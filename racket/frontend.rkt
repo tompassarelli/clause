@@ -298,20 +298,19 @@
       (list "intent" (parsed-item-name intent) "desired"
             (clause-semantic intent "clause" (parsed-item-name declaration)))))
   (define semantic
-    (append
-     (list (if (null? intents) "clause-semantic-v2" "clause-semantic-v3")
-           (list "relations"
-                 (list (list "relation" (parsed-item-name declaration) "roles"
-                             (for/list ([role (in-list ordered-roles)])
-                               (list (parsed-role-name role) (parsed-role-text role)))
-                             "sentence" sentence
-                             "modes" (list (list "mode" "finite" "known" (list (first declared-mode))
-                                                 "sought" (list (second declared-mode))
-                                                 "cardinality" (third declared-mode))))))
-           (list "facts" (sort (map (lambda (fact) (clause-semantic fact "fact")) facts) string<? #:key ~s))
-           (list "query" (clause-semantic query "query")))
-     (if (null? intents) '() (list (list "intents" intent-semantics)))
-     (list (list "order" "ascending" (second declared-mode)))))
+    (list "clause-semantic-v3"
+          (list "relations"
+                (list (list "relation" (parsed-item-name declaration) "roles"
+                            (for/list ([role (in-list ordered-roles)])
+                              (list (parsed-role-name role) (parsed-role-text role)))
+                            "sentence" sentence
+                            "modes" (list (list "mode" "finite" "known" (list (first declared-mode))
+                                                "sought" (list (second declared-mode))
+                                                "cardinality" (third declared-mode))))))
+          (list "facts" (sort (map (lambda (fact) (clause-semantic fact "fact")) facts) string<? #:key ~s))
+          (list "query" (clause-semantic query "query"))
+          (list "intents" intent-semantics)
+          (list "order" "ascending" (second declared-mode))))
   (elaboration semantic
                (map parsed-role-span
                     (append (append-map parsed-item-roles facts)

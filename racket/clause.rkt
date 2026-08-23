@@ -60,7 +60,11 @@
                            (hash-values (Model-relations reloaded-model)))
                    (andmap (lambda (fact) (immutable? (Clause-roles fact)))
                            (Model-facts reloaded-model))
-                   (immutable? (Clause-roles (Model-query reloaded-model))))
+                   (immutable? (Clause-roles (Model-query reloaded-model)))
+                   (immutable? (Revision-identity reloaded-a))
+                   (immutable? (Clause-relation (Model-query reloaded-model)))
+                   (immutable? (Literal-text
+                                (hash-ref (Clause-roles (Model-query reloaded-model)) "set"))))
         (error 'canary "reload was not deterministic and immutable"))
       (define envelope (string->jsexpr serialized))
       (define semantic (third envelope))
@@ -72,10 +76,11 @@
         (error 'canary "revision wire envelope or canonical semantic payload drifted"))
       (expect-reload-failure (jsexpr->string (list (first envelope) "rev-sha256-tampered" (third envelope)))
                              "identity")
+      (expect-reload-failure (string-append " " serialized) "canonical")
       (define broken-query
         (match semantic
-          [(list version relations facts (list "query" (list kind relation "roles" roles)) order)
-           (list version relations facts (list "query" (list kind relation "roles" (rest roles))) order)]))
+          [(list version relations facts (list "query" (list kind relation "roles" roles)) intents order)
+           (list version relations facts (list "query" (list kind relation "roles" (rest roles))) intents order)]))
       (expect-reload-failure (jsexpr->string (list (first envelope) (second envelope) broken-query))
                              "role map")
       (define plan (check-query reloaded-a))

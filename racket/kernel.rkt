@@ -87,7 +87,9 @@
 
 (: expect-string (-> Any String String))
 (define (expect-string value where)
-  (if (string? value) value (reject (format "~a must be a string" where))))
+  (if (string? value)
+      (string->immutable-string value)
+      (reject (format "~a must be a string" where))))
 
 (: valid-name (-> Any Regexp String String))
 (define (valid-name value rx where)
@@ -180,7 +182,7 @@
            (list "facts" fact-values)
            (list "query" query-value)
            (list "intents" intent-values)
-           (list "order" "ascending" order-role))
+           (list "order" "ascending" raw-order-role))
      (unless (and (list? relation-values) (= (length relation-values) 1))
        (reject "exactly one relation is required"))
      (define relation-entry (first relation-values))
@@ -283,6 +285,7 @@
             (set! intent-names (cons intent-name intent-names))
             (Intent intent-name (decode-clause desired-value "clause" #t))]
            [_ (reject "invalid intent")])) )
+     (define order-role (valid-name raw-order-role role-name-rx "order role"))
      (define variables
        (for/list : (Listof String) ([(name item) (in-hash (Clause-roles query))] #:when (Variable? item)) name))
      (unless (= (length variables) 1) (reject "query must bind exactly one variable"))
@@ -304,7 +307,10 @@
 
 (: reload-revision (-> String Revision))
 (define (reload-revision text)
-  (match (exact-list (string->jsexpr text) 3 "revision envelope")
+  (define envelope (string->jsexpr text))
+  (unless (string=? text (jsexpr->string envelope))
+    (reject "revision envelope is not canonical"))
+  (match (exact-list envelope 3 "revision envelope")
     [(list "clause-revision-v1" raw-id semantic)
      (define stored-id (expect-string raw-id "revision identity"))
      (unless (regexp-match? #px"^rev-sha256-[0-9a-f]{64}$" stored-id)

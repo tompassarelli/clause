@@ -74,7 +74,7 @@
       (define elaborated (elaborate-source (file->string source-path)))
 
       ;; M3's two operations are trailing figures over the same exact sentence
-      ;; shape.  The semantic payload remains the M2 clause-semantic-v2 bytes.
+      ;; shape.  The semantic payload is the canonical v3 form with no intents.
       (define operations (elaboration-operations elaborated))
       (unless (= (length operations) 2)
         (error 'm3-canary "expected one claim and one require operation"))
@@ -182,19 +182,19 @@
       (define post-envelope (string->jsexpr post-serialized))
       (define broken-semantic
         (match (third post-envelope)
-          [(list version relations facts (list "query" query) order)
+          [(list version relations facts (list "query" query) intents order)
            (list version relations facts
                  (list "query"
                        (match query
                          [(list kind relation "roles" roles)
                           (list kind relation "roles" (rest roles))]))
-                 order)]))
+                 intents order)]))
       (expect-failure
        (lambda ()
          (reload-revision
           (jsexpr->string (list "clause-revision-v1"
-                                (Revision-identity next-revision)
-                                broken-semantic))))
+                                 (Revision-identity next-revision)
+                                 broken-semantic))))
        "role map")
 
       ;; Generated host code and the interpreter must agree byte-for-byte.
