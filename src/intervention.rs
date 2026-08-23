@@ -1,16 +1,31 @@
 //! Certified finite intervention synthesis over typed, sealed revisions.
 //!
-//! `one minimal` and `all minimal` are deliberately separate contracts.  A
+//! `one minimal` and `all minimal` are deliberately separate contracts. A
 //! one-result request proves inclusion minimality by exact counterfactual
 //! closure checks; it makes no claim about cardinality optimality or the
-//! complete frontier.  An all-result request is complete only after the
-//! finite candidate space has been exhausted.
+//! complete frontier. An all-result request is complete only after the finite
+//! candidate space has been exhausted.
+//!
+//! The stable public surface stays at clause::intervention. Private modules
+//! separate one-result certification, exhaustive frontier search, candidate
+//! construction, and shared bounded closure mechanics.
+#![allow(unexpected_cfgs)]
+
+#[cfg(not(clause_generated))]
+mod all;
+#[cfg(not(clause_generated))]
+mod basis;
+#[cfg(not(clause_generated))]
+mod closure;
+#[cfg(not(clause_generated))]
+mod one;
+#[cfg(not(clause_generated))]
+mod search;
 
 use crate::{
-    derive::{self, Closure, Limits, Proof, SupportLimits, SupportStatus},
-    kernel::{Clause, Delta, KernelError, RelationId, Result, Revision, Term},
+    derive::{Limits, Proof, SupportLimits},
+    kernel::{Clause, Delta, RelationId, Result, Revision},
 };
-use std::collections::BTreeSet;
 
 /// Explicit resource bounds for an intervention request.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -39,12 +54,15 @@ impl InterventionLimits {
     pub fn closure(&self) -> Limits {
         self.closure
     }
+
     pub fn max_candidates(&self) -> usize {
         self.max_candidates
     }
+
     pub fn max_solutions(&self) -> usize {
         self.max_solutions
     }
+
     pub fn support(&self) -> SupportLimits {
         self.support
     }
@@ -62,11 +80,34 @@ impl Intervention {
     pub fn delta(&self) -> &Delta {
         &self.delta
     }
+
     pub fn revision(&self) -> &Revision {
         &self.revision
     }
+
     pub fn proof(&self) -> Option<&Proof> {
         self.proof.as_ref()
+    }
+
+    fn withdrawal(source: &Revision, withdrawals: Vec<Clause>, revision: Revision) -> Result<Self> {
+        Ok(Self {
+            delta: Delta::new(source.identity().clone(), Vec::new(), withdrawals)?,
+            revision,
+            proof: None,
+        })
+    }
+
+    fn admission(
+        source: &Revision,
+        admissions: Vec<Clause>,
+        revision: Revision,
+        proof: Proof,
+    ) -> Result<Self> {
+        Ok(Self {
+            delta: Delta::new(source.identity().clone(), admissions, Vec::new())?,
+            revision,
+            proof: Some(proof),
+        })
     }
 }
 
@@ -80,7 +121,7 @@ pub enum Incomplete {
     SupportBudgetExhausted,
 }
 
-/// Exact outcome for a `prevent one minimal` request.
+/// Exact outcome for `prevent one minimal`.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum PreventOne {
     Satisfied(Box<Intervention>),
@@ -89,7 +130,7 @@ pub enum PreventOne {
     Incomplete(Incomplete),
 }
 
-/// Exact outcome for an `achieve one minimal` request.
+/// Exact outcome for `achieve one minimal`.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum AchieveOne {
     Satisfied(Box<Intervention>),
@@ -98,7 +139,7 @@ pub enum AchieveOne {
     Incomplete(Incomplete),
 }
 
-/// Exhaustive finite prevention output.  Results retained on an incomplete
+/// Exhaustive finite prevention output. Results retained on an incomplete
 /// search are individually verified but are not a complete frontier.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum PreventAll {
@@ -124,7 +165,7 @@ impl PreventAll {
     }
 }
 
-/// Exhaustive finite achievement output.  Results retained on an incomplete
+/// Exhaustive finite achievement output. Results retained on an incomplete
 /// search are individually verified but are not a complete frontier.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum AchieveAll {
@@ -153,53 +194,91 @@ impl AchieveAll {
 /// Return one canonical inclusion-minimal asserted-clause withdrawal.
 ///
 /// The deletion/restoration algorithm is valid only because the admitted law
-/// fragment is positive and monotone.  It proves each retained withdrawal is
+/// fragment is positive and monotone. It proves each retained withdrawal is
 /// necessary, but intentionally does not prove it has minimum cardinality.
+#[cfg(not(clause_generated))]
 pub fn prevent_one_minimal(
     source: &Revision,
     target: Clause,
     using: Vec<RelationId>,
     limits: InterventionLimits,
 ) -> Result<PreventOne> {
-    source.model().validate_clause(&target, false)?;
-    let Some(source_closure) = complete_closure(source, limits.closure)? else {
-        return Ok(PreventOne::Incomplete(Incomplete::ClosureBudgetExhausted));
+    one::prevent_one_minimal(source, target, using, limits)
+}
+
+/// Return one canonical inclusion-minimal asserted-clause admission.
+///
+/// This is the dual of [`prevent_one_minimal`]. It proves subset necessity,
+/// not cardinality optimality or complete-frontier enumeration.
+#[cfg(not(clause_generated))]
+pub fn achieve_one_minimal(
+    source: &Revision,
+    target: Clause,
+    using: Vec<RelationId>,
+    limits: InterventionLimits,
+) -> Result<AchieveOne> {
+    one::achieve_one_minimal(source, target, using, limits)
+}
+
+/// Enumerate every inclusion-minimal withdrawal over the complete support
+/// frontier.
+#[cfg(not(clause_generated))]
+pub fn prevent_all_minimal(
+    source: &Revision,
+    target: Clause,
+    using: Vec<RelationId>,
+    limits: InterventionLimits,
+) -> Result<PreventAll> {
+    all::prevent_all_minimal(source, target, using, limits)
+}
+
+/// Enumerate every inclusion-minimal addition over the finite typed basis.
+#[cfg(not(clause_generated))]
+pub fn achieve_all_minimal(
+    source: &Revision,
+    target: Clause,
+    using: Vec<RelationId>,
+    limits: InterventionLimits,
+) -> Result<AchieveAll> {
+    all::achieve_all_minimal(source, target, using, limits)
+}
+
+#[cfg(clause_generated)]
+mod generated {
+    use super::*;
+    use crate::{
+        derive::{self, Closure, SupportStatus},
+        kernel::{KernelError, Term},
     };
-    if source_closure.proof(&target).is_none() {
-        return Ok(PreventOne::AlreadyAbsent);
-    }
-    let basis = withdrawal_basis(source, using)?;
-    if basis.is_empty() {
-        return Ok(PreventOne::Impossible);
-    }
-    let mut checks = 0;
-    match closure_after(
-        source,
-        &[],
-        &basis,
-        limits.closure,
-        &mut checks,
-        limits.max_candidates,
-    )? {
-        ClosureAttempt::CandidateBudget => {
-            return Ok(PreventOne::Incomplete(Incomplete::CandidateBudgetExhausted));
-        }
-        ClosureAttempt::ClosureBudget => {
+    use std::collections::BTreeSet;
+
+    /// Return one canonical inclusion-minimal asserted-clause withdrawal.
+    ///
+    /// The deletion/restoration algorithm is valid only because the admitted law
+    /// fragment is positive and monotone.  It proves each retained withdrawal is
+    /// necessary, but intentionally does not prove it has minimum cardinality.
+    pub fn prevent_one_minimal(
+        source: &Revision,
+        target: Clause,
+        using: Vec<RelationId>,
+        limits: InterventionLimits,
+    ) -> Result<PreventOne> {
+        source.model().validate_clause(&target, false)?;
+        let Some(source_closure) = complete_closure(source, limits.closure)? else {
             return Ok(PreventOne::Incomplete(Incomplete::ClosureBudgetExhausted));
+        };
+        if source_closure.proof(&target).is_none() {
+            return Ok(PreventOne::AlreadyAbsent);
         }
-        ClosureAttempt::Complete(closure) if closure.proof(&target).is_some() => {
+        let basis = withdrawal_basis(source, using)?;
+        if basis.is_empty() {
             return Ok(PreventOne::Impossible);
         }
-        ClosureAttempt::Complete(_) => {}
-    }
-
-    let mut withdrawals = basis;
-    for candidate in withdrawals.clone() {
-        let restored = without(&withdrawals, &candidate);
-        let closure = match closure_after(
+        let mut checks = 0;
+        match closure_after(
             source,
             &[],
-            &restored,
+            &basis,
             limits.closure,
             &mut checks,
             limits.max_candidates,
@@ -210,78 +289,80 @@ pub fn prevent_one_minimal(
             ClosureAttempt::ClosureBudget => {
                 return Ok(PreventOne::Incomplete(Incomplete::ClosureBudgetExhausted));
             }
-            ClosureAttempt::Complete(closure) => closure,
-        };
-        if closure.proof(&target).is_none() {
-            withdrawals = restored;
+            ClosureAttempt::Complete(closure) if closure.proof(&target).is_some() => {
+                return Ok(PreventOne::Impossible);
+            }
+            ClosureAttempt::Complete(_) => {}
         }
-    }
-    let revision = apply(source, Vec::new(), withdrawals.clone())?;
-    let Some(closure) = complete_closure(&revision, limits.closure)? else {
-        return Ok(PreventOne::Incomplete(Incomplete::ClosureBudgetExhausted));
-    };
-    if closure.proof(&target).is_some() {
-        return Err(KernelError::new(
-            "prevent minimizer returned an entailed target",
-        ));
-    }
-    Ok(PreventOne::Satisfied(Box::new(Intervention {
-        delta: Delta::new(source.identity().clone(), Vec::new(), withdrawals)?,
-        revision,
-        proof: None,
-    })))
-}
 
-/// Return one canonical inclusion-minimal asserted-clause admission.
-///
-/// This is the dual of [`prevent_one_minimal`].  It proves subset necessity,
-/// not cardinality optimality or complete-frontier enumeration.
-pub fn achieve_one_minimal(
-    source: &Revision,
-    target: Clause,
-    using: Vec<RelationId>,
-    limits: InterventionLimits,
-) -> Result<AchieveOne> {
-    source.model().validate_clause(&target, false)?;
-    let Some(source_closure) = complete_closure(source, limits.closure)? else {
-        return Ok(AchieveOne::Incomplete(Incomplete::ClosureBudgetExhausted));
-    };
-    if source_closure.proof(&target).is_some() {
-        return Ok(AchieveOne::AlreadyEntailed);
+        let mut withdrawals = basis;
+        for candidate in withdrawals.clone() {
+            let restored = without(&withdrawals, &candidate);
+            let closure = match closure_after(
+                source,
+                &[],
+                &restored,
+                limits.closure,
+                &mut checks,
+                limits.max_candidates,
+            )? {
+                ClosureAttempt::CandidateBudget => {
+                    return Ok(PreventOne::Incomplete(Incomplete::CandidateBudgetExhausted));
+                }
+                ClosureAttempt::ClosureBudget => {
+                    return Ok(PreventOne::Incomplete(Incomplete::ClosureBudgetExhausted));
+                }
+                ClosureAttempt::Complete(closure) => closure,
+            };
+            if closure.proof(&target).is_none() {
+                withdrawals = restored;
+            }
+        }
+        let revision = apply(source, Vec::new(), withdrawals.clone())?;
+        let Some(closure) = complete_closure(&revision, limits.closure)? else {
+            return Ok(PreventOne::Incomplete(Incomplete::ClosureBudgetExhausted));
+        };
+        if closure.proof(&target).is_some() {
+            return Err(KernelError::new(
+                "prevent minimizer returned an entailed target",
+            ));
+        }
+        Ok(PreventOne::Satisfied(Box::new(Intervention {
+            delta: Delta::new(source.identity().clone(), Vec::new(), withdrawals)?,
+            revision,
+            proof: None,
+        })))
     }
-    let basis = achievement_basis(source, using, limits.max_candidates)?;
-    if !basis.complete {
-        return Ok(AchieveOne::Incomplete(Incomplete::CandidateBudgetExhausted));
-    }
-    let mut additions = basis.clauses;
-    if additions.is_empty() {
-        return Ok(AchieveOne::Impossible);
-    }
-    let mut checks = 0;
-    let full = match closure_after(
-        source,
-        &additions,
-        &[],
-        limits.closure,
-        &mut checks,
-        limits.max_candidates,
-    )? {
-        ClosureAttempt::CandidateBudget => {
+
+    /// Return one canonical inclusion-minimal asserted-clause admission.
+    ///
+    /// This is the dual of [`prevent_one_minimal`].  It proves subset necessity,
+    /// not cardinality optimality or complete-frontier enumeration.
+    pub fn achieve_one_minimal(
+        source: &Revision,
+        target: Clause,
+        using: Vec<RelationId>,
+        limits: InterventionLimits,
+    ) -> Result<AchieveOne> {
+        source.model().validate_clause(&target, false)?;
+        let Some(source_closure) = complete_closure(source, limits.closure)? else {
+            return Ok(AchieveOne::Incomplete(Incomplete::ClosureBudgetExhausted));
+        };
+        if source_closure.proof(&target).is_some() {
+            return Ok(AchieveOne::AlreadyEntailed);
+        }
+        let basis = achievement_basis(source, using, limits.max_candidates)?;
+        if !basis.complete {
             return Ok(AchieveOne::Incomplete(Incomplete::CandidateBudgetExhausted));
         }
-        ClosureAttempt::ClosureBudget => {
-            return Ok(AchieveOne::Incomplete(Incomplete::ClosureBudgetExhausted));
+        let mut additions = basis.clauses;
+        if additions.is_empty() {
+            return Ok(AchieveOne::Impossible);
         }
-        ClosureAttempt::Complete(closure) => closure,
-    };
-    if full.proof(&target).is_none() {
-        return Ok(AchieveOne::Impossible);
-    }
-    for candidate in additions.clone() {
-        let reduced = without(&additions, &candidate);
-        let closure = match closure_after(
+        let mut checks = 0;
+        let full = match closure_after(
             source,
-            &reduced,
+            &additions,
             &[],
             limits.closure,
             &mut checks,
@@ -295,453 +376,492 @@ pub fn achieve_one_minimal(
             }
             ClosureAttempt::Complete(closure) => closure,
         };
-        if closure.proof(&target).is_some() {
-            additions = reduced;
+        if full.proof(&target).is_none() {
+            return Ok(AchieveOne::Impossible);
         }
+        for candidate in additions.clone() {
+            let reduced = without(&additions, &candidate);
+            let closure = match closure_after(
+                source,
+                &reduced,
+                &[],
+                limits.closure,
+                &mut checks,
+                limits.max_candidates,
+            )? {
+                ClosureAttempt::CandidateBudget => {
+                    return Ok(AchieveOne::Incomplete(Incomplete::CandidateBudgetExhausted));
+                }
+                ClosureAttempt::ClosureBudget => {
+                    return Ok(AchieveOne::Incomplete(Incomplete::ClosureBudgetExhausted));
+                }
+                ClosureAttempt::Complete(closure) => closure,
+            };
+            if closure.proof(&target).is_some() {
+                additions = reduced;
+            }
+        }
+        let revision = apply(source, additions.clone(), Vec::new())?;
+        let Some(closure) = complete_closure(&revision, limits.closure)? else {
+            return Ok(AchieveOne::Incomplete(Incomplete::ClosureBudgetExhausted));
+        };
+        let proof = closure
+            .proof(&target)
+            .cloned()
+            .ok_or_else(|| KernelError::new("achieve minimizer returned an absent target"))?;
+        Ok(AchieveOne::Satisfied(Box::new(Intervention {
+            delta: Delta::new(source.identity().clone(), additions, Vec::new())?,
+            revision,
+            proof: Some(proof),
+        })))
     }
-    let revision = apply(source, additions.clone(), Vec::new())?;
-    let Some(closure) = complete_closure(&revision, limits.closure)? else {
-        return Ok(AchieveOne::Incomplete(Incomplete::ClosureBudgetExhausted));
-    };
-    let proof = closure
-        .proof(&target)
-        .cloned()
-        .ok_or_else(|| KernelError::new("achieve minimizer returned an absent target"))?;
-    Ok(AchieveOne::Satisfied(Box::new(Intervention {
-        delta: Delta::new(source.identity().clone(), additions, Vec::new())?,
-        revision,
-        proof: Some(proof),
-    })))
-}
 
-/// Enumerate every inclusion-minimal withdrawal over the complete support
-/// frontier.  An incomplete support projection is never treated as exact.
-pub fn prevent_all_minimal(
-    source: &Revision,
-    target: Clause,
-    using: Vec<RelationId>,
-    limits: InterventionLimits,
-) -> Result<PreventAll> {
-    source.model().validate_clause(&target, false)?;
-    let basis = withdrawal_basis(source, using)?;
-    let frontier = match derive::support_frontier(source, &target, limits.support) {
-        Ok(frontier) => frontier,
-        Err(error) if is_closure_limit(&error) => {
+    /// Enumerate every inclusion-minimal withdrawal over the complete support
+    /// frontier.  An incomplete support projection is never treated as exact.
+    pub fn prevent_all_minimal(
+        source: &Revision,
+        target: Clause,
+        using: Vec<RelationId>,
+        limits: InterventionLimits,
+    ) -> Result<PreventAll> {
+        source.model().validate_clause(&target, false)?;
+        let basis = withdrawal_basis(source, using)?;
+        let frontier = match derive::support_frontier(source, &target, limits.support) {
+            Ok(frontier) => frontier,
+            Err(error) if is_closure_limit(&error) => {
+                return Ok(PreventAll::Incomplete {
+                    interventions: Vec::new(),
+                    reason: Incomplete::ClosureBudgetExhausted,
+                });
+            }
+            Err(error) => return Err(error),
+        };
+        if !frontier.status().is_complete() {
             return Ok(PreventAll::Incomplete {
+                interventions: Vec::new(),
+                reason: incomplete_support(frontier.status()),
+            });
+        }
+        if frontier.supports().is_empty() {
+            return Ok(PreventAll::AlreadyAbsent);
+        }
+        let supports = frontier
+            .supports()
+            .iter()
+            .map(|support| support.assertions().to_vec())
+            .collect::<Vec<_>>();
+        if basis.is_empty()
+            || supports
+                .iter()
+                .any(|support| !support.iter().any(|item| basis.binary_search(item).is_ok()))
+        {
+            return Ok(PreventAll::Impossible);
+        }
+        let mut state = AllState::new();
+        for size in 1..=basis.len() {
+            let mut choice = Vec::new();
+            let control = enumerate(&basis, size, 0, &mut choice, &mut |withdrawals| {
+                if state.reason.is_some() {
+                    return Ok(Enumeration::Break);
+                }
+                if state.checked >= limits.max_candidates {
+                    state.reason = Some(Incomplete::CandidateBudgetExhausted);
+                    return Ok(Enumeration::Break);
+                }
+                state.checked += 1;
+                if state
+                    .items
+                    .iter()
+                    .any(|item| is_subset(item.delta().withdrawals(), withdrawals))
+                {
+                    return Ok(Enumeration::Continue);
+                }
+                if !supports.iter().all(|support| {
+                    support
+                        .iter()
+                        .any(|item| withdrawals.binary_search(item).is_ok())
+                }) {
+                    return Ok(Enumeration::Continue);
+                }
+                let revision = apply(source, Vec::new(), withdrawals.to_vec())?;
+                let Some(closure) = complete_closure(&revision, limits.closure)? else {
+                    state.reason = Some(Incomplete::ClosureBudgetExhausted);
+                    return Ok(Enumeration::Break);
+                };
+                if closure.proof(&target).is_some() {
+                    return Err(KernelError::new(
+                        "support hitting set did not prevent target",
+                    ));
+                }
+                if state.items.len() >= limits.max_solutions {
+                    state.reason = Some(Incomplete::SolutionBudgetExhausted);
+                    return Ok(Enumeration::Break);
+                }
+                state.items.push(Intervention {
+                    delta: Delta::new(source.identity().clone(), Vec::new(), withdrawals.to_vec())?,
+                    revision,
+                    proof: None,
+                });
+                Ok(Enumeration::Continue)
+            })?;
+            if control == Enumeration::Break {
+                break;
+            }
+        }
+        Ok(state.prevent_result())
+    }
+
+    /// Enumerate every inclusion-minimal addition over the finite typed basis.
+    pub fn achieve_all_minimal(
+        source: &Revision,
+        target: Clause,
+        using: Vec<RelationId>,
+        limits: InterventionLimits,
+    ) -> Result<AchieveAll> {
+        source.model().validate_clause(&target, false)?;
+        let Some(source_closure) = complete_closure(source, limits.closure)? else {
+            return Ok(AchieveAll::Incomplete {
                 interventions: Vec::new(),
                 reason: Incomplete::ClosureBudgetExhausted,
             });
+        };
+        if source_closure.proof(&target).is_some() {
+            return Ok(AchieveAll::AlreadyEntailed);
         }
-        Err(error) => return Err(error),
-    };
-    if !frontier.status().is_complete() {
-        return Ok(PreventAll::Incomplete {
-            interventions: Vec::new(),
-            reason: incomplete_support(frontier.status()),
-        });
-    }
-    if frontier.supports().is_empty() {
-        return Ok(PreventAll::AlreadyAbsent);
-    }
-    let supports = frontier
-        .supports()
-        .iter()
-        .map(|support| support.assertions().to_vec())
-        .collect::<Vec<_>>();
-    if basis.is_empty()
-        || supports
-            .iter()
-            .any(|support| !support.iter().any(|item| basis.binary_search(item).is_ok()))
-    {
-        return Ok(PreventAll::Impossible);
-    }
-    let mut state = AllState::new();
-    for size in 1..=basis.len() {
-        let mut choice = Vec::new();
-        let control = enumerate(&basis, size, 0, &mut choice, &mut |withdrawals| {
-            if state.reason.is_some() {
-                return Ok(Enumeration::Break);
-            }
-            if state.checked >= limits.max_candidates {
-                state.reason = Some(Incomplete::CandidateBudgetExhausted);
-                return Ok(Enumeration::Break);
-            }
-            state.checked += 1;
-            if state
-                .items
-                .iter()
-                .any(|item| is_subset(item.delta().withdrawals(), withdrawals))
-            {
-                return Ok(Enumeration::Continue);
-            }
-            if !supports.iter().all(|support| {
-                support
+        let basis = achievement_basis(source, using, limits.max_candidates)?;
+        if !basis.complete {
+            return Ok(AchieveAll::Incomplete {
+                interventions: Vec::new(),
+                reason: Incomplete::CandidateBudgetExhausted,
+            });
+        }
+        let mut state = AllState::new();
+        for size in 1..=basis.clauses.len() {
+            let mut choice = Vec::new();
+            let control = enumerate(&basis.clauses, size, 0, &mut choice, &mut |additions| {
+                if state.reason.is_some() {
+                    return Ok(Enumeration::Break);
+                }
+                if state.checked >= limits.max_candidates {
+                    state.reason = Some(Incomplete::CandidateBudgetExhausted);
+                    return Ok(Enumeration::Break);
+                }
+                state.checked += 1;
+                if state
+                    .items
                     .iter()
-                    .any(|item| withdrawals.binary_search(item).is_ok())
-            }) {
-                return Ok(Enumeration::Continue);
+                    .any(|item| is_subset(item.delta().admissions(), additions))
+                {
+                    return Ok(Enumeration::Continue);
+                }
+                let revision = apply(source, additions.to_vec(), Vec::new())?;
+                let Some(closure) = complete_closure(&revision, limits.closure)? else {
+                    state.reason = Some(Incomplete::ClosureBudgetExhausted);
+                    return Ok(Enumeration::Break);
+                };
+                let Some(proof) = closure.proof(&target).cloned() else {
+                    return Ok(Enumeration::Continue);
+                };
+                if state.items.len() >= limits.max_solutions {
+                    state.reason = Some(Incomplete::SolutionBudgetExhausted);
+                    return Ok(Enumeration::Break);
+                }
+                state.items.push(Intervention {
+                    delta: Delta::new(source.identity().clone(), additions.to_vec(), Vec::new())?,
+                    revision,
+                    proof: Some(proof),
+                });
+                Ok(Enumeration::Continue)
+            })?;
+            if control == Enumeration::Break {
+                break;
             }
-            let revision = apply(source, Vec::new(), withdrawals.to_vec())?;
-            let Some(closure) = complete_closure(&revision, limits.closure)? else {
-                state.reason = Some(Incomplete::ClosureBudgetExhausted);
-                return Ok(Enumeration::Break);
-            };
-            if closure.proof(&target).is_some() {
-                return Err(KernelError::new(
-                    "support hitting set did not prevent target",
-                ));
-            }
-            if state.items.len() >= limits.max_solutions {
-                state.reason = Some(Incomplete::SolutionBudgetExhausted);
-                return Ok(Enumeration::Break);
-            }
-            state.items.push(Intervention {
-                delta: Delta::new(source.identity().clone(), Vec::new(), withdrawals.to_vec())?,
-                revision,
-                proof: None,
-            });
-            Ok(Enumeration::Continue)
-        })?;
-        if control == Enumeration::Break {
-            break;
         }
-    }
-    Ok(state.prevent_result())
-}
-
-/// Enumerate every inclusion-minimal addition over the finite typed basis.
-pub fn achieve_all_minimal(
-    source: &Revision,
-    target: Clause,
-    using: Vec<RelationId>,
-    limits: InterventionLimits,
-) -> Result<AchieveAll> {
-    source.model().validate_clause(&target, false)?;
-    let Some(source_closure) = complete_closure(source, limits.closure)? else {
-        return Ok(AchieveAll::Incomplete {
-            interventions: Vec::new(),
-            reason: Incomplete::ClosureBudgetExhausted,
-        });
-    };
-    if source_closure.proof(&target).is_some() {
-        return Ok(AchieveAll::AlreadyEntailed);
-    }
-    let basis = achievement_basis(source, using, limits.max_candidates)?;
-    if !basis.complete {
-        return Ok(AchieveAll::Incomplete {
-            interventions: Vec::new(),
-            reason: Incomplete::CandidateBudgetExhausted,
-        });
-    }
-    let mut state = AllState::new();
-    for size in 1..=basis.clauses.len() {
-        let mut choice = Vec::new();
-        let control = enumerate(&basis.clauses, size, 0, &mut choice, &mut |additions| {
-            if state.reason.is_some() {
-                return Ok(Enumeration::Break);
-            }
-            if state.checked >= limits.max_candidates {
-                state.reason = Some(Incomplete::CandidateBudgetExhausted);
-                return Ok(Enumeration::Break);
-            }
-            state.checked += 1;
-            if state
-                .items
-                .iter()
-                .any(|item| is_subset(item.delta().admissions(), additions))
-            {
-                return Ok(Enumeration::Continue);
-            }
-            let revision = apply(source, additions.to_vec(), Vec::new())?;
-            let Some(closure) = complete_closure(&revision, limits.closure)? else {
-                state.reason = Some(Incomplete::ClosureBudgetExhausted);
-                return Ok(Enumeration::Break);
-            };
-            let Some(proof) = closure.proof(&target).cloned() else {
-                return Ok(Enumeration::Continue);
-            };
-            if state.items.len() >= limits.max_solutions {
-                state.reason = Some(Incomplete::SolutionBudgetExhausted);
-                return Ok(Enumeration::Break);
-            }
-            state.items.push(Intervention {
-                delta: Delta::new(source.identity().clone(), additions.to_vec(), Vec::new())?,
-                revision,
-                proof: Some(proof),
-            });
-            Ok(Enumeration::Continue)
-        })?;
-        if control == Enumeration::Break {
-            break;
+        if state.items.is_empty() && state.reason.is_none() {
+            return Ok(AchieveAll::Impossible);
         }
+        Ok(state.achieve_result())
     }
-    if state.items.is_empty() && state.reason.is_none() {
-        return Ok(AchieveAll::Impossible);
-    }
-    Ok(state.achieve_result())
-}
 
-fn withdrawal_basis(source: &Revision, using: Vec<RelationId>) -> Result<Vec<Clause>> {
-    let using = extensional_relations(source, using)?;
-    Ok(source
-        .model()
-        .assertions()
-        .iter()
-        .filter(|assertion| using.binary_search(assertion.relation()).is_ok())
-        .cloned()
-        .collect())
-}
-
-/// Cartesian ground clauses use only entities already admitted by the exact
-/// Model and only the exact declared type of each role.
-struct AchievementBasis {
-    clauses: Vec<Clause>,
-    complete: bool,
-}
-
-fn achievement_basis(
-    source: &Revision,
-    using: Vec<RelationId>,
-    max_candidates: usize,
-) -> Result<AchievementBasis> {
-    let using = extensional_relations(source, using)?;
-    let mut candidates = Vec::new();
-    for relation_id in using {
-        let relation = source
-            .model()
-            .relations()
-            .get(&relation_id)
-            .expect("validated relation");
-        let roles = relation.roles().iter().collect::<Vec<_>>();
-        if collect_ground_clauses(
-            source,
-            &relation_id,
-            &roles,
-            0,
-            &mut BTreeSet::new(),
-            &mut candidates,
-            max_candidates,
-        )? == Enumeration::Break
-        {
-            return Ok(AchievementBasis {
-                clauses: candidates,
-                complete: false,
-            });
-        }
-    }
-    Ok(AchievementBasis {
-        clauses: candidates,
-        complete: true,
-    })
-}
-
-fn extensional_relations(source: &Revision, using: Vec<RelationId>) -> Result<Vec<RelationId>> {
-    let using = using
-        .into_iter()
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .collect::<Vec<_>>();
-    if using.is_empty() {
-        return Err(KernelError::new(
-            "intervention requires at least one relation",
-        ));
-    }
-    let derived = source
-        .model()
-        .laws()
-        .iter()
-        .map(|law| law.conclusion().relation())
-        .collect::<BTreeSet<_>>();
-    for relation in &using {
-        if !source.model().relations().contains_key(relation) {
-            return Err(KernelError::new("intervention relation is undeclared"));
-        }
-        if derived.contains(relation) {
-            return Err(KernelError::new("intervention relation is not extensional"));
-        }
-    }
-    Ok(using)
-}
-
-fn collect_ground_clauses(
-    source: &Revision,
-    relation: &RelationId,
-    roles: &[(&crate::kernel::RoleId, &crate::kernel::Role)],
-    index: usize,
-    values: &mut BTreeSet<(crate::kernel::RoleId, Term)>,
-    candidates: &mut Vec<Clause>,
-    max_candidates: usize,
-) -> Result<Enumeration> {
-    if index == roles.len() {
-        let candidate = Clause::new(relation.clone(), values.iter().cloned().collect())?;
-        if source
+    fn withdrawal_basis(source: &Revision, using: Vec<RelationId>) -> Result<Vec<Clause>> {
+        let using = extensional_relations(source, using)?;
+        Ok(source
             .model()
             .assertions()
-            .binary_search(&candidate)
-            .is_ok()
-        {
+            .iter()
+            .filter(|assertion| using.binary_search(assertion.relation()).is_ok())
+            .cloned()
+            .collect())
+    }
+
+    /// Cartesian ground clauses use only entities already admitted by the exact
+    /// Model and only the exact declared type of each role.
+    struct AchievementBasis {
+        clauses: Vec<Clause>,
+        complete: bool,
+    }
+
+    fn achievement_basis(
+        source: &Revision,
+        using: Vec<RelationId>,
+        max_candidates: usize,
+    ) -> Result<AchievementBasis> {
+        let using = extensional_relations(source, using)?;
+        let mut candidates = Vec::new();
+        for relation_id in using {
+            let relation = source
+                .model()
+                .relations()
+                .get(&relation_id)
+                .expect("validated relation");
+            let roles = relation.roles().iter().collect::<Vec<_>>();
+            if collect_ground_clauses(
+                source,
+                &relation_id,
+                &roles,
+                0,
+                &mut BTreeSet::new(),
+                &mut candidates,
+                max_candidates,
+            )? == Enumeration::Break
+            {
+                return Ok(AchievementBasis {
+                    clauses: candidates,
+                    complete: false,
+                });
+            }
+        }
+        Ok(AchievementBasis {
+            clauses: candidates,
+            complete: true,
+        })
+    }
+
+    fn extensional_relations(source: &Revision, using: Vec<RelationId>) -> Result<Vec<RelationId>> {
+        let using = using
+            .into_iter()
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>();
+        if using.is_empty() {
+            return Err(KernelError::new(
+                "intervention requires at least one relation",
+            ));
+        }
+        let derived = source
+            .model()
+            .laws()
+            .iter()
+            .map(|law| law.conclusion().relation())
+            .collect::<BTreeSet<_>>();
+        for relation in &using {
+            if !source.model().relations().contains_key(relation) {
+                return Err(KernelError::new("intervention relation is undeclared"));
+            }
+            if derived.contains(relation) {
+                return Err(KernelError::new("intervention relation is not extensional"));
+            }
+        }
+        Ok(using)
+    }
+
+    fn collect_ground_clauses(
+        source: &Revision,
+        relation: &RelationId,
+        roles: &[(&crate::kernel::RoleId, &crate::kernel::Role)],
+        index: usize,
+        values: &mut BTreeSet<(crate::kernel::RoleId, Term)>,
+        candidates: &mut Vec<Clause>,
+        max_candidates: usize,
+    ) -> Result<Enumeration> {
+        if index == roles.len() {
+            let candidate = Clause::new(relation.clone(), values.iter().cloned().collect())?;
+            if source
+                .model()
+                .assertions()
+                .binary_search(&candidate)
+                .is_ok()
+            {
+                return Ok(Enumeration::Continue);
+            }
+            if candidates.len() >= max_candidates {
+                return Ok(Enumeration::Break);
+            }
+            candidates.push(candidate);
             return Ok(Enumeration::Continue);
         }
-        if candidates.len() >= max_candidates {
-            return Ok(Enumeration::Break);
+        let (role_id, role) = roles[index];
+        for entity in source
+            .model()
+            .entities()
+            .iter()
+            .filter(|entity| entity.typ() == role.typ())
+        {
+            values.insert((role_id.clone(), Term::entity(entity.clone())));
+            let control = collect_ground_clauses(
+                source,
+                relation,
+                roles,
+                index + 1,
+                values,
+                candidates,
+                max_candidates,
+            )?;
+            values.remove(&(role_id.clone(), Term::entity(entity.clone())));
+            if control == Enumeration::Break {
+                return Ok(Enumeration::Break);
+            }
         }
-        candidates.push(candidate);
-        return Ok(Enumeration::Continue);
+        Ok(Enumeration::Continue)
     }
-    let (role_id, role) = roles[index];
-    for entity in source
-        .model()
-        .entities()
-        .iter()
-        .filter(|entity| entity.typ() == role.typ())
+
+    fn apply(
+        source: &Revision,
+        admissions: Vec<Clause>,
+        withdrawals: Vec<Clause>,
+    ) -> Result<Revision> {
+        if admissions.is_empty() && withdrawals.is_empty() {
+            return Ok(source.clone());
+        }
+        Delta::new(source.identity().clone(), admissions, withdrawals)?.apply(source)
+    }
+
+    fn complete_closure(revision: &Revision, limits: Limits) -> Result<Option<Closure>> {
+        match derive::saturate(revision, limits) {
+            Ok(closure) => Ok(Some(closure)),
+            Err(error) if is_closure_limit(&error) => Ok(None),
+            Err(error) => Err(error),
+        }
+    }
+
+    enum ClosureAttempt {
+        Complete(Closure),
+        CandidateBudget,
+        ClosureBudget,
+    }
+
+    fn closure_after(
+        source: &Revision,
+        admissions: &[Clause],
+        withdrawals: &[Clause],
+        limits: Limits,
+        checks: &mut usize,
+        max_checks: usize,
+    ) -> Result<ClosureAttempt> {
+        if *checks >= max_checks {
+            return Ok(ClosureAttempt::CandidateBudget);
+        }
+        *checks += 1;
+        let revision = apply(source, admissions.to_vec(), withdrawals.to_vec())?;
+        Ok(match complete_closure(&revision, limits)? {
+            Some(closure) => ClosureAttempt::Complete(closure),
+            None => ClosureAttempt::ClosureBudget,
+        })
+    }
+
+    fn is_closure_limit(error: &KernelError) -> bool {
+        error.to_string().starts_with("closure ")
+    }
+
+    fn incomplete_support(status: SupportStatus) -> Incomplete {
+        match status {
+            SupportStatus::Complete => {
+                unreachable!("complete support status has no incomplete projection")
+            }
+            SupportStatus::ExpansionBudgetExhausted => Incomplete::SupportExpansionBudgetExhausted,
+            SupportStatus::SupportBudgetExhausted => Incomplete::SupportBudgetExhausted,
+        }
+    }
+
+    fn without(items: &[Clause], removed: &Clause) -> Vec<Clause> {
+        items
+            .iter()
+            .filter(|item| *item != removed)
+            .cloned()
+            .collect()
+    }
+
+    fn is_subset(left: &[Clause], right: &[Clause]) -> bool {
+        left.iter().all(|item| right.binary_search(item).is_ok())
+    }
+
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    enum Enumeration {
+        Continue,
+        Break,
+    }
+
+    fn enumerate<F>(
+        basis: &[Clause],
+        remaining: usize,
+        start: usize,
+        choice: &mut Vec<Clause>,
+        visit: &mut F,
+    ) -> Result<Enumeration>
+    where
+        F: FnMut(&[Clause]) -> Result<Enumeration>,
     {
-        values.insert((role_id.clone(), Term::entity(entity.clone())));
-        let control = collect_ground_clauses(
-            source,
-            relation,
-            roles,
-            index + 1,
-            values,
-            candidates,
-            max_candidates,
-        )?;
-        values.remove(&(role_id.clone(), Term::entity(entity.clone())));
-        if control == Enumeration::Break {
-            return Ok(Enumeration::Break);
+        if remaining == 0 {
+            return visit(choice);
         }
-    }
-    Ok(Enumeration::Continue)
-}
-
-fn apply(source: &Revision, admissions: Vec<Clause>, withdrawals: Vec<Clause>) -> Result<Revision> {
-    if admissions.is_empty() && withdrawals.is_empty() {
-        return Ok(source.clone());
-    }
-    Delta::new(source.identity().clone(), admissions, withdrawals)?.apply(source)
-}
-
-fn complete_closure(revision: &Revision, limits: Limits) -> Result<Option<Closure>> {
-    match derive::saturate(revision, limits) {
-        Ok(closure) => Ok(Some(closure)),
-        Err(error) if is_closure_limit(&error) => Ok(None),
-        Err(error) => Err(error),
-    }
-}
-
-enum ClosureAttempt {
-    Complete(Closure),
-    CandidateBudget,
-    ClosureBudget,
-}
-
-fn closure_after(
-    source: &Revision,
-    admissions: &[Clause],
-    withdrawals: &[Clause],
-    limits: Limits,
-    checks: &mut usize,
-    max_checks: usize,
-) -> Result<ClosureAttempt> {
-    if *checks >= max_checks {
-        return Ok(ClosureAttempt::CandidateBudget);
-    }
-    *checks += 1;
-    let revision = apply(source, admissions.to_vec(), withdrawals.to_vec())?;
-    Ok(match complete_closure(&revision, limits)? {
-        Some(closure) => ClosureAttempt::Complete(closure),
-        None => ClosureAttempt::ClosureBudget,
-    })
-}
-
-fn is_closure_limit(error: &KernelError) -> bool {
-    error.to_string().starts_with("closure ")
-}
-
-fn incomplete_support(status: SupportStatus) -> Incomplete {
-    match status {
-        SupportStatus::Complete => {
-            unreachable!("complete support status has no incomplete projection")
+        for index in start..=basis.len() - remaining {
+            choice.push(basis[index].clone());
+            let control = enumerate(basis, remaining - 1, index + 1, choice, visit)?;
+            choice.pop();
+            if control == Enumeration::Break {
+                return Ok(Enumeration::Break);
+            }
         }
-        SupportStatus::ExpansionBudgetExhausted => Incomplete::SupportExpansionBudgetExhausted,
-        SupportStatus::SupportBudgetExhausted => Incomplete::SupportBudgetExhausted,
+        Ok(Enumeration::Continue)
     }
-}
 
-fn without(items: &[Clause], removed: &Clause) -> Vec<Clause> {
-    items
-        .iter()
-        .filter(|item| *item != removed)
-        .cloned()
-        .collect()
-}
-
-fn is_subset(left: &[Clause], right: &[Clause]) -> bool {
-    left.iter().all(|item| right.binary_search(item).is_ok())
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Enumeration {
-    Continue,
-    Break,
-}
-
-fn enumerate<F>(
-    basis: &[Clause],
-    remaining: usize,
-    start: usize,
-    choice: &mut Vec<Clause>,
-    visit: &mut F,
-) -> Result<Enumeration>
-where
-    F: FnMut(&[Clause]) -> Result<Enumeration>,
-{
-    if remaining == 0 {
-        return visit(choice);
+    struct AllState {
+        checked: usize,
+        items: Vec<Intervention>,
+        reason: Option<Incomplete>,
     }
-    for index in start..=basis.len() - remaining {
-        choice.push(basis[index].clone());
-        let control = enumerate(basis, remaining - 1, index + 1, choice, visit)?;
-        choice.pop();
-        if control == Enumeration::Break {
-            return Ok(Enumeration::Break);
+
+    impl AllState {
+        fn new() -> Self {
+            Self {
+                checked: 0,
+                items: Vec::new(),
+                reason: None,
+            }
         }
-    }
-    Ok(Enumeration::Continue)
-}
-
-struct AllState {
-    checked: usize,
-    items: Vec<Intervention>,
-    reason: Option<Incomplete>,
-}
-
-impl AllState {
-    fn new() -> Self {
-        Self {
-            checked: 0,
-            items: Vec::new(),
-            reason: None,
+        fn prevent_result(self) -> PreventAll {
+            match self.reason {
+                Some(reason) => PreventAll::Incomplete {
+                    interventions: self.items,
+                    reason,
+                },
+                None => PreventAll::Complete(self.items),
+            }
         }
-    }
-    fn prevent_result(self) -> PreventAll {
-        match self.reason {
-            Some(reason) => PreventAll::Incomplete {
-                interventions: self.items,
-                reason,
-            },
-            None => PreventAll::Complete(self.items),
-        }
-    }
-    fn achieve_result(self) -> AchieveAll {
-        match self.reason {
-            Some(reason) => AchieveAll::Incomplete {
-                interventions: self.items,
-                reason,
-            },
-            None => AchieveAll::Complete(self.items),
+        fn achieve_result(self) -> AchieveAll {
+            match self.reason {
+                Some(reason) => AchieveAll::Incomplete {
+                    interventions: self.items,
+                    reason,
+                },
+                None => AchieveAll::Complete(self.items),
+            }
         }
     }
 }
+#[cfg(clause_generated)]
+pub use generated::{
+    achieve_all_minimal, achieve_one_minimal, prevent_all_minimal, prevent_one_minimal,
+};
+
+#[cfg(test)]
+use crate::kernel::Term;
+#[cfg(test)]
+use basis::achievement_basis;
+#[cfg(test)]
+use search::{Enumeration, enumerate};
+#[cfg(test)]
+use std::collections::BTreeSet;
 
 #[cfg(test)]
 mod tests {
