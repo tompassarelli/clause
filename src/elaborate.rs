@@ -1,5 +1,5 @@
 use crate::frontend::{self, ShapePart, TermKind};
-use crate::kernel::{self, Clause, Intent, Model, Relation, Role, Sentence, Term};
+use crate::kernel::{self, Clause, Intent, Law, Model, Relation, Role, Sentence, Term};
 
 pub fn program(program: frontend::Program) -> kernel::Result<Model> {
     if program.models.len() != 1 || program.queries.len() != 1 {
@@ -28,6 +28,11 @@ pub fn program(program: frontend::Program) -> kernel::Result<Model> {
             )
         })
         .collect::<kernel::Result<Vec<_>>>()?;
+    let laws = program
+        .laws
+        .into_iter()
+        .map(law)
+        .collect::<kernel::Result<Vec<_>>>()?;
 
     let model = program
         .models
@@ -51,7 +56,7 @@ pub fn program(program: frontend::Program) -> kernel::Result<Model> {
         .map(|fact| clause(fact.relation, fact.roles))
         .collect::<kernel::Result<Vec<_>>>()?;
     let query = clause(query.relation, query.roles)?;
-    Model::with_intents(relations, facts, query, intents, "ascending")
+    Model::with_laws_and_intents(relations, facts, laws, query, intents, "ascending")
 }
 
 /// Elaborate one already-resolved closed frontend operation clause.  Operation
@@ -103,6 +108,19 @@ fn relation(declaration: frontend::RelationDecl) -> kernel::Result<Relation> {
     )
 }
 
+fn law(declaration: frontend::LawDecl) -> kernel::Result<Law> {
+    let premises = declaration
+        .premises
+        .into_iter()
+        .map(|premise| clause(premise.relation, premise.roles))
+        .collect::<kernel::Result<Vec<_>>>()?;
+    let conclusion = clause(
+        declaration.conclusion.relation,
+        declaration.conclusion.roles,
+    )?;
+    Law::new(declaration.name, premises, conclusion)
+}
+
 fn clause(
     relation: String,
     roles: std::collections::BTreeMap<String, frontend::Term>,
@@ -144,6 +162,40 @@ claim catalog:
         assert_eq!(
             error.to_string(),
             "source claim/require operations are not supported by sealed revisions"
+        );
+    }
+
+    #[test]
+    fn elaborates_impact_laws_with_source_premise_order() {
+        let source = include_str!("../examples/impact.clause");
+        let parsed = frontend::parse(source).expect("impact fixture parses");
+        let model = program(parsed).expect("impact fixture elaborates");
+
+        assert_eq!(model.laws().len(), 3);
+        assert_eq!(
+            model
+                .laws()
+                .iter()
+                .map(|law| (law.name(), law.premises().len()))
+                .collect::<Vec<_>>(),
+            vec![
+                ("impact/direct-dependency", 1),
+                ("impact/impact", 2),
+                ("impact/recursive-dependency", 2),
+            ]
+        );
+        let recursive = model
+            .laws()
+            .iter()
+            .find(|law| law.name() == "impact/recursive-dependency")
+            .expect("recursive law admitted");
+        assert_eq!(
+            recursive
+                .premises()
+                .iter()
+                .map(Clause::relation)
+                .collect::<Vec<_>>(),
+            vec!["impact/imports", "impact/depends"]
         );
     }
 }
