@@ -38,6 +38,14 @@ Handles beginning with `$` are corpus symbols, not Store identities.
 | `structural-connects` | explicit role-labelled escape candidate round-trips |
 | `ambiguous-connects` | overlapping exact shapes name both candidates and role conflict |
 | `missing-focus-connects` | root fragment diagnoses the absent focus role |
+| `definition-distance` | colon-bound pattern and body are recursive term trees |
+| `binding-position-projection` | binding value is a one-valued relation projection |
+| `nested-role-move` | a relation role contains a grouped expression of projections |
+| `overlap-grouped` | explicit grouping fixes the nested comparison tree |
+| `overlap-type-resolved` | domain checking leaves the same unique tree without global precedence |
+| `mixfix-grouped-left` | explicit left grouping round-trips |
+| `mixfix-grouped-right` | explicit right grouping remains distinct |
+| `mixfix-ungrouped-ambiguous` | two type-correct trees require an exact diagnostic |
 
 Do not “bless” these files from parser output. A later fixture checker may
 compare exact projections and print diffs, but reviewed corpus remains the

@@ -1,0 +1,34 @@
+{
+  "schema": "clause-m0-contrast-v1",
+  "id": "overlap-grouped",
+  "axis": "recursive-expression-grouping",
+  "decision": {"status": "unresolved", "candidate": "explicit-parentheses"},
+  "source": {
+    "lines": ["distance between player and coin < (radius of player + radius of coin)"],
+    "line_break": "LF",
+    "ends_with_line_break": true
+  },
+  "context": {"domains": {"$distance": "F32", "$radius": "F32", "$add": "F32,F32->F32", "$less-than": "F32,F32->Bool"}},
+  "structural_intent": "grouped-boolean-proposition",
+  "equivalence_group": "overlap-expression",
+  "required": ["parentheses determine the add subtree", "every phrase role is a recursive term"],
+  "forbidden": ["flat-token-template", "implicit-precedence-rewrite"],
+  "canonical_term": "distance between player and coin < (radius of player + radius of coin)",
+  "elaborated": [
+    {
+      "kind": "proposition",
+      "relation": "$less-than",
+      "roles": {
+        "left": {"kind": "relation-application", "relation": "$distance", "roles": {"first": {"kind": "symbol", "name": "player"}, "second": {"kind": "symbol", "name": "coin"}}, "output_role": "value"},
+        "right": {
+          "kind": "function-application",
+          "function": "$add",
+          "arguments": [
+            {"kind": "relation-projection", "relation": "$radius", "roles": {"member": {"kind": "symbol", "name": "player"}}, "output_role": "value"},
+            {"kind": "relation-projection", "relation": "$radius", "roles": {"member": {"kind": "symbol", "name": "coin"}}, "output_role": "value"}
+          ]
+        }
+      }
+    }
+  ]
+}

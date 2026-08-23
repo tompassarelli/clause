@@ -1,0 +1,46 @@
+{
+  "schema": "clause-m0-contrast-v1",
+  "id": "definition-distance",
+  "axis": "recursive-definition-surface",
+  "decision": {"status": "unresolved", "candidate": "pattern-colon-body", "layout_style": "provisional-four-space"},
+  "source": {
+    "lines": ["distance between ?a and ?b:", "    length(position of ?a - position of ?b)"],
+    "line_break": "LF",
+    "ends_with_line_break": true
+  },
+  "context": {"relations": ["$distance", "$position"], "functions": ["$length", "$subtract"]},
+  "structural_intent": "pure-definition-binding",
+  "required": [
+    "outer colon means binding",
+    "named holes correlate by identity across pattern and body",
+    "each projection is a recursive relation term"
+  ],
+  "forbidden": ["Law-object", "field-access", "flat-token-template", "fresh-hole-on-repeat"],
+  "elaborated": [
+    {
+      "kind": "binding",
+      "left": {
+        "kind": "pattern-application",
+        "relation": "$distance",
+        "roles": {
+          "first": {"kind": "named-hole", "identity": "$hole:a"},
+          "second": {"kind": "named-hole", "identity": "$hole:b"}
+        }
+      },
+      "right": {
+        "kind": "function-application",
+        "function": "$length",
+        "arguments": [
+          {
+            "kind": "function-application",
+            "function": "$subtract",
+            "arguments": [
+              {"kind": "relation-projection", "relation": "$position", "roles": {"member": {"kind": "named-hole", "identity": "$hole:a"}}, "output_role": "value"},
+              {"kind": "relation-projection", "relation": "$position", "roles": {"member": {"kind": "named-hole", "identity": "$hole:b"}}, "output_role": "value"}
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "schema": "clause-m0-contrast-v1",
+  "id": "binding-position-projection",
+  "axis": "relation-projection-surface",
+  "decision": {"status": "unresolved", "candidate": "relation-first-of"},
+  "source": {
+    "lines": ["spawn: position of player"],
+    "line_break": "LF",
+    "ends_with_line_break": true
+  },
+  "context": {"relations": ["$position"], "contracts": [{"relation": "$position", "cardinality": "exactly-one"}]},
+  "structural_intent": "binding-to-relation-projection",
+  "required": ["colon means binding", "position retains relation identity and named roles"],
+  "forbidden": ["dot-field-access", "object", "property-read", "equality"],
+  "elaborated": [
+    {
+      "kind": "binding",
+      "left": {"kind": "name", "name": "spawn"},
+      "right": {
+        "kind": "relation-projection",
+        "relation": "$position",
+        "roles": {"member": {"kind": "symbol", "name": "player"}},
+        "output_role": "value",
+        "cardinality": "exactly-one"
+      }
+    }
+  ]
+}

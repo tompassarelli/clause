@@ -1,0 +1,39 @@
+{
+  "schema": "clause-m0-contrast-v1",
+  "id": "overlap-type-resolved",
+  "axis": "type-directed-grouping",
+  "decision": {"status": "unresolved", "candidate": "ungrouped-checked-resolution"},
+  "source": {
+    "lines": ["distance between player and coin < radius of player + radius of coin"],
+    "line_break": "LF",
+    "ends_with_line_break": true
+  },
+  "context": {"domains": {"$distance": "F32", "$radius": "F32", "$add": "F32,F32->F32", "$less-than": "F32,F32->Bool"}},
+  "structural_intent": "type-disambiguated-boolean-proposition",
+  "equivalence_group": "overlap-expression",
+  "required": ["all structural candidates are checked", "exactly one type-correct tree survives", "no global precedence is inferred from this case"],
+  "forbidden": ["source-order-choice", "operator-table-assumption", "probabilistic-choice"],
+  "resolution": {
+    "candidates": [
+      {"grouping": "distance < (radius + radius)", "result_domain": "Bool", "outcome": "survives"},
+      {"grouping": "(distance < radius) + radius", "result_domain": null, "outcome": "rejected", "conflict": {"function": "$add", "argument": 1, "expected": "F32", "observed": "Bool"}}
+    ]
+  },
+  "elaborated": [
+    {
+      "kind": "proposition",
+      "relation": "$less-than",
+      "roles": {
+        "left": {"kind": "relation-application", "relation": "$distance", "roles": {"first": {"kind": "symbol", "name": "player"}, "second": {"kind": "symbol", "name": "coin"}}, "output_role": "value"},
+        "right": {
+          "kind": "function-application",
+          "function": "$add",
+          "arguments": [
+            {"kind": "relation-projection", "relation": "$radius", "roles": {"member": {"kind": "symbol", "name": "player"}}, "output_role": "value"},
+            {"kind": "relation-projection", "relation": "$radius", "roles": {"member": {"kind": "symbol", "name": "coin"}}, "output_role": "value"}
+          ]
+        }
+      }
+    }
+  ]
+}

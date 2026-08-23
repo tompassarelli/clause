@@ -1,0 +1,31 @@
+{
+  "schema": "clause-m0-contrast-v1",
+  "id": "mixfix-grouped-left",
+  "axis": "explicit-mixfix-grouping",
+  "decision": {"status": "unresolved", "candidate": "parenthesized-left"},
+  "source": {
+    "lines": ["result: (a blends b) with c"],
+    "line_break": "LF",
+    "ends_with_line_break": true
+  },
+  "context": {"domains": {"a": "Value", "b": "Value", "c": "Value", "$blends": "Value,Value->Value", "$with": "Value,Value->Value"}},
+  "structural_intent": "binding-to-left-grouped-term",
+  "required": ["colon means binding", "left parentheses survive term rendering"],
+  "forbidden": ["right-grouping", "parenthesis-erasure", "source-order-choice"],
+  "canonical_term": "(a blends b) with c",
+  "elaborated": [
+    {
+      "kind": "binding",
+      "left": {"kind": "name", "name": "result"},
+      "right": {
+        "kind": "relation-application",
+        "relation": "$with",
+        "roles": {
+          "left": {"kind": "relation-application", "relation": "$blends", "roles": {"left": {"kind": "symbol", "name": "a"}, "right": {"kind": "symbol", "name": "b"}}, "output_role": "value"},
+          "right": {"kind": "symbol", "name": "c"}
+        },
+        "output_role": "value"
+      }
+    }
+  ]
+}

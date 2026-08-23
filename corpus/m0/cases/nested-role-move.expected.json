@@ -1,0 +1,33 @@
+{
+  "schema": "clause-m0-contrast-v1",
+  "id": "nested-role-move",
+  "axis": "recursive-role-term",
+  "decision": {"status": "unresolved", "candidate": "grouped-role-expression"},
+  "source": {
+    "lines": ["player moves to (position of player + velocity of player)"],
+    "line_break": "LF",
+    "ends_with_line_break": true
+  },
+  "context": {"relations": ["$moves-to", "$position", "$velocity"], "functions": ["$add"]},
+  "structural_intent": "relation-claim-with-recursive-role",
+  "required": ["destination is one recursive term", "parentheses survive term rendering", "nested projections retain relation identities"],
+  "forbidden": ["flat-token-template", "field-access", "implicit-temporary-object"],
+  "canonical_term": "(position of player + velocity of player)",
+  "elaborated": [
+    {
+      "kind": "relation-claim",
+      "relation": "$moves-to",
+      "roles": {
+        "mover": {"kind": "symbol", "name": "player"},
+        "destination": {
+          "kind": "function-application",
+          "function": "$add",
+          "arguments": [
+            {"kind": "relation-projection", "relation": "$position", "roles": {"member": {"kind": "symbol", "name": "player"}}, "output_role": "value"},
+            {"kind": "relation-projection", "relation": "$velocity", "roles": {"member": {"kind": "symbol", "name": "player"}}, "output_role": "value"}
+          ]
+        }
+      }
+    }
+  ]
+}
