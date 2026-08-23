@@ -203,23 +203,18 @@ examples:
 | `examples/hospital.clause` | `cargo run --bin clause -- run examples/hospital.clause` |
 
 `bin/clause run examples/hospital.clause` is the equivalent repository-local
-wrapper route. To build the CLI once and place that build first on `PATH`:
-
-```sh
-cargo build --bin clause
-export PATH="$PWD/target/debug:$PATH"
-```
-
-Then run an exact copy, emit standalone Rust, delete the authoring copy, compile
-the projection, and compare canonical results. Shell command substitution
-removes the CLI's single presentation newline before the byte comparison.
+wrapper route. It uses Cargo's effective target directory, including a private
+`CARGO_TARGET_DIR` when one is configured. The following recipe runs an exact
+copy, emits standalone Rust, deletes the authoring copy, compiles the
+projection, and compares canonical results. Shell command substitution removes
+the CLI's single presentation newline before the byte comparison.
 
 ```sh
 build_dir=$(mktemp -d)
 cp examples/hospital.clause "$build_dir/hospital.clause"
 
-expected=$(clause run "$build_dir/hospital.clause")
-clause emit-rust "$build_dir/hospital.clause" "$build_dir/hospital.rs"
+expected=$(bin/clause run "$build_dir/hospital.clause")
+bin/clause emit-rust "$build_dir/hospital.clause" "$build_dir/hospital.rs"
 rm "$build_dir/hospital.clause"
 
 rustc --edition=2024 --cfg clause_generated \
