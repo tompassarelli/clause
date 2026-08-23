@@ -103,6 +103,8 @@ pub enum Member {
     Sentence(SentenceShapeDecl),
     Mode(ModeDecl),
     Entity(EntityDecl),
+    EntityGroup(EntityGroupDecl),
+    Focus(FocusBlock),
     Clause(SurfaceClause),
     When(Vec<SurfaceClause>),
     From(Name),
@@ -149,9 +151,69 @@ pub struct EntityDecl {
     pub span: Span,
 }
 
+/// A closed, finite family of semantic identities. This remains authored
+/// surface data until the focus elaborator distributes it into ordinary
+/// entities; parsing never expands the range.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EntityGroupDecl {
+    pub prefix: Spanned<String>,
+    pub range: IntegerRange,
+    pub suffix: Spanned<String>,
+    pub typ: Spanned<TypeName>,
+    pub span: Span,
+}
+
+/// An inclusive integer interval written in source order.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct IntegerRange {
+    pub start: u64,
+    pub end: u64,
+    pub span: Span,
+}
+
+/// One correlated placeholder in a focus head. `prefix`, `variable`, and
+/// `suffix` are deliberately retained rather than expanded or interpolated.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EntityTemplate {
+    pub prefix: Spanned<String>,
+    pub variable: Spanned<VariableName>,
+    pub suffix: Spanned<String>,
+    pub span: Span,
+}
+
+/// A typed-focus block is surface structure, not an implicit relation. The
+/// later type-directed elaborator alone chooses the role-labelled clause that
+/// each slot denotes.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FocusBlock {
+    pub template: EntityTemplate,
+    pub slots: Vec<FocusSlot>,
+    pub binding: FocusBinding,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FocusSlot {
+    /// The literal sequence immediately after the focused role.  It is a
+    /// sentence-shape prefix rather than a relation or role identity.
+    pub label: Spanned<String>,
+    pub value: SurfaceTerm,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FocusBinding {
+    pub variable: Spanned<VariableName>,
+    pub range: IntegerRange,
+    pub span: Span,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SurfaceTerm {
     Entity(Spanned<Name>),
+    /// A bracketed entity identity correlated with a focus binder.  This is
+    /// authoring-only structure and must be substituted before lowering.
+    Template(EntityTemplate),
     Variable(Spanned<VariableName>),
     String(Spanned<String>),
 }
@@ -255,6 +317,12 @@ struct RelationSpec {
 }
 
 #[derive(Clone, Debug)]
+struct EntityCatalog {
+    explicit: BTreeMap<Name, TypeName>,
+    groups: Vec<EntityGroupDecl>,
+}
+
+#[derive(Clone, Debug)]
 struct ChangeLayout<'a> {
     from: Spanned<Name>,
     apply: Option<Spanned<Name>>,
@@ -272,6 +340,7 @@ struct LawLayout<'a> {
 struct Token {
     raw: String,
     quoted: bool,
+    bracketed: bool,
     span: Span,
 }
 
@@ -391,6 +460,77 @@ fn type_name(
     Ok(Spanned {
         value: TypeName(name.value.0),
         span: name.span,
+    })
+}
+
+fn entity_name(
+    line: SourceLine<'_>,
+    offset: usize,
+    text: &str,
+) -> Result<Spanned<Name>, ParseError> {
+    if text.is_empty()
+        || text.starts_with(' ')
+        || text.ends_with(' ')
+        || text.split(' ').any(|part| {
+            part.is_empty()
+                || !part.chars().all(|character| {
+                    character.is_ascii_alphanumeric()
+                        || character == '_'
+                        || character == '-'
+                        || character == '/'
+                })
+        })
+    {
+        return Err(error(
+            child_span(line, offset, text.len()),
+            format!("expected bracketed entity name, found '[{text}]'"),
+        ));
+    }
+    Ok(Spanned {
+        value: Name(text.to_owned()),
+        span: child_span(line, offset, text.len()),
+    })
+}
+
+fn integer_range(
+    line: SourceLine<'_>,
+    offset: usize,
+    text: &str,
+) -> Result<IntegerRange, ParseError> {
+    let (start, end) = text.split_once("..").ok_or_else(|| {
+        error(
+            child_span(line, offset, text.len()),
+            "expected inclusive integer range 'start..end'",
+        )
+    })?;
+    if start.is_empty() || end.is_empty() || end.contains("..") {
+        return Err(error(
+            child_span(line, offset, text.len()),
+            "expected inclusive integer range 'start..end'",
+        ));
+    }
+    let start = start.parse::<u64>().map_err(|_| {
+        error(
+            child_span(line, offset, text.len()),
+            "range bounds must be unsigned integers",
+        )
+    })?;
+    let end = end.parse::<u64>().map_err(|_| {
+        error(
+            child_span(line, offset, text.len()),
+            "range bounds must be unsigned integers",
+        )
+    })?;
+    if start > end {
+        return Err(error(
+            child_span(line, offset, text.len()),
+            "range must be nonempty and ascending",
+        ));
+    }
+    Ok(IntegerRange {
+        start,
+        end,
+        span: child_span(line, offset, text.len()),
     })
 }
 
@@ -851,48 +991,287 @@ fn relation_spec(raw: &RawDecl<'_>) -> Result<RelationSpec, ParseError> {
 
 fn entity_line(line: SourceLine<'_>) -> Option<Result<EntityDecl, ParseError>> {
     let text = content(line);
-    let (local, typ) = text.split_once(": ")?;
-    if local.contains(':') || typ.contains(':') {
+    let (local_text, typ) = text.split_once(": ")?;
+    if local_text.contains(':') || typ.contains(':') {
         return None;
     }
     Some((|| {
+        let local = if let Some((inside, close, tail)) = bracket_contents(line, local_text)? {
+            if close != local_text.len() || !tail.is_empty() {
+                return Err(error(line_span(line), "malformed bracketed entity"));
+            }
+            entity_name(line, 5, inside)?
+        } else {
+            qname(line, 4, local_text)?
+        };
         Ok(EntityDecl {
-            local: qname(line, 4, local)?,
-            typ: type_name(line, 4 + local.len() + 2, typ)?,
+            local,
+            typ: type_name(line, 4 + local_text.len() + 2, typ)?,
             span: line_span(line),
         })
     })())
 }
 
-fn model_entities(raw: &RawDecl<'_>) -> Result<BTreeMap<Name, TypeName>, ParseError> {
-    let mut entities = BTreeMap::new();
-    for line in nonblank(raw.body.iter().copied()) {
-        if indent(line)? != 4 {
-            return Err(error(
+fn bracket_contents<'a>(
+    line: SourceLine<'a>,
+    text: &'a str,
+) -> Result<Option<(&'a str, usize, &'a str)>, ParseError> {
+    if !text.starts_with('[') {
+        return Ok(None);
+    }
+    let close = text
+        .find(']')
+        .ok_or_else(|| error(line_span(line), "unterminated bracketed entity"))?;
+    if text[1..close].contains('[') {
+        return Err(error(line_span(line), "malformed bracketed entity"));
+    }
+    Ok(Some((&text[1..close], close + 1, &text[close + 1..])))
+}
+
+fn entity_group_line(line: SourceLine<'_>) -> Option<Result<EntityGroupDecl, ParseError>> {
+    let text = content(line);
+    let (inside, close, tail) = match bracket_contents(line, text) {
+        Ok(Some(contents)) => contents,
+        Ok(None) => return None,
+        Err(error) => return Some(Err(error)),
+    };
+    let typ = match tail.strip_prefix(": ") {
+        Some(typ) => typ,
+        None => return None,
+    };
+    if typ.contains(':') || inside.contains('{') || inside.contains('}') {
+        return Some(Err(error(line_span(line), "malformed finite entity group")));
+    }
+    let Some((before_end, range_end)) = inside.split_once("..") else {
+        return None;
+    };
+    let start_offset = before_end
+        .char_indices()
+        .rev()
+        .take_while(|(_, character)| character.is_ascii_digit())
+        .last()
+        .map_or(before_end.len(), |(offset, _)| offset);
+    let end_digits = range_end
+        .char_indices()
+        .take_while(|(_, character)| character.is_ascii_digit())
+        .map(|(offset, character)| offset + character.len_utf8())
+        .last()
+        .unwrap_or(0);
+    if start_offset == before_end.len() || end_digits == 0 {
+        return Some(Err(error(
+            line_span(line),
+            "finite entity group requires one integer range",
+        )));
+    }
+    let range_text = &inside[start_offset..before_end.len() + 2 + end_digits];
+    if range_end[end_digits..].contains("..") || before_end[..start_offset].contains("..") {
+        return Some(Err(error(
+            line_span(line),
+            "finite entity group permits exactly one integer range",
+        )));
+    }
+    let prefix = &inside[..start_offset];
+    let suffix = &range_end[end_digits..];
+    if entity_name(line, 4 + 1, &format!("{prefix}0{suffix}")).is_err() {
+        return Some(Err(error(
+            line_span(line),
+            "finite entity group does not form valid bracketed entity names",
+        )));
+    }
+    Some((|| {
+        Ok(EntityGroupDecl {
+            prefix: Spanned {
+                value: prefix.to_owned(),
+                span: child_span(line, 5, prefix.len()),
+            },
+            range: integer_range(line, 5 + start_offset, range_text)?,
+            suffix: Spanned {
+                value: suffix.to_owned(),
+                span: child_span(line, 5 + before_end.len() + 2 + end_digits, suffix.len()),
+            },
+            typ: type_name(line, 4 + close + 2, typ)?,
+            span: line_span(line),
+        })
+    })())
+}
+
+fn focus_template(line: SourceLine<'_>) -> Option<Result<EntityTemplate, ParseError>> {
+    let text = content(line);
+    let (inside, _close, tail) = match bracket_contents(line, text) {
+        Ok(Some(contents)) => contents,
+        Ok(None) => return None,
+        Err(error) => return Some(Err(error)),
+    };
+    if tail != ":" {
+        return None;
+    }
+    let open = match inside.find('{') {
+        Some(open) => open,
+        None => return None,
+    };
+    let close = match inside[open + 1..].find('}') {
+        Some(close) => open + 1 + close,
+        None => {
+            return Some(Err(error(
                 line_span(line),
-                "Model members must use four-space indentation",
-            ));
+                "unterminated focus template variable",
+            )));
         }
-        if let Some(entity) = entity_line(line) {
-            let entity = entity?;
-            if entity.local.value.0.contains('/') {
-                return Err(error(
-                    entity.local.span,
-                    "model entity names cannot be qualified",
-                ));
+    };
+    if inside[close + 1..].contains('{')
+        || inside[..open].contains('}')
+        || inside[close + 1..].contains('}')
+    {
+        return Some(Err(error(
+            line_span(line),
+            "focus head permits exactly one template variable",
+        )));
+    }
+    let prefix = &inside[..open];
+    let variable = &inside[open + 1..close];
+    let suffix = &inside[close + 1..];
+    if variable.is_empty() || entity_name(line, 5, &format!("{prefix}0{suffix}")).is_err() {
+        return Some(Err(error(
+            line_span(line),
+            "malformed correlated focus template",
+        )));
+    }
+    Some((|| {
+        Ok(EntityTemplate {
+            prefix: Spanned {
+                value: prefix.to_owned(),
+                span: child_span(line, 5, prefix.len()),
+            },
+            variable: variable_name(line, 5 + open + 1, variable)?,
+            suffix: Spanned {
+                value: suffix.to_owned(),
+                span: child_span(line, 5 + close + 1, suffix.len()),
+            },
+            span: line_span(line),
+        })
+    })())
+}
+
+fn focus_slot(line: SourceLine<'_>) -> Result<FocusSlot, ParseError> {
+    if indent(line)? != 8 {
+        return Err(error(
+            line_span(line),
+            "focus slots must use eight-space indentation",
+        ));
+    }
+    let text = content(line);
+    let (label, value) = text
+        .split_once(": ")
+        .ok_or_else(|| error(line_span(line), "focus slot requires 'label: value'"))?;
+    if label.contains(':') || value.is_empty() {
+        return Err(error(line_span(line), "focus slot requires 'label: value'"));
+    }
+    let label = label.split_ascii_whitespace().collect::<Vec<_>>().join(" ");
+    if label.is_empty()
+        || label
+            .chars()
+            .any(|character| matches!(character, '{' | '}' | '[' | ']' | '"' | '?'))
+    {
+        return Err(error(
+            line_span(line),
+            "focus slot requires a sentence literal prefix",
+        ));
+    }
+    let mut tokens = lex_clause(SourceLine {
+        number: line.number,
+        text: value,
+    })?;
+    let value_offset = 8 + label.len() + 2;
+    for token in &mut tokens {
+        token.span.column += value_offset;
+    }
+    if tokens.len() != 1 {
+        return Err(error(
+            line_span(line),
+            "focus slot value must be one surface term",
+        ));
+    }
+    let label_width = label.len();
+    Ok(FocusSlot {
+        label: Spanned {
+            value: label,
+            span: child_span(line, 8, label_width),
+        },
+        value: focus_term(&tokens[0])?,
+        span: line_span(line),
+    })
+}
+
+fn focus_binding(line: SourceLine<'_>) -> Result<FocusBinding, ParseError> {
+    if indent(line)? != 4 {
+        return Err(error(
+            line_span(line),
+            "focus binding must use four-space indentation",
+        ));
+    }
+    let text = content(line);
+    let rest = text.strip_prefix("for ").ok_or_else(|| {
+        error(
+            line_span(line),
+            "focus block requires 'for name: start..end'",
+        )
+    })?;
+    let (variable, range) = rest.split_once(": ").ok_or_else(|| {
+        error(
+            line_span(line),
+            "focus block requires 'for name: start..end'",
+        )
+    })?;
+    Ok(FocusBinding {
+        variable: variable_name(line, 4 + "for ".len(), variable)?,
+        range: integer_range(line, 4 + "for ".len() + variable.len() + 2, range)?,
+        span: line_span(line),
+    })
+}
+
+fn model_entities(raw: &RawDecl<'_>) -> Result<EntityCatalog, ParseError> {
+    let mut explicit = BTreeMap::new();
+    let mut groups = Vec::new();
+    for line in nonblank(raw.body.iter().copied()) {
+        match indent(line)? {
+            4 => {
+                if let Some(group) = entity_group_line(line) {
+                    let group = group?;
+                    groups.push(group);
+                } else if let Some(template) = focus_template(line) {
+                    template?;
+                } else if content(line).starts_with("for ") {
+                    // The later Model pass verifies that it belongs to the
+                    // immediately preceding focus block.
+                } else if let Some(entity) = entity_line(line) {
+                    let entity = entity?;
+                    if entity.local.value.0.contains('/') {
+                        return Err(error(
+                            entity.local.span,
+                            "model entity names cannot be qualified",
+                        ));
+                    }
+                    if explicit
+                        .insert(entity.local.value.clone(), entity.typ.value.clone())
+                        .is_some()
+                    {
+                        return Err(error(
+                            entity.local.span,
+                            format!("duplicate entity '{}'", entity.local.value.as_str()),
+                        ));
+                    }
+                }
             }
-            if entities
-                .insert(entity.local.value.clone(), entity.typ.value.clone())
-                .is_some()
-            {
+            8 => {}
+            _ => {
                 return Err(error(
-                    entity.local.span,
-                    format!("duplicate entity '{}'", entity.local.value.as_str()),
+                    line_span(line),
+                    "Model members must use four or eight-space indentation",
                 ));
             }
         }
     }
-    Ok(entities)
+    Ok(EntityCatalog { explicit, groups })
 }
 
 fn parse_law_layout<'a>(raw: &RawDecl<'a>) -> Result<LawLayout<'a>, ParseError> {
@@ -1087,6 +1466,45 @@ fn lex_clause(line: SourceLine<'_>) -> Result<Vec<Token>, ParseError> {
             tokens.push(Token {
                 raw: value,
                 quoted: true,
+                bracketed: false,
+                span: child_span(line, base + start, index - start),
+            });
+        } else if text.as_bytes()[index] == b'[' {
+            index += 1;
+            let value_start = index;
+            while index < text.len() && text.as_bytes()[index] != b']' {
+                if text.as_bytes()[index].is_ascii_whitespace() && text.as_bytes()[index] != b' ' {
+                    return Err(error(
+                        child_span(line, base + index, 1),
+                        "bracketed entity words must be separated by ASCII spaces",
+                    ));
+                }
+                if matches!(text.as_bytes()[index], b'[' | b'"') {
+                    return Err(error(
+                        child_span(line, base + index, 1),
+                        "malformed bracketed entity",
+                    ));
+                }
+                index += 1;
+            }
+            if index == text.len() {
+                return Err(error(
+                    child_span(line, base + start, text.len() - start),
+                    "unterminated bracketed entity",
+                ));
+            }
+            let value = &text[value_start..index];
+            index += 1;
+            if index < text.len() && text.as_bytes()[index] != b' ' {
+                return Err(error(
+                    child_span(line, base + index, 1),
+                    "bracketed entity must be followed by a space",
+                ));
+            }
+            tokens.push(Token {
+                raw: value.to_owned(),
+                quoted: false,
+                bracketed: true,
                 span: child_span(line, base + start, index - start),
             });
         } else {
@@ -1102,6 +1520,7 @@ fn lex_clause(line: SourceLine<'_>) -> Result<Vec<Token>, ParseError> {
             tokens.push(Token {
                 raw: text[start..index].to_owned(),
                 quoted: false,
+                bracketed: false,
                 span: child_span(line, base + start, index - start),
             });
         }
@@ -1120,6 +1539,9 @@ fn parse_term(token: &Token) -> Result<SurfaceTerm, ParseError> {
         }));
     }
     if let Some(name) = token.raw.strip_prefix('?') {
+        if token.bracketed {
+            return Err(error(token.span, "variables cannot be bracketed entities"));
+        }
         return Ok(SurfaceTerm::Variable(variable_name(
             SourceLine {
                 number: token.span.line,
@@ -1128,6 +1550,20 @@ fn parse_term(token: &Token) -> Result<SurfaceTerm, ParseError> {
             token.span.column - 1,
             name,
         )?));
+    }
+    if token.bracketed {
+        let name = entity_name(
+            SourceLine {
+                number: token.span.line,
+                text: "",
+            },
+            token.span.column,
+            &token.raw,
+        )?;
+        return Ok(SurfaceTerm::Entity(Spanned {
+            value: name.value,
+            span: token.span,
+        }));
     }
     if !is_qname(&token.raw) {
         return Err(error(
@@ -1141,30 +1577,94 @@ fn parse_term(token: &Token) -> Result<SurfaceTerm, ParseError> {
     }))
 }
 
+fn focus_term(token: &Token) -> Result<SurfaceTerm, ParseError> {
+    if !token.bracketed || !token.raw.contains('{') {
+        return parse_term(token);
+    }
+    let open = token.raw.find('{').expect("checked focus template marker");
+    let close = token.raw[open + 1..]
+        .find('}')
+        .map(|offset| open + 1 + offset)
+        .ok_or_else(|| error(token.span, "unterminated correlated entity template"))?;
+    if token.raw[..open].contains('}')
+        || token.raw[close + 1..].contains(['{', '}'])
+        || token.raw[open + 1..close].is_empty()
+    {
+        return Err(error(
+            token.span,
+            "correlated entity template permits exactly one variable",
+        ));
+    }
+    let prefix = &token.raw[..open];
+    let variable = &token.raw[open + 1..close];
+    let suffix = &token.raw[close + 1..];
+    let source = SourceLine {
+        number: token.span.line,
+        text: "",
+    };
+    entity_name(source, token.span.column, &format!("{prefix}0{suffix}"))?;
+    Ok(SurfaceTerm::Template(EntityTemplate {
+        prefix: Spanned {
+            value: prefix.to_owned(),
+            span: child_span(source, token.span.column, prefix.len()),
+        },
+        variable: variable_name(source, token.span.column + open + 1, variable)?,
+        suffix: Spanned {
+            value: suffix.to_owned(),
+            span: child_span(source, token.span.column + close + 1, suffix.len()),
+        },
+        span: token.span,
+    }))
+}
+
 fn entity_type(
     term: &SurfaceTerm,
     current_model: &Name,
-    entities: &BTreeMap<Name, BTreeMap<Name, TypeName>>,
+    entities: &BTreeMap<Name, EntityCatalog>,
 ) -> Result<Option<TypeName>, ParseError> {
     match term {
         SurfaceTerm::String(_) => Ok(Some(TypeName("Text".to_owned()))),
         SurfaceTerm::Variable(_) => Ok(None),
+        SurfaceTerm::Template(template) => Err(error(
+            template.span,
+            "correlated entity templates are only valid inside a focus block",
+        )),
         SurfaceTerm::Entity(entity) => {
             if !entity.value.0.contains('/') {
-                return entities
+                let catalog = entities
                     .get(current_model)
-                    .and_then(|model| model.get(&entity.value))
-                    .cloned()
-                    .map(Some)
-                    .ok_or_else(|| {
-                        error(
-                            entity.span,
-                            format!("unknown entity '{}'", entity.value.as_str()),
-                        )
-                    });
+                    .expect("current model was declared before its clauses");
+                if let Some(typ) = catalog.explicit.get(&entity.value) {
+                    return Ok(Some(typ.clone()));
+                }
+                let mut matched = catalog.groups.iter().filter_map(|group| {
+                    let name = entity.value.as_str();
+                    let prefix = group.prefix.value.as_str();
+                    let suffix = group.suffix.value.as_str();
+                    let number = name
+                        .strip_prefix(prefix)?
+                        .strip_suffix(suffix)?
+                        .parse::<u64>()
+                        .ok()?;
+                    (group.range.start <= number && number <= group.range.end)
+                        .then(|| group.typ.value.clone())
+                });
+                let Some(typ) = matched.next() else {
+                    return Err(error(
+                        entity.span,
+                        format!("unknown entity '{}'", entity.value.as_str()),
+                    ));
+                };
+                if matched.any(|other| other != typ) {
+                    return Err(error(
+                        entity.span,
+                        format!("ambiguous grouped entity '{}'", entity.value.as_str()),
+                    ));
+                }
+                return Ok(Some(typ));
             }
-            for (model, locals) in entities {
-                for (local, typ) in locals {
+            for (model, catalog) in entities {
+                for (local, typ) in &catalog.explicit {
                     if entity.value.0 == format!("{}/{}", model.as_str(), local.as_str()) {
                         return Ok(Some(typ.clone()));
                     }
@@ -1195,7 +1695,7 @@ fn clause(
     line: SourceLine<'_>,
     current_model: &Name,
     relations: &BTreeMap<Name, RelationSpec>,
-    entities: &BTreeMap<Name, BTreeMap<Name, TypeName>>,
+    entities: &BTreeMap<Name, EntityCatalog>,
     variable_types: &mut BTreeMap<VariableName, TypeName>,
 ) -> Result<SurfaceClause, ParseError> {
     let tokens = lex_clause(line)?;
@@ -1302,6 +1802,10 @@ fn clause_key(clause: &SurfaceClause) -> String {
         key.push('=');
         match term {
             SurfaceTerm::Entity(value) => key.push_str(&format!("E:{}", value.value.0)),
+            SurfaceTerm::Template(value) => key.push_str(&format!(
+                "T:{}{{{}}}{}",
+                value.prefix.value, value.variable.value.0, value.suffix.value
+            )),
             SurfaceTerm::Variable(value) => key.push_str(&format!("V:{}", value.value.0)),
             SurfaceTerm::String(value) => key.push_str(&format!("S:{:?}", value.value)),
         }
@@ -1320,10 +1824,7 @@ fn variables(clause: &SurfaceClause) -> BTreeSet<VariableName> {
         .collect()
 }
 
-fn declared_model_for_law(
-    name: &Name,
-    models: &BTreeMap<Name, BTreeMap<Name, TypeName>>,
-) -> Option<Name> {
+fn declared_model_for_law(name: &Name, models: &BTreeMap<Name, EntityCatalog>) -> Option<Name> {
     models
         .keys()
         .filter(|model| {
@@ -1464,7 +1965,11 @@ pub fn parse(source: &str) -> Result<Program, ParseError> {
         .filter(|declaration| declaration.kind == Kind::Model)
     {
         let model_entities = model_entities(declaration)?;
-        for typ in model_entities.values() {
+        for typ in model_entities
+            .explicit
+            .values()
+            .chain(model_entities.groups.iter().map(|group| &group.typ.value))
+        {
             if !types.contains(&Name(typ.0.clone())) {
                 return Err(error(
                     line_span(declaration.header),
@@ -1518,9 +2023,66 @@ pub fn parse(source: &str) -> Result<Program, ParseError> {
             Kind::Model => {
                 let mut members = Vec::new();
                 let mut variables = BTreeMap::new();
-                for line in nonblank(raw.body.iter().copied()) {
-                    if let Some(entity) = entity_line(line) {
+                let entries = nonblank(raw.body.iter().copied());
+                let mut index = 0;
+                while index < entries.len() {
+                    let line = entries[index];
+                    if indent(line)? != 4 {
+                        return Err(error(
+                            line_span(line),
+                            "Model members must use four-space indentation",
+                        ));
+                    }
+                    if let Some(group) = entity_group_line(line) {
+                        members.push(Member::EntityGroup(group?));
+                        index += 1;
+                    } else if let Some(template) = focus_template(line) {
+                        let template = template?;
+                        index += 1;
+                        let slot_start = index;
+                        while index < entries.len() && indent(entries[index])? == 8 {
+                            index += 1;
+                        }
+                        if slot_start == index {
+                            return Err(error(
+                                line_span(line),
+                                "focus block requires one or more slots",
+                            ));
+                        }
+                        let slots = entries[slot_start..index]
+                            .iter()
+                            .copied()
+                            .map(focus_slot)
+                            .collect::<Result<Vec<_>, _>>()?;
+                        let binding_line = entries.get(index).copied().ok_or_else(|| {
+                            error(line_span(line), "focus block requires a binding")
+                        })?;
+                        let binding = focus_binding(binding_line)?;
+                        if binding.variable.value != template.variable.value {
+                            return Err(error(
+                                binding.variable.span,
+                                format!(
+                                    "focus binding '{}' does not match template variable '{}'",
+                                    binding.variable.value.as_str(),
+                                    template.variable.value.as_str()
+                                ),
+                            ));
+                        }
+                        members.push(Member::Focus(FocusBlock {
+                            template,
+                            slots,
+                            binding,
+                            span: line_span(line),
+                        }));
+                        index += 1;
+                    } else if let Some(entity) = entity_line(line) {
                         members.push(Member::Entity(entity?));
+                        index += 1;
+                    } else if content(line).starts_with("for ") {
+                        return Err(error(
+                            line_span(line),
+                            "focus binding has no preceding focus block",
+                        ));
                     } else {
                         let parsed = clause(
                             line,
@@ -1533,6 +2095,7 @@ pub fn parse(source: &str) -> Result<Program, ParseError> {
                             return Err(error(parsed.span, "model assertions must be closed"));
                         }
                         members.push(Member::Clause(parsed));
+                        index += 1;
                     }
                 }
                 members
@@ -1875,20 +2438,13 @@ diff impact -> impact/adopt
 
     #[test]
     fn rejects_retired_prefixes_and_sentence_members() {
-        for (head, tail) in [
-            ("rela", "tion"),
-            ("mo", "del"),
-            ("l", "aw"),
-            ("in", "tent"),
-            ("que", "ry"),
-            ("cl", "aim"),
-            ("requ", "ire"),
-            ("fa", "ct"),
+        for prefix in [
+            "relation", "model", "law", "intent", "query", "claim", "require", "fact",
         ] {
-            let prefix = [head, tail].concat();
             assert!(
                 parse(&format!("{prefix} retired:")).is_err(),
-                "{prefix} is retired"
+                "{} is retired",
+                prefix
             );
         }
         assert!(
@@ -2033,5 +2589,39 @@ diff impact -> impact/adopt
             program.requests[2],
             RequestDecl::Why { all: true, .. }
         ));
+    }
+
+    #[test]
+    fn rejects_malformed_focus_ranges_bindings_and_slots() {
+        let base = r#"Item: Type
+Sensor: Type
+
+pairing/pair: Relation
+    {item: Item} paired with {sensor: Sensor}
+    mode item -> sensor: many
+
+pairing: Model
+    Sensor-A: Sensor
+    [Item 1..6]: Item
+    [Item {n}]:
+        paired with: Sensor-A
+    for n: 1..4
+"#;
+        for replacement in [
+            "[Item 6..1]: Item",
+            "[Item 1..]: Item",
+            "[Item {n}]:\n        paired with: Sensor-A\n    for m: 1..4",
+            "[Item {n}]:\n        paired with Sensor-A\n    for n: 1..4",
+            "[Item {n}]:\n    paired with: Sensor-A\n    for n: 1..4",
+        ] {
+            let source = base
+                .replace(
+                    "[Item 1..6]: Item\n    [Item {n}]:\n        paired with: Sensor-A\n    for n: 1..4",
+                    replacement,
+                );
+            assert!(parse(&source).is_err(), "{}", replacement);
+        }
+        assert!(parse(&base.replace("[Item 1..6]", "[Item 1")).is_err());
+        assert!(parse(&base.replace("[Item {n}]:", "[Item {n}] trailing:")).is_err());
     }
 }

@@ -284,7 +284,7 @@ fn decode_entity(value: &Json) -> Result<EntityId> {
     require_string(&item[0], "entity", "entity tag")?;
     EntityId::new(
         decode_model_id(&item[1])?,
-        decode_name(&item[2], "entity local")?,
+        Name::entity_local(string(&item[2], "entity local")?.to_owned())?,
         decode_type_id(&item[3])?,
     )
 }

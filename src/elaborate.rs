@@ -9,7 +9,8 @@ use crate::{
     frontend::{self, AscriptionDecl, Kind, Member, ShapePartDecl, SurfaceClause, SurfaceTerm},
     kernel::{
         self, Clause, Delta, EntityId, InlineSentencePart, Law, Model, ModelId, Name, Relation,
-        RelationId, Revision, Role, RoleId, SentenceShape, Term, Type, TypeId, VariableId,
+        RelationId, Revision, Role, RoleId, SentencePart, SentenceShape, Term, Type, TypeId,
+        VariableId,
     },
     wire,
 };
@@ -222,10 +223,35 @@ fn lower_models(
             }
             if !entities.insert(EntityId::new(
                 id.clone(),
-                name(&entity.local.value.0)?,
+                entity_local(&entity.local.value.0)?,
                 typ,
             )?) {
                 return Err(kernel::KernelError::new("duplicate entity identity"));
+            }
+        }
+        for group in declaration.body.iter().filter_map(|member| {
+            if let Member::EntityGroup(group) = member {
+                Some(group)
+            } else {
+                None
+            }
+        }) {
+            let typ = type_id(&group.typ.value.0)?;
+            if !types.contains_key(&typ) {
+                return Err(kernel::KernelError::new(format!(
+                    "undeclared Type '{}'",
+                    typ.as_str()
+                )));
+            }
+            for number in group.range.start..=group.range.end {
+                let local = format!("{}{}{}", group.prefix.value, number, group.suffix.value);
+                if !entities.insert(EntityId::new(
+                    id.clone(),
+                    entity_local(&local)?,
+                    typ.clone(),
+                )?) {
+                    return Err(kernel::KernelError::new("duplicate entity identity"));
+                }
             }
         }
         let shell = Model::new(
@@ -237,18 +263,14 @@ fn lower_models(
             vec![],
         )?;
         let shell = wire::admit(shell);
-        let assertions = declaration
-            .body
-            .iter()
-            .filter_map(|m| {
-                if let Member::Clause(v) = m {
-                    Some(v)
-                } else {
-                    None
-                }
-            })
-            .map(|clause| lower_clause(&shell, clause))
-            .collect::<kernel::Result<Vec<_>>>()?;
+        let mut assertions = Vec::new();
+        for member in &declaration.body {
+            match member {
+                Member::Clause(clause) => assertions.push(lower_clause(&shell, clause)?),
+                Member::Focus(focus) => assertions.extend(lower_focus(&shell, focus)?),
+                _ => {}
+            }
+        }
         let model = Model::new(
             id,
             types.clone(),
@@ -512,7 +534,128 @@ fn lower_term(model: &Model, expected: &TypeId, term: &SurfaceTerm) -> kernel::R
             }
             Ok(Term::entity(entity))
         }
+        SurfaceTerm::Template(_) => Err(kernel::KernelError::new(
+            "correlated entity templates are only valid inside a focus block",
+        )),
     }
+}
+
+fn lower_focus(model: &Revision, focus: &frontend::FocusBlock) -> kernel::Result<Vec<Clause>> {
+    let mut clauses = Vec::new();
+    for number in focus.binding.range.start..=focus.binding.range.end {
+        let focused = focus_entity(model.model(), &focus.template, number)?;
+        for slot in &focus.slots {
+            let mut candidates = Vec::new();
+            for relation in model.model().relations().values() {
+                let [
+                    SentencePart::Role(focused_role),
+                    SentencePart::Literal(literal),
+                    SentencePart::Role(value_role),
+                ] = relation.shape().parts()
+                else {
+                    continue;
+                };
+                if literal != &slot.label.value {
+                    continue;
+                }
+                candidates.push((relation, focused_role, value_role));
+            }
+            if candidates.is_empty() {
+                return Err(kernel::KernelError::new(format!(
+                    "no declared sentence shape accepts focused slot '{}'",
+                    slot.label.value
+                )));
+            }
+            if candidates.len() > 1 {
+                let names = candidates
+                    .iter()
+                    .map(|(relation, _, _)| relation.id().as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                return Err(kernel::KernelError::new(format!(
+                    "ambiguous focused slot '{}'; candidates: {names}",
+                    slot.label.value
+                )));
+            }
+            let (relation, focused_role, value_role) =
+                candidates.pop().expect("nonempty focus candidates");
+            let focused_role = relation
+                .roles()
+                .get(focused_role)
+                .expect("sentence shape role belongs to relation");
+            if focused.typ() != focused_role.typ() {
+                return Err(kernel::KernelError::new(format!(
+                    "entity '{}' has Type '{}', not '{}'",
+                    focused.local().as_str(),
+                    focused.typ().as_str(),
+                    focused_role.typ().as_str()
+                )));
+            }
+            let value_role = relation
+                .roles()
+                .get(value_role)
+                .expect("sentence shape role belongs to relation");
+            let value = lower_focus_term(
+                model.model(),
+                value_role.typ(),
+                &slot.value,
+                &focus.binding.variable.value,
+                number,
+            )?;
+            let clause = Clause::new(
+                relation.id().clone(),
+                BTreeMap::from([
+                    (focused_role.id().clone(), Term::entity(focused.clone())),
+                    (value_role.id().clone(), value),
+                ]),
+            )?;
+            model.model().validate_clause(&clause, true)?;
+            clauses.push(clause);
+        }
+    }
+    Ok(clauses)
+}
+
+fn lower_focus_term(
+    model: &Model,
+    expected: &TypeId,
+    term: &SurfaceTerm,
+    binding: &frontend::VariableName,
+    number: u64,
+) -> kernel::Result<Term> {
+    match term {
+        SurfaceTerm::Template(template) => {
+            if &template.variable.value != binding {
+                return Err(kernel::KernelError::new(format!(
+                    "unbound focus variable '{}'",
+                    template.variable.value.as_str()
+                )));
+            }
+            let entity = focus_entity(model, template, number)?;
+            if entity.typ() != expected {
+                return Err(kernel::KernelError::new(format!(
+                    "entity '{}' has Type '{}', not '{}'",
+                    entity.local().as_str(),
+                    entity.typ().as_str(),
+                    expected.as_str()
+                )));
+            }
+            Ok(Term::entity(entity))
+        }
+        _ => lower_term(model, expected, term),
+    }
+}
+
+fn focus_entity(
+    model: &Model,
+    template: &frontend::EntityTemplate,
+    number: u64,
+) -> kernel::Result<EntityId> {
+    let local = frontend::Name(format!(
+        "{}{}{}",
+        template.prefix.value, number, template.suffix.value
+    ));
+    resolve_entity(model, &local)
 }
 
 fn resolve_entity(model: &Model, authored: &frontend::Name) -> kernel::Result<EntityId> {
@@ -555,6 +698,9 @@ fn cardinality(value: frontend::Cardinality) -> kernel::Cardinality {
 }
 fn name(value: &str) -> kernel::Result<Name> {
     Name::new(value.to_owned())
+}
+fn entity_local(value: &str) -> kernel::Result<Name> {
+    Name::entity_local(value.to_owned())
 }
 fn type_id(value: &str) -> kernel::Result<TypeId> {
     TypeId::new(name(value)?)
