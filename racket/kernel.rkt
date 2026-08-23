@@ -159,10 +159,11 @@
 
 (: identity-for (-> Model String))
 (define (identity-for model)
-  (string-append "rev-sha256-"
-                 (bytes->hex (sha256-bytes (open-input-bytes
-                                            (string->bytes/utf-8
-                                             (jsexpr->string (canonical-model model))))))))
+  (string->immutable-string
+   (string-append "rev-sha256-"
+                  (bytes->hex (sha256-bytes (open-input-bytes
+                                             (string->bytes/utf-8
+                                              (jsexpr->string (canonical-model model)))))))))
 
 (: decode-term (-> Any String Term))
 (define (decode-term value where)

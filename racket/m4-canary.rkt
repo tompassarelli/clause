@@ -485,6 +485,7 @@
       (define-values (claimed-branch claim-output) (claim base-branch desired))
       (define next-revision (Branch-head claimed-branch))
       (unless (and (string=? (Revision-identity next-revision) NEXT)
+                   (immutable? (Revision-identity next-revision))
                    (equal? (claim-output->jsexpr claim-output)
                            (expected-claim BASE NEXT))
                    (equal? (serialize-revision (Branch-head base-branch))
