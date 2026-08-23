@@ -1,0 +1,29 @@
+{
+  "schema": "clause-m0-contrast-v1",
+  "id": "functional-contract-position",
+  "axis": "projection-contract-spelling",
+  "decision": {"status": "unresolved", "candidate": "focused-arrow", "layout_style": "provisional-four-space"},
+  "source": {
+    "lines": ["Player", "    position -> Vec2"],
+    "line_break": "LF",
+    "ends_with_line_break": true
+  },
+  "structural_intent": "focused-relation-contract",
+  "required": [
+    "position is an ordinary relation",
+    "the focus category supplies the member domain",
+    "exactly one is the default output cardinality"
+  ],
+  "forbidden": ["object", "field", "record-slot", "owned-child"],
+  "elaborated": [
+    {
+      "kind": "relation-contract",
+      "relation": "$position",
+      "roles": [
+        {"name": "member", "domain": "Player"},
+        {"name": "value", "domain": "Vec2"}
+      ],
+      "projection": {"inputs": ["member"], "output": "value", "cardinality": "exactly-one"}
+    }
+  ]
+}

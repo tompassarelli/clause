@@ -1,0 +1,19 @@
+{
+  "schema": "clause-m0-contrast-v1",
+  "id": "claim-expanded-connects",
+  "axis": "relation-claim-surface",
+  "decision": {"status": "unresolved", "candidate": "expanded-phrase"},
+  "source": {
+    "lines": ["iron-door connects Cellar to Armory"],
+    "line_break": "LF",
+    "ends_with_line_break": true
+  },
+  "context": {"schemas": ["$connects"], "focus_role": "door"},
+  "structural_intent": "expanded-relation-claim",
+  "equivalence_group": "connects-claim",
+  "required": ["all declared roles are present", "role names survive elaboration"],
+  "forbidden": ["object", "method", "field", "binding"],
+  "elaborated": [
+    {"kind": "relation-claim", "relation": "$connects", "roles": {"door": "iron-door", "origin": "Cellar", "destination": "Armory"}}
+  ]
+}

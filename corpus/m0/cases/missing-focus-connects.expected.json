@@ -1,0 +1,22 @@
+{
+  "schema": "clause-m0-contrast-v1",
+  "id": "missing-focus-connects",
+  "axis": "focus-role-resolution",
+  "decision": {"status": "unresolved", "candidate": "root-relation-fragment"},
+  "source": {
+    "lines": ["connects Cellar to Armory"],
+    "line_break": "LF",
+    "ends_with_line_break": true
+  },
+  "context": {"schemas": ["$connects"], "required_focus_role": "door"},
+  "structural_intent": "incomplete-relation-fragment",
+  "required": ["the absent door role is diagnosed", "no implicit focus or object is invented"],
+  "forbidden": ["implicit-object", "implicit-focus", "partial-relation-claim", "silent-elaboration"],
+  "diagnostic": {
+    "code": "phrase.missing-role",
+    "relation": "$connects",
+    "missing_roles": ["door"],
+    "repair": "supply the door role in an expanded or explicit role-labelled claim"
+  },
+  "elaborated": null
+}

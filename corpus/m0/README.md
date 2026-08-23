@@ -31,6 +31,13 @@ Handles beginning with `$` are corpus symbols, not Store identities.
 | `binding-shape` | homogeneous colon bindings stay structural |
 | `legacy-colon-binding` | `thing: Space` is never membership |
 | `focused-colon-binding` | possible projection binding remains unresolved and is not `state locked` |
+| `relation-schema-connects` | compact three-role schema and operational projection candidate |
+| `functional-contract-position` | focused binary relation contract, never a field |
+| `claim-focused-connects` | focus supplies the declared `door` role |
+| `claim-expanded-connects` | expanded claim has the same role graph |
+| `structural-connects` | explicit role-labelled escape candidate round-trips |
+| `ambiguous-connects` | overlapping exact shapes name both candidates and role conflict |
+| `missing-focus-connects` | root fragment diagnoses the absent focus role |
 
 Do not “bless” these files from parser output. A later fixture checker may
 compare exact projections and print diffs, but reviewed corpus remains the

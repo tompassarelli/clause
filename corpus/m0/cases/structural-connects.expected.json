@@ -1,0 +1,23 @@
+{
+  "schema": "clause-m0-contrast-v1",
+  "id": "structural-connects",
+  "axis": "structural-escape-spelling",
+  "decision": {"status": "unresolved", "candidate": "clause-heading-with-role-bindings", "layout_style": "provisional-four-space"},
+  "source": {
+    "lines": ["clause connects", "    door: iron-door", "    origin: Cellar", "    destination: Armory"],
+    "line_break": "LF",
+    "ends_with_line_break": true
+  },
+  "context": {"schemas": ["$connects"]},
+  "structural_intent": "explicit-role-labelled-claim",
+  "equivalence_group": "connects-claim",
+  "required": [
+    "each colon binds a role name to a term",
+    "explicit structure selects one relation identity",
+    "round-trip preserves all role names"
+  ],
+  "forbidden": ["object", "record", "field", "second-semantic-authority"],
+  "elaborated": [
+    {"kind": "relation-claim", "relation": "$connects", "roles": {"door": "iron-door", "origin": "Cellar", "destination": "Armory"}}
+  ]
+}
