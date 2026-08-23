@@ -1,4 +1,5 @@
 pub mod delta;
+pub mod derive;
 pub mod elaborate;
 pub mod execution;
 pub mod frontend;
