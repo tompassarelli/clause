@@ -1,9 +1,7 @@
 //! Frozen expectations for the redundant impact journey.
 //!
 //! The support-frontier assertions below are deliberately kept in this fixture
-//! rather than reimplementing support search in the kernel.  The executable
-//! support tests are gated until the `derive::SupportFrontier` seam lands; the
-//! parser/model checks remain live on the clean candidate in the meantime.
+//! rather than reimplementing support search in the kernel.
 
 use clause::{elaborate, frontend, kernel};
 
@@ -81,10 +79,6 @@ fn source_freezes_two_independent_north_routes_and_one_intent() {
 
 /// Exact support-frontier, prevention, achievement, and support-loss oracle.
 ///
-/// This module waits for the agreed `derive::SupportFrontier` API and the
-/// corresponding intervention/diff projections.  Keep every assertion exact
-/// when enabling it; do not replace it with counts or a selected proof.
-#[cfg(feature = "support-frontier-api")]
 mod support_frontier_acceptance {
     use super::*;
     use clause::{

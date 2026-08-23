@@ -321,65 +321,67 @@ pub fn canonical_json(output: &QueryOutput) -> String {
     let proofs = output
         .proofs
         .iter()
-        .map(|proof| {
-            let nodes = proof
-                .why
-                .nodes
+        .map(|proof| canonical_why_json(&proof.why))
+        .collect::<Vec<_>>()
+        .join(",");
+    format!("[\"clause-query-output-v2\",[\"results\",[{results}]],[\"proofs\",[{proofs}]]]")
+}
+
+/// Encode one public proof graph using the same canonical representation as a
+/// query result or a `why all` alternative.
+pub fn canonical_why_json(why: &WhyGraph) -> String {
+    let nodes = why
+        .nodes
+        .iter()
+        .map(|node| {
+            let roles = node
+                .roles
                 .iter()
-                .map(|node| {
-                    let roles = node
-                        .roles
-                        .iter()
-                        .map(|(name, value)| format!("[{},{}]", quoted(name), quoted(value)))
-                        .collect::<Vec<_>>()
-                        .join(",");
-                    format!(
-                        "[\"clause\",\"relation\",{},\"roles\",[{roles}]]",
-                        quoted(&node.relation)
-                    )
-                })
-                .collect::<Vec<_>>()
-                .join(",");
-            let witnesses = proof
-                .why
-                .witnesses
-                .iter()
-                .map(|edge| match &edge.witness {
-                    Witness::Asserted => format!("[\"asserted\",{}]", edge.conclusion),
-                    Witness::Derived {
-                        law,
-                        premises,
-                        substitution,
-                    } => {
-                        let premises = premises
-                            .iter()
-                            .map(usize::to_string)
-                            .collect::<Vec<_>>()
-                            .join(",");
-                        let substitution = substitution
-                            .iter()
-                            .map(|(variable, value)| {
-                                format!("[{},{}]", quoted(variable), quoted(value))
-                            })
-                            .collect::<Vec<_>>()
-                            .join(",");
-                        format!(
-                            "[\"derived\",{},\"law\",{},\"premises\",[{premises}],\"substitution\",[{substitution}]]",
-                            edge.conclusion,
-                            quoted(law),
-                        )
-                    }
-                })
+                .map(|(name, value)| format!("[{},{}]", quoted(name), quoted(value)))
                 .collect::<Vec<_>>()
                 .join(",");
             format!(
-                "[\"why\",[\"root\",{}],[\"clauses\",[{nodes}]],[\"witnesses\",[{witnesses}]]]",
-                proof.why.root,
+                "[\"clause\",\"relation\",{},\"roles\",[{roles}]]",
+                quoted(&node.relation)
             )
         })
         .collect::<Vec<_>>()
         .join(",");
-    format!("[\"clause-query-output-v2\",[\"results\",[{results}]],[\"proofs\",[{proofs}]]]")
+    let witnesses = why
+        .witnesses
+        .iter()
+        .map(|edge| match &edge.witness {
+            Witness::Asserted => format!("[\"asserted\",{}]", edge.conclusion),
+            Witness::Derived {
+                law,
+                premises,
+                substitution,
+            } => {
+                let premises = premises
+                    .iter()
+                    .map(usize::to_string)
+                    .collect::<Vec<_>>()
+                    .join(",");
+                let substitution = substitution
+                    .iter()
+                    .map(|(variable, value)| {
+                        format!("[{},{}]", quoted(variable), quoted(value))
+                    })
+                    .collect::<Vec<_>>()
+                    .join(",");
+                format!(
+                    "[\"derived\",{},\"law\",{},\"premises\",[{premises}],\"substitution\",[{substitution}]]",
+                    edge.conclusion,
+                    quoted(law),
+                )
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(",");
+    format!(
+        "[\"why\",[\"root\",{}],[\"clauses\",[{nodes}]],[\"witnesses\",[{witnesses}]]]",
+        why.root,
+    )
 }
 
 fn quoted(value: &str) -> String {

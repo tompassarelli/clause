@@ -7,4 +7,5 @@ pub mod generated;
 pub mod intervention;
 pub mod kernel;
 pub mod semantic_diff;
+pub mod semantic_output;
 pub mod wire;
