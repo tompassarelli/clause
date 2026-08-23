@@ -1,13 +1,44 @@
 #![allow(unexpected_cfgs)]
 
-use crate::kernel::{Clause, KernelError, QueryPlan, Result, Revision};
+use crate::{
+    derive::{self, Closure, Limits},
+    kernel::{Clause, KernelError, QueryPlan, Result, Revision},
+};
+use std::collections::BTreeMap;
 use std::fmt::Write;
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Proof {
-    pub id: String,
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct ClauseNode {
     pub relation: String,
     pub roles: Vec<(String, String)>,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum Witness {
+    Asserted,
+    Derived {
+        law: String,
+        premises: Vec<usize>,
+        substitution: Vec<(String, String)>,
+    },
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct WitnessEdge {
+    pub conclusion: usize,
+    pub witness: Witness,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct WhyGraph {
+    pub root: usize,
+    pub nodes: Vec<ClauseNode>,
+    pub witnesses: Vec<WitnessEdge>,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct Proof {
+    pub why: WhyGraph,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -16,7 +47,11 @@ pub struct QueryOutput {
     pub proofs: Vec<Proof>,
 }
 
-pub fn execute(revision: &Revision, plan: &QueryPlan) -> Result<QueryOutput> {
+/// Answer one admitted query from a bounded derived closure.
+///
+/// The supplied limits are part of execution's contract: it never performs
+/// unbounded saturation or mutates the sealed revision it explains.
+pub fn execute(revision: &Revision, plan: &QueryPlan, limits: Limits) -> Result<QueryOutput> {
     if revision.plan()? != *plan {
         return Err(KernelError::new("query plan does not belong to revision"));
     }
@@ -34,9 +69,9 @@ pub fn execute(revision: &Revision, plan: &QueryPlan) -> Result<QueryOutput> {
         .iter()
         .filter(|(_, term)| !term.is_variable())
         .collect::<Vec<_>>();
+    let closure = derive::saturate(revision, limits)?;
 
-    let mut rows = revision
-        .model()
+    let mut rows = closure
         .facts()
         .iter()
         .filter(|fact| {
@@ -45,12 +80,12 @@ pub fn execute(revision: &Revision, plan: &QueryPlan) -> Result<QueryOutput> {
                     fact.roles().get(*role).map(|term| term.text()) == Some(wanted.text())
                 })
         })
-        .map(|fact| row(revision.identity(), fact, sought))
+        .map(|fact| row(&closure, fact, sought))
         .collect::<Result<Vec<_>>>()?;
     rows.sort_by(|left, right| {
         left.0
             .cmp(&right.0)
-            .then_with(|| left.1.id.cmp(&right.1.id))
+            .then_with(|| left.1.why.cmp(&right.1.why))
     });
 
     Ok(QueryOutput {
@@ -59,31 +94,96 @@ pub fn execute(revision: &Revision, plan: &QueryPlan) -> Result<QueryOutput> {
     })
 }
 
-fn row(revision_id: &str, fact: &Clause, sought: &str) -> Result<(String, Proof)> {
+/// Return the chosen, acyclic proof graph for `fact`, if the bounded closure
+/// entails it.
+pub fn why(revision: &Revision, fact: &Clause, limits: Limits) -> Result<Option<WhyGraph>> {
+    let closure = derive::saturate(revision, limits)?;
+    graph(&closure, fact)
+}
+
+fn row(closure: &Closure, fact: &Clause, sought: &str) -> Result<(String, Proof)> {
     let result = fact
         .roles()
         .get(sought)
         .ok_or_else(|| KernelError::new("fact does not fill sought role"))?
         .text()
         .to_owned();
-    let roles = fact
-        .roles()
-        .iter()
-        .map(|(name, term)| (name.clone(), term.text().to_owned()))
-        .collect::<Vec<_>>();
-    let identity_roles = roles
-        .iter()
-        .map(|(name, value)| format!("{name}={value}"))
-        .collect::<Vec<_>>()
-        .join(",");
     Ok((
         result,
         Proof {
-            id: format!("proof/{revision_id}/{}/{identity_roles}", fact.relation()),
-            relation: fact.relation().to_owned(),
-            roles,
+            why: graph(closure, fact)?.expect("closure fact has a proof"),
         },
     ))
+}
+
+fn graph(closure: &Closure, root: &Clause) -> Result<Option<WhyGraph>> {
+    if closure.proof(root).is_none() {
+        return Ok(None);
+    }
+
+    let mut facts = Vec::new();
+    let mut indices = BTreeMap::new();
+    let mut witnesses = Vec::new();
+    let root = add_fact(root, closure, &mut facts, &mut indices, &mut witnesses)?;
+    witnesses.sort_by_key(|edge| edge.conclusion);
+    Ok(Some(WhyGraph {
+        root,
+        nodes: facts.into_iter().map(node).collect(),
+        witnesses,
+    }))
+}
+
+fn add_fact(
+    fact: &Clause,
+    closure: &Closure,
+    facts: &mut Vec<Clause>,
+    indices: &mut BTreeMap<Clause, usize>,
+    witnesses: &mut Vec<WitnessEdge>,
+) -> Result<usize> {
+    if let Some(index) = indices.get(fact) {
+        return Ok(*index);
+    }
+
+    let conclusion = facts.len();
+    facts.push(fact.clone());
+    indices.insert(fact.clone(), conclusion);
+    let proof = closure
+        .proof(fact)
+        .ok_or_else(|| KernelError::new("closure fact has no chosen witness"))?;
+    let witness = match proof.witness() {
+        derive::Witness::Asserted => Witness::Asserted,
+        derive::Witness::Derived {
+            law,
+            premises,
+            substitution,
+        } => Witness::Derived {
+            law: law.clone(),
+            premises: premises
+                .iter()
+                .map(|premise| add_fact(premise, closure, facts, indices, witnesses))
+                .collect::<Result<Vec<_>>>()?,
+            substitution: substitution
+                .iter()
+                .map(|(variable, value)| (variable.clone(), value.clone()))
+                .collect(),
+        },
+    };
+    witnesses.push(WitnessEdge {
+        conclusion,
+        witness,
+    });
+    Ok(conclusion)
+}
+
+fn node(fact: Clause) -> ClauseNode {
+    ClauseNode {
+        relation: fact.relation().to_owned(),
+        roles: fact
+            .roles()
+            .iter()
+            .map(|(role, term)| (role.clone(), term.text().to_owned()))
+            .collect(),
+    }
 }
 
 pub fn canonical_json(output: &QueryOutput) -> String {
@@ -97,21 +197,64 @@ pub fn canonical_json(output: &QueryOutput) -> String {
         .proofs
         .iter()
         .map(|proof| {
-            let roles = proof
-                .roles
+            let nodes = proof
+                .why
+                .nodes
                 .iter()
-                .map(|(name, value)| format!("[{},{}]", quoted(name), quoted(value)))
+                .map(|node| {
+                    let roles = node
+                        .roles
+                        .iter()
+                        .map(|(name, value)| format!("[{},{}]", quoted(name), quoted(value)))
+                        .collect::<Vec<_>>()
+                        .join(",");
+                    format!(
+                        "[\"clause\",\"relation\",{},\"roles\",[{roles}]]",
+                        quoted(&node.relation)
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(",");
+            let witnesses = proof
+                .why
+                .witnesses
+                .iter()
+                .map(|edge| match &edge.witness {
+                    Witness::Asserted => format!("[\"asserted\",{}]", edge.conclusion),
+                    Witness::Derived {
+                        law,
+                        premises,
+                        substitution,
+                    } => {
+                        let premises = premises
+                            .iter()
+                            .map(usize::to_string)
+                            .collect::<Vec<_>>()
+                            .join(",");
+                        let substitution = substitution
+                            .iter()
+                            .map(|(variable, value)| {
+                                format!("[{},{}]", quoted(variable), quoted(value))
+                            })
+                            .collect::<Vec<_>>()
+                            .join(",");
+                        format!(
+                            "[\"derived\",{},\"law\",{},\"premises\",[{premises}],\"substitution\",[{substitution}]]",
+                            edge.conclusion,
+                            quoted(law),
+                        )
+                    }
+                })
                 .collect::<Vec<_>>()
                 .join(",");
             format!(
-                "[\"proof\",{},\"relation\",{},\"roles\",[{roles}]]",
-                quoted(&proof.id),
-                quoted(&proof.relation)
+                "[\"why\",[\"root\",{}],[\"clauses\",[{nodes}]],[\"witnesses\",[{witnesses}]]]",
+                proof.why.root,
             )
         })
         .collect::<Vec<_>>()
         .join(",");
-    format!("[\"clause-query-output-v1\",[\"results\",[{results}]],[\"proofs\",[{proofs}]]]")
+    format!("[\"clause-query-output-v2\",[\"results\",[{results}]],[\"proofs\",[{proofs}]]]")
 }
 
 fn quoted(value: &str) -> String {
@@ -287,7 +430,7 @@ fn main() {
 mod tests {
     use super::*;
     use crate::kernel::{
-        self, Cardinality, Clause, Intent, Mode, Model, Relation, Role, Sentence, Term,
+        self, Cardinality, Clause, Intent, Law, Mode, Model, Relation, Role, Sentence, Term,
     };
     use crate::wire;
     use std::fs;
@@ -319,6 +462,131 @@ mod tests {
         let _ = fs::remove_file(source);
         let _ = fs::remove_file(binary);
         String::from_utf8(output.stdout).unwrap()
+    }
+
+    fn limits() -> Limits {
+        Limits::new(100, 10, 10_000)
+    }
+
+    fn relation(name: &str) -> Relation {
+        Relation::new(
+            name,
+            vec![
+                Role::new("from", "Place").unwrap(),
+                Role::new("to", "Place").unwrap(),
+            ],
+            Sentence::new("from", "reaches", "to").unwrap(),
+            vec![Mode::finite(vec!["from".into()], vec!["to".into()], Cardinality::Many).unwrap()],
+        )
+        .unwrap()
+    }
+
+    fn clause(relation: &str, from: Term, to: Term) -> Clause {
+        Clause::new(relation, vec![("from".into(), from), ("to".into(), to)]).unwrap()
+    }
+
+    #[test]
+    fn impact_query_returns_derived_results_with_acyclic_why_graphs() {
+        let literal = |relation: &str, from: &str, to: &str| {
+            clause(
+                relation,
+                Term::literal(from).unwrap(),
+                Term::literal(to).unwrap(),
+            )
+        };
+        let pattern = |relation: &str, from: &str, to: &str| {
+            clause(
+                relation,
+                Term::variable(from).unwrap(),
+                Term::variable(to).unwrap(),
+            )
+        };
+        let north_store = literal("impact/links", "North", "Store");
+        let store_beagle = literal("impact/hosts", "Store", "Beagle");
+        let query = clause(
+            "impact/reaches",
+            Term::literal("North").unwrap(),
+            Term::variable("destination").unwrap(),
+        );
+        let revision = Revision::admit(
+            Model::with_laws(
+                vec![
+                    relation("impact/links"),
+                    relation("impact/hosts"),
+                    relation("impact/reaches"),
+                ],
+                vec![north_store.clone(), store_beagle.clone()],
+                vec![
+                    Law::new(
+                        "impact/direct",
+                        vec![pattern("impact/links", "source", "destination")],
+                        pattern("impact/reaches", "source", "destination"),
+                    )
+                    .unwrap(),
+                    Law::new(
+                        "impact/transitive",
+                        vec![
+                            pattern("impact/reaches", "source", "middle"),
+                            pattern("impact/hosts", "middle", "destination"),
+                        ],
+                        pattern("impact/reaches", "source", "destination"),
+                    )
+                    .unwrap(),
+                ],
+                query,
+                "ascending",
+            )
+            .unwrap(),
+        );
+
+        let output = execute(&revision, &revision.plan().unwrap(), limits()).unwrap();
+        assert_eq!(output.results, ["Beagle", "Store"]);
+        let graph = &output.proofs[0].why;
+        assert_eq!(graph.root, 0);
+        assert_eq!(graph.nodes.len(), 4);
+        assert_eq!(graph.witnesses.len(), 4);
+        assert_eq!(graph.nodes[0].relation, "impact/reaches");
+        assert_eq!(
+            graph.nodes[0].roles,
+            vec![
+                ("from".into(), "North".into()),
+                ("to".into(), "Beagle".into())
+            ]
+        );
+        assert!(matches!(
+            graph.witnesses[0].witness,
+            Witness::Derived { ref law, ref premises, .. }
+                if law == "impact/transitive" && premises == &[1, 3]
+        ));
+        assert!(matches!(
+            graph.witnesses[1].witness,
+            Witness::Derived { ref law, ref premises, .. }
+                if law == "impact/direct" && premises == &[2]
+        ));
+        assert!(graph.witnesses.iter().all(|edge| match &edge.witness {
+            Witness::Asserted => true,
+            Witness::Derived { premises, .. } =>
+                premises.iter().all(|premise| *premise > edge.conclusion),
+        }));
+        assert_eq!(
+            why(
+                &revision,
+                &literal("impact/reaches", "North", "Beagle"),
+                limits()
+            )
+            .unwrap(),
+            Some(graph.clone())
+        );
+        assert!(
+            why(
+                &revision,
+                &literal("impact/reaches", "North", "Missing"),
+                limits()
+            )
+            .unwrap()
+            .is_none()
+        );
+        assert!(canonical_json(&output).starts_with("[\"clause-query-output-v2\","));
     }
 
     #[test]
@@ -368,7 +636,7 @@ mod tests {
             .unwrap(),
         );
         let plan = revision.plan().unwrap();
-        let interpreted = canonical_json(&execute(&revision, &plan).unwrap());
+        let interpreted = canonical_json(&execute(&revision, &plan, limits()).unwrap());
         assert!(interpreted.contains("[\"results\",[\"gadget\",\"widget\"]]"));
         let generated = emit_rust(&revision, &plan).unwrap();
         assert!(!generated.contains("catalog/contains"));
@@ -429,14 +697,20 @@ mod tests {
             .unwrap(),
         );
         let branch = kernel::Branch::new("orchard", revision.clone()).unwrap();
-        let base_query = canonical_json(&execute(&revision, &revision.plan().unwrap()).unwrap());
+        let base_query =
+            canonical_json(&execute(&revision, &revision.plan().unwrap(), limits()).unwrap());
         let proposed = kernel::intent(&branch, "orchard/replenish");
         let desired = proposed.intent().unwrap().desired().clone();
         let claimed = kernel::claim(&branch, desired.clone()).unwrap();
         let successor = claimed.successor().unwrap();
         let required = kernel::require(successor.revision(), desired).unwrap();
         let next_query = canonical_json(
-            &execute(successor.revision(), &successor.revision().plan().unwrap()).unwrap(),
+            &execute(
+                successor.revision(),
+                &successor.revision().plan().unwrap(),
+                limits(),
+            )
+            .unwrap(),
         );
         let satisfied = kernel::intent(successor, "orchard/replenish");
         let expected = format!(
