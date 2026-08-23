@@ -19,9 +19,21 @@ the arbitrary I/O, networking, concurrency, or general-purpose effects needed
 to author an entire application such as a server or terminal UI without a Rust
 boundary.
 
+## Repository and artifact map
+
+| Path or artifact | Authority and lifecycle |
+| --- | --- |
+| `src/` | Authoritative Rust implementation. Stable facade modules retain the library boundary; their private child modules own the implementation details. |
+| `examples/` | Authoritative Clause authoring inputs. They are the inputs exercised by the native CLI routes below. |
+| `tests/` | Verification consumers of the public Rust and CLI behavior. |
+| `src/generated.rs` | Authoritative source composer for standalone generated Rust. Do not hand-edit an emitted projection. |
+| `target/`, emitted `.rs` files and binaries, and temporary sealed Revision files | Disposable build or projection artifacts unless deliberately retained for a named consumer. |
+| `bin/clause` | Repository-local shell wrapper for the native Cargo CLI. |
+
 ## The complete one-page hospital program
 
-This is the complete, copy-pasteable `examples/hospital.clause`, not a sketch:
+`examples/hospital.clause` is authoritative. The complete, copy-pasteable
+block below is its verified documentation projection, not a sketch:
 
 ```clause
 Space: Type
@@ -181,7 +193,17 @@ complete.
 
 ## Run and materialize
 
-From the repository root, build the CLI and place that build first on `PATH`:
+From the repository root, use the native Cargo CLI to run the authoritative
+examples:
+
+| Input | Native Cargo CLI route |
+| --- | --- |
+| `examples/catalog.clause` | `cargo run --bin clause -- run examples/catalog.clause` |
+| `examples/impact.clause` | `cargo run --bin clause -- run examples/impact.clause` |
+| `examples/hospital.clause` | `cargo run --bin clause -- run examples/hospital.clause` |
+
+`bin/clause run examples/hospital.clause` is the equivalent repository-local
+wrapper route. To build the CLI once and place that build first on `PATH`:
 
 ```sh
 cargo build --bin clause
@@ -216,13 +238,18 @@ relation roles and modes, asserted clauses, and laws do.
 Clause pins Rust 1.96.1.
 
 ```sh
-cargo test
+cargo fmt --all --check
+cargo check --all-targets
+cargo test --all-targets
+cargo clippy --all-targets -- -D warnings
 ```
 
 The acceptance suite covers native parsing and lowering, strict Revision wire
 reload, recursive derivation, complete support and intervention frontiers,
 semantic diff, ordered request execution, and source-deleted generated-Rust
 parity.
+
+Every concurrently written Clause lane uses a private `CARGO_TARGET_DIR`.
 
 ## License
 
