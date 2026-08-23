@@ -1,5 +1,5 @@
 use crate::{
-    derive::{self, Closure, Limits},
+    derive::{self, Closure, Limits, SupportLimits, SupportProof, SupportWitness},
     kernel::{Clause, KernelError, QueryPlan, Result, Revision},
 };
 use std::collections::BTreeMap;
@@ -37,6 +37,36 @@ pub struct WhyGraph {
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct Proof {
     pub why: WhyGraph,
+}
+
+/// One inclusion-minimal asserted support and its canonical derivation.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct WhySupport {
+    pub assertions: Vec<Clause>,
+    pub why: WhyGraph,
+}
+
+/// The bounded projection of every minimal support for one target fact.
+///
+/// `complete` is false when the shared support kernel stopped at a budget.  A
+/// partial result is still useful for inspection, but is never presented as
+/// the complete set of alternatives.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct WhyAll {
+    pub target: Clause,
+    pub alternatives: Vec<WhySupport>,
+    pub complete: bool,
+    pub expansions: usize,
+}
+
+impl WhyAll {
+    pub fn alternative_count(&self) -> usize {
+        self.alternatives.len()
+    }
+
+    pub fn is_complete(&self) -> bool {
+        self.complete
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -95,8 +125,54 @@ pub fn execute(revision: &Revision, plan: &QueryPlan, limits: Limits) -> Result<
 /// Return the chosen, acyclic proof graph for `fact`, if the bounded closure
 /// entails it.
 pub fn why(revision: &Revision, fact: &Clause, limits: Limits) -> Result<Option<WhyGraph>> {
-    let closure = derive::saturate(revision, limits)?;
-    graph(&closure, fact)
+    let frontier = derive::support_frontier(
+        revision,
+        fact,
+        SupportLimits::new(limits, limits.max_join_attempts, limits.max_facts),
+    )?;
+    frontier
+        .supports()
+        .first()
+        .map(|support| support_graph(support.proof()))
+        .transpose()
+}
+
+/// Return all bounded, inclusion-minimal asserted supports for `fact`.
+///
+/// This is a projection only: support enumeration and deduplication remain in
+/// `derive::support_frontier`.  `Limits` is accepted as a convenience and
+/// derives a support budget from its fact bound; callers needing an explicit
+/// alternative budget should pass `SupportLimits` directly.
+pub fn why_all<L>(revision: &Revision, fact: &Clause, limits: L) -> Result<Option<WhyAll>>
+where
+    L: Into<SupportLimits>,
+{
+    let frontier = derive::support_frontier(revision, fact, limits.into())?;
+    if frontier.supports().is_empty() {
+        return Ok(None);
+    }
+    let alternatives = frontier
+        .supports()
+        .iter()
+        .map(|support| {
+            Ok(WhySupport {
+                assertions: support.assertions().to_vec(),
+                why: support_graph(support.proof())?,
+            })
+        })
+        .collect::<Result<Vec<_>>>()?;
+    Ok(Some(WhyAll {
+        target: fact.clone(),
+        alternatives,
+        complete: frontier.status().is_complete(),
+        expansions: frontier.expansions(),
+    }))
+}
+
+impl From<Limits> for SupportLimits {
+    fn from(limits: Limits) -> Self {
+        SupportLimits::new(limits, limits.max_join_attempts, limits.max_facts)
+    }
 }
 
 fn row(closure: &Closure, fact: &Clause, sought: &str) -> Result<(String, Proof)> {
@@ -129,6 +205,57 @@ fn graph(closure: &Closure, root: &Clause) -> Result<Option<WhyGraph>> {
         nodes: facts.into_iter().map(node).collect(),
         witnesses,
     }))
+}
+
+fn support_graph(root: &SupportProof) -> Result<WhyGraph> {
+    let mut facts = Vec::new();
+    let mut indices = BTreeMap::new();
+    let mut witnesses = Vec::new();
+    let root_index = add_support_fact(root, &mut facts, &mut indices, &mut witnesses)?;
+    witnesses.sort_by_key(|edge| edge.conclusion);
+    Ok(WhyGraph {
+        root: root_index,
+        nodes: facts.into_iter().map(node).collect(),
+        witnesses,
+    })
+}
+
+fn add_support_fact(
+    proof: &SupportProof,
+    facts: &mut Vec<Clause>,
+    indices: &mut BTreeMap<Clause, usize>,
+    witnesses: &mut Vec<WitnessEdge>,
+) -> Result<usize> {
+    let fact = proof.conclusion();
+    if let Some(index) = indices.get(fact) {
+        return Ok(*index);
+    }
+    let conclusion = facts.len();
+    facts.push(fact.clone());
+    indices.insert(fact.clone(), conclusion);
+    let witness = match proof.witness() {
+        SupportWitness::Asserted => Witness::Asserted,
+        SupportWitness::Derived {
+            law,
+            premises,
+            substitution,
+        } => Witness::Derived {
+            law: law.clone(),
+            premises: premises
+                .iter()
+                .map(|premise| add_support_fact(premise, facts, indices, witnesses))
+                .collect::<Result<Vec<_>>>()?,
+            substitution: substitution
+                .iter()
+                .map(|(variable, value)| (variable.clone(), value.clone()))
+                .collect(),
+        },
+    };
+    witnesses.push(WitnessEdge {
+        conclusion,
+        witness,
+    });
+    Ok(conclusion)
 }
 
 fn add_fact(
@@ -398,5 +525,98 @@ mod tests {
             .is_none()
         );
         assert!(canonical_json(&output).starts_with("[\"clause-query-output-v2\","));
+    }
+
+    #[test]
+    fn why_all_projects_independent_supports_and_deduplicates_derivations() {
+        let literal = |relation: &str, from: &str, to: &str| {
+            clause(
+                relation,
+                Term::literal(from).unwrap(),
+                Term::literal(to).unwrap(),
+            )
+        };
+        let pattern = |relation: &str, from: &str, to: &str| {
+            clause(
+                relation,
+                Term::variable(from).unwrap(),
+                Term::variable(to).unwrap(),
+            )
+        };
+        let target = literal("impact/reaches", "North", "Beagle");
+        let revision = Revision::admit(
+            Model::with_laws(
+                vec![
+                    relation("impact/links"),
+                    relation("impact/hosts"),
+                    relation("impact/reaches"),
+                ],
+                vec![
+                    literal("impact/links", "North", "Store"),
+                    literal("impact/hosts", "Store", "Beagle"),
+                    literal("impact/links", "North", "Relay"),
+                    literal("impact/hosts", "Relay", "Beagle"),
+                ],
+                vec![
+                    Law::new(
+                        "impact/direct",
+                        vec![pattern("impact/links", "source", "destination")],
+                        pattern("impact/reaches", "source", "destination"),
+                    )
+                    .unwrap(),
+                    Law::new(
+                        "impact/transitive",
+                        vec![
+                            pattern("impact/reaches", "source", "middle"),
+                            pattern("impact/hosts", "middle", "destination"),
+                        ],
+                        pattern("impact/reaches", "source", "destination"),
+                    )
+                    .unwrap(),
+                    // A distinct derivation must not create a third support.
+                    Law::new(
+                        "impact/transitive-copy",
+                        vec![
+                            pattern("impact/reaches", "source", "middle"),
+                            pattern("impact/hosts", "middle", "destination"),
+                        ],
+                        pattern("impact/reaches", "source", "destination"),
+                    )
+                    .unwrap(),
+                ],
+                clause(
+                    "impact/reaches",
+                    Term::literal("North").unwrap(),
+                    Term::variable("destination").unwrap(),
+                ),
+                "ascending",
+            )
+            .unwrap(),
+        );
+
+        let limits = SupportLimits::new(limits(), 10_000, 10);
+        let all = why_all(&revision, &target, limits).unwrap().unwrap();
+        assert!(all.is_complete());
+        assert_eq!(all.alternative_count(), 2);
+        assert_eq!(
+            all.alternatives
+                .iter()
+                .map(|alternative| alternative.assertions.clone())
+                .collect::<Vec<_>>(),
+            vec![
+                vec![
+                    literal("impact/hosts", "Relay", "Beagle"),
+                    literal("impact/links", "North", "Relay"),
+                ],
+                vec![
+                    literal("impact/hosts", "Store", "Beagle"),
+                    literal("impact/links", "North", "Store"),
+                ],
+            ]
+        );
+        assert_eq!(
+            why(&revision, &target, limits()).unwrap(),
+            Some(all.alternatives[0].why.clone())
+        );
     }
 }
