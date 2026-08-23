@@ -4,7 +4,7 @@
 //! revision and therefore remains usable after the source file is removed.
 
 use clause::{
-    derive::Limits,
+    derive::{Limits, SupportLimits},
     elaborate, execution, frontend, generated,
     intervention::{self, AchieveConfig, AchieveResult, PreventLimits, PreventStatus},
     kernel,
@@ -22,6 +22,10 @@ const USAGE: &str =
 
 fn limits() -> Limits {
     Limits::new(100, 10, 10_000)
+}
+
+fn support_limits() -> SupportLimits {
+    SupportLimits::new(limits(), 10_000, 100)
 }
 
 #[derive(Debug)]
@@ -416,7 +420,7 @@ fn e2e(source_path: &Path, revision_path: &Path) -> Result<(), CliError> {
     let next_query = execution::canonical_json(&next_query_output);
     let intervention_target = added_query_fact(&base_query_output, &next_query_output, &next)?;
     let satisfied = kernel::intent(&next_branch, &intent_name);
-    let diff = SemanticDiff::between(&base, &next, limits())
+    let diff = SemanticDiff::between(&base, &next, support_limits())
         .map_err(|error| CliError::failure(format!("diff revisions: {error}")))?;
     let prevention = intervention::prevent(
         &next,
