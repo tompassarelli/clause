@@ -1,22 +1,44 @@
-//! Canonical Clause semantic wire v2.  The semantic payload is intentionally
-//! an ordered JSON array: its exact UTF-8 bytes are the identity preimage.
+//! Canonical Clause semantic wire v5.
+//!
+//! The semantic payload is an ordered JSON array whose exact UTF-8 bytes are
+//! the revision identity preimage. Reload admits only the v3 envelope and v5
+//! payload and accepts no alternate ordering or JSON spelling.
+
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::kernel::{
-    Cardinality, ClaimResult, Clause, Intent, IntentResult, KernelError, Law, Mode, Model, Proof,
-    Relation, RequireResult, Result, Revision, Role, Sentence, Term,
+    Cardinality, Clause, EntityId, InlineSentencePart, KernelError, Law, LawId, Mode, Model,
+    ModelId, Name, Relation, RelationId, Result, Revision, RevisionId, Role, RoleId, SentencePart,
+    SentenceShape, Term, Type, TypeId, VariableId,
 };
 
+pub const SEMANTIC_TAG: &str = "clause-semantic-v5";
+pub const REVISION_TAG: &str = "clause-revision-v3";
+
+/// Serialize the exact semantic-v5 identity preimage for an admitted Model.
 pub fn semantic_payload(model: &Model) -> String {
+    let types = model
+        .types()
+        .values()
+        .map(type_json)
+        .collect::<Vec<_>>()
+        .join(",");
+    let entities = model
+        .entities()
+        .iter()
+        .map(entity_json)
+        .collect::<Vec<_>>()
+        .join(",");
     let relations = model
         .relations()
         .values()
         .map(relation_json)
         .collect::<Vec<_>>()
         .join(",");
-    let facts = model
-        .facts()
+    let assertions = model
+        .assertions()
         .iter()
-        .map(|fact| clause_json("fact", fact))
+        .map(|assertion| clause_json("assertion", assertion))
         .collect::<Vec<_>>()
         .join(",");
     let laws = model
@@ -25,134 +47,43 @@ pub fn semantic_payload(model: &Model) -> String {
         .map(law_json)
         .collect::<Vec<_>>()
         .join(",");
-    let query = clause_json("query", model.query());
-    let intents = model
-        .intents()
-        .iter()
-        .map(intent_json)
-        .collect::<Vec<_>>()
-        .join(",");
-    let sought_role = model
-        .query()
-        .roles()
-        .iter()
-        .find_map(|(role, term)| term.is_variable().then_some(role.as_str()))
-        .expect("model admission requires one query variable");
+
     format!(
-        "[\"clause-semantic-v4\",[\"relations\",[{relations}]],[\"facts\",[{facts}]],[\"laws\",[{laws}]],[\"query\",{query}],[\"intents\",[{intents}]],[\"order\",\"{}\",\"{}\"]]",
-        escape(model.order()),
-        escape(sought_role)
+        "[\"{SEMANTIC_TAG}\",[\"model\",\"{}\"],[\"types\",[{types}]],[\"entities\",[{entities}]],[\"relations\",[{relations}]],[\"assertions\",[{assertions}]],[\"laws\",[{laws}]]]",
+        escape(model.id().as_str())
     )
 }
 
-pub fn revision_id(model: &Model) -> String {
-    format!(
-        "rev-sha256-{}",
-        sha256_hex(semantic_payload(model).as_bytes())
-    )
+/// Derive the typed revision identity from the exact semantic-v5 bytes.
+pub fn revision_id(model: &Model) -> RevisionId {
+    RevisionId::from_digest(sha256_digest(semantic_payload(model).as_bytes()))
 }
 
+/// Admit a Model as a content-addressed immutable Revision.
+pub fn admit(model: Model) -> Revision {
+    let identity = revision_id(&model);
+    Revision::reloaded(identity, model)
+}
+
+/// Serialize the sole live persisted Revision envelope.
 pub fn serialize(revision: &Revision) -> String {
     format!(
-        "[\"clause-revision-v2\",\"{}\",{}]",
-        escape(revision.identity()),
+        "[\"{REVISION_TAG}\",\"{}\",{}]",
+        revision.identity(),
         semantic_payload(revision.model())
     )
 }
 
-pub fn claim_output(result: &ClaimResult) -> String {
-    match result {
-        ClaimResult::Admitted { .. } => {
-            let successor = result.successor().expect("admitted claim has successor");
-            let fact = result.fact().expect("admitted claim has fact");
-            format!(
-                "[\"clause-claim-output-v1\",\"admitted\",[\"branch\",\"{}\"],[\"base\",\"{}\"],[\"revision\",\"{}\"],[\"fact\",{}]]",
-                escape(result.branch().name()),
-                escape(result.base_revision().identity()),
-                escape(successor.revision().identity()),
-                clause_json("fact", fact)
-            )
-        }
-        ClaimResult::Duplicate { .. } => format!(
-            "[\"clause-claim-output-v1\",\"duplicate\",[\"branch\",\"{}\"],[\"revision\",\"{}\"],[\"diagnostic\",\"claim.duplicate\"]]",
-            escape(result.branch().name()),
-            escape(result.base_revision().identity())
-        ),
-    }
-}
-
-pub fn require_output(result: &RequireResult) -> String {
-    match result {
-        RequireResult::Satisfied { .. } => format!(
-            "[\"clause-require-output-v1\",\"satisfied\",[\"revision\",\"{}\"],[\"proof\",{}]]",
-            escape(result.revision().identity()),
-            proof_json(result.proof().expect("satisfied require has proof"))
-        ),
-        RequireResult::Unsatisfied { .. } => format!(
-            "[\"clause-require-output-v1\",\"unsatisfied\",[\"revision\",\"{}\"],[\"clause\",{}],[\"diagnostic\",\"require.unsatisfied\"]]",
-            escape(result.revision().identity()),
-            clause_json(
-                "clause",
-                result.clause().expect("unsatisfied require has clause")
-            )
-        ),
-    }
-}
-
-pub fn intent_output(result: &IntentResult) -> String {
-    match result {
-        IntentResult::Proposed { revision, intent } => {
-            let desired = clause_json("clause", intent.desired());
-            let fact = clause_json("fact", intent.desired());
-            format!(
-                "[\"clause-intent-output-v1\",\"proposed\",[\"revision\",\"{}\"],[\"intent\",\"{}\"],[\"desired\",{}],[\"plan\",[\"plan\",\"plan/{}/{}\",\"operation\",\"claim\",\"base\",\"{}\",\"fact\",{}]],[\"explanation\",[\"explanation\",\"desired-clause-is-absent\",\"revision\",\"{}\",\"clause\",{},\"diagnostic\",\"require.unsatisfied\"]]]",
-                escape(revision.identity()),
-                escape(intent.name()),
-                desired,
-                escape(revision.identity()),
-                escape(intent.name()),
-                escape(revision.identity()),
-                fact,
-                escape(revision.identity()),
-                desired,
-            )
-        }
-        IntentResult::AlreadySatisfied {
-            revision,
-            intent,
-            proof,
-        } => format!(
-            "[\"clause-intent-output-v1\",\"already-satisfied\",[\"revision\",\"{}\"],[\"intent\",\"{}\"],[\"desired\",{}],[\"proof\",{}],[\"explanation\",[\"explanation\",\"desired-clause-is-claimed\",\"revision\",\"{}\"]]]",
-            escape(revision.identity()),
-            escape(intent.name()),
-            clause_json("clause", intent.desired()),
-            proof_json(proof),
-            escape(revision.identity()),
-        ),
-        IntentResult::Rejected { revision, name } => format!(
-            "[\"clause-intent-output-v1\",\"rejected\",[\"revision\",\"{}\"],[\"intent\",\"{}\"],[\"diagnostic\",\"intent.unknown\"]]",
-            escape(revision.identity()),
-            escape(name),
-        ),
-    }
-}
-
+/// Strictly reload one canonical v3/v5 Revision.
 pub fn reload(bytes: &str) -> Result<Revision> {
     let value = JsonParser::new(bytes).parse()?;
     if json(&value) != bytes {
         return Err(KernelError::new("revision wire is not canonical JSON"));
     }
+
     let envelope = list(&value, 3, "revision envelope")?;
-    require_string(&envelope[0], "clause-revision-v2", "revision envelope tag")?;
-    let claimed = string(&envelope[1], "revision identity")?;
-    if !claimed.starts_with("rev-sha256-")
-        || claimed.len() != 75
-        || !claimed[11..]
-            .bytes()
-            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
-    {
-        return Err(KernelError::new("invalid revision identity"));
-    }
+    require_string(&envelope[0], REVISION_TAG, "revision envelope tag")?;
+    let claimed = decode_revision_id(string(&envelope[1], "revision identity")?)?;
     let model = decode_model(&envelope[2])?;
     let expected = revision_id(&model);
     if claimed != expected {
@@ -160,20 +91,47 @@ pub fn reload(bytes: &str) -> Result<Revision> {
             "revision identity does not match canonical semantic payload",
         ));
     }
-    if serialize(&Revision::reloaded(claimed.to_owned(), model.clone())) != bytes {
+
+    let revision = Revision::reloaded(claimed, model);
+    if serialize(&revision) != bytes {
         return Err(KernelError::new("revision payload is not canonical"));
     }
-    Ok(Revision::reloaded(claimed.to_owned(), model))
+    Ok(revision)
+}
+
+fn type_json(typ: &Type) -> String {
+    format!("[\"type\",\"{}\"]", escape(typ.id().as_str()))
+}
+
+fn entity_json(entity: &EntityId) -> String {
+    format!(
+        "[\"entity\",\"{}\",\"{}\",\"{}\"]",
+        escape(entity.model().as_str()),
+        escape(entity.local().as_str()),
+        escape(entity.typ().as_str())
+    )
 }
 
 fn relation_json(relation: &Relation) -> String {
     let roles = relation
         .roles()
         .values()
-        .map(|role| format!("[\"{}\",\"{}\"]", escape(role.name()), escape(role.typ())))
+        .map(|role| {
+            format!(
+                "[\"role\",\"{}\",\"{}\"]",
+                escape(role.id().as_str()),
+                escape(role.typ().as_str())
+            )
+        })
         .collect::<Vec<_>>()
         .join(",");
-    let sentence = relation.sentence();
+    let shape = relation
+        .shape()
+        .parts()
+        .iter()
+        .map(shape_part_json)
+        .collect::<Vec<_>>()
+        .join(",");
     let modes = relation
         .modes()
         .iter()
@@ -181,43 +139,46 @@ fn relation_json(relation: &Relation) -> String {
         .collect::<Vec<_>>()
         .join(",");
     format!(
-        "[\"relation\",\"{}\",\"roles\",[{roles}],\"sentence\",[\"{}\",\"{}\",\"{}\"],\"modes\",[{modes}]]",
-        escape(relation.name()),
-        escape(sentence.left()),
-        escape(sentence.literal()),
-        escape(sentence.right())
+        "[\"relation\",\"{}\",[\"roles\",[{roles}]],[\"shape\",[{shape}]],[\"modes\",[{modes}]]]",
+        escape(relation.id().as_str())
     )
 }
 
+fn shape_part_json(part: &SentencePart) -> String {
+    match part {
+        SentencePart::Literal(literal) => {
+            format!("[\"literal\",\"{}\"]", escape(literal))
+        }
+        SentencePart::Role(role) => format!("[\"role\",\"{}\"]", escape(role.as_str())),
+    }
+}
+
 fn mode_json(mode: &Mode) -> String {
-    let known = mode
-        .known()
-        .iter()
-        .map(|name| format!("\"{}\"", escape(name)))
-        .collect::<Vec<_>>()
-        .join(",");
-    let sought = mode
-        .sought()
-        .iter()
-        .map(|name| format!("\"{}\"", escape(name)))
-        .collect::<Vec<_>>()
-        .join(",");
+    let known = string_list(mode.known().iter().map(RoleId::as_str));
+    let sought = string_list(mode.sought().iter().map(RoleId::as_str));
     format!(
-        "[\"mode\",\"finite\",\"known\",[{known}],\"sought\",[{sought}],\"cardinality\",\"{}\"]",
+        "[\"mode\",[\"known\",[{known}]],[\"sought\",[{sought}]],[\"cardinality\",\"{}\"]]",
         mode.cardinality().as_str()
     )
+}
+
+fn string_list<'a>(values: impl Iterator<Item = &'a str>) -> String {
+    values
+        .map(|value| format!("\"{}\"", escape(value)))
+        .collect::<Vec<_>>()
+        .join(",")
 }
 
 fn clause_json(kind: &str, clause: &Clause) -> String {
     let roles = clause
         .roles()
         .iter()
-        .map(|(name, term)| format!("[\"{}\",{}]", escape(name), term_json(term)))
+        .map(|(role, term)| format!("[\"{}\",{}]", escape(role.as_str()), term_json(term)))
         .collect::<Vec<_>>()
         .join(",");
     format!(
-        "[\"{kind}\",\"{}\",\"roles\",[{roles}]]",
-        escape(clause.relation())
+        "[\"{kind}\",\"{}\",[\"roles\",[{roles}]]]",
+        escape(clause.relation().as_str())
     )
 }
 
@@ -229,184 +190,315 @@ fn law_json(law: &Law) -> String {
         .collect::<Vec<_>>()
         .join(",");
     format!(
-        "[\"law\",\"{}\",\"premises\",[{premises}],\"conclusion\",{}]",
-        escape(law.name()),
+        "[\"law\",\"{}\",[\"premises\",[{premises}]],[\"conclusion\",{}]]",
+        escape(law.id().as_str()),
         clause_json("conclusion", law.conclusion())
     )
 }
 
-fn intent_json(intent: &Intent) -> String {
-    format!(
-        "[\"intent\",\"{}\",\"desired\",{}]",
-        escape(intent.name()),
-        clause_json("clause", intent.desired())
-    )
-}
-
 fn term_json(term: &Term) -> String {
-    format!(
-        "[\"{}\",\"{}\"]",
-        if term.is_variable() {
-            "variable"
-        } else {
-            "literal"
-        },
-        escape(term.text())
-    )
-}
-
-fn proof_json(proof: &Proof) -> String {
-    let roles = proof
-        .roles()
-        .iter()
-        .map(|(name, value)| format!("[\"{}\",\"{}\"]", escape(name), escape(value)))
-        .collect::<Vec<_>>()
-        .join(",");
-    format!(
-        "[\"proof\",\"{}\",\"relation\",\"{}\",\"roles\",[{roles}]]",
-        escape(&proof.identity()),
-        escape(proof.relation())
-    )
+    match term {
+        Term::Entity(entity) => entity_json(entity),
+        Term::Value { typ, canonical } => format!(
+            "[\"value\",\"{}\",\"{}\"]",
+            escape(typ.as_str()),
+            escape(canonical)
+        ),
+        Term::Variable { id, typ } => format!(
+            "[\"variable\",\"{}\",\"{}\"]",
+            escape(id.as_str()),
+            escape(typ.as_str())
+        ),
+    }
 }
 
 fn decode_model(value: &Json) -> Result<Model> {
     let root = list(value, 7, "semantic payload")?;
-    require_string(&root[0], "clause-semantic-v4", "semantic tag")?;
-    let relations_group = list(&root[1], 2, "relations")?;
-    require_string(&relations_group[0], "relations", "relations tag")?;
-    let relation_values = array(&relations_group[1], "relations body")?;
-    let mut relations = Vec::new();
-    for relation in relation_values {
-        relations.push(decode_relation(relation)?);
+    require_string(&root[0], SEMANTIC_TAG, "semantic tag")?;
+
+    let model_group = tagged_group(&root[1], "model", "model")?;
+    let model = decode_model_id(model_group)?;
+
+    let type_values = array(tagged_group(&root[2], "types", "types")?, "types body")?;
+    let mut types = BTreeMap::new();
+    for value in type_values {
+        let typ = decode_type(value)?;
+        if types.insert(typ.id().clone(), typ).is_some() {
+            return Err(KernelError::new("duplicate type identity"));
+        }
     }
-    let facts_group = list(&root[2], 2, "facts")?;
-    require_string(&facts_group[0], "facts", "facts tag")?;
-    let fact_values = array(&facts_group[1], "facts body")?;
-    let mut facts = Vec::new();
-    for fact in fact_values {
-        facts.push(decode_clause(fact, "fact")?);
+
+    let entity_values = array(
+        tagged_group(&root[3], "entities", "entities")?,
+        "entities body",
+    )?;
+    let mut entities = BTreeSet::new();
+    for value in entity_values {
+        if !entities.insert(decode_entity(value)?) {
+            return Err(KernelError::new("duplicate entity identity"));
+        }
     }
-    let laws_group = list(&root[3], 2, "laws")?;
-    require_string(&laws_group[0], "laws", "laws tag")?;
-    let mut laws = Vec::new();
-    for law in array(&laws_group[1], "laws body")? {
-        laws.push(decode_law(law)?);
+
+    let relation_values = array(
+        tagged_group(&root[4], "relations", "relations")?,
+        "relations body",
+    )?;
+    let mut relations = BTreeMap::new();
+    for value in relation_values {
+        let relation = decode_relation(value)?;
+        if relations.insert(relation.id().clone(), relation).is_some() {
+            return Err(KernelError::new("duplicate relation identity"));
+        }
     }
-    let query_group = list(&root[4], 2, "query")?;
-    require_string(&query_group[0], "query", "query tag")?;
-    let query = decode_clause(&query_group[1], "query")?;
-    let intents_group = list(&root[5], 2, "intents")?;
-    require_string(&intents_group[0], "intents", "intents tag")?;
-    let mut intents = Vec::new();
-    for intent in array(&intents_group[1], "intents body")? {
-        intents.push(decode_intent(intent)?);
-    }
-    let order_group = list(&root[6], 3, "order")?;
-    require_string(&order_group[0], "order", "order tag")?;
-    let order = string(&order_group[1], "order value")?.to_owned();
-    let model = Model::with_laws_and_intents(relations, facts, laws, query, intents, order)?;
+
+    let assertion_values = array(
+        tagged_group(&root[5], "assertions", "assertions")?,
+        "assertions body",
+    )?;
+    let assertions = assertion_values
+        .iter()
+        .map(|value| decode_clause(value, "assertion"))
+        .collect::<Result<Vec<_>>>()?;
+
+    let law_values = array(tagged_group(&root[6], "laws", "laws")?, "laws body")?;
+    let laws = law_values
+        .iter()
+        .map(decode_law)
+        .collect::<Result<Vec<_>>>()?;
+
+    let model = Model::new(model, types, entities, relations, assertions, laws)?;
     if semantic_payload(&model) != json(value) {
         return Err(KernelError::new("semantic payload is not canonical"));
     }
     Ok(model)
 }
 
-fn decode_law(value: &Json) -> Result<Law> {
-    let item = list(value, 6, "law")?;
-    require_string(&item[0], "law", "law tag")?;
-    let name = string(&item[1], "law name")?;
-    require_string(&item[2], "premises", "law premises tag")?;
-    let mut premises = Vec::new();
-    for premise in array(&item[3], "law premises")? {
-        premises.push(decode_clause(premise, "premise")?);
-    }
-    require_string(&item[4], "conclusion", "law conclusion tag")?;
-    Law::new(name, premises, decode_clause(&item[5], "conclusion")?)
+fn decode_type(value: &Json) -> Result<Type> {
+    let item = list(value, 2, "type")?;
+    require_string(&item[0], "type", "type tag")?;
+    Ok(Type::new(decode_type_id(&item[1])?))
 }
 
-fn decode_intent(value: &Json) -> Result<Intent> {
-    let item = list(value, 4, "intent")?;
-    require_string(&item[0], "intent", "intent tag")?;
-    let name = string(&item[1], "intent name")?;
-    require_string(&item[2], "desired", "intent desired tag")?;
-    Intent::new(name, decode_clause(&item[3], "clause")?)
-}
-
-fn decode_relation(value: &Json) -> Result<Relation> {
-    let item = list(value, 8, "relation")?;
-    require_string(&item[0], "relation", "relation tag")?;
-    let name = string(&item[1], "relation name")?;
-    require_string(&item[2], "roles", "relation roles tag")?;
-    let role_values = array(&item[3], "relation roles")?;
-    let mut roles = Vec::new();
-    for role in role_values {
-        let pair = list(role, 2, "role")?;
-        roles.push(Role::new(
-            string(&pair[0], "role name")?,
-            string(&pair[1], "role type")?,
-        )?);
-    }
-    require_string(&item[4], "sentence", "sentence tag")?;
-    let sentence_values = list(&item[5], 3, "sentence")?;
-    let sentence = Sentence::new(
-        string(&sentence_values[0], "sentence left")?,
-        string(&sentence_values[1], "sentence literal")?,
-        string(&sentence_values[2], "sentence right")?,
-    )?;
-    require_string(&item[6], "modes", "modes tag")?;
-    let mut modes = Vec::new();
-    for mode in array(&item[7], "modes")? {
-        modes.push(decode_mode(mode)?);
-    }
-    Relation::new(name, roles, sentence, modes)
-}
-
-fn decode_mode(value: &Json) -> Result<Mode> {
-    let item = list(value, 8, "mode")?;
-    require_string(&item[0], "mode", "mode tag")?;
-    require_string(&item[1], "finite", "mode finiteness")?;
-    require_string(&item[2], "known", "mode known tag")?;
-    let known = array(&item[3], "known roles")?
-        .iter()
-        .map(|value| string(value, "known role").map(str::to_owned))
-        .collect::<Result<Vec<_>>>()?;
-    require_string(&item[4], "sought", "mode sought tag")?;
-    let sought = array(&item[5], "sought roles")?
-        .iter()
-        .map(|value| string(value, "sought role").map(str::to_owned))
-        .collect::<Result<Vec<_>>>()?;
-    require_string(&item[6], "cardinality", "mode cardinality tag")?;
-    Mode::finite(
-        known,
-        sought,
-        Cardinality::parse(string(&item[7], "mode cardinality")?)?,
+fn decode_entity(value: &Json) -> Result<EntityId> {
+    let item = list(value, 4, "entity")?;
+    require_string(&item[0], "entity", "entity tag")?;
+    EntityId::new(
+        decode_model_id(&item[1])?,
+        decode_name(&item[2], "entity local")?,
+        decode_type_id(&item[3])?,
     )
 }
 
-fn decode_clause(value: &Json, expected_kind: &str) -> Result<Clause> {
-    let item = list(value, 4, "clause")?;
-    require_string(&item[0], expected_kind, "clause tag")?;
-    let relation = string(&item[1], "clause relation")?;
-    require_string(&item[2], "roles", "clause roles tag")?;
-    let mut roles = Vec::new();
-    for role in array(&item[3], "clause roles")? {
-        let pair = list(role, 2, "clause role")?;
-        roles.push((
-            string(&pair[0], "clause role name")?.to_owned(),
-            decode_term(&pair[1])?,
+fn decode_relation(value: &Json) -> Result<Relation> {
+    let item = list(value, 5, "relation")?;
+    require_string(&item[0], "relation", "relation tag")?;
+    let identity = decode_relation_id(&item[1])?;
+
+    let role_values = array(
+        tagged_group(&item[2], "roles", "relation roles")?,
+        "relation roles body",
+    )?;
+    let mut roles = BTreeMap::new();
+    for value in role_values {
+        let role = decode_role(value)?;
+        if roles.insert(role.id().clone(), role).is_some() {
+            return Err(KernelError::new("duplicate relation role"));
+        }
+    }
+
+    let shape_values = array(
+        tagged_group(&item[3], "shape", "relation shape")?,
+        "relation shape body",
+    )?;
+    let mut parts = Vec::new();
+    for value in shape_values {
+        let part = array(value, "sentence shape part")?;
+        let tag = part
+            .first()
+            .ok_or_else(|| KernelError::new("invalid sentence shape part"))?;
+        match string(tag, "sentence shape part tag")? {
+            "literal" => {
+                let item = list(value, 2, "literal shape part")?;
+                parts.push(InlineSentencePart::Literal(
+                    string(&item[1], "sentence literal")?.to_owned(),
+                ));
+            }
+            "role" => {
+                let item = list(value, 2, "role shape part")?;
+                let id = decode_role_id(&item[1])?;
+                let role = roles
+                    .get(&id)
+                    .ok_or_else(|| KernelError::new("sentence shape names an unknown role"))?;
+                parts.push(InlineSentencePart::Role(role.clone()));
+            }
+            _ => return Err(KernelError::new("invalid sentence shape part tag")),
+        }
+    }
+    let shape = SentenceShape::new(parts)?;
+
+    let mode_values = array(
+        tagged_group(&item[4], "modes", "relation modes")?,
+        "relation modes body",
+    )?;
+    let modes = mode_values
+        .iter()
+        .map(decode_mode)
+        .collect::<Result<Vec<_>>>()?;
+    let relation = Relation::new(identity, shape, modes)?;
+    if relation.roles() != &roles {
+        return Err(KernelError::new(
+            "relation roles must exactly match its sentence shape",
         ));
+    }
+    Ok(relation)
+}
+
+fn decode_role(value: &Json) -> Result<Role> {
+    let item = list(value, 3, "role")?;
+    require_string(&item[0], "role", "role tag")?;
+    Ok(Role::new(
+        decode_role_id(&item[1])?,
+        decode_type_id(&item[2])?,
+    ))
+}
+
+fn decode_mode(value: &Json) -> Result<Mode> {
+    let item = list(value, 4, "mode")?;
+    require_string(&item[0], "mode", "mode tag")?;
+    let known = decode_role_id_list(tagged_group(&item[1], "known", "mode known")?)?;
+    let sought = decode_role_id_list(tagged_group(&item[2], "sought", "mode sought")?)?;
+    let cardinality = match string(
+        tagged_group(&item[3], "cardinality", "mode cardinality")?,
+        "mode cardinality value",
+    )? {
+        "one" => Cardinality::One,
+        "maybe" => Cardinality::Maybe,
+        "some" => Cardinality::Some,
+        "many" => Cardinality::Many,
+        _ => return Err(KernelError::new("invalid mode cardinality")),
+    };
+    Mode::finite(known, sought, cardinality)
+}
+
+fn decode_role_id_list(value: &Json) -> Result<Vec<RoleId>> {
+    array(value, "role identity list")?
+        .iter()
+        .map(decode_role_id)
+        .collect()
+}
+
+fn decode_law(value: &Json) -> Result<Law> {
+    let item = list(value, 4, "law")?;
+    require_string(&item[0], "law", "law tag")?;
+    let premises = array(
+        tagged_group(&item[2], "premises", "law premises")?,
+        "law premises body",
+    )?
+    .iter()
+    .map(|value| decode_clause(value, "premise"))
+    .collect::<Result<Vec<_>>>()?;
+    let conclusion = decode_clause(
+        tagged_group(&item[3], "conclusion", "law conclusion")?,
+        "conclusion",
+    )?;
+    Law::new(decode_law_id(&item[1])?, premises, conclusion)
+}
+
+fn decode_clause(value: &Json, expected_kind: &str) -> Result<Clause> {
+    let item = list(value, 3, "clause")?;
+    require_string(&item[0], expected_kind, "clause tag")?;
+    let relation = decode_relation_id(&item[1])?;
+    let role_values = array(
+        tagged_group(&item[2], "roles", "clause roles")?,
+        "clause roles body",
+    )?;
+    let mut roles = BTreeMap::new();
+    for value in role_values {
+        let pair = list(value, 2, "clause role")?;
+        let role = decode_role_id(&pair[0])?;
+        if roles.insert(role, decode_term(&pair[1])?).is_some() {
+            return Err(KernelError::new("duplicate clause role"));
+        }
     }
     Clause::new(relation, roles)
 }
 
 fn decode_term(value: &Json) -> Result<Term> {
-    let item = list(value, 2, "term")?;
-    let text = string(&item[1], "term text")?;
-    match string(&item[0], "term kind")? {
-        "literal" => Term::literal(text),
-        "variable" => Term::variable(text),
+    let item = array(value, "term")?;
+    let tag = item
+        .first()
+        .ok_or_else(|| KernelError::new("invalid term"))?;
+    match string(tag, "term tag")? {
+        "entity" => Ok(Term::entity(decode_entity(value)?)),
+        "value" => {
+            let item = list(value, 3, "value term")?;
+            Term::value(
+                decode_type_id(&item[1])?,
+                string(&item[2], "canonical value")?.to_owned(),
+            )
+        }
+        "variable" => {
+            let item = list(value, 3, "variable term")?;
+            Ok(Term::variable(
+                decode_variable_id(&item[1])?,
+                decode_type_id(&item[2])?,
+            ))
+        }
         _ => Err(KernelError::new("invalid term kind")),
     }
+}
+
+fn tagged_group<'a>(value: &'a Json, expected: &str, where_: &str) -> Result<&'a Json> {
+    let item = list(value, 2, where_)?;
+    require_string(&item[0], expected, &format!("{where_} tag"))?;
+    Ok(&item[1])
+}
+
+fn decode_name(value: &Json, where_: &str) -> Result<Name> {
+    Name::new(string(value, where_)?.to_owned())
+}
+
+fn decode_type_id(value: &Json) -> Result<TypeId> {
+    TypeId::new(decode_name(value, "type identity")?)
+}
+
+fn decode_model_id(value: &Json) -> Result<ModelId> {
+    ModelId::new(decode_name(value, "model identity")?)
+}
+
+fn decode_relation_id(value: &Json) -> Result<RelationId> {
+    RelationId::new(decode_name(value, "relation identity")?)
+}
+
+fn decode_law_id(value: &Json) -> Result<LawId> {
+    LawId::new(decode_name(value, "law identity")?)
+}
+
+fn decode_role_id(value: &Json) -> Result<RoleId> {
+    RoleId::new(decode_name(value, "role identity")?)
+}
+
+fn decode_variable_id(value: &Json) -> Result<VariableId> {
+    VariableId::new(decode_name(value, "variable identity")?)
+}
+
+fn decode_revision_id(value: &str) -> Result<RevisionId> {
+    let hex = value
+        .strip_prefix("rev-sha256-")
+        .ok_or_else(|| KernelError::new("invalid revision identity"))?;
+    if hex.len() != 64
+        || !hex
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    {
+        return Err(KernelError::new("invalid revision identity"));
+    }
+    let mut digest = [0u8; 32];
+    for (index, byte) in digest.iter_mut().enumerate() {
+        *byte = u8::from_str_radix(&hex[index * 2..index * 2 + 2], 16)
+            .map_err(|_| KernelError::new("invalid revision identity"))?;
+    }
+    Ok(RevisionId::from_digest(digest))
 }
 
 fn escape(value: &str) -> String {
@@ -430,6 +522,7 @@ enum Json {
     String(String),
     Array(Vec<Json>),
 }
+
 fn json(value: &Json) -> String {
     match value {
         Json::String(text) => format!("\"{}\"", escape(text)),
@@ -439,12 +532,14 @@ fn json(value: &Json) -> String {
         ),
     }
 }
+
 fn array<'a>(value: &'a Json, where_: &str) -> Result<&'a [Json]> {
     match value {
         Json::Array(values) => Ok(values),
         _ => Err(KernelError::new(format!("invalid {where_}"))),
     }
 }
+
 fn list<'a>(value: &'a Json, count: usize, where_: &str) -> Result<&'a [Json]> {
     let values = array(value, where_)?;
     if values.len() == count {
@@ -453,12 +548,14 @@ fn list<'a>(value: &'a Json, count: usize, where_: &str) -> Result<&'a [Json]> {
         Err(KernelError::new(format!("invalid {where_}")))
     }
 }
+
 fn string<'a>(value: &'a Json, where_: &str) -> Result<&'a str> {
     match value {
         Json::String(text) => Ok(text),
         _ => Err(KernelError::new(format!("invalid {where_}"))),
     }
 }
+
 fn require_string(value: &Json, expected: &str, where_: &str) -> Result<()> {
     if string(value, where_)? == expected {
         Ok(())
@@ -471,6 +568,7 @@ struct JsonParser<'a> {
     input: &'a [u8],
     at: usize,
 }
+
 impl<'a> JsonParser<'a> {
     fn new(input: &'a str) -> Self {
         Self {
@@ -478,6 +576,7 @@ impl<'a> JsonParser<'a> {
             at: 0,
         }
     }
+
     fn parse(mut self) -> Result<Json> {
         let value = self.value()?;
         if self.at == self.input.len() {
@@ -486,6 +585,7 @@ impl<'a> JsonParser<'a> {
             Err(KernelError::new("trailing data in revision wire"))
         }
     }
+
     fn value(&mut self) -> Result<Json> {
         match self.peek() {
             Some(b'\"') => self.string().map(Json::String),
@@ -495,6 +595,7 @@ impl<'a> JsonParser<'a> {
             )),
         }
     }
+
     fn array(&mut self) -> Result<Json> {
         self.expect(b'[')?;
         let mut values = Vec::new();
@@ -514,6 +615,7 @@ impl<'a> JsonParser<'a> {
             }
         }
     }
+
     fn string(&mut self) -> Result<String> {
         self.expect(b'\"')?;
         let mut output = String::new();
@@ -560,14 +662,17 @@ impl<'a> JsonParser<'a> {
             }
         }
     }
+
     fn peek(&self) -> Option<u8> {
         self.input.get(self.at).copied()
     }
+
     fn next(&mut self) -> Option<u8> {
         let byte = self.peek()?;
         self.at += 1;
         Some(byte)
     }
+
     fn expect(&mut self, expected: u8) -> Result<()> {
         if self.next() == Some(expected) {
             Ok(())
@@ -575,6 +680,7 @@ impl<'a> JsonParser<'a> {
             Err(KernelError::new("invalid JSON"))
         }
     }
+
     fn take(&mut self, count: usize) -> Result<&'a [u8]> {
         let end = self
             .at
@@ -588,6 +694,7 @@ impl<'a> JsonParser<'a> {
         Ok(result)
     }
 }
+
 fn utf8_width(first: u8) -> Option<usize> {
     match first {
         0xc2..=0xdf => Some(2),
@@ -597,7 +704,7 @@ fn utf8_width(first: u8) -> Option<usize> {
     }
 }
 
-pub fn sha256_hex(bytes: &[u8]) -> String {
+fn sha256_digest(bytes: &[u8]) -> [u8; 32] {
     let mut state: [u32; 8] = [
         0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab,
         0x5be0cd19,
@@ -672,369 +779,18 @@ pub fn sha256_hex(bytes: &[u8]) -> String {
         state[6] = state[6].wrapping_add(g);
         state[7] = state[7].wrapping_add(h);
     }
-    state.iter().map(|word| format!("{word:08x}")).collect()
+
+    let mut digest = [0u8; 32];
+    for (index, word) in state.iter().enumerate() {
+        digest[index * 4..index * 4 + 4].copy_from_slice(&word.to_be_bytes());
+    }
+    digest
 }
 
-#[cfg(test)]
-mod tests {
-    use super::{
-        claim_output, intent_output, reload, require_output, semantic_payload, serialize,
-        sha256_hex,
-    };
-    use crate::kernel::{
-        Cardinality, Clause, Intent, Law, Mode, Model, Relation, Role, Sentence, Term, claim,
-        intent, require,
-    };
-
-    fn model(variable: &str) -> Model {
-        let relation = Relation::new(
-            "catalog/contains",
-            vec![
-                Role::new("set", "Text").unwrap(),
-                Role::new("member", "Text").unwrap(),
-            ],
-            Sentence::new("set", "contains", "member").unwrap(),
-            vec![
-                Mode::finite(vec!["set".into()], vec!["member".into()], Cardinality::Many).unwrap(),
-            ],
-        )
-        .unwrap();
-        let fact = |member: &str| {
-            Clause::new(
-                "catalog/contains",
-                vec![
-                    ("set".into(), Term::literal("letters").unwrap()),
-                    ("member".into(), Term::literal(member).unwrap()),
-                ],
-            )
-            .unwrap()
-        };
-        let query = Clause::new(
-            "catalog/contains",
-            vec![
-                ("set".into(), Term::literal("letters").unwrap()),
-                ("member".into(), Term::variable(variable).unwrap()),
-            ],
-        )
-        .unwrap();
-        let desired = Clause::new(
-            "catalog/contains",
-            vec![
-                ("set".into(), Term::literal("letters").unwrap()),
-                ("member".into(), Term::literal("c").unwrap()),
-            ],
-        )
-        .unwrap();
-        Model::with_intents(
-            vec![relation],
-            vec![fact("b"), fact("a")],
-            query,
-            vec![Intent::new("catalog/restock", desired).unwrap()],
-            "ascending",
-        )
-        .unwrap()
-    }
-
-    fn law_model() -> Model {
-        let base = model("member");
-        let pattern = |set: &str, member: &str| {
-            Clause::new(
-                "catalog/contains",
-                vec![
-                    ("set".into(), Term::variable(set).unwrap()),
-                    ("member".into(), Term::variable(member).unwrap()),
-                ],
-            )
-            .unwrap()
-        };
-        let law = |name: &str| {
-            Law::new(
-                name,
-                vec![pattern("set", "member"), pattern("member", "set")],
-                pattern("set", "member"),
-            )
-            .unwrap()
-        };
-        Model::with_laws_and_intents(
-            base.relations().values().cloned().collect(),
-            base.facts().to_vec(),
-            vec![law("catalog/zeta"), law("catalog/alpha")],
-            base.query().clone(),
-            base.intents().to_vec(),
-            base.order(),
-        )
-        .unwrap()
-    }
-
-    #[test]
-    fn sha256_matches_the_standard_vector() {
-        assert_eq!(
-            super::sha256_hex(b"abc"),
-            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
-        );
-    }
-
-    #[test]
-    fn sealed_wire_roundtrips_and_rejects_every_tamper_class() {
-        let revision = crate::kernel::Revision::admit(model("member"));
-        let semantic = semantic_payload(revision.model());
-        let expected_semantic = "[\"clause-semantic-v4\",[\"relations\",[[\"relation\",\"catalog/contains\",\"roles\",[[\"member\",\"Text\"],[\"set\",\"Text\"]],\"sentence\",[\"set\",\"contains\",\"member\"],\"modes\",[[\"mode\",\"finite\",\"known\",[\"set\"],\"sought\",[\"member\"],\"cardinality\",\"many\"]]]]], [\"facts\",[[\"fact\",\"catalog/contains\",\"roles\",[[\"member\",[\"literal\",\"a\"]],[\"set\",[\"literal\",\"letters\"]]]],[\"fact\",\"catalog/contains\",\"roles\",[[\"member\",[\"literal\",\"b\"]],[\"set\",[\"literal\",\"letters\"]]]]]], [\"laws\",[]], [\"query\",[\"query\",\"catalog/contains\",\"roles\",[[\"member\",[\"variable\",\"member\"]],[\"set\",[\"literal\",\"letters\"]]]]], [\"intents\",[[\"intent\",\"catalog/restock\",\"desired\",[\"clause\",\"catalog/contains\",\"roles\",[[\"member\",[\"literal\",\"c\"]],[\"set\",[\"literal\",\"letters\"]]]]]]], [\"order\",\"ascending\",\"member\"]]".replace("], [", "],[");
-        assert_eq!(semantic, expected_semantic);
-        assert_eq!(
-            revision.identity(),
-            "rev-sha256-48bd94194c0a888bbc2b373d1c0babffa6668650b4de860a2f7376ddefc426a8"
-        );
-        let wire = serialize(&revision);
-        assert_eq!(reload(&wire).unwrap(), revision);
-        assert!(reload(&(" ".to_owned() + &wire)).is_err(), "changed bytes");
-        assert!(reload(&(wire.clone() + " ")).is_err(), "changed bytes");
-        assert!(
-            reload(&wire.replacen("\"a\"", "\"z\"", 1)).is_err(),
-            "changed role binding"
-        );
-        assert!(
-            reload(&wire.replacen("rev-sha256-", "rev-sha256-a", 1)).is_err(),
-            "changed claimed identity"
-        );
-        assert!(
-            reload(&wire.replacen("catalog/restock", "catalog/missing", 1)).is_err(),
-            "changed intent name"
-        );
-        assert!(
-            reload(&wire.replacen("[\"literal\",\"c\"]", "[\"literal\",\"d\"]", 1)).is_err(),
-            "changed desired term"
-        );
-        assert!(
-            reload(&wire.replacen("[\"relations\"", "[\"facts\"", 1)).is_err(),
-            "changed canonical array order"
-        );
-    }
-
-    #[test]
-    fn laws_are_canonical_strictly_reloaded_hashed_and_preserved_by_claim() {
-        let model_with_laws = law_model();
-        assert_eq!(
-            model_with_laws
-                .laws()
-                .iter()
-                .map(Law::name)
-                .collect::<Vec<_>>(),
-            vec!["catalog/alpha", "catalog/zeta"]
-        );
-        assert_eq!(
-            model_with_laws.laws()[0].premises()[0].roles()["set"].text(),
-            "set",
-            "law premise order is semantic"
-        );
-        assert_eq!(
-            model_with_laws.laws()[0].premises()[1].roles()["set"].text(),
-            "member",
-            "law premise order is preserved"
-        );
-
-        let revision = crate::kernel::Revision::admit(model("member"));
-        let law_revision = crate::kernel::Revision::admit(model_with_laws);
-        assert_ne!(law_revision.identity(), revision.identity());
-        let semantic = semantic_payload(law_revision.model());
-        let alpha = super::law_json(&law_revision.model().laws()[0]);
-        let zeta = super::law_json(&law_revision.model().laws()[1]);
-        assert!(semantic.find(&alpha).unwrap() < semantic.find(&zeta).unwrap());
-
-        let wire = serialize(&law_revision);
-        assert!(wire.starts_with("[\"clause-revision-v2\""));
-        assert_eq!(reload(&wire).unwrap(), law_revision);
-        assert!(
-            reload(&wire.replacen("catalog/alpha", "catalog/changed", 1)).is_err(),
-            "law tampering changes revision identity"
-        );
-        assert!(
-            reload(&wire.replacen("clause-revision-v2", "clause-revision-v1", 1)).is_err(),
-            "only the current revision envelope is admitted"
-        );
-
-        let noncanonical = semantic.replacen(
-            &format!("[\"laws\",[{alpha},{zeta}]]"),
-            &format!("[\"laws\",[{zeta},{alpha}]]"),
-            1,
-        );
-        let claimed = format!("rev-sha256-{}", sha256_hex(noncanonical.as_bytes()));
-        assert!(
-            reload(&format!(
-                "[\"clause-revision-v2\",\"{claimed}\",{noncanonical}]"
-            ))
-            .is_err(),
-            "reload rejects noncanonical law order even with a recomputed identity"
-        );
-
-        let branch = crate::kernel::Branch::new("catalog", law_revision.clone()).unwrap();
-        let fact = Clause::new(
-            "catalog/contains",
-            vec![
-                ("set".into(), Term::literal("letters").unwrap()),
-                ("member".into(), Term::literal("c").unwrap()),
-            ],
-        )
-        .unwrap();
-        let claimed = claim(&branch, fact).unwrap();
-        assert_eq!(
-            claimed.successor().unwrap().revision().model().laws(),
-            law_revision.model().laws(),
-            "an immutable claim preserves every law"
-        );
-    }
-
-    #[test]
-    fn reload_rejects_recomputed_intent_outside_relation_namespace() {
-        let revision = crate::kernel::Revision::admit(model("member"));
-        let semantic =
-            semantic_payload(revision.model()).replace("catalog/restock", "other/restock");
-        let identity = format!("rev-sha256-{}", sha256_hex(semantic.as_bytes()));
-        let wire = format!("[\"clause-revision-v2\",\"{identity}\",{semantic}]");
-
-        assert!(
-            reload(&wire).is_err(),
-            "recomputed identity must not bypass intent namespace admission"
-        );
-    }
-
-    #[test]
-    fn order_names_the_sought_role_not_the_variable_token() {
-        assert!(
-            semantic_payload(&model("answer")).ends_with("[\"order\",\"ascending\",\"member\"]]")
-        );
-    }
-
-    #[test]
-    fn claim_and_require_are_immutable_and_emit_exact_arrays() {
-        let revision = crate::kernel::Revision::admit(model("member"));
-        let branch = crate::kernel::Branch::new("catalog", revision.clone()).unwrap();
-        let fact = |member: &str| {
-            Clause::new(
-                "catalog/contains",
-                vec![
-                    ("set".into(), Term::literal("letters").unwrap()),
-                    ("member".into(), Term::literal(member).unwrap()),
-                ],
-            )
-            .unwrap()
-        };
-        let c = fact("c");
-
-        let missing = require(&revision, c.clone()).unwrap();
-        assert_eq!(
-            require_output(&missing),
-            format!(
-                "[\"clause-require-output-v1\",\"unsatisfied\",[\"revision\",\"{}\"],[\"clause\",[\"clause\",\"catalog/contains\",\"roles\",[[\"member\",[\"literal\",\"c\"]],[\"set\",[\"literal\",\"letters\"]]]]],[\"diagnostic\",\"require.unsatisfied\"]]",
-                revision.identity()
-            )
-        );
-
-        let admitted = claim(&branch, c.clone()).unwrap();
-        let successor = admitted.successor().unwrap();
-        assert_eq!(
-            branch.revision(),
-            &revision,
-            "claim changed its input branch"
-        );
-        assert_eq!(
-            revision.model().facts().len(),
-            2,
-            "claim changed its base revision"
-        );
-        assert_eq!(successor.revision().model().facts().len(), 3);
-        assert_eq!(
-            semantic_payload(successor.revision().model()),
-            "[\"clause-semantic-v4\",[\"relations\",[[\"relation\",\"catalog/contains\",\"roles\",[[\"member\",\"Text\"],[\"set\",\"Text\"]],\"sentence\",[\"set\",\"contains\",\"member\"],\"modes\",[[\"mode\",\"finite\",\"known\",[\"set\"],\"sought\",[\"member\"],\"cardinality\",\"many\"]]]]],[\"facts\",[[\"fact\",\"catalog/contains\",\"roles\",[[\"member\",[\"literal\",\"a\"]],[\"set\",[\"literal\",\"letters\"]]]],[\"fact\",\"catalog/contains\",\"roles\",[[\"member\",[\"literal\",\"b\"]],[\"set\",[\"literal\",\"letters\"]]]],[\"fact\",\"catalog/contains\",\"roles\",[[\"member\",[\"literal\",\"c\"]],[\"set\",[\"literal\",\"letters\"]]]]]],[\"laws\",[]],[\"query\",[\"query\",\"catalog/contains\",\"roles\",[[\"member\",[\"variable\",\"member\"]],[\"set\",[\"literal\",\"letters\"]]]]],[\"intents\",[[\"intent\",\"catalog/restock\",\"desired\",[\"clause\",\"catalog/contains\",\"roles\",[[\"member\",[\"literal\",\"c\"]],[\"set\",[\"literal\",\"letters\"]]]]]]],[\"order\",\"ascending\",\"member\"]]"
-        );
-        assert_eq!(
-            claim_output(&admitted),
-            format!(
-                "[\"clause-claim-output-v1\",\"admitted\",[\"branch\",\"catalog\"],[\"base\",\"{}\"],[\"revision\",\"{}\"],[\"fact\",[\"fact\",\"catalog/contains\",\"roles\",[[\"member\",[\"literal\",\"c\"]],[\"set\",[\"literal\",\"letters\"]]]]]]",
-                revision.identity(),
-                successor.revision().identity()
-            )
-        );
-
-        let duplicate = claim(&branch, fact("a")).unwrap();
-        assert!(duplicate.successor().is_none());
-        assert_eq!(
-            claim_output(&duplicate),
-            format!(
-                "[\"clause-claim-output-v1\",\"duplicate\",[\"branch\",\"catalog\"],[\"revision\",\"{}\"],[\"diagnostic\",\"claim.duplicate\"]]",
-                revision.identity()
-            )
-        );
-
-        let satisfied = require(successor.revision(), c).unwrap();
-        assert_eq!(
-            require_output(&satisfied),
-            format!(
-                "[\"clause-require-output-v1\",\"satisfied\",[\"revision\",\"{}\"],[\"proof\",[\"proof\",\"proof/{}/catalog/contains/member=c,set=letters\",\"relation\",\"catalog/contains\",\"roles\",[[\"member\",\"c\"],[\"set\",\"letters\"]]]]]",
-                successor.revision().identity(),
-                successor.revision().identity()
-            )
-        );
-    }
-
-    #[test]
-    fn intent_is_immutable_and_emits_exact_arrays() {
-        const BASE: &str =
-            "rev-sha256-48bd94194c0a888bbc2b373d1c0babffa6668650b4de860a2f7376ddefc426a8";
-        const NEXT: &str =
-            "rev-sha256-67569fe238751531a561f2202f263ce961a0a70c2f24fe1e2e9210c5414ee910";
-        let revision = crate::kernel::Revision::admit(model("member"));
-        let branch = crate::kernel::Branch::new("catalog", revision.clone()).unwrap();
-        assert_eq!(revision.identity(), BASE);
-
-        let proposed = intent(&branch, "catalog/restock");
-        assert_eq!(
-            branch.revision(),
-            &revision,
-            "intent changed its input branch"
-        );
-        assert_eq!(
-            proposed.revision(),
-            &revision,
-            "proposal changed its revision"
-        );
-        assert_eq!(
-            intent_output(&proposed),
-            format!(
-                "[\"clause-intent-output-v1\",\"proposed\",[\"revision\",\"{BASE}\"],[\"intent\",\"catalog/restock\"],[\"desired\",[\"clause\",\"catalog/contains\",\"roles\",[[\"member\",[\"literal\",\"c\"]],[\"set\",[\"literal\",\"letters\"]]]]],[\"plan\",[\"plan\",\"plan/{BASE}/catalog/restock\",\"operation\",\"claim\",\"base\",\"{BASE}\",\"fact\",[\"fact\",\"catalog/contains\",\"roles\",[[\"member\",[\"literal\",\"c\"]],[\"set\",[\"literal\",\"letters\"]]]]]],[\"explanation\",[\"explanation\",\"desired-clause-is-absent\",\"revision\",\"{BASE}\",\"clause\",[\"clause\",\"catalog/contains\",\"roles\",[[\"member\",[\"literal\",\"c\"]],[\"set\",[\"literal\",\"letters\"]]]],\"diagnostic\",\"require.unsatisfied\"]]]"
-            )
-        );
-        let unknown = intent(&branch, "catalog/missing");
-        assert_eq!(unknown.revision(), &revision);
-        assert_eq!(
-            intent_output(&unknown),
-            format!(
-                "[\"clause-intent-output-v1\",\"rejected\",[\"revision\",\"{BASE}\"],[\"intent\",\"catalog/missing\"],[\"diagnostic\",\"intent.unknown\"]]"
-            )
-        );
-
-        let desired = proposed.intent().unwrap().desired().clone();
-        let admitted = claim(&branch, desired).unwrap();
-        let successor = admitted.successor().unwrap();
-        assert_eq!(
-            branch.revision(),
-            &revision,
-            "claim changed its input branch"
-        );
-        assert_eq!(
-            revision.model().facts().len(),
-            2,
-            "claim changed its base revision"
-        );
-        assert_eq!(successor.revision().identity(), NEXT);
-        assert_eq!(successor.revision().model().intents().len(), 1);
-
-        let satisfied = intent(successor, "catalog/restock");
-        assert_eq!(satisfied.revision(), successor.revision());
-        assert_eq!(
-            intent_output(&satisfied),
-            format!(
-                "[\"clause-intent-output-v1\",\"already-satisfied\",[\"revision\",\"{NEXT}\"],[\"intent\",\"catalog/restock\"],[\"desired\",[\"clause\",\"catalog/contains\",\"roles\",[[\"member\",[\"literal\",\"c\"]],[\"set\",[\"literal\",\"letters\"]]]]],[\"proof\",[\"proof\",\"proof/{NEXT}/catalog/contains/member=c,set=letters\",\"relation\",\"catalog/contains\",\"roles\",[[\"member\",\"c\"],[\"set\",\"letters\"]]]],[\"explanation\",[\"explanation\",\"desired-clause-is-claimed\",\"revision\",\"{NEXT}\"]]]"
-            )
-        );
-    }
+/// Lowercase SHA-256 hex, retained as a small public deterministic utility.
+pub fn sha256_hex(bytes: &[u8]) -> String {
+    sha256_digest(bytes)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
 }

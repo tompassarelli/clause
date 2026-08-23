@@ -1,159 +1,133 @@
 # Clause
 
-**The sealed Revision is the program.** Clause evaluates one immutable semantic
-model in several directions: forward to what follows, backward to every minimal
-reason it follows, across revisions to what changed, and counterfactually to the
-smallest admitted additions or withdrawals that change the answer. Generated
-Rust is another executable projection of that same Revision.
+Clause is a small language for immutable, typed relation models. A named Model
+is sealed into a Revision with a stable semantic identity. Revisions can add or
+withdraw asserted clauses; requests select bounded derivation, explanation,
+intervention, and comparison over those sealed values.
 
-The current 45-line impact program asks which consumers a compiler change can
-affect. Relations declare stable identities, named roles, exact sentence shapes,
-and admitted modes; asserted clauses and laws then use those shapes directly:
+## Native source surface
+
+One `:` grammar introduces every declaration. Types, relations, models, laws,
+Revisions, and reusable Deltas have stable names. A relation declares its
+roles inline in its sentence shape, so clauses are always role-labelled and can
+be binary or n-ary.
 
 ```clause
-relation impact/imports(consumer: Text, dependency: Text):
-    sentence: {consumer} imports {dependency}
+Module: Type
+Change: Type
+
+impact/imports: Relation
+    {consumer: Module} imports {dependency: Module}
     mode consumer -> dependency: many
 
-relation impact/depends(consumer: Text, dependency: Text):
-    sentence: {consumer} depends on {dependency}
-    mode consumer -> dependency: many
-
-relation impact/changes(change: Text, component: Text):
-    sentence: {change} changes {component}
+impact/changes: Relation
+    {change: Change} changes {component: Module}
     mode change -> component: many
 
-relation impact/affected(change: Text, consumer: Text):
-    sentence: {change} affects {consumer}
-    mode change -> consumer: many
+impact: Model
+    North: Module
+    Store: Module
+    compiler-change: Change
+    North imports Store
+    compiler-change changes Store
 
-model impact:
-    "North" imports "Store"
-    "North" imports "Relay"
-    "Store" imports "Beagle"
-    "Relay" imports "Beagle"
-    "compiler-change" changes "Beagle"
-
-law impact/direct-dependency:
-    ?consumer depends on ?dependency
+impact/direct-dependency: Law
+    ?consumer imports ?dependency
     when:
         ?consumer imports ?dependency
 
-law impact/recursive-dependency:
-    ?consumer depends on ?dependency
-    when:
-        ?consumer imports ?intermediate
-        ?intermediate depends on ?dependency
-
-law impact/impact:
-    ?change affects ?consumer
-    when:
-        ?change changes ?component
-        ?consumer depends on ?component
-
-intent impact/adopt-south:
-    "South" imports "North"
-
-query impact:
-    ?consumer where "compiler-change" affects ?consumer
+impact/add-south: Revision
+    from: impact
+    admit:
+        South imports North
 ```
 
-## Run the impact demo
+Entities have an admitted Type and belong to their selected Model. Scalar text
+is written with an explicit admitted `Text: Type`; ordinary entity references
+are unquoted. A clause must fill every role exactly once with a type-correct
+entity, scalar value, or law variable. A relation shape begins and ends with a
+role and has a nonempty literal between adjacent roles.
+
+`when:` preserves positive, range-restricted Horn-law premises. `mode` states
+the relation's known and sought roles plus cardinality. Both forms participate
+in the sealed semantic payload.
+
+## Revisions and Deltas
+
+A Model name may be used as the base Revision. A Revision owns its change set;
+a Delta is reusable only against its exact typed base Revision.
+
+```clause
+impact/remove-relay: Delta
+    from: impact
+    withdraw:
+        North imports Relay
+
+impact/no-relay: Revision
+    from: impact
+    apply: impact/remove-relay
+```
+
+The only persisted Revision envelope contains its canonical semantic payload.
+Names used for source navigation, request order, and Delta names do not enter
+the Revision identity.
+
+## Requests
+
+Requests are outside Revision identity and run in source order:
+
+```clause
+find all ?consumer in impact:
+    compiler-change affects ?consumer
+
+why all in impact:
+    compiler-change affects North
+
+prevent all minimal in impact:
+    compiler-change affects North
+using:
+    impact/imports
+
+achieve one minimal in impact/add-south:
+    compiler-change affects South
+using:
+    impact/imports
+
+diff impact -> impact/add-south
+```
+
+`find` returns canonical typed bindings. `why` selects one deterministic proof;
+`why all` returns a bounded support frontier and says whether it is complete.
+`prevent` searches typed asserted-clause withdrawals. `achieve` forms its finite
+candidate basis from active entities of the allowed relation's role Types in
+the selected Revision, then excludes clauses already asserted. `one minimal`
+proves the first canonical inclusion-minimal result; `all minimal` exhausts the
+admitted finite search or reports a bounded incomplete result. `diff` preserves
+authored, entailed, proof, and support changes between two Revisions.
+
+## Run
 
 From the repository root:
 
 ```sh
 revision=$(mktemp)
-source=$(mktemp)
-cp examples/impact.clause "$source"
-./bin/clause e2e "$source" "$revision"
-rm -f "$source"
-./bin/clause query "$revision"
+./bin/clause seal examples/impact.clause impact "$revision"
+./bin/clause run examples/impact.clause
 rm -f "$revision"
 ```
 
-`e2e` seals [clause:examples/impact.clause](examples/impact.clause), derives its
-finite closure, and emits one deterministic `clause-semantic-journey-v1`
-envelope containing `find`, the complete support frontier, `why all`, semantic
-and support diff, `prevent`, and `achieve`. It compiles standalone Rust and
-requires that executable to produce the complete envelope byte for byte. The
-following `query` runs from the persisted successor after the authoring source
-has been removed.
-
-The named acceptance journey goes further: it removes its test-owned Clause
-source before emitting and compiling the standalone Rust, then requires the
-source-free executable's full semantic-journey bytes to equal the interpreter's
-golden bytes. Parity covers every semantic direction above, not only query
-results.
-
-## What the semantic core gives you
-
-- **Forward and backward traversal.** `find` returns `North`, `Relay`, and
-  `Store`. `why all` proves `compiler-change affects North` from exactly two
-  inclusion-minimal supports: the common `compiler-change changes Beagle`
-  assertion plus either `North -> Relay -> Beagle` or
-  `North -> Store -> Beagle`. The complete status means the bounded support
-  frontier was exhausted, not that one convenient proof was selected.
-
-- **Support-preserving semantic diff.** A successor withdraws
-  `North imports Relay`. The assertion and the lost entailment
-  `North depends on Relay` appear in their respective diff layers. North remains
-  affected through Store, while support diff records the lost Relay route and
-  retained Store route. Clause can therefore report degraded justification even
-  when a consequence remains true.
-
-- **Complete minimal prevention.** Restricted to import withdrawals, `prevent`
-  returns the four inclusion-minimal ways to hit both supports:
-  `{North->Relay, North->Store}`, `{North->Relay, Store->Beagle}`,
-  `{North->Store, Relay->Beagle}`, and
-  `{Relay->Beagle, Store->Beagle}`. No returned set contains another.
-
-- **Complete bounded achievement.** Given an explicit finite basis of checked,
-  ground import clauses, `achieve` exhausts that basis and returns exactly four
-  singleton ways to make `compiler-change affects South` true:
-  `South imports Beagle`, `South imports North`, `South imports Relay`, or
-  `South imports Store`. This frontier is complete because its declared basis
-  was exhausted; a candidate-budget-exhausted result is reported as incomplete.
-
-- **Source-independent execution.** The persisted Revision is the execution
-  boundary. Standalone generated Rust reproduces the interpreter's canonical
-  find, supports, explanations, diff, and intervention frontiers without the
-  authoring source.
+`seal SOURCE REVISION_NAME REVISION_FILE` writes one canonical Revision. `run
+SOURCE` compiles the named Revision registry, resolves every authored request,
+and prints one deterministic ordered transcript. Generated Rust embeds the
+resolved request program and referenced Revisions, so it can produce the same
+transcript after the authoring source is removed.
 
 ## Semantic boundary
 
-Clause currently admits a deliberately narrow, useful fragment: finite,
-positive, role-labelled Horn laws. Asserted clauses and laws use named roles
-rather than positional triples; closure, complete support construction, and
-intervention search have explicit resource bounds. Those bounds are part of the
-contract: exceeding one fails visibly rather than silently claiming
-completeness.
-
-This is not a general theorem prover or workflow engine. There are no effects,
-no negation or unrestricted search, and no hidden solver. Canonical semantic
-arrays exclude source text, spans, and runtime details. A Revision identity is
-`rev-sha256-` plus SHA-256 of those canonical UTF-8 bytes; reload rejects
-noncanonical bytes, mismatched identities, incomplete role maps, malformed
-modes, and invalid intent namespaces.
-
-## Roadmap
-
-The north star remains a semantic time machine: one sealed Revision that can
-compute, explain, compare, synthesize interventions, and project ordinary
-executables. The next milestones are deliberately ordered:
-
-1. Replace the current prefixed authoring syntax atomically with one native `:`
-   grammar, typed stable identities, n-ary relation shapes, explicit Revision
-   deltas, and first-class `find`, `why`, `diff`, `prevent`, and `achieve`
-   requests. The syntax shown above is the implemented surface today.
-2. Add checked semantic ellipsis: typed focus blocks, finite groups, and
-   correlated patterns that lower to ordinary canonical clauses without adding
-   a second ontology.
-3. Generalize relation modes and bounded constraint domains only after their
-   determinism, cardinality, and termination contracts are explicit.
-
-Every expansion must preserve deterministic semantic bytes, bounded failure,
-and inspectable evidence. Faster machinery is welcome; a second ontology is not.
+Clause admits finite positive Horn derivation with explicit resource bounds.
+There are no effects, hidden solver choices, or unbounded search. Canonical
+semantic bytes contain Types, entities, relation shapes, asserted clauses, and
+laws; source spans and request navigation stay outside the sealed identity.
 
 ## Develop
 
@@ -163,10 +137,9 @@ Clause pins Rust 1.96.1.
 cargo test
 ```
 
-The tests cover parsing and elaboration, named roles and modes, finite closure,
-complete minimal support frontiers and explanations, immutable Revision
-transitions, three-layer semantic diff, complete bounded intervention
-antichains, and source-deleted full-journey generated-Rust parity.
+The focused tests cover native lowering, Revision wire strictness, the typed
+impact journey, support frontiers, intervention selection, semantic diff, and
+source-deleted generated-request parity.
 
 ## License
 

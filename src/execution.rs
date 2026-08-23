@@ -1,23 +1,30 @@
+//! Typed evaluation projections over one sealed Revision.
+//!
+//! Requests live outside the semantic Model.  This module evaluates the typed
+//! `FindPlan` and projects either the canonical chosen proof or the bounded
+//! minimal-support frontier; presentation and result encoding belong to the
+//! request layer.
+
 use crate::{
     derive::{self, Closure, Limits, SupportLimits, SupportProof, SupportWitness},
-    kernel::{Clause, KernelError, QueryPlan, Result, Revision},
+    kernel::{Clause, KernelError, LawId, Result, Revision, RevisionId, Term, VariableId},
 };
 use std::collections::BTreeMap;
-use std::fmt::Write;
 
+/// A ground clause in a revision-scoped explanation graph.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct ClauseNode {
-    pub relation: String,
-    pub roles: Vec<(String, String)>,
+    pub clause: Clause,
 }
 
+/// One canonical witness for a derived or asserted clause.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum Witness {
     Asserted,
     Derived {
-        law: String,
+        law: LawId,
         premises: Vec<usize>,
-        substitution: Vec<(String, String)>,
+        substitution: BTreeMap<VariableId, Term>,
     },
 }
 
@@ -27,6 +34,7 @@ pub struct WitnessEdge {
     pub witness: Witness,
 }
 
+/// An acyclic, canonical proof projection.  Node indices address `nodes`.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct WhyGraph {
     pub root: usize,
@@ -34,25 +42,28 @@ pub struct WhyGraph {
     pub witnesses: Vec<WitnessEdge>,
 }
 
+/// One canonical proof, explicitly scoped to the Revision that admitted it.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct Proof {
+    pub revision: RevisionId,
     pub why: WhyGraph,
 }
 
-/// One inclusion-minimal asserted support and its canonical derivation.
+/// One inclusion-minimal asserted support and its exact derivation.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct WhySupport {
     pub assertions: Vec<Clause>,
-    pub why: WhyGraph,
+    pub proof: Proof,
 }
 
-/// The bounded projection of every minimal support for one target fact.
+/// The bounded projection of every discovered inclusion-minimal support.
 ///
-/// `complete` is false when the shared support kernel stopped at a budget.  A
-/// partial result is still useful for inspection, but is never presented as
-/// the complete set of alternatives.
+/// `complete` is true only when the support engine exhausted the admitted
+/// finite search.  An empty, incomplete frontier is intentionally distinct
+/// from a complete proof of no support.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct WhyAll {
+    pub revision: RevisionId,
     pub target: Clause,
     pub alternatives: Vec<WhySupport>,
     pub complete: bool,
@@ -69,170 +80,153 @@ impl WhyAll {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct QueryOutput {
-    pub results: Vec<String>,
-    pub proofs: Vec<Proof>,
-}
-
-/// Answer one admitted query from a bounded derived closure.
+/// Evaluate the complete bounded derived closure and return canonical typed
+/// bindings for the sole sought role in `plan`.
 ///
-/// The supplied limits are part of execution's contract: it never performs
-/// unbounded saturation or mutates the sealed revision it explains.
-pub fn execute(revision: &Revision, plan: &QueryPlan, limits: Limits) -> Result<QueryOutput> {
-    if revision.plan()? != *plan {
-        return Err(KernelError::new("query plan does not belong to revision"));
-    }
-    let sought = match plan.sought() {
-        [role] => role,
-        _ => {
-            return Err(KernelError::new(
-                "query output requires exactly one sought role",
-            ));
-        }
-    };
-    let query = revision.model().query();
-    let requested = query
+/// The complete retained pattern is matched role-by-role.  In particular, two
+/// otherwise identical orientations with distinct known entities cannot share
+/// results merely because their `known` role sets are the same.
+pub fn find(
+    revision: &Revision,
+    plan: &crate::kernel::FindPlan,
+    limits: Limits,
+) -> Result<Vec<Term>> {
+    revision.model().validate_clause(plan.pattern(), true)?;
+    let sought = plan.sought();
+    let sought_variable = plan
+        .pattern()
         .roles()
-        .iter()
-        .filter(|(_, term)| !term.is_variable())
-        .collect::<Vec<_>>();
+        .get(sought)
+        .and_then(Term::variable_id)
+        .ok_or_else(|| KernelError::new("find plan sought role is not a variable"))?;
     let closure = derive::saturate(revision, limits)?;
-
-    let mut rows = closure
-        .facts()
+    let mut bindings = closure
+        .assertions()
         .iter()
-        .filter(|fact| {
-            fact.relation() == query.relation()
-                && requested.iter().all(|(role, wanted)| {
-                    fact.roles().get(*role).map(|term| term.text()) == Some(wanted.text())
-                })
+        .filter(|candidate| matches_pattern(candidate, plan.pattern(), sought_variable))
+        .map(|candidate| {
+            candidate
+                .roles()
+                .get(sought)
+                .cloned()
+                .ok_or_else(|| KernelError::new("closure clause does not fill sought role"))
         })
-        .map(|fact| row(&closure, fact, sought))
         .collect::<Result<Vec<_>>>()?;
-    rows.sort_by(|left, right| {
-        left.0
-            .cmp(&right.0)
-            .then_with(|| left.1.why.cmp(&right.1.why))
-    });
-
-    Ok(QueryOutput {
-        results: rows.iter().map(|(value, _)| value.clone()).collect(),
-        proofs: rows.into_iter().map(|(_, proof)| proof).collect(),
-    })
+    bindings.sort();
+    bindings.dedup();
+    Ok(bindings)
 }
 
-/// Return the chosen, acyclic proof graph for `fact`, if the bounded closure
-/// entails it.
-pub fn why(revision: &Revision, fact: &Clause, limits: Limits) -> Result<Option<WhyGraph>> {
-    let frontier = derive::support_frontier(
-        revision,
-        fact,
-        SupportLimits::new(limits, limits.max_join_attempts, limits.max_facts),
-    )?;
-    frontier
-        .supports()
-        .first()
-        .map(|support| support_graph(support.proof()))
-        .transpose()
+/// Return the deterministic chosen proof for a ground target, if it follows.
+pub fn why(revision: &Revision, target: &Clause, limits: Limits) -> Result<Option<Proof>> {
+    revision.model().validate_clause(target, false)?;
+    let closure = derive::saturate(revision, limits)?;
+    graph(&closure, target, revision.identity().clone())
 }
 
-/// Return all bounded, inclusion-minimal asserted supports for `fact`.
+/// Return every discovered minimal asserted support for a ground target.
 ///
-/// This is a projection only: support enumeration and deduplication remain in
-/// `derive::support_frontier`.  `Limits` is accepted as a convenience and
-/// derives a support budget from its fact bound; callers needing an explicit
-/// alternative budget should pass `SupportLimits` directly.
-pub fn why_all<L>(revision: &Revision, fact: &Clause, limits: L) -> Result<Option<WhyAll>>
-where
-    L: Into<SupportLimits>,
-{
-    let frontier = derive::support_frontier(revision, fact, limits.into())?;
-    if frontier.supports().is_empty() {
+/// The complete closure is checked first, so a bounded support search can
+/// honestly return `Some(WhyAll { complete: false, alternatives: [] })` for an
+/// entailed target whose support frontier was not reached before its budget.
+pub fn why_all(
+    revision: &Revision,
+    target: &Clause,
+    limits: SupportLimits,
+) -> Result<Option<WhyAll>> {
+    revision.model().validate_clause(target, false)?;
+    let closure = derive::saturate(revision, limits.closure)?;
+    if closure.proof(target).is_none() {
         return Ok(None);
     }
+    let frontier = derive::support_frontier(revision, target, limits)?;
+    let revision_id = revision.identity().clone();
     let alternatives = frontier
         .supports()
         .iter()
         .map(|support| {
             Ok(WhySupport {
                 assertions: support.assertions().to_vec(),
-                why: support_graph(support.proof())?,
+                proof: Proof {
+                    revision: revision_id.clone(),
+                    why: support_graph(support.proof())?,
+                },
             })
         })
         .collect::<Result<Vec<_>>>()?;
     Ok(Some(WhyAll {
-        target: fact.clone(),
+        revision: revision_id,
+        target: target.clone(),
         alternatives,
         complete: frontier.status().is_complete(),
         expansions: frontier.expansions(),
     }))
 }
 
-impl From<Limits> for SupportLimits {
-    fn from(limits: Limits) -> Self {
-        SupportLimits::new(limits, limits.max_join_attempts, limits.max_facts)
-    }
+fn matches_pattern(candidate: &Clause, pattern: &Clause, sought: &VariableId) -> bool {
+    candidate.relation() == pattern.relation()
+        && pattern.roles().iter().all(|(role, expected)| {
+            let Some(actual) = candidate.roles().get(role) else {
+                return false;
+            };
+            match expected.variable_id() {
+                Some(variable) => variable == sought,
+                None => actual == expected,
+            }
+        })
 }
 
-fn row(closure: &Closure, fact: &Clause, sought: &str) -> Result<(String, Proof)> {
-    let result = fact
-        .roles()
-        .get(sought)
-        .ok_or_else(|| KernelError::new("fact does not fill sought role"))?
-        .text()
-        .to_owned();
-    Ok((
-        result,
-        Proof {
-            why: graph(closure, fact)?.expect("closure fact has a proof"),
-        },
-    ))
-}
-
-fn graph(closure: &Closure, root: &Clause) -> Result<Option<WhyGraph>> {
+fn graph(closure: &Closure, root: &Clause, revision: RevisionId) -> Result<Option<Proof>> {
     if closure.proof(root).is_none() {
         return Ok(None);
     }
-
-    let mut facts = Vec::new();
+    let mut clauses = Vec::new();
     let mut indices = BTreeMap::new();
     let mut witnesses = Vec::new();
-    let root = add_fact(root, closure, &mut facts, &mut indices, &mut witnesses)?;
+    let root = add_clause(root, closure, &mut clauses, &mut indices, &mut witnesses)?;
     witnesses.sort_by_key(|edge| edge.conclusion);
-    Ok(Some(WhyGraph {
-        root,
-        nodes: facts.into_iter().map(node).collect(),
-        witnesses,
+    Ok(Some(Proof {
+        revision,
+        why: WhyGraph {
+            root,
+            nodes: clauses
+                .into_iter()
+                .map(|clause| ClauseNode { clause })
+                .collect(),
+            witnesses,
+        },
     }))
 }
 
 fn support_graph(root: &SupportProof) -> Result<WhyGraph> {
-    let mut facts = Vec::new();
+    let mut clauses = Vec::new();
     let mut indices = BTreeMap::new();
     let mut witnesses = Vec::new();
-    let root_index = add_support_fact(root, &mut facts, &mut indices, &mut witnesses)?;
+    let root = add_support_clause(root, &mut clauses, &mut indices, &mut witnesses)?;
     witnesses.sort_by_key(|edge| edge.conclusion);
     Ok(WhyGraph {
-        root: root_index,
-        nodes: facts.into_iter().map(node).collect(),
+        root,
+        nodes: clauses
+            .into_iter()
+            .map(|clause| ClauseNode { clause })
+            .collect(),
         witnesses,
     })
 }
 
-fn add_support_fact(
+fn add_support_clause(
     proof: &SupportProof,
-    facts: &mut Vec<Clause>,
+    clauses: &mut Vec<Clause>,
     indices: &mut BTreeMap<Clause, usize>,
     witnesses: &mut Vec<WitnessEdge>,
 ) -> Result<usize> {
-    let fact = proof.conclusion();
-    if let Some(index) = indices.get(fact) {
+    let clause = proof.conclusion();
+    if let Some(index) = indices.get(clause) {
         return Ok(*index);
     }
-    let conclusion = facts.len();
-    facts.push(fact.clone());
-    indices.insert(fact.clone(), conclusion);
+    let conclusion = clauses.len();
+    clauses.push(clause.clone());
+    indices.insert(clause.clone(), conclusion);
     let witness = match proof.witness() {
         SupportWitness::Asserted => Witness::Asserted,
         SupportWitness::Derived {
@@ -243,12 +237,9 @@ fn add_support_fact(
             law: law.clone(),
             premises: premises
                 .iter()
-                .map(|premise| add_support_fact(premise, facts, indices, witnesses))
+                .map(|premise| add_support_clause(premise, clauses, indices, witnesses))
                 .collect::<Result<Vec<_>>>()?,
-            substitution: substitution
-                .iter()
-                .map(|(variable, value)| (variable.clone(), value.clone()))
-                .collect(),
+            substitution: substitution.clone(),
         },
     };
     witnesses.push(WitnessEdge {
@@ -258,23 +249,22 @@ fn add_support_fact(
     Ok(conclusion)
 }
 
-fn add_fact(
-    fact: &Clause,
+fn add_clause(
+    clause: &Clause,
     closure: &Closure,
-    facts: &mut Vec<Clause>,
+    clauses: &mut Vec<Clause>,
     indices: &mut BTreeMap<Clause, usize>,
     witnesses: &mut Vec<WitnessEdge>,
 ) -> Result<usize> {
-    if let Some(index) = indices.get(fact) {
+    if let Some(index) = indices.get(clause) {
         return Ok(*index);
     }
-
-    let conclusion = facts.len();
-    facts.push(fact.clone());
-    indices.insert(fact.clone(), conclusion);
+    let conclusion = clauses.len();
+    clauses.push(clause.clone());
+    indices.insert(clause.clone(), conclusion);
     let proof = closure
-        .proof(fact)
-        .ok_or_else(|| KernelError::new("closure fact has no chosen witness"))?;
+        .proof(clause)
+        .ok_or_else(|| KernelError::new("closure clause has no chosen witness"))?;
     let witness = match proof.witness() {
         derive::Witness::Asserted => Witness::Asserted,
         derive::Witness::Derived {
@@ -285,12 +275,9 @@ fn add_fact(
             law: law.clone(),
             premises: premises
                 .iter()
-                .map(|premise| add_fact(premise, closure, facts, indices, witnesses))
+                .map(|premise| add_clause(premise, closure, clauses, indices, witnesses))
                 .collect::<Result<Vec<_>>>()?,
-            substitution: substitution
-                .iter()
-                .map(|(variable, value)| (variable.clone(), value.clone()))
-                .collect(),
+            substitution: substitution.clone(),
         },
     };
     witnesses.push(WitnessEdge {
@@ -300,327 +287,265 @@ fn add_fact(
     Ok(conclusion)
 }
 
-fn node(fact: Clause) -> ClauseNode {
-    ClauseNode {
-        relation: fact.relation().to_owned(),
-        roles: fact
-            .roles()
-            .iter()
-            .map(|(role, term)| (role.clone(), term.text().to_owned()))
-            .collect(),
-    }
-}
-
-pub fn canonical_json(output: &QueryOutput) -> String {
-    let results = output
-        .results
-        .iter()
-        .map(|value| quoted(value))
-        .collect::<Vec<_>>()
-        .join(",");
-    let proofs = output
-        .proofs
-        .iter()
-        .map(|proof| canonical_why_json(&proof.why))
-        .collect::<Vec<_>>()
-        .join(",");
-    format!("[\"clause-query-output-v2\",[\"results\",[{results}]],[\"proofs\",[{proofs}]]]")
-}
-
-/// Encode one public proof graph using the same canonical representation as a
-/// query result or a `why all` alternative.
-pub fn canonical_why_json(why: &WhyGraph) -> String {
-    let nodes = why
-        .nodes
-        .iter()
-        .map(|node| {
-            let roles = node
-                .roles
-                .iter()
-                .map(|(name, value)| format!("[{},{}]", quoted(name), quoted(value)))
-                .collect::<Vec<_>>()
-                .join(",");
-            format!(
-                "[\"clause\",\"relation\",{},\"roles\",[{roles}]]",
-                quoted(&node.relation)
-            )
-        })
-        .collect::<Vec<_>>()
-        .join(",");
-    let witnesses = why
-        .witnesses
-        .iter()
-        .map(|edge| match &edge.witness {
-            Witness::Asserted => format!("[\"asserted\",{}]", edge.conclusion),
-            Witness::Derived {
-                law,
-                premises,
-                substitution,
-            } => {
-                let premises = premises
-                    .iter()
-                    .map(usize::to_string)
-                    .collect::<Vec<_>>()
-                    .join(",");
-                let substitution = substitution
-                    .iter()
-                    .map(|(variable, value)| {
-                        format!("[{},{}]", quoted(variable), quoted(value))
-                    })
-                    .collect::<Vec<_>>()
-                    .join(",");
-                format!(
-                    "[\"derived\",{},\"law\",{},\"premises\",[{premises}],\"substitution\",[{substitution}]]",
-                    edge.conclusion,
-                    quoted(law),
-                )
-            }
-        })
-        .collect::<Vec<_>>()
-        .join(",");
-    format!(
-        "[\"why\",[\"root\",{}],[\"clauses\",[{nodes}]],[\"witnesses\",[{witnesses}]]]",
-        why.root,
-    )
-}
-
-fn quoted(value: &str) -> String {
-    let mut escaped = String::new();
-    for character in value.chars() {
-        match character {
-            '"' => escaped.push_str("\\\""),
-            '\\' => escaped.push_str("\\\\"),
-            '\n' => escaped.push_str("\\n"),
-            '\r' => escaped.push_str("\\r"),
-            '\t' => escaped.push_str("\\t"),
-            value if value <= '\u{1f}' => write!(escaped, "\\u{:04x}", value as u32).unwrap(),
-            value => escaped.push(value),
-        }
-    }
-    format!("\"{escaped}\"")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kernel::{Cardinality, Clause, Law, Mode, Model, Relation, Role, Sentence, Term};
+    use crate::{
+        kernel::{
+            Cardinality, EntityId, InlineSentencePart, Law, Mode, Model, ModelId, Name, Relation,
+            RelationId, Role, RoleId, SentenceShape, Type, TypeId,
+        },
+        wire,
+    };
+    use std::collections::BTreeMap;
+
+    fn name(value: &str) -> Name {
+        Name::new(value.to_owned()).unwrap()
+    }
+    fn type_id(value: &str) -> TypeId {
+        TypeId::new(name(value)).unwrap()
+    }
+    fn relation_id(value: &str) -> RelationId {
+        RelationId::new(name(value)).unwrap()
+    }
+    fn role_id(value: &str) -> RoleId {
+        RoleId::new(name(value)).unwrap()
+    }
+    fn variable_id(value: &str) -> VariableId {
+        VariableId::new(name(value)).unwrap()
+    }
+    fn entity(model: &ModelId, local: &str, typ: &TypeId) -> Term {
+        Term::entity(EntityId::new(model.clone(), name(local), typ.clone()).unwrap())
+    }
+    fn variable(local: &str, typ: &TypeId) -> Term {
+        Term::variable(variable_id(local), typ.clone())
+    }
+    fn clause(relation: &RelationId, from: Term, to: Term) -> Clause {
+        Clause::new(
+            relation.clone(),
+            BTreeMap::from([(role_id("from"), from), (role_id("to"), to)]),
+        )
+        .unwrap()
+    }
+    fn relation(id: &RelationId, typ: &TypeId) -> Relation {
+        let from = Role::new(role_id("from"), typ.clone());
+        let to = Role::new(role_id("to"), typ.clone());
+        Relation::new(
+            id.clone(),
+            SentenceShape::new(vec![
+                InlineSentencePart::Role(from.clone()),
+                InlineSentencePart::Literal("reaches".to_owned()),
+                InlineSentencePart::Role(to.clone()),
+            ])
+            .unwrap(),
+            vec![
+                Mode::finite(
+                    vec![from.id().clone()],
+                    vec![to.id().clone()],
+                    Cardinality::Many,
+                )
+                .unwrap(),
+            ],
+        )
+        .unwrap()
+    }
+    fn revision(assertions: Vec<Clause>, laws: Vec<Law>) -> Revision {
+        let model = ModelId::new(name("map")).unwrap();
+        let module = type_id("Module");
+        let links = relation_id("map/links");
+        let reaches = relation_id("map/reaches");
+        let entities = ["North", "South", "Store", "Relay", "Beagle"]
+            .into_iter()
+            .map(|local| EntityId::new(model.clone(), name(local), module.clone()).unwrap())
+            .collect();
+        wire::admit(
+            Model::new(
+                model,
+                BTreeMap::from([(module.clone(), Type::new(module.clone()))]),
+                entities,
+                BTreeMap::from([
+                    (links.clone(), relation(&links, &module)),
+                    (reaches.clone(), relation(&reaches, &module)),
+                ]),
+                assertions,
+                laws,
+            )
+            .unwrap(),
+        )
+    }
     fn limits() -> Limits {
         Limits::new(100, 10, 10_000)
     }
-
-    fn relation(name: &str) -> Relation {
-        Relation::new(
-            name,
-            vec![
-                Role::new("from", "Place").unwrap(),
-                Role::new("to", "Place").unwrap(),
-            ],
-            Sentence::new("from", "reaches", "to").unwrap(),
-            vec![Mode::finite(vec!["from".into()], vec!["to".into()], Cardinality::Many).unwrap()],
+    fn chain_laws() -> Vec<Law> {
+        let module = type_id("Module");
+        let links = relation_id("map/links");
+        let reaches = relation_id("map/reaches");
+        let source = variable("source", &module);
+        let middle = variable("middle", &module);
+        let destination = variable("destination", &module);
+        vec![
+            Law::new(
+                LawId::new(name("map/direct")).unwrap(),
+                vec![clause(&links, source.clone(), destination.clone())],
+                clause(&reaches, source.clone(), destination.clone()),
+            )
+            .unwrap(),
+            Law::new(
+                LawId::new(name("map/recursive")).unwrap(),
+                vec![
+                    clause(&reaches, source.clone(), middle.clone()),
+                    clause(&links, middle, destination.clone()),
+                ],
+                clause(&reaches, source, destination),
+            )
+            .unwrap(),
+        ]
+    }
+    fn asserted(relation: &str, from: &str, to: &str) -> Clause {
+        let model = ModelId::new(name("map")).unwrap();
+        let module = type_id("Module");
+        clause(
+            &relation_id(relation),
+            entity(&model, from, &module),
+            entity(&model, to, &module),
+        )
+    }
+    fn find_plan(revision: &Revision, from: &str) -> crate::kernel::FindPlan {
+        let model = ModelId::new(name("map")).unwrap();
+        let module = type_id("Module");
+        let target = variable_id("target");
+        crate::kernel::FindPlan::new(
+            revision.model(),
+            &clause(
+                &relation_id("map/reaches"),
+                entity(&model, from, &module),
+                Term::variable(target.clone(), module),
+            ),
+            target,
         )
         .unwrap()
     }
 
-    fn clause(relation: &str, from: Term, to: Term) -> Clause {
-        Clause::new(relation, vec![("from".into(), from), ("to".into(), to)]).unwrap()
+    #[test]
+    fn find_discriminates_known_entity_bindings_and_returns_typed_terms() {
+        let revision = revision(
+            vec![
+                asserted("map/links", "North", "Store"),
+                asserted("map/links", "South", "Relay"),
+            ],
+            chain_laws(),
+        );
+        assert_eq!(
+            find(&revision, &find_plan(&revision, "North"), limits()).unwrap(),
+            vec![entity(
+                &ModelId::new(name("map")).unwrap(),
+                "Store",
+                &type_id("Module")
+            )]
+        );
+        assert_eq!(
+            find(&revision, &find_plan(&revision, "South"), limits()).unwrap(),
+            vec![entity(
+                &ModelId::new(name("map")).unwrap(),
+                "Relay",
+                &type_id("Module")
+            )]
+        );
     }
 
     #[test]
-    fn impact_query_returns_derived_results_with_acyclic_why_graphs() {
-        let literal = |relation: &str, from: &str, to: &str| {
-            clause(
-                relation,
-                Term::literal(from).unwrap(),
-                Term::literal(to).unwrap(),
-            )
-        };
-        let pattern = |relation: &str, from: &str, to: &str| {
-            clause(
-                relation,
-                Term::variable(from).unwrap(),
-                Term::variable(to).unwrap(),
-            )
-        };
-        let north_store = literal("impact/links", "North", "Store");
-        let store_beagle = literal("impact/hosts", "Store", "Beagle");
-        let query = clause(
-            "impact/reaches",
-            Term::literal("North").unwrap(),
-            Term::variable("destination").unwrap(),
-        );
-        let revision = Revision::admit(
-            Model::with_laws(
-                vec![
-                    relation("impact/links"),
-                    relation("impact/hosts"),
-                    relation("impact/reaches"),
-                ],
-                vec![north_store.clone(), store_beagle.clone()],
-                vec![
-                    Law::new(
-                        "impact/direct",
-                        vec![pattern("impact/links", "source", "destination")],
-                        pattern("impact/reaches", "source", "destination"),
-                    )
-                    .unwrap(),
-                    Law::new(
-                        "impact/transitive",
-                        vec![
-                            pattern("impact/reaches", "source", "middle"),
-                            pattern("impact/hosts", "middle", "destination"),
-                        ],
-                        pattern("impact/reaches", "source", "destination"),
-                    )
-                    .unwrap(),
-                ],
-                query,
-                "ascending",
-            )
-            .unwrap(),
-        );
-
-        let output = execute(&revision, &revision.plan().unwrap(), limits()).unwrap();
-        assert_eq!(output.results, ["Beagle", "Store"]);
-        let graph = &output.proofs[0].why;
-        assert_eq!(graph.root, 0);
-        assert_eq!(graph.nodes.len(), 4);
-        assert_eq!(graph.witnesses.len(), 4);
-        assert_eq!(graph.nodes[0].relation, "impact/reaches");
-        assert_eq!(
-            graph.nodes[0].roles,
+    fn find_returns_recursive_derived_bindings_in_canonical_order() {
+        let revision = revision(
             vec![
-                ("from".into(), "North".into()),
-                ("to".into(), "Beagle".into())
+                asserted("map/links", "North", "Store"),
+                asserted("map/links", "Store", "Beagle"),
+            ],
+            chain_laws(),
+        );
+        let result = find(&revision, &find_plan(&revision, "North"), limits()).unwrap();
+        assert_eq!(
+            result,
+            vec![
+                entity(
+                    &ModelId::new(name("map")).unwrap(),
+                    "Beagle",
+                    &type_id("Module")
+                ),
+                entity(
+                    &ModelId::new(name("map")).unwrap(),
+                    "Store",
+                    &type_id("Module")
+                ),
             ]
         );
-        assert!(matches!(
-            graph.witnesses[0].witness,
-            Witness::Derived { ref law, ref premises, .. }
-                if law == "impact/transitive" && premises == &[1, 3]
-        ));
-        assert!(matches!(
-            graph.witnesses[1].witness,
-            Witness::Derived { ref law, ref premises, .. }
-                if law == "impact/direct" && premises == &[2]
-        ));
-        assert!(graph.witnesses.iter().all(|edge| match &edge.witness {
-            Witness::Asserted => true,
-            Witness::Derived { premises, .. } =>
-                premises.iter().all(|premise| *premise > edge.conclusion),
-        }));
-        assert_eq!(
-            why(
-                &revision,
-                &literal("impact/reaches", "North", "Beagle"),
-                limits()
-            )
-            .unwrap(),
-            Some(graph.clone())
-        );
-        assert!(
-            why(
-                &revision,
-                &literal("impact/reaches", "North", "Missing"),
-                limits()
-            )
-            .unwrap()
-            .is_none()
-        );
-        assert!(canonical_json(&output).starts_with("[\"clause-query-output-v2\","));
+        assert!(result.iter().all(|term| matches!(term, Term::Entity(_))));
     }
 
     #[test]
-    fn why_all_projects_independent_supports_and_deduplicates_derivations() {
-        let literal = |relation: &str, from: &str, to: &str| {
-            clause(
-                relation,
-                Term::literal(from).unwrap(),
-                Term::literal(to).unwrap(),
-            )
-        };
-        let pattern = |relation: &str, from: &str, to: &str| {
-            clause(
-                relation,
-                Term::variable(from).unwrap(),
-                Term::variable(to).unwrap(),
-            )
-        };
-        let target = literal("impact/reaches", "North", "Beagle");
-        let revision = Revision::admit(
-            Model::with_laws(
-                vec![
-                    relation("impact/links"),
-                    relation("impact/hosts"),
-                    relation("impact/reaches"),
-                ],
-                vec![
-                    literal("impact/links", "North", "Store"),
-                    literal("impact/hosts", "Store", "Beagle"),
-                    literal("impact/links", "North", "Relay"),
-                    literal("impact/hosts", "Relay", "Beagle"),
-                ],
-                vec![
-                    Law::new(
-                        "impact/direct",
-                        vec![pattern("impact/links", "source", "destination")],
-                        pattern("impact/reaches", "source", "destination"),
-                    )
-                    .unwrap(),
-                    Law::new(
-                        "impact/transitive",
-                        vec![
-                            pattern("impact/reaches", "source", "middle"),
-                            pattern("impact/hosts", "middle", "destination"),
-                        ],
-                        pattern("impact/reaches", "source", "destination"),
-                    )
-                    .unwrap(),
-                    // A distinct derivation must not create a third support.
-                    Law::new(
-                        "impact/transitive-copy",
-                        vec![
-                            pattern("impact/reaches", "source", "middle"),
-                            pattern("impact/hosts", "middle", "destination"),
-                        ],
-                        pattern("impact/reaches", "source", "destination"),
-                    )
-                    .unwrap(),
-                ],
-                clause(
-                    "impact/reaches",
-                    Term::literal("North").unwrap(),
-                    Term::variable("destination").unwrap(),
-                ),
-                "ascending",
-            )
-            .unwrap(),
+    fn why_projects_one_canonical_revision_scoped_proof() {
+        let revision = revision(vec![asserted("map/links", "North", "Store")], chain_laws());
+        let target = asserted("map/reaches", "North", "Store");
+        let proof = why(&revision, &target, limits()).unwrap().unwrap();
+        assert_eq!(proof.revision, *revision.identity());
+        assert_eq!(proof.why.root, 0);
+        assert!(
+            matches!(proof.why.witnesses[0].witness, Witness::Derived { ref law, .. } if law.as_str() == "map/direct")
         );
+    }
 
-        let support_limits = SupportLimits::new(limits(), 10_000, 10);
-        let all = why_all(&revision, &target, support_limits)
-            .unwrap()
-            .unwrap();
+    #[test]
+    fn why_all_projects_two_independent_minimal_supports() {
+        let revision = revision(
+            vec![
+                asserted("map/links", "North", "Store"),
+                asserted("map/links", "Store", "Beagle"),
+                asserted("map/links", "North", "Relay"),
+                asserted("map/links", "Relay", "Beagle"),
+            ],
+            chain_laws(),
+        );
+        let all = why_all(
+            &revision,
+            &asserted("map/reaches", "North", "Beagle"),
+            SupportLimits::new(limits(), 100, 10),
+        )
+        .unwrap()
+        .unwrap();
         assert!(all.is_complete());
         assert_eq!(all.alternative_count(), 2);
-        assert_eq!(
+        assert!(
             all.alternatives
                 .iter()
-                .map(|alternative| alternative.assertions.clone())
-                .collect::<Vec<_>>(),
-            vec![
-                vec![
-                    literal("impact/hosts", "Relay", "Beagle"),
-                    literal("impact/links", "North", "Relay"),
-                ],
-                vec![
-                    literal("impact/hosts", "Store", "Beagle"),
-                    literal("impact/links", "North", "Store"),
-                ],
-            ]
+                .all(|alternative| alternative.assertions.len() == 2)
         );
+    }
+
+    #[test]
+    fn why_all_marks_a_bounded_frontier_incomplete() {
+        let revision = revision(vec![asserted("map/links", "North", "Store")], chain_laws());
+        let all = why_all(
+            &revision,
+            &asserted("map/reaches", "North", "Store"),
+            SupportLimits::new(limits(), 0, 10),
+        )
+        .unwrap()
+        .unwrap();
+        assert!(!all.is_complete());
+        assert!(all.alternatives.is_empty());
+    }
+
+    #[test]
+    fn proof_is_deterministic_when_assertion_order_changes() {
+        let assertions = vec![
+            asserted("map/links", "North", "Store"),
+            asserted("map/links", "Store", "Beagle"),
+        ];
+        let target = asserted("map/reaches", "North", "Beagle");
+        let forward = revision(assertions.clone(), chain_laws());
+        let reverse = revision(assertions.into_iter().rev().collect(), chain_laws());
         assert_eq!(
-            why(&revision, &target, limits()).unwrap(),
-            Some(all.alternatives[0].why.clone())
+            why(&forward, &target, limits()).unwrap().unwrap().why,
+            why(&reverse, &target, limits()).unwrap().unwrap().why
         );
     }
 }

@@ -1,36 +1,49 @@
-//! Executable flagship journey for the dependency-impact model.
+//! Executable source-to-request journey for the typed impact program.
 
-use clause::{
-    derive::Limits,
-    generated,
-    semantic_output::{self, SemanticJourney},
-    wire,
-};
-use std::{env, fs, process::Command};
+use clause::{elaborate, frontend, generated, request, wire};
+use std::{env, fs, path::PathBuf, process::Command};
 
 const SOURCE: &str = include_str!("../examples/impact.clause");
-const EXPECTED: &str = include_str!("impact_semantic_journey_v1.json");
 
-fn temp_path(extension: &str) -> std::path::PathBuf {
+fn temporary(extension: &str) -> PathBuf {
     env::temp_dir().join(format!(
-        "clause-impact-oracle-{}-{}.{}",
+        "clause-native-impact-{}.{}",
         std::process::id(),
-        extension,
         extension
     ))
 }
 
 #[test]
-fn impact_journey_seals_derives_changes_intervenes_and_survives_source_removal() {
-    let source_path = temp_path("clause");
-    let revision_path = temp_path("revision");
-    fs::write(&source_path, SOURCE).expect("fixture writes");
+fn impact_source_seals_runs_and_generated_requests_survive_source_removal() {
+    let parsed = frontend::parse(SOURCE).expect("impact source parses");
+    let compiled = elaborate::compile(parsed).expect("impact source compiles");
+    let resolved = request::resolve(&compiled).expect("requests resolve in authored order");
+    assert_eq!(resolved.requests().len(), 5);
+    let expected = request::run(&resolved, request::RunLimits::default())
+        .expect("typed requests execute")
+        .canonical_bytes();
+    assert!(expected.starts_with("[\"clause-run-v1\",[[\"find\","));
+    for tag in [
+        "\"why-all\"",
+        "\"prevent-all\"",
+        "\"achieve-one\"",
+        "\"diff\"",
+    ] {
+        assert!(expected.contains(tag), "missing request result {tag}");
+    }
+
+    let source = temporary("clause");
+    let revision = temporary("revision");
+    let generated_source = temporary("rs");
+    let generated_binary = temporary("bin");
+    fs::write(&source, SOURCE).expect("source writes");
 
     let seal = Command::new(env!("CARGO_BIN_EXE_clause"))
         .args([
             "seal",
-            source_path.to_str().unwrap(),
-            revision_path.to_str().unwrap(),
+            source.to_str().expect("UTF-8 source path"),
+            "impact",
+            revision.to_str().expect("UTF-8 revision path"),
         ])
         .output()
         .expect("seal command starts");
@@ -39,87 +52,55 @@ fn impact_journey_seals_derives_changes_intervenes_and_survives_source_removal()
         "{}",
         String::from_utf8_lossy(&seal.stderr)
     );
-    let base_wire = fs::read_to_string(&revision_path).expect("base revision reads");
-    let base = wire::reload(&base_wire).expect("base revision reloads");
-
-    let demo = Command::new(env!("CARGO_BIN_EXE_clause"))
-        .args([
-            "e2e",
-            source_path.to_str().unwrap(),
-            revision_path.to_str().unwrap(),
-        ])
-        .output()
-        .expect("demo command starts");
-    assert!(
-        demo.status.success(),
-        "{}",
-        String::from_utf8_lossy(&demo.stderr)
+    let sealed = wire::reload(&fs::read_to_string(&revision).expect("revision reads"))
+        .expect("v3 revision reloads");
+    assert_eq!(
+        sealed.identity(),
+        compiled
+            .revision(&frontend::Name("impact".to_owned()))
+            .expect("base revision exists")
+            .identity()
     );
-    let demo = String::from_utf8(demo.stdout).expect("demo is UTF-8");
-    assert_eq!(demo, EXPECTED);
 
-    assert!(demo.starts_with("[\"clause-semantic-journey-v1\","));
-    assert!(demo.contains("[\"find\",[\"results\",[\"North\",\"Relay\",\"Store\"]]]"));
-    assert!(demo.contains("[\"support-frontier\",[\"target\","));
-    assert!(demo.contains("[\"why-all\",[\"target\","));
-    assert!(demo.contains("[\"support-diff\",[\"asserted\","));
-    assert!(demo.contains("\"impact/recursive-dependency\""));
-    assert!(demo.contains("\"impact/impact\""));
-    assert!(demo.contains("[\"status\",\"complete\"]"));
-    assert!(demo.contains("[\"achieve\",[\"status\",\"complete\"]"));
-
-    let persisted = fs::read_to_string(&revision_path).expect("successor revision reads");
-    let successor = wire::reload(&persisted).expect("successor revision reloads");
-    let limits = Limits::new(100, 10, 10_000);
-    let journey = SemanticJourney::from_successor(&base, &successor, limits)
-        .expect("semantic journey prepares from revisions");
-    let interpreted =
-        semantic_output::canonical_output(&base, &journey).expect("semantic journey interprets");
-    assert_eq!(format!("{interpreted}\n"), EXPECTED);
-
-    fs::remove_file(&source_path).expect("authoring source removes before generation");
-    let query = Command::new(env!("CARGO_BIN_EXE_clause"))
-        .args(["query", revision_path.to_str().unwrap()])
+    let run = Command::new(env!("CARGO_BIN_EXE_clause"))
+        .args(["run", source.to_str().expect("UTF-8 source path")])
         .output()
-        .expect("source-free query starts");
+        .expect("run command starts");
     assert!(
-        query.status.success(),
+        run.status.success(),
         "{}",
-        String::from_utf8_lossy(&query.stderr)
+        String::from_utf8_lossy(&run.stderr)
     );
-    let query = String::from_utf8(query.stdout).expect("query is UTF-8");
-    assert!(query.starts_with(
-        "[\"clause-query-output-v2\",[\"results\",[\"North\",\"Relay\",\"South\",\"Store\"]]"
-    ));
-    let generated_source = temp_path("rs");
-    let generated_binary = temp_path("bin");
+    assert_eq!(
+        String::from_utf8(run.stdout).expect("run output is UTF-8"),
+        format!("{expected}\n")
+    );
+
+    fs::remove_file(&source).expect("authoring source removes before generation");
     fs::write(
         &generated_source,
-        generated::emit_rust(&base, &journey).expect("standalone Rust emits after source removal"),
+        generated::emit_rust(&resolved).expect("resolved requests emit Rust"),
     )
-    .expect("standalone Rust writes");
+    .expect("generated source writes");
     let compile = Command::new("rustc")
         .args(["--edition=2024", "--cfg", "clause_generated"])
         .arg(&generated_source)
         .arg("-o")
         .arg(&generated_binary)
         .output()
-        .expect("standalone Rust compiler starts");
+        .expect("generated Rust compiler starts");
     assert!(
         compile.status.success(),
         "{}",
         String::from_utf8_lossy(&compile.stderr)
     );
-    let generated_journey = Command::new(&generated_binary)
+    let generated = Command::new(&generated_binary)
         .output()
-        .expect("source-deleted generated journey starts");
-    assert!(generated_journey.status.success());
-    assert_eq!(
-        generated_journey.stdout,
-        EXPECTED.strip_suffix('\n').unwrap().as_bytes()
-    );
+        .expect("source-deleted generated program starts");
+    assert!(generated.status.success());
+    assert_eq!(generated.stdout, expected.as_bytes());
 
-    let _ = fs::remove_file(generated_source);
-    let _ = fs::remove_file(generated_binary);
-    let _ = fs::remove_file(revision_path);
+    fs::remove_file(&generated_source).expect("generated source cleans up");
+    fs::remove_file(&generated_binary).expect("generated binary cleans up");
+    fs::remove_file(&revision).expect("revision cleans up");
 }

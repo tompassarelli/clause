@@ -1,231 +1,257 @@
-//! Standalone generated Rust for canonical semantic-journey parity.
+//! Source-deletion-safe request-program emission.
 
 #![allow(unexpected_cfgs)]
 
-use crate::{
-    intervention::{AchieveConfig, PreventLimits},
-    kernel::{Clause, Result, Revision},
-    semantic_output::SemanticJourney,
-};
 use std::fmt::Write;
 
-/// Emit a source-agnostic standalone Rust program that reloads a sealed
-/// revision and prints the same complete bounded semantic-journey bytes.
-#[cfg(not(clause_generated))]
-pub fn emit_rust(revision: &Revision, journey: &SemanticJourney) -> Result<String> {
-    let mut source = String::new();
-    writeln!(source, "mod kernel {{\n{}\n}}", include_str!("kernel.rs")).unwrap();
-    writeln!(source, "mod wire {{\n{}\n}}", include_str!("wire.rs")).unwrap();
-    writeln!(source, "mod derive {{\n{}\n}}", include_str!("derive.rs")).unwrap();
-    writeln!(source, "mod delta {{\n{}\n}}", include_str!("delta.rs")).unwrap();
-    writeln!(
-        source,
-        "mod execution {{\n{}\n}}",
-        include_str!("execution.rs")
-    )
-    .unwrap();
-    writeln!(
-        source,
-        "mod intervention {{\n{}\n}}",
-        include_str!("intervention.rs")
-    )
-    .unwrap();
-    writeln!(
-        source,
-        "mod semantic_diff {{\n{}\n}}",
-        include_str!("semantic_diff.rs")
-    )
-    .unwrap();
-    writeln!(
-        source,
-        "mod semantic_output {{\n{}\n}}",
-        include_str!("semantic_output.rs")
-    )
-    .unwrap();
-    writeln!(
-        source,
-        "mod generated {{\n{}\n}}",
-        include_str!("generated.rs")
-    )
-    .unwrap();
-    writeln!(
-        source,
-        "const REVISION_WIRE: &str = {:?};",
-        crate::wire::serialize(revision)
-    )
-    .unwrap();
-    writeln!(
-        source,
-        "const SUPPORT_LOSS_WIRE: &str = {:?};",
-        crate::wire::serialize(journey.support_loss())
-    )
-    .unwrap();
-    let query_limits = journey.query_limits();
-    let prevent = prevent_source(journey.prevent_limits());
-    let achieve = achieve_source(journey.achieve_config());
-    writeln!(
-        source,
-        "fn main() {{ let revision = wire::reload(REVISION_WIRE).expect(\"sealed revision reloads\"); let support_loss = wire::reload(SUPPORT_LOSS_WIRE).expect(\"support-loss revision reloads\"); let journey = semantic_output::SemanticJourney::new(support_loss, {}, {prevent}, {}, {achieve}, derive::Limits::new({}, {}, {})); let output = semantic_output::canonical_output(&revision, &journey).expect(\"bounded semantic journey executes\"); print!(\"{{}}\", output); }}",
-        clause_source(journey.support_target()),
-        clause_source(journey.achievement_goal()),
-        query_limits.max_facts,
-        query_limits.max_rounds,
-        query_limits.max_join_attempts,
-    )
-    .unwrap();
-    Ok(source)
-}
+use crate::{
+    kernel::{Clause, RelationId, Result, RoleId, Term, TypeId, VariableId},
+    request::{Request, ResolvedProgram, Selection},
+    wire,
+};
 
+/// Emit a standalone program that reloads the referenced v3 Revisions and
+/// invokes the same ordered request evaluator as the interpreter.
 #[cfg(not(clause_generated))]
-fn limits_source(limits: crate::derive::Limits) -> String {
-    format!(
-        "derive::Limits::new({}, {}, {})",
-        limits.max_facts, limits.max_rounds, limits.max_join_attempts
-    )
-}
-
-#[cfg(not(clause_generated))]
-fn support_limits_source(limits: crate::derive::SupportLimits) -> String {
-    format!(
-        "derive::SupportLimits::new({}, {}, {})",
-        limits_source(limits.closure),
-        limits.max_expansions,
-        limits.max_supports_per_clause,
-    )
-}
-
-#[cfg(not(clause_generated))]
-fn prevent_source(limits: &PreventLimits) -> String {
-    let mut source = format!(
-        "intervention::PreventLimits::new({}, {}, {}).with_support_limits({})",
-        limits.max_candidates(),
-        limits.max_solutions(),
-        limits_source(limits.closure_limits()),
-        support_limits_source(limits.support_limits()),
-    );
-    if let Some(relations) = limits.withdrawal_relations() {
-        write!(
-            source,
-            ".using_relations(vec![{}])",
-            strings_source(relations)
+pub fn emit_rust(program: &ResolvedProgram) -> Result<String> {
+    let mut modules = String::new();
+    for module in [
+        "kernel",
+        "wire",
+        "derive",
+        "delta",
+        "execution",
+        "intervention",
+        "semantic_diff",
+        "request",
+    ] {
+        let body = match module {
+            "kernel" => include_str!("kernel.rs"),
+            "wire" => include_str!("wire.rs"),
+            "derive" => include_str!("derive.rs"),
+            "delta" => include_str!("delta.rs"),
+            "execution" => include_str!("execution.rs"),
+            "intervention" => include_str!("intervention.rs"),
+            "semantic_diff" => include_str!("semantic_diff.rs"),
+            "request" => include_str!("request.rs"),
+            _ => unreachable!(),
+        };
+        let body = production_source(body);
+        writeln!(modules, "mod {module} {{\n{body}\n}}").unwrap();
+    }
+    let mut body = String::new();
+    for (index, revision) in program.revisions().values().enumerate() {
+        writeln!(
+            body,
+            "let r{index} = wire::reload({:?}).expect(\"sealed revision reloads\");",
+            wire::serialize(revision)
         )
         .unwrap();
     }
-    source
+    writeln!(body, "let program = request::ResolvedProgram::new(std::collections::BTreeMap::from([{}]), vec![{}]).expect(\"generated requests resolve\");", program.revisions().values().enumerate().map(|(index, _)| format!("(r{index}.identity().clone(), r{index}.clone())")).collect::<Vec<_>>().join(","), program.requests().iter().map(|request| request_source(request, program)).collect::<Vec<_>>().join(",")).unwrap();
+    writeln!(body, "print!(\"{{}}\", request::run(&program, request::RunLimits::default()).expect(\"generated requests run\").canonical_bytes());").unwrap();
+    Ok(format!("{modules}\nfn main() {{ {body} }}"))
 }
 
 #[cfg(not(clause_generated))]
-fn achieve_source(config: &AchieveConfig) -> String {
-    let source = format!(
-        "intervention::AchieveConfig::new(vec![{}], vec![{}], {}, {}, {})",
-        strings_source(config.allowed_relations()),
-        strings_source(config.active_domain()),
-        config.max_candidates(),
-        config.max_solutions(),
-        limits_source(config.closure_limits()),
-    );
-    match config.candidate_basis() {
-        Some(basis) => format!(
-            "{source}.with_candidate_basis(vec![{}])",
-            basis
+fn production_source(source: &str) -> &str {
+    source
+        .split_once("\n#[cfg(test)]")
+        .map_or(source, |(production, _)| production)
+}
+
+#[cfg(not(clause_generated))]
+fn revision_source(identity: &crate::kernel::RevisionId, program: &ResolvedProgram) -> String {
+    let index = program
+        .revisions()
+        .keys()
+        .position(|candidate| candidate == identity)
+        .expect("request revision is embedded");
+    format!("r{index}.identity().clone()")
+}
+
+#[cfg(not(clause_generated))]
+fn request_source(request: &Request, program: &ResolvedProgram) -> String {
+    match request {
+        Request::Find {
+            revision,
+            pattern,
+            sought,
+        } => format!(
+            "request::Request::Find {{ revision: {}, pattern: {}, sought: {} }}",
+            revision_source(revision, program),
+            clause_source(pattern),
+            variable_source(sought)
+        ),
+        Request::Why {
+            revision,
+            target,
+            all,
+        } => format!(
+            "request::Request::Why {{ revision: {}, target: {}, all: {all} }}",
+            revision_source(revision, program),
+            clause_source(target)
+        ),
+        Request::Prevent {
+            revision,
+            target,
+            selection,
+            using,
+        } => format!(
+            "request::Request::Prevent {{ revision: {}, target: {}, selection: {}, using: vec![{}] }}",
+            revision_source(revision, program),
+            clause_source(target),
+            selection_source(*selection),
+            using
                 .iter()
-                .map(clause_source)
+                .map(relation_source)
                 .collect::<Vec<_>>()
                 .join(",")
         ),
-        None => source,
+        Request::Achieve {
+            revision,
+            target,
+            selection,
+            using,
+        } => format!(
+            "request::Request::Achieve {{ revision: {}, target: {}, selection: {}, using: vec![{}] }}",
+            revision_source(revision, program),
+            clause_source(target),
+            selection_source(*selection),
+            using
+                .iter()
+                .map(relation_source)
+                .collect::<Vec<_>>()
+                .join(",")
+        ),
+        Request::Diff { base, successor } => format!(
+            "request::Request::Diff {{ base: {}, successor: {} }}",
+            revision_source(base, program),
+            revision_source(successor, program)
+        ),
     }
 }
 
 #[cfg(not(clause_generated))]
-fn strings_source(values: &[String]) -> String {
-    values
-        .iter()
-        .map(|value| format!("String::from({value:?})"))
-        .collect::<Vec<_>>()
-        .join(",")
+fn selection_source(selection: Selection) -> &'static str {
+    match selection {
+        Selection::OneMinimal => "request::Selection::OneMinimal",
+        Selection::AllMinimal => "request::Selection::AllMinimal",
+    }
 }
-
 #[cfg(not(clause_generated))]
-fn clause_source(clause: &Clause) -> String {
-    let roles = clause
-        .roles()
-        .iter()
-        .map(|(role, term)| {
-            format!(
-                "(String::from({role:?}), kernel::Term::literal({:?}).expect(\"generated ground term is valid\"))",
-                term.text()
-            )
-        })
-        .collect::<Vec<_>>()
-        .join(",");
+fn name_source(value: &str) -> String {
+    format!("kernel::Name::new({value:?}.into()).expect(\"generated name\")")
+}
+#[cfg(not(clause_generated))]
+fn relation_source(value: &RelationId) -> String {
     format!(
-        "kernel::Clause::new({:?}, vec![{roles}]).expect(\"generated ground clause is valid\")",
-        clause.relation()
+        "kernel::RelationId::new({}).expect(\"generated relation\")",
+        name_source(value.as_str())
+    )
+}
+#[cfg(not(clause_generated))]
+fn role_source(value: &RoleId) -> String {
+    format!(
+        "kernel::RoleId::new({}).expect(\"generated role\")",
+        name_source(value.as_str())
+    )
+}
+#[cfg(not(clause_generated))]
+fn type_source(value: &TypeId) -> String {
+    format!(
+        "kernel::TypeId::new({}).expect(\"generated type\")",
+        name_source(value.as_str())
+    )
+}
+#[cfg(not(clause_generated))]
+fn variable_source(value: &VariableId) -> String {
+    format!(
+        "kernel::VariableId::new({}).expect(\"generated variable\")",
+        name_source(value.as_str())
+    )
+}
+#[cfg(not(clause_generated))]
+fn term_source(value: &Term) -> String {
+    match value {
+        Term::Entity(entity) => format!(
+            "kernel::Term::entity(kernel::EntityId::new(kernel::ModelId::new({}).expect(\"generated model\"), {}, {}).expect(\"generated entity\"))",
+            name_source(entity.model().as_str()),
+            name_source(entity.local().as_str()),
+            type_source(entity.typ())
+        ),
+        Term::Value { typ, canonical } => format!(
+            "kernel::Term::value({}, {canonical:?}.into()).expect(\"generated value\")",
+            type_source(typ)
+        ),
+        Term::Variable { id, typ } => format!(
+            "kernel::Term::variable({}, {})",
+            variable_source(id),
+            type_source(typ)
+        ),
+    }
+}
+#[cfg(not(clause_generated))]
+fn clause_source(value: &Clause) -> String {
+    format!(
+        "kernel::Clause::new({}, std::collections::BTreeMap::from([{}])).expect(\"generated clause\")",
+        relation_source(value.relation()),
+        value
+            .roles()
+            .iter()
+            .map(|(role, term)| format!("({}, {})", role_source(role), term_source(term)))
+            .collect::<Vec<_>>()
+            .join(",")
     )
 }
 
 #[cfg(test)]
 mod tests {
     use super::emit_rust;
-    use crate::{
-        derive::Limits,
-        elaborate, frontend, kernel,
-        semantic_output::{self, SemanticJourney},
-    };
-    use std::fs;
-    use std::process::Command;
+    use crate::{elaborate, frontend, request};
+    use std::{fs, process::Command};
 
     #[test]
-    fn impact_semantic_journey_generated_rust_matches_in_process_bytes() {
-        let model = elaborate::program(
-            frontend::parse(include_str!("../examples/impact.clause"))
-                .expect("impact source parses"),
-        )
-        .expect("impact source elaborates");
-        let revision = kernel::Revision::admit(model);
-        let limits = Limits::new(100, 10, 10_000);
-        let intent = &revision.model().intents()[0];
-        let branch = kernel::Branch::new("impact", revision.clone()).expect("branch admits");
-        let claimed = kernel::claim(&branch, intent.desired().clone()).expect("intent claims");
-        let successor = claimed.successor().expect("claim has successor").revision();
-        let journey = SemanticJourney::from_successor(&revision, successor, limits)
-            .expect("semantic journey prepares");
-        let expected = semantic_output::canonical_output(&revision, &journey)
-            .expect("semantic journey executes");
-        assert!(expected.starts_with("[\"clause-semantic-journey-v1\","));
-        assert!(expected.contains("impact/recursive-dependency"));
-        assert!(expected.contains("impact/impact"));
+    fn embeds_resolved_requests_not_source() {
+        let source = "Item: Type\nlink: Relation\n    {left: Item} links {right: Item}\n    mode left -> right: many\ngraph: Model\n    A: Item\n    B: Item\n    A links B\nfind all ?right in graph:\n    A links ?right\n";
+        let program =
+            request::resolve(&elaborate::compile(frontend::parse(source).unwrap()).unwrap())
+                .unwrap();
+        let emitted = emit_rust(&program).unwrap();
+        assert!(emitted.contains("request::Request::Find"));
+        assert!(!emitted.contains("find all ?right"));
+    }
 
-        let root = std::env::temp_dir().join(format!(
-            "clause-impact-generated-parity-{}",
-            std::process::id()
-        ));
-        let source = root.with_extension("rs");
+    #[test]
+    fn generated_program_matches_source_deleted_request_transcript() {
+        let source = "Item: Type\nlink: Relation\n    {left: Item} links {right: Item}\n    mode left -> right: many\ngraph: Model\n    A: Item\n    B: Item\n    A links B\ngraph/add: Revision\n    from: graph\n    admit:\n        B links A\nfind all ?right in graph:\n    A links ?right\nwhy all in graph:\n    A links B\ndiff graph -> graph/add\n";
+        let program =
+            request::resolve(&elaborate::compile(frontend::parse(source).unwrap()).unwrap())
+                .unwrap();
+        let expected = request::run(&program, request::RunLimits::default())
+            .unwrap()
+            .canonical_bytes();
+        let root =
+            std::env::temp_dir().join(format!("clause-request-generated-{}", std::process::id()));
+        let rust = root.with_extension("rs");
         let binary = root.with_extension("bin");
-        fs::write(
-            &source,
-            emit_rust(&revision, &journey).expect("generated source emits"),
-        )
-        .expect("generated source writes");
-        let compile = Command::new("rustc")
+        fs::write(&rust, emit_rust(&program).unwrap()).unwrap();
+        let compiled = Command::new("rustc")
             .args(["--edition=2024", "--cfg", "clause_generated"])
-            .arg(&source)
+            .arg(&rust)
             .arg("-o")
             .arg(&binary)
             .output()
-            .expect("rustc starts");
+            .unwrap();
         assert!(
-            compile.status.success(),
+            compiled.status.success(),
             "{}",
-            String::from_utf8_lossy(&compile.stderr)
+            String::from_utf8_lossy(&compiled.stderr)
         );
-        let generated = Command::new(&binary)
-            .output()
-            .expect("generated program runs");
-        assert!(generated.status.success());
-        assert_eq!(generated.stdout, expected.as_bytes());
-        fs::remove_file(source).expect("generated source cleans up");
-        fs::remove_file(binary).expect("generated binary cleans up");
+        let actual = Command::new(&binary).output().unwrap();
+        assert!(actual.status.success());
+        assert_eq!(actual.stdout, expected.as_bytes());
+        fs::remove_file(rust).unwrap();
+        fs::remove_file(binary).unwrap();
     }
 }

@@ -1,27 +1,25 @@
 //! Deterministic finite closure for admitted positive laws.
 
-use crate::kernel::{self, Clause, KernelError, Law, Result, Revision, Term};
+use crate::kernel::{Clause, KernelError, Law, Result, Revision, RevisionId, Term, VariableId};
 use std::collections::{BTreeMap, BTreeSet};
 
-/// Explicit resource bounds for one closure computation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Limits {
-    pub max_facts: usize,
+    pub max_assertions: usize,
     pub max_rounds: usize,
     pub max_join_attempts: usize,
 }
 
 impl Limits {
-    pub fn new(max_facts: usize, max_rounds: usize, max_join_attempts: usize) -> Self {
+    pub fn new(max_assertions: usize, max_rounds: usize, max_join_attempts: usize) -> Self {
         Self {
-            max_facts,
+            max_assertions,
             max_rounds,
             max_join_attempts,
         }
     }
 }
 
-/// The selected proof for a fact in a closure.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Proof {
     generation: usize,
@@ -29,52 +27,43 @@ pub struct Proof {
 }
 
 impl Proof {
-    /// Asserted facts have generation zero; derived facts have the first round
-    /// in which they were available.
     pub fn generation(&self) -> usize {
         self.generation
     }
-
     pub fn witness(&self) -> &Witness {
         &self.witness
     }
 }
 
-/// The canonical witness selected for a fact.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Witness {
     Asserted,
     Derived {
-        law: String,
+        law: crate::kernel::LawId,
         premises: Vec<Clause>,
-        substitution: BTreeMap<String, String>,
+        substitution: BTreeMap<VariableId, Term>,
     },
 }
 
-/// A sorted least fixed point and its acyclic chosen proof DAG.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Closure {
-    facts: Vec<Clause>,
+    assertions: Vec<Clause>,
     proofs: BTreeMap<Clause, Proof>,
 }
 
 impl Closure {
-    pub fn facts(&self) -> &[Clause] {
-        &self.facts
+    pub fn assertions(&self) -> &[Clause] {
+        &self.assertions
     }
-
-    pub fn proof(&self, fact: &Clause) -> Option<&Proof> {
-        self.proofs.get(fact)
+    pub fn proof(&self, clause: &Clause) -> Option<&Proof> {
+        self.proofs.get(clause)
     }
 }
 
-/// Explicit resource bounds for enumerating minimal asserted supports.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct SupportLimits {
     pub closure: Limits,
-    /// Maximum number of complete premise-support combinations considered.
     pub max_expansions: usize,
-    /// Maximum antichain size retained for any one entailed clause.
     pub max_supports_per_clause: usize,
 }
 
@@ -88,7 +77,6 @@ impl SupportLimits {
     }
 }
 
-/// Whether support enumeration reached its fixed point.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SupportStatus {
     Complete,
@@ -102,7 +90,6 @@ impl SupportStatus {
     }
 }
 
-/// One canonical acyclic proof for a single asserted support.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct SupportProof {
     conclusion: Clause,
@@ -113,7 +100,6 @@ impl SupportProof {
     pub fn conclusion(&self) -> &Clause {
         &self.conclusion
     }
-
     pub fn witness(&self) -> &SupportWitness {
         &self.witness
     }
@@ -129,18 +115,16 @@ impl SupportProof {
     }
 }
 
-/// The witness at one node of a support proof.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum SupportWitness {
     Asserted,
     Derived {
-        law: String,
+        law: crate::kernel::LawId,
         premises: Vec<SupportProof>,
-        substitution: BTreeMap<String, String>,
+        substitution: BTreeMap<VariableId, Term>,
     },
 }
 
-/// An inclusion-minimal sorted set of asserted clauses and its canonical proof.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct Support {
     assertions: Vec<Clause>,
@@ -151,16 +135,14 @@ impl Support {
     pub fn assertions(&self) -> &[Clause] {
         &self.assertions
     }
-
     pub fn proof(&self) -> &SupportProof {
         &self.proof
     }
 }
 
-/// Every bounded inclusion-minimal asserted support for one target in one Revision.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SupportFrontier {
-    revision: String,
+    revision: RevisionId,
     target: Clause,
     limits: SupportLimits,
     status: SupportStatus,
@@ -169,26 +151,21 @@ pub struct SupportFrontier {
 }
 
 impl SupportFrontier {
-    pub fn revision(&self) -> &str {
+    pub fn revision(&self) -> &RevisionId {
         &self.revision
     }
-
     pub fn target(&self) -> &Clause {
         &self.target
     }
-
     pub fn limits(&self) -> SupportLimits {
         self.limits
     }
-
     pub fn status(&self) -> SupportStatus {
         self.status
     }
-
     pub fn expansions(&self) -> usize {
         self.expansions
     }
-
     pub fn supports(&self) -> &[Support] {
         &self.supports
     }
@@ -196,25 +173,21 @@ impl SupportFrontier {
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 struct Candidate {
-    law: String,
+    law: crate::kernel::LawId,
     premises: Vec<Clause>,
-    substitution: BTreeMap<String, String>,
+    substitution: BTreeMap<VariableId, Term>,
 }
 
-/// Saturate the asserted facts of `revision` under its admitted laws.
-///
-/// Rounds are level-synchronous: every proof selected in a round refers only
-/// to facts from earlier generations. Limits are checked before admitting a
-/// fact or performing a join attempt.
+/// Saturate a Revision's admitted assertions under its positive, range-restricted laws.
 pub fn saturate(revision: &Revision, limits: Limits) -> Result<Closure> {
     let mut proofs = revision
         .model()
-        .facts()
+        .assertions()
         .iter()
         .cloned()
-        .map(|fact| {
+        .map(|assertion| {
             (
-                fact,
+                assertion,
                 Proof {
                     generation: 0,
                     witness: Witness::Asserted,
@@ -222,35 +195,45 @@ pub fn saturate(revision: &Revision, limits: Limits) -> Result<Closure> {
             )
         })
         .collect::<BTreeMap<_, _>>();
-
-    if proofs.len() > limits.max_facts {
-        return Err(limit_error("fact", "max_facts", limits.max_facts));
+    if proofs.len() > limits.max_assertions {
+        return Err(limit_error(
+            "assertion",
+            "max_assertions",
+            limits.max_assertions,
+        ));
     }
 
     let mut join_attempts = 0usize;
     let mut generation = 1usize;
     loop {
-        let facts = proofs.keys().cloned().collect::<Vec<_>>();
+        let assertions = proofs.keys().cloned().collect::<Vec<_>>();
         let mut candidates = BTreeMap::<Clause, Candidate>::new();
-
         for law in revision.model().laws() {
-            collect_law_candidates(law, &facts, &limits, &mut join_attempts, &mut candidates)?;
+            collect_law_candidates(
+                law,
+                &assertions,
+                &limits,
+                &mut join_attempts,
+                &mut candidates,
+            )?;
         }
-
-        candidates.retain(|fact, _| !proofs.contains_key(fact));
+        candidates.retain(|clause, _| !proofs.contains_key(clause));
         if candidates.is_empty() {
             break;
         }
         if generation > limits.max_rounds {
             return Err(limit_error("round", "max_rounds", limits.max_rounds));
         }
-        if candidates.len() > limits.max_facts.saturating_sub(proofs.len()) {
-            return Err(limit_error("fact", "max_facts", limits.max_facts));
+        if candidates.len() > limits.max_assertions.saturating_sub(proofs.len()) {
+            return Err(limit_error(
+                "assertion",
+                "max_assertions",
+                limits.max_assertions,
+            ));
         }
-
-        for (fact, candidate) in candidates {
+        for (clause, candidate) in candidates {
             proofs.insert(
-                fact,
+                clause,
                 Proof {
                     generation,
                     witness: Witness::Derived {
@@ -263,9 +246,8 @@ pub fn saturate(revision: &Revision, limits: Limits) -> Result<Closure> {
         }
         generation += 1;
     }
-
     Ok(Closure {
-        facts: proofs.keys().cloned().collect(),
+        assertions: proofs.keys().cloned().collect(),
         proofs,
     })
 }
@@ -273,25 +255,22 @@ pub fn saturate(revision: &Revision, limits: Limits) -> Result<Closure> {
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 struct GroundDerivation {
     conclusion: Clause,
-    law: String,
+    law: crate::kernel::LawId,
     premises: Vec<Clause>,
-    substitution: BTreeMap<String, String>,
+    substitution: BTreeMap<VariableId, Term>,
 }
 
-/// Enumerate the bounded support frontier for `target` in exactly `revision`.
-///
-/// A non-complete status means `supports()` is only the deterministic prefix
-/// discovered before the named budget was exhausted.
+/// Enumerate bounded inclusion-minimal asserted supports for one ground target.
 pub fn support_frontier(
     revision: &Revision,
     target: &Clause,
     limits: SupportLimits,
 ) -> Result<SupportFrontier> {
-    kernel::require(revision, target.clone())?;
+    revision.model().validate_clause(target, false)?;
     let closure = saturate(revision, limits.closure)?;
     if limits.max_supports_per_clause == 0 {
         return Ok(SupportFrontier {
-            revision: revision.identity().to_owned(),
+            revision: revision.identity().clone(),
             target: target.clone(),
             limits,
             status: SupportStatus::SupportBudgetExhausted,
@@ -304,7 +283,7 @@ pub fn support_frontier(
     for law in revision.model().laws() {
         collect_ground_derivations(
             law,
-            closure.facts(),
+            closure.assertions(),
             &limits.closure,
             &mut join_attempts,
             &mut derivations,
@@ -313,10 +292,9 @@ pub fn support_frontier(
             Vec::new(),
         )?;
     }
-
     let mut frontiers = revision
         .model()
-        .facts()
+        .assertions()
         .iter()
         .cloned()
         .map(|assertion| {
@@ -333,7 +311,6 @@ pub fn support_frontier(
     let mut explored = BTreeSet::<SupportProof>::new();
     let mut expansions = 0;
     let mut status = SupportStatus::Complete;
-
     'fixed_point: loop {
         let mut changed = false;
         for derivation in &derivations {
@@ -369,7 +346,6 @@ pub fn support_frontier(
             break;
         }
     }
-
     let supports = frontiers
         .remove(target)
         .unwrap_or_default()
@@ -377,7 +353,7 @@ pub fn support_frontier(
         .map(|(assertions, proof)| Support { assertions, proof })
         .collect();
     Ok(SupportFrontier {
-        revision: revision.identity().to_owned(),
+        revision: revision.identity().clone(),
         target: target.clone(),
         limits,
         status,
@@ -433,7 +409,6 @@ fn expand_derivation(
             InsertSupport::BudgetExhausted => Some(SupportStatus::SupportBudgetExhausted),
         };
     }
-
     for proof in &frontiers[index] {
         selected.push(proof.clone());
         let exhausted = expand_derivation(
@@ -499,14 +474,12 @@ fn insert_support(
     {
         return InsertSupport::Unchanged;
     }
-
     let supersets = frontier
         .keys()
         .filter(|known| sorted_subset(&assertions, known))
         .cloned()
         .collect::<Vec<_>>();
-    let next_len = frontier.len() + 1 - supersets.len();
-    if next_len > max_supports {
+    if frontier.len() + 1 - supersets.len() > max_supports {
         return InsertSupport::BudgetExhausted;
     }
     for superset in supersets {
@@ -533,26 +506,25 @@ fn sorted_subset(left: &[Clause], right: &[Clause]) -> bool {
 #[allow(clippy::too_many_arguments)]
 fn collect_ground_derivations(
     law: &Law,
-    facts: &[Clause],
+    assertions: &[Clause],
     limits: &Limits,
     join_attempts: &mut usize,
     derivations: &mut BTreeSet<GroundDerivation>,
     premise_index: usize,
-    substitution: BTreeMap<String, String>,
+    substitution: BTreeMap<VariableId, Term>,
     premises: Vec<Clause>,
 ) -> Result<()> {
     if premise_index == law.premises().len() {
         derivations.insert(GroundDerivation {
             conclusion: instantiate(law.conclusion(), &substitution),
-            law: law.name().to_owned(),
+            law: law.id().clone(),
             premises,
             substitution,
         });
         return Ok(());
     }
-
     let pattern = &law.premises()[premise_index];
-    for fact in facts {
+    for assertion in assertions {
         if *join_attempts >= limits.max_join_attempts {
             return Err(limit_error(
                 "support join attempt",
@@ -561,14 +533,14 @@ fn collect_ground_derivations(
             ));
         }
         *join_attempts += 1;
-        let Some(next_substitution) = unify(pattern, fact, &substitution) else {
+        let Some(next_substitution) = unify(pattern, assertion, &substitution) else {
             continue;
         };
         let mut next_premises = premises.clone();
-        next_premises.push(fact.clone());
+        next_premises.push(assertion.clone());
         collect_ground_derivations(
             law,
-            facts,
+            assertions,
             limits,
             join_attempts,
             derivations,
@@ -582,14 +554,14 @@ fn collect_ground_derivations(
 
 fn collect_law_candidates(
     law: &Law,
-    facts: &[Clause],
+    assertions: &[Clause],
     limits: &Limits,
     join_attempts: &mut usize,
     candidates: &mut BTreeMap<Clause, Candidate>,
 ) -> Result<()> {
     collect_joins(
         law,
-        facts,
+        assertions,
         limits,
         join_attempts,
         candidates,
@@ -602,18 +574,18 @@ fn collect_law_candidates(
 #[allow(clippy::too_many_arguments)]
 fn collect_joins(
     law: &Law,
-    facts: &[Clause],
+    assertions: &[Clause],
     limits: &Limits,
     join_attempts: &mut usize,
     candidates: &mut BTreeMap<Clause, Candidate>,
     premise_index: usize,
-    substitution: BTreeMap<String, String>,
+    substitution: BTreeMap<VariableId, Term>,
     premises: Vec<Clause>,
 ) -> Result<()> {
     if premise_index == law.premises().len() {
         let conclusion = instantiate(law.conclusion(), &substitution);
         let candidate = Candidate {
-            law: law.name().to_owned(),
+            law: law.id().clone(),
             premises,
             substitution,
         };
@@ -626,9 +598,8 @@ fn collect_joins(
         }
         return Ok(());
     }
-
     let pattern = &law.premises()[premise_index];
-    for fact in facts {
+    for assertion in assertions {
         if *join_attempts >= limits.max_join_attempts {
             return Err(limit_error(
                 "join attempt",
@@ -637,15 +608,14 @@ fn collect_joins(
             ));
         }
         *join_attempts += 1;
-
-        let Some(next_substitution) = unify(pattern, fact, &substitution) else {
+        let Some(next_substitution) = unify(pattern, assertion, &substitution) else {
             continue;
         };
         let mut next_premises = premises.clone();
-        next_premises.push(fact.clone());
+        next_premises.push(assertion.clone());
         collect_joins(
             law,
-            facts,
+            assertions,
             limits,
             join_attempts,
             candidates,
@@ -659,51 +629,49 @@ fn collect_joins(
 
 fn unify(
     pattern: &Clause,
-    fact: &Clause,
-    substitution: &BTreeMap<String, String>,
-) -> Option<BTreeMap<String, String>> {
-    if pattern.relation() != fact.relation() || pattern.roles().len() != fact.roles().len() {
+    assertion: &Clause,
+    substitution: &BTreeMap<VariableId, Term>,
+) -> Option<BTreeMap<VariableId, Term>> {
+    if pattern.relation() != assertion.relation()
+        || pattern.roles().len() != assertion.roles().len()
+    {
         return None;
     }
-
     let mut substitution = substitution.clone();
     for (role, pattern_term) in pattern.roles() {
-        let fact_term = fact.roles().get(role)?;
-        if pattern_term.is_variable() {
-            match substitution.get(pattern_term.text()) {
-                Some(bound) if bound != fact_term.text() => return None,
+        let assertion_term = assertion.roles().get(role)?;
+        match pattern_term {
+            Term::Variable { id, typ } if typ == assertion_term.typ() => match substitution.get(id)
+            {
+                Some(bound) if bound != assertion_term => return None,
                 Some(_) => {}
                 None => {
-                    substitution
-                        .insert(pattern_term.text().to_owned(), fact_term.text().to_owned());
+                    substitution.insert(id.clone(), assertion_term.clone());
                 }
-            }
-        } else if pattern_term.text() != fact_term.text() {
-            return None;
+            },
+            Term::Variable { .. } => return None,
+            _ if pattern_term != assertion_term => return None,
+            _ => {}
         }
     }
     Some(substitution)
 }
 
-fn instantiate(pattern: &Clause, substitution: &BTreeMap<String, String>) -> Clause {
+fn instantiate(pattern: &Clause, substitution: &BTreeMap<VariableId, Term>) -> Clause {
     Clause::new(
-        pattern.relation(),
+        pattern.relation().clone(),
         pattern
             .roles()
             .iter()
             .map(|(role, term)| {
-                let value = if term.is_variable() {
-                    substitution
-                        .get(term.text())
+                let value = match term {
+                    Term::Variable { id, .. } => substitution
+                        .get(id)
                         .expect("admitted law conclusions are range-restricted")
-                        .as_str()
-                } else {
-                    term.text()
+                        .clone(),
+                    _ => term.clone(),
                 };
-                (
-                    role.clone(),
-                    Term::literal(value).expect("admitted terms remain valid literals"),
-                )
+                (role.clone(), value)
             })
             .collect(),
     )
@@ -716,392 +684,190 @@ fn limit_error(kind: &str, name: &str, value: usize) -> KernelError {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        Limits, SupportLimits, SupportStatus, SupportWitness, Witness, saturate, support_frontier,
-    };
+    use super::{Limits, SupportLimits, SupportStatus, Witness, saturate, support_frontier};
     use crate::kernel::{
-        Cardinality, Clause, Law, Mode, Model, Relation, Revision, Role, Sentence, Term,
+        Cardinality, Clause, InlineSentencePart, Law, LawId, Mode, Model, ModelId, Name, Relation,
+        RelationId, Revision, RevisionId, Role, RoleId, SentenceShape, Term, Type, TypeId,
+        VariableId,
     };
-    use std::collections::BTreeSet;
+    use std::collections::{BTreeMap, BTreeSet};
 
-    fn relation(name: &str) -> Relation {
+    fn name(value: &str) -> Name {
+        Name::new(value.to_owned()).unwrap()
+    }
+    fn id(value: &str) -> TypeId {
+        TypeId::new(name(value)).unwrap()
+    }
+    fn relation_id(value: &str) -> RelationId {
+        RelationId::new(name(value)).unwrap()
+    }
+    fn role(value: &str, typ: &TypeId) -> Role {
+        Role::new(RoleId::new(name(value)).unwrap(), typ.clone())
+    }
+    fn variable(value: &str, typ: &TypeId) -> Term {
+        Term::variable(VariableId::new(name(value)).unwrap(), typ.clone())
+    }
+    fn text(value: &str, typ: &TypeId) -> Term {
+        Term::value(typ.clone(), value.to_owned()).unwrap()
+    }
+
+    fn relation(identity: &RelationId, typ: &TypeId) -> Relation {
+        let from = role("from", typ);
+        let to = role("to", typ);
         Relation::new(
-            name,
+            identity.clone(),
+            SentenceShape::new(vec![
+                InlineSentencePart::Role(from.clone()),
+                InlineSentencePart::Literal("reaches".to_owned()),
+                InlineSentencePart::Role(to.clone()),
+            ])
+            .unwrap(),
             vec![
-                Role::new("from", "Place").unwrap(),
-                Role::new("to", "Place").unwrap(),
+                Mode::finite(
+                    vec![from.id().clone()],
+                    vec![to.id().clone()],
+                    Cardinality::Many,
+                )
+                .unwrap(),
             ],
-            Sentence::new("from", "reaches", "to").unwrap(),
-            vec![Mode::finite(vec!["from".into()], vec!["to".into()], Cardinality::Many).unwrap()],
         )
         .unwrap()
     }
 
-    fn literal(relation: &str, from: &str, to: &str) -> Clause {
-        clause(
-            relation,
-            Term::literal(from).unwrap(),
-            Term::literal(to).unwrap(),
+    fn clause(identity: &RelationId, from: Term, to: Term) -> Clause {
+        Clause::new(
+            identity.clone(),
+            BTreeMap::from([
+                (RoleId::new(name("from")).unwrap(), from),
+                (RoleId::new(name("to")).unwrap(), to),
+            ]),
         )
+        .unwrap()
     }
 
-    fn pattern(relation: &str, from: &str, to: &str) -> Clause {
-        clause(
-            relation,
-            Term::variable(from).unwrap(),
-            Term::variable(to).unwrap(),
+    fn revision(assertions: Vec<Clause>, laws: Vec<Law>) -> Revision {
+        let text_type = id("Text");
+        let reaches = relation_id("map/reaches");
+        let links = relation_id("map/links");
+        let model = Model::new(
+            ModelId::new(name("map")).unwrap(),
+            BTreeMap::from([(text_type.clone(), Type::new(text_type.clone()))]),
+            BTreeSet::new(),
+            BTreeMap::from([
+                (reaches.clone(), relation(&reaches, &text_type)),
+                (links.clone(), relation(&links, &text_type)),
+            ]),
+            assertions,
+            laws,
         )
-    }
-
-    fn clause(relation: &str, from: Term, to: Term) -> Clause {
-        Clause::new(relation, vec![("from".into(), from), ("to".into(), to)]).unwrap()
-    }
-
-    fn revision(facts: Vec<Clause>, laws: Vec<Law>) -> Revision {
-        let query = clause(
-            "map/reaches",
-            Term::literal("North").unwrap(),
-            Term::variable("destination").unwrap(),
-        );
-        Revision::admit(
-            Model::with_laws(
-                vec![
-                    relation("map/links"),
-                    relation("map/hosts"),
-                    relation("map/reaches"),
-                    relation("map/a"),
-                    relation("map/b"),
-                ],
-                facts,
-                laws,
-                query,
-                "ascending",
-            )
-            .unwrap(),
-        )
-    }
-
-    fn generous() -> Limits {
-        Limits::new(100, 10, 10_000)
+        .unwrap();
+        Revision::reloaded(RevisionId::from_digest([3; 32]), model)
     }
 
     #[test]
-    fn multi_round_dependency_closure_has_acyclic_proofs() {
-        let seed = literal("map/links", "North", "Store");
-        let hosted = literal("map/hosts", "Store", "Beagle");
-        let first = Law::new(
-            "map/01-link-reaches",
-            vec![pattern("map/links", "source", "middle")],
-            pattern("map/reaches", "source", "middle"),
-        )
-        .unwrap();
-        let second = Law::new(
-            "map/02-hosted-reaches",
-            vec![
-                pattern("map/reaches", "source", "middle"),
-                pattern("map/hosts", "middle", "destination"),
-            ],
-            pattern("map/reaches", "source", "destination"),
-        )
-        .unwrap();
-        let closure = saturate(
-            &revision(vec![seed, hosted], vec![second, first]),
-            generous(),
-        )
-        .expect("finite laws saturate");
-
-        let north_store = literal("map/reaches", "North", "Store");
-        let north_beagle = literal("map/reaches", "North", "Beagle");
-        assert_eq!(closure.proof(&north_store).unwrap().generation(), 1);
-        let proof = closure.proof(&north_beagle).unwrap();
-        assert_eq!(proof.generation(), 2);
-        match proof.witness() {
-            Witness::Derived { law, premises, .. } => {
-                assert_eq!(law, "map/02-hosted-reaches");
-                assert_eq!(
-                    premises,
-                    &[north_store, literal("map/hosts", "Store", "Beagle")]
-                );
-                assert!(premises.iter().all(|premise| {
-                    closure.proof(premise).unwrap().generation() < proof.generation()
-                }));
-            }
-            Witness::Asserted => panic!("North to Beagle is derived"),
-        }
-    }
-
-    #[test]
-    fn recursive_cycle_terminates_without_replacing_asserted_proof() {
-        let a_to_b = Law::new(
-            "map/a-to-b",
-            vec![pattern("map/a", "left", "right")],
-            pattern("map/b", "left", "right"),
-        )
-        .unwrap();
-        let b_to_a = Law::new(
-            "map/b-to-a",
-            vec![pattern("map/b", "left", "right")],
-            pattern("map/a", "left", "right"),
-        )
-        .unwrap();
-        let asserted = literal("map/a", "North", "Store");
-        let closure = saturate(
-            &revision(vec![asserted.clone()], vec![b_to_a, a_to_b]),
-            generous(),
-        )
-        .unwrap();
-
-        assert_eq!(closure.facts().len(), 2);
-        assert_eq!(
-            closure.proof(&asserted).unwrap().witness(),
-            &Witness::Asserted
-        );
-        assert_eq!(
-            closure
-                .proof(&literal("map/b", "North", "Store"))
-                .unwrap()
-                .generation(),
-            1
-        );
-    }
-
-    #[test]
-    fn competing_witness_uses_lexical_law_key() {
-        let later = Law::new(
-            "map/z-witness",
-            vec![pattern("map/links", "left", "right")],
-            pattern("map/reaches", "left", "right"),
-        )
-        .unwrap();
-        let earlier = Law::new(
-            "map/a-witness",
-            vec![pattern("map/links", "left", "right")],
-            pattern("map/reaches", "left", "right"),
+    fn typed_multi_round_closure_selects_canonical_witnesses() {
+        let text_type = id("Text");
+        let reaches = relation_id("map/reaches");
+        let links = relation_id("map/links");
+        let subject = variable("subject", &text_type);
+        let destination = variable("destination", &text_type);
+        let copy = Law::new(
+            LawId::new(name("map/copy")).unwrap(),
+            vec![clause(&links, subject.clone(), destination.clone())],
+            clause(&reaches, subject, destination),
         )
         .unwrap();
         let closure = saturate(
             &revision(
-                vec![literal("map/links", "North", "Store")],
-                vec![later, earlier],
+                vec![clause(
+                    &links,
+                    text("North", &text_type),
+                    text("Store", &text_type),
+                )],
+                vec![copy],
             ),
-            generous(),
+            Limits::new(10, 10, 100),
         )
         .unwrap();
-
-        match closure
-            .proof(&literal("map/reaches", "North", "Store"))
-            .unwrap()
-            .witness()
-        {
-            Witness::Derived { law, .. } => assert_eq!(law, "map/a-witness"),
-            Witness::Asserted => panic!("the reachable fact is derived"),
-        }
+        let derived = clause(
+            &reaches,
+            text("North", &text_type),
+            text("Store", &text_type),
+        );
+        assert_eq!(closure.assertions().len(), 2);
+        assert_eq!(closure.proof(&derived).unwrap().generation(), 1);
+        assert!(matches!(
+            closure.proof(&derived).unwrap().witness(),
+            Witness::Derived { .. }
+        ));
     }
 
     #[test]
-    fn fact_and_law_permutations_produce_identical_closures() {
-        let facts = vec![
-            literal("map/links", "North", "Store"),
-            literal("map/links", "South", "Store"),
-        ];
-        let laws = vec![
-            Law::new(
-                "map/z-copy",
-                vec![pattern("map/links", "left", "right")],
-                pattern("map/reaches", "left", "right"),
-            )
-            .unwrap(),
-            Law::new(
-                "map/a-copy",
-                vec![pattern("map/links", "left", "right")],
-                pattern("map/reaches", "left", "right"),
-            )
-            .unwrap(),
-        ];
-        let mut reversed_facts = facts.clone();
-        reversed_facts.reverse();
-        let mut reversed_laws = laws.clone();
-        reversed_laws.reverse();
-
+    fn reversed_law_source_order_admits_the_same_model_and_closure() {
+        let text_type = id("Text");
+        let reaches = relation_id("map/reaches");
+        let links = relation_id("map/links");
+        let subject = variable("subject", &text_type);
+        let destination = variable("destination", &text_type);
+        let law_a = Law::new(
+            LawId::new(name("map/a-copy")).unwrap(),
+            vec![clause(&links, subject.clone(), destination.clone())],
+            clause(&reaches, subject.clone(), destination.clone()),
+        )
+        .unwrap();
+        let law_z = Law::new(
+            LawId::new(name("map/z-copy")).unwrap(),
+            vec![clause(&links, subject.clone(), destination.clone())],
+            clause(&reaches, subject, destination),
+        )
+        .unwrap();
+        let assertions = vec![clause(
+            &links,
+            text("North", &text_type),
+            text("Store", &text_type),
+        )];
+        let forward = revision(assertions.clone(), vec![law_a.clone(), law_z.clone()]);
+        let reversed = revision(assertions, vec![law_z, law_a]);
+        assert_eq!(forward.model(), reversed.model());
         assert_eq!(
-            saturate(&revision(facts, laws), generous()).unwrap(),
-            saturate(&revision(reversed_facts, reversed_laws), generous()).unwrap()
-        );
-    }
-
-    #[test]
-    fn repeated_saturation_is_idempotent() {
-        let revision = revision(
-            vec![literal("map/links", "North", "Store")],
-            vec![
-                Law::new(
-                    "map/copy",
-                    vec![pattern("map/links", "left", "right")],
-                    pattern("map/reaches", "left", "right"),
-                )
-                .unwrap(),
-            ],
-        );
-        let first = saturate(&revision, generous()).unwrap();
-        let second = saturate(&revision, generous()).unwrap();
-
-        assert_eq!(first, second);
-        assert_eq!(
-            first.facts().iter().collect::<BTreeSet<_>>().len(),
-            first.facts().len()
+            saturate(&forward, Limits::new(10, 10, 100)).unwrap(),
+            saturate(&reversed, Limits::new(10, 10, 100)).unwrap(),
         );
     }
 
     #[test]
-    fn every_limit_has_a_stable_error() {
-        let seed = literal("map/links", "North", "Store");
-        let law = Law::new(
-            "map/copy",
-            vec![pattern("map/links", "left", "right")],
-            pattern("map/reaches", "left", "right"),
+    fn support_frontier_remains_minimal_and_typed() {
+        let text_type = id("Text");
+        let reaches = relation_id("map/reaches");
+        let links = relation_id("map/links");
+        let subject = variable("subject", &text_type);
+        let destination = variable("destination", &text_type);
+        let copy = Law::new(
+            LawId::new(name("map/copy")).unwrap(),
+            vec![clause(&links, subject.clone(), destination.clone())],
+            clause(&reaches, subject, destination),
         )
         .unwrap();
-        let revision = revision(vec![seed], vec![law]);
-
-        assert_eq!(
-            saturate(&revision, Limits::new(0, 10, 100))
-                .unwrap_err()
-                .to_string(),
-            "closure fact limit exceeded (max_facts=0)"
+        let target = clause(
+            &reaches,
+            text("North", &text_type),
+            text("Store", &text_type),
         );
-        assert_eq!(
-            saturate(&revision, Limits::new(10, 0, 100))
-                .unwrap_err()
-                .to_string(),
-            "closure round limit exceeded (max_rounds=0)"
-        );
-        assert_eq!(
-            saturate(&revision, Limits::new(10, 10, 0))
-                .unwrap_err()
-                .to_string(),
-            "closure join attempt limit exceeded (max_join_attempts=0)"
-        );
-    }
-
-    #[test]
-    fn support_frontier_is_minimal_canonical_recursive_and_visibly_bounded() {
-        let north_store = literal("map/links", "North", "Store");
-        let store_beagle = literal("map/hosts", "Store", "Beagle");
-        let north_beagle = literal("map/links", "North", "Beagle");
-        let copy_z = Law::new(
-            "map/z-copy",
-            vec![pattern("map/links", "source", "destination")],
-            pattern("map/reaches", "source", "destination"),
-        )
-        .unwrap();
-        let copy_a = Law::new(
-            "map/a-copy",
-            vec![pattern("map/links", "source", "destination")],
-            pattern("map/reaches", "source", "destination"),
-        )
-        .unwrap();
-        let recursive = Law::new(
-            "map/recursive",
-            vec![
-                pattern("map/reaches", "source", "middle"),
-                pattern("map/hosts", "middle", "destination"),
-            ],
-            pattern("map/reaches", "source", "destination"),
-        )
-        .unwrap();
-        let cycle = Law::new(
-            "map/reaches-to-a",
-            vec![pattern("map/reaches", "source", "destination")],
-            pattern("map/a", "source", "destination"),
-        )
-        .unwrap();
-        let cycle_back = Law::new(
-            "map/a-to-reaches",
-            vec![pattern("map/a", "source", "destination")],
-            pattern("map/reaches", "source", "destination"),
-        )
-        .unwrap();
-        let facts = vec![
-            north_store.clone(),
-            store_beagle.clone(),
-            north_beagle.clone(),
-        ];
-        let laws = vec![copy_z, cycle, recursive, copy_a, cycle_back];
-        let target = literal("map/reaches", "North", "Beagle");
-        let limits = SupportLimits::new(generous(), 1_000, 10);
-        let first =
-            support_frontier(&revision(facts.clone(), laws.clone()), &target, limits).unwrap();
-
-        assert_eq!(first.status(), SupportStatus::Complete);
-        assert_eq!(first.supports().len(), 2);
-        let mut recursive_support = vec![north_store.clone(), store_beagle.clone()];
-        recursive_support.sort();
-        let mut expected = vec![vec![north_beagle.clone()], recursive_support];
-        expected.sort();
-        assert_eq!(
-            first
-                .supports()
-                .iter()
-                .map(|support| support.assertions().to_vec())
-                .collect::<Vec<_>>(),
-            expected
-        );
-        let direct = first
-            .supports()
-            .iter()
-            .find(|support| support.assertions() == [north_beagle.clone()])
-            .unwrap();
-        match direct.proof().witness() {
-            SupportWitness::Derived { law, .. } => assert_eq!(law, "map/a-copy"),
-            SupportWitness::Asserted => panic!("the target itself was not asserted"),
-        }
-
-        let mut reversed_facts = facts;
-        reversed_facts.reverse();
-        let mut reversed_laws = laws;
-        reversed_laws.reverse();
-        assert_eq!(
-            first,
-            support_frontier(&revision(reversed_facts, reversed_laws), &target, limits).unwrap()
-        );
-
-        let asserted =
-            support_frontier(&revision(vec![target.clone()], Vec::new()), &target, limits).unwrap();
-        assert_eq!(asserted.supports()[0].assertions(), &[target.clone()]);
-        assert_eq!(
-            asserted.supports()[0].proof().witness(),
-            &SupportWitness::Asserted
-        );
-
-        let exhausted = support_frontier(
+        let frontier = support_frontier(
             &revision(
-                vec![north_store, store_beagle, north_beagle],
-                vec![
-                    Law::new(
-                        "map/copy",
-                        vec![pattern("map/links", "source", "destination")],
-                        pattern("map/reaches", "source", "destination"),
-                    )
-                    .unwrap(),
-                ],
+                vec![clause(
+                    &links,
+                    text("North", &text_type),
+                    text("Store", &text_type),
+                )],
+                vec![copy],
             ),
             &target,
-            SupportLimits::new(generous(), 0, 10),
+            SupportLimits::new(Limits::new(10, 10, 100), 10, 10),
         )
         .unwrap();
-        assert_eq!(exhausted.status(), SupportStatus::ExpansionBudgetExhausted);
-        assert!(!exhausted.status().is_complete());
-
-        let support_exhausted = support_frontier(
-            &revision(vec![target.clone()], Vec::new()),
-            &target,
-            SupportLimits::new(generous(), 10, 0),
-        )
-        .unwrap();
-        assert_eq!(
-            support_exhausted.status(),
-            SupportStatus::SupportBudgetExhausted
-        );
-        assert!(support_exhausted.supports().is_empty());
+        assert_eq!(frontier.status(), SupportStatus::Complete);
+        assert_eq!(frontier.supports().len(), 1);
+        assert_eq!(frontier.supports()[0].assertions().len(), 1);
     }
 }

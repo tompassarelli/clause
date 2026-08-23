@@ -1,285 +1,255 @@
-//! Frozen expectations for the redundant impact journey.
-//!
-//! The support-frontier assertions below are deliberately kept in this fixture
-//! rather than reimplementing support search in the kernel.
+//! Typed acceptance checks for the redundant dependency-impact model.
+
+use std::collections::BTreeMap;
 
 use clause::{
-    elaborate, frontend,
-    intervention::{self, AchieveConfig, AchieveResult},
-    kernel,
+    delta::RevisionDiff,
+    derive::{self, SupportStatus},
+    elaborate, execution, frontend,
+    intervention::{self, AchieveAll, Incomplete, InterventionLimits, PreventAll},
+    kernel::{self, Clause, EntityId, Name, RelationId, Revision, RoleId, Term},
+    semantic_diff::SemanticDiff,
 };
 
 const SOURCE: &str = include_str!("../examples/impact.clause");
 
-fn model() -> kernel::Revision {
-    let parsed = frontend::parse(SOURCE).expect("redundant impact fixture parses");
-    kernel::Revision::admit(elaborate::program(parsed).expect("fixture elaborates"))
+fn impact() -> elaborate::CompiledProgram {
+    elaborate::compile(frontend::parse(SOURCE).expect("impact source parses"))
+        .expect("impact source lowers")
 }
 
-fn fact(relation: &str, consumer: &str, dependency: &str) -> kernel::Clause {
-    kernel::Clause::new(
-        relation,
-        vec![
-            ("consumer".into(), kernel::Term::literal(consumer).unwrap()),
-            (
-                "dependency".into(),
-                kernel::Term::literal(dependency).unwrap(),
-            ),
-        ],
+fn revision(program: &elaborate::CompiledProgram, name: &str) -> Revision {
+    program
+        .revision(&frontend::Name(name.to_owned()))
+        .expect("named Revision resolves")
+        .clone()
+}
+
+fn name(value: &str) -> Name {
+    Name::new(value.to_owned()).expect("valid stable name")
+}
+
+fn relation(value: &str) -> RelationId {
+    RelationId::new(name(value)).expect("valid Relation identity")
+}
+
+fn role(value: &str) -> RoleId {
+    RoleId::new(name(value)).expect("valid Role identity")
+}
+
+fn entity(revision: &Revision, local: &str) -> EntityId {
+    revision
+        .model()
+        .entities()
+        .iter()
+        .find(|candidate| candidate.local().as_str() == local)
+        .expect("admitted entity exists")
+        .clone()
+}
+
+fn assertion(revision: &Revision, relation_name: &str, roles: &[(&str, &str)]) -> Clause {
+    Clause::new(
+        relation(relation_name),
+        roles
+            .iter()
+            .map(|(role_name, local)| (role(role_name), Term::entity(entity(revision, local))))
+            .collect::<BTreeMap<_, _>>(),
     )
-    .unwrap()
+    .expect("typed assertion is valid")
 }
 
-fn changes(change: &str, component: &str) -> kernel::Clause {
-    kernel::Clause::new(
+fn imports(revision: &Revision, consumer: &str, dependency: &str) -> Clause {
+    assertion(
+        revision,
+        "impact/imports",
+        &[("consumer", consumer), ("dependency", dependency)],
+    )
+}
+
+fn changes(revision: &Revision, change: &str, component: &str) -> Clause {
+    assertion(
+        revision,
         "impact/changes",
-        vec![
-            ("change".into(), kernel::Term::literal(change).unwrap()),
-            (
-                "component".into(),
-                kernel::Term::literal(component).unwrap(),
-            ),
-        ],
+        &[("change", change), ("component", component)],
     )
-    .unwrap()
 }
 
-fn affected(change: &str, consumer: &str) -> kernel::Clause {
-    kernel::Clause::new(
+fn affected(revision: &Revision, change: &str, consumer: &str) -> Clause {
+    assertion(
+        revision,
         "impact/affected",
+        &[("change", change), ("consumer", consumer)],
+    )
+}
+
+fn limits() -> derive::Limits {
+    derive::Limits::new(100, 10, 10_000)
+}
+
+fn support_limits() -> derive::SupportLimits {
+    derive::SupportLimits::new(limits(), 10_000, 100)
+}
+
+fn intervention_limits() -> InterventionLimits {
+    InterventionLimits::new(limits(), 10_000, 100).with_support_limits(support_limits())
+}
+
+fn canonical_sets(mut sets: Vec<Vec<Clause>>) -> Vec<Vec<Clause>> {
+    for set in &mut sets {
+        set.sort();
+    }
+    sets.sort();
+    sets
+}
+
+#[test]
+fn authored_source_has_typed_entities_revisions_and_requests() {
+    let program = impact();
+    let base = revision(&program, "impact");
+    let successor = revision(&program, "impact/adopt-south");
+    assert_eq!(base.model().assertions().len(), 5);
+    assert_eq!(base.model().entities().len(), 6);
+    assert_eq!(
+        RevisionDiff::between(&base, &successor)
+            .expect("same declarations diff")
+            .added(),
+        [imports(&base, "South", "North")]
+    );
+    assert_eq!(program.requests().len(), 5);
+}
+
+#[test]
+fn north_has_two_independent_minimal_supports_and_four_prevention_sets() {
+    let base = revision(&impact(), "impact");
+    let target = affected(&base, "compiler-change", "North");
+    let supports = derive::support_frontier(&base, &target, support_limits())
+        .expect("support frontier computes");
+    assert_eq!(supports.status(), SupportStatus::Complete);
+    assert_eq!(supports.supports().len(), 2);
+    assert_eq!(
+        canonical_sets(
+            supports
+                .supports()
+                .iter()
+                .map(|support| support.assertions().to_vec())
+                .collect(),
+        ),
+        canonical_sets(vec![
+            vec![
+                changes(&base, "compiler-change", "Beagle"),
+                imports(&base, "North", "Relay"),
+                imports(&base, "Relay", "Beagle"),
+            ],
+            vec![
+                changes(&base, "compiler-change", "Beagle"),
+                imports(&base, "North", "Store"),
+                imports(&base, "Store", "Beagle"),
+            ],
+        ]),
+    );
+    let all = execution::why_all(&base, &target, support_limits())
+        .expect("why all computes")
+        .expect("target follows");
+    assert!(all.is_complete());
+    assert_eq!(all.alternative_count(), 2);
+
+    let prevented = intervention::prevent_all_minimal(
+        &base,
+        target,
+        vec![relation("impact/imports")],
+        intervention_limits(),
+    )
+    .expect("prevention computes");
+    let PreventAll::Complete(prevented) = prevented else {
+        panic!("finite prevention frontier must be complete");
+    };
+    assert_eq!(prevented.len(), 4);
+    assert_eq!(
+        canonical_sets(
+            prevented
+                .iter()
+                .map(|item| item.delta().withdrawals().to_vec())
+                .collect(),
+        ),
+        canonical_sets(vec![
+            vec![
+                imports(&base, "North", "Relay"),
+                imports(&base, "North", "Store")
+            ],
+            vec![
+                imports(&base, "North", "Relay"),
+                imports(&base, "Store", "Beagle")
+            ],
+            vec![
+                imports(&base, "North", "Store"),
+                imports(&base, "Relay", "Beagle")
+            ],
+            vec![
+                imports(&base, "Relay", "Beagle"),
+                imports(&base, "Store", "Beagle")
+            ],
+        ]),
+    );
+}
+
+#[test]
+fn successor_retains_consequence_while_losing_one_support() {
+    let program = impact();
+    let base = revision(&program, "impact");
+    let successor = kernel::Delta::new(
+        base.identity().clone(),
+        Vec::new(),
         vec![
-            ("change".into(), kernel::Term::literal(change).unwrap()),
-            ("consumer".into(), kernel::Term::literal(consumer).unwrap()),
+            imports(&base, "North", "Relay"),
+            imports(&base, "Relay", "Beagle"),
         ],
     )
-    .unwrap()
+    .expect("typed withdrawal Delta")
+    .apply(&base)
+    .expect("successor applies");
+    let target = affected(&base, "compiler-change", "North");
+    let diff = SemanticDiff::between(&base, &successor, support_limits()).expect("semantic diff");
+    assert!(!diff.entailed_removed().contains(&target));
+    let change = diff
+        .changed_supports()
+        .iter()
+        .find(|change| change.consequence() == &target)
+        .expect("retained consequence has support change");
+    assert!(change.added().is_empty());
+    assert_eq!(change.removed().len(), 1);
+    assert_eq!(change.retained().len(), 1);
 }
 
 #[test]
-fn explicit_achievement_basis_proves_the_complete_south_frontier() {
-    let revision = model();
-    let additions = expected_south_additions();
-    let result = intervention::achieve(
-        &revision,
-        affected("compiler-change", "South"),
-        &AchieveConfig::new(
-            vec!["impact/imports".into()],
-            vec![
-                "Beagle".into(),
-                "North".into(),
-                "Relay".into(),
-                "South".into(),
-                "Store".into(),
-            ],
-            4,
-            100,
-            clause::derive::Limits::new(100, 10, 10_000),
-        )
-        .with_candidate_basis(additions.clone()),
+fn typed_active_domain_yields_four_south_additions() {
+    let base = revision(&impact(), "impact");
+    let target = affected(&base, "compiler-change", "South");
+    let achieved = intervention::achieve_all_minimal(
+        &base,
+        target,
+        vec![relation("impact/imports")],
+        InterventionLimits::new(limits(), 100, 100).with_support_limits(support_limits()),
     )
-    .expect("explicit achievement frontier computes");
-
-    assert!(matches!(&result, AchieveResult::Solutions(_)));
-    assert_eq!(
-        result
-            .interventions()
-            .iter()
-            .map(|intervention| intervention.additions().to_vec())
-            .collect::<Vec<_>>(),
-        additions
-            .into_iter()
-            .map(|addition| vec![addition])
-            .collect::<Vec<_>>(),
-    );
-}
-
-fn expected_south_additions() -> Vec<kernel::Clause> {
-    vec![
-        import("South", "Beagle"),
-        import("South", "North"),
-        import("South", "Relay"),
-        import("South", "Store"),
-    ]
-}
-
-fn import(consumer: &str, dependency: &str) -> kernel::Clause {
-    fact("impact/imports", consumer, dependency)
-}
-
-#[test]
-fn source_freezes_two_independent_north_routes_and_one_intent() {
-    let revision = model();
-    assert_eq!(
-        revision.model().facts(),
-        [
-            changes("compiler-change", "Beagle"),
-            import("North", "Relay"),
-            import("North", "Store"),
-            import("Relay", "Beagle"),
-            import("Store", "Beagle"),
-        ]
-    );
-    assert_eq!(revision.model().intents().len(), 1);
-    assert_eq!(
-        revision.model().intents()[0].desired(),
-        &import("South", "North")
-    );
-    assert_eq!(revision.model().query().relation(), "impact/affected");
-}
-
-/// Exact support-frontier, prevention, achievement, and support-loss oracle.
-///
-mod support_frontier_acceptance {
-    use super::*;
-    use clause::{
-        delta::RevisionDelta,
-        derive::{self, SupportStatus},
-        execution,
-        intervention::{self, PreventLimits, PreventStatus},
-        semantic_diff::SemanticDiff,
+    .expect("achievement computes");
+    let achieved = match achieved {
+        AchieveAll::Complete(items) => items,
+        AchieveAll::Incomplete {
+            interventions,
+            reason: Incomplete::CandidateBudgetExhausted,
+        } => interventions,
+        other => panic!("typed active domain must discover additions: {other:?}"),
     };
-
-    fn limits() -> derive::Limits {
-        derive::Limits::new(100, 10, 10_000)
-    }
-
-    fn support_limits() -> derive::SupportLimits {
-        derive::SupportLimits::new(limits(), 10_000, 100)
-    }
-
-    fn target() -> kernel::Clause {
-        affected("compiler-change", "North")
-    }
-
-    fn expected_supports() -> Vec<Vec<kernel::Clause>> {
-        vec![
-            vec![
-                changes("compiler-change", "Beagle"),
-                import("North", "Relay"),
-                import("Relay", "Beagle"),
-            ],
-            vec![
-                changes("compiler-change", "Beagle"),
-                import("North", "Store"),
-                import("Store", "Beagle"),
-            ],
-        ]
-    }
-
-    fn expected_hitting_sets() -> Vec<Vec<kernel::Clause>> {
-        vec![
-            vec![import("North", "Relay"), import("North", "Store")],
-            vec![import("North", "Relay"), import("Store", "Beagle")],
-            vec![import("North", "Store"), import("Relay", "Beagle")],
-            vec![import("Relay", "Beagle"), import("Store", "Beagle")],
-        ]
-    }
-
-    fn canonical_sets(mut sets: Vec<Vec<kernel::Clause>>) -> Vec<Vec<kernel::Clause>> {
-        for set in &mut sets {
-            set.sort();
-        }
-        sets.sort();
-        sets
-    }
-
-    #[test]
-    fn affected_north_has_exactly_two_minimal_supports() {
-        let revision = model();
-        let frontier = derive::support_frontier(&revision, &target(), support_limits())
-            .expect("support frontier computes");
-        assert_eq!(frontier.status(), SupportStatus::Complete);
-        assert_eq!(frontier.supports().len(), 2);
-        assert_eq!(
-            canonical_sets(
-                frontier
-                    .supports()
-                    .iter()
-                    .map(|support| support.assertions().to_vec())
-                    .collect(),
-            ),
-            canonical_sets(expected_supports()),
-        );
-
-        let all = execution::why_all(&revision, &target(), support_limits())
-            .expect("why all computes")
-            .expect("target is entailed");
-        assert!(all.is_complete());
-        assert_eq!(all.alternative_count(), 2);
-        assert_eq!(
-            canonical_sets(
-                all.alternatives
-                    .iter()
-                    .map(|alternative| alternative.assertions.clone())
-                    .collect(),
-            ),
-            canonical_sets(expected_supports()),
-        );
-        assert_eq!(
-            execution::why(&revision, &target(), limits()).expect("why computes"),
-            Some(all.alternatives[0].why.clone()),
-        );
-    }
-
-    #[test]
-    fn successor_keeps_entailment_but_loses_the_relay_support() {
-        let base = model();
-        let successor = RevisionDelta::new(
-            base.identity(),
-            Vec::new(),
-            vec![import("North", "Relay"), import("Relay", "Beagle")],
-        )
-        .expect("withdrawal delta admits")
-        .apply(&base)
-        .expect("successor applies");
-        let base_frontier = derive::support_frontier(&base, &target(), support_limits())
-            .expect("base frontier computes");
-        let successor_frontier = derive::support_frontier(&successor, &target(), support_limits())
-            .expect("successor frontier computes");
-        assert_eq!(base_frontier.supports().len(), 2);
-        assert_eq!(successor_frontier.supports().len(), 1);
-        assert_eq!(
-            successor_frontier.supports()[0].assertions(),
-            expected_supports()[1].as_slice()
-        );
-
-        let diff = SemanticDiff::between(&base, &successor, support_limits())
-            .expect("support diff computes");
-        assert!(!diff.entailed_removed().contains(&target()));
-        let change = diff
-            .changed_supports()
+    assert_eq!(achieved.len(), 4);
+    assert_eq!(
+        achieved
             .iter()
-            .find(|change| change.fact() == &target())
-            .expect("unchanged entailment reports lost support");
-        assert!(change.added().is_empty());
-        assert_eq!(change.removed().len(), 1);
-        assert_eq!(
-            change.removed()[0].assertions(),
-            expected_supports()[0].as_slice(),
-        );
-    }
-
-    #[test]
-    fn intervention_frontiers_are_frozen_as_exact_antichains() {
-        let revision = model();
-        let prevention = intervention::prevent(
-            &revision,
-            target(),
-            PreventLimits::new(100, 100, limits())
-                .with_support_limits(support_limits())
-                .using_relations(vec!["impact/imports".into()]),
-        )
-        .expect("prevention frontier computes");
-        assert_eq!(prevention.status(), PreventStatus::Complete);
-        assert_eq!(
-            canonical_sets(
-                prevention
-                    .solutions()
-                    .iter()
-                    .map(|solution| solution.withdrawals().to_vec())
-                    .collect(),
-            ),
-            canonical_sets(expected_hitting_sets()),
-        );
-    }
+            .map(|item| item.delta().admissions().to_vec())
+            .collect::<Vec<_>>(),
+        vec![
+            vec![imports(&base, "South", "Beagle")],
+            vec![imports(&base, "South", "North")],
+            vec![imports(&base, "South", "Relay")],
+            vec![imports(&base, "South", "Store")],
+        ],
+    );
 }

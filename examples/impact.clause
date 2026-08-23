@@ -1,45 +1,71 @@
-relation impact/imports(consumer: Text, dependency: Text):
-    sentence: {consumer} imports {dependency}
+Module: Type
+Change: Type
+
+impact/imports: Relation
+    {consumer: Module} imports {dependency: Module}
     mode consumer -> dependency: many
 
-relation impact/depends(consumer: Text, dependency: Text):
-    sentence: {consumer} depends on {dependency}
+impact/depends: Relation
+    {consumer: Module} depends on {dependency: Module}
     mode consumer -> dependency: many
 
-relation impact/changes(change: Text, component: Text):
-    sentence: {change} changes {component}
+impact/changes: Relation
+    {change: Change} changes {component: Module}
     mode change -> component: many
 
-relation impact/affected(change: Text, consumer: Text):
-    sentence: {change} affects {consumer}
+impact/affected: Relation
+    {change: Change} affects {consumer: Module}
     mode change -> consumer: many
 
-model impact:
-    "North" imports "Store"
-    "North" imports "Relay"
-    "Store" imports "Beagle"
-    "Relay" imports "Beagle"
-    "compiler-change" changes "Beagle"
+impact: Model
+    North: Module
+    Store: Module
+    Relay: Module
+    Beagle: Module
+    South: Module
+    compiler-change: Change
+    North imports Store
+    North imports Relay
+    Store imports Beagle
+    Relay imports Beagle
+    compiler-change changes Beagle
 
-law impact/direct-dependency:
+impact/direct-dependency: Law
     ?consumer depends on ?dependency
     when:
         ?consumer imports ?dependency
 
-law impact/recursive-dependency:
+impact/recursive-dependency: Law
     ?consumer depends on ?dependency
     when:
         ?consumer imports ?intermediate
         ?intermediate depends on ?dependency
 
-law impact/impact:
+impact/impact: Law
     ?change affects ?consumer
     when:
         ?change changes ?component
         ?consumer depends on ?component
 
-intent impact/adopt-south:
-    "South" imports "North"
+impact/adopt-south: Revision
+    from: impact
+    admit:
+        South imports North
 
-query impact:
-    ?consumer where "compiler-change" affects ?consumer
+find all ?consumer in impact:
+    compiler-change affects ?consumer
+
+why all in impact:
+    compiler-change affects North
+
+prevent all minimal in impact:
+    compiler-change affects North
+using:
+    impact/imports
+
+achieve one minimal in impact/adopt-south:
+    compiler-change affects South
+using:
+    impact/imports
+
+diff impact -> impact/adopt-south

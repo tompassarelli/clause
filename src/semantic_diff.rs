@@ -3,23 +3,25 @@
 //! A semantic diff is deliberately a comparison value only: it is never part
 //! of a revision's admitted model or identity.
 
+use std::collections::BTreeSet;
+
 use crate::{
     delta::RevisionDiff,
     derive::{self, Proof, Support, SupportFrontier, SupportLimits},
     kernel::{Clause, Result, Revision},
 };
 
-/// A selected derivation that changed for a fact entailed by both revisions.
+/// A selected derivation that changed for a consequence entailed by both revisions.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProofChange {
-    fact: Clause,
+    consequence: Clause,
     base: Proof,
     successor: Proof,
 }
 
 impl ProofChange {
-    pub fn fact(&self) -> &Clause {
-        &self.fact
+    pub fn consequence(&self) -> &Clause {
+        &self.consequence
     }
 
     pub fn base(&self) -> &Proof {
@@ -31,23 +33,24 @@ impl ProofChange {
     }
 }
 
-/// Canonical minimal asserted supports that changed for one shared consequence.
+/// Canonical minimal asserted supports that changed for one consequence.
 ///
 /// The frontiers remain attached to make their bounds and completeness explicit:
 /// an incomplete frontier is a deterministic prefix, not a claim that no other
 /// support exists.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SupportChange {
-    fact: Clause,
+    consequence: Clause,
     base: SupportFrontier,
     successor: SupportFrontier,
     added: Vec<Support>,
     removed: Vec<Support>,
+    retained: Vec<Support>,
 }
 
 impl SupportChange {
-    pub fn fact(&self) -> &Clause {
-        &self.fact
+    pub fn consequence(&self) -> &Clause {
+        &self.consequence
     }
 
     pub fn base(&self) -> &SupportFrontier {
@@ -64,6 +67,14 @@ impl SupportChange {
 
     pub fn removed(&self) -> &[Support] {
         &self.removed
+    }
+
+    /// Supports witnessed in both frontiers by the same asserted-clause set.
+    ///
+    /// This is positive evidence only: an incomplete frontier does not claim
+    /// that these are every retained support.
+    pub fn retained(&self) -> &[Support] {
+        &self.retained
     }
 }
 
@@ -82,8 +93,9 @@ impl SemanticDiff {
     ///
     /// `authored` describes asserted changes. Entailed additions and removals
     /// exclude those asserted changes, leaving only their semantic
-    /// consequences. Chosen proofs are compared only for facts entailed by
-    /// both revisions.
+    /// consequences. Chosen proofs are compared only for clauses entailed by
+    /// both revisions. Support changes cover the canonical union of both
+    /// closures, including appearing and disappearing consequences.
     pub fn between(
         base: &Revision,
         successor: &Revision,
@@ -94,43 +106,52 @@ impl SemanticDiff {
         let successor_closure = derive::saturate(successor, support_limits.closure)?;
 
         let entailed_added = successor_closure
-            .facts()
+            .assertions()
             .iter()
-            .filter(|fact| {
-                base_closure.facts().binary_search(fact).is_err()
-                    && authored.added().binary_search(fact).is_err()
+            .filter(|consequence| {
+                base_closure
+                    .assertions()
+                    .binary_search(consequence)
+                    .is_err()
+                    && authored.added().binary_search(consequence).is_err()
             })
             .cloned()
             .collect();
         let entailed_removed = base_closure
-            .facts()
+            .assertions()
             .iter()
-            .filter(|fact| {
-                successor_closure.facts().binary_search(fact).is_err()
-                    && authored.removed().binary_search(fact).is_err()
+            .filter(|consequence| {
+                successor_closure
+                    .assertions()
+                    .binary_search(consequence)
+                    .is_err()
+                    && authored.removed().binary_search(consequence).is_err()
             })
             .cloned()
             .collect();
         let changed_proofs = base_closure
-            .facts()
+            .assertions()
             .iter()
-            .filter_map(|fact| {
-                let successor_proof = successor_closure.proof(fact)?;
+            .filter_map(|consequence| {
+                let successor_proof = successor_closure.proof(consequence)?;
                 let base_proof = base_closure
-                    .proof(fact)
-                    .expect("closure facts always have selected proofs");
+                    .proof(consequence)
+                    .expect("closure clauses always have selected proofs");
                 (base_proof != successor_proof).then(|| ProofChange {
-                    fact: fact.clone(),
+                    consequence: consequence.clone(),
                     base: base_proof.clone(),
                     successor: successor_proof.clone(),
                 })
             })
             .collect();
         let changed_supports = base_closure
-            .facts()
+            .assertions()
             .iter()
-            .filter(|fact| successor_closure.facts().binary_search(fact).is_ok())
-            .map(|fact| support_change(base, successor, fact, support_limits))
+            .chain(successor_closure.assertions())
+            .cloned()
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .map(|consequence| support_change(base, successor, &consequence, support_limits))
             .collect::<Result<Vec<_>>>()?
             .into_iter()
             .flatten()
@@ -169,33 +190,57 @@ impl SemanticDiff {
 fn support_change(
     base_revision: &Revision,
     successor_revision: &Revision,
-    fact: &Clause,
+    consequence: &Clause,
     limits: SupportLimits,
 ) -> Result<Option<SupportChange>> {
-    let base = derive::support_frontier(base_revision, fact, limits)?;
-    let successor = derive::support_frontier(successor_revision, fact, limits)?;
-    let added: Vec<Support> = successor
+    let base = derive::support_frontier(base_revision, consequence, limits)?;
+    let successor = derive::support_frontier(successor_revision, consequence, limits)?;
+    let retained = base
         .supports()
         .iter()
         .filter(|support| {
-            !base
+            successor
                 .supports()
                 .iter()
                 .any(|candidate| candidate.assertions() == support.assertions())
         })
         .cloned()
         .collect();
-    let removed: Vec<Support> = base
-        .supports()
-        .iter()
-        .filter(|support| {
-            !successor
+    // A gain is exact only if the base frontier proved that support absent.
+    let added: Vec<Support> = base
+        .status()
+        .is_complete()
+        .then(|| {
+            successor
                 .supports()
                 .iter()
-                .any(|candidate| candidate.assertions() == support.assertions())
+                .filter(|support| {
+                    !base
+                        .supports()
+                        .iter()
+                        .any(|candidate| candidate.assertions() == support.assertions())
+                })
+                .cloned()
+                .collect()
         })
-        .cloned()
-        .collect();
+        .unwrap_or_default();
+    // A loss is exact only if the successor frontier proved that support absent.
+    let removed: Vec<Support> = successor
+        .status()
+        .is_complete()
+        .then(|| {
+            base.supports()
+                .iter()
+                .filter(|support| {
+                    !successor
+                        .supports()
+                        .iter()
+                        .any(|candidate| candidate.assertions() == support.assertions())
+                })
+                .cloned()
+                .collect()
+        })
+        .unwrap_or_default();
 
     if added.is_empty()
         && removed.is_empty()
@@ -206,39 +251,71 @@ fn support_change(
     }
 
     Ok(Some(SupportChange {
-        fact: fact.clone(),
+        consequence: consequence.clone(),
         base,
         successor,
         added,
         removed,
+        retained,
     }))
 }
 
 #[cfg(test)]
 mod tests {
+    use std::collections::{BTreeMap, BTreeSet};
+
     use super::SemanticDiff;
     use crate::{
-        delta::RevisionDelta,
-        derive::{Limits, SupportLimits},
-        kernel::{Cardinality, Clause, Law, Mode, Model, Relation, Revision, Role, Sentence, Term},
+        derive::{Limits, SupportLimits, SupportStatus},
+        kernel::{
+            Cardinality, Clause, Delta, EntityId, InlineSentencePart, Law, Mode, Model, ModelId,
+            Name, Relation, RelationId, Role, RoleId, SentenceShape, Term, Type, TypeId,
+            VariableId,
+        },
+        wire,
     };
 
-    fn support_limits() -> SupportLimits {
+    fn name(value: &str) -> Name {
+        Name::new(value.to_owned()).unwrap()
+    }
+    fn model_id() -> ModelId {
+        ModelId::new(name("impact")).unwrap()
+    }
+    fn module() -> TypeId {
+        TypeId::new(name("Module")).unwrap()
+    }
+    fn relation_id(value: &str) -> RelationId {
+        RelationId::new(name(value)).unwrap()
+    }
+    fn role(value: &str) -> RoleId {
+        RoleId::new(name(value)).unwrap()
+    }
+    fn variable(value: &str) -> VariableId {
+        VariableId::new(name(value)).unwrap()
+    }
+    fn entity(value: &str) -> EntityId {
+        EntityId::new(model_id(), name(value), module()).unwrap()
+    }
+
+    fn limits() -> SupportLimits {
         SupportLimits::new(Limits::new(100, 10, 10_000), 100, 100)
     }
 
-    fn relation(name: &str, roles: &[&str]) -> Relation {
+    fn source(relation: &str) -> Relation {
+        let subject = Role::new(role("subject"), module());
+        let object = Role::new(role("object"), module());
         Relation::new(
-            name,
-            roles
-                .iter()
-                .map(|name| Role::new(*name, "Text").unwrap())
-                .collect(),
-            Sentence::new(roles[0], "relates to", roles[1]).unwrap(),
+            relation_id(relation),
+            SentenceShape::new(vec![
+                InlineSentencePart::Role(subject),
+                InlineSentencePart::Literal("reaches".into()),
+                InlineSentencePart::Role(object),
+            ])
+            .unwrap(),
             vec![
                 Mode::finite(
-                    vec![roles[0].into()],
-                    vec![roles[1].into()],
+                    vec![role("subject")],
+                    vec![role("object")],
                     Cardinality::Many,
                 )
                 .unwrap(),
@@ -247,274 +324,156 @@ mod tests {
         .unwrap()
     }
 
-    fn fact(relation: &str, roles: &[(&str, &str)]) -> Clause {
+    fn clause(relation: &str) -> Clause {
         Clause::new(
-            relation,
-            roles
-                .iter()
-                .map(|(role, value)| ((*role).into(), Term::literal(*value).unwrap()))
-                .collect(),
+            relation_id(relation),
+            BTreeMap::from([
+                (role("subject"), Term::entity(entity("North"))),
+                (role("object"), Term::entity(entity("Beagle"))),
+            ]),
         )
         .unwrap()
     }
 
-    fn pattern(relation: &str, roles: &[(&str, &str)]) -> Clause {
+    fn pattern(relation: &str) -> Clause {
         Clause::new(
-            relation,
-            roles
-                .iter()
-                .map(|(role, variable)| ((*role).into(), Term::variable(*variable).unwrap()))
-                .collect(),
+            relation_id(relation),
+            BTreeMap::from([
+                (
+                    role("subject"),
+                    Term::variable(variable("subject"), module()),
+                ),
+                (role("object"), Term::variable(variable("object"), module())),
+            ]),
         )
         .unwrap()
     }
 
-    fn model() -> Model {
-        let imports = |consumer, dependency| {
-            pattern(
-                "impact/imports",
-                &[("consumer", consumer), ("dependency", dependency)],
-            )
-        };
-        let depends = |consumer, dependency| {
-            pattern(
-                "impact/depends",
-                &[("consumer", consumer), ("dependency", dependency)],
-            )
-        };
-        let changes = |change, component| {
-            pattern(
-                "impact/changes",
-                &[("change", change), ("component", component)],
-            )
-        };
-        let affected = |change, consumer| {
-            pattern(
-                "impact/affected",
-                &[("change", change), ("consumer", consumer)],
-            )
-        };
-        Model::with_laws(
-            vec![
-                relation("impact/imports", &["consumer", "dependency"]),
-                relation("impact/depends", &["consumer", "dependency"]),
-                relation("impact/changes", &["change", "component"]),
-                relation("impact/affected", &["change", "consumer"]),
-            ],
-            vec![
-                fact(
-                    "impact/imports",
-                    &[("consumer", "North"), ("dependency", "Store")],
-                ),
-                fact(
-                    "impact/imports",
-                    &[("consumer", "Store"), ("dependency", "Beagle")],
-                ),
-                fact(
-                    "impact/changes",
-                    &[("change", "compiler-change"), ("component", "Beagle")],
-                ),
-            ],
-            vec![
+    fn model(assertions: Vec<Clause>, reverse_laws: bool) -> Model {
+        let mut laws = ["left", "middle", "right"]
+            .into_iter()
+            .map(|side| {
                 Law::new(
-                    "impact/direct-dependency",
-                    vec![imports("consumer", "dependency")],
-                    depends("consumer", "dependency"),
+                    crate::kernel::LawId::new(name(&format!("impact/{side}-support"))).unwrap(),
+                    vec![pattern(&format!("impact/{side}"))],
+                    pattern("impact/result"),
                 )
-                .unwrap(),
-                Law::new(
-                    "impact/recursive-dependency",
-                    vec![
-                        imports("consumer", "dependency"),
-                        depends("dependency", "transitive"),
-                    ],
-                    depends("consumer", "transitive"),
-                )
-                .unwrap(),
-                Law::new(
-                    "impact/impact",
-                    vec![
-                        changes("change", "component"),
-                        depends("consumer", "component"),
-                    ],
-                    affected("change", "consumer"),
-                )
-                .unwrap(),
-            ],
-            Clause::new(
-                "impact/imports",
-                vec![
-                    ("consumer".into(), Term::literal("North").unwrap()),
-                    ("dependency".into(), Term::variable("dependency").unwrap()),
-                ],
-            )
-            .unwrap(),
-            "ascending",
-        )
-        .unwrap()
-    }
-
-    fn support_fact(relation: &str) -> Clause {
-        fact(relation, &[("consumer", "North"), ("dependency", "Beagle")])
-    }
-
-    fn support_model(facts: Vec<Clause>, reverse_laws: bool) -> Model {
-        let input = |relation, consumer, dependency| {
-            pattern(
-                relation,
-                &[("consumer", consumer), ("dependency", dependency)],
-            )
-        };
-        let mut laws = vec![
-            Law::new(
-                "impact/left-support",
-                vec![input("impact/left", "consumer", "dependency")],
-                input("impact/result", "consumer", "dependency"),
-            )
-            .unwrap(),
-            Law::new(
-                "impact/right-support",
-                vec![input("impact/right", "consumer", "dependency")],
-                input("impact/result", "consumer", "dependency"),
-            )
-            .unwrap(),
-        ];
+                .unwrap()
+            })
+            .collect::<Vec<_>>();
         if reverse_laws {
             laws.reverse();
         }
-        Model::with_laws(
-            vec![
-                relation("impact/left", &["consumer", "dependency"]),
-                relation("impact/right", &["consumer", "dependency"]),
-                relation("impact/result", &["consumer", "dependency"]),
-            ],
-            facts,
+        let relations = ["left", "middle", "right", "result"]
+            .into_iter()
+            .map(|side| {
+                let identity = relation_id(&format!("impact/{side}"));
+                (identity, source(&format!("impact/{side}")))
+            })
+            .collect();
+        Model::new(
+            model_id(),
+            BTreeMap::from([(module(), Type::new(module()))]),
+            BTreeSet::from([entity("North"), entity("Beagle")]),
+            relations,
+            assertions,
             laws,
-            Clause::new(
-                "impact/result",
-                vec![
-                    ("consumer".into(), Term::literal("North").unwrap()),
-                    ("dependency".into(), Term::variable("dependency").unwrap()),
-                ],
-            )
-            .unwrap(),
-            "ascending",
         )
         .unwrap()
     }
 
-    #[test]
-    fn south_to_north_distinguishes_authored_and_entailed_additions() {
-        let base = Revision::admit(model());
-        let successor = RevisionDelta::new(
-            base.identity(),
-            vec![fact(
-                "impact/imports",
-                &[("consumer", "South"), ("dependency", "North")],
-            )],
-            Vec::new(),
-        )
-        .unwrap()
-        .apply(&base)
-        .unwrap();
-        let diff = SemanticDiff::between(&base, &successor, support_limits()).unwrap();
-
-        assert_eq!(diff.authored().added().len(), 1);
-        assert_eq!(diff.authored().removed(), []);
-        assert_eq!(
-            diff.entailed_added(),
-            [
-                fact(
-                    "impact/affected",
-                    &[("change", "compiler-change"), ("consumer", "South")]
-                ),
-                fact(
-                    "impact/depends",
-                    &[("consumer", "South"), ("dependency", "Beagle")]
-                ),
-                fact(
-                    "impact/depends",
-                    &[("consumer", "South"), ("dependency", "North")]
-                ),
-                fact(
-                    "impact/depends",
-                    &[("consumer", "South"), ("dependency", "Store")]
-                ),
-            ]
-        );
-        assert_eq!(diff.entailed_removed(), []);
-        assert_eq!(diff.changed_proofs(), []);
+    fn revision(assertions: Vec<Clause>, reverse_laws: bool) -> crate::kernel::Revision {
+        wire::admit(model(assertions, reverse_laws))
     }
 
-    #[test]
-    fn support_loss_remains_visible_when_entailment_is_unchanged() {
-        let left = support_fact("impact/left");
-        let right = support_fact("impact/right");
-        let target = support_fact("impact/result");
-        let base = Revision::admit(support_model(vec![left.clone(), right.clone()], false));
-        let successor = RevisionDelta::new(base.identity(), Vec::new(), vec![left.clone()])
+    fn successor(
+        base: &crate::kernel::Revision,
+        admissions: Vec<Clause>,
+        withdrawals: Vec<Clause>,
+    ) -> crate::kernel::Revision {
+        Delta::new(base.identity().clone(), admissions, withdrawals)
             .unwrap()
-            .apply(&base)
-            .unwrap();
+            .apply(base)
+            .unwrap()
+    }
 
-        let diff = SemanticDiff::between(&base, &successor, support_limits()).unwrap();
-
-        assert!(diff.entailed_removed().is_empty());
-        let change = diff
-            .changed_supports()
+    fn change<'a>(diff: &'a SemanticDiff) -> &'a super::SupportChange {
+        diff.changed_supports()
             .iter()
-            .find(|change| change.fact() == &target)
-            .expect("the retained consequence exposes its lost support");
-        assert_eq!(change.added(), []);
-        assert_eq!(change.removed().len(), 1);
+            .find(|change| change.consequence() == &clause("impact/result"))
+            .unwrap()
+    }
+
+    #[test]
+    fn keeps_asserted_and_entailed_layers_separate() {
+        let left = clause("impact/left");
+        let base = revision(vec![], false);
+        let successor = successor(&base, vec![left.clone()], vec![]);
+        let diff = SemanticDiff::between(&base, &successor, limits()).unwrap();
+        assert_eq!(diff.authored().added(), &[left]);
+        assert_eq!(diff.entailed_added(), &[clause("impact/result")]);
+    }
+
+    #[test]
+    fn retained_consequence_exposes_lost_and_retained_supports() {
+        let left = clause("impact/left");
+        let right = clause("impact/right");
+        let base = revision(vec![left.clone(), right.clone()], false);
+        let successor = successor(&base, vec![], vec![left.clone()]);
+        let diff = SemanticDiff::between(&base, &successor, limits()).unwrap();
+        let change = change(&diff);
         assert_eq!(change.removed()[0].assertions(), &[left]);
-        assert!(change.base().status().is_complete());
-        assert!(change.successor().status().is_complete());
+        assert_eq!(change.retained()[0].assertions(), &[right]);
     }
 
     #[test]
-    fn support_gain_does_not_require_a_new_consequence() {
-        let left = support_fact("impact/left");
-        let right = support_fact("impact/right");
-        let target = support_fact("impact/result");
-        let base = Revision::admit(support_model(vec![left], false));
-        let successor = RevisionDelta::new(base.identity(), vec![right.clone()], Vec::new())
-            .unwrap()
-            .apply(&base)
-            .unwrap();
-
-        let diff = SemanticDiff::between(&base, &successor, support_limits()).unwrap();
-
-        assert!(diff.entailed_added().is_empty());
-        let change = diff
-            .changed_supports()
-            .iter()
-            .find(|change| change.fact() == &target)
-            .expect("the existing consequence exposes its gained support");
-        assert_eq!(change.removed(), []);
-        assert_eq!(change.added().len(), 1);
-        assert_eq!(change.added()[0].assertions(), &[right]);
+    fn disappearing_consequence_retains_its_support_loss() {
+        let left = clause("impact/left");
+        let base = revision(vec![left.clone()], false);
+        let successor = successor(&base, vec![], vec![left.clone()]);
+        let diff = SemanticDiff::between(&base, &successor, limits()).unwrap();
+        assert_eq!(diff.entailed_removed(), &[clause("impact/result")]);
+        assert_eq!(change(&diff).removed()[0].assertions(), &[left]);
     }
 
     #[test]
-    fn support_changes_are_deterministic_under_reordering() {
-        let left = support_fact("impact/left");
-        let right = support_fact("impact/right");
-        let base = Revision::admit(support_model(vec![left.clone(), right.clone()], false));
-        let reordered = Revision::admit(support_model(vec![right.clone(), left.clone()], true));
-        let successor = RevisionDelta::new(base.identity(), Vec::new(), vec![left.clone()])
-            .unwrap()
-            .apply(&base)
-            .unwrap();
-        let reordered_successor = RevisionDelta::new(reordered.identity(), Vec::new(), vec![left])
-            .unwrap()
-            .apply(&reordered)
-            .unwrap();
+    fn appearing_consequence_retains_its_support_gain() {
+        let left = clause("impact/left");
+        let base = revision(vec![], false);
+        let successor = successor(&base, vec![left.clone()], vec![]);
+        let diff = SemanticDiff::between(&base, &successor, limits()).unwrap();
+        assert_eq!(change(&diff).added()[0].assertions(), &[left]);
+    }
 
+    #[test]
+    fn incomplete_opposite_frontier_withholds_removal_claims() {
+        let left = clause("impact/left");
+        let right = clause("impact/right");
+        let middle = clause("impact/middle");
+        let base = revision(vec![left.clone()], false);
+        let successor = successor(&base, vec![right, middle], vec![left]);
+        let bounded = SupportLimits::new(Limits::new(100, 10, 10_000), 100, 1);
+        let diff = SemanticDiff::between(&base, &successor, bounded).unwrap();
+        let change = change(&diff);
+        assert_eq!(
+            change.successor().status(),
+            SupportStatus::SupportBudgetExhausted
+        );
+        assert!(change.removed().is_empty());
+    }
+
+    #[test]
+    fn support_projection_is_deterministic_under_declaration_reordering() {
+        let left = clause("impact/left");
+        let right = clause("impact/right");
+        let base = revision(vec![left.clone(), right.clone()], false);
+        let reordered = revision(vec![right, left.clone()], true);
+        let base_successor = successor(&base, vec![], vec![left.clone()]);
+        let reordered_successor = successor(&reordered, vec![], vec![left]);
         assert_eq!(base, reordered);
         assert_eq!(
-            SemanticDiff::between(&base, &successor, support_limits()).unwrap(),
-            SemanticDiff::between(&reordered, &reordered_successor, support_limits()).unwrap()
+            SemanticDiff::between(&base, &base_successor, limits()).unwrap(),
+            SemanticDiff::between(&reordered, &reordered_successor, limits()).unwrap(),
         );
     }
 }

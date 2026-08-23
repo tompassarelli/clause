@@ -1,1252 +1,1139 @@
-//! Bounded synthesis of direct fact additions for an absent ground goal.
+//! Certified finite intervention synthesis over typed, sealed revisions.
 //!
-//! The search space is deliberately explicit: callers name the extensional
-//! relations that may receive facts and the finite active domain used to fill
-//! their roles.  Each candidate is admitted as a fresh [`Revision`].
+//! `one minimal` and `all minimal` are deliberately separate contracts.  A
+//! one-result request proves inclusion minimality by exact counterfactual
+//! closure checks; it makes no claim about cardinality optimality or the
+//! complete frontier.  An all-result request is complete only after the
+//! finite candidate space has been exhausted.
 
-use crate::delta::RevisionDelta;
-use crate::derive::{self, Limits, Proof, SupportLimits, SupportStatus};
-use crate::kernel::{self, Clause, KernelError, Model, Result, Revision, Term};
+use crate::{
+    derive::{self, Closure, Limits, Proof, SupportLimits, SupportStatus},
+    kernel::{Clause, Delta, KernelError, RelationId, Result, Revision, Term},
+};
 use std::collections::BTreeSet;
 
-/// Explicit bounds and inputs for one finite intervention search.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct AchieveConfig {
-    allowed_relations: Vec<String>,
-    active_domain: Vec<String>,
-    candidate_basis: Option<Vec<Clause>>,
-    max_candidates: usize,
-    max_solutions: usize,
-    closure_limits: Limits,
-}
-
-impl AchieveConfig {
-    pub fn new(
-        allowed_relations: Vec<String>,
-        active_domain: Vec<String>,
-        max_candidates: usize,
-        max_solutions: usize,
-        closure_limits: Limits,
-    ) -> Self {
-        let allowed_relations = canonical(allowed_relations);
-        let active_domain = canonical(active_domain);
-        Self {
-            allowed_relations,
-            active_domain,
-            candidate_basis: None,
-            max_candidates,
-            max_solutions,
-            closure_limits,
-        }
-    }
-
-    pub fn allowed_relations(&self) -> &[String] {
-        &self.allowed_relations
-    }
-
-    pub fn active_domain(&self) -> &[String] {
-        &self.active_domain
-    }
-
-    /// Restrict enumeration to this finite, canonical set of direct facts.
-    ///
-    /// Each candidate is still validated against the configured relations and
-    /// active domain when achievement begins.
-    pub fn with_candidate_basis(mut self, candidates: Vec<Clause>) -> Self {
-        self.candidate_basis = Some(canonical_clauses(candidates));
-        self
-    }
-
-    pub fn candidate_basis(&self) -> Option<&[Clause]> {
-        self.candidate_basis.as_deref()
-    }
-
-    pub fn max_candidates(&self) -> usize {
-        self.max_candidates
-    }
-
-    pub fn max_solutions(&self) -> usize {
-        self.max_solutions
-    }
-
-    pub fn closure_limits(&self) -> Limits {
-        self.closure_limits
-    }
-}
-
-/// One minimal direct-fact addition set and the immutable revision it admits.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Intervention {
-    additions: Vec<Clause>,
-    revision: Revision,
-    proof: Proof,
-}
-
-impl Intervention {
-    pub fn additions(&self) -> &[Clause] {
-        &self.additions
-    }
-
-    pub fn revision(&self) -> &Revision {
-        &self.revision
-    }
-
-    /// The selected closure proof for the requested goal in `revision`.
-    pub fn proof(&self) -> &Proof {
-        &self.proof
-    }
-}
-
-/// The finite search result.  Limit variants retain any earlier minimal
-/// answers in canonical order, but make clear that enumeration was truncated.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum AchieveResult {
-    Solutions(Vec<Intervention>),
-    Impossible,
-    CandidateLimit(Vec<Intervention>),
-    SolutionLimit(Vec<Intervention>),
-}
-
-impl AchieveResult {
-    pub fn interventions(&self) -> &[Intervention] {
-        match self {
-            Self::Solutions(interventions)
-            | Self::CandidateLimit(interventions)
-            | Self::SolutionLimit(interventions) => interventions,
-            Self::Impossible => &[],
-        }
-    }
-}
-
-/// Find inclusion-minimal sets of allowed direct facts that entail `goal`.
-///
-/// Candidates are evaluated in increasing addition count and canonical clause
-/// order.  A relation is extensional here precisely when no admitted law has
-/// it as a conclusion; allowlisting a derived-only relation is rejected.
-pub fn achieve(revision: &Revision, goal: Clause, config: &AchieveConfig) -> Result<AchieveResult> {
-    kernel::require(revision, goal.clone())?;
-    let source_closure = derive::saturate(revision, config.closure_limits)?;
-    if source_closure.proof(&goal).is_some() {
-        return Err(KernelError::new("achievement goal is already entailed"));
-    }
-
-    let candidates = candidate_facts(revision, config)?;
-    let candidates = candidates
-        .into_iter()
-        .filter(|candidate| revision.model().facts().binary_search(candidate).is_err())
-        .collect::<Vec<_>>();
-    let mut evaluated = 0usize;
-    let mut solutions = Vec::new();
-
-    for size in 1..=candidates.len() {
-        if let Some(result) = search_combinations(
-            revision,
-            &goal,
-            config,
-            &candidates,
-            size,
-            0,
-            &mut Vec::new(),
-            &mut evaluated,
-            &mut solutions,
-        )? {
-            return Ok(result);
-        }
-    }
-
-    Ok(if solutions.is_empty() {
-        AchieveResult::Impossible
-    } else {
-        AchieveResult::Solutions(solutions)
-    })
-}
-
-fn candidate_facts(revision: &Revision, config: &AchieveConfig) -> Result<Vec<Clause>> {
-    if let Some(candidates) = config.candidate_basis() {
-        return validate_candidate_basis(revision, config, candidates);
-    }
-
-    let model = revision.model();
-    let derived_relations = model
-        .laws()
-        .iter()
-        .map(|law| law.conclusion().relation())
-        .collect::<BTreeSet<_>>();
-    let mut candidates = BTreeSet::new();
-
-    for relation_name in config.allowed_relations() {
-        let relation = model
-            .relations()
-            .get(relation_name)
-            .ok_or_else(|| KernelError::new("intervention relation is undeclared"))?;
-        if derived_relations.contains(relation_name.as_str()) {
-            return Err(KernelError::new(format!(
-                "intervention relation is derived-only: {relation_name}"
-            )));
-        }
-        let role_names = relation.roles().keys().cloned().collect::<Vec<_>>();
-        collect_relation_facts(
-            relation_name,
-            &role_names,
-            config.active_domain(),
-            &mut Vec::new(),
-            &mut candidates,
-        )?;
-    }
-
-    Ok(candidates.into_iter().collect())
-}
-
-fn validate_candidate_basis(
-    revision: &Revision,
-    config: &AchieveConfig,
-    candidates: &[Clause],
-) -> Result<Vec<Clause>> {
-    let model = revision.model();
-    let derived_relations = model
-        .laws()
-        .iter()
-        .map(|law| law.conclusion().relation())
-        .collect::<BTreeSet<_>>();
-
-    for candidate in candidates {
-        let relation_name = candidate.relation();
-        let relation = model
-            .relations()
-            .get(relation_name)
-            .ok_or_else(|| KernelError::new("intervention candidate relation is undeclared"))?;
-        if config
-            .allowed_relations()
-            .binary_search_by(|allowed| allowed.as_str().cmp(relation_name))
-            .is_err()
-        {
-            return Err(KernelError::new(format!(
-                "intervention candidate relation is not allowlisted: {relation_name}"
-            )));
-        }
-        if candidate.roles().keys().ne(relation.roles().keys()) {
-            return Err(KernelError::new(
-                "intervention candidate must fill the complete named role map",
-            ));
-        }
-        if candidate.roles().values().any(Term::is_variable) {
-            return Err(KernelError::new("intervention candidate must be ground"));
-        }
-        if candidate.roles().values().any(|term| {
-            config
-                .active_domain()
-                .binary_search_by(|value| value.as_str().cmp(term.text()))
-                .is_err()
-        }) {
-            return Err(KernelError::new(
-                "intervention candidate literal is outside the active domain",
-            ));
-        }
-        if derived_relations.contains(relation_name) {
-            return Err(KernelError::new(format!(
-                "intervention relation is derived-only: {relation_name}"
-            )));
-        }
-    }
-
-    Ok(candidates.to_vec())
-}
-
-fn collect_relation_facts(
-    relation: &str,
-    roles: &[String],
-    domain: &[String],
-    values: &mut Vec<String>,
-    candidates: &mut BTreeSet<Clause>,
-) -> Result<()> {
-    if values.len() == roles.len() {
-        let fact = Clause::new(
-            relation,
-            roles
-                .iter()
-                .cloned()
-                .zip(values.iter().cloned().map(Term::literal))
-                .map(|(role, value)| Ok((role, value?)))
-                .collect::<Result<Vec<_>>>()?,
-        )?;
-        candidates.insert(fact);
-        return Ok(());
-    }
-    for value in domain {
-        values.push(value.clone());
-        collect_relation_facts(relation, roles, domain, values, candidates)?;
-        values.pop();
-    }
-    Ok(())
-}
-
-fn candidate_revision(revision: &Revision, additions: Vec<Clause>) -> Result<Revision> {
-    let model = revision.model();
-    let mut facts = model.facts().to_vec();
-    facts.extend(additions);
-    Ok(Revision::admit(Model::with_laws_and_intents(
-        model.relations().values().cloned().collect(),
-        facts,
-        model.laws().to_vec(),
-        model.query().clone(),
-        model.intents().to_vec(),
-        model.order().to_owned(),
-    )?))
-}
-
-#[allow(clippy::too_many_arguments)]
-fn search_combinations(
-    revision: &Revision,
-    goal: &Clause,
-    config: &AchieveConfig,
-    candidates: &[Clause],
-    remaining: usize,
-    start: usize,
-    chosen: &mut Vec<Clause>,
-    evaluated: &mut usize,
-    solutions: &mut Vec<Intervention>,
-) -> Result<Option<AchieveResult>> {
-    if remaining == 0 {
-        if solutions
-            .iter()
-            .any(|solution| is_subset(solution.additions(), chosen))
-        {
-            return Ok(None);
-        }
-        if *evaluated == config.max_candidates {
-            return Ok(Some(AchieveResult::CandidateLimit(solutions.clone())));
-        }
-        *evaluated += 1;
-        let candidate = candidate_revision(revision, chosen.clone())?;
-        let closure = derive::saturate(&candidate, config.closure_limits)?;
-        let Some(proof) = closure.proof(goal).cloned() else {
-            return Ok(None);
-        };
-        if solutions.len() == config.max_solutions {
-            return Ok(Some(AchieveResult::SolutionLimit(solutions.clone())));
-        }
-        solutions.push(Intervention {
-            additions: chosen.clone(),
-            revision: candidate,
-            proof,
-        });
-        return Ok(None);
-    }
-    for index in start..=candidates.len() - remaining {
-        chosen.push(candidates[index].clone());
-        if let Some(result) = search_combinations(
-            revision,
-            goal,
-            config,
-            candidates,
-            remaining - 1,
-            index + 1,
-            chosen,
-            evaluated,
-            solutions,
-        )? {
-            return Ok(Some(result));
-        }
-        chosen.pop();
-    }
-    Ok(None)
-}
-
-fn is_subset(subset: &[Clause], set: &[Clause]) -> bool {
-    subset
-        .iter()
-        .all(|candidate| set.binary_search(candidate).is_ok())
-}
-
-fn canonical(values: Vec<String>) -> Vec<String> {
-    values
-        .into_iter()
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .collect()
-}
-
-fn canonical_clauses(clauses: Vec<Clause>) -> Vec<Clause> {
-    clauses
-        .into_iter()
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .collect()
-}
-
-/// Bounds for a prevention search.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct PreventLimits {
+/// Explicit resource bounds for an intervention request.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct InterventionLimits {
+    closure: Limits,
     max_candidates: usize,
     max_solutions: usize,
     support: SupportLimits,
-    withdrawal_relations: Option<Vec<String>>,
 }
 
-impl PreventLimits {
-    pub fn new(max_candidates: usize, max_solutions: usize, closure: Limits) -> Self {
+impl InterventionLimits {
+    pub fn new(closure: Limits, max_candidates: usize, max_solutions: usize) -> Self {
         Self {
+            closure,
             max_candidates,
             max_solutions,
             support: SupportLimits::new(closure, max_candidates, max_solutions),
-            withdrawal_relations: None,
         }
     }
 
-    /// Restrict withdrawals to asserted clauses of these declared relations.
-    /// The supplied relation identities are canonicalized before enumeration.
-    pub fn using_relations(mut self, relations: Vec<String>) -> Self {
-        self.withdrawal_relations = Some(canonical(relations));
+    pub fn with_support_limits(mut self, support: SupportLimits) -> Self {
+        self.support = support;
         self
     }
 
-    /// Use explicit bounds for the shared support frontier.
-    pub fn with_support_limits(mut self, limits: SupportLimits) -> Self {
-        self.support = limits;
-        self
+    pub fn closure(&self) -> Limits {
+        self.closure
     }
-
     pub fn max_candidates(&self) -> usize {
         self.max_candidates
     }
-
     pub fn max_solutions(&self) -> usize {
         self.max_solutions
     }
-
-    pub fn closure_limits(&self) -> Limits {
-        self.support.closure
-    }
-
-    pub fn support_limits(&self) -> SupportLimits {
+    pub fn support(&self) -> SupportLimits {
         self.support
     }
-
-    pub fn withdrawal_relations(&self) -> Option<&[String]> {
-        self.withdrawal_relations.as_deref()
-    }
 }
 
-/// Why a prevention search stopped.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum PreventStatus {
-    /// Every candidate subset was considered and all minimal solutions found.
-    Complete,
-    /// The source closure did not entail the target, so no withdrawal is
-    /// needed or returned.
-    AlreadyAbsent,
-    /// No admissible withdrawal intersects every asserted support.
-    Impossible,
-    /// The shared support frontier exhausted its derivation-expansion budget.
-    SupportExpansionBudgetExhausted,
-    /// The shared support frontier exhausted its per-clause support budget.
-    SupportBudgetExhausted,
-    /// The candidate enumeration reached `max_candidates`.
-    CandidateBudgetExhausted,
-    /// The result reached `max_solutions` before enumeration was complete.
-    SolutionBudgetExhausted,
-}
-
-/// One inclusion-minimal withdrawal and its immutable candidate revision.
+/// A verified Delta and the only successor Revision it admits.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct PreventSolution {
-    withdrawals: Vec<Clause>,
+pub struct Intervention {
+    delta: Delta,
     revision: Revision,
+    proof: Option<Proof>,
 }
 
-impl PreventSolution {
-    pub fn withdrawals(&self) -> &[Clause] {
-        &self.withdrawals
+impl Intervention {
+    pub fn delta(&self) -> &Delta {
+        &self.delta
     }
-
-    /// The source declarations are preserved and only these direct facts are
-    /// absent from the candidate revision.
     pub fn revision(&self) -> &Revision {
         &self.revision
     }
+    pub fn proof(&self) -> Option<&Proof> {
+        self.proof.as_ref()
+    }
 }
 
-/// Deterministic, bounded prevention output for one source revision and target.
+/// A result that may be sound but cannot make a stronger certification claim.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Incomplete {
+    CandidateBudgetExhausted,
+    SolutionBudgetExhausted,
+    ClosureBudgetExhausted,
+    SupportExpansionBudgetExhausted,
+    SupportBudgetExhausted,
+}
+
+/// Exact outcome for a `prevent one minimal` request.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct PreventReport {
-    source_revision: String,
+pub enum PreventOne {
+    Satisfied(Intervention),
+    AlreadyAbsent,
+    Impossible,
+    Incomplete(Incomplete),
+}
+
+/// Exact outcome for an `achieve one minimal` request.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum AchieveOne {
+    Satisfied(Intervention),
+    AlreadyEntailed,
+    Impossible,
+    Incomplete(Incomplete),
+}
+
+/// Exhaustive finite prevention output.  Results retained on an incomplete
+/// search are individually verified but are not a complete frontier.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum PreventAll {
+    Complete(Vec<Intervention>),
+    AlreadyAbsent,
+    Impossible,
+    Incomplete {
+        interventions: Vec<Intervention>,
+        reason: Incomplete,
+    },
+}
+
+impl PreventAll {
+    pub fn interventions(&self) -> &[Intervention] {
+        match self {
+            Self::Complete(items)
+            | Self::Incomplete {
+                interventions: items,
+                ..
+            } => items,
+            Self::AlreadyAbsent | Self::Impossible => &[],
+        }
+    }
+}
+
+/// Exhaustive finite achievement output.  Results retained on an incomplete
+/// search are individually verified but are not a complete frontier.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum AchieveAll {
+    Complete(Vec<Intervention>),
+    AlreadyEntailed,
+    Impossible,
+    Incomplete {
+        interventions: Vec<Intervention>,
+        reason: Incomplete,
+    },
+}
+
+impl AchieveAll {
+    pub fn interventions(&self) -> &[Intervention] {
+        match self {
+            Self::Complete(items)
+            | Self::Incomplete {
+                interventions: items,
+                ..
+            } => items,
+            Self::AlreadyEntailed | Self::Impossible => &[],
+        }
+    }
+}
+
+/// Return one canonical inclusion-minimal asserted-clause withdrawal.
+///
+/// The deletion/restoration algorithm is valid only because the admitted law
+/// fragment is positive and monotone.  It proves each retained withdrawal is
+/// necessary, but intentionally does not prove it has minimum cardinality.
+pub fn prevent_one_minimal(
+    source: &Revision,
     target: Clause,
-    status: PreventStatus,
-    candidates_examined: usize,
-    solutions: Vec<PreventSolution>,
+    using: Vec<RelationId>,
+    limits: InterventionLimits,
+) -> Result<PreventOne> {
+    source.model().validate_clause(&target, false)?;
+    let Some(source_closure) = complete_closure(source, limits.closure)? else {
+        return Ok(PreventOne::Incomplete(Incomplete::ClosureBudgetExhausted));
+    };
+    if source_closure.proof(&target).is_none() {
+        return Ok(PreventOne::AlreadyAbsent);
+    }
+    let basis = withdrawal_basis(source, using)?;
+    if basis.is_empty() {
+        return Ok(PreventOne::Impossible);
+    }
+    let mut checks = 0;
+    match closure_after(
+        source,
+        &[],
+        &basis,
+        limits.closure,
+        &mut checks,
+        limits.max_candidates,
+    )? {
+        ClosureAttempt::CandidateBudget => {
+            return Ok(PreventOne::Incomplete(Incomplete::CandidateBudgetExhausted));
+        }
+        ClosureAttempt::ClosureBudget => {
+            return Ok(PreventOne::Incomplete(Incomplete::ClosureBudgetExhausted));
+        }
+        ClosureAttempt::Complete(closure) if closure.proof(&target).is_some() => {
+            return Ok(PreventOne::Impossible);
+        }
+        ClosureAttempt::Complete(_) => {}
+    }
+
+    let mut withdrawals = basis;
+    for candidate in withdrawals.clone() {
+        let restored = without(&withdrawals, &candidate);
+        let closure = match closure_after(
+            source,
+            &[],
+            &restored,
+            limits.closure,
+            &mut checks,
+            limits.max_candidates,
+        )? {
+            ClosureAttempt::CandidateBudget => {
+                return Ok(PreventOne::Incomplete(Incomplete::CandidateBudgetExhausted));
+            }
+            ClosureAttempt::ClosureBudget => {
+                return Ok(PreventOne::Incomplete(Incomplete::ClosureBudgetExhausted));
+            }
+            ClosureAttempt::Complete(closure) => closure,
+        };
+        if closure.proof(&target).is_none() {
+            withdrawals = restored;
+        }
+    }
+    let revision = apply(source, Vec::new(), withdrawals.clone())?;
+    let Some(closure) = complete_closure(&revision, limits.closure)? else {
+        return Ok(PreventOne::Incomplete(Incomplete::ClosureBudgetExhausted));
+    };
+    if closure.proof(&target).is_some() {
+        return Err(KernelError::new(
+            "prevent minimizer returned an entailed target",
+        ));
+    }
+    Ok(PreventOne::Satisfied(Intervention {
+        delta: Delta::new(source.identity().clone(), Vec::new(), withdrawals)?,
+        revision,
+        proof: None,
+    }))
 }
 
-impl PreventReport {
-    pub fn source_revision(&self) -> &str {
-        &self.source_revision
+/// Return one canonical inclusion-minimal asserted-clause admission.
+///
+/// This is the dual of [`prevent_one_minimal`].  It proves subset necessity,
+/// not cardinality optimality or complete-frontier enumeration.
+pub fn achieve_one_minimal(
+    source: &Revision,
+    target: Clause,
+    using: Vec<RelationId>,
+    limits: InterventionLimits,
+) -> Result<AchieveOne> {
+    source.model().validate_clause(&target, false)?;
+    let Some(source_closure) = complete_closure(source, limits.closure)? else {
+        return Ok(AchieveOne::Incomplete(Incomplete::ClosureBudgetExhausted));
+    };
+    if source_closure.proof(&target).is_some() {
+        return Ok(AchieveOne::AlreadyEntailed);
     }
-
-    pub fn target(&self) -> &Clause {
-        &self.target
+    let mut additions = achievement_basis(source, using)?;
+    if additions.is_empty() {
+        return Ok(AchieveOne::Impossible);
     }
-
-    pub fn status(&self) -> PreventStatus {
-        self.status
+    let mut checks = 0;
+    let full = match closure_after(
+        source,
+        &additions,
+        &[],
+        limits.closure,
+        &mut checks,
+        limits.max_candidates,
+    )? {
+        ClosureAttempt::CandidateBudget => {
+            return Ok(AchieveOne::Incomplete(Incomplete::CandidateBudgetExhausted));
+        }
+        ClosureAttempt::ClosureBudget => {
+            return Ok(AchieveOne::Incomplete(Incomplete::ClosureBudgetExhausted));
+        }
+        ClosureAttempt::Complete(closure) => closure,
+    };
+    if full.proof(&target).is_none() {
+        return Ok(AchieveOne::Impossible);
     }
-
-    pub fn candidates_examined(&self) -> usize {
-        self.candidates_examined
+    for candidate in additions.clone() {
+        let reduced = without(&additions, &candidate);
+        let closure = match closure_after(
+            source,
+            &reduced,
+            &[],
+            limits.closure,
+            &mut checks,
+            limits.max_candidates,
+        )? {
+            ClosureAttempt::CandidateBudget => {
+                return Ok(AchieveOne::Incomplete(Incomplete::CandidateBudgetExhausted));
+            }
+            ClosureAttempt::ClosureBudget => {
+                return Ok(AchieveOne::Incomplete(Incomplete::ClosureBudgetExhausted));
+            }
+            ClosureAttempt::Complete(closure) => closure,
+        };
+        if closure.proof(&target).is_some() {
+            additions = reduced;
+        }
     }
-
-    pub fn solutions(&self) -> &[PreventSolution] {
-        &self.solutions
-    }
+    let revision = apply(source, additions.clone(), Vec::new())?;
+    let Some(closure) = complete_closure(&revision, limits.closure)? else {
+        return Ok(AchieveOne::Incomplete(Incomplete::ClosureBudgetExhausted));
+    };
+    let proof = closure
+        .proof(&target)
+        .cloned()
+        .ok_or_else(|| KernelError::new("achieve minimizer returned an absent target"))?;
+    Ok(AchieveOne::Satisfied(Intervention {
+        delta: Delta::new(source.identity().clone(), additions, Vec::new())?,
+        revision,
+        proof: Some(proof),
+    }))
 }
 
-/// Enumerate every inclusion-minimal set of direct asserted facts whose
-/// withdrawal makes `target` absent from the derived closure.
-pub fn prevent(source: &Revision, target: Clause, limits: PreventLimits) -> Result<PreventReport> {
-    kernel::require(source, target.clone())?;
-
-    let source_revision = source.identity().to_owned();
-    let frontier = derive::support_frontier(source, &target, limits.support_limits())?;
+/// Enumerate every inclusion-minimal withdrawal over the complete support
+/// frontier.  An incomplete support projection is never treated as exact.
+pub fn prevent_all_minimal(
+    source: &Revision,
+    target: Clause,
+    using: Vec<RelationId>,
+    limits: InterventionLimits,
+) -> Result<PreventAll> {
+    source.model().validate_clause(&target, false)?;
+    let basis = withdrawal_basis(source, using)?;
+    let frontier = match derive::support_frontier(source, &target, limits.support) {
+        Ok(frontier) => frontier,
+        Err(error) if is_closure_limit(&error) => {
+            return Ok(PreventAll::Incomplete {
+                interventions: Vec::new(),
+                reason: Incomplete::ClosureBudgetExhausted,
+            });
+        }
+        Err(error) => return Err(error),
+    };
     if !frontier.status().is_complete() {
-        return Ok(PreventReport {
-            source_revision,
-            target,
-            status: support_status(frontier.status()),
-            candidates_examined: 0,
-            solutions: Vec::new(),
+        return Ok(PreventAll::Incomplete {
+            interventions: Vec::new(),
+            reason: incomplete_support(frontier.status()),
         });
     }
     if frontier.supports().is_empty() {
-        return Ok(PreventReport {
-            source_revision,
-            target,
-            status: PreventStatus::AlreadyAbsent,
-            candidates_examined: 0,
-            solutions: Vec::new(),
-        });
+        return Ok(PreventAll::AlreadyAbsent);
     }
-
-    let direct_facts = admissible_withdrawals(source, &limits)?;
     let supports = frontier
         .supports()
         .iter()
         .map(|support| support.assertions().to_vec())
         .collect::<Vec<_>>();
-    if direct_facts.is_empty()
-        || supports.iter().any(|support| {
-            support
-                .iter()
-                .all(|assertion| direct_facts.binary_search(assertion).is_err())
-        })
+    if basis.is_empty()
+        || supports
+            .iter()
+            .any(|support| !support.iter().any(|item| basis.binary_search(item).is_ok()))
     {
-        return Ok(PreventReport {
-            source_revision,
-            target,
-            status: PreventStatus::Impossible,
-            candidates_examined: 0,
-            solutions: Vec::new(),
-        });
+        return Ok(PreventAll::Impossible);
     }
-    let mut state = PreventSearch {
-        source,
-        supports: &supports,
-        direct_facts: &direct_facts,
-        limits,
-        candidates_examined: 0,
-        solutions: Vec::new(),
-        status: None,
-    };
-
-    if state.limits.max_solutions == 0 {
-        state.status = Some(PreventStatus::SolutionBudgetExhausted);
-    } else {
-        for size in 1..=direct_facts.len() {
-            if state.status.is_some() {
-                break;
+    let mut state = AllState::new(limits);
+    for size in 1..=basis.len() {
+        let mut choice = Vec::new();
+        enumerate(&basis, size, 0, &mut choice, &mut |withdrawals| {
+            if state.reason.is_some() {
+                return Ok(());
             }
-            let mut indexes = Vec::with_capacity(size);
-            state.combinations(size, 0, &mut indexes)?;
+            if state.checked >= limits.max_candidates {
+                state.reason = Some(Incomplete::CandidateBudgetExhausted);
+                return Ok(());
+            }
+            state.checked += 1;
+            if state
+                .items
+                .iter()
+                .any(|item| is_subset(item.delta().withdrawals(), withdrawals))
+            {
+                return Ok(());
+            }
+            if !supports.iter().all(|support| {
+                support
+                    .iter()
+                    .any(|item| withdrawals.binary_search(item).is_ok())
+            }) {
+                return Ok(());
+            }
+            let revision = apply(source, Vec::new(), withdrawals.to_vec())?;
+            let Some(closure) = complete_closure(&revision, limits.closure)? else {
+                state.reason = Some(Incomplete::ClosureBudgetExhausted);
+                return Ok(());
+            };
+            if closure.proof(&target).is_some() {
+                return Err(KernelError::new(
+                    "support hitting set did not prevent target",
+                ));
+            }
+            state.items.push(Intervention {
+                delta: Delta::new(source.identity().clone(), Vec::new(), withdrawals.to_vec())?,
+                revision,
+                proof: None,
+            });
+            if state.items.len() >= limits.max_solutions {
+                state.reason = Some(Incomplete::SolutionBudgetExhausted);
+            }
+            Ok(())
+        })?;
+        if state.reason.is_some() {
+            break;
         }
     }
-
-    let status = state.status.unwrap_or(PreventStatus::Complete);
-    Ok(PreventReport {
-        source_revision,
-        target: target.clone(),
-        status,
-        candidates_examined: state.candidates_examined,
-        solutions: state.solutions,
-    })
+    Ok(state.prevent_result())
 }
 
-fn support_status(status: SupportStatus) -> PreventStatus {
-    match status {
-        SupportStatus::Complete => unreachable!("incomplete frontiers are handled by the caller"),
-        SupportStatus::ExpansionBudgetExhausted => PreventStatus::SupportExpansionBudgetExhausted,
-        SupportStatus::SupportBudgetExhausted => PreventStatus::SupportBudgetExhausted,
-    }
-}
-
-fn admissible_withdrawals(source: &Revision, limits: &PreventLimits) -> Result<Vec<Clause>> {
-    let Some(relations) = limits.withdrawal_relations() else {
-        return Ok(source.model().facts().to_vec());
+/// Enumerate every inclusion-minimal addition over the finite typed basis.
+pub fn achieve_all_minimal(
+    source: &Revision,
+    target: Clause,
+    using: Vec<RelationId>,
+    limits: InterventionLimits,
+) -> Result<AchieveAll> {
+    source.model().validate_clause(&target, false)?;
+    let Some(source_closure) = complete_closure(source, limits.closure)? else {
+        return Ok(AchieveAll::Incomplete {
+            interventions: Vec::new(),
+            reason: Incomplete::ClosureBudgetExhausted,
+        });
     };
-    for relation in relations {
-        if !source.model().relations().contains_key(relation) {
-            return Err(KernelError::new(format!(
-                "withdrawal relation is undeclared: {relation}"
-            )));
+    if source_closure.proof(&target).is_some() {
+        return Ok(AchieveAll::AlreadyEntailed);
+    }
+    let basis = achievement_basis(source, using)?;
+    let mut state = AllState::new(limits);
+    for size in 1..=basis.len() {
+        let mut choice = Vec::new();
+        enumerate(&basis, size, 0, &mut choice, &mut |additions| {
+            if state.reason.is_some() {
+                return Ok(());
+            }
+            if state.checked >= limits.max_candidates {
+                state.reason = Some(Incomplete::CandidateBudgetExhausted);
+                return Ok(());
+            }
+            state.checked += 1;
+            if state
+                .items
+                .iter()
+                .any(|item| is_subset(item.delta().admissions(), additions))
+            {
+                return Ok(());
+            }
+            let revision = apply(source, additions.to_vec(), Vec::new())?;
+            let Some(closure) = complete_closure(&revision, limits.closure)? else {
+                state.reason = Some(Incomplete::ClosureBudgetExhausted);
+                return Ok(());
+            };
+            let Some(proof) = closure.proof(&target).cloned() else {
+                return Ok(());
+            };
+            state.items.push(Intervention {
+                delta: Delta::new(source.identity().clone(), additions.to_vec(), Vec::new())?,
+                revision,
+                proof: Some(proof),
+            });
+            if state.items.len() >= limits.max_solutions {
+                state.reason = Some(Incomplete::SolutionBudgetExhausted);
+            }
+            Ok(())
+        })?;
+        if state.reason.is_some() {
+            break;
         }
     }
+    if state.items.is_empty() && state.reason.is_none() {
+        return Ok(AchieveAll::Impossible);
+    }
+    Ok(state.achieve_result())
+}
+
+fn withdrawal_basis(source: &Revision, using: Vec<RelationId>) -> Result<Vec<Clause>> {
+    let using = extensional_relations(source, using)?;
     Ok(source
         .model()
-        .facts()
+        .assertions()
         .iter()
-        .filter(|fact| {
-            relations
-                .binary_search_by(|relation| relation.as_str().cmp(fact.relation()))
-                .is_ok()
-        })
+        .filter(|assertion| using.binary_search(assertion.relation()).is_ok())
         .cloned()
         .collect())
 }
 
-struct PreventSearch<'a> {
-    source: &'a Revision,
-    supports: &'a [Vec<Clause>],
-    direct_facts: &'a [Clause],
-    limits: PreventLimits,
-    candidates_examined: usize,
-    solutions: Vec<PreventSolution>,
-    status: Option<PreventStatus>,
+/// Cartesian ground clauses use only entities already admitted by the exact
+/// Model and only the exact declared type of each role.
+fn achievement_basis(source: &Revision, using: Vec<RelationId>) -> Result<Vec<Clause>> {
+    let using = extensional_relations(source, using)?;
+    let mut candidates = BTreeSet::new();
+    for relation_id in using {
+        let relation = source
+            .model()
+            .relations()
+            .get(&relation_id)
+            .expect("validated relation");
+        let roles = relation.roles().iter().collect::<Vec<_>>();
+        collect_ground_clauses(
+            source,
+            &relation_id,
+            &roles,
+            0,
+            &mut BTreeSet::new(),
+            &mut candidates,
+        )?;
+    }
+    Ok(candidates
+        .into_iter()
+        .filter(|candidate| {
+            source
+                .model()
+                .assertions()
+                .binary_search(candidate)
+                .is_err()
+        })
+        .collect())
 }
 
-impl PreventSearch<'_> {
-    fn combinations(&mut self, size: usize, next: usize, indexes: &mut Vec<usize>) -> Result<()> {
-        if self.status.is_some() {
-            return Ok(());
-        }
-        if indexes.len() == size {
-            return self.evaluate(indexes);
-        }
-
-        let remaining = size - indexes.len();
-        let last_start = self.direct_facts.len().saturating_sub(remaining);
-        for index in next..=last_start {
-            indexes.push(index);
-            self.combinations(size, index + 1, indexes)?;
-            indexes.pop();
-            if self.status.is_some() {
-                break;
-            }
-        }
-        Ok(())
+fn extensional_relations(source: &Revision, using: Vec<RelationId>) -> Result<Vec<RelationId>> {
+    let using = using
+        .into_iter()
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    if using.is_empty() {
+        return Err(KernelError::new(
+            "intervention requires at least one relation",
+        ));
     }
-
-    fn evaluate(&mut self, indexes: &[usize]) -> Result<()> {
-        if self.candidates_examined >= self.limits.max_candidates {
-            self.status = Some(PreventStatus::CandidateBudgetExhausted);
-            return Ok(());
+    let derived = source
+        .model()
+        .laws()
+        .iter()
+        .map(|law| law.conclusion().relation())
+        .collect::<BTreeSet<_>>();
+    for relation in &using {
+        if !source.model().relations().contains_key(relation) {
+            return Err(KernelError::new("intervention relation is undeclared"));
         }
-        let withdrawals = indexes
-            .iter()
-            .map(|index| self.direct_facts[*index].clone())
-            .collect::<Vec<_>>();
-
-        self.candidates_examined += 1;
-        if self
-            .solutions
-            .iter()
-            .any(|solution| is_subset(solution.withdrawals(), &withdrawals))
-        {
-            return Ok(());
+        if derived.contains(relation) {
+            return Err(KernelError::new("intervention relation is not extensional"));
         }
+    }
+    Ok(using)
+}
 
-        if self.supports.iter().all(|support| {
-            support
-                .iter()
-                .any(|assertion| withdrawals.binary_search(assertion).is_ok())
-        }) {
-            let candidate =
-                RevisionDelta::new(self.source.identity(), Vec::new(), withdrawals.clone())?
-                    .apply(self.source)?;
-            self.solutions.push(PreventSolution {
-                withdrawals,
-                revision: candidate,
-            });
-            if self.solutions.len() >= self.limits.max_solutions {
-                self.status = Some(PreventStatus::SolutionBudgetExhausted);
-            }
+fn collect_ground_clauses(
+    source: &Revision,
+    relation: &RelationId,
+    roles: &[(&crate::kernel::RoleId, &crate::kernel::Role)],
+    index: usize,
+    values: &mut BTreeSet<(crate::kernel::RoleId, Term)>,
+    candidates: &mut BTreeSet<Clause>,
+) -> Result<()> {
+    if index == roles.len() {
+        candidates.insert(Clause::new(
+            relation.clone(),
+            values.iter().cloned().collect(),
+        )?);
+        return Ok(());
+    }
+    let (role_id, role) = roles[index];
+    for entity in source
+        .model()
+        .entities()
+        .iter()
+        .filter(|entity| entity.typ() == role.typ())
+    {
+        values.insert((role_id.clone(), Term::entity(entity.clone())));
+        collect_ground_clauses(source, relation, roles, index + 1, values, candidates)?;
+        values.remove(&(role_id.clone(), Term::entity(entity.clone())));
+    }
+    Ok(())
+}
+
+fn apply(source: &Revision, admissions: Vec<Clause>, withdrawals: Vec<Clause>) -> Result<Revision> {
+    if admissions.is_empty() && withdrawals.is_empty() {
+        return Ok(source.clone());
+    }
+    Delta::new(source.identity().clone(), admissions, withdrawals)?.apply(source)
+}
+
+fn complete_closure(revision: &Revision, limits: Limits) -> Result<Option<Closure>> {
+    match derive::saturate(revision, limits) {
+        Ok(closure) => Ok(Some(closure)),
+        Err(error) if is_closure_limit(&error) => Ok(None),
+        Err(error) => Err(error),
+    }
+}
+
+enum ClosureAttempt {
+    Complete(Closure),
+    CandidateBudget,
+    ClosureBudget,
+}
+
+fn closure_after(
+    source: &Revision,
+    admissions: &[Clause],
+    withdrawals: &[Clause],
+    limits: Limits,
+    checks: &mut usize,
+    max_checks: usize,
+) -> Result<ClosureAttempt> {
+    if *checks >= max_checks {
+        return Ok(ClosureAttempt::CandidateBudget);
+    }
+    *checks += 1;
+    let revision = apply(source, admissions.to_vec(), withdrawals.to_vec())?;
+    Ok(match complete_closure(&revision, limits)? {
+        Some(closure) => ClosureAttempt::Complete(closure),
+        None => ClosureAttempt::ClosureBudget,
+    })
+}
+
+fn is_closure_limit(error: &KernelError) -> bool {
+    error.to_string().starts_with("closure ")
+}
+
+fn incomplete_support(status: SupportStatus) -> Incomplete {
+    match status {
+        SupportStatus::Complete => {
+            unreachable!("complete support status has no incomplete projection")
         }
-        Ok(())
+        SupportStatus::ExpansionBudgetExhausted => Incomplete::SupportExpansionBudgetExhausted,
+        SupportStatus::SupportBudgetExhausted => Incomplete::SupportBudgetExhausted,
+    }
+}
+
+fn without(items: &[Clause], removed: &Clause) -> Vec<Clause> {
+    items
+        .iter()
+        .filter(|item| *item != removed)
+        .cloned()
+        .collect()
+}
+
+fn is_subset(left: &[Clause], right: &[Clause]) -> bool {
+    left.iter().all(|item| right.binary_search(item).is_ok())
+}
+
+fn enumerate<F>(
+    basis: &[Clause],
+    remaining: usize,
+    start: usize,
+    choice: &mut Vec<Clause>,
+    visit: &mut F,
+) -> Result<()>
+where
+    F: FnMut(&[Clause]) -> Result<()>,
+{
+    if remaining == 0 {
+        return visit(choice);
+    }
+    for index in start..=basis.len() - remaining {
+        choice.push(basis[index].clone());
+        enumerate(basis, remaining - 1, index + 1, choice, visit)?;
+        choice.pop();
+    }
+    Ok(())
+}
+
+struct AllState {
+    checked: usize,
+    items: Vec<Intervention>,
+    reason: Option<Incomplete>,
+}
+
+impl AllState {
+    fn new(limits: InterventionLimits) -> Self {
+        Self {
+            checked: 0,
+            items: Vec::new(),
+            reason: (limits.max_solutions == 0).then_some(Incomplete::SolutionBudgetExhausted),
+        }
+    }
+    fn prevent_result(self) -> PreventAll {
+        match self.reason {
+            Some(reason) => PreventAll::Incomplete {
+                interventions: self.items,
+                reason,
+            },
+            None => PreventAll::Complete(self.items),
+        }
+    }
+    fn achieve_result(self) -> AchieveAll {
+        match self.reason {
+            Some(reason) => AchieveAll::Incomplete {
+                interventions: self.items,
+                reason,
+            },
+            None => AchieveAll::Complete(self.items),
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        AchieveConfig, AchieveResult, PreventLimits, PreventStatus, SupportLimits, achieve, prevent,
+    use super::*;
+    use crate::{
+        kernel::{
+            Cardinality, EntityId, InlineSentencePart, Law, LawId, Mode, Model, ModelId, Name,
+            Relation, Role, RoleId, SentenceShape, Type, TypeId, VariableId,
+        },
+        wire,
     };
-    use crate::derive::{Limits, Witness};
-    use crate::kernel::{
-        Cardinality, Clause, Law, Mode, Model, Relation, Revision, Role, Sentence, Term,
-    };
-    use crate::wire;
+    use std::collections::BTreeMap;
 
-    fn relation(name: &str) -> Relation {
+    fn name(value: &str) -> Name {
+        Name::new(value.to_owned()).unwrap()
+    }
+    fn type_id(value: &str) -> TypeId {
+        TypeId::new(name(value)).unwrap()
+    }
+    fn relation_id(value: &str) -> RelationId {
+        RelationId::new(name(value)).unwrap()
+    }
+    fn role_id(value: &str) -> RoleId {
+        RoleId::new(name(value)).unwrap()
+    }
+    fn entity(model: &ModelId, local: &str, typ: &TypeId) -> EntityId {
+        EntityId::new(model.clone(), name(local), typ.clone()).unwrap()
+    }
+    fn role(value: &str, typ: &TypeId) -> Role {
+        Role::new(role_id(value), typ.clone())
+    }
+    fn relation(id: &RelationId, left: (&str, &TypeId), right: (&str, &TypeId)) -> Relation {
+        let left_role = role(left.0, left.1);
+        let right_role = role(right.0, right.1);
         Relation::new(
-            name,
+            id.clone(),
+            SentenceShape::new(vec![
+                InlineSentencePart::Role(left_role.clone()),
+                InlineSentencePart::Literal("relates".into()),
+                InlineSentencePart::Role(right_role.clone()),
+            ])
+            .unwrap(),
             vec![
-                Role::new("from", "Place").unwrap(),
-                Role::new("to", "Place").unwrap(),
-            ],
-            Sentence::new("from", "reaches", "to").unwrap(),
-            vec![Mode::finite(vec!["from".into()], vec!["to".into()], Cardinality::Many).unwrap()],
-        )
-        .unwrap()
-    }
-
-    fn clause(relation: &str, from: &str, to: &str) -> Clause {
-        Clause::new(
-            relation,
-            vec![
-                ("from".into(), Term::literal(from).unwrap()),
-                ("to".into(), Term::literal(to).unwrap()),
-            ],
-        )
-        .unwrap()
-    }
-
-    fn pattern(relation: &str, from: &str, to: &str) -> Clause {
-        Clause::new(
-            relation,
-            vec![
-                ("from".into(), Term::variable(from).unwrap()),
-                ("to".into(), Term::variable(to).unwrap()),
-            ],
-        )
-        .unwrap()
-    }
-
-    fn revision(laws: Vec<Law>) -> Revision {
-        Revision::admit(
-            Model::with_laws(
-                vec![
-                    relation("map/input"),
-                    relation("map/left"),
-                    relation("map/right"),
-                    relation("map/middle"),
-                    relation("map/goal"),
-                ],
-                vec![],
-                laws,
-                Clause::new(
-                    "map/goal",
-                    vec![
-                        ("from".into(), Term::literal("A").unwrap()),
-                        ("to".into(), Term::variable("destination").unwrap()),
-                    ],
+                Mode::finite(
+                    vec![left_role.id().clone()],
+                    vec![right_role.id().clone()],
+                    Cardinality::Many,
                 )
                 .unwrap(),
-                "ascending",
+            ],
+        )
+        .unwrap()
+    }
+    fn clause(relation: &RelationId, left: (&str, &EntityId), right: (&str, &EntityId)) -> Clause {
+        Clause::new(
+            relation.clone(),
+            BTreeMap::from([
+                (role_id(left.0), Term::entity(left.1.clone())),
+                (role_id(right.0), Term::entity(right.1.clone())),
+            ]),
+        )
+        .unwrap()
+    }
+    fn variable(value: &str, typ: &TypeId) -> Term {
+        Term::variable(VariableId::new(name(value)).unwrap(), typ.clone())
+    }
+    fn law(id: &str, premise: Clause, conclusion: Clause) -> Law {
+        Law::new(LawId::new(name(id)).unwrap(), vec![premise], conclusion).unwrap()
+    }
+    fn rev(
+        entities: Vec<EntityId>,
+        relations: Vec<Relation>,
+        assertions: Vec<Clause>,
+        laws: Vec<Law>,
+    ) -> Revision {
+        let model_id = entities.first().unwrap().model().clone();
+        let types = entities
+            .iter()
+            .map(|entity| (entity.typ().clone(), Type::new(entity.typ().clone())))
+            .collect();
+        wire::admit(
+            Model::new(
+                model_id,
+                types,
+                entities.into_iter().collect(),
+                relations
+                    .into_iter()
+                    .map(|relation| (relation.id().clone(), relation))
+                    .collect(),
+                assertions,
+                laws,
             )
             .unwrap(),
         )
     }
+    fn limits() -> InterventionLimits {
+        InterventionLimits::new(Limits::new(100, 10, 20_000), 200, 100)
+    }
 
-    fn prevention_revision(facts: Vec<Clause>, laws: Vec<Law>) -> Revision {
-        Revision::admit(
-            Model::with_laws(
-                vec![relation("map/links"), relation("map/reaches")],
-                facts,
-                laws,
-                Clause::new(
-                    "map/reaches",
+    #[test]
+    fn typed_achievement_basis_uses_exact_role_types_and_excludes_existing_assertions() {
+        let model = ModelId::new(name("plans")).unwrap();
+        let place = type_id("Place");
+        let permit = type_id("Permit");
+        let alpha = entity(&model, "Alpha", &place);
+        let beta = entity(&model, "Beta", &place);
+        let permit_a = entity(&model, "A", &permit);
+        let assigned = relation_id("plans/assigned");
+        let source = rev(
+            vec![alpha.clone(), beta.clone(), permit_a.clone()],
+            vec![relation(&assigned, ("place", &place), ("permit", &permit))],
+            vec![clause(&assigned, ("place", &alpha), ("permit", &permit_a))],
+            vec![],
+        );
+        let basis = achievement_basis(&source, vec![assigned.clone()]).unwrap();
+        assert_eq!(
+            basis,
+            vec![clause(&assigned, ("place", &beta), ("permit", &permit_a),)]
+        );
+    }
+
+    #[test]
+    fn one_minimal_proves_subset_necessity_but_not_minimum_cardinality() {
+        let model = ModelId::new(name("m")).unwrap();
+        let t = type_id("Thing");
+        let a = entity(&model, "A", &t);
+        let b = entity(&model, "B", &t);
+        let input_a = relation_id("m/a");
+        let input_b = relation_id("m/b");
+        let goal = relation_id("m/goal");
+        let va = variable("a", &t);
+        let vb = variable("b", &t);
+        let source = rev(
+            vec![a.clone(), b.clone()],
+            vec![
+                relation(&input_a, ("x", &t), ("y", &t)),
+                relation(&input_b, ("x", &t), ("y", &t)),
+                relation(&goal, ("x", &t), ("y", &t)),
+            ],
+            vec![],
+            vec![
+                law(
+                    "m/a-goal",
+                    Clause::new(
+                        input_a.clone(),
+                        BTreeMap::from([(role_id("x"), va.clone()), (role_id("y"), vb.clone())]),
+                    )
+                    .unwrap(),
+                    Clause::new(
+                        goal.clone(),
+                        BTreeMap::from([(role_id("x"), va.clone()), (role_id("y"), vb.clone())]),
+                    )
+                    .unwrap(),
+                ),
+                Law::new(
+                    LawId::new(name("m/bc-goal")).unwrap(),
                     vec![
-                        ("from".into(), Term::literal("North").unwrap()),
-                        ("to".into(), Term::variable("destination").unwrap()),
+                        Clause::new(
+                            input_b.clone(),
+                            BTreeMap::from([
+                                (role_id("x"), va.clone()),
+                                (role_id("y"), vb.clone()),
+                            ]),
+                        )
+                        .unwrap(),
+                        Clause::new(
+                            input_b.clone(),
+                            BTreeMap::from([
+                                (role_id("x"), vb.clone()),
+                                (role_id("y"), va.clone()),
+                            ]),
+                        )
+                        .unwrap(),
                     ],
+                    Clause::new(
+                        goal.clone(),
+                        BTreeMap::from([(role_id("x"), va.clone()), (role_id("y"), vb.clone())]),
+                    )
+                    .unwrap(),
                 )
                 .unwrap(),
-                "ascending",
-            )
-            .unwrap(),
-        )
-    }
-
-    fn config(allowed: Vec<&str>, max_candidates: usize, max_solutions: usize) -> AchieveConfig {
-        AchieveConfig::new(
-            allowed.into_iter().map(str::to_owned).collect(),
-            vec!["B".into(), "A".into()],
-            max_candidates,
-            max_solutions,
-            Limits::new(100, 10, 10_000),
-        )
-    }
-
-    fn closure_limits() -> Limits {
-        Limits::new(100, 10, 10_000)
-    }
-
-    #[test]
-    fn explicit_candidate_basis_is_canonical_and_complete() {
-        let source = revision(vec![
-            Law::new(
-                "map/left-goal",
-                vec![pattern("map/left", "from", "to")],
-                pattern("map/goal", "from", "to"),
-            )
-            .unwrap(),
-            Law::new(
-                "map/right-goal",
-                vec![pattern("map/right", "from", "to")],
-                pattern("map/goal", "from", "to"),
-            )
-            .unwrap(),
-        ]);
-        let config = config(vec!["map/right", "map/left"], 2, 10).with_candidate_basis(vec![
-            clause("map/right", "A", "B"),
-            clause("map/left", "A", "B"),
-            clause("map/right", "A", "B"),
-        ]);
-        assert_eq!(
-            config.candidate_basis(),
-            Some([clause("map/left", "A", "B"), clause("map/right", "A", "B"),].as_slice())
-        );
-
-        let result = achieve(&source, clause("map/goal", "A", "B"), &config).unwrap();
-
-        assert!(matches!(&result, AchieveResult::Solutions(_)));
-        assert_eq!(
-            result
-                .interventions()
-                .iter()
-                .map(|intervention| intervention.additions().to_vec())
-                .collect::<Vec<_>>(),
-            vec![
-                vec![clause("map/left", "A", "B")],
-                vec![clause("map/right", "A", "B")],
-            ]
-        );
-    }
-
-    #[test]
-    fn explicit_candidate_basis_rejects_invalid_candidates() {
-        let source = revision(vec![
-            Law::new(
-                "map/input-goal",
-                vec![pattern("map/input", "from", "to")],
-                pattern("map/goal", "from", "to"),
-            )
-            .unwrap(),
-        ]);
-        let goal = clause("map/goal", "A", "B");
-        let basis =
-            |candidate| config(vec!["map/input"], 100, 10).with_candidate_basis(vec![candidate]);
-
-        let undeclared = Clause::new(
-            "map/missing",
-            vec![
-                ("from".into(), Term::literal("A").unwrap()),
-                ("to".into(), Term::literal("B").unwrap()),
             ],
-        )
-        .unwrap();
-        assert_eq!(
-            achieve(&source, goal.clone(), &basis(undeclared))
-                .unwrap_err()
-                .to_string(),
-            "intervention candidate relation is undeclared"
         );
-
-        assert_eq!(
-            achieve(&source, goal.clone(), &basis(clause("map/left", "A", "B")))
-                .unwrap_err()
-                .to_string(),
-            "intervention candidate relation is not allowlisted: map/left"
-        );
-
-        let incomplete = Clause::new(
-            "map/input",
-            vec![("from".into(), Term::literal("A").unwrap())],
-        )
-        .unwrap();
-        assert_eq!(
-            achieve(&source, goal.clone(), &basis(incomplete))
-                .unwrap_err()
-                .to_string(),
-            "intervention candidate must fill the complete named role map"
-        );
-
-        let nonground = Clause::new(
-            "map/input",
-            vec![
-                ("from".into(), Term::variable("from").unwrap()),
-                ("to".into(), Term::literal("B").unwrap()),
-            ],
-        )
-        .unwrap();
-        assert_eq!(
-            achieve(&source, goal.clone(), &basis(nonground))
-                .unwrap_err()
-                .to_string(),
-            "intervention candidate must be ground"
-        );
-
-        assert_eq!(
-            achieve(&source, goal.clone(), &basis(clause("map/input", "A", "C")))
-                .unwrap_err()
-                .to_string(),
-            "intervention candidate literal is outside the active domain"
-        );
-
-        assert_eq!(
-            achieve(
-                &source,
-                goal,
-                &config(vec!["map/goal"], 100, 10)
-                    .with_candidate_basis(vec![clause("map/goal", "A", "B")]),
-            )
-            .unwrap_err()
-            .to_string(),
-            "intervention relation is derived-only: map/goal"
-        );
-    }
-
-    #[test]
-    fn direct_fact_achievement_has_an_asserted_proof() {
-        let source = revision(vec![]);
-        let result = achieve(
+        let target = clause(&goal, ("x", &a), ("y", &b));
+        let result = achieve_one_minimal(
             &source,
-            clause("map/goal", "A", "B"),
-            &config(vec!["map/goal"], 100, 10),
+            target,
+            vec![input_a.clone(), input_b.clone()],
+            limits(),
         )
         .unwrap();
-
-        let interventions = result.interventions();
-        assert_eq!(interventions.len(), 1);
-        assert_eq!(
-            interventions[0].additions(),
-            &[clause("map/goal", "A", "B")]
+        let AchieveOne::Satisfied(intervention) = result else {
+            panic!("expected certified one-minimal result");
+        };
+        assert_eq!(intervention.delta().admissions().len(), 2);
+        assert!(
+            intervention
+                .delta()
+                .admissions()
+                .iter()
+                .all(|item| item.relation() == &input_b)
         );
+    }
+
+    #[test]
+    fn all_achievement_is_complete_and_impossible_is_explicit() {
+        let model = ModelId::new(name("m")).unwrap();
+        let t = type_id("Thing");
+        let a = entity(&model, "A", &t);
+        let b = entity(&model, "B", &t);
+        let input = relation_id("m/input");
+        let goal = relation_id("m/goal");
+        let va = variable("a", &t);
+        let vb = variable("b", &t);
+        let source = rev(
+            vec![a.clone(), b.clone()],
+            vec![
+                relation(&input, ("x", &t), ("y", &t)),
+                relation(&goal, ("x", &t), ("y", &t)),
+            ],
+            vec![],
+            vec![law(
+                "m/copy",
+                Clause::new(
+                    input.clone(),
+                    BTreeMap::from([(role_id("x"), va.clone()), (role_id("y"), vb.clone())]),
+                )
+                .unwrap(),
+                Clause::new(
+                    goal.clone(),
+                    BTreeMap::from([(role_id("x"), va.clone()), (role_id("y"), vb.clone())]),
+                )
+                .unwrap(),
+            )],
+        );
+        let target = clause(&goal, ("x", &a), ("y", &b));
+        let all =
+            achieve_all_minimal(&source, target.clone(), vec![input.clone()], limits()).unwrap();
+        assert_eq!(all.interventions().len(), 1);
+        assert!(matches!(all, AchieveAll::Complete(_)));
         assert!(matches!(
-            interventions[0].proof().witness(),
-            Witness::Asserted
+            achieve_all_minimal(&source, target, vec![goal], limits())
+                .unwrap_err()
+                .to_string()
+                .as_str(),
+            "intervention relation is not extensional"
         ));
     }
 
     #[test]
-    fn two_law_chain_returns_the_enabled_proof_and_preserves_source() {
-        let source = revision(vec![
-            Law::new(
-                "map/01-input-middle",
-                vec![pattern("map/input", "from", "to")],
-                pattern("map/middle", "from", "to"),
-            )
-            .unwrap(),
-            Law::new(
-                "map/02-middle-goal",
-                vec![pattern("map/middle", "from", "to")],
-                pattern("map/goal", "from", "to"),
-            )
-            .unwrap(),
-        ]);
-        let source_wire = wire::serialize(&source);
-        let result = achieve(
+    fn all_prevention_hits_redundant_supports_and_budget_never_certifies() {
+        let model = ModelId::new(name("m")).unwrap();
+        let t = type_id("Thing");
+        let a = entity(&model, "A", &t);
+        let b = entity(&model, "B", &t);
+        let left = relation_id("m/left");
+        let right = relation_id("m/right");
+        let goal = relation_id("m/goal");
+        let va = variable("a", &t);
+        let vb = variable("b", &t);
+        let c1 = clause(&left, ("x", &a), ("y", &b));
+        let c2 = clause(&right, ("x", &a), ("y", &b));
+        let source = rev(
+            vec![a.clone(), b.clone()],
+            vec![
+                relation(&left, ("x", &t), ("y", &t)),
+                relation(&right, ("x", &t), ("y", &t)),
+                relation(&goal, ("x", &t), ("y", &t)),
+            ],
+            vec![c1.clone(), c2.clone()],
+            vec![
+                law(
+                    "m/left-goal",
+                    Clause::new(
+                        left.clone(),
+                        BTreeMap::from([(role_id("x"), va.clone()), (role_id("y"), vb.clone())]),
+                    )
+                    .unwrap(),
+                    Clause::new(
+                        goal.clone(),
+                        BTreeMap::from([(role_id("x"), va.clone()), (role_id("y"), vb.clone())]),
+                    )
+                    .unwrap(),
+                ),
+                law(
+                    "m/right-goal",
+                    Clause::new(
+                        right.clone(),
+                        BTreeMap::from([(role_id("x"), va.clone()), (role_id("y"), vb.clone())]),
+                    )
+                    .unwrap(),
+                    Clause::new(
+                        goal.clone(),
+                        BTreeMap::from([(role_id("x"), va.clone()), (role_id("y"), vb.clone())]),
+                    )
+                    .unwrap(),
+                ),
+            ],
+        );
+        let target = clause(&goal, ("x", &a), ("y", &b));
+        let all = prevent_all_minimal(
             &source,
-            clause("map/goal", "A", "B"),
-            &config(vec!["map/input"], 100, 10),
+            target.clone(),
+            vec![left.clone(), right.clone()],
+            limits(),
         )
         .unwrap();
-
-        let intervention = &result.interventions()[0];
-        assert_eq!(intervention.additions(), &[clause("map/input", "A", "B")]);
-        assert_eq!(intervention.proof().generation(), 2);
-        match intervention.proof().witness() {
-            Witness::Derived { law, premises, .. } => {
-                assert_eq!(law, "map/02-middle-goal");
-                assert_eq!(premises, &[clause("map/middle", "A", "B")]);
+        assert_eq!(all.interventions().len(), 1);
+        assert_eq!(all.interventions()[0].delta().withdrawals(), &[c1, c2]);
+        let bounded = prevent_all_minimal(
+            &source,
+            target,
+            vec![left, right],
+            InterventionLimits::new(Limits::new(100, 10, 20_000), 0, 10)
+                .with_support_limits(SupportLimits::new(Limits::new(100, 10, 20_000), 100, 100)),
+        )
+        .unwrap();
+        assert!(matches!(
+            bounded,
+            PreventAll::Incomplete {
+                reason: Incomplete::CandidateBudgetExhausted,
+                ..
             }
-            Witness::Asserted => panic!("goal should be derived"),
-        }
-        assert_eq!(wire::serialize(&source), source_wire);
-        assert!(source.model().facts().is_empty());
-    }
-
-    #[test]
-    fn alternate_minimal_additions_are_canonical_and_deterministic() {
-        let source = revision(vec![
-            Law::new(
-                "map/left-goal",
-                vec![pattern("map/left", "from", "to")],
-                pattern("map/goal", "from", "to"),
-            )
-            .unwrap(),
-            Law::new(
-                "map/right-goal",
-                vec![pattern("map/right", "from", "to")],
-                pattern("map/goal", "from", "to"),
-            )
-            .unwrap(),
-        ]);
-        let goal = clause("map/goal", "A", "B");
-        let first = achieve(
-            &source,
-            goal.clone(),
-            &config(vec!["map/right", "map/left"], 100, 10),
-        )
-        .unwrap();
-        let second = achieve(
-            &source,
-            goal,
-            &config(vec!["map/left", "map/right"], 100, 10),
-        )
-        .unwrap();
-
-        assert_eq!(first, second);
-        assert_eq!(
-            first
-                .interventions()
-                .iter()
-                .map(|intervention| intervention.additions().to_vec())
-                .collect::<Vec<_>>(),
-            vec![
-                vec![clause("map/left", "A", "B")],
-                vec![clause("map/right", "A", "B")],
-            ]
-        );
-    }
-
-    #[test]
-    fn inclusion_minimal_sets_continue_after_a_smaller_solution() {
-        let source = revision(vec![
-            Law::new(
-                "map/left-goal",
-                vec![pattern("map/left", "from", "to")],
-                pattern("map/goal", "from", "to"),
-            )
-            .unwrap(),
-            Law::new(
-                "map/input-pair-goal",
-                vec![
-                    pattern("map/input", "from", "middle"),
-                    pattern("map/input", "middle", "to"),
-                ],
-                pattern("map/goal", "from", "to"),
-            )
-            .unwrap(),
-        ]);
-        let result = achieve(
-            &source,
-            clause("map/goal", "A", "B"),
-            &config(vec!["map/left", "map/input"], 1_000, 10),
-        )
-        .unwrap();
-
-        assert_eq!(
-            result
-                .interventions()
-                .iter()
-                .map(|intervention| intervention.additions().to_vec())
-                .collect::<Vec<_>>(),
-            vec![
-                vec![clause("map/left", "A", "B")],
-                vec![clause("map/input", "A", "A"), clause("map/input", "A", "B"),],
-                vec![clause("map/input", "A", "B"), clause("map/input", "B", "B"),],
-            ]
-        );
-    }
-
-    #[test]
-    fn derived_only_relations_cannot_be_allowlisted() {
-        let source = revision(vec![
-            Law::new(
-                "map/middle-goal",
-                vec![pattern("map/middle", "from", "to")],
-                pattern("map/goal", "from", "to"),
-            )
-            .unwrap(),
-        ]);
-        let error = achieve(
-            &source,
-            clause("map/goal", "A", "B"),
-            &config(vec!["map/goal"], 100, 10),
-        )
-        .unwrap_err();
-        assert_eq!(
-            error.to_string(),
-            "intervention relation is derived-only: map/goal"
-        );
-    }
-
-    #[test]
-    fn impossible_and_candidate_budget_exhaustion_are_distinct() {
-        let source = revision(vec![
-            Law::new(
-                "map/input-goal",
-                vec![pattern("map/input", "from", "to")],
-                pattern("map/goal", "from", "to"),
-            )
-            .unwrap(),
-        ]);
-        assert_eq!(
-            achieve(
-                &source,
-                clause("map/goal", "A", "B"),
-                &config(vec!["map/left"], 100, 10),
-            )
-            .unwrap(),
-            AchieveResult::Impossible
-        );
-        assert!(matches!(
-            achieve(
-                &source,
-                clause("map/goal", "A", "B"),
-                &config(vec!["map/input"], 1, 10),
-            )
-            .unwrap(),
-            AchieveResult::CandidateLimit(interventions) if interventions.is_empty()
-        ));
-        assert!(matches!(
-            achieve(
-                &revision(vec![]),
-                clause("map/goal", "A", "B"),
-                &config(vec!["map/goal"], 100, 0),
-            )
-            .unwrap(),
-            AchieveResult::SolutionLimit(interventions) if interventions.is_empty()
         ));
     }
 
     #[test]
-    fn alternate_paths_require_one_withdrawal_from_each_path() {
-        let a = clause("map/links", "North", "A");
-        let b = clause("map/links", "A", "Store");
-        let c = clause("map/links", "North", "B");
-        let d = clause("map/links", "B", "Store");
-        let law = Law::new(
-            "map/path-reaches",
+    fn prevention_one_restoration_returns_an_inclusion_minimal_withdrawal() {
+        let model = ModelId::new(name("m")).unwrap();
+        let t = type_id("Thing");
+        let a = entity(&model, "A", &t);
+        let b = entity(&model, "B", &t);
+        let input = relation_id("m/input");
+        let goal = relation_id("m/goal");
+        let va = variable("a", &t);
+        let vb = variable("b", &t);
+        let asserted = clause(&input, ("x", &a), ("y", &b));
+        let source = rev(
+            vec![a.clone(), b.clone()],
             vec![
-                pattern("map/links", "from", "middle"),
-                pattern("map/links", "middle", "to"),
+                relation(&input, ("x", &t), ("y", &t)),
+                relation(&goal, ("x", &t), ("y", &t)),
             ],
-            pattern("map/reaches", "from", "to"),
-        )
-        .unwrap();
-        let source =
-            prevention_revision(vec![a.clone(), b.clone(), c.clone(), d.clone()], vec![law]);
-        let original = source.clone();
-        let report = prevent(
-            &source,
-            clause("map/reaches", "North", "Store"),
-            PreventLimits::new(100, 100, closure_limits())
-                .using_relations(vec!["map/links".into()]),
-        )
-        .unwrap();
-
-        assert_eq!(report.status(), PreventStatus::Complete);
-        assert_eq!(report.solutions().len(), 4);
-        assert_eq!(report.solutions()[0].withdrawals(), &[b.clone(), d.clone()]);
-        assert_eq!(report.solutions()[1].withdrawals(), &[b, c.clone()]);
-        assert_eq!(report.solutions()[2].withdrawals(), &[d, a.clone()]);
-        assert_eq!(report.solutions()[3].withdrawals(), &[a, c]);
-        assert_eq!(source, original);
-        assert!(report.solutions().iter().all(|solution| {
-            solution
-                .revision()
-                .model()
-                .facts()
-                .iter()
-                .all(|fact| fact.relation() == "map/links")
-        }));
-
-        let rerun = prevent(
-            &source,
-            clause("map/reaches", "North", "Store"),
-            PreventLimits::new(100, 100, closure_limits())
-                .using_relations(vec!["map/links".into()]),
-        )
-        .unwrap();
-        assert_eq!(report, rerun);
-    }
-
-    #[test]
-    fn absent_target_and_budgets_are_explicit() {
-        let source = prevention_revision(vec![clause("map/links", "North", "Store")], Vec::new());
-        let absent = prevent(
-            &source,
-            clause("map/reaches", "North", "Store"),
-            PreventLimits::new(0, 0, closure_limits()).with_support_limits(SupportLimits::new(
-                closure_limits(),
-                100,
-                100,
-            )),
-        )
-        .unwrap();
-        assert_eq!(absent.status(), PreventStatus::AlreadyAbsent);
-        let law = Law::new(
-            "map/link-reaches",
-            vec![pattern("map/links", "from", "to")],
-            pattern("map/reaches", "from", "to"),
-        )
-        .unwrap();
-        let source = prevention_revision(vec![clause("map/links", "North", "Store")], vec![law]);
-        let exhausted =
-            prevent(
-                &source,
-                clause("map/reaches", "North", "Store"),
-                PreventLimits::new(0, 10, closure_limits())
-                    .with_support_limits(SupportLimits::new(closure_limits(), 100, 100)),
-            )
-            .unwrap();
-        assert_eq!(exhausted.status(), PreventStatus::CandidateBudgetExhausted);
-    }
-
-    #[test]
-    fn restricted_basis_cannot_prevent_a_support_it_does_not_touch() {
-        let law = Law::new(
-            "map/link-reaches",
-            vec![pattern("map/links", "from", "to")],
-            pattern("map/reaches", "from", "to"),
-        )
-        .unwrap();
-        let source = prevention_revision(vec![clause("map/links", "North", "Store")], vec![law]);
-
-        let report = prevent(
-            &source,
-            clause("map/reaches", "North", "Store"),
-            PreventLimits::new(100, 100, closure_limits())
-                .using_relations(vec!["map/reaches".into()]),
-        )
-        .unwrap();
-
-        assert_eq!(report.status(), PreventStatus::Impossible);
-        assert_eq!(report.candidates_examined(), 0);
-        assert!(report.solutions().is_empty());
-    }
-
-    #[test]
-    fn incomplete_support_frontier_never_reports_complete_prevention() {
-        let law = Law::new(
-            "map/link-reaches",
-            vec![pattern("map/links", "from", "to")],
-            pattern("map/reaches", "from", "to"),
-        )
-        .unwrap();
-        let source = prevention_revision(vec![clause("map/links", "North", "Store")], vec![law]);
-
-        let report =
-            prevent(
-                &source,
-                clause("map/reaches", "North", "Store"),
-                PreventLimits::new(100, 100, closure_limits())
-                    .with_support_limits(SupportLimits::new(closure_limits(), 0, 100)),
-            )
-            .unwrap();
-
-        assert_eq!(
-            report.status(),
-            PreventStatus::SupportExpansionBudgetExhausted
+            vec![asserted.clone()],
+            vec![law(
+                "m/copy",
+                Clause::new(
+                    input.clone(),
+                    BTreeMap::from([(role_id("x"), va.clone()), (role_id("y"), vb.clone())]),
+                )
+                .unwrap(),
+                Clause::new(
+                    goal.clone(),
+                    BTreeMap::from([(role_id("x"), va.clone()), (role_id("y"), vb.clone())]),
+                )
+                .unwrap(),
+            )],
         );
-        assert_eq!(report.candidates_examined(), 0);
-        assert!(report.solutions().is_empty());
+        let result = prevent_one_minimal(
+            &source,
+            clause(&goal, ("x", &a), ("y", &b)),
+            vec![input],
+            limits(),
+        )
+        .unwrap();
+        let PreventOne::Satisfied(intervention) = result else {
+            panic!("expected certified prevention");
+        };
+        assert_eq!(intervention.delta().withdrawals(), &[asserted]);
+    }
+
+    #[test]
+    fn absent_candidate_basis_is_impossible_not_a_empty_delta() {
+        let model = ModelId::new(name("m")).unwrap();
+        let t = type_id("Thing");
+        let a = entity(&model, "A", &t);
+        let b = entity(&model, "B", &t);
+        let input = relation_id("m/input");
+        let goal = relation_id("m/goal");
+        let source = rev(
+            vec![a.clone(), b.clone()],
+            vec![
+                relation(&input, ("x", &t), ("y", &t)),
+                relation(&goal, ("x", &t), ("y", &t)),
+            ],
+            vec![],
+            vec![],
+        );
+        assert!(matches!(
+            achieve_one_minimal(
+                &source,
+                clause(&goal, ("x", &a), ("y", &b)),
+                vec![input],
+                limits()
+            )
+            .unwrap(),
+            AchieveOne::Impossible
+        ));
+    }
+
+    #[test]
+    fn closure_budget_is_uncertified_not_absence_or_impossibility() {
+        let model = ModelId::new(name("m")).unwrap();
+        let t = type_id("Thing");
+        let a = entity(&model, "A", &t);
+        let b = entity(&model, "B", &t);
+        let input = relation_id("m/input");
+        let goal = relation_id("m/goal");
+        let va = variable("a", &t);
+        let vb = variable("b", &t);
+        let source = rev(
+            vec![a.clone(), b.clone()],
+            vec![
+                relation(&input, ("x", &t), ("y", &t)),
+                relation(&goal, ("x", &t), ("y", &t)),
+            ],
+            vec![],
+            vec![law(
+                "m/copy",
+                Clause::new(
+                    input.clone(),
+                    BTreeMap::from([(role_id("x"), va.clone()), (role_id("y"), vb.clone())]),
+                )
+                .unwrap(),
+                Clause::new(
+                    goal.clone(),
+                    BTreeMap::from([(role_id("x"), va), (role_id("y"), vb)]),
+                )
+                .unwrap(),
+            )],
+        );
+        let tight = InterventionLimits::new(Limits::new(0, 10, 100), 10, 10);
+        assert!(matches!(
+            achieve_all_minimal(
+                &source,
+                clause(&goal, ("x", &a), ("y", &b)),
+                vec![input],
+                tight,
+            )
+            .unwrap(),
+            AchieveAll::Incomplete {
+                reason: Incomplete::ClosureBudgetExhausted,
+                ..
+            }
+        ));
     }
 }
