@@ -214,40 +214,36 @@ fn support_change(
         .cloned()
         .collect();
     // A gain is exact only if the base frontier proved that support absent.
-    let added: Vec<Support> = base
-        .status()
-        .is_complete()
-        .then(|| {
-            successor
-                .supports()
-                .iter()
-                .filter(|support| {
-                    !base
-                        .supports()
-                        .iter()
-                        .any(|candidate| candidate.assertion_key() == support.assertion_key())
-                })
-                .cloned()
-                .collect()
-        })
-        .unwrap_or_default();
+    let added: Vec<Support> = if base.status().is_complete() {
+        successor
+            .supports()
+            .iter()
+            .filter(|support| {
+                !base
+                    .supports()
+                    .iter()
+                    .any(|candidate| candidate.assertion_key() == support.assertion_key())
+            })
+            .cloned()
+            .collect()
+    } else {
+        Vec::new()
+    };
     // A loss is exact only if the successor frontier proved that support absent.
-    let removed: Vec<Support> = successor
-        .status()
-        .is_complete()
-        .then(|| {
-            base.supports()
-                .iter()
-                .filter(|support| {
-                    !successor
-                        .supports()
-                        .iter()
-                        .any(|candidate| candidate.assertion_key() == support.assertion_key())
-                })
-                .cloned()
-                .collect()
-        })
-        .unwrap_or_default();
+    let removed: Vec<Support> = if successor.status().is_complete() {
+        base.supports()
+            .iter()
+            .filter(|support| {
+                !successor
+                    .supports()
+                    .iter()
+                    .any(|candidate| candidate.assertion_key() == support.assertion_key())
+            })
+            .cloned()
+            .collect()
+    } else {
+        Vec::new()
+    };
 
     // An incomplete projection with no observed delta is unknown, not a
     // changed support frontier. Emit a change only when a gain or loss is
@@ -403,7 +399,7 @@ mod tests {
             .unwrap()
     }
 
-    fn change<'a>(diff: &'a SemanticDiff) -> &'a super::SupportChange {
+    fn change(diff: &SemanticDiff) -> &super::SupportChange {
         diff.changed_supports()
             .iter()
             .find(|change| change.consequence() == &clause("impact/result"))
@@ -475,7 +471,7 @@ mod tests {
         let base = revision(vec![left.clone(), right], false);
         let successor = successor(&base, vec![], vec![left.clone()]);
         let exact = SemanticDiff::between(&base, &successor, limits()).unwrap();
-        assert_eq!(exact.authored().removed(), &[left.clone()]);
+        assert_eq!(exact.authored().removed(), std::slice::from_ref(&left));
         assert!(
             exact
                 .changed_supports()

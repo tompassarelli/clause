@@ -94,9 +94,9 @@ pub fn lower_clause(revision: &Revision, surface: &SurfaceClause) -> kernel::Res
     Ok(clause)
 }
 
-fn declaration_map<'a>(
-    declarations: &'a [AscriptionDecl],
-) -> kernel::Result<BTreeMap<frontend::Name, &'a AscriptionDecl>> {
+fn declaration_map(
+    declarations: &[AscriptionDecl],
+) -> kernel::Result<BTreeMap<frontend::Name, &AscriptionDecl>> {
     let mut map = BTreeMap::new();
     for declaration in declarations {
         if map

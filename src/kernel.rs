@@ -743,7 +743,8 @@ impl FindPlan {
         let mut sought_roles = pattern
             .roles()
             .iter()
-            .filter_map(|(role, term)| (term.variable_id() == Some(&sought)).then(|| role.clone()))
+            .filter(|(_, term)| term.variable_id() == Some(&sought))
+            .map(|(role, _)| role.clone())
             .collect::<Vec<_>>();
         if sought_roles.len() != 1
             || pattern
@@ -758,7 +759,8 @@ impl FindPlan {
         let known = pattern
             .roles()
             .iter()
-            .filter_map(|(role, term)| term.is_ground().then(|| role.clone()))
+            .filter(|(_, term)| term.is_ground())
+            .map(|(role, _)| role.clone())
             .collect::<Vec<_>>();
         let sought_role = sought_roles.remove(0);
         let mode = relation

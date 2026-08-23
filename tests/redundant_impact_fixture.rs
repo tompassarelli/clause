@@ -6,12 +6,38 @@ use clause::{
     delta::RevisionDiff,
     derive::{self, SupportStatus},
     elaborate, execution, frontend,
-    intervention::{self, AchieveAll, Incomplete, InterventionLimits, PreventAll},
+    intervention::{self, AchieveAll, InterventionLimits, PreventAll},
     kernel::{self, Clause, EntityId, Name, RelationId, Revision, RoleId, Term},
     semantic_diff::SemanticDiff,
 };
 
 const SOURCE: &str = include_str!("../examples/impact.clause");
+
+const ACHIEVEMENT_SOURCE: &str = r#"Start: Type
+Option: Type
+State: Type
+
+choice/selects: Relation
+    {start: Start} selects {option: Option}
+    mode start -> option: many
+
+choice/reached: Relation
+    {start: Start} reached {state: State}
+    mode start -> state: many
+
+choice: Model
+    South: Start
+    Beagle: Option
+    North: Option
+    Relay: Option
+    Store: Option
+    Ready: State
+
+choice/selection-reaches-ready: Law
+    ?start reached Ready
+    when:
+        ?start selects ?option
+"#;
 
 fn impact() -> elaborate::CompiledProgram {
     elaborate::compile(frontend::parse(SOURCE).expect("impact source parses"))
@@ -221,23 +247,26 @@ fn successor_retains_consequence_while_losing_one_support() {
 }
 
 #[test]
-fn typed_active_domain_yields_four_south_additions() {
-    let base = revision(&impact(), "impact");
-    let target = affected(&base, "compiler-change", "South");
+fn typed_active_domain_yields_four_complete_additions() {
+    let program =
+        elaborate::compile(frontend::parse(ACHIEVEMENT_SOURCE).expect("achievement source parses"))
+            .expect("achievement source lowers");
+    let base = revision(&program, "choice");
+    let target = assertion(
+        &base,
+        "choice/reached",
+        &[("start", "South"), ("state", "Ready")],
+    );
     let achieved = intervention::achieve_all_minimal(
         &base,
         target,
-        vec![relation("impact/imports")],
-        InterventionLimits::new(limits(), 100, 100).with_support_limits(support_limits()),
+        vec![relation("choice/selects")],
+        intervention_limits(),
     )
     .expect("achievement computes");
     let achieved = match achieved {
         AchieveAll::Complete(items) => items,
-        AchieveAll::Incomplete {
-            interventions,
-            reason: Incomplete::CandidateBudgetExhausted,
-        } => interventions,
-        other => panic!("typed active domain must discover additions: {other:?}"),
+        other => panic!("typed active domain must have a complete frontier: {other:?}"),
     };
     assert_eq!(achieved.len(), 4);
     assert_eq!(
@@ -246,10 +275,26 @@ fn typed_active_domain_yields_four_south_additions() {
             .map(|item| item.delta().admissions().to_vec())
             .collect::<Vec<_>>(),
         vec![
-            vec![imports(&base, "South", "Beagle")],
-            vec![imports(&base, "South", "North")],
-            vec![imports(&base, "South", "Relay")],
-            vec![imports(&base, "South", "Store")],
+            vec![assertion(
+                &base,
+                "choice/selects",
+                &[("start", "South"), ("option", "Beagle")],
+            )],
+            vec![assertion(
+                &base,
+                "choice/selects",
+                &[("start", "South"), ("option", "North")],
+            )],
+            vec![assertion(
+                &base,
+                "choice/selects",
+                &[("start", "South"), ("option", "Relay")],
+            )],
+            vec![assertion(
+                &base,
+                "choice/selects",
+                &[("start", "South"), ("option", "Store")],
+            )],
         ],
     );
 }

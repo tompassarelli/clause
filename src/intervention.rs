@@ -83,7 +83,7 @@ pub enum Incomplete {
 /// Exact outcome for a `prevent one minimal` request.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum PreventOne {
-    Satisfied(Intervention),
+    Satisfied(Box<Intervention>),
     AlreadyAbsent,
     Impossible,
     Incomplete(Incomplete),
@@ -92,7 +92,7 @@ pub enum PreventOne {
 /// Exact outcome for an `achieve one minimal` request.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum AchieveOne {
-    Satisfied(Intervention),
+    Satisfied(Box<Intervention>),
     AlreadyEntailed,
     Impossible,
     Incomplete(Incomplete),
@@ -225,11 +225,11 @@ pub fn prevent_one_minimal(
             "prevent minimizer returned an entailed target",
         ));
     }
-    Ok(PreventOne::Satisfied(Intervention {
+    Ok(PreventOne::Satisfied(Box::new(Intervention {
         delta: Delta::new(source.identity().clone(), Vec::new(), withdrawals)?,
         revision,
         proof: None,
-    }))
+    })))
 }
 
 /// Return one canonical inclusion-minimal asserted-clause admission.
@@ -307,11 +307,11 @@ pub fn achieve_one_minimal(
         .proof(&target)
         .cloned()
         .ok_or_else(|| KernelError::new("achieve minimizer returned an absent target"))?;
-    Ok(AchieveOne::Satisfied(Intervention {
+    Ok(AchieveOne::Satisfied(Box::new(Intervention {
         delta: Delta::new(source.identity().clone(), additions, Vec::new())?,
         revision,
         proof: Some(proof),
-    }))
+    })))
 }
 
 /// Enumerate every inclusion-minimal withdrawal over the complete support

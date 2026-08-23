@@ -847,13 +847,13 @@ fn parse_shape(line: SourceLine<'_>) -> Result<SentenceShapeDecl, ParseError> {
     }
     let mut roles = BTreeSet::new();
     for part in &parts {
-        if let ShapePartDecl::Role { id, .. } = part {
-            if !roles.insert(id.value.clone()) {
-                return Err(error(
-                    id.span,
-                    format!("duplicate inline role '{}'", id.value.as_str()),
-                ));
-            }
+        if let ShapePartDecl::Role { id, .. } = part
+            && !roles.insert(id.value.clone())
+        {
+            return Err(error(
+                id.span,
+                format!("duplicate inline role '{}'", id.value.as_str()),
+            ));
         }
     }
     Ok(SentenceShapeDecl {
@@ -1035,16 +1035,11 @@ fn entity_group_line(line: SourceLine<'_>) -> Option<Result<EntityGroupDecl, Par
         Ok(None) => return None,
         Err(error) => return Some(Err(error)),
     };
-    let typ = match tail.strip_prefix(": ") {
-        Some(typ) => typ,
-        None => return None,
-    };
+    let typ = tail.strip_prefix(": ")?;
     if typ.contains(':') || inside.contains('{') || inside.contains('}') {
         return Some(Err(error(line_span(line), "malformed finite entity group")));
     }
-    let Some((before_end, range_end)) = inside.split_once("..") else {
-        return None;
-    };
+    let (before_end, range_end) = inside.split_once("..")?;
     let start_offset = before_end
         .char_indices()
         .rev()
@@ -1105,10 +1100,7 @@ fn focus_template(line: SourceLine<'_>) -> Option<Result<EntityTemplate, ParseEr
     if tail != ":" {
         return None;
     }
-    let open = match inside.find('{') {
-        Some(open) => open,
-        None => return None,
-    };
+    let open = inside.find('{')?;
     let close = match inside[open + 1..].find('}') {
         Some(close) => open + 1 + close,
         None => {
@@ -1706,6 +1698,15 @@ fn clause(
             continue;
         }
         let mut terms = BTreeMap::new();
+        let roles = spec
+            .shape
+            .parts
+            .iter()
+            .filter_map(|part| match part {
+                ShapePartDecl::Role { id, .. } => Some(&id.value),
+                ShapePartDecl::Literal(_) => None,
+            })
+            .collect::<Vec<_>>();
         let mut role_index = 0;
         let mut matches = true;
         for (part, token) in pattern.iter().zip(&tokens) {
@@ -1716,34 +1717,22 @@ fn clause(
                     break;
                 }
                 None => {
-                    let role = match &spec
-                        .shape
-                        .parts
-                        .iter()
-                        .filter_map(|part| match part {
-                            ShapePartDecl::Role { id, .. } => Some(id.value.clone()),
-                            ShapePartDecl::Literal(_) => None,
-                        })
-                        .collect::<Vec<_>>()[role_index]
-                    {
-                        role => role.clone(),
-                    };
+                    let role = (*roles[role_index]).clone();
                     role_index += 1;
                     let term = parse_term(token)?;
                     let expected = spec.roles.get(&role).expect("shape roles populate spec");
-                    if let Some(actual) = entity_type(&term, current_model, entities)? {
-                        if &actual != expected {
-                            matches = false;
-                            break;
-                        }
+                    if let Some(actual) = entity_type(&term, current_model, entities)?
+                        && &actual != expected
+                    {
+                        matches = false;
+                        break;
                     }
-                    if let SurfaceTerm::Variable(variable) = &term {
-                        if let Some(previous) = variable_types.get(&variable.value) {
-                            if previous != expected {
-                                matches = false;
-                                break;
-                            }
-                        }
+                    if let SurfaceTerm::Variable(variable) = &term
+                        && let Some(previous) = variable_types.get(&variable.value)
+                        && previous != expected
+                    {
+                        matches = false;
+                        break;
                     }
                     terms.insert(role, term);
                 }
@@ -1998,12 +1987,9 @@ pub fn parse(source: &str) -> Result<Program, ParseError> {
         )?;
         if let Some(apply) = &layout.apply {
             reference_kind(apply, &kinds, &[Kind::Delta], "applied Delta")?;
-        }
-        if kinds[name] == Kind::Delta && layout.apply.is_some() {
-            return Err(error(
-                layout.apply.as_ref().expect("some").span,
-                "Delta cannot apply another Delta",
-            ));
+            if kinds[name] == Kind::Delta {
+                return Err(error(apply.span, "Delta cannot apply another Delta"));
+            }
         }
     }
     check_cycles(&kinds, &layouts)?;
