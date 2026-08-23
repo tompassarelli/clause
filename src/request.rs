@@ -69,6 +69,14 @@ impl ResolvedProgram {
         revisions: BTreeMap<RevisionId, Revision>,
         requests: Vec<Request>,
     ) -> kernel::Result<Self> {
+        if revisions
+            .iter()
+            .any(|(identity, revision)| identity != revision.identity())
+        {
+            return Err(kernel::KernelError::new(
+                "Revision registry key must match sealed Revision identity",
+            ));
+        }
         for request in &requests {
             for revision in request.revisions() {
                 if !revisions.contains_key(revision) {

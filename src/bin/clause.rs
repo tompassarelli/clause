@@ -1,13 +1,13 @@
 //! Native Clause command line interface.
 
-use clause::{elaborate, frontend, request, wire};
+use clause::{elaborate, frontend, generated, request, wire};
 use std::{
     env, fmt, fs,
     path::{Path, PathBuf},
     process::ExitCode,
 };
 
-const USAGE: &str = "usage: clause seal SOURCE REVISION_NAME REVISION_FILE | clause run SOURCE";
+const USAGE: &str = "usage: clause seal SOURCE REVISION_NAME REVISION_FILE | clause run SOURCE | clause emit-rust SOURCE OUTPUT.rs";
 
 #[derive(Debug)]
 struct CliError {
@@ -43,6 +43,10 @@ enum Command {
     Run {
         source: PathBuf,
     },
+    EmitRust {
+        source: PathBuf,
+        output: PathBuf,
+    },
 }
 
 fn parse_command(args: impl IntoIterator<Item = String>) -> Result<Command, CliError> {
@@ -68,6 +72,17 @@ fn parse_command(args: impl IntoIterator<Item = String>) -> Result<Command, CliE
             }
             Ok(Command::Run {
                 source: source.into(),
+            })
+        }
+        Some("emit-rust") => {
+            let source = args.next().ok_or_else(|| CliError::usage(USAGE))?;
+            let output = args.next().ok_or_else(|| CliError::usage(USAGE))?;
+            if args.next().is_some() {
+                return Err(CliError::usage(USAGE));
+            }
+            Ok(Command::EmitRust {
+                source: source.into(),
+                output: output.into(),
             })
         }
         _ => Err(CliError::usage(USAGE)),
@@ -106,6 +121,16 @@ fn run(source: &Path) -> Result<(), CliError> {
     Ok(())
 }
 
+fn emit_rust(source: &Path, output: &Path) -> Result<(), CliError> {
+    let compiled = compile(source)?;
+    let resolved = request::resolve(&compiled)
+        .map_err(|error| CliError::failure(format!("resolve requests: {error}")))?;
+    let emitted = generated::emit_rust(&resolved)
+        .map_err(|error| CliError::failure(format!("emit Rust: {error}")))?;
+    fs::write(output, emitted)
+        .map_err(|error| CliError::failure(format!("write Rust '{}': {error}", output.display())))
+}
+
 fn main() -> ExitCode {
     let result = match parse_command(env::args().skip(1)) {
         Ok(Command::Seal {
@@ -114,6 +139,7 @@ fn main() -> ExitCode {
             revision,
         }) => seal(&source, &name, &revision),
         Ok(Command::Run { source }) => run(&source),
+        Ok(Command::EmitRust { source, output }) => emit_rust(&source, &output),
         Err(error) => Err(error),
     };
     match result {
@@ -143,6 +169,14 @@ mod tests {
                 "graph.rev".into()
             ]),
             Ok(Command::Seal { .. })
+        ));
+        assert!(matches!(
+            parse_command([
+                "emit-rust".into(),
+                "input.clause".into(),
+                "output.rs".into()
+            ]),
+            Ok(Command::EmitRust { .. })
         ));
     }
 }
