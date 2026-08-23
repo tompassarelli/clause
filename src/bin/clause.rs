@@ -314,6 +314,9 @@ fn prevent_status(status: PreventStatus) -> &'static str {
     match status {
         PreventStatus::Complete => "complete",
         PreventStatus::AlreadyAbsent => "already-absent",
+        PreventStatus::Impossible => "impossible",
+        PreventStatus::SupportExpansionBudgetExhausted => "support-expansion-budget-exhausted",
+        PreventStatus::SupportBudgetExhausted => "support-budget-exhausted",
         PreventStatus::CandidateBudgetExhausted => "candidate-budget-exhausted",
         PreventStatus::SolutionBudgetExhausted => "solution-budget-exhausted",
     }

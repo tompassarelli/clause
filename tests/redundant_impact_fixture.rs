@@ -87,7 +87,21 @@ fn source_freezes_two_independent_north_routes_and_one_intent() {
 #[cfg(feature = "support-frontier-api")]
 mod support_frontier_acceptance {
     use super::*;
-    use clause::{delta::RevisionDelta, derive, derive::SupportStatus};
+    use clause::{
+        delta::RevisionDelta,
+        derive::{self, SupportStatus},
+        execution,
+        intervention::{self, AchieveConfig, AchieveResult, PreventLimits, PreventStatus},
+        semantic_diff::SemanticDiff,
+    };
+
+    fn limits() -> derive::Limits {
+        derive::Limits::new(100, 10, 10_000)
+    }
+
+    fn support_limits() -> derive::SupportLimits {
+        derive::SupportLimits::new(limits(), 10_000, 100)
+    }
 
     fn target() -> kernel::Clause {
         affected("compiler-change", "North")
@@ -137,12 +151,8 @@ mod support_frontier_acceptance {
     #[test]
     fn affected_north_has_exactly_two_minimal_supports() {
         let revision = model();
-        let frontier = derive::support_frontier(
-            &revision,
-            &target(),
-            derive::SupportLimits::new(derive::Limits::new(100, 10, 10_000), 10_000, 100),
-        )
-        .expect("support frontier computes");
+        let frontier = derive::support_frontier(&revision, &target(), support_limits())
+            .expect("support frontier computes");
         assert_eq!(frontier.status(), SupportStatus::Complete);
         assert_eq!(frontier.supports().len(), 2);
         assert_eq!(
@@ -154,6 +164,25 @@ mod support_frontier_acceptance {
                     .collect(),
             ),
             canonical_sets(expected_supports()),
+        );
+
+        let all = execution::why_all(&revision, &target(), support_limits())
+            .expect("why all computes")
+            .expect("target is entailed");
+        assert!(all.is_complete());
+        assert_eq!(all.alternative_count(), 2);
+        assert_eq!(
+            canonical_sets(
+                all.alternatives
+                    .iter()
+                    .map(|alternative| alternative.assertions.clone())
+                    .collect(),
+            ),
+            canonical_sets(expected_supports()),
+        );
+        assert_eq!(
+            execution::why(&revision, &target(), limits()).expect("why computes"),
+            Some(all.alternatives[0].why.clone()),
         );
     }
 
@@ -168,31 +197,86 @@ mod support_frontier_acceptance {
         .expect("withdrawal delta admits")
         .apply(&base)
         .expect("successor applies");
-        let base_frontier = derive::support_frontier(
-            &base,
-            &target(),
-            derive::SupportLimits::new(derive::Limits::new(100, 10, 10_000), 10_000, 100),
-        )
-        .expect("base frontier computes");
-        let successor_frontier = derive::support_frontier(
-            &successor,
-            &target(),
-            derive::SupportLimits::new(derive::Limits::new(100, 10, 10_000), 10_000, 100),
-        )
-        .expect("successor frontier computes");
+        let base_frontier = derive::support_frontier(&base, &target(), support_limits())
+            .expect("base frontier computes");
+        let successor_frontier = derive::support_frontier(&successor, &target(), support_limits())
+            .expect("successor frontier computes");
         assert_eq!(base_frontier.supports().len(), 2);
         assert_eq!(successor_frontier.supports().len(), 1);
         assert_eq!(
             successor_frontier.supports()[0].assertions(),
             expected_supports()[1].as_slice()
         );
+
+        let diff = SemanticDiff::between(&base, &successor, support_limits())
+            .expect("support diff computes");
+        assert!(!diff.entailed_removed().contains(&target()));
+        let change = diff
+            .changed_supports()
+            .iter()
+            .find(|change| change.fact() == &target())
+            .expect("unchanged entailment reports lost support");
+        assert!(change.added().is_empty());
+        assert_eq!(change.removed().len(), 1);
+        assert_eq!(
+            change.removed()[0].assertions(),
+            expected_supports()[0].as_slice(),
+        );
     }
 
-    // The four exact prevention and four one-import achievement sets are kept
-    // as named expected values for the intervention projection to consume.
     #[test]
     fn intervention_frontiers_are_frozen_as_exact_antichains() {
-        assert_eq!(expected_hitting_sets().len(), 4);
-        assert_eq!(expected_south_additions().len(), 4);
+        let revision = model();
+        let prevention = intervention::prevent(
+            &revision,
+            target(),
+            PreventLimits::new(100, 100, limits())
+                .with_support_limits(support_limits())
+                .using_relations(vec!["impact/imports".into()]),
+        )
+        .expect("prevention frontier computes");
+        assert_eq!(prevention.status(), PreventStatus::Complete);
+        assert_eq!(
+            canonical_sets(
+                prevention
+                    .solutions()
+                    .iter()
+                    .map(|solution| solution.withdrawals().to_vec())
+                    .collect(),
+            ),
+            canonical_sets(expected_hitting_sets()),
+        );
+
+        let goal = affected("compiler-change", "South");
+        let achievement = intervention::achieve(
+            &revision,
+            goal,
+            &AchieveConfig::new(
+                vec!["impact/imports".into()],
+                vec![
+                    "Beagle".into(),
+                    "North".into(),
+                    "Relay".into(),
+                    "South".into(),
+                    "Store".into(),
+                ],
+                21,
+                100,
+                limits(),
+            ),
+        )
+        .expect("one-addition achievement frontier computes");
+        assert!(matches!(achievement, AchieveResult::CandidateLimit(_)));
+        assert_eq!(
+            achievement
+                .interventions()
+                .iter()
+                .map(|intervention| {
+                    assert_eq!(intervention.additions().len(), 1);
+                    intervention.additions()[0].clone()
+                })
+                .collect::<Vec<_>>(),
+            expected_south_additions(),
+        );
     }
 }
