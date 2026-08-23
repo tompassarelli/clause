@@ -1,0 +1,32 @@
+{
+  "schema": "clause-m0-contrast-v1",
+  "id": "transition-admit-keypress",
+  "axis": "event-exact-admission",
+  "decision": {"status": "unresolved", "candidate": "on-signed-ground-delta", "layout_style": "provisional-four-space"},
+  "source": {
+    "lines": ["on KeyLeft pressed", "    + player intends movement left"],
+    "line_break": "LF",
+    "ends_with_line_break": true
+  },
+  "context": {
+    "current_state": "$state:key-left-up",
+    "event": {"relation": "$key-state", "roles": {"key": "KeyLeft", "state": "pressed"}},
+    "relation_contract": {"relation": "$intends-movement", "cardinality": "zero-or-more", "checker_proved_functional_key": false},
+    "assertion_presence": [{"clause": {"relation": "$intends-movement", "roles": {"actor": "player", "direction": "left"}}, "present": false}]
+  },
+  "structural_intent": "event-scoped-exact-admission",
+  "required": ["the sign admits one exact ground clause", "multi-valued relation updates do not require functional replacement", "the admission commits in the event successor"],
+  "forbidden": ["field-assignment", "functional-overwrite", "toggle", "admit-if-absent", "mutable-set-operation-semantics"],
+  "elaborated": [
+    {
+      "kind": "event-transition",
+      "trigger": {"relation": "$key-state", "roles": {"key": "KeyLeft", "state": "pressed"}},
+      "pre_state": "$state:key-left-up",
+      "delta": {
+        "admissions": [{"kind": "relation-claim", "relation": "$intends-movement", "roles": {"actor": "player", "direction": "left"}}],
+        "withdrawals": []
+      },
+      "atomic": true
+    }
+  ]
+}

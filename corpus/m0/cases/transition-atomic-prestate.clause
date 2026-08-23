@@ -1,0 +1,10 @@
+on collection tick
+    coin state active ~>
+        coin state collected
+    if
+        player collects coin
+
+    player score ?score ~>
+        player score (?score + value of coin)
+    if
+        player collects coin

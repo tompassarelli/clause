@@ -1,0 +1,38 @@
+{
+  "schema": "clause-m0-contrast-v1",
+  "id": "transition-conflict-reversed",
+  "axis": "functional-write-conflict-order-invariance",
+  "decision": {"status": "unresolved", "candidate": "conflicting-event-writers-reordered", "layout_style": "provisional-four-space"},
+  "source": {
+    "lines": [
+      "on frame ?dt",
+      "    player position ?position ~>",
+      "        player position (?position + wind * ?dt)",
+      "",
+      "    player position ?position ~>",
+      "        player position (?position + velocity of player * ?dt)"
+    ],
+    "line_break": "LF",
+    "ends_with_line_break": true
+  },
+  "context": {
+    "current_state": "$state:game-before-frame",
+    "functional_contract": {"relation": "$position", "key_roles": ["member"], "value_role": "value", "checker_proved": true},
+    "declared_phases": [],
+    "declared_merges": []
+  },
+  "structural_intent": "reject-competing-functional-writers",
+  "diagnostic_group": "position-writer-conflict",
+  "required": ["both candidate writes are reported", "the conflicting functional key is reported", "absence of a phase or merge rejects the whole event transition", "reversing source order preserves this diagnostic"],
+  "forbidden": ["first-writer-wins", "last-writer-wins", "source-order-phase", "implicit-merge", "partial-successor"],
+  "diagnostic": {
+    "code": "transition.functional-write-conflict",
+    "event": "$frame",
+    "relation": "$position",
+    "key": {"member": "player"},
+    "writers": ["$writer:velocity-integrator", "$writer:wind-integrator"],
+    "repair": "declare a unique writer, an explicit phase, or a checked merge",
+    "order_invariant": true
+  },
+  "elaborated": null
+}

@@ -1,0 +1,94 @@
+{
+  "schema": "clause-m0-contrast-v1",
+  "id": "transition-atomic-prestate",
+  "axis": "single-pre-state-atomic-successor",
+  "decision": {"status": "unresolved", "candidate": "guarded-event-transaction", "layout_style": "provisional-four-space"},
+  "source": {
+    "lines": [
+      "on collection tick",
+      "    coin state active ~>",
+      "        coin state collected",
+      "    if",
+      "        player collects coin",
+      "",
+      "    player score ?score ~>",
+      "        player score (?score + value of coin)",
+      "    if",
+      "        player collects coin"
+    ],
+    "line_break": "LF",
+    "ends_with_line_break": true
+  },
+  "context": {
+    "current_state": "$state:coin-active-score-zero",
+    "event": {"relation": "$collection-tick", "roles": {}},
+    "functional_contracts": [
+      {"relation": "$state", "key_roles": ["member"], "value_role": "value", "checker_proved": true},
+      {"relation": "$score", "key_roles": ["member"], "value_role": "value", "checker_proved": true}
+    ],
+    "pre_state_assertions": [
+      {"relation": "$state", "roles": {"member": "coin", "value": "active"}},
+      {"relation": "$score", "roles": {"member": "player", "value": 0}},
+      {"relation": "$value", "roles": {"member": "coin", "value": 10}},
+      {"relation": "$collects", "roles": {"collector": "player", "item": "coin"}}
+    ]
+  },
+  "structural_intent": "one-phase-transaction-over-one-pre-state",
+  "required": [
+    "both guards are evaluated against the same exact pre-state",
+    "both old clauses match against that pre-state",
+    "the coin replacement cannot invalidate the score guard during evaluation",
+    "both accepted replacements commit as one successor"
+  ],
+  "forbidden": ["line-by-line-state-mutation", "post-first-write-guard-evaluation", "visible-intermediate-state", "partial-commit", "source-order-arbitration"],
+  "elaborated": [
+    {
+      "kind": "event-transition",
+      "trigger": {"relation": "$collection-tick", "roles": {}},
+      "pre_state": "$state:coin-active-score-zero",
+      "matching_snapshot": "pre-state",
+      "guard_snapshot": "pre-state",
+      "replacements": [
+        {
+          "relation": "$state",
+          "key": {"member": "coin"},
+          "matched": {"relation": "$state", "roles": {"member": "coin", "value": "active"}},
+          "successor": {"relation": "$state", "roles": {"member": "coin", "value": "collected"}},
+          "guard": {"relation": "$collects", "roles": {"collector": "player", "item": "coin"}}
+        },
+        {
+          "relation": "$score",
+          "key": {"member": "player"},
+          "matched": {"relation": "$score", "roles": {"member": "player", "value": {"kind": "named-hole", "identity": "$hole:score"}}},
+          "successor": {
+            "relation": "$score",
+            "roles": {
+              "member": "player",
+              "value": {
+                "kind": "call",
+                "function": "$add",
+                "arguments": [
+                  {"kind": "named-hole", "identity": "$hole:score"},
+                  {"kind": "projection", "relation": "$value", "roles": {"member": "coin"}, "output_role": "value"}
+                ]
+              }
+            }
+          },
+          "guard": {"relation": "$collects", "roles": {"collector": "player", "item": "coin"}}
+        }
+      ],
+      "successor": {
+        "identity": "$state:coin-collected-score-ten",
+        "admissions": [
+          {"relation": "$state", "roles": {"member": "coin", "value": "collected"}},
+          {"relation": "$score", "roles": {"member": "player", "value": 10}}
+        ],
+        "withdrawals": [
+          {"relation": "$state", "roles": {"member": "coin", "value": "active"}},
+          {"relation": "$score", "roles": {"member": "player", "value": 0}}
+        ],
+        "atomic": true
+      }
+    }
+  ]
+}

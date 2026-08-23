@@ -1,0 +1,3 @@
+on unlock iron-door
+    iron-door state locked ~>
+        iron-door state unlocked

@@ -1,0 +1,73 @@
+{
+  "schema": "clause-m0-contrast-v1",
+  "id": "transition-functional-position",
+  "axis": "functional-complete-clause-succession",
+  "decision": {"status": "unresolved", "candidate": "on-complete-clause-succession", "layout_style": "provisional-four-space"},
+  "source": {
+    "lines": ["on frame ?dt", "    player position ?position ~>", "        player position (?position + velocity of player * ?dt)"],
+    "line_break": "LF",
+    "ends_with_line_break": true
+  },
+  "context": {
+    "current_state": "$state:game-before-frame",
+    "event": {"relation": "$frame", "roles": {"dt": 0.016}},
+    "functional_contract": {
+      "relation": "$position",
+      "key_roles": ["member"],
+      "value_role": "value",
+      "cardinality": "exactly-one",
+      "checker_proved": true
+    },
+    "assertions": [
+      {"relation": "$position", "roles": {"member": "player", "value": [0.0, 0.0]}},
+      {"relation": "$velocity", "roles": {"member": "player", "value": [300.0, 0.0]}}
+    ]
+  },
+  "structural_intent": "event-scoped-functional-replacement",
+  "required": [
+    "the left and right sides of succession are complete position clauses",
+    "the old clause matches only against the exact pre-state",
+    "the checker-proved member key makes replacement single-valued",
+    "the successor is committed atomically after matching"
+  ],
+  "forbidden": ["field-assignment", "in-place-mutation-semantics", "partial-clause-right-hand-side", "post-state-rematch", "source-order-commit"],
+  "elaborated": [
+    {
+      "kind": "event-transition",
+      "trigger": {"relation": "$frame", "roles": {"dt": {"kind": "named-hole", "identity": "$hole:dt"}}},
+      "pre_state": "$state:game-before-frame",
+      "replacements": [
+        {
+          "kind": "functional-replacement",
+          "relation": "$position",
+          "key": {"member": "player"},
+          "matched": {"relation": "$position", "roles": {"member": "player", "value": {"kind": "named-hole", "identity": "$hole:position"}}},
+          "successor": {
+            "relation": "$position",
+            "roles": {
+              "member": "player",
+              "value": {
+                "kind": "call",
+                "function": "$add",
+                "arguments": [
+                  {"kind": "named-hole", "identity": "$hole:position"},
+                  {
+                    "kind": "call",
+                    "function": "$multiply",
+                    "arguments": [
+                      {"kind": "projection", "relation": "$velocity", "roles": {"member": "player"}, "output_role": "value"},
+                      {"kind": "named-hole", "identity": "$hole:dt"}
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          "functional_key_proved": true
+        }
+      ],
+      "matching_snapshot": "pre-state",
+      "commit": "atomic-successor"
+    }
+  ]
+}

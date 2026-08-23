@@ -1,0 +1,49 @@
+{
+  "schema": "clause-m0-contrast-v1",
+  "id": "transition-functional-state",
+  "axis": "functional-status-succession",
+  "decision": {"status": "unresolved", "candidate": "on-complete-clause-succession", "layout_style": "provisional-four-space"},
+  "source": {
+    "lines": ["on unlock iron-door", "    iron-door state locked ~>", "        iron-door state unlocked"],
+    "line_break": "LF",
+    "ends_with_line_break": true
+  },
+  "context": {
+    "current_state": "$state:door-locked",
+    "event": {"relation": "$unlock", "roles": {"door": "iron-door"}},
+    "functional_contract": {
+      "relation": "$state",
+      "key_roles": ["member"],
+      "value_role": "value",
+      "cardinality": "exactly-one",
+      "checker_proved": true
+    },
+    "assertions": [{"relation": "$state", "roles": {"member": "iron-door", "value": "locked"}}]
+  },
+  "structural_intent": "event-scoped-functional-status-replacement",
+  "required": [
+    "locked and unlocked remain values in complete co-equal state clauses",
+    "the checker-proved door key licenses one replacement",
+    "the locked clause is withdrawn and the unlocked clause admitted in one successor"
+  ],
+  "forbidden": ["object-field-mutation", "assignment", "equality", "nested-owned-state", "intermediate-state-publication"],
+  "elaborated": [
+    {
+      "kind": "event-transition",
+      "trigger": {"relation": "$unlock", "roles": {"door": "iron-door"}},
+      "pre_state": "$state:door-locked",
+      "replacements": [
+        {
+          "kind": "functional-replacement",
+          "relation": "$state",
+          "key": {"member": "iron-door"},
+          "matched": {"relation": "$state", "roles": {"member": "iron-door", "value": "locked"}},
+          "successor": {"relation": "$state", "roles": {"member": "iron-door", "value": "unlocked"}},
+          "functional_key_proved": true
+        }
+      ],
+      "matching_snapshot": "pre-state",
+      "commit": "atomic-successor"
+    }
+  ]
+}

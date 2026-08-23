@@ -1,0 +1,76 @@
+{
+  "schema": "clause-m0-contrast-v1",
+  "id": "replay-deterministic",
+  "axis": "exact-authority-deterministic-replay",
+  "decision": {"status": "unresolved", "candidate": "structural-replay-request", "layout_style": "provisional-four-space"},
+  "source": {
+    "lines": [
+      "replay run-42",
+      "    program one-coin-program",
+      "    model one-coin-model",
+      "    state game-start",
+      "    tick fixed 16ms",
+      "    event 1 KeyLeft pressed",
+      "    event 2 pulse 1",
+      "    event 3 KeyLeft released",
+      "    event 4 pulse 2"
+    ],
+    "line_break": "LF",
+    "ends_with_line_break": true
+  },
+  "context": {
+    "bindings": {
+      "one-coin-program": "$program:one-coin-exact",
+      "one-coin-model": "$model:one-coin-exact",
+      "game-start": "$state:game-start-exact"
+    },
+    "authority": {
+      "program": {"identity": "$program:one-coin-exact", "resolution": "exact"},
+      "model": {"identity": "$model:one-coin-exact", "resolution": "exact"},
+      "initial_state": {"identity": "$state:game-start-exact", "resolution": "exact"}
+    },
+    "tick_policy": {"kind": "fixed-step", "quantum_ms": 16, "event_cutoff": "sequence-number"},
+    "ordered_events": [
+      {"identity": "$event:1", "sequence": 1, "relation": "$key-state", "roles": {"key": "KeyLeft", "state": "pressed"}},
+      {"identity": "$event:2", "sequence": 2, "relation": "$pulse", "roles": {"amount": 1}},
+      {"identity": "$event:3", "sequence": 3, "relation": "$key-state", "roles": {"key": "KeyLeft", "state": "released"}},
+      {"identity": "$event:4", "sequence": 4, "relation": "$pulse", "roles": {"amount": 2}}
+    ]
+  },
+  "structural_intent": "deterministic-replay-evidence",
+  "required": [
+    "Program, Model, and initial State labels resolve to exact semantic identities before replay",
+    "event sequence and tick policy are part of replay identity",
+    "two executions produce the same content-derived successor identity",
+    "two executions produce byte-identical canonical successor encodings"
+  ],
+  "forbidden": ["latest-program-resolution", "ambient-model-resolution", "mutable-initial-state", "wall-clock-tick-policy", "unordered-events", "query-result-only-comparison", "canonical-replay-surface-ruling"],
+  "elaborated": [
+    {
+      "kind": "replay-request",
+      "authority": {
+        "program": "$program:one-coin-exact",
+        "model": "$model:one-coin-exact",
+        "initial_state": "$state:game-start-exact"
+      },
+      "tick_policy": {"kind": "fixed-step", "quantum_ms": 16, "event_cutoff": "sequence-number"},
+      "events": ["$event:1", "$event:2", "$event:3", "$event:4"]
+    }
+  ],
+  "result": {
+    "executions": [
+      {
+        "run": "$execution:A",
+        "successor_identity": "$state:run-42-final",
+        "canonical_successor_bytes_utf8": "clause-state-v1\n$clock|member=scheduler|value=3\n"
+      },
+      {
+        "run": "$execution:B",
+        "successor_identity": "$state:run-42-final",
+        "canonical_successor_bytes_utf8": "clause-state-v1\n$clock|member=scheduler|value=3\n"
+      }
+    ],
+    "same_successor_identity": true,
+    "same_canonical_successor_bytes": true
+  }
+}

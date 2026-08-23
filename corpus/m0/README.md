@@ -78,6 +78,15 @@ Handles beginning with `$` are corpus symbols, not Store identities.
 | `prevent-incomplete` | candidate exhaustion cannot claim a complete prevention frontier |
 | `achieve-incomplete` | retained additions remain certified under incomplete search |
 | `diff-semantic-degradation` | authored, entailed, proof, and support changes remain distinct |
+| `transition-functional-position` | complete-clause position succession uses a proved functional key |
+| `transition-functional-state` | status replacement preserves complete old and new clauses |
+| `transition-admit-keypress` | key press emits one exact multi-valued admission |
+| `transition-withdraw-keyrelease` | key release emits one exact multi-valued withdrawal |
+| `transition-atomic-prestate` | guarded replacements share one pre-state and atomic successor |
+| `transition-conflict-forward` | competing functional writers reject without source-order arbitration |
+| `transition-conflict-reversed` | reversed writer order produces the identical conflict |
+| `transition-nonfunctional-replacement` | `~>` without a proved key directs repair to exact deltas |
+| `replay-deterministic` | exact authority, events, ticks, identity, and bytes replay identically |
 
 Do not “bless” these files from parser output. A later fixture checker may
 compare exact projections and print diffs, but reviewed corpus remains the
