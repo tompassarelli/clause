@@ -1,0 +1,2 @@
+select one ?person
+    ?person likes Go

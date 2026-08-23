@@ -1,0 +1,3 @@
+select ?person
+    ?person likes ?opening
+    Alice likes ?opening

@@ -1,0 +1,28 @@
+{
+  "schema": "clause-m0-contrast-v1",
+  "id": "select-first",
+  "axis": "query-result-contract",
+  "decision": {"status": "unresolved", "candidate": "select-canonical-first", "layout_style": "provisional-four-space"},
+  "source": {
+    "lines": ["select first ?person", "    ?person likes Chess"],
+    "line_break": "LF",
+    "ends_with_line_break": true
+  },
+  "context": {"facts": [["Alice", "likes", "Chess"], ["Bob", "likes", "Go"], ["Carol", "likes", "Chess"]], "bounded": true, "row_order": "canonical"},
+  "structural_intent": "canonical-first-selection-query",
+  "required": ["the first row is selected by canonical order", "the projected hole keeps the result name person"],
+  "forbidden": ["exact-one-cardinality-failure", "random-witness", "existence-Bool", "unbounded-search"],
+  "elaborated": [
+    {
+      "kind": "query",
+      "mood": "select",
+      "cardinality": "first",
+      "selection_order": "canonical",
+      "clauses": [
+        {"kind": "relation-pattern", "relation": "$likes", "roles": {"person": {"kind": "named-hole", "identity": "$hole:person", "result_name": "person"}, "opening": {"kind": "symbol", "name": "Chess"}}}
+      ],
+      "projection": [{"hole": "$hole:person", "name": "person"}]
+    }
+  ],
+  "result": {"kind": "relation", "columns": [{"hole": "$hole:person", "name": "person"}], "rows": [["Alice"]]}
+}

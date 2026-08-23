@@ -1,0 +1,56 @@
+{
+  "schema": "clause-m0-contrast-v1",
+  "id": "law-inferred",
+  "axis": "law-inference-surface",
+  "decision": {"status": "unresolved", "candidate": "conclusion-if-premises", "layout_style": "provisional-four-space"},
+  "source": {
+    "lines": [
+      "?origin has a usable egress path to ?destination if",
+      "    ?door connects ?origin to ?destination",
+      "    ?door passed Fire-Marshal Inspection"
+    ],
+    "line_break": "LF",
+    "ends_with_line_break": true
+  },
+  "structural_intent": "inferred-positive-law",
+  "required": [
+    "conclusion plus if body proves the law category",
+    "repeated named holes correlate across conclusion and premises",
+    "the law retains a stable semantic identity without a human label"
+  ],
+  "forbidden": ["Law-kind-keyword", "fresh-hole-on-repeat", "label-derived-semantic-identity"],
+  "semantic_law": {
+    "kind": "positive-law",
+    "identity": "$law:egress-direct",
+    "conclusion": {
+      "kind": "relation-pattern",
+      "relation": "$route",
+      "roles": {
+        "origin": {"kind": "named-hole", "identity": "$hole:origin"},
+        "destination": {"kind": "named-hole", "identity": "$hole:destination"}
+      }
+    },
+    "premises": [
+      {
+        "kind": "relation-pattern",
+        "relation": "$connects",
+        "roles": {
+          "door": {"kind": "named-hole", "identity": "$hole:door"},
+          "origin": {"kind": "named-hole", "identity": "$hole:origin"},
+          "destination": {"kind": "named-hole", "identity": "$hole:destination"}
+        }
+      },
+      {
+        "kind": "relation-pattern",
+        "relation": "$passed",
+        "roles": {
+          "door": {"kind": "named-hole", "identity": "$hole:door"},
+          "inspection": {"kind": "symbol", "name": "Fire-Marshal Inspection"}
+        }
+      }
+    ]
+  },
+  "elaborated": [
+    {"kind": "law-admission", "law": "$law:egress-direct"}
+  ]
+}

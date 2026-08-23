@@ -1,0 +1,31 @@
+{
+  "schema": "clause-m0-contrast-v1",
+  "id": "query-anonymous-fresh",
+  "axis": "anonymous-hole-identity",
+  "decision": {"status": "unresolved", "candidate": "two-anonymous-holes"},
+  "source": {
+    "lines": ["? likes ?"],
+    "line_break": "LF",
+    "ends_with_line_break": true
+  },
+  "context": {"facts": [["Alice", "likes", "Chess"], ["Bob", "likes", "Go"], ["Carol", "likes", "Chess"]], "bounded": true},
+  "structural_intent": "implicit-select-all-query",
+  "required": ["each anonymous hole is fresh", "both anonymous holes are projected"],
+  "forbidden": ["hole-correlation", "named-result-column", "random-witness"],
+  "elaborated": [
+    {
+      "kind": "query",
+      "mood": "select",
+      "cardinality": "all",
+      "clauses": [
+        {"kind": "relation-pattern", "relation": "$likes", "roles": {"person": {"kind": "anonymous-hole", "identity": "$anon:1"}, "opening": {"kind": "anonymous-hole", "identity": "$anon:2"}}}
+      ],
+      "projection": [{"hole": "$anon:1", "name": null}, {"hole": "$anon:2", "name": null}]
+    }
+  ],
+  "result": {
+    "kind": "relation",
+    "columns": [{"hole": "$anon:1", "name": null}, {"hole": "$anon:2", "name": null}],
+    "rows": [["Alice", "Chess"], ["Bob", "Go"], ["Carol", "Chess"]]
+  }
+}

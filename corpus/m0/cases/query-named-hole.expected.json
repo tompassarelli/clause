@@ -1,0 +1,27 @@
+{
+  "schema": "clause-m0-contrast-v1",
+  "id": "query-named-hole",
+  "axis": "naked-query-surface",
+  "decision": {"status": "unresolved", "candidate": "named-hole-clause"},
+  "source": {
+    "lines": ["?person likes Chess"],
+    "line_break": "LF",
+    "ends_with_line_break": true
+  },
+  "context": {"facts": [["Alice", "likes", "Chess"], ["Bob", "likes", "Go"], ["Carol", "likes", "Chess"]], "bounded": true},
+  "structural_intent": "implicit-select-all-query",
+  "required": ["named hole identity is reusable", "result column preserves name person", "rows use canonical order"],
+  "forbidden": ["anonymous-result-column", "random-witness", "unbounded-search"],
+  "elaborated": [
+    {
+      "kind": "query",
+      "mood": "select",
+      "cardinality": "all",
+      "clauses": [
+        {"kind": "relation-pattern", "relation": "$likes", "roles": {"person": {"kind": "named-hole", "identity": "$hole:person", "result_name": "person"}, "opening": {"kind": "symbol", "name": "Chess"}}}
+      ],
+      "projection": [{"hole": "$hole:person", "name": "person"}]
+    }
+  ],
+  "result": {"kind": "relation", "columns": [{"hole": "$hole:person", "name": "person"}], "rows": [["Alice"], ["Carol"]]}
+}

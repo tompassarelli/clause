@@ -1,0 +1,62 @@
+{
+  "schema": "clause-m0-contrast-v1",
+  "id": "law-labelled",
+  "axis": "optional-law-label-binding",
+  "decision": {"status": "unresolved", "candidate": "colon-bound-human-label", "layout_style": "provisional-four-space"},
+  "source": {
+    "lines": [
+      "direct route:",
+      "    ?origin has a usable egress path to ?destination if",
+      "        ?door connects ?origin to ?destination",
+      "        ?door passed Fire-Marshal Inspection"
+    ],
+    "line_break": "LF",
+    "ends_with_line_break": true
+  },
+  "structural_intent": "labelled-inferred-positive-law",
+  "required": [
+    "outer colon binds the human label to the law",
+    "the label is separate from stable semantic identity",
+    "labelled and unlabelled forms retain the same semantic law tree"
+  ],
+  "forbidden": ["Law-kind-keyword", "label-derived-semantic-identity", "second-semantic-law", "colon-as-block-opener"],
+  "semantic_law": {
+    "kind": "positive-law",
+    "identity": "$law:egress-direct",
+    "conclusion": {
+      "kind": "relation-pattern",
+      "relation": "$route",
+      "roles": {
+        "origin": {"kind": "named-hole", "identity": "$hole:origin"},
+        "destination": {"kind": "named-hole", "identity": "$hole:destination"}
+      }
+    },
+    "premises": [
+      {
+        "kind": "relation-pattern",
+        "relation": "$connects",
+        "roles": {
+          "door": {"kind": "named-hole", "identity": "$hole:door"},
+          "origin": {"kind": "named-hole", "identity": "$hole:origin"},
+          "destination": {"kind": "named-hole", "identity": "$hole:destination"}
+        }
+      },
+      {
+        "kind": "relation-pattern",
+        "relation": "$passed",
+        "roles": {
+          "door": {"kind": "named-hole", "identity": "$hole:door"},
+          "inspection": {"kind": "symbol", "name": "Fire-Marshal Inspection"}
+        }
+      }
+    ]
+  },
+  "elaborated": [
+    {
+      "kind": "binding",
+      "left": {"kind": "human-label", "name": "direct route"},
+      "right": {"kind": "semantic-reference", "identity": "$law:egress-direct"}
+    },
+    {"kind": "law-admission", "law": "$law:egress-direct"}
+  ]
+}

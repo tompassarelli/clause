@@ -46,6 +46,16 @@ Handles beginning with `$` are corpus symbols, not Store identities.
 | `mixfix-grouped-left` | explicit left grouping round-trips |
 | `mixfix-grouped-right` | explicit right grouping remains distinct |
 | `mixfix-ungrouped-ambiguous` | two type-correct trees require an exact diagnostic |
+| `query-anonymous-hole` | naked query projects one anonymous hole |
+| `query-named-hole` | named hole becomes a named result column |
+| `query-named-pair` | two named holes produce two-column rows |
+| `query-anonymous-fresh` | each anonymous hole is fresh |
+| `select-correlated` | repeated internal hole correlates clauses but is not projected |
+| `any-exists` | existential query returns Bool, never a random witness |
+| `select-one` | exact-one cardinality contract |
+| `select-first` | canonical-first selection is deterministic |
+| `law-inferred` | conclusion plus `if` body infers a positive law |
+| `law-labelled` | optional colon-bound label leaves semantic law identity intact |
 
 Do not “bless” these files from parser output. A later fixture checker may
 compare exact projections and print diffs, but reviewed corpus remains the
