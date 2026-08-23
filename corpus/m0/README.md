@@ -10,11 +10,13 @@ Every case consists of `cases/ID.clause` and
 
 `source.lines` stores raw lines without their line breaks.
 `source.line_break` and `source.ends_with_line_break` make exact byte
-reconstruction mechanical. `decision` is either:
+reconstruction mechanical. `decision` is one of:
 
 - `fixed-invariant` — the stated semantic boundary is direction now; or
 - `unresolved` — the source is a contrast candidate whose admission remains
-  an M0 decision.
+  an M0 decision; or
+- `implemented-legacy` — the source is current executable migration evidence,
+  not a target candidate.
 
 `required` and `forbidden` are normative even for unresolved candidates.
 `elaborated` is an abstract role graph independent of surface spelling.
@@ -56,6 +58,17 @@ Handles beginning with `$` are corpus symbols, not Store identities.
 | `select-first` | canonical-first selection is deterministic |
 | `law-inferred` | conclusion plus `if` body infers a positive law |
 | `law-labelled` | optional colon-bound label leaves semantic law identity intact |
+| `revision-withdrawal` | exact-base successor with one signed withdrawal |
+| `revision-withdrawal-renamed` | human rename leaves semantic Revision unchanged |
+| `revision-withdrawal-legacy` | current profile preserves withdrawal semantics for migration |
+| `revision-addition` | exact-base successor with one signed admission |
+| `revision-addition-legacy` | current profile preserves admission semantics for migration |
+| `revision-mixed-delta` | admission and withdrawal commit as one atomic successor |
+| `revision-unknown-base` | unresolved base prevents elaboration |
+| `revision-withdraw-missing` | withdrawal must name an assertion in the exact base |
+| `revision-admit-existing` | admission must be absent from the exact base |
+| `revision-overlap` | one clause cannot be both admitted and withdrawn |
+| `diff-revisions` | diff preserves exact base-to-successor direction |
 
 Do not “bless” these files from parser output. A later fixture checker may
 compare exact projections and print diffs, but reviewed corpus remains the

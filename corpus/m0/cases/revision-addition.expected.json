@@ -1,0 +1,29 @@
+{
+  "schema": "clause-m0-contrast-v1",
+  "id": "revision-addition",
+  "axis": "revision-surface-reset",
+  "decision": {"status": "unresolved", "candidate": "header-from-signed-admission", "layout_style": "provisional-four-space"},
+  "source": {
+    "lines": ["isolation-route-candidate from egress", "    + Door 105 passed Fire-Marshal Inspection"],
+    "line_break": "LF",
+    "ends_with_line_break": true
+  },
+  "context": {"revisions": {"egress": "$revision:egress"}, "assertion_presence": [{"clause": {"relation": "$passed", "roles": {"door": "Door 105", "inspection": "Fire-Marshal Inspection"}}, "present": false}]},
+  "structural_intent": "exact-successor-revision",
+  "equivalence_group": "egress-admit-door-105",
+  "surface_binding": {"label": "isolation-route-candidate", "semantic": "$revision:egress-plus-door-105-passed"},
+  "required": ["from resolves one exact base Revision identity", "plus denotes one exact ground admission", "header label is separate from semantic identity"],
+  "forbidden": ["Revision-kind-keyword", "from-colon", "admit-block", "mutable-base", "source-order-mutation"],
+  "elaborated": [
+    {
+      "kind": "successor-revision",
+      "identity": "$revision:egress-plus-door-105-passed",
+      "base": "$revision:egress",
+      "delta": {
+        "admissions": [{"kind": "relation-claim", "relation": "$passed", "roles": {"door": "Door 105", "inspection": "Fire-Marshal Inspection"}}],
+        "withdrawals": []
+      },
+      "atomic": true
+    }
+  ]
+}

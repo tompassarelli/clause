@@ -1,0 +1,4 @@
+egress/isolation-route-candidate: Revision
+    from: egress
+    admit:
+        [Door 105] passed Fire-Marshal-Inspection

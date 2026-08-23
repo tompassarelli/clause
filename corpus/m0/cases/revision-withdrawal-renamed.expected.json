@@ -1,0 +1,32 @@
+{
+  "schema": "clause-m0-contrast-v1",
+  "id": "revision-withdrawal-renamed",
+  "axis": "revision-label-identity",
+  "decision": {"status": "unresolved", "candidate": "renamed-header-from-signed-withdrawal", "layout_style": "provisional-four-space"},
+  "source": {
+    "lines": ["egress-without-door-101-inspection from egress", "    - Door 101 passed Fire-Marshal Inspection"],
+    "line_break": "LF",
+    "ends_with_line_break": true
+  },
+  "context": {
+    "revisions": {"egress": "$revision:egress"},
+    "assertion_presence": [{"clause": {"relation": "$passed", "roles": {"door": "Door 101", "inspection": "Fire-Marshal Inspection"}}, "present": true}]
+  },
+  "structural_intent": "renamed-exact-successor-revision",
+  "equivalence_group": "egress-withdraw-door-101",
+  "surface_binding": {"label": "egress-without-door-101-inspection", "semantic": "$revision:egress-minus-door-101-passed"},
+  "required": ["renaming the human header preserves semantic Revision identity", "base and Delta are unchanged", "rename history is editor transaction metadata rather than semantic content"],
+  "forbidden": ["label-derived-revision-identity", "second-semantic-revision", "mutable-base"],
+  "elaborated": [
+    {
+      "kind": "successor-revision",
+      "identity": "$revision:egress-minus-door-101-passed",
+      "base": "$revision:egress",
+      "delta": {
+        "admissions": [],
+        "withdrawals": [{"kind": "relation-claim", "relation": "$passed", "roles": {"door": "Door 101", "inspection": "Fire-Marshal Inspection"}}]
+      },
+      "atomic": true
+    }
+  ]
+}

@@ -1,0 +1,36 @@
+{
+  "schema": "clause-m0-contrast-v1",
+  "id": "diff-revisions",
+  "axis": "revision-diff-direction",
+  "decision": {"status": "unresolved", "candidate": "diff-base-arrow-successor"},
+  "source": {
+    "lines": ["diff egress -> door-101-withdrawn"],
+    "line_break": "LF",
+    "ends_with_line_break": true
+  },
+  "context": {
+    "revision_bindings": {"egress": "$revision:egress", "door-101-withdrawn": "$revision:egress-minus-door-101-passed"},
+    "same_declarations": true
+  },
+  "structural_intent": "forward-revision-comparison",
+  "required": ["left resolves as exact base Revision", "right resolves as exact successor Revision", "authored assertion difference preserves direction"],
+  "forbidden": ["reverse-diff", "label-string-comparison", "mutable-base", "random-order"],
+  "elaborated": [
+    {
+      "kind": "query",
+      "mood": "diff",
+      "base": "$revision:egress",
+      "successor": "$revision:egress-minus-door-101-passed"
+    }
+  ],
+  "result": {
+    "kind": "revision-diff",
+    "base": "$revision:egress",
+    "successor": "$revision:egress-minus-door-101-passed",
+    "authored": {
+      "added": [],
+      "removed": [{"kind": "relation-claim", "relation": "$passed", "roles": {"door": "Door 101", "inspection": "Fire-Marshal Inspection"}}]
+    },
+    "completeness": "complete"
+  }
+}

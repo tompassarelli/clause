@@ -1,0 +1,24 @@
+{
+  "schema": "clause-m0-contrast-v1",
+  "id": "revision-admit-existing",
+  "axis": "exact-delta-admission",
+  "decision": {"status": "unresolved", "candidate": "existing-admission-diagnostic", "layout_style": "provisional-four-space"},
+  "source": {
+    "lines": ["candidate from egress", "    + Door 101 passed Fire-Marshal Inspection"],
+    "line_break": "LF",
+    "ends_with_line_break": true
+  },
+  "context": {
+    "revisions": {"egress": "$revision:egress"},
+    "assertion_presence": [{"clause": {"relation": "$passed", "roles": {"door": "Door 101", "inspection": "Fire-Marshal Inspection"}}, "present": true}]
+  },
+  "structural_intent": "invalid-successor-existing-admission",
+  "required": ["admission is checked against the exact base assertion set", "the full Delta is rejected atomically"],
+  "forbidden": ["set-like-silent-no-op", "duplicate-assertion", "partial-successor", "content-derived-successor"],
+  "diagnostic": {
+    "code": "delta.admission.existing",
+    "base": "$revision:egress",
+    "clause": {"relation": "$passed", "roles": {"door": "Door 101", "inspection": "Fire-Marshal Inspection"}}
+  },
+  "elaborated": null
+}

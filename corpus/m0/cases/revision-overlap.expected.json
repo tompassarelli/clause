@@ -1,0 +1,23 @@
+{
+  "schema": "clause-m0-contrast-v1",
+  "id": "revision-overlap",
+  "axis": "signed-delta-consistency",
+  "decision": {"status": "unresolved", "candidate": "overlapping-sign-diagnostic", "layout_style": "provisional-four-space"},
+  "source": {
+    "lines": ["candidate from egress", "    + Door 101 passed Fire-Marshal Inspection", "    - Door 101 passed Fire-Marshal Inspection"],
+    "line_break": "LF",
+    "ends_with_line_break": true
+  },
+  "context": {
+    "revisions": {"egress": "$revision:egress"},
+    "assertion_presence": [{"clause": {"relation": "$passed", "roles": {"door": "Door 101", "inspection": "Fire-Marshal Inspection"}}, "present": true}]
+  },
+  "structural_intent": "invalid-overlapping-signed-delta",
+  "required": ["one exact clause cannot occur under both signs", "overlap is rejected before application"],
+  "forbidden": ["source-order-winner", "net-zero-normalization", "partial-successor", "content-derived-successor"],
+  "diagnostic": {
+    "code": "delta.change.overlap",
+    "clause": {"relation": "$passed", "roles": {"door": "Door 101", "inspection": "Fire-Marshal Inspection"}}
+  },
+  "elaborated": null
+}

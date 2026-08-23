@@ -1,0 +1,22 @@
+{
+  "schema": "clause-m0-contrast-v1",
+  "id": "revision-unknown-base",
+  "axis": "exact-revision-ancestry",
+  "decision": {"status": "unresolved", "candidate": "unknown-base-diagnostic", "layout_style": "provisional-four-space"},
+  "source": {
+    "lines": ["candidate from missing-revision", "    + Door 105 passed Fire-Marshal Inspection"],
+    "line_break": "LF",
+    "ends_with_line_break": true
+  },
+  "context": {"revisions": {"egress": "$revision:egress"}},
+  "structural_intent": "invalid-successor-unknown-base",
+  "required": ["from must resolve one admitted exact Revision", "no Delta application or successor identity is produced"],
+  "forbidden": ["implicit-empty-base", "nearest-name-selection", "partial-elaboration", "content-derived-successor"],
+  "diagnostic": {
+    "code": "revision.base.unknown",
+    "role": "base",
+    "name": "missing-revision",
+    "repair": "name one admitted exact base Revision or use explicit structural rendering"
+  },
+  "elaborated": null
+}

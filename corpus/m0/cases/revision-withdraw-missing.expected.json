@@ -1,0 +1,27 @@
+{
+  "schema": "clause-m0-contrast-v1",
+  "id": "revision-withdraw-missing",
+  "axis": "exact-delta-withdrawal",
+  "decision": {"status": "unresolved", "candidate": "missing-withdrawal-diagnostic", "layout_style": "provisional-four-space"},
+  "source": {
+    "lines": ["candidate from egress", "    - Door 105 passed Fire-Marshal Inspection"],
+    "line_break": "LF",
+    "ends_with_line_break": true
+  },
+  "context": {
+    "revisions": {"egress": "$revision:egress"},
+    "assertion_presence": [
+      {"clause": {"relation": "$passed", "roles": {"door": "Door 101", "inspection": "Fire-Marshal Inspection"}}, "present": true},
+      {"clause": {"relation": "$passed", "roles": {"door": "Door 105", "inspection": "Fire-Marshal Inspection"}}, "present": false}
+    ]
+  },
+  "structural_intent": "invalid-successor-missing-withdrawal",
+  "required": ["withdrawal is checked against the exact base assertion set", "the full Delta is rejected atomically"],
+  "forbidden": ["withdraw-if-present", "silent-no-op", "partial-successor", "content-derived-successor"],
+  "diagnostic": {
+    "code": "delta.withdrawal.missing",
+    "base": "$revision:egress",
+    "clause": {"relation": "$passed", "roles": {"door": "Door 105", "inspection": "Fire-Marshal Inspection"}}
+  },
+  "elaborated": null
+}
