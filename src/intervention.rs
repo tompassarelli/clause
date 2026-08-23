@@ -5,7 +5,7 @@
 //! their roles.  Each candidate is admitted as a fresh [`Revision`].
 
 use crate::delta::RevisionDelta;
-use crate::derive::{self, Limits, Proof};
+use crate::derive::{self, Limits, Proof, SupportLimits, SupportStatus};
 use crate::kernel::{self, Clause, KernelError, Model, Result, Revision, Term};
 use std::collections::BTreeSet;
 
@@ -293,11 +293,12 @@ fn canonical(values: Vec<String>) -> Vec<String> {
 }
 
 /// Bounds for a prevention search.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PreventLimits {
     max_candidates: usize,
     max_solutions: usize,
-    closure: Limits,
+    support: SupportLimits,
+    withdrawal_relations: Option<Vec<String>>,
 }
 
 impl PreventLimits {
@@ -305,8 +306,22 @@ impl PreventLimits {
         Self {
             max_candidates,
             max_solutions,
-            closure,
+            support: SupportLimits::new(closure, max_candidates, max_solutions),
+            withdrawal_relations: None,
         }
+    }
+
+    /// Restrict withdrawals to asserted clauses of these declared relations.
+    /// The supplied relation identities are canonicalized before enumeration.
+    pub fn using_relations(mut self, relations: Vec<String>) -> Self {
+        self.withdrawal_relations = Some(canonical(relations));
+        self
+    }
+
+    /// Use explicit bounds for the shared support frontier.
+    pub fn with_support_limits(mut self, limits: SupportLimits) -> Self {
+        self.support = limits;
+        self
     }
 
     pub fn max_candidates(&self) -> usize {
@@ -318,7 +333,15 @@ impl PreventLimits {
     }
 
     pub fn closure_limits(&self) -> Limits {
-        self.closure
+        self.support.closure
+    }
+
+    pub fn support_limits(&self) -> SupportLimits {
+        self.support
+    }
+
+    pub fn withdrawal_relations(&self) -> Option<&[String]> {
+        self.withdrawal_relations.as_deref()
     }
 }
 
@@ -330,6 +353,12 @@ pub enum PreventStatus {
     /// The source closure did not entail the target, so no withdrawal is
     /// needed or returned.
     AlreadyAbsent,
+    /// No admissible withdrawal intersects every asserted support.
+    Impossible,
+    /// The shared support frontier exhausted its derivation-expansion budget.
+    SupportExpansionBudgetExhausted,
+    /// The shared support frontier exhausted its per-clause support budget.
+    SupportBudgetExhausted,
     /// The candidate enumeration reached `max_candidates`.
     CandidateBudgetExhausted,
     /// The result reached `max_solutions` before enumeration was complete.
@@ -392,9 +421,18 @@ impl PreventReport {
 pub fn prevent(source: &Revision, target: Clause, limits: PreventLimits) -> Result<PreventReport> {
     kernel::require(source, target.clone())?;
 
-    let source_closure = derive::saturate(source, limits.closure)?;
     let source_revision = source.identity().to_owned();
-    if source_closure.proof(&target).is_none() {
+    let frontier = derive::support_frontier(source, &target, limits.support_limits())?;
+    if !frontier.status().is_complete() {
+        return Ok(PreventReport {
+            source_revision,
+            target,
+            status: support_status(frontier.status()),
+            candidates_examined: 0,
+            solutions: Vec::new(),
+        });
+    }
+    if frontier.supports().is_empty() {
         return Ok(PreventReport {
             source_revision,
             target,
@@ -404,10 +442,30 @@ pub fn prevent(source: &Revision, target: Clause, limits: PreventLimits) -> Resu
         });
     }
 
-    let direct_facts = source.model().facts().to_vec();
+    let direct_facts = admissible_withdrawals(source, &limits)?;
+    let supports = frontier
+        .supports()
+        .iter()
+        .map(|support| support.assertions().to_vec())
+        .collect::<Vec<_>>();
+    if direct_facts.is_empty()
+        || supports.iter().any(|support| {
+            support
+                .iter()
+                .all(|assertion| direct_facts.binary_search(assertion).is_err())
+        })
+    {
+        return Ok(PreventReport {
+            source_revision,
+            target,
+            status: PreventStatus::Impossible,
+            candidates_examined: 0,
+            solutions: Vec::new(),
+        });
+    }
     let mut state = PreventSearch {
         source,
-        target: &target,
+        supports: &supports,
         direct_facts: &direct_facts,
         limits,
         candidates_examined: 0,
@@ -415,7 +473,7 @@ pub fn prevent(source: &Revision, target: Clause, limits: PreventLimits) -> Resu
         status: None,
     };
 
-    if limits.max_solutions == 0 {
+    if state.limits.max_solutions == 0 {
         state.status = Some(PreventStatus::SolutionBudgetExhausted);
     } else {
         for size in 1..=direct_facts.len() {
@@ -437,9 +495,41 @@ pub fn prevent(source: &Revision, target: Clause, limits: PreventLimits) -> Resu
     })
 }
 
+fn support_status(status: SupportStatus) -> PreventStatus {
+    match status {
+        SupportStatus::Complete => unreachable!("incomplete frontiers are handled by the caller"),
+        SupportStatus::ExpansionBudgetExhausted => PreventStatus::SupportExpansionBudgetExhausted,
+        SupportStatus::SupportBudgetExhausted => PreventStatus::SupportBudgetExhausted,
+    }
+}
+
+fn admissible_withdrawals(source: &Revision, limits: &PreventLimits) -> Result<Vec<Clause>> {
+    let Some(relations) = limits.withdrawal_relations() else {
+        return Ok(source.model().facts().to_vec());
+    };
+    for relation in relations {
+        if !source.model().relations().contains_key(relation) {
+            return Err(KernelError::new(format!(
+                "withdrawal relation is undeclared: {relation}"
+            )));
+        }
+    }
+    Ok(source
+        .model()
+        .facts()
+        .iter()
+        .filter(|fact| {
+            relations
+                .binary_search_by(|relation| relation.as_str().cmp(fact.relation()))
+                .is_ok()
+        })
+        .cloned()
+        .collect())
+}
+
 struct PreventSearch<'a> {
     source: &'a Revision,
-    target: &'a Clause,
+    supports: &'a [Vec<Clause>],
     direct_facts: &'a [Clause],
     limits: PreventLimits,
     candidates_examined: usize,
@@ -488,11 +578,14 @@ impl PreventSearch<'_> {
             return Ok(());
         }
 
-        let candidate =
-            RevisionDelta::new(self.source.identity(), Vec::new(), withdrawals.clone())?
-                .apply(self.source)?;
-        let closure = derive::saturate(&candidate, self.limits.closure)?;
-        if closure.proof(self.target).is_none() {
+        if self.supports.iter().all(|support| {
+            support
+                .iter()
+                .any(|assertion| withdrawals.binary_search(assertion).is_ok())
+        }) {
+            let candidate =
+                RevisionDelta::new(self.source.identity(), Vec::new(), withdrawals.clone())?
+                    .apply(self.source)?;
             self.solutions.push(PreventSolution {
                 withdrawals,
                 revision: candidate,
@@ -507,7 +600,9 @@ impl PreventSearch<'_> {
 
 #[cfg(test)]
 mod tests {
-    use super::{AchieveConfig, AchieveResult, PreventLimits, PreventStatus, achieve, prevent};
+    use super::{
+        AchieveConfig, AchieveResult, PreventLimits, PreventStatus, SupportLimits, achieve, prevent,
+    };
     use crate::derive::{Limits, Witness};
     use crate::kernel::{
         Cardinality, Clause, Law, Mode, Model, Relation, Revision, Role, Sentence, Term,
@@ -835,7 +930,8 @@ mod tests {
         let report = prevent(
             &source,
             clause("map/reaches", "North", "Store"),
-            PreventLimits::new(100, 100, closure_limits()),
+            PreventLimits::new(100, 100, closure_limits())
+                .using_relations(vec!["map/links".into()]),
         )
         .unwrap();
 
@@ -858,7 +954,8 @@ mod tests {
         let rerun = prevent(
             &source,
             clause("map/reaches", "North", "Store"),
-            PreventLimits::new(100, 100, closure_limits()),
+            PreventLimits::new(100, 100, closure_limits())
+                .using_relations(vec!["map/links".into()]),
         )
         .unwrap();
         assert_eq!(report, rerun);
@@ -870,7 +967,11 @@ mod tests {
         let absent = prevent(
             &source,
             clause("map/reaches", "North", "Store"),
-            PreventLimits::new(0, 0, closure_limits()),
+            PreventLimits::new(0, 0, closure_limits()).with_support_limits(SupportLimits::new(
+                closure_limits(),
+                100,
+                100,
+            )),
         )
         .unwrap();
         assert_eq!(absent.status(), PreventStatus::AlreadyAbsent);
@@ -881,12 +982,64 @@ mod tests {
         )
         .unwrap();
         let source = prevention_revision(vec![clause("map/links", "North", "Store")], vec![law]);
-        let exhausted = prevent(
-            &source,
-            clause("map/reaches", "North", "Store"),
-            PreventLimits::new(0, 10, closure_limits()),
+        let exhausted =
+            prevent(
+                &source,
+                clause("map/reaches", "North", "Store"),
+                PreventLimits::new(0, 10, closure_limits())
+                    .with_support_limits(SupportLimits::new(closure_limits(), 100, 100)),
+            )
+            .unwrap();
+        assert_eq!(exhausted.status(), PreventStatus::CandidateBudgetExhausted);
+    }
+
+    #[test]
+    fn restricted_basis_cannot_prevent_a_support_it_does_not_touch() {
+        let law = Law::new(
+            "map/link-reaches",
+            vec![pattern("map/links", "from", "to")],
+            pattern("map/reaches", "from", "to"),
         )
         .unwrap();
-        assert_eq!(exhausted.status(), PreventStatus::CandidateBudgetExhausted);
+        let source = prevention_revision(vec![clause("map/links", "North", "Store")], vec![law]);
+
+        let report = prevent(
+            &source,
+            clause("map/reaches", "North", "Store"),
+            PreventLimits::new(100, 100, closure_limits())
+                .using_relations(vec!["map/reaches".into()]),
+        )
+        .unwrap();
+
+        assert_eq!(report.status(), PreventStatus::Impossible);
+        assert_eq!(report.candidates_examined(), 0);
+        assert!(report.solutions().is_empty());
+    }
+
+    #[test]
+    fn incomplete_support_frontier_never_reports_complete_prevention() {
+        let law = Law::new(
+            "map/link-reaches",
+            vec![pattern("map/links", "from", "to")],
+            pattern("map/reaches", "from", "to"),
+        )
+        .unwrap();
+        let source = prevention_revision(vec![clause("map/links", "North", "Store")], vec![law]);
+
+        let report =
+            prevent(
+                &source,
+                clause("map/reaches", "North", "Store"),
+                PreventLimits::new(100, 100, closure_limits())
+                    .with_support_limits(SupportLimits::new(closure_limits(), 0, 100)),
+            )
+            .unwrap();
+
+        assert_eq!(
+            report.status(),
+            PreventStatus::SupportExpansionBudgetExhausted
+        );
+        assert_eq!(report.candidates_examined(), 0);
+        assert!(report.solutions().is_empty());
     }
 }
