@@ -66,7 +66,7 @@ fn impact_journey_seals_derives_changes_intervenes_and_survives_source_removal()
     assert!(demo.contains("\"impact/recursive-dependency\""));
     assert!(demo.contains("\"impact/impact\""));
     assert!(demo.contains("[\"status\",\"complete\"]"));
-    assert!(demo.contains("[\"status\",\"candidate-budget-exhausted\"]"));
+    assert!(demo.contains("[\"achieve\",[\"status\",\"complete\"]"));
 
     let persisted = fs::read_to_string(&revision_path).expect("successor revision reads");
     let successor = wire::reload(&persisted).expect("successor revision reloads");

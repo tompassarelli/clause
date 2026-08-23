@@ -85,34 +85,18 @@ impl SemanticJourney {
         };
         let intervention_relation = intent.desired().relation().to_owned();
         let active_domain = intervention_domain(base, intent.desired());
-        let relation = base
-            .model()
-            .relations()
-            .get(&intervention_relation)
-            .expect("an admitted intent relation is declared");
-        let candidate_count = active_domain
-            .len()
-            .checked_pow(relation.roles().len() as u32)
-            .and_then(|count| {
-                count.checked_sub(
-                    base.model()
-                        .facts()
-                        .iter()
-                        .filter(|fact| fact.relation() == intervention_relation)
-                        .count(),
-                )
-            })
-            .ok_or_else(|| KernelError::new("semantic journey candidate bound overflows"))?;
+        let candidate_basis = achievement_basis(base, intent.desired(), &achievement_goal)?;
         let prevent_limits = PreventLimits::new(limits.max_facts, limits.max_facts, limits)
             .with_support_limits(support_limits)
             .using_relations(vec![intervention_relation.clone()]);
         let achieve_config = AchieveConfig::new(
             vec![intervention_relation],
             active_domain,
-            candidate_count,
+            candidate_basis.len(),
             limits.max_facts,
             limits,
-        );
+        )
+        .with_candidate_basis(candidate_basis);
         Ok(Self::new(
             support_loss,
             support_target,
@@ -242,6 +226,82 @@ fn intervention_domain(base: &Revision, desired: &Clause) -> Vec<String> {
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect()
+}
+
+fn achievement_basis(base: &Revision, desired: &Clause, goal: &Clause) -> Result<Vec<Clause>> {
+    let relation = base
+        .model()
+        .relations()
+        .get(desired.relation())
+        .expect("an admitted intent relation is declared");
+    let modes = relation
+        .modes()
+        .iter()
+        .filter(|mode| {
+            mode.known().iter().all(|role| {
+                desired
+                    .roles()
+                    .get(role)
+                    .is_some_and(|term| goal.roles().get(role) == Some(term))
+            })
+        })
+        .collect::<Vec<_>>();
+    let [mode] = modes.as_slice() else {
+        return Err(KernelError::new(
+            "semantic journey achievement requires exactly one intent mode anchored by the goal",
+        ));
+    };
+    let role_values = desired
+        .roles()
+        .iter()
+        .map(|(role, desired_term)| {
+            if mode.known().binary_search(role).is_ok() {
+                return (role.clone(), vec![desired_term.clone()]);
+            }
+            let mut values = base
+                .model()
+                .facts()
+                .iter()
+                .filter(|fact| fact.relation() == desired.relation())
+                .filter_map(|fact| fact.roles().get(role).cloned())
+                .collect::<BTreeSet<_>>();
+            values.insert(desired_term.clone());
+            (role.clone(), values.into_iter().collect())
+        })
+        .collect::<Vec<_>>();
+
+    let mut basis = BTreeSet::new();
+    collect_achievement_basis(
+        desired.relation(),
+        &role_values,
+        0,
+        &mut Vec::new(),
+        &mut basis,
+    )?;
+    Ok(basis
+        .into_iter()
+        .filter(|candidate| base.model().facts().binary_search(candidate).is_err())
+        .collect())
+}
+
+fn collect_achievement_basis(
+    relation: &str,
+    role_values: &[(String, Vec<Term>)],
+    index: usize,
+    roles: &mut Vec<(String, Term)>,
+    basis: &mut BTreeSet<Clause>,
+) -> Result<()> {
+    if index == role_values.len() {
+        basis.insert(Clause::new(relation, roles.clone())?);
+        return Ok(());
+    }
+    let (role, values) = &role_values[index];
+    for value in values {
+        roles.push((role.clone(), value.clone()));
+        collect_achievement_basis(relation, role_values, index + 1, roles, basis)?;
+        roles.pop();
+    }
+    Ok(())
 }
 
 fn query_json(output: &QueryOutput) -> String {

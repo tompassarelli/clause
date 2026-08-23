@@ -116,14 +116,25 @@ fn prevent_source(limits: &PreventLimits) -> String {
 
 #[cfg(not(clause_generated))]
 fn achieve_source(config: &AchieveConfig) -> String {
-    format!(
+    let source = format!(
         "intervention::AchieveConfig::new(vec![{}], vec![{}], {}, {}, {})",
         strings_source(config.allowed_relations()),
         strings_source(config.active_domain()),
         config.max_candidates(),
         config.max_solutions(),
         limits_source(config.closure_limits()),
-    )
+    );
+    match config.candidate_basis() {
+        Some(basis) => format!(
+            "{source}.with_candidate_basis(vec![{}])",
+            basis
+                .iter()
+                .map(clause_source)
+                .collect::<Vec<_>>()
+                .join(",")
+        ),
+        None => source,
+    }
 }
 
 #[cfg(not(clause_generated))]
