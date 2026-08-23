@@ -52,8 +52,8 @@ immutable revision.
   asserted additions and removals from newly entailed or lost consequences, and
   identifies selected-proof changes for facts that remain true.
 
-- **Bounded ways to intervene.** `achieve` searches for a candidate assertion
-  that makes a goal true; `prevent` enumerates inclusion-minimal withdrawals
+- **Bounded ways to intervene.** `achieve` searches for candidate assertion
+  sets that make a goal true; `prevent` enumerates inclusion-minimal withdrawals
   that make an entailed target absent. Both return new candidate revisions and
   both are explicitly bounded, so neither hides an unbounded planner behind a
   convenient verb.
@@ -67,10 +67,9 @@ immutable revision.
 
 Clause currently admits a deliberately narrow, useful fragment: finite,
 positive, role-labelled Horn laws. Facts and laws use named roles rather than
-positional triples; closure, query proof construction,
-and intervention search have explicit resource bounds. Those bounds are part
-of the contract: exceeding one fails visibly rather than silently broadening a
-search.
+positional triples; closure, query proof construction, and intervention search
+have explicit resource bounds. Those bounds are part of the contract: exceeding
+one fails visibly rather than silently broadening a search.
 
 This is not a general theorem prover or workflow engine. There are no effects,
 no negation or unrestricted search, and no hidden solver. Canonical semantic
