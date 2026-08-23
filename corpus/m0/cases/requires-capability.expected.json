@@ -1,0 +1,30 @@
+{
+  "schema": "clause-m0-contrast-v1",
+  "id": "requires-capability",
+  "axis": "program-capability-requirement",
+  "decision": {"status": "unresolved", "candidate": "requires-capability-entry", "layout_style": "provisional-four-space"},
+  "source": {
+    "lines": ["requires", "    capability render"],
+    "line_break": "LF",
+    "ends_with_line_break": true
+  },
+  "context": {
+    "program": "$program:render-candidate",
+    "capability_resolution": {"label": "render", "identity": "$capability:render-exact", "resolution": "exact"}
+  },
+  "structural_intent": "program-capability-requirement",
+  "required": [
+    "the checked Program records one exact capability requirement",
+    "the requirement contributes to Program identity",
+    "runtime authorization remains a separate judgment"
+  ],
+  "forbidden": ["domain-membership", "ambient-capability-grant", "runtime-authorization", "effect-attempt", "canonical-capability-entry-spelling"],
+  "elaborated": [
+    {
+      "kind": "capability-requirement",
+      "program": "$program:render-candidate",
+      "capability": "$capability:render-exact",
+      "identity_relevant": true
+    }
+  ]
+}

@@ -1,0 +1,57 @@
+{
+  "schema": "clause-m0-contrast-v1",
+  "id": "effect-render-request",
+  "axis": "explicit-effect-request-and-receipt",
+  "decision": {"status": "unresolved", "candidate": "bang-effect-request"},
+  "source": {
+    "lines": ["render! scene"],
+    "line_break": "LF",
+    "ends_with_line_break": true
+  },
+  "context": {
+    "program": "$program:render-exact",
+    "state": "$state:frame-7",
+    "terms": {"scene": "$render-plan:frame-7"},
+    "required_capability": "$capability:render-exact",
+    "runtime_grants": ["$capability:render-exact"]
+  },
+  "structural_intent": "authorized-effect-request",
+  "effect_equivalence_group": "render-scene-request",
+  "effect_request": {
+    "kind": "effect-request",
+    "identity": "$effect-request:render-scene",
+    "operation": "$render",
+    "arguments": ["$render-plan:frame-7"],
+    "capability": "$capability:render-exact",
+    "result_contract": "receipt"
+  },
+  "required": [
+    "bang marks an external capability boundary",
+    "authorization precedes the host attempt",
+    "the attempt produces a receipt linked to the exact request",
+    "the receipt is evidence of the attempt outcome rather than admitted truth"
+  ],
+  "forbidden": ["pure-call", "modeled-state-mutation", "scene-is-rendered-assertion", "receipt-as-proof", "permanent-external-condition"],
+  "elaborated": [
+    {
+      "kind": "effect-request",
+      "identity": "$effect-request:render-scene",
+      "operation": "$render",
+      "arguments": ["$render-plan:frame-7"],
+      "capability": "$capability:render-exact",
+      "result_contract": "receipt"
+    }
+  ],
+  "result": {
+    "authorization": {"capability": "$capability:render-exact", "status": "granted"},
+    "attempt": {"identity": "$effect-attempt:render-scene/1", "request": "$effect-request:render-scene", "status": "completed"},
+    "receipt": {
+      "kind": "effect-receipt",
+      "identity": "$receipt:render-scene/1",
+      "request": "$effect-request:render-scene",
+      "attempt": "$effect-attempt:render-scene/1",
+      "status": "succeeded",
+      "admitted_truth": false
+    }
+  }
+}

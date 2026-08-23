@@ -1,0 +1,54 @@
+{
+  "schema": "clause-m0-contrast-v1",
+  "id": "effect-missing-capability",
+  "axis": "effect-authorization-denial",
+  "decision": {"status": "unresolved", "candidate": "bang-effect-missing-runtime-grant"},
+  "source": {
+    "lines": ["render! scene"],
+    "line_break": "LF",
+    "ends_with_line_break": true
+  },
+  "context": {
+    "program": "$program:render-exact",
+    "state": "$state:frame-7",
+    "terms": {"scene": "$render-plan:frame-7"},
+    "program_requirements": ["$capability:render-exact"],
+    "runtime_grants": []
+  },
+  "structural_intent": "deny-effect-before-host-attempt",
+  "effect_request": {
+    "kind": "effect-request",
+    "identity": "$effect-request:render-scene",
+    "operation": "$render",
+    "arguments": ["$render-plan:frame-7"],
+    "capability": "$capability:render-exact",
+    "result_contract": "receipt"
+  },
+  "required": [
+    "a Program requirement does not grant its capability",
+    "runtime authorization checks the exact capability before host invocation",
+    "denial records an authorization result without fabricating an attempt or receipt"
+  ],
+  "forbidden": ["ambient-authorization", "host-attempt", "success-receipt", "denial-as-effect-receipt", "modeled-state-change"],
+  "elaborated": [
+    {
+      "kind": "effect-request",
+      "identity": "$effect-request:render-scene",
+      "operation": "$render",
+      "arguments": ["$render-plan:frame-7"],
+      "capability": "$capability:render-exact",
+      "result_contract": "receipt"
+    }
+  ],
+  "diagnostic": {
+    "code": "effect.authorization.denied",
+    "request": "$effect-request:render-scene",
+    "required_capability": "$capability:render-exact",
+    "available_capabilities": []
+  },
+  "result": {
+    "authorization": {"capability": "$capability:render-exact", "status": "denied"},
+    "attempt": null,
+    "receipt": null
+  }
+}

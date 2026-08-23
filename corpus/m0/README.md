@@ -87,6 +87,14 @@ Handles beginning with `$` are corpus symbols, not Store identities.
 | `transition-conflict-reversed` | reversed writer order produces the identical conflict |
 | `transition-nonfunctional-replacement` | `~>` without a proved key directs repair to exact deltas |
 | `replay-deterministic` | exact authority, events, ticks, identity, and bytes replay identically |
+| `requires-packages` | reserved requirements relate the Program to exact packages, not members |
+| `requires-capability` | a Program capability requirement is not a runtime grant |
+| `effect-render-request` | `render!` records request, authorization, attempt, and receipt |
+| `effect-render-bound` | colon binds the receipt without changing the effect request |
+| `effect-load-resource` | `load!` returns an opaque session resource with receipt provenance |
+| `effect-missing-capability` | authorization denial prevents host attempt and fabricated receipt |
+| `effect-postcommit-success` | rendering observes the committed post-state and records success |
+| `effect-postcommit-failure` | failed rendering records failure without rolling back modeled state |
 
 Do not “bless” these files from parser output. A later fixture checker may
 compare exact projections and print diffs, but reviewed corpus remains the

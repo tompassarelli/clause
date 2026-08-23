@@ -1,0 +1,33 @@
+{
+  "schema": "clause-m0-contrast-v1",
+  "id": "requires-packages",
+  "axis": "reserved-program-package-requirements",
+  "decision": {"status": "unresolved", "candidate": "requires-package-list", "layout_style": "provisional-four-space"},
+  "source": {
+    "lines": ["requires", "    game", "    three"],
+    "line_break": "LF",
+    "ends_with_line_break": true
+  },
+  "context": {
+    "program": "$program:one-coin-candidate",
+    "package_resolution": [
+      {"label": "game", "identity": "$package:game-exact", "resolution": "exact"},
+      {"label": "three", "identity": "$package:three-exact", "resolution": "exact"}
+    ]
+  },
+  "structural_intent": "program-package-requirements",
+  "required": [
+    "requires is a reserved list form rather than an enumeration heading",
+    "each bare child relates the current Program to one exactly resolved package",
+    "resolved package identities contribute to checked Program identity"
+  ],
+  "forbidden": ["game-member-of-requires", "three-member-of-requires", "domain-membership", "implicit-runtime-import", "capability-grant", "module-declaration"],
+  "elaborated": [
+    {
+      "kind": "program-requirements",
+      "program": "$program:one-coin-candidate",
+      "packages": ["$package:game-exact", "$package:three-exact"],
+      "identity_relevant": true
+    }
+  ]
+}
