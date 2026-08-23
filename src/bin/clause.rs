@@ -5,13 +5,12 @@
 
 use clause::{
     derive::Limits,
-    elaborate, frontend, generated,
+    elaborate, execution, frontend, generated,
     intervention::{self, AchieveConfig, AchieveResult, PreventLimits, PreventStatus},
     kernel,
     semantic_diff::SemanticDiff,
     wire,
 };
-use std::collections::BTreeSet;
 use std::env;
 use std::fmt;
 use std::fs;
@@ -174,8 +173,48 @@ fn query(revision_path: &Path) -> Result<(), CliError> {
 }
 
 fn query_json(revision: &kernel::Revision) -> Result<String, CliError> {
-    generated::canonical_output(revision, limits())
+    Ok(execution::canonical_json(&query_output(revision)?))
+}
+
+fn query_output(revision: &kernel::Revision) -> Result<execution::QueryOutput, CliError> {
+    let plan = revision
+        .plan()
+        .map_err(|error| CliError::failure(format!("plan revision: {error}")))?;
+    execution::execute(revision, &plan, limits())
         .map_err(|error| CliError::failure(format!("query revision: {error}")))
+}
+
+fn added_query_fact(
+    base: &execution::QueryOutput,
+    successor: &execution::QueryOutput,
+    revision: &kernel::Revision,
+) -> Result<kernel::Clause, CliError> {
+    let added = successor
+        .results
+        .iter()
+        .filter(|result| !base.results.contains(result))
+        .collect::<Vec<_>>();
+    let [added] = added.as_slice() else {
+        return Err(CliError::failure(
+            "e2e requires exactly one newly entailed query result",
+        ));
+    };
+    let query = revision.model().query();
+    let roles = query
+        .roles()
+        .iter()
+        .map(|(role, term)| {
+            let term = if term.is_variable() {
+                kernel::Term::literal(added.as_str())?
+            } else {
+                term.clone()
+            };
+            Ok((role.clone(), term))
+        })
+        .collect::<kernel::Result<Vec<_>>>()
+        .map_err(|error| CliError::failure(format!("bind added query result: {error}")))?;
+    kernel::Clause::new(query.relation(), roles)
+        .map_err(|error| CliError::failure(format!("instantiate added query result: {error}")))
 }
 
 fn verify_generated_rust(revision: &kernel::Revision, output: &str) -> Result<(), CliError> {
@@ -339,7 +378,8 @@ fn e2e(source_path: &Path, revision_path: &Path) -> Result<(), CliError> {
         .ok_or_else(|| CliError::failure("intent has no model namespace"))?;
     let branch = kernel::Branch::new(branch_name, base.clone())
         .map_err(|error| CliError::failure(error.to_string()))?;
-    let base_query = query_json(&base)?;
+    let base_query_output = query_output(&base)?;
+    let base_query = execution::canonical_json(&base_query_output);
     let intent_name = intent.name().to_owned();
     let proposed = kernel::intent(&branch, &intent_name);
     let desired = proposed
@@ -372,44 +412,46 @@ fn e2e(source_path: &Path, revision_path: &Path) -> Result<(), CliError> {
         .map_err(|error| CliError::failure(error.to_string()))?;
     let required = kernel::require(&next, desired.clone())
         .map_err(|error| CliError::failure(error.to_string()))?;
-    let next_query = query_json(&next)?;
+    let next_query_output = query_output(&next)?;
+    let next_query = execution::canonical_json(&next_query_output);
+    let intervention_target = added_query_fact(&base_query_output, &next_query_output, &next)?;
     let satisfied = kernel::intent(&next_branch, &intent_name);
     let diff = SemanticDiff::between(&base, &next, limits())
         .map_err(|error| CliError::failure(format!("diff revisions: {error}")))?;
     let prevention = intervention::prevent(
         &next,
-        desired.clone(),
+        intervention_target.clone(),
         PreventLimits::new(100, 10, limits()),
     )
-    .map_err(|error| CliError::failure(format!("prevent intent: {error}")))?;
+    .map_err(|error| CliError::failure(format!("prevent added query result: {error}")))?;
     if prevention.solutions().is_empty() {
-        return Err(CliError::failure("prevent intent produced no withdrawal"));
+        return Err(CliError::failure(
+            "prevent added query result produced no withdrawal",
+        ));
     }
-    let mut domain = base
-        .model()
-        .facts()
-        .iter()
-        .flat_map(|fact| fact.roles().values())
+    let domain = desired
+        .roles()
+        .values()
         .map(|term| term.text().to_owned())
-        .collect::<BTreeSet<_>>();
-    domain.extend(desired.roles().values().map(|term| term.text().to_owned()));
+        .collect();
     let achievement = intervention::achieve(
         &base,
-        desired.clone(),
+        intervention_target.clone(),
         &AchieveConfig::new(
             vec![desired.relation().to_owned()],
-            domain.into_iter().collect(),
+            domain,
             100,
             10,
             limits(),
         ),
     )
-    .map_err(|error| CliError::failure(format!("achieve intent: {error}")))?;
+    .map_err(|error| CliError::failure(format!("achieve added query result: {error}")))?;
     if achievement.interventions().is_empty() {
         return Err(CliError::failure("achieve intent produced no intervention"));
     }
     let output = format!(
-        "[\"clause-demo-output-v1\",[\"base-query\",{base_query}],[\"successor-query\",{next_query}],[\"intent\",{proposed_output}],[\"claim\",{}],[\"require\",{}],[\"satisfied-intent\",{}],[\"diff\",{}],[\"prevent\",{}],[\"achieve\",{}],[\"generated-parity\",true]]",
+        "[\"clause-demo-output-v1\",[\"base-query\",{base_query}],[\"successor-query\",{next_query}],[\"intervention-target\",{}],[\"intent\",{proposed_output}],[\"claim\",{}],[\"require\",{}],[\"satisfied-intent\",{}],[\"diff\",{}],[\"prevent\",{}],[\"achieve\",{}],[\"generated-parity\",true]]",
+        clause_json(&intervention_target),
         wire::claim_output(&claimed),
         wire::require_output(&required),
         wire::intent_output(&satisfied),

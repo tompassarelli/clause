@@ -41,6 +41,7 @@ fn impact_journey_seals_derives_changes_intervenes_and_survives_source_removal()
     assert!(demo.contains("[\"successor-query\",[\"clause-query-output-v2\",[\"results\",[\"North\",\"South\",\"Store\"]]"));
     assert!(demo.contains("\"impact/recursive-dependency\""));
     assert!(demo.contains("\"impact/impact\""));
+    assert!(demo.contains("[\"intervention-target\",[\"clause\",\"relation\",\"impact/affected\",\"roles\",[[\"change\",\"compiler-change\"],[\"consumer\",\"South\"]]]]"));
     assert!(demo.contains("[\"asserted\",[\"added\",[[\"clause\",\"relation\",\"impact/imports\",\"roles\",[[\"consumer\",\"South\"],[\"dependency\",\"North\"]]]]]"));
     assert!(
         demo.contains("[\"entailed\",[\"added\",[[\"clause\",\"relation\",\"impact/affected\"")
@@ -52,8 +53,9 @@ fn impact_journey_seals_derives_changes_intervenes_and_survives_source_removal()
             "[\"clause-prevent-output-v1\",[\"status\",\"complete\"],[\"candidates\",15]"
         )
     );
-    assert!(demo.contains("[\"clause-achieve-output-v1\",[\"status\",\"candidate-limit\"]"));
+    assert!(demo.contains("[\"clause-achieve-output-v1\",[\"status\",\"solutions\"]"));
     assert_eq!(demo.matches("[\"additions\",[[\"clause\"").count(), 1);
+    assert!(demo.contains("[\"additions\",[[\"clause\",\"relation\",\"impact/imports\",\"roles\",[[\"consumer\",\"South\"],[\"dependency\",\"North\"]]]]]"));
     assert!(demo.ends_with("[\"generated-parity\",true]]\n"));
 
     fs::remove_file(&source_path).expect("authoring source removes after seal");
