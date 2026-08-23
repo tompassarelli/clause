@@ -19,6 +19,14 @@ the arbitrary I/O, networking, concurrency, or general-purpose effects needed
 to author an entire application such as a server or terminal UI without a Rust
 boundary.
 
+Clause is committed to growing this core into one general-purpose,
+relation-centered programming system: recursive values and propositions,
+exact state transitions, explicit effects and receipts, JavaScript and
+Three.js first, measured Wasm specialization later, and eventually a real
+North application vertical. This is product direction, not a claim about the
+current implementation. See the [Clause roadmap](ROADMAP.md) for the authority
+model, dependency order, prototype gates, and acceptance criteria.
+
 ## Repository and artifact map
 
 | Path or artifact | Authority and lifecycle |
