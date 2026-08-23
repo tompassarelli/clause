@@ -87,7 +87,7 @@ diff scenario -> scenario/ab-withdrawn
 
 fn temporary(extension: &str) -> PathBuf {
     env::temp_dir().join(format!(
-        "clause-request-materialization-{}.{}",
+        "clause-rust-projection-{}.{}",
         std::process::id(),
         extension
     ))
@@ -172,7 +172,7 @@ mod emit_rust_cli {
             .expect("system clock after epoch")
             .as_nanos();
         env::temp_dir().join(format!(
-            "clause-request-integrity-{}-{nonce}.{extension}",
+            "clause-rust-projection-cli-{}-{nonce}.{extension}",
             std::process::id()
         ))
     }

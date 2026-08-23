@@ -147,5 +147,4 @@ impl SemanticDiff {
 }
 
 #[cfg(test)]
-#[path = "semantic_diff/tests.rs"]
 mod tests;

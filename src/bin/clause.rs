@@ -2,7 +2,9 @@
 
 use clause::{elaborate, frontend, generated, request, wire};
 use std::{
-    env, fmt, fs,
+    env,
+    ffi::OsString,
+    fmt, fs,
     path::{Path, PathBuf},
     process::ExitCode,
 };
@@ -49,10 +51,17 @@ enum Command {
     },
 }
 
-fn parse_command(args: impl IntoIterator<Item = String>) -> Result<Command, CliError> {
+fn text_argument(argument: OsString, label: &str) -> Result<String, CliError> {
+    argument
+        .into_string()
+        .map_err(|_| CliError::usage(format!("{label} must be valid UTF-8\n{USAGE}")))
+}
+
+fn parse_command(args: impl IntoIterator<Item = OsString>) -> Result<Command, CliError> {
     let mut args = args.into_iter();
-    match args.next().as_deref() {
-        Some("seal") => {
+    let command = args.next().ok_or_else(|| CliError::usage(USAGE))?;
+    match text_argument(command, "COMMAND")?.as_str() {
+        "seal" => {
             let source = args.next().ok_or_else(|| CliError::usage(USAGE))?;
             let name = args.next().ok_or_else(|| CliError::usage(USAGE))?;
             let revision = args.next().ok_or_else(|| CliError::usage(USAGE))?;
@@ -61,11 +70,11 @@ fn parse_command(args: impl IntoIterator<Item = String>) -> Result<Command, CliE
             }
             Ok(Command::Seal {
                 source: source.into(),
-                name: frontend::Name(name),
+                name: frontend::Name(text_argument(name, "REVISION_NAME")?),
                 revision: revision.into(),
             })
         }
-        Some("run") => {
+        "run" => {
             let source = args.next().ok_or_else(|| CliError::usage(USAGE))?;
             if args.next().is_some() {
                 return Err(CliError::usage(USAGE));
@@ -74,7 +83,7 @@ fn parse_command(args: impl IntoIterator<Item = String>) -> Result<Command, CliE
                 source: source.into(),
             })
         }
-        Some("emit-rust") => {
+        "emit-rust" => {
             let source = args.next().ok_or_else(|| CliError::usage(USAGE))?;
             let output = args.next().ok_or_else(|| CliError::usage(USAGE))?;
             if args.next().is_some() {
@@ -132,7 +141,7 @@ fn emit_rust(source: &Path, output: &Path) -> Result<(), CliError> {
 }
 
 fn main() -> ExitCode {
-    let result = match parse_command(env::args().skip(1)) {
+    let result = match parse_command(env::args_os().skip(1)) {
         Ok(Command::Seal {
             source,
             name,
@@ -178,5 +187,46 @@ mod tests {
             ]),
             Ok(Command::EmitRust { .. })
         ));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn preserves_non_utf8_filesystem_paths() {
+        use std::{ffi::OsString, os::unix::ffi::OsStringExt, path::PathBuf};
+
+        let source = OsString::from_vec(b"input-\xff.clause".to_vec());
+        let output = OsString::from_vec(b"output-\xff.rs".to_vec());
+        let Ok(Command::EmitRust {
+            source: parsed_source,
+            output: parsed_output,
+        }) = parse_command([OsString::from("emit-rust"), source.clone(), output.clone()])
+        else {
+            panic!("non-UTF-8 filesystem paths should parse");
+        };
+
+        assert_eq!(parsed_source, PathBuf::from(source));
+        assert_eq!(parsed_output, PathBuf::from(output));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn rejects_non_utf8_revision_names_as_usage_errors() {
+        use std::{ffi::OsString, os::unix::ffi::OsStringExt};
+
+        let Err(error) = parse_command([
+            OsString::from("seal"),
+            OsString::from("input.clause"),
+            OsString::from_vec(b"revision-\xff".to_vec()),
+            OsString::from("output.revision"),
+        ]) else {
+            panic!("non-UTF-8 Revision names should be rejected");
+        };
+
+        assert_eq!(error.status, 2);
+        assert!(
+            error
+                .message
+                .starts_with("REVISION_NAME must be valid UTF-8")
+        );
     }
 }

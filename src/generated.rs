@@ -24,37 +24,37 @@ const NO_CHILDREN: &[ChildModule] = &[];
 const KERNEL_CHILDREN: &[ChildModule] = &[
     ChildModule {
         name: "clause",
-        declaration: "#[path = \"kernel/clause.rs\"]\nmod clause;",
+        declaration: "mod clause;",
         source: include_str!("kernel/clause.rs"),
     },
     ChildModule {
         name: "error",
-        declaration: "#[path = \"kernel/error.rs\"]\nmod error;",
+        declaration: "mod error;",
         source: include_str!("kernel/error.rs"),
     },
     ChildModule {
         name: "find",
-        declaration: "#[path = \"kernel/find.rs\"]\nmod find;",
+        declaration: "mod find;",
         source: include_str!("kernel/find.rs"),
     },
     ChildModule {
         name: "identity",
-        declaration: "#[path = \"kernel/identity.rs\"]\nmod identity;",
+        declaration: "mod identity;",
         source: include_str!("kernel/identity.rs"),
     },
     ChildModule {
         name: "model",
-        declaration: "#[path = \"kernel/model.rs\"]\nmod model;",
+        declaration: "mod model;",
         source: include_str!("kernel/model.rs"),
     },
     ChildModule {
         name: "revision",
-        declaration: "#[path = \"kernel/revision.rs\"]\nmod revision;",
+        declaration: "mod revision;",
         source: include_str!("kernel/revision.rs"),
     },
     ChildModule {
         name: "schema",
-        declaration: "#[path = \"kernel/schema.rs\"]\nmod schema;",
+        declaration: "mod schema;",
         source: include_str!("kernel/schema.rs"),
     },
 ];
@@ -389,5 +389,4 @@ fn clause_source(value: &Clause) -> String {
 }
 
 #[cfg(test)]
-#[path = "generated/tests.rs"]
 mod tests;

@@ -13,7 +13,7 @@ const SOURCE: &str = include_str!("../examples/hospital.clause");
 
 fn temporary(extension: &str) -> PathBuf {
     env::temp_dir().join(format!(
-        "clause-hospital-golden-{}.{}",
+        "clause-hospital-program-{}.{}",
         std::process::id(),
         extension
     ))

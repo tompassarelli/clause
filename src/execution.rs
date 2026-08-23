@@ -115,5 +115,4 @@ pub fn why_all(
 }
 
 #[cfg(test)]
-#[path = "execution/tests.rs"]
 mod tests;

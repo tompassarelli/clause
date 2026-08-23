@@ -242,5 +242,4 @@ use search::{Enumeration, enumerate};
 use std::collections::BTreeSet;
 
 #[cfg(test)]
-#[path = "intervention/tests.rs"]
 mod tests;

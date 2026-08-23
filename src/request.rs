@@ -167,5 +167,4 @@ impl RunOutput {
 }
 
 #[cfg(test)]
-#[path = "request/tests.rs"]
 mod tests;

@@ -3,19 +3,12 @@
 //! The kernel admits semantic values only. Parsing, revision aliases, wire
 //! representation, and requests live outside this module.
 
-#[path = "kernel/clause.rs"]
 mod clause;
-#[path = "kernel/error.rs"]
 mod error;
-#[path = "kernel/find.rs"]
 mod find;
-#[path = "kernel/identity.rs"]
 mod identity;
-#[path = "kernel/model.rs"]
 mod model;
-#[path = "kernel/revision.rs"]
 mod revision;
-#[path = "kernel/schema.rs"]
 mod schema;
 
 pub use clause::{Clause, Law, Term};
@@ -31,5 +24,4 @@ pub use schema::{
 };
 
 #[cfg(test)]
-#[path = "kernel/tests.rs"]
 mod tests;

@@ -188,5 +188,4 @@ fn limit_error(kind: &str, name: &str, value: usize) -> KernelError {
 }
 
 #[cfg(test)]
-#[path = "derive/tests.rs"]
 mod tests;

@@ -7,7 +7,7 @@ const SOURCE: &str = include_str!("../examples/impact.clause");
 
 fn temporary(extension: &str) -> PathBuf {
     env::temp_dir().join(format!(
-        "clause-native-impact-{}.{}",
+        "clause-impact-program-{}.{}",
         std::process::id(),
         extension
     ))
