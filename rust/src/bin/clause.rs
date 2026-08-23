@@ -242,10 +242,27 @@ fn e2e(source_path: &Path, revision_path: &Path) -> Result<(), CliError> {
     let successor = claimed
         .successor()
         .ok_or_else(|| CliError::failure("intent claim did not create successor"))?;
-    let required = kernel::require(successor.revision(), desired)
+    let canonical_next = wire::serialize(successor.revision());
+    write_revision(revision_path, &canonical_next)?;
+    let persisted_next = read_utf8(revision_path, "read claimed revision")?;
+    if persisted_next != canonical_next {
+        return Err(CliError::failure(
+            "final revision bytes differ from canonical NEXT envelope",
+        ));
+    }
+    let next = wire::reload(&persisted_next)
+        .map_err(|error| CliError::failure(format!("reload claimed revision: {error}")))?;
+    if wire::serialize(&next) != canonical_next {
+        return Err(CliError::failure(
+            "reloaded final revision differs from canonical NEXT envelope",
+        ));
+    }
+    let next_branch = kernel::Branch::new(branch_name, next.clone())
         .map_err(|error| CliError::failure(error.to_string()))?;
-    let next_query = query_json(successor.revision())?;
-    let satisfied = kernel::intent(successor, intent.name());
+    let required =
+        kernel::require(&next, desired).map_err(|error| CliError::failure(error.to_string()))?;
+    let next_query = query_json(&next)?;
+    let satisfied = kernel::intent(&next_branch, intent.name());
     let output = format!(
         "[\"clause-e2e-output-v1\",{base_query},{proposed_output},{},{},{next_query},{}]",
         wire::claim_output(&claimed),
@@ -257,7 +274,7 @@ fn e2e(source_path: &Path, revision_path: &Path) -> Result<(), CliError> {
     eprintln!(
         "clause: e2e ok base={} successor={} revision_file={}",
         base.identity(),
-        successor.revision().identity(),
+        next.identity(),
         revision_path.display()
     );
     Ok(())
