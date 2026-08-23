@@ -249,7 +249,11 @@ pub fn achieve_one_minimal(
     if source_closure.proof(&target).is_some() {
         return Ok(AchieveOne::AlreadyEntailed);
     }
-    let mut additions = achievement_basis(source, using)?;
+    let basis = achievement_basis(source, using, limits.max_candidates)?;
+    if !basis.complete {
+        return Ok(AchieveOne::Incomplete(Incomplete::CandidateBudgetExhausted));
+    }
+    let mut additions = basis.clauses;
     if additions.is_empty() {
         return Ok(AchieveOne::Impossible);
     }
@@ -351,16 +355,16 @@ pub fn prevent_all_minimal(
     {
         return Ok(PreventAll::Impossible);
     }
-    let mut state = AllState::new(limits);
+    let mut state = AllState::new();
     for size in 1..=basis.len() {
         let mut choice = Vec::new();
-        enumerate(&basis, size, 0, &mut choice, &mut |withdrawals| {
+        let control = enumerate(&basis, size, 0, &mut choice, &mut |withdrawals| {
             if state.reason.is_some() {
-                return Ok(());
+                return Ok(Enumeration::Break);
             }
             if state.checked >= limits.max_candidates {
                 state.reason = Some(Incomplete::CandidateBudgetExhausted);
-                return Ok(());
+                return Ok(Enumeration::Break);
             }
             state.checked += 1;
             if state
@@ -368,36 +372,37 @@ pub fn prevent_all_minimal(
                 .iter()
                 .any(|item| is_subset(item.delta().withdrawals(), withdrawals))
             {
-                return Ok(());
+                return Ok(Enumeration::Continue);
             }
             if !supports.iter().all(|support| {
                 support
                     .iter()
                     .any(|item| withdrawals.binary_search(item).is_ok())
             }) {
-                return Ok(());
+                return Ok(Enumeration::Continue);
             }
             let revision = apply(source, Vec::new(), withdrawals.to_vec())?;
             let Some(closure) = complete_closure(&revision, limits.closure)? else {
                 state.reason = Some(Incomplete::ClosureBudgetExhausted);
-                return Ok(());
+                return Ok(Enumeration::Break);
             };
             if closure.proof(&target).is_some() {
                 return Err(KernelError::new(
                     "support hitting set did not prevent target",
                 ));
             }
+            if state.items.len() >= limits.max_solutions {
+                state.reason = Some(Incomplete::SolutionBudgetExhausted);
+                return Ok(Enumeration::Break);
+            }
             state.items.push(Intervention {
                 delta: Delta::new(source.identity().clone(), Vec::new(), withdrawals.to_vec())?,
                 revision,
                 proof: None,
             });
-            if state.items.len() >= limits.max_solutions {
-                state.reason = Some(Incomplete::SolutionBudgetExhausted);
-            }
-            Ok(())
+            Ok(Enumeration::Continue)
         })?;
-        if state.reason.is_some() {
+        if control == Enumeration::Break {
             break;
         }
     }
@@ -421,17 +426,23 @@ pub fn achieve_all_minimal(
     if source_closure.proof(&target).is_some() {
         return Ok(AchieveAll::AlreadyEntailed);
     }
-    let basis = achievement_basis(source, using)?;
-    let mut state = AllState::new(limits);
-    for size in 1..=basis.len() {
+    let basis = achievement_basis(source, using, limits.max_candidates)?;
+    if !basis.complete {
+        return Ok(AchieveAll::Incomplete {
+            interventions: Vec::new(),
+            reason: Incomplete::CandidateBudgetExhausted,
+        });
+    }
+    let mut state = AllState::new();
+    for size in 1..=basis.clauses.len() {
         let mut choice = Vec::new();
-        enumerate(&basis, size, 0, &mut choice, &mut |additions| {
+        let control = enumerate(&basis.clauses, size, 0, &mut choice, &mut |additions| {
             if state.reason.is_some() {
-                return Ok(());
+                return Ok(Enumeration::Break);
             }
             if state.checked >= limits.max_candidates {
                 state.reason = Some(Incomplete::CandidateBudgetExhausted);
-                return Ok(());
+                return Ok(Enumeration::Break);
             }
             state.checked += 1;
             if state
@@ -439,27 +450,28 @@ pub fn achieve_all_minimal(
                 .iter()
                 .any(|item| is_subset(item.delta().admissions(), additions))
             {
-                return Ok(());
+                return Ok(Enumeration::Continue);
             }
             let revision = apply(source, additions.to_vec(), Vec::new())?;
             let Some(closure) = complete_closure(&revision, limits.closure)? else {
                 state.reason = Some(Incomplete::ClosureBudgetExhausted);
-                return Ok(());
+                return Ok(Enumeration::Break);
             };
             let Some(proof) = closure.proof(&target).cloned() else {
-                return Ok(());
+                return Ok(Enumeration::Continue);
             };
+            if state.items.len() >= limits.max_solutions {
+                state.reason = Some(Incomplete::SolutionBudgetExhausted);
+                return Ok(Enumeration::Break);
+            }
             state.items.push(Intervention {
                 delta: Delta::new(source.identity().clone(), additions.to_vec(), Vec::new())?,
                 revision,
                 proof: Some(proof),
             });
-            if state.items.len() >= limits.max_solutions {
-                state.reason = Some(Incomplete::SolutionBudgetExhausted);
-            }
-            Ok(())
+            Ok(Enumeration::Continue)
         })?;
-        if state.reason.is_some() {
+        if control == Enumeration::Break {
             break;
         }
     }
@@ -482,9 +494,18 @@ fn withdrawal_basis(source: &Revision, using: Vec<RelationId>) -> Result<Vec<Cla
 
 /// Cartesian ground clauses use only entities already admitted by the exact
 /// Model and only the exact declared type of each role.
-fn achievement_basis(source: &Revision, using: Vec<RelationId>) -> Result<Vec<Clause>> {
+struct AchievementBasis {
+    clauses: Vec<Clause>,
+    complete: bool,
+}
+
+fn achievement_basis(
+    source: &Revision,
+    using: Vec<RelationId>,
+    max_candidates: usize,
+) -> Result<AchievementBasis> {
     let using = extensional_relations(source, using)?;
-    let mut candidates = BTreeSet::new();
+    let mut candidates = Vec::new();
     for relation_id in using {
         let relation = source
             .model()
@@ -492,25 +513,26 @@ fn achievement_basis(source: &Revision, using: Vec<RelationId>) -> Result<Vec<Cl
             .get(&relation_id)
             .expect("validated relation");
         let roles = relation.roles().iter().collect::<Vec<_>>();
-        collect_ground_clauses(
+        if collect_ground_clauses(
             source,
             &relation_id,
             &roles,
             0,
             &mut BTreeSet::new(),
             &mut candidates,
-        )?;
+            max_candidates,
+        )? == Enumeration::Break
+        {
+            return Ok(AchievementBasis {
+                clauses: candidates,
+                complete: false,
+            });
+        }
     }
-    Ok(candidates
-        .into_iter()
-        .filter(|candidate| {
-            source
-                .model()
-                .assertions()
-                .binary_search(candidate)
-                .is_err()
-        })
-        .collect())
+    Ok(AchievementBasis {
+        clauses: candidates,
+        complete: true,
+    })
 }
 
 fn extensional_relations(source: &Revision, using: Vec<RelationId>) -> Result<Vec<RelationId>> {
@@ -547,14 +569,24 @@ fn collect_ground_clauses(
     roles: &[(&crate::kernel::RoleId, &crate::kernel::Role)],
     index: usize,
     values: &mut BTreeSet<(crate::kernel::RoleId, Term)>,
-    candidates: &mut BTreeSet<Clause>,
-) -> Result<()> {
+    candidates: &mut Vec<Clause>,
+    max_candidates: usize,
+) -> Result<Enumeration> {
     if index == roles.len() {
-        candidates.insert(Clause::new(
-            relation.clone(),
-            values.iter().cloned().collect(),
-        )?);
-        return Ok(());
+        let candidate = Clause::new(relation.clone(), values.iter().cloned().collect())?;
+        if source
+            .model()
+            .assertions()
+            .binary_search(&candidate)
+            .is_ok()
+        {
+            return Ok(Enumeration::Continue);
+        }
+        if candidates.len() >= max_candidates {
+            return Ok(Enumeration::Break);
+        }
+        candidates.push(candidate);
+        return Ok(Enumeration::Continue);
     }
     let (role_id, role) = roles[index];
     for entity in source
@@ -564,10 +596,21 @@ fn collect_ground_clauses(
         .filter(|entity| entity.typ() == role.typ())
     {
         values.insert((role_id.clone(), Term::entity(entity.clone())));
-        collect_ground_clauses(source, relation, roles, index + 1, values, candidates)?;
+        let control = collect_ground_clauses(
+            source,
+            relation,
+            roles,
+            index + 1,
+            values,
+            candidates,
+            max_candidates,
+        )?;
         values.remove(&(role_id.clone(), Term::entity(entity.clone())));
+        if control == Enumeration::Break {
+            return Ok(Enumeration::Break);
+        }
     }
-    Ok(())
+    Ok(Enumeration::Continue)
 }
 
 fn apply(source: &Revision, admissions: Vec<Clause>, withdrawals: Vec<Clause>) -> Result<Revision> {
@@ -636,25 +679,34 @@ fn is_subset(left: &[Clause], right: &[Clause]) -> bool {
     left.iter().all(|item| right.binary_search(item).is_ok())
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Enumeration {
+    Continue,
+    Break,
+}
+
 fn enumerate<F>(
     basis: &[Clause],
     remaining: usize,
     start: usize,
     choice: &mut Vec<Clause>,
     visit: &mut F,
-) -> Result<()>
+) -> Result<Enumeration>
 where
-    F: FnMut(&[Clause]) -> Result<()>,
+    F: FnMut(&[Clause]) -> Result<Enumeration>,
 {
     if remaining == 0 {
         return visit(choice);
     }
     for index in start..=basis.len() - remaining {
         choice.push(basis[index].clone());
-        enumerate(basis, remaining - 1, index + 1, choice, visit)?;
+        let control = enumerate(basis, remaining - 1, index + 1, choice, visit)?;
         choice.pop();
+        if control == Enumeration::Break {
+            return Ok(Enumeration::Break);
+        }
     }
-    Ok(())
+    Ok(Enumeration::Continue)
 }
 
 struct AllState {
@@ -664,11 +716,11 @@ struct AllState {
 }
 
 impl AllState {
-    fn new(limits: InterventionLimits) -> Self {
+    fn new() -> Self {
         Self {
             checked: 0,
             items: Vec::new(),
-            reason: (limits.max_solutions == 0).then_some(Incomplete::SolutionBudgetExhausted),
+            reason: None,
         }
     }
     fn prevent_result(self) -> PreventAll {
@@ -804,11 +856,19 @@ mod tests {
             vec![clause(&assigned, ("place", &alpha), ("permit", &permit_a))],
             vec![],
         );
-        let basis = achievement_basis(&source, vec![assigned.clone()]).unwrap();
+        let basis = achievement_basis(&source, vec![assigned.clone()], usize::MAX)
+            .unwrap()
+            .clauses;
         assert_eq!(
             basis,
             vec![clause(&assigned, ("place", &beta), ("permit", &permit_a),)]
         );
+        let exhausted = achievement_basis(&source, vec![assigned.clone()], 0).unwrap();
+        assert!(!exhausted.complete);
+        assert!(exhausted.clauses.is_empty());
+        let exact = achievement_basis(&source, vec![assigned], 1).unwrap();
+        assert!(exact.complete);
+        assert_eq!(exact.clauses.len(), 1);
     }
 
     #[test]
@@ -930,6 +990,33 @@ mod tests {
             achieve_all_minimal(&source, target.clone(), vec![input.clone()], limits()).unwrap();
         assert_eq!(all.interventions().len(), 1);
         assert!(matches!(all, AchieveAll::Complete(_)));
+        let exact_limit = achieve_all_minimal(
+            &source,
+            target.clone(),
+            vec![input.clone()],
+            InterventionLimits::new(Limits::new(100, 10, 20_000), 20, 1),
+        )
+        .unwrap();
+        assert!(matches!(exact_limit, AchieveAll::Complete(items) if items.len() == 1));
+        let impossible_source = rev(
+            vec![a.clone(), b.clone()],
+            vec![
+                relation(&input, ("x", &t), ("y", &t)),
+                relation(&goal, ("x", &t), ("y", &t)),
+            ],
+            vec![],
+            vec![],
+        );
+        assert!(matches!(
+            achieve_all_minimal(
+                &impossible_source,
+                target.clone(),
+                vec![input.clone()],
+                InterventionLimits::new(Limits::new(100, 10, 20_000), 20, 0),
+            )
+            .unwrap(),
+            AchieveAll::Impossible
+        ));
         assert!(matches!(
             achieve_all_minimal(&source, target, vec![goal], limits())
                 .unwrap_err()
@@ -1183,6 +1270,20 @@ mod tests {
                 vec![clause(&second, ("x", &start), ("y", &finish))],
             ]),
         );
+        let limited = achieve_all_minimal(
+            &choices_source,
+            clause(&achieved, ("x", &start), ("y", &finish)),
+            vec![first, second],
+            InterventionLimits::new(Limits::new(100, 10, 20_000), 10_000, 1),
+        )
+        .unwrap();
+        assert!(matches!(
+            limited,
+            AchieveAll::Incomplete {
+                interventions,
+                reason: Incomplete::SolutionBudgetExhausted,
+            } if interventions.len() == 1
+        ));
     }
 
     #[test]
@@ -1304,5 +1405,28 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn enumeration_break_stops_the_search_immediately() {
+        let model = ModelId::new(name("m")).unwrap();
+        let typ = type_id("Thing");
+        let alpha = entity(&model, "Alpha", &typ);
+        let beta = entity(&model, "Beta", &typ);
+        let relation = relation_id("m/input");
+        let basis = vec![
+            clause(&relation, ("x", &alpha), ("y", &alpha)),
+            clause(&relation, ("x", &alpha), ("y", &beta)),
+            clause(&relation, ("x", &beta), ("y", &alpha)),
+            clause(&relation, ("x", &beta), ("y", &beta)),
+        ];
+        let mut visits = 0;
+        let control = enumerate(&basis, 1, 0, &mut Vec::new(), &mut |_| {
+            visits += 1;
+            Ok(Enumeration::Break)
+        })
+        .unwrap();
+        assert_eq!(control, Enumeration::Break);
+        assert_eq!(visits, 1);
     }
 }
