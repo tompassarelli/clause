@@ -1,0 +1,17 @@
+{
+  "schema": "clause-m0-contrast-v1",
+  "id": "legacy-colon-binding",
+  "axis": "colon-semantics",
+  "decision": {"status": "fixed-invariant"},
+  "source": {
+    "lines": ["thing: Space"],
+    "line_break": "LF",
+    "ends_with_line_break": true
+  },
+  "structural_intent": "binding",
+  "required": ["colon means binding", "migration must report any rewritten classification"],
+  "forbidden": ["membership", "instance-of", "object-construction"],
+  "elaborated": [
+    {"kind": "binding", "left": "thing", "right": "Space"}
+  ]
+}

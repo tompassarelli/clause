@@ -1,0 +1,15 @@
+{
+  "schema": "clause-m0-contrast-v1",
+  "id": "focused-colon-binding",
+  "axis": "focused-projection-binding-sugar",
+  "decision": {"status": "unresolved", "candidate": "state-colon-locked"},
+  "source": {
+    "lines": ["iron-door", "    state: locked"],
+    "line_break": "LF",
+    "ends_with_line_break": true
+  },
+  "structural_intent": "candidate-focused-binding",
+  "required": ["colon means binding", "admission requires an explicit checked carrier"],
+  "forbidden": ["ordinary-state-relation-claim", "object-field", "membership"],
+  "elaborated": null
+}

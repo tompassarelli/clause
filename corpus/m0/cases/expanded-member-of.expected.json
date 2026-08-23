@@ -1,0 +1,20 @@
+{
+  "schema": "clause-m0-contrast-v1",
+  "id": "expanded-member-of",
+  "axis": "membership-spelling",
+  "decision": {"status": "unresolved", "candidate": "member-of-words"},
+  "source": {
+    "lines": ["iron-door member of Door", "iron-door connects Cellar to Armory", "iron-door state locked"],
+    "line_break": "LF",
+    "ends_with_line_break": true
+  },
+  "structural_intent": "expanded-coequal-claims",
+  "equivalence_group": "iron-door-coequal",
+  "required": ["membership has member and category roles", "all three claims are co-equal"],
+  "forbidden": ["object", "field", "binding"],
+  "elaborated": [
+    {"kind": "membership", "relation": "$membership", "roles": {"member": "iron-door", "category": "Door"}},
+    {"kind": "relation-claim", "relation": "$connects", "roles": {"door": "iron-door", "origin": "Cellar", "destination": "Armory"}},
+    {"kind": "relation-claim", "relation": "$state", "roles": {"member": "iron-door", "value": "locked"}}
+  ]
+}

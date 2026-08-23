@@ -13,9 +13,10 @@ currently uses one native `:` grammar for Types, Relations, Models, Laws,
 Revisions, and their members. That grammar is executable truth and a migration
 oracle, not the target human surface. The provisional [Clause Surface
 Reset](SURFACE.md) replaces the earlier surface recommendations with grounded
-symbols, bindings, membership, focused forms, recursive role-labelled clauses,
-and explicit semantic moods. It remains provisional, revising M0 design input:
-no target spelling is implemented merely because it appears in that draft.
+symbols, bindings, membership, focused co-equal claims, recursive
+role-labelled clauses, and explicit semantic moods. It remains revising M0
+design input: no proposed spelling is implemented merely because it appears in
+that draft.
 
 An emitted `.rs` file is an executable projection: it carries the referenced
 sealed Revisions and the resolved request sequence, not the authoring source or
@@ -34,37 +35,28 @@ North application vertical. This is product direction, not a claim about the
 current implementation. See the [Clause roadmap](ROADMAP.md) for the authority
 model, dependency order, prototype gates, and acceptance criteria.
 
-## Target surface rulings
+## Target surface direction
 
-Three exact rulings now constrain the provisional profile and its roadmap:
+The target ontology is relational: focus layout projects co-equal claims and
+never creates an object, field, owner, or nested record. `:` means binding and
+never silently means membership or an ordinary relational assertion.
 
-- `x ∈ Y` is the only authored membership form; there is no ASCII `in`, `::`,
-  or colon membership alias;
-- `:` means stable-handle binding, including a focused projection/current
-  binding;
-- canonical indentation is exactly two spaces per level, spaces only; tabs and
-  a leading width inconsistent with structural depth reject.
-
-The canonical focus specimen is:
+The controlling focus specimen is:
 
 ```clause
 iron-door
-  Door
-  connects Cellar to Armory
-  state: locked
+    Door
+    connects Cellar to Armory
+    state locked
 ```
 
-Its exact elaboration keeps three distinct judgments:
+It elaborates to membership plus two ordinary role-labelled relation claims;
+`state locked` is exactly the co-equal claim `iron-door state locked`.
 
-```clause
-iron-door ∈ Door
-iron-door connects Cellar to Armory
-state of iron-door: locked
-```
-
-The current parser does not implement this profile. [ROADMAP.md](ROADMAP.md)
-places the corpus, lossless layout contract, focused-binding authority, and
-migration proof before parser work.
+Membership spelling, canonical indentation width, and any distinct focused
+projection-binding sugar remain explicit M0 contrast questions. The current
+parser does not implement this profile. [M0.md](M0.md) defines the evidence
+contract that must be independently reviewed before parser work.
 
 ## Repository and artifact map
 

@@ -1,0 +1,37 @@
+# Clause M0 contrast corpus
+
+This directory is evidence for the [M0 contract](../../M0.md). It deliberately
+contains unresolved source candidates. Nothing here claims that the current
+parser accepts the source or that a candidate is canonical.
+
+Every case consists of `cases/ID.clause` and
+`cases/ID.expected.json`. Expected JSON uses
+`clause-m0-contrast-v1`.
+
+`source.lines` stores raw lines without their line breaks.
+`source.line_break` and `source.ends_with_line_break` make exact byte
+reconstruction mechanical. `decision` is either:
+
+- `fixed-invariant` — the stated semantic boundary is direction now; or
+- `unresolved` — the source is a contrast candidate whose admission remains
+  an M0 decision.
+
+`required` and `forbidden` are normative even for unresolved candidates.
+`elaborated` is an abstract role graph independent of surface spelling.
+Handles beginning with `$` are corpus symbols, not Store identities.
+
+| Case | Purpose |
+| --- | --- |
+| `focus-relation-four` | controlling focus semantics with four-space projection |
+| `focus-relation-two` | same focus semantics with two-space projection |
+| `expanded-member-of` | worded membership candidate with expanded co-equal claims |
+| `expanded-symbolic-membership` | symbolic membership candidate with the same graph |
+| `enumeration-four` | child-to-heading membership with four-space projection |
+| `enumeration-two` | same enumeration semantics with two-space projection |
+| `binding-shape` | homogeneous colon bindings stay structural |
+| `legacy-colon-binding` | `thing: Space` is never membership |
+| `focused-colon-binding` | possible projection binding remains unresolved and is not `state locked` |
+
+Do not “bless” these files from parser output. A later fixture checker may
+compare exact projections and print diffs, but reviewed corpus remains the
+authority.
