@@ -224,15 +224,8 @@ pub fn emit_rust(program: &ResolvedProgram) -> Result<String> {
 }
 
 #[cfg(not(clause_generated))]
-fn production_source(source: &str) -> &str {
-    source
-        .split_once("\n#[cfg(test)]")
-        .map_or(source, |(production, _)| production)
-}
-
-#[cfg(not(clause_generated))]
 fn production_module(name: &str, source: &str, children: &[ChildModule]) -> Result<String> {
-    let mut source = production_source(source).to_owned();
+    let mut source = source.to_owned();
     for child in children {
         let occurrences = source.match_indices(child.declaration).count();
         if occurrences != 1 {
@@ -241,10 +234,9 @@ fn production_module(name: &str, source: &str, children: &[ChildModule]) -> Resu
                 child.name
             )));
         }
-        let body = production_source(child.source);
         source = source.replacen(
             child.declaration,
-            &format!("mod {} {{\n{body}\n}}", child.name),
+            &format!("mod {} {{\n{}\n}}", child.name, child.source),
             1,
         );
     }
