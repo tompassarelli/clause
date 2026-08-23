@@ -8,10 +8,18 @@ positive laws; sealing it produces a canonical Revision with a content-derived
 identity. A successor Revision is another value, produced by exact admissions
 and withdrawals from an exact base.
 
-A `.clause` file is the authoring projection. It uses one native `:` grammar
-for Types, Relations, Models, Laws, Revisions, and their members. An emitted
-`.rs` file is an executable projection: it carries the referenced sealed
-Revisions and the resolved request sequence, not the authoring source or
+A `.clause` file is the authoring projection. The supported implementation
+currently uses one native `:` grammar for Types, Relations, Models, Laws,
+Revisions, and their members. That grammar is executable truth and a migration
+oracle, not the target human surface. The provisional [Clause Surface
+Reset](SURFACE.md) replaces the earlier surface recommendations with grounded
+symbols, bindings, membership, focused co-equal claims, recursive
+role-labelled clauses, and explicit semantic moods. It remains revising M0
+design input: no proposed spelling is implemented merely because it appears in
+that draft.
+
+An emitted `.rs` file is an executable projection: it carries the referenced
+sealed Revisions and the resolved request sequence, not the authoring source or
 frontend. Requests navigate Revisions without entering their identity.
 
 Clause currently supplies this semantic-program core. It does not yet supply
@@ -38,10 +46,12 @@ model, dependency order, prototype gates, and acceptance criteria.
 | `target/`, emitted `.rs` files and binaries, and temporary sealed Revision files | Disposable build or projection artifacts unless deliberately retained for a named consumer. |
 | `bin/clause` | Repository-local shell wrapper for the native Cargo CLI. |
 
-## The complete one-page hospital program
+## The complete current-profile hospital program
 
-`examples/hospital.clause` is authoritative. The complete, copy-pasteable
-block below is its verified documentation projection, not a sketch:
+`examples/hospital.clause` is authoritative for the current executable profile
+and remains the semantic/migration oracle. The complete, copy-pasteable block
+below is its verified documentation projection, not the future canonical
+surface and not a sketch:
 
 ```clause
 Space: Type
