@@ -1,7 +1,7 @@
 //! Exact acceptance oracle for the one-page hospital fire-egress program.
 
 use clause::{
-    elaborate, frontend, generated,
+    elaborate, frontend,
     intervention::{AchieveAll, PreventAll},
     kernel::{Clause, EntityId, Name, RelationId, Revision, RoleId, Term},
     request::{self, Request, RequestOutput, Selection},
@@ -330,13 +330,25 @@ fn hospital_program_has_the_complete_six_request_semantic_and_materialization_jo
         format!("{expected}\n"),
     );
 
-    fs::remove_file(&source).expect("authoring source removes before generation");
+    let materialize = Command::new(env!("CARGO_BIN_EXE_clause"))
+        .args([
+            "emit-rust",
+            source.to_str().expect("UTF-8 source path"),
+            generated_source.to_str().expect("UTF-8 generated path"),
+        ])
+        .output()
+        .expect("emit-rust command starts");
+    assert!(
+        materialize.status.success(),
+        "{}",
+        String::from_utf8_lossy(&materialize.stderr)
+    );
+    let emitted = fs::read_to_string(&generated_source).expect("generated Rust reads");
+    assert!(!emitted.contains("mod frontend"));
+    assert!(!emitted.contains("[Door 101..106]"));
+
+    fs::remove_file(&source).expect("authoring source removes before generated compilation");
     assert!(!source.exists());
-    fs::write(
-        &generated_source,
-        generated::emit_rust(&resolved).expect("hospital requests emit Rust"),
-    )
-    .expect("generated source writes");
     let compile = Command::new("rustc")
         .args(["--edition=2024", "--cfg", "clause_generated"])
         .arg(&generated_source)
