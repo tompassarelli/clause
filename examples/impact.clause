@@ -16,7 +16,9 @@ relation impact/affected(change: Text, consumer: Text):
 
 model impact:
     "North" imports "Store"
+    "North" imports "Relay"
     "Store" imports "Beagle"
+    "Relay" imports "Beagle"
     "compiler-change" changes "Beagle"
 
 law impact/direct-dependency:

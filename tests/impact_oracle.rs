@@ -37,9 +37,9 @@ fn impact_journey_seals_derives_changes_intervenes_and_survives_source_removal()
 
     assert!(demo.starts_with("[\"clause-demo-output-v1\","));
     assert!(demo.contains(
-        "[\"base-query\",[\"clause-query-output-v2\",[\"results\",[\"North\",\"Store\"]]"
+        "[\"base-query\",[\"clause-query-output-v2\",[\"results\",[\"North\",\"Relay\",\"Store\"]]"
     ));
-    assert!(demo.contains("[\"successor-query\",[\"clause-query-output-v2\",[\"results\",[\"North\",\"South\",\"Store\"]]"));
+    assert!(demo.contains("[\"successor-query\",[\"clause-query-output-v2\",[\"results\",[\"North\",\"Relay\",\"South\",\"Store\"]]"));
     assert!(demo.contains("\"impact/recursive-dependency\""));
     assert!(demo.contains("\"impact/impact\""));
     assert!(demo.contains("[\"intervention-target\",[\"clause\",\"relation\",\"impact/affected\",\"roles\",[[\"change\",\"compiler-change\"],[\"consumer\",\"South\"]]]]"));
@@ -47,11 +47,11 @@ fn impact_journey_seals_derives_changes_intervenes_and_survives_source_removal()
     assert!(
         demo.contains("[\"entailed\",[\"added\",[[\"clause\",\"relation\",\"impact/affected\"")
     );
-    assert_eq!(demo.matches("\"impact/depends\"").count(), 12);
+    assert_eq!(demo.matches("\"impact/depends\"").count(), 15);
     assert!(demo.contains("[\"proof-changes\",[]]"));
     assert!(
         demo.contains(
-            "[\"clause-prevent-output-v1\",[\"status\",\"complete\"],[\"candidates\",15]"
+            "[\"clause-prevent-output-v1\",[\"status\",\"complete\"],[\"candidates\",63]"
         )
     );
     assert!(demo.contains("[\"clause-achieve-output-v1\",[\"status\",\"solutions\"]"));
@@ -70,11 +70,9 @@ fn impact_journey_seals_derives_changes_intervenes_and_survives_source_removal()
         String::from_utf8_lossy(&query.stderr)
     );
     let query = String::from_utf8(query.stdout).expect("query is UTF-8");
-    assert!(
-        query.starts_with(
-            "[\"clause-query-output-v2\",[\"results\",[\"North\",\"South\",\"Store\"]]"
-        )
-    );
+    assert!(query.starts_with(
+        "[\"clause-query-output-v2\",[\"results\",[\"North\",\"Relay\",\"South\",\"Store\"]]"
+    ));
     assert!(demo.contains(&format!("[\"successor-query\",{}]", query.trim())));
 
     let persisted = fs::read_to_string(&revision_path).expect("sealed revision reads");
