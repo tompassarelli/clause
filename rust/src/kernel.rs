@@ -340,8 +340,27 @@ impl Model {
             validate_clause(&relation_map, fact, false)?;
         }
         validate_clause(&relation_map, &query, true)?;
+        let namespace = if intents.is_empty() {
+            None
+        } else {
+            Some(
+                query
+                    .relation()
+                    .split_once('/')
+                    .map(|(namespace, _)| format!("{namespace}/"))
+                    .ok_or_else(|| KernelError::new("relation must have a namespace"))?,
+            )
+        };
         let mut intent_names = BTreeSet::new();
         for intent in &intents {
+            if namespace
+                .as_ref()
+                .is_some_and(|namespace| !intent.name().starts_with(namespace))
+            {
+                return Err(KernelError::new(
+                    "intent name is outside the model namespace",
+                ));
+            }
             if !intent_names.insert(intent.name.clone()) {
                 return Err(KernelError::new("duplicate intent identity"));
             }

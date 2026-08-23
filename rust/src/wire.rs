@@ -638,7 +638,10 @@ pub fn sha256_hex(bytes: &[u8]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{claim_output, intent_output, reload, require_output, semantic_payload, serialize};
+    use super::{
+        claim_output, intent_output, reload, require_output, semantic_payload, serialize,
+        sha256_hex,
+    };
     use crate::kernel::{
         Cardinality, Clause, Intent, Mode, Model, Relation, Role, Sentence, Term, claim, intent,
         require,
@@ -733,6 +736,20 @@ mod tests {
         assert!(
             reload(&wire.replacen("[\"relations\"", "[\"facts\"", 1)).is_err(),
             "changed canonical array order"
+        );
+    }
+
+    #[test]
+    fn reload_rejects_recomputed_intent_outside_relation_namespace() {
+        let revision = crate::kernel::Revision::admit(model("member"));
+        let semantic =
+            semantic_payload(revision.model()).replace("catalog/restock", "other/restock");
+        let identity = format!("rev-sha256-{}", sha256_hex(semantic.as_bytes()));
+        let wire = format!("[\"clause-revision-v1\",\"{identity}\",{semantic}]");
+
+        assert!(
+            reload(&wire).is_err(),
+            "recomputed identity must not bypass intent namespace admission"
         );
     }
 
