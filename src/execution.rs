@@ -4,17 +4,13 @@
 //! `FindPlan` and projects either the canonical chosen proof or the bounded
 //! minimal-support frontier; presentation and result encoding belong to the
 //! request layer.
-#![allow(unexpected_cfgs)]
-
 use crate::{
     derive::{Limits, SupportLimits},
     kernel::{Clause, LawId, Result, Revision, RevisionId, Term, VariableId},
 };
 use std::collections::BTreeMap;
 
-#[cfg(not(clause_generated))]
 mod explain;
-#[cfg(not(clause_generated))]
 mod query;
 
 /// A ground clause in a revision-scoped explanation graph.
@@ -97,18 +93,12 @@ pub fn find(
     plan: &crate::kernel::FindPlan,
     limits: Limits,
 ) -> Result<Vec<Term>> {
-    #[cfg(not(clause_generated))]
-    return query::find(revision, plan, limits);
-    #[cfg(clause_generated)]
-    emitted_find(revision, plan, limits)
+    query::find(revision, plan, limits)
 }
 
 /// Return the deterministic chosen proof for a ground target, if it follows.
 pub fn why(revision: &Revision, target: &Clause, limits: Limits) -> Result<Option<Proof>> {
-    #[cfg(not(clause_generated))]
-    return explain::why(revision, target, limits);
-    #[cfg(clause_generated)]
-    emitted_why(revision, target, limits)
+    explain::why(revision, target, limits)
 }
 
 /// Return every discovered minimal asserted support for a ground target.
@@ -121,226 +111,7 @@ pub fn why_all(
     target: &Clause,
     limits: SupportLimits,
 ) -> Result<Option<WhyAll>> {
-    #[cfg(not(clause_generated))]
-    return explain::why_all(revision, target, limits);
-    #[cfg(clause_generated)]
-    emitted_why_all(revision, target, limits)
-}
-
-// Emitted programs contain this module as one source file, so their
-// source-deleted build cannot load the normal sibling ownership modules.
-#[cfg(clause_generated)]
-fn emitted_find(
-    revision: &Revision,
-    plan: &crate::kernel::FindPlan,
-    limits: Limits,
-) -> Result<Vec<Term>> {
-    use crate::{derive, kernel::KernelError};
-
-    revision.model().validate_clause(plan.pattern(), true)?;
-    let sought = plan.sought();
-    let sought_variable = plan
-        .pattern()
-        .roles()
-        .get(sought)
-        .and_then(Term::variable_id)
-        .ok_or_else(|| KernelError::new("find plan sought role is not a variable"))?;
-    let closure = derive::saturate(revision, limits)?;
-    let mut bindings = closure
-        .assertions()
-        .iter()
-        .filter(|candidate| {
-            candidate.relation() == plan.pattern().relation()
-                && plan.pattern().roles().iter().all(|(role, expected)| {
-                    let Some(actual) = candidate.roles().get(role) else {
-                        return false;
-                    };
-                    match expected.variable_id() {
-                        Some(variable) => variable == sought_variable,
-                        None => actual == expected,
-                    }
-                })
-        })
-        .map(|candidate| {
-            candidate
-                .roles()
-                .get(sought)
-                .cloned()
-                .ok_or_else(|| KernelError::new("closure clause does not fill sought role"))
-        })
-        .collect::<Result<Vec<_>>>()?;
-    bindings.sort();
-    bindings.dedup();
-    Ok(bindings)
-}
-
-#[cfg(clause_generated)]
-fn emitted_why(revision: &Revision, target: &Clause, limits: Limits) -> Result<Option<Proof>> {
-    use crate::derive;
-
-    revision.model().validate_clause(target, false)?;
-    let closure = derive::saturate(revision, limits)?;
-    emitted_graph(&closure, target, revision.identity().clone())
-}
-
-#[cfg(clause_generated)]
-fn emitted_why_all(
-    revision: &Revision,
-    target: &Clause,
-    limits: SupportLimits,
-) -> Result<Option<WhyAll>> {
-    use crate::derive;
-
-    revision.model().validate_clause(target, false)?;
-    let closure = derive::saturate(revision, limits.closure)?;
-    if closure.proof(target).is_none() {
-        return Ok(None);
-    }
-    let frontier = derive::support_frontier(revision, target, limits)?;
-    let revision_id = revision.identity().clone();
-    let alternatives = frontier
-        .supports()
-        .iter()
-        .map(|support| {
-            Ok(WhySupport {
-                assertions: support.assertions().to_vec(),
-                proof: Proof {
-                    revision: revision_id.clone(),
-                    why: emitted_support_graph(support.proof())?,
-                },
-            })
-        })
-        .collect::<Result<Vec<_>>>()?;
-    Ok(Some(WhyAll {
-        revision: revision_id,
-        target: target.clone(),
-        alternatives,
-        complete: frontier.status().is_complete(),
-        expansions: frontier.expansions(),
-    }))
-}
-
-#[cfg(clause_generated)]
-fn emitted_graph(
-    closure: &crate::derive::Closure,
-    root: &Clause,
-    revision: RevisionId,
-) -> Result<Option<Proof>> {
-    if closure.proof(root).is_none() {
-        return Ok(None);
-    }
-    let mut clauses = Vec::new();
-    let mut indices = BTreeMap::new();
-    let mut witnesses = Vec::new();
-    let root = emitted_add_clause(root, closure, &mut clauses, &mut indices, &mut witnesses)?;
-    witnesses.sort_by_key(|edge| edge.conclusion);
-    Ok(Some(Proof {
-        revision,
-        why: WhyGraph {
-            root,
-            nodes: clauses
-                .into_iter()
-                .map(|clause| ClauseNode { clause })
-                .collect(),
-            witnesses,
-        },
-    }))
-}
-
-#[cfg(clause_generated)]
-fn emitted_support_graph(root: &crate::derive::SupportProof) -> Result<WhyGraph> {
-    let mut clauses = Vec::new();
-    let mut indices = BTreeMap::new();
-    let mut witnesses = Vec::new();
-    let root = emitted_add_support_clause(root, &mut clauses, &mut indices, &mut witnesses)?;
-    witnesses.sort_by_key(|edge| edge.conclusion);
-    Ok(WhyGraph {
-        root,
-        nodes: clauses
-            .into_iter()
-            .map(|clause| ClauseNode { clause })
-            .collect(),
-        witnesses,
-    })
-}
-
-#[cfg(clause_generated)]
-fn emitted_add_support_clause(
-    proof: &crate::derive::SupportProof,
-    clauses: &mut Vec<Clause>,
-    indices: &mut BTreeMap<Clause, usize>,
-    witnesses: &mut Vec<WitnessEdge>,
-) -> Result<usize> {
-    use crate::derive::SupportWitness;
-
-    let clause = proof.conclusion();
-    if let Some(index) = indices.get(clause) {
-        return Ok(*index);
-    }
-    let conclusion = clauses.len();
-    clauses.push(clause.clone());
-    indices.insert(clause.clone(), conclusion);
-    let witness = match proof.witness() {
-        SupportWitness::Asserted => Witness::Asserted,
-        SupportWitness::Derived {
-            law,
-            premises,
-            substitution,
-        } => Witness::Derived {
-            law: law.clone(),
-            premises: premises
-                .iter()
-                .map(|premise| emitted_add_support_clause(premise, clauses, indices, witnesses))
-                .collect::<Result<Vec<_>>>()?,
-            substitution: substitution.clone(),
-        },
-    };
-    witnesses.push(WitnessEdge {
-        conclusion,
-        witness,
-    });
-    Ok(conclusion)
-}
-
-#[cfg(clause_generated)]
-fn emitted_add_clause(
-    clause: &Clause,
-    closure: &crate::derive::Closure,
-    clauses: &mut Vec<Clause>,
-    indices: &mut BTreeMap<Clause, usize>,
-    witnesses: &mut Vec<WitnessEdge>,
-) -> Result<usize> {
-    use crate::{derive, kernel::KernelError};
-
-    if let Some(index) = indices.get(clause) {
-        return Ok(*index);
-    }
-    let conclusion = clauses.len();
-    clauses.push(clause.clone());
-    indices.insert(clause.clone(), conclusion);
-    let proof = closure
-        .proof(clause)
-        .ok_or_else(|| KernelError::new("closure clause has no chosen witness"))?;
-    let witness = match proof.witness() {
-        derive::Witness::Asserted => Witness::Asserted,
-        derive::Witness::Derived {
-            law,
-            premises,
-            substitution,
-        } => Witness::Derived {
-            law: law.clone(),
-            premises: premises
-                .iter()
-                .map(|premise| emitted_add_clause(premise, closure, clauses, indices, witnesses))
-                .collect::<Result<Vec<_>>>()?,
-            substitution: substitution.clone(),
-        },
-    };
-    witnesses.push(WitnessEdge {
-        conclusion,
-        witness,
-    });
-    Ok(conclusion)
+    explain::why_all(revision, target, limits)
 }
 
 #[cfg(test)]

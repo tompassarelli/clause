@@ -2,19 +2,14 @@
 //!
 //! A semantic diff is deliberately a comparison value only: it is never part
 //! of a revision's admitted model or identity.
-#![allow(unexpected_cfgs)]
-
 use crate::{
     delta::RevisionDiff,
     derive::{self, Proof, Support, SupportFrontier, SupportLimits},
     kernel::{Clause, Result, Revision},
 };
 
-#[cfg(not(clause_generated))]
 mod entailment;
-#[cfg(not(clause_generated))]
 mod proofs;
-#[cfg(not(clause_generated))]
 mod supports;
 
 /// A selected derivation that changed for a consequence entailed by both revisions.
@@ -110,36 +105,24 @@ impl SemanticDiff {
         let authored = RevisionDiff::between(base, successor)?;
         let base_closure = derive::saturate(base, support_limits.closure)?;
         let successor_closure = derive::saturate(successor, support_limits.closure)?;
-        #[cfg(not(clause_generated))]
-        {
-            let (entailed_added, entailed_removed) =
-                entailment::changes(&base_closure, &successor_closure, &authored);
-            let changed_proofs = proofs::changes(&base_closure, &successor_closure);
-            let changed_supports = supports::changes(
-                base,
-                successor,
-                &base_closure,
-                &successor_closure,
-                &authored,
-                support_limits,
-            )?;
-            Ok(Self {
-                authored,
-                entailed_added,
-                entailed_removed,
-                changed_proofs,
-                changed_supports,
-            })
-        }
-        #[cfg(clause_generated)]
-        emitted_between(
+        let (entailed_added, entailed_removed) =
+            entailment::changes(&base_closure, &successor_closure, &authored);
+        let changed_proofs = proofs::changes(&base_closure, &successor_closure);
+        let changed_supports = supports::changes(
             base,
             successor,
+            &base_closure,
+            &successor_closure,
+            &authored,
             support_limits,
+        )?;
+        Ok(Self {
             authored,
-            base_closure,
-            successor_closure,
-        )
+            entailed_added,
+            entailed_removed,
+            changed_proofs,
+            changed_supports,
+        })
     }
 
     pub fn authored(&self) -> &RevisionDiff {
@@ -161,145 +144,6 @@ impl SemanticDiff {
     pub fn changed_supports(&self) -> &[SupportChange] {
         &self.changed_supports
     }
-}
-
-// Emitted programs contain this module as one source file, so their
-// source-deleted build cannot load the normal sibling comparison modules.
-#[cfg(clause_generated)]
-fn emitted_between(
-    base: &Revision,
-    successor: &Revision,
-    support_limits: SupportLimits,
-    authored: RevisionDiff,
-    base_closure: derive::Closure,
-    successor_closure: derive::Closure,
-) -> Result<SemanticDiff> {
-    use std::collections::BTreeSet;
-
-    let entailed_added = successor_closure
-        .assertions()
-        .iter()
-        .filter(|consequence| {
-            base_closure
-                .assertions()
-                .binary_search(consequence)
-                .is_err()
-                && authored.added().binary_search(consequence).is_err()
-        })
-        .cloned()
-        .collect();
-    let entailed_removed = base_closure
-        .assertions()
-        .iter()
-        .filter(|consequence| {
-            successor_closure
-                .assertions()
-                .binary_search(consequence)
-                .is_err()
-                && authored.removed().binary_search(consequence).is_err()
-        })
-        .cloned()
-        .collect();
-    let changed_proofs = base_closure
-        .assertions()
-        .iter()
-        .filter_map(|consequence| {
-            let successor_proof = successor_closure.proof(consequence)?;
-            let base_proof = base_closure
-                .proof(consequence)
-                .expect("closure clauses always have selected proofs");
-            (base_proof != successor_proof).then(|| ProofChange {
-                consequence: consequence.clone(),
-                base: base_proof.clone(),
-                successor: successor_proof.clone(),
-            })
-        })
-        .collect();
-    let changed_supports = base_closure
-        .assertions()
-        .iter()
-        .chain(successor_closure.assertions())
-        .cloned()
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .filter(|consequence| {
-            authored.added().binary_search(consequence).is_err()
-                && authored.removed().binary_search(consequence).is_err()
-        })
-        .map(|consequence| emitted_support_change(base, successor, &consequence, support_limits))
-        .collect::<Result<Vec<_>>>()?
-        .into_iter()
-        .flatten()
-        .collect();
-    Ok(SemanticDiff {
-        authored,
-        entailed_added,
-        entailed_removed,
-        changed_proofs,
-        changed_supports,
-    })
-}
-
-#[cfg(clause_generated)]
-fn emitted_support_change(
-    base_revision: &Revision,
-    successor_revision: &Revision,
-    consequence: &Clause,
-    limits: SupportLimits,
-) -> Result<Option<SupportChange>> {
-    let base = derive::support_frontier(base_revision, consequence, limits)?;
-    let successor = derive::support_frontier(successor_revision, consequence, limits)?;
-    let retained = base
-        .supports()
-        .iter()
-        .filter(|support| {
-            successor
-                .supports()
-                .iter()
-                .any(|candidate| candidate.assertion_key() == support.assertion_key())
-        })
-        .cloned()
-        .collect();
-    let added: Vec<Support> = if base.status().is_complete() {
-        successor
-            .supports()
-            .iter()
-            .filter(|support| {
-                !base
-                    .supports()
-                    .iter()
-                    .any(|candidate| candidate.assertion_key() == support.assertion_key())
-            })
-            .cloned()
-            .collect()
-    } else {
-        Vec::new()
-    };
-    let removed: Vec<Support> = if successor.status().is_complete() {
-        base.supports()
-            .iter()
-            .filter(|support| {
-                !successor
-                    .supports()
-                    .iter()
-                    .any(|candidate| candidate.assertion_key() == support.assertion_key())
-            })
-            .cloned()
-            .collect()
-    } else {
-        Vec::new()
-    };
-    if added.is_empty() && removed.is_empty() {
-        return Ok(None);
-    }
-    Ok(Some(SupportChange {
-        consequence: consequence.clone(),
-        base,
-        successor,
-        added,
-        removed,
-        retained,
-    }))
 }
 
 #[cfg(test)]
