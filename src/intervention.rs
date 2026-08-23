@@ -14,6 +14,7 @@ use std::collections::BTreeSet;
 pub struct AchieveConfig {
     allowed_relations: Vec<String>,
     active_domain: Vec<String>,
+    candidate_basis: Option<Vec<Clause>>,
     max_candidates: usize,
     max_solutions: usize,
     closure_limits: Limits,
@@ -32,6 +33,7 @@ impl AchieveConfig {
         Self {
             allowed_relations,
             active_domain,
+            candidate_basis: None,
             max_candidates,
             max_solutions,
             closure_limits,
@@ -44,6 +46,19 @@ impl AchieveConfig {
 
     pub fn active_domain(&self) -> &[String] {
         &self.active_domain
+    }
+
+    /// Restrict enumeration to this finite, canonical set of direct facts.
+    ///
+    /// Each candidate is still validated against the configured relations and
+    /// active domain when achievement begins.
+    pub fn with_candidate_basis(mut self, candidates: Vec<Clause>) -> Self {
+        self.candidate_basis = Some(canonical_clauses(candidates));
+        self
+    }
+
+    pub fn candidate_basis(&self) -> Option<&[Clause]> {
+        self.candidate_basis.as_deref()
     }
 
     pub fn max_candidates(&self) -> usize {
@@ -147,6 +162,10 @@ pub fn achieve(revision: &Revision, goal: Clause, config: &AchieveConfig) -> Res
 }
 
 fn candidate_facts(revision: &Revision, config: &AchieveConfig) -> Result<Vec<Clause>> {
+    if let Some(candidates) = config.candidate_basis() {
+        return validate_candidate_basis(revision, config, candidates);
+    }
+
     let model = revision.model();
     let derived_relations = model
         .laws()
@@ -176,6 +195,61 @@ fn candidate_facts(revision: &Revision, config: &AchieveConfig) -> Result<Vec<Cl
     }
 
     Ok(candidates.into_iter().collect())
+}
+
+fn validate_candidate_basis(
+    revision: &Revision,
+    config: &AchieveConfig,
+    candidates: &[Clause],
+) -> Result<Vec<Clause>> {
+    let model = revision.model();
+    let derived_relations = model
+        .laws()
+        .iter()
+        .map(|law| law.conclusion().relation())
+        .collect::<BTreeSet<_>>();
+
+    for candidate in candidates {
+        let relation_name = candidate.relation();
+        let relation = model
+            .relations()
+            .get(relation_name)
+            .ok_or_else(|| KernelError::new("intervention candidate relation is undeclared"))?;
+        if config
+            .allowed_relations()
+            .binary_search_by(|allowed| allowed.as_str().cmp(relation_name))
+            .is_err()
+        {
+            return Err(KernelError::new(format!(
+                "intervention candidate relation is not allowlisted: {relation_name}"
+            )));
+        }
+        if candidate.roles().keys().ne(relation.roles().keys()) {
+            return Err(KernelError::new(
+                "intervention candidate must fill the complete named role map",
+            ));
+        }
+        if candidate.roles().values().any(Term::is_variable) {
+            return Err(KernelError::new("intervention candidate must be ground"));
+        }
+        if candidate.roles().values().any(|term| {
+            config
+                .active_domain()
+                .binary_search_by(|value| value.as_str().cmp(term.text()))
+                .is_err()
+        }) {
+            return Err(KernelError::new(
+                "intervention candidate literal is outside the active domain",
+            ));
+        }
+        if derived_relations.contains(relation_name) {
+            return Err(KernelError::new(format!(
+                "intervention relation is derived-only: {relation_name}"
+            )));
+        }
+    }
+
+    Ok(candidates.to_vec())
 }
 
 fn collect_relation_facts(
@@ -286,6 +360,14 @@ fn is_subset(subset: &[Clause], set: &[Clause]) -> bool {
 
 fn canonical(values: Vec<String>) -> Vec<String> {
     values
+        .into_iter()
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect()
+}
+
+fn canonical_clauses(clauses: Vec<Clause>) -> Vec<Clause> {
+    clauses
         .into_iter()
         .collect::<BTreeSet<_>>()
         .into_iter()
@@ -702,6 +784,131 @@ mod tests {
 
     fn closure_limits() -> Limits {
         Limits::new(100, 10, 10_000)
+    }
+
+    #[test]
+    fn explicit_candidate_basis_is_canonical_and_complete() {
+        let source = revision(vec![
+            Law::new(
+                "map/left-goal",
+                vec![pattern("map/left", "from", "to")],
+                pattern("map/goal", "from", "to"),
+            )
+            .unwrap(),
+            Law::new(
+                "map/right-goal",
+                vec![pattern("map/right", "from", "to")],
+                pattern("map/goal", "from", "to"),
+            )
+            .unwrap(),
+        ]);
+        let config = config(vec!["map/right", "map/left"], 2, 10).with_candidate_basis(vec![
+            clause("map/right", "A", "B"),
+            clause("map/left", "A", "B"),
+            clause("map/right", "A", "B"),
+        ]);
+        assert_eq!(
+            config.candidate_basis(),
+            Some([clause("map/left", "A", "B"), clause("map/right", "A", "B"),].as_slice())
+        );
+
+        let result = achieve(&source, clause("map/goal", "A", "B"), &config).unwrap();
+
+        assert!(matches!(&result, AchieveResult::Solutions(_)));
+        assert_eq!(
+            result
+                .interventions()
+                .iter()
+                .map(|intervention| intervention.additions().to_vec())
+                .collect::<Vec<_>>(),
+            vec![
+                vec![clause("map/left", "A", "B")],
+                vec![clause("map/right", "A", "B")],
+            ]
+        );
+    }
+
+    #[test]
+    fn explicit_candidate_basis_rejects_invalid_candidates() {
+        let source = revision(vec![
+            Law::new(
+                "map/input-goal",
+                vec![pattern("map/input", "from", "to")],
+                pattern("map/goal", "from", "to"),
+            )
+            .unwrap(),
+        ]);
+        let goal = clause("map/goal", "A", "B");
+        let basis =
+            |candidate| config(vec!["map/input"], 100, 10).with_candidate_basis(vec![candidate]);
+
+        let undeclared = Clause::new(
+            "map/missing",
+            vec![
+                ("from".into(), Term::literal("A").unwrap()),
+                ("to".into(), Term::literal("B").unwrap()),
+            ],
+        )
+        .unwrap();
+        assert_eq!(
+            achieve(&source, goal.clone(), &basis(undeclared))
+                .unwrap_err()
+                .to_string(),
+            "intervention candidate relation is undeclared"
+        );
+
+        assert_eq!(
+            achieve(&source, goal.clone(), &basis(clause("map/left", "A", "B")))
+                .unwrap_err()
+                .to_string(),
+            "intervention candidate relation is not allowlisted: map/left"
+        );
+
+        let incomplete = Clause::new(
+            "map/input",
+            vec![("from".into(), Term::literal("A").unwrap())],
+        )
+        .unwrap();
+        assert_eq!(
+            achieve(&source, goal.clone(), &basis(incomplete))
+                .unwrap_err()
+                .to_string(),
+            "intervention candidate must fill the complete named role map"
+        );
+
+        let nonground = Clause::new(
+            "map/input",
+            vec![
+                ("from".into(), Term::variable("from").unwrap()),
+                ("to".into(), Term::literal("B").unwrap()),
+            ],
+        )
+        .unwrap();
+        assert_eq!(
+            achieve(&source, goal.clone(), &basis(nonground))
+                .unwrap_err()
+                .to_string(),
+            "intervention candidate must be ground"
+        );
+
+        assert_eq!(
+            achieve(&source, goal.clone(), &basis(clause("map/input", "A", "C")))
+                .unwrap_err()
+                .to_string(),
+            "intervention candidate literal is outside the active domain"
+        );
+
+        assert_eq!(
+            achieve(
+                &source,
+                goal,
+                &config(vec!["map/goal"], 100, 10)
+                    .with_candidate_basis(vec![clause("map/goal", "A", "B")]),
+            )
+            .unwrap_err()
+            .to_string(),
+            "intervention relation is derived-only: map/goal"
+        );
     }
 
     #[test]
