@@ -30,7 +30,11 @@ pub(super) fn parse_law_layout<'a>(raw: &RawDecl<'a>) -> Result<LawLayout<'a>, P
         ));
     }
     let premises = entries[2..].to_vec();
-    if premises.is_empty() || premises.iter().any(|line| indent(*line).unwrap() != 8) {
+    if premises.is_empty()
+        || premises.iter().any(|line| {
+            indent(*line).expect("source indentation was validated before parsing") != 8
+        })
+    {
         return Err(error(
             line_span(raw.header),
             "when requires one or more eight-space clauses",

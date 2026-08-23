@@ -277,9 +277,9 @@ fn read_clause_block<'a>(
     let body = take_body(lines, index);
     let entries = nonblank(body);
     if entries.len() != 1
-        || entries
-            .first()
-            .is_some_and(|line| indent(*line).unwrap() != 4)
+        || entries.first().is_some_and(|line| {
+            indent(*line).expect("source indentation was validated before parsing") != 4
+        })
     {
         let span = entries.first().map_or(
             Span {
@@ -396,7 +396,9 @@ fn parse_request<'a>(
             *index += 1;
             let using_lines = nonblank(take_body(lines, index));
             if using_lines.is_empty()
-                || using_lines.iter().any(|entry| indent(*entry).unwrap() != 4)
+                || using_lines.iter().any(|entry| {
+                    indent(*entry).expect("source indentation was validated before parsing") != 4
+                })
             {
                 return Err(error(
                     line_span(using_header),

@@ -197,7 +197,11 @@ fn known_text_width(roles: &[Spanned<RoleName>]) -> usize {
 
 pub(super) fn relation_spec(raw: &RawDecl<'_>) -> Result<RelationSpec, ParseError> {
     let entries = nonblank(raw.body.iter().copied());
-    if entries.is_empty() || entries.iter().any(|line| indent(*line).unwrap() != 4) {
+    if entries.is_empty()
+        || entries.iter().any(|line| {
+            indent(*line).expect("source indentation was validated before parsing") != 4
+        })
+    {
         return Err(error(
             line_span(raw.header),
             "Relation requires four-space sentence and mode members",
