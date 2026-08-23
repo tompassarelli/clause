@@ -300,9 +300,41 @@ impl Intent {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Law {
+    name: String,
+    premises: Vec<Clause>,
+    conclusion: Clause,
+}
+
+impl Law {
+    pub fn new(name: impl Into<String>, premises: Vec<Clause>, conclusion: Clause) -> Result<Self> {
+        let name = name.into();
+        valid_name(&name, "law name")?;
+        if premises.is_empty() {
+            return Err(KernelError::new("law needs at least one premise"));
+        }
+        Ok(Self {
+            name,
+            premises,
+            conclusion,
+        })
+    }
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+    pub fn premises(&self) -> &[Clause] {
+        &self.premises
+    }
+    pub fn conclusion(&self) -> &Clause {
+        &self.conclusion
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Model {
     relations: BTreeMap<String, Relation>,
     facts: Vec<Clause>,
+    laws: Vec<Law>,
     query: Clause,
     intents: Vec<Intent>,
     order: String,
@@ -315,11 +347,30 @@ impl Model {
         query: Clause,
         order: impl Into<String>,
     ) -> Result<Self> {
-        Self::with_intents(relations, facts, query, Vec::new(), order)
+        Self::with_laws_and_intents(relations, facts, Vec::new(), query, Vec::new(), order)
     }
     pub fn with_intents(
         relations: Vec<Relation>,
+        facts: Vec<Clause>,
+        query: Clause,
+        intents: Vec<Intent>,
+        order: impl Into<String>,
+    ) -> Result<Self> {
+        Self::with_laws_and_intents(relations, facts, Vec::new(), query, intents, order)
+    }
+    pub fn with_laws(
+        relations: Vec<Relation>,
+        facts: Vec<Clause>,
+        laws: Vec<Law>,
+        query: Clause,
+        order: impl Into<String>,
+    ) -> Result<Self> {
+        Self::with_laws_and_intents(relations, facts, laws, query, Vec::new(), order)
+    }
+    pub fn with_laws_and_intents(
+        relations: Vec<Relation>,
         mut facts: Vec<Clause>,
+        mut laws: Vec<Law>,
         query: Clause,
         mut intents: Vec<Intent>,
         order: impl Into<String>,
@@ -338,6 +389,13 @@ impl Model {
         }
         for fact in &facts {
             validate_clause(&relation_map, fact, false)?;
+        }
+        let mut law_names = BTreeSet::new();
+        for law in &laws {
+            if !law_names.insert(law.name.clone()) {
+                return Err(KernelError::new("duplicate law identity"));
+            }
+            validate_law(&relation_map, law)?;
         }
         validate_clause(&relation_map, &query, true)?;
         let namespace = if intents.is_empty() {
@@ -368,6 +426,7 @@ impl Model {
         }
         facts.sort();
         facts.dedup();
+        laws.sort_by(|left, right| left.name.cmp(&right.name));
         intents.sort();
         let order = order.into();
         let sought = query
@@ -381,6 +440,7 @@ impl Model {
         Ok(Self {
             relations: relation_map,
             facts,
+            laws,
             query,
             intents,
             order,
@@ -391,6 +451,9 @@ impl Model {
     }
     pub fn facts(&self) -> &[Clause] {
         &self.facts
+    }
+    pub fn laws(&self) -> &[Law] {
+        &self.laws
     }
     pub fn query(&self) -> &Clause {
         &self.query
@@ -618,9 +681,10 @@ pub fn claim(branch: &Branch, clause: Clause) -> Result<ClaimResult> {
     facts.push(clause.clone());
     let successor = Branch::new(
         branch.name.clone(),
-        Revision::admit(Model::with_intents(
+        Revision::admit(Model::with_laws_and_intents(
             model.relations.values().cloned().collect(),
             facts,
+            model.laws.clone(),
             model.query.clone(),
             model.intents.clone(),
             model.order.clone(),
@@ -744,6 +808,67 @@ fn validate_clause(
     Ok(())
 }
 
+fn validate_law(relations: &BTreeMap<String, Relation>, law: &Law) -> Result<()> {
+    let mut premise_variables = BTreeSet::new();
+    let mut variable_types = BTreeMap::new();
+    for premise in law.premises() {
+        validate_clause(relations, premise, true)?;
+        record_variable_types(
+            relations,
+            premise,
+            &mut variable_types,
+            Some(&mut premise_variables),
+        )?;
+    }
+    validate_clause(relations, law.conclusion(), true)?;
+    record_variable_types(relations, law.conclusion(), &mut variable_types, None)?;
+    if law
+        .conclusion()
+        .roles()
+        .values()
+        .filter(|term| term.is_variable())
+        .any(|term| !premise_variables.contains(term.text()))
+    {
+        return Err(KernelError::new(
+            "every conclusion variable must occur in a premise",
+        ));
+    }
+    Ok(())
+}
+
+fn record_variable_types(
+    relations: &BTreeMap<String, Relation>,
+    clause: &Clause,
+    variable_types: &mut BTreeMap<String, String>,
+    mut variables: Option<&mut BTreeSet<String>>,
+) -> Result<()> {
+    let relation = relations
+        .get(clause.relation())
+        .expect("validated law clause has a declared relation");
+    for (role_name, term) in clause.roles() {
+        if !term.is_variable() {
+            continue;
+        }
+        let typ = relation
+            .roles()
+            .get(role_name)
+            .expect("validated law clause fills declared roles")
+            .typ();
+        if variable_types
+            .insert(term.text().to_owned(), typ.to_owned())
+            .is_some_and(|declared| declared != typ)
+        {
+            return Err(KernelError::new(
+                "law variable occurs at inconsistent declared role types",
+            ));
+        }
+        if let Some(variables) = variables.as_deref_mut() {
+            variables.insert(term.text().to_owned());
+        }
+    }
+    Ok(())
+}
+
 fn sorted_names(values: Vec<String>, where_: &str) -> Result<Vec<String>> {
     let mut values = values;
     for value in &values {
@@ -763,5 +888,151 @@ fn valid_name(value: &str, where_: &str) -> Result<()> {
         Err(KernelError::new(format!("invalid {where_}")))
     } else {
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Cardinality, Clause, Law, Mode, Model, Relation, Role, Sentence, Term};
+
+    fn relation(name: &str, left_type: &str, right_type: &str) -> Relation {
+        Relation::new(
+            name,
+            vec![
+                Role::new("left", left_type).unwrap(),
+                Role::new("right", right_type).unwrap(),
+            ],
+            Sentence::new("left", "relates to", "right").unwrap(),
+            vec![
+                Mode::finite(vec!["left".into()], vec!["right".into()], Cardinality::Many).unwrap(),
+            ],
+        )
+        .unwrap()
+    }
+
+    fn pattern(relation: &str, left: Term, right: Term) -> Clause {
+        Clause::new(
+            relation,
+            vec![("left".into(), left), ("right".into(), right)],
+        )
+        .unwrap()
+    }
+
+    fn admit(laws: Vec<Law>) -> super::Result<Model> {
+        Model::with_laws(
+            vec![
+                relation("catalog/text", "Text", "Text"),
+                relation("catalog/number", "Text", "Number"),
+            ],
+            Vec::new(),
+            laws,
+            pattern(
+                "catalog/text",
+                Term::literal("known").unwrap(),
+                Term::variable("answer").unwrap(),
+            ),
+            "ascending",
+        )
+    }
+
+    fn valid_law(name: &str) -> Law {
+        Law::new(
+            name,
+            vec![pattern(
+                "catalog/text",
+                Term::variable("subject").unwrap(),
+                Term::variable("value").unwrap(),
+            )],
+            pattern(
+                "catalog/text",
+                Term::variable("value").unwrap(),
+                Term::variable("subject").unwrap(),
+            ),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn law_admission_enforces_positive_range_and_declared_types() {
+        let conclusion = pattern(
+            "catalog/text",
+            Term::variable("subject").unwrap(),
+            Term::variable("fresh").unwrap(),
+        );
+        assert!(
+            Law::new("catalog/empty", Vec::new(), conclusion.clone()).is_err(),
+            "a law must have a positive premise"
+        );
+        assert!(
+            admit(vec![
+                Law::new(
+                    "catalog/fresh",
+                    vec![pattern(
+                        "catalog/text",
+                        Term::variable("subject").unwrap(),
+                        Term::variable("value").unwrap(),
+                    )],
+                    conclusion,
+                )
+                .unwrap()
+            ])
+            .is_err(),
+            "a conclusion variable must be bound by a premise"
+        );
+
+        let inconsistent = Law::new(
+            "catalog/inconsistent",
+            vec![pattern(
+                "catalog/text",
+                Term::variable("subject").unwrap(),
+                Term::variable("value").unwrap(),
+            )],
+            pattern(
+                "catalog/number",
+                Term::variable("subject").unwrap(),
+                Term::variable("value").unwrap(),
+            ),
+        )
+        .unwrap();
+        assert!(
+            admit(vec![inconsistent]).is_err(),
+            "one variable cannot inhabit Text and Number roles"
+        );
+
+        let unknown = Law::new(
+            "catalog/unknown",
+            vec![pattern(
+                "catalog/missing",
+                Term::variable("subject").unwrap(),
+                Term::variable("value").unwrap(),
+            )],
+            valid_law("catalog/unused").conclusion().clone(),
+        )
+        .unwrap();
+        assert!(admit(vec![unknown]).is_err(), "law relations are declared");
+
+        let incomplete = Law::new(
+            "catalog/incomplete",
+            vec![
+                Clause::new(
+                    "catalog/text",
+                    vec![("left".into(), Term::variable("subject").unwrap())],
+                )
+                .unwrap(),
+            ],
+            valid_law("catalog/unused").conclusion().clone(),
+        )
+        .unwrap();
+        assert!(
+            admit(vec![incomplete]).is_err(),
+            "law atoms fill every named role"
+        );
+
+        let law = valid_law("catalog/symmetric");
+        assert!(
+            admit(vec![law.clone(), law]).is_err(),
+            "law names are unique identities"
+        );
+        assert!(admit(vec![valid_law("catalog/symmetric")]).is_ok());
     }
 }
