@@ -1,5 +1,6 @@
 //! Executable flagship journey for the dependency-impact model.
 
+use clause::{derive::Limits, generated, wire};
 use std::{env, fs, process::Command};
 
 const SOURCE: &str = include_str!("../examples/impact.clause");
@@ -76,5 +77,35 @@ fn impact_journey_seals_derives_changes_intervenes_and_survives_source_removal()
     );
     assert!(demo.contains(&format!("[\"successor-query\",{}]", query.trim())));
 
+    let persisted = fs::read_to_string(&revision_path).expect("sealed revision reads");
+    let revision = wire::reload(&persisted).expect("sealed revision reloads");
+    let generated_source = temp_path("rs");
+    let generated_binary = temp_path("bin");
+    fs::write(
+        &generated_source,
+        generated::emit_rust(&revision, Limits::new(100, 10, 10_000))
+            .expect("standalone Rust emits after source removal"),
+    )
+    .expect("standalone Rust writes");
+    let compile = Command::new("rustc")
+        .args(["--edition=2024", "--cfg", "clause_generated"])
+        .arg(&generated_source)
+        .arg("-o")
+        .arg(&generated_binary)
+        .output()
+        .expect("standalone Rust compiler starts");
+    assert!(
+        compile.status.success(),
+        "{}",
+        String::from_utf8_lossy(&compile.stderr)
+    );
+    let generated_query = Command::new(&generated_binary)
+        .output()
+        .expect("source-deleted generated query starts");
+    assert!(generated_query.status.success());
+    assert_eq!(generated_query.stdout, query.trim().as_bytes());
+
+    let _ = fs::remove_file(generated_source);
+    let _ = fs::remove_file(generated_binary);
     let _ = fs::remove_file(revision_path);
 }
