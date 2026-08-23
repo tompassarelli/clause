@@ -301,19 +301,12 @@ pub struct PreventLimits {
 }
 
 impl PreventLimits {
-    /// Construct limits using unbounded closure limits.
-    pub fn new(max_candidates: usize, max_solutions: usize) -> Self {
+    pub fn new(max_candidates: usize, max_solutions: usize, closure: Limits) -> Self {
         Self {
             max_candidates,
             max_solutions,
-            closure: Limits::new(usize::MAX, usize::MAX, usize::MAX),
+            closure,
         }
-    }
-
-    /// Bound the fixed-point computation performed for every candidate.
-    pub fn with_closure_limits(mut self, closure: Limits) -> Self {
-        self.closure = closure;
-        self
     }
 
     pub fn max_candidates(&self) -> usize {
@@ -397,9 +390,7 @@ impl PreventReport {
 /// Enumerate every inclusion-minimal set of direct asserted facts whose
 /// withdrawal makes `target` absent from the derived closure.
 pub fn prevent(source: &Revision, target: Clause, limits: PreventLimits) -> Result<PreventReport> {
-    if target.roles().values().any(|term| term.is_variable()) {
-        return Err(KernelError::new("prevent target must be ground"));
-    }
+    kernel::require(source, target.clone())?;
 
     let source_closure = derive::saturate(source, limits.closure)?;
     let source_revision = source.identity().to_owned();
@@ -612,6 +603,10 @@ mod tests {
             max_solutions,
             Limits::new(100, 10, 10_000),
         )
+    }
+
+    fn closure_limits() -> Limits {
+        Limits::new(100, 10, 10_000)
     }
 
     #[test]
@@ -840,7 +835,7 @@ mod tests {
         let report = prevent(
             &source,
             clause("map/reaches", "North", "Store"),
-            PreventLimits::new(100, 100),
+            PreventLimits::new(100, 100, closure_limits()),
         )
         .unwrap();
 
@@ -863,7 +858,7 @@ mod tests {
         let rerun = prevent(
             &source,
             clause("map/reaches", "North", "Store"),
-            PreventLimits::new(100, 100),
+            PreventLimits::new(100, 100, closure_limits()),
         )
         .unwrap();
         assert_eq!(report, rerun);
@@ -875,7 +870,7 @@ mod tests {
         let absent = prevent(
             &source,
             clause("map/reaches", "North", "Store"),
-            PreventLimits::new(0, 0),
+            PreventLimits::new(0, 0, closure_limits()),
         )
         .unwrap();
         assert_eq!(absent.status(), PreventStatus::AlreadyAbsent);
@@ -889,7 +884,7 @@ mod tests {
         let exhausted = prevent(
             &source,
             clause("map/reaches", "North", "Store"),
-            PreventLimits::new(0, 10),
+            PreventLimits::new(0, 10, closure_limits()),
         )
         .unwrap();
         assert_eq!(exhausted.status(), PreventStatus::CandidateBudgetExhausted);
