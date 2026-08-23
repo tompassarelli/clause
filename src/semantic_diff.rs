@@ -268,7 +268,7 @@ mod tests {
 
     use super::SemanticDiff;
     use crate::{
-        derive::{Limits, SupportLimits, SupportStatus},
+        derive::{Limits, SupportLimits},
         kernel::{
             Cardinality, Clause, Delta, EntityId, InlineSentencePart, Law, Mode, Model, ModelId,
             Name, Relation, RelationId, Role, RoleId, SentenceShape, Term, Type, TypeId,
@@ -448,7 +448,7 @@ mod tests {
     }
 
     #[test]
-    fn incomplete_opposite_frontier_withholds_removal_claims() {
+    fn incomplete_opposite_frontier_suppresses_unknown_change() {
         let left = clause("impact/left");
         let right = clause("impact/right");
         let middle = clause("impact/middle");
@@ -456,12 +456,7 @@ mod tests {
         let successor = successor(&base, vec![right, middle], vec![left]);
         let bounded = SupportLimits::new(Limits::new(100, 10, 10_000), 100, 1);
         let diff = SemanticDiff::between(&base, &successor, bounded).unwrap();
-        let change = change(&diff);
-        assert_eq!(
-            change.successor().status(),
-            SupportStatus::SupportBudgetExhausted
-        );
-        assert!(change.removed().is_empty());
+        assert!(diff.changed_supports().is_empty());
     }
 
     #[test]
