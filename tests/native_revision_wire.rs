@@ -3,14 +3,30 @@
 #![allow(unexpected_cfgs)]
 
 #[cfg(g3_standalone)]
+#[path = "../src/wire/canonical.rs"]
+mod canonical;
+#[cfg(g3_standalone)]
+#[path = "../src/wire/decode.rs"]
+mod decode;
+#[cfg(g3_standalone)]
 #[path = "../src/delta.rs"]
 mod delta;
+#[cfg(g3_standalone)]
+#[path = "../src/wire/json.rs"]
+mod json;
 #[cfg(g3_standalone)]
 #[path = "../src/kernel.rs"]
 mod kernel;
 #[cfg(g3_standalone)]
-#[path = "../src/wire.rs"]
-mod wire;
+#[path = "../src/wire/sha256.rs"]
+mod sha256;
+
+#[cfg(g3_standalone)]
+mod wire {
+    pub use super::canonical::{admit, semantic_payload, serialize};
+    pub use super::decode::reload;
+    pub use super::sha256::sha256_hex;
+}
 
 use std::collections::{BTreeMap, BTreeSet};
 
