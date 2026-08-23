@@ -594,8 +594,10 @@ mod tests {
             .unwrap(),
         );
 
-        let limits = SupportLimits::new(limits(), 10_000, 10);
-        let all = why_all(&revision, &target, limits).unwrap().unwrap();
+        let support_limits = SupportLimits::new(limits(), 10_000, 10);
+        let all = why_all(&revision, &target, support_limits)
+            .unwrap()
+            .unwrap();
         assert!(all.is_complete());
         assert_eq!(all.alternative_count(), 2);
         assert_eq!(
