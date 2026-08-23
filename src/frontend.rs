@@ -152,6 +152,15 @@ pub struct IntentDecl {
     pub desired: Fact,
     pub span: Span,
 }
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LawDecl {
+    pub name: String,
+    pub conclusion: Fact,
+    pub premises: Vec<Fact>,
+    pub span: Span,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Default)]
 pub struct Program {
     pub relations: Vec<RelationDecl>,
@@ -159,6 +168,7 @@ pub struct Program {
     pub queries: Vec<Query>,
     pub operations: Vec<Operation>,
     pub intents: Vec<IntentDecl>,
+    pub laws: Vec<LawDecl>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -876,6 +886,123 @@ fn parse_intent(
     })
 }
 
+fn is_four_space_member(line: SourceLine<'_>) -> bool {
+    line.text.starts_with("    ") && !line.text.starts_with("        ")
+}
+
+fn is_eight_space_member(line: SourceLine<'_>) -> bool {
+    line.text.starts_with("        ") && !line.text.starts_with("            ")
+}
+
+fn parse_law(
+    lines: &[SourceLine<'_>],
+    index: &mut usize,
+    relations: &[RelationDecl],
+    models: &[ModelDecl],
+) -> Result<LawDecl, ParseError> {
+    let line = lines[*index];
+    let name = line
+        .text
+        .strip_prefix("law ")
+        .and_then(|body| body.strip_suffix(':'))
+        .ok_or_else(|| error(line_span(line), "law declaration must be 'law name:'"))?;
+    if !is_name(name) {
+        return Err(error(child_span(line, 4, name.len()), "invalid law name"));
+    }
+    if !models.iter().any(|model| {
+        let namespace = format!("{}/", model.name);
+        name.strip_prefix(&namespace)
+            .is_some_and(|local_name| is_name(local_name))
+    }) {
+        return Err(error(
+            child_span(line, 4, name.len()),
+            "law name must begin with a declared model namespace",
+        ));
+    }
+
+    *index += 1;
+    let conclusion_line = lines.get(*index).copied().ok_or_else(|| {
+        error(
+            line_span(line),
+            "law requires one four-space conclusion clause before 'when:'",
+        )
+    })?;
+    if !is_four_space_member(conclusion_line) || conclusion_line.text.starts_with("    when:") {
+        return Err(error(
+            line_span(conclusion_line),
+            "law requires one four-space conclusion clause before 'when:'",
+        ));
+    }
+    let (relation, roles) = find_relation(
+        relations,
+        &conclusion_line.text[4..],
+        conclusion_line,
+        5,
+        true,
+    )?;
+    let conclusion = Fact {
+        relation: relation.name.clone(),
+        roles,
+        span: line_span(conclusion_line),
+    };
+    *index += 1;
+
+    let when_line = lines.get(*index).copied().ok_or_else(|| {
+        error(
+            line_span(line),
+            "law requires exactly one four-space 'when:' after its conclusion",
+        )
+    })?;
+    if when_line.text != "    when:" {
+        return Err(error(
+            line_span(when_line),
+            "law requires exactly one four-space 'when:' after its conclusion",
+        ));
+    }
+    *index += 1;
+
+    let mut premises = Vec::new();
+    while let Some(premise_line) = lines.get(*index).copied() {
+        if !is_eight_space_member(premise_line) {
+            break;
+        }
+        if premise_line.text.len() == 8 {
+            return Err(error(
+                line_span(premise_line),
+                "law premise must be an eight-space clause",
+            ));
+        }
+        let (relation, roles) =
+            find_relation(relations, &premise_line.text[8..], premise_line, 9, true)?;
+        premises.push(Fact {
+            relation: relation.name.clone(),
+            roles,
+            span: line_span(premise_line),
+        });
+        *index += 1;
+    }
+    if premises.is_empty() {
+        return Err(error(
+            line_span(when_line),
+            "law requires one or more eight-space premise clauses",
+        ));
+    }
+    if let Some(extra) = lines.get(*index).copied() {
+        if extra.text.starts_with("    ") {
+            return Err(error(
+                line_span(extra),
+                "law permits only one conclusion, one 'when:', and premise clauses",
+            ));
+        }
+    }
+    Ok(LawDecl {
+        name: name.to_owned(),
+        conclusion,
+        premises,
+        span: line_span(line),
+    })
+}
+
 /// Parse the exact first Clause fixture into typed, source-spanned declarations.
 pub fn parse(source: &str) -> Result<Program, ParseError> {
     let lines = source
@@ -947,6 +1074,19 @@ pub fn parse(source: &str) -> Result<Program, ParseError> {
                 ));
             }
             program.intents.push(intent);
+        } else if line.text.starts_with("law ") {
+            let law = parse_law(&lines, &mut index, &program.relations, &program.models)?;
+            if program
+                .laws
+                .iter()
+                .any(|candidate| candidate.name == law.name)
+            {
+                return Err(error(
+                    law.span,
+                    format!("duplicate law name '{}'", law.name),
+                ));
+            }
+            program.laws.push(law);
         } else {
             return Err(error(line_span(line), "unknown top-level declaration"));
         }
@@ -1015,6 +1155,28 @@ intent catalog/restock:
 
 query catalog:
     ?member where "letters" contains ?member
+"#;
+
+    const LAW_FIXTURE: &str = r#"relation dependency/imports(consumer: Text, dependency: Text):
+    sentence: {consumer} imports {dependency}
+    mode consumer -> dependency: many
+
+relation dependency/depends(consumer: Text, dependency: Text):
+    sentence: {consumer} depends on {dependency}
+    mode consumer -> dependency: many
+
+model dependency:
+    "app" imports "library"
+    "library" imports "core"
+
+law dependency/transitive:
+    ?consumer depends on ?dependency
+    when:
+        ?consumer imports ?via
+        ?via depends on ?dependency
+
+query dependency:
+    ?dependency where "app" depends on ?dependency
 "#;
 
     #[test]
@@ -1212,5 +1374,85 @@ query catalog:
         );
         let error = parse(&source).expect_err("multiple intent clauses must fail");
         assert!(error.message.contains("exactly one closed clause"));
+    }
+
+    #[test]
+    fn parses_recursive_multi_premise_law_with_resolved_roles() {
+        let program = parse(LAW_FIXTURE).expect("law fixture parses");
+        assert_eq!(program.laws.len(), 1);
+        let law = &program.laws[0];
+        assert_eq!(law.name, "dependency/transitive");
+        assert_eq!(law.conclusion.relation, "dependency/depends");
+        assert_eq!(
+            law.conclusion.roles["consumer"].kind,
+            TermKind::Variable("consumer".to_owned())
+        );
+        assert_eq!(law.premises.len(), 2);
+        assert_eq!(law.premises[0].relation, "dependency/imports");
+        assert_eq!(law.premises[1].relation, "dependency/depends");
+        assert_eq!(
+            law.premises[0].roles["dependency"].kind,
+            TermKind::Variable("via".to_owned())
+        );
+        assert_eq!(law.span.line, 13);
+        assert_eq!(law.conclusion.span.line, 14);
+        assert_eq!(law.premises[1].span.line, 17);
+    }
+
+    #[test]
+    fn rejects_law_without_a_conclusion() {
+        let source = LAW_FIXTURE.replacen("    ?consumer depends on ?dependency", "    when:", 1);
+        let error = parse(&source).expect_err("law without conclusion must fail");
+        assert!(error.message.contains("conclusion clause"));
+    }
+
+    #[test]
+    fn rejects_law_without_when() {
+        let source = LAW_FIXTURE.replace("    when:\n", "");
+        let error = parse(&source).expect_err("law without when must fail");
+        assert!(error.message.contains("four-space 'when:'"));
+    }
+
+    #[test]
+    fn rejects_law_without_a_premise() {
+        let source = LAW_FIXTURE.replace(
+            "        ?consumer imports ?via\n        ?via depends on ?dependency\n",
+            "",
+        );
+        let error = parse(&source).expect_err("law without premise must fail");
+        assert!(error.message.contains("one or more eight-space premise"));
+    }
+
+    #[test]
+    fn rejects_extra_law_members() {
+        let source = LAW_FIXTURE.replace(
+            "        ?via depends on ?dependency\n",
+            "        ?via depends on ?dependency\n    because:\n",
+        );
+        let error = parse(&source).expect_err("extra law member must fail");
+        assert!(error.message.contains("only one conclusion"));
+    }
+
+    #[test]
+    fn rejects_law_with_unknown_sentence_shape() {
+        let source = LAW_FIXTURE.replace("?via depends on ?dependency", "?via needs ?dependency");
+        let error = parse(&source).expect_err("unknown law sentence must fail");
+        assert!(error.message.contains("no declared sentence shape"));
+    }
+
+    #[test]
+    fn rejects_duplicate_law_names() {
+        let source = format!(
+            "{LAW_FIXTURE}\nlaw dependency/transitive:\n    ?consumer depends on ?dependency\n    when:\n        ?consumer imports ?dependency\n"
+        );
+        let error = parse(&source).expect_err("duplicate law name must fail");
+        assert!(error.message.contains("duplicate law name"));
+    }
+
+    #[test]
+    fn rejects_law_outside_model_namespace() {
+        let source = LAW_FIXTURE.replace("law dependency/transitive:", "law pantry/transitive:");
+        let error = parse(&source).expect_err("non-model law namespace must fail");
+        assert!(error.message.contains("declared model namespace"));
     }
 }
