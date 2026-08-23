@@ -13,7 +13,11 @@ milestone authority. This file is an editorially normalized tracked copy of the
 operator's current surface draft, so decisions do not depend on an external
 document. Its relational invariants control direction over earlier
 human-surface recommendations. Its exact punctuation and specimens remain
-revisable until M0 freezes them through corpus and elaboration evidence.
+revisable until M0 freezes them through corpus and elaboration evidence, except
+for three controlling design rulings already fixed here: membership is only
+`x ∈ Y`; `:` is stable-handle binding and never membership; and canonical
+layout is exactly two spaces per level, spaces only. None of these rulings is a
+claim that the current parser implements the reset profile.
 
 **Scope:** this supersedes the human-surface recommendations and specimens in
 the earlier strategy packet. It does not discard Clause's semantic core,
@@ -55,8 +59,8 @@ Reject this as canonical Clause:
 
 ```clause
 iron-door: Door
-    connects: Cellar to Armory
-    state: locked
+  connects: Cellar to Armory
+  state: locked
 ```
 
 That form smuggles in four ideas Clause does not need:
@@ -70,21 +74,25 @@ The canonical relational form is:
 
 ```clause
 iron-door
-    Door
-    connects Cellar to Armory
-    state locked
+  Door
+  connects Cellar to Armory
+  state: locked
 ```
 
 Its exact elaboration is:
 
 ```clause
-iron-door member of Door
+iron-door ∈ Door
 iron-door connects Cellar to Armory
-iron-door state locked
+state of iron-door: locked
 ```
 
-All three propositions are co-equal graph claims. The block merely avoids
-repeating `iron-door` in the designated focus role.
+The three children do not smuggle in object fields, but neither do they collapse
+to one undifferentiated edge form. Bare `Door` is focus membership sugar;
+`connects Cellar to Armory` is an ordinary role-labelled relational claim; and
+`state: locked` binds the focused `state of iron-door` projection handle/current
+binding to `locked`. The block avoids repeating the designated focus while each
+child retains the semantics proved by its own form.
 
 The compiler may later lower `state` to an enum field, `connects` to an
 adjacency index, and membership to a bitset. Those are physical strategies.
@@ -107,32 +115,32 @@ Adopt:
 
 ```clause
 requires
-    game
-    three
+  game
+  three
 ```
 
 Retract:
 
 ```clause
 type: Vec2
-    x: F32
-    y: F32
+  x: F32
+  y: F32
 ```
 
 and:
 
 ```clause
 type Vec2:
-    x: F32
-    y: F32
+  x: F32
+  y: F32
 ```
 
 Adopt:
 
 ```clause
 Vec2
-    x: F32
-    y: F32
+  x: F32
+  y: F32
 ```
 
 The body proves this is a structural value shape. The word `type` adds no
@@ -143,17 +151,17 @@ Retract:
 
 ```clause
 player: Player
-    position: (0, 0)
-    velocity: (0, 0)
+  position: (0, 0)
+  velocity: (0, 0)
 ```
 
 Adopt:
 
 ```clause
 player
-    Player
-    position (0, 0)
-    velocity (0, 0)
+  Player
+  position (0, 0)
+  velocity (0, 0)
 ```
 
 `player` is a grounded symbol. `Player`, `position`, and `velocity` are claims
@@ -164,7 +172,7 @@ initialization or admission. Adopt `player position (0, 0)`, or under focus:
 
 ```clause
 player
-    position (0, 0)
+  position (0, 0)
 ```
 
 Reserve `=` for actual equality.
@@ -223,8 +231,8 @@ block:
 
 ```clause
 Vec2
-    x: F32
-    y: F32
+  x: F32
+  y: F32
 ```
 
 This means `Vec2` is a value shape with labels `x` and `y`, each bound to
@@ -248,41 +256,42 @@ participate in membership and relations.
 
 ### 3.3 Categories and contracts
 
-A category is not a separate ontological species. It is a semantic symbol used
-as the target of membership and, optionally, as the focus of contracts.
+A category is not a separate ontological species. It is an ordinary semantic
+set used on the right of membership and, optionally, as the focus of contracts.
 
 ```clause
 Game
-    Chess
-    Soccer
+  Chess
+  Soccer
 ```
 
 means:
 
 ```clause
-Chess member of Game
-Soccer member of Game
+Chess ∈ Game
+Soccer ∈ Game
 ```
 
 A member may itself be a category:
 
 ```clause
 Chess
-    Blitz
-    Rapid
-    Classical
+  Blitz
+  Rapid
+  Classical
 ```
 
-Therefore `Chess` is both a member of `Game` and a category for its own
-members. Clause should not force it into an exclusive “instance” or “type” box.
+Therefore `Chess` is both a member of the `Game` set and a semantic set for its
+own members. Sets may themselves belong to sets. Clause should not force a
+symbol into an exclusive “instance” or “type” box.
 
 A category contract constrains relations its members participate in:
 
 ```clause
 Player
-    position -> Vec2
-    velocity -> Vec2
-    radius -> F32
+  position -> Vec2
+  velocity -> Vec2
+  radius -> F32
 ```
 
 This does not declare fields on a `Player` object. It says that, for members of
@@ -321,8 +330,8 @@ In a value-shape block:
 
 ```clause
 Vec2
-    x: F32
-    y: F32
+  x: F32
+  y: F32
 ```
 
 `x` is bound to the domain `F32` as a structural slot declaration.
@@ -331,7 +340,7 @@ A pure definition is also a binding:
 
 ```clause
 distance between ?a and ?b:
-    length(position of ?a - position of ?b)
+  length(position of ?a - position of ?b)
 ```
 
 The term pattern on the left is bound to the pure computation on the right.
@@ -340,7 +349,7 @@ An explicit relation schema may bind a stable human anchor to a phrase pattern:
 
 ```clause
 connects:
-    door: Door connects origin: Space to destination: Space
+  door: Door connects origin: Space to destination: Space
 ```
 
 The inner colons bind role names to participant domains.
@@ -349,7 +358,7 @@ The inner colons bind role names to participant domains.
 
 - opens an indented block;
 - is an instance of;
-- is a member of;
+- expresses membership;
 - has a field;
 - assign a mutable property;
 - equality;
@@ -357,16 +366,33 @@ The inner colons bind role names to participant domains.
 
 Therefore `iron-door: Door` is not canonical membership syntax. If accepted at
 all, it means an alias/binding and must never silently elaborate to
-`iron-door member of Door`.
+`iron-door ∈ Door`. There is no ASCII `in` alias, no `::` alias, and no colon
+membership form. Canonical membership is only:
 
-Likewise `state: locked` is not the canonical relational assertion. Use
-`state locked` within a focus block, or `iron-door state locked` in expanded
-form.
+```clause
+iron-door ∈ Door
+```
+
+Membership is a role-labelled semantic relation whose member and set operands
+accept checked terms or patterns, including holes in laws and queries. The
+surface gives that relation exactly one authored infix spelling.
+
+Within a focus block, `state: locked` is canonical binding syntax. It binds the
+focused projection handle/current binding `state of iron-door` to `locked`; it
+does not elaborate to a generic `iron-door state locked` edge.
 
 ## 5. Layout has three inferred forms
 
 Indentation should be semantically useful while remaining erasable. It must
 never introduce ownership or nested object identity.
+
+Canonical indentation is exactly two spaces per level, using spaces only. A
+tab is rejected. A line whose leading-space width is not the exact width for
+its structural depth is rejected with the observed width and expected depth;
+the reader does not guess whether it meant a sibling or child. The canonical
+formatter may normalize whitespace only after a structural tree has parsed
+successfully. Canonical whitespace-only reformatting must not change elaborated
+semantics or semantic identity.
 
 The reader should classify an indented block by the forms of its children.
 
@@ -377,17 +403,17 @@ declared reserved form such as `requires`:
 
 ```clause
 Famous Chess Openings
-    Sicilian Defense
-    Ruy Lopez
-    Queen's Gambit
+  Sicilian Defense
+  Ruy Lopez
+  Queen's Gambit
 ```
 
 It lowers to:
 
 ```clause
-Sicilian Defense member of Famous Chess Openings
-Ruy Lopez member of Famous Chess Openings
-Queen's Gambit member of Famous Chess Openings
+Sicilian Defense ∈ Famous Chess Openings
+Ruy Lopez ∈ Famous Chess Openings
+Queen's Gambit ∈ Famous Chess Openings
 ```
 
 This preserves the ordinary prior that an indented list contains members of
@@ -402,54 +428,58 @@ namespace:
 
 ```clause
 Vec2
-    x: F32
-    y: F32
+  x: F32
+  y: F32
 ```
 
 The children do not become graph claims. They are bindings in the structural
 definition of `Vec2`.
 
-### 5.3 Focused claim block
+### 5.3 Focused block
 
-A block containing relation fragments, contracts, transitions, or other clause
-forms establishes its heading as the focus participant:
+A block containing relation fragments, bindings, contracts, transitions, or
+other non-bare forms establishes its heading as the focus participant:
 
 ```clause
 iron-door
-    Door
-    connects Cellar to Armory
-    state locked
+  Door
+  connects Cellar to Armory
+  state: locked
 ```
 
 It lowers to:
 
 ```clause
-iron-door member of Door
+iron-door ∈ Door
 iron-door connects Cellar to Armory
-iron-door state locked
+state of iron-door: locked
 ```
 
-Within a focused claim block, a bare category name is a unary classification
-claim about the focus.
+Within a focused block, a bare set name is membership sugar about the focus, a
+relation fragment is an ordinary relational claim with the focus supplied to
+its designated role, and a binding binds the corresponding focused projection
+handle/current binding.
 
 ### 5.4 Mixed blocks have one deterministic reading
 
-The presence of any non-bare child makes the block a focused claim block.
+The presence of any non-bare child makes the block a focused block.
 Therefore:
 
 ```clause
 Thing
-    A
-    B
-    relation value
+  A
+  B
+  relation value
+  state: active
 ```
 
 means:
 
 ```clause
-Thing member of A
-Thing member of B
+Thing ∈ A
+Thing ∈ B
 Thing relation value
+state of Thing: active
 ```
 
 It does **not** enumerate `A` and `B` beneath `Thing`.
@@ -459,31 +489,32 @@ separate blocks:
 
 ```clause
 Thing
-    A
-    B
+  A
+  B
 
 Thing
-    relation value
+  relation value
 ```
 
 The canonical formatter should preserve this separation. An editor should warn
-before an edit changes an all-bare enumeration block into a focused claim
+before an edit changes an all-bare enumeration block into a focused
 block, because that edit changes the interpretation of the existing bare
 lines.
 
 This structural rule resolves the apparent conflict between `Game / Chess` and
-`iron-door / Door / state locked` without fuzzy English parsing and without
+`iron-door / Door / state: locked` without fuzzy English parsing and without
 making membership direction depend on capitalization.
 
 ### 5.5 Layout equivalence is an invariant
 
-For every focused block, the compiler must be able to print its fully expanded
-co-equal clauses.
+For every focused block, the compiler must print a fully expanded sequence of
+semantically typed judgments: membership, relational claim, or focused binding
+according to each child form.
 
 Moving between focused and expanded forms must not change:
 
-- proposition identity;
-- participant roles;
+- proposition or binding identity;
+- participant roles and focused projection handles;
 - provenance except source span;
 - revision identity after canonical elaboration;
 - query results;
@@ -495,6 +526,7 @@ Clause should adopt this vocabulary and reject synonyms that blur the axes.
 
 | Form | Meaning |
 | --- | --- |
+| `∈` | membership; the only authored membership form |
 | `:` | binding |
 | `=` | equality proposition |
 | `->` | result/projection direction or return contract |
@@ -554,8 +586,8 @@ A public or ambiguous relation can use an explicit schema binding:
 
 ```clause
 connects:
-    door: Door connects origin: Space to destination: Space
-    door origin -> destination*
+  door: Door connects origin: Space to destination: Space
+  door origin -> destination*
 ```
 
 This says:
@@ -578,9 +610,9 @@ The common one-subject/one-value case should be much smaller:
 
 ```clause
 Player
-    position -> Vec2
-    velocity -> Vec2
-    radius -> F32
+  position -> Vec2
+  velocity -> Vec2
+  radius -> F32
 ```
 
 Each line declares a focused binary relation. Conceptually:
@@ -671,8 +703,8 @@ The two `?opening` occurrences correlate through identity.
 
 ```clause
 ?origin has a usable egress path to ?destination if
-    ?door connects ?origin to ?destination
-    ?door passed Fire-Marshal Inspection
+  ?door connects ?origin to ?destination
+  ?door passed Fire-Marshal Inspection
 ```
 
 The conclusion plus `if` body proves that this is a law. Do not require `Law`.
@@ -681,9 +713,9 @@ A recursive law is equally direct:
 
 ```clause
 ?origin has a usable egress path to ?destination if
-    ?door connects ?origin to ?intermediate
-    ?door passed Fire-Marshal Inspection
-    ?intermediate has a usable egress path to ?destination
+  ?door connects ?origin to ?intermediate
+  ?door passed Fire-Marshal Inspection
+  ?intermediate has a usable egress path to ?destination
 ```
 
 ### 8.2 Optional human labels are bindings
@@ -693,9 +725,9 @@ tooling. When a human name is useful:
 
 ```clause
 recursive route:
-    ?origin has a usable egress path to ?destination if
-        ?door connects ?origin to ?intermediate
-        ?intermediate has a usable egress path to ?destination
+  ?origin has a usable egress path to ?destination if
+    ?door connects ?origin to ?intermediate
+    ?intermediate has a usable egress path to ?destination
 ```
 
 The colon binds the label `recursive route` to the law. It does not declare a
@@ -707,7 +739,7 @@ Do not invent field defaults. To say every coin has radius 8:
 
 ```clause
 ?coin radius 8 if
-    ?coin member of Coin
+  ?coin ∈ Coin
 ```
 
 That is a universal relational law. It is not a default value installed into a
@@ -717,10 +749,10 @@ A category contract and a universal fact remain distinct:
 
 ```clause
 Coin
-    radius -> F32
+  radius -> F32
 
 ?coin radius 8 if
-    ?coin member of Coin
+  ?coin ∈ Coin
 ```
 
 ## 9. Queries begin with the relation
@@ -744,8 +776,8 @@ Multiple named holes yield rows:
 
 ```clause
 select ?person
-    ?person likes ?opening
-    Alice likes ?opening
+  ?person likes ?opening
+  Alice likes ?opening
 ```
 
 Only `person` is projected. `opening` is an internal correlated hole. The
@@ -762,14 +794,14 @@ returns `Bool`: does at least one solution exist?
 
 ```clause
 select one ?person
-    ?person likes Chess
+  ?person likes Chess
 ```
 
 requires exactly one result or fails its cardinality contract.
 
 ```clause
 select first ?person
-    ?person likes Chess
+  ?person likes Chess
 ```
 
 returns the canonical first result.
@@ -778,7 +810,7 @@ Random choice is not `any`:
 
 ```clause
 sample ?person
-    ?person likes Chess
+  ?person likes Chess
 ```
 
 Randomness requires an explicit random capability or seed and is not a pure
@@ -803,17 +835,17 @@ Keep explicit words for genuinely different operations:
 
 ```clause
 why
-    ICU-A has a usable egress path to North-Exit
+  ICU-A has a usable egress path to North-Exit
 
 prevent all minimal
-    ICU-A has a usable egress path to North-Exit
+  ICU-A has a usable egress path to North-Exit
 using
-    passed
+  passed
 
 achieve all minimal
-    Isolation-Room has a usable egress path to North-Exit
+  Isolation-Room has a usable egress path to North-Exit
 using
-    passed
+  passed
 ```
 
 These are not cardinality variants of ordinary selection. They navigate proof
@@ -829,7 +861,7 @@ A successor Revision is recognizable from exact ancestry and signed deltas:
 
 ```clause
 door-101-withdrawn from egress
-    - Door 101 passed Fire-Marshal Inspection
+  - Door 101 passed Fire-Marshal Inspection
 ```
 
 No `Revision`, `from:`, or `withdraw:` scaffolding is needed.
@@ -838,7 +870,7 @@ An additive candidate is equally direct:
 
 ```clause
 isolation-route-candidate from egress
-    + Door 105 passed Fire-Marshal Inspection
+  + Door 105 passed Fire-Marshal Inspection
 ```
 
 The semantic core still records exact base Revision, exact admitted or
@@ -852,18 +884,18 @@ Surface compression must not collapse authority distinctions.
 
 ```clause
 observe
-    build-host supports wasm
+  build-host supports wasm
 via
-    probe! build-host
+  probe! build-host
 
 assume
-    target supports threads
+  target supports threads
 within
-    require
-        worker-pool is safe
+  require
+    worker-pool is safe
 
 intend
-    North materializes under wasm as "build/North.wasm"
+  North materializes under wasm as "build/North.wasm"
 ```
 
 An observation, assumption, intention, receipt, and admitted assertion remain
@@ -878,7 +910,7 @@ Use `~>` between complete old and new clauses:
 
 ```clause
 player position ?position ~>
-    player position (?position + velocity of player * ?dt)
+  player position (?position + velocity of player * ?dt)
 ```
 
 This means: in the successor state, replace the matched `position` proposition
@@ -888,7 +920,7 @@ For a status change:
 
 ```clause
 coin state active ~>
-    coin state collected
+  coin state collected
 ```
 
 This is not equality and not assignment. It is temporal succession.
@@ -897,8 +929,8 @@ This is not equality and not assignment. It is temporal succession.
 
 ```clause
 on frame ?dt
-    player position ?position ~>
-        player position (?position + velocity of player * ?dt)
+  player position ?position ~>
+    player position (?position + velocity of player * ?dt)
 ```
 
 The event shape binds `?dt` for the transition scope.
@@ -909,7 +941,7 @@ A contract such as:
 
 ```clause
 Player
-    position -> Vec2
+  position -> Vec2
 ```
 
 establishes that each player has one current `position` value in a state.
@@ -919,10 +951,10 @@ For multi-valued relations, use exact deltas:
 
 ```clause
 on KeyLeft pressed
-    + player intends movement left
+  + player intends movement left
 
 on KeyLeft released
-    - player intends movement left
+  - player intends movement left
 ```
 
 ### 11.3 Transition blocks are transactions
@@ -971,7 +1003,7 @@ A pure game program should normally derive a render plan relationally:
 scene includes sprite "player" at position of player
 
 scene includes sprite "coin" at position of coin if
-    coin state active
+  coin state active
 ```
 
 The Three.js adapter realizes that plan:
@@ -990,31 +1022,31 @@ ontology, not that target strategy.
 
 ```clause
 Space
-    Cellar
-    Armory
+  Cellar
+  Armory
 
 DoorState
-    locked
-    unlocked
+  locked
+  unlocked
 
 Door
-    state -> DoorState
+  state -> DoorState
 ```
 
 ### Relation schema
 
 ```clause
 connects:
-    door: Door connects origin: Space to destination: Space
+  door: Door connects origin: Space to destination: Space
 ```
 
 ### Grounded semantic node and claims
 
 ```clause
 iron-door
-    Door
-    connects Cellar to Armory
-    state locked
+  Door
+  connects Cellar to Armory
+  state: locked
 ```
 
 ### Query
@@ -1033,8 +1065,8 @@ any ?door connects Cellar to Armory
 
 ```clause
 on unlock iron-door
-    iron-door state locked ~>
-        iron-door state unlocked
+  iron-door state locked ~>
+    iron-door state unlocked
 ```
 
 ### Explicit flattening
@@ -1042,9 +1074,9 @@ on unlock iron-door
 The authored focus block is exactly equivalent to:
 
 ```clause
-iron-door member of Door
+iron-door ∈ Door
 iron-door connects Cellar to Armory
-iron-door state locked
+state of iron-door: locked
 ```
 
 No record, constructor, instance, field, or object is part of the meaning.
@@ -1053,73 +1085,73 @@ No record, constructor, instance, field, or object is part of the meaning.
 
 ```clause
 Space
-    ICU-A
-    East-Corridor
-    West-Corridor
-    North-Exit
-    Isolation-Room
+  ICU-A
+  East-Corridor
+  West-Corridor
+  North-Exit
+  Isolation-Room
 
 Door
-    Door 101
-    Door 102
-    Door 103
-    Door 104
-    Door 105
-    Door 106
+  Door 101
+  Door 102
+  Door 103
+  Door 104
+  Door 105
+  Door 106
 
 Inspection
-    Fire-Marshal Inspection
+  Fire-Marshal Inspection
 
 connects:
-    door: Door connects origin: Space to destination: Space
-    door origin -> destination*
+  door: Door connects origin: Space to destination: Space
+  door origin -> destination*
 
 passed:
-    door: Door passed inspection: Inspection
-    door -> inspection*
+  door: Door passed inspection: Inspection
+  door -> inspection*
 
 route:
-    origin: Space has a usable egress path to destination: Space
-    origin -> destination*
+  origin: Space has a usable egress path to destination: Space
+  origin -> destination*
 
 Door 101
-    connects ICU-A to East-Corridor
-    passed Fire-Marshal Inspection
+  connects ICU-A to East-Corridor
+  passed Fire-Marshal Inspection
 
 Door 102
-    connects East-Corridor to North-Exit
-    passed Fire-Marshal Inspection
+  connects East-Corridor to North-Exit
+  passed Fire-Marshal Inspection
 
 Door 103
-    connects ICU-A to West-Corridor
-    passed Fire-Marshal Inspection
+  connects ICU-A to West-Corridor
+  passed Fire-Marshal Inspection
 
 Door 104
-    connects West-Corridor to North-Exit
-    passed Fire-Marshal Inspection
+  connects West-Corridor to North-Exit
+  passed Fire-Marshal Inspection
 
 Door 105
-    connects Isolation-Room to East-Corridor
+  connects Isolation-Room to East-Corridor
 
 Door 106
-    connects Isolation-Room to West-Corridor
+  connects Isolation-Room to West-Corridor
 
 ?origin has a usable egress path to ?destination if
-    ?door connects ?origin to ?destination
-    ?door passed Fire-Marshal Inspection
+  ?door connects ?origin to ?destination
+  ?door passed Fire-Marshal Inspection
 
 ?origin has a usable egress path to ?destination if
-    ?door connects ?origin to ?intermediate
-    ?door passed Fire-Marshal Inspection
-    ?intermediate has a usable egress path to ?destination
+  ?door connects ?origin to ?intermediate
+  ?door passed Fire-Marshal Inspection
+  ?intermediate has a usable egress path to ?destination
 
 ICU-A has a usable egress path to ?destination
 
 why
-    ICU-A has a usable egress path to North-Exit
+  ICU-A has a usable egress path to North-Exit
 
 door-101-withdrawn from egress
-    - Door 101 passed Fire-Marshal Inspection
+  - Door 101 passed Fire-Marshal Inspection
 
 diff egress -> door-101-withdrawn
 ```
@@ -1147,76 +1179,76 @@ This is the first game surface Clause should try to make real.
 
 ```clause
 requires
-    game
-    three
+  game
+  three
 
 Vec2
-    x: F32
-    y: F32
+  x: F32
+  y: F32
 
 CoinState
-    active
-    collected
+  active
+  collected
 
 Player
-    position -> Vec2
-    velocity -> Vec2
-    radius -> F32
-    score -> Int
+  position -> Vec2
+  velocity -> Vec2
+  radius -> F32
+  score -> Int
 
 Coin
-    position -> Vec2
-    radius -> F32
-    value -> Int
-    state -> CoinState
+  position -> Vec2
+  radius -> F32
+  value -> Int
+  state -> CoinState
 
 player
-    Player
-    position (0, 0)
-    velocity (0, 0)
-    radius 12
-    score 0
+  Player
+  position (0, 0)
+  velocity (0, 0)
+  radius 12
+  score 0
 
 coin
-    Coin
-    position (120, 40)
-    radius 8
-    value 10
-    state active
+  Coin
+  position (120, 40)
+  radius 8
+  value 10
+  state active
 
 distance between ?a and ?b:
-    length(position of ?a - position of ?b)
+  length(position of ?a - position of ?b)
 
 ?a overlaps ?b if
-    distance between ?a and ?b < radius of ?a + radius of ?b
+  distance between ?a and ?b < radius of ?a + radius of ?b
 
 player collects coin if
-    coin state active
-    player overlaps coin
+  coin state active
+  player overlaps coin
 
 on frame ?dt
-    player velocity ? ~>
-        player velocity (input movement * 300)
+  player velocity ? ~>
+    player velocity (input movement * 300)
 
-    player position ?position ~>
-        player position (?position + velocity of player * ?dt)
+  player position ?position ~>
+    player position (?position + velocity of player * ?dt)
 
-    coin state active ~>
-        coin state collected
-    if
-        player collects coin
+  coin state active ~>
+    coin state collected
+  if
+    player collects coin
 
-    player score ?score ~>
-        player score (?score + value of coin)
-    if
-        player collects coin
+  player score ?score ~>
+    player score (?score + value of coin)
+  if
+    player collects coin
 
-    receipt: render! scene
+  receipt: render! scene
 
 scene includes sprite "player" at position of player
 
 scene includes sprite "coin" at position of coin if
-    coin state active
+  coin state active
 ```
 
 This specimen is intended to prove that:
@@ -1225,7 +1257,8 @@ This specimen is intended to prove that:
 - `Vec2` is a value shape, not a semantic object category;
 - `Player` and `Coin` are categories with relation contracts, not classes with
   fields;
-- `player` and `coin` are grounded symbols with co-equal claims;
+- `player` and `coin` are grounded symbols whose focused children retain their
+  membership, relation, or binding semantics by form;
 - value projections derive from single-valued relations;
 - collision is an ordinary recursive definition or law;
 - state changes are clause-to-clause transitions;
@@ -1245,18 +1278,23 @@ conceptually like:
 
 ```text
 clause connects
-    door: iron-door
-    origin: Cellar
-    destination: Armory
+  door: iron-door
+  origin: Cellar
+  destination: Armory
 ```
 
 or:
 
 ```text
-member-of
-    member: iron-door
-    category: Door
+clause
+  relation: ∈
+  member: iron-door
+  set: Door
 ```
+
+The latter is structural interchange, not a second authored membership form:
+its `:` lines are bindings inside the debug record and its relation value is
+the same `∈` identity. Ordinary authored membership remains only `x ∈ Y`.
 
 This form is for ambiguity repair, compiler bootstrap, machine interchange,
 diagnostics, agent edits, schema migration, proof inspection, and structural
@@ -1279,10 +1317,10 @@ semantics here.
 
 ### Stage B — block classification
 
-Classify homogeneous blocks as enumeration; binding or shape; focused claims or
-contracts; definition or law; query; event or transition; revision delta; or
-epistemic/effect mood. Reject structurally unresolved forms or require the
-formatter to split them.
+Classify homogeneous blocks as enumeration; binding or shape; focused blocks
+containing membership sugar, relational claims, or focused bindings; definition
+or law; query; event or transition; revision delta; or epistemic/effect mood.
+Reject structurally unresolved forms or require the formatter to split them.
 
 ### Stage C — recursive phrase resolution
 
@@ -1295,9 +1333,10 @@ current focus role. It may not use probabilistic NLP.
 
 ### Stage D — role-labelled elaboration
 
-Elaborate all sugar into stable semantic nodes: grounded identities, membership
-clauses, relation identity, named participant roles, bindings, laws, query
-projections, transitions, exact deltas, and effect requests.
+Elaborate all sugar into stable semantic nodes: grounded identities, `∈`
+membership clauses, relation identity, named participant roles, stable-handle
+bindings including focused projection bindings, laws, query projections,
+transitions, exact deltas, and effect requests.
 
 ### Stage E — existing semantic core
 
@@ -1318,7 +1357,7 @@ codemod, then remove the ceremonial forms unless a real consumer requires them.
 | Current | Replacement |
 | --- | --- |
 | `Space: Type` | `Space` |
-| `thing: Space` for membership | focused bare `Space` or explicit `thing member of Space` |
+| legacy `thing: Space` where classification was intended | never reinterpret the colon; rewrite explicitly to `thing ∈ Space` or unambiguous list/focus membership sugar and report the inference |
 | `name: Relation` | inferred phrase schema; optional `name:` schema binding |
 | `{role: Type}` | `role: Type` inside schema only |
 | `mode ...` | arrow and cardinality contract |
@@ -1331,7 +1370,7 @@ codemod, then remove the ceremonial forms unless a real consumer requires them.
 | `declare:` | naked ground claims in admission context |
 | `find all ?x` | naked hole clause or `select` |
 | `use game` | `requires` block |
-| object-like `property: value` claims | relational `property value` under focus |
+| object-like `property: value` under focus | focused projection binding such as `state of thing: value`; never an owned field or generic relation edge |
 | `:=` | `:` |
 
 The migration tool should preserve semantic IDs and print a report for every
@@ -1343,20 +1382,25 @@ The new surface is not accepted merely because examples look attractive.
 
 ### Relational honesty
 
-- `iron-door` focus form and three expanded clauses produce identical checked
-  semantics.
+- the `iron-door` focus form and its expanded membership, relational claim, and
+  focused binding produce identical checked semantics;
 - No semantic node created by a focus block contains child fields or owned
   nested records.
 - `iron-door: Door` never silently means membership.
 
 ### Block determinism
 
-- all-bare enumeration lowers child-to-parent membership;
+- all-bare enumeration lowers each child to `child ∈ heading`;
 - binding blocks remain structural bindings, not graph assertions;
-- any non-bare child makes the block a focused claim block;
+- any non-bare child makes the block a focused block;
 - bare children inside a focused block classify the focus;
 - the formatter separates enumeration blocks from contract or claim blocks and
   warns before edits that would reclassify an existing block.
+- canonical indentation is exactly two spaces per level and spaces only;
+- tabs reject with an exact diagnostic;
+- noncanonical leading-space widths reject rather than guessing structure;
+- formatting an already parsed tree to canonical whitespace preserves
+  elaborated semantics and identity.
 
 ### Hole semantics
 
@@ -1400,13 +1444,22 @@ terms, holes and correlation, laws, queries, revisions, transitions, effects,
 the hospital program, and the one-coin game.
 
 For every example retain source, grouped tree, elaborated role graph, canonical
-rendering, diagnostics, and expected result.
+rendering, diagnostics, and expected result. Every example uses exactly two
+spaces per level. The corpus includes nested-depth formatting/round-trip cases,
+tab rejection, explicit one-, three-, and four-space rejection at a depth that
+expects two spaces, and other noncanonical-width rejection with observed width
+and exact expected depth. It also includes ordinary-term and hole-pattern `∈`
+membership in laws, a focus/expanded oracle that distinguishes membership,
+relation, and binding judgments, whitespace-only canonical-reformat identity
+parity, and legacy-colon classification migration that writes and reports
+explicit `∈` rather than reinterpreting `:`.
 
 ### Milestone 1 — New layout and focus profile
 
-Implement bare symbol grounding, enumeration blocks, binding or shape blocks,
-focused claim blocks, explicit flattening display, and multiword semantic names
-without brackets. Lower into the current semantic core.
+Implement bare symbol grounding, `∈` membership, enumeration blocks, binding or
+shape blocks, focused blocks with membership sugar, relational claims, and
+focused projection bindings, explicit flattening display, and multiword
+semantic names without brackets. Lower into the current semantic core.
 
 ### Milestone 2 — Compact relation schemas
 
@@ -1460,7 +1513,8 @@ Phrases are exact declared grammar, not statistical English interpretation.
 
 ### An object language with prettier property syntax
 
-Focused claims are co-equal clauses. They do not create objects with fields.
+Focused relational claims are co-equal clauses; focused bindings remain
+distinct binding judgments. Neither creates objects with fields.
 
 ### A generic triple interpreter in the hot path
 
@@ -1499,12 +1553,15 @@ Treat this document as a surface reset, not a patch list.
 Implementation proceeds from these invariants:
 
 1. Bare names ground semantic symbols.
-2. Categories emerge through membership and contracts; they are not declared
-   with `Type`.
+2. Categories are ordinary semantic sets; membership is only `x ∈ Y`, and sets
+   may themselves belong to sets.
 3. Semantic entities do not have fields.
-4. `:` means binding and nothing else.
-5. Enumeration, binding, and focused-claim blocks are structurally distinct.
-6. Indentation is erasable projection sugar over co-equal clauses.
+4. `:` means stable-handle binding and nothing else, including focused
+   projection/current bindings.
+5. Enumeration, binding, and focused blocks are structurally distinct; focused
+   children retain membership, relation, or binding semantics by form.
+6. Indentation is erasable projection sugar, exactly two spaces per level,
+   spaces only; tabs and noncanonical widths reject.
 7. Relation phrases are exact, role-labelled, recursively compositional
    grammar.
 8. `?` is a hole; `?name` is a named or reusable hole.

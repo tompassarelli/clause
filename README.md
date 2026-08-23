@@ -13,10 +13,9 @@ currently uses one native `:` grammar for Types, Relations, Models, Laws,
 Revisions, and their members. That grammar is executable truth and a migration
 oracle, not the target human surface. The provisional [Clause Surface
 Reset](SURFACE.md) replaces the earlier surface recommendations with grounded
-symbols, bindings, membership, focused co-equal claims, recursive
-role-labelled clauses, and explicit semantic moods. It remains revising M0
-design input: no proposed spelling is implemented merely because it appears in
-that draft.
+symbols, bindings, membership, focused forms, recursive role-labelled clauses,
+and explicit semantic moods. It remains provisional, revising M0 design input:
+no target spelling is implemented merely because it appears in that draft.
 
 An emitted `.rs` file is an executable projection: it carries the referenced
 sealed Revisions and the resolved request sequence, not the authoring source or
@@ -35,6 +34,38 @@ North application vertical. This is product direction, not a claim about the
 current implementation. See the [Clause roadmap](ROADMAP.md) for the authority
 model, dependency order, prototype gates, and acceptance criteria.
 
+## Target surface rulings
+
+Three exact rulings now constrain the provisional profile and its roadmap:
+
+- `x ∈ Y` is the only authored membership form; there is no ASCII `in`, `::`,
+  or colon membership alias;
+- `:` means stable-handle binding, including a focused projection/current
+  binding;
+- canonical indentation is exactly two spaces per level, spaces only; tabs and
+  a leading width inconsistent with structural depth reject.
+
+The canonical focus specimen is:
+
+```clause
+iron-door
+  Door
+  connects Cellar to Armory
+  state: locked
+```
+
+Its exact elaboration keeps three distinct judgments:
+
+```clause
+iron-door ∈ Door
+iron-door connects Cellar to Armory
+state of iron-door: locked
+```
+
+The current parser does not implement this profile. [ROADMAP.md](ROADMAP.md)
+places the corpus, lossless layout contract, focused-binding authority, and
+migration proof before parser work.
+
 ## Repository and artifact map
 
 | Path or artifact | Authority and lifecycle |
@@ -46,91 +77,13 @@ model, dependency order, prototype gates, and acceptance criteria.
 | `target/`, emitted `.rs` files and binaries, and temporary sealed Revision files | Disposable build or projection artifacts unless deliberately retained for a named consumer. |
 | `bin/clause` | Repository-local shell wrapper for the native Cargo CLI. |
 
-## The complete current-profile hospital program
+## The current-profile hospital oracle
 
 `examples/hospital.clause` is authoritative for the current executable profile
-and remains the semantic/migration oracle. The complete, copy-pasteable block
-below is its verified documentation projection, not the future canonical
-surface and not a sketch:
-
-```clause
-Space: Type
-Door: Type
-Inspection: Type
-
-egress/connects: Relation
-    {door: Door} connects {origin: Space} to {destination: Space}
-    mode door, origin -> destination: many
-
-egress/passed: Relation
-    {door: Door} passed {inspection: Inspection}
-    mode door -> inspection: many
-
-egress/route: Relation
-    {origin: Space} has a usable egress path to {destination: Space}
-    mode origin -> destination: many
-
-egress: Model
-    ICU-A: Space
-    East-Corridor: Space
-    West-Corridor: Space
-    North-Exit: Space
-    Isolation-Room: Space
-    Fire-Marshal-Inspection: Inspection
-
-    [Door 101..106]: Door
-    [Door {n}]:
-        passed: Fire-Marshal-Inspection
-    for n: 101..104
-
-    [Door 101] connects ICU-A to East-Corridor
-    [Door 102] connects East-Corridor to North-Exit
-    [Door 103] connects ICU-A to West-Corridor
-    [Door 104] connects West-Corridor to North-Exit
-    [Door 105] connects Isolation-Room to East-Corridor
-    [Door 106] connects Isolation-Room to West-Corridor
-
-egress/direct-route: Law
-    ?origin has a usable egress path to ?destination
-    when:
-        ?door connects ?origin to ?destination
-        ?door passed Fire-Marshal-Inspection
-
-egress/recursive-route: Law
-    ?origin has a usable egress path to ?destination
-    when:
-        ?door connects ?origin to ?intermediate
-        ?door passed Fire-Marshal-Inspection
-        ?intermediate has a usable egress path to ?destination
-
-egress/door-101-withdrawn: Revision
-    from: egress
-    withdraw:
-        [Door 101] passed Fire-Marshal-Inspection
-
-find all ?destination in egress:
-    ICU-A has a usable egress path to ?destination
-
-why all in egress:
-    ICU-A has a usable egress path to North-Exit
-
-prevent all minimal in egress:
-    ICU-A has a usable egress path to North-Exit
-using:
-    egress/passed
-
-prevent all minimal in egress/door-101-withdrawn:
-    ICU-A has a usable egress path to North-Exit
-using:
-    egress/passed
-
-achieve all minimal in egress:
-    Isolation-Room has a usable egress path to North-Exit
-using:
-    egress/passed
-
-diff egress -> egress/door-101-withdrawn
-```
+and remains the semantic/migration oracle. Read and run the authoritative
+[current source](examples/hospital.clause) itself. Its four-space, ceremonial
+grammar is implemented truth, not canonical target layout and not an example
+for new surface work.
 
 The three-place `connects` relation is genuinely n-ary: every clause fills its
 typed `door`, `origin`, and `destination` roles. Entity identity includes the

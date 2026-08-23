@@ -26,9 +26,12 @@ This tracked roadmap is the sole normative language and product roadmap.
 [SURFACE.md](SURFACE.md) durably preserves the operator's current **Clause
 Surface Reset** draft. That draft supersedes the human-surface recommendations
 and specimens in the earlier strategy packet, but it is explicitly provisional
-and undergoing revision. Its relational invariants control direction; its exact
-punctuation does not become a parser contract until M0 freezes it with corpus
-and elaboration evidence.
+and undergoing revision. Three exact design rulings control M0 now: membership
+is only `x ∈ Y`; `:` is stable-handle binding and never membership; and
+canonical layout is exactly two spaces per level, spaces only. These are not
+claims about the current parser. The remaining surface punctuation and
+specimens stay revisable until M0 freezes them through corpus and elaboration
+evidence.
 
 The earlier packet remains provenance, not live surface authority. Its four
 unique input identities were:
@@ -113,28 +116,33 @@ against Beagle and Store before freezing shared wire nouns.
 The following relational invariants are committed direction now:
 
 1. Bare names ground semantic symbols.
-2. Categories emerge through membership and contracts; they are not an
-   exclusive declared species.
+2. Categories are ordinary semantic sets; membership is only `x ∈ Y`, and
+   sets may themselves belong to sets.
 3. Semantic entities have relations, not fields.
-4. Enumeration, structural binding, and focused-claim blocks are distinct.
-5. Indentation never creates ownership or nested object identity.
-6. Focused and fully expanded clauses elaborate to identical role-labelled
-   semantics and canonical identity.
-7. Relation phrases are exact declared grammar, never probabilistic NLP.
-8. Every relation role accepts a recursively parsed term of the expected
+4. `:` means stable-handle binding and never membership; there is no ASCII `in`,
+   `::`, or colon membership alias.
+5. Enumeration, structural binding, and focused blocks are distinct; focused
+   children retain membership, relation, or binding semantics according to
+   their form.
+6. Indentation is exactly two spaces per level, spaces only. Tabs and a leading
+   width inconsistent with structural depth reject rather than being guessed.
+7. Focused and fully expanded forms elaborate to identical typed judgments and
+   canonical identity.
+8. Relation phrases are exact declared grammar, never probabilistic NLP.
+9. Every relation role accepts a recursively parsed term of the expected
    category.
-9. Stable semantic identity and named roles remain in the checked core even
+10. Stable semantic identity and named roles remain in the checked core even
    when hidden from ordinary source.
-10. Inference is permitted only when one lexical, structural, and type-correct
+11. Inference is permitted only when one lexical, structural, and type-correct
     elaboration survives; otherwise the diagnostic requires explicit structure.
-11. Search, bounds, nondeterminism, time, authority changes, effects, and
+12. Search, bounds, nondeterminism, time, authority changes, effects, and
     externally observable order are never hidden for aesthetic compression.
-12. Runtime representation is free to specialize; semantic meaning is not.
+13. Runtime representation is free to specialize; semantic meaning is not.
 
-The current draft additionally proposes `:` for binding, `=` for equality,
-`->` for projection/production, `?`/`?name` for holes, `~>` for state
-succession, `+`/`-` for exact deltas, `!` for effects, naked hole clauses for
-selection, and `select`/`any` for projection/existence. These spellings are
+The current draft additionally proposes `=` for equality, `->` for
+projection/production, `?`/`?name` for holes, `~>` for state succession,
+`+`/`-` for exact deltas, `!` for effects, naked hole clauses for selection,
+and `select`/`any` for projection/existence. Those remaining spellings are
 provisional until M0. No implementation lane may quietly freeze them first.
 
 ## Current foundation
@@ -207,28 +215,42 @@ milestone.
 M0 is the only admitted next surface implementation milestone. Before changing
 the parser grammar, deliver:
 
-- golden sources for enumeration, value-shape bindings, focused graph claims,
-  explicit flattening, relation schemas, recursive terms, holes/correlation,
-  laws, selection, revisions, transitions, effects, hospital egress, and the
-  one-coin game;
+- golden sources for explicit `∈` membership whose operands include ordinary
+  terms and hole patterns in laws, enumeration, value-shape bindings, focused
+  forms, explicit flattening, relation schemas, recursive terms,
+  holes/correlation, selection, revisions, transitions, effects, hospital
+  egress, and the one-coin game;
 - for every specimen: lossless grouped tree, elaborated role graph, canonical
   structural rendering, diagnostics, expected semantic result, and applicable
   generated-result oracle;
 - a Stage A lossless layout reader contract containing lines, indentation
   groups, delimiters, literals, names, punctuation, and source spans without
-  deciding object/type/relation semantics;
+  deciding object/type/relation semantics; every positive fixture uses exactly
+  two spaces per depth, nested-depth fixtures round-trip, tabs reject, and
+  one-, three-, four-, or otherwise depth-inconsistent widths diagnose the
+  observed width and expected depth;
 - a deterministic Stage B classification contract for enumeration, structural
-  binding, focused claim/contract, law/definition, query, revision delta,
-  transition, and epistemic/effect forms;
+  binding, focused membership/relation/binding forms, law/definition, query,
+  revision delta, transition, and epistemic/effect forms;
 - a surface ledger recording each semantic distinction, candidate spelling,
   inferable information, ambiguity, explicit repair, checked node, and runtime
   consequence;
 - a canonical role-labelled structural escape hatch and formatter prototype;
-- exact focused-versus-expanded equivalence oracles proving identical roles,
-  proposition and Revision identity after elaboration, results, and generated
-  output, with source span the only permitted provenance difference;
+- exact focused-versus-expanded equivalence oracles that distinguish membership
+  judgments, relation claims, and focused projection bindings while proving
+  identical roles, proposition or binding identity, Revision identity after
+  elaboration, results, and generated output, with source span the only
+  permitted provenance difference;
+- an explicit checked-IR authority and state-context contract for focused
+  projection/current bindings before any parser implementation;
 - formatter separation of enumeration and focus blocks plus a diagnostic before
   an edit reclassifies an existing all-bare block;
+- a formatter contract that normalizes whitespace only for an already parsed
+  tree and proves whitespace-only canonical formatting preserves elaborated
+  semantics and identity;
+- migration fixtures proving legacy `thing: Space` classification is never
+  reinterpreted: the codemod writes `thing ∈ Space` or unambiguous list/focus
+  sugar and reports the inference;
 - bounded corpus measurements for scaffolding, punctuation, ambiguity,
   qualification, formatting stability, role diagnostics, import stability,
   and agent repair success;
@@ -241,12 +263,13 @@ M0 may implement a lossless reader and fixture harness. It may not implement or
 publish the provisional canonical grammar beyond invariants needed to make the
 corpus and elaboration contracts executable.
 
-**Exit proof:** the complete corpus parses losslessly; every block has one
+**Exit proof:** the complete corpus parses losslessly at exact two-space depth;
+tabs and wrong widths produce the specified diagnostics; every block has one
 structural classification or a finite exact diagnostic; canonical structural
-rendering round-trips; focus/expanded pairs produce identical role graphs and
-semantic identities; and every proposed canonical token has written semantic
-rent. Unrelated imports preserve elaboration or produce an exact ambiguity
-repair.
+rendering round-trips without semantic or identity drift; focus/expanded pairs
+produce identical typed judgments, role graphs, and semantic identities; and
+every proposed canonical token has written semantic rent. Unrelated imports
+preserve elaboration or produce an exact ambiguity repair.
 
 **Next safe checkpoint:** an independently reviewed M0 corpus and Stage A/B
 contract, not a new parser profile.
@@ -255,17 +278,20 @@ contract, not a new parser profile.
 
 **Depends on:** frozen M0 rulings.
 
-Implement bare symbol grounding, enumeration blocks, homogeneous binding/value
-shape blocks, focused claim/contract blocks, explicit flattening display, and
-multiword semantic names without bracket syntax. Lower into the current
-semantic core. No semantic node created by focus may contain owned child fields
-or nested records; `iron-door: Door` must never silently mean membership.
+Implement bare symbol grounding, `∈` membership, enumeration blocks,
+homogeneous binding/value-shape blocks, focused blocks whose children preserve
+membership, relation, or focused-binding semantics by form, explicit flattening
+display, and multiword semantic names without bracket syntax. Lower into the
+current semantic core. No semantic node created by focus may contain owned
+child fields or nested records; `iron-door: Door` must never silently mean
+membership.
 
-**Exit proof:** all-bare enumeration lowers child-to-parent membership; any
-non-bare child deterministically selects focus; bare children under focus
-classify the focus; binding blocks remain structural; focused and expanded
-forms are semantically and canonically identical; current hospital semantic
-results and source-deleted parity remain unchanged.
+**Exit proof:** all-bare enumeration lowers each child to `child ∈ heading`;
+any non-bare child deterministically selects focus; bare children under focus
+lower to `focus ∈ child`; relational fragments and focused bindings retain
+their distinct judgments; binding blocks remain structural; focused and
+expanded forms are semantically and canonically identical; current hospital
+semantic results and source-deleted parity remain unchanged.
 
 ## M2 — Compact relation schemas
 
@@ -328,7 +354,10 @@ logic search is introduced.
 Implement revision forms recognized by exact ancestry and signed clauses;
 preserve current `why`, `prevent`, `achieve`, and `diff` behavior; and provide a
 formatter/codemod from the current Model/Law/Revision syntax. The migration
-reports every inference and preserves stable semantic IDs.
+reports every inference and preserves stable semantic IDs. A legacy
+classification such as `thing: Space` is never reinterpreted in place: it is
+rewritten to `thing ∈ Space` or unambiguous list/focus membership sugar, with
+that inference in the report.
 
 Do not keep the old grammar indefinitely as a second first-class language. A
 temporary profile exists only to prove parity and migrate in-tree consumers.
@@ -478,14 +507,15 @@ The reset supersedes these earlier recommendations as target syntax:
 | `type: Vec2` or `type Vec2:` | inferred `Vec2` binding/shape block |
 | `Space: Type` | bare grounding/category use |
 | `name: Relation` with brace roles and `mode` | exact schema binding with named roles and projection/cardinality contract |
-| `player: Player` plus `property: value` | grounded `player` with co-equal focused claims |
+| `player: Player` or `thing: Space` classification | never reinterpret `:`; migrate to explicit `player ∈ Player` / `thing ∈ Space` or unambiguous list/focus sugar and report it |
+| `property: value` under focus | focused stable-handle binding such as `state of player: value`, not an owned field or generic relation edge |
 | `position of player = value` for admission | subject-first relation claim; `=` reserved for equality |
 | `name: Law` and `when:` | conclusion plus `if`; optional label binding |
 | `find all ?x` | naked hole clause or explicit `select` |
 | “logic variable” as the primary account of `?name` | visible hole/reusable-result semantics |
 | `name: Revision`, `from:`, `withdraw:` | ancestry form plus signed clauses |
 | brackets around multiword entities | ordinary multiword semantic names |
-| `:=` | no second binding glyph; `:` is the proposed binding axis |
+| `:=` | no second binding glyph; `:` is stable-handle binding |
 | `player.position` as canonical projection | relation-first `position of player` |
 | simultaneous North + Orbit as the first generality gate | generated-JavaScript Three.js one-coin vertical first; real North slice later |
 
@@ -498,17 +528,19 @@ actually removes it.
 Every milestone preserves gates already crossed:
 
 1. **Relational honesty:** focus/layout never creates objects, fields, or owned
-   child records.
+   child records; membership has only the authored form `x ∈ Y`.
 2. **Recursive structurality:** every eligible role accepts a recursive checked
    term rather than one lexical token.
-3. **Canonicality:** authored sugar lowers away; parse/format/parse and canonical
-   identity are stable.
+3. **Canonicality:** authored sugar lowers away; exact two-space, spaces-only
+   layout parse/format/parse and canonical identity are stable; tabs and wrong
+   widths reject before formatting.
 4. **Locality:** imports never silently change old meaning; ambiguity reports
    candidates, role conflicts, and exact repairs.
 5. **Category honesty:** values, propositions, definitions, laws, queries,
    transitions, procedures, effects, and evidence remain distinct.
-6. **Identity honesty:** layout and rename operations preserve stable semantic
-   identity when the editor transaction says they are the same meaning.
+6. **Identity honesty:** layout, focus expansion, and whitespace-only formatting
+   preserve proposition or binding identity; rename operations preserve stable
+   semantic identity when the editor transaction says they are the same meaning.
 7. **Lineage honesty:** exact bases, deltas, alternative supports, proof changes,
    and intervention certificates survive every surface migration.
 8. **Bound honesty:** partial derivation or search never claims completeness or
@@ -551,8 +583,8 @@ Every milestone preserves gates already crossed:
 - no effects before the transition core can distinguish modeled change from
   observed reality;
 - no Wasm-first browser host or source rewrite for target partitioning;
-- no syntax stabilization before M0 evidence or old-grammar retirement before
-  migration parity.
+- no parser-grammar publication before M0 evidence or old-grammar retirement
+  before migration parity.
 
 ## Completion standard
 
