@@ -209,7 +209,7 @@ fn support_change(
             successor
                 .supports()
                 .iter()
-                .any(|candidate| candidate.assertions() == support.assertions())
+                .any(|candidate| candidate.assertion_key() == support.assertion_key())
         })
         .cloned()
         .collect();
@@ -225,7 +225,7 @@ fn support_change(
                     !base
                         .supports()
                         .iter()
-                        .any(|candidate| candidate.assertions() == support.assertions())
+                        .any(|candidate| candidate.assertion_key() == support.assertion_key())
                 })
                 .cloned()
                 .collect()
@@ -242,7 +242,7 @@ fn support_change(
                     !successor
                         .supports()
                         .iter()
-                        .any(|candidate| candidate.assertions() == support.assertions())
+                        .any(|candidate| candidate.assertion_key() == support.assertion_key())
                 })
                 .cloned()
                 .collect()

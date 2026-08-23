@@ -127,6 +127,7 @@ pub enum SupportWitness {
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct Support {
+    assertion_key: Vec<Clause>,
     assertions: Vec<Clause>,
     proof: SupportProof,
 }
@@ -137,6 +138,10 @@ impl Support {
     }
     pub fn proof(&self) -> &SupportProof {
         &self.proof
+    }
+
+    pub(crate) fn assertion_key(&self) -> &[Clause] {
+        &self.assertion_key
     }
 }
 
@@ -268,6 +273,16 @@ pub fn support_frontier(
 ) -> Result<SupportFrontier> {
     revision.model().validate_clause(target, false)?;
     let closure = saturate(revision, limits.closure)?;
+    if closure.proof(target).is_none() {
+        return Ok(SupportFrontier {
+            revision: revision.identity().clone(),
+            target: target.clone(),
+            limits,
+            status: SupportStatus::Complete,
+            expansions: 0,
+            supports: Vec::new(),
+        });
+    }
     if limits.max_supports_per_clause == 0 {
         return Ok(SupportFrontier {
             revision: revision.identity().clone(),
@@ -346,12 +361,20 @@ pub fn support_frontier(
             break;
         }
     }
-    let supports = frontiers
-        .remove(target)
-        .unwrap_or_default()
-        .into_iter()
-        .map(|(assertions, proof)| Support { assertions, proof })
-        .collect();
+    let supports = if status.is_complete() {
+        frontiers
+            .remove(target)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|(assertion_key, proof)| Support {
+                assertions: ordered_proof_assertions(&proof),
+                assertion_key,
+                proof,
+            })
+            .collect()
+    } else {
+        Vec::new()
+    };
     Ok(SupportFrontier {
         revision: revision.identity().clone(),
         target: target.clone(),
@@ -434,6 +457,32 @@ fn proof_assertions(proof: &SupportProof) -> Vec<Clause> {
     let mut assertions = BTreeSet::new();
     collect_proof_assertions(proof, &mut assertions);
     assertions.into_iter().collect()
+}
+
+fn ordered_proof_assertions(proof: &SupportProof) -> Vec<Clause> {
+    let mut seen = BTreeSet::new();
+    let mut assertions = Vec::new();
+    collect_ordered_proof_assertions(proof, &mut seen, &mut assertions);
+    assertions
+}
+
+fn collect_ordered_proof_assertions(
+    proof: &SupportProof,
+    seen: &mut BTreeSet<Clause>,
+    assertions: &mut Vec<Clause>,
+) {
+    match &proof.witness {
+        SupportWitness::Asserted => {
+            if seen.insert(proof.conclusion.clone()) {
+                assertions.push(proof.conclusion.clone());
+            }
+        }
+        SupportWitness::Derived { premises, .. } => {
+            for premise in premises {
+                collect_ordered_proof_assertions(premise, seen, assertions);
+            }
+        }
+    }
 }
 
 fn collect_proof_assertions(proof: &SupportProof, assertions: &mut BTreeSet<Clause>) {
@@ -869,5 +918,100 @@ mod tests {
         assert_eq!(frontier.status(), SupportStatus::Complete);
         assert_eq!(frontier.supports().len(), 1);
         assert_eq!(frontier.supports()[0].assertions().len(), 1);
+    }
+
+    #[test]
+    fn support_members_follow_the_canonical_proof_path() {
+        let text_type = id("Text");
+        let reaches = relation_id("map/reaches");
+        let links = relation_id("map/links");
+        let first = clause(&links, text("Zulu", &text_type), text("First", &text_type));
+        let second = clause(
+            &links,
+            text("Alpha", &text_type),
+            text("Second", &text_type),
+        );
+        assert!(second < first);
+        let target = clause(
+            &reaches,
+            text("North", &text_type),
+            text("Store", &text_type),
+        );
+        let law = Law::new(
+            LawId::new(name("map/path-order")).unwrap(),
+            vec![first.clone(), second.clone()],
+            target.clone(),
+        )
+        .unwrap();
+        let frontier = support_frontier(
+            &revision(vec![second.clone(), first.clone()], vec![law]),
+            &target,
+            SupportLimits::new(Limits::new(10, 10, 100), 10, 10),
+        )
+        .unwrap();
+        let support = &frontier.supports()[0];
+        assert_eq!(support.assertion_key(), &[second.clone(), first.clone()]);
+        assert_eq!(support.assertions(), &[first, second]);
+    }
+
+    #[test]
+    fn incomplete_frontier_does_not_expose_a_provisional_superset() {
+        let text_type = id("Text");
+        let reaches = relation_id("map/reaches");
+        let links = relation_id("map/links");
+        let alpha = clause(&links, text("Alpha", &text_type), text("One", &text_type));
+        let beta = clause(&links, text("Beta", &text_type), text("Two", &text_type));
+        let target = clause(
+            &reaches,
+            text("North", &text_type),
+            text("Store", &text_type),
+        );
+        let wide = Law::new(
+            LawId::new(name("map/a-wide")).unwrap(),
+            vec![alpha.clone(), beta.clone()],
+            target.clone(),
+        )
+        .unwrap();
+        let narrow = Law::new(
+            LawId::new(name("map/z-narrow")).unwrap(),
+            vec![alpha.clone()],
+            target.clone(),
+        )
+        .unwrap();
+        let frontier = support_frontier(
+            &revision(vec![alpha, beta], vec![wide, narrow]),
+            &target,
+            SupportLimits::new(Limits::new(10, 10, 100), 1, 10),
+        )
+        .unwrap();
+        assert_eq!(frontier.status(), SupportStatus::ExpansionBudgetExhausted);
+        assert!(frontier.supports().is_empty());
+    }
+
+    #[test]
+    fn absent_target_has_a_complete_empty_frontier_without_support_budget() {
+        let text_type = id("Text");
+        let reaches = relation_id("map/reaches");
+        let links = relation_id("map/links");
+        let target = clause(
+            &reaches,
+            text("North", &text_type),
+            text("Store", &text_type),
+        );
+        let frontier = support_frontier(
+            &revision(
+                vec![clause(
+                    &links,
+                    text("Alpha", &text_type),
+                    text("Beta", &text_type),
+                )],
+                Vec::new(),
+            ),
+            &target,
+            SupportLimits::new(Limits::new(10, 10, 100), 0, 0),
+        )
+        .unwrap();
+        assert_eq!(frontier.status(), SupportStatus::Complete);
+        assert!(frontier.supports().is_empty());
     }
 }
