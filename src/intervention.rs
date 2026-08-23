@@ -4,6 +4,7 @@
 //! relations that may receive facts and the finite active domain used to fill
 //! their roles.  Each candidate is admitted as a fresh [`Revision`].
 
+use crate::delta::RevisionDelta;
 use crate::derive::{self, Limits, Proof};
 use crate::kernel::{self, Clause, KernelError, Model, Result, Revision, Term};
 use std::collections::BTreeSet;
@@ -234,7 +235,7 @@ fn search_combinations(
     if remaining == 0 {
         if solutions
             .iter()
-            .any(|solution| subset_of(solution.additions(), chosen))
+            .any(|solution| is_subset(solution.additions(), chosen))
         {
             return Ok(None);
         }
@@ -277,7 +278,7 @@ fn search_combinations(
     Ok(None)
 }
 
-fn subset_of(subset: &[Clause], set: &[Clause]) -> bool {
+fn is_subset(subset: &[Clause], set: &[Clause]) -> bool {
     subset
         .iter()
         .all(|candidate| set.binary_search(candidate).is_ok())
@@ -291,9 +292,231 @@ fn canonical(values: Vec<String>) -> Vec<String> {
         .collect()
 }
 
+/// Bounds for a prevention search.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PreventLimits {
+    max_candidates: usize,
+    max_solutions: usize,
+    closure: Limits,
+}
+
+impl PreventLimits {
+    /// Construct limits using unbounded closure limits.
+    pub fn new(max_candidates: usize, max_solutions: usize) -> Self {
+        Self {
+            max_candidates,
+            max_solutions,
+            closure: Limits::new(usize::MAX, usize::MAX, usize::MAX),
+        }
+    }
+
+    /// Bound the fixed-point computation performed for every candidate.
+    pub fn with_closure_limits(mut self, closure: Limits) -> Self {
+        self.closure = closure;
+        self
+    }
+
+    pub fn max_candidates(&self) -> usize {
+        self.max_candidates
+    }
+
+    pub fn max_solutions(&self) -> usize {
+        self.max_solutions
+    }
+
+    pub fn closure_limits(&self) -> Limits {
+        self.closure
+    }
+}
+
+/// Why a prevention search stopped.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PreventStatus {
+    /// Every candidate subset was considered and all minimal solutions found.
+    Complete,
+    /// The source closure did not entail the target, so no withdrawal is
+    /// needed or returned.
+    AlreadyAbsent,
+    /// The candidate enumeration reached `max_candidates`.
+    CandidateBudgetExhausted,
+    /// The result reached `max_solutions` before enumeration was complete.
+    SolutionBudgetExhausted,
+}
+
+/// One inclusion-minimal withdrawal and its immutable candidate revision.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PreventSolution {
+    withdrawals: Vec<Clause>,
+    revision: Revision,
+}
+
+impl PreventSolution {
+    pub fn withdrawals(&self) -> &[Clause] {
+        &self.withdrawals
+    }
+
+    /// The source declarations are preserved and only these direct facts are
+    /// absent from the candidate revision.
+    pub fn revision(&self) -> &Revision {
+        &self.revision
+    }
+}
+
+/// Deterministic, bounded prevention output for one source revision and target.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PreventReport {
+    source_revision: String,
+    target: Clause,
+    status: PreventStatus,
+    candidates_examined: usize,
+    solutions: Vec<PreventSolution>,
+}
+
+impl PreventReport {
+    pub fn source_revision(&self) -> &str {
+        &self.source_revision
+    }
+
+    pub fn target(&self) -> &Clause {
+        &self.target
+    }
+
+    pub fn status(&self) -> PreventStatus {
+        self.status
+    }
+
+    pub fn candidates_examined(&self) -> usize {
+        self.candidates_examined
+    }
+
+    pub fn solutions(&self) -> &[PreventSolution] {
+        &self.solutions
+    }
+}
+
+/// Enumerate every inclusion-minimal set of direct asserted facts whose
+/// withdrawal makes `target` absent from the derived closure.
+pub fn prevent(source: &Revision, target: Clause, limits: PreventLimits) -> Result<PreventReport> {
+    if target.roles().values().any(|term| term.is_variable()) {
+        return Err(KernelError::new("prevent target must be ground"));
+    }
+
+    let source_closure = derive::saturate(source, limits.closure)?;
+    let source_revision = source.identity().to_owned();
+    if source_closure.proof(&target).is_none() {
+        return Ok(PreventReport {
+            source_revision,
+            target,
+            status: PreventStatus::AlreadyAbsent,
+            candidates_examined: 0,
+            solutions: Vec::new(),
+        });
+    }
+
+    let direct_facts = source.model().facts().to_vec();
+    let mut state = PreventSearch {
+        source,
+        target: &target,
+        direct_facts: &direct_facts,
+        limits,
+        candidates_examined: 0,
+        solutions: Vec::new(),
+        status: None,
+    };
+
+    if limits.max_solutions == 0 {
+        state.status = Some(PreventStatus::SolutionBudgetExhausted);
+    } else {
+        for size in 1..=direct_facts.len() {
+            if state.status.is_some() {
+                break;
+            }
+            let mut indexes = Vec::with_capacity(size);
+            state.combinations(size, 0, &mut indexes)?;
+        }
+    }
+
+    let status = state.status.unwrap_or(PreventStatus::Complete);
+    Ok(PreventReport {
+        source_revision,
+        target: target.clone(),
+        status,
+        candidates_examined: state.candidates_examined,
+        solutions: state.solutions,
+    })
+}
+
+struct PreventSearch<'a> {
+    source: &'a Revision,
+    target: &'a Clause,
+    direct_facts: &'a [Clause],
+    limits: PreventLimits,
+    candidates_examined: usize,
+    solutions: Vec<PreventSolution>,
+    status: Option<PreventStatus>,
+}
+
+impl PreventSearch<'_> {
+    fn combinations(&mut self, size: usize, next: usize, indexes: &mut Vec<usize>) -> Result<()> {
+        if self.status.is_some() {
+            return Ok(());
+        }
+        if indexes.len() == size {
+            return self.evaluate(indexes);
+        }
+
+        let remaining = size - indexes.len();
+        let last_start = self.direct_facts.len().saturating_sub(remaining);
+        for index in next..=last_start {
+            indexes.push(index);
+            self.combinations(size, index + 1, indexes)?;
+            indexes.pop();
+            if self.status.is_some() {
+                break;
+            }
+        }
+        Ok(())
+    }
+
+    fn evaluate(&mut self, indexes: &[usize]) -> Result<()> {
+        if self.candidates_examined >= self.limits.max_candidates {
+            self.status = Some(PreventStatus::CandidateBudgetExhausted);
+            return Ok(());
+        }
+        let withdrawals = indexes
+            .iter()
+            .map(|index| self.direct_facts[*index].clone())
+            .collect::<Vec<_>>();
+
+        self.candidates_examined += 1;
+        if self
+            .solutions
+            .iter()
+            .any(|solution| is_subset(solution.withdrawals(), &withdrawals))
+        {
+            return Ok(());
+        }
+
+        let candidate =
+            RevisionDelta::new(self.source.identity(), Vec::new(), withdrawals.clone())?
+                .apply(self.source)?;
+        let closure = derive::saturate(&candidate, self.limits.closure)?;
+        if closure.proof(self.target).is_none() {
+            self.solutions.push(PreventSolution {
+                withdrawals,
+                revision: candidate,
+            });
+            if self.solutions.len() >= self.limits.max_solutions {
+                self.status = Some(PreventStatus::SolutionBudgetExhausted);
+            }
+        }
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{AchieveConfig, AchieveResult, achieve};
+    use super::{AchieveConfig, AchieveResult, PreventLimits, PreventStatus, achieve, prevent};
     use crate::derive::{Limits, Witness};
     use crate::kernel::{
         Cardinality, Clause, Law, Mode, Model, Relation, Revision, Role, Sentence, Term,
@@ -351,6 +574,26 @@ mod tests {
                     "map/goal",
                     vec![
                         ("from".into(), Term::literal("A").unwrap()),
+                        ("to".into(), Term::variable("destination").unwrap()),
+                    ],
+                )
+                .unwrap(),
+                "ascending",
+            )
+            .unwrap(),
+        )
+    }
+
+    fn prevention_revision(facts: Vec<Clause>, laws: Vec<Law>) -> Revision {
+        Revision::admit(
+            Model::with_laws(
+                vec![relation("map/links"), relation("map/reaches")],
+                facts,
+                laws,
+                Clause::new(
+                    "map/reaches",
+                    vec![
+                        ("from".into(), Term::literal("North").unwrap()),
                         ("to".into(), Term::variable("destination").unwrap()),
                     ],
                 )
@@ -574,5 +817,81 @@ mod tests {
             .unwrap(),
             AchieveResult::SolutionLimit(interventions) if interventions.is_empty()
         ));
+    }
+
+    #[test]
+    fn alternate_paths_require_one_withdrawal_from_each_path() {
+        let a = clause("map/links", "North", "A");
+        let b = clause("map/links", "A", "Store");
+        let c = clause("map/links", "North", "B");
+        let d = clause("map/links", "B", "Store");
+        let law = Law::new(
+            "map/path-reaches",
+            vec![
+                pattern("map/links", "from", "middle"),
+                pattern("map/links", "middle", "to"),
+            ],
+            pattern("map/reaches", "from", "to"),
+        )
+        .unwrap();
+        let source =
+            prevention_revision(vec![a.clone(), b.clone(), c.clone(), d.clone()], vec![law]);
+        let original = source.clone();
+        let report = prevent(
+            &source,
+            clause("map/reaches", "North", "Store"),
+            PreventLimits::new(100, 100),
+        )
+        .unwrap();
+
+        assert_eq!(report.status(), PreventStatus::Complete);
+        assert_eq!(report.solutions().len(), 4);
+        assert_eq!(report.solutions()[0].withdrawals(), &[b.clone(), d.clone()]);
+        assert_eq!(report.solutions()[1].withdrawals(), &[b, c.clone()]);
+        assert_eq!(report.solutions()[2].withdrawals(), &[d, a.clone()]);
+        assert_eq!(report.solutions()[3].withdrawals(), &[a, c]);
+        assert_eq!(source, original);
+        assert!(report.solutions().iter().all(|solution| {
+            solution
+                .revision()
+                .model()
+                .facts()
+                .iter()
+                .all(|fact| fact.relation() == "map/links")
+        }));
+
+        let rerun = prevent(
+            &source,
+            clause("map/reaches", "North", "Store"),
+            PreventLimits::new(100, 100),
+        )
+        .unwrap();
+        assert_eq!(report, rerun);
+    }
+
+    #[test]
+    fn absent_target_and_budgets_are_explicit() {
+        let source = prevention_revision(vec![clause("map/links", "North", "Store")], Vec::new());
+        let absent = prevent(
+            &source,
+            clause("map/reaches", "North", "Store"),
+            PreventLimits::new(0, 0),
+        )
+        .unwrap();
+        assert_eq!(absent.status(), PreventStatus::AlreadyAbsent);
+        let law = Law::new(
+            "map/link-reaches",
+            vec![pattern("map/links", "from", "to")],
+            pattern("map/reaches", "from", "to"),
+        )
+        .unwrap();
+        let source = prevention_revision(vec![clause("map/links", "North", "Store")], vec![law]);
+        let exhausted = prevent(
+            &source,
+            clause("map/reaches", "North", "Store"),
+            PreventLimits::new(0, 10),
+        )
+        .unwrap();
+        assert_eq!(exhausted.status(), PreventStatus::CandidateBudgetExhausted);
     }
 }
