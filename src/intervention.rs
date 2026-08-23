@@ -1017,6 +1017,175 @@ mod tests {
     }
 
     #[test]
+    fn complete_frontiers_cover_redundant_withdrawals_successor_degradation_and_typed_additions() {
+        let exhaustive = InterventionLimits::new(Limits::new(100, 10, 20_000), 10_000, 100);
+        let model = ModelId::new(name("network")).unwrap();
+        let node = type_id("Node");
+        let alpha = entity(&model, "Alpha", &node);
+        let beta = entity(&model, "Beta", &node);
+        let gamma = entity(&model, "Gamma", &node);
+        let omega = entity(&model, "Omega", &node);
+        let link = relation_id("network/link");
+        let reaches = relation_id("network/reaches");
+        let subject = variable("subject", &node);
+        let middle = variable("middle", &node);
+        let destination = variable("destination", &node);
+        let alpha_beta = clause(&link, ("x", &alpha), ("y", &beta));
+        let beta_omega = clause(&link, ("x", &beta), ("y", &omega));
+        let alpha_gamma = clause(&link, ("x", &alpha), ("y", &gamma));
+        let gamma_omega = clause(&link, ("x", &gamma), ("y", &omega));
+        let source = rev(
+            vec![alpha.clone(), beta.clone(), gamma.clone(), omega.clone()],
+            vec![
+                relation(&link, ("x", &node), ("y", &node)),
+                relation(&reaches, ("x", &node), ("y", &node)),
+            ],
+            vec![
+                alpha_beta.clone(),
+                beta_omega.clone(),
+                alpha_gamma.clone(),
+                gamma_omega.clone(),
+            ],
+            vec![
+                Law::new(
+                    LawId::new(name("network/path")).unwrap(),
+                    vec![
+                        Clause::new(
+                            link.clone(),
+                            BTreeMap::from([
+                                (role_id("x"), subject.clone()),
+                                (role_id("y"), middle.clone()),
+                            ]),
+                        )
+                        .unwrap(),
+                        Clause::new(
+                            link.clone(),
+                            BTreeMap::from([
+                                (role_id("x"), middle.clone()),
+                                (role_id("y"), destination.clone()),
+                            ]),
+                        )
+                        .unwrap(),
+                    ],
+                    Clause::new(
+                        reaches.clone(),
+                        BTreeMap::from([(role_id("x"), subject), (role_id("y"), destination)]),
+                    )
+                    .unwrap(),
+                )
+                .unwrap(),
+            ],
+        );
+        let target = clause(&reaches, ("x", &alpha), ("y", &omega));
+        let expected_base = BTreeSet::from([
+            vec![alpha_beta.clone(), alpha_gamma.clone()],
+            vec![alpha_beta.clone(), gamma_omega.clone()],
+            vec![alpha_gamma.clone(), beta_omega.clone()],
+            vec![beta_omega.clone(), gamma_omega.clone()],
+        ]);
+        let PreventAll::Complete(base) =
+            prevent_all_minimal(&source, target.clone(), vec![link.clone()], exhaustive).unwrap()
+        else {
+            panic!("finite redundant prevention frontier must be complete");
+        };
+        assert_eq!(
+            base.iter()
+                .map(|item| item.delta().withdrawals().to_vec())
+                .collect::<BTreeSet<_>>(),
+            expected_base,
+        );
+
+        let successor = Delta::new(
+            source.identity().clone(),
+            Vec::new(),
+            vec![alpha_beta.clone()],
+        )
+        .unwrap()
+        .apply(&source)
+        .unwrap();
+        let PreventAll::Complete(successor_prevention) =
+            prevent_all_minimal(&successor, target, vec![link.clone()], exhaustive).unwrap()
+        else {
+            panic!("degraded finite prevention frontier must be complete");
+        };
+        assert_eq!(
+            successor_prevention
+                .iter()
+                .map(|item| item.delta().withdrawals().to_vec())
+                .collect::<BTreeSet<_>>(),
+            BTreeSet::from([vec![alpha_gamma.clone()], vec![gamma_omega.clone()]]),
+        );
+
+        let choices = ModelId::new(name("choices")).unwrap();
+        let start = entity(&choices, "Start", &node);
+        let finish = entity(&choices, "Finish", &node);
+        let first = relation_id("choices/first");
+        let second = relation_id("choices/second");
+        let achieved = relation_id("choices/achieved");
+        let from = variable("from", &node);
+        let to = variable("to", &node);
+        let choices_source = rev(
+            vec![start.clone(), finish.clone()],
+            vec![
+                relation(&first, ("x", &node), ("y", &node)),
+                relation(&second, ("x", &node), ("y", &node)),
+                relation(&achieved, ("x", &node), ("y", &node)),
+            ],
+            Vec::new(),
+            vec![
+                law(
+                    "choices/first-achieves",
+                    Clause::new(
+                        first.clone(),
+                        BTreeMap::from([(role_id("x"), from.clone()), (role_id("y"), to.clone())]),
+                    )
+                    .unwrap(),
+                    Clause::new(
+                        achieved.clone(),
+                        BTreeMap::from([(role_id("x"), from.clone()), (role_id("y"), to.clone())]),
+                    )
+                    .unwrap(),
+                ),
+                law(
+                    "choices/second-achieves",
+                    Clause::new(
+                        second.clone(),
+                        BTreeMap::from([(role_id("x"), from), (role_id("y"), to)]),
+                    )
+                    .unwrap(),
+                    Clause::new(
+                        achieved.clone(),
+                        BTreeMap::from([
+                            (role_id("x"), variable("from", &node)),
+                            (role_id("y"), variable("to", &node)),
+                        ]),
+                    )
+                    .unwrap(),
+                ),
+            ],
+        );
+        let AchieveAll::Complete(additions) = achieve_all_minimal(
+            &choices_source,
+            clause(&achieved, ("x", &start), ("y", &finish)),
+            vec![first.clone(), second.clone()],
+            exhaustive,
+        )
+        .unwrap() else {
+            panic!("finite typed achievement frontier must be complete");
+        };
+        assert_eq!(
+            additions
+                .iter()
+                .map(|item| item.delta().admissions().to_vec())
+                .collect::<BTreeSet<_>>(),
+            BTreeSet::from([
+                vec![clause(&first, ("x", &start), ("y", &finish))],
+                vec![clause(&second, ("x", &start), ("y", &finish))],
+            ]),
+        );
+    }
+
+    #[test]
     fn prevention_one_restoration_returns_an_inclusion_minimal_withdrawal() {
         let model = ModelId::new(name("m")).unwrap();
         let t = type_id("Thing");
