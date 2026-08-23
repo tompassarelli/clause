@@ -4,7 +4,7 @@ use crate::kernel::{self, Clause, Intent, Model, Relation, Role, Sentence, Term}
 pub fn program(program: frontend::Program) -> kernel::Result<Model> {
     if program.models.len() != 1 || program.queries.len() != 1 {
         return Err(kernel::KernelError::new(
-            "M2 requires exactly one model and one query",
+            "program requires exactly one model and one query",
         ));
     }
     if !program.operations.is_empty() {
@@ -56,7 +56,7 @@ pub fn program(program: frontend::Program) -> kernel::Result<Model> {
 
 /// Elaborate one already-resolved closed frontend operation clause.  Operation
 /// execution remains in the kernel; this only carries the source clause across
-/// the frontend/kernel boundary used by the M3 canary.
+/// the frontend/kernel boundary.
 pub fn operation(operation: &frontend::Operation) -> kernel::Result<Clause> {
     clause(
         operation.clause.relation.clone(),

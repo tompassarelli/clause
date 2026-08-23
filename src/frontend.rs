@@ -756,24 +756,40 @@ fn parse_operation(
     } else if line.text.starts_with("require ") {
         (OperationKind::Require, "require ")
     } else {
-        return Err(error(line_span(line), "expected claim or require declaration"));
+        return Err(error(
+            line_span(line),
+            "expected claim or require declaration",
+        ));
     };
     let model = line
         .text
         .strip_prefix(keyword)
         .and_then(|body| body.strip_suffix(':'))
-        .ok_or_else(|| error(line_span(line), "operation declaration must be 'claim|require model:'"))?;
+        .ok_or_else(|| {
+            error(
+                line_span(line),
+                "operation declaration must be 'claim|require model:'",
+            )
+        })?;
     if !is_name(model) || !models.iter().any(|candidate| candidate.name == model) {
-        return Err(error(child_span(line, keyword.len(), model.len()), "operation refers to an unknown model"));
+        return Err(error(
+            child_span(line, keyword.len(), model.len()),
+            "operation refers to an unknown model",
+        ));
     }
 
     *index += 1;
-    let child = lines
-        .get(*index)
-        .copied()
-        .ok_or_else(|| error(line_span(line), "operation requires exactly one closed clause"))?;
+    let child = lines.get(*index).copied().ok_or_else(|| {
+        error(
+            line_span(line),
+            "operation requires exactly one closed clause",
+        )
+    })?;
     if !child.text.starts_with("    ") || child.text.len() == 4 {
-        return Err(error(line_span(child), "operation body must be one indented closed clause"));
+        return Err(error(
+            line_span(child),
+            "operation body must be one indented closed clause",
+        ));
     }
     let input = &child.text[4..];
     let (relation, roles) = find_relation(relations, input, child, 5, false)?;
@@ -785,7 +801,10 @@ fn parse_operation(
     *index += 1;
     if let Some(extra) = lines.get(*index).copied() {
         if extra.text.starts_with("    ") {
-            return Err(error(line_span(extra), "operation requires exactly one closed clause"));
+            return Err(error(
+                line_span(extra),
+                "operation requires exactly one closed clause",
+            ));
         }
     }
     Ok(Operation {
@@ -912,7 +931,8 @@ pub fn parse(source: &str) -> Result<Program, ParseError> {
             }
             program.queries.push(query);
         } else if line.text.starts_with("claim ") || line.text.starts_with("require ") {
-            let operation = parse_operation(&lines, &mut index, &program.relations, &program.models)?;
+            let operation =
+                parse_operation(&lines, &mut index, &program.relations, &program.models)?;
             program.operations.push(operation);
         } else if line.text.starts_with("intent ") {
             let intent = parse_intent(&lines, &mut index, &program.relations, &program.models)?;
@@ -976,13 +996,13 @@ query catalog:
     ?member where "letters" contains ?member
 "#;
 
-    fn m3_fixture() -> String {
+    fn operation_fixture() -> String {
         format!(
             "{FIXTURE}\nclaim catalog:\n    \"letters\" contains \"c\"\n\nrequire catalog:\n    \"letters\" contains \"c\"\n"
         )
     }
 
-    const M4_FIXTURE: &str = r#"relation catalog/contains(set: Text, member: Text):
+    const INTENT_FIXTURE: &str = r#"relation catalog/contains(set: Text, member: Text):
     sentence: {set} contains {member}
     mode set -> member: many
 
@@ -1056,52 +1076,71 @@ query catalog:
     }
     #[test]
     fn parses_closed_claim_and_require_operations_in_source_order() {
-        let program = parse(&m3_fixture()).expect("M3 fixture parses");
+        let program = parse(&operation_fixture()).expect("operation fixture parses");
         assert_eq!(program.operations.len(), 2);
         assert_eq!(program.operations[0].kind, OperationKind::Claim);
         assert_eq!(program.operations[1].kind, OperationKind::Require);
         for operation in &program.operations {
             assert_eq!(operation.model, "catalog");
             assert_eq!(operation.clause.relation, "catalog/contains");
-            assert_eq!(operation.clause.roles["set"].kind, TermKind::Text("letters".to_owned()));
+            assert_eq!(
+                operation.clause.roles["set"].kind,
+                TermKind::Text("letters".to_owned())
+            );
         }
-        assert_eq!(program.operations[0].clause.roles["member"].kind, TermKind::Text("c".to_owned()));
+        assert_eq!(
+            program.operations[0].clause.roles["member"].kind,
+            TermKind::Text("c".to_owned())
+        );
     }
 
     #[test]
     fn rejects_open_operation_clause() {
-        let source = m3_fixture().replace("    \"letters\" contains \"c\"", "    \"letters\" contains ?member");
+        let source = operation_fixture().replace(
+            "    \"letters\" contains \"c\"",
+            "    \"letters\" contains ?member",
+        );
         let error = parse(&source).expect_err("open operation clause must fail");
         assert!(error.message.contains("no declared sentence shape"));
     }
 
     #[test]
     fn rejects_incomplete_operation_block() {
-        let source = m3_fixture().replace("require catalog:\n    \"letters\" contains \"c\"", "require catalog:");
+        let source = operation_fixture().replace(
+            "require catalog:\n    \"letters\" contains \"c\"",
+            "require catalog:",
+        );
         let error = parse(&source).expect_err("operation without a body must fail");
         assert!(error.message.contains("exactly one closed clause"));
     }
 
     #[test]
     fn rejects_mismatched_operation_clause() {
-        let source = m3_fixture().replace("require catalog:\n    \"letters\" contains \"c\"", "require catalog:\n    \"letters\" stores \"c\"");
+        let source = operation_fixture().replace(
+            "require catalog:\n    \"letters\" contains \"c\"",
+            "require catalog:\n    \"letters\" stores \"c\"",
+        );
         let error = parse(&source).expect_err("mismatched operation clause must fail");
         assert!(error.message.contains("no declared sentence shape"));
     }
 
     #[test]
     fn rejects_ambiguous_operation_clause() {
-        let source = m3_fixture().replace(
+        let source = operation_fixture().replace(
             "model catalog:",
             "relation catalog/also(set: Text, member: Text):\n    sentence: {set} contains {member}\n    mode set -> member: many\n\nmodel catalog:",
         );
         let error = parse(&source).expect_err("ambiguous operation sentence must fail");
-        assert!(error.message.contains("more than one declared sentence shape"));
+        assert!(
+            error
+                .message
+                .contains("more than one declared sentence shape")
+        );
     }
 
     #[test]
     fn rejects_extra_operation_clause() {
-        let source = m3_fixture().replace(
+        let source = operation_fixture().replace(
             "require catalog:\n    \"letters\" contains \"c\"",
             "require catalog:\n    \"letters\" contains \"c\"\n    \"letters\" contains \"d\"",
         );
@@ -1111,7 +1150,7 @@ query catalog:
 
     #[test]
     fn parses_closed_intent_resolved_by_declared_sentence() {
-        let program = parse(M4_FIXTURE).expect("M4 fixture parses");
+        let program = parse(INTENT_FIXTURE).expect("intent fixture parses");
         assert_eq!(program.intents.len(), 1);
         let intent = &program.intents[0];
         assert_eq!(intent.name, "catalog/restock");
@@ -1130,7 +1169,7 @@ query catalog:
 
     #[test]
     fn rejects_open_intent_clause() {
-        let source = M4_FIXTURE.replace(
+        let source = INTENT_FIXTURE.replace(
             "    \"letters\" contains \"c\"",
             "    \"letters\" contains ?member",
         );
@@ -1140,7 +1179,7 @@ query catalog:
 
     #[test]
     fn rejects_intent_with_unknown_sentence_shape() {
-        let source = M4_FIXTURE.replace(
+        let source = INTENT_FIXTURE.replace(
             "    \"letters\" contains \"c\"",
             "    \"letters\" stores \"c\"",
         );
@@ -1150,14 +1189,14 @@ query catalog:
 
     #[test]
     fn rejects_intent_outside_model_namespace() {
-        let source = M4_FIXTURE.replace("intent catalog/restock:", "intent pantry/restock:");
+        let source = INTENT_FIXTURE.replace("intent catalog/restock:", "intent pantry/restock:");
         let error = parse(&source).expect_err("non-model intent namespace must fail");
         assert!(error.message.contains("declared model namespace"));
     }
 
     #[test]
     fn rejects_duplicate_intent_names() {
-        let source = M4_FIXTURE.replace(
+        let source = INTENT_FIXTURE.replace(
             "query catalog:",
             "intent catalog/restock:\n    \"letters\" contains \"c\"\n\nquery catalog:",
         );
@@ -1167,7 +1206,7 @@ query catalog:
 
     #[test]
     fn rejects_multiple_intent_clauses() {
-        let source = M4_FIXTURE.replace(
+        let source = INTENT_FIXTURE.replace(
             "intent catalog/restock:\n    \"letters\" contains \"c\"",
             "intent catalog/restock:\n    \"letters\" contains \"c\"\n    \"letters\" contains \"d\"",
         );

@@ -1,4 +1,4 @@
-//! The small, host-neutral semantic kernel used by the Clause M2 experiment.
+//! Clause's small semantic kernel.
 //!
 //! All persistent values have private fields.  They are admitted through the
 //! constructors below, which sort maps/facts and reject incomplete clauses.
@@ -376,7 +376,7 @@ impl Model {
             .filter(|term| term.is_variable())
             .collect::<Vec<_>>();
         if order != "ascending" || sought.len() != 1 {
-            return Err(KernelError::new("M2 requires one ascending sought role"));
+            return Err(KernelError::new("model requires one ascending sought role"));
         }
         Ok(Self {
             relations: relation_map,

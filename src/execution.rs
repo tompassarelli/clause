@@ -22,7 +22,11 @@ pub fn execute(revision: &Revision, plan: &QueryPlan) -> Result<QueryOutput> {
     }
     let sought = match plan.sought() {
         [role] => role,
-        _ => return Err(KernelError::new("query output requires exactly one sought role")),
+        _ => {
+            return Err(KernelError::new(
+                "query output requires exactly one sought role",
+            ));
+        }
     };
     let query = revision.model().query();
     let requested = query
@@ -43,7 +47,11 @@ pub fn execute(revision: &Revision, plan: &QueryPlan) -> Result<QueryOutput> {
         })
         .map(|fact| row(revision.identity(), fact, sought))
         .collect::<Result<Vec<_>>>()?;
-    rows.sort_by(|left, right| left.0.cmp(&right.0).then_with(|| left.1.id.cmp(&right.1.id)));
+    rows.sort_by(|left, right| {
+        left.0
+            .cmp(&right.0)
+            .then_with(|| left.1.id.cmp(&right.1.id))
+    });
 
     Ok(QueryOutput {
         results: rows.iter().map(|(value, _)| value.clone()).collect(),
@@ -103,9 +111,7 @@ pub fn canonical_json(output: &QueryOutput) -> String {
         })
         .collect::<Vec<_>>()
         .join(",");
-    format!(
-        "[\"clause-query-output-v1\",[\"results\",[{results}]],[\"proofs\",[{proofs}]]]"
-    )
+    format!("[\"clause-query-output-v1\",[\"results\",[{results}]],[\"proofs\",[{proofs}]]]")
 }
 
 fn quoted(value: &str) -> String {
@@ -152,7 +158,10 @@ pub fn emit_rust(revision: &Revision, plan: &QueryPlan) -> Result<String> {
                 .map(|(role, term)| format!("({role:?}, {:?})", term.text()))
                 .collect::<Vec<_>>()
                 .join(",");
-            format!("Fact {{ relation: {:?}, roles: &[{roles}] }}", fact.relation())
+            format!(
+                "Fact {{ relation: {:?}, roles: &[{roles}] }}",
+                fact.relation()
+            )
         })
         .collect::<Vec<_>>()
         .join(",");
@@ -204,7 +213,7 @@ fn main() {
 "#;
 
 /// Emit a standalone Rust program that reloads a sealed revision and executes
-/// the M4 intent journey with the same generic kernel, wire, and query code.
+/// the intent journey with the same generic kernel, wire, and query code.
 /// The authoring source and interpreted output are deliberately absent.
 #[cfg(not(clause_generated))]
 pub fn emit_rust_e2e(revision: &Revision) -> Result<String> {
@@ -216,9 +225,18 @@ pub fn emit_rust_e2e(revision: &Revision) -> Result<String> {
     let mut source = String::new();
     writeln!(source, "mod kernel {{\n{}\n}}", include_str!("kernel.rs")).unwrap();
     writeln!(source, "mod wire {{\n{}\n}}", include_str!("wire.rs")).unwrap();
-    writeln!(source, "mod execution {{\n{}\n}}", include_str!("execution.rs")).unwrap();
-    writeln!(source, "const REVISION_WIRE: &str = {:?};", crate::wire::serialize(revision))
-        .unwrap();
+    writeln!(
+        source,
+        "mod execution {{\n{}\n}}",
+        include_str!("execution.rs")
+    )
+    .unwrap();
+    writeln!(
+        source,
+        "const REVISION_WIRE: &str = {:?};",
+        crate::wire::serialize(revision)
+    )
+    .unwrap();
     source.push_str(GENERATED_E2E_RUNTIME);
     Ok(source)
 }
@@ -268,27 +286,87 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kernel::{Cardinality, Clause, Mode, Model, Relation, Role, Sentence, Term};
+    use crate::kernel::{
+        self, Cardinality, Clause, Intent, Mode, Model, Relation, Role, Sentence, Term,
+    };
+    use crate::wire;
     use std::fs;
     use std::process::Command;
+
+    fn compile_and_run(generated: String, name: &str, generated_e2e: bool) -> String {
+        let root = std::env::temp_dir().join(format!("clause-{name}-{}", std::process::id()));
+        let source = root.with_extension("rs");
+        let binary = root.with_extension("bin");
+        fs::write(&source, generated).unwrap();
+        let mut compiler = Command::new("rustc");
+        compiler.arg("--edition=2024");
+        if generated_e2e {
+            compiler.arg("--cfg").arg("clause_generated");
+        }
+        let compile = compiler
+            .arg(&source)
+            .arg("-o")
+            .arg(&binary)
+            .output()
+            .unwrap();
+        assert!(
+            compile.status.success(),
+            "{}",
+            String::from_utf8_lossy(&compile.stderr)
+        );
+        let output = Command::new(&binary).output().unwrap();
+        assert!(output.status.success());
+        let _ = fs::remove_file(source);
+        let _ = fs::remove_file(binary);
+        String::from_utf8(output.stdout).unwrap()
+    }
 
     #[test]
     fn non_catalog_plan_interprets_and_generates_identically() {
         let relation = Relation::new(
             "inventory/stores",
-            vec![Role::new("container", "Text").unwrap(), Role::new("item", "Text").unwrap()],
+            vec![
+                Role::new("container", "Text").unwrap(),
+                Role::new("item", "Text").unwrap(),
+            ],
             Sentence::new("container", "stores", "item").unwrap(),
-            vec![Mode::finite(vec!["container".into()], vec!["item".into()], Cardinality::Many).unwrap()],
-        ).unwrap();
-        let fact = |item: &str| Clause::new("inventory/stores", vec![
-            ("container".into(), Term::literal("shelf-7").unwrap()),
-            ("item".into(), Term::literal(item).unwrap()),
-        ]).unwrap();
-        let query = Clause::new("inventory/stores", vec![
-            ("container".into(), Term::literal("shelf-7").unwrap()),
-            ("item".into(), Term::variable("found").unwrap()),
-        ]).unwrap();
-        let revision = Revision::admit(Model::new(vec![relation], vec![fact("widget"), fact("gadget")], query, "ascending").unwrap());
+            vec![
+                Mode::finite(
+                    vec!["container".into()],
+                    vec!["item".into()],
+                    Cardinality::Many,
+                )
+                .unwrap(),
+            ],
+        )
+        .unwrap();
+        let fact = |item: &str| {
+            Clause::new(
+                "inventory/stores",
+                vec![
+                    ("container".into(), Term::literal("shelf-7").unwrap()),
+                    ("item".into(), Term::literal(item).unwrap()),
+                ],
+            )
+            .unwrap()
+        };
+        let query = Clause::new(
+            "inventory/stores",
+            vec![
+                ("container".into(), Term::literal("shelf-7").unwrap()),
+                ("item".into(), Term::variable("found").unwrap()),
+            ],
+        )
+        .unwrap();
+        let revision = Revision::admit(
+            Model::new(
+                vec![relation],
+                vec![fact("widget"), fact("gadget")],
+                query,
+                "ascending",
+            )
+            .unwrap(),
+        );
         let plan = revision.plan().unwrap();
         let interpreted = canonical_json(&execute(&revision, &plan).unwrap());
         assert!(interpreted.contains("[\"results\",[\"gadget\",\"widget\"]]"));
@@ -296,16 +374,79 @@ mod tests {
         assert!(!generated.contains("catalog/contains"));
         assert!(!generated.contains("letters"));
 
-        let root = std::env::temp_dir().join(format!("clause-generic-execution-{}", std::process::id()));
-        let source = root.with_extension("rs");
-        let binary = root.with_extension("bin");
-        fs::write(&source, generated).unwrap();
-        let compile = Command::new("rustc").arg("--edition=2024").arg(&source).arg("-o").arg(&binary).output().unwrap();
-        assert!(compile.status.success(), "{}", String::from_utf8_lossy(&compile.stderr));
-        let output = Command::new(&binary).output().unwrap();
-        assert!(output.status.success());
-        assert_eq!(String::from_utf8(output.stdout).unwrap(), interpreted);
-        let _ = fs::remove_file(source);
-        let _ = fs::remove_file(binary);
+        assert_eq!(
+            compile_and_run(generated, "generic-query", false),
+            interpreted
+        );
+    }
+
+    #[test]
+    fn non_catalog_intent_journey_executes_in_generated_rust() {
+        let relation = Relation::new(
+            "orchard/harvest",
+            vec![
+                Role::new("crate", "Text").unwrap(),
+                Role::new("fruit", "Text").unwrap(),
+            ],
+            Sentence::new("crate", "holds", "fruit").unwrap(),
+            vec![
+                Mode::finite(
+                    vec!["crate".into()],
+                    vec!["fruit".into()],
+                    Cardinality::Many,
+                )
+                .unwrap(),
+            ],
+        )
+        .unwrap();
+        let fact = |fruit: &str| {
+            Clause::new(
+                "orchard/harvest",
+                vec![
+                    ("crate".into(), Term::literal("west").unwrap()),
+                    ("fruit".into(), Term::literal(fruit).unwrap()),
+                ],
+            )
+            .unwrap()
+        };
+        let query = Clause::new(
+            "orchard/harvest",
+            vec![
+                ("crate".into(), Term::literal("west").unwrap()),
+                ("fruit".into(), Term::variable("found").unwrap()),
+            ],
+        )
+        .unwrap();
+        let desired = fact("plum");
+        let revision = Revision::admit(
+            Model::with_intents(
+                vec![relation],
+                vec![fact("pear"), fact("apple")],
+                query,
+                vec![Intent::new("orchard/replenish", desired).unwrap()],
+                "ascending",
+            )
+            .unwrap(),
+        );
+        let branch = kernel::Branch::new("orchard", revision.clone()).unwrap();
+        let base_query = canonical_json(&execute(&revision, &revision.plan().unwrap()).unwrap());
+        let proposed = kernel::intent(&branch, "orchard/replenish");
+        let desired = proposed.intent().unwrap().desired().clone();
+        let claimed = kernel::claim(&branch, desired.clone()).unwrap();
+        let successor = claimed.successor().unwrap();
+        let required = kernel::require(successor.revision(), desired).unwrap();
+        let next_query = canonical_json(
+            &execute(successor.revision(), &successor.revision().plan().unwrap()).unwrap(),
+        );
+        let satisfied = kernel::intent(successor, "orchard/replenish");
+        let expected = format!(
+            "[\"clause-e2e-output-v1\",{base_query},{},{},{},{next_query},{}]",
+            wire::intent_output(&proposed),
+            wire::claim_output(&claimed),
+            wire::require_output(&required),
+            wire::intent_output(&satisfied),
+        );
+        let generated = emit_rust_e2e(&revision).unwrap();
+        assert_eq!(compile_and_run(generated, "generic-e2e", true), expected);
     }
 }

@@ -3,7 +3,7 @@
 //! The authoring file is only needed by `seal`.  `query` reads the persisted
 //! revision and therefore remains usable after the source file is removed.
 
-use clause_rust_spike::{elaborate, execution, frontend, kernel, wire};
+use clause::{elaborate, execution, frontend, kernel, wire};
 use std::env;
 use std::fmt;
 use std::fs;

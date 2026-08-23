@@ -1,6 +1,6 @@
-//! The sealed Clause M4 end-to-end intent journey.
+//! The sealed Clause catalog end-to-end intent journey.
 
-use clause_rust_spike::{elaborate, execution, frontend, kernel, wire};
+use clause::{elaborate, execution, frontend, kernel, wire};
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -25,7 +25,7 @@ query catalog:
 "#;
 
 fn fail(message: impl Into<String>) -> ! {
-    panic!("Clause Rust M4 e2e canary: {}", message.into())
+    panic!("Clause catalog e2e canary: {}", message.into())
 }
 
 fn check(condition: bool, message: impl Into<String>) {
@@ -35,7 +35,7 @@ fn check(condition: bool, message: impl Into<String>) {
 }
 
 fn temp_path(suffix: &str) -> PathBuf {
-    env::temp_dir().join(format!("clause-rust-m4-{}-{suffix}", std::process::id()))
+    env::temp_dir().join(format!("clause-catalog-{}-{suffix}", std::process::id()))
 }
 
 fn read(path: &Path) -> String {
@@ -52,7 +52,8 @@ fn query(revision: &kernel::Revision) -> String {
     )
 }
 
-fn main() {
+#[test]
+fn catalog_end_to_end() {
     let source_path = temp_path("fixture.clause");
     let sealed_path = temp_path("revision.json");
     let generated_path = temp_path("generated.rs");
@@ -162,8 +163,7 @@ fn main() {
     let e2e = format!(
         "[\"clause-e2e-output-v1\",{base_query},{proposed_wire},{claim_wire},{require_wire},{next_query},{satisfied}]"
     );
-    let generated =
-        execution::emit_rust_e2e(&base).unwrap_or_else(|error| fail(error.to_string()));
+    let generated = execution::emit_rust_e2e(&base).unwrap_or_else(|error| fail(error.to_string()));
     fs::write(&generated_path, generated)
         .unwrap_or_else(|error| fail(format!("write generated Rust: {error}")));
     let compile = Command::new("rustc")
@@ -198,5 +198,44 @@ fn main() {
         let _ = fs::remove_file(path);
     }
     println!("{e2e}");
-    println!("PASS clause-rust-m4-e2e {BASE_ID} {NEXT_ID}");
+    println!("PASS clause-catalog-e2e {BASE_ID} {NEXT_ID}");
+}
+
+#[test]
+fn cli_preserves_source_and_queries_the_revision_alone() {
+    let root = env::temp_dir().join(format!("clause-cli-{}", std::process::id()));
+    let source_path = root.with_extension("clause");
+    let revision_path = root.with_extension("revision.json");
+    fs::write(&source_path, FIXTURE).unwrap();
+
+    let e2e = Command::new(env!("CARGO_BIN_EXE_clause"))
+        .arg("e2e")
+        .arg(&source_path)
+        .arg(&revision_path)
+        .output()
+        .unwrap();
+    assert!(
+        e2e.status.success(),
+        "{}",
+        String::from_utf8_lossy(&e2e.stderr)
+    );
+    assert!(source_path.exists(), "e2e deleted the authoring source");
+
+    fs::remove_file(&source_path).unwrap();
+    let query = Command::new(env!("CARGO_BIN_EXE_clause"))
+        .arg("query")
+        .arg(&revision_path)
+        .output()
+        .unwrap();
+    assert!(
+        query.status.success(),
+        "{}",
+        String::from_utf8_lossy(&query.stderr)
+    );
+    assert!(
+        String::from_utf8(query.stdout)
+            .unwrap()
+            .contains("[\"results\",[\"a\",\"b\",\"c\"]]")
+    );
+    let _ = fs::remove_file(revision_path);
 }

@@ -3,5 +3,5 @@
 version = 4
 
 [[package]]
-name = "clause-rust-spike"
+name = "clause"
 version = "0.1.0"

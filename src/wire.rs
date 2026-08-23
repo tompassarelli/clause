@@ -716,6 +716,7 @@ mod tests {
         );
         let wire = serialize(&revision);
         assert_eq!(reload(&wire).unwrap(), revision);
+        assert!(reload(&(" ".to_owned() + &wire)).is_err(), "changed bytes");
         assert!(reload(&(wire.clone() + " ")).is_err(), "changed bytes");
         assert!(
             reload(&wire.replacen("\"a\"", "\"z\"", 1)).is_err(),
@@ -761,7 +762,7 @@ mod tests {
     }
 
     #[test]
-    fn claim_and_require_are_immutable_and_emit_exact_m3_arrays() {
+    fn claim_and_require_are_immutable_and_emit_exact_arrays() {
         let revision = crate::kernel::Revision::admit(model("member"));
         let branch = crate::kernel::Branch::new("catalog", revision.clone()).unwrap();
         let fact = |member: &str| {
@@ -833,7 +834,7 @@ mod tests {
     }
 
     #[test]
-    fn intent_is_immutable_and_emits_exact_m4_arrays() {
+    fn intent_is_immutable_and_emits_exact_arrays() {
         const BASE: &str =
             "rev-sha256-746240d8119edb45ce1971043d46fa865847efa799b682463d484445aa7b8f77";
         const NEXT: &str =

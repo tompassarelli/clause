@@ -1,14 +1,10 @@
 # Clause
 
-Clause is a research-language proof of concept (PoC). Its semantic program is
-a `Model`: an immutable collection of relations, facts, intents, and a query.
-An immutable `Revision` gives that Model a stable identity. A `Branch` is a
-coherent tracked development of Revisions. A `mode` records an operational
-orientation declared by a relation and selected by query planning.
-
-## M4 intent program
-
-The implemented M4 authoring program is:
+Clause is a Rust research-language proof of concept organized around typed
+relations rather than functions or positional triples. A program elaborates to
+an immutable `Model`; a canonical `Revision` gives that Model a stable identity;
+a `Branch` tracks coherent Revision development; and a declared `mode` tells
+the planner which participants are known and sought.
 
 ```clause
 relation catalog/contains(set: Text, member: Text):
@@ -26,51 +22,58 @@ query catalog:
     ?member where "letters" contains ?member
 ```
 
-The relation declares the sentence and its finite mode. The model supplies the
-`a` and `b` facts. The intent names the desired `c` fact, and the query opens
-`member` for execution. Selecting the intent on the base branch produces a
-claim plan; `claim` admits a successor Revision, and `require` checks that
-Revision and returns its proof. The base Revision remains unchanged.
+The example query selects the relation's finite mode and returns `a` and `b`.
+The intent proposes admitting `c`; `claim` produces a successor Revision;
+`require` proves that the successor contains the desired clause; and the final
+query returns `a`, `b`, and `c`. The base Revision remains unchanged.
 
-## Persisted Revision contract
+## Run it
 
-Each host reads authoring source only while sealing or running the focused M4
-journey. Elaboration produces canonical, host-neutral semantic arrays; Revision
-admission assigns a `rev-sha256-...` identity and persists a
-`clause-revision-v1` JSON envelope. Reload validates the identity and canonical
-payload. `query` executes a reloaded Revision without opening or retaining the
-authoring file, so deleting the source after sealing does not change execution.
-The Racket and Rust hosts implement this same contract, including immutable
-branch/Revision transitions and array-only outputs. This is a PoC: wire shapes,
-commands, and language surface are experimental rather than a compatibility
-promise.
-
-## Run the hosts
-
-From the repository root, run the focused M4 journey on either host:
+Clause pins Rust 1.96.1. From the repository root:
 
 ```sh
-racket_revision=$(mktemp)
-./racket/bin/clause run racket/m4.clause "$racket_revision"
-rm -f "$racket_revision"
-
-rust_revision=$(mktemp)
-./rust/bin/clause e2e racket/m4.clause "$rust_revision"
-./rust/bin/clause query "$rust_revision"
-rm -f "$rust_revision"
+revision=$(mktemp)
+./bin/clause e2e examples/catalog.clause "$revision"
+./bin/clause query "$revision"
+rm -f "$revision"
 ```
 
-Both launchers resolve their project roots independently of the caller's
-working directory. The example source and revision paths are repository-root
-relative; from another directory, pass paths valid for that directory. The
-Rust `query` command demonstrates source-free execution from the persisted
-successor Revision.
+`e2e` seals the source, strictly reloads the persisted base Revision, executes
+the intent/claim/require/query journey, persists and reloads the successor, and
+checks independently generated Rust execution byte-for-byte. It never deletes
+the authoring source. `query` reads only the persisted Revision, so it continues
+to work after the source is moved or removed.
 
-## Repository layout
+The narrower commands are:
 
-The root documents the semantic contract. Host implementations and their
-launchers live under `racket/` and `rust/`; `racket/m4.clause` is the shared
-authoring fixture used by the commands above.
+```sh
+./bin/clause seal SOURCE REVISION
+./bin/clause query REVISION
+```
+
+## Semantic boundary
+
+Canonical semantic arrays exclude source text, spans, and runtime details.
+Revision identity is `rev-sha256-` plus SHA-256 of those canonical UTF-8 bytes.
+Reload rejects noncanonical bytes, mismatched identities, incomplete role maps,
+malformed modes, and invalid intent namespaces. Query results, proofs, claims,
+requirements, and intent plans use deterministic array-only encodings.
+
+The current surface deliberately supports a small finite slice: binary mixfix
+relations, one Model and query per program, one declared mode per relation, and
+pure intent planning. General search, effects, native compilation, packaging,
+and compatibility guarantees remain outside this proof.
+
+## Develop
+
+```sh
+cargo test
+```
+
+The tests cover parsing and spans, named-role elaboration, mode planning,
+canonical persistence and tamper rejection, immutable Revision transitions,
+source-deleted reload, generic generated execution, and the complete catalog
+journey.
 
 ## License
 
