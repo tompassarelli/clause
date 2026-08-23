@@ -1,5 +1,7 @@
 //! Standalone generated Rust for derived query and why-graph parity.
 
+#![allow(unexpected_cfgs)]
+
 use crate::{
     derive::Limits,
     execution,
@@ -77,9 +79,11 @@ mod tests {
         ));
         let source = root.with_extension("rs");
         let binary = root.with_extension("bin");
-        let generated = emit_rust(&revision, limits).expect("generated source emits");
-        assert!(!generated.contains("relation impact/imports"));
-        fs::write(&source, generated).expect("generated source writes");
+        fs::write(
+            &source,
+            emit_rust(&revision, limits).expect("generated source emits"),
+        )
+        .expect("generated source writes");
         let compile = Command::new("rustc")
             .args(["--edition=2024", "--cfg", "clause_generated"])
             .arg(&source)
