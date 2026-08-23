@@ -1,0 +1,36 @@
+{
+  "schema": "clause-m0-contrast-v1",
+  "id": "prevent-all-minimal",
+  "axis": "intervention-query-surface",
+  "decision": {"status": "unresolved", "candidate": "prevent-all-minimal-block", "layout_style": "provisional-four-space"},
+  "source": {
+    "lines": ["prevent all minimal", "    ICU-A has a usable egress path to North-Exit", "using", "    passed"],
+    "line_break": "LF",
+    "ends_with_line_break": true
+  },
+  "context": {
+    "current_revision": "$revision:egress",
+    "target": {"handle": "$target:icu-north", "clause": {"relation": "$route", "roles": {"origin": "ICU-A", "destination": "North-Exit"}}},
+    "finite_basis": {"relation": "$passed", "members": ["$passed:101", "$passed:102", "$passed:103", "$passed:104"]}
+  },
+  "structural_intent": "complete-minimal-withdrawal-query",
+  "equivalence_group": "prevent-icu-north",
+  "required": ["using names one finite extensional relation basis", "each Delta is exact-base and individually verified", "all inclusion-minimal withdrawals form a complete antichain"],
+  "forbidden": ["minimum-cardinality-claim", "arbitrary-fact-basis", "mutable-revision", "random-result-order"],
+  "elaborated": [
+    {"kind": "query", "mood": "prevent", "revision": "$revision:egress", "target": "$target:icu-north", "selection": "all-minimal", "using": ["$passed"]}
+  ],
+  "result": {
+    "kind": "intervention-frontier",
+    "operation": "withdrawal",
+    "base": "$revision:egress",
+    "status": "complete",
+    "minimality": "inclusion",
+    "interventions": [
+      ["$passed:101", "$passed:103"],
+      ["$passed:101", "$passed:104"],
+      ["$passed:102", "$passed:103"],
+      ["$passed:102", "$passed:104"]
+    ]
+  }
+}

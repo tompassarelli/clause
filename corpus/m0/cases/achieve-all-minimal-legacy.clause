@@ -1,0 +1,4 @@
+achieve all minimal in egress:
+    Isolation-Room has a usable egress path to North-Exit
+using:
+    egress/passed

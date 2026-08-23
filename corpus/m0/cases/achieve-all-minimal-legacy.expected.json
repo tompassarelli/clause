@@ -1,0 +1,31 @@
+{
+  "schema": "clause-m0-contrast-v1",
+  "id": "achieve-all-minimal-legacy",
+  "axis": "intervention-migration-parity",
+  "decision": {"status": "implemented-legacy", "replacement_equivalence_group": "achieve-isolation-north"},
+  "source": {
+    "lines": ["achieve all minimal in egress:", "    Isolation-Room has a usable egress path to North-Exit", "using:", "    egress/passed"],
+    "line_break": "LF",
+    "ends_with_line_break": true
+  },
+  "context": {
+    "current_revision": "$revision:egress",
+    "target": {"handle": "$target:isolation-north", "clause": {"relation": "$route", "roles": {"origin": "Isolation-Room", "destination": "North-Exit"}}},
+    "finite_typed_basis": {"relation": "$passed", "absent_ground_members": ["$passed:105", "$passed:106"]}
+  },
+  "structural_intent": "legacy-complete-minimal-admission-query",
+  "equivalence_group": "achieve-isolation-north",
+  "required": ["migration preserves exact Revision, target, and typed relation basis", "complete minimal antichain is unchanged"],
+  "forbidden": ["target-candidate", "canonical-current-profile", "semantic-result-change", "untyped-grounding"],
+  "elaborated": [
+    {"kind": "query", "mood": "achieve", "revision": "$revision:egress", "target": "$target:isolation-north", "selection": "all-minimal", "using": ["$passed"]}
+  ],
+  "result": {
+    "kind": "intervention-frontier",
+    "operation": "admission",
+    "base": "$revision:egress",
+    "status": "complete",
+    "minimality": "inclusion",
+    "interventions": [["$passed:105"], ["$passed:106"]]
+  }
+}

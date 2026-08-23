@@ -1,0 +1,33 @@
+{
+  "schema": "clause-m0-contrast-v1",
+  "id": "prevent-incomplete",
+  "axis": "intervention-completeness",
+  "decision": {"status": "unresolved", "candidate": "bounded-prevent-result", "layout_style": "provisional-four-space"},
+  "source": {
+    "lines": ["prevent all minimal", "    ICU-A has a usable egress path to North-Exit", "using", "    passed"],
+    "line_break": "LF",
+    "ends_with_line_break": true
+  },
+  "context": {
+    "current_revision": "$revision:egress",
+    "target": {"handle": "$target:icu-north", "clause": {"relation": "$route", "roles": {"origin": "ICU-A", "destination": "North-Exit"}}},
+    "finite_basis": {"relation": "$passed", "members": ["$passed:101", "$passed:102", "$passed:103", "$passed:104"]},
+    "limits": {"max_candidate_checks": 1, "max_solutions": 100}
+  },
+  "structural_intent": "incomplete-minimal-withdrawal-query",
+  "required": ["candidate exhaustion is explicit", "retained prefix contains only verified minimal interventions", "empty retained prefix does not claim impossibility"],
+  "forbidden": ["complete-status", "frontier-exhaustion-claim", "retry-as-proof", "silent-truncation"],
+  "elaborated": [
+    {"kind": "query", "mood": "prevent", "revision": "$revision:egress", "target": "$target:icu-north", "selection": "all-minimal", "using": ["$passed"]}
+  ],
+  "result": {
+    "kind": "intervention-frontier",
+    "operation": "withdrawal",
+    "base": "$revision:egress",
+    "status": "incomplete",
+    "reason": "candidate-budget-exhausted",
+    "minimality": "individually-certified",
+    "retained_prefix": [],
+    "frontier_claim": "not-made"
+  }
+}

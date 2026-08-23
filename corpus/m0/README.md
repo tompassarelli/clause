@@ -18,7 +18,7 @@ reconstruction mechanical. `decision` is one of:
 - `implemented-legacy` — the source is current executable migration evidence,
   not a target candidate.
 
-`required` and `forbidden` are normative even for unresolved candidates.
+`required` and `forbidden` are normative for every case.
 `elaborated` is an abstract role graph independent of surface spelling.
 Handles beginning with `$` are corpus symbols, not Store identities.
 
@@ -69,6 +69,15 @@ Handles beginning with `$` are corpus symbols, not Store identities.
 | `revision-admit-existing` | admission must be absent from the exact base |
 | `revision-overlap` | one clause cannot be both admitted and withdrawn |
 | `diff-revisions` | diff preserves exact base-to-successor direction |
+| `why-explanation` | explanation retains two complete minimal supports and proofs |
+| `why-explanation-legacy` | current profile preserves explanation semantics for migration |
+| `prevent-all-minimal` | four complete inclusion-minimal withdrawal pairs |
+| `prevent-all-minimal-legacy` | current profile preserves prevention semantics for migration |
+| `achieve-all-minimal` | two complete typed singleton additions |
+| `achieve-all-minimal-legacy` | current profile preserves achievement semantics for migration |
+| `prevent-incomplete` | candidate exhaustion cannot claim a complete prevention frontier |
+| `achieve-incomplete` | retained additions remain certified under incomplete search |
+| `diff-semantic-degradation` | authored, entailed, proof, and support changes remain distinct |
 
 Do not “bless” these files from parser output. A later fixture checker may
 compare exact projections and print diffs, but reviewed corpus remains the
