@@ -299,12 +299,10 @@ fn hospital_program_has_the_complete_six_request_semantic_and_materialization_jo
     fs::write(&source, SOURCE).expect("hospital source writes");
 
     let seal = Command::new(env!("CARGO_BIN_EXE_clause"))
-        .args([
-            "seal",
-            source.to_str().expect("UTF-8 source path"),
-            "egress",
-            revision.to_str().expect("UTF-8 revision path"),
-        ])
+        .arg("seal")
+        .arg(&source)
+        .arg("egress")
+        .arg(&revision)
         .output()
         .expect("seal command starts");
     assert!(
@@ -317,7 +315,8 @@ fn hospital_program_has_the_complete_six_request_semantic_and_materialization_jo
     assert_eq!(sealed.identity(), base.identity());
 
     let run = Command::new(env!("CARGO_BIN_EXE_clause"))
-        .args(["run", source.to_str().expect("UTF-8 source path")])
+        .arg("run")
+        .arg(&source)
         .output()
         .expect("run command starts");
     assert!(
@@ -331,11 +330,9 @@ fn hospital_program_has_the_complete_six_request_semantic_and_materialization_jo
     );
 
     let materialize = Command::new(env!("CARGO_BIN_EXE_clause"))
-        .args([
-            "emit-rust",
-            source.to_str().expect("UTF-8 source path"),
-            generated_source.to_str().expect("UTF-8 generated path"),
-        ])
+        .arg("emit-rust")
+        .arg(&source)
+        .arg(&generated_source)
         .output()
         .expect("emit-rust command starts");
     assert!(

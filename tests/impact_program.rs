@@ -39,12 +39,10 @@ fn impact_source_seals_runs_and_generated_requests_survive_source_removal() {
     fs::write(&source, SOURCE).expect("source writes");
 
     let seal = Command::new(env!("CARGO_BIN_EXE_clause"))
-        .args([
-            "seal",
-            source.to_str().expect("UTF-8 source path"),
-            "impact",
-            revision.to_str().expect("UTF-8 revision path"),
-        ])
+        .arg("seal")
+        .arg(&source)
+        .arg("impact")
+        .arg(&revision)
         .output()
         .expect("seal command starts");
     assert!(
@@ -63,7 +61,8 @@ fn impact_source_seals_runs_and_generated_requests_survive_source_removal() {
     );
 
     let run = Command::new(env!("CARGO_BIN_EXE_clause"))
-        .args(["run", source.to_str().expect("UTF-8 source path")])
+        .arg("run")
+        .arg(&source)
         .output()
         .expect("run command starts");
     assert!(

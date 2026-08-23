@@ -16,7 +16,7 @@ use super::{
 /// authored order. Requests are deliberately outside revision identity.
 #[derive(Clone, Debug)]
 pub struct CompiledProgram {
-    pub(super) revisions: BTreeMap<frontend::Name, kernel::Revision>,
+    revisions: BTreeMap<frontend::Name, kernel::Revision>,
     requests: Vec<frontend::RequestDecl>,
 }
 

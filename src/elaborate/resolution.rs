@@ -63,10 +63,10 @@ impl<'a> Resolver<'a> {
             )));
         }
         let outcome = (|| {
-            let base = self.revision(&from(declaration)?)?;
-            match apply(declaration)? {
+            let base = self.revision(from(declaration)?)?;
+            match apply(declaration) {
                 Some(delta_name) => {
-                    let delta = self.delta(&delta_name)?;
+                    let delta = self.delta(delta_name)?;
                     if delta.base() != base.identity() {
                         return Err(kernel::KernelError::new(format!(
                             "Delta '{}' base does not match Revision '{}'",
@@ -97,9 +97,9 @@ impl<'a> Resolver<'a> {
             )));
         }
         let outcome = (|| {
-            let base = self.revision(&from(declaration)?)?;
+            let base = self.revision(from(declaration)?)?;
             let delta = local_delta(&base, declaration)?;
-            delta.clone().apply(&base)?;
+            delta.apply(&base)?;
             Ok(delta)
         })();
         self.visiting_deltas.remove(name);
@@ -109,22 +109,22 @@ impl<'a> Resolver<'a> {
     }
 }
 
-fn from(declaration: &AscriptionDecl) -> kernel::Result<frontend::Name> {
+fn from(declaration: &AscriptionDecl) -> kernel::Result<&frontend::Name> {
     declaration
         .body
         .iter()
         .find_map(|member| match member {
-            Member::From(name) => Some(name.clone()),
+            Member::From(name) => Some(name),
             _ => None,
         })
         .ok_or_else(|| kernel::KernelError::new("Revision or Delta requires from:"))
 }
 
-fn apply(declaration: &AscriptionDecl) -> kernel::Result<Option<frontend::Name>> {
-    Ok(declaration.body.iter().find_map(|member| match member {
-        Member::Apply(name) => Some(name.clone()),
+fn apply(declaration: &AscriptionDecl) -> Option<&frontend::Name> {
+    declaration.body.iter().find_map(|member| match member {
+        Member::Apply(name) => Some(name),
         _ => None,
-    }))
+    })
 }
 
 fn local_delta(base: &Revision, declaration: &AscriptionDecl) -> kernel::Result<Delta> {

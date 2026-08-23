@@ -184,7 +184,8 @@ mod emit_rust_cli {
         fs::write(&source, SOURCE).expect("source writes");
 
         let interpreted = Command::new(env!("CARGO_BIN_EXE_clause"))
-            .args(["run", source.to_str().expect("UTF-8 source path")])
+            .arg("run")
+            .arg(&source)
             .output()
             .expect("run command starts");
         assert!(
@@ -198,11 +199,9 @@ mod emit_rust_cli {
             .to_owned();
 
         let materialized = Command::new(env!("CARGO_BIN_EXE_clause"))
-            .args([
-                "emit-rust",
-                source.to_str().expect("UTF-8 source path"),
-                emitted.to_str().expect("UTF-8 output path"),
-            ])
+            .arg("emit-rust")
+            .arg(&source)
+            .arg(&emitted)
             .output()
             .expect("emit-rust command starts");
         assert!(
