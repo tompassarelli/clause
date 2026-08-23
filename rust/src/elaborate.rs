@@ -7,6 +7,11 @@ pub fn program(program: frontend::Program) -> kernel::Result<Model> {
             "M2 requires exactly one model and one query",
         ));
     }
+    if !program.operations.is_empty() {
+        return Err(kernel::KernelError::new(
+            "source claim/require operations are not supported by sealed revisions",
+        ));
+    }
 
     let relations = program
         .relations
@@ -113,4 +118,32 @@ fn clause(
         })
         .collect::<kernel::Result<Vec<_>>>()?;
     Clause::new(relation, roles)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rejects_authored_operations_until_they_are_sealed() {
+        let source = r#"relation catalog/contains(set: Text, member: Text):
+    sentence: {set} contains {member}
+    mode set -> member: many
+
+model catalog:
+    "letters" contains "a"
+
+query catalog:
+    ?member where "letters" contains ?member
+
+claim catalog:
+    "letters" contains "c"
+"#;
+        let parsed = frontend::parse(source).expect("source parses before elaboration");
+        let error = program(parsed).expect_err("unsealed operations must not be dropped");
+        assert_eq!(
+            error.to_string(),
+            "source claim/require operations are not supported by sealed revisions"
+        );
+    }
 }

@@ -176,15 +176,18 @@ fn query_json(revision: &kernel::Revision) -> Result<String, CliError> {
     Ok(execution::canonical_json(&output))
 }
 
-fn verify_generated_rust(output: &str) -> Result<(), CliError> {
+fn verify_generated_rust(revision: &kernel::Revision, output: &str) -> Result<(), CliError> {
     let stem = env::temp_dir().join(format!("clause-e2e-generated-{}", std::process::id()));
     let source = stem.with_extension("rs");
     let binary = stem.with_extension("bin");
-    let generated = format!("fn main() {{ print!(\"{{}}\", {output:?}); }}\n");
+    let generated = execution::emit_rust_e2e(revision)
+        .map_err(|error| CliError::failure(format!("generate Rust: {error}")))?;
     fs::write(&source, generated)
         .map_err(|error| CliError::failure(format!("write generated Rust: {error}")))?;
     let compile = Process::new("rustc")
         .arg("--edition=2024")
+        .arg("--cfg")
+        .arg("clause_generated")
         .arg(&source)
         .arg("-o")
         .arg(&binary)
@@ -211,6 +214,15 @@ fn verify_generated_rust(output: &str) -> Result<(), CliError> {
 
 fn e2e(source_path: &Path, revision_path: &Path) -> Result<(), CliError> {
     seal(source_path, revision_path)?;
+    fs::remove_file(source_path).map_err(|error| {
+        CliError::failure(format!(
+            "delete source '{}': {error}",
+            source_path.display()
+        ))
+    })?;
+    if source_path.exists() {
+        return Err(CliError::failure("authoring source survived deletion"));
+    }
     let persisted = read_utf8(revision_path, "read revision")?;
     let base = wire::reload(&persisted)
         .map_err(|error| CliError::failure(format!("reload revision: {error}")))?;
@@ -269,7 +281,7 @@ fn e2e(source_path: &Path, revision_path: &Path) -> Result<(), CliError> {
         wire::require_output(&required),
         wire::intent_output(&satisfied),
     );
-    verify_generated_rust(&output)?;
+    verify_generated_rust(&base, &output)?;
     println!("{output}");
     eprintln!(
         "clause: e2e ok base={} successor={} revision_file={}",

@@ -1,3 +1,5 @@
+#![allow(unexpected_cfgs)]
+
 use crate::kernel::{Clause, KernelError, QueryPlan, Result, Revision};
 use std::fmt::Write;
 
@@ -122,6 +124,7 @@ fn quoted(value: &str) -> String {
     format!("\"{escaped}\"")
 }
 
+#[cfg(not(clause_generated))]
 pub fn emit_rust(revision: &Revision, plan: &QueryPlan) -> Result<String> {
     if revision.plan()? != *plan {
         return Err(KernelError::new("query plan does not belong to revision"));
@@ -164,6 +167,7 @@ pub fn emit_rust(revision: &Revision, plan: &QueryPlan) -> Result<String> {
     Ok(source)
 }
 
+#[cfg(not(clause_generated))]
 const GENERATED_RUNTIME: &str = r#"
 struct Fact { relation: &'static str, roles: &'static [(&'static str, &'static str)] }
 fn role<'a>(roles: &'a [(&str, &str)], name: &str) -> Option<&'a str> {
@@ -196,6 +200,68 @@ fn main() {
     let results = rows.iter().map(|(value, _)| json(value)).collect::<Vec<_>>().join(",");
     let proofs = rows.iter().map(|(_, proof)| proof.as_str()).collect::<Vec<_>>().join(",");
     print!("[\"clause-query-output-v1\",[\"results\",[{}]],[\"proofs\",[{}]]]", results, proofs);
+}
+"#;
+
+/// Emit a standalone Rust program that reloads a sealed revision and executes
+/// the M4 intent journey with the same generic kernel, wire, and query code.
+/// The authoring source and interpreted output are deliberately absent.
+#[cfg(not(clause_generated))]
+pub fn emit_rust_e2e(revision: &Revision) -> Result<String> {
+    if revision.model().intents().len() != 1 {
+        return Err(KernelError::new(
+            "generated e2e requires exactly one declared intent",
+        ));
+    }
+    let mut source = String::new();
+    writeln!(source, "mod kernel {{\n{}\n}}", include_str!("kernel.rs")).unwrap();
+    writeln!(source, "mod wire {{\n{}\n}}", include_str!("wire.rs")).unwrap();
+    writeln!(source, "mod execution {{\n{}\n}}", include_str!("execution.rs")).unwrap();
+    writeln!(source, "const REVISION_WIRE: &str = {:?};", crate::wire::serialize(revision))
+        .unwrap();
+    source.push_str(GENERATED_E2E_RUNTIME);
+    Ok(source)
+}
+
+#[cfg(not(clause_generated))]
+const GENERATED_E2E_RUNTIME: &str = r#"
+fn query(revision: &kernel::Revision) -> String {
+    let plan = revision.plan().expect("sealed revision has a query plan");
+    let output = execution::execute(revision, &plan).expect("sealed revision executes");
+    execution::canonical_json(&output)
+}
+
+fn main() {
+    let base = wire::reload(REVISION_WIRE).expect("embedded revision reloads");
+    let intent = match base.model().intents() {
+        [intent] => intent,
+        _ => panic!("generated e2e requires exactly one declared intent"),
+    };
+    let branch_name = intent
+        .name()
+        .split_once('/')
+        .map(|(namespace, _)| namespace)
+        .expect("intent has a model namespace");
+    let branch = kernel::Branch::new(branch_name, base.clone()).expect("valid branch name");
+    let base_query = query(&base);
+    let proposed = kernel::intent(&branch, intent.name());
+    let desired = proposed
+        .intent()
+        .expect("declared intent is selectable")
+        .desired()
+        .clone();
+    let proposed_output = wire::intent_output(&proposed);
+    let claimed = kernel::claim(&branch, desired.clone()).expect("intent claim is admissible");
+    let successor = claimed.successor().expect("intent claim creates a successor");
+    let required = kernel::require(successor.revision(), desired).expect("require is valid");
+    let next_query = query(successor.revision());
+    let satisfied = kernel::intent(successor, intent.name());
+    print!(
+        "[\"clause-e2e-output-v1\",{base_query},{proposed_output},{},{},{next_query},{}]",
+        wire::claim_output(&claimed),
+        wire::require_output(&required),
+        wire::intent_output(&satisfied),
+    );
 }
 "#;
 

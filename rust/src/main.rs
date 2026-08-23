@@ -162,11 +162,14 @@ fn main() {
     let e2e = format!(
         "[\"clause-e2e-output-v1\",{base_query},{proposed_wire},{claim_wire},{require_wire},{next_query},{satisfied}]"
     );
-    let generated = format!("fn main() {{ print!(\"{{}}\", {e2e:?}); }}\n");
+    let generated =
+        execution::emit_rust_e2e(&base).unwrap_or_else(|error| fail(error.to_string()));
     fs::write(&generated_path, generated)
         .unwrap_or_else(|error| fail(format!("write generated Rust: {error}")));
     let compile = Command::new("rustc")
         .arg("--edition=2024")
+        .arg("--cfg")
+        .arg("clause_generated")
         .arg(&generated_path)
         .arg("-o")
         .arg(&binary_path)
