@@ -214,15 +214,6 @@ fn verify_generated_rust(revision: &kernel::Revision, output: &str) -> Result<()
 
 fn e2e(source_path: &Path, revision_path: &Path) -> Result<(), CliError> {
     seal(source_path, revision_path)?;
-    fs::remove_file(source_path).map_err(|error| {
-        CliError::failure(format!(
-            "delete source '{}': {error}",
-            source_path.display()
-        ))
-    })?;
-    if source_path.exists() {
-        return Err(CliError::failure("authoring source survived deletion"));
-    }
     let persisted = read_utf8(revision_path, "read revision")?;
     let base = wire::reload(&persisted)
         .map_err(|error| CliError::failure(format!("reload revision: {error}")))?;
