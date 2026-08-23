@@ -1,0 +1,43 @@
+relation impact/imports(consumer: Text, dependency: Text):
+    sentence: {consumer} imports {dependency}
+    mode consumer -> dependency: many
+
+relation impact/depends(consumer: Text, dependency: Text):
+    sentence: {consumer} depends on {dependency}
+    mode consumer -> dependency: many
+
+relation impact/changes(change: Text, component: Text):
+    sentence: {change} changes {component}
+    mode change -> component: many
+
+relation impact/affected(change: Text, consumer: Text):
+    sentence: {change} affects {consumer}
+    mode change -> consumer: many
+
+model impact:
+    "North" imports "Store"
+    "Store" imports "Beagle"
+    "compiler-change" changes "Beagle"
+
+law impact/direct-dependency:
+    ?consumer depends on ?dependency
+    when:
+        ?consumer imports ?dependency
+
+law impact/recursive-dependency:
+    ?consumer depends on ?dependency
+    when:
+        ?consumer imports ?intermediate
+        ?intermediate depends on ?dependency
+
+law impact/impact:
+    ?change affects ?consumer
+    when:
+        ?change changes ?component
+        ?consumer depends on ?component
+
+intent impact/adopt-south:
+    "South" imports "North"
+
+query impact:
+    ?consumer where "compiler-change" affects ?consumer
