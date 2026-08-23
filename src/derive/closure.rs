@@ -1,6 +1,68 @@
-use super::{Closure, Limits, Proof, Witness, limit_error};
-use crate::kernel::{Clause, Law, Result, Revision, Term, VariableId};
+use crate::kernel::{Clause, KernelError, Law, Result, Revision, Term, VariableId};
 use std::collections::BTreeMap;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Limits {
+    pub max_assertions: usize,
+    pub max_rounds: usize,
+    pub max_join_attempts: usize,
+}
+
+impl Limits {
+    pub fn new(max_assertions: usize, max_rounds: usize, max_join_attempts: usize) -> Self {
+        Self {
+            max_assertions,
+            max_rounds,
+            max_join_attempts,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Proof {
+    generation: usize,
+    witness: Witness,
+}
+
+impl Proof {
+    pub fn generation(&self) -> usize {
+        self.generation
+    }
+
+    pub fn witness(&self) -> &Witness {
+        &self.witness
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Witness {
+    Asserted,
+    Derived {
+        law: crate::kernel::LawId,
+        premises: Vec<Clause>,
+        substitution: BTreeMap<VariableId, Term>,
+    },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Closure {
+    assertions: Vec<Clause>,
+    proofs: BTreeMap<Clause, Proof>,
+}
+
+impl Closure {
+    pub fn assertions(&self) -> &[Clause] {
+        &self.assertions
+    }
+
+    pub fn proof(&self, clause: &Clause) -> Option<&Proof> {
+        self.proofs.get(clause)
+    }
+}
+
+pub(super) fn limit_error(kind: &str, name: &str, value: usize) -> KernelError {
+    KernelError::new(format!("closure {kind} limit exceeded ({name}={value})"))
+}
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 struct Candidate {

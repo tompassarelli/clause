@@ -1,9 +1,129 @@
-use super::{
-    Support, SupportFrontier, SupportLimits, SupportProof, SupportStatus, SupportWitness,
-    limit_error,
-};
-use crate::kernel::{Clause, Law, Result, Revision, Term, VariableId};
+use super::closure::{Limits, limit_error, saturate};
+use crate::kernel::{Clause, Law, Result, Revision, RevisionId, Term, VariableId};
 use std::collections::{BTreeMap, BTreeSet};
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SupportLimits {
+    pub closure: Limits,
+    pub max_expansions: usize,
+    pub max_supports_per_clause: usize,
+}
+
+impl SupportLimits {
+    pub fn new(closure: Limits, max_expansions: usize, max_supports_per_clause: usize) -> Self {
+        Self {
+            closure,
+            max_expansions,
+            max_supports_per_clause,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SupportStatus {
+    Complete,
+    ExpansionBudgetExhausted,
+    SupportBudgetExhausted,
+}
+
+impl SupportStatus {
+    pub fn is_complete(self) -> bool {
+        self == Self::Complete
+    }
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct SupportProof {
+    conclusion: Clause,
+    witness: SupportWitness,
+}
+
+impl SupportProof {
+    pub fn conclusion(&self) -> &Clause {
+        &self.conclusion
+    }
+
+    pub fn witness(&self) -> &SupportWitness {
+        &self.witness
+    }
+
+    fn contains(&self, clause: &Clause) -> bool {
+        self.conclusion == *clause
+            || match &self.witness {
+                SupportWitness::Asserted => false,
+                SupportWitness::Derived { premises, .. } => {
+                    premises.iter().any(|premise| premise.contains(clause))
+                }
+            }
+    }
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum SupportWitness {
+    Asserted,
+    Derived {
+        law: crate::kernel::LawId,
+        premises: Vec<SupportProof>,
+        substitution: BTreeMap<VariableId, Term>,
+    },
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct Support {
+    assertion_key: Vec<Clause>,
+    assertions: Vec<Clause>,
+    proof: SupportProof,
+}
+
+impl Support {
+    pub fn assertions(&self) -> &[Clause] {
+        &self.assertions
+    }
+
+    pub fn proof(&self) -> &SupportProof {
+        &self.proof
+    }
+
+    pub(crate) fn assertion_key(&self) -> &[Clause] {
+        &self.assertion_key
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SupportFrontier {
+    revision: RevisionId,
+    target: Clause,
+    limits: SupportLimits,
+    status: SupportStatus,
+    expansions: usize,
+    supports: Vec<Support>,
+}
+
+impl SupportFrontier {
+    pub fn revision(&self) -> &RevisionId {
+        &self.revision
+    }
+
+    pub fn target(&self) -> &Clause {
+        &self.target
+    }
+
+    pub fn limits(&self) -> SupportLimits {
+        self.limits
+    }
+
+    pub fn status(&self) -> SupportStatus {
+        self.status
+    }
+
+    pub fn expansions(&self) -> usize {
+        self.expansions
+    }
+
+    pub fn supports(&self) -> &[Support] {
+        &self.supports
+    }
+}
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 struct GroundDerivation {
@@ -20,7 +140,7 @@ pub fn support_frontier(
     limits: SupportLimits,
 ) -> Result<SupportFrontier> {
     revision.model().validate_clause(target, false)?;
-    let closure = super::closure::saturate(revision, limits.closure)?;
+    let closure = saturate(revision, limits.closure)?;
     if closure.proof(target).is_none() {
         return Ok(SupportFrontier {
             revision: revision.identity().clone(),
@@ -304,7 +424,7 @@ fn sorted_subset(left: &[Clause], right: &[Clause]) -> bool {
 fn collect_ground_derivations(
     law: &Law,
     assertions: &[Clause],
-    limits: &super::Limits,
+    limits: &Limits,
     join_attempts: &mut usize,
     derivations: &mut BTreeSet<GroundDerivation>,
     premise_index: usize,

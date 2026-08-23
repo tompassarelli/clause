@@ -13,4 +13,9 @@ mod source;
 mod syntax;
 
 pub use parser::parse;
-pub use syntax::*;
+pub use syntax::{
+    AscriptionDecl, Cardinality, EntityDecl, EntityGroupDecl, EntityTemplate, FocusBinding,
+    FocusBlock, FocusSlot, IntegerRange, InterventionSelection, Kind, Member, ModeDecl, Name,
+    ParseError, Program, RequestDecl, RoleName, SentenceShapeDecl, ShapePartDecl, Span, Spanned,
+    SurfaceClause, SurfaceTerm, TypeName, VariableName,
+};
