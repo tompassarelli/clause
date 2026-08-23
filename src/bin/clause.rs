@@ -3,7 +3,15 @@
 //! The authoring file is only needed by `seal`.  `query` reads the persisted
 //! revision and therefore remains usable after the source file is removed.
 
-use clause::{elaborate, execution, frontend, kernel, wire};
+use clause::{
+    derive::Limits,
+    elaborate, frontend, generated,
+    intervention::{self, AchieveConfig, AchieveResult, PreventLimits, PreventStatus},
+    kernel,
+    semantic_diff::SemanticDiff,
+    wire,
+};
+use std::collections::BTreeSet;
 use std::env;
 use std::fmt;
 use std::fs;
@@ -12,6 +20,10 @@ use std::process::{Command as Process, ExitCode};
 
 const USAGE: &str =
     "usage: clause seal SOURCE REVISION | clause query REVISION | clause e2e SOURCE REVISION";
+
+fn limits() -> Limits {
+    Limits::new(100, 10, 10_000)
+}
 
 #[derive(Debug)]
 struct CliError {
@@ -146,19 +158,13 @@ fn query(revision_path: &Path) -> Result<(), CliError> {
             revision_path.display()
         ))
     })?;
-    let plan = revision.plan().map_err(|error| {
-        CliError::failure(format!(
-            "plan revision '{}': {error}",
-            revision_path.display()
-        ))
-    })?;
-    let output = execution::execute(&revision, &plan).map_err(|error| {
+    let output = query_json(&revision).map_err(|error| {
         CliError::failure(format!(
             "query revision '{}': {error}",
             revision_path.display()
         ))
     })?;
-    println!("{}", execution::canonical_json(&output));
+    println!("{output}");
     eprintln!(
         "clause: query ok revision={} revision_file={}",
         revision.identity(),
@@ -168,19 +174,15 @@ fn query(revision_path: &Path) -> Result<(), CliError> {
 }
 
 fn query_json(revision: &kernel::Revision) -> Result<String, CliError> {
-    let plan = revision
-        .plan()
-        .map_err(|error| CliError::failure(format!("plan revision: {error}")))?;
-    let output = execution::execute(revision, &plan)
-        .map_err(|error| CliError::failure(format!("query revision: {error}")))?;
-    Ok(execution::canonical_json(&output))
+    generated::canonical_output(revision, limits())
+        .map_err(|error| CliError::failure(format!("query revision: {error}")))
 }
 
 fn verify_generated_rust(revision: &kernel::Revision, output: &str) -> Result<(), CliError> {
     let stem = env::temp_dir().join(format!("clause-e2e-generated-{}", std::process::id()));
     let source = stem.with_extension("rs");
     let binary = stem.with_extension("bin");
-    let generated = execution::emit_rust_e2e(revision)
+    let generated = generated::emit_rust(revision, limits())
         .map_err(|error| CliError::failure(format!("generate Rust: {error}")))?;
     fs::write(&source, generated)
         .map_err(|error| CliError::failure(format!("write generated Rust: {error}")))?;
@@ -206,10 +208,115 @@ fn verify_generated_rust(revision: &kernel::Revision, output: &str) -> Result<()
     let _ = fs::remove_file(binary);
     if !generated_output.status.success() || generated_output.stdout != output.as_bytes() {
         return Err(CliError::failure(
-            "interpreter/generated Rust e2e output differs",
+            "interpreter/generated Rust query-v2 output differs",
         ));
     }
     Ok(())
+}
+
+fn json(value: &str) -> String {
+    let mut escaped = String::new();
+    for character in value.chars() {
+        match character {
+            '"' => escaped.push_str("\\\""),
+            '\\' => escaped.push_str("\\\\"),
+            '\n' => escaped.push_str("\\n"),
+            '\r' => escaped.push_str("\\r"),
+            '\t' => escaped.push_str("\\t"),
+            value if value <= '\u{1f}' => escaped.push_str(&format!("\\u{:04x}", value as u32)),
+            value => escaped.push(value),
+        }
+    }
+    format!("\"{escaped}\"")
+}
+
+fn clauses_json(clauses: &[kernel::Clause]) -> String {
+    clauses
+        .iter()
+        .map(clause_json)
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
+fn clause_json(clause: &kernel::Clause) -> String {
+    let roles = clause
+        .roles()
+        .iter()
+        .map(|(name, term)| format!("[{},{}]", json(name), json(term.text())))
+        .collect::<Vec<_>>()
+        .join(",");
+    format!(
+        "[\"clause\",\"relation\",{},\"roles\",[{roles}]]",
+        json(clause.relation())
+    )
+}
+
+fn diff_json(diff: &SemanticDiff) -> String {
+    let proof_changes = diff
+        .changed_proofs()
+        .iter()
+        .map(|change| clause_json(change.fact()))
+        .collect::<Vec<_>>()
+        .join(",");
+    format!(
+        "[\"clause-semantic-diff-v1\",[\"asserted\",[\"added\",[{}]],[\"removed\",[{}]]],[\"entailed\",[\"added\",[{}]],[\"removed\",[{}]]],[\"proof-changes\",[{proof_changes}]]]",
+        clauses_json(diff.authored().added()),
+        clauses_json(diff.authored().removed()),
+        clauses_json(diff.entailed_added()),
+        clauses_json(diff.entailed_removed()),
+    )
+}
+
+fn prevent_status(status: PreventStatus) -> &'static str {
+    match status {
+        PreventStatus::Complete => "complete",
+        PreventStatus::AlreadyAbsent => "already-absent",
+        PreventStatus::CandidateBudgetExhausted => "candidate-budget-exhausted",
+        PreventStatus::SolutionBudgetExhausted => "solution-budget-exhausted",
+    }
+}
+
+fn prevent_json(report: &intervention::PreventReport) -> String {
+    let solutions = report
+        .solutions()
+        .iter()
+        .map(|solution| {
+            format!(
+                "[\"withdrawals\",[{}]]",
+                clauses_json(solution.withdrawals())
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(",");
+    format!(
+        "[\"clause-prevent-output-v1\",[\"status\",{}],[\"candidates\",{}],[\"solutions\",[{solutions}]]]",
+        json(prevent_status(report.status())),
+        report.candidates_examined(),
+    )
+}
+
+fn achieve_json(result: &AchieveResult) -> String {
+    let status = match result {
+        AchieveResult::Solutions(_) => "solutions",
+        AchieveResult::Impossible => "impossible",
+        AchieveResult::CandidateLimit(_) => "candidate-limit",
+        AchieveResult::SolutionLimit(_) => "solution-limit",
+    };
+    let interventions = result
+        .interventions()
+        .iter()
+        .map(|intervention| {
+            format!(
+                "[\"additions\",[{}]]",
+                clauses_json(intervention.additions())
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(",");
+    format!(
+        "[\"clause-achieve-output-v1\",[\"status\",{}],[\"interventions\",[{interventions}]]]",
+        json(status),
+    )
 }
 
 fn e2e(source_path: &Path, revision_path: &Path) -> Result<(), CliError> {
@@ -233,7 +340,8 @@ fn e2e(source_path: &Path, revision_path: &Path) -> Result<(), CliError> {
     let branch = kernel::Branch::new(branch_name, base.clone())
         .map_err(|error| CliError::failure(error.to_string()))?;
     let base_query = query_json(&base)?;
-    let proposed = kernel::intent(&branch, intent.name());
+    let intent_name = intent.name().to_owned();
+    let proposed = kernel::intent(&branch, &intent_name);
     let desired = proposed
         .intent()
         .ok_or_else(|| CliError::failure("declared intent was not selectable"))?
@@ -262,17 +370,54 @@ fn e2e(source_path: &Path, revision_path: &Path) -> Result<(), CliError> {
     }
     let next_branch = kernel::Branch::new(branch_name, next.clone())
         .map_err(|error| CliError::failure(error.to_string()))?;
-    let required =
-        kernel::require(&next, desired).map_err(|error| CliError::failure(error.to_string()))?;
+    let required = kernel::require(&next, desired.clone())
+        .map_err(|error| CliError::failure(error.to_string()))?;
     let next_query = query_json(&next)?;
-    let satisfied = kernel::intent(&next_branch, intent.name());
+    let satisfied = kernel::intent(&next_branch, &intent_name);
+    let diff = SemanticDiff::between(&base, &next, limits())
+        .map_err(|error| CliError::failure(format!("diff revisions: {error}")))?;
+    let prevention = intervention::prevent(
+        &next,
+        desired.clone(),
+        PreventLimits::new(100, 10, limits()),
+    )
+    .map_err(|error| CliError::failure(format!("prevent intent: {error}")))?;
+    if prevention.solutions().is_empty() {
+        return Err(CliError::failure("prevent intent produced no withdrawal"));
+    }
+    let mut domain = base
+        .model()
+        .facts()
+        .iter()
+        .flat_map(|fact| fact.roles().values())
+        .map(|term| term.text().to_owned())
+        .collect::<BTreeSet<_>>();
+    domain.extend(desired.roles().values().map(|term| term.text().to_owned()));
+    let achievement = intervention::achieve(
+        &base,
+        desired.clone(),
+        &AchieveConfig::new(
+            vec![desired.relation().to_owned()],
+            domain.into_iter().collect(),
+            100,
+            10,
+            limits(),
+        ),
+    )
+    .map_err(|error| CliError::failure(format!("achieve intent: {error}")))?;
+    if achievement.interventions().is_empty() {
+        return Err(CliError::failure("achieve intent produced no intervention"));
+    }
     let output = format!(
-        "[\"clause-e2e-output-v1\",{base_query},{proposed_output},{},{},{next_query},{}]",
+        "[\"clause-demo-output-v1\",[\"base-query\",{base_query}],[\"successor-query\",{next_query}],[\"intent\",{proposed_output}],[\"claim\",{}],[\"require\",{}],[\"satisfied-intent\",{}],[\"diff\",{}],[\"prevent\",{}],[\"achieve\",{}],[\"generated-parity\",true]]",
         wire::claim_output(&claimed),
         wire::require_output(&required),
         wire::intent_output(&satisfied),
+        diff_json(&diff),
+        prevent_json(&prevention),
+        achieve_json(&achievement),
     );
-    verify_generated_rust(&base, &output)?;
+    verify_generated_rust(&base, &base_query)?;
     println!("{output}");
     eprintln!(
         "clause: e2e ok base={} successor={} revision_file={}",

@@ -1,104 +1,78 @@
-//! Acceptance oracle for the dependency-impact flagship model.
-//!
-//! The runtime law evaluator and revision-delta APIs are intentionally not
-//! available at the checkpoint this fixture is authored against.  Keep the
-//! contract executable as soon as those APIs land without coupling this test
-//! to guessed interfaces in the meantime.
+//! Executable flagship journey for the dependency-impact model.
+
+use std::{env, fs, process::Command};
 
 const SOURCE: &str = include_str!("../examples/impact.clause");
 
-const BASE_FACTS: &[(&str, &str, &str)] = &[
-    ("imports", "North", "Store"),
-    ("imports", "Store", "Beagle"),
-    ("changes", "compiler-change", "Beagle"),
-];
-
-const BASE_DEPENDENCY_CLOSURE: &[(&str, &str, &str)] = &[
-    ("depends", "North", "Beagle"),
-    ("depends", "North", "Store"),
-    ("depends", "Store", "Beagle"),
-];
-
-const BASE_QUERY_RESULTS: &[&str] = &["North", "Store"];
-
-const BASE_PROOF_CHAINS: &[(&str, &str)] = &[
-    (
-        "compiler-change affects North",
-        "changes(compiler-change, Beagle) + depends(North, Beagle) <= imports(North, Store) + imports(Store, Beagle)",
-    ),
-    (
-        "compiler-change affects Store",
-        "changes(compiler-change, Beagle) + depends(Store, Beagle) <= imports(Store, Beagle)",
-    ),
-];
-
-const INTENT: (&str, &str, &str) = ("imports", "South", "North");
-
-const SUCCESSOR_AUTHORED_DELTA: &[(&str, &str, &str)] = &[INTENT];
-
-const SUCCESSOR_DERIVED_DELTA: &[(&str, &str, &str)] = &[
-    ("depends", "South", "North"),
-    ("depends", "South", "Beagle"),
-    ("depends", "South", "Store"),
-    ("affected", "compiler-change", "South"),
-];
-
-const SUCCESSOR_QUERY_RESULTS: &[&str] = &["North", "South", "Store"];
+fn temp_path(extension: &str) -> std::path::PathBuf {
+    env::temp_dir().join(format!(
+        "clause-impact-oracle-{}-{}.{}",
+        std::process::id(),
+        extension,
+        extension
+    ))
+}
 
 #[test]
-#[ignore = "law runtime integration pending"]
-fn impact_oracle() {
-    for required in [
-        "relation impact/imports(consumer: Text, dependency: Text):",
-        "relation impact/depends(consumer: Text, dependency: Text):",
-        "relation impact/changes(change: Text, component: Text):",
-        "relation impact/affected(change: Text, consumer: Text):",
-        "law impact/direct-dependency:",
-        "law impact/recursive-dependency:",
-        "law impact/impact:",
-        "intent impact/adopt-south:",
-        "query impact:",
-    ] {
-        assert!(
-            SOURCE.contains(required),
-            "fixture lost required clause: {required}"
-        );
-    }
+fn impact_journey_seals_derives_changes_intervenes_and_survives_source_removal() {
+    let source_path = temp_path("clause");
+    let revision_path = temp_path("revision");
+    fs::write(&source_path, SOURCE).expect("fixture writes");
 
-    assert_eq!(BASE_FACTS.len(), 3);
-    assert_eq!(
-        BASE_DEPENDENCY_CLOSURE,
-        &[
-            ("depends", "North", "Beagle"),
-            ("depends", "North", "Store"),
-            ("depends", "Store", "Beagle"),
-        ]
+    let demo = Command::new(env!("CARGO_BIN_EXE_clause"))
+        .args([
+            "e2e",
+            source_path.to_str().unwrap(),
+            revision_path.to_str().unwrap(),
+        ])
+        .output()
+        .expect("demo command starts");
+    assert!(
+        demo.status.success(),
+        "{}",
+        String::from_utf8_lossy(&demo.stderr)
     );
-    assert_eq!(BASE_QUERY_RESULTS, &["North", "Store"]);
-    assert_eq!(
-        BASE_PROOF_CHAINS,
-        &[
-            (
-                "compiler-change affects North",
-                "changes(compiler-change, Beagle) + depends(North, Beagle) <= imports(North, Store) + imports(Store, Beagle)",
-            ),
-            (
-                "compiler-change affects Store",
-                "changes(compiler-change, Beagle) + depends(Store, Beagle) <= imports(Store, Beagle)",
-            ),
-        ]
-    );
-    assert_eq!(BASE_PROOF_CHAINS.len(), BASE_QUERY_RESULTS.len());
+    let demo = String::from_utf8(demo.stdout).expect("demo is UTF-8");
 
-    assert_eq!(SUCCESSOR_AUTHORED_DELTA, &[INTENT]);
-    assert_eq!(
-        SUCCESSOR_DERIVED_DELTA,
-        &[
-            ("depends", "South", "North"),
-            ("depends", "South", "Beagle"),
-            ("depends", "South", "Store"),
-            ("affected", "compiler-change", "South"),
-        ]
+    assert!(demo.starts_with("[\"clause-demo-output-v1\","));
+    assert!(demo.contains(
+        "[\"base-query\",[\"clause-query-output-v2\",[\"results\",[\"North\",\"Store\"]]"
+    ));
+    assert!(demo.contains("[\"successor-query\",[\"clause-query-output-v2\",[\"results\",[\"North\",\"South\",\"Store\"]]"));
+    assert!(demo.contains("\"impact/recursive-dependency\""));
+    assert!(demo.contains("\"impact/impact\""));
+    assert!(demo.contains("[\"asserted\",[\"added\",[[\"clause\",\"relation\",\"impact/imports\",\"roles\",[[\"consumer\",\"South\"],[\"dependency\",\"North\"]]]]]"));
+    assert!(
+        demo.contains("[\"entailed\",[\"added\",[[\"clause\",\"relation\",\"impact/affected\"")
     );
-    assert_eq!(SUCCESSOR_QUERY_RESULTS, &["North", "South", "Store"]);
+    assert_eq!(demo.matches("\"impact/depends\"").count(), 12);
+    assert!(demo.contains("[\"proof-changes\",[]]"));
+    assert!(
+        demo.contains(
+            "[\"clause-prevent-output-v1\",[\"status\",\"complete\"],[\"candidates\",15]"
+        )
+    );
+    assert!(demo.contains("[\"clause-achieve-output-v1\",[\"status\",\"candidate-limit\"]"));
+    assert_eq!(demo.matches("[\"additions\",[[\"clause\"").count(), 1);
+    assert!(demo.ends_with("[\"generated-parity\",true]]\n"));
+
+    fs::remove_file(&source_path).expect("authoring source removes after seal");
+    let query = Command::new(env!("CARGO_BIN_EXE_clause"))
+        .args(["query", revision_path.to_str().unwrap()])
+        .output()
+        .expect("source-free query starts");
+    assert!(
+        query.status.success(),
+        "{}",
+        String::from_utf8_lossy(&query.stderr)
+    );
+    let query = String::from_utf8(query.stdout).expect("query is UTF-8");
+    assert!(
+        query.starts_with(
+            "[\"clause-query-output-v2\",[\"results\",[\"North\",\"South\",\"Store\"]]"
+        )
+    );
+    assert!(demo.contains(&format!("[\"successor-query\",{}]", query.trim())));
+
+    let _ = fs::remove_file(revision_path);
 }
