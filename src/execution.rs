@@ -4,12 +4,18 @@
 //! `FindPlan` and projects either the canonical chosen proof or the bounded
 //! minimal-support frontier; presentation and result encoding belong to the
 //! request layer.
+#![allow(unexpected_cfgs)]
 
 use crate::{
-    derive::{self, Closure, Limits, SupportLimits, SupportProof, SupportWitness},
-    kernel::{Clause, KernelError, LawId, Result, Revision, RevisionId, Term, VariableId},
+    derive::{Limits, SupportLimits},
+    kernel::{Clause, LawId, Result, Revision, RevisionId, Term, VariableId},
 };
 use std::collections::BTreeMap;
+
+#[cfg(not(clause_generated))]
+mod explain;
+#[cfg(not(clause_generated))]
+mod query;
 
 /// A ground clause in a revision-scoped explanation graph.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -91,6 +97,46 @@ pub fn find(
     plan: &crate::kernel::FindPlan,
     limits: Limits,
 ) -> Result<Vec<Term>> {
+    #[cfg(not(clause_generated))]
+    return query::find(revision, plan, limits);
+    #[cfg(clause_generated)]
+    emitted_find(revision, plan, limits)
+}
+
+/// Return the deterministic chosen proof for a ground target, if it follows.
+pub fn why(revision: &Revision, target: &Clause, limits: Limits) -> Result<Option<Proof>> {
+    #[cfg(not(clause_generated))]
+    return explain::why(revision, target, limits);
+    #[cfg(clause_generated)]
+    emitted_why(revision, target, limits)
+}
+
+/// Return every discovered minimal asserted support for a ground target.
+///
+/// The complete closure is checked first, so a bounded support search can
+/// honestly return `Some(WhyAll { complete: false, alternatives: [] })` for an
+/// entailed target whose support frontier was not reached before its budget.
+pub fn why_all(
+    revision: &Revision,
+    target: &Clause,
+    limits: SupportLimits,
+) -> Result<Option<WhyAll>> {
+    #[cfg(not(clause_generated))]
+    return explain::why_all(revision, target, limits);
+    #[cfg(clause_generated)]
+    emitted_why_all(revision, target, limits)
+}
+
+// Emitted programs contain this module as one source file, so their
+// source-deleted build cannot load the normal sibling ownership modules.
+#[cfg(clause_generated)]
+fn emitted_find(
+    revision: &Revision,
+    plan: &crate::kernel::FindPlan,
+    limits: Limits,
+) -> Result<Vec<Term>> {
+    use crate::{derive, kernel::KernelError};
+
     revision.model().validate_clause(plan.pattern(), true)?;
     let sought = plan.sought();
     let sought_variable = plan
@@ -103,7 +149,18 @@ pub fn find(
     let mut bindings = closure
         .assertions()
         .iter()
-        .filter(|candidate| matches_pattern(candidate, plan.pattern(), sought_variable))
+        .filter(|candidate| {
+            candidate.relation() == plan.pattern().relation()
+                && plan.pattern().roles().iter().all(|(role, expected)| {
+                    let Some(actual) = candidate.roles().get(role) else {
+                        return false;
+                    };
+                    match expected.variable_id() {
+                        Some(variable) => variable == sought_variable,
+                        None => actual == expected,
+                    }
+                })
+        })
         .map(|candidate| {
             candidate
                 .roles()
@@ -117,23 +174,23 @@ pub fn find(
     Ok(bindings)
 }
 
-/// Return the deterministic chosen proof for a ground target, if it follows.
-pub fn why(revision: &Revision, target: &Clause, limits: Limits) -> Result<Option<Proof>> {
+#[cfg(clause_generated)]
+fn emitted_why(revision: &Revision, target: &Clause, limits: Limits) -> Result<Option<Proof>> {
+    use crate::derive;
+
     revision.model().validate_clause(target, false)?;
     let closure = derive::saturate(revision, limits)?;
-    graph(&closure, target, revision.identity().clone())
+    emitted_graph(&closure, target, revision.identity().clone())
 }
 
-/// Return every discovered minimal asserted support for a ground target.
-///
-/// The complete closure is checked first, so a bounded support search can
-/// honestly return `Some(WhyAll { complete: false, alternatives: [] })` for an
-/// entailed target whose support frontier was not reached before its budget.
-pub fn why_all(
+#[cfg(clause_generated)]
+fn emitted_why_all(
     revision: &Revision,
     target: &Clause,
     limits: SupportLimits,
 ) -> Result<Option<WhyAll>> {
+    use crate::derive;
+
     revision.model().validate_clause(target, false)?;
     let closure = derive::saturate(revision, limits.closure)?;
     if closure.proof(target).is_none() {
@@ -149,7 +206,7 @@ pub fn why_all(
                 assertions: support.assertions().to_vec(),
                 proof: Proof {
                     revision: revision_id.clone(),
-                    why: support_graph(support.proof())?,
+                    why: emitted_support_graph(support.proof())?,
                 },
             })
         })
@@ -163,27 +220,19 @@ pub fn why_all(
     }))
 }
 
-fn matches_pattern(candidate: &Clause, pattern: &Clause, sought: &VariableId) -> bool {
-    candidate.relation() == pattern.relation()
-        && pattern.roles().iter().all(|(role, expected)| {
-            let Some(actual) = candidate.roles().get(role) else {
-                return false;
-            };
-            match expected.variable_id() {
-                Some(variable) => variable == sought,
-                None => actual == expected,
-            }
-        })
-}
-
-fn graph(closure: &Closure, root: &Clause, revision: RevisionId) -> Result<Option<Proof>> {
+#[cfg(clause_generated)]
+fn emitted_graph(
+    closure: &crate::derive::Closure,
+    root: &Clause,
+    revision: RevisionId,
+) -> Result<Option<Proof>> {
     if closure.proof(root).is_none() {
         return Ok(None);
     }
     let mut clauses = Vec::new();
     let mut indices = BTreeMap::new();
     let mut witnesses = Vec::new();
-    let root = add_clause(root, closure, &mut clauses, &mut indices, &mut witnesses)?;
+    let root = emitted_add_clause(root, closure, &mut clauses, &mut indices, &mut witnesses)?;
     witnesses.sort_by_key(|edge| edge.conclusion);
     Ok(Some(Proof {
         revision,
@@ -198,11 +247,12 @@ fn graph(closure: &Closure, root: &Clause, revision: RevisionId) -> Result<Optio
     }))
 }
 
-fn support_graph(root: &SupportProof) -> Result<WhyGraph> {
+#[cfg(clause_generated)]
+fn emitted_support_graph(root: &crate::derive::SupportProof) -> Result<WhyGraph> {
     let mut clauses = Vec::new();
     let mut indices = BTreeMap::new();
     let mut witnesses = Vec::new();
-    let root = add_support_clause(root, &mut clauses, &mut indices, &mut witnesses)?;
+    let root = emitted_add_support_clause(root, &mut clauses, &mut indices, &mut witnesses)?;
     witnesses.sort_by_key(|edge| edge.conclusion);
     Ok(WhyGraph {
         root,
@@ -214,12 +264,15 @@ fn support_graph(root: &SupportProof) -> Result<WhyGraph> {
     })
 }
 
-fn add_support_clause(
-    proof: &SupportProof,
+#[cfg(clause_generated)]
+fn emitted_add_support_clause(
+    proof: &crate::derive::SupportProof,
     clauses: &mut Vec<Clause>,
     indices: &mut BTreeMap<Clause, usize>,
     witnesses: &mut Vec<WitnessEdge>,
 ) -> Result<usize> {
+    use crate::derive::SupportWitness;
+
     let clause = proof.conclusion();
     if let Some(index) = indices.get(clause) {
         return Ok(*index);
@@ -237,7 +290,7 @@ fn add_support_clause(
             law: law.clone(),
             premises: premises
                 .iter()
-                .map(|premise| add_support_clause(premise, clauses, indices, witnesses))
+                .map(|premise| emitted_add_support_clause(premise, clauses, indices, witnesses))
                 .collect::<Result<Vec<_>>>()?,
             substitution: substitution.clone(),
         },
@@ -249,13 +302,16 @@ fn add_support_clause(
     Ok(conclusion)
 }
 
-fn add_clause(
+#[cfg(clause_generated)]
+fn emitted_add_clause(
     clause: &Clause,
-    closure: &Closure,
+    closure: &crate::derive::Closure,
     clauses: &mut Vec<Clause>,
     indices: &mut BTreeMap<Clause, usize>,
     witnesses: &mut Vec<WitnessEdge>,
 ) -> Result<usize> {
+    use crate::{derive, kernel::KernelError};
+
     if let Some(index) = indices.get(clause) {
         return Ok(*index);
     }
@@ -275,7 +331,7 @@ fn add_clause(
             law: law.clone(),
             premises: premises
                 .iter()
-                .map(|premise| add_clause(premise, closure, clauses, indices, witnesses))
+                .map(|premise| emitted_add_clause(premise, closure, clauses, indices, witnesses))
                 .collect::<Result<Vec<_>>>()?,
             substitution: substitution.clone(),
         },

@@ -2,14 +2,20 @@
 //!
 //! A semantic diff is deliberately a comparison value only: it is never part
 //! of a revision's admitted model or identity.
-
-use std::collections::BTreeSet;
+#![allow(unexpected_cfgs)]
 
 use crate::{
     delta::RevisionDiff,
     derive::{self, Proof, Support, SupportFrontier, SupportLimits},
     kernel::{Clause, Result, Revision},
 };
+
+#[cfg(not(clause_generated))]
+mod entailment;
+#[cfg(not(clause_generated))]
+mod proofs;
+#[cfg(not(clause_generated))]
+mod supports;
 
 /// A selected derivation that changed for a consequence entailed by both revisions.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -104,73 +110,36 @@ impl SemanticDiff {
         let authored = RevisionDiff::between(base, successor)?;
         let base_closure = derive::saturate(base, support_limits.closure)?;
         let successor_closure = derive::saturate(successor, support_limits.closure)?;
-
-        let entailed_added = successor_closure
-            .assertions()
-            .iter()
-            .filter(|consequence| {
-                base_closure
-                    .assertions()
-                    .binary_search(consequence)
-                    .is_err()
-                    && authored.added().binary_search(consequence).is_err()
+        #[cfg(not(clause_generated))]
+        {
+            let (entailed_added, entailed_removed) =
+                entailment::changes(&base_closure, &successor_closure, &authored);
+            let changed_proofs = proofs::changes(&base_closure, &successor_closure);
+            let changed_supports = supports::changes(
+                base,
+                successor,
+                &base_closure,
+                &successor_closure,
+                &authored,
+                support_limits,
+            )?;
+            Ok(Self {
+                authored,
+                entailed_added,
+                entailed_removed,
+                changed_proofs,
+                changed_supports,
             })
-            .cloned()
-            .collect();
-        let entailed_removed = base_closure
-            .assertions()
-            .iter()
-            .filter(|consequence| {
-                successor_closure
-                    .assertions()
-                    .binary_search(consequence)
-                    .is_err()
-                    && authored.removed().binary_search(consequence).is_err()
-            })
-            .cloned()
-            .collect();
-        let changed_proofs = base_closure
-            .assertions()
-            .iter()
-            .filter_map(|consequence| {
-                let successor_proof = successor_closure.proof(consequence)?;
-                let base_proof = base_closure
-                    .proof(consequence)
-                    .expect("closure clauses always have selected proofs");
-                (base_proof != successor_proof).then(|| ProofChange {
-                    consequence: consequence.clone(),
-                    base: base_proof.clone(),
-                    successor: successor_proof.clone(),
-                })
-            })
-            .collect();
-        let changed_supports = base_closure
-            .assertions()
-            .iter()
-            .chain(successor_closure.assertions())
-            .cloned()
-            .collect::<BTreeSet<_>>()
-            .into_iter()
-            // Assertion deltas are their own layer. Repeating a directly
-            // admitted or withdrawn clause as a one-clause support change
-            // would make the semantic layer duplicate authored history.
-            .filter(|consequence| {
-                authored.added().binary_search(consequence).is_err()
-                    && authored.removed().binary_search(consequence).is_err()
-            })
-            .map(|consequence| support_change(base, successor, &consequence, support_limits))
-            .collect::<Result<Vec<_>>>()?
-            .into_iter()
-            .flatten()
-            .collect();
-
-        Ok(Self {
+        }
+        #[cfg(clause_generated)]
+        emitted_between(
+            base,
+            successor,
+            support_limits,
             authored,
-            entailed_added,
-            entailed_removed,
-            changed_proofs,
-            changed_supports,
-        })
+            base_closure,
+            successor_closure,
+        )
     }
 
     pub fn authored(&self) -> &RevisionDiff {
@@ -194,7 +163,85 @@ impl SemanticDiff {
     }
 }
 
-fn support_change(
+// Emitted programs contain this module as one source file, so their
+// source-deleted build cannot load the normal sibling comparison modules.
+#[cfg(clause_generated)]
+fn emitted_between(
+    base: &Revision,
+    successor: &Revision,
+    support_limits: SupportLimits,
+    authored: RevisionDiff,
+    base_closure: derive::Closure,
+    successor_closure: derive::Closure,
+) -> Result<SemanticDiff> {
+    use std::collections::BTreeSet;
+
+    let entailed_added = successor_closure
+        .assertions()
+        .iter()
+        .filter(|consequence| {
+            base_closure
+                .assertions()
+                .binary_search(consequence)
+                .is_err()
+                && authored.added().binary_search(consequence).is_err()
+        })
+        .cloned()
+        .collect();
+    let entailed_removed = base_closure
+        .assertions()
+        .iter()
+        .filter(|consequence| {
+            successor_closure
+                .assertions()
+                .binary_search(consequence)
+                .is_err()
+                && authored.removed().binary_search(consequence).is_err()
+        })
+        .cloned()
+        .collect();
+    let changed_proofs = base_closure
+        .assertions()
+        .iter()
+        .filter_map(|consequence| {
+            let successor_proof = successor_closure.proof(consequence)?;
+            let base_proof = base_closure
+                .proof(consequence)
+                .expect("closure clauses always have selected proofs");
+            (base_proof != successor_proof).then(|| ProofChange {
+                consequence: consequence.clone(),
+                base: base_proof.clone(),
+                successor: successor_proof.clone(),
+            })
+        })
+        .collect();
+    let changed_supports = base_closure
+        .assertions()
+        .iter()
+        .chain(successor_closure.assertions())
+        .cloned()
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .filter(|consequence| {
+            authored.added().binary_search(consequence).is_err()
+                && authored.removed().binary_search(consequence).is_err()
+        })
+        .map(|consequence| emitted_support_change(base, successor, &consequence, support_limits))
+        .collect::<Result<Vec<_>>>()?
+        .into_iter()
+        .flatten()
+        .collect();
+    Ok(SemanticDiff {
+        authored,
+        entailed_added,
+        entailed_removed,
+        changed_proofs,
+        changed_supports,
+    })
+}
+
+#[cfg(clause_generated)]
+fn emitted_support_change(
     base_revision: &Revision,
     successor_revision: &Revision,
     consequence: &Clause,
@@ -213,7 +260,6 @@ fn support_change(
         })
         .cloned()
         .collect();
-    // A gain is exact only if the base frontier proved that support absent.
     let added: Vec<Support> = if base.status().is_complete() {
         successor
             .supports()
@@ -229,7 +275,6 @@ fn support_change(
     } else {
         Vec::new()
     };
-    // A loss is exact only if the successor frontier proved that support absent.
     let removed: Vec<Support> = if successor.status().is_complete() {
         base.supports()
             .iter()
@@ -244,14 +289,9 @@ fn support_change(
     } else {
         Vec::new()
     };
-
-    // An incomplete projection with no observed delta is unknown, not a
-    // changed support frontier. Emit a change only when a gain or loss is
-    // positively witnessed; its frontier statuses retain the exact bounds.
     if added.is_empty() && removed.is_empty() {
         return Ok(None);
     }
-
     Ok(Some(SupportChange {
         consequence: consequence.clone(),
         base,
