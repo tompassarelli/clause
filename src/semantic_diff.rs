@@ -151,6 +151,13 @@ impl SemanticDiff {
             .cloned()
             .collect::<BTreeSet<_>>()
             .into_iter()
+            // Assertion deltas are their own layer. Repeating a directly
+            // admitted or withdrawn clause as a one-clause support change
+            // would make the semantic layer duplicate authored history.
+            .filter(|consequence| {
+                authored.added().binary_search(consequence).is_err()
+                    && authored.removed().binary_search(consequence).is_err()
+            })
             .map(|consequence| support_change(base, successor, &consequence, support_limits))
             .collect::<Result<Vec<_>>>()?
             .into_iter()
@@ -242,11 +249,10 @@ fn support_change(
         })
         .unwrap_or_default();
 
-    if added.is_empty()
-        && removed.is_empty()
-        && base.status().is_complete()
-        && successor.status().is_complete()
-    {
+    // An incomplete projection with no observed delta is unknown, not a
+    // changed support frontier. Emit a change only when a gain or loss is
+    // positively witnessed; its frontier statuses retain the exact bounds.
+    if added.is_empty() && removed.is_empty() {
         return Ok(None);
     }
 
@@ -460,6 +466,26 @@ mod tests {
             SupportStatus::SupportBudgetExhausted
         );
         assert!(change.removed().is_empty());
+    }
+
+    #[test]
+    fn reports_only_nonduplicate_observed_support_changes() {
+        let left = clause("impact/left");
+        let right = clause("impact/right");
+        let base = revision(vec![left.clone(), right], false);
+        let successor = successor(&base, vec![], vec![left.clone()]);
+        let exact = SemanticDiff::between(&base, &successor, limits()).unwrap();
+        assert_eq!(exact.authored().removed(), &[left.clone()]);
+        assert!(
+            exact
+                .changed_supports()
+                .iter()
+                .all(|change| change.consequence() != &left)
+        );
+
+        let bounded = SupportLimits::new(Limits::new(100, 10, 10_000), 100, 1);
+        let unknown = SemanticDiff::between(&base, &base, bounded).unwrap();
+        assert!(unknown.changed_supports().is_empty());
     }
 
     #[test]
