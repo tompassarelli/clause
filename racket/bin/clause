@@ -1,0 +1,95 @@
+#!/bin/sh
+set -eu
+
+# Clause owns a user-local, content-addressed-enough runtime cache so a fresh
+# checkout never depends on the host's Racket or a system/Nix installation.
+version='9.3'
+archive_name='racket-minimal-9.3-x86_64-linux-buster-cs.tgz'
+archive_url='https://download.racket-lang.org/releases/9.3/installers/racket-minimal-9.3-x86_64-linux-buster-cs.tgz'
+archive_sha256='8f469b7e93645fc876594470d884775aafff7688f530fd38be873fb44c71ca6a'
+
+die() {
+    printf 'clause: %s\n' "$*" >&2
+    exit 1
+}
+
+for command in curl sha256sum tar awk; do
+    command -v "$command" >/dev/null 2>&1 ||
+        die "required bootstrap command '$command' is unavailable"
+done
+
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+project_root=$(CDPATH= cd -- "$script_dir/.." && pwd)
+cache_home=${XDG_CACHE_HOME:-${HOME:?HOME is required}/.cache}
+case "$cache_home" in
+    /*) ;;
+    *) die "XDG_CACHE_HOME must be an absolute path" ;;
+esac
+
+cache_root="$cache_home/clause/racket/$version"
+archive="$cache_root/$archive_name"
+install_root="$cache_root/racket"
+racket="$install_root/bin/racket"
+plt_user_home=${CLAUSE_PLTUSERHOME:-"$cache_root/plt-user"}
+mkdir -p "$cache_root" "$plt_user_home"
+export PLTUSERHOME="$plt_user_home"
+
+archive_is_valid() {
+    [ -f "$archive" ] &&
+        [ "$(sha256sum "$archive" | awk '{print $1}')" = "$archive_sha256" ]
+}
+
+if ! archive_is_valid; then
+    download="$cache_root/$archive_name.download.$$"
+    trap 'rm -f "$download"' EXIT HUP INT TERM
+    printf 'clause: downloading verified Racket %s toolchain\n' "$version" >&2
+    curl -fL --retry 2 --connect-timeout 20 --max-time 600 \
+        -o "$download" "$archive_url" ||
+        die "could not download the Racket $version toolchain"
+    [ "$(sha256sum "$download" | awk '{print $1}')" = "$archive_sha256" ] ||
+        die "Racket $version archive checksum mismatch"
+    mv -f "$download" "$archive"
+    trap - EXIT HUP INT TERM
+fi
+
+runtime_is_valid() {
+    [ -x "$racket" ] || return 1
+    [ "$("$racket" -e '(display (version))' 2>/dev/null)" = "$version" ]
+}
+
+packages_are_valid() {
+    "$racket" -e '(require typed/racket/base)' >/dev/null 2>&1
+}
+
+if ! runtime_is_valid; then
+    stage="$cache_root/.racket-$version.$$"
+    trap 'rm -rf "$stage"' EXIT HUP INT TERM
+    rm -rf "$stage"
+    mkdir "$stage"
+    tar -xzf "$archive" -C "$stage" ||
+        die "could not extract the verified Racket $version archive"
+    [ -x "$stage/racket/bin/racket" ] ||
+        die "Racket $version archive has an unexpected extraction layout"
+    [ "$("$stage/racket/bin/racket" -e '(display (version))' 2>/dev/null)" = "$version" ] ||
+        die "Racket archive does not report version $version"
+    rm -rf "$install_root"
+    mv "$stage/racket" "$install_root"
+    trap - EXIT HUP INT TERM
+fi
+
+runtime_is_valid || die "cached Racket runtime is not exactly version $version"
+if [ "$#" -eq 1 ] && [ "$1" = '--version' ]; then
+    printf 'racket %s (CS)\n' "$version"
+    exit 0
+fi
+if ! packages_are_valid; then
+    printf 'clause: installing verified typed-racket-lib dependencies\n' >&2
+    "$racket" -l- raco/main.rkt pkg install --auto typed-racket-lib ||
+        die "could not install the Racket typed-racket-lib dependency set"
+    packages_are_valid || die "typed-racket-lib did not become available"
+fi
+if [ "${1:-}" = 'run' ]; then
+    shift
+    exec "$racket" "$project_root/cli.rkt" "$@"
+fi
+exec "$racket" "$project_root/clause.rkt" "$@"

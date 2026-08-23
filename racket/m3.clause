@@ -1,0 +1,16 @@
+relation catalog/contains(set: Text, member: Text):
+    sentence: {set} contains {member}
+    mode set -> member: many
+
+model catalog:
+    "letters" contains "a"
+    "letters" contains "b"
+
+query catalog:
+    ?member where "letters" contains ?member
+
+claim catalog:
+    "letters" contains "c"
+
+require catalog:
+    "letters" contains "c"
