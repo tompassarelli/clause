@@ -1,5 +1,5 @@
 use super::closure::{Limits, limit_error, saturate};
-use crate::kernel::{Clause, Law, Result, Revision, RevisionId, Term, VariableId};
+use crate::kernel::{PatternId, RelationalContent, Result, Revision, RevisionId, Term};
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -34,12 +34,12 @@ impl SupportStatus {
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct SupportProof {
-    conclusion: Clause,
+    conclusion: RelationalContent,
     witness: SupportWitness,
 }
 
 impl SupportProof {
-    pub fn conclusion(&self) -> &Clause {
+    pub fn conclusion(&self) -> &RelationalContent {
         &self.conclusion
     }
 
@@ -47,7 +47,7 @@ impl SupportProof {
         &self.witness
     }
 
-    fn contains(&self, clause: &Clause) -> bool {
+    fn contains(&self, clause: &RelationalContent) -> bool {
         self.conclusion == *clause
             || match &self.witness {
                 SupportWitness::Asserted => false,
@@ -62,21 +62,21 @@ impl SupportProof {
 pub enum SupportWitness {
     Asserted,
     Derived {
-        law: crate::kernel::LawId,
+        rule: crate::kernel::ReferentId,
         premises: Vec<SupportProof>,
-        substitution: BTreeMap<VariableId, Term>,
+        substitution: BTreeMap<PatternId, Term>,
     },
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct Support {
-    assertion_key: Vec<Clause>,
-    assertions: Vec<Clause>,
+    assertion_key: Vec<RelationalContent>,
+    assertions: Vec<RelationalContent>,
     proof: SupportProof,
 }
 
 impl Support {
-    pub fn assertions(&self) -> &[Clause] {
+    pub fn assertions(&self) -> &[RelationalContent] {
         &self.assertions
     }
 
@@ -84,7 +84,7 @@ impl Support {
         &self.proof
     }
 
-    pub(crate) fn assertion_key(&self) -> &[Clause] {
+    pub(crate) fn assertion_key(&self) -> &[RelationalContent] {
         &self.assertion_key
     }
 }
@@ -92,7 +92,7 @@ impl Support {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SupportFrontier {
     revision: RevisionId,
-    target: Clause,
+    target: RelationalContent,
     limits: SupportLimits,
     status: SupportStatus,
     expansions: usize,
@@ -104,7 +104,7 @@ impl SupportFrontier {
         &self.revision
     }
 
-    pub fn target(&self) -> &Clause {
+    pub fn target(&self) -> &RelationalContent {
         &self.target
     }
 
@@ -127,19 +127,19 @@ impl SupportFrontier {
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 struct GroundDerivation {
-    conclusion: Clause,
-    law: crate::kernel::LawId,
-    premises: Vec<Clause>,
-    substitution: BTreeMap<VariableId, Term>,
+    conclusion: RelationalContent,
+    rule: crate::kernel::ReferentId,
+    premises: Vec<RelationalContent>,
+    substitution: BTreeMap<PatternId, Term>,
 }
 
 /// Enumerate bounded inclusion-minimal asserted supports for one ground target.
 pub fn support_frontier(
     revision: &Revision,
-    target: &Clause,
+    target: &RelationalContent,
     limits: SupportLimits,
 ) -> Result<SupportFrontier> {
-    revision.model().validate_clause(target, false)?;
+    revision.model().validate_content(target, false)?;
     let closure = saturate(revision, limits.closure)?;
     if closure.proof(target).is_none() {
         return Ok(SupportFrontier {
@@ -163,21 +163,34 @@ pub fn support_frontier(
     }
     let mut derivations = BTreeSet::new();
     let mut join_attempts = 0;
-    for law in revision.model().laws() {
-        collect_ground_derivations(
-            law,
-            closure.assertions(),
-            &limits.closure,
-            &mut join_attempts,
-            &mut derivations,
-            0,
-            BTreeMap::new(),
-            Vec::new(),
-        )?;
+    for rule in revision.model().derivation_rules() {
+        let premises = rule
+            .premises()
+            .forms()
+            .iter()
+            .map(|id| revision.model().content(id).expect("checked rule premise"))
+            .collect::<Vec<_>>();
+        for conclusion in rule.conclusion().forms() {
+            collect_ground_derivations(
+                rule.id(),
+                &premises,
+                revision
+                    .model()
+                    .content(conclusion)
+                    .expect("checked rule conclusion"),
+                closure.contents(),
+                &limits.closure,
+                &mut join_attempts,
+                &mut derivations,
+                0,
+                BTreeMap::new(),
+                Vec::new(),
+            )?;
+        }
     }
     let mut frontiers = revision
         .model()
-        .assertions()
+        .admitted_contents()
         .iter()
         .cloned()
         .map(|assertion| {
@@ -260,7 +273,10 @@ fn expand_derivation(
     index: usize,
     selected: &mut Vec<SupportProof>,
     explored: &mut BTreeSet<SupportProof>,
-    supports_by_clause: &mut BTreeMap<Clause, BTreeMap<Vec<Clause>, SupportProof>>,
+    supports_by_clause: &mut BTreeMap<
+        RelationalContent,
+        BTreeMap<Vec<RelationalContent>, SupportProof>,
+    >,
     limits: &SupportLimits,
     expansions: &mut usize,
     changed: &mut bool,
@@ -275,7 +291,7 @@ fn expand_derivation(
         let proof = SupportProof {
             conclusion: derivation.conclusion.clone(),
             witness: SupportWitness::Derived {
-                law: derivation.law.clone(),
+                rule: derivation.rule.clone(),
                 premises: selected.clone(),
                 substitution: derivation.substitution.clone(),
             },
@@ -321,13 +337,13 @@ fn expand_derivation(
     None
 }
 
-fn proof_assertions(proof: &SupportProof) -> Vec<Clause> {
+fn proof_assertions(proof: &SupportProof) -> Vec<RelationalContent> {
     let mut assertions = BTreeSet::new();
     collect_proof_assertions(proof, &mut assertions);
     assertions.into_iter().collect()
 }
 
-fn ordered_proof_assertions(proof: &SupportProof) -> Vec<Clause> {
+fn ordered_proof_assertions(proof: &SupportProof) -> Vec<RelationalContent> {
     let mut seen = BTreeSet::new();
     let mut assertions = Vec::new();
     collect_ordered_proof_assertions(proof, &mut seen, &mut assertions);
@@ -336,8 +352,8 @@ fn ordered_proof_assertions(proof: &SupportProof) -> Vec<Clause> {
 
 fn collect_ordered_proof_assertions(
     proof: &SupportProof,
-    seen: &mut BTreeSet<Clause>,
-    assertions: &mut Vec<Clause>,
+    seen: &mut BTreeSet<RelationalContent>,
+    assertions: &mut Vec<RelationalContent>,
 ) {
     match &proof.witness {
         SupportWitness::Asserted => {
@@ -353,7 +369,7 @@ fn collect_ordered_proof_assertions(
     }
 }
 
-fn collect_proof_assertions(proof: &SupportProof, assertions: &mut BTreeSet<Clause>) {
+fn collect_proof_assertions(proof: &SupportProof, assertions: &mut BTreeSet<RelationalContent>) {
     match &proof.witness {
         SupportWitness::Asserted => {
             assertions.insert(proof.conclusion.clone());
@@ -373,8 +389,8 @@ enum InsertSupport {
 }
 
 fn insert_support(
-    frontier: &mut BTreeMap<Vec<Clause>, SupportProof>,
-    assertions: Vec<Clause>,
+    frontier: &mut BTreeMap<Vec<RelationalContent>, SupportProof>,
+    assertions: Vec<RelationalContent>,
     proof: SupportProof,
     max_supports: usize,
 ) -> InsertSupport {
@@ -406,7 +422,7 @@ fn insert_support(
     InsertSupport::Changed
 }
 
-fn sorted_subset(left: &[Clause], right: &[Clause]) -> bool {
+fn sorted_subset(left: &[RelationalContent], right: &[RelationalContent]) -> bool {
     let mut right_index = 0;
     for wanted in left {
         while right_index < right.len() && right[right_index] < *wanted {
@@ -422,25 +438,27 @@ fn sorted_subset(left: &[Clause], right: &[Clause]) -> bool {
 
 #[allow(clippy::too_many_arguments)]
 fn collect_ground_derivations(
-    law: &Law,
-    assertions: &[Clause],
+    rule: &crate::kernel::ReferentId,
+    patterns: &[&RelationalContent],
+    conclusion: &RelationalContent,
+    assertions: &[RelationalContent],
     limits: &Limits,
     join_attempts: &mut usize,
     derivations: &mut BTreeSet<GroundDerivation>,
     premise_index: usize,
-    substitution: BTreeMap<VariableId, Term>,
-    premises: Vec<Clause>,
+    substitution: BTreeMap<PatternId, Term>,
+    premises: Vec<RelationalContent>,
 ) -> Result<()> {
-    if premise_index == law.premises().len() {
+    if premise_index == patterns.len() {
         derivations.insert(GroundDerivation {
-            conclusion: super::matching::instantiate(law.conclusion(), &substitution),
-            law: law.id().clone(),
+            conclusion: super::matching::instantiate(conclusion, &substitution),
+            rule: rule.clone(),
             premises,
             substitution,
         });
         return Ok(());
     }
-    let pattern = &law.premises()[premise_index];
+    let pattern = patterns[premise_index];
     for assertion in assertions {
         if *join_attempts >= limits.max_join_attempts {
             return Err(limit_error(
@@ -457,7 +475,9 @@ fn collect_ground_derivations(
         let mut next_premises = premises.clone();
         next_premises.push(assertion.clone());
         collect_ground_derivations(
-            law,
+            rule,
+            patterns,
+            conclusion,
             assertions,
             limits,
             join_attempts,

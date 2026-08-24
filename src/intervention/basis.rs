@@ -1,13 +1,18 @@
 //! Typed, finite candidate bases for intervention search.
 
-use crate::kernel::{Clause, KernelError, RelationId, Result, Revision, Role, RoleId, Term};
+use crate::kernel::{
+    KernelError, ReferentId, RelationalContent, Result, Revision, Role, RoleId, Term,
+};
 use std::collections::BTreeSet;
 
-pub(super) fn withdrawal_basis(source: &Revision, using: Vec<RelationId>) -> Result<Vec<Clause>> {
+pub(super) fn withdrawal_basis(
+    source: &Revision,
+    using: Vec<ReferentId>,
+) -> Result<Vec<RelationalContent>> {
     let using = extensional_relations(source, using)?;
     Ok(source
         .model()
-        .assertions()
+        .admitted_contents()
         .iter()
         .filter(|assertion| using.binary_search(assertion.relation()).is_ok())
         .cloned()
@@ -17,13 +22,13 @@ pub(super) fn withdrawal_basis(source: &Revision, using: Vec<RelationId>) -> Res
 /// Cartesian ground clauses use only entities already admitted by the exact
 /// Model and only the exact declared type of each role.
 pub(super) struct AchievementBasis {
-    pub(super) clauses: Vec<Clause>,
+    pub(super) clauses: Vec<RelationalContent>,
     pub(super) complete: bool,
 }
 
 pub(super) fn achievement_basis(
     source: &Revision,
-    using: Vec<RelationId>,
+    using: Vec<ReferentId>,
     max_candidates: usize,
 ) -> Result<AchievementBasis> {
     let using = extensional_relations(source, using)?;
@@ -31,7 +36,7 @@ pub(super) fn achievement_basis(
     for relation_id in using {
         let relation = source
             .model()
-            .relations()
+            .relation_shapes()
             .get(&relation_id)
             .expect("validated relation");
         let roles = relation.roles().iter().collect::<Vec<_>>();
@@ -56,7 +61,7 @@ pub(super) fn achievement_basis(
     })
 }
 
-fn extensional_relations(source: &Revision, using: Vec<RelationId>) -> Result<Vec<RelationId>> {
+fn extensional_relations(source: &Revision, using: Vec<ReferentId>) -> Result<Vec<ReferentId>> {
     let using = using
         .into_iter()
         .collect::<BTreeSet<_>>()
@@ -69,12 +74,19 @@ fn extensional_relations(source: &Revision, using: Vec<RelationId>) -> Result<Ve
     }
     let derived = source
         .model()
-        .laws()
+        .derivation_rules()
         .iter()
-        .map(|law| law.conclusion().relation())
+        .flat_map(|rule| rule.conclusion().forms())
+        .map(|content| {
+            source
+                .model()
+                .content(content)
+                .expect("checked rule conclusion")
+                .relation()
+        })
         .collect::<BTreeSet<_>>();
     for relation in &using {
-        if !source.model().relations().contains_key(relation) {
+        if !source.model().relation_shapes().contains_key(relation) {
             return Err(KernelError::new("intervention relation is undeclared"));
         }
         if derived.contains(relation) {
@@ -86,18 +98,18 @@ fn extensional_relations(source: &Revision, using: Vec<RelationId>) -> Result<Ve
 
 fn collect_ground_clauses(
     source: &Revision,
-    relation: &RelationId,
+    relation: &ReferentId,
     roles: &[(&RoleId, &Role)],
     index: usize,
     values: &mut BTreeSet<(RoleId, Term)>,
-    candidates: &mut Vec<Clause>,
+    candidates: &mut Vec<RelationalContent>,
     max_candidates: usize,
 ) -> Result<bool> {
     if index == roles.len() {
-        let candidate = Clause::new(relation.clone(), values.iter().cloned().collect())?;
+        let candidate = RelationalContent::new(relation.clone(), values.iter().cloned().collect())?;
         if source
             .model()
-            .assertions()
+            .admitted_contents()
             .binary_search(&candidate)
             .is_ok()
         {
@@ -109,14 +121,18 @@ fn collect_ground_clauses(
         candidates.push(candidate);
         return Ok(false);
     }
-    let (role_id, role) = roles[index];
-    for entity in source
-        .model()
-        .entities()
-        .iter()
-        .filter(|entity| entity.typ() == role.typ())
-    {
-        values.insert((role_id.clone(), Term::entity(entity.clone())));
+    let (role_id, _) = roles[index];
+    for referent in source.model().referents().keys() {
+        values.insert((role_id.clone(), Term::referent(referent.clone())));
+        let partial = RelationalContent::new(relation.clone(), values.iter().cloned().collect());
+        if index + 1 == roles.len()
+            && partial
+                .as_ref()
+                .is_ok_and(|content| source.model().validate_content(content, false).is_err())
+        {
+            values.remove(&(role_id.clone(), Term::referent(referent.clone())));
+            continue;
+        }
         let exhausted = collect_ground_clauses(
             source,
             relation,
@@ -126,7 +142,7 @@ fn collect_ground_clauses(
             candidates,
             max_candidates,
         )?;
-        values.remove(&(role_id.clone(), Term::entity(entity.clone())));
+        values.remove(&(role_id.clone(), Term::referent(referent.clone())));
         if exhausted {
             return Ok(true);
         }

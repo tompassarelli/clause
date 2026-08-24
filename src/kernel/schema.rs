@@ -2,41 +2,85 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use super::{
     error::{KernelError, Result},
-    identity::{RelationId, RoleId, TypeId},
+    identity::{ReferentId, RoleId},
 };
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Type {
-    id: TypeId,
+/// One addressable semantic distinction. Designations and every fact about a
+/// referent live outside this identity-bearing value.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct Referent {
+    id: ReferentId,
 }
 
-impl Type {
-    pub fn new(id: TypeId) -> Self {
+impl Referent {
+    pub fn new(id: ReferentId) -> Self {
         Self { id }
     }
 
-    pub fn id(&self) -> &TypeId {
+    pub fn id(&self) -> &ReferentId {
         &self.id
+    }
+}
+
+/// One ordinary relational pattern used to decide whether a candidate may
+/// occupy a role. Zero or more may apply to a role.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct RolePredicate {
+    relation: ReferentId,
+    candidate_role: RoleId,
+    fixed_roles: BTreeMap<RoleId, ReferentId>,
+}
+
+impl RolePredicate {
+    pub fn new(
+        relation: ReferentId,
+        candidate_role: RoleId,
+        fixed_roles: BTreeMap<RoleId, ReferentId>,
+    ) -> Result<Self> {
+        if fixed_roles.contains_key(&candidate_role) {
+            return Err(KernelError::new(
+                "role predicate cannot fix its candidate role",
+            ));
+        }
+        Ok(Self {
+            relation,
+            candidate_role,
+            fixed_roles,
+        })
+    }
+
+    pub fn relation(&self) -> &ReferentId {
+        &self.relation
+    }
+    pub fn candidate_role(&self) -> &RoleId {
+        &self.candidate_role
+    }
+    pub fn fixed_roles(&self) -> &BTreeMap<RoleId, ReferentId> {
+        &self.fixed_roles
     }
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct Role {
     id: RoleId,
-    typ: TypeId,
+    admissibility: Vec<RolePredicate>,
 }
 
 impl Role {
-    pub fn new(id: RoleId, typ: TypeId) -> Self {
-        Self { id, typ }
+    pub fn new(id: RoleId, mut admissibility: Vec<RolePredicate>) -> Result<Self> {
+        admissibility.sort();
+        if admissibility.windows(2).any(|pair| pair[0] == pair[1]) {
+            return Err(KernelError::new("duplicate role admissibility predicate"));
+        }
+        Ok(Self { id, admissibility })
     }
 
     pub fn id(&self) -> &RoleId {
         &self.id
     }
 
-    pub fn typ(&self) -> &TypeId {
-        &self.typ
+    pub fn admissibility(&self) -> &[RolePredicate] {
+        &self.admissibility
     }
 }
 
@@ -59,14 +103,15 @@ impl Cardinality {
     }
 }
 
+/// A derived executable lookup contract. It is not judgment modality.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub struct Mode {
+pub struct LookupMode {
     known: Vec<RoleId>,
     sought: Vec<RoleId>,
     cardinality: Cardinality,
 }
 
-impl Mode {
+impl LookupMode {
     pub fn finite(
         known: Vec<RoleId>,
         sought: Vec<RoleId>,
@@ -79,7 +124,7 @@ impl Mode {
             || known.iter().any(|role| sought.binary_search(role).is_ok())
         {
             return Err(KernelError::new(
-                "mode must have disjoint nonempty known and sought roles",
+                "lookup contract must have disjoint nonempty known and sought roles",
             ));
         }
         Ok(Self {
@@ -102,95 +147,29 @@ impl Mode {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum SentencePart {
-    Literal(String),
-    Role(RoleId),
+/// A derived executable contract for a referent used in relational position.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct RelationShape {
+    referent: ReferentId,
+    roles: BTreeMap<RoleId, Role>,
+    lookup: Vec<LookupMode>,
 }
 
-/// One inline shape. Role types travel with the shape until `Relation::new`
-/// derives the Relation role map; the public parts remain the semantic n-ary
-/// sentence pattern.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct SentenceShape {
-    parts: Vec<SentencePart>,
-    inline_roles: BTreeMap<RoleId, Role>,
-}
-
-impl SentenceShape {
-    pub fn new(parts: Vec<InlineSentencePart>) -> Result<Self> {
-        if parts.len() < 3
-            || !matches!(parts.first(), Some(InlineSentencePart::Role(_)))
-            || !matches!(parts.last(), Some(InlineSentencePart::Role(_)))
-        {
+impl RelationShape {
+    pub fn new(
+        referent: ReferentId,
+        roles: BTreeMap<RoleId, Role>,
+        mut lookup: Vec<LookupMode>,
+    ) -> Result<Self> {
+        if roles.is_empty() {
+            return Err(KernelError::new("relation shape needs at least one role"));
+        }
+        if roles.iter().any(|(id, role)| id != role.id()) {
             return Err(KernelError::new(
-                "sentence shape must begin and end with a role and contain a literal",
+                "relation shape role map key does not match identity",
             ));
         }
-        let mut inline_roles = BTreeMap::new();
-        let mut canonical = Vec::with_capacity(parts.len());
-        let mut role_count = 0;
-        let mut previous_was_role = false;
-        for part in parts {
-            match part {
-                InlineSentencePart::Role(role) => {
-                    if previous_was_role {
-                        return Err(KernelError::new(
-                            "sentence roles need a literal between them",
-                        ));
-                    }
-                    if inline_roles.insert(role.id.clone(), role.clone()).is_some() {
-                        return Err(KernelError::new("duplicate inline relation role"));
-                    }
-                    canonical.push(SentencePart::Role(role.id));
-                    role_count += 1;
-                    previous_was_role = true;
-                }
-                InlineSentencePart::Literal(literal) => {
-                    if !previous_was_role {
-                        return Err(KernelError::new("sentence literals must follow a role"));
-                    }
-                    canonical.push(SentencePart::Literal(canonical_literal(literal)?));
-                    previous_was_role = false;
-                }
-            }
-        }
-        if role_count < 2 {
-            return Err(KernelError::new("relation needs at least two inline roles"));
-        }
-        Ok(Self {
-            parts: canonical,
-            inline_roles,
-        })
-    }
-
-    pub fn parts(&self) -> &[SentencePart] {
-        &self.parts
-    }
-
-    fn roles(&self) -> &BTreeMap<RoleId, Role> {
-        &self.inline_roles
-    }
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum InlineSentencePart {
-    Literal(String),
-    Role(Role),
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Relation {
-    id: RelationId,
-    roles: BTreeMap<RoleId, Role>,
-    shape: SentenceShape,
-    modes: Vec<Mode>,
-}
-
-impl Relation {
-    pub fn new(id: RelationId, shape: SentenceShape, mut modes: Vec<Mode>) -> Result<Self> {
-        let roles = shape.roles().clone();
-        for mode in &modes {
+        for mode in &lookup {
             let covered = mode
                 .known()
                 .iter()
@@ -198,36 +177,30 @@ impl Relation {
                 .cloned()
                 .collect::<BTreeSet<_>>();
             if roles.keys().cloned().collect::<BTreeSet<_>>() != covered {
-                return Err(KernelError::new("mode must classify every relation role"));
+                return Err(KernelError::new(
+                    "lookup contract must classify every relation role",
+                ));
             }
         }
-        modes.sort();
-        modes.dedup();
-        if modes.is_empty() {
-            return Err(KernelError::new("relation needs a declared mode"));
-        }
+        lookup.sort();
+        lookup.dedup();
         Ok(Self {
-            id,
+            referent,
             roles,
-            shape,
-            modes,
+            lookup,
         })
     }
 
-    pub fn id(&self) -> &RelationId {
-        &self.id
+    pub fn referent(&self) -> &ReferentId {
+        &self.referent
     }
 
     pub fn roles(&self) -> &BTreeMap<RoleId, Role> {
         &self.roles
     }
 
-    pub fn shape(&self) -> &SentenceShape {
-        &self.shape
-    }
-
-    pub fn modes(&self) -> &[Mode] {
-        &self.modes
+    pub fn lookup(&self) -> &[LookupMode] {
+        &self.lookup
     }
 }
 
@@ -237,13 +210,4 @@ fn sorted_unique<T: Ord>(mut values: Vec<T>, where_: &str) -> Result<Vec<T>> {
         return Err(KernelError::new(format!("duplicate {where_}")));
     }
     Ok(values)
-}
-
-fn canonical_literal(value: String) -> Result<String> {
-    let literal = value.split_ascii_whitespace().collect::<Vec<_>>().join(" ");
-    if literal.is_empty() {
-        Err(KernelError::new("sentence literal cannot be empty"))
-    } else {
-        Ok(literal)
-    }
 }

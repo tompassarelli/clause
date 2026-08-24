@@ -1,54 +1,47 @@
 use super::*;
 use crate::{
     kernel::{
-        Cardinality, EntityId, InlineSentencePart, Law, Mode, Model, ModelId, Name, Relation,
-        RelationId, Role, RoleId, SentenceShape, Type, TypeId,
+        AssertionOccurrence, Cardinality, DerivationRule, Judgment, JudgmentKind, JudgmentStatus,
+        JudgmentTarget, LookupMode, Model, Pattern, PatternId, Referent, ReferentId, RelationShape,
+        RelationalContent, Revision, Role, RoleId, Term,
     },
     wire,
 };
 use std::collections::BTreeMap;
 
-fn name(value: &str) -> Name {
-    Name::new(value.to_owned()).unwrap()
-}
-fn type_id(value: &str) -> TypeId {
-    TypeId::new(name(value)).unwrap()
-}
-fn relation_id(value: &str) -> RelationId {
-    RelationId::new(name(value)).unwrap()
+fn referent_id(value: &str) -> ReferentId {
+    ReferentId::from_digest(wire::sha256_digest(value.as_bytes()))
 }
 fn role_id(value: &str) -> RoleId {
-    RoleId::new(name(value)).unwrap()
+    RoleId::from_digest(wire::sha256_digest(value.as_bytes()))
 }
-fn variable_id(value: &str) -> VariableId {
-    VariableId::new(name(value)).unwrap()
+fn pattern_id(value: &str) -> PatternId {
+    PatternId::from_digest(wire::sha256_digest(value.as_bytes()))
 }
-fn entity(model: &ModelId, local: &str, typ: &TypeId) -> Term {
-    Term::entity(EntityId::new(model.clone(), name(local), typ.clone()).unwrap())
+fn referent(value: &str) -> Term {
+    Term::referent(referent_id(value))
 }
-fn variable(local: &str, typ: &TypeId) -> Term {
-    Term::variable(variable_id(local), typ.clone())
+fn variable(value: &str) -> Term {
+    Term::pattern(pattern_id(value))
 }
-fn clause(relation: &RelationId, from: Term, to: Term) -> Clause {
-    Clause::new(
+fn clause(relation: &ReferentId, from: Term, to: Term) -> RelationalContent {
+    RelationalContent::new(
         relation.clone(),
         BTreeMap::from([(role_id("from"), from), (role_id("to"), to)]),
     )
     .unwrap()
 }
-fn relation(id: &RelationId, typ: &TypeId) -> Relation {
-    let from = Role::new(role_id("from"), typ.clone());
-    let to = Role::new(role_id("to"), typ.clone());
-    Relation::new(
+fn relation(id: &ReferentId) -> RelationShape {
+    let from = Role::new(role_id("from"), Vec::new()).unwrap();
+    let to = Role::new(role_id("to"), Vec::new()).unwrap();
+    RelationShape::new(
         id.clone(),
-        SentenceShape::new(vec![
-            InlineSentencePart::Role(from.clone()),
-            InlineSentencePart::Literal("reaches".to_owned()),
-            InlineSentencePart::Role(to.clone()),
-        ])
-        .unwrap(),
+        BTreeMap::from([
+            (from.id().clone(), from.clone()),
+            (to.id().clone(), to.clone()),
+        ]),
         vec![
-            Mode::finite(
+            LookupMode::finite(
                 vec![from.id().clone()],
                 vec![to.id().clone()],
                 Cardinality::Many,
@@ -58,26 +51,130 @@ fn relation(id: &RelationId, typ: &TypeId) -> Relation {
     )
     .unwrap()
 }
-fn revision(assertions: Vec<Clause>, laws: Vec<Law>) -> Revision {
-    let model = ModelId::new(name("map")).unwrap();
-    let module = type_id("Module");
-    let links = relation_id("map/links");
-    let reaches = relation_id("map/reaches");
-    let entities = ["North", "South", "Store", "Relay", "Beagle"]
-        .into_iter()
-        .map(|local| EntityId::new(model.clone(), name(local), module.clone()).unwrap())
-        .collect();
+
+fn rule(
+    identity: &str,
+    premises: Vec<RelationalContent>,
+    conclusion: RelationalContent,
+) -> (DerivationRule, Vec<RelationalContent>) {
+    let rule = DerivationRule::new(
+        referent_id(identity),
+        referent_id("map/scope"),
+        referent_id("map/authority"),
+        Pattern::new(premises.iter().map(|item| item.id().clone()).collect()).unwrap(),
+        Pattern::new(vec![conclusion.id().clone()]).unwrap(),
+    )
+    .unwrap();
+    let mut contents = premises;
+    contents.push(conclusion);
+    (rule, contents)
+}
+
+fn declare(referents: &mut BTreeMap<ReferentId, Referent>, id: ReferentId) {
+    referents.insert(id.clone(), Referent::new(id));
+}
+
+fn declare_content_referents(
+    referents: &mut BTreeMap<ReferentId, Referent>,
+    content: &RelationalContent,
+) {
+    declare(referents, content.relation().clone());
+    for term in content.roles().values() {
+        if let Term::Referent(id) = term {
+            declare(referents, id.clone());
+        }
+    }
+}
+
+fn revision(
+    assertions: Vec<RelationalContent>,
+    rule_fixtures: Vec<(DerivationRule, Vec<RelationalContent>)>,
+) -> Revision {
+    let model_id = referent_id("map");
+    let links = referent_id("map/links");
+    let reaches = referent_id("map/reaches");
+    let source = referent_id("map/source");
+    let scope = referent_id("map/scope");
+    let policy = referent_id("map/admission-policy");
+    let mut referents = BTreeMap::new();
+    for id in [
+        model_id.clone(),
+        links.clone(),
+        reaches.clone(),
+        source.clone(),
+        scope.clone(),
+        policy.clone(),
+        referent_id("map/authority"),
+    ] {
+        declare(&mut referents, id);
+    }
+    for value in ["North", "South", "Store", "Relay", "Beagle"] {
+        declare(&mut referents, referent_id(value));
+    }
+    let mut relational_contents = BTreeMap::new();
+    for content in &assertions {
+        declare_content_referents(&mut referents, content);
+        relational_contents.insert(content.id().clone(), content.clone());
+    }
+    let mut rules = Vec::new();
+    for (rule, contents) in rule_fixtures {
+        declare(&mut referents, rule.id().clone());
+        declare(&mut referents, rule.scope().clone());
+        declare(&mut referents, rule.authority().clone());
+        for content in contents {
+            declare_content_referents(&mut referents, &content);
+            relational_contents.insert(content.id().clone(), content);
+        }
+        rules.push(rule);
+    }
+    let mut occurrences = Vec::new();
+    let mut judgments = Vec::new();
+    for assertion in assertions {
+        let occurrence_id = referent_id(&format!(
+            "map/assertion-occurrence/{}",
+            assertion.id().as_str()
+        ));
+        let judgment_id = referent_id(&format!(
+            "map/admission-judgment/{}",
+            assertion.id().as_str()
+        ));
+        declare(&mut referents, occurrence_id.clone());
+        declare(&mut referents, judgment_id.clone());
+        occurrences.push(AssertionOccurrence::new(
+            occurrence_id.clone(),
+            assertion.id().clone(),
+            source.clone(),
+            model_id.clone(),
+        ));
+        judgments.push(Judgment::new(
+            judgment_id,
+            model_id.clone(),
+            model_id.clone(),
+            JudgmentTarget::Occurrence(occurrence_id),
+            JudgmentKind::Admitted {
+                policy: policy.clone(),
+                basis: Vec::new(),
+            },
+            JudgmentStatus::Affirmed,
+        ));
+    }
     wire::admit(
-        Model::new(
-            model,
-            BTreeMap::from([(module.clone(), Type::new(module.clone()))]),
-            entities,
+        Model::with_distinctions(
+            model_id,
+            referents,
+            relational_contents,
             BTreeMap::from([
-                (links.clone(), relation(&links, &module)),
-                (reaches.clone(), relation(&reaches, &module)),
+                (links.clone(), relation(&links)),
+                (reaches.clone(), relation(&reaches)),
             ]),
-            assertions,
-            laws,
+            occurrences,
+            Vec::new(),
+            rules,
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            judgments,
         )
         .unwrap(),
     )
@@ -85,50 +182,39 @@ fn revision(assertions: Vec<Clause>, laws: Vec<Law>) -> Revision {
 fn limits() -> Limits {
     Limits::new(100, 10, 10_000)
 }
-fn chain_laws() -> Vec<Law> {
-    let module = type_id("Module");
-    let links = relation_id("map/links");
-    let reaches = relation_id("map/reaches");
-    let source = variable("source", &module);
-    let middle = variable("middle", &module);
-    let destination = variable("destination", &module);
+fn chain_rules() -> Vec<(DerivationRule, Vec<RelationalContent>)> {
+    let links = referent_id("map/links");
+    let reaches = referent_id("map/reaches");
+    let source = variable("source");
+    let middle = variable("middle");
+    let destination = variable("destination");
     vec![
-        Law::new(
-            LawId::new(name("map/direct")).unwrap(),
+        rule(
+            "map/direct",
             vec![clause(&links, source.clone(), destination.clone())],
             clause(&reaches, source.clone(), destination.clone()),
-        )
-        .unwrap(),
-        Law::new(
-            LawId::new(name("map/recursive")).unwrap(),
+        ),
+        rule(
+            "map/recursive",
             vec![
                 clause(&reaches, source.clone(), middle.clone()),
                 clause(&links, middle, destination.clone()),
             ],
             clause(&reaches, source, destination),
-        )
-        .unwrap(),
+        ),
     ]
 }
-fn asserted(relation: &str, from: &str, to: &str) -> Clause {
-    let model = ModelId::new(name("map")).unwrap();
-    let module = type_id("Module");
-    clause(
-        &relation_id(relation),
-        entity(&model, from, &module),
-        entity(&model, to, &module),
-    )
+fn asserted(relation: &str, from: &str, to: &str) -> RelationalContent {
+    clause(&referent_id(relation), referent(from), referent(to))
 }
 fn find_plan(revision: &Revision, from: &str) -> crate::kernel::FindPlan {
-    let model = ModelId::new(name("map")).unwrap();
-    let module = type_id("Module");
-    let target = variable_id("target");
+    let target = pattern_id("target");
     crate::kernel::FindPlan::new(
         revision.model(),
         &clause(
-            &relation_id("map/reaches"),
-            entity(&model, from, &module),
-            Term::variable(target.clone(), module),
+            &referent_id("map/reaches"),
+            referent(from),
+            Term::pattern(target.clone()),
         ),
         target,
     )
@@ -136,69 +222,47 @@ fn find_plan(revision: &Revision, from: &str) -> crate::kernel::FindPlan {
 }
 
 #[test]
-fn find_discriminates_known_entity_bindings_and_returns_typed_terms() {
+fn find_discriminates_known_referent_bindings_and_returns_referent_terms() {
     let revision = revision(
         vec![
             asserted("map/links", "North", "Store"),
             asserted("map/links", "South", "Relay"),
         ],
-        chain_laws(),
+        chain_rules(),
     );
     assert_eq!(
         find(&revision, &find_plan(&revision, "North"), limits()).unwrap(),
-        vec![entity(
-            &ModelId::new(name("map")).unwrap(),
-            "Store",
-            &type_id("Module")
-        )]
+        vec![referent("Store")]
     );
     assert_eq!(
         find(&revision, &find_plan(&revision, "South"), limits()).unwrap(),
-        vec![entity(
-            &ModelId::new(name("map")).unwrap(),
-            "Relay",
-            &type_id("Module")
-        )]
+        vec![referent("Relay")]
     );
 }
 
 #[test]
-fn find_returns_recursive_derived_bindings_in_canonical_order() {
+fn find_returns_recursive_derived_referents_in_canonical_order() {
     let revision = revision(
         vec![
             asserted("map/links", "North", "Store"),
             asserted("map/links", "Store", "Beagle"),
         ],
-        chain_laws(),
+        chain_rules(),
     );
     let result = find(&revision, &find_plan(&revision, "North"), limits()).unwrap();
-    assert_eq!(
-        result,
-        vec![
-            entity(
-                &ModelId::new(name("map")).unwrap(),
-                "Beagle",
-                &type_id("Module")
-            ),
-            entity(
-                &ModelId::new(name("map")).unwrap(),
-                "Store",
-                &type_id("Module")
-            ),
-        ]
-    );
-    assert!(result.iter().all(|term| matches!(term, Term::Entity(_))));
+    assert_eq!(result, vec![referent("Beagle"), referent("Store")]);
+    assert!(result.iter().all(|term| matches!(term, Term::Referent(_))));
 }
 
 #[test]
 fn why_projects_one_canonical_revision_scoped_proof() {
-    let revision = revision(vec![asserted("map/links", "North", "Store")], chain_laws());
+    let revision = revision(vec![asserted("map/links", "North", "Store")], chain_rules());
     let target = asserted("map/reaches", "North", "Store");
     let proof = why(&revision, &target, limits()).unwrap().unwrap();
     assert_eq!(proof.revision, *revision.identity());
     assert_eq!(proof.why.root, 0);
     assert!(
-        matches!(proof.why.witnesses[0].witness, Witness::Derived { ref law, .. } if law.as_str() == "map/direct")
+        matches!(&proof.why.witnesses[0].witness, Witness::Derived { rule, .. } if rule == &referent_id("map/direct"))
     );
 }
 
@@ -211,7 +275,7 @@ fn why_all_projects_two_independent_minimal_supports() {
             asserted("map/links", "North", "Relay"),
             asserted("map/links", "Relay", "Beagle"),
         ],
-        chain_laws(),
+        chain_rules(),
     );
     let all = why_all(
         &revision,
@@ -231,7 +295,7 @@ fn why_all_projects_two_independent_minimal_supports() {
 
 #[test]
 fn why_all_marks_a_bounded_frontier_incomplete() {
-    let revision = revision(vec![asserted("map/links", "North", "Store")], chain_laws());
+    let revision = revision(vec![asserted("map/links", "North", "Store")], chain_rules());
     let all = why_all(
         &revision,
         &asserted("map/reaches", "North", "Store"),
@@ -250,8 +314,8 @@ fn proof_is_deterministic_when_assertion_order_changes() {
         asserted("map/links", "Store", "Beagle"),
     ];
     let target = asserted("map/reaches", "North", "Beagle");
-    let forward = revision(assertions.clone(), chain_laws());
-    let reverse = revision(assertions.into_iter().rev().collect(), chain_laws());
+    let forward = revision(assertions.clone(), chain_rules());
+    let reverse = revision(assertions.into_iter().rev().collect(), chain_rules());
     assert_eq!(
         why(&forward, &target, limits()).unwrap().unwrap().why,
         why(&reverse, &target, limits()).unwrap().unwrap().why

@@ -8,18 +8,18 @@ use super::{
 };
 use crate::{
     derive,
-    kernel::{Clause, KernelError, RelationId, Result, Revision},
+    kernel::{KernelError, ReferentId, RelationalContent, Result, Revision},
 };
 
 /// Enumerate every inclusion-minimal withdrawal over the complete support
 /// frontier. An incomplete support projection is never treated as exact.
 pub(super) fn prevent_all_minimal(
     source: &Revision,
-    target: Clause,
-    using: Vec<RelationId>,
+    target: RelationalContent,
+    using: Vec<ReferentId>,
     limits: InterventionLimits,
 ) -> Result<PreventAll> {
-    source.model().validate_clause(&target, false)?;
+    source.model().validate_content(&target, false)?;
     let basis = withdrawal_basis(source, using)?;
     let frontier = match derive::support_frontier(source, &target, limits.support()) {
         Ok(frontier) => frontier,
@@ -67,7 +67,7 @@ pub(super) fn prevent_all_minimal(
             if state
                 .items
                 .iter()
-                .any(|item| is_subset(item.delta().withdrawals(), withdrawals))
+                .any(|item| is_subset(item.withdrawals(), withdrawals))
             {
                 return Ok(Enumeration::Continue);
             }
@@ -109,11 +109,11 @@ pub(super) fn prevent_all_minimal(
 /// Enumerate every inclusion-minimal addition over the finite typed basis.
 pub(super) fn achieve_all_minimal(
     source: &Revision,
-    target: Clause,
-    using: Vec<RelationId>,
+    target: RelationalContent,
+    using: Vec<ReferentId>,
     limits: InterventionLimits,
 ) -> Result<AchieveAll> {
-    source.model().validate_clause(&target, false)?;
+    source.model().validate_content(&target, false)?;
     let Some(source_closure) = complete_closure(source, limits.closure())? else {
         return Ok(AchieveAll::Incomplete {
             interventions: Vec::new(),
@@ -145,7 +145,7 @@ pub(super) fn achieve_all_minimal(
             if state
                 .items
                 .iter()
-                .any(|item| is_subset(item.delta().admissions(), additions))
+                .any(|item| is_subset(item.admissions(), additions))
             {
                 return Ok(Enumeration::Continue);
             }

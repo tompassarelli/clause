@@ -6,7 +6,7 @@ use super::{
     closure::{ClosureAttempt, apply, closure_after, complete_closure},
     search::without,
 };
-use crate::kernel::{Clause, KernelError, RelationId, Result, Revision};
+use crate::kernel::{KernelError, ReferentId, RelationalContent, Result, Revision};
 
 /// Return one canonical inclusion-minimal asserted-clause withdrawal.
 ///
@@ -15,11 +15,11 @@ use crate::kernel::{Clause, KernelError, RelationId, Result, Revision};
 /// necessary, but intentionally does not prove it has minimum cardinality.
 pub(super) fn prevent_one_minimal(
     source: &Revision,
-    target: Clause,
-    using: Vec<RelationId>,
+    target: RelationalContent,
+    using: Vec<ReferentId>,
     limits: InterventionLimits,
 ) -> Result<PreventOne> {
-    source.model().validate_clause(&target, false)?;
+    source.model().validate_content(&target, false)?;
     let Some(source_closure) = complete_closure(source, limits.closure())? else {
         return Ok(PreventOne::Incomplete(Incomplete::ClosureBudgetExhausted));
     };
@@ -96,11 +96,11 @@ pub(super) fn prevent_one_minimal(
 /// necessity, not cardinality optimality or complete-frontier enumeration.
 pub(super) fn achieve_one_minimal(
     source: &Revision,
-    target: Clause,
-    using: Vec<RelationId>,
+    target: RelationalContent,
+    using: Vec<ReferentId>,
     limits: InterventionLimits,
 ) -> Result<AchieveOne> {
-    source.model().validate_clause(&target, false)?;
+    source.model().validate_content(&target, false)?;
     let Some(source_closure) = complete_closure(source, limits.closure())? else {
         return Ok(AchieveOne::Incomplete(Incomplete::ClosureBudgetExhausted));
     };

@@ -5,7 +5,7 @@
 use crate::{
     delta::RevisionDiff,
     derive::{self, Proof, Support, SupportFrontier, SupportLimits},
-    kernel::{Clause, Result, Revision},
+    kernel::{RelationalContent, Result, Revision},
 };
 
 mod entailment;
@@ -15,13 +15,13 @@ mod supports;
 /// A selected derivation that changed for a consequence entailed by both revisions.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProofChange {
-    consequence: Clause,
+    consequence: RelationalContent,
     base: Proof,
     successor: Proof,
 }
 
 impl ProofChange {
-    pub fn consequence(&self) -> &Clause {
+    pub fn consequence(&self) -> &RelationalContent {
         &self.consequence
     }
 
@@ -41,7 +41,7 @@ impl ProofChange {
 /// support exists.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SupportChange {
-    consequence: Clause,
+    consequence: RelationalContent,
     base: SupportFrontier,
     successor: SupportFrontier,
     added: Vec<Support>,
@@ -50,7 +50,7 @@ pub struct SupportChange {
 }
 
 impl SupportChange {
-    pub fn consequence(&self) -> &Clause {
+    pub fn consequence(&self) -> &RelationalContent {
         &self.consequence
     }
 
@@ -83,8 +83,8 @@ impl SupportChange {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SemanticDiff {
     authored: RevisionDiff,
-    entailed_added: Vec<Clause>,
-    entailed_removed: Vec<Clause>,
+    entailed_added: Vec<RelationalContent>,
+    entailed_removed: Vec<RelationalContent>,
     changed_proofs: Vec<ProofChange>,
     changed_supports: Vec<SupportChange>,
 }
@@ -129,11 +129,11 @@ impl SemanticDiff {
         &self.authored
     }
 
-    pub fn entailed_added(&self) -> &[Clause] {
+    pub fn entailed_added(&self) -> &[RelationalContent] {
         &self.entailed_added
     }
 
-    pub fn entailed_removed(&self) -> &[Clause] {
+    pub fn entailed_removed(&self) -> &[RelationalContent] {
         &self.entailed_removed
     }
 

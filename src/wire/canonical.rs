@@ -1,182 +1,305 @@
 use crate::kernel::{
-    Clause, EntityId, Law, Mode, Model, Relation, Revision, RevisionId, RoleId, SentencePart, Term,
-    Type,
+    AssertionOccurrence, Definition, Delta, DerivationRule, Goal, Invariant, Judgment,
+    JudgmentKind, JudgmentTarget, LookupMode, Model, Pattern, Referent, RelationShape,
+    RelationalContent, Revision, RevisionId, RevisionLineage, RoleId, RolePredicate, SemanticAtom,
+    Term, Transition, UniversalLaw,
 };
 
-use super::json::escape;
-use super::sha256::sha256_digest;
+use super::{json::escape, sha256::sha256_digest};
 
-pub const SEMANTIC_TAG: &str = "clause-semantic-v5";
-pub const REVISION_TAG: &str = "clause-revision-v3";
+pub const SEMANTIC_TAG: &str = "clause-semantic-v6";
+pub const REVISION_TAG: &str = "clause-revision-v4";
 
-/// Serialize the exact semantic-v5 identity preimage for an admitted Model.
-pub fn semantic_payload(model: &Model) -> String {
-    let types = model
-        .types()
-        .values()
-        .map(type_json)
-        .collect::<Vec<_>>()
-        .join(",");
-    let entities = model
-        .entities()
-        .iter()
-        .map(entity_json)
-        .collect::<Vec<_>>()
-        .join(",");
-    let relations = model
-        .relations()
-        .values()
-        .map(relation_json)
-        .collect::<Vec<_>>()
-        .join(",");
-    let assertions = model
-        .assertions()
-        .iter()
-        .map(|assertion| clause_json("assertion", assertion))
-        .collect::<Vec<_>>()
-        .join(",");
-    let laws = model
-        .laws()
-        .iter()
-        .map(law_json)
-        .collect::<Vec<_>>()
-        .join(",");
+pub fn semantic_payload(revision: &Revision) -> String {
+    payload(revision.lineage(), revision.model())
+}
 
+fn payload(lineage: &RevisionLineage, model: &Model) -> String {
+    let referents = join(model.referents().values().map(referent_json));
+    let contents = join(model.relational_contents().values().map(content_json));
+    let shapes = join(model.relation_shapes().values().map(shape_json));
+    let occurrences = join(model.occurrences().iter().map(occurrence_json));
+    let definitions = join(model.definitions().iter().map(definition_json));
+    let rules = join(model.derivation_rules().iter().map(rule_json));
+    let laws = join(model.universal_laws().iter().map(law_json));
+    let invariants = join(model.invariants().iter().map(invariant_json));
+    let goals = join(model.goals().iter().map(goal_json));
+    let transitions = join(model.transitions().iter().map(transition_json));
+    let judgments = join(model.judgments().iter().map(judgment_json));
     format!(
-        "[\"{SEMANTIC_TAG}\",[\"model\",\"{}\"],[\"types\",[{types}]],[\"entities\",[{entities}]],[\"relations\",[{relations}]],[\"assertions\",[{assertions}]],[\"laws\",[{laws}]]]",
-        escape(model.id().as_str())
+        "[\"{SEMANTIC_TAG}\",[\"lineage\",{}],[\"model\",\"{}\"],[\"referents\",[{referents}]],[\"relational-contents\",[{contents}]],[\"relation-shapes\",[{shapes}]],[\"occurrences\",[{occurrences}]],[\"definitions\",[{definitions}]],[\"derivation-rules\",[{rules}]],[\"universal-laws\",[{laws}]],[\"invariants\",[{invariants}]],[\"goals\",[{goals}]],[\"transitions\",[{transitions}]],[\"judgments\",[{judgments}]]]",
+        lineage_json(lineage),
+        escape(model.id().as_str()),
     )
 }
 
-/// Derive the typed revision identity from the exact semantic-v5 bytes.
-pub fn revision_id(model: &Model) -> RevisionId {
-    RevisionId::from_digest(sha256_digest(semantic_payload(model).as_bytes()))
+pub fn revision_id(lineage: &RevisionLineage, model: &Model) -> RevisionId {
+    RevisionId::from_digest(sha256_digest(payload(lineage, model).as_bytes()))
 }
 
-/// Admit a Model as a content-addressed immutable Revision.
 pub fn admit(model: Model) -> Revision {
-    let identity = revision_id(&model);
-    Revision::reloaded(identity, model)
+    admit_with_lineage(model, RevisionLineage::Root)
 }
 
-/// Serialize the sole live persisted Revision envelope.
+pub fn admit_successor(
+    base: &Revision,
+    model: Model,
+    delta: Delta,
+) -> crate::kernel::Result<Revision> {
+    if delta.base() != base.identity() {
+        return Err(crate::kernel::KernelError::new(
+            "successor Delta names the wrong predecessor",
+        ));
+    }
+    let mut atoms = base.model().atoms();
+    for withdrawal in delta.withdrawals() {
+        if !atoms.remove(withdrawal) {
+            return Err(crate::kernel::KernelError::new(
+                "successor Delta withdraws an absent atom",
+            ));
+        }
+    }
+    for admission in delta.admissions() {
+        if !atoms.insert(admission.clone()) {
+            return Err(crate::kernel::KernelError::new(
+                "successor Delta admits an existing atom",
+            ));
+        }
+    }
+    if atoms != model.atoms() || base.model().id() != model.id() {
+        return Err(crate::kernel::KernelError::new(
+            "successor Delta does not account for the complete semantic snapshot",
+        ));
+    }
+    Ok(admit_with_lineage(model, RevisionLineage::Successor(delta)))
+}
+
+fn admit_with_lineage(model: Model, lineage: RevisionLineage) -> Revision {
+    let identity = revision_id(&lineage, &model);
+    Revision::reloaded(identity, lineage, model)
+}
+
 pub fn serialize(revision: &Revision) -> String {
     format!(
         "[\"{REVISION_TAG}\",\"{}\",{}]",
         revision.identity(),
-        semantic_payload(revision.model())
+        semantic_payload(revision)
     )
 }
 
-fn type_json(typ: &Type) -> String {
-    format!("[\"type\",\"{}\"]", escape(typ.id().as_str()))
-}
-
-fn entity_json(entity: &EntityId) -> String {
-    format!(
-        "[\"entity\",\"{}\",\"{}\",\"{}\"]",
-        escape(entity.model().as_str()),
-        escape(entity.local().as_str()),
-        escape(entity.typ().as_str())
-    )
-}
-
-fn relation_json(relation: &Relation) -> String {
-    let roles = relation
-        .roles()
-        .values()
-        .map(|role| {
-            format!(
-                "[\"role\",\"{}\",\"{}\"]",
-                escape(role.id().as_str()),
-                escape(role.typ().as_str())
-            )
-        })
-        .collect::<Vec<_>>()
-        .join(",");
-    let shape = relation
-        .shape()
-        .parts()
-        .iter()
-        .map(shape_part_json)
-        .collect::<Vec<_>>()
-        .join(",");
-    let modes = relation
-        .modes()
-        .iter()
-        .map(mode_json)
-        .collect::<Vec<_>>()
-        .join(",");
-    format!(
-        "[\"relation\",\"{}\",[\"roles\",[{roles}]],[\"shape\",[{shape}]],[\"modes\",[{modes}]]]",
-        escape(relation.id().as_str())
-    )
-}
-
-fn shape_part_json(part: &SentencePart) -> String {
-    match part {
-        SentencePart::Literal(literal) => {
-            format!("[\"literal\",\"{}\"]", escape(literal))
+fn lineage_json(lineage: &RevisionLineage) -> String {
+    match lineage {
+        RevisionLineage::Root => "[\"root\"]".into(),
+        RevisionLineage::Successor(delta) => {
+            format!("[\"successor\",\"{}\",{}]", delta.base(), delta_json(delta))
         }
-        SentencePart::Role(role) => format!("[\"role\",\"{}\"]", escape(role.as_str())),
     }
 }
 
-fn mode_json(mode: &Mode) -> String {
-    let known = string_list(mode.known().iter().map(RoleId::as_str));
-    let sought = string_list(mode.sought().iter().map(RoleId::as_str));
+fn delta_json(delta: &Delta) -> String {
+    let admissions = join(delta.admissions().iter().map(atom_json));
+    let withdrawals = join(delta.withdrawals().iter().map(atom_json));
+    format!("[\"delta\",[\"admit\",[{admissions}]],[\"withdraw\",[{withdrawals}]]]")
+}
+
+fn atom_json(atom: &SemanticAtom) -> String {
+    match atom {
+        SemanticAtom::Referent(value) => referent_json(value),
+        SemanticAtom::RelationalContent(value) => content_json(value),
+        SemanticAtom::RelationShape(value) => shape_json(value),
+        SemanticAtom::AssertionOccurrence(value) => occurrence_json(value),
+        SemanticAtom::Definition(value) => definition_json(value),
+        SemanticAtom::DerivationRule(value) => rule_json(value),
+        SemanticAtom::UniversalLaw(value) => law_json(value),
+        SemanticAtom::Invariant(value) => invariant_json(value),
+        SemanticAtom::Goal(value) => goal_json(value),
+        SemanticAtom::Transition(value) => transition_json(value),
+        SemanticAtom::Judgment(value) => judgment_json(value),
+    }
+}
+
+fn referent_json(referent: &Referent) -> String {
+    format!("[\"referent\",\"{}\"]", escape(referent.id().as_str()))
+}
+
+fn content_json(content: &RelationalContent) -> String {
+    let roles = join(
+        content
+            .roles()
+            .iter()
+            .map(|(role, term)| format!("[\"{}\",{}]", escape(role.as_str()), term_json(term))),
+    );
     format!(
-        "[\"mode\",[\"known\",[{known}]],[\"sought\",[{sought}]],[\"cardinality\",\"{}\"]]",
+        "[\"relational-content\",\"{}\",\"{}\",[\"roles\",[{roles}]]]",
+        escape(content.id().as_str()),
+        escape(content.relation().as_str())
+    )
+}
+
+fn shape_json(shape: &RelationShape) -> String {
+    let roles = join(shape.roles().values().map(|role| {
+        let predicates = join(role.admissibility().iter().map(predicate_json));
+        format!(
+            "[\"role\",\"{}\",[\"admissibility\",[{predicates}]]]",
+            escape(role.id().as_str())
+        )
+    }));
+    let lookup = join(shape.lookup().iter().map(lookup_json));
+    format!(
+        "[\"relation-shape\",\"{}\",[\"roles\",[{roles}]],[\"lookup\",[{lookup}]]]",
+        escape(shape.referent().as_str())
+    )
+}
+
+fn predicate_json(predicate: &RolePredicate) -> String {
+    let fixed = join(predicate.fixed_roles().iter().map(|(role, referent)| {
+        format!(
+            "[\"{}\",\"{}\"]",
+            escape(role.as_str()),
+            escape(referent.as_str())
+        )
+    }));
+    format!(
+        "[\"predicate\",\"{}\",\"{}\",[\"fixed\",[{fixed}]]]",
+        escape(predicate.relation().as_str()),
+        escape(predicate.candidate_role().as_str())
+    )
+}
+
+fn lookup_json(mode: &LookupMode) -> String {
+    let known = strings(mode.known().iter().map(RoleId::as_str));
+    let sought = strings(mode.sought().iter().map(RoleId::as_str));
+    format!(
+        "[\"lookup\",[\"known\",[{known}]],[\"sought\",[{sought}]],[\"cardinality\",\"{}\"]]",
         mode.cardinality().as_str()
     )
 }
 
-fn string_list<'a>(values: impl Iterator<Item = &'a str>) -> String {
-    values
-        .map(|value| format!("\"{}\"", escape(value)))
-        .collect::<Vec<_>>()
-        .join(",")
-}
-
-fn clause_json(kind: &str, clause: &Clause) -> String {
-    let roles = clause
-        .roles()
-        .iter()
-        .map(|(role, term)| format!("[\"{}\",{}]", escape(role.as_str()), term_json(term)))
-        .collect::<Vec<_>>()
-        .join(",");
+fn occurrence_json(occurrence: &AssertionOccurrence) -> String {
     format!(
-        "[\"{kind}\",\"{}\",[\"roles\",[{roles}]]]",
-        escape(clause.relation().as_str())
+        "[\"assertion-occurrence\",\"{}\",\"{}\",[\"source\",\"{}\"],[\"scope\",\"{}\"]]",
+        escape(occurrence.id().as_str()),
+        escape(occurrence.content().as_str()),
+        escape(occurrence.source().as_str()),
+        escape(occurrence.scope().as_str()),
     )
 }
 
-fn law_json(law: &Law) -> String {
-    let premises = law
-        .premises()
-        .iter()
-        .map(|premise| clause_json("premise", premise))
-        .collect::<Vec<_>>()
-        .join(",");
+fn definition_json(value: &Definition) -> String {
     format!(
-        "[\"law\",\"{}\",[\"premises\",[{premises}]],[\"conclusion\",{}]]",
-        escape(law.id().as_str()),
-        clause_json("conclusion", law.conclusion())
+        "[\"definition\",\"{}\",{}]",
+        escape(value.id().as_str()),
+        term_json(value.denotation())
     )
+}
+
+fn rule_json(value: &DerivationRule) -> String {
+    format!(
+        "[\"derivation-rule\",\"{}\",[\"scope\",\"{}\"],[\"authority\",\"{}\"],[\"premises\",{}],[\"conclusion\",{}]]",
+        escape(value.id().as_str()),
+        escape(value.scope().as_str()),
+        escape(value.authority().as_str()),
+        pattern_json(value.premises()),
+        pattern_json(value.conclusion())
+    )
+}
+
+fn law_json(value: &UniversalLaw) -> String {
+    format!(
+        "[\"universal-law\",\"{}\",[\"scope\",\"{}\"],[\"generalized\",{}]]",
+        escape(value.id().as_str()),
+        escape(value.scope().as_str()),
+        pattern_json(value.generalized())
+    )
+}
+
+fn invariant_json(value: &Invariant) -> String {
+    format!(
+        "[\"invariant\",\"{}\",[\"scope\",\"{}\"],[\"policy\",\"{}\"],[\"condition\",{}],[\"admission\",\"{}\"]]",
+        escape(value.id().as_str()),
+        escape(value.scope().as_str()),
+        escape(value.policy().as_str()),
+        pattern_json(value.condition()),
+        value.admission().as_str()
+    )
+}
+
+fn goal_json(value: &Goal) -> String {
+    format!(
+        "[\"goal\",\"{}\",[\"context\",\"{}\"],[\"desired\",{}]]",
+        escape(value.id().as_str()),
+        escape(value.context().as_str()),
+        pattern_json(value.desired())
+    )
+}
+
+fn pattern_json(value: &Pattern) -> String {
+    format!(
+        "[\"pattern\",[{}]]",
+        strings(value.forms().iter().map(|id| id.as_str()))
+    )
+}
+
+fn transition_json(value: &Transition) -> String {
+    format!(
+        "[\"transition\",\"{}\",[\"from\",\"{}\"],[\"to\",\"{}\"]]",
+        escape(value.id().as_str()),
+        escape(value.from().as_str()),
+        escape(value.to().as_str())
+    )
+}
+
+fn judgment_json(value: &Judgment) -> String {
+    let target = match value.target() {
+        JudgmentTarget::Content(id) => format!("[\"content\",\"{}\"]", escape(id.as_str())),
+        JudgmentTarget::Occurrence(id) => format!("[\"occurrence\",\"{}\"]", escape(id.as_str())),
+    };
+    format!(
+        "[\"judgment\",\"{}\",[\"authority\",\"{}\"],[\"scope\",\"{}\"],[\"target\",{target}],[\"kind\",{}],[\"status\",\"{}\"]]",
+        escape(value.id().as_str()),
+        escape(value.authority().as_str()),
+        escape(value.scope().as_str()),
+        judgment_kind_json(value.kind()),
+        value.status().as_str()
+    )
+}
+
+fn judgment_kind_json(kind: &JudgmentKind) -> String {
+    match kind {
+        JudgmentKind::Declared => "[\"declared\"]".into(),
+        JudgmentKind::Derived { rule, premises } => format!(
+            "[\"derived\",\"{}\",[{}]]",
+            escape(rule.as_str()),
+            strings(premises.iter().map(|id| id.as_str()))
+        ),
+        JudgmentKind::Observed { evidence } => {
+            format!("[\"observed\",\"{}\"]", escape(evidence.as_str()))
+        }
+        JudgmentKind::Admitted { policy, basis } => format!(
+            "[\"admitted\",\"{}\",[{}]]",
+            escape(policy.as_str()),
+            strings(basis.iter().map(|id| id.as_str()))
+        ),
+        JudgmentKind::Rejected { policy, basis } => format!(
+            "[\"rejected\",\"{}\",[{}]]",
+            escape(policy.as_str()),
+            strings(basis.iter().map(|id| id.as_str()))
+        ),
+        JudgmentKind::Superseded { by } => format!("[\"superseded\",\"{}\"]", escape(by.as_str())),
+    }
 }
 
 fn term_json(term: &Term) -> String {
     match term {
-        Term::Entity(entity) => entity_json(entity),
-        Term::Value { typ, canonical } => format!(
-            "[\"value\",\"{}\",\"{}\"]",
-            escape(typ.as_str()),
-            escape(canonical)
-        ),
-        Term::Variable { id, typ } => format!(
-            "[\"variable\",\"{}\",\"{}\"]",
-            escape(id.as_str()),
-            escape(typ.as_str())
-        ),
+        Term::Referent(id) => format!("[\"referent\",\"{}\"]", escape(id.as_str())),
+        Term::Pattern(id) => format!("[\"pattern\",\"{}\"]", escape(id.as_str())),
+        Term::Application(id) => format!("[\"application\",\"{}\"]", escape(id.as_str())),
     }
+}
+
+fn join(values: impl Iterator<Item = String>) -> String {
+    values.collect::<Vec<_>>().join(",")
+}
+fn strings<'a>(values: impl Iterator<Item = &'a str>) -> String {
+    join(values.map(|value| format!("\"{}\"", escape(value))))
 }

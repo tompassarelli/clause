@@ -17,7 +17,7 @@ mod search;
 
 use crate::{
     derive::{Limits, Proof, SupportLimits},
-    kernel::{Clause, Delta, RelationId, Result, Revision},
+    kernel::{Delta, ReferentId, RelationalContent, Result, Revision},
 };
 
 /// Explicit resource bounds for an intervention request.
@@ -67,6 +67,8 @@ pub struct Intervention {
     delta: Delta,
     revision: Revision,
     proof: Option<Proof>,
+    admissions: Vec<RelationalContent>,
+    withdrawals: Vec<RelationalContent>,
 }
 
 impl Intervention {
@@ -82,24 +84,40 @@ impl Intervention {
         self.proof.as_ref()
     }
 
-    fn withdrawal(source: &Revision, withdrawals: Vec<Clause>, revision: Revision) -> Result<Self> {
+    pub fn admissions(&self) -> &[RelationalContent] {
+        &self.admissions
+    }
+
+    pub fn withdrawals(&self) -> &[RelationalContent] {
+        &self.withdrawals
+    }
+
+    fn withdrawal(
+        source: &Revision,
+        withdrawals: Vec<RelationalContent>,
+        revision: Revision,
+    ) -> Result<Self> {
         Ok(Self {
-            delta: Delta::new(source.identity().clone(), Vec::new(), withdrawals)?,
+            delta: crate::delta::content_delta(source, Vec::new(), withdrawals.clone())?,
             revision,
             proof: None,
+            admissions: Vec::new(),
+            withdrawals,
         })
     }
 
     fn admission(
         source: &Revision,
-        admissions: Vec<Clause>,
+        admissions: Vec<RelationalContent>,
         revision: Revision,
         proof: Proof,
     ) -> Result<Self> {
         Ok(Self {
-            delta: Delta::new(source.identity().clone(), admissions, Vec::new())?,
+            delta: crate::delta::content_delta(source, admissions.clone(), Vec::new())?,
             revision,
             proof: Some(proof),
+            admissions,
+            withdrawals: Vec::new(),
         })
     }
 }
@@ -191,8 +209,8 @@ impl AchieveAll {
 /// necessary, but intentionally does not prove it has minimum cardinality.
 pub fn prevent_one_minimal(
     source: &Revision,
-    target: Clause,
-    using: Vec<RelationId>,
+    target: RelationalContent,
+    using: Vec<ReferentId>,
     limits: InterventionLimits,
 ) -> Result<PreventOne> {
     one::prevent_one_minimal(source, target, using, limits)
@@ -204,8 +222,8 @@ pub fn prevent_one_minimal(
 /// not cardinality optimality or complete-frontier enumeration.
 pub fn achieve_one_minimal(
     source: &Revision,
-    target: Clause,
-    using: Vec<RelationId>,
+    target: RelationalContent,
+    using: Vec<ReferentId>,
     limits: InterventionLimits,
 ) -> Result<AchieveOne> {
     one::achieve_one_minimal(source, target, using, limits)
@@ -215,8 +233,8 @@ pub fn achieve_one_minimal(
 /// frontier.
 pub fn prevent_all_minimal(
     source: &Revision,
-    target: Clause,
-    using: Vec<RelationId>,
+    target: RelationalContent,
+    using: Vec<ReferentId>,
     limits: InterventionLimits,
 ) -> Result<PreventAll> {
     all::prevent_all_minimal(source, target, using, limits)
@@ -225,8 +243,8 @@ pub fn prevent_all_minimal(
 /// Enumerate every inclusion-minimal addition over the finite typed basis.
 pub fn achieve_all_minimal(
     source: &Revision,
-    target: Clause,
-    using: Vec<RelationId>,
+    target: RelationalContent,
+    using: Vec<ReferentId>,
     limits: InterventionLimits,
 ) -> Result<AchieveAll> {
     all::achieve_all_minimal(source, target, using, limits)

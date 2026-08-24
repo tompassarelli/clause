@@ -2,21 +2,21 @@
 
 use crate::{
     derive::{self, Limits},
-    kernel::{Clause, FindPlan, KernelError, Result, Revision, Term, VariableId},
+    kernel::{FindPlan, KernelError, PatternId, RelationalContent, Result, Revision, Term},
 };
 
 pub(super) fn find(revision: &Revision, plan: &FindPlan, limits: Limits) -> Result<Vec<Term>> {
-    revision.model().validate_clause(plan.pattern(), true)?;
+    revision.model().validate_content(plan.pattern(), true)?;
     let sought = plan.sought();
     let sought_variable = plan
         .pattern()
         .roles()
         .get(sought)
-        .and_then(Term::variable_id)
+        .and_then(Term::pattern_id)
         .ok_or_else(|| KernelError::new("find plan sought role is not a variable"))?;
     let closure = derive::saturate(revision, limits)?;
     let mut bindings = closure
-        .assertions()
+        .contents()
         .iter()
         .filter(|candidate| matches_pattern(candidate, plan.pattern(), sought_variable))
         .map(|candidate| {
@@ -32,13 +32,17 @@ pub(super) fn find(revision: &Revision, plan: &FindPlan, limits: Limits) -> Resu
     Ok(bindings)
 }
 
-fn matches_pattern(candidate: &Clause, pattern: &Clause, sought: &VariableId) -> bool {
+fn matches_pattern(
+    candidate: &RelationalContent,
+    pattern: &RelationalContent,
+    sought: &PatternId,
+) -> bool {
     candidate.relation() == pattern.relation()
         && pattern.roles().iter().all(|(role, expected)| {
             let Some(actual) = candidate.roles().get(role) else {
                 return false;
             };
-            match expected.variable_id() {
+            match expected.pattern_id() {
                 Some(variable) => variable == sought,
                 None => actual == expected,
             }

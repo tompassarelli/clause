@@ -1,19 +1,19 @@
 Module: Type
 Change: Type
 
-impact/imports: Relation
+impact/imports: RelationShape
     {consumer: Module} imports {dependency: Module}
     mode consumer -> dependency: many
 
-impact/depends: Relation
+impact/depends: RelationShape
     {consumer: Module} depends on {dependency: Module}
     mode consumer -> dependency: many
 
-impact/changes: Relation
+impact/changes: RelationShape
     {change: Change} changes {component: Module}
     mode change -> component: many
 
-impact/affected: Relation
+impact/affected: RelationShape
     {change: Change} affects {consumer: Module}
     mode change -> consumer: many
 
@@ -30,18 +30,18 @@ impact: Model
     Relay imports Beagle
     compiler-change changes Beagle
 
-impact/direct-dependency: Law
+impact/direct-dependency: DerivationRule
     ?consumer depends on ?dependency
     when:
         ?consumer imports ?dependency
 
-impact/recursive-dependency: Law
+impact/recursive-dependency: DerivationRule
     ?consumer depends on ?dependency
     when:
         ?consumer imports ?intermediate
         ?intermediate depends on ?dependency
 
-impact/impact: Law
+impact/impact: DerivationRule
     ?change affects ?consumer
     when:
         ?change changes ?component

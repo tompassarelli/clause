@@ -7,7 +7,7 @@ use clause::{
     derive::{self, SupportStatus},
     elaborate, execution, frontend,
     intervention::{self, AchieveAll, InterventionLimits, PreventAll},
-    kernel::{self, Clause, EntityId, Name, RelationId, Revision, RoleId, Term},
+    kernel::{ReferentId, RelationalContent, Revision, RoleId, Term},
     semantic_diff::SemanticDiff,
 };
 
@@ -17,11 +17,11 @@ const ACHIEVEMENT_SOURCE: &str = r#"Start: Type
 Option: Type
 State: Type
 
-choice/selects: Relation
+choice/selects: RelationShape
     {start: Start} selects {option: Option}
     mode start -> option: many
 
-choice/reached: Relation
+choice/reached: RelationShape
     {start: Start} reached {state: State}
     mode start -> state: many
 
@@ -33,7 +33,7 @@ choice: Model
     Store: Option
     Ready: State
 
-choice/selection-reaches-ready: Law
+choice/selection-reaches-ready: DerivationRule
     ?start reached Ready
     when:
         ?start selects ?option
@@ -51,57 +51,85 @@ fn revision(program: &elaborate::CompiledProgram, name: &str) -> Revision {
         .clone()
 }
 
-fn name(value: &str) -> Name {
-    Name::new(value.to_owned()).expect("valid stable name")
+fn relation(program: &elaborate::CompiledProgram, value: &str) -> ReferentId {
+    program
+        .designations()
+        .global(value)
+        .expect("relation designation resolves")
 }
 
-fn relation(value: &str) -> RelationId {
-    RelationId::new(name(value)).expect("valid Relation identity")
+fn role(program: &elaborate::CompiledProgram, relation: &ReferentId, value: &str) -> RoleId {
+    program
+        .designations()
+        .role(relation, value)
+        .expect("role designation resolves")
 }
 
-fn role(value: &str) -> RoleId {
-    RoleId::new(name(value)).expect("valid Role identity")
+fn referent(program: &elaborate::CompiledProgram, revision: &Revision, local: &str) -> ReferentId {
+    program
+        .designations()
+        .scoped(revision.model().id(), local)
+        .expect("scoped referent designation resolves")
 }
 
-fn entity(revision: &Revision, local: &str) -> EntityId {
-    revision
-        .model()
-        .entities()
-        .iter()
-        .find(|candidate| candidate.local().as_str() == local)
-        .expect("admitted entity exists")
-        .clone()
-}
-
-fn assertion(revision: &Revision, relation_name: &str, roles: &[(&str, &str)]) -> Clause {
-    Clause::new(
-        relation(relation_name),
+fn assertion(
+    program: &elaborate::CompiledProgram,
+    revision: &Revision,
+    relation_name: &str,
+    roles: &[(&str, &str)],
+) -> RelationalContent {
+    let relation = relation(program, relation_name);
+    RelationalContent::new(
+        relation.clone(),
         roles
             .iter()
-            .map(|(role_name, local)| (role(role_name), Term::entity(entity(revision, local))))
+            .map(|(role_name, local)| {
+                (
+                    role(program, &relation, role_name),
+                    Term::referent(referent(program, revision, local)),
+                )
+            })
             .collect::<BTreeMap<_, _>>(),
     )
     .expect("typed assertion is valid")
 }
 
-fn imports(revision: &Revision, consumer: &str, dependency: &str) -> Clause {
+fn imports(
+    program: &elaborate::CompiledProgram,
+    revision: &Revision,
+    consumer: &str,
+    dependency: &str,
+) -> RelationalContent {
     assertion(
+        program,
         revision,
         "impact/imports",
         &[("consumer", consumer), ("dependency", dependency)],
     )
 }
 
-fn changes(revision: &Revision, change: &str, component: &str) -> Clause {
+fn changes(
+    program: &elaborate::CompiledProgram,
+    revision: &Revision,
+    change: &str,
+    component: &str,
+) -> RelationalContent {
     assertion(
+        program,
         revision,
         "impact/changes",
         &[("change", change), ("component", component)],
     )
 }
 
-fn affected(revision: &Revision, change: &str, consumer: &str) -> Clause {
+fn affected(
+    program: &elaborate::CompiledProgram,
+    revision: &Revision,
+    change: &str,
+    consumer: &str,
+) -> RelationalContent {
     assertion(
+        program,
         revision,
         "impact/affected",
         &[("change", change), ("consumer", consumer)],
@@ -120,7 +148,7 @@ fn intervention_limits() -> InterventionLimits {
     InterventionLimits::new(limits(), 10_000, 100).with_support_limits(support_limits())
 }
 
-fn canonical_sets(mut sets: Vec<Vec<Clause>>) -> Vec<Vec<Clause>> {
+fn canonical_sets(mut sets: Vec<Vec<RelationalContent>>) -> Vec<Vec<RelationalContent>> {
     for set in &mut sets {
         set.sort();
     }
@@ -129,25 +157,39 @@ fn canonical_sets(mut sets: Vec<Vec<Clause>>) -> Vec<Vec<Clause>> {
 }
 
 #[test]
-fn authored_source_has_typed_entities_revisions_and_requests() {
+fn authored_source_has_referents_revisions_and_requests() {
     let program = impact();
     let base = revision(&program, "impact");
     let successor = revision(&program, "impact/adopt-south");
-    assert_eq!(base.model().assertions().len(), 5);
-    assert_eq!(base.model().entities().len(), 6);
+    assert_eq!(base.model().admitted_contents().len(), 11);
+    for local in [
+        "North",
+        "Store",
+        "Relay",
+        "Beagle",
+        "South",
+        "compiler-change",
+    ] {
+        assert!(
+            base.model()
+                .referents()
+                .contains_key(&referent(&program, &base, local))
+        );
+    }
     assert_eq!(
         RevisionDiff::between(&base, &successor)
             .expect("same declarations diff")
             .added(),
-        [imports(&base, "South", "North")]
+        [imports(&program, &base, "South", "North")]
     );
     assert_eq!(program.requests().len(), 5);
 }
 
 #[test]
 fn north_has_two_independent_minimal_supports_and_four_prevention_sets() {
-    let base = revision(&impact(), "impact");
-    let target = affected(&base, "compiler-change", "North");
+    let program = impact();
+    let base = revision(&program, "impact");
+    let target = affected(&program, &base, "compiler-change", "North");
     let supports = derive::support_frontier(&base, &target, support_limits())
         .expect("support frontier computes");
     assert_eq!(supports.status(), SupportStatus::Complete);
@@ -162,14 +204,14 @@ fn north_has_two_independent_minimal_supports_and_four_prevention_sets() {
         ),
         canonical_sets(vec![
             vec![
-                changes(&base, "compiler-change", "Beagle"),
-                imports(&base, "North", "Relay"),
-                imports(&base, "Relay", "Beagle"),
+                changes(&program, &base, "compiler-change", "Beagle"),
+                imports(&program, &base, "North", "Relay"),
+                imports(&program, &base, "Relay", "Beagle"),
             ],
             vec![
-                changes(&base, "compiler-change", "Beagle"),
-                imports(&base, "North", "Store"),
-                imports(&base, "Store", "Beagle"),
+                changes(&program, &base, "compiler-change", "Beagle"),
+                imports(&program, &base, "North", "Store"),
+                imports(&program, &base, "Store", "Beagle"),
             ],
         ]),
     );
@@ -182,7 +224,7 @@ fn north_has_two_independent_minimal_supports_and_four_prevention_sets() {
     let prevented = intervention::prevent_all_minimal(
         &base,
         target,
-        vec![relation("impact/imports")],
+        vec![relation(&program, "impact/imports")],
         intervention_limits(),
     )
     .expect("prevention computes");
@@ -194,25 +236,25 @@ fn north_has_two_independent_minimal_supports_and_four_prevention_sets() {
         canonical_sets(
             prevented
                 .iter()
-                .map(|item| item.delta().withdrawals().to_vec())
+                .map(|item| item.withdrawals().to_vec())
                 .collect(),
         ),
         canonical_sets(vec![
             vec![
-                imports(&base, "North", "Relay"),
-                imports(&base, "North", "Store")
+                imports(&program, &base, "North", "Relay"),
+                imports(&program, &base, "North", "Store"),
             ],
             vec![
-                imports(&base, "North", "Relay"),
-                imports(&base, "Store", "Beagle")
+                imports(&program, &base, "North", "Relay"),
+                imports(&program, &base, "Store", "Beagle"),
             ],
             vec![
-                imports(&base, "North", "Store"),
-                imports(&base, "Relay", "Beagle")
+                imports(&program, &base, "North", "Store"),
+                imports(&program, &base, "Relay", "Beagle"),
             ],
             vec![
-                imports(&base, "Relay", "Beagle"),
-                imports(&base, "Store", "Beagle")
+                imports(&program, &base, "Relay", "Beagle"),
+                imports(&program, &base, "Store", "Beagle"),
             ],
         ]),
     );
@@ -220,20 +262,15 @@ fn north_has_two_independent_minimal_supports_and_four_prevention_sets() {
 
 #[test]
 fn successor_retains_consequence_while_losing_one_support() {
-    let program = impact();
+    let source = SOURCE.replace(
+        "impact/adopt-south: Revision",
+        "impact/redundant-path-withdrawn: Revision\n    from: impact\n    withdraw:\n        North imports Relay\n        Relay imports Beagle\n\nimpact/adopt-south: Revision",
+    );
+    let program = elaborate::compile(frontend::parse(&source).expect("impact source parses"))
+        .expect("impact source lowers");
     let base = revision(&program, "impact");
-    let successor = kernel::Delta::new(
-        base.identity().clone(),
-        Vec::new(),
-        vec![
-            imports(&base, "North", "Relay"),
-            imports(&base, "Relay", "Beagle"),
-        ],
-    )
-    .expect("typed withdrawal Delta")
-    .apply(&base)
-    .expect("successor applies");
-    let target = affected(&base, "compiler-change", "North");
+    let successor = revision(&program, "impact/redundant-path-withdrawn");
+    let target = affected(&program, &base, "compiler-change", "North");
     let diff = SemanticDiff::between(&base, &successor, support_limits()).expect("semantic diff");
     assert!(!diff.entailed_removed().contains(&target));
     let change = diff
@@ -253,6 +290,7 @@ fn typed_active_domain_yields_four_complete_additions() {
             .expect("achievement source lowers");
     let base = revision(&program, "choice");
     let target = assertion(
+        &program,
         &base,
         "choice/reached",
         &[("start", "South"), ("state", "Ready")],
@@ -260,7 +298,7 @@ fn typed_active_domain_yields_four_complete_additions() {
     let achieved = intervention::achieve_all_minimal(
         &base,
         target,
-        vec![relation("choice/selects")],
+        vec![relation(&program, "choice/selects")],
         intervention_limits(),
     )
     .expect("achievement computes");
@@ -270,31 +308,37 @@ fn typed_active_domain_yields_four_complete_additions() {
     };
     assert_eq!(achieved.len(), 4);
     assert_eq!(
-        achieved
-            .iter()
-            .map(|item| item.delta().admissions().to_vec())
-            .collect::<Vec<_>>(),
-        vec![
+        canonical_sets(
+            achieved
+                .iter()
+                .map(|item| item.admissions().to_vec())
+                .collect(),
+        ),
+        canonical_sets(vec![
             vec![assertion(
+                &program,
                 &base,
                 "choice/selects",
                 &[("start", "South"), ("option", "Beagle")],
             )],
             vec![assertion(
+                &program,
                 &base,
                 "choice/selects",
                 &[("start", "South"), ("option", "North")],
             )],
             vec![assertion(
+                &program,
                 &base,
                 "choice/selects",
                 &[("start", "South"), ("option", "Relay")],
             )],
             vec![assertion(
+                &program,
                 &base,
                 "choice/selects",
                 &[("start", "South"), ("option", "Store")],
             )],
-        ],
+        ]),
     );
 }

@@ -4,23 +4,27 @@ use std::collections::BTreeMap;
 
 use crate::{
     derive::{self, Closure, Limits, SupportLimits, SupportProof, SupportWitness},
-    kernel::{Clause, KernelError, Result, Revision, RevisionId},
+    kernel::{KernelError, RelationalContent, Result, Revision, RevisionId},
 };
 
 use super::{ClauseNode, Proof, WhyAll, WhyGraph, WhySupport, Witness, WitnessEdge};
 
-pub(super) fn why(revision: &Revision, target: &Clause, limits: Limits) -> Result<Option<Proof>> {
-    revision.model().validate_clause(target, false)?;
+pub(super) fn why(
+    revision: &Revision,
+    target: &RelationalContent,
+    limits: Limits,
+) -> Result<Option<Proof>> {
+    revision.model().validate_content(target, false)?;
     let closure = derive::saturate(revision, limits)?;
     graph(&closure, target, revision.identity().clone())
 }
 
 pub(super) fn why_all(
     revision: &Revision,
-    target: &Clause,
+    target: &RelationalContent,
     limits: SupportLimits,
 ) -> Result<Option<WhyAll>> {
-    revision.model().validate_clause(target, false)?;
+    revision.model().validate_content(target, false)?;
     let closure = derive::saturate(revision, limits.closure)?;
     if closure.proof(target).is_none() {
         return Ok(None);
@@ -49,7 +53,11 @@ pub(super) fn why_all(
     }))
 }
 
-fn graph(closure: &Closure, root: &Clause, revision: RevisionId) -> Result<Option<Proof>> {
+fn graph(
+    closure: &Closure,
+    root: &RelationalContent,
+    revision: RevisionId,
+) -> Result<Option<Proof>> {
     if closure.proof(root).is_none() {
         return Ok(None);
     }
@@ -89,8 +97,8 @@ fn support_graph(root: &SupportProof) -> Result<WhyGraph> {
 
 fn add_support_clause(
     proof: &SupportProof,
-    clauses: &mut Vec<Clause>,
-    indices: &mut BTreeMap<Clause, usize>,
+    clauses: &mut Vec<RelationalContent>,
+    indices: &mut BTreeMap<RelationalContent, usize>,
     witnesses: &mut Vec<WitnessEdge>,
 ) -> Result<usize> {
     let clause = proof.conclusion();
@@ -103,11 +111,11 @@ fn add_support_clause(
     let witness = match proof.witness() {
         SupportWitness::Asserted => Witness::Asserted,
         SupportWitness::Derived {
-            law,
+            rule,
             premises,
             substitution,
         } => Witness::Derived {
-            law: law.clone(),
+            rule: rule.clone(),
             premises: premises
                 .iter()
                 .map(|premise| add_support_clause(premise, clauses, indices, witnesses))
@@ -123,10 +131,10 @@ fn add_support_clause(
 }
 
 fn add_clause(
-    clause: &Clause,
+    clause: &RelationalContent,
     closure: &Closure,
-    clauses: &mut Vec<Clause>,
-    indices: &mut BTreeMap<Clause, usize>,
+    clauses: &mut Vec<RelationalContent>,
+    indices: &mut BTreeMap<RelationalContent, usize>,
     witnesses: &mut Vec<WitnessEdge>,
 ) -> Result<usize> {
     if let Some(index) = indices.get(clause) {
@@ -141,11 +149,11 @@ fn add_clause(
     let witness = match proof.witness() {
         derive::Witness::Asserted => Witness::Asserted,
         derive::Witness::Derived {
-            law,
+            rule,
             premises,
             substitution,
         } => Witness::Derived {
-            law: law.clone(),
+            rule: rule.clone(),
             premises: premises
                 .iter()
                 .map(|premise| add_clause(premise, closure, clauses, indices, witnesses))

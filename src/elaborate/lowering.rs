@@ -1,67 +1,170 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
     frontend::{self, SurfaceClause, SurfaceTerm},
-    kernel::{self, Clause, EntityId, Model, Revision, SentencePart, Term, TypeId},
+    kernel::{self, Model, PatternId, ReferentId, RelationalContent, RoleId, Term},
 };
 
-use super::identifiers::{relation_id, role_id, type_id, variable_id};
+use super::{compilation::CompiledProgram, identifiers::DesignationTable};
 
-/// Lower one parsed clause against the selected Revision's typed Model.
-pub fn lower_clause(revision: &Revision, surface: &SurfaceClause) -> kernel::Result<Clause> {
-    let model = revision.model();
-    let relation_id = relation_id(&surface.relation.value.0)?;
-    let relation = model.relations().get(&relation_id).ok_or_else(|| {
-        kernel::KernelError::new(format!("undeclared Relation '{}'", relation_id.as_str()))
+#[derive(Clone, Debug, Default)]
+pub(crate) struct Projection {
+    pub(crate) designations: DesignationTable,
+    pub(crate) types: BTreeSet<ReferentId>,
+    pub(crate) entity_types: BTreeMap<ReferentId, ReferentId>,
+    pub(crate) model_entities: BTreeMap<ReferentId, BTreeSet<ReferentId>>,
+    pub(crate) role_types: BTreeMap<(ReferentId, RoleId), ReferentId>,
+    pub(crate) focus_shapes: Vec<FocusShape>,
+    pub(crate) rule_binders: BTreeMap<ReferentId, BinderTable>,
+    pub(crate) request_binders: BTreeMap<usize, BinderTable>,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct FocusShape {
+    pub(crate) relation: ReferentId,
+    pub(crate) literal: String,
+    pub(crate) focused_role: RoleId,
+    pub(crate) value_role: RoleId,
+}
+
+#[derive(Clone, Debug, Default)]
+pub(crate) struct BinderTable(BTreeMap<frontend::VariableName, PatternId>);
+
+impl BinderTable {
+    pub(crate) fn declare_alpha<'a>(
+        designations: &mut DesignationTable,
+        scope: &ReferentId,
+        clauses: impl IntoIterator<Item = &'a SurfaceClause>,
+    ) -> kernel::Result<Self> {
+        let mut first = BTreeMap::<frontend::VariableName, (usize, usize)>::new();
+        for clause in clauses {
+            for term in clause.roles.values() {
+                if let SurfaceTerm::Variable(variable) = term {
+                    first
+                        .entry(variable.value.clone())
+                        .and_modify(|span| {
+                            *span = (*span).min((variable.span.line, variable.span.column))
+                        })
+                        .or_insert((variable.span.line, variable.span.column));
+                }
+            }
+        }
+        let mut ordered = first.into_iter().collect::<Vec<_>>();
+        ordered.sort_by_key(|(_, span)| *span);
+        let mut binders = BTreeMap::new();
+        for (index, (name, _)) in ordered.into_iter().enumerate() {
+            let id = designations.declare_pattern(scope, &format!("binder-{index}"))?;
+            binders.insert(name, id);
+        }
+        Ok(Self(binders))
+    }
+
+    pub(crate) fn get(&self, name: &frontend::VariableName) -> kernel::Result<PatternId> {
+        self.0.get(name).cloned().ok_or_else(|| {
+            kernel::KernelError::new(format!("unbound pattern variable '{}'", name.as_str()))
+        })
+    }
+}
+
+/// Lower a request clause through the program's source projection. The
+/// designation table remains outside the sealed Revision.
+pub fn lower_clause(
+    program: &CompiledProgram,
+    revision: &crate::kernel::Revision,
+    surface: &SurfaceClause,
+) -> kernel::Result<RelationalContent> {
+    lower_clause_with(program.projection(), revision.model(), surface, None)
+}
+
+pub(crate) fn lower_clause_with(
+    projection: &Projection,
+    model: &Model,
+    surface: &SurfaceClause,
+    binders: Option<&BinderTable>,
+) -> kernel::Result<RelationalContent> {
+    let relation_id = projection
+        .designations
+        .global(surface.relation.value.as_str())?;
+    let relation = model.relation_shapes().get(&relation_id).ok_or_else(|| {
+        kernel::KernelError::new(format!(
+            "undeclared RelationShape '{}'",
+            surface.relation.value.as_str()
+        ))
     })?;
     let mut roles = BTreeMap::new();
     for (surface_role, surface_term) in &surface.roles {
-        let role_id = role_id(&surface_role.0)?;
-        let role = relation.roles().get(&role_id).ok_or_else(|| {
-            kernel::KernelError::new(format!(
-                "Relation '{}' has no role '{}'",
-                relation_id.as_str(),
-                role_id.as_str()
-            ))
-        })?;
+        let role_id = projection
+            .designations
+            .role(&relation_id, &surface_role.0)?;
+        if !relation.roles().contains_key(&role_id) {
+            return Err(kernel::KernelError::new(format!(
+                "RelationShape '{}' has no role '{}'",
+                surface.relation.value.as_str(),
+                surface_role.0
+            )));
+        }
+        let expected = projection
+            .role_types
+            .get(&(relation_id.clone(), role_id.clone()))
+            .ok_or_else(|| {
+                kernel::KernelError::new("relation role has no authoring type projection")
+            })?;
         if roles
-            .insert(role_id, lower_term(model, role.typ(), surface_term)?)
+            .insert(
+                role_id,
+                lower_term(projection, model, expected, surface_term, binders)?,
+            )
             .is_some()
         {
-            return Err(kernel::KernelError::new("duplicate clause role"));
+            return Err(kernel::KernelError::new("duplicate relational role"));
         }
     }
-    let clause = Clause::new(relation_id, roles)?;
-    model.validate_clause(&clause, true)?;
-    Ok(clause)
+    let content = RelationalContent::new(relation_id, roles)?;
+    model.validate_content(&content, binders.is_some())?;
+    Ok(content)
 }
 
-fn lower_term(model: &Model, expected: &TypeId, term: &SurfaceTerm) -> kernel::Result<Term> {
+fn lower_term(
+    projection: &Projection,
+    model: &Model,
+    expected: &ReferentId,
+    term: &SurfaceTerm,
+    binders: Option<&BinderTable>,
+) -> kernel::Result<Term> {
     match term {
-        SurfaceTerm::Variable(value) => Ok(Term::variable(
-            variable_id(&value.value.0)?,
-            expected.clone(),
-        )),
+        SurfaceTerm::Variable(value) => {
+            let binders = binders.ok_or_else(|| {
+                kernel::KernelError::new("pattern variable is not valid in ground content")
+            })?;
+            Ok(Term::pattern(binders.get(&value.value)?))
+        }
         SurfaceTerm::String(value) => {
-            let text = type_id("Text")?;
-            if expected != &text || !model.types().contains_key(&text) {
+            let text = projection.designations.global("Text")?;
+            if expected != &text {
                 return Err(kernel::KernelError::new(
                     "scalar strings require an admitted Text role",
                 ));
             }
-            Term::value(text, value.value.clone())
+            let referent = projection.designations.literal(&value.value)?;
+            require_term_referent(model, &referent, "string literal")?;
+            Ok(Term::referent(referent))
         }
         SurfaceTerm::Entity(value) => {
-            let entity = resolve_entity(model, &value.value)?;
-            if entity.typ() != expected {
+            let referent = projection
+                .designations
+                .scoped(model.id(), value.value.as_str())?;
+            require_term_referent(model, &referent, "entity")?;
+            let actual = projection
+                .entity_types
+                .get(&referent)
+                .ok_or_else(|| kernel::KernelError::new("designation is not an authored entity"))?;
+            if actual != expected {
                 return Err(kernel::KernelError::new(format!(
-                    "entity '{}' has Type '{}', not '{}'",
-                    entity.local().as_str(),
-                    entity.typ().as_str(),
-                    expected.as_str()
+                    "entity '{}' does not satisfy the authored role type",
+                    value.value.as_str()
                 )));
             }
-            Ok(Term::entity(entity))
+            Ok(Term::referent(referent))
         }
         SurfaceTerm::Template(_) => Err(kernel::KernelError::new(
             "correlated entity templates are only valid inside a focus block",
@@ -69,88 +172,96 @@ fn lower_term(model: &Model, expected: &TypeId, term: &SurfaceTerm) -> kernel::R
     }
 }
 
-pub(super) fn lower_focus(
-    revision: &Revision,
+pub(crate) fn lower_focus(
+    projection: &Projection,
+    model: &Model,
     focus: &frontend::FocusBlock,
-) -> kernel::Result<Vec<Clause>> {
-    let mut clauses = Vec::new();
+) -> kernel::Result<Vec<RelationalContent>> {
+    let mut contents = Vec::new();
     for number in focus.binding.range.start..=focus.binding.range.end {
-        let focused = focus_entity(revision.model(), &focus.template, number)?;
+        let focused = focus_referent(projection, model, &focus.template, number)?;
         for slot in &focus.slots {
-            let mut candidates = Vec::new();
-            for relation in revision.model().relations().values() {
-                let [
-                    SentencePart::Role(focused_role),
-                    SentencePart::Literal(literal),
-                    SentencePart::Role(value_role),
-                ] = relation.shape().parts()
-                else {
-                    continue;
-                };
-                if literal != &slot.label.value {
-                    continue;
+            let candidates = projection
+                .focus_shapes
+                .iter()
+                .filter(|shape| {
+                    shape.literal == slot.label.value
+                        && model.relation_shapes().contains_key(&shape.relation)
+                })
+                .collect::<Vec<_>>();
+            let shape = match candidates.as_slice() {
+                [] => {
+                    return Err(kernel::KernelError::new(format!(
+                        "no declared sentence shape accepts focused slot '{}'",
+                        slot.label.value
+                    )));
                 }
-                candidates.push((relation, focused_role, value_role));
-            }
-            if candidates.is_empty() {
+                [shape] => *shape,
+                many => {
+                    let mut designations = many
+                        .iter()
+                        .map(|shape| {
+                            projection
+                                .designations
+                                .global_name(&shape.relation)
+                                .expect("focus relation retains a source designation")
+                        })
+                        .collect::<Vec<_>>();
+                    designations.sort_unstable();
+                    return Err(kernel::KernelError::new(format!(
+                        "ambiguous focused slot '{}'; candidates {}",
+                        slot.label.value,
+                        designations.join(", ")
+                    )));
+                }
+            };
+            let focused_type = projection
+                .entity_types
+                .get(&focused)
+                .ok_or_else(|| kernel::KernelError::new("focused designation is not an entity"))?;
+            let expected_focused =
+                &projection.role_types[&(shape.relation.clone(), shape.focused_role.clone())];
+            if focused_type != expected_focused {
+                let actual = projection
+                    .designations
+                    .global_name(focused_type)
+                    .expect("authored entity type retains a source designation");
+                let expected = projection
+                    .designations
+                    .global_name(expected_focused)
+                    .expect("authored role type retains a source designation");
                 return Err(kernel::KernelError::new(format!(
-                    "no declared sentence shape accepts focused slot '{}'",
-                    slot.label.value
+                    "focused entity has Type '{actual}', not '{expected}'"
                 )));
             }
-            if candidates.len() > 1 {
-                let names = candidates
-                    .iter()
-                    .map(|(relation, _, _)| relation.id().as_str())
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                return Err(kernel::KernelError::new(format!(
-                    "ambiguous focused slot '{}'; candidates: {names}",
-                    slot.label.value
-                )));
-            }
-            let (relation, focused_role, value_role) =
-                candidates.pop().expect("nonempty focus candidates");
-            let focused_role = relation
-                .roles()
-                .get(focused_role)
-                .expect("sentence shape role belongs to relation");
-            if focused.typ() != focused_role.typ() {
-                return Err(kernel::KernelError::new(format!(
-                    "entity '{}' has Type '{}', not '{}'",
-                    focused.local().as_str(),
-                    focused.typ().as_str(),
-                    focused_role.typ().as_str()
-                )));
-            }
-            let value_role = relation
-                .roles()
-                .get(value_role)
-                .expect("sentence shape role belongs to relation");
+            let expected_value =
+                &projection.role_types[&(shape.relation.clone(), shape.value_role.clone())];
             let value = lower_focus_term(
-                revision.model(),
-                value_role.typ(),
+                projection,
+                model,
+                expected_value,
                 &slot.value,
                 &focus.binding.variable.value,
                 number,
             )?;
-            let clause = Clause::new(
-                relation.id().clone(),
+            let content = RelationalContent::new(
+                shape.relation.clone(),
                 BTreeMap::from([
-                    (focused_role.id().clone(), Term::entity(focused.clone())),
-                    (value_role.id().clone(), value),
+                    (shape.focused_role.clone(), Term::referent(focused.clone())),
+                    (shape.value_role.clone(), value),
                 ]),
             )?;
-            revision.model().validate_clause(&clause, true)?;
-            clauses.push(clause);
+            model.validate_content(&content, false)?;
+            contents.push(content);
         }
     }
-    Ok(clauses)
+    Ok(contents)
 }
 
 fn lower_focus_term(
+    projection: &Projection,
     model: &Model,
-    expected: &TypeId,
+    expected: &ReferentId,
     term: &SurfaceTerm,
     binding: &frontend::VariableName,
     number: u64,
@@ -163,110 +274,73 @@ fn lower_focus_term(
                     template.variable.value.as_str()
                 )));
             }
-            let entity = focus_entity(model, template, number)?;
-            if entity.typ() != expected {
-                return Err(kernel::KernelError::new(format!(
-                    "entity '{}' has Type '{}', not '{}'",
-                    entity.local().as_str(),
-                    entity.typ().as_str(),
-                    expected.as_str()
-                )));
+            let referent = focus_referent(projection, model, template, number)?;
+            if projection.entity_types.get(&referent) != Some(expected) {
+                return Err(kernel::KernelError::new(
+                    "focused entity does not satisfy the authored role type",
+                ));
             }
-            Ok(Term::entity(entity))
+            Ok(Term::referent(referent))
         }
-        _ => lower_term(model, expected, term),
+        _ => lower_term(projection, model, expected, term, None),
     }
 }
 
-fn focus_entity(
+fn focus_referent(
+    projection: &Projection,
     model: &Model,
     template: &frontend::EntityTemplate,
     number: u64,
-) -> kernel::Result<EntityId> {
-    let local = frontend::Name(format!(
+) -> kernel::Result<ReferentId> {
+    let local = format!(
         "{}{}{}",
         template.prefix.value, number, template.suffix.value
-    ));
-    resolve_entity(model, &local)
+    );
+    let referent = projection.designations.scoped(model.id(), &local)?;
+    require_term_referent(model, &referent, "focused entity")?;
+    Ok(referent)
 }
 
-fn resolve_entity(model: &Model, authored: &frontend::Name) -> kernel::Result<EntityId> {
-    let authored = authored.as_str();
-    let local = if authored.contains('/') {
-        authored
-            .strip_prefix(&format!("{}/", model.id().as_str()))
-            .ok_or_else(|| {
-                kernel::KernelError::new(format!(
-                    "qualified entity '{}' is not admitted by Model '{}'",
-                    authored,
-                    model.id().as_str()
-                ))
-            })?
+fn require_term_referent(model: &Model, id: &ReferentId, where_: &str) -> kernel::Result<()> {
+    if model.referents().contains_key(id) {
+        Ok(())
     } else {
-        authored
-    };
-    if local.contains('/') {
-        return Err(kernel::KernelError::new(format!(
-            "qualified entity '{}' is not a local entity of Model '{}'",
-            authored,
-            model.id().as_str()
-        )));
+        Err(kernel::KernelError::new(format!(
+            "{where_} is not admitted by this Model"
+        )))
     }
-    model
-        .entities()
-        .iter()
-        .find(|entity| entity.local().as_str() == local)
-        .cloned()
-        .ok_or_else(|| kernel::KernelError::new(format!("unknown entity '{}'", authored)))
 }
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeMap;
+    use std::collections::BTreeSet;
 
     use crate::{elaborate::compile, frontend};
 
-    use super::*;
-
-    const BASE: &str = "Module: Type\n\nimpact/imports: Relation\n    {consumer: Module} imports {dependency: Module}\n    mode consumer -> dependency: many\n\nimpact: Model\n    North: Module\n    South: Module\n    Store: Module\n    North imports Store\n";
+    const BASE: &str = "Module: Type\n\nimpact/imports: RelationShape\n    {consumer: Module} imports {dependency: Module}\n    mode consumer -> dependency: many\n\nimpact: Model\n    North: Module\n    South: Module\n    Store: Module\n    North imports Store\n";
 
     #[test]
-    fn rejects_wrong_scalar_type() {
-        let program = compile(frontend::parse(BASE).unwrap()).unwrap();
-        let revision = program.revision(&frontend::Name("impact".into())).unwrap();
-        let span = frontend::Span {
-            line: 1,
-            column: 1,
-            width: 1,
-        };
-        let clause = SurfaceClause {
-            relation: frontend::Spanned {
-                value: frontend::Name("impact/imports".into()),
-                span,
-            },
-            roles: BTreeMap::from([
-                (
-                    frontend::RoleName("consumer".into()),
-                    SurfaceTerm::String(frontend::Spanned {
-                        value: "North".into(),
-                        span,
-                    }),
-                ),
-                (
-                    frontend::RoleName("dependency".into()),
-                    SurfaceTerm::Entity(frontend::Spanned {
-                        value: frontend::Name("Store".into()),
-                        span,
-                    }),
-                ),
-            ]),
-            span,
-        };
-        assert!(
-            lower_clause(revision, &clause)
-                .unwrap_err()
-                .to_string()
-                .contains("admitted Text role")
+    fn repeated_holes_share_one_opaque_pattern_binder() {
+        let source = format!(
+            "{BASE}\nimpact/reflexive: DerivationRule\n    ?item imports ?item\n    when:\n        ?item imports ?item\n"
         );
+        let program = compile(frontend::parse(&source).unwrap()).unwrap();
+        let rule = &program
+            .revision(&frontend::Name("impact".into()))
+            .unwrap()
+            .model()
+            .derivation_rules()[0];
+        let premise = program
+            .revision(&frontend::Name("impact".into()))
+            .unwrap()
+            .model()
+            .content(&rule.premises().forms()[0])
+            .unwrap();
+        let ids = premise
+            .roles()
+            .values()
+            .map(|term| term.pattern_id().unwrap())
+            .collect::<BTreeSet<_>>();
+        assert_eq!(ids.len(), 1);
     }
 }

@@ -5,7 +5,7 @@ use crate::derive::Closure;
 use super::ProofChange;
 
 pub(super) fn changes(base: &Closure, successor: &Closure) -> Vec<ProofChange> {
-    base.assertions()
+    base.contents()
         .iter()
         .filter_map(|consequence| {
             let successor_proof = successor.proof(consequence)?;

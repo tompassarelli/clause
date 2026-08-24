@@ -3,7 +3,7 @@
 use clause::{
     elaborate, frontend,
     intervention::{AchieveAll, PreventAll},
-    kernel::{Clause, EntityId, Name, RelationId, Revision, RoleId, Term},
+    kernel::{ReferentId, RelationalContent, Revision, RoleId, Term},
     request::{self, Request, RequestOutput, Selection},
     wire,
 };
@@ -31,41 +31,58 @@ fn revision(program: &elaborate::CompiledProgram, name: &str) -> Revision {
         .clone()
 }
 
-fn name(value: &str) -> Name {
-    Name::new(value.to_owned()).expect("valid stable semantic name")
+fn relation(program: &elaborate::CompiledProgram, value: &str) -> ReferentId {
+    program
+        .designations()
+        .global(value)
+        .expect("relation designation resolves")
 }
 
-fn relation(value: &str) -> RelationId {
-    RelationId::new(name(value)).expect("valid Relation identity")
+fn role(program: &elaborate::CompiledProgram, relation: &ReferentId, value: &str) -> RoleId {
+    program
+        .designations()
+        .role(relation, value)
+        .expect("role designation resolves")
 }
 
-fn role(value: &str) -> RoleId {
-    RoleId::new(name(value)).expect("valid role identity")
+fn referent(program: &elaborate::CompiledProgram, revision: &Revision, local: &str) -> ReferentId {
+    program
+        .designations()
+        .scoped(revision.model().id(), local)
+        .expect("hospital referent designation resolves")
 }
 
-fn entity(revision: &Revision, local: &str) -> EntityId {
-    revision
-        .model()
-        .entities()
-        .iter()
-        .find(|candidate| candidate.local().as_str() == local)
-        .expect("hospital entity is admitted")
-        .clone()
-}
-
-fn assertion(revision: &Revision, relation_name: &str, roles: &[(&str, &str)]) -> Clause {
-    Clause::new(
-        relation(relation_name),
+fn assertion(
+    program: &elaborate::CompiledProgram,
+    revision: &Revision,
+    relation_name: &str,
+    roles: &[(&str, &str)],
+) -> RelationalContent {
+    let relation = relation(program, relation_name);
+    RelationalContent::new(
+        relation.clone(),
         roles
             .iter()
-            .map(|(role_name, local)| (role(role_name), Term::entity(entity(revision, local))))
+            .map(|(role_name, local)| {
+                (
+                    role(program, &relation, role_name),
+                    Term::referent(referent(program, revision, local)),
+                )
+            })
             .collect::<BTreeMap<_, _>>(),
     )
     .expect("typed hospital assertion")
 }
 
-fn connects(revision: &Revision, door: &str, origin: &str, destination: &str) -> Clause {
+fn connects(
+    program: &elaborate::CompiledProgram,
+    revision: &Revision,
+    door: &str,
+    origin: &str,
+    destination: &str,
+) -> RelationalContent {
     assertion(
+        program,
         revision,
         "egress/connects",
         &[
@@ -76,46 +93,65 @@ fn connects(revision: &Revision, door: &str, origin: &str, destination: &str) ->
     )
 }
 
-fn passed(revision: &Revision, door: &str) -> Clause {
+fn passed(
+    program: &elaborate::CompiledProgram,
+    revision: &Revision,
+    door: &str,
+) -> RelationalContent {
     assertion(
+        program,
         revision,
         "egress/passed",
         &[("door", door), ("inspection", "Fire-Marshal-Inspection")],
     )
 }
 
-fn route(revision: &Revision, origin: &str, destination: &str) -> Clause {
+fn route(
+    program: &elaborate::CompiledProgram,
+    revision: &Revision,
+    origin: &str,
+    destination: &str,
+) -> RelationalContent {
     assertion(
+        program,
         revision,
         "egress/route",
         &[("origin", origin), ("destination", destination)],
     )
 }
 
-fn support_sets(why: &clause::execution::WhyAll) -> Vec<Vec<Clause>> {
+fn canonical_sets(mut alternatives: Vec<Vec<RelationalContent>>) -> Vec<Vec<RelationalContent>> {
+    for members in &mut alternatives {
+        members.sort();
+    }
+    alternatives.sort();
+    alternatives
+}
+
+fn support_sets(why: &clause::execution::WhyAll) -> Vec<Vec<RelationalContent>> {
     why.alternatives
         .iter()
         .map(|alternative| alternative.assertions.clone())
         .collect()
 }
 
-fn withdrawals(result: &PreventAll) -> Vec<Vec<Clause>> {
+fn withdrawals(result: &PreventAll) -> Vec<Vec<RelationalContent>> {
     let PreventAll::Complete(items) = result else {
         panic!("prevent all must exhaust its finite frontier: {result:?}");
     };
     items
         .iter()
-        .map(|item| item.delta().withdrawals().to_vec())
+        .map(|item| item.withdrawals().to_vec())
         .collect()
 }
 
-fn additions(result: &AchieveAll) -> Vec<Vec<Clause>> {
+fn additions(result: &AchieveAll) -> Vec<Vec<RelationalContent>> {
     let AchieveAll::Complete(items) = result else {
         panic!("achieve all must exhaust its finite frontier: {result:?}");
     };
     items
         .iter()
-        .map(|item| item.delta().admissions().to_vec())
+        .map(|item| item.admissions().to_vec())
         .collect()
 }
 
@@ -125,15 +161,17 @@ fn hospital_program_has_the_complete_six_request_semantic_and_materialization_jo
     let base = revision(&compiled, "egress");
     let successor = revision(&compiled, "egress/door-101-withdrawn");
 
-    assert_eq!(base.model().assertions().len(), 10);
-    assert_eq!(
-        base.model()
-            .entities()
-            .iter()
-            .filter(|candidate| candidate.typ().as_str() == "Door")
-            .count(),
-        6,
-    );
+    assert_eq!(base.model().admitted_contents().len(), 22);
+    assert_eq!(successor.model().admitted_contents().len(), 21);
+    for door in [
+        "Door 101", "Door 102", "Door 103", "Door 104", "Door 105", "Door 106",
+    ] {
+        assert!(
+            base.model()
+                .referents()
+                .contains_key(&referent(&compiled, &base, door))
+        );
+    }
 
     let resolved = request::resolve(&compiled).expect("hospital requests resolve in source order");
     assert!(matches!(
@@ -164,131 +202,151 @@ fn hospital_program_has_the_complete_six_request_semantic_and_materialization_jo
     let RequestOutput::Find(destinations) = &output.results[0] else {
         panic!("first request is recursive find");
     };
-    assert_eq!(
-        destinations,
-        &[
-            Term::entity(entity(&base, "East-Corridor")),
-            Term::entity(entity(&base, "North-Exit")),
-            Term::entity(entity(&base, "West-Corridor")),
-        ],
-    );
+    let mut expected_destinations = vec![
+        Term::referent(referent(&compiled, &base, "East-Corridor")),
+        Term::referent(referent(&compiled, &base, "North-Exit")),
+        Term::referent(referent(&compiled, &base, "West-Corridor")),
+    ];
+    expected_destinations.sort();
+    assert_eq!(destinations, &expected_destinations);
 
     let RequestOutput::WhyAll(Some(why)) = &output.results[1] else {
         panic!("second request is complete why all");
     };
     assert!(why.is_complete());
     assert_eq!(
-        support_sets(why),
-        vec![
+        canonical_sets(support_sets(why)),
+        canonical_sets(vec![
             vec![
-                connects(&base, "Door 101", "ICU-A", "East-Corridor"),
-                passed(&base, "Door 101"),
-                connects(&base, "Door 102", "East-Corridor", "North-Exit"),
-                passed(&base, "Door 102"),
+                connects(&compiled, &base, "Door 101", "ICU-A", "East-Corridor"),
+                passed(&compiled, &base, "Door 101"),
+                connects(&compiled, &base, "Door 102", "East-Corridor", "North-Exit",),
+                passed(&compiled, &base, "Door 102"),
             ],
             vec![
-                connects(&base, "Door 103", "ICU-A", "West-Corridor"),
-                passed(&base, "Door 103"),
-                connects(&base, "Door 104", "West-Corridor", "North-Exit"),
-                passed(&base, "Door 104"),
+                connects(&compiled, &base, "Door 103", "ICU-A", "West-Corridor"),
+                passed(&compiled, &base, "Door 103"),
+                connects(&compiled, &base, "Door 104", "West-Corridor", "North-Exit",),
+                passed(&compiled, &base, "Door 104"),
             ],
-        ],
+        ]),
     );
 
     let RequestOutput::PreventAll(base_prevent) = &output.results[2] else {
         panic!("third request is base prevention");
     };
     assert_eq!(
-        withdrawals(base_prevent),
-        vec![
-            vec![passed(&base, "Door 101"), passed(&base, "Door 103")],
-            vec![passed(&base, "Door 101"), passed(&base, "Door 104")],
-            vec![passed(&base, "Door 102"), passed(&base, "Door 103")],
-            vec![passed(&base, "Door 102"), passed(&base, "Door 104")],
-        ],
+        canonical_sets(withdrawals(base_prevent)),
+        canonical_sets(vec![
+            vec![
+                passed(&compiled, &base, "Door 101"),
+                passed(&compiled, &base, "Door 103"),
+            ],
+            vec![
+                passed(&compiled, &base, "Door 101"),
+                passed(&compiled, &base, "Door 104"),
+            ],
+            vec![
+                passed(&compiled, &base, "Door 102"),
+                passed(&compiled, &base, "Door 103"),
+            ],
+            vec![
+                passed(&compiled, &base, "Door 102"),
+                passed(&compiled, &base, "Door 104"),
+            ],
+        ]),
     );
 
     let RequestOutput::PreventAll(successor_prevent) = &output.results[3] else {
         panic!("fourth request is successor prevention");
     };
     assert_eq!(
-        withdrawals(successor_prevent),
-        vec![
-            vec![passed(&successor, "Door 103")],
-            vec![passed(&successor, "Door 104")],
-        ],
+        canonical_sets(withdrawals(successor_prevent)),
+        canonical_sets(vec![
+            vec![passed(&compiled, &successor, "Door 103")],
+            vec![passed(&compiled, &successor, "Door 104")],
+        ]),
     );
 
     let RequestOutput::AchieveAll(achieve) = &output.results[4] else {
         panic!("fifth request is complete achievement");
     };
     assert_eq!(
-        additions(achieve),
-        vec![
-            vec![passed(&base, "Door 105")],
-            vec![passed(&base, "Door 106")],
-        ],
+        canonical_sets(additions(achieve)),
+        canonical_sets(vec![
+            vec![passed(&compiled, &base, "Door 105")],
+            vec![passed(&compiled, &base, "Door 106")],
+        ]),
     );
 
     let RequestOutput::Diff(diff) = &output.results[5] else {
         panic!("sixth request is semantic diff");
     };
     assert!(diff.authored().added().is_empty());
-    assert_eq!(diff.authored().removed(), &[passed(&base, "Door 101")]);
+    assert_eq!(
+        diff.authored().removed(),
+        &[passed(&compiled, &base, "Door 101")]
+    );
     assert!(diff.entailed_added().is_empty());
     assert_eq!(
         diff.entailed_removed(),
-        &[route(&base, "ICU-A", "East-Corridor")],
+        &[route(&compiled, &base, "ICU-A", "East-Corridor")],
     );
     assert_eq!(diff.changed_supports().len(), 2);
     let east = diff
         .changed_supports()
         .iter()
-        .find(|change| change.consequence() == &route(&base, "ICU-A", "East-Corridor"))
+        .find(|change| change.consequence() == &route(&compiled, &base, "ICU-A", "East-Corridor"))
         .expect("east route support disappears");
     assert!(east.added().is_empty());
     assert_eq!(
-        east.removed()
-            .iter()
-            .map(|support| support.assertions().to_vec())
-            .collect::<Vec<_>>(),
-        vec![vec![
-            connects(&base, "Door 101", "ICU-A", "East-Corridor"),
-            passed(&base, "Door 101"),
-        ]],
+        canonical_sets(
+            east.removed()
+                .iter()
+                .map(|support| support.assertions().to_vec())
+                .collect(),
+        ),
+        canonical_sets(vec![vec![
+            connects(&compiled, &base, "Door 101", "ICU-A", "East-Corridor"),
+            passed(&compiled, &base, "Door 101"),
+        ]]),
     );
     assert!(east.retained().is_empty());
     let north = diff
         .changed_supports()
         .iter()
-        .find(|change| change.consequence() == &route(&base, "ICU-A", "North-Exit"))
+        .find(|change| change.consequence() == &route(&compiled, &base, "ICU-A", "North-Exit"))
         .expect("north route retains its west support");
     assert!(north.added().is_empty());
     assert_eq!(
-        north
-            .removed()
-            .iter()
-            .map(|support| support.assertions().to_vec())
-            .collect::<Vec<_>>(),
-        vec![vec![
-            connects(&base, "Door 101", "ICU-A", "East-Corridor"),
-            passed(&base, "Door 101"),
-            connects(&base, "Door 102", "East-Corridor", "North-Exit"),
-            passed(&base, "Door 102"),
-        ]],
+        canonical_sets(
+            north
+                .removed()
+                .iter()
+                .map(|support| support.assertions().to_vec())
+                .collect(),
+        ),
+        canonical_sets(vec![vec![
+            connects(&compiled, &base, "Door 101", "ICU-A", "East-Corridor"),
+            passed(&compiled, &base, "Door 101"),
+            connects(&compiled, &base, "Door 102", "East-Corridor", "North-Exit",),
+            passed(&compiled, &base, "Door 102"),
+        ]]),
     );
     assert_eq!(
-        north
-            .retained()
-            .iter()
-            .map(|support| support.assertions().to_vec())
-            .collect::<Vec<_>>(),
-        vec![vec![
-            connects(&base, "Door 103", "ICU-A", "West-Corridor"),
-            passed(&base, "Door 103"),
-            connects(&base, "Door 104", "West-Corridor", "North-Exit"),
-            passed(&base, "Door 104"),
-        ]],
+        canonical_sets(
+            north
+                .retained()
+                .iter()
+                .map(|support| support.assertions().to_vec())
+                .collect(),
+        ),
+        canonical_sets(vec![vec![
+            connects(&compiled, &base, "Door 103", "ICU-A", "West-Corridor"),
+            passed(&compiled, &base, "Door 103"),
+            connects(&compiled, &base, "Door 104", "West-Corridor", "North-Exit",),
+            passed(&compiled, &base, "Door 104"),
+        ]]),
     );
 
     let expected = output.canonical_bytes();

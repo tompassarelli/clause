@@ -1,4 +1,4 @@
-//! The singular source-facing Clause grammar.
+//! The singular source-facing RelationalContent grammar.
 //!
 //! This reader is intentionally independent from the kernel. It preserves
 //! authoring names and spans, resolves source structure after every declaration

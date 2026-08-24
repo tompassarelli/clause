@@ -5,7 +5,7 @@ use clause::{elaborate, frontend, wire};
 const ELLIPSIS: &str = r#"Item: Type
 Sensor: Type
 
-pairing/pair: Relation
+pairing/pair: RelationShape
     {item: Item} paired with {sensor: Sensor}
     mode item -> sensor: many
 
@@ -20,7 +20,7 @@ pairing: Model
 const EXPLICIT: &str = r#"Item: Type
 Sensor: Type
 
-pairing/pair: Relation
+pairing/pair: RelationShape
     {item: Item} paired with {sensor: Sensor}
     mode item -> sensor: many
 
@@ -39,9 +39,12 @@ pairing: Model
     [Item 4] paired with [Sensor 4]
 "#;
 
-fn revision(source: &str) -> clause::kernel::Revision {
-    elaborate::compile(frontend::parse(source).expect("source parses"))
-        .expect("source lowers")
+fn program(source: &str) -> elaborate::CompiledProgram {
+    elaborate::compile(frontend::parse(source).expect("source parses")).expect("source lowers")
+}
+
+fn revision(program: &elaborate::CompiledProgram) -> clause::kernel::Revision {
+    program
         .revision(&frontend::Name("pairing".to_owned()))
         .expect("base Revision")
         .clone()
@@ -49,8 +52,10 @@ fn revision(source: &str) -> clause::kernel::Revision {
 
 #[test]
 fn finite_groups_and_correlated_focus_lower_to_the_same_sealed_revision() {
-    let ellipsis = revision(ELLIPSIS);
-    let explicit = revision(EXPLICIT);
+    let ellipsis_program = program(ELLIPSIS);
+    let explicit_program = program(EXPLICIT);
+    let ellipsis = revision(&ellipsis_program);
+    let explicit = revision(&explicit_program);
 
     assert_eq!(ellipsis.identity(), explicit.identity());
     assert_eq!(wire::serialize(&ellipsis), wire::serialize(&explicit));
@@ -58,24 +63,29 @@ fn finite_groups_and_correlated_focus_lower_to_the_same_sealed_revision() {
         wire::reload(&wire::serialize(&ellipsis)).expect("canonical wire reloads"),
         ellipsis
     );
-    assert_eq!(ellipsis.model().entities().len(), 8);
-    assert_eq!(ellipsis.model().assertions().len(), 4);
-    assert!(
-        ellipsis
-            .model()
-            .entities()
-            .iter()
-            .any(|entity| entity.local().as_str() == "Item 1")
-    );
+    assert_eq!(ellipsis.model().admitted_contents().len(), 12);
+    let model = ellipsis_program
+        .designations()
+        .global("pairing")
+        .expect("pairing designation resolves");
+    for local in [
+        "Item 1", "Item 2", "Item 3", "Item 4", "Sensor 1", "Sensor 2", "Sensor 3", "Sensor 4",
+    ] {
+        let referent = ellipsis_program
+            .designations()
+            .scoped(&model, local)
+            .expect("focused referent designation resolves");
+        assert!(ellipsis.model().referents().contains_key(&referent));
+    }
 }
 
 #[test]
 fn focused_slots_report_sorted_ambiguity_and_checked_template_errors() {
     let ambiguous = ELLIPSIS
-        .replace("pairing/pair: Relation", "a/pair: Relation")
+        .replace("pairing/pair: RelationShape", "a/pair: RelationShape")
         .replace(
             "pairing: Model",
-            "b/pair: Relation\n    {item: Item} paired with {sensor: Sensor}\n    mode item -> sensor: many\n\npairing: Model",
+            "b/pair: RelationShape\n    {item: Item} paired with {sensor: Sensor}\n    mode item -> sensor: many\n\npairing: Model",
         );
     assert!(
         elaborate::compile(frontend::parse(&ambiguous).unwrap())

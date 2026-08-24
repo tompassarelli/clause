@@ -5,7 +5,7 @@
 use std::fmt::Write;
 
 use crate::{
-    kernel::{Clause, KernelError, RelationId, Result, RoleId, Term, TypeId, VariableId},
+    kernel::{KernelError, PatternId, ReferentId, RelationalContent, Result, RoleId, Term},
     request::{Request, ResolvedProgram, Selection},
     wire,
 };
@@ -178,7 +178,7 @@ const REQUEST_CHILDREN: &[ChildModule] = &[
     },
 ];
 
-/// Emit a standalone program that reloads the referenced v3 Revisions and
+/// Emit a standalone program that reloads the referenced v4 Revisions and
 /// invokes the same ordered request evaluator as the interpreter.
 #[cfg(not(clause_generated))]
 pub fn emit_rust(program: &ResolvedProgram) -> Result<String> {
@@ -210,17 +210,63 @@ pub fn emit_rust(program: &ResolvedProgram) -> Result<String> {
             .expect("writing generated modules to a String cannot fail");
     }
     let mut body = String::new();
-    for (index, revision) in program.revisions().values().enumerate() {
-        writeln!(
-            body,
-            "let r{index} = wire::reload({:?}).expect(\"sealed revision reloads\");",
-            wire::serialize(revision)
-        )
-        .expect("writing generated Revision reloads to a String cannot fail");
+    let revisions = revision_order(program)?;
+    let indices = revisions
+        .iter()
+        .enumerate()
+        .map(|(index, revision)| (revision.identity().clone(), index))
+        .collect::<std::collections::BTreeMap<_, _>>();
+    for (index, revision) in revisions.iter().enumerate() {
+        let serialized = wire::serialize(revision);
+        match revision.predecessor() {
+            Some(predecessor) => {
+                let base = indices
+                    .get(predecessor)
+                    .expect("lineage order contains each predecessor");
+                writeln!(
+                    body,
+                    "let r{index} = wire::reload_successor({serialized:?}, &r{base}).expect(\"sealed successor reloads\");"
+                )
+                .expect("writing generated Revision reloads to a String cannot fail");
+            }
+            None => {
+                writeln!(
+                    body,
+                    "let r{index} = wire::reload({serialized:?}).expect(\"sealed root reloads\");"
+                )
+                .expect("writing generated Revision reloads to a String cannot fail");
+            }
+        }
     }
-    writeln!(body, "let program = request::ResolvedProgram::new(std::collections::BTreeMap::from([{}]), vec![{}]).expect(\"generated requests resolve\");", program.revisions().values().enumerate().map(|(index, _)| format!("(r{index}.identity().clone(), r{index}.clone())")).collect::<Vec<_>>().join(","), program.requests().iter().map(|request| request_source(request, program)).collect::<Vec<_>>().join(",")).expect("writing the generated request registry to a String cannot fail");
+    writeln!(body, "let program = request::ResolvedProgram::new(std::collections::BTreeMap::from([{}]), vec![{}]).expect(\"generated requests resolve\");", revisions.iter().enumerate().map(|(index, _)| format!("(r{index}.identity().clone(), r{index}.clone())")).collect::<Vec<_>>().join(","), program.requests().iter().map(|request| request_source(request, &indices)).collect::<Vec<_>>().join(",")).expect("writing the generated request registry to a String cannot fail");
     writeln!(body, "print!(\"{{}}\", request::run(&program, request::RunLimits::default()).expect(\"generated requests run\").canonical_bytes());").expect("writing the generated entry point to a String cannot fail");
     Ok(format!("{modules}\nfn main() {{ {body} }}"))
+}
+
+#[cfg(not(clause_generated))]
+fn revision_order(program: &ResolvedProgram) -> Result<Vec<&crate::kernel::Revision>> {
+    let mut ordered = Vec::with_capacity(program.revisions().len());
+    let mut admitted = std::collections::BTreeSet::new();
+    while ordered.len() < program.revisions().len() {
+        let before = ordered.len();
+        for revision in program.revisions().values() {
+            if admitted.contains(revision.identity())
+                || revision
+                    .predecessor()
+                    .is_some_and(|predecessor| !admitted.contains(predecessor))
+            {
+                continue;
+            }
+            admitted.insert(revision.identity().clone());
+            ordered.push(revision);
+        }
+        if ordered.len() == before {
+            return Err(KernelError::new(
+                "resolved Revision registry has incomplete or cyclic lineage",
+            ));
+        }
+    }
+    Ok(ordered)
 }
 
 #[cfg(not(clause_generated))]
@@ -244,17 +290,19 @@ fn production_module(name: &str, source: &str, children: &[ChildModule]) -> Resu
 }
 
 #[cfg(not(clause_generated))]
-fn revision_source(identity: &crate::kernel::RevisionId, program: &ResolvedProgram) -> String {
-    let index = program
-        .revisions()
-        .keys()
-        .position(|candidate| candidate == identity)
-        .expect("request revision is embedded");
+fn revision_source(
+    identity: &crate::kernel::RevisionId,
+    indices: &std::collections::BTreeMap<crate::kernel::RevisionId, usize>,
+) -> String {
+    let index = indices.get(identity).expect("request revision is embedded");
     format!("r{index}.identity().clone()")
 }
 
 #[cfg(not(clause_generated))]
-fn request_source(request: &Request, program: &ResolvedProgram) -> String {
+fn request_source(
+    request: &Request,
+    indices: &std::collections::BTreeMap<crate::kernel::RevisionId, usize>,
+) -> String {
     match request {
         Request::Find {
             revision,
@@ -262,7 +310,7 @@ fn request_source(request: &Request, program: &ResolvedProgram) -> String {
             sought,
         } => format!(
             "request::Request::Find {{ revision: {}, pattern: {}, sought: {} }}",
-            revision_source(revision, program),
+            revision_source(revision, indices),
             clause_source(pattern),
             variable_source(sought)
         ),
@@ -272,7 +320,7 @@ fn request_source(request: &Request, program: &ResolvedProgram) -> String {
             all,
         } => format!(
             "request::Request::Why {{ revision: {}, target: {}, all: {all} }}",
-            revision_source(revision, program),
+            revision_source(revision, indices),
             clause_source(target)
         ),
         Request::Prevent {
@@ -282,7 +330,7 @@ fn request_source(request: &Request, program: &ResolvedProgram) -> String {
             using,
         } => format!(
             "request::Request::Prevent {{ revision: {}, target: {}, selection: {}, using: vec![{}] }}",
-            revision_source(revision, program),
+            revision_source(revision, indices),
             clause_source(target),
             selection_source(*selection),
             using
@@ -298,7 +346,7 @@ fn request_source(request: &Request, program: &ResolvedProgram) -> String {
             using,
         } => format!(
             "request::Request::Achieve {{ revision: {}, target: {}, selection: {}, using: vec![{}] }}",
-            revision_source(revision, program),
+            revision_source(revision, indices),
             clause_source(target),
             selection_source(*selection),
             using
@@ -309,8 +357,8 @@ fn request_source(request: &Request, program: &ResolvedProgram) -> String {
         ),
         Request::Diff { base, successor } => format!(
             "request::Request::Diff {{ base: {}, successor: {} }}",
-            revision_source(base, program),
-            revision_source(successor, program)
+            revision_source(base, indices),
+            revision_source(successor, indices)
         ),
     }
 }
@@ -323,61 +371,44 @@ fn selection_source(selection: Selection) -> &'static str {
     }
 }
 #[cfg(not(clause_generated))]
-fn name_source(value: &str) -> String {
-    format!("kernel::Name::new({value:?}.into()).expect(\"generated name\")")
-}
-#[cfg(not(clause_generated))]
-fn relation_source(value: &RelationId) -> String {
+fn relation_source(value: &ReferentId) -> String {
     format!(
-        "kernel::RelationId::new({}).expect(\"generated relation\")",
-        name_source(value.as_str())
+        "kernel::ReferentId::new({:?}.into()).expect(\"generated relation\")",
+        value.as_str()
     )
 }
 #[cfg(not(clause_generated))]
 fn role_source(value: &RoleId) -> String {
     format!(
-        "kernel::RoleId::new({}).expect(\"generated role\")",
-        name_source(value.as_str())
+        "kernel::RoleId::new({:?}.into()).expect(\"generated role\")",
+        value.as_str()
     )
 }
 #[cfg(not(clause_generated))]
-fn type_source(value: &TypeId) -> String {
+fn variable_source(value: &PatternId) -> String {
     format!(
-        "kernel::TypeId::new({}).expect(\"generated type\")",
-        name_source(value.as_str())
-    )
-}
-#[cfg(not(clause_generated))]
-fn variable_source(value: &VariableId) -> String {
-    format!(
-        "kernel::VariableId::new({}).expect(\"generated variable\")",
-        name_source(value.as_str())
+        "kernel::PatternId::new({:?}.into()).expect(\"generated variable\")",
+        value.as_str()
     )
 }
 #[cfg(not(clause_generated))]
 fn term_source(value: &Term) -> String {
     match value {
-        Term::Entity(entity) => format!(
-            "kernel::Term::entity(kernel::EntityId::new(kernel::ModelId::new({}).expect(\"generated model\"), {}, {}).expect(\"generated entity\"))",
-            name_source(entity.model().as_str()),
-            name_source(entity.local().as_str()),
-            type_source(entity.typ())
+        Term::Referent(id) => format!(
+            "kernel::Term::referent(kernel::ReferentId::new({:?}.into()).expect(\"generated referent\"))",
+            id.as_str()
         ),
-        Term::Value { typ, canonical } => format!(
-            "kernel::Term::value({}, {canonical:?}.into()).expect(\"generated value\")",
-            type_source(typ)
-        ),
-        Term::Variable { id, typ } => format!(
-            "kernel::Term::variable({}, {})",
-            variable_source(id),
-            type_source(typ)
+        Term::Pattern(id) => format!("kernel::Term::pattern({})", variable_source(id)),
+        Term::Application(id) => format!(
+            "kernel::Term::application(kernel::ContentId::new({:?}.into()).expect(\"generated content\"))",
+            id.as_str()
         ),
     }
 }
 #[cfg(not(clause_generated))]
-fn clause_source(value: &Clause) -> String {
+fn clause_source(value: &RelationalContent) -> String {
     format!(
-        "kernel::Clause::new({}, std::collections::BTreeMap::from([{}])).expect(\"generated clause\")",
+        "kernel::RelationalContent::new({}, std::collections::BTreeMap::from([{}])).expect(\"generated clause\")",
         relation_source(value.relation()),
         value
             .roles()

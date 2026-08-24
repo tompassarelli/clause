@@ -26,7 +26,7 @@ pub(super) fn parse_law_layout<'a>(raw: &RawDecl<'a>) -> Result<LawLayout<'a>, P
     {
         return Err(error(
             line_span(raw.header),
-            "Law requires one conclusion followed by 'when:' and premises",
+            "DerivationRule requires one conclusion followed by 'when:' and premises",
         ));
     }
     let premises = entries[2..].to_vec();

@@ -1,7 +1,7 @@
 //! Semantic-free, lossless concrete reading for the M0 surface contract.
 //!
 //! This module deliberately has no dependency on the executable frontend.  Its
-//! token categories are lexical only; later stages alone assign Clause meaning.
+//! token categories are lexical only; later stages alone assign RelationalContent meaning.
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct SourceSpan {
@@ -144,7 +144,7 @@ impl Document {
     }
 }
 
-/// Reads concrete source without choosing a Clause syntactic or semantic form.
+/// Reads concrete source without choosing a RelationalContent syntactic or semantic form.
 pub fn read(source: &str) -> Document {
     let mut lines = Vec::new();
     let mut diagnostics = Vec::new();

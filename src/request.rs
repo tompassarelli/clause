@@ -9,7 +9,7 @@ use crate::{
     derive::{Limits, SupportLimits},
     execution::{Proof, WhyAll},
     intervention::{AchieveAll, AchieveOne, InterventionLimits, PreventAll, PreventOne},
-    kernel::{self, Clause, RelationId, Revision, RevisionId, Term, VariableId},
+    kernel::{self, PatternId, ReferentId, RelationalContent, Revision, RevisionId, Term},
     semantic_diff::SemanticDiff,
 };
 
@@ -23,25 +23,25 @@ mod resolution;
 pub enum Request {
     Find {
         revision: RevisionId,
-        pattern: Clause,
-        sought: VariableId,
+        pattern: RelationalContent,
+        sought: PatternId,
     },
     Why {
         revision: RevisionId,
-        target: Clause,
+        target: RelationalContent,
         all: bool,
     },
     Prevent {
         revision: RevisionId,
-        target: Clause,
+        target: RelationalContent,
         selection: Selection,
-        using: Vec<RelationId>,
+        using: Vec<ReferentId>,
     },
     Achieve {
         revision: RevisionId,
-        target: Clause,
+        target: RelationalContent,
         selection: Selection,
-        using: Vec<RelationId>,
+        using: Vec<ReferentId>,
     },
     Diff {
         base: RevisionId,
@@ -75,6 +75,21 @@ impl ResolvedProgram {
             return Err(kernel::KernelError::new(
                 "Revision registry key must match sealed Revision identity",
             ));
+        }
+        for revision in revisions.values() {
+            let Some(delta) = revision.delta() else {
+                continue;
+            };
+            let predecessor = revisions.get(delta.base()).ok_or_else(|| {
+                kernel::KernelError::new("Revision registry is missing an exact predecessor")
+            })?;
+            let expected =
+                crate::wire::admit_successor(predecessor, revision.model().clone(), delta.clone())?;
+            if expected != *revision {
+                return Err(kernel::KernelError::new(
+                    "Revision registry contains an inexact successor edge",
+                ));
+            }
         }
         for request in &requests {
             for revision in request.revisions() {

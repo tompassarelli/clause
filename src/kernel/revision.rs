@@ -1,44 +1,69 @@
 use super::{
-    clause::Clause,
     error::{KernelError, Result},
     identity::RevisionId,
-    model::Model,
+    model::{Model, SemanticAtom},
 };
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum RevisionLineage {
+    Root,
+    Successor(Delta),
+}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Revision {
     identity: RevisionId,
+    lineage: RevisionLineage,
     model: Model,
 }
 
 impl Revision {
-    /// Wire admission owns semantic hashing and is the only module that pairs
-    /// a checked digest with its admitted model.
-    pub(crate) fn reloaded(identity: RevisionId, model: Model) -> Self {
-        Self { identity, model }
+    /// Wire admission owns hashing and is the only module that can pair a
+    /// canonical lineage/model payload with its content-derived identity.
+    pub(crate) fn reloaded(identity: RevisionId, lineage: RevisionLineage, model: Model) -> Self {
+        Self {
+            identity,
+            lineage,
+            model,
+        }
     }
 
     pub fn identity(&self) -> &RevisionId {
         &self.identity
     }
-
+    pub fn lineage(&self) -> &RevisionLineage {
+        &self.lineage
+    }
+    pub fn predecessor(&self) -> Option<&RevisionId> {
+        match &self.lineage {
+            RevisionLineage::Root => None,
+            RevisionLineage::Successor(delta) => Some(delta.base()),
+        }
+    }
+    pub fn delta(&self) -> Option<&Delta> {
+        match &self.lineage {
+            RevisionLineage::Root => None,
+            RevisionLineage::Successor(delta) => Some(delta),
+        }
+    }
     pub fn model(&self) -> &Model {
         &self.model
     }
 }
 
+/// One exact signed semantic edge from an immutable predecessor.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Delta {
     base: RevisionId,
-    admissions: Vec<Clause>,
-    withdrawals: Vec<Clause>,
+    admissions: Vec<SemanticAtom>,
+    withdrawals: Vec<SemanticAtom>,
 }
 
 impl Delta {
     pub fn new(
         base: RevisionId,
-        mut admissions: Vec<Clause>,
-        mut withdrawals: Vec<Clause>,
+        mut admissions: Vec<SemanticAtom>,
+        mut withdrawals: Vec<SemanticAtom>,
     ) -> Result<Self> {
         if admissions.is_empty() && withdrawals.is_empty() {
             return Err(KernelError::new("delta needs an admission or withdrawal"));
@@ -52,12 +77,9 @@ impl Delta {
         }
         if admissions
             .iter()
-            .any(|clause| withdrawals.binary_search(clause).is_ok())
+            .any(|atom| withdrawals.binary_search(atom).is_ok())
         {
             return Err(KernelError::new("delta admissions and withdrawals overlap"));
-        }
-        if !admissions.iter().chain(&withdrawals).all(Clause::is_ground) {
-            return Err(KernelError::new("delta changes must be ground clauses"));
         }
         Ok(Self {
             base,
@@ -69,12 +91,10 @@ impl Delta {
     pub fn base(&self) -> &RevisionId {
         &self.base
     }
-
-    pub fn admissions(&self) -> &[Clause] {
+    pub fn admissions(&self) -> &[SemanticAtom] {
         &self.admissions
     }
-
-    pub fn withdrawals(&self) -> &[Clause] {
+    pub fn withdrawals(&self) -> &[SemanticAtom] {
         &self.withdrawals
     }
 }

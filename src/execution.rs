@@ -6,7 +6,7 @@
 //! request layer.
 use crate::{
     derive::{Limits, SupportLimits},
-    kernel::{Clause, LawId, Result, Revision, RevisionId, Term, VariableId},
+    kernel::{PatternId, ReferentId, RelationalContent, Result, Revision, RevisionId, Term},
 };
 use std::collections::BTreeMap;
 
@@ -16,7 +16,7 @@ mod query;
 /// A ground clause in a revision-scoped explanation graph.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct ClauseNode {
-    pub clause: Clause,
+    pub clause: RelationalContent,
 }
 
 /// One canonical witness for a derived or asserted clause.
@@ -24,9 +24,9 @@ pub struct ClauseNode {
 pub enum Witness {
     Asserted,
     Derived {
-        law: LawId,
+        rule: ReferentId,
         premises: Vec<usize>,
-        substitution: BTreeMap<VariableId, Term>,
+        substitution: BTreeMap<PatternId, Term>,
     },
 }
 
@@ -54,7 +54,7 @@ pub struct Proof {
 /// One inclusion-minimal asserted support and its exact derivation.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct WhySupport {
-    pub assertions: Vec<Clause>,
+    pub assertions: Vec<RelationalContent>,
     pub proof: Proof,
 }
 
@@ -66,7 +66,7 @@ pub struct WhySupport {
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct WhyAll {
     pub revision: RevisionId,
-    pub target: Clause,
+    pub target: RelationalContent,
     pub alternatives: Vec<WhySupport>,
     pub complete: bool,
     pub expansions: usize,
@@ -97,7 +97,11 @@ pub fn find(
 }
 
 /// Return the deterministic chosen proof for a ground target, if it follows.
-pub fn why(revision: &Revision, target: &Clause, limits: Limits) -> Result<Option<Proof>> {
+pub fn why(
+    revision: &Revision,
+    target: &RelationalContent,
+    limits: Limits,
+) -> Result<Option<Proof>> {
     explain::why(revision, target, limits)
 }
 
@@ -108,7 +112,7 @@ pub fn why(revision: &Revision, target: &Clause, limits: Limits) -> Result<Optio
 /// entailed target whose support frontier was not reached before its budget.
 pub fn why_all(
     revision: &Revision,
-    target: &Clause,
+    target: &RelationalContent,
     limits: SupportLimits,
 ) -> Result<Option<WhyAll>> {
     explain::why_all(revision, target, limits)

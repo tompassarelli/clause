@@ -240,9 +240,9 @@ pub(super) fn integer_range(
 fn kind(text: &str) -> Option<Kind> {
     match text {
         "Type" => Some(Kind::Type),
-        "Relation" => Some(Kind::Relation),
+        "RelationShape" => Some(Kind::RelationShape),
         "Model" => Some(Kind::Model),
-        "Law" => Some(Kind::Law),
+        "DerivationRule" => Some(Kind::DerivationRule),
         "Revision" => Some(Kind::Revision),
         "Delta" => Some(Kind::Delta),
         _ => None,

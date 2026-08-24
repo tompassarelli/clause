@@ -3,18 +3,18 @@
 use super::Incomplete;
 use crate::{
     derive::{self, Closure, Limits, SupportStatus},
-    kernel::{Clause, Delta, KernelError, Result, Revision},
+    kernel::{KernelError, RelationalContent, Result, Revision},
 };
 
 pub(super) fn apply(
     source: &Revision,
-    admissions: Vec<Clause>,
-    withdrawals: Vec<Clause>,
+    admissions: Vec<RelationalContent>,
+    withdrawals: Vec<RelationalContent>,
 ) -> Result<Revision> {
     if admissions.is_empty() && withdrawals.is_empty() {
         return Ok(source.clone());
     }
-    Delta::new(source.identity().clone(), admissions, withdrawals)?.apply(source)
+    crate::delta::content_delta(source, admissions, withdrawals)?.apply(source)
 }
 
 pub(super) fn complete_closure(revision: &Revision, limits: Limits) -> Result<Option<Closure>> {
@@ -33,8 +33,8 @@ pub(super) enum ClosureAttempt {
 
 pub(super) fn closure_after(
     source: &Revision,
-    admissions: &[Clause],
-    withdrawals: &[Clause],
+    admissions: &[RelationalContent],
+    withdrawals: &[RelationalContent],
     limits: Limits,
     checks: &mut usize,
     max_checks: usize,

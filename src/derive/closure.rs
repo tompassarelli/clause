@@ -1,4 +1,4 @@
-use crate::kernel::{Clause, KernelError, Law, Result, Revision, Term, VariableId};
+use crate::kernel::{KernelError, PatternId, RelationalContent, Result, Revision, Term};
 use std::collections::BTreeMap;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -38,24 +38,24 @@ impl Proof {
 pub enum Witness {
     Asserted,
     Derived {
-        law: crate::kernel::LawId,
-        premises: Vec<Clause>,
-        substitution: BTreeMap<VariableId, Term>,
+        rule: crate::kernel::ReferentId,
+        premises: Vec<RelationalContent>,
+        substitution: BTreeMap<PatternId, Term>,
     },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Closure {
-    assertions: Vec<Clause>,
-    proofs: BTreeMap<Clause, Proof>,
+    assertions: Vec<RelationalContent>,
+    proofs: BTreeMap<RelationalContent, Proof>,
 }
 
 impl Closure {
-    pub fn assertions(&self) -> &[Clause] {
+    pub fn contents(&self) -> &[RelationalContent] {
         &self.assertions
     }
 
-    pub fn proof(&self, clause: &Clause) -> Option<&Proof> {
+    pub fn proof(&self, clause: &RelationalContent) -> Option<&Proof> {
         self.proofs.get(clause)
     }
 }
@@ -66,16 +66,16 @@ pub(super) fn limit_error(kind: &str, name: &str, value: usize) -> KernelError {
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 struct Candidate {
-    law: crate::kernel::LawId,
-    premises: Vec<Clause>,
-    substitution: BTreeMap<VariableId, Term>,
+    rule: crate::kernel::ReferentId,
+    premises: Vec<RelationalContent>,
+    substitution: BTreeMap<PatternId, Term>,
 }
 
 /// Saturate a Revision's admitted assertions under its positive, range-restricted laws.
 pub fn saturate(revision: &Revision, limits: Limits) -> Result<Closure> {
     let mut proofs = revision
         .model()
-        .assertions()
+        .admitted_contents()
         .iter()
         .cloned()
         .map(|assertion| {
@@ -100,15 +100,28 @@ pub fn saturate(revision: &Revision, limits: Limits) -> Result<Closure> {
     let mut generation = 1usize;
     loop {
         let assertions = proofs.keys().cloned().collect::<Vec<_>>();
-        let mut candidates = BTreeMap::<Clause, Candidate>::new();
-        for law in revision.model().laws() {
-            collect_law_candidates(
-                law,
-                &assertions,
-                &limits,
-                &mut join_attempts,
-                &mut candidates,
-            )?;
+        let mut candidates = BTreeMap::<RelationalContent, Candidate>::new();
+        for rule in revision.model().derivation_rules() {
+            let premises = rule
+                .premises()
+                .forms()
+                .iter()
+                .map(|id| revision.model().content(id).expect("checked rule premise"))
+                .collect::<Vec<_>>();
+            for conclusion in rule.conclusion().forms() {
+                collect_rule_candidates(
+                    rule.id(),
+                    &premises,
+                    revision
+                        .model()
+                        .content(conclusion)
+                        .expect("checked rule conclusion"),
+                    &assertions,
+                    &limits,
+                    &mut join_attempts,
+                    &mut candidates,
+                )?;
+            }
         }
         candidates.retain(|clause, _| !proofs.contains_key(clause));
         if candidates.is_empty() {
@@ -130,7 +143,7 @@ pub fn saturate(revision: &Revision, limits: Limits) -> Result<Closure> {
                 Proof {
                     generation,
                     witness: Witness::Derived {
-                        law: candidate.law,
+                        rule: candidate.rule,
                         premises: candidate.premises,
                         substitution: candidate.substitution,
                     },
@@ -145,15 +158,19 @@ pub fn saturate(revision: &Revision, limits: Limits) -> Result<Closure> {
     })
 }
 
-fn collect_law_candidates(
-    law: &Law,
-    assertions: &[Clause],
+fn collect_rule_candidates(
+    rule: &crate::kernel::ReferentId,
+    patterns: &[&RelationalContent],
+    conclusion: &RelationalContent,
+    assertions: &[RelationalContent],
     limits: &Limits,
     join_attempts: &mut usize,
-    candidates: &mut BTreeMap<Clause, Candidate>,
+    candidates: &mut BTreeMap<RelationalContent, Candidate>,
 ) -> Result<()> {
     collect_joins(
-        law,
+        rule,
+        patterns,
+        conclusion,
         assertions,
         limits,
         join_attempts,
@@ -166,19 +183,21 @@ fn collect_law_candidates(
 
 #[allow(clippy::too_many_arguments)]
 fn collect_joins(
-    law: &Law,
-    assertions: &[Clause],
+    rule: &crate::kernel::ReferentId,
+    patterns: &[&RelationalContent],
+    conclusion: &RelationalContent,
+    assertions: &[RelationalContent],
     limits: &Limits,
     join_attempts: &mut usize,
-    candidates: &mut BTreeMap<Clause, Candidate>,
+    candidates: &mut BTreeMap<RelationalContent, Candidate>,
     premise_index: usize,
-    substitution: BTreeMap<VariableId, Term>,
-    premises: Vec<Clause>,
+    substitution: BTreeMap<PatternId, Term>,
+    premises: Vec<RelationalContent>,
 ) -> Result<()> {
-    if premise_index == law.premises().len() {
-        let conclusion = super::matching::instantiate(law.conclusion(), &substitution);
+    if premise_index == patterns.len() {
+        let conclusion = super::matching::instantiate(conclusion, &substitution);
         let candidate = Candidate {
-            law: law.id().clone(),
+            rule: rule.clone(),
             premises,
             substitution,
         };
@@ -191,7 +210,7 @@ fn collect_joins(
         }
         return Ok(());
     }
-    let pattern = &law.premises()[premise_index];
+    let pattern = patterns[premise_index];
     for assertion in assertions {
         if *join_attempts >= limits.max_join_attempts {
             return Err(limit_error(
@@ -208,7 +227,9 @@ fn collect_joins(
         let mut next_premises = premises.clone();
         next_premises.push(assertion.clone());
         collect_joins(
-            law,
+            rule,
+            patterns,
+            conclusion,
             assertions,
             limits,
             join_attempts,

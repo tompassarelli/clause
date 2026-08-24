@@ -204,7 +204,7 @@ pub(super) fn relation_spec(raw: &RawDecl<'_>) -> Result<RelationSpec, ParseErro
     {
         return Err(error(
             line_span(raw.header),
-            "Relation requires four-space sentence and mode members",
+            "RelationShape requires four-space sentence and mode members",
         ));
     }
     let shape = parse_shape(entries[0])?;
@@ -222,7 +222,7 @@ pub(super) fn relation_spec(raw: &RawDecl<'_>) -> Result<RelationSpec, ParseErro
     if modes.is_empty() {
         return Err(error(
             line_span(raw.header),
-            "Relation requires one or more mode declarations",
+            "RelationShape requires one or more mode declarations",
         ));
     }
     Ok(RelationSpec {

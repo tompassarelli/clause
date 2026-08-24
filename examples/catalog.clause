@@ -1,7 +1,7 @@
 Set: Type
 Letter: Type
 
-catalog/contains: Relation
+catalog/contains: RelationShape
     {set: Set} contains {member: Letter}
     mode set -> member: many
 

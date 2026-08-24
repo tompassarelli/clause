@@ -1,11 +1,11 @@
-use crate::kernel::{Clause, Term, VariableId};
+use crate::kernel::{PatternId, RelationalContent, Term};
 use std::collections::BTreeMap;
 
 pub(super) fn unify(
-    pattern: &Clause,
-    assertion: &Clause,
-    substitution: &BTreeMap<VariableId, Term>,
-) -> Option<BTreeMap<VariableId, Term>> {
+    pattern: &RelationalContent,
+    assertion: &RelationalContent,
+    substitution: &BTreeMap<PatternId, Term>,
+) -> Option<BTreeMap<PatternId, Term>> {
     if pattern.relation() != assertion.relation()
         || pattern.roles().len() != assertion.roles().len()
     {
@@ -15,15 +15,13 @@ pub(super) fn unify(
     for (role, pattern_term) in pattern.roles() {
         let assertion_term = assertion.roles().get(role)?;
         match pattern_term {
-            Term::Variable { id, typ } if typ == assertion_term.typ() => match substitution.get(id)
-            {
+            Term::Pattern(id) => match substitution.get(id) {
                 Some(bound) if bound != assertion_term => return None,
                 Some(_) => {}
                 None => {
                     substitution.insert(id.clone(), assertion_term.clone());
                 }
             },
-            Term::Variable { .. } => return None,
             _ if pattern_term != assertion_term => return None,
             _ => {}
         }
@@ -31,15 +29,18 @@ pub(super) fn unify(
     Some(substitution)
 }
 
-pub(super) fn instantiate(pattern: &Clause, substitution: &BTreeMap<VariableId, Term>) -> Clause {
-    Clause::new(
+pub(super) fn instantiate(
+    pattern: &RelationalContent,
+    substitution: &BTreeMap<PatternId, Term>,
+) -> RelationalContent {
+    RelationalContent::new(
         pattern.relation().clone(),
         pattern
             .roles()
             .iter()
             .map(|(role, term)| {
                 let value = match term {
-                    Term::Variable { id, .. } => substitution
+                    Term::Pattern(id) => substitution
                         .get(id)
                         .expect("admitted law conclusions are range-restricted")
                         .clone(),

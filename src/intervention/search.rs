@@ -1,9 +1,12 @@
 //! Canonical finite subset enumeration and all-result search state.
 
 use super::{AchieveAll, Incomplete, Intervention, PreventAll};
-use crate::kernel::{Clause, Result};
+use crate::kernel::{RelationalContent, Result};
 
-pub(super) fn without(items: &[Clause], removed: &Clause) -> Vec<Clause> {
+pub(super) fn without(
+    items: &[RelationalContent],
+    removed: &RelationalContent,
+) -> Vec<RelationalContent> {
     items
         .iter()
         .filter(|item| *item != removed)
@@ -11,8 +14,8 @@ pub(super) fn without(items: &[Clause], removed: &Clause) -> Vec<Clause> {
         .collect()
 }
 
-pub(super) fn is_subset(left: &[Clause], right: &[Clause]) -> bool {
-    left.iter().all(|item| right.binary_search(item).is_ok())
+pub(super) fn is_subset(left: &[RelationalContent], right: &[RelationalContent]) -> bool {
+    left.iter().all(|item| right.contains(item))
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -22,14 +25,14 @@ pub(super) enum Enumeration {
 }
 
 pub(super) fn enumerate<F>(
-    basis: &[Clause],
+    basis: &[RelationalContent],
     remaining: usize,
     start: usize,
-    choice: &mut Vec<Clause>,
+    choice: &mut Vec<RelationalContent>,
     visit: &mut F,
 ) -> Result<Enumeration>
 where
-    F: FnMut(&[Clause]) -> Result<Enumeration>,
+    F: FnMut(&[RelationalContent]) -> Result<Enumeration>,
 {
     if remaining == 0 {
         return visit(choice);

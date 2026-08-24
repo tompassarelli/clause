@@ -2,7 +2,7 @@ use super::{RequestOutput, RunOutput};
 use crate::{
     execution::{self, Proof, WhyAll},
     intervention::{AchieveAll, AchieveOne, Incomplete, Intervention, PreventAll, PreventOne},
-    kernel::{Clause, Term},
+    kernel::{RelationalContent, Term},
     semantic_diff::SemanticDiff,
 };
 
@@ -64,23 +64,12 @@ fn string(value: &str) -> String {
 }
 fn term(value: &Term) -> String {
     match value {
-        Term::Entity(entity) => format!(
-            "[\"entity\",{},{},{}]",
-            string(entity.model().as_str()),
-            string(entity.local().as_str()),
-            string(entity.typ().as_str())
-        ),
-        Term::Value { typ, canonical } => {
-            format!("[\"value\",{},{}]", string(typ.as_str()), string(canonical))
-        }
-        Term::Variable { id, typ } => format!(
-            "[\"variable\",{},{}]",
-            string(id.as_str()),
-            string(typ.as_str())
-        ),
+        Term::Referent(id) => format!("[\"referent\",{}]", string(id.as_str())),
+        Term::Pattern(id) => format!("[\"pattern\",{}]", string(id.as_str())),
+        Term::Application(id) => format!("[\"application\",{}]", string(id.as_str())),
     }
 }
-fn clause(value: &Clause) -> String {
+fn clause(value: &RelationalContent) -> String {
     format!(
         "[\"clause\",{},[{}]]",
         string(value.relation().as_str()),
@@ -121,12 +110,12 @@ fn witness(value: &execution::Witness) -> String {
     match value {
         execution::Witness::Asserted => "[\"asserted\"]".into(),
         execution::Witness::Derived {
-            law,
+            rule,
             premises,
             substitution,
         } => format!(
             "[\"derived\",{},[{}],[{}]]",
-            string(law.as_str()),
+            string(rule.as_str()),
             premises
                 .iter()
                 .map(usize::to_string)
@@ -168,14 +157,12 @@ fn intervention(value: &Intervention) -> String {
         "[\"intervention\",{},[{}],[{}],{},{}]",
         string(&value.revision().identity().to_string()),
         value
-            .delta()
             .admissions()
             .iter()
             .map(clause)
             .collect::<Vec<_>>()
             .join(","),
         value
-            .delta()
             .withdrawals()
             .iter()
             .map(clause)
@@ -199,12 +186,12 @@ fn derive_witness(value: &crate::derive::Witness) -> String {
     match value {
         crate::derive::Witness::Asserted => "[\"asserted\"]".into(),
         crate::derive::Witness::Derived {
-            law,
+            rule,
             premises,
             substitution,
         } => format!(
             "[\"derived\",{},[{}],[{}]]",
-            string(law.as_str()),
+            string(rule.as_str()),
             premises.iter().map(clause).collect::<Vec<_>>().join(","),
             substitution
                 .iter()
@@ -225,12 +212,12 @@ fn support_witness(value: &crate::derive::SupportWitness) -> String {
     match value {
         crate::derive::SupportWitness::Asserted => "[\"asserted\"]".into(),
         crate::derive::SupportWitness::Derived {
-            law,
+            rule,
             premises,
             substitution,
         } => format!(
             "[\"derived\",{},[{}],[{}]]",
-            string(law.as_str()),
+            string(rule.as_str()),
             premises
                 .iter()
                 .map(support_proof)

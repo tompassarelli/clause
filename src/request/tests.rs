@@ -2,7 +2,7 @@ use super::{Request, RequestOutput, RunLimits, Selection, resolve, run};
 use crate::{elaborate, frontend};
 
 const SOURCE: &str = "Item: Type
-link: Relation
+link: RelationShape
     {left: Item} links {right: Item}
     mode left -> right: many
 graph: Model
@@ -21,7 +21,7 @@ diff graph -> graph/add
 ";
 
 const INTERVENTIONS: &str = "Item: Type
-link: Relation
+link: RelationShape
     {left: Item} links {right: Item}
     mode left -> right: many
 graph: Model
@@ -72,6 +72,37 @@ fn resolves_typed_requests_in_authored_order_and_encodes_one_aggregate() {
     ));
     assert_eq!(output.canonical_bytes().matches("[\"find\"").count(), 1);
     assert!(output.canonical_bytes().starts_with("[\"clause-run-v1\","));
+}
+
+#[test]
+fn request_hole_renames_preserve_alpha_normal_pattern_identity() {
+    let before = program(SOURCE);
+    let after = program(&SOURCE.replace("?right", "?destination"));
+    let Request::Find {
+        pattern: before_pattern,
+        sought: before_sought,
+        ..
+    } = &before.requests()[0]
+    else {
+        panic!("first request must be find");
+    };
+    let Request::Find {
+        pattern: after_pattern,
+        sought: after_sought,
+        ..
+    } = &after.requests()[0]
+    else {
+        panic!("first request must be find");
+    };
+
+    assert_eq!(before_pattern, after_pattern);
+    assert_eq!(before_sought, after_sought);
+    assert!(
+        before_pattern
+            .roles()
+            .values()
+            .any(|term| term.pattern_id() == Some(before_sought))
+    );
 }
 
 #[test]

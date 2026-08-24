@@ -1,4 +1,4 @@
-//! Native Clause command line interface.
+//! Native RelationalContent command line interface.
 
 use clause::{elaborate, frontend, generated, request, wire};
 use std::{

@@ -1,91 +1,79 @@
-//! Immutable asserted-clause transitions and comparisons between revisions.
-//!
-//! Delta values remain outside revision identity and persistence. Applying a
-//! Delta rebuilds only the asserted-clause set and admits the resulting Model
-//! through the canonical semantic wire.
+//! Immutable, completely signed semantic transitions and Revision comparisons.
 
 use crate::{
-    kernel::{Clause, Delta, KernelError, Result, Revision, RevisionId},
+    kernel::{
+        AssertionOccurrence, Delta, Judgment, JudgmentKind, JudgmentStatus, JudgmentTarget,
+        KernelError, Referent, ReferentId, RelationalContent, Result, Revision, RevisionId,
+        SemanticAtom,
+    },
     wire,
 };
+use std::collections::BTreeSet;
 
 impl Delta {
-    /// Apply this transition atomically to its exact base revision.
+    /// Apply every signed atom atomically to this exact predecessor.
     pub fn apply(&self, base: &Revision) -> Result<Revision> {
         if self.base() != base.identity() {
             return Err(KernelError::new("delta base revision does not match"));
         }
-
-        let model = base.model();
+        let mut atoms = base.model().atoms();
         for withdrawal in self.withdrawals() {
-            if model.assertions().binary_search(withdrawal).is_err() {
-                return Err(KernelError::new("delta withdraws a nonexistent assertion"));
+            if !atoms.remove(withdrawal) {
+                return Err(KernelError::new(
+                    "delta withdraws a nonexistent semantic atom",
+                ));
             }
         }
         for admission in self.admissions() {
-            if model.assertions().binary_search(admission).is_ok() {
-                return Err(KernelError::new("delta admits an existing assertion"));
+            if !atoms.insert(admission.clone()) {
+                return Err(KernelError::new("delta admits an existing semantic atom"));
             }
-            model.validate_clause(admission, false)?;
         }
-
-        let mut assertions = model
-            .assertions()
-            .iter()
-            .filter(|assertion| self.withdrawals().binary_search(assertion).is_err())
-            .cloned()
-            .collect::<Vec<_>>();
-        assertions.extend(self.admissions().iter().cloned());
-        Ok(wire::admit(model.with_assertions(assertions)?))
+        let successor = crate::kernel::Model::from_atoms(base.model().id().clone(), atoms)?;
+        wire::admit_successor(base, successor, self.clone())
     }
 }
 
-/// The authored assertion difference between two same-declaration revisions.
+/// Exact signed and admitted-content differences across one lineage edge.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RevisionDiff {
     base_revision: RevisionId,
     successor_revision: RevisionId,
-    added: Vec<Clause>,
-    removed: Vec<Clause>,
+    admitted_atoms: Vec<SemanticAtom>,
+    withdrawn_atoms: Vec<SemanticAtom>,
+    added: Vec<RelationalContent>,
+    removed: Vec<RelationalContent>,
 }
 
 impl RevisionDiff {
-    /// Compare assertions only when all declarations are identical.
     pub fn between(base: &Revision, successor: &Revision) -> Result<Self> {
-        let base_model = base.model();
-        let successor_model = successor.model();
-        if base_model.id() != successor_model.id()
-            || base_model.types() != successor_model.types()
-            || base_model.entities() != successor_model.entities()
-            || base_model.relations() != successor_model.relations()
-            || base_model.laws() != successor_model.laws()
-        {
+        if successor.predecessor() != Some(base.identity()) {
             return Err(KernelError::new(
-                "cannot diff revisions with different declarations",
+                "cannot diff revisions without an exact predecessor edge",
             ));
         }
-
-        let added = successor_model
-            .assertions()
-            .iter()
-            .filter(|assertion| base_model.assertions().binary_search(assertion).is_err())
-            .cloned()
-            .collect();
-        let removed = base_model
-            .assertions()
-            .iter()
-            .filter(|assertion| {
-                successor_model
-                    .assertions()
-                    .binary_search(assertion)
-                    .is_err()
-            })
-            .cloned()
-            .collect();
-
+        let declared = successor
+            .delta()
+            .ok_or_else(|| KernelError::new("successor Revision has no signed Delta"))?;
+        let expected = exact_delta(base, successor)?;
+        if declared != &expected {
+            return Err(KernelError::new(
+                "Revision lineage Delta does not account for its complete semantic difference",
+            ));
+        }
+        let added = content_difference(
+            successor.model().admitted_contents(),
+            base.model().admitted_contents(),
+        );
+        let removed = content_difference(
+            base.model().admitted_contents(),
+            successor.model().admitted_contents(),
+        );
         Ok(Self {
             base_revision: base.identity().clone(),
             successor_revision: successor.identity().clone(),
+            admitted_atoms: declared.admissions().to_vec(),
+            withdrawn_atoms: declared.withdrawals().to_vec(),
             added,
             removed,
         })
@@ -94,16 +82,140 @@ impl RevisionDiff {
     pub fn base_revision(&self) -> &RevisionId {
         &self.base_revision
     }
-
     pub fn successor_revision(&self) -> &RevisionId {
         &self.successor_revision
     }
-
-    pub fn added(&self) -> &[Clause] {
+    pub fn admitted_atoms(&self) -> &[SemanticAtom] {
+        &self.admitted_atoms
+    }
+    pub fn withdrawn_atoms(&self) -> &[SemanticAtom] {
+        &self.withdrawn_atoms
+    }
+    pub fn added(&self) -> &[RelationalContent] {
         &self.added
     }
-
-    pub fn removed(&self) -> &[Clause] {
+    pub fn removed(&self) -> &[RelationalContent] {
         &self.removed
     }
+}
+
+pub(crate) fn exact_delta(base: &Revision, successor: &Revision) -> Result<Delta> {
+    if base.model().id() != successor.model().id() {
+        return Err(KernelError::new("a Delta cannot change Model identity"));
+    }
+    let base_atoms = base.model().atoms();
+    let successor_atoms = successor.model().atoms();
+    let admissions = successor_atoms.difference(&base_atoms).cloned().collect();
+    let withdrawals = base_atoms.difference(&successor_atoms).cloned().collect();
+    Delta::new(base.identity().clone(), admissions, withdrawals)
+}
+
+/// Project legacy assertion-content intervention intent into explicit content,
+/// occurrence, and admission-judgment atoms.
+pub(crate) fn content_delta(
+    base: &Revision,
+    admissions: Vec<RelationalContent>,
+    withdrawals: Vec<RelationalContent>,
+) -> Result<Delta> {
+    if admissions.is_empty() && withdrawals.is_empty() {
+        return Err(KernelError::new("content Delta has no changes"));
+    }
+    let source = stable_referent(&format!(
+        "{}/intervention-source",
+        base.model().id().as_str()
+    ));
+    let policy = stable_referent(&format!(
+        "{}/intervention-policy",
+        base.model().id().as_str()
+    ));
+    let mut added = Vec::new();
+    let atoms = base.model().atoms();
+    for id in [&source, &policy] {
+        let atom = SemanticAtom::Referent(Referent::new(id.clone()));
+        if !atoms.contains(&atom) {
+            added.push(atom);
+        }
+    }
+    for content in admissions {
+        let content_atom = SemanticAtom::RelationalContent(content.clone());
+        if !atoms.contains(&content_atom) {
+            added.push(content_atom);
+        }
+        let occurrence_id = stable_referent(&format!(
+            "{}/occurrence/{}",
+            base.identity(),
+            content.id().as_str()
+        ));
+        let judgment_id = stable_referent(&format!(
+            "{}/judgment/{}",
+            base.identity(),
+            content.id().as_str()
+        ));
+        added.push(SemanticAtom::Referent(Referent::new(occurrence_id.clone())));
+        added.push(SemanticAtom::Referent(Referent::new(judgment_id.clone())));
+        let occurrence = AssertionOccurrence::new(
+            occurrence_id.clone(),
+            content.id().clone(),
+            source.clone(),
+            base.model().id().clone(),
+        );
+        added.push(SemanticAtom::AssertionOccurrence(occurrence));
+        added.push(SemanticAtom::Judgment(Judgment::new(
+            judgment_id,
+            base.model().id().clone(),
+            base.model().id().clone(),
+            JudgmentTarget::Occurrence(occurrence_id),
+            JudgmentKind::Admitted {
+                policy: policy.clone(),
+                basis: Vec::new(),
+            },
+            JudgmentStatus::Affirmed,
+        )));
+    }
+
+    let withdrawal_ids = withdrawals
+        .iter()
+        .map(RelationalContent::id)
+        .collect::<BTreeSet<_>>();
+    let occurrence_ids = base
+        .model()
+        .occurrences()
+        .iter()
+        .filter(|item| withdrawal_ids.contains(item.content()))
+        .map(|item| item.id().clone())
+        .collect::<BTreeSet<_>>();
+    let mut removed = base
+        .model()
+        .occurrences()
+        .iter()
+        .filter(|item| occurrence_ids.contains(item.id()))
+        .cloned()
+        .map(SemanticAtom::AssertionOccurrence)
+        .collect::<Vec<_>>();
+    removed.extend(
+        base.model()
+            .judgments()
+            .iter()
+            .filter(|judgment| match judgment.target() {
+                JudgmentTarget::Content(id) => withdrawal_ids.contains(id),
+                JudgmentTarget::Occurrence(id) => occurrence_ids.contains(id),
+            })
+            .cloned()
+            .map(SemanticAtom::Judgment),
+    );
+    Delta::new(base.identity().clone(), added, removed)
+}
+
+fn stable_referent(value: &str) -> ReferentId {
+    ReferentId::from_digest(crate::wire::sha256_digest(value.as_bytes()))
+}
+
+fn content_difference(
+    left: &[RelationalContent],
+    right: &[RelationalContent],
+) -> Vec<RelationalContent> {
+    left.iter()
+        .filter(|item| right.binary_search(item).is_err())
+        .cloned()
+        .collect()
 }

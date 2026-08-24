@@ -1,324 +1,550 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 use crate::kernel::{
-    Cardinality, Clause, EntityId, InlineSentencePart, KernelError, Law, LawId, Mode, Model,
-    ModelId, Name, Relation, RelationId, Result, Revision, RevisionId, Role, RoleId, SentenceShape,
-    Term, Type, TypeId, VariableId,
+    AssertionOccurrence, Cardinality, ContentId, Definition, Delta, DerivationRule, Goal,
+    Invariant, InvariantAdmission, Judgment, JudgmentKind, JudgmentStatus, JudgmentTarget,
+    KernelError, LookupMode, Model, Pattern, PatternId, Referent, ReferentId, RelationShape,
+    RelationalContent, Result, Revision, RevisionId, RevisionLineage, Role, RoleId, RolePredicate,
+    SemanticAtom, Term, Transition, UniversalLaw,
 };
 
-use super::canonical::{REVISION_TAG, SEMANTIC_TAG, revision_id, semantic_payload, serialize};
-use super::json::{Json, JsonParser, array, json, list, require_string, string};
+use super::{
+    canonical::{REVISION_TAG, SEMANTIC_TAG, revision_id, semantic_payload, serialize},
+    json::{Json, JsonParser, array, json, list, require_string, string},
+};
 
-/// Strictly reload one canonical v3/v5 Revision.
+/// Strictly reload one canonical root Revision-v4 / semantic-v6 artifact.
+///
+/// A successor carries an exact Delta claim whose completeness cannot be
+/// checked without its predecessor snapshot. Use [`reload_successor`] for
+/// those artifacts.
 pub fn reload(bytes: &str) -> Result<Revision> {
-    let value = JsonParser::new(bytes).parse()?;
-    if json(&value) != bytes {
-        return Err(KernelError::new("revision wire is not canonical JSON"));
-    }
-
-    let envelope = list(&value, 3, "revision envelope")?;
-    require_string(&envelope[0], REVISION_TAG, "revision envelope tag")?;
-    let claimed = decode_revision_id(string(&envelope[1], "revision identity")?)?;
-    let model = decode_model(&envelope[2])?;
-    let expected = revision_id(&model);
-    if claimed != expected {
+    let revision = decode_canonical(bytes)?;
+    if revision.predecessor().is_some() {
         return Err(KernelError::new(
-            "revision identity does not match canonical semantic payload",
+            "successor Revision reload requires its exact predecessor",
         ));
-    }
-
-    let revision = Revision::reloaded(claimed, model);
-    if serialize(&revision) != bytes {
-        return Err(KernelError::new("revision payload is not canonical"));
     }
     Ok(revision)
 }
 
-fn decode_model(value: &Json) -> Result<Model> {
-    let root = list(value, 7, "semantic payload")?;
+/// Strictly reload a successor against the exact predecessor named by its
+/// signed Delta.
+pub fn reload_successor(bytes: &str, predecessor: &Revision) -> Result<Revision> {
+    let revision = decode_canonical(bytes)?;
+    let delta = revision
+        .delta()
+        .ok_or_else(|| KernelError::new("successor reload requires successor lineage"))?;
+    let expected =
+        super::canonical::admit_successor(predecessor, revision.model().clone(), delta.clone())?;
+    if expected != revision {
+        return Err(KernelError::new(
+            "successor Revision does not match its exact predecessor",
+        ));
+    }
+    Ok(revision)
+}
+
+fn decode_canonical(bytes: &str) -> Result<Revision> {
+    let value = JsonParser::new(bytes).parse()?;
+    if json(&value) != bytes {
+        return Err(KernelError::new("Revision wire is not canonical JSON"));
+    }
+    let envelope = list(&value, 3, "Revision envelope")?;
+    require_string(&envelope[0], REVISION_TAG, "Revision envelope tag")?;
+    let claimed = decode_revision_id(string(&envelope[1], "Revision identity")?)?;
+    let (lineage, model) = decode_payload(&envelope[2])?;
+    if claimed != revision_id(&lineage, &model) {
+        return Err(KernelError::new(
+            "Revision identity does not match the complete semantic-v6 payload",
+        ));
+    }
+    validate_lineage_snapshot(&lineage, &model)?;
+    let revision = Revision::reloaded(claimed, lineage, model);
+    if semantic_payload(&revision) != json(&envelope[2]) || serialize(&revision) != bytes {
+        return Err(KernelError::new("Revision payload is not canonical"));
+    }
+    Ok(revision)
+}
+
+fn decode_payload(value: &Json) -> Result<(RevisionLineage, Model)> {
+    let root = list(value, 14, "semantic payload")?;
     require_string(&root[0], SEMANTIC_TAG, "semantic tag")?;
+    let lineage = decode_lineage(tagged_group(&root[1], "lineage", "lineage")?)?;
+    let model_id = decode_referent_id(tagged_group(&root[2], "model", "model")?)?;
 
-    let model_group = tagged_group(&root[1], "model", "model")?;
-    let model = decode_model_id(model_group)?;
-
-    let type_values = array(tagged_group(&root[2], "types", "types")?, "types body")?;
-    let mut types = BTreeMap::new();
-    for value in type_values {
-        let typ = decode_type(value)?;
-        if types.insert(typ.id().clone(), typ).is_some() {
-            return Err(KernelError::new("duplicate type identity"));
-        }
+    let mut referents = BTreeMap::new();
+    for item in group_array(&root[3], "referents")? {
+        let referent = decode_referent(item)?;
+        insert(&mut referents, referent.id().clone(), referent, "referent")?;
     }
-
-    let entity_values = array(
-        tagged_group(&root[3], "entities", "entities")?,
-        "entities body",
-    )?;
-    let mut entities = BTreeSet::new();
-    for value in entity_values {
-        if !entities.insert(decode_entity(value)?) {
-            return Err(KernelError::new("duplicate entity identity"));
-        }
+    let mut contents = BTreeMap::new();
+    for item in group_array(&root[4], "relational-contents")? {
+        let content = decode_content(item)?;
+        insert(
+            &mut contents,
+            content.id().clone(),
+            content,
+            "relational content",
+        )?;
     }
-
-    let relation_values = array(
-        tagged_group(&root[4], "relations", "relations")?,
-        "relations body",
-    )?;
-    let mut relations = BTreeMap::new();
-    for value in relation_values {
-        let relation = decode_relation(value)?;
-        if relations.insert(relation.id().clone(), relation).is_some() {
-            return Err(KernelError::new("duplicate relation identity"));
-        }
+    let mut shapes = BTreeMap::new();
+    for item in group_array(&root[5], "relation-shapes")? {
+        let shape = decode_shape(item)?;
+        insert(
+            &mut shapes,
+            shape.referent().clone(),
+            shape,
+            "relation shape",
+        )?;
     }
-
-    let assertion_values = array(
-        tagged_group(&root[5], "assertions", "assertions")?,
-        "assertions body",
-    )?;
-    let assertions = assertion_values
+    let occurrences = group_array(&root[6], "occurrences")?
         .iter()
-        .map(|value| decode_clause(value, "assertion"))
+        .map(decode_occurrence)
         .collect::<Result<Vec<_>>>()?;
-
-    let law_values = array(tagged_group(&root[6], "laws", "laws")?, "laws body")?;
-    let laws = law_values
+    let definitions = group_array(&root[7], "definitions")?
+        .iter()
+        .map(decode_definition)
+        .collect::<Result<Vec<_>>>()?;
+    let rules = group_array(&root[8], "derivation-rules")?
+        .iter()
+        .map(decode_rule)
+        .collect::<Result<Vec<_>>>()?;
+    let laws = group_array(&root[9], "universal-laws")?
         .iter()
         .map(decode_law)
         .collect::<Result<Vec<_>>>()?;
-
-    let model = Model::new(model, types, entities, relations, assertions, laws)?;
-    if semantic_payload(&model) != json(value) {
-        return Err(KernelError::new("semantic payload is not canonical"));
-    }
-    Ok(model)
-}
-
-fn decode_type(value: &Json) -> Result<Type> {
-    let item = list(value, 2, "type")?;
-    require_string(&item[0], "type", "type tag")?;
-    Ok(Type::new(decode_type_id(&item[1])?))
-}
-
-fn decode_entity(value: &Json) -> Result<EntityId> {
-    let item = list(value, 4, "entity")?;
-    require_string(&item[0], "entity", "entity tag")?;
-    EntityId::new(
-        decode_model_id(&item[1])?,
-        Name::entity_local(string(&item[2], "entity local")?.to_owned())?,
-        decode_type_id(&item[3])?,
-    )
-}
-
-fn decode_relation(value: &Json) -> Result<Relation> {
-    let item = list(value, 5, "relation")?;
-    require_string(&item[0], "relation", "relation tag")?;
-    let identity = decode_relation_id(&item[1])?;
-
-    let role_values = array(
-        tagged_group(&item[2], "roles", "relation roles")?,
-        "relation roles body",
+    let invariants = group_array(&root[10], "invariants")?
+        .iter()
+        .map(decode_invariant)
+        .collect::<Result<Vec<_>>>()?;
+    let goals = group_array(&root[11], "goals")?
+        .iter()
+        .map(decode_goal)
+        .collect::<Result<Vec<_>>>()?;
+    let transitions = group_array(&root[12], "transitions")?
+        .iter()
+        .map(decode_transition)
+        .collect::<Result<Vec<_>>>()?;
+    let judgments = group_array(&root[13], "judgments")?
+        .iter()
+        .map(decode_judgment)
+        .collect::<Result<Vec<_>>>()?;
+    let model = Model::with_distinctions(
+        model_id,
+        referents,
+        contents,
+        shapes,
+        occurrences,
+        definitions,
+        rules,
+        laws,
+        invariants,
+        goals,
+        transitions,
+        judgments,
     )?;
-    let mut roles = BTreeMap::new();
-    for value in role_values {
-        let role = decode_role(value)?;
-        if roles.insert(role.id().clone(), role).is_some() {
-            return Err(KernelError::new("duplicate relation role"));
+    Ok((lineage, model))
+}
+
+fn decode_lineage(value: &Json) -> Result<RevisionLineage> {
+    let item = array(value, "Revision lineage")?;
+    let tag = item
+        .first()
+        .ok_or_else(|| KernelError::new("invalid Revision lineage"))?;
+    match string(tag, "Revision lineage tag")? {
+        "root" => {
+            list(value, 1, "root lineage")?;
+            Ok(RevisionLineage::Root)
         }
-    }
-
-    let shape_values = array(
-        tagged_group(&item[3], "shape", "relation shape")?,
-        "relation shape body",
-    )?;
-    let mut parts = Vec::new();
-    for value in shape_values {
-        let part = array(value, "sentence shape part")?;
-        let tag = part
-            .first()
-            .ok_or_else(|| KernelError::new("invalid sentence shape part"))?;
-        match string(tag, "sentence shape part tag")? {
-            "literal" => {
-                let item = list(value, 2, "literal shape part")?;
-                parts.push(InlineSentencePart::Literal(
-                    string(&item[1], "sentence literal")?.to_owned(),
+        "successor" => {
+            let item = list(value, 3, "successor lineage")?;
+            let predecessor = decode_revision_id(string(&item[1], "predecessor identity")?)?;
+            let delta = decode_delta(&item[2], predecessor.clone())?;
+            if delta.base() != &predecessor {
+                return Err(KernelError::new(
+                    "lineage predecessor and Delta base differ",
                 ));
             }
-            "role" => {
-                let item = list(value, 2, "role shape part")?;
-                let id = decode_role_id(&item[1])?;
-                let role = roles
-                    .get(&id)
-                    .ok_or_else(|| KernelError::new("sentence shape names an unknown role"))?;
-                parts.push(InlineSentencePart::Role(role.clone()));
-            }
-            _ => return Err(KernelError::new("invalid sentence shape part tag")),
+            Ok(RevisionLineage::Successor(delta))
         }
+        _ => Err(KernelError::new("invalid Revision lineage tag")),
     }
-    let shape = SentenceShape::new(parts)?;
+}
 
-    let mode_values = array(
-        tagged_group(&item[4], "modes", "relation modes")?,
-        "relation modes body",
-    )?;
-    let modes = mode_values
+fn decode_delta(value: &Json, base: RevisionId) -> Result<Delta> {
+    let item = list(value, 3, "Delta")?;
+    require_string(&item[0], "delta", "Delta tag")?;
+    let admissions = tagged_array(&item[1], "admit", "Delta admissions")?
         .iter()
-        .map(decode_mode)
+        .map(decode_atom)
         .collect::<Result<Vec<_>>>()?;
-    let relation = Relation::new(identity, shape, modes)?;
-    if relation.roles() != &roles {
-        return Err(KernelError::new(
-            "relation roles must exactly match its sentence shape",
-        ));
+    let withdrawals = tagged_array(&item[2], "withdraw", "Delta withdrawals")?
+        .iter()
+        .map(decode_atom)
+        .collect::<Result<Vec<_>>>()?;
+    Delta::new(base, admissions, withdrawals)
+}
+
+fn decode_atom(value: &Json) -> Result<SemanticAtom> {
+    let item = array(value, "semantic atom")?;
+    let tag = string(
+        item.first()
+            .ok_or_else(|| KernelError::new("invalid semantic atom"))?,
+        "semantic atom tag",
+    )?;
+    match tag {
+        "referent" => decode_referent(value).map(SemanticAtom::Referent),
+        "relational-content" => decode_content(value).map(SemanticAtom::RelationalContent),
+        "relation-shape" => decode_shape(value).map(SemanticAtom::RelationShape),
+        "assertion-occurrence" => decode_occurrence(value).map(SemanticAtom::AssertionOccurrence),
+        "definition" => decode_definition(value).map(SemanticAtom::Definition),
+        "derivation-rule" => decode_rule(value).map(SemanticAtom::DerivationRule),
+        "universal-law" => decode_law(value).map(SemanticAtom::UniversalLaw),
+        "invariant" => decode_invariant(value).map(SemanticAtom::Invariant),
+        "goal" => decode_goal(value).map(SemanticAtom::Goal),
+        "transition" => decode_transition(value).map(SemanticAtom::Transition),
+        "judgment" => decode_judgment(value).map(SemanticAtom::Judgment),
+        _ => Err(KernelError::new("invalid semantic atom tag")),
     }
-    Ok(relation)
+}
+
+fn decode_referent(value: &Json) -> Result<Referent> {
+    let item = list(value, 2, "referent")?;
+    require_string(&item[0], "referent", "referent tag")?;
+    Ok(Referent::new(decode_referent_id(&item[1])?))
+}
+
+fn decode_content(value: &Json) -> Result<RelationalContent> {
+    let item = list(value, 4, "relational content")?;
+    require_string(&item[0], "relational-content", "relational content tag")?;
+    let claimed = decode_content_id(&item[1])?;
+    let relation = decode_referent_id(&item[2])?;
+    let mut roles = BTreeMap::new();
+    for value in tagged_array(&item[3], "roles", "content roles")? {
+        let pair = list(value, 2, "content role")?;
+        insert(
+            &mut roles,
+            decode_role_id(&pair[0])?,
+            decode_term(&pair[1])?,
+            "content role",
+        )?;
+    }
+    let content = RelationalContent::new(relation, roles)?;
+    if content.id() != &claimed {
+        return Err(KernelError::new("relational content identity mismatch"));
+    }
+    Ok(content)
+}
+
+fn decode_shape(value: &Json) -> Result<RelationShape> {
+    let item = list(value, 4, "relation shape")?;
+    require_string(&item[0], "relation-shape", "relation shape tag")?;
+    let relation = decode_referent_id(&item[1])?;
+    let mut roles = BTreeMap::new();
+    for value in tagged_array(&item[2], "roles", "shape roles")? {
+        let role = decode_role(value)?;
+        insert(&mut roles, role.id().clone(), role, "shape role")?;
+    }
+    let lookup = tagged_array(&item[3], "lookup", "lookup contracts")?
+        .iter()
+        .map(decode_lookup)
+        .collect::<Result<Vec<_>>>()?;
+    RelationShape::new(relation, roles, lookup)
 }
 
 fn decode_role(value: &Json) -> Result<Role> {
     let item = list(value, 3, "role")?;
     require_string(&item[0], "role", "role tag")?;
-    Ok(Role::new(
-        decode_role_id(&item[1])?,
-        decode_type_id(&item[2])?,
-    ))
+    let predicates = tagged_array(&item[2], "admissibility", "role admissibility")?
+        .iter()
+        .map(decode_predicate)
+        .collect::<Result<Vec<_>>>()?;
+    Role::new(decode_role_id(&item[1])?, predicates)
 }
 
-fn decode_mode(value: &Json) -> Result<Mode> {
-    let item = list(value, 4, "mode")?;
-    require_string(&item[0], "mode", "mode tag")?;
-    let known = decode_role_id_list(tagged_group(&item[1], "known", "mode known")?)?;
-    let sought = decode_role_id_list(tagged_group(&item[2], "sought", "mode sought")?)?;
+fn decode_predicate(value: &Json) -> Result<RolePredicate> {
+    let item = list(value, 4, "role predicate")?;
+    require_string(&item[0], "predicate", "role predicate tag")?;
+    let relation = decode_referent_id(&item[1])?;
+    let candidate = decode_role_id(&item[2])?;
+    let mut fixed = BTreeMap::new();
+    for value in tagged_array(&item[3], "fixed", "fixed predicate roles")? {
+        let pair = list(value, 2, "fixed predicate role")?;
+        insert(
+            &mut fixed,
+            decode_role_id(&pair[0])?,
+            decode_referent_id(&pair[1])?,
+            "fixed predicate role",
+        )?;
+    }
+    RolePredicate::new(relation, candidate, fixed)
+}
+
+fn decode_lookup(value: &Json) -> Result<LookupMode> {
+    let item = list(value, 4, "lookup contract")?;
+    require_string(&item[0], "lookup", "lookup tag")?;
+    let known = decode_role_list(tagged_group(&item[1], "known", "known roles")?)?;
+    let sought = decode_role_list(tagged_group(&item[2], "sought", "sought roles")?)?;
     let cardinality = match string(
-        tagged_group(&item[3], "cardinality", "mode cardinality")?,
-        "mode cardinality value",
+        tagged_group(&item[3], "cardinality", "cardinality")?,
+        "cardinality value",
     )? {
         "one" => Cardinality::One,
         "maybe" => Cardinality::Maybe,
         "some" => Cardinality::Some,
         "many" => Cardinality::Many,
-        _ => return Err(KernelError::new("invalid mode cardinality")),
+        _ => return Err(KernelError::new("invalid lookup cardinality")),
     };
-    Mode::finite(known, sought, cardinality)
+    LookupMode::finite(known, sought, cardinality)
 }
 
-fn decode_role_id_list(value: &Json) -> Result<Vec<RoleId>> {
-    array(value, "role identity list")?
+fn decode_occurrence(value: &Json) -> Result<AssertionOccurrence> {
+    let item = list(value, 5, "assertion occurrence")?;
+    require_string(&item[0], "assertion-occurrence", "assertion occurrence tag")?;
+    Ok(AssertionOccurrence::new(
+        decode_referent_id(&item[1])?,
+        decode_content_id(&item[2])?,
+        decode_referent_id(tagged_group(&item[3], "source", "occurrence source")?)?,
+        decode_referent_id(tagged_group(&item[4], "scope", "occurrence scope")?)?,
+    ))
+}
+
+fn decode_definition(value: &Json) -> Result<Definition> {
+    let item = list(value, 3, "definition")?;
+    require_string(&item[0], "definition", "definition tag")?;
+    Ok(Definition::new(
+        decode_referent_id(&item[1])?,
+        decode_term(&item[2])?,
+    ))
+}
+
+fn decode_rule(value: &Json) -> Result<DerivationRule> {
+    let item = list(value, 6, "derivation rule")?;
+    require_string(&item[0], "derivation-rule", "derivation rule tag")?;
+    DerivationRule::new(
+        decode_referent_id(&item[1])?,
+        decode_referent_id(tagged_group(&item[2], "scope", "rule scope")?)?,
+        decode_referent_id(tagged_group(&item[3], "authority", "rule authority")?)?,
+        decode_pattern(tagged_group(&item[4], "premises", "rule premises")?)?,
+        decode_pattern(tagged_group(&item[5], "conclusion", "rule conclusion")?)?,
+    )
+}
+
+fn decode_law(value: &Json) -> Result<UniversalLaw> {
+    let item = list(value, 4, "universal law")?;
+    require_string(&item[0], "universal-law", "universal law tag")?;
+    Ok(UniversalLaw::new(
+        decode_referent_id(&item[1])?,
+        decode_referent_id(tagged_group(&item[2], "scope", "law scope")?)?,
+        decode_pattern(tagged_group(&item[3], "generalized", "law pattern")?)?,
+    ))
+}
+
+fn decode_invariant(value: &Json) -> Result<Invariant> {
+    let item = list(value, 6, "invariant")?;
+    require_string(&item[0], "invariant", "invariant tag")?;
+    let admission = match string(
+        tagged_group(&item[5], "admission", "invariant admission")?,
+        "invariant admission value",
+    )? {
+        "reject-on-match" => InvariantAdmission::RejectOnMatch,
+        "require-match" => InvariantAdmission::RequireMatch,
+        _ => return Err(KernelError::new("invalid invariant admission behavior")),
+    };
+    Ok(Invariant::new(
+        decode_referent_id(&item[1])?,
+        decode_referent_id(tagged_group(&item[2], "scope", "invariant scope")?)?,
+        decode_referent_id(tagged_group(&item[3], "policy", "invariant policy")?)?,
+        decode_pattern(tagged_group(&item[4], "condition", "invariant condition")?)?,
+        admission,
+    ))
+}
+
+fn decode_goal(value: &Json) -> Result<Goal> {
+    let item = list(value, 4, "goal")?;
+    require_string(&item[0], "goal", "goal tag")?;
+    Ok(Goal::new(
+        decode_referent_id(&item[1])?,
+        decode_referent_id(tagged_group(&item[2], "context", "goal context")?)?,
+        decode_pattern(tagged_group(&item[3], "desired", "goal pattern")?)?,
+    ))
+}
+
+fn decode_pattern(value: &Json) -> Result<Pattern> {
+    let item = list(value, 2, "pattern")?;
+    require_string(&item[0], "pattern", "pattern tag")?;
+    Pattern::new(decode_content_list(&item[1])?)
+}
+
+fn decode_transition(value: &Json) -> Result<Transition> {
+    let item = list(value, 4, "transition")?;
+    require_string(&item[0], "transition", "transition tag")?;
+    Transition::new(
+        decode_referent_id(&item[1])?,
+        decode_content_id(tagged_group(&item[2], "from", "transition source")?)?,
+        decode_content_id(tagged_group(&item[3], "to", "transition destination")?)?,
+    )
+}
+
+fn decode_judgment(value: &Json) -> Result<Judgment> {
+    let item = list(value, 7, "judgment")?;
+    require_string(&item[0], "judgment", "judgment tag")?;
+    let target_value = tagged_group(&item[4], "target", "judgment target")?;
+    let target_item = list(target_value, 2, "judgment target value")?;
+    let target = match string(&target_item[0], "judgment target tag")? {
+        "content" => JudgmentTarget::Content(decode_content_id(&target_item[1])?),
+        "occurrence" => JudgmentTarget::Occurrence(decode_referent_id(&target_item[1])?),
+        _ => return Err(KernelError::new("invalid judgment target tag")),
+    };
+    let status = match string(
+        tagged_group(&item[6], "status", "judgment status")?,
+        "judgment status value",
+    )? {
+        "affirmed" => JudgmentStatus::Affirmed,
+        "disputed" => JudgmentStatus::Disputed,
+        "withdrawn" => JudgmentStatus::Withdrawn,
+        _ => return Err(KernelError::new("invalid judgment status")),
+    };
+    Ok(Judgment::new(
+        decode_referent_id(&item[1])?,
+        decode_referent_id(tagged_group(&item[2], "authority", "judgment authority")?)?,
+        decode_referent_id(tagged_group(&item[3], "scope", "judgment scope")?)?,
+        target,
+        decode_judgment_kind(tagged_group(&item[5], "kind", "judgment kind")?)?,
+        status,
+    ))
+}
+
+fn decode_judgment_kind(value: &Json) -> Result<JudgmentKind> {
+    let item = array(value, "judgment kind")?;
+    let tag = string(
+        item.first()
+            .ok_or_else(|| KernelError::new("invalid judgment kind"))?,
+        "judgment kind tag",
+    )?;
+    match tag {
+        "declared" => {
+            list(value, 1, "declared judgment")?;
+            Ok(JudgmentKind::Declared)
+        }
+        "derived" => {
+            let item = list(value, 3, "derived judgment")?;
+            Ok(JudgmentKind::Derived {
+                rule: decode_referent_id(&item[1])?,
+                premises: decode_content_list(&item[2])?,
+            })
+        }
+        "observed" => {
+            let item = list(value, 2, "observed judgment")?;
+            Ok(JudgmentKind::Observed {
+                evidence: decode_referent_id(&item[1])?,
+            })
+        }
+        "admitted" | "rejected" => {
+            let item = list(value, 3, "admission judgment")?;
+            let policy = decode_referent_id(&item[1])?;
+            let basis = array(&item[2], "judgment basis")?
+                .iter()
+                .map(decode_referent_id)
+                .collect::<Result<Vec<_>>>()?;
+            if tag == "admitted" {
+                Ok(JudgmentKind::Admitted { policy, basis })
+            } else {
+                Ok(JudgmentKind::Rejected { policy, basis })
+            }
+        }
+        "superseded" => {
+            let item = list(value, 2, "superseded judgment")?;
+            Ok(JudgmentKind::Superseded {
+                by: decode_referent_id(&item[1])?,
+            })
+        }
+        _ => Err(KernelError::new("invalid judgment kind tag")),
+    }
+}
+
+fn decode_term(value: &Json) -> Result<Term> {
+    let item = list(value, 2, "term")?;
+    match string(&item[0], "term tag")? {
+        "referent" => Ok(Term::referent(decode_referent_id(&item[1])?)),
+        "pattern" => Ok(Term::pattern(PatternId::new(
+            string(&item[1], "pattern identity")?.to_owned(),
+        )?)),
+        "application" => Ok(Term::application(decode_content_id(&item[1])?)),
+        _ => Err(KernelError::new("invalid term tag")),
+    }
+}
+
+fn validate_lineage_snapshot(lineage: &RevisionLineage, model: &Model) -> Result<()> {
+    let RevisionLineage::Successor(delta) = lineage else {
+        return Ok(());
+    };
+    let atoms = model.atoms();
+    if delta.admissions().iter().any(|atom| !atoms.contains(atom))
+        || delta.withdrawals().iter().any(|atom| atoms.contains(atom))
+    {
+        return Err(KernelError::new(
+            "successor snapshot contradicts its signed Delta",
+        ));
+    }
+    Ok(())
+}
+
+fn group_array<'a>(value: &'a Json, tag: &str) -> Result<&'a [Json]> {
+    tagged_array(value, tag, tag)
+}
+fn tagged_array<'a>(value: &'a Json, tag: &str, where_: &str) -> Result<&'a [Json]> {
+    array(tagged_group(value, tag, where_)?, where_)
+}
+fn tagged_group<'a>(value: &'a Json, tag: &str, where_: &str) -> Result<&'a Json> {
+    let item = list(value, 2, where_)?;
+    require_string(&item[0], tag, &format!("{where_} tag"))?;
+    Ok(&item[1])
+}
+fn decode_role_list(value: &Json) -> Result<Vec<RoleId>> {
+    array(value, "role list")?
         .iter()
         .map(decode_role_id)
         .collect()
 }
-
-fn decode_law(value: &Json) -> Result<Law> {
-    let item = list(value, 4, "law")?;
-    require_string(&item[0], "law", "law tag")?;
-    let premises = array(
-        tagged_group(&item[2], "premises", "law premises")?,
-        "law premises body",
-    )?
-    .iter()
-    .map(|value| decode_clause(value, "premise"))
-    .collect::<Result<Vec<_>>>()?;
-    let conclusion = decode_clause(
-        tagged_group(&item[3], "conclusion", "law conclusion")?,
-        "conclusion",
-    )?;
-    Law::new(decode_law_id(&item[1])?, premises, conclusion)
+fn decode_content_list(value: &Json) -> Result<Vec<ContentId>> {
+    array(value, "content identity list")?
+        .iter()
+        .map(decode_content_id)
+        .collect()
 }
-
-fn decode_clause(value: &Json, expected_kind: &str) -> Result<Clause> {
-    let item = list(value, 3, "clause")?;
-    require_string(&item[0], expected_kind, "clause tag")?;
-    let relation = decode_relation_id(&item[1])?;
-    let role_values = array(
-        tagged_group(&item[2], "roles", "clause roles")?,
-        "clause roles body",
-    )?;
-    let mut roles = BTreeMap::new();
-    for value in role_values {
-        let pair = list(value, 2, "clause role")?;
-        let role = decode_role_id(&pair[0])?;
-        if roles.insert(role, decode_term(&pair[1])?).is_some() {
-            return Err(KernelError::new("duplicate clause role"));
-        }
-    }
-    Clause::new(relation, roles)
+fn decode_referent_id(value: &Json) -> Result<ReferentId> {
+    ReferentId::new(string(value, "referent identity")?.to_owned())
 }
-
-fn decode_term(value: &Json) -> Result<Term> {
-    let item = array(value, "term")?;
-    let tag = item
-        .first()
-        .ok_or_else(|| KernelError::new("invalid term"))?;
-    match string(tag, "term tag")? {
-        "entity" => Ok(Term::entity(decode_entity(value)?)),
-        "value" => {
-            let item = list(value, 3, "value term")?;
-            Term::value(
-                decode_type_id(&item[1])?,
-                string(&item[2], "canonical value")?.to_owned(),
-            )
-        }
-        "variable" => {
-            let item = list(value, 3, "variable term")?;
-            Ok(Term::variable(
-                decode_variable_id(&item[1])?,
-                decode_type_id(&item[2])?,
-            ))
-        }
-        _ => Err(KernelError::new("invalid term kind")),
-    }
+fn decode_content_id(value: &Json) -> Result<ContentId> {
+    ContentId::new(string(value, "content identity")?.to_owned())
 }
-
-fn tagged_group<'a>(value: &'a Json, expected: &str, where_: &str) -> Result<&'a Json> {
-    let item = list(value, 2, where_)?;
-    require_string(&item[0], expected, &format!("{where_} tag"))?;
-    Ok(&item[1])
-}
-
-fn decode_name(value: &Json, where_: &str) -> Result<Name> {
-    Name::new(string(value, where_)?.to_owned())
-}
-
-fn decode_type_id(value: &Json) -> Result<TypeId> {
-    TypeId::new(decode_name(value, "type identity")?)
-}
-
-fn decode_model_id(value: &Json) -> Result<ModelId> {
-    ModelId::new(decode_name(value, "model identity")?)
-}
-
-fn decode_relation_id(value: &Json) -> Result<RelationId> {
-    RelationId::new(decode_name(value, "relation identity")?)
-}
-
-fn decode_law_id(value: &Json) -> Result<LawId> {
-    LawId::new(decode_name(value, "law identity")?)
-}
-
 fn decode_role_id(value: &Json) -> Result<RoleId> {
-    RoleId::new(decode_name(value, "role identity")?)
+    RoleId::new(string(value, "role identity")?.to_owned())
 }
-
-fn decode_variable_id(value: &Json) -> Result<VariableId> {
-    VariableId::new(decode_name(value, "variable identity")?)
-}
-
 fn decode_revision_id(value: &str) -> Result<RevisionId> {
     let hex = value
         .strip_prefix("rev-sha256-")
-        .ok_or_else(|| KernelError::new("invalid revision identity"))?;
+        .ok_or_else(|| KernelError::new("invalid Revision identity"))?;
     if hex.len() != 64
         || !hex
             .bytes()
             .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
     {
-        return Err(KernelError::new("invalid revision identity"));
+        return Err(KernelError::new("invalid Revision identity"));
     }
-    let mut digest = [0u8; 32];
+    let mut digest = [0; 32];
     for (index, byte) in digest.iter_mut().enumerate() {
         *byte = u8::from_str_radix(&hex[index * 2..index * 2 + 2], 16)
-            .map_err(|_| KernelError::new("invalid revision identity"))?;
+            .map_err(|_| KernelError::new("invalid Revision identity"))?;
     }
     Ok(RevisionId::from_digest(digest))
+}
+fn insert<K: Ord, V>(map: &mut BTreeMap<K, V>, key: K, value: V, where_: &str) -> Result<()> {
+    if map.insert(key, value).is_some() {
+        Err(KernelError::new(format!("duplicate {where_}")))
+    } else {
+        Ok(())
+    }
 }

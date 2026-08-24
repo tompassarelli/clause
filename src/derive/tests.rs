@@ -1,42 +1,44 @@
 use super::{Limits, SupportLimits, SupportStatus, Witness, saturate, support_frontier};
-use crate::kernel::{
-    Cardinality, Clause, InlineSentencePart, Law, LawId, Mode, Model, ModelId, Name, Relation,
-    RelationId, Revision, RevisionId, Role, RoleId, SentenceShape, Term, Type, TypeId, VariableId,
+use crate::{
+    kernel::{
+        AssertionOccurrence, Cardinality, DerivationRule, Judgment, JudgmentKind, JudgmentStatus,
+        JudgmentTarget, LookupMode, Model, Pattern, PatternId, Referent, ReferentId, RelationShape,
+        RelationalContent, Revision, Role, RoleId, Term,
+    },
+    wire,
 };
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
-fn name(value: &str) -> Name {
-    Name::new(value.to_owned()).unwrap()
+fn referent_id(value: &str) -> ReferentId {
+    ReferentId::from_digest(wire::sha256_digest(value.as_bytes()))
 }
-fn id(value: &str) -> TypeId {
-    TypeId::new(name(value)).unwrap()
+fn role_id(value: &str) -> RoleId {
+    RoleId::from_digest(wire::sha256_digest(value.as_bytes()))
 }
-fn relation_id(value: &str) -> RelationId {
-    RelationId::new(name(value)).unwrap()
+fn pattern_id(value: &str) -> PatternId {
+    PatternId::from_digest(wire::sha256_digest(value.as_bytes()))
 }
-fn role(value: &str, typ: &TypeId) -> Role {
-    Role::new(RoleId::new(name(value)).unwrap(), typ.clone())
+fn role(value: &str) -> Role {
+    Role::new(role_id(value), Vec::new()).unwrap()
 }
-fn variable(value: &str, typ: &TypeId) -> Term {
-    Term::variable(VariableId::new(name(value)).unwrap(), typ.clone())
+fn variable(value: &str) -> Term {
+    Term::pattern(pattern_id(value))
 }
-fn text(value: &str, typ: &TypeId) -> Term {
-    Term::value(typ.clone(), value.to_owned()).unwrap()
+fn referent(value: &str) -> Term {
+    Term::referent(referent_id(value))
 }
 
-fn relation(identity: &RelationId, typ: &TypeId) -> Relation {
-    let from = role("from", typ);
-    let to = role("to", typ);
-    Relation::new(
+fn relation(identity: &ReferentId) -> RelationShape {
+    let from = role("from");
+    let to = role("to");
+    RelationShape::new(
         identity.clone(),
-        SentenceShape::new(vec![
-            InlineSentencePart::Role(from.clone()),
-            InlineSentencePart::Literal("reaches".to_owned()),
-            InlineSentencePart::Role(to.clone()),
-        ])
-        .unwrap(),
+        BTreeMap::from([
+            (from.id().clone(), from.clone()),
+            (to.id().clone(), to.clone()),
+        ]),
         vec![
-            Mode::finite(
+            LookupMode::finite(
                 vec![from.id().clone()],
                 vec![to.id().clone()],
                 Cardinality::Many,
@@ -47,67 +49,164 @@ fn relation(identity: &RelationId, typ: &TypeId) -> Relation {
     .unwrap()
 }
 
-fn clause(identity: &RelationId, from: Term, to: Term) -> Clause {
-    Clause::new(
+fn clause(identity: &ReferentId, from: Term, to: Term) -> RelationalContent {
+    RelationalContent::new(
         identity.clone(),
-        BTreeMap::from([
-            (RoleId::new(name("from")).unwrap(), from),
-            (RoleId::new(name("to")).unwrap(), to),
-        ]),
+        BTreeMap::from([(role_id("from"), from), (role_id("to"), to)]),
     )
     .unwrap()
 }
 
-fn revision(assertions: Vec<Clause>, laws: Vec<Law>) -> Revision {
-    let text_type = id("Text");
-    let reaches = relation_id("map/reaches");
-    let links = relation_id("map/links");
-    let model = Model::new(
-        ModelId::new(name("map")).unwrap(),
-        BTreeMap::from([(text_type.clone(), Type::new(text_type.clone()))]),
-        BTreeSet::new(),
-        BTreeMap::from([
-            (reaches.clone(), relation(&reaches, &text_type)),
-            (links.clone(), relation(&links, &text_type)),
-        ]),
-        assertions,
-        laws,
+fn rule(
+    identity: &str,
+    premises: Vec<RelationalContent>,
+    conclusion: RelationalContent,
+) -> (DerivationRule, Vec<RelationalContent>) {
+    let rule = DerivationRule::new(
+        referent_id(identity),
+        referent_id("map/scope"),
+        referent_id("map/authority"),
+        Pattern::new(premises.iter().map(|item| item.id().clone()).collect()).unwrap(),
+        Pattern::new(vec![conclusion.id().clone()]).unwrap(),
     )
     .unwrap();
-    Revision::reloaded(RevisionId::from_digest([3; 32]), model)
+    let mut contents = premises;
+    contents.push(conclusion);
+    (rule, contents)
+}
+
+fn declare(referents: &mut BTreeMap<ReferentId, Referent>, id: ReferentId) {
+    referents.insert(id.clone(), Referent::new(id));
+}
+
+fn declare_content_referents(
+    referents: &mut BTreeMap<ReferentId, Referent>,
+    content: &RelationalContent,
+) {
+    declare(referents, content.relation().clone());
+    for term in content.roles().values() {
+        if let Term::Referent(id) = term {
+            declare(referents, id.clone());
+        }
+    }
+}
+
+fn revision(
+    assertions: Vec<RelationalContent>,
+    rule_fixtures: Vec<(DerivationRule, Vec<RelationalContent>)>,
+) -> Revision {
+    let model_id = referent_id("map");
+    let reaches = referent_id("map/reaches");
+    let links = referent_id("map/links");
+    let source = referent_id("map/source");
+    let scope = referent_id("map/scope");
+    let policy = referent_id("map/admission-policy");
+    let mut referents = BTreeMap::new();
+    for id in [
+        model_id.clone(),
+        reaches.clone(),
+        links.clone(),
+        source.clone(),
+        scope.clone(),
+        policy.clone(),
+        referent_id("map/authority"),
+    ] {
+        declare(&mut referents, id);
+    }
+    for value in [
+        "Alpha", "Beta", "First", "North", "One", "Second", "Store", "Two", "Zulu",
+    ] {
+        declare(&mut referents, referent_id(value));
+    }
+    let mut relational_contents = BTreeMap::new();
+    for content in &assertions {
+        declare_content_referents(&mut referents, content);
+        relational_contents.insert(content.id().clone(), content.clone());
+    }
+    let mut rules = Vec::new();
+    for (rule, contents) in rule_fixtures {
+        declare(&mut referents, rule.id().clone());
+        declare(&mut referents, rule.scope().clone());
+        declare(&mut referents, rule.authority().clone());
+        for content in contents {
+            declare_content_referents(&mut referents, &content);
+            relational_contents.insert(content.id().clone(), content);
+        }
+        rules.push(rule);
+    }
+    let mut occurrences = Vec::new();
+    let mut judgments = Vec::new();
+    for assertion in assertions {
+        let occurrence_id = referent_id(&format!(
+            "map/assertion-occurrence/{}",
+            assertion.id().as_str()
+        ));
+        let judgment_id = referent_id(&format!(
+            "map/admission-judgment/{}",
+            assertion.id().as_str()
+        ));
+        declare(&mut referents, occurrence_id.clone());
+        declare(&mut referents, judgment_id.clone());
+        occurrences.push(AssertionOccurrence::new(
+            occurrence_id.clone(),
+            assertion.id().clone(),
+            source.clone(),
+            model_id.clone(),
+        ));
+        judgments.push(Judgment::new(
+            judgment_id,
+            model_id.clone(),
+            model_id.clone(),
+            JudgmentTarget::Occurrence(occurrence_id),
+            JudgmentKind::Admitted {
+                policy: policy.clone(),
+                basis: Vec::new(),
+            },
+            JudgmentStatus::Affirmed,
+        ));
+    }
+    let model = Model::with_distinctions(
+        model_id,
+        referents,
+        relational_contents,
+        BTreeMap::from([
+            (reaches.clone(), relation(&reaches)),
+            (links.clone(), relation(&links)),
+        ]),
+        occurrences,
+        Vec::new(),
+        rules,
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        judgments,
+    )
+    .unwrap();
+    wire::admit(model)
 }
 
 #[test]
-fn typed_multi_round_closure_selects_canonical_witnesses() {
-    let text_type = id("Text");
-    let reaches = relation_id("map/reaches");
-    let links = relation_id("map/links");
-    let subject = variable("subject", &text_type);
-    let destination = variable("destination", &text_type);
-    let copy = Law::new(
-        LawId::new(name("map/copy")).unwrap(),
+fn multi_round_closure_selects_canonical_referent_witnesses() {
+    let reaches = referent_id("map/reaches");
+    let links = referent_id("map/links");
+    let subject = variable("subject");
+    let destination = variable("destination");
+    let copy = rule(
+        "map/copy",
         vec![clause(&links, subject.clone(), destination.clone())],
         clause(&reaches, subject, destination),
-    )
-    .unwrap();
+    );
     let closure = saturate(
         &revision(
-            vec![clause(
-                &links,
-                text("North", &text_type),
-                text("Store", &text_type),
-            )],
+            vec![clause(&links, referent("North"), referent("Store"))],
             vec![copy],
         ),
         Limits::new(10, 10, 100),
     )
     .unwrap();
-    let derived = clause(
-        &reaches,
-        text("North", &text_type),
-        text("Store", &text_type),
-    );
-    assert_eq!(closure.assertions().len(), 2);
+    let derived = clause(&reaches, referent("North"), referent("Store"));
+    assert_eq!(closure.contents().len(), 2);
     assert_eq!(closure.proof(&derived).unwrap().generation(), 1);
     assert!(matches!(
         closure.proof(&derived).unwrap().witness(),
@@ -116,31 +215,24 @@ fn typed_multi_round_closure_selects_canonical_witnesses() {
 }
 
 #[test]
-fn reversed_law_source_order_admits_the_same_model_and_closure() {
-    let text_type = id("Text");
-    let reaches = relation_id("map/reaches");
-    let links = relation_id("map/links");
-    let subject = variable("subject", &text_type);
-    let destination = variable("destination", &text_type);
-    let law_a = Law::new(
-        LawId::new(name("map/a-copy")).unwrap(),
+fn reversed_rule_source_order_admits_the_same_model_and_closure() {
+    let reaches = referent_id("map/reaches");
+    let links = referent_id("map/links");
+    let subject = variable("subject");
+    let destination = variable("destination");
+    let rule_a = rule(
+        "map/a-copy",
         vec![clause(&links, subject.clone(), destination.clone())],
         clause(&reaches, subject.clone(), destination.clone()),
-    )
-    .unwrap();
-    let law_z = Law::new(
-        LawId::new(name("map/z-copy")).unwrap(),
+    );
+    let rule_z = rule(
+        "map/z-copy",
         vec![clause(&links, subject.clone(), destination.clone())],
         clause(&reaches, subject, destination),
-    )
-    .unwrap();
-    let assertions = vec![clause(
-        &links,
-        text("North", &text_type),
-        text("Store", &text_type),
-    )];
-    let forward = revision(assertions.clone(), vec![law_a.clone(), law_z.clone()]);
-    let reversed = revision(assertions, vec![law_z, law_a]);
+    );
+    let assertions = vec![clause(&links, referent("North"), referent("Store"))];
+    let forward = revision(assertions.clone(), vec![rule_a.clone(), rule_z.clone()]);
+    let reversed = revision(assertions, vec![rule_z, rule_a]);
     assert_eq!(forward.model(), reversed.model());
     assert_eq!(
         saturate(&forward, Limits::new(10, 10, 100)).unwrap(),
@@ -149,30 +241,20 @@ fn reversed_law_source_order_admits_the_same_model_and_closure() {
 }
 
 #[test]
-fn support_frontier_remains_minimal_and_typed() {
-    let text_type = id("Text");
-    let reaches = relation_id("map/reaches");
-    let links = relation_id("map/links");
-    let subject = variable("subject", &text_type);
-    let destination = variable("destination", &text_type);
-    let copy = Law::new(
-        LawId::new(name("map/copy")).unwrap(),
+fn support_frontier_remains_minimal_for_referents() {
+    let reaches = referent_id("map/reaches");
+    let links = referent_id("map/links");
+    let subject = variable("subject");
+    let destination = variable("destination");
+    let copy = rule(
+        "map/copy",
         vec![clause(&links, subject.clone(), destination.clone())],
         clause(&reaches, subject, destination),
-    )
-    .unwrap();
-    let target = clause(
-        &reaches,
-        text("North", &text_type),
-        text("Store", &text_type),
     );
+    let target = clause(&reaches, referent("North"), referent("Store"));
     let frontier = support_frontier(
         &revision(
-            vec![clause(
-                &links,
-                text("North", &text_type),
-                text("Store", &text_type),
-            )],
+            vec![clause(&links, referent("North"), referent("Store"))],
             vec![copy],
         ),
         &target,
@@ -186,29 +268,25 @@ fn support_frontier_remains_minimal_and_typed() {
 
 #[test]
 fn support_members_follow_the_canonical_proof_path() {
-    let text_type = id("Text");
-    let reaches = relation_id("map/reaches");
-    let links = relation_id("map/links");
-    let first = clause(&links, text("Zulu", &text_type), text("First", &text_type));
-    let second = clause(
-        &links,
-        text("Alpha", &text_type),
-        text("Second", &text_type),
-    );
+    let reaches = referent_id("map/reaches");
+    let links = referent_id("map/links");
+    let first = clause(&links, referent("Zulu"), referent("First"));
+    let second = clause(&links, referent("Alpha"), referent("Second"));
     assert!(second < first);
-    let target = clause(
-        &reaches,
-        text("North", &text_type),
-        text("Store", &text_type),
-    );
-    let law = Law::new(
-        LawId::new(name("map/path-order")).unwrap(),
-        vec![first.clone(), second.clone()],
+    let intermediate = clause(&reaches, referent("Zulu"), referent("Zulu"));
+    assert!(intermediate < second);
+    let target = clause(&reaches, referent("North"), referent("Store"));
+    let first_step = rule("map/path-first", vec![first.clone()], intermediate.clone());
+    let path_rule = rule(
+        "map/path-order",
+        vec![intermediate, second.clone()],
         target.clone(),
-    )
-    .unwrap();
+    );
     let frontier = support_frontier(
-        &revision(vec![second.clone(), first.clone()], vec![law]),
+        &revision(
+            vec![second.clone(), first.clone()],
+            vec![first_step, path_rule],
+        ),
         &target,
         SupportLimits::new(Limits::new(10, 10, 100), 10, 10),
     )
@@ -220,28 +298,17 @@ fn support_members_follow_the_canonical_proof_path() {
 
 #[test]
 fn incomplete_frontier_does_not_expose_a_provisional_superset() {
-    let text_type = id("Text");
-    let reaches = relation_id("map/reaches");
-    let links = relation_id("map/links");
-    let alpha = clause(&links, text("Alpha", &text_type), text("One", &text_type));
-    let beta = clause(&links, text("Beta", &text_type), text("Two", &text_type));
-    let target = clause(
-        &reaches,
-        text("North", &text_type),
-        text("Store", &text_type),
-    );
-    let wide = Law::new(
-        LawId::new(name("map/a-wide")).unwrap(),
+    let reaches = referent_id("map/reaches");
+    let links = referent_id("map/links");
+    let alpha = clause(&links, referent("Alpha"), referent("One"));
+    let beta = clause(&links, referent("Beta"), referent("Two"));
+    let target = clause(&reaches, referent("North"), referent("Store"));
+    let wide = rule(
+        "map/a-wide",
         vec![alpha.clone(), beta.clone()],
         target.clone(),
-    )
-    .unwrap();
-    let narrow = Law::new(
-        LawId::new(name("map/z-narrow")).unwrap(),
-        vec![alpha.clone()],
-        target.clone(),
-    )
-    .unwrap();
+    );
+    let narrow = rule("map/z-narrow", vec![alpha.clone()], target.clone());
     let frontier = support_frontier(
         &revision(vec![alpha, beta], vec![wide, narrow]),
         &target,
@@ -254,21 +321,12 @@ fn incomplete_frontier_does_not_expose_a_provisional_superset() {
 
 #[test]
 fn absent_target_has_a_complete_empty_frontier_without_support_budget() {
-    let text_type = id("Text");
-    let reaches = relation_id("map/reaches");
-    let links = relation_id("map/links");
-    let target = clause(
-        &reaches,
-        text("North", &text_type),
-        text("Store", &text_type),
-    );
+    let reaches = referent_id("map/reaches");
+    let links = referent_id("map/links");
+    let target = clause(&reaches, referent("North"), referent("Store"));
     let frontier = support_frontier(
         &revision(
-            vec![clause(
-                &links,
-                text("Alpha", &text_type),
-                text("Beta", &text_type),
-            )],
+            vec![clause(&links, referent("Alpha"), referent("Beta"))],
             Vec::new(),
         ),
         &target,

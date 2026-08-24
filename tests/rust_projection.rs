@@ -7,15 +7,15 @@ const SOURCE: &str = "Node: Type
 Gate: Type
 State: Type
 
-network/connects: Relation
+network/connects: RelationShape
     {gate: Gate} connects {origin: Node} to {destination: Node}
     mode gate, origin -> destination: many
 
-network/open: Relation
+network/open: RelationShape
     {gate: Gate} is {state: State}
     mode gate -> state: many
 
-network/reaches: Relation
+network/reaches: RelationShape
     {origin: Node} reaches {destination: Node}
     mode origin -> destination: many
 
@@ -43,13 +43,13 @@ scenario: Model
     AC is Active
     CD is Active
 
-scenario/direct: Law
+scenario/direct: DerivationRule
     ?origin reaches ?destination
     when:
         ?gate connects ?origin to ?destination
         ?gate is Active
 
-scenario/recursive: Law
+scenario/recursive: DerivationRule
     ?origin reaches ?destination
     when:
         ?gate connects ?origin to ?intermediate
@@ -123,7 +123,8 @@ fn six_resolved_requests_preserve_order_and_survive_source_deletion() {
         .canonical_bytes();
 
     let emitted = generated::emit_rust(&resolved).expect("sealed requests emit Rust");
-    assert!(emitted.contains("wire::reload"));
+    assert!(emitted.contains("wire::reload("));
+    assert!(emitted.contains("wire::reload_successor"));
     assert!(!emitted.contains("find all ?destination in scenario"));
     assert!(!emitted.contains("mod frontend"));
     assert!(!emitted.contains("mod elaborate"));
@@ -164,7 +165,7 @@ mod emit_rust_cli {
         time::{SystemTime, UNIX_EPOCH},
     };
 
-    const SOURCE: &str = "Item: Type\nlink: Relation\n    {left: Item} links {right: Item}\n    mode left -> right: many\ngraph: Model\n    A: Item\n    B: Item\n    A links B\ngraph/add: Revision\n    from: graph\n    admit:\n        B links A\nfind all ?right in graph:\n    A links ?right\nwhy all in graph:\n    A links B\ndiff graph -> graph/add\n";
+    const SOURCE: &str = "Item: Type\nlink: RelationShape\n    {left: Item} links {right: Item}\n    mode left -> right: many\ngraph: Model\n    A: Item\n    B: Item\n    A links B\ngraph/add: Revision\n    from: graph\n    admit:\n        B links A\nfind all ?right in graph:\n    A links ?right\nwhy all in graph:\n    A links B\ndiff graph -> graph/add\n";
 
     fn temporary(extension: &str) -> PathBuf {
         let nonce = SystemTime::now()

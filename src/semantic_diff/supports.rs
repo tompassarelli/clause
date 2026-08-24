@@ -5,7 +5,7 @@ use std::collections::BTreeSet;
 use crate::{
     delta::RevisionDiff,
     derive::{self, Closure, Support, SupportLimits},
-    kernel::{Clause, Result, Revision},
+    kernel::{RelationalContent, Result, Revision},
 };
 
 use super::SupportChange;
@@ -19,9 +19,9 @@ pub(super) fn changes(
     limits: SupportLimits,
 ) -> Result<Vec<SupportChange>> {
     base_closure
-        .assertions()
+        .contents()
         .iter()
-        .chain(successor_closure.assertions())
+        .chain(successor_closure.contents())
         .cloned()
         .collect::<BTreeSet<_>>()
         .into_iter()
@@ -40,7 +40,7 @@ pub(super) fn changes(
 fn support_change(
     base_revision: &Revision,
     successor_revision: &Revision,
-    consequence: &Clause,
+    consequence: &RelationalContent,
     limits: SupportLimits,
 ) -> Result<Option<SupportChange>> {
     let base = derive::support_frontier(base_revision, consequence, limits)?;

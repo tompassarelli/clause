@@ -43,7 +43,7 @@ pub fn parse(source: &str) -> Result<Program, ParseError> {
     let mut relations = BTreeMap::new();
     for declaration in raw_declarations
         .iter()
-        .filter(|declaration| declaration.kind == Kind::Relation)
+        .filter(|declaration| declaration.kind == Kind::RelationShape)
     {
         let spec = relation_spec(declaration)?;
         for typ in spec.roles.values() {
@@ -106,12 +106,12 @@ pub fn parse(source: &str) -> Result<Program, ParseError> {
     for raw in &raw_declarations {
         let body = match raw.kind {
             Kind::Type => Vec::new(),
-            Kind::Relation => {
+            Kind::RelationShape => {
                 let spec = relations
                     .get(&raw.subject.value)
                     .expect("relation spec exists");
                 let mut members = vec![Member::Sentence(spec.shape.clone())];
-                members.extend(spec.modes.iter().cloned().map(Member::Mode));
+                members.extend(spec.modes.iter().cloned().map(Member::LookupMode));
                 members
             }
             Kind::Model => {
@@ -188,19 +188,19 @@ pub fn parse(source: &str) -> Result<Program, ParseError> {
                         if !ground(&parsed) {
                             return Err(error(parsed.span, "model assertions must be closed"));
                         }
-                        members.push(Member::Clause(parsed));
+                        members.push(Member::RelationalContent(parsed));
                         index += 1;
                     }
                 }
                 members
             }
-            Kind::Law => {
+            Kind::DerivationRule => {
                 let layout = parse_law_layout(raw)?;
                 let model =
                     declared_model_for_law(&raw.subject.value, &entities).ok_or_else(|| {
                         error(
                             raw.subject.span,
-                            "Law name must be in a declared Model namespace",
+                            "DerivationRule name must be in a declared Model namespace",
                         )
                     })?;
                 let mut variable_types = BTreeMap::new();
@@ -222,10 +222,13 @@ pub fn parse(source: &str) -> Result<Program, ParseError> {
                 if !variables(&conclusion).is_subset(&premise_variables) {
                     return Err(error(
                         conclusion.span,
-                        "Law conclusion variables must be range-restricted by when",
+                        "DerivationRule conclusion variables must be range-restricted by when",
                     ));
                 }
-                vec![Member::Clause(conclusion), Member::When(premises)]
+                vec![
+                    Member::RelationalContent(conclusion),
+                    Member::When(premises),
+                ]
             }
             Kind::Revision | Kind::Delta => {
                 let layout = layouts
@@ -249,9 +252,7 @@ pub fn parse(source: &str) -> Result<Program, ParseError> {
                             if !ground(parsed) {
                                 return Err(error(parsed.span, "changes must be closed"));
                             }
-                            if !admitted.insert(clause_key(parsed)) {
-                                return Err(error(parsed.span, "duplicate admission"));
-                            }
+                            admitted.insert(clause_key(parsed));
                         }
                         members.push(Member::Admit(clauses));
                     }
@@ -366,7 +367,7 @@ pub fn parse(source: &str) -> Result<Program, ParseError> {
                 }
                 let mut seen = BTreeSet::new();
                 for relation in &using {
-                    reference_kind(relation, &kinds, &[Kind::Relation], "using relation")?;
+                    reference_kind(relation, &kinds, &[Kind::RelationShape], "using relation")?;
                     if !seen.insert(relation.value.clone()) {
                         return Err(error(relation.span, "using relations must be unique"));
                     }
@@ -423,11 +424,11 @@ mod tests {
     const SOURCE: &str = r#"Module: Type
 Change: Type
 
-impact/imports: Relation
+impact/imports: RelationShape
     {consumer: Module} imports {dependency: Module}
     mode consumer -> dependency: many
 
-impact/affects: Relation
+impact/affects: RelationShape
     {change: Change} affects {consumer: Module}
     mode change -> consumer: many
 
@@ -437,7 +438,7 @@ impact: Model
     compiler-change: Change
     North imports Store
 
-impact/direct: Law
+impact/direct: DerivationRule
     ?consumer imports ?dependency
     when:
         ?consumer imports ?dependency
@@ -496,7 +497,7 @@ diff impact -> impact/adopt
         let law = program
             .declarations
             .iter()
-            .find(|declaration| declaration.kind == Kind::Law)
+            .find(|declaration| declaration.kind == Kind::DerivationRule)
             .expect("law exists");
         assert!(matches!(law.body[1], Member::When(_)));
         assert!(matches!(
@@ -600,12 +601,12 @@ diff impact -> impact/adopt
     }
 
     #[test]
-    fn rejects_change_duplicates_and_overlaps() {
+    fn preserves_duplicate_admissions_but_rejects_overlaps() {
         let duplicate = SOURCE.replace(
             "        Store imports North",
             "        Store imports North\n        Store imports North",
         );
-        assert!(parse(&duplicate).is_err());
+        assert!(parse(&duplicate).is_ok());
         let overlap = SOURCE.replace(
             "    admit:\n        Store imports North",
             "    admit:\n        Store imports North\n    withdraw:\n        Store imports North",
@@ -690,7 +691,7 @@ diff impact -> impact/adopt
         let base = r#"Item: Type
 Sensor: Type
 
-pairing/pair: Relation
+pairing/pair: RelationShape
     {item: Item} paired with {sensor: Sensor}
     mode item -> sensor: many
 

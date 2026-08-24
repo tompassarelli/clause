@@ -71,9 +71,9 @@ pub struct Spanned<T> {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Kind {
     Type,
-    Relation,
+    RelationShape,
     Model,
-    Law,
+    DerivationRule,
     Revision,
     Delta,
 }
@@ -95,11 +95,11 @@ pub struct AscriptionDecl {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Member {
     Sentence(SentenceShapeDecl),
-    Mode(ModeDecl),
+    LookupMode(ModeDecl),
     Entity(EntityDecl),
     EntityGroup(EntityGroupDecl),
     Focus(FocusBlock),
-    Clause(SurfaceClause),
+    RelationalContent(SurfaceClause),
     When(Vec<SurfaceClause>),
     From(Name),
     Apply(Name),

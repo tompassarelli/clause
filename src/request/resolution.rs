@@ -4,13 +4,13 @@ use super::{Request, ResolvedProgram, Selection};
 use crate::{
     elaborate::{self, CompiledProgram},
     frontend,
-    kernel::{self, Name, RelationId, VariableId},
+    kernel::{self, ReferentId},
 };
 
 pub(super) fn resolve(program: &CompiledProgram) -> kernel::Result<ResolvedProgram> {
     let mut revisions = BTreeMap::new();
     let mut requests = Vec::with_capacity(program.requests().len());
-    for request in program.requests() {
+    for (index, request) in program.requests().iter().enumerate() {
         let resolved = match request {
             frontend::RequestDecl::Find {
                 revision,
@@ -19,8 +19,8 @@ pub(super) fn resolve(program: &CompiledProgram) -> kernel::Result<ResolvedProgr
                 ..
             } => {
                 let revision = program.revision(&revision.value)?;
-                let pattern = elaborate::lower_clause(revision, pattern)?;
-                let sought = variable(&sought.value)?;
+                let pattern = program.lower_request_clause(index, revision, pattern)?;
+                let sought = program.request_pattern(index, &sought.value)?;
                 let _ = kernel::FindPlan::new(revision.model(), &pattern, sought.clone())?;
                 Request::Find {
                     revision: revision.identity().clone(),
@@ -37,7 +37,7 @@ pub(super) fn resolve(program: &CompiledProgram) -> kernel::Result<ResolvedProgr
                 let revision = program.revision(&revision.value)?;
                 Request::Why {
                     revision: revision.identity().clone(),
-                    target: elaborate::lower_clause(revision, target)?,
+                    target: elaborate::lower_clause(program, revision, target)?,
                     all: *all,
                 }
             }
@@ -51,9 +51,9 @@ pub(super) fn resolve(program: &CompiledProgram) -> kernel::Result<ResolvedProgr
                 let revision = program.revision(&revision.value)?;
                 Request::Prevent {
                     revision: revision.identity().clone(),
-                    target: elaborate::lower_clause(revision, target)?,
+                    target: elaborate::lower_clause(program, revision, target)?,
                     selection: lower_selection(*requested_selection),
-                    using: relations(using)?,
+                    using: relations(program, revision, using)?,
                 }
             }
             frontend::RequestDecl::Achieve {
@@ -66,9 +66,9 @@ pub(super) fn resolve(program: &CompiledProgram) -> kernel::Result<ResolvedProgr
                 let revision = program.revision(&revision.value)?;
                 Request::Achieve {
                     revision: revision.identity().clone(),
-                    target: elaborate::lower_clause(revision, target)?,
+                    target: elaborate::lower_clause(program, revision, target)?,
                     selection: lower_selection(*requested_selection),
-                    using: relations(using)?,
+                    using: relations(program, revision, using)?,
                 }
             }
             frontend::RequestDecl::Diff {
@@ -79,28 +79,57 @@ pub(super) fn resolve(program: &CompiledProgram) -> kernel::Result<ResolvedProgr
             },
         };
         for identity in resolved.revisions() {
-            revisions.entry(identity.clone()).or_insert_with(|| {
-                program
-                    .revisions()
-                    .values()
-                    .find(|revision| revision.identity() == identity)
-                    .expect("compiled request revision is registered")
-                    .clone()
-            });
+            let revision = program
+                .revisions()
+                .values()
+                .find(|revision| revision.identity() == identity)
+                .expect("compiled request revision is registered");
+            register_revision_closure(program, revision, &mut revisions)?;
         }
         requests.push(resolved);
     }
     ResolvedProgram::new(revisions, requests)
 }
 
-fn variable(value: &frontend::VariableName) -> kernel::Result<VariableId> {
-    VariableId::new(Name::new(value.0.clone())?)
+fn register_revision_closure(
+    program: &CompiledProgram,
+    revision: &kernel::Revision,
+    revisions: &mut BTreeMap<kernel::RevisionId, kernel::Revision>,
+) -> kernel::Result<()> {
+    if revisions.contains_key(revision.identity()) {
+        return Ok(());
+    }
+    if let Some(predecessor) = revision.predecessor() {
+        let base = program
+            .revisions()
+            .values()
+            .find(|candidate| candidate.identity() == predecessor)
+            .ok_or_else(|| {
+                kernel::KernelError::new("compiled successor is missing its exact predecessor")
+            })?;
+        register_revision_closure(program, base, revisions)?;
+    }
+    revisions.insert(revision.identity().clone(), revision.clone());
+    Ok(())
 }
 
-fn relations(values: &[frontend::Spanned<frontend::Name>]) -> kernel::Result<Vec<RelationId>> {
+fn relations(
+    program: &CompiledProgram,
+    revision: &kernel::Revision,
+    values: &[frontend::Spanned<frontend::Name>],
+) -> kernel::Result<Vec<ReferentId>> {
     values
         .iter()
-        .map(|value| RelationId::new(Name::new(value.value.0.clone())?))
+        .map(|value| {
+            let relation = program.designations().global(value.value.as_str())?;
+            if !revision.model().relation_shapes().contains_key(&relation) {
+                return Err(kernel::KernelError::new(format!(
+                    "relation '{}' is not admitted by this Revision",
+                    value.value.as_str()
+                )));
+            }
+            Ok(relation)
+        })
         .collect()
 }
 

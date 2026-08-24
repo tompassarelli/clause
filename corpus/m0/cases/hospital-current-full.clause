@@ -2,15 +2,15 @@ Space: Type
 Door: Type
 Inspection: Type
 
-egress/connects: Relation
+egress/connects: RelationShape
     {door: Door} connects {origin: Space} to {destination: Space}
     mode door, origin -> destination: many
 
-egress/passed: Relation
+egress/passed: RelationShape
     {door: Door} passed {inspection: Inspection}
     mode door -> inspection: many
 
-egress/route: Relation
+egress/route: RelationShape
     {origin: Space} has a usable egress path to {destination: Space}
     mode origin -> destination: many
 
@@ -34,13 +34,13 @@ egress: Model
     [Door 105] connects Isolation-Room to East-Corridor
     [Door 106] connects Isolation-Room to West-Corridor
 
-egress/direct-route: Law
+egress/direct-route: DerivationRule
     ?origin has a usable egress path to ?destination
     when:
         ?door connects ?origin to ?destination
         ?door passed Fire-Marshal-Inspection
 
-egress/recursive-route: Law
+egress/recursive-route: DerivationRule
     ?origin has a usable egress path to ?destination
     when:
         ?door connects ?origin to ?intermediate

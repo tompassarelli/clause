@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 
 use clause::{elaborate, frontend, request};
 
-const SOURCE: &str = "Item: Type\nlink: Relation\n    {left: Item} links {right: Item}\n    mode left -> right: many\ngraph: Model\n    A: Item\n    B: Item\n    A links B\ngraph/add: Revision\n    from: graph\n    admit:\n        B links A\nfind all ?right in graph:\n    A links ?right\nwhy all in graph:\n    A links B\ndiff graph -> graph/add\n";
+const SOURCE: &str = "Item: Type\nlink: RelationShape\n    {left: Item} links {right: Item}\n    mode left -> right: many\ngraph: Model\n    A: Item\n    B: Item\n    A links B\ngraph/add: Revision\n    from: graph\n    admit:\n        B links A\nfind all ?right in graph:\n    A links ?right\nwhy all in graph:\n    A links B\ndiff graph -> graph/add\n";
 #[test]
 fn rejects_a_revision_registry_key_for_a_different_sealed_revision() {
     let compiled = elaborate::compile(frontend::parse(SOURCE).expect("source parses"))
@@ -26,5 +26,16 @@ fn rejects_a_revision_registry_key_for_a_different_sealed_revision() {
         error
             .to_string()
             .contains("Revision registry key must match sealed Revision identity")
+    );
+
+    let error = request::ResolvedProgram::new(
+        BTreeMap::from([(successor.identity().clone(), successor.clone())]),
+        vec![],
+    )
+    .expect_err("successor registry must retain its exact predecessor");
+    assert!(
+        error
+            .to_string()
+            .contains("Revision registry is missing an exact predecessor")
     );
 }
