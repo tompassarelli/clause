@@ -197,9 +197,9 @@ Public Clause currently implements:
   universal laws, invariants, goals, and transitions;
 - canonical semantic-v6 / Revision-v4 persistence with exact predecessor
   lineage and complete successor Deltas;
-- a flat declaration surface using `Type`, `RelationShape`, `Model`,
-  `DerivationRule`, `Revision`, `mode`, bracketed multiword entities, and
-  explicit request words;
+- the compact M1 grounding, binding, membership, enumeration, and focus
+  surface, alongside retained `RelationShape`, `DerivationRule`, `Revision`,
+  `mode`, and explicit request ceremony awaiting later milestones;
 - admitted relational content and bounded positive recursive derivation rules;
 - immutable Revisions and exact successor Deltas;
 - recursive closure queries and bounded complete support enumeration;
@@ -208,9 +208,9 @@ Public Clause currently implements:
 - authored request ordering and canonical result bytes;
 - standalone generated Rust with source-deleted result parity.
 
-That surface remains executable during migration, but it is ceremonial syntax
-scheduled for retirement. It must not be used as the template for new canonical
-examples or independently extended as a second language.
+The retained declaration and request ceremony remains executable during
+migration and is scheduled for retirement. It must not be used as the template
+for new canonical examples or independently extended as a second language.
 
 ## Dependency spine
 

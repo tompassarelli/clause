@@ -1207,7 +1207,8 @@ door-101-withdrawn from egress
 diff egress -> door-101-withdrawn
 ```
 
-Compared with the current surface, this removes:
+Compared with the pre-M1 ceremonial surface and the ceremony retained for
+later milestones, this removes:
 
 - `Space: Type`;
 - `egress/connects: RelationShape`;
@@ -1403,7 +1404,7 @@ Add new IR only where the old core cannot honestly represent recursive value
 terms, local definitions, state transitions, effects and resources, or
 JavaScript interoperation.
 
-## 18. Migration from current Clause
+## 18. Migration from pre-M1 Clause and retained ceremony
 
 Do not keep the old surface indefinitely as a second first-class language.
 Implement the new surface as a profile, prove parity, provide a formatter or
@@ -1420,9 +1421,9 @@ codemod, then remove the ceremonial forms unless a real consumer requires them.
 | `[Door 101]` | `Door 101` |
 | `name: DerivationRule` | conclusion plus `if` for an oriented derivation rule; universal-law mode remains distinct |
 | `name: Revision` | `name from base` plus signed clauses |
-| `from:` | `from` in the revision header; current executable profile remains migration evidence |
-| `withdraw:` | `-`; current executable profile remains migration evidence |
-| `declare:` | ground relational content creating assertion occurrences in admission context; current executable profile remains migration evidence |
+| `from:` | `from` in the revision header; the retained Revision profile remains migration evidence |
+| `withdraw:` | `-`; the retained Revision profile remains migration evidence |
+| `declare:` | ground relational content creating assertion occurrences in admission context; the retained Revision profile remains migration evidence |
 | `find all ?x` | naked hole clause or `select` |
 | `use game` | `requires` block |
 | object-like `property: value` content | relational `property value` under focus |

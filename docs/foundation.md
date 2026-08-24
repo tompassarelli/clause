@@ -208,9 +208,12 @@ history/version evidence: a content-addressed Model snapshot with exact
 lineage. It is not a synonym for the program, application, host process, or
 execution.
 
-The native parser still accepts ceremonial `Type`, `RelationShape`, `Model`,
-`DerivationRule`, and `Revision` declarations as executable migration evidence. Lowering resolves
-them into the implemented referent kernel. Canonical persistence is now
+The native parser executes M1 bare grounding, enumeration, binding-shape,
+Model, membership, and focus forms. Retained `RelationShape`,
+`DerivationRule`, and `Revision` declarations remain executable migration
+evidence while later surface milestones replace their ceremony. Lowering
+resolves both profiles into the implemented referent kernel. Canonical
+persistence is now
 `clause-semantic-v6` inside `clause-revision-v4`, with exact predecessor
 lineage, separate content, occurrences, and judgments, and strict successor
 reload. The legacy surface does not restore a primitive semantic Type, Entity,
