@@ -2,29 +2,30 @@
 
 ## Distinction-first relational authoring
 
-**Status:** constitutional target; referents, claims, laws, classification,
-definition, and indentation frozen by M0
+**Status:** authoring projection under the semantic authority of
+[FOUNDATION.md](FOUNDATION.md); classification, definition, and indentation are
+frozen by M0
 
 Clause has one semantic domain: addressable referents. A referent is a
-stabilized distinction that can be reidentified across claims and Revisions;
-structural equality never collapses that identity. Relations are referents in
-relational position. Claims arrange referents in named roles. Laws derive,
-constrain, reject, or operationally orient claims. Terms project referents but
-are not themselves referents, and a claim remains distinct from its acceptance,
-status, and authority.
+stabilized distinction that can be reidentified across relational content,
+assertion occurrences, and Revisions; structural equality never collapses that
+identity. Relations are referents in relational position. N-ary relational
+content assigns every participant to a stable named role. An assertion
+occurrence is the scoped source act that commits to content, while judgment and
+modal authority remain separate. Terms project referents but are not themselves
+referents.
 
 **Audience:** Clause implementers, reviewers, formatter/tooling authors, and
 corpus designers
 
-**Authority:** [ROADMAP.md](ROADMAP.md) remains the normative execution and
-milestone authority. This file is an editorially normalized tracked copy of the
-operator's current surface draft, so decisions do not depend on an external
-document. Its relational invariants control direction over earlier
-human-surface recommendations. `Chess : Game` is classification sugar for an
-ordinary membership relation; `gravity := 9.81` is definition/denotation.
-Neither spelling creates a primitive type or value domain. `∈` and `::` are
-not canonical source and editors must not rewrite input to `∈`. Canonical
-indentation is two spaces, spaces only, and tabs are diagnosed.
+**Authority:** [FOUNDATION.md](FOUNDATION.md) controls semantics;
+[ROADMAP.md](ROADMAP.md) controls execution order and [M0.md](M0.md) controls
+executable evidence. This file controls only authoring projection. `Chess :
+Game` is classification sugar for ordinary membership relational content;
+`gravity := 9.81` is definition/denotation. Neither spelling creates a
+primitive type or value domain. `∈` and `::` are not canonical source and
+editors must not rewrite input to `∈`. Canonical indentation is two spaces,
+spaces only, and tabs are diagnosed.
 
 **Scope:** this supersedes the human-surface recommendations and specimens in
 the earlier strategy packet. It does not discard Clause's semantic core,
@@ -36,22 +37,30 @@ interventions, or target strategy.
 Clause should stop asking authors to declare an ontology for the language
 before they can describe the domain.
 
-The canonical surface should be organized around four semantic commitments:
+The canonical surface must preserve these semantic commitments:
 
 1. **referents** — stabilized, addressable distinctions;
-2. **claims** — referents arranged in named roles, including membership;
-3. **laws** — derivation, constraint, rejection, and operational orientation;
-4. **definitions** — explicit denotation from a term to what it designates.
+2. **relational content** — a relation referent and participants assigned to
+   explicit named roles, including membership content;
+3. **assertion occurrences and judgments** — respectively the scoped act that
+   commits to content and a separate authority's status about content or an
+   occurrence;
+4. **semantic modes** — universal law, oriented derivation rule,
+   Revision-admission invariant, goal, observation, requirement, intention,
+   transition, and effect remain distinct;
+5. **definitions** — explicit denotation from a term to what it designates.
 
 Source terms name or compose these commitments but do not create another
-semantic domain. Acceptance, status, authority, and occurrence metadata qualify
-claims without becoming claim content.
+semantic domain. Absence is undetermined rather than denial. Acceptance,
+status, authority, and occurrence provenance never become relational content.
 
 The decisive surface thesis is:
 
-> **A Clause program is a graph of grounded symbols and role-labelled clauses.
-> Layout is a projection over that graph. Layout never creates objects, fields,
-> ownership, or containment in the semantic core.**
+> **When realized, the canonical authoritative Model is the Clause program: a
+> graph of referents, named-role relational content, assertion occurrences,
+> judgments, and explicit modes. Layout is a projection over that Model and
+> never creates objects, fields, ownership, or containment. A Revision is
+> immutable version and lineage evidence, not the program.**
 
 The decisive implementation thesis is:
 
@@ -82,7 +91,7 @@ That form smuggles in four ideas Clause does not need:
 The canonical relational form is:
 
 ```clause
-iron-door : Door
+iron-door
   Door
   connects Cellar to Armory
   state := locked
@@ -149,9 +158,9 @@ Vec2
   y: F32
 ```
 
-The body proves this is a structural value shape. The word `type` adds no
-information. A colon after `Vec2` would merely open a block, which is not a
-legitimate use of `:`.
+The body permits a derived structural view. It does not prove a primitive
+value species. The word `type` adds no information, and a colon after `Vec2`
+would merely open a block, which is not a legitimate use of `:`.
 
 Retract:
 
@@ -216,10 +225,10 @@ and `=` for equality. Identity remains distinct from all three.
 Clause implementations may derive a type-system view. The surface must not
 force authors to declare types as a second semantic domain.
 
-The surface must distinguish three semantic strata without turning each into a
-keyword ceremony.
+The surface may expose three derived views without turning them into semantic
+domains or keyword ceremony.
 
-### 3.1 Value domains and shapes
+### 3.1 Representation and structural views
 
 Examples:
 
@@ -230,19 +239,21 @@ Bool
 String
 ```
 
-These are built-in value domains with representation and operation contracts.
+These names address referents with built-in representation and operation
+contracts. They are not members of a second value domain.
 
-A user-defined structural value view is inferred from a homogeneous definition
-block:
+A structural view may be inferred from a homogeneous classification block:
 
 ```clause
 Vec2
-  x := F32
-  y := F32
+  x : F32
+  y : F32
 ```
 
-This means `Vec2` has definitions for labels `x` and `y`, each denoting `F32`.
-It does **not** add a primitive value or record domain.
+This establishes `x : F32` and `y : F32` membership content under the `Vec2`
+projection. It does not define `x` or `y`, create owned fields, or add a
+primitive value or record domain. Any derived structural view remains a
+replaceable projection of those relations.
 
 ### 3.2 Semantic symbols
 
@@ -256,9 +267,10 @@ iron-door
 Chess
 ```
 
-A bare name can ground a semantic distinction in the program. It does not need
-fields, a constructor, or immediate classification. A semantic symbol may later
-participate in membership and relations.
+A declaration-position bare name may ground a semantic distinction in the
+program. That act does not automatically create roles, constraints, fields, a
+constructor, or immediate classification. A use-position name must resolve an
+existing referent unless explicitly fresh or variable.
 
 ### 3.3 Categories and contracts
 
@@ -308,9 +320,10 @@ component arrays, or indexes. That is a lowering decision.
 
 ### 3.4 The rule
 
-> **Value shapes may derive named relational roles. Semantic symbols have relations.
-> Categories have relational contracts. Do not turn semantic entities into
-> records merely because a backend may store them that way.**
+> **Structural views may project named relational roles. Semantic symbols
+> participate in relations. Categories may have explicit relational contracts.
+> Do not turn semantic entities into records merely because a backend may store
+> them that way.**
 
 ## 4. Classification and definition are different
 
@@ -396,9 +409,9 @@ its heading. Reserved list forms declare their own expansion; for example,
 `requires` relates the current program to each listed package rather than
 asserting ordinary domain membership.
 
-### 5.2 Definition/shape block
+### 5.2 Classification/derived-shape block
 
-A homogeneous block of definitions can project a structural shape:
+A homogeneous block of classifications can project a derived structural view:
 
 ```clause
 Vec2
@@ -513,7 +526,10 @@ Words carry semantic moods:
 
 | Word | Meaning |
 | --- | --- |
-| `if` | timeless derivation |
+| `law` | explicit universally generalized content mode |
+| `if` | oriented derivation-rule body |
+| `invariant` | candidate-Revision admission gate |
+| `goal` | desired content without current-truth or derivation authority |
 | `on` | event/time-triggered transition scope |
 | `from` | exact revision ancestry |
 | `requires` | program/package requirements |
@@ -526,7 +542,7 @@ Words carry semantic moods:
 | `observe` | evidence-backed claim mood |
 | `assume` | scoped premise mood |
 | `require` | proof obligation mood |
-| `intend` | desired-state mood |
+| `intend` | actor intention mood, distinct from a goal |
 | `do` | explicitly procedural stratum |
 
 `find` is not a core relational mood. It may remain an ordinary library or
@@ -554,12 +570,17 @@ Layout already groups their bodies.
 Clause is not a natural-language parser. Domain phrases are exact declared
 mixfix shapes.
 
-A public or ambiguous relation can use an explicit schema definition:
+A public or ambiguous relation can use an explicit relation-contract form. The
+following structural spelling is provisional; the mode and named-role content
+are authoritative:
 
 ```clause
-connects:
-  door: Door connects origin: Space to destination: Space
-  door origin -> destination*
+relation contract connects
+  role door : Door
+  role origin : Space
+  role destination : Space
+  phrase {door} connects {origin} to {destination}
+  project door origin -> destination*
 ```
 
 This says:
@@ -571,10 +592,17 @@ This says:
 - operational projection: given `door` and `origin`, produce zero or more
   `destination` values.
 
-No `Relation` keyword, braces, or `mode` keyword is needed.
+`relation contract` states a mode; it does not classify `connects` into a
+primitive `Relation` species. The final spelling remains an M2 decision.
 
 The checked core still retains relation identity, named roles, role domains,
 surface pattern, and voice/cardinality contract.
+
+The contract describes the `connects` referent; it does not execute it.
+Relations, rules, Revisions, and evaluation may appear as participants in other
+content, but interpreting them requires an admitted shape and mode and may
+require quotation, stratification, or an exact Revision boundary. One referent
+domain never grants self-execution.
 
 ### 7.1 Functional focused relations
 
@@ -671,7 +699,7 @@ Alice likes ?opening
 
 The two `?opening` occurrences correlate through identity.
 
-### 8.1 Laws are inferred from `if`
+### 8.1 Derivation rules are oriented by `if`
 
 ```clause
 ?origin has a usable egress path to ?destination if
@@ -679,9 +707,10 @@ The two `?opening` occurrences correlate through identity.
   ?door passed Fire-Marshal Inspection
 ```
 
-The conclusion plus `if` body proves that this is a law. Do not require `Law`.
+The conclusion plus `if` body proves that this is an oriented derivation rule.
+It does not prove a universal law, invariant, or goal.
 
-A recursive law is equally direct:
+A recursive derivation rule is equally direct:
 
 ```clause
 ?origin has a usable egress path to ?destination if
@@ -692,8 +721,8 @@ A recursive law is equally direct:
 
 ### 8.2 Optional human labels are definitions
 
-Most laws should receive stable semantic identities independently of a human
-label. When a human name is useful:
+Rules receive stable semantic identities independently of a human label. When
+a human name is useful:
 
 ```clause
 recursive route :=
@@ -702,22 +731,31 @@ recursive route :=
     ?intermediate has a usable egress path to ?destination
 ```
 
-The definition orients the label `recursive route` to the law. It does not
-declare a `Law` object or enter the law's claim content.
+The definition orients the label `recursive route` to the derivation rule. It
+does not classify a `Law` object or enter the rule's premise or conclusion
+content.
 
-### 8.3 Category-wide facts remain ordinary laws
+### 8.3 Universal law, derivation rule, invariant, and goal remain distinct
 
-Do not invent field defaults. To say every coin has radius 8:
+Do not invent field defaults. This oriented rule derives a radius consequence
+for every matched coin:
 
 ```clause
 ?coin radius 8 if
   ?coin : Coin
 ```
 
-That is a universal relational law. It is not a default value installed into a
+That is a derivation rule with a universally matchable pattern. It is not, by
+that fact alone, a universal law and is not a default value installed into a
 record schema.
 
-A category contract and a universal fact remain distinct:
+A universal law generalizes content within an explicit scope. A derivation rule
+authorizes oriented consequence production. An invariant gates admission of a
+candidate Revision. A goal describes desired content without asserting current
+truth or authorizing derivation. Their final surface spellings remain separate
+M0 evidence questions; an implementation may not accept a collapsed mode.
+
+A category contract and a derivation rule remain distinct:
 
 ```clause
 Coin
@@ -870,8 +908,10 @@ intend
   North materializes under wasm as "build/North.wasm"
 ```
 
-An observation, assumption, intention, receipt, and admitted assertion remain
-different checked judgments.
+An observation, assumption, requirement, intention, goal, receipt, and admitted
+assertion occurrence remain different checked modes or judgments. A goal does
+not assert current truth, an intention does not make its goal true, and a
+receipt does not admit relational content.
 
 ## 11. State is relational succession, not field mutation
 
@@ -1008,8 +1048,11 @@ Door
 ### Relation schema
 
 ```clause
-connects:
-  door: Door connects origin: Space to destination: Space
+relation contract connects
+  role door : Door
+  role origin : Space
+  role destination : Space
+  phrase {door} connects {origin} to {destination}
 ```
 
 ### Grounded semantic node and claims
@@ -1018,7 +1061,7 @@ connects:
 iron-door
   Door
   connects Cellar to Armory
-  state: locked
+  state := locked
 ```
 
 ### Query
@@ -1074,17 +1117,24 @@ Door
 Inspection
   Fire-Marshal Inspection
 
-connects:
-  door: Door connects origin: Space to destination: Space
-  door origin -> destination*
+relation contract connects
+  role door : Door
+  role origin : Space
+  role destination : Space
+  phrase {door} connects {origin} to {destination}
+  project door origin -> destination*
 
-passed:
-  door: Door passed inspection: Inspection
-  door -> inspection*
+relation contract passed
+  role door : Door
+  role inspection : Inspection
+  phrase {door} passed {inspection}
+  project door -> inspection*
 
-route:
-  origin: Space has a usable egress path to destination: Space
-  origin -> destination*
+relation contract route
+  role origin : Space
+  role destination : Space
+  phrase {origin} has a usable egress path to {destination}
+  project origin -> destination*
 
 Door 101
   connects ICU-A to East-Corridor
@@ -1142,7 +1192,7 @@ Compared with the current surface, this removes:
 - `find all` around a clause that already contains a hole.
 
 It preserves stable relation identities, named roles, participant domains,
-recursive laws, operational cardinality, exact Revision ancestry, explanation,
+recursive derivation rules, operational cardinality, exact Revision ancestry, explanation,
 intervention, and diff semantics.
 
 ## 15. Complete game specimen: one-coin collection
@@ -1188,7 +1238,7 @@ coin
   value 10
   state active
 
-distance between ?a and ?b:
+distance between ?a and ?b :=
   length(position of ?a - position of ?b)
 
 ?a overlaps ?b if
@@ -1215,7 +1265,7 @@ on frame ?dt
   if
     player collects coin
 
-  receipt: render! scene
+  receipt := render! scene
 
 scene includes sprite "player" at position of player
 
@@ -1226,12 +1276,13 @@ scene includes sprite "coin" at position of coin if
 This specimen is intended to prove that:
 
 - packages enter through `requires`;
-- `Vec2` is a value shape, not a semantic object category;
+- `Vec2` supplies a derived structural view, not a semantic object or value
+  species;
 - `Player` and `Coin` are categories with relation contracts, not classes with
   fields;
-- `player` and `coin` are grounded symbols with co-equal claims;
-- value projections derive from single-valued relations;
-- collision is an ordinary recursive definition or law;
+- `player` and `coin` are grounded referents in co-equal relational content;
+- structural projections derive from single-valued relations;
+- collision is an ordinary recursive definition or derivation rule;
 - state changes are clause-to-clause transitions;
 - rendering is an explicit effect over a derived relational scene;
 - the compiler remains free to lower relational state into efficient ECS-like
@@ -1267,8 +1318,15 @@ diagnostics, agent edits, schema migration, proof inspection, and structural
 diffs. It is not the default human surface.
 
 Stable semantic IDs should normally remain hidden and be maintained by the
-Store and editor transaction history. Renaming a phrase or label should not
+Model and editor transaction history. Renaming a phrase or label should not
 create a new relation identity unless the author deliberately creates one.
+
+Clause has no Store implementation. A future Store adapter treats Store as a
+neutral substrate and adds a typed Clause envelope for referent terms,
+relational content, occurrence attestations, judgments, modality, evidence,
+authority, admission/rejection, supersession, and exact Revision-to-storage
+lineage. Missing rows, retraction, query negation, equality, liveness, and Store
+revision identity do not supply those semantics.
 
 ## 17. Parser and elaborator requirements
 
@@ -1283,11 +1341,12 @@ semantics here.
 
 ### Stage B — block classification
 
-Classify homogeneous blocks as enumeration; definition or derived shape;
-focused forms or
-contracts; definition or law; query; event or transition; revision delta; or
-epistemic/effect mood. Reject structurally unresolved forms or require the
-formatter to split them.
+Classify relational content/assertion occurrence, relation contract,
+definition, universal law, oriented derivation rule, invariant, query, goal,
+observation, requirement, intention, effect, transition, and delta separately
+whenever the source structure proves the mode. If Stage B cannot prove one,
+retain an explicit `Unresolved...` class for Stage C; never accept a collapsed
+union as a semantic class.
 
 ### Stage C — recursive phrase resolution
 
@@ -1300,9 +1359,10 @@ current focus role. It may not use probabilistic NLP.
 
 ### Stage D — role-labelled elaboration
 
-Elaborate all sugar into stable semantic nodes: referent identities, membership
-claims, relation identity, named participant roles, definitions, laws, query
-projections, transitions, exact deltas, and effect requests.
+Elaborate all sugar into stable semantic nodes: referent identities,
+named-role relational content, assertion occurrences, judgments, definitions,
+universal laws, derivation rules, invariants, goals, query projections,
+transitions, exact deltas, and effect requests.
 
 ### Stage E — existing semantic core
 
@@ -1322,14 +1382,14 @@ codemod, then remove the ceremonial forms unless a real consumer requires them.
 
 | Current | Replacement |
 | --- | --- |
-| `Space: Type` | `Space : Type` classification, or a bare grounded term when no classification is intended |
+| `Space: Type` | bare `Space` grounding, or `Space : Category` only when that domain classification is intended |
 | `thing ∈ Space` | `thing : Space`; report the membership migration |
-| `name: Relation` | `name : Relation`; inferred phrase schema may omit it |
+| `name: Relation` | explicit relation-contract form; never primitive `Relation` classification |
 | `{role: Type}` | `role : Type` inside schema only |
 | `mode ...` | arrow and cardinality contract |
 | `name: Model` | authoring or revision context inferred or externally named |
 | `[Door 101]` | `Door 101` |
-| `name: Law` | `name : Law`, or conclusion `if` premises with separate identity |
+| `name: Law` | explicit universal-law mode, or conclusion plus `if` for an oriented derivation rule; optional label definition |
 | `name: Revision` | `name from base` plus signed clauses |
 | `from:` | `from` in the revision header; current executable profile remains migration evidence |
 | `withdraw:` | `-`; current executable profile remains migration evidence |
@@ -1404,9 +1464,10 @@ The new surface is not accepted merely because examples look attractive.
 ### Milestone 0 — Freeze the constitution and corpus
 
 Before changing the parser, add golden examples for enumeration, derived shape
-views, focused graph claims, explicit flattening, relation schemas, recursive
-terms, holes and correlation, laws, queries, revisions, transitions, effects,
-the hospital program, and the one-coin game.
+views, focused relational content and occurrences, explicit flattening,
+relation schemas, recursive terms, holes and correlation, laws, derivation
+rules, invariants, goals, queries, revisions, transitions, effects, the
+hospital program, and the one-coin game.
 
 For every example retain source, grouped tree, elaborated role graph, canonical
 rendering, diagnostics, and expected result. Include positive `x : Group`
@@ -1431,15 +1492,16 @@ identities. Remove required `Relation` and `mode` syntax in the new profile.
 ### Milestone 3 — Recursive term grammar
 
 Permit every role to contain recursive terms with explicit grouping and
-canonical formatting. Add derived value shapes, pure definitions, projections,
-definitions. This milestone recovers the recursive-relational thesis.
+canonical formatting. Add derived structural views, pure definitions, and
+projections. This milestone recovers the recursive-relational thesis.
 
 ### Milestone 4 — Holes, rules, and relational selection
 
 Implement `?` and `?name` holes, repeated-hole correlation, naked single-clause
 selection, `select` projection blocks, `any` existence, `select one` and
 `select first`, `if` law inference, and hidden or optional law labels. Replace
-`find` in canonical examples.
+`find` in canonical examples. Do not collapse derivation rules into universal
+laws, invariants, or goals.
 
 ### Milestone 5 — Revision surface reset
 

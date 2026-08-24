@@ -6,11 +6,12 @@ language, grow a separate game language, or disguise objects and fields as
 lighter syntax.
 
 Its one semantic domain is addressable referents: stabilized distinctions that
-remain reidentifiable across claims and Revisions and are not collapsed by
-structural equality. Relations are referents in relational position, claims
-arrange referents in named roles, and laws derive, constrain, reject, or
-operationally orient claims. Terms project this Model; source terms and files
-are not the Model.
+remain reidentifiable across relational content, assertion occurrences, and
+Revisions and are not collapsed by structural equality. Relations are
+referents in relational position, and n-ary relational content assigns every
+participant to a stable named role. An assertion occurrence commits to content
+under an exact scope and provenance; judgment and modal authority remain
+separate. Terms project this Model; source terms and files are not the Model.
 
 The current Rust implementation is a real but narrower foundation. It seals
 typed Models as immutable Revisions; navigates them with `find`, `why`,
@@ -29,16 +30,14 @@ A milestone or specimen is not implemented merely because it appears here.
 
 ## Authority
 
-This tracked roadmap is the sole normative language and product roadmap.
-[SURFACE.md](SURFACE.md) durably preserves the operator's current **Clause
-Surface Reset**. It supersedes the human-surface recommendations and specimens
-in the earlier strategy packet. Its distinction-first relational constitution
-controls direction. `Chess : Game` is classification sugar for an ordinary
-membership relation, while `gravity := 9.81` is definition/denotation. `∈` and
-`::` are not canonical source, and editors do not rewrite input to `∈`.
-Formatters and agents emit `:` classification and `:=` definition directly.
-M0 also freezes two spaces, spaces only, as canonical indentation; tabs are
-diagnosed.
+[FOUNDATION.md](FOUNDATION.md) is the semantic authority. This tracked roadmap
+is the normative product sequence; [SURFACE.md](SURFACE.md) owns authoring
+projection and [M0.md](M0.md) owns executable evidence. `Chess : Game` is
+classification sugar for ordinary membership relational content, while
+`gravity := 9.81` is definition/denotation. `∈` and `::` are not canonical
+source, and editors do not rewrite input to `∈`. Formatters and agents emit `:`
+classification and `:=` definition directly. M0 also freezes two spaces,
+spaces only, as canonical indentation; tabs are diagnosed.
 
 The earlier packet remains provenance, not live surface authority. Its four
 unique input identities were:
@@ -56,28 +55,25 @@ execute this roadmap.
 
 ## Product thesis
 
-For the current semantic core:
-
-> **The sealed Revision is the program. Source and generated code are
-> projections of it.**
-
-For the complete programming system:
-
-> **A Clause program is a graph of addressable referents and named-role claims.
-> Layout is an erasable projection. The sealed ProgramRevision is the program;
-> State advances by exact deltas; effects produce receipts; source and target
-> code are projections.**
+> **When realized, the canonical authoritative Model is the program. It is a
+> graph of addressable referents, n-ary named-role relational content,
+> assertion occurrences, judgments, and explicit semantic modes. Layout,
+> source, and target code are projections. Revisions retain immutable version
+> and lineage evidence; State advances by exact deltas; effects produce
+> receipts.**
 
 The authored ontology does not contain objects, fields, owned child records, or
 implicit mutation. The compiler remains free to lower functional relations to
 fields, columns, component arrays, indexes, or bitsets when those physical
 strategies preserve the relational meaning.
 
-One recursive surface serves referents, claims, laws, queries, transitions,
-effects, and procedures. Type, value, module, package, object, record, set,
-function, variable, state, mutation, checking, and evaluation are derived
-relational views, not additional semantic domains. They may lower through
-distinct checked IR strata without becoming primitive ontology.
+One recursive surface serves referents, relational content, assertion
+occurrences, judgments, universal laws, derivation rules, invariants, goals,
+queries, transitions, effects, and procedures. Type, value, module, package,
+object, record, set, function, variable, state, mutation, checking, and
+evaluation are derived relational views, not additional semantic domains. They
+may lower through distinct checked IR strata without becoming primitive
+ontology.
 
 ## Protected contracts
 
@@ -86,7 +82,7 @@ These contracts remain load-bearing while the surface changes:
 - immutable, content-derived Revisions and exact predecessor lineage;
 - exact admitted and withdrawn Deltas;
 - stable semantic relation identities independent of wording and orientation;
-- typed, named roles on genuinely n-ary relations;
+- explicit, stable named roles on genuinely n-ary relational content;
 - bounded positive recursive derivation;
 - exact proof/support structure, including alternative supports;
 - sound inclusion-minimal `prevent` and `achieve` results with explicit finite
@@ -103,32 +99,40 @@ oracle. Their old spelling does not remain canonical source authority.
 
 ## Whole-program authority
 
-The current `Revision` is retained as the proven immutable model capability.
-The complete system separates authorities a live application cannot honestly
-collapse:
+The current `Revision` is retained as proven immutable version and lineage
+evidence. The complete system separates authorities a live application cannot
+honestly collapse:
 
 | Authority | Meaning |
 | --- | --- |
-| `ProgramRevision` | Immutable content-addressed checked program: referents, claims, definitions, laws, transitions, effects, dependencies, capabilities, target requirements, and selected initial content. |
-| `ModelRevision` | Immutable admitted domain/content clauses checked against one exact ProgramRevision. This is the future placement of today's semantic `Revision`. |
-| `StateRevision` | Logically immutable runtime state produced from an exact predecessor and Delta and bound to exact program/model authority. |
-| `RuntimeSession` | ProgramRevision, initial model/state, tick policy, ordered input/event stream, transition results, capability realizations, and effect receipts. |
+| `Model` | Canonical authoritative program: referents, relational content, assertion occurrences, judgments, definitions, laws, derivation rules, invariants, goals, transitions, effects, dependencies, capabilities, target requirements, and selected initial content. |
+| `Revision` | Immutable content-addressed Model version with exact lineage and provenance; evidence about program history, not the program itself. |
+| `StateRevision` | Logically immutable runtime state produced from an exact predecessor and Delta and bound to an exact Model Revision. |
+| `RuntimeSession` | Exact Model Revision, initial state, tick policy, ordered input/event stream, transition results, capability realizations, and effect receipts. |
 
-Today's `Revision` fuses checked declarations and admitted content. Any future
-split migrates the representation and all in-tree consumers atomically; it does
-not pass through two public wire meanings. M0 records the typed frontend/kernel
-and semantic-v5 wire as legacy migration evidence. Clause has no Store
-implementation or Store-side contract, so M0 claims no Store closure.
+Today's legacy `Revision` fuses checked declarations and admitted content. Any
+future split migrates the representation and all in-tree consumers atomically;
+it does not pass through two public wire meanings. M0 records the typed
+frontend/kernel and semantic-v5 wire as legacy migration evidence.
+
+Clause has no Store implementation and claims no Store closure. Store is a
+neutral persistence and query substrate. A future adapter must add a typed
+Clause envelope for referents, relational content, assertion-occurrence
+attestations, judgments, modality, evidence, authority, admission/rejection,
+supersession, and exact Clause-Revision-to-storage-lineage links. It may infer
+none of those distinctions from equality, missing rows, liveness, retraction,
+query negation, or storage revision identity.
 
 ## Surface constitution
 
 The following relational invariants are committed direction now:
 
 1. Terms may denote addressable referents; the term is not the referent.
-2. Referent identity survives claims and Revisions and is not structural
+2. Referent identity survives content, occurrences, and Revisions and is not structural
    equality.
-3. Relations are referents in relational position; claims arrange referents in
-   named roles; claim content/occurrence is distinct from status and authority.
+3. Relations are referents in relational position; n-ary content assigns every
+   participant to a stable named role; content, assertion occurrence, and
+   judgment are distinct.
 4. `:` is classification sugar for ordinary membership; `:=` is
    definition/denotation; `=` is equality.
 5. `∈`, `::`, and `in` are not canonical membership source.
@@ -142,13 +146,20 @@ The following relational invariants are committed direction now:
 9. Relation phrases are exact declared grammar, never probabilistic NLP.
 10. Every relation role accepts a recursively parsed term of the expected
    category.
-11. Stable referent and claim identity and named roles remain in the checked core even
-   when hidden from ordinary source.
+11. Stable referent, content, and occurrence identity and named roles remain in
+    the checked core even when hidden from ordinary source.
 12. Inference is permitted only when one lexical, structural, and type-correct
     elaboration survives; otherwise the diagnostic requires explicit structure.
 13. Search, bounds, nondeterminism, time, authority changes, effects, and
     externally observable order are never hidden for aesthetic compression.
-14. Runtime representation is free to specialize; semantic meaning is not.
+14. Universal law, oriented derivation rule, Revision-admission invariant, and
+    goal remain distinct and never confer one another's authority.
+15. Absence is undetermined under the open world; denial requires explicit
+    content or judgment.
+16. Relations, rules, Revisions, and evaluation may be discussed as referents,
+    but interpretation requires admitted shape/mode and may require quotation,
+    stratification, or a Revision boundary; mention never self-executes.
+17. Runtime representation is free to specialize; semantic meaning is not.
 
 The current draft additionally proposes `=` for equality, `->` for
 projection/production, `?`/`?name` for holes, `~>` for state
@@ -188,6 +199,9 @@ current semantic foundation
 M0 constitution, corpus, lossless reader contract
     |
     v
+atomic distinction-kernel + canonical v6/v4 migration
+    |
+    v
 M1 layout, grounding, enumeration, definition, and focus
     |
     v
@@ -197,7 +211,7 @@ M2 compact exact relation schemas and contracts
 M3 recursive term/value grammar and pure definitions
     |
     v
-M4 holes, laws, and relational selection
+M4 holes, derivation rules, and relational selection
     |
     v
 M5 Revision surface reset and migration parity
@@ -228,10 +242,11 @@ milestone.
 M0 is the only admitted next surface implementation milestone. Before changing
 the parser grammar, deliver:
 
-- golden sources for enumeration, derived value-shape views, focused graph claims,
-  explicit flattening, relation schemas, recursive terms, holes/correlation,
-  laws, selection, revisions, transitions, effects, hospital egress, and the
-  one-coin game, including accepted `:` classification and `:=` definition,
+- golden sources for enumeration, derived structural views, focused relational
+  content and assertion occurrences, explicit flattening, relation schemas,
+  recursive terms, holes/correlation, universal laws, derivation rules,
+  invariants, goals, selection, revisions, transitions, effects, hospital
+  egress, and the one-coin game, including accepted `:` classification and `:=` definition,
   retired `member of`, `∈`, `::`, and `in` contrasts, canonical two-space
   layout and tab diagnostics;
 - for every specimen: lossless grouped tree, elaborated role graph, canonical
@@ -241,9 +256,12 @@ the parser grammar, deliver:
   groups, delimiters, literals, names, punctuation, and source spans without
   deciding object/type/relation semantics; it applies the frozen two-space,
   spaces-only grouping rule and reports tabs;
-- a deterministic Stage B classification contract for enumeration,
-  definition/derived-shape, focused claim/contract, law, query, revision delta,
-  transition, and epistemic/effect forms;
+- a deterministic Stage B classification contract that keeps relational
+  content/assertion occurrence, relation contract, definition, universal law,
+  oriented derivation rule, invariant, query, goal, observation, requirement,
+  intention, effect, transition, and delta structurally distinct whenever the
+  source proves the mode, and reports an explicit `Unresolved...` class when it
+  does not;
 - a surface ledger recording each semantic distinction, candidate spelling,
   inferable information, ambiguity, explicit repair, checked node, and runtime
   consequence;
@@ -276,7 +294,8 @@ prototype. It does not change the current executable parser or runtime.
 reviewed layout policy; every block has one
 structural classification or a finite exact diagnostic; canonical structural
 rendering round-trips; focus/expanded pairs preserve their distinct membership
-claim, ordinary claim, and definition forms and semantic identities; and every
+content, ordinary relational content and occurrence, and definition forms and
+semantic identities; and every
 proposed canonical token has written semantic
 rent. The exit review protects the settled classification, definition, and
 indentation rulings. Unrelated imports
@@ -285,12 +304,42 @@ preserve elaboration or produce an exact ambiguity repair.
 **Next safe checkpoint:** an independently reviewed M0 corpus and Stage A/B
 contract, not a new parser profile.
 
+## Post-M0 atomic kernel migration
+
+**Depends on:** public, independently reviewed M0.
+
+The constitutional kernel migration is one serial edge and one atomic public
+checkpoint:
+
+```text
+kernel identity/schema/relational form/model/revision/delta + canonical v6/v4 wire
+  -> derive/execution/intervention/diff/request
+  -> frontend AST/parser
+  -> elaboration
+  -> CLI/examples
+  -> generated Rust
+  -> tests/corpus
+```
+
+Semantic-v5 hashes the bytes of the legacy `Type`, `Entity`, `Value`, and
+`Variable` encodings. Retire those identities; do not preserve them as live
+compatibility. Current `Mode` is lookup orientation, not judgment modality.
+Current `Clause` collapses relational content with its assertion occurrence,
+and current `Revision` lacks persisted predecessor, occurrence, authority, and
+judgment lineage. The atomic migration corrects every downstream consumer in
+the order above without publishing an intermediate ontology or wire meaning.
+
+**Exit proof:** primitive encodings and semantic-v5 are absent; canonical v6/v4
+strictly reloads; classification, definition, equality, transition, and
+open-world absence remain distinct; exact Delta lineage and hospital results
+retain parity; and source-deleted generated Rust emits byte-identical results.
+
 ## M1 — Layout and focus profile
 
-**Depends on:** frozen M0 rulings.
+**Depends on:** the atomic distinction-kernel and canonical v6/v4 migration.
 
 Implement term-to-referent grounding, `:` classification, enumeration
-blocks, homogeneous definition/derived-shape blocks, focused blocks,
+blocks, homogeneous classification/derived-shape blocks, focused blocks,
 explicit flattening display, and multiword semantic names without bracket
 syntax. Lower into the current semantic core. No semantic node created by focus
 may contain owned child fields or nested records; `iron-door : Door` must
@@ -298,7 +347,7 @@ elaborate to ordinary membership and never to definition or primitive typing.
 
 **Exit proof:** all-bare enumeration lowers child-to-parent membership; any
 non-bare child deterministically selects focus; bare children under focus
-classify the focus; definition/shape blocks remain derived views; focused and expanded
+classify the focus; classification/shape blocks remain derived views; focused and expanded
 forms are semantically and canonically identical; current hospital semantic
 results and source-deleted parity remain unchanged.
 
@@ -319,7 +368,7 @@ ordinary clauses need no schema name when resolution is unique; explicit
 structure round-trips exactly; ambiguity names candidate shapes and conflicting
 roles.
 
-## M3 — Recursive terms, value shapes, and pure definitions
+## M3 — Recursive terms, derived structural views, and pure definitions
 
 **Depends on:** M2.
 
@@ -338,23 +387,24 @@ nontrivial data transform, and a headless one-coin pure simulation use one
 recursive checked tree. Canonical grouping and source/role diagnostics remain
 stable, and no ordinary algorithm must be encoded as generic runtime triples.
 
-## M4 — Holes, laws, and relational selection
+## M4 — Holes, derivation rules, and relational selection
 
 **Depends on:** M3.
 
 Implement fresh anonymous holes, named reusable/result holes, repeated-hole
 correlation, naked single-clause selection, explicit `select` projection,
-`any` existence, exact-one and canonical-first selection, and `if`-inferred
-positive laws with hidden or optional human labels.
+`any` existence, exact-one and canonical-first selection, and `if`-oriented
+positive derivation rules with hidden or optional human labels. Universal laws,
+Revision-admission invariants, and goals remain distinct modes.
 
 Random witness selection is a distinct effectful operation. `find` ceases to be
 the canonical relational query word but may remain a tooling/library verb.
 `why`, `prevent`, `achieve`, and `diff` retain distinct semantic operations.
 
 **Exit proof:** anonymous and named holes have exact column/correlation
-semantics; `any` returns only Bool; recursive hospital laws and queries retain
-their bounded results/proofs; no general English parser or universal unbounded
-logic search is introduced.
+semantics; `any` returns only Bool; recursive hospital derivation rules and
+queries retain their bounded results/proofs; no general English parser or
+universal unbounded logic search is introduced.
 
 ## M5 — Revision surface reset and migration parity
 
@@ -449,8 +499,8 @@ For a proposition `P` in Revision `R`, retain one exact shared derivability
 representation over asserted clauses:
 
 ```text
-AND — every premise of one law application is required
-OR  — any alternative law application or assertion is sufficient
+AND — every premise of one derivation-rule application is required
+OR  — any alternative rule application or assertion occurrence is sufficient
 ```
 
 The same representation supports query evaluation, one proof, complete bounded
@@ -514,12 +564,12 @@ The reset supersedes these earlier recommendations as target syntax:
 | --- | --- |
 | `use game` | `requires` block |
 | `type: Vec2` or `type Vec2:` | `Vec2` with derived classification/shape view |
-| `Space: Type` | `Space : Type` classification, or bare grounding when no classification is intended |
-| `name: Relation` with brace roles and `mode` | `name : Relation` plus exact named-role schema and projection/cardinality contract |
+| `Space: Type` | bare `Space` grounding, or `Space : Category` only when that domain classification is intended |
+| `name: Relation` with brace roles and `mode` | explicit relation-contract form with exact named roles and projection/cardinality contract; no primitive `Relation` classification |
 | `player ∈ Player` or `thing ∈ Space` classification | `player : Player` / `thing : Space`; report the migration |
 | object-like `property: value` claims | relational `property value` under focus |
 | `position of player = value` for admission | subject-first relation claim; `=` reserved for equality |
-| `name: Law` and `when:` | `name : Law` or conclusion plus `if`; optional label definition |
+| `name: Law` and `when:` | explicit universal-law mode, or conclusion plus `if` for an oriented derivation rule; optional label definition |
 | `find all ?x` | naked hole clause or explicit `select` |
 | “logic variable” as the primary account of `?name` | visible hole/reusable-result semantics |
 | `name: Revision`, `from:`, `withdraw:` | ancestry form plus signed clauses |
@@ -568,10 +618,10 @@ Every milestone preserves gates already crossed:
 | --- | --- | --- |
 | Lossless reader | layout, tokens, delimiters, spans | object/type/relation meaning |
 | Classifier/resolver | deterministic block classes, scoped shapes, ambiguity | target policy or semantic evaluation |
-| Role-labelled elaborator | referents, definitions, membership claims, relations, laws, queries, deltas, transitions, effects | physical storage strategy |
-| Checked program | referent/claim/law IDs, derived admissibility views, Program/Model/State authority, provenance | host resources |
-| Value lowering | pure values, definitions, patterns, collections, target-neutral IR | proposition search or effect realization |
-| Proposition/lineage | laws, closure, proof/support, exact intervention verification | heuristic authority or external effects |
+| Role-labelled elaborator | referents, definitions, membership content, assertion occurrences, relations, universal laws, derivation rules, invariants, goals, queries, deltas, transitions, effects | physical storage strategy |
+| Checked Model | referent/content/occurrence/judgment/mode IDs, derived admissibility views, exact authority and provenance | host resources or Revision-as-program identity |
+| Term lowering | pure terms, definitions, patterns, collections, target-neutral IR | proposition search or effect realization |
+| Proposition/lineage | laws, derivation rules, invariants, closure, proof/support, exact intervention verification | heuristic authority or external effects |
 | Transition runtime | events, snapshot matching, conflicts, deltas, replay | callback mutation or incidental source-order conflict resolution |
 | Effect runtime | capabilities, resources, async outcomes, receipts | claiming intent as fact |
 | Target planner | JavaScript, Rust, later Wasm, indexes, schedules, layouts | changing source meaning to fit a target |

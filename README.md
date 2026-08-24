@@ -1,29 +1,45 @@
 # Clause
 
-The sealed Revision is the program. Source and generated code are projections of it.
+When realized, the canonical authoritative Model is the program. Source and
+generated code are projections; a sealed Revision is immutable version and
+lineage evidence for one Model, not the program itself.
 
-Clause is a Rust-only language for immutable, typed semantic programs. A Model
-admits stable identities, role-labelled n-ary relations, asserted clauses, and
-positive laws; sealing it produces a canonical Revision with a content-derived
-identity. A successor Revision is another value, produced by exact admissions
-and withdrawals from an exact base.
+Clause is a Rust implementation of immutable, distinction-first relational
+programs. A Model admits stable referent identities, explicitly named roles on
+n-ary relational content, assertion occurrences, judgments, universal laws,
+oriented derivation rules, admission invariants, and goals. Sealing a Model
+produces a canonical Revision with a content-derived identity. A successor
+Revision records exact admissions and withdrawals from an exact base.
 
 Clause has one semantic domain of addressable referents. A referent is a
-stabilized distinction reidentifiable across claims and Revisions, independent
-of structural equality. Relations are referents in relational position; claims
-arrange referents in named roles; laws derive, constrain, reject, or
-operationally orient claims. Terms and source files project the Model; they are
-not the Model. Claim content and occurrence stay distinct from acceptance,
-status, and authority; identity stays distinct from structural equality.
+stabilized distinction reidentifiable across relational content, assertion
+occurrences, and Revisions, independent of structural equality. Relations are
+referents in relational position. Relational content assigns participants to
+stable named roles; an assertion occurrence is the scoped act that commits to
+that content, and judgment remains separate from both. Terms and source files
+project the Model; they are not the Model. Identity stays distinct from
+structural equality, and absence remains undetermined rather than denial.
+
+[FOUNDATION.md](FOUNDATION.md) is the semantic authority. [SURFACE.md](SURFACE.md)
+defines the authoring projection, [M0.md](M0.md) defines executable evidence,
+and [ROADMAP.md](ROADMAP.md) orders implementation.
+
+Clause currently has no Store implementation. Store is a neutral persistence
+and query substrate, not semantic authority. A future adapter must supply a
+typed Clause envelope for referents, relational content, assertion occurrences,
+judgments, modal authority, admission/rejection, supersession, and exact
+Revision-to-storage lineage; none may be inferred from equality, missing rows,
+retraction, query negation, liveness, or storage revision identity.
 
 A `.clause` file is the authoring projection. The supported implementation
 currently uses one native `:` grammar for Types, Relations, Models, Laws,
 Revisions, and their members. That grammar is executable truth and a migration
 oracle, not the target human surface. The [Clause Surface
 Reset](SURFACE.md) replaces the earlier surface recommendations with grounded
-referents, named-role claims, laws, classification, definition, focused forms,
-and explicit semantic moods. M0 freezes that constitution and indentation
-without pretending the current typed parser/kernel/wire already implements it.
+referents, named-role relational content and occurrences, distinct semantic
+modes, classification, definition, and focused forms. M0 freezes that
+constitution and indentation without pretending the current typed
+parser/kernel/wire already implements it.
 
 An emitted `.rs` file is an executable projection: it carries the referenced
 sealed Revisions and the resolved request sequence, not the authoring source or
@@ -90,9 +106,11 @@ grammar is implemented truth, not canonical target layout and not an example
 for new surface work.
 
 The three-place `connects` relation is genuinely n-ary: every clause fills its
-typed `door`, `origin`, and `destination` roles. Entity identity includes the
-Model, local name, and admitted Type, so `Door 101` is distinct from an
-equal-looking local name of another Type or Model.
+named `door`, `origin`, and `destination` roles. In the current legacy kernel,
+role domains use `Type`, and Entity identity includes the Model, local name, and
+admitted Type. That representation keeps `Door 101` distinct from an
+equal-looking legacy entity in another Type or Model; it is migration evidence,
+not the constitutional identity rule.
 
 `[Door 101..106]` and the focused `{n}` block are checked semantic ellipsis.
 The first admits six ordinary `Door` identities. The second correlates the same
@@ -147,12 +165,13 @@ sets; Clause makes no such claim. `one minimal` returns one canonical certified
 result. `all minimal` returns an antichain and says `Complete` only after the
 entire admitted finite search has been exhausted.
 
-An intervention's `using:` block defines a finite, typed basis. `prevent`
-considers currently asserted clauses of those extensional relations.
-`achieve` constructs ground clauses from the selected relation's exact role
-Types and entities already admitted by the selected Revision, then excludes
-clauses already asserted. Every returned Delta is checked by applying it to
-its exact base Revision and evaluating the target again.
+In the current executable profile, an intervention's `using:` block defines a
+finite basis using legacy typed relation declarations. `prevent` considers
+currently asserted clauses of those extensional relations. `achieve` constructs
+ground clauses from the selected relation's exact legacy role domains and
+entities admitted by the selected Revision, then excludes clauses already
+asserted. Every returned Delta is checked by applying it to its exact base
+Revision and evaluating the target again.
 
 The default runner bounds closure at 100 assertions, 10 rounds, and 10,000 join
 attempts; support enumeration at 100 expansions and 100 supports per clause;
