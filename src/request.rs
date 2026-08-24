@@ -157,6 +157,13 @@ pub struct RunOutput {
     pub results: Vec<RequestOutput>,
 }
 
+/// Canonical results for an ordered selection of pure definitions in one Revision.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EvaluationOutput {
+    revision: RevisionId,
+    definitions: Vec<(ReferentId, Term)>,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RequestOutput {
     Find(Vec<Term>),
@@ -178,6 +185,34 @@ impl RunOutput {
     /// The sole deterministic run transcript. Semantic IDs are rendered only here.
     pub fn canonical_bytes(&self) -> String {
         canonical_rendering::canonical_bytes(self)
+    }
+}
+
+impl EvaluationOutput {
+    /// Preserve one evaluated result for each uniquely requested definition.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the same definition identity occurs more than once.
+    pub fn new(revision: RevisionId, definitions: Vec<(ReferentId, Term)>) -> kernel::Result<Self> {
+        let mut unique = std::collections::BTreeSet::new();
+        if definitions
+            .iter()
+            .any(|(definition, _)| !unique.insert(definition))
+        {
+            return Err(kernel::KernelError::new(
+                "evaluation output cannot contain duplicate definitions",
+            ));
+        }
+        Ok(Self {
+            revision,
+            definitions,
+        })
+    }
+
+    /// Exact no-newline JSON bytes in requested definition order.
+    pub fn canonical_bytes(&self) -> String {
+        canonical_rendering::evaluation_bytes(self)
     }
 }
 

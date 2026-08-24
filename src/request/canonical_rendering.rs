@@ -1,4 +1,4 @@
-use super::{RequestOutput, RunOutput};
+use super::{EvaluationOutput, RequestOutput, RunOutput};
 use crate::{
     execution::{self, Proof, WhyAll},
     intervention::{AchieveAll, AchieveOne, Incomplete, Intervention, PreventAll, PreventOne},
@@ -13,6 +13,21 @@ pub(super) fn canonical_bytes(output: &RunOutput) -> String {
             .results
             .iter()
             .map(request_output)
+            .collect::<Vec<_>>()
+            .join(",")
+    )
+}
+
+pub(super) fn evaluation_bytes(output: &EvaluationOutput) -> String {
+    format!(
+        "[\"clause-evaluate-v1\",{},[{}]]",
+        string(&output.revision.to_string()),
+        output
+            .definitions
+            .iter()
+            .map(|(definition, result)| {
+                format!("[{},{}]", string(definition.as_str()), term(result))
+            })
             .collect::<Vec<_>>()
             .join(",")
     )

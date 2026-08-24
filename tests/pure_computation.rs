@@ -1,12 +1,14 @@
 use clause::{
     elaborate::{self, ModelContext},
-    execution, frontend,
-    kernel::{Model, ReferentId, Revision, Term},
-    wire,
+    execution, frontend, generated,
+    kernel::{Delta, Model, ReferentId, Revision, SemanticAtom, Term},
+    request, wire,
 };
 use std::{
     collections::BTreeMap,
     fs,
+    path::PathBuf,
+    process::Command,
     sync::atomic::{AtomicUsize, Ordering},
 };
 
@@ -69,6 +71,7 @@ struct SealedFixture {
     revision: Revision,
     canonical: String,
     definitions: BTreeMap<&'static str, ReferentId>,
+    source_path: PathBuf,
 }
 
 fn model_id() -> ReferentId {
@@ -129,6 +132,7 @@ fn sealed_fixture() -> SealedFixture {
         revision: wire::reload(&canonical).expect("source-deleted computation wire reloads"),
         canonical,
         definitions,
+        source_path,
     }
 }
 
@@ -191,4 +195,87 @@ fn reloaded_pure_computation_is_target_neutral_and_deterministic() {
     assert_eq!(first, second);
     assert_eq!(wire::serialize(&fixture.revision), fixture.canonical);
     assert_eq!(wire::serialize(&repeat_reload), fixture.canonical);
+}
+
+#[test]
+fn generated_evaluation_matches_source_deleted_interpreter_bytes() {
+    let fixture = sealed_fixture();
+    let selected = RESULT_PAIRS
+        .map(|(actual, _)| fixture.definitions[actual].clone())
+        .to_vec();
+    let duplicate = [selected[0].clone(), selected[0].clone()];
+    assert!(
+        generated::emit_evaluation_rust(&fixture.revision, &duplicate)
+            .expect_err("duplicate definition requests are ambiguous")
+            .to_string()
+            .contains("duplicate definition")
+    );
+    assert!(
+        generated::emit_evaluation_rust(&fixture.revision, &[model_id()])
+            .expect_err("a referent without a definition is not evaluable by definition ID")
+            .to_string()
+            .contains("missing definition")
+    );
+    let removed_definition = fixture.revision.model().definitions()[0].clone();
+    let successor = Delta::new(
+        fixture.revision.identity().clone(),
+        Vec::new(),
+        vec![SemanticAtom::Definition(removed_definition)],
+    )
+    .expect("one exact definition withdrawal is a valid Delta")
+    .apply(&fixture.revision)
+    .expect("definition withdrawal admits a successor");
+    assert_eq!(
+        generated::emit_evaluation_rust(&successor, &[])
+            .expect_err("standalone evaluation requires a root Revision")
+            .to_string(),
+        "generated evaluation requires a root Revision"
+    );
+    let expected = request::EvaluationOutput::new(
+        fixture.revision.identity().clone(),
+        selected
+            .iter()
+            .map(|definition| (definition.clone(), evaluate(&fixture.revision, definition)))
+            .collect(),
+    )
+    .expect("selected definitions are unique")
+    .canonical_bytes();
+    assert!(expected.starts_with("[\"clause-evaluate-v1\","));
+    assert!(!expected.ends_with('\n'));
+    let emitted = generated::emit_evaluation_rust(&fixture.revision, &selected)
+        .expect("root Revision emits target-neutral evaluation Rust");
+    assert!(!emitted.contains("mod frontend"));
+    assert!(!emitted.contains("mod elaborate"));
+
+    let artifact = std::env::temp_dir().join(format!(
+        "clause-pure-evaluation-generated-{}-{}",
+        std::process::id(),
+        SOURCE_NUMBER.fetch_add(1, Ordering::Relaxed)
+    ));
+    let rust = artifact.with_extension("rs");
+    let binary = artifact.with_extension("bin");
+    fs::write(&rust, emitted).expect("generated evaluation Rust writes once");
+    assert!(
+        !fixture.source_path.exists(),
+        "authoring source must be absent before generated rustc"
+    );
+    let compiled = Command::new("rustc")
+        .args(["--edition=2024", "--cfg", "clause_generated"])
+        .arg(&rust)
+        .arg("-o")
+        .arg(&binary)
+        .output()
+        .expect("generated evaluation rustc starts once");
+    assert!(
+        compiled.status.success(),
+        "{}",
+        String::from_utf8_lossy(&compiled.stderr)
+    );
+    let actual = Command::new(&binary)
+        .output()
+        .expect("generated evaluation runs once");
+    assert!(actual.status.success());
+    assert_eq!(actual.stdout, expected.as_bytes());
+    fs::remove_file(rust).expect("generated evaluation Rust cleans up");
+    fs::remove_file(binary).expect("generated evaluation binary cleans up");
 }

@@ -105,6 +105,11 @@ const DERIVE_CHILDREN: &[ChildModule] = &[
 #[cfg(not(clause_generated))]
 const EXECUTION_CHILDREN: &[ChildModule] = &[
     ChildModule {
+        name: "evaluate",
+        declaration: "mod evaluate;",
+        source: include_str!("execution/evaluate.rs"),
+    },
+    ChildModule {
         name: "explain",
         declaration: "mod explain;",
         source: include_str!("execution/explain.rs"),
@@ -178,37 +183,11 @@ const REQUEST_CHILDREN: &[ChildModule] = &[
     },
 ];
 
-/// Emit a standalone program that reloads the referenced v4 Revisions and
+/// Emit a standalone program that reloads the referenced Revisions and
 /// invokes the same ordered request evaluator as the interpreter.
 #[cfg(not(clause_generated))]
 pub fn emit_rust(program: &ResolvedProgram) -> Result<String> {
-    let mut modules = String::new();
-    for (name, source, children) in [
-        ("kernel", include_str!("kernel.rs"), KERNEL_CHILDREN),
-        ("wire", include_str!("wire.rs"), WIRE_CHILDREN),
-        ("derive", include_str!("derive.rs"), DERIVE_CHILDREN),
-        ("delta", include_str!("delta.rs"), NO_CHILDREN),
-        (
-            "execution",
-            include_str!("execution.rs"),
-            EXECUTION_CHILDREN,
-        ),
-        (
-            "intervention",
-            include_str!("intervention.rs"),
-            INTERVENTION_CHILDREN,
-        ),
-        (
-            "semantic_diff",
-            include_str!("semantic_diff.rs"),
-            SEMANTIC_DIFF_CHILDREN,
-        ),
-        ("request", include_str!("request.rs"), REQUEST_CHILDREN),
-    ] {
-        let body = production_module(name, source, children)?;
-        writeln!(modules, "mod {name} {{\n{body}\n}}")
-            .expect("writing generated modules to a String cannot fail");
-    }
+    let modules = target_neutral_modules()?;
     let mut body = String::new();
     let revisions = revision_order(program)?;
     let indices = revisions
@@ -241,6 +220,89 @@ pub fn emit_rust(program: &ResolvedProgram) -> Result<String> {
     writeln!(body, "let program = request::ResolvedProgram::new(std::collections::BTreeMap::from([{}]), vec![{}]).expect(\"generated requests resolve\");", revisions.iter().enumerate().map(|(index, _)| format!("(r{index}.identity().clone(), r{index}.clone())")).collect::<Vec<_>>().join(","), program.requests().iter().map(|request| request_source(request, &indices)).collect::<Vec<_>>().join(",")).expect("writing the generated request registry to a String cannot fail");
     writeln!(body, "print!(\"{{}}\", request::run(&program, request::RunLimits::default()).expect(\"generated requests run\").canonical_bytes());").expect("writing the generated entry point to a String cannot fail");
     Ok(format!("{modules}\nfn main() {{ {body} }}"))
+}
+
+/// Emit a standalone program that strictly reloads one root Revision and
+/// evaluates the requested definitions in caller-supplied order.
+#[cfg(not(clause_generated))]
+pub fn emit_evaluation_rust(
+    revision: &crate::kernel::Revision,
+    definitions: &[ReferentId],
+) -> Result<String> {
+    if revision.predecessor().is_some() {
+        return Err(KernelError::new(
+            "generated evaluation requires a root Revision",
+        ));
+    }
+    let mut unique = std::collections::BTreeSet::new();
+    for definition in definitions {
+        if !unique.insert(definition) {
+            return Err(KernelError::new(format!(
+                "generated evaluation requested duplicate definition '{}'",
+                definition.as_str()
+            )));
+        }
+        if revision.model().definition(definition).is_none() {
+            return Err(KernelError::new(format!(
+                "generated evaluation requested missing definition '{}'",
+                definition.as_str()
+            )));
+        }
+    }
+
+    let modules = target_neutral_modules()?;
+    let serialized = wire::serialize(revision);
+    let requested = definitions
+        .iter()
+        .map(definition_source)
+        .collect::<Vec<_>>()
+        .join(",");
+    let body = format!(
+        "let revision = wire::reload({serialized:?}).expect(\"sealed root reloads\");\n\
+         let requested = vec![{requested}];\n\
+         let mut results = Vec::with_capacity(requested.len());\n\
+         for definition_id in requested {{\n\
+             let definition = revision.model().definition(&definition_id).expect(\"validated definition survives strict reload\");\n\
+             let result = execution::evaluate(&revision, definition.denotation()).expect(\"sealed pure definition evaluates\");\n\
+             results.push((definition_id, result));\n\
+         }}\n\
+         let output = request::EvaluationOutput::new(revision.identity().clone(), results).expect(\"validated evaluation requests remain unique\");\n\
+         print!(\"{{}}\", output.canonical_bytes());"
+    );
+    Ok(format!("{modules}\nfn main() {{ {body} }}"))
+}
+
+#[cfg(not(clause_generated))]
+fn target_neutral_modules() -> Result<String> {
+    let mut modules = String::new();
+    for (name, source, children) in [
+        ("kernel", include_str!("kernel.rs"), KERNEL_CHILDREN),
+        ("wire", include_str!("wire.rs"), WIRE_CHILDREN),
+        ("intrinsic", include_str!("intrinsic.rs"), NO_CHILDREN),
+        ("derive", include_str!("derive.rs"), DERIVE_CHILDREN),
+        ("delta", include_str!("delta.rs"), NO_CHILDREN),
+        (
+            "execution",
+            include_str!("execution.rs"),
+            EXECUTION_CHILDREN,
+        ),
+        (
+            "intervention",
+            include_str!("intervention.rs"),
+            INTERVENTION_CHILDREN,
+        ),
+        (
+            "semantic_diff",
+            include_str!("semantic_diff.rs"),
+            SEMANTIC_DIFF_CHILDREN,
+        ),
+        ("request", include_str!("request.rs"), REQUEST_CHILDREN),
+    ] {
+        let body = production_module(name, source, children)?;
+        writeln!(modules, "mod {name} {{\n{body}\n}}")
+            .expect("writing generated modules to a String cannot fail");
+    }
+    Ok(modules)
 }
 
 #[cfg(not(clause_generated))]
@@ -374,6 +436,13 @@ fn selection_source(selection: Selection) -> &'static str {
 fn relation_source(value: &ReferentId) -> String {
     format!(
         "kernel::ReferentId::new({:?}.into()).expect(\"generated relation\")",
+        value.as_str()
+    )
+}
+#[cfg(not(clause_generated))]
+fn definition_source(value: &ReferentId) -> String {
+    format!(
+        "kernel::ReferentId::new({:?}.into()).expect(\"generated definition identity\")",
         value.as_str()
     )
 }
