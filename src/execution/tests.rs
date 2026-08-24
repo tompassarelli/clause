@@ -450,11 +450,69 @@ fn evaluate_uses_indexed_intrinsics_short_circuits_and_memoizes() {
         Term::application(length.id().clone()),
     ])
     .unwrap();
-    let (evaluated, dispatches) = super::evaluate::evaluate_with_dispatches(&revision, &repeated)
+    let (evaluated, operations) = super::evaluate::evaluate_with_operations(&revision, &repeated)
         .expect("shared application evaluates");
     assert_eq!(
         evaluated,
         Term::tuple(vec![Term::f32(5.0).unwrap(), Term::f32(5.0).unwrap()]).unwrap()
     );
-    assert_eq!(dispatches, 1);
+    assert_eq!(operations, 1);
+}
+
+#[test]
+fn pure_map_and_one_coin_score_have_exact_deterministic_work_budgets() {
+    const SOURCE: &str = r#"F32
+
+lengths:
+  input: [(3.0, 4.0), (5.0, 12.0)]
+  map length over input
+
+frame velocity:
+  direction: (1.0, 0.0)
+  direction * 300.0
+
+frame next position:
+  position: (0.0, 0.0)
+  dt: 0.5
+  position + frame velocity * dt
+
+frame collision:
+  coin: (160.0, 0.0)
+  player radius: 12.0
+  coin radius: 8.0
+  length (frame next position - coin) <= player radius + coin radius
+
+frame collected:
+  if frame collision then true else false
+
+frame score:
+  if frame collected then 10 else 0
+"#;
+
+    let model_id = referent_id("pure/budget-model");
+    let program = crate::elaborate::compile_in(
+        crate::frontend::parse(SOURCE).expect("budget witness parses"),
+        crate::elaborate::ModelContext::new(model_id.clone()),
+    )
+    .expect("budget witness compiles");
+    let revision = program.context_revision().expect("budget Revision");
+    let evaluate_named = |name: &str| {
+        let id = program
+            .designations()
+            .scoped(&model_id, name)
+            .unwrap_or_else(|error| panic!("definition '{name}' resolves: {error}"));
+        super::evaluate::evaluate_with_operations(revision, &Term::referent(id))
+            .unwrap_or_else(|error| panic!("definition '{name}' evaluates: {error}"))
+    };
+
+    let (lengths, map_operations) = evaluate_named("lengths");
+    assert_eq!(
+        lengths,
+        Term::sequence(vec![Term::f32(5.0).unwrap(), Term::f32(13.0).unwrap()]).unwrap()
+    );
+    assert_eq!(map_operations, 3);
+
+    let (score, coin_operations) = evaluate_named("frame score");
+    assert_eq!(score, Term::int(10));
+    assert_eq!(coin_operations, 9);
 }

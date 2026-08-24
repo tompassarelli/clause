@@ -16,10 +16,10 @@ pub(super) fn evaluate(revision: &Revision, term: &Term) -> Result<Term> {
 }
 
 #[cfg(test)]
-pub(super) fn evaluate_with_dispatches(revision: &Revision, term: &Term) -> Result<(Term, usize)> {
+pub(super) fn evaluate_with_operations(revision: &Revision, term: &Term) -> Result<(Term, usize)> {
     let mut evaluator = Evaluator::new(revision);
     let result = evaluator.term(term)?;
-    Ok((result, evaluator.application_dispatches))
+    Ok((result, evaluator.operation_count))
 }
 
 struct Evaluator<'a> {
@@ -28,7 +28,7 @@ struct Evaluator<'a> {
     applications: BTreeMap<ContentId, Term>,
     active: BTreeSet<ActiveKey>,
     #[cfg(test)]
-    application_dispatches: usize,
+    operation_count: usize,
 }
 
 impl<'a> Evaluator<'a> {
@@ -39,7 +39,7 @@ impl<'a> Evaluator<'a> {
             applications: BTreeMap::new(),
             active: BTreeSet::new(),
             #[cfg(test)]
-            application_dispatches: 0,
+            operation_count: 0,
         }
     }
 
@@ -111,7 +111,7 @@ impl<'a> Evaluator<'a> {
         }
         #[cfg(test)]
         {
-            self.application_dispatches += 1;
+            self.operation_count += 1;
         }
         let result = self.dispatch(&content);
         self.active.remove(&key);
@@ -206,7 +206,18 @@ impl<'a> Evaluator<'a> {
         let Term::Sequence(values) = sequence else {
             return Err(KernelError::new("map requires a Sequence input"));
         };
-        Term::sequence(values.iter().map(length).collect::<Result<Vec<_>>>()?)
+        Term::sequence(
+            values
+                .iter()
+                .map(|value| {
+                    #[cfg(test)]
+                    {
+                        self.operation_count += 1;
+                    }
+                    length(value)
+                })
+                .collect::<Result<Vec<_>>>()?,
+        )
     }
 }
 
