@@ -369,8 +369,9 @@ distance between ?a and ?b:
 An explicit relation schema retains named roles and classifies their referents:
 
 ```clause
-connects:
+connects
   door: Door connects origin: Space to destination: Space
+  door origin -> destination*
 ```
 
 `∈` is canonical source. Editors may transform typed `::` to `∈` before
@@ -598,17 +599,13 @@ Layout already groups their bodies.
 Clause is not a natural-language parser. Domain phrases are exact declared
 mixfix shapes.
 
-A public or ambiguous relation can use an explicit relation-contract form. The
-following structural spelling is provisional; the mode and named-role content
-are authoritative:
+A relation contract is inferred from one role-pattern line followed by its
+projection/cardinality line:
 
 ```clause
-relation contract connects
-  role door: Door
-  role origin: Space
-  role destination: Space
-  phrase {door} connects {origin} to {destination}
-  project door origin -> destination*
+connects
+  door: Door connects origin: Space to destination: Space
+  door origin -> destination*
 ```
 
 This says:
@@ -620,8 +617,9 @@ This says:
 - operational projection: given `door` and `origin`, produce zero or more
   `destination` values.
 
-`relation contract` states a mode; it does not classify `connects` into a
-primitive `Relation` species. The final spelling remains an M2 decision.
+The block establishes a checked contract; it does not classify `connects` into
+a primitive `Relation` species. The bare heading is not a binding, and `:`
+appears only inside the genuine role-to-domain bindings.
 
 The checked core still retains relation identity, named roles, role domains,
 surface pattern, and voice/cardinality contract.
@@ -673,10 +671,9 @@ laws, derivation rules, queries, and strategies. Reserve dot syntax for
 explicit foreign-host interoperation,
 if it exists at all.
 
-Exactly one is the default return cardinality. `*` means zero or more; `+`
-means one or more. Do not overload suffix `?` for optionality while `?` is the
-hole glyph. Use an explicit `maybe` contract until a better optional notation
-earns itself.
+Exactly one is the default return cardinality. `0..1` means zero or one, `*`
+means zero or more, and `+` means one or more. Do not overload suffix `?` for
+optionality while `?` is the hole glyph.
 
 ### 7.2 Ordinary clauses do not name their schema
 
@@ -1414,7 +1411,7 @@ codemod, then remove the ceremonial forms unless a real consumer requires them.
 | --- | --- |
 | `Space: Type` | bare `Space` grounding, or `Space ∈ Category` only when that membership is intended |
 | `thing: Space` used as classification | `thing ∈ Space`; report the membership migration |
-| `name: RelationShape` | explicit relation-contract form; never primitive relation classification |
+| `name: RelationShape` | bare relation heading with role-pattern and projection/cardinality lines; never primitive relation classification |
 | `{role: Type}` | `role: Type` as a schema-role binding only |
 | `mode ...` | arrow and cardinality contract |
 | `name: Model` | authoring or revision context inferred or externally named |

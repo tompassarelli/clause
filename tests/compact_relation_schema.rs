@@ -22,7 +22,7 @@ iron-door
 const COMPACT: &str = r#"Door
 Space
 
-connects:
+connects
   door: Door connects origin: Space to destination: Space
   door origin -> destination*
 
@@ -37,11 +37,11 @@ const OVERLAPPING: &str = r#"Door
 Portal
 Space
 
-connects:
+connects
   door: Door connects origin: Space to destination: Space
   door origin -> destination*
 
-links:
+links
   portal: Portal connects source: Space to target: Space
   portal source -> target*
 
@@ -167,4 +167,45 @@ fn overlapping_schemas_name_candidates_and_conflicting_roles() {
             "ambiguity diagnostic must name '{required}': {diagnostic}"
         );
     }
+}
+
+#[test]
+fn checked_focus_rejects_an_undeclared_role() {
+    let mut program = frontend::parse(COMPACT).expect("compact relation schema parses");
+    let relation = program
+        .declarations
+        .iter_mut()
+        .find(|declaration| declaration.subject.value.as_str() == "connects")
+        .expect("connects relation exists");
+    let frontend::Member::Sentence(sentence) = &mut relation.body[0] else {
+        panic!("compact relation starts with a sentence shape");
+    };
+    sentence.focus.value = frontend::RoleName("owner".to_owned());
+
+    let error = elaborate::compile_in(program, ModelContext::new(model_id()))
+        .expect_err("focus must resolve through the checked role designations")
+        .to_string();
+    assert!(error.contains("unknown role 'owner'"), "{error}");
+}
+
+#[test]
+fn compact_optional_projection_lowers_without_reserving_maybe() {
+    let compiled = compile_in(
+        "Item\nState\n\nstatus\n  subject: Item has maybe: State\n  subject -> maybe 0..1\n",
+    );
+    let relation = compiled
+        .designations()
+        .global("status")
+        .expect("status relation identity");
+    let revision = compiled.context_revision().expect("context Revision");
+    let shape = &revision.model().relation_shapes()[&relation];
+    let maybe = compiled
+        .designations()
+        .role(&relation, "maybe")
+        .expect("maybe remains an ordinary role name");
+    let [lookup] = shape.lookup() else {
+        panic!("status has one projection");
+    };
+    assert_eq!(lookup.sought(), std::slice::from_ref(&maybe));
+    assert_eq!(lookup.cardinality(), &Cardinality::Maybe);
 }

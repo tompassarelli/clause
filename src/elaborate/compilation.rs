@@ -376,14 +376,22 @@ fn declare_relation_projection(
             }
         }
     }
+    let focused_role = projection
+        .designations
+        .role(&relation, sentence.focus.value.as_str())?;
     if ordered_roles.len() == 2
         && let Some(literal) = literal
     {
+        let value_role = ordered_roles
+            .iter()
+            .find(|role| *role != &focused_role)
+            .cloned()
+            .expect("binary sentence shape has one role besides its checked focus");
         projection.focus_shapes.push(super::lowering::FocusShape {
             relation,
             literal,
-            focused_role: ordered_roles[0].clone(),
-            value_role: ordered_roles[1].clone(),
+            focused_role,
+            value_role,
         });
     }
     Ok(())

@@ -137,6 +137,10 @@ pub struct MembershipDecl {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SentenceShapeDecl {
+    /// The first inline role is the designated focus supplied by a focused
+    /// clause projection. Keeping it explicit prevents downstream lowering
+    /// from recovering semantic structure from incidental vector position.
+    pub focus: Spanned<RoleName>,
     pub parts: Vec<ShapePartDecl>,
     pub span: Span,
 }

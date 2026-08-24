@@ -49,12 +49,12 @@ pub fn parse(source: &str) -> Result<Program, ParseError> {
     let (mut raw_declarations, mut raw_top_level, raw_requests) = scan(source)?;
     for declaration in &mut raw_declarations {
         if declaration.bare_block && content(declaration.header).ends_with(':') {
-            if !compact_relation_candidate(declaration) {
-                return Err(error(
-                    line_span(declaration.header),
-                    "':' only establishes a binding; this block is not a compact relation schema",
-                ));
-            }
+            return Err(error(
+                line_span(declaration.header),
+                "':' only establishes a binding; it cannot introduce a block",
+            ));
+        }
+        if declaration.bare_block && compact_relation_candidate(declaration) {
             declaration.kind = Kind::RelationShape;
             declaration.bare_block = false;
         }
@@ -792,7 +792,7 @@ diff impact -> impact/adopt
     #[test]
     fn compact_relation_block_matches_the_ceremonial_relation_ast() {
         let compact = parse(
-            "Door\nSpace\n\nconnects:\n  door: Door connects origin: Space to destination: Space\n  door origin -> destination*\n",
+            "Door\nSpace\n\nconnects\n  door: Door connects origin: Space to destination: Space\n  door origin -> destination*\n",
         )
         .expect("compact relation schema parses");
         let ceremonial = parse(
@@ -810,6 +810,7 @@ diff impact -> impact/adopt
             let Member::Sentence(sentence) = &relation.body[0] else {
                 panic!("relation starts with a sentence shape");
             };
+            assert_eq!(sentence.focus.value.as_str(), "door");
             let parts = sentence
                 .parts
                 .iter()
@@ -843,7 +844,7 @@ diff impact -> impact/adopt
     #[test]
     fn compact_relation_domains_resolve_exact_grounded_multiword_names() {
         let compact = parse(
-            "security door\ninterior space\n\nconnects:\n  door: security door connects origin: interior space to destination: interior space\n  door origin -> destination*\n",
+            "security door\ninterior space\n\nconnects\n  door: security door connects origin: interior space to destination: interior space\n  door origin -> destination*\n",
         )
         .expect("grounded multiword compact domains resolve");
         let relation = compact
@@ -880,7 +881,7 @@ diff impact -> impact/adopt
     #[test]
     fn compact_relation_domains_reject_ambiguous_grounded_segmentations() {
         let error = parse(
-            "security\nsecurity door\ninterior space\n\nconnects:\n  door: security door connects origin: interior space to destination: interior space\n  door origin -> destination*\n",
+            "security\nsecurity door\ninterior space\n\nconnects\n  door: security door connects origin: interior space to destination: interior space\n  door origin -> destination*\n",
         )
         .expect_err("two grounded domain prefixes must remain ambiguous")
         .to_string();
@@ -891,9 +892,56 @@ diff impact -> impact/adopt
     }
 
     #[test]
+    fn compact_optional_cardinality_is_exact_and_does_not_reserve_role_names() {
+        let program = parse(
+            "Item\nState\n\nstatus\n  subject: Item has maybe: State\n  subject -> maybe 0..1\n",
+        )
+        .expect("0..1 is an exact optional contract beside an ordinary 'maybe' role");
+        let relation = program
+            .declarations
+            .iter()
+            .find(|declaration| declaration.subject.value.as_str() == "status")
+            .expect("status relation exists");
+        let Member::Sentence(shape) = &relation.body[0] else {
+            panic!("status starts with its sentence shape");
+        };
+        assert_eq!(shape.focus.value.as_str(), "subject");
+        let Member::LookupMode(mode) = &relation.body[1] else {
+            panic!("status ends with its projection contract");
+        };
+        assert_eq!(mode.cardinality, Cardinality::Maybe);
+        assert_eq!(mode.sought[0].value.as_str(), "maybe");
+    }
+
+    #[test]
     fn rejects_colon_used_only_as_block_punctuation() {
         let error = parse("Game:\n  Chess\n  Soccer\n").unwrap_err().to_string();
         assert!(error.contains("':' only establishes a binding"), "{error}");
+
+        let error = parse("Item\n\nsettings:\n  left: Item pairs right: Item\n  left -> right\n")
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("':' only establishes a binding"), "{error}");
+
+        let error = parse("Item\n\nsettings:\n  left: Item pairs right: Item\n  left, -> right\n")
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("':' only establishes a binding"), "{error}");
+    }
+
+    #[test]
+    fn compact_schema_candidates_require_exact_role_tokens() {
+        for source in [
+            "Item\n\nsettings\n  left: Item, right: Item\n  left -> right\n",
+            "Item\n\nsettings\n  left: Item pairs right: Item\n  left, -> right\n",
+        ] {
+            let (declarations, _, _) = scan(source).expect("candidate source scans");
+            let settings = declarations
+                .iter()
+                .find(|declaration| declaration.subject.value.as_str() == "settings")
+                .expect("settings block exists");
+            assert!(!compact_relation_candidate(settings));
+        }
     }
 
     #[test]

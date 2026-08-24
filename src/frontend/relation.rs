@@ -95,7 +95,11 @@ fn parse_shape(line: SourceLine<'_>) -> Result<SentenceShapeDecl, ParseError> {
             ));
         }
     }
+    let ShapePartDecl::Role { id: focus, .. } = &parts[0] else {
+        unreachable!("validated sentence shape begins with a role");
+    };
     Ok(SentenceShapeDecl {
+        focus: focus.clone(),
         parts,
         span: line_span(line),
     })
@@ -237,7 +241,11 @@ fn parse_compact_shape(
             }));
         }
     }
+    let ShapePartDecl::Role { id: focus, .. } = &parts[0] else {
+        unreachable!("validated compact shape begins with a role");
+    };
     Ok(SentenceShapeDecl {
+        focus: focus.clone(),
         parts,
         span: line_span(line),
     })
@@ -381,6 +389,8 @@ fn parse_compact_mode(
         (sought, Cardinality::Many)
     } else if let Some(sought) = sought_with_cardinality.strip_suffix('+') {
         (sought, Cardinality::Some)
+    } else if let Some(sought) = sought_with_cardinality.strip_suffix(" 0..1") {
+        (sought, Cardinality::Maybe)
     } else {
         (sought_with_cardinality, Cardinality::One)
     };
@@ -418,7 +428,7 @@ pub(super) fn relation_spec(
             "RelationShape requires two-space sentence and mode members",
         ));
     }
-    let compact = content(raw.header).ends_with(':');
+    let compact = !content(raw.header).contains(": ");
     let shape = if compact {
         parse_compact_shape(entries[0], grounded)?
     } else {
@@ -456,8 +466,58 @@ pub(super) fn relation_spec(
 
 pub(super) fn compact_relation_candidate(raw: &RawDecl<'_>) -> bool {
     let entries = nonblank(raw.body.iter().copied());
-    content(raw.header).ends_with(':')
-        && entries.len() == 2
-        && content(entries[0]).matches(": ").count() >= 2
-        && content(entries[1]).contains(" -> ")
+    let [shape, projection] = entries.as_slice() else {
+        return false;
+    };
+    if content(raw.header).ends_with(':')
+        || content(raw.header).contains(": ")
+        || indent(*shape) != Ok(2)
+        || indent(*projection) != Ok(2)
+    {
+        return false;
+    }
+
+    let shape_tokens = content(*shape).split(' ').collect::<Vec<_>>();
+    if shape_tokens.iter().any(|token| token.is_empty()) {
+        return false;
+    }
+    let markers = shape_tokens
+        .iter()
+        .enumerate()
+        .filter_map(|(index, token)| {
+            token
+                .strip_suffix(':')
+                .and_then(|role| role_name(*shape, 2, role).is_ok().then_some(index))
+        })
+        .collect::<Vec<_>>();
+    if markers.len() < 2 || markers.first() != Some(&0) {
+        return false;
+    }
+    if markers.windows(2).any(|pair| pair[1] < pair[0] + 3)
+        || markers
+            .last()
+            .is_some_and(|marker| marker + 1 >= shape_tokens.len())
+    {
+        return false;
+    }
+
+    let projection_text = content(*projection);
+    if projection_text.matches(" -> ").count() != 1 {
+        return false;
+    }
+    let Some((known, sought_with_cardinality)) = projection_text.split_once(" -> ") else {
+        return false;
+    };
+    let sought = sought_with_cardinality
+        .strip_suffix(" 0..1")
+        .or_else(|| sought_with_cardinality.strip_suffix('*'))
+        .or_else(|| sought_with_cardinality.strip_suffix('+'))
+        .unwrap_or(sought_with_cardinality);
+    [known, sought].into_iter().all(|roles| {
+        !roles.is_empty()
+            && !roles.split(' ').any(str::is_empty)
+            && roles
+                .split(' ')
+                .all(|role| role_name(*projection, 2, role).is_ok())
+    })
 }
