@@ -505,16 +505,24 @@ pub(super) fn clause_with_catalog(
         ));
     }
     if candidates.len() > 1 {
-        let names = candidates
+        let descriptions = candidates
             .iter()
-            .map(|(name, _)| name.as_str())
+            .map(|(name, _)| {
+                let roles = relations[name]
+                    .roles
+                    .keys()
+                    .map(RoleName::as_str)
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("{} [{roles}]", name.as_str())
+            })
             .collect::<BTreeSet<_>>()
             .into_iter()
             .collect::<Vec<_>>()
-            .join(", ");
+            .join("; ");
         return Err(error(
             line_span(line),
-            format!("ambiguous clause; candidates: {names}"),
+            format!("ambiguous clause; conflicting schemas and roles: {descriptions}"),
         ));
     }
     let (relation, roles) = candidates.pop().expect("nonempty candidates");
