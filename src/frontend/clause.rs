@@ -169,18 +169,13 @@ fn parse_term(token: &Token) -> Result<SurfaceTerm, ParseError> {
         )?));
     }
     if token.bracketed {
-        let name = referent_name(
-            SourceLine {
-                number: token.span.line,
-                text: "",
-            },
-            token.span.column,
-            &token.raw,
-        )?;
-        return Ok(SurfaceTerm::Referent(Spanned {
-            value: name.value,
-            span: token.span,
-        }));
+        return Err(error(
+            token.span,
+            format!(
+                "bracketed concrete referents are retired; write '{}'",
+                token.raw
+            ),
+        ));
     }
     if !is_qname(&token.raw) {
         return Err(error(
@@ -290,17 +285,143 @@ fn term_domains(
     }
 }
 
-fn shape_tokens(shape: &SentenceShapeDecl) -> Vec<Option<String>> {
-    let mut tokens = Vec::new();
-    for part in &shape.parts {
-        match part {
-            ShapePartDecl::Literal(value) => {
-                tokens.extend(value.value.split(' ').map(|word| Some(word.to_owned())))
+fn parse_role_term(tokens: &[Token]) -> Result<SurfaceTerm, ParseError> {
+    if tokens.len() == 1 {
+        return parse_term(&tokens[0]);
+    }
+    let first = tokens.first().expect("role capture is nonempty");
+    let last = tokens.last().expect("role capture is nonempty");
+    if tokens
+        .iter()
+        .any(|token| token.quoted || token.bracketed || token.raw.starts_with('?'))
+    {
+        return Err(error(
+            Span {
+                line: first.span.line,
+                column: first.span.column,
+                width: last.span.column + last.span.width - first.span.column,
+            },
+            "a multiword participant must be one semantic name",
+        ));
+    }
+    let value = tokens
+        .iter()
+        .map(|token| token.raw.as_str())
+        .collect::<Vec<_>>()
+        .join(" ");
+    let span = Span {
+        line: first.span.line,
+        column: first.span.column,
+        width: last.span.column + last.span.width - first.span.column,
+    };
+    semantic_name(
+        SourceLine {
+            number: span.line,
+            text: "",
+        },
+        span.column - 1,
+        &value,
+    )?;
+    Ok(SurfaceTerm::Referent(Spanned {
+        value: Name(value),
+        span,
+    }))
+}
+
+fn literal_matches(tokens: &[Token], start: usize, literal: &str) -> Option<usize> {
+    let words = literal.split(' ').collect::<Vec<_>>();
+    let end = start.checked_add(words.len())?;
+    let supplied = tokens.get(start..end)?;
+    supplied
+        .iter()
+        .zip(words)
+        .all(|(token, word)| !token.quoted && !token.bracketed && token.raw == word)
+        .then_some(end)
+}
+
+fn collect_shape_matches(
+    parts: &[ShapePartDecl],
+    tokens: &[Token],
+    part_index: usize,
+    token_index: usize,
+    roles: &mut BTreeMap<RoleName, SurfaceTerm>,
+    matches: &mut Vec<BTreeMap<RoleName, SurfaceTerm>>,
+) {
+    let Some(part) = parts.get(part_index) else {
+        if token_index == tokens.len() {
+            matches.push(roles.clone());
+        }
+        return;
+    };
+    match part {
+        ShapePartDecl::Literal(literal) => {
+            if let Some(next) = literal_matches(tokens, token_index, &literal.value) {
+                collect_shape_matches(parts, tokens, part_index + 1, next, roles, matches);
             }
-            ShapePartDecl::Role { .. } => tokens.push(None),
+        }
+        ShapePartDecl::Role { id, .. } => {
+            if part_index + 1 == parts.len() {
+                if token_index < tokens.len()
+                    && let Ok(term) = parse_role_term(&tokens[token_index..])
+                {
+                    roles.insert(id.value.clone(), term);
+                    collect_shape_matches(
+                        parts,
+                        tokens,
+                        part_index + 1,
+                        tokens.len(),
+                        roles,
+                        matches,
+                    );
+                    roles.remove(&id.value);
+                }
+                return;
+            }
+            let ShapePartDecl::Literal(next_literal) = &parts[part_index + 1] else {
+                unreachable!("sentence-shape roles have literal separators");
+            };
+            for end in token_index + 1..tokens.len() {
+                if literal_matches(tokens, end, &next_literal.value).is_none() {
+                    continue;
+                }
+                let Ok(term) = parse_role_term(&tokens[token_index..end]) else {
+                    continue;
+                };
+                roles.insert(id.value.clone(), term);
+                collect_shape_matches(parts, tokens, part_index + 1, end, roles, matches);
+                roles.remove(&id.value);
+            }
         }
     }
-    tokens
+}
+
+fn shape_matches(
+    shape: &SentenceShapeDecl,
+    tokens: &[Token],
+) -> Vec<BTreeMap<RoleName, SurfaceTerm>> {
+    let mut matches = Vec::new();
+    collect_shape_matches(
+        &shape.parts,
+        tokens,
+        0,
+        0,
+        &mut BTreeMap::new(),
+        &mut matches,
+    );
+    matches
+}
+
+fn reject_bracketed_clause_terms(tokens: &[Token]) -> Result<(), ParseError> {
+    if let Some(token) = tokens.iter().find(|token| token.bracketed) {
+        return Err(error(
+            token.span,
+            format!(
+                "bracketed concrete referents are retired; write '{}'",
+                token.raw
+            ),
+        ));
+    }
+    Ok(())
 }
 
 pub(super) fn relation_line_matches(
@@ -308,14 +429,10 @@ pub(super) fn relation_line_matches(
     relations: &BTreeMap<Name, RelationSpec>,
 ) -> Result<bool, ParseError> {
     let tokens = lex_clause(line)?;
-    Ok(relations.values().any(|spec| {
-        let pattern = shape_tokens(&spec.shape);
-        pattern.len() == tokens.len()
-            && pattern.iter().zip(&tokens).all(|(part, token)| match part {
-                Some(word) => !token.quoted && token.raw == *word,
-                None => true,
-            })
-    }))
+    reject_bracketed_clause_terms(&tokens)?;
+    Ok(relations
+        .values()
+        .any(|spec| !shape_matches(&spec.shape, &tokens).is_empty()))
 }
 
 pub(super) fn clause(
@@ -345,58 +462,43 @@ pub(super) fn clause_with_catalog(
     variable_domains: &mut BTreeMap<VariableName, DomainName>,
 ) -> Result<SurfaceClause, ParseError> {
     let tokens = lex_clause(line)?;
+    reject_bracketed_clause_terms(&tokens)?;
     let mut candidates = Vec::new();
+    let mut first_term_error = None;
     for (relation, spec) in relations {
-        let pattern = shape_tokens(&spec.shape);
-        if pattern.len() != tokens.len() {
-            continue;
-        }
-        let mut terms = BTreeMap::new();
-        let roles = spec
-            .shape
-            .parts
-            .iter()
-            .filter_map(|part| match part {
-                ShapePartDecl::Role { id, .. } => Some(&id.value),
-                ShapePartDecl::Literal(_) => None,
-            })
-            .collect::<Vec<_>>();
-        let mut role_index = 0;
-        let mut matches = true;
-        for (part, token) in pattern.iter().zip(&tokens) {
-            match part {
-                Some(word) if !token.quoted && token.raw == *word => {}
-                Some(_) => {
-                    matches = false;
+        for terms in shape_matches(&spec.shape, &tokens) {
+            let mut accepted = true;
+            for (role, term) in &terms {
+                let expected = spec.roles.get(role).expect("shape roles populate spec");
+                match term_domains(term, current_memberships, memberships) {
+                    Ok(Some(actual)) if !actual.contains(expected) => {
+                        accepted = false;
+                        break;
+                    }
+                    Ok(_) => {}
+                    Err(error) => {
+                        first_term_error.get_or_insert(error);
+                        accepted = false;
+                        break;
+                    }
+                }
+                if let SurfaceTerm::Variable(variable) = term
+                    && let Some(previous) = variable_domains.get(&variable.value)
+                    && previous != expected
+                {
+                    accepted = false;
                     break;
                 }
-                None => {
-                    let role = (*roles[role_index]).clone();
-                    role_index += 1;
-                    let term = parse_term(token)?;
-                    let expected = spec.roles.get(&role).expect("shape roles populate spec");
-                    if let Some(actual) = term_domains(&term, current_memberships, memberships)?
-                        && !actual.contains(expected)
-                    {
-                        matches = false;
-                        break;
-                    }
-                    if let SurfaceTerm::Variable(variable) = &term
-                        && let Some(previous) = variable_domains.get(&variable.value)
-                        && previous != expected
-                    {
-                        matches = false;
-                        break;
-                    }
-                    terms.insert(role, term);
-                }
             }
-        }
-        if matches {
-            candidates.push((relation.clone(), terms));
+            if accepted {
+                candidates.push((relation.clone(), terms));
+            }
         }
     }
     if candidates.is_empty() {
+        if let Some(error) = first_term_error {
+            return Err(error);
+        }
         return Err(error(
             line_span(line),
             "no declared sentence shape accepts this clause",
@@ -406,6 +508,8 @@ pub(super) fn clause_with_catalog(
         let names = candidates
             .iter()
             .map(|(name, _)| name.as_str())
+            .collect::<BTreeSet<_>>()
+            .into_iter()
             .collect::<Vec<_>>()
             .join(", ");
         return Err(error(

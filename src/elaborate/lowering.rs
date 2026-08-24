@@ -273,6 +273,20 @@ pub(crate) fn lower_focus(
                     )));
                 }
             };
+            let expected_focused =
+                &projection.role_domains[&(shape.relation.clone(), shape.focused_role.clone())];
+            let focused_name = format!(
+                "{}{}{}",
+                focus.template.prefix.value, number, focus.template.suffix.value
+            );
+            require_authored_membership(
+                projection,
+                model,
+                &focused,
+                expected_focused,
+                &focused_name,
+                "focused referent",
+            )?;
             let expected_value =
                 &projection.role_domains[&(shape.relation.clone(), shape.value_role.clone())];
             let value = lower_focus_term(
@@ -314,10 +328,43 @@ fn lower_focus_term(
                 )));
             }
             let referent = focus_referent(projection, model, template, number)?;
+            let authored = format!(
+                "{}{}{}",
+                template.prefix.value, number, template.suffix.value
+            );
+            require_authored_membership(
+                projection,
+                model,
+                &referent,
+                expected,
+                &authored,
+                "focused slot referent",
+            )?;
             Ok(Term::referent(referent))
         }
         _ => lower_term(projection, model, expected, term, None),
     }
+}
+
+fn require_authored_membership(
+    projection: &Projection,
+    model: &Model,
+    referent: &ReferentId,
+    expected: &ReferentId,
+    authored: &str,
+    where_: &str,
+) -> kernel::Result<()> {
+    let required = membership_content(referent.clone(), expected.clone())?;
+    if model.operative_status(&required) == kernel::OpenWorldStatus::Admitted {
+        return Ok(());
+    }
+    let domain = projection
+        .designations
+        .global_name(expected)
+        .unwrap_or_else(|| expected.as_str());
+    Err(kernel::KernelError::new(format!(
+        "{where_} '{authored}' is not a member of '{domain}'"
+    )))
 }
 
 fn focus_referent(

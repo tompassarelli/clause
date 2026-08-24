@@ -25,18 +25,18 @@ pairing/pair: RelationShape
   mode item -> sensor: many
 
 pairing
-  [Item 1] ∈ Item
-  [Item 2] ∈ Item
-  [Item 3] ∈ Item
-  [Item 4] ∈ Item
-  [Sensor 1] ∈ Sensor
-  [Sensor 2] ∈ Sensor
-  [Sensor 3] ∈ Sensor
-  [Sensor 4] ∈ Sensor
-  [Item 1] paired with [Sensor 1]
-  [Item 2] paired with [Sensor 2]
-  [Item 3] paired with [Sensor 3]
-  [Item 4] paired with [Sensor 4]
+  Item 1 ∈ Item
+  Item 2 ∈ Item
+  Item 3 ∈ Item
+  Item 4 ∈ Item
+  Sensor 1 ∈ Sensor
+  Sensor 2 ∈ Sensor
+  Sensor 3 ∈ Sensor
+  Sensor 4 ∈ Sensor
+  Item 1 paired with Sensor 1
+  Item 2 paired with Sensor 2
+  Item 3 paired with Sensor 3
+  Item 4 paired with Sensor 4
 "#;
 
 fn program(source: &str) -> elaborate::CompiledProgram {
@@ -80,6 +80,20 @@ fn finite_groups_and_correlated_focus_lower_to_the_same_sealed_revision() {
 }
 
 #[test]
+fn concrete_multiword_referents_reject_retired_brackets() {
+    let bracketed = EXPLICIT.replace(
+        "Item 1 paired with Sensor 1",
+        "[Item 1] paired with Sensor 1",
+    );
+    assert!(
+        frontend::parse(&bracketed)
+            .unwrap_err()
+            .to_string()
+            .contains("bracketed concrete referents are retired")
+    );
+}
+
+#[test]
 fn focused_slots_report_sorted_ambiguity_and_checked_template_errors() {
     let ambiguous = ELLIPSIS
         .replace("pairing/pair: RelationShape", "a/pair: RelationShape")
@@ -103,11 +117,12 @@ fn focused_slots_report_sorted_ambiguity_and_checked_template_errors() {
     );
 
     let wrong_type = ELLIPSIS.replace("[Item {n}]", "[Sensor {n}]");
+    let wrong_type_error = elaborate::compile(frontend::parse(&wrong_type).unwrap())
+        .unwrap_err()
+        .to_string();
     assert!(
-        elaborate::compile(frontend::parse(&wrong_type).unwrap())
-            .unwrap_err()
-            .to_string()
-            .contains("has Type 'Sensor', not 'Item'")
+        wrong_type_error.contains("focused referent 'Sensor 1' is not a member of 'Item'"),
+        "{wrong_type_error}"
     );
 
     assert!(frontend::parse(&ELLIPSIS.replace("1..4", "4..1")).is_err());
