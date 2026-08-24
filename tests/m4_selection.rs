@@ -52,6 +52,26 @@ any World relates ?person through ?same and ?same to ?
 any World relates ?same through ?same and ?same to ?same
 ";
 
+const EXPLICIT_PROJECTION_SOURCE: &str = "Entity
+
+selection/related: RelationShape
+  {scope: Entity} relates {a: Entity} through {b: Entity} and {c: Entity} to {d: Entity}
+  mode scope -> a, b, c, d: many
+
+selection
+  World ∈ Entity
+  A ∈ Entity
+  B ∈ Entity
+  C ∈ Entity
+  D ∈ Entity
+  World relates A through B and B to C
+  World relates A through B and C to D
+  World relates C through B and B to A
+
+select ?person
+  World relates ?person through ?same and ?same to ?
+";
+
 fn temporary(extension: &str) -> PathBuf {
     env::temp_dir().join(format!(
         "clause-m4-selection-{}.{}",
@@ -490,4 +510,152 @@ fn any_returns_only_bool_with_alpha_and_generated_parity() {
     assert_eq!(actual.stdout, output.canonical_bytes().as_bytes());
     fs::remove_file(rust).expect("generated Any Rust cleans up");
     fs::remove_file(binary).expect("generated Any executable cleans up");
+}
+
+#[test]
+fn explicit_projection_keeps_hidden_binders_private_and_matches_with_them() {
+    let compiled = elaborate::compile(
+        frontend::parse(EXPLICIT_PROJECTION_SOURCE).expect("explicit projection source parses"),
+    )
+    .expect("explicit projection source compiles");
+    let resolved = request::resolve(&compiled).expect("explicit projection resolves");
+    let [
+        Request::Select {
+            pattern,
+            columns: resolved_columns,
+            ..
+        },
+    ] = resolved.requests()
+    else {
+        panic!("source must resolve to exactly one explicit selection");
+    };
+
+    let relation = compiled.designations().global("selection/related").unwrap();
+    let role = |label: &str| compiled.designations().role(&relation, label).unwrap();
+    assert_eq!(resolved_columns.len(), 1, "only ?person is projected");
+    assert_eq!(resolved_columns[0].label(), Some("person"));
+    assert_eq!(resolved_columns[0].origins(), &[role("a")]);
+
+    let mut pattern_origins = std::collections::BTreeMap::new();
+    for (role, term) in pattern.roles() {
+        if let Some(binder) = term.pattern_id() {
+            pattern_origins
+                .entry(binder.clone())
+                .or_insert_with(Vec::new)
+                .push(role.clone());
+        }
+    }
+    for origins in pattern_origins.values_mut() {
+        origins.sort();
+    }
+    let mut correlated_origins = vec![role("b"), role("c")];
+    correlated_origins.sort();
+    assert_eq!(
+        pattern_origins.get(resolved_columns[0].binder()),
+        Some(&vec![role("a")]),
+        "the projected column retains its exact role origin"
+    );
+    assert_eq!(
+        pattern_origins.len(),
+        3,
+        "two hidden binders remain in the pattern"
+    );
+    assert!(
+        pattern_origins
+            .values()
+            .any(|origins| origins == &correlated_origins),
+        "hidden ?same still correlates roles b and c"
+    );
+    assert!(
+        pattern_origins
+            .values()
+            .any(|origins| origins == &vec![role("d")]),
+        "the anonymous hidden hole remains a distinct fresh binder"
+    );
+
+    let output =
+        request::run(&resolved, request::RunLimits::default()).expect("selection executes");
+    let [RequestOutput::Select { columns, rows }] = output.results.as_slice() else {
+        panic!("source must produce exactly one explicit selection result");
+    };
+    assert_eq!(columns, resolved_columns);
+    let model = compiled.designations().global("selection").unwrap();
+    let term = |name: &str| {
+        Term::referent(
+            compiled
+                .designations()
+                .scoped(&model, name)
+                .expect("fixture referent resolves"),
+        )
+    };
+    let mut expected = vec![vec![term("A")], vec![term("C")]];
+    expected.sort();
+    assert_eq!(
+        rows.iter()
+            .map(|row| {
+                assert_eq!(row.cells().len(), 1);
+                assert_eq!(row.cells()[0].origins(), &[role("a")]);
+                vec![row.cells()[0].value().clone()]
+            })
+            .collect::<Vec<_>>(),
+        expected,
+        "hidden correlation filters the mismatched fact while the fresh hole matches freely"
+    );
+
+    let renamed_source = EXPLICIT_PROJECTION_SOURCE.replace("?same", "?opening");
+    let renamed = elaborate::compile(
+        frontend::parse(&renamed_source).expect("hidden-alpha-renamed source parses"),
+    )
+    .expect("hidden-alpha-renamed source compiles");
+    let revision = frontend::Name("selection".into());
+    assert_eq!(
+        wire::serialize(compiled.revision(&revision).unwrap()),
+        wire::serialize(renamed.revision(&revision).unwrap()),
+        "hidden binder labels do not enter Model or Revision identity"
+    );
+    let renamed_resolved = request::resolve(&renamed).expect("renamed projection resolves");
+    let renamed_output = request::run(&renamed_resolved, request::RunLimits::default())
+        .expect("renamed projection executes");
+    assert_eq!(
+        renamed_output.canonical_bytes(),
+        output.canonical_bytes(),
+        "hidden alpha-renaming changes no semantic or canonical output"
+    );
+
+    let expected_bytes = output.canonical_bytes();
+    let authoring = temporary("explicit.clause");
+    let rust = temporary("explicit.rs");
+    let binary = temporary("explicit.bin");
+    fs::write(&authoring, EXPLICIT_PROJECTION_SOURCE).expect("authoring source writes");
+    fs::write(
+        &rust,
+        generated::emit_rust(&resolved).expect("explicit projection emits Rust"),
+    )
+    .expect("generated Rust writes");
+    fs::remove_file(&authoring).expect("authoring source deletes before generated compile");
+    let generated = Command::new("rustc")
+        .args([
+            "--edition=2024",
+            "--cfg",
+            "clause_generated",
+            "--crate-name",
+            "clause_m4_explicit_projection",
+        ])
+        .arg(&rust)
+        .arg("-o")
+        .arg(&binary)
+        .output()
+        .expect("generated Rust compiler starts");
+    assert!(
+        generated.status.success(),
+        "{}",
+        String::from_utf8_lossy(&generated.stderr)
+    );
+    let actual = Command::new(&binary)
+        .output()
+        .expect("source-deleted generated executable starts");
+    assert!(actual.status.success());
+    assert_eq!(actual.stdout, expected_bytes.as_bytes());
+    fs::remove_file(rust).expect("generated Rust cleans up");
+    fs::remove_file(binary).expect("generated executable cleans up");
 }
