@@ -25,7 +25,9 @@ pub use schema::{
     Cardinality, LookupMode, Referent, RelationShape, Role, RolePredicate, StructuralContract,
     StructuralForm,
 };
-pub(crate) use schema::{membership_group_role, membership_member_role, membership_relation};
+pub(crate) use schema::{
+    membership_group_role, membership_member_role, membership_relation, structural_sequence_domain,
+};
 
 #[cfg(test)]
 mod tests;

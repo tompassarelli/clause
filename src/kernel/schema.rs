@@ -17,6 +17,10 @@ pub(crate) fn membership_group_role() -> RoleId {
     synthetic_role("membership", &["group"])
 }
 
+pub(crate) fn structural_sequence_domain(element: &ReferentId) -> ReferentId {
+    synthetic_referent("structural-sequence-domain", &[element.as_str()])
+}
+
 /// One addressable semantic distinction. Designations and every fact about a
 /// referent live outside this identity-bearing value.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]

@@ -54,7 +54,7 @@ pub(crate) fn structural_domain(
         .as_deref()
     {
         let element = structural_domain(projection, &frontend::DomainName((*element).to_owned()));
-        return structural_sequence_domain(&element);
+        return kernel::structural_sequence_domain(&element);
     }
     projection
         .designations
@@ -91,10 +91,6 @@ fn structural_tuple_domain(domains: &[ReferentId]) -> ReferentId {
         "structural-tuple-domain",
         &domains.iter().map(ReferentId::as_str).collect::<Vec<_>>(),
     )
-}
-
-pub(crate) fn structural_sequence_domain(element: &ReferentId) -> ReferentId {
-    synthetic_referent("structural-sequence-domain", &[element.as_str()])
 }
 
 pub(crate) fn membership_shape() -> kernel::Result<RelationShape> {
@@ -707,7 +703,7 @@ fn definition_term_domain(
                 values.first().expect("surface sequence is nonempty"),
                 locals,
             )?;
-            Ok(structural_sequence_domain(&element))
+            Ok(kernel::structural_sequence_domain(&element))
         }
         SurfaceTerm::Intrinsic(_) => Err(kernel::KernelError::new(
             "intrinsic identity is only valid as an intrinsic application role",

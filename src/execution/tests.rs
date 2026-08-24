@@ -543,7 +543,7 @@ frame score:
     assert_eq!(
         lengths,
         Term::sequence(
-            crate::elaborate::structural_sequence_domain(&f32_domain),
+            crate::kernel::structural_sequence_domain(&f32_domain),
             f32_domain,
             vec![Term::f32(5.0).unwrap(), Term::f32(13.0).unwrap()],
         )

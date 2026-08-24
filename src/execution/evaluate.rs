@@ -1,11 +1,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
-    elaborate::structural_sequence_domain,
     intrinsic::{Intrinsic, IntrinsicRole},
     kernel::{
         ContentId, KernelError, ProductField, ReferentId, RelationalContent, Result, Revision,
-        StructuralForm, Term,
+        StructuralForm, Term, structural_sequence_domain,
     },
 };
 
