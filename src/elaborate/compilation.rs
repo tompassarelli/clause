@@ -609,11 +609,9 @@ fn membership_predicate(group: ReferentId) -> kernel::Result<RolePredicate> {
 }
 
 fn insert_intrinsic_identities(referents: &mut BTreeMap<ReferentId, Referent>) {
-    for name in ["length"] {
-        let source_name = format!("@clause/intrinsic/{name}");
-        let id = synthetic_referent("pure-intrinsic-identity", &[&source_name]);
-        referents.insert(id.clone(), Referent::new(id));
-    }
+    let source_name = "@clause/intrinsic/length";
+    let id = synthetic_referent("pure-intrinsic-identity", &[source_name]);
+    referents.insert(id.clone(), Referent::new(id));
 }
 
 fn require_registered_dependencies(
