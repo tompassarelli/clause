@@ -81,15 +81,28 @@ fn finite_groups_and_correlated_focus_lower_to_the_same_sealed_revision() {
 
 #[test]
 fn concrete_multiword_referents_reject_retired_brackets() {
-    let bracketed = EXPLICIT.replace(
-        "Item 1 paired with Sensor 1",
-        "[Item 1] paired with Sensor 1",
-    );
-    assert!(
-        frontend::parse(&bracketed)
+    for (replacement, column) in [
+        ("[Item 1] paired with Sensor 1", 3),
+        ("([Item 1]) paired with Sensor 1", 4),
+    ] {
+        let bracketed = EXPLICIT.replace("Item 1 paired with Sensor 1", replacement);
+        assert_eq!(
+            frontend::parse(&bracketed).unwrap_err().to_string(),
+            format!("17:{column}: bracketed concrete referents are retired; write 'Item 1'")
+        );
+    }
+}
+
+#[test]
+fn sequence_brackets_retain_singletons_and_heterogeneous_diagnostics() {
+    let singleton = "truth: true\ntruths: [truth]\n";
+    frontend::parse(singleton).expect("singleton sequence remains legal");
+
+    assert_eq!(
+        frontend::parse("truths: [true, 1]\n")
             .unwrap_err()
-            .to_string()
-            .contains("bracketed concrete referents are retired")
+            .to_string(),
+        "1:16: heterogeneous sequence member shape"
     );
 }
 

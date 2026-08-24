@@ -11,7 +11,7 @@ use crate::{
 
 use super::{
     compilation::CompiledProgram,
-    identifiers::{DesignationTable, synthetic_referent, synthetic_role},
+    identifiers::{DesignationTable, synthetic_referent},
 };
 
 #[derive(Clone, Debug, Default)]
@@ -19,6 +19,7 @@ pub(crate) struct Projection {
     pub(crate) designations: DesignationTable,
     pub(crate) grounded: BTreeSet<ReferentId>,
     pub(crate) model_referents: BTreeMap<ReferentId, BTreeSet<ReferentId>>,
+    pub(crate) structural_fields: BTreeMap<ReferentId, BTreeMap<ReferentId, ReferentId>>,
     pub(crate) role_domains: BTreeMap<(ReferentId, RoleId), ReferentId>,
     pub(crate) focus_shapes: Vec<FocusShape>,
     pub(crate) rule_binders: BTreeMap<ReferentId, BinderTable>,
@@ -26,22 +27,74 @@ pub(crate) struct Projection {
 }
 
 pub(crate) fn membership_relation() -> ReferentId {
-    synthetic_referent("membership", &["relation"])
+    kernel::membership_relation()
 }
 
 pub(crate) fn membership_member_role() -> RoleId {
-    synthetic_role("membership", &["member"])
+    kernel::membership_member_role()
 }
 
 pub(crate) fn membership_group_role() -> RoleId {
-    synthetic_role("membership", &["group"])
+    kernel::membership_group_role()
 }
 
-fn structural_domain(projection: &Projection, domain: &frontend::DomainName) -> ReferentId {
+pub(crate) fn structural_domain(
+    projection: &Projection,
+    domain: &frontend::DomainName,
+) -> ReferentId {
+    if let Some(members) = structural_signature_members(domain.as_str(), "tuple") {
+        let domains = members
+            .into_iter()
+            .map(|member| structural_domain(projection, &frontend::DomainName(member.to_owned())))
+            .collect::<Vec<_>>();
+        return structural_tuple_domain(&domains);
+    }
+    if let Some([element]) = structural_signature_members(domain.as_str(), "sequence")
+        .map(Vec::into_boxed_slice)
+        .as_deref()
+    {
+        let element = structural_domain(projection, &frontend::DomainName((*element).to_owned()));
+        return structural_sequence_domain(&element);
+    }
     projection
         .designations
         .global(domain.as_str())
         .unwrap_or_else(|_| synthetic_referent("structural-domain", &[domain.as_str()]))
+}
+
+fn structural_signature_members<'a>(domain: &'a str, name: &str) -> Option<Vec<&'a str>> {
+    let inner = domain
+        .strip_prefix(&format!("@clause/{name}("))?
+        .strip_suffix(')')?;
+    let mut depth = 0usize;
+    let mut start = 0usize;
+    let mut members = Vec::new();
+    for (index, byte) in inner.bytes().enumerate() {
+        match byte {
+            b'(' => depth += 1,
+            b')' => depth = depth.checked_sub(1)?,
+            b',' if depth == 0 => {
+                members.push(&inner[start..index]);
+                start = index + 1;
+            }
+            _ => {}
+        }
+    }
+    (depth == 0 && start < inner.len()).then(|| {
+        members.push(&inner[start..]);
+        members
+    })
+}
+
+fn structural_tuple_domain(domains: &[ReferentId]) -> ReferentId {
+    synthetic_referent(
+        "structural-tuple-domain",
+        &domains.iter().map(ReferentId::as_str).collect::<Vec<_>>(),
+    )
+}
+
+pub(crate) fn structural_sequence_domain(element: &ReferentId) -> ReferentId {
+    synthetic_referent("structural-sequence-domain", &[element.as_str()])
 }
 
 pub(crate) fn membership_shape() -> kernel::Result<RelationShape> {
@@ -296,6 +349,8 @@ fn lower_term(
     locals: Option<&BTreeMap<Name, (ReferentId, Term)>>,
     dependencies: &mut Vec<RelationalContent>,
 ) -> kernel::Result<Term> {
+    let empty_locals = BTreeMap::new();
+    let domain_locals = locals.unwrap_or(&empty_locals);
     match term {
         SurfaceTerm::Variable(value) => {
             let binders = binders.ok_or_else(|| {
@@ -318,48 +373,79 @@ fn lower_term(
         SurfaceTerm::Int(value) => Ok(Term::int(value.value)),
         SurfaceTerm::Bool(value) => Ok(Term::boolean(value.value)),
         SurfaceTerm::Tuple { values, .. } => Term::tuple(
+            expected.clone(),
             values
                 .iter()
                 .map(|value| {
-                    lower_term(
+                    let domain = definition_term_domain(projection, model, value, domain_locals)?;
+                    let lowered = lower_term(
                         projection,
                         model,
-                        expected,
+                        &domain,
                         value,
                         binders,
                         locals,
                         dependencies,
-                    )
+                    )?;
+                    Ok((domain, lowered))
                 })
                 .collect::<kernel::Result<Vec<_>>>()?,
         ),
-        SurfaceTerm::Product { fields, .. } => Term::product(
-            fields
-                .iter()
-                .map(|(label, value)| {
-                    Ok((
-                        kernel::Name::new(label.as_str().to_owned())?,
-                        lower_term(
-                            projection,
-                            model,
-                            expected,
-                            value,
-                            binders,
-                            locals,
-                            dependencies,
-                        )?,
-                    ))
-                })
-                .collect::<kernel::Result<BTreeMap<_, _>>>()?,
-        ),
+        SurfaceTerm::Product { shape, fields, .. } => {
+            let shape = projection.designations.global(shape.value.as_str())?;
+            if &shape != expected {
+                return Err(kernel::KernelError::new(
+                    "labelled product does not match its expected shape",
+                ));
+            }
+            Term::labelled_product(
+                shape.clone(),
+                fields
+                    .iter()
+                    .map(|(label, value)| {
+                        let field = projection.designations.scoped(&shape, label.as_str())?;
+                        let domain = projection
+                            .structural_fields
+                            .get(&shape)
+                            .and_then(|fields| fields.get(&field))
+                            .cloned()
+                            .ok_or_else(|| {
+                                kernel::KernelError::new(
+                                    "labelled product field has no declared shape binding",
+                                )
+                            })?;
+                        Ok((
+                            field,
+                            lower_term(
+                                projection,
+                                model,
+                                &domain,
+                                value,
+                                binders,
+                                locals,
+                                dependencies,
+                            )?,
+                        ))
+                    })
+                    .collect::<kernel::Result<BTreeMap<_, _>>>()?,
+            )
+        }
         SurfaceTerm::Sequence { values, .. } => Term::sequence(
+            expected.clone(),
+            definition_term_domain(
+                projection,
+                model,
+                values.first().expect("surface sequence is nonempty"),
+                domain_locals,
+            )?,
             values
                 .iter()
                 .map(|value| {
+                    let domain = definition_term_domain(projection, model, value, domain_locals)?;
                     lower_term(
                         projection,
                         model,
-                        expected,
+                        &domain,
                         value,
                         binders,
                         locals,
@@ -607,10 +693,22 @@ fn definition_term_domain(
             projection,
             &frontend::DomainName(shape.value.0.clone()),
         )),
-        SurfaceTerm::Tuple { .. } | SurfaceTerm::Sequence { .. } => Ok(synthetic_referent(
-            "structural-domain",
-            &[&format!("{:?}", term)],
-        )),
+        SurfaceTerm::Tuple { values, .. } => {
+            let domains = values
+                .iter()
+                .map(|value| definition_term_domain(projection, model, value, locals))
+                .collect::<kernel::Result<Vec<_>>>()?;
+            Ok(structural_tuple_domain(&domains))
+        }
+        SurfaceTerm::Sequence { values, .. } => {
+            let element = definition_term_domain(
+                projection,
+                model,
+                values.first().expect("surface sequence is nonempty"),
+                locals,
+            )?;
+            Ok(structural_sequence_domain(&element))
+        }
         SurfaceTerm::Intrinsic(_) => Err(kernel::KernelError::new(
             "intrinsic identity is only valid as an intrinsic application role",
         )),

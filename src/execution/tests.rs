@@ -4,7 +4,8 @@ use crate::{
     kernel::{
         AssertionOccurrence, Cardinality, Definition, DerivationRule, Judgment, JudgmentKind,
         JudgmentStatus, JudgmentTarget, LookupMode, Model, Pattern, PatternId, Referent,
-        ReferentId, RelationShape, RelationalContent, Revision, Role, RoleId, Term,
+        ReferentId, RelationShape, RelationalContent, Revision, Role, RoleId, StructuralContract,
+        StructuralForm, Term,
     },
     wire,
 };
@@ -168,6 +169,7 @@ fn revision(
                 (links.clone(), relation(&links)),
                 (reaches.clone(), relation(&reaches)),
             ]),
+            BTreeMap::new(),
             occurrences,
             Vec::new(),
             rules,
@@ -371,11 +373,21 @@ fn intrinsic_content(intrinsic: Intrinsic, roles: &[(IntrinsicRole, Term)]) -> R
 fn evaluate_uses_indexed_intrinsics_short_circuits_and_memoizes() {
     let model_id = referent_id("pure/model");
     let result_id = referent_id("pure/result");
+    let f32_domain = referent_id("pure/F32");
+    let bool_domain = referent_id("pure/Bool");
+    let tuple_shape = referent_id("pure/tuple(F32,F32)");
     let length = intrinsic_content(
         Intrinsic::Length,
         &[(
             IntrinsicRole::Input,
-            Term::tuple(vec![Term::f32(3.0).unwrap(), Term::f32(4.0).unwrap()]).unwrap(),
+            Term::tuple(
+                tuple_shape.clone(),
+                vec![
+                    (f32_domain.clone(), Term::f32(3.0).unwrap()),
+                    (f32_domain.clone(), Term::f32(4.0).unwrap()),
+                ],
+            )
+            .unwrap(),
         )],
     );
     let divide = intrinsic_content(
@@ -396,6 +408,9 @@ fn evaluate_uses_indexed_intrinsics_short_circuits_and_memoizes() {
     let referents = [
         model_id.clone(),
         result_id.clone(),
+        f32_domain.clone(),
+        bool_domain.clone(),
+        tuple_shape.clone(),
         Intrinsic::Length.relation(),
         Intrinsic::Divide.relation(),
         Intrinsic::Conditional.relation(),
@@ -415,12 +430,20 @@ fn evaluate_uses_indexed_intrinsics_short_circuits_and_memoizes() {
     .into_iter()
     .map(|shape| (shape.referent().clone(), shape))
     .collect();
+    let structural_contracts = [
+        StructuralContract::new(f32_domain.clone(), StructuralForm::F32).unwrap(),
+        StructuralContract::new(bool_domain, StructuralForm::Bool).unwrap(),
+    ]
+    .into_iter()
+    .map(|contract| (contract.referent().clone(), contract))
+    .collect();
     let revision = wire::admit(
         Model::with_distinctions(
             model_id,
             referents,
             contents,
             shapes,
+            structural_contracts,
             Vec::new(),
             vec![Definition::new(
                 result_id.clone(),
@@ -445,16 +468,26 @@ fn evaluate_uses_indexed_intrinsics_short_circuits_and_memoizes() {
     );
     assert!(evaluate(&revision, &Term::application(divide.id().clone())).is_err());
 
-    let repeated = Term::tuple(vec![
-        Term::application(length.id().clone()),
-        Term::application(length.id().clone()),
-    ])
+    let repeated = Term::tuple(
+        tuple_shape.clone(),
+        vec![
+            (f32_domain.clone(), Term::application(length.id().clone())),
+            (f32_domain.clone(), Term::application(length.id().clone())),
+        ],
+    )
     .unwrap();
     let (evaluated, operations) = super::evaluate::evaluate_with_operations(&revision, &repeated)
         .expect("shared application evaluates");
     assert_eq!(
         evaluated,
-        Term::tuple(vec![Term::f32(5.0).unwrap(), Term::f32(5.0).unwrap()]).unwrap()
+        Term::tuple(
+            tuple_shape,
+            vec![
+                (f32_domain.clone(), Term::f32(5.0).unwrap()),
+                (f32_domain, Term::f32(5.0).unwrap()),
+            ],
+        )
+        .unwrap()
     );
     assert_eq!(operations, 1);
 }
@@ -506,9 +539,15 @@ frame score:
     };
 
     let (lengths, map_operations) = evaluate_named("lengths");
+    let f32_domain = program.designations().global("F32").unwrap();
     assert_eq!(
         lengths,
-        Term::sequence(vec![Term::f32(5.0).unwrap(), Term::f32(13.0).unwrap()]).unwrap()
+        Term::sequence(
+            crate::elaborate::structural_sequence_domain(&f32_domain),
+            f32_domain,
+            vec![Term::f32(5.0).unwrap(), Term::f32(13.0).unwrap()],
+        )
+        .unwrap()
     );
     assert_eq!(map_operations, 3);
 

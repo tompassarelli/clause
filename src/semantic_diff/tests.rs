@@ -203,6 +203,7 @@ fn model(assertions: Vec<FixtureRelation>, reverse_laws: bool) -> Model {
         referents,
         relational_contents,
         relation_shapes,
+        BTreeMap::new(),
         occurrences,
         Vec::new(),
         laws,

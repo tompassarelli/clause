@@ -17,9 +17,44 @@ pub enum Term {
     F32(FiniteF32),
     Int(i64),
     Bool(bool),
-    Product(BTreeMap<Name, Term>),
-    Sum { tag: Name, value: Box<Term> },
-    Sequence(Vec<Term>),
+    Product {
+        shape: ReferentId,
+        fields: BTreeMap<Name, ProductField>,
+    },
+    LabelledProduct {
+        shape: ReferentId,
+        fields: BTreeMap<ReferentId, Term>,
+    },
+    Sum {
+        tag: Name,
+        value: Box<Term>,
+    },
+    Sequence {
+        shape: ReferentId,
+        element: ReferentId,
+        values: Vec<Term>,
+    },
+}
+
+/// One tuple/product position with its exact expected representation domain.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct ProductField {
+    domain: ReferentId,
+    value: Term,
+}
+
+impl ProductField {
+    pub fn new(domain: ReferentId, value: Term) -> Self {
+        Self { domain, value }
+    }
+
+    pub fn domain(&self) -> &ReferentId {
+        &self.domain
+    }
+
+    pub fn value(&self) -> &Term {
+        &self.value
+    }
 }
 
 /// The exact IEEE-754 binary32 bits of a finite structural number.
@@ -72,25 +107,41 @@ impl Term {
     pub fn boolean(value: bool) -> Self {
         Self::Bool(value)
     }
-    pub fn product(fields: BTreeMap<Name, Term>) -> Result<Self> {
-        let term = Self::Product(fields);
+    pub fn product(shape: ReferentId, fields: BTreeMap<Name, ProductField>) -> Result<Self> {
+        if fields.is_empty() {
+            return Err(KernelError::new(
+                "structural product requires at least one field",
+            ));
+        }
+        let term = Self::Product { shape, fields };
         term.validate_structure()?;
         Ok(term)
     }
-    pub fn tuple(values: Vec<Term>) -> Result<Self> {
+    pub fn tuple(shape: ReferentId, values: Vec<(ReferentId, Term)>) -> Result<Self> {
         Self::product(
+            shape,
             values
                 .into_iter()
                 .enumerate()
-                .map(|(index, value)| {
+                .map(|(index, (domain, value))| {
                     (
                         Name::new(format!("_{index:020}"))
                             .expect("fixed-width ordinal tuple label is valid"),
-                        value,
+                        ProductField::new(domain, value),
                     )
                 })
                 .collect(),
         )
+    }
+    pub fn labelled_product(shape: ReferentId, fields: BTreeMap<ReferentId, Term>) -> Result<Self> {
+        if fields.is_empty() {
+            return Err(KernelError::new(
+                "labelled product requires at least one field",
+            ));
+        }
+        let term = Self::LabelledProduct { shape, fields };
+        term.validate_structure()?;
+        Ok(term)
     }
     pub fn sum(tag: Name, value: Term) -> Result<Self> {
         let term = Self::Sum {
@@ -100,21 +151,30 @@ impl Term {
         term.validate_structure()?;
         Ok(term)
     }
-    pub fn sequence(values: Vec<Term>) -> Result<Self> {
-        let term = Self::Sequence(values);
+    pub fn sequence(shape: ReferentId, element: ReferentId, values: Vec<Term>) -> Result<Self> {
+        let term = Self::Sequence {
+            shape,
+            element,
+            values,
+        };
         term.validate_structure()?;
         Ok(term)
     }
     pub fn walk(&self, visitor: &mut impl FnMut(&Term)) {
         visitor(self);
         match self {
-            Self::Product(fields) => {
+            Self::Product { fields, .. } => {
+                for field in fields.values() {
+                    field.value.walk(visitor);
+                }
+            }
+            Self::LabelledProduct { fields, .. } => {
                 for value in fields.values() {
                     value.walk(visitor);
                 }
             }
             Self::Sum { value, .. } => value.walk(visitor),
-            Self::Sequence(values) => {
+            Self::Sequence { values, .. } => {
                 for value in values {
                     value.walk(visitor);
                 }
@@ -138,9 +198,13 @@ impl Term {
         }
 
         match self {
-            Self::Product(fields) => fields.values().try_for_each(validate_member),
+            Self::Product { fields, .. } => fields
+                .values()
+                .map(ProductField::value)
+                .try_for_each(validate_member),
+            Self::LabelledProduct { fields, .. } => fields.values().try_for_each(validate_member),
             Self::Sum { value, .. } => validate_member(value),
-            Self::Sequence(values) => values.iter().try_for_each(validate_member),
+            Self::Sequence { values, .. } => values.iter().try_for_each(validate_member),
             Self::Referent(_)
             | Self::Pattern(_)
             | Self::Application(_)
@@ -173,9 +237,10 @@ impl Term {
         match self {
             Self::Referent(_) | Self::F32(_) | Self::Int(_) | Self::Bool(_) => true,
             Self::Pattern(_) | Self::Application(_) => false,
-            Self::Product(fields) => fields.values().all(Self::is_ground),
+            Self::Product { fields, .. } => fields.values().all(|field| field.value.is_ground()),
+            Self::LabelledProduct { fields, .. } => fields.values().all(Self::is_ground),
             Self::Sum { value, .. } => value.is_ground(),
-            Self::Sequence(values) => values.iter().all(Self::is_ground),
+            Self::Sequence { values, .. } => values.iter().all(Self::is_ground),
         }
     }
 }
@@ -276,11 +341,22 @@ fn term_preimage(bytes: &mut Vec<u8>, term: &Term) {
             bytes.push(b'b');
             bytes.push(u8::from(*value));
         }
-        Term::Product(fields) => {
+        Term::Product { shape, fields } => {
             bytes.push(b'P');
+            field(bytes, shape.as_str());
             bytes.extend_from_slice(&(fields.len() as u64).to_be_bytes());
-            for (label, value) in fields {
+            for (label, product_field) in fields {
                 field(bytes, label.as_str());
+                field(bytes, product_field.domain.as_str());
+                term_preimage(bytes, &product_field.value);
+            }
+        }
+        Term::LabelledProduct { shape, fields } => {
+            bytes.push(b'L');
+            field(bytes, shape.as_str());
+            bytes.extend_from_slice(&(fields.len() as u64).to_be_bytes());
+            for (field_id, value) in fields {
+                field(bytes, field_id.as_str());
                 term_preimage(bytes, value);
             }
         }
@@ -289,8 +365,14 @@ fn term_preimage(bytes: &mut Vec<u8>, term: &Term) {
             field(bytes, tag.as_str());
             term_preimage(bytes, value);
         }
-        Term::Sequence(values) => {
+        Term::Sequence {
+            shape,
+            element,
+            values,
+        } => {
             bytes.push(b'Q');
+            field(bytes, shape.as_str());
+            field(bytes, element.as_str());
             bytes.extend_from_slice(&(values.len() as u64).to_be_bytes());
             for value in values {
                 term_preimage(bytes, value);

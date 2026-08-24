@@ -8,7 +8,7 @@ use clause::{
         AssertionOccurrence, Cardinality, Definition, Delta, DerivationRule, Judgment,
         JudgmentKind, JudgmentStatus, JudgmentTarget, LookupMode, Model, Name, OpenWorldStatus,
         Pattern, PatternId, Referent, ReferentId, RelationShape, RelationalContent, Role, RoleId,
-        SemanticAtom, Term,
+        SemanticAtom, StructuralContract, StructuralForm, Term,
     },
     wire,
 };
@@ -157,6 +157,7 @@ fn fixture_model(label: u8, occurrence_id: u8, judgment_id: u8, source: u8) -> M
         referents,
         contents,
         BTreeMap::from([(shape.referent().clone(), shape)]),
+        BTreeMap::new(),
         vec![occurrence(&ground, occurrence_id, source)],
         Vec::new(),
         vec![
@@ -185,7 +186,7 @@ const PATTERN_CONTENT_ID: &str =
 const WEST_CONTENT_ID: &str =
     "content-sha256-6f99f9d878a067fc9a7e94bae2e2b8fef060d81629c845cb9b769107d83fb0d0";
 const EXPECTED_REVISION_ID: &str =
-    "rev-sha256-75b9d2923d7566e1697ff249fba9ffde5def40c56f27bc49d35ac5d5aa46aebf";
+    "rev-sha256-92f8acbfedcfe7ec37912325460ecc30e7bf85f792baa8145a3b3fad9e1aa85a";
 
 fn expected_semantic() -> String {
     let referent = |seed: u8| format!("ref-sha256-{}", format!("{seed:02x}").repeat(32));
@@ -250,7 +251,7 @@ fn expected_semantic() -> String {
         referent(SOURCE_A),
     );
     format!(
-        "[\"clause-semantic-v7\",[\"lineage\",[\"root\"]],[\"model\",\"{}\"],[\"referents\",[{referents}]],[\"relational-contents\",[{contents}]],[\"relation-shapes\",[{shape}]],[\"occurrences\",[{occurrence}]],[\"definitions\",[]],[\"derivation-rules\",[{rule}]],[\"universal-laws\",[]],[\"invariants\",[]],[\"goals\",[]],[\"transitions\",[]],[\"judgments\",[{judgment}]]]",
+        "[\"clause-semantic-v7\",[\"lineage\",[\"root\"]],[\"model\",\"{}\"],[\"referents\",[{referents}]],[\"relational-contents\",[{contents}]],[\"relation-shapes\",[{shape}]],[\"structural-contracts\",[]],[\"occurrences\",[{occurrence}]],[\"definitions\",[]],[\"derivation-rules\",[{rule}]],[\"universal-laws\",[]],[\"invariants\",[]],[\"goals\",[]],[\"transitions\",[]],[\"judgments\",[{judgment}]]]",
         referent(MODEL),
     )
 }
@@ -333,33 +334,65 @@ fn exact_semantic_v7_bytes_hash_and_revision_v5_roundtrip_are_frozen() {
 fn structural_terms_roundtrip_and_malformed_encodings_fail_closed() {
     let model_id = referent_id(0x40);
     let definition_id = referent_id(0x41);
-    let structural = Term::product(BTreeMap::from([
-        (Name::new("flag".into()).unwrap(), Term::boolean(true)),
-        (
-            Name::new("number".into()).unwrap(),
-            Term::f32(-0.0).unwrap(),
-        ),
-        (
-            Name::new("tuple".into()).unwrap(),
-            Term::tuple((0..11).map(Term::int).collect()).unwrap(),
-        ),
-        (
-            Name::new("variant".into()).unwrap(),
-            Term::sum(Name::new("some".into()).unwrap(), Term::int(5)).unwrap(),
-        ),
-    ]))
+    let sum_definition_id = referent_id(0x42);
+    let bool_domain = referent_id(0x43);
+    let f32_domain = referent_id(0x44);
+    let int_domain = referent_id(0x45);
+    let outer_shape = referent_id(0x46);
+    let tuple_shape = referent_id(0x47);
+    let structural = Term::tuple(
+        outer_shape.clone(),
+        vec![
+            (bool_domain.clone(), Term::boolean(true)),
+            (f32_domain.clone(), Term::f32(-0.0).unwrap()),
+            (
+                tuple_shape.clone(),
+                Term::tuple(
+                    tuple_shape.clone(),
+                    (0..11)
+                        .map(|value| (int_domain.clone(), Term::int(value)))
+                        .collect(),
+                )
+                .unwrap(),
+            ),
+        ],
+    )
     .unwrap();
-    let referents = [model_id.clone(), definition_id.clone()]
-        .into_iter()
-        .map(|id| (id.clone(), Referent::new(id)))
-        .collect();
+    let referents = [
+        model_id.clone(),
+        definition_id.clone(),
+        sum_definition_id.clone(),
+        bool_domain.clone(),
+        f32_domain.clone(),
+        int_domain.clone(),
+        outer_shape,
+        tuple_shape,
+    ]
+    .into_iter()
+    .map(|id| (id.clone(), Referent::new(id)))
+    .collect();
+    let structural_contracts = [
+        StructuralContract::new(bool_domain.clone(), StructuralForm::Bool).unwrap(),
+        StructuralContract::new(f32_domain, StructuralForm::F32).unwrap(),
+        StructuralContract::new(int_domain, StructuralForm::Int).unwrap(),
+    ]
+    .into_iter()
+    .map(|contract| (contract.referent().clone(), contract))
+    .collect();
     let model = Model::with_distinctions(
         model_id,
         referents,
         BTreeMap::new(),
         BTreeMap::new(),
+        structural_contracts,
         Vec::new(),
-        vec![Definition::new(definition_id, structural)],
+        vec![
+            Definition::new(definition_id, structural),
+            Definition::new(
+                sum_definition_id,
+                Term::sum(Name::new("some".into()).unwrap(), Term::int(5)).unwrap(),
+            ),
+        ],
         Vec::new(),
         Vec::new(),
         Vec::new(),
@@ -387,9 +420,13 @@ fn structural_terms_roundtrip_and_malformed_encodings_fail_closed() {
         "F32 term must be finite"
     );
 
+    let first_field = format!(
+        "[\"_00000000000000000000\",\"{}\",[\"bool\",\"true\"]]",
+        bool_domain.as_str()
+    );
     let duplicate = wire::semantic_payload(&revision).replacen(
-        "[[\"flag\",[\"bool\",\"true\"]]",
-        "[[\"flag\",[\"bool\",\"true\"]],[\"flag\",[\"bool\",\"false\"]]",
+        &first_field,
+        &format!("{first_field},{first_field}"),
         1,
     );
     assert_eq!(

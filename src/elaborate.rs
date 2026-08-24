@@ -14,3 +14,4 @@ pub use compilation::{
 };
 pub use identifiers::DesignationTable;
 pub use lowering::lower_clause;
+pub(crate) use lowering::structural_sequence_domain;

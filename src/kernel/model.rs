@@ -7,8 +7,11 @@ use super::{
         Transition, UniversalLaw,
     },
     error::{KernelError, Result},
-    identity::{ContentId, PatternId, ReferentId},
-    schema::{Cardinality, Referent, RelationShape, Role, RolePredicate},
+    identity::{ContentId, Name, PatternId, ReferentId},
+    schema::{
+        Cardinality, Referent, RelationShape, Role, RolePredicate, StructuralContract,
+        StructuralForm, membership_group_role, membership_member_role, membership_relation,
+    },
 };
 
 /// Every signed semantic constituent of a Model snapshot.
@@ -17,6 +20,7 @@ pub enum SemanticAtom {
     Referent(Referent),
     RelationalContent(RelationalContent),
     RelationShape(RelationShape),
+    StructuralContract(StructuralContract),
     AssertionOccurrence(AssertionOccurrence),
     Definition(Definition),
     DerivationRule(DerivationRule),
@@ -33,6 +37,7 @@ pub struct Model {
     referents: BTreeMap<ReferentId, Referent>,
     relational_contents: BTreeMap<ContentId, RelationalContent>,
     relation_shapes: BTreeMap<ReferentId, RelationShape>,
+    structural_contracts: BTreeMap<ReferentId, StructuralContract>,
     occurrences: Vec<AssertionOccurrence>,
     definitions: Vec<Definition>,
     derivation_rules: Vec<DerivationRule>,
@@ -50,6 +55,7 @@ impl Model {
         referents: BTreeMap<ReferentId, Referent>,
         relational_contents: BTreeMap<ContentId, RelationalContent>,
         relation_shapes: BTreeMap<ReferentId, RelationShape>,
+        structural_contracts: BTreeMap<ReferentId, StructuralContract>,
         occurrences: Vec<AssertionOccurrence>,
         derivation_rules: Vec<DerivationRule>,
     ) -> Result<Self> {
@@ -58,6 +64,7 @@ impl Model {
             referents,
             relational_contents,
             relation_shapes,
+            structural_contracts,
             occurrences,
             Vec::new(),
             derivation_rules,
@@ -75,6 +82,7 @@ impl Model {
         referents: BTreeMap<ReferentId, Referent>,
         relational_contents: BTreeMap<ContentId, RelationalContent>,
         relation_shapes: BTreeMap<ReferentId, RelationShape>,
+        structural_contracts: BTreeMap<ReferentId, StructuralContract>,
         mut occurrences: Vec<AssertionOccurrence>,
         mut definitions: Vec<Definition>,
         mut derivation_rules: Vec<DerivationRule>,
@@ -91,6 +99,11 @@ impl Model {
             "relational content",
         )?;
         validate_keyed(&relation_shapes, RelationShape::referent, "relation shape")?;
+        validate_keyed(
+            &structural_contracts,
+            StructuralContract::referent,
+            "structural contract",
+        )?;
         require_referent(&referents, &id, "Model identity")?;
 
         for shape in relation_shapes.values() {
@@ -100,6 +113,9 @@ impl Model {
                     validate_predicate(&referents, &relation_shapes, predicate)?;
                 }
             }
+        }
+        for contract in structural_contracts.values() {
+            validate_structural_contract(&referents, contract)?;
         }
         let mut application_targets = BTreeSet::new();
         for term in relational_contents
@@ -186,6 +202,7 @@ impl Model {
         transitions.sort();
         judgments.sort();
         ensure_unique_ids(definitions.iter().map(Definition::id), "definition")?;
+        validate_structural_contract_definitions(&structural_contracts, &definitions)?;
         ensure_unique_ids(
             derivation_rules.iter().map(DerivationRule::id),
             "derivation rule",
@@ -281,10 +298,27 @@ impl Model {
         admitted_contents.sort();
         admitted_contents.dedup();
 
+        for term in relational_contents
+            .values()
+            .flat_map(|content| content.roles().values())
+            .chain(definitions.iter().map(Definition::denotation))
+        {
+            validate_structural_term(
+                &structural_contracts,
+                &definitions,
+                &relational_contents,
+                &relation_shapes,
+                &admitted_ids,
+                term,
+            )?;
+        }
+
         for content in relational_contents.values() {
             validate_admissibility(
                 &relational_contents,
                 &relation_shapes,
+                &structural_contracts,
+                &definitions,
                 &admitted_ids,
                 content,
             )?;
@@ -295,6 +329,7 @@ impl Model {
             referents,
             relational_contents,
             relation_shapes,
+            structural_contracts,
             occurrences,
             definitions,
             derivation_rules,
@@ -314,6 +349,7 @@ impl Model {
         let mut referents = BTreeMap::new();
         let mut contents = BTreeMap::new();
         let mut shapes = BTreeMap::new();
+        let mut structural_contracts = BTreeMap::new();
         let mut occurrences = Vec::new();
         let mut definitions = Vec::new();
         let mut rules = Vec::new();
@@ -339,6 +375,12 @@ impl Model {
                     value,
                     "relation shape",
                 )?,
+                SemanticAtom::StructuralContract(value) => insert(
+                    &mut structural_contracts,
+                    value.referent().clone(),
+                    value,
+                    "structural contract",
+                )?,
                 SemanticAtom::AssertionOccurrence(value) => occurrences.push(value),
                 SemanticAtom::Definition(value) => definitions.push(value),
                 SemanticAtom::DerivationRule(value) => rules.push(value),
@@ -354,6 +396,7 @@ impl Model {
             referents,
             contents,
             shapes,
+            structural_contracts,
             occurrences,
             definitions,
             rules,
@@ -381,6 +424,12 @@ impl Model {
                     .values()
                     .cloned()
                     .map(SemanticAtom::RelationShape),
+            )
+            .chain(
+                self.structural_contracts
+                    .values()
+                    .cloned()
+                    .map(SemanticAtom::StructuralContract),
             )
             .chain(
                 self.occurrences
@@ -429,6 +478,9 @@ impl Model {
     }
     pub fn relation_shapes(&self) -> &BTreeMap<ReferentId, RelationShape> {
         &self.relation_shapes
+    }
+    pub fn structural_contracts(&self) -> &BTreeMap<ReferentId, StructuralContract> {
+        &self.structural_contracts
     }
     pub fn occurrences(&self) -> &[AssertionOccurrence] {
         &self.occurrences
@@ -485,6 +537,8 @@ impl Model {
         validate_admissibility(
             &self.relational_contents,
             &self.relation_shapes,
+            &self.structural_contracts,
+            &self.definitions,
             &self
                 .admitted_contents
                 .iter()
@@ -529,6 +583,273 @@ impl Model {
     ) -> OpenWorldStatus {
         open_world_status(content.id(), &self.occurrences, &self.judgments, include)
     }
+}
+
+fn validate_structural_contract(
+    referents: &BTreeMap<ReferentId, Referent>,
+    contract: &StructuralContract,
+) -> Result<()> {
+    require_referent(referents, contract.referent(), "structural contract")?;
+    match contract.form() {
+        StructuralForm::Product(fields) => {
+            for field in fields {
+                require_referent(referents, field, "structural product field binding")?;
+            }
+        }
+        StructuralForm::F32 | StructuralForm::Int | StructuralForm::Bool => {}
+    }
+    Ok(())
+}
+
+fn validate_structural_contract_definitions(
+    contracts: &BTreeMap<ReferentId, StructuralContract>,
+    definitions: &[Definition],
+) -> Result<()> {
+    for contract in contracts.values() {
+        match contract.form() {
+            StructuralForm::Product(fields) => {
+                for field in fields {
+                    let definition = definitions
+                        .binary_search_by(|definition| definition.id().cmp(field))
+                        .ok()
+                        .map(|index| &definitions[index])
+                        .ok_or_else(|| {
+                            KernelError::new(
+                                "structural product field has no exact binding definition",
+                            )
+                        })?;
+                    let Some(domain) = definition.denotation().referent_id() else {
+                        return Err(KernelError::new(
+                            "structural product field binding must denote one domain referent",
+                        ));
+                    };
+                    if !contracts.contains_key(domain) {
+                        return Err(KernelError::new(
+                            "structural product field domain has no sealed representation contract",
+                        ));
+                    }
+                }
+            }
+            StructuralForm::F32 | StructuralForm::Int | StructuralForm::Bool => {}
+        }
+    }
+    Ok(())
+}
+
+fn validate_structural_term(
+    contracts: &BTreeMap<ReferentId, StructuralContract>,
+    definitions: &[Definition],
+    contents: &BTreeMap<ContentId, RelationalContent>,
+    shapes: &BTreeMap<ReferentId, RelationShape>,
+    admitted: &BTreeSet<ContentId>,
+    term: &Term,
+) -> Result<()> {
+    match term {
+        Term::F32(_) => require_structural_form(contracts, StructuralForm::F32),
+        Term::Int(_) => require_structural_form(contracts, StructuralForm::Int),
+        Term::Bool(_) => require_structural_form(contracts, StructuralForm::Bool),
+        Term::Product { shape, fields } => validate_inline_product(
+            contracts,
+            definitions,
+            contents,
+            shapes,
+            admitted,
+            shape,
+            fields,
+        ),
+        Term::LabelledProduct { shape, .. } => validate_term_against(
+            contracts,
+            definitions,
+            contents,
+            shapes,
+            admitted,
+            shape,
+            term,
+        ),
+        Term::Sequence {
+            element, values, ..
+        } => {
+            for value in values {
+                validate_term_against(
+                    contracts,
+                    definitions,
+                    contents,
+                    shapes,
+                    admitted,
+                    element,
+                    value,
+                )?;
+            }
+            Ok(())
+        }
+        Term::Sum { value, .. } => {
+            validate_structural_term(contracts, definitions, contents, shapes, admitted, value)
+        }
+        Term::Referent(_) | Term::Pattern(_) | Term::Application(_) => Ok(()),
+    }
+}
+
+fn require_structural_form(
+    contracts: &BTreeMap<ReferentId, StructuralContract>,
+    expected: StructuralForm,
+) -> Result<()> {
+    if contracts
+        .values()
+        .any(|contract| contract.form() == &expected)
+    {
+        Ok(())
+    } else {
+        Err(KernelError::new(
+            "structural scalar has no sealed representation contract",
+        ))
+    }
+}
+
+fn validate_term_against(
+    contracts: &BTreeMap<ReferentId, StructuralContract>,
+    definitions: &[Definition],
+    contents: &BTreeMap<ContentId, RelationalContent>,
+    shapes: &BTreeMap<ReferentId, RelationShape>,
+    admitted: &BTreeSet<ContentId>,
+    expected: &ReferentId,
+    term: &Term,
+) -> Result<()> {
+    if let Term::Referent(candidate) = term {
+        let membership = RelationalContent::new(
+            membership_relation(),
+            BTreeMap::from([
+                (membership_member_role(), Term::referent(candidate.clone())),
+                (membership_group_role(), Term::referent(expected.clone())),
+            ]),
+        )?;
+        return if contents.get(membership.id()) == Some(&membership)
+            && admitted.contains(membership.id())
+        {
+            Ok(())
+        } else {
+            Err(KernelError::new(
+                "structural term does not match its expected domain",
+            ))
+        };
+    }
+    if let Term::Application(id) = term {
+        let target = contents
+            .get(id)
+            .ok_or_else(|| KernelError::new("recursive term names undeclared content"))?;
+        let result = application_result_role(shapes, target)?;
+        return if structural_role_domain(result)? == Some(expected) {
+            Ok(())
+        } else {
+            Err(KernelError::new(
+                "structural term does not match its expected domain",
+            ))
+        };
+    }
+    if let Some(contract) = contracts.get(expected) {
+        return match (contract.form(), term) {
+            (StructuralForm::F32, Term::F32(_))
+            | (StructuralForm::Int, Term::Int(_))
+            | (StructuralForm::Bool, Term::Bool(_)) => Ok(()),
+            (StructuralForm::Product(required), Term::LabelledProduct { shape, fields }) => {
+                if shape != expected
+                    || fields.keys().collect::<BTreeSet<_>>() != required.iter().collect()
+                {
+                    return Err(KernelError::new(
+                        "labelled product must fill its exact structural contract",
+                    ));
+                }
+                for (field, value) in fields {
+                    let definition = definitions
+                        .binary_search_by(|definition| definition.id().cmp(field))
+                        .ok()
+                        .map(|index| &definitions[index])
+                        .expect("structural product definitions were validated");
+                    let domain = definition
+                        .denotation()
+                        .referent_id()
+                        .expect("structural product definitions denote domains");
+                    validate_term_against(
+                        contracts,
+                        definitions,
+                        contents,
+                        shapes,
+                        admitted,
+                        domain,
+                        value,
+                    )
+                    .map_err(|_| {
+                        KernelError::new("labelled product field does not satisfy its bound domain")
+                    })?;
+                }
+                Ok(())
+            }
+            _ => Err(KernelError::new(
+                "structural term does not match its expected domain",
+            )),
+        };
+    }
+    match term {
+        Term::Product { shape, fields } if shape == expected => validate_inline_product(
+            contracts,
+            definitions,
+            contents,
+            shapes,
+            admitted,
+            shape,
+            fields,
+        ),
+        Term::Sequence {
+            shape,
+            element,
+            values,
+        } if shape == expected => {
+            for value in values {
+                validate_term_against(
+                    contracts,
+                    definitions,
+                    contents,
+                    shapes,
+                    admitted,
+                    element,
+                    value,
+                )?;
+            }
+            Ok(())
+        }
+        _ => Err(KernelError::new(
+            "structural term does not match its expected domain",
+        )),
+    }
+}
+
+fn validate_inline_product(
+    contracts: &BTreeMap<ReferentId, StructuralContract>,
+    definitions: &[Definition],
+    contents: &BTreeMap<ContentId, RelationalContent>,
+    shapes: &BTreeMap<ReferentId, RelationShape>,
+    admitted: &BTreeSet<ContentId>,
+    _shape: &ReferentId,
+    fields: &BTreeMap<Name, super::clause::ProductField>,
+) -> Result<()> {
+    for (index, (label, field)) in fields.iter().enumerate() {
+        let expected_label =
+            Name::new(format!("_{index:020}")).expect("fixed-width ordinal tuple label is valid");
+        if label != &expected_label {
+            return Err(KernelError::new(
+                "tuple does not use canonical structural positions",
+            ));
+        }
+        validate_term_against(
+            contracts,
+            definitions,
+            contents,
+            shapes,
+            admitted,
+            field.domain(),
+            field.value(),
+        )?;
+    }
+    Ok(())
 }
 
 fn open_world_status(
@@ -665,6 +986,30 @@ fn application_result_role<'a>(
     Ok(&shape.roles()[&mode.sought()[0]])
 }
 
+fn structural_role_domain(role: &Role) -> Result<Option<&ReferentId>> {
+    if role.admissibility().is_empty() {
+        return Ok(None);
+    }
+    let [predicate] = role.admissibility() else {
+        return Err(KernelError::new(
+            "structural term requires one exact domain predicate",
+        ));
+    };
+    if predicate.relation() != &membership_relation()
+        || predicate.candidate_role() != &membership_member_role()
+        || predicate.fixed_roles().len() != 1
+    {
+        return Err(KernelError::new(
+            "structural term requires one exact domain predicate",
+        ));
+    }
+    predicate
+        .fixed_roles()
+        .get(&membership_group_role())
+        .map(Some)
+        .ok_or_else(|| KernelError::new("structural term requires one exact domain predicate"))
+}
+
 fn validate_content_structure(
     referents: &BTreeMap<ReferentId, Referent>,
     contents: &BTreeMap<ContentId, RelationalContent>,
@@ -748,12 +1093,24 @@ fn validate_term(
             Term::Application(id) => require_content(contents, id, "recursive term"),
             Term::Pattern(_) if allow_patterns => Ok(()),
             Term::Pattern(_) => Err(KernelError::new("pattern is not valid in ground content")),
-            Term::F32(_)
-            | Term::Int(_)
-            | Term::Bool(_)
-            | Term::Product(_)
-            | Term::Sum { .. }
-            | Term::Sequence(_) => Ok(()),
+            Term::Product { shape, fields } => require_referent(referents, shape, "tuple shape")
+                .and_then(|()| {
+                    fields.values().try_for_each(|field| {
+                        require_referent(referents, field.domain(), "tuple field domain")
+                    })
+                }),
+            Term::LabelledProduct { shape, fields } => {
+                require_referent(referents, shape, "labelled product shape").and_then(|()| {
+                    fields.keys().try_for_each(|field| {
+                        require_referent(referents, field, "labelled product field")
+                    })
+                })
+            }
+            Term::Sequence { shape, element, .. } => {
+                require_referent(referents, shape, "sequence shape")
+                    .and_then(|()| require_referent(referents, element, "sequence element domain"))
+            }
+            Term::F32(_) | Term::Int(_) | Term::Bool(_) | Term::Sum { .. } => Ok(()),
         };
     });
     result
@@ -793,11 +1150,14 @@ fn term_is_ground(
             visiting.remove(id);
             ground
         }
-        Term::Product(fields) => fields
+        Term::Product { fields, .. } => fields
+            .values()
+            .all(|field| term_is_ground(contents, field.value(), visiting)),
+        Term::LabelledProduct { fields, .. } => fields
             .values()
             .all(|term| term_is_ground(contents, term, visiting)),
         Term::Sum { value, .. } => term_is_ground(contents, value, visiting),
-        Term::Sequence(values) => values
+        Term::Sequence { values, .. } => values
             .iter()
             .all(|term| term_is_ground(contents, term, visiting)),
     }
@@ -832,6 +1192,8 @@ fn admitted_content_ids(
 fn validate_admissibility(
     contents: &BTreeMap<ContentId, RelationalContent>,
     shapes: &BTreeMap<ReferentId, RelationShape>,
+    structural_contracts: &BTreeMap<ReferentId, StructuralContract>,
+    definitions: &[Definition],
     admitted: &BTreeSet<ContentId>,
     content: &RelationalContent,
 ) -> Result<()> {
@@ -873,13 +1235,20 @@ fn validate_admissibility(
             Term::F32(_)
             | Term::Int(_)
             | Term::Bool(_)
-            | Term::Product(_)
+            | Term::Product { .. }
+            | Term::LabelledProduct { .. }
             | Term::Sum { .. }
-            | Term::Sequence(_) => {
-                if !shape.roles()[role_id].admissibility().is_empty() {
-                    return Err(KernelError::new(
-                        "structural term cannot satisfy relational admissibility predicates",
-                    ));
+            | Term::Sequence { .. } => {
+                if let Some(expected) = structural_role_domain(&shape.roles()[role_id])? {
+                    validate_term_against(
+                        structural_contracts,
+                        definitions,
+                        contents,
+                        shapes,
+                        admitted,
+                        expected,
+                        term,
+                    )?;
                 }
             }
         }
@@ -1153,9 +1522,10 @@ fn match_form(
             | Term::F32(_)
             | Term::Int(_)
             | Term::Bool(_)
-            | Term::Product(_)
+            | Term::Product { .. }
+            | Term::LabelledProduct { .. }
             | Term::Sum { .. }
-            | Term::Sequence(_)
+            | Term::Sequence { .. }
                 if expected != actual =>
             {
                 return false;
@@ -1165,9 +1535,10 @@ fn match_form(
             | Term::F32(_)
             | Term::Int(_)
             | Term::Bool(_)
-            | Term::Product(_)
+            | Term::Product { .. }
+            | Term::LabelledProduct { .. }
             | Term::Sum { .. }
-            | Term::Sequence(_) => {}
+            | Term::Sequence { .. } => {}
         }
     }
     true

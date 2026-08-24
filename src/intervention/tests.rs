@@ -232,6 +232,7 @@ fn rev(
             referents,
             contents,
             shapes,
+            BTreeMap::new(),
             occurrences,
             Vec::new(),
             derivation_rules,

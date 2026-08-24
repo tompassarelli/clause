@@ -1,8 +1,12 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
+    elaborate::structural_sequence_domain,
     intrinsic::{Intrinsic, IntrinsicRole},
-    kernel::{ContentId, KernelError, ReferentId, RelationalContent, Result, Revision, Term},
+    kernel::{
+        ContentId, KernelError, ProductField, ReferentId, RelationalContent, Result, Revision,
+        StructuralForm, Term,
+    },
 };
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -51,14 +55,33 @@ impl<'a> Evaluator<'a> {
             )),
             Term::Application(id) => self.application(id),
             Term::F32(_) | Term::Int(_) | Term::Bool(_) => Ok(term.clone()),
-            Term::Product(fields) => Term::product(
+            Term::Product { shape, fields } => Term::product(
+                shape.clone(),
                 fields
                     .iter()
-                    .map(|(label, value)| Ok((label.clone(), self.term(value)?)))
+                    .map(|(label, field)| {
+                        Ok((
+                            label.clone(),
+                            ProductField::new(field.domain().clone(), self.term(field.value())?),
+                        ))
+                    })
+                    .collect::<Result<BTreeMap<_, _>>>()?,
+            ),
+            Term::LabelledProduct { shape, fields } => Term::labelled_product(
+                shape.clone(),
+                fields
+                    .iter()
+                    .map(|(field, value)| Ok((field.clone(), self.term(value)?)))
                     .collect::<Result<BTreeMap<_, _>>>()?,
             ),
             Term::Sum { tag, value } => Term::sum(tag.clone(), self.term(value)?),
-            Term::Sequence(values) => Term::sequence(
+            Term::Sequence {
+                shape,
+                element,
+                values,
+            } => Term::sequence(
+                shape.clone(),
+                element.clone(),
                 values
                     .iter()
                     .map(|value| self.term(value))
@@ -203,10 +226,28 @@ impl<'a> Evaluator<'a> {
             ));
         }
         let sequence = self.normalized_role(content, intrinsic, IntrinsicRole::Sequence)?;
-        let Term::Sequence(values) = sequence else {
+        let Term::Sequence { values, .. } = sequence else {
             return Err(KernelError::new("map requires a Sequence input"));
         };
+        let mut f32_domains = self
+            .revision
+            .model()
+            .structural_contracts()
+            .values()
+            .filter(|contract| contract.form() == &StructuralForm::F32)
+            .map(|contract| contract.referent().clone());
+        let element = f32_domains
+            .next()
+            .ok_or_else(|| KernelError::new("map requires one sealed F32 result domain"))?;
+        if f32_domains.next().is_some() {
+            return Err(KernelError::new(
+                "map requires one unambiguous sealed F32 result domain",
+            ));
+        }
+        let shape = structural_sequence_domain(&element);
         Term::sequence(
+            shape,
+            element,
             values
                 .iter()
                 .map(|value| {
@@ -242,12 +283,12 @@ fn arithmetic(intrinsic: Intrinsic, left: &Term, right: &Term) -> Result<Term> {
             arithmetic_f32(intrinsic, left.value(), right.value())
         }
         (Term::Int(left), Term::Int(right)) => arithmetic_int(intrinsic, *left, *right),
-        (Term::Product(_), Term::Product(_))
+        (Term::Product { .. }, Term::Product { .. })
             if matches!(intrinsic, Intrinsic::Add | Intrinsic::Subtract) =>
         {
             tuple_pair(intrinsic, left, right)
         }
-        (Term::Product(_), Term::F32(_) | Term::Int(_))
+        (Term::Product { .. }, Term::F32(_) | Term::Int(_))
             if matches!(intrinsic, Intrinsic::Multiply | Intrinsic::Divide) =>
         {
             tuple_scalar(intrinsic, left, right)
@@ -319,10 +360,10 @@ enum NumericTuple {
 }
 
 fn numeric_tuple(term: &Term) -> Result<NumericTuple> {
-    let Term::Product(fields) = term else {
+    let Term::Product { fields, .. } = term else {
         return Err(KernelError::new("numeric tuple must be a Product"));
     };
-    let values = fields.values().collect::<Vec<_>>();
+    let values = fields.values().map(ProductField::value).collect::<Vec<_>>();
     for (index, label) in fields.keys().enumerate() {
         if label.as_str() != format!("_{index:020}") {
             return Err(KernelError::new(
@@ -359,20 +400,34 @@ fn numeric_tuple(term: &Term) -> Result<NumericTuple> {
 }
 
 fn tuple_pair(intrinsic: Intrinsic, left: &Term, right: &Term) -> Result<Term> {
+    let (shape, domains) = tuple_contract(left)?;
+    if tuple_contract(right)? != (shape.clone(), domains.clone()) {
+        return Err(KernelError::new(
+            "tuple arithmetic requires equal structural domains",
+        ));
+    }
     match (numeric_tuple(left)?, numeric_tuple(right)?) {
         (NumericTuple::F32(left), NumericTuple::F32(right)) if left.len() == right.len() => {
             Term::tuple(
+                shape,
                 left.into_iter()
                     .zip(right)
-                    .map(|(left, right)| arithmetic_f32(intrinsic, left, right))
+                    .zip(domains)
+                    .map(|((left, right), domain)| {
+                        Ok((domain, arithmetic_f32(intrinsic, left, right)?))
+                    })
                     .collect::<Result<Vec<_>>>()?,
             )
         }
         (NumericTuple::Int(left), NumericTuple::Int(right)) if left.len() == right.len() => {
             Term::tuple(
+                shape,
                 left.into_iter()
                     .zip(right)
-                    .map(|(left, right)| arithmetic_int(intrinsic, left, right))
+                    .zip(domains)
+                    .map(|((left, right), domain)| {
+                        Ok((domain, arithmetic_int(intrinsic, left, right)?))
+                    })
                     .collect::<Result<Vec<_>>>()?,
             )
         }
@@ -383,23 +438,43 @@ fn tuple_pair(intrinsic: Intrinsic, left: &Term, right: &Term) -> Result<Term> {
 }
 
 fn tuple_scalar(intrinsic: Intrinsic, tuple: &Term, scalar: &Term) -> Result<Term> {
+    let (shape, domains) = tuple_contract(tuple)?;
     match (numeric_tuple(tuple)?, scalar) {
         (NumericTuple::F32(values), Term::F32(scalar)) => Term::tuple(
+            shape,
             values
                 .into_iter()
-                .map(|value| arithmetic_f32(intrinsic, value, scalar.value()))
+                .zip(domains)
+                .map(|(value, domain)| {
+                    Ok((domain, arithmetic_f32(intrinsic, value, scalar.value())?))
+                })
                 .collect::<Result<Vec<_>>>()?,
         ),
         (NumericTuple::Int(values), Term::Int(scalar)) => Term::tuple(
+            shape,
             values
                 .into_iter()
-                .map(|value| arithmetic_int(intrinsic, value, *scalar))
+                .zip(domains)
+                .map(|(value, domain)| Ok((domain, arithmetic_int(intrinsic, value, *scalar)?)))
                 .collect::<Result<Vec<_>>>()?,
         ),
         _ => Err(KernelError::new(
             "tuple scaling requires a scalar matching the tuple leaf kind",
         )),
     }
+}
+
+fn tuple_contract(term: &Term) -> Result<(ReferentId, Vec<ReferentId>)> {
+    let Term::Product { shape, fields } = term else {
+        return Err(KernelError::new("numeric tuple must be a Product"));
+    };
+    Ok((
+        shape.clone(),
+        fields
+            .values()
+            .map(|field| field.domain().clone())
+            .collect(),
+    ))
 }
 
 fn length(term: &Term) -> Result<Term> {

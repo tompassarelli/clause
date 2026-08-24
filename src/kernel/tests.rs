@@ -39,6 +39,7 @@ fn relation_contract_uses_stable_roles_without_layout_or_type_identity() {
         ]),
         BTreeMap::new(),
         BTreeMap::from([(relation, shape)]),
+        BTreeMap::new(),
         Vec::new(),
         Vec::new(),
     );
@@ -84,6 +85,7 @@ fn only_exact_model_authority_and_scope_make_content_operative() {
         referents,
         BTreeMap::from([(content.id().clone(), content.clone())]),
         BTreeMap::from([(relation, shape)]),
+        BTreeMap::new(),
         vec![AssertionOccurrence::new(
             occurrence.clone(),
             content.id().clone(),
@@ -248,6 +250,7 @@ fn derived_judgments_validate_recursive_groundness() {
             .map(|content| (content.id().clone(), content))
             .collect(),
             shapes.clone(),
+            BTreeMap::new(),
             Vec::new(),
             Vec::new(),
             vec![rule.clone()],
@@ -343,6 +346,7 @@ fn recursive_application_requires_one_unambiguous_result_contract() {
                 (parent_relation.clone(), parent_shape.clone()),
                 (application_relation.clone(), application_shape),
             ]),
+            BTreeMap::new(),
             Vec::new(),
             Vec::new(),
         )
@@ -442,6 +446,7 @@ fn partial_application_content_cannot_become_an_assertion_root() {
             .map(|content| (content.id().clone(), content))
             .collect(),
         shapes,
+        BTreeMap::new(),
         vec![AssertionOccurrence::new(
             occurrence,
             child.id().clone(),
@@ -462,8 +467,17 @@ fn structural_terms_are_checked_canonical_and_ordered() {
     assert!(Term::f32(f32::INFINITY).is_err());
     assert_eq!(Term::f32(-0.0).unwrap(), Term::f32(0.0).unwrap());
 
-    let tuple = Term::tuple((0..11).map(Term::int).collect()).unwrap();
-    let Term::Product(fields) = &tuple else {
+    let tuple_shape = referent(73);
+    let integer_domain = referent(74);
+    let sequence_shape = referent(75);
+    let tuple = Term::tuple(
+        tuple_shape,
+        (0..11)
+            .map(|value| (integer_domain.clone(), Term::int(value)))
+            .collect(),
+    )
+    .unwrap();
+    let Term::Product { fields, .. } = &tuple else {
         panic!("tuple lowers to one labelled structural product");
     };
     assert_eq!(
@@ -473,16 +487,24 @@ fn structural_terms_are_checked_canonical_and_ordered() {
             .collect::<Vec<_>>()
     );
     assert_eq!(
-        fields.values().cloned().collect::<Vec<_>>(),
+        fields
+            .values()
+            .map(ProductField::value)
+            .cloned()
+            .collect::<Vec<_>>(),
         (0..11).map(Term::int).collect::<Vec<_>>()
     );
     assert!(tuple.is_ground());
 
     let binder = Term::pattern(PatternId::from_digest([70; 32]));
     assert_eq!(
-        Term::sequence(vec![binder.clone()])
-            .unwrap_err()
-            .to_string(),
+        Term::sequence(
+            sequence_shape.clone(),
+            integer_domain.clone(),
+            vec![binder.clone()]
+        )
+        .unwrap_err()
+        .to_string(),
         "pattern is not valid inside a structural term"
     );
     assert_eq!(
@@ -498,7 +520,12 @@ fn structural_terms_are_checked_canonical_and_ordered() {
         relation.clone(),
         BTreeMap::from([(
             role.clone(),
-            Term::sequence(vec![Term::int(1), Term::int(2)]).unwrap(),
+            Term::sequence(
+                sequence_shape.clone(),
+                integer_domain.clone(),
+                vec![Term::int(1), Term::int(2)],
+            )
+            .unwrap(),
         )]),
     )
     .unwrap();
@@ -506,7 +533,12 @@ fn structural_terms_are_checked_canonical_and_ordered() {
         relation.clone(),
         BTreeMap::from([(
             role.clone(),
-            Term::sequence(vec![Term::int(1), Term::int(2)]).unwrap(),
+            Term::sequence(
+                sequence_shape.clone(),
+                integer_domain.clone(),
+                vec![Term::int(1), Term::int(2)],
+            )
+            .unwrap(),
         )]),
     )
     .unwrap();
@@ -514,7 +546,12 @@ fn structural_terms_are_checked_canonical_and_ordered() {
         relation,
         BTreeMap::from([(
             role,
-            Term::sequence(vec![Term::int(2), Term::int(1)]).unwrap(),
+            Term::sequence(
+                sequence_shape,
+                integer_domain,
+                vec![Term::int(2), Term::int(1)],
+            )
+            .unwrap(),
         )]),
     )
     .unwrap();
@@ -528,8 +565,13 @@ fn structural_definition_recursively_registers_and_validates_applications() {
     let relation = referent(81);
     let value = referent(82);
     let definition = referent(83);
+    let sequence_shape = referent(86);
+    let result_domain = referent(87);
     let input = RoleId::from_digest([84; 32]);
     let result = RoleId::from_digest([85; 32]);
+    let membership = membership_relation();
+    let member = membership_member_role();
+    let group = membership_group_role();
     let application = RelationalContent::new(
         relation.clone(),
         BTreeMap::from([(input.clone(), Term::referent(value.clone()))]),
@@ -541,29 +583,56 @@ fn structural_definition_recursively_registers_and_validates_applications() {
             (input.clone(), Role::new(input.clone(), Vec::new()).unwrap()),
             (
                 result.clone(),
-                Role::new(result.clone(), Vec::new()).unwrap(),
+                Role::new(
+                    result.clone(),
+                    vec![
+                        RolePredicate::new(
+                            membership.clone(),
+                            member.clone(),
+                            BTreeMap::from([(group.clone(), result_domain.clone())]),
+                        )
+                        .unwrap(),
+                    ],
+                )
+                .unwrap(),
             ),
         ]),
         vec![LookupMode::finite(vec![input], vec![result], Cardinality::One).unwrap()],
     )
     .unwrap();
-    let referents = [model.clone(), relation.clone(), value, definition.clone()]
-        .into_iter()
-        .map(|id| (id.clone(), Referent::new(id)))
-        .collect();
-    let structural = Term::sequence(vec![
-        Term::product(BTreeMap::from([(
-            Name::new("result".into()).unwrap(),
-            Term::application(application.id().clone()),
-        )]))
-        .unwrap(),
-    ])
+    let membership_shape = RelationShape::new(
+        membership.clone(),
+        BTreeMap::from([
+            (member.clone(), Role::new(member, Vec::new()).unwrap()),
+            (group.clone(), Role::new(group, Vec::new()).unwrap()),
+        ]),
+        Vec::new(),
+    )
+    .unwrap();
+    let referents = [
+        model.clone(),
+        relation.clone(),
+        value,
+        definition.clone(),
+        sequence_shape.clone(),
+        result_domain.clone(),
+        membership.clone(),
+    ]
+    .into_iter()
+    .map(|id| (id.clone(), Referent::new(id)))
+    .collect();
+    let structural = Term::sequence(
+        sequence_shape,
+        result_domain,
+        vec![Term::application(application.id().clone())],
+    )
     .unwrap();
     let model = Model::with_distinctions(
         model,
         referents,
         BTreeMap::from([(application.id().clone(), application.clone())]),
-        BTreeMap::from([(relation, shape)]),
+        BTreeMap::from([(relation, shape), (membership, membership_shape)]),
+        BTreeMap::new(),
         Vec::new(),
         vec![Definition::new(definition, structural)],
         Vec::new(),

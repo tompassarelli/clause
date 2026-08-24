@@ -478,20 +478,37 @@ fn term_source(value: &Term) -> String {
         ),
         Term::Int(value) => format!("kernel::Term::int({value})"),
         Term::Bool(value) => format!("kernel::Term::boolean({value})"),
-        Term::Product(fields) => {
+        Term::Product { shape, fields } => {
             let fields = fields
                 .iter()
-                .map(|(label, value)| {
+                .map(|(label, field)| {
                     format!(
-                        "(kernel::Name::new({:?}.into()).expect(\"generated product label\"), {})",
+                        "(kernel::Name::new({:?}.into()).expect(\"generated product label\"), kernel::ProductField::new(kernel::ReferentId::new({:?}.into()).expect(\"generated product domain\"), {}))",
                         label.as_str(),
-                        term_source(value)
+                        field.domain().as_str(),
+                        term_source(field.value())
                     )
                 })
                 .collect::<Vec<_>>()
                 .join(",");
             format!(
-                "kernel::Term::product(std::collections::BTreeMap::from([{fields}])).expect(\"generated structural product\")"
+                "kernel::Term::product(kernel::ReferentId::new({:?}.into()).expect(\"generated product shape\"), std::collections::BTreeMap::from([{fields}])).expect(\"generated structural product\")",
+                shape.as_str()
+            )
+        }
+        Term::LabelledProduct { shape, fields } => {
+            let fields = fields
+                .iter()
+                .map(|(field, value)| format!(
+                    "(kernel::ReferentId::new({:?}.into()).expect(\"generated product field\"), {})",
+                    field.as_str(),
+                    term_source(value)
+                ))
+                .collect::<Vec<_>>()
+                .join(",");
+            format!(
+                "kernel::Term::labelled_product(kernel::ReferentId::new({:?}.into()).expect(\"generated labelled product shape\"), std::collections::BTreeMap::from([{fields}])).expect(\"generated labelled product\")",
+                shape.as_str()
             )
         }
         Term::Sum { tag, value } => format!(
@@ -499,8 +516,14 @@ fn term_source(value: &Term) -> String {
             tag.as_str(),
             term_source(value)
         ),
-        Term::Sequence(values) => format!(
-            "kernel::Term::sequence(vec![{}]).expect(\"generated structural sequence\")",
+        Term::Sequence {
+            shape,
+            element,
+            values,
+        } => format!(
+            "kernel::Term::sequence(kernel::ReferentId::new({:?}.into()).expect(\"generated sequence shape\"), kernel::ReferentId::new({:?}.into()).expect(\"generated sequence element domain\"), vec![{}]).expect(\"generated structural sequence\")",
+            shape.as_str(),
+            element.as_str(),
             values.iter().map(term_source).collect::<Vec<_>>().join(",")
         ),
     }

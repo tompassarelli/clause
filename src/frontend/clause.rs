@@ -1746,7 +1746,6 @@ fn closed_term_candidates(
     relations: &BTreeMap<Name, RelationSpec>,
     memberships: &BTreeMap<Name, MembershipCatalog>,
 ) -> Result<(SurfaceTerm, DomainName), ParseError> {
-    reject_bracketed_clause_terms(&tokens)?;
     let mut domains = current_memberships
         .explicit
         .values()
@@ -1790,10 +1789,13 @@ fn closed_term_candidates(
     }
     match candidates.as_slice() {
         [(domain, term)] => Ok((term.clone(), domain.clone())),
-        [] => Err(error(
-            span,
-            "no declared recursive term accepts this definition expression",
-        )),
+        [] => {
+            reject_bracketed_clause_terms(&tokens)?;
+            Err(error(
+                span,
+                "no declared recursive term accepts this definition expression",
+            ))
+        }
         _ => Err(error(
             span,
             "ambiguous definition expression; expected one recursive term",
@@ -1834,12 +1836,43 @@ pub(super) fn bind_local_references(term: &mut SurfaceTerm, locals: &BTreeSet<Na
 }
 
 fn reject_bracketed_clause_terms(tokens: &[Token]) -> Result<(), ParseError> {
-    if let Some(token) = tokens.iter().find(|token| token.bracketed) {
+    for (open, token) in tokens.iter().enumerate() {
+        if token.quoted || token.raw != "[" {
+            continue;
+        }
+        let mut depth = 0usize;
+        let mut close = None;
+        for (index, candidate) in tokens.iter().enumerate().skip(open) {
+            if !candidate.quoted && candidate.raw == "[" {
+                depth += 1;
+            } else if !candidate.quoted && candidate.raw == "]" {
+                depth -= 1;
+                if depth == 0 {
+                    close = Some(index);
+                    break;
+                }
+            }
+        }
+        let Some(close) = close else {
+            continue;
+        };
+        let inner = &tokens[open + 1..close];
+        if split_top_level(inner, ",").len() != 1 {
+            continue;
+        }
+        let Ok(SurfaceTerm::Referent(referent)) = parse_role_term(inner) else {
+            continue;
+        };
+        let close_token = &tokens[close];
         return Err(error(
-            token.span,
+            Span {
+                line: token.span.line,
+                column: token.span.column,
+                width: close_token.span.column + close_token.span.width - token.span.column,
+            },
             format!(
                 "bracketed concrete referents are retired; write '{}'",
-                token.raw
+                referent.value.as_str()
             ),
         ));
     }
@@ -1895,14 +1928,18 @@ pub(super) fn relation_line_matches(
     relations: &BTreeMap<Name, RelationSpec>,
 ) -> Result<bool, ParseError> {
     let tokens = recursive_clause_tokens(line)?;
-    reject_bracketed_clause_terms(&tokens)?;
     let ungrouped = tokens
-        .into_iter()
+        .iter()
         .filter(|token| !is_open_parenthesis(token) && !is_close_parenthesis(token))
+        .cloned()
         .collect::<Vec<_>>();
-    Ok(relations
+    let matched = relations
         .values()
-        .any(|spec| !shape_matches(&spec.shape, &ungrouped).is_empty()))
+        .any(|spec| !shape_matches(&spec.shape, &ungrouped).is_empty());
+    if !matched {
+        reject_bracketed_clause_terms(&tokens)?;
+    }
+    Ok(matched)
 }
 
 pub(super) fn clause(
@@ -1932,7 +1969,6 @@ pub(super) fn clause_with_catalog(
     variable_domains: &mut BTreeMap<VariableName, DomainName>,
 ) -> Result<SurfaceClause, ParseError> {
     let tokens = recursive_clause_tokens(line)?;
-    reject_bracketed_clause_terms(&tokens)?;
     let mut candidates = Vec::new();
     let mut first_term_error = None;
     let mut chart = TermChart::new();
@@ -1985,6 +2021,10 @@ pub(super) fn clause_with_catalog(
         }
     }
     if candidates.is_empty() {
+        if let Err(structural_error) = structural_term(&tokens, current_memberships, memberships) {
+            return Err(structural_error);
+        }
+        reject_bracketed_clause_terms(&tokens)?;
         if let Some(error) = first_term_error {
             return Err(error);
         }

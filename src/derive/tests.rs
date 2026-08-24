@@ -173,6 +173,7 @@ fn revision(
             (reaches.clone(), relation(&reaches)),
             (links.clone(), relation(&links)),
         ]),
+        BTreeMap::new(),
         occurrences,
         Vec::new(),
         rules,

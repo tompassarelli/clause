@@ -1,11 +1,12 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::kernel::{
     AssertionOccurrence, Cardinality, ContentId, Definition, Delta, DerivationRule, Goal,
     Invariant, InvariantAdmission, Judgment, JudgmentKind, JudgmentStatus, JudgmentTarget,
-    KernelError, LookupMode, Model, Name, Pattern, PatternId, Referent, ReferentId, RelationShape,
-    RelationalContent, Result, Revision, RevisionId, RevisionLineage, Role, RoleId, RolePredicate,
-    SemanticAtom, Term, Transition, UniversalLaw,
+    KernelError, LookupMode, Model, Name, Pattern, PatternId, ProductField, Referent, ReferentId,
+    RelationShape, RelationalContent, Result, Revision, RevisionId, RevisionLineage, Role, RoleId,
+    RolePredicate, SemanticAtom, StructuralContract, StructuralForm, Term, Transition,
+    UniversalLaw,
 };
 
 use super::{
@@ -68,7 +69,7 @@ fn decode_canonical(bytes: &str) -> Result<Revision> {
 }
 
 fn decode_payload(value: &Json) -> Result<(RevisionLineage, Model)> {
-    let root = list(value, 14, "semantic payload")?;
+    let root = list(value, 15, "semantic payload")?;
     require_string(&root[0], SEMANTIC_TAG, "semantic tag")?;
     let lineage = decode_lineage(tagged_group(&root[1], "lineage", "lineage")?)?;
     let model_id = decode_referent_id(tagged_group(&root[2], "model", "model")?)?;
@@ -98,35 +99,45 @@ fn decode_payload(value: &Json) -> Result<(RevisionLineage, Model)> {
             "relation shape",
         )?;
     }
-    let occurrences = group_array(&root[6], "occurrences")?
+    let mut structural_contracts = BTreeMap::new();
+    for item in group_array(&root[6], "structural-contracts")? {
+        let contract = decode_structural_contract(item)?;
+        insert(
+            &mut structural_contracts,
+            contract.referent().clone(),
+            contract,
+            "structural contract",
+        )?;
+    }
+    let occurrences = group_array(&root[7], "occurrences")?
         .iter()
         .map(decode_occurrence)
         .collect::<Result<Vec<_>>>()?;
-    let definitions = group_array(&root[7], "definitions")?
+    let definitions = group_array(&root[8], "definitions")?
         .iter()
         .map(decode_definition)
         .collect::<Result<Vec<_>>>()?;
-    let rules = group_array(&root[8], "derivation-rules")?
+    let rules = group_array(&root[9], "derivation-rules")?
         .iter()
         .map(decode_rule)
         .collect::<Result<Vec<_>>>()?;
-    let laws = group_array(&root[9], "universal-laws")?
+    let laws = group_array(&root[10], "universal-laws")?
         .iter()
         .map(decode_law)
         .collect::<Result<Vec<_>>>()?;
-    let invariants = group_array(&root[10], "invariants")?
+    let invariants = group_array(&root[11], "invariants")?
         .iter()
         .map(decode_invariant)
         .collect::<Result<Vec<_>>>()?;
-    let goals = group_array(&root[11], "goals")?
+    let goals = group_array(&root[12], "goals")?
         .iter()
         .map(decode_goal)
         .collect::<Result<Vec<_>>>()?;
-    let transitions = group_array(&root[12], "transitions")?
+    let transitions = group_array(&root[13], "transitions")?
         .iter()
         .map(decode_transition)
         .collect::<Result<Vec<_>>>()?;
-    let judgments = group_array(&root[13], "judgments")?
+    let judgments = group_array(&root[14], "judgments")?
         .iter()
         .map(decode_judgment)
         .collect::<Result<Vec<_>>>()?;
@@ -135,6 +146,7 @@ fn decode_payload(value: &Json) -> Result<(RevisionLineage, Model)> {
         referents,
         contents,
         shapes,
+        structural_contracts,
         occurrences,
         definitions,
         rules,
@@ -197,6 +209,9 @@ fn decode_atom(value: &Json) -> Result<SemanticAtom> {
         "referent" => decode_referent(value).map(SemanticAtom::Referent),
         "relational-content" => decode_content(value).map(SemanticAtom::RelationalContent),
         "relation-shape" => decode_shape(value).map(SemanticAtom::RelationShape),
+        "structural-contract" => {
+            decode_structural_contract(value).map(SemanticAtom::StructuralContract)
+        }
         "assertion-occurrence" => decode_occurrence(value).map(SemanticAtom::AssertionOccurrence),
         "definition" => decode_definition(value).map(SemanticAtom::Definition),
         "derivation-rule" => decode_rule(value).map(SemanticAtom::DerivationRule),
@@ -213,6 +228,41 @@ fn decode_referent(value: &Json) -> Result<Referent> {
     let item = list(value, 2, "referent")?;
     require_string(&item[0], "referent", "referent tag")?;
     Ok(Referent::new(decode_referent_id(&item[1])?))
+}
+
+fn decode_structural_contract(value: &Json) -> Result<StructuralContract> {
+    let item = list(value, 3, "structural contract")?;
+    require_string(&item[0], "structural-contract", "structural contract tag")?;
+    let referent = decode_referent_id(&item[1])?;
+    let form = array(&item[2], "structural form")?;
+    let tag = form
+        .first()
+        .ok_or_else(|| KernelError::new("invalid structural form"))?;
+    let form = match string(tag, "structural form tag")? {
+        "f32" => {
+            list(&item[2], 1, "F32 structural form")?;
+            StructuralForm::F32
+        }
+        "int" => {
+            list(&item[2], 1, "Int structural form")?;
+            StructuralForm::Int
+        }
+        "bool" => {
+            list(&item[2], 1, "Bool structural form")?;
+            StructuralForm::Bool
+        }
+        "product" => {
+            let form = list(&item[2], 2, "product structural form")?;
+            StructuralForm::Product(
+                array(&form[1], "structural product fields")?
+                    .iter()
+                    .map(decode_referent_id)
+                    .collect::<Result<BTreeSet<_>>>()?,
+            )
+        }
+        _ => return Err(KernelError::new("invalid structural form tag")),
+    };
+    StructuralContract::new(referent, form)
 }
 
 fn decode_content(value: &Json) -> Result<RelationalContent> {
@@ -510,16 +560,36 @@ fn decode_term(value: &Json) -> Result<Term> {
             }
         }
         "product" => {
-            let item = list(value, 2, "product term")?;
+            let item = list(value, 3, "product term")?;
+            let shape = decode_referent_id(&item[1])?;
             let mut fields = BTreeMap::new();
-            for field in array(&item[1], "product fields")? {
-                let field = list(field, 2, "product field")?;
+            for field in array(&item[2], "product fields")? {
+                let field = list(field, 3, "product field")?;
                 let label = Name::new(string(&field[0], "product label")?.to_owned())?;
-                if fields.insert(label, decode_term(&field[1])?).is_some() {
+                let domain = decode_referent_id(&field[1])?;
+                if fields
+                    .insert(label, ProductField::new(domain, decode_term(&field[2])?))
+                    .is_some()
+                {
                     return Err(KernelError::new("duplicate product label"));
                 }
             }
-            Term::product(fields)
+            Term::product(shape, fields)
+        }
+        "labelled-product" => {
+            let item = list(value, 3, "labelled product term")?;
+            let shape = decode_referent_id(&item[1])?;
+            let mut fields = BTreeMap::new();
+            for field in array(&item[2], "labelled product fields")? {
+                let field = list(field, 2, "labelled product field")?;
+                if fields
+                    .insert(decode_referent_id(&field[0])?, decode_term(&field[1])?)
+                    .is_some()
+                {
+                    return Err(KernelError::new("duplicate labelled product field"));
+                }
+            }
+            Term::labelled_product(shape, fields)
         }
         "sum" => {
             let item = list(value, 3, "sum term")?;
@@ -529,9 +599,11 @@ fn decode_term(value: &Json) -> Result<Term> {
             )
         }
         "sequence" => {
-            let item = list(value, 2, "sequence term")?;
+            let item = list(value, 4, "sequence term")?;
             Term::sequence(
-                array(&item[1], "sequence values")?
+                decode_referent_id(&item[1])?,
+                decode_referent_id(&item[2])?,
+                array(&item[3], "sequence values")?
                     .iter()
                     .map(decode_term)
                     .collect::<Result<Vec<_>>>()?,

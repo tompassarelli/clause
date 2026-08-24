@@ -4,9 +4,10 @@ use crate::{
     frontend::{self, Declaration, Kind, Member, ShapePartDecl, SurfaceTerm},
     intrinsic::{Intrinsic, IntrinsicRole},
     kernel::{
-        self, AssertionOccurrence, DerivationRule, Judgment, JudgmentKind, JudgmentStatus,
-        JudgmentTarget, LookupMode, Model, Pattern, Referent, ReferentId, RelationShape,
-        RelationalContent, Role, RolePredicate, Term,
+        self, AssertionOccurrence, Definition, DerivationRule, Judgment, JudgmentKind,
+        JudgmentStatus, JudgmentTarget, LookupMode, Model, Pattern, Referent, ReferentId,
+        RelationShape, RelationalContent, Role, RolePredicate, StructuralContract, StructuralForm,
+        Term,
     },
     wire,
 };
@@ -17,7 +18,7 @@ use super::{
         BinderTable, LoweredContentGraph, LoweredDefinitionGraph, Projection,
         lower_clause_graph_with, lower_clause_with, lower_definition, lower_focus,
         lower_pure_definition, lower_shape_binding, membership_content, membership_group_role,
-        membership_member_role, membership_relation, membership_shape,
+        membership_member_role, membership_relation, membership_shape, structural_domain,
     },
     resolution::Resolver,
 };
@@ -469,9 +470,20 @@ fn declare_model_members(
                 let referent = projection
                     .designations
                     .declare_scoped(model, binding.label.value.as_str())?;
-                projection
+                let domain = projection
                     .designations
                     .global(binding.domain.value.as_str())?;
+                if projection
+                    .structural_fields
+                    .entry(model.clone())
+                    .or_default()
+                    .insert(referent.clone(), domain)
+                    .is_some()
+                {
+                    return Err(kernel::KernelError::new(
+                        "duplicate structural shape binding",
+                    ));
+                }
                 projection
                     .model_referents
                     .entry(model.clone())
@@ -759,6 +771,7 @@ fn lower_models(
             referents.clone(),
             contents.clone(),
             shapes.clone(),
+            BTreeMap::new(),
             occurrences.clone(),
             Vec::new(),
             Vec::new(),
@@ -888,11 +901,14 @@ fn lower_models(
                 Pattern::new(vec![conclusion_content.id().clone()])?,
             )?);
         }
+        let structural_contracts =
+            extend_structural_closure(projection, &mut referents, &contents, &mut definitions)?;
         let model = Model::with_distinctions(
             model_id,
             referents,
             contents,
             shapes.clone(),
+            structural_contracts,
             occurrences,
             definitions,
             rules,
@@ -973,6 +989,7 @@ fn lower_context_model(
         referents.clone(),
         contents.clone(),
         shapes.clone(),
+        BTreeMap::new(),
         occurrences.clone(),
         Vec::new(),
         Vec::new(),
@@ -1016,12 +1033,15 @@ fn lower_context_model(
             _ => unreachable!("direct top-level members were checked in the shell pass"),
         }
     }
+    let structural_contracts =
+        extend_structural_closure(projection, &mut referents, &contents, &mut definitions)?;
     Ok((
         Model::with_distinctions(
             model_id,
             referents,
             contents,
             shapes.clone(),
+            structural_contracts,
             occurrences,
             definitions,
             Vec::new(),
@@ -1033,6 +1053,145 @@ fn lower_context_model(
         )?,
         source_spans,
     ))
+}
+
+fn extend_structural_closure(
+    projection: &Projection,
+    referents: &mut BTreeMap<ReferentId, Referent>,
+    contents: &BTreeMap<kernel::ContentId, RelationalContent>,
+    definitions: &mut Vec<Definition>,
+) -> kernel::Result<BTreeMap<ReferentId, StructuralContract>> {
+    let terms = contents
+        .values()
+        .flat_map(|content| content.roles().values())
+        .chain(definitions.iter().map(Definition::denotation))
+        .cloned()
+        .collect::<Vec<_>>();
+    let mut contracts = BTreeMap::new();
+    for (shape, fields) in &projection.structural_fields {
+        referents
+            .entry(shape.clone())
+            .or_insert_with(|| Referent::new(shape.clone()));
+        for (field, domain) in fields {
+            referents
+                .entry(field.clone())
+                .or_insert_with(|| Referent::new(field.clone()));
+            referents
+                .entry(domain.clone())
+                .or_insert_with(|| Referent::new(domain.clone()));
+            extend_declared_scalar_contract(projection, domain, &mut contracts)?;
+            if !definitions
+                .iter()
+                .any(|definition| definition.id() == field)
+            {
+                definitions.push(Definition::new(
+                    field.clone(),
+                    Term::referent(domain.clone()),
+                ));
+            }
+        }
+        contracts.insert(
+            shape.clone(),
+            StructuralContract::new(
+                shape.clone(),
+                StructuralForm::Product(fields.keys().cloned().collect()),
+            )?,
+        );
+    }
+    for term in &terms {
+        extend_term_structural_closure(projection, term, referents, &mut contracts)?;
+    }
+    Ok(contracts)
+}
+
+fn extend_declared_scalar_contract(
+    projection: &Projection,
+    domain: &ReferentId,
+    contracts: &mut BTreeMap<ReferentId, StructuralContract>,
+) -> kernel::Result<()> {
+    for (name, form) in [
+        ("F32", StructuralForm::F32),
+        ("Int", StructuralForm::Int),
+        ("Bool", StructuralForm::Bool),
+    ] {
+        let candidate = structural_domain(projection, &frontend::DomainName(name.to_owned()));
+        if &candidate == domain {
+            contracts
+                .entry(candidate.clone())
+                .or_insert(StructuralContract::new(candidate, form)?);
+            break;
+        }
+    }
+    Ok(())
+}
+
+fn extend_term_structural_closure(
+    projection: &Projection,
+    term: &Term,
+    referents: &mut BTreeMap<ReferentId, Referent>,
+    contracts: &mut BTreeMap<ReferentId, StructuralContract>,
+) -> kernel::Result<()> {
+    let scalar = match term {
+        Term::F32(_) => Some(("F32", StructuralForm::F32)),
+        Term::Int(_) => Some(("Int", StructuralForm::Int)),
+        Term::Bool(_) => Some(("Bool", StructuralForm::Bool)),
+        _ => None,
+    };
+    if let Some((name, form)) = scalar {
+        let domain = structural_domain(projection, &frontend::DomainName(name.to_owned()));
+        referents
+            .entry(domain.clone())
+            .or_insert_with(|| Referent::new(domain.clone()));
+        contracts.insert(domain.clone(), StructuralContract::new(domain, form)?);
+    }
+    match term {
+        Term::Product { shape, fields } => {
+            referents
+                .entry(shape.clone())
+                .or_insert_with(|| Referent::new(shape.clone()));
+            for field in fields.values() {
+                referents
+                    .entry(field.domain().clone())
+                    .or_insert_with(|| Referent::new(field.domain().clone()));
+                extend_term_structural_closure(projection, field.value(), referents, contracts)?;
+            }
+        }
+        Term::LabelledProduct { shape, fields } => {
+            referents
+                .entry(shape.clone())
+                .or_insert_with(|| Referent::new(shape.clone()));
+            for (field, value) in fields {
+                referents
+                    .entry(field.clone())
+                    .or_insert_with(|| Referent::new(field.clone()));
+                extend_term_structural_closure(projection, value, referents, contracts)?;
+            }
+        }
+        Term::Sequence {
+            shape,
+            element,
+            values,
+        } => {
+            for id in [shape, element] {
+                referents
+                    .entry(id.clone())
+                    .or_insert_with(|| Referent::new(id.clone()));
+            }
+            for value in values {
+                extend_term_structural_closure(projection, value, referents, contracts)?;
+            }
+        }
+        Term::Sum { value, .. } => {
+            extend_term_structural_closure(projection, value, referents, contracts)?;
+        }
+        Term::Referent(_)
+        | Term::Pattern(_)
+        | Term::Application(_)
+        | Term::F32(_)
+        | Term::Int(_)
+        | Term::Bool(_) => {}
+    }
+    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1455,8 +1614,15 @@ typed
     #[test]
     fn inferred_enumeration_and_binding_shape_lower_without_type_ontology() {
         let program = compile(
-            frontend::parse("F32\n\nGame\n  Chess\n  Soccer\n\nVec2\n  x: F32\n  y: F32\n")
-                .unwrap(),
+            frontend::parse(
+                "F32\n\nGame\n  Chess\n  Soccer\n\nVec2\n  x: F32\n  y: F32\n\nPose\n  position: Vec2\n",
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        let context_program = compile_in(
+            frontend::parse("F32\n\nVec2\n  x: F32\n  y: F32\n\nPose\n  position: Vec2\n").unwrap(),
+            ModelContext::new(ReferentId::from_digest([99; 32])),
         )
         .unwrap();
         let game = program.designations().global("Game").unwrap();
@@ -1483,5 +1649,47 @@ typed
                     definition.id() == &x && definition.denotation() == &Term::referent(f32.clone())
                 })
         );
+
+        let pose = program.designations().global("Pose").unwrap();
+        let position = program.designations().scoped(&pose, "position").unwrap();
+        let pose_revision = program.revision(&frontend::Name("Pose".into())).unwrap();
+        assert_eq!(
+            pose_revision
+                .model()
+                .definition(&position)
+                .unwrap()
+                .denotation(),
+            &Term::referent(vec2.clone())
+        );
+
+        let expected_vec2 = StructuralForm::Product(BTreeSet::from([
+            x,
+            program.designations().scoped(&vec2, "y").unwrap(),
+        ]));
+        let expected_pose = StructuralForm::Product(BTreeSet::from([position]));
+        for model in [
+            vec2_revision.model(),
+            pose_revision.model(),
+            context_program.context_model().unwrap(),
+        ] {
+            assert_eq!(
+                model.structural_contracts().get(&f32).unwrap().form(),
+                &StructuralForm::F32
+            );
+            assert_eq!(
+                model.structural_contracts().get(&vec2).unwrap().form(),
+                &expected_vec2
+            );
+            assert_eq!(
+                model.structural_contracts().get(&pose).unwrap().form(),
+                &expected_pose
+            );
+            assert_eq!(
+                wire::reload(&wire::serialize(&wire::admit(model.clone())))
+                    .unwrap()
+                    .model(),
+                model
+            );
+        }
     }
 }

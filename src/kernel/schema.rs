@@ -2,14 +2,69 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use super::{
     error::{KernelError, Result},
-    identity::{ReferentId, RoleId},
+    identity::{ReferentId, RoleId, synthetic_referent, synthetic_role},
 };
+
+pub(crate) fn membership_relation() -> ReferentId {
+    synthetic_referent("membership", &["relation"])
+}
+
+pub(crate) fn membership_member_role() -> RoleId {
+    synthetic_role("membership", &["member"])
+}
+
+pub(crate) fn membership_group_role() -> RoleId {
+    synthetic_role("membership", &["group"])
+}
 
 /// One addressable semantic distinction. Designations and every fact about a
 /// referent live outside this identity-bearing value.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct Referent {
     id: ReferentId,
+}
+
+/// A sealed representation contract anchored to one ordinary referent.
+/// Structural forms remain derived views; they do not create a second type or
+/// field identity domain.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct StructuralContract {
+    referent: ReferentId,
+    form: StructuralForm,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum StructuralForm {
+    F32,
+    Int,
+    Bool,
+    /// The exact shape-scoped binding referents required by a labelled product.
+    Product(BTreeSet<ReferentId>),
+}
+
+impl StructuralContract {
+    pub fn new(referent: ReferentId, form: StructuralForm) -> Result<Self> {
+        match &form {
+            StructuralForm::Product(fields) if fields.is_empty() => {
+                return Err(KernelError::new(
+                    "structural product contract needs at least one field",
+                ));
+            }
+            StructuralForm::F32
+            | StructuralForm::Int
+            | StructuralForm::Bool
+            | StructuralForm::Product(_) => {}
+        }
+        Ok(Self { referent, form })
+    }
+
+    pub fn referent(&self) -> &ReferentId {
+        &self.referent
+    }
+
+    pub fn form(&self) -> &StructuralForm {
+        &self.form
+    }
 }
 
 impl Referent {

@@ -85,19 +85,40 @@ fn term(value: &Term) -> String {
         Term::F32(value) => format!("[\"f32\",\"{:08x}\"]", value.bits()),
         Term::Int(value) => format!("[\"int\",\"{value}\"]"),
         Term::Bool(value) => format!("[\"bool\",\"{value}\"]"),
-        Term::Product(fields) => format!(
-            "[\"product\",[{}]]",
+        Term::Product { shape, fields } => format!(
+            "[\"product\",{},[{}]]",
+            string(shape.as_str()),
             fields
                 .iter()
-                .map(|(label, value)| format!("[{},{}]", string(label.as_str()), term(value)))
+                .map(|(label, field)| format!(
+                    "[{},{},{}]",
+                    string(label.as_str()),
+                    string(field.domain().as_str()),
+                    term(field.value())
+                ))
+                .collect::<Vec<_>>()
+                .join(",")
+        ),
+        Term::LabelledProduct { shape, fields } => format!(
+            "[\"labelled-product\",{},[{}]]",
+            string(shape.as_str()),
+            fields
+                .iter()
+                .map(|(field, value)| format!("[{},{}]", string(field.as_str()), term(value)))
                 .collect::<Vec<_>>()
                 .join(",")
         ),
         Term::Sum { tag, value } => {
             format!("[\"sum\",{},{}]", string(tag.as_str()), term(value))
         }
-        Term::Sequence(values) => format!(
-            "[\"sequence\",[{}]]",
+        Term::Sequence {
+            shape,
+            element,
+            values,
+        } => format!(
+            "[\"sequence\",{},{},[{}]]",
+            string(shape.as_str()),
+            string(element.as_str()),
             values.iter().map(term).collect::<Vec<_>>().join(",")
         ),
     }

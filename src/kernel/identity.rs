@@ -1,5 +1,7 @@
 use std::fmt;
 
+use crate::wire::sha256_digest;
+
 use super::error::{KernelError, Result};
 
 /// A qualified source/navigation name, never semantic identity.
@@ -183,6 +185,29 @@ impl fmt::Display for RevisionId {
         }
         Ok(())
     }
+}
+
+pub(crate) fn synthetic_referent(namespace: &str, fields: &[&str]) -> ReferentId {
+    let mut preimage = b"clause-referent-designation-v1\0".to_vec();
+    write_field(&mut preimage, namespace);
+    for field in fields {
+        write_field(&mut preimage, field);
+    }
+    ReferentId::from_digest(sha256_digest(&preimage))
+}
+
+pub(crate) fn synthetic_role(namespace: &str, fields: &[&str]) -> RoleId {
+    let mut preimage = b"clause-scoped-identity-v1\0".to_vec();
+    write_field(&mut preimage, namespace);
+    for field in fields {
+        write_field(&mut preimage, field);
+    }
+    RoleId::from_digest(sha256_digest(&preimage))
+}
+
+fn write_field(preimage: &mut Vec<u8>, value: &str) {
+    preimage.extend_from_slice(&(value.len() as u64).to_be_bytes());
+    preimage.extend_from_slice(value.as_bytes());
 }
 
 fn valid_segment(value: &str) -> bool {

@@ -2,7 +2,7 @@ use crate::kernel::{
     AssertionOccurrence, Definition, Delta, DerivationRule, Goal, Invariant, Judgment,
     JudgmentKind, JudgmentTarget, LookupMode, Model, Pattern, Referent, RelationShape,
     RelationalContent, Revision, RevisionId, RevisionLineage, RoleId, RolePredicate, SemanticAtom,
-    Term, Transition, UniversalLaw,
+    StructuralContract, StructuralForm, Term, Transition, UniversalLaw,
 };
 
 use super::{json::escape, sha256::sha256_digest};
@@ -18,6 +18,12 @@ fn payload(lineage: &RevisionLineage, model: &Model) -> String {
     let referents = join(model.referents().values().map(referent_json));
     let contents = join(model.relational_contents().values().map(content_json));
     let shapes = join(model.relation_shapes().values().map(shape_json));
+    let structural_contracts = join(
+        model
+            .structural_contracts()
+            .values()
+            .map(structural_contract_json),
+    );
     let occurrences = join(model.occurrences().iter().map(occurrence_json));
     let definitions = join(model.definitions().iter().map(definition_json));
     let rules = join(model.derivation_rules().iter().map(rule_json));
@@ -27,7 +33,7 @@ fn payload(lineage: &RevisionLineage, model: &Model) -> String {
     let transitions = join(model.transitions().iter().map(transition_json));
     let judgments = join(model.judgments().iter().map(judgment_json));
     format!(
-        "[\"{SEMANTIC_TAG}\",[\"lineage\",{}],[\"model\",\"{}\"],[\"referents\",[{referents}]],[\"relational-contents\",[{contents}]],[\"relation-shapes\",[{shapes}]],[\"occurrences\",[{occurrences}]],[\"definitions\",[{definitions}]],[\"derivation-rules\",[{rules}]],[\"universal-laws\",[{laws}]],[\"invariants\",[{invariants}]],[\"goals\",[{goals}]],[\"transitions\",[{transitions}]],[\"judgments\",[{judgments}]]]",
+        "[\"{SEMANTIC_TAG}\",[\"lineage\",{}],[\"model\",\"{}\"],[\"referents\",[{referents}]],[\"relational-contents\",[{contents}]],[\"relation-shapes\",[{shapes}]],[\"structural-contracts\",[{structural_contracts}]],[\"occurrences\",[{occurrences}]],[\"definitions\",[{definitions}]],[\"derivation-rules\",[{rules}]],[\"universal-laws\",[{laws}]],[\"invariants\",[{invariants}]],[\"goals\",[{goals}]],[\"transitions\",[{transitions}]],[\"judgments\",[{judgments}]]]",
         lineage_json(lineage),
         escape(model.id().as_str()),
     )
@@ -107,6 +113,7 @@ fn atom_json(atom: &SemanticAtom) -> String {
         SemanticAtom::Referent(value) => referent_json(value),
         SemanticAtom::RelationalContent(value) => content_json(value),
         SemanticAtom::RelationShape(value) => shape_json(value),
+        SemanticAtom::StructuralContract(value) => structural_contract_json(value),
         SemanticAtom::AssertionOccurrence(value) => occurrence_json(value),
         SemanticAtom::Definition(value) => definition_json(value),
         SemanticAtom::DerivationRule(value) => rule_json(value),
@@ -120,6 +127,22 @@ fn atom_json(atom: &SemanticAtom) -> String {
 
 fn referent_json(referent: &Referent) -> String {
     format!("[\"referent\",\"{}\"]", escape(referent.id().as_str()))
+}
+
+fn structural_contract_json(contract: &StructuralContract) -> String {
+    let form = match contract.form() {
+        StructuralForm::F32 => "[\"f32\"]".to_owned(),
+        StructuralForm::Int => "[\"int\"]".to_owned(),
+        StructuralForm::Bool => "[\"bool\"]".to_owned(),
+        StructuralForm::Product(fields) => format!(
+            "[\"product\",[{}]]",
+            strings(fields.iter().map(|field| field.as_str()))
+        ),
+    };
+    format!(
+        "[\"structural-contract\",\"{}\",{form}]",
+        escape(contract.referent().as_str())
+    )
 }
 
 fn content_json(content: &RelationalContent) -> String {
@@ -297,11 +320,22 @@ fn term_json(term: &Term) -> String {
         Term::F32(value) => format!("[\"f32\",\"{:08x}\"]", value.bits()),
         Term::Int(value) => format!("[\"int\",\"{value}\"]"),
         Term::Bool(value) => format!("[\"bool\",\"{value}\"]"),
-        Term::Product(fields) => format!(
-            "[\"product\",[{}]]",
-            join(fields.iter().map(|(label, value)| format!(
-                "[\"{}\",{}]",
+        Term::Product { shape, fields } => format!(
+            "[\"product\",\"{}\",[{}]]",
+            escape(shape.as_str()),
+            join(fields.iter().map(|(label, field)| format!(
+                "[\"{}\",\"{}\",{}]",
                 escape(label.as_str()),
+                escape(field.domain().as_str()),
+                term_json(field.value())
+            )))
+        ),
+        Term::LabelledProduct { shape, fields } => format!(
+            "[\"labelled-product\",\"{}\",[{}]]",
+            escape(shape.as_str()),
+            join(fields.iter().map(|(field, value)| format!(
+                "[\"{}\",{}]",
+                escape(field.as_str()),
                 term_json(value)
             )))
         ),
@@ -310,8 +344,17 @@ fn term_json(term: &Term) -> String {
             escape(tag.as_str()),
             term_json(value)
         ),
-        Term::Sequence(values) => {
-            format!("[\"sequence\",[{}]]", join(values.iter().map(term_json)))
+        Term::Sequence {
+            shape,
+            element,
+            values,
+        } => {
+            format!(
+                "[\"sequence\",\"{}\",\"{}\",[{}]]",
+                escape(shape.as_str()),
+                escape(element.as_str()),
+                join(values.iter().map(term_json))
+            )
         }
     }
 }
