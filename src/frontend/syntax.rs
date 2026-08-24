@@ -127,6 +127,7 @@ pub struct PureDefinitionDecl {
     pub name: Spanned<Name>,
     pub locals: Vec<LocalDefinitionDecl>,
     pub result: SurfaceTerm,
+    pub domain: DomainName,
     pub span: Span,
 }
 
@@ -253,6 +254,26 @@ pub enum SurfaceTerm {
     Template(ReferentTemplate),
     Variable(Spanned<VariableName>),
     String(Spanned<String>),
+    /// Checked IEEE-754 binary32 bits. The parser rejects non-finite values
+    /// and normalizes negative zero before this enters the ambiguity chart.
+    F32(Spanned<u32>),
+    Int(Spanned<i64>),
+    Bool(Spanned<bool>),
+    Tuple {
+        values: Vec<SurfaceTerm>,
+        span: Span,
+    },
+    Product {
+        shape: Spanned<Name>,
+        fields: BTreeMap<Name, SurfaceTerm>,
+        span: Span,
+    },
+    Sequence {
+        values: Vec<SurfaceTerm>,
+        span: Span,
+    },
+    /// A fixed source-free identity carried as an intrinsic application input.
+    Intrinsic(Spanned<Name>),
     Application(Box<SurfaceApplication>),
 }
 
@@ -264,6 +285,7 @@ pub struct SurfaceApplication {
     pub relation: Spanned<Name>,
     pub roles: BTreeMap<RoleName, SurfaceTerm>,
     pub result: Spanned<RoleName>,
+    pub domain: DomainName,
     pub span: Span,
 }
 

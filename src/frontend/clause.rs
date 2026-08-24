@@ -156,83 +156,141 @@ fn is_close_parenthesis(token: &Token) -> bool {
     !token.quoted && !token.bracketed && token.raw == ")"
 }
 
-fn recursive_clause_tokens(line: SourceLine<'_>) -> Result<Vec<Token>, ParseError> {
-    let mut grouped = Vec::new();
-    for token in lex_clause(line)? {
-        if token.quoted || token.bracketed {
-            grouped.push(token);
-            continue;
-        }
-        let mut start = 0;
-        for (offset, byte) in token.raw.bytes().enumerate() {
-            if !matches!(byte, b'(' | b')') {
-                continue;
-            }
+fn is_open_delimiter(token: &Token) -> bool {
+    !token.quoted && matches!(token.raw.as_str(), "(" | "[" | "{")
+}
+
+fn is_close_delimiter(token: &Token) -> bool {
+    !token.quoted && matches!(token.raw.as_str(), ")" | "]" | "}")
+}
+
+fn matching_delimiters(open: &str, close: &str) -> bool {
+    matches!((open, close), ("(", ")") | ("[", "]") | ("{", "}"))
+}
+
+fn push_structural_tokens(grouped: &mut Vec<Token>, token: &Token, raw: &str, column: usize) {
+    let mut start = 0;
+    for (offset, character) in raw.char_indices() {
+        if character == ' ' || matches!(character, '(' | ')' | '[' | ']' | '{' | '}' | ',' | ':') {
             if start < offset {
                 grouped.push(Token {
-                    raw: token.raw[start..offset].to_owned(),
+                    raw: raw[start..offset].to_owned(),
                     quoted: false,
                     bracketed: false,
                     span: Span {
                         line: token.span.line,
-                        column: token.span.column + start,
+                        column: column + start,
                         width: offset - start,
                     },
                 });
             }
+            if character != ' ' {
+                grouped.push(Token {
+                    raw: character.to_string(),
+                    quoted: false,
+                    bracketed: false,
+                    span: Span {
+                        line: token.span.line,
+                        column: column + offset,
+                        width: character.len_utf8(),
+                    },
+                });
+            }
+            start = offset + character.len_utf8();
+        }
+    }
+    if start < raw.len() {
+        grouped.push(Token {
+            raw: raw[start..].to_owned(),
+            quoted: false,
+            bracketed: false,
+            span: Span {
+                line: token.span.line,
+                column: column + start,
+                width: raw.len() - start,
+            },
+        });
+    }
+}
+
+fn recursive_clause_tokens(line: SourceLine<'_>) -> Result<Vec<Token>, ParseError> {
+    let mut grouped = Vec::new();
+    for token in lex_clause(line)? {
+        if token.quoted {
+            grouped.push(token);
+            continue;
+        }
+        if token.bracketed {
             grouped.push(Token {
-                raw: token.raw[offset..offset + 1].to_owned(),
+                raw: "[".to_owned(),
                 quoted: false,
                 bracketed: false,
                 span: Span {
                     line: token.span.line,
-                    column: token.span.column + offset,
+                    column: token.span.column,
                     width: 1,
                 },
             });
-            start = offset + 1;
-        }
-        if start < token.raw.len() {
+            push_structural_tokens(&mut grouped, &token, &token.raw, token.span.column + 1);
             grouped.push(Token {
-                raw: token.raw[start..].to_owned(),
+                raw: "]".to_owned(),
                 quoted: false,
                 bracketed: false,
                 span: Span {
                     line: token.span.line,
-                    column: token.span.column + start,
-                    width: token.raw.len() - start,
+                    column: token.span.column + token.span.width - 1,
+                    width: 1,
                 },
             });
+        } else {
+            push_structural_tokens(&mut grouped, &token, &token.raw, token.span.column);
         }
     }
 
-    let mut opens = Vec::new();
+    let mut opens: Vec<&Token> = Vec::new();
     for token in &grouped {
-        if is_open_parenthesis(token) {
-            opens.push(token.span);
-        } else if is_close_parenthesis(token) && opens.pop().is_none() {
-            return Err(error(token.span, "unmatched closing parenthesis"));
+        if is_open_delimiter(token) {
+            opens.push(token);
+        } else if is_close_delimiter(token) {
+            let Some(open) = opens.pop() else {
+                let message = if token.raw == ")" {
+                    "unmatched closing parenthesis"
+                } else {
+                    "unmatched closing term delimiter"
+                };
+                return Err(error(token.span, message));
+            };
+            if !matching_delimiters(&open.raw, &token.raw) {
+                return Err(error(token.span, "mismatched term delimiters"));
+            }
         }
     }
-    if let Some(span) = opens.first() {
-        return Err(error(*span, "unterminated parenthesized term"));
+    if let Some(open) = opens.first() {
+        let message = if open.raw == "(" {
+            "unterminated parenthesized term"
+        } else {
+            "unterminated term delimiter"
+        };
+        return Err(error(open.span, message));
     }
     Ok(grouped)
 }
 
 fn balanced_tokens(tokens: &[Token]) -> bool {
-    let mut depth = 0usize;
+    let mut opens = Vec::new();
     for token in tokens {
-        if is_open_parenthesis(token) {
-            depth += 1;
-        } else if is_close_parenthesis(token) {
-            let Some(next) = depth.checked_sub(1) else {
+        if is_open_delimiter(token) {
+            opens.push(token.raw.as_str());
+        } else if is_close_delimiter(token) {
+            let Some(open) = opens.pop() else {
                 return false;
             };
-            depth = next;
+            if !matching_delimiters(open, &token.raw) {
+                return false;
+            }
         }
     }
-    depth == 0
+    opens.is_empty()
 }
 
 fn parenthesized_tokens(tokens: &[Token]) -> Option<&[Token]> {
@@ -343,8 +401,17 @@ fn term_domains(
 ) -> Result<Option<BTreeSet<DomainName>>, ParseError> {
     match term {
         SurfaceTerm::String(_) => Ok(Some(BTreeSet::from([DomainName("Text".to_owned())]))),
+        SurfaceTerm::F32(_) => Ok(Some(BTreeSet::from([DomainName("F32".to_owned())]))),
+        SurfaceTerm::Int(_) => Ok(Some(BTreeSet::from([DomainName("Int".to_owned())]))),
+        SurfaceTerm::Bool(_) => Ok(Some(BTreeSet::from([DomainName("Bool".to_owned())]))),
         SurfaceTerm::Variable(_) => Ok(None),
-        SurfaceTerm::Application(_) => Ok(None),
+        SurfaceTerm::Application(application) => {
+            Ok(Some(BTreeSet::from([application.domain.clone()])))
+        }
+        SurfaceTerm::Tuple { .. }
+        | SurfaceTerm::Product { .. }
+        | SurfaceTerm::Sequence { .. }
+        | SurfaceTerm::Intrinsic(_) => Ok(None),
         SurfaceTerm::Template(template) => Err(error(
             template.span,
             "correlated referent templates are only valid inside a focus block",
@@ -529,9 +596,268 @@ fn token_span(tokens: &[Token]) -> Span {
     }
 }
 
+fn domain_signature(name: &str, members: &[DomainName]) -> DomainName {
+    let mut signature = String::from("@clause/");
+    signature.push_str(name);
+    signature.push('(');
+    signature.push_str(
+        &members
+            .iter()
+            .map(DomainName::as_str)
+            .collect::<Vec<_>>()
+            .join(","),
+    );
+    signature.push(')');
+    DomainName(signature)
+}
+
+fn delimited_body<'a>(tokens: &'a [Token], open: &str, close: &str) -> Option<&'a [Token]> {
+    (tokens.first()?.raw == open && tokens.last()?.raw == close).then(|| {
+        let mut depth = 0usize;
+        for (index, token) in tokens.iter().enumerate() {
+            if is_open_delimiter(token) {
+                depth += 1;
+            } else if is_close_delimiter(token) {
+                depth -= 1;
+                if depth == 0 && index + 1 != tokens.len() {
+                    return &tokens[0..0];
+                }
+            }
+        }
+        &tokens[1..tokens.len() - 1]
+    })
+}
+
+fn split_top_level<'a>(tokens: &'a [Token], separator: &str) -> Vec<&'a [Token]> {
+    let mut depth = 0usize;
+    let mut start = 0usize;
+    let mut parts = Vec::new();
+    for (index, token) in tokens.iter().enumerate() {
+        if is_open_delimiter(token) {
+            depth += 1;
+        } else if is_close_delimiter(token) {
+            depth -= 1;
+        } else if depth == 0 && token.raw == separator {
+            parts.push(&tokens[start..index]);
+            start = index + 1;
+        }
+    }
+    parts.push(&tokens[start..]);
+    parts
+}
+
+fn numeric_spelling(value: &str) -> bool {
+    matches!(
+        value.to_ascii_lowercase().as_str(),
+        "nan" | "inf" | "+inf" | "-inf" | "infinity" | "+infinity" | "-infinity"
+    ) || value
+        .as_bytes()
+        .first()
+        .is_some_and(|byte| byte.is_ascii_digit() || matches!(byte, b'+' | b'-'))
+        && value.bytes().all(|byte| {
+            byte.is_ascii_digit() || matches!(byte, b'+' | b'-' | b'.' | b'e' | b'E' | b'_')
+        })
+}
+
+fn structural_term(
+    tokens: &[Token],
+    current_memberships: &MembershipCatalog,
+    memberships: &BTreeMap<Name, MembershipCatalog>,
+) -> Result<Option<(SurfaceTerm, DomainName)>, ParseError> {
+    if tokens.is_empty() {
+        return Ok(None);
+    }
+    let span = token_span(tokens);
+    if tokens.len() == 1 && !tokens[0].quoted {
+        let token = &tokens[0];
+        if token.raw == "true" || token.raw == "false" {
+            return Ok(Some((
+                SurfaceTerm::Bool(Spanned {
+                    value: token.raw == "true",
+                    span: token.span,
+                }),
+                DomainName("Bool".to_owned()),
+            )));
+        }
+        if numeric_spelling(&token.raw) {
+            if token.raw.contains(['.', 'e', 'E'])
+                || matches!(
+                    token.raw.to_ascii_lowercase().as_str(),
+                    "nan" | "inf" | "+inf" | "-inf" | "infinity" | "+infinity" | "-infinity"
+                )
+            {
+                let value = token.raw.parse::<f32>().map_err(|_| {
+                    error(token.span, "malformed or overflowing decimal F32 literal")
+                })?;
+                if !value.is_finite() {
+                    return Err(error(token.span, "F32 literal must be finite"));
+                }
+                let bits = if value == 0.0 {
+                    0.0_f32.to_bits()
+                } else {
+                    value.to_bits()
+                };
+                return Ok(Some((
+                    SurfaceTerm::F32(Spanned {
+                        value: bits,
+                        span: token.span,
+                    }),
+                    DomainName("F32".to_owned()),
+                )));
+            }
+            let value = token
+                .raw
+                .parse::<i64>()
+                .map_err(|_| error(token.span, "malformed or overflowing Int literal"))?;
+            return Ok(Some((
+                SurfaceTerm::Int(Spanned {
+                    value,
+                    span: token.span,
+                }),
+                DomainName("Int".to_owned()),
+            )));
+        }
+    }
+
+    if let Some(body) = delimited_body(tokens, "(", ")")
+        && !body.is_empty()
+    {
+        let parts = split_top_level(body, ",");
+        if parts.len() > 1 {
+            if parts.iter().any(|part| part.is_empty()) {
+                return Err(error(span, "invalid tuple delimiter"));
+            }
+            let mut values = Vec::new();
+            let mut domains = Vec::new();
+            for part in parts {
+                let Some((value, domain)) =
+                    structural_term(part, current_memberships, memberships)?
+                else {
+                    return Err(error(token_span(part), "invalid tuple member term"));
+                };
+                values.push(value);
+                domains.push(domain);
+            }
+            return Ok(Some((
+                SurfaceTerm::Tuple { values, span },
+                domain_signature("tuple", &domains),
+            )));
+        }
+    }
+
+    if let Some(body) = delimited_body(tokens, "[", "]") {
+        if body.is_empty() {
+            return Err(error(span, "empty sequence has no element shape"));
+        }
+        let parts = split_top_level(body, ",");
+        if parts.iter().any(|part| part.is_empty()) {
+            return Err(error(span, "invalid sequence delimiter"));
+        }
+        let mut values = Vec::new();
+        let mut element_domain = None;
+        for part in parts {
+            let Some((value, domain)) = structural_term(part, current_memberships, memberships)?
+            else {
+                return Err(error(token_span(part), "invalid sequence member term"));
+            };
+            if element_domain
+                .as_ref()
+                .is_some_and(|actual| actual != &domain)
+            {
+                return Err(error(
+                    token_span(part),
+                    "heterogeneous sequence member shape",
+                ));
+            }
+            element_domain.get_or_insert(domain);
+            values.push(value);
+        }
+        let element_domain = element_domain.expect("nonempty sequence");
+        return Ok(Some((
+            SurfaceTerm::Sequence { values, span },
+            domain_signature("sequence", &[element_domain]),
+        )));
+    }
+
+    if let Some(open) = tokens
+        .iter()
+        .position(|token| token.raw == "{" && !token.quoted)
+        && open > 0
+        && tokens.last().is_some_and(|token| token.raw == "}")
+    {
+        let shape_tokens = &tokens[..open];
+        let body = &tokens[open + 1..tokens.len() - 1];
+        let SurfaceTerm::Referent(shape) = parse_role_term(shape_tokens)? else {
+            return Err(error(
+                token_span(shape_tokens),
+                "invalid product shape name",
+            ));
+        };
+        if body.is_empty() {
+            return Err(error(span, "labelled product requires at least one field"));
+        }
+        let mut fields = BTreeMap::new();
+        for field in split_top_level(body, ",") {
+            if field.is_empty() {
+                return Err(error(span, "invalid product field delimiter"));
+            }
+            let parts = split_top_level(field, ":");
+            let [label_tokens, value_tokens] = parts.as_slice() else {
+                return Err(error(token_span(field), "product field requires one ':'"));
+            };
+            let SurfaceTerm::Referent(label) = parse_role_term(label_tokens)? else {
+                return Err(error(
+                    token_span(label_tokens),
+                    "invalid product field label",
+                ));
+            };
+            let Some((value, _)) = structural_term(value_tokens, current_memberships, memberships)?
+            else {
+                return Err(error(
+                    token_span(value_tokens),
+                    "invalid product field term",
+                ));
+            };
+            if fields.insert(label.value.clone(), value).is_some() {
+                return Err(error(label.span, "duplicate product field"));
+            }
+        }
+        let domain = DomainName(shape.value.0.clone());
+        return Ok(Some((
+            SurfaceTerm::Product {
+                shape,
+                fields,
+                span,
+            },
+            domain,
+        )));
+    }
+
+    if let Ok(term) = parse_role_term(tokens)
+        && let Ok(Some(domains)) = term_domains(&term, current_memberships, memberships)
+        && domains.len() == 1
+    {
+        return Ok(Some((
+            term,
+            domains.into_iter().next().expect("one domain"),
+        )));
+    }
+    Ok(None)
+}
+
 fn term_is_ground(term: &SurfaceTerm) -> bool {
     match term {
-        SurfaceTerm::Referent(_) | SurfaceTerm::Local(_) | SurfaceTerm::String(_) => true,
+        SurfaceTerm::Referent(_)
+        | SurfaceTerm::Local(_)
+        | SurfaceTerm::String(_)
+        | SurfaceTerm::F32(_)
+        | SurfaceTerm::Int(_)
+        | SurfaceTerm::Bool(_)
+        | SurfaceTerm::Intrinsic(_) => true,
+        SurfaceTerm::Tuple { values, .. } | SurfaceTerm::Sequence { values, .. } => {
+            values.iter().all(term_is_ground)
+        }
+        SurfaceTerm::Product { fields, .. } => fields.values().all(term_is_ground),
         SurfaceTerm::Application(application) => application.roles.values().all(term_is_ground),
         SurfaceTerm::Template(_) | SurfaceTerm::Variable(_) => false,
     }
@@ -547,8 +873,33 @@ fn term_key(term: &SurfaceTerm) -> String {
         ),
         SurfaceTerm::Variable(value) => format!("V:{}", value.value.0),
         SurfaceTerm::String(value) => format!("S:{:?}", value.value),
+        SurfaceTerm::F32(value) => format!("F:{:08x}", value.value),
+        SurfaceTerm::Int(value) => format!("I:{}", value.value),
+        SurfaceTerm::Bool(value) => format!("B:{}", value.value),
+        SurfaceTerm::Tuple { values, .. } => format!(
+            "T({})",
+            values.iter().map(term_key).collect::<Vec<_>>().join(",")
+        ),
+        SurfaceTerm::Product { shape, fields, .. } => {
+            let mut key = format!("P:{}", shape.value.as_str());
+            for (field, value) in fields {
+                key.push('|');
+                key.push_str(field.as_str());
+                key.push('=');
+                key.push_str(&term_key(value));
+            }
+            key
+        }
+        SurfaceTerm::Sequence { values, .. } => format!(
+            "Q[{}]",
+            values.iter().map(term_key).collect::<Vec<_>>().join(",")
+        ),
+        SurfaceTerm::Intrinsic(value) => format!("N:{}", value.value.as_str()),
         SurfaceTerm::Application(value) => {
-            let mut key = format!("A:{}->{}", value.relation.value.0, value.result.value.0);
+            let mut key = format!(
+                "A:{}->{}:{}",
+                value.relation.value.0, value.result.value.0, value.domain.0
+            );
             for (role, term) in &value.roles {
                 key.push('|');
                 key.push_str(role.as_str());
@@ -599,6 +950,7 @@ struct TermChartKey {
     width: usize,
     expected: DomainName,
     minimum_precedence: u8,
+    binding: bool,
 }
 
 type TermChart = BTreeMap<TermChartKey, Option<Vec<SurfaceTerm>>>;
@@ -860,6 +1212,7 @@ fn term_candidates(
         width: span.width,
         expected: expected.clone(),
         minimum_precedence,
+        binding: false,
     };
     if let Some(entry) = chart.get(&key) {
         return entry.clone().unwrap_or_default();
@@ -942,10 +1295,404 @@ fn term_candidates(
                     },
                     roles,
                     result: result.clone(),
+                    domain: expected.clone(),
                     span,
                 })),
             );
         }
+    }
+    chart.insert(key, Some(candidates.clone()));
+    candidates
+}
+
+const INTRINSIC_PREFIX: &str = "@clause/intrinsic/";
+
+fn intrinsic_application(
+    name: &str,
+    roles: BTreeMap<RoleName, SurfaceTerm>,
+    domain: DomainName,
+    span: Span,
+) -> SurfaceTerm {
+    SurfaceTerm::Application(Box::new(SurfaceApplication {
+        relation: Spanned {
+            value: Name(format!("{INTRINSIC_PREFIX}{name}")),
+            span,
+        },
+        roles,
+        result: Spanned {
+            value: RoleName("result".to_owned()),
+            span,
+        },
+        domain,
+        span,
+    }))
+}
+
+fn top_level_token(tokens: &[Token], raw: &str) -> Vec<usize> {
+    let mut depth = 0usize;
+    let mut indices = Vec::new();
+    for (index, token) in tokens.iter().enumerate() {
+        if is_open_delimiter(token) {
+            depth += 1;
+        } else if is_close_delimiter(token) {
+            depth -= 1;
+        } else if depth == 0 && !token.quoted && token.raw == raw {
+            indices.push(index);
+        }
+    }
+    indices
+}
+
+fn candidate_domains(
+    tokens: &[Token],
+    current_memberships: &MembershipCatalog,
+    memberships: &BTreeMap<Name, MembershipCatalog>,
+    relations: &BTreeMap<Name, RelationSpec>,
+) -> Result<BTreeSet<DomainName>, ParseError> {
+    let mut domains = BTreeSet::from([
+        DomainName("F32".to_owned()),
+        DomainName("Int".to_owned()),
+        DomainName("Bool".to_owned()),
+        domain_signature("sequence", &[DomainName("F32".to_owned())]),
+    ]);
+    domains.extend(current_memberships.explicit.values().flatten().cloned());
+    domains.extend(
+        relations
+            .values()
+            .flat_map(|relation| relation.roles.values().cloned()),
+    );
+    if let Some((_, domain)) = structural_term(tokens, current_memberships, memberships)? {
+        domains.insert(domain);
+    }
+    Ok(domains)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn any_binding_candidates(
+    tokens: &[Token],
+    current_memberships: &MembershipCatalog,
+    memberships: &BTreeMap<Name, MembershipCatalog>,
+    relations: &BTreeMap<Name, RelationSpec>,
+    minimum_precedence: u8,
+    chart: &mut TermChart,
+) -> Vec<(DomainName, SurfaceTerm)> {
+    let Ok(domains) = candidate_domains(tokens, current_memberships, memberships, relations) else {
+        return Vec::new();
+    };
+    let mut candidates = Vec::new();
+    for domain in domains {
+        for term in binding_term_candidates(
+            tokens,
+            &domain,
+            current_memberships,
+            memberships,
+            relations,
+            minimum_precedence,
+            chart,
+        ) {
+            if !candidates.iter().any(|(other, candidate)| {
+                other == &domain && term_key(candidate) == term_key(&term)
+            }) {
+                candidates.push((domain.clone(), term));
+            }
+        }
+    }
+    candidates
+}
+
+fn arithmetic_result(operator: &str, left: &DomainName, right: &DomainName) -> Option<DomainName> {
+    let scalar = |domain: &DomainName| matches!(domain.as_str(), "F32" | "Int");
+    let tuple = |domain: &DomainName| domain.as_str().starts_with("@clause/tuple(");
+    match operator {
+        "+" | "-" if left == right && (scalar(left) || tuple(left)) => Some(left.clone()),
+        "*" if left == right && scalar(left) => Some(left.clone()),
+        "*" | "/" if tuple(left) && scalar(right) => Some(left.clone()),
+        "/" if left == right && scalar(left) => Some(left.clone()),
+        "<" | "<=" | ">" | ">=" if left == right && scalar(left) => {
+            Some(DomainName("Bool".to_owned()))
+        }
+        "=" | "!=" if left == right => Some(DomainName("Bool".to_owned())),
+        _ => None,
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn intrinsic_candidates(
+    tokens: &[Token],
+    expected: &DomainName,
+    current_memberships: &MembershipCatalog,
+    memberships: &BTreeMap<Name, MembershipCatalog>,
+    relations: &BTreeMap<Name, RelationSpec>,
+    minimum_precedence: u8,
+    chart: &mut TermChart,
+) -> Vec<SurfaceTerm> {
+    let span = token_span(tokens);
+    let mut candidates = Vec::new();
+
+    if minimum_precedence == 0
+        && tokens.first().is_some_and(|token| token.raw == "if")
+        && let ([then_index], [else_index]) = (
+            top_level_token(tokens, "then").as_slice(),
+            top_level_token(tokens, "else").as_slice(),
+        )
+        && 1 < *then_index
+        && *then_index + 1 < *else_index
+        && *else_index + 1 < tokens.len()
+    {
+        let conditions = binding_term_candidates(
+            &tokens[1..*then_index],
+            &DomainName("Bool".to_owned()),
+            current_memberships,
+            memberships,
+            relations,
+            0,
+            chart,
+        );
+        let then_terms = binding_term_candidates(
+            &tokens[*then_index + 1..*else_index],
+            expected,
+            current_memberships,
+            memberships,
+            relations,
+            0,
+            chart,
+        );
+        let else_terms = binding_term_candidates(
+            &tokens[*else_index + 1..],
+            expected,
+            current_memberships,
+            memberships,
+            relations,
+            0,
+            chart,
+        );
+        for condition in &conditions {
+            for then_term in &then_terms {
+                for else_term in &else_terms {
+                    push_unique_term(
+                        &mut candidates,
+                        intrinsic_application(
+                            "conditional",
+                            BTreeMap::from([
+                                (RoleName("condition".to_owned()), condition.clone()),
+                                (RoleName("then".to_owned()), then_term.clone()),
+                                (RoleName("else".to_owned()), else_term.clone()),
+                            ]),
+                            expected.clone(),
+                            span,
+                        ),
+                    );
+                }
+            }
+        }
+    }
+
+    if minimum_precedence <= 40
+        && tokens.first().is_some_and(|token| token.raw == "length")
+        && tokens.len() > 1
+        && expected.as_str() == "F32"
+    {
+        for (domain, input) in any_binding_candidates(
+            &tokens[1..],
+            current_memberships,
+            memberships,
+            relations,
+            40,
+            chart,
+        ) {
+            if domain.as_str().starts_with("@clause/tuple(") {
+                push_unique_term(
+                    &mut candidates,
+                    intrinsic_application(
+                        "length",
+                        BTreeMap::from([(RoleName("input".to_owned()), input)]),
+                        expected.clone(),
+                        span,
+                    ),
+                );
+            }
+        }
+    }
+
+    if minimum_precedence == 0
+        && tokens.first().is_some_and(|token| token.raw == "map")
+        && tokens.get(1).is_some_and(|token| token.raw == "length")
+        && tokens.get(2).is_some_and(|token| token.raw == "over")
+        && tokens.len() > 3
+        && expected == &domain_signature("sequence", &[DomainName("F32".to_owned())])
+    {
+        for (domain, sequence) in any_binding_candidates(
+            &tokens[3..],
+            current_memberships,
+            memberships,
+            relations,
+            0,
+            chart,
+        ) {
+            if domain
+                .as_str()
+                .starts_with("@clause/sequence(@clause/tuple(")
+            {
+                push_unique_term(
+                    &mut candidates,
+                    intrinsic_application(
+                        "map",
+                        BTreeMap::from([
+                            (
+                                RoleName("mapper".to_owned()),
+                                SurfaceTerm::Intrinsic(Spanned {
+                                    value: Name(format!("{INTRINSIC_PREFIX}length")),
+                                    span: tokens[1].span,
+                                }),
+                            ),
+                            (RoleName("sequence".to_owned()), sequence),
+                        ]),
+                        expected.clone(),
+                        span,
+                    ),
+                );
+            }
+        }
+    }
+
+    for operator in ["<", "<=", ">", ">=", "=", "!=", "+", "-", "*", "/"] {
+        let Some(prior) = operator_prior(operator) else {
+            continue;
+        };
+        if prior.precedence < minimum_precedence {
+            continue;
+        }
+        for index in top_level_token(tokens, operator) {
+            if index == 0 || index + 1 == tokens.len() {
+                continue;
+            }
+            let left_minimum = match prior.association {
+                Association::Left => prior.precedence,
+                Association::None => prior.precedence + 1,
+            };
+            let left_terms = any_binding_candidates(
+                &tokens[..index],
+                current_memberships,
+                memberships,
+                relations,
+                left_minimum,
+                chart,
+            );
+            let right_terms = any_binding_candidates(
+                &tokens[index + 1..],
+                current_memberships,
+                memberships,
+                relations,
+                prior.precedence + 1,
+                chart,
+            );
+            for (left_domain, left) in &left_terms {
+                for (right_domain, right) in &right_terms {
+                    if arithmetic_result(operator, left_domain, right_domain).as_ref()
+                        != Some(expected)
+                    {
+                        continue;
+                    }
+                    let name = match operator {
+                        "+" => "add",
+                        "-" => "subtract",
+                        "*" => "multiply",
+                        "/" => "divide",
+                        "<" => "less-than",
+                        "<=" => "less-or-equal",
+                        ">" => "greater-than",
+                        ">=" => "greater-or-equal",
+                        "=" => "equal",
+                        "!=" => "not-equal",
+                        _ => unreachable!(),
+                    };
+                    push_unique_term(
+                        &mut candidates,
+                        intrinsic_application(
+                            name,
+                            BTreeMap::from([
+                                (RoleName("left".to_owned()), left.clone()),
+                                (RoleName("right".to_owned()), right.clone()),
+                            ]),
+                            expected.clone(),
+                            span,
+                        ),
+                    );
+                }
+            }
+        }
+    }
+    candidates
+}
+
+#[allow(clippy::too_many_arguments)]
+fn binding_term_candidates(
+    tokens: &[Token],
+    expected: &DomainName,
+    current_memberships: &MembershipCatalog,
+    memberships: &BTreeMap<Name, MembershipCatalog>,
+    relations: &BTreeMap<Name, RelationSpec>,
+    minimum_precedence: u8,
+    chart: &mut TermChart,
+) -> Vec<SurfaceTerm> {
+    if tokens.is_empty() || !balanced_tokens(tokens) {
+        return Vec::new();
+    }
+    let span = token_span(tokens);
+    let key = TermChartKey {
+        line: span.line,
+        column: span.column,
+        width: span.width,
+        expected: expected.clone(),
+        minimum_precedence,
+        binding: true,
+    };
+    if let Some(entry) = chart.get(&key) {
+        return entry.clone().unwrap_or_default();
+    }
+    chart.insert(key.clone(), None);
+    let mut candidates = Vec::new();
+    if let Ok(Some((term, domain))) = structural_term(tokens, current_memberships, memberships)
+        && &domain == expected
+    {
+        push_unique_term(&mut candidates, term);
+    }
+    if let Some(inner) = parenthesized_tokens(tokens)
+        && split_top_level(inner, ",").len() == 1
+    {
+        for term in binding_term_candidates(
+            inner,
+            expected,
+            current_memberships,
+            memberships,
+            relations,
+            0,
+            chart,
+        ) {
+            push_unique_term(&mut candidates, term);
+        }
+    }
+    for term in term_candidates(
+        tokens,
+        expected,
+        current_memberships,
+        memberships,
+        relations,
+        minimum_precedence,
+        chart,
+    ) {
+        push_unique_term(&mut candidates, term);
+    }
+    for term in intrinsic_candidates(
+        tokens,
+        expected,
+        current_memberships,
+        memberships,
+        relations,
+        minimum_precedence,
+        chart,
+    ) {
+        push_unique_term(&mut candidates, term);
     }
     chart.insert(key, Some(candidates.clone()));
     candidates
@@ -1000,7 +1747,7 @@ fn closed_term_candidates(
     memberships: &BTreeMap<Name, MembershipCatalog>,
 ) -> Result<(SurfaceTerm, DomainName), ParseError> {
     reject_bracketed_clause_terms(&tokens)?;
-    let domains = current_memberships
+    let mut domains = current_memberships
         .explicit
         .values()
         .flatten()
@@ -1011,10 +1758,19 @@ fn closed_term_candidates(
         )
         .cloned()
         .collect::<BTreeSet<_>>();
+    domains.extend(candidate_domains(
+        &tokens,
+        current_memberships,
+        memberships,
+        relations,
+    )?);
+    // Preserve precise checked-literal and delimiter diagnostics even when no
+    // candidate survives later domain-directed ambiguity filtering.
+    let _ = structural_term(&tokens, current_memberships, memberships)?;
     let mut chart = TermChart::new();
     let mut candidates = Vec::new();
     for domain in domains {
-        for term in term_candidates(
+        for term in binding_term_candidates(
             &tokens,
             &domain,
             current_memberships,
@@ -1055,11 +1811,25 @@ pub(super) fn bind_local_references(term: &mut SurfaceTerm, locals: &BTreeSet<Na
                 bind_local_references(nested, locals);
             }
         }
+        SurfaceTerm::Tuple { values, .. } | SurfaceTerm::Sequence { values, .. } => {
+            for nested in values {
+                bind_local_references(nested, locals);
+            }
+        }
+        SurfaceTerm::Product { fields, .. } => {
+            for nested in fields.values_mut() {
+                bind_local_references(nested, locals);
+            }
+        }
         SurfaceTerm::Referent(_)
         | SurfaceTerm::Local(_)
         | SurfaceTerm::Template(_)
         | SurfaceTerm::Variable(_)
-        | SurfaceTerm::String(_) => {}
+        | SurfaceTerm::String(_)
+        | SurfaceTerm::F32(_)
+        | SurfaceTerm::Int(_)
+        | SurfaceTerm::Bool(_)
+        | SurfaceTerm::Intrinsic(_) => {}
     }
 }
 
@@ -1297,10 +2067,24 @@ pub(super) fn variables(clause: &SurfaceClause) -> BTreeSet<VariableName> {
                     collect(term, variables);
                 }
             }
+            SurfaceTerm::Tuple { values, .. } | SurfaceTerm::Sequence { values, .. } => {
+                for term in values {
+                    collect(term, variables);
+                }
+            }
+            SurfaceTerm::Product { fields, .. } => {
+                for term in fields.values() {
+                    collect(term, variables);
+                }
+            }
             SurfaceTerm::Referent(_)
             | SurfaceTerm::Local(_)
             | SurfaceTerm::Template(_)
-            | SurfaceTerm::String(_) => {}
+            | SurfaceTerm::String(_)
+            | SurfaceTerm::F32(_)
+            | SurfaceTerm::Int(_)
+            | SurfaceTerm::Bool(_)
+            | SurfaceTerm::Intrinsic(_) => {}
         }
     }
 

@@ -21,7 +21,7 @@ pub(super) fn pure_definition_block(
     memberships: &BTreeMap<Name, MembershipCatalog>,
 ) -> Result<PureDefinitionDecl, ParseError> {
     let entries = nonblank(raw.body.iter().copied());
-    if entries.len() < 2 || entries.iter().any(|line| indent(*line) != Ok(2)) {
+    if entries.is_empty() || entries.iter().any(|line| indent(*line) != Ok(2)) {
         return Err(error(
             line_span(raw.header),
             "':' only establishes a binding; it cannot introduce a block",
@@ -83,12 +83,14 @@ pub(super) fn pure_definition_block(
             "pure definition block requires one final result term",
         ));
     }
-    let (mut result, _) = closed_term_with_catalog(result_line, &catalog, relations, memberships)?;
+    let (mut result, domain) =
+        closed_term_with_catalog(result_line, &catalog, relations, memberships)?;
     bind_local_references(&mut result, &local_names);
     Ok(PureDefinitionDecl {
         name: raw.subject.clone(),
         locals,
         result,
+        domain,
         span: line_span(raw.header),
     })
 }

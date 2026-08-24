@@ -174,8 +174,12 @@ pub fn parse(source: &str) -> Result<Program, ParseError> {
                 ));
             }
             insert_membership(&mut top_memberships.explicit, &membership);
-        } else if let Some(definition) = definition_line(fragment.line) {
-            definition?;
+        } else if content(fragment.line).contains(": ") {
+            let text = content(fragment.line);
+            let (name, _) = text
+                .split_once(": ")
+                .expect("checked top-level binding separator");
+            semantic_name(fragment.line, indent(fragment.line)?, name)?;
         }
     }
     for focus in &raw_focuses {
@@ -525,36 +529,102 @@ pub fn parse(source: &str) -> Result<Program, ParseError> {
     }
 
     let mut top_level = Vec::new();
-    let mut ordered_top_level = Vec::new();
-    for fragment in raw_top_level {
-        let member = if let Some(membership) = membership_line(fragment.line) {
-            Member::Membership(membership?)
-        } else if let Some(definition) = definition_line(fragment.line) {
-            Member::Definition(definition?)
-        } else {
-            let mut variables = BTreeMap::new();
-            let parsed = clause_with_catalog(
-                fragment.line,
-                &top_memberships,
-                &relations,
-                &memberships,
-                &mut variables,
-            )?;
-            if !ground(&parsed) {
-                return Err(error(parsed.span, "model assertions must be closed"));
-            }
-            Member::RelationalContent(parsed)
-        };
-        ordered_top_level.push((fragment.line.number, member));
+    enum OrderedTopLevel<'a> {
+        Line(SourceLine<'a>),
+        Block(RawDecl<'a>),
     }
-    for definition in raw_definition_blocks {
-        let member = Member::PureDefinition(pure_definition_block(
-            &definition,
-            &top_memberships,
-            &relations,
-            &memberships,
-        )?);
-        ordered_top_level.push((definition.header.number, member));
+    let mut ordered_input = raw_top_level
+        .into_iter()
+        .map(|fragment| OrderedTopLevel::Line(fragment.line))
+        .chain(
+            raw_definition_blocks
+                .into_iter()
+                .map(OrderedTopLevel::Block),
+        )
+        .collect::<Vec<_>>();
+    ordered_input.sort_by_key(|item| match item {
+        OrderedTopLevel::Line(line) => line.number,
+        OrderedTopLevel::Block(block) => block.header.number,
+    });
+    let mut binding_catalog = top_memberships.clone();
+    let mut ordered_top_level = Vec::new();
+    for item in ordered_input {
+        let (line_number, member) = match item {
+            OrderedTopLevel::Block(block) => {
+                let definition =
+                    pure_definition_block(&block, &binding_catalog, &relations, &memberships)?;
+                binding_catalog
+                    .explicit
+                    .entry(definition.name.value.clone())
+                    .or_insert_with(|| BTreeSet::from([definition.domain.clone()]));
+                (block.header.number, Member::PureDefinition(definition))
+            }
+            OrderedTopLevel::Line(line) => {
+                if let Some(membership) = membership_line(line) {
+                    (line.number, Member::Membership(membership?))
+                } else if let Some((name_text, expression)) = content(line).split_once(": ") {
+                    let base = indent(line)?;
+                    let name = semantic_name(line, base, name_text)?;
+                    let expression_offset = base + name_text.len() + 2;
+                    let legacy = definition_line(line)
+                        .and_then(Result::ok)
+                        .filter(|definition| {
+                            binding_catalog
+                                .explicit
+                                .contains_key(&definition.denotation.value)
+                        });
+                    if let Some(definition) = legacy {
+                        (line.number, Member::Definition(definition))
+                    } else {
+                        match closed_term_text_with_catalog(
+                            line,
+                            expression_offset,
+                            expression,
+                            &binding_catalog,
+                            &relations,
+                            &memberships,
+                        ) {
+                            Ok((result, domain)) => {
+                                binding_catalog
+                                    .explicit
+                                    .entry(name.value.clone())
+                                    .or_insert_with(|| BTreeSet::from([domain.clone()]));
+                                (
+                                    line.number,
+                                    Member::PureDefinition(PureDefinitionDecl {
+                                        name,
+                                        locals: Vec::new(),
+                                        result,
+                                        domain,
+                                        span: line_span(line),
+                                    }),
+                                )
+                            }
+                            Err(term_error) => match definition_line(line) {
+                                Some(Ok(definition)) => {
+                                    (line.number, Member::Definition(definition))
+                                }
+                                _ => return Err(term_error),
+                            },
+                        }
+                    }
+                } else {
+                    let mut variables = BTreeMap::new();
+                    let parsed = clause_with_catalog(
+                        line,
+                        &binding_catalog,
+                        &relations,
+                        &memberships,
+                        &mut variables,
+                    )?;
+                    if !ground(&parsed) {
+                        return Err(error(parsed.span, "model assertions must be closed"));
+                    }
+                    (line.number, Member::RelationalContent(parsed))
+                }
+            }
+        };
+        ordered_top_level.push((line_number, member));
     }
     for focus in raw_focuses {
         for line in nonblank(focus.body.iter().copied()) {

@@ -36,6 +36,23 @@ pub(crate) fn membership_group_role() -> RoleId {
     synthetic_role("membership", &["group"])
 }
 
+const INTRINSIC_PREFIX: &str = "@clause/intrinsic/";
+
+pub(crate) fn intrinsic_relation(name: &str) -> ReferentId {
+    synthetic_referent("pure-intrinsic-relation", &[name])
+}
+
+pub(crate) fn intrinsic_role(name: &str, role: &str) -> RoleId {
+    synthetic_role("pure-intrinsic-role", &[name, role])
+}
+
+fn structural_domain(projection: &Projection, domain: &frontend::DomainName) -> ReferentId {
+    projection
+        .designations
+        .global(domain.as_str())
+        .unwrap_or_else(|_| synthetic_referent("structural-domain", &[domain.as_str()]))
+}
+
 pub(crate) fn membership_shape() -> kernel::Result<RelationShape> {
     let member = Role::new(membership_member_role(), Vec::new())?;
     let group = Role::new(membership_group_role(), Vec::new())?;
@@ -113,7 +130,7 @@ pub(crate) fn lower_pure_definition(
         }
     }
 
-    let expected = definition_term_domain(projection, model, &surface.result, &locals)?;
+    let expected = structural_domain(projection, &surface.domain);
     let denotation = lower_term(
         projection,
         model,
@@ -306,6 +323,64 @@ fn lower_term(
             require_term_referent(model, &referent, "string literal")?;
             Ok(Term::referent(referent))
         }
+        SurfaceTerm::F32(value) => Term::f32_bits(value.value),
+        SurfaceTerm::Int(value) => Ok(Term::int(value.value)),
+        SurfaceTerm::Bool(value) => Ok(Term::boolean(value.value)),
+        SurfaceTerm::Tuple { values, .. } => Term::tuple(
+            values
+                .iter()
+                .map(|value| {
+                    lower_term(
+                        projection,
+                        model,
+                        expected,
+                        value,
+                        binders,
+                        locals,
+                        dependencies,
+                    )
+                })
+                .collect::<kernel::Result<Vec<_>>>()?,
+        ),
+        SurfaceTerm::Product { fields, .. } => Term::product(
+            fields
+                .iter()
+                .map(|(label, value)| {
+                    Ok((
+                        kernel::Name::new(label.as_str().to_owned())?,
+                        lower_term(
+                            projection,
+                            model,
+                            expected,
+                            value,
+                            binders,
+                            locals,
+                            dependencies,
+                        )?,
+                    ))
+                })
+                .collect::<kernel::Result<BTreeMap<_, _>>>()?,
+        ),
+        SurfaceTerm::Sequence { values, .. } => Term::sequence(
+            values
+                .iter()
+                .map(|value| {
+                    lower_term(
+                        projection,
+                        model,
+                        expected,
+                        value,
+                        binders,
+                        locals,
+                        dependencies,
+                    )
+                })
+                .collect::<kernel::Result<Vec<_>>>()?,
+        ),
+        SurfaceTerm::Intrinsic(value) => Ok(Term::referent(synthetic_referent(
+            "pure-intrinsic-identity",
+            &[value.value.as_str()],
+        ))),
         SurfaceTerm::Referent(value) => {
             let referent = projection
                 .designations
@@ -330,6 +405,46 @@ fn lower_term(
             Ok(denotation.clone())
         }
         SurfaceTerm::Application(application) => {
+            if let Some(name) = application
+                .relation
+                .value
+                .as_str()
+                .strip_prefix(INTRINSIC_PREFIX)
+            {
+                let mut roles = BTreeMap::new();
+                for (surface_role, surface_term) in &application.roles {
+                    let lowered = if let SurfaceTerm::Local(value) = surface_term {
+                        locals
+                            .and_then(|locals| locals.get(&value.value))
+                            .map(|(_, term)| term.clone())
+                            .ok_or_else(|| {
+                                kernel::KernelError::new(format!(
+                                    "unbound pure definition local '{}'",
+                                    value.value.as_str()
+                                ))
+                            })?
+                    } else {
+                        lower_term(
+                            projection,
+                            model,
+                            expected,
+                            surface_term,
+                            binders,
+                            locals,
+                            dependencies,
+                        )?
+                    };
+                    roles.insert(intrinsic_role(name, surface_role.as_str()), lowered);
+                }
+                let content = RelationalContent::new(intrinsic_relation(name), roles)?;
+                if !dependencies
+                    .iter()
+                    .any(|dependency| dependency.id() == content.id())
+                {
+                    dependencies.push(content.clone());
+                }
+                return Ok(Term::application(content.id().clone()));
+            }
             let relation_id = projection
                 .designations
                 .global(application.relation.value.as_str())?;
@@ -427,6 +542,14 @@ fn definition_term_domain(
 ) -> kernel::Result<ReferentId> {
     match term {
         SurfaceTerm::Application(application) => {
+            if application
+                .relation
+                .value
+                .as_str()
+                .starts_with(INTRINSIC_PREFIX)
+            {
+                return Ok(structural_domain(projection, &application.domain));
+            }
             let relation = projection
                 .designations
                 .global(application.relation.value.as_str())?;
@@ -482,6 +605,29 @@ fn definition_term_domain(
         }
         SurfaceTerm::String(_) => Err(kernel::KernelError::new(
             "pure definition literals are not supported by this lowering boundary",
+        )),
+        SurfaceTerm::F32(_) => Ok(structural_domain(
+            projection,
+            &frontend::DomainName("F32".to_owned()),
+        )),
+        SurfaceTerm::Int(_) => Ok(structural_domain(
+            projection,
+            &frontend::DomainName("Int".to_owned()),
+        )),
+        SurfaceTerm::Bool(_) => Ok(structural_domain(
+            projection,
+            &frontend::DomainName("Bool".to_owned()),
+        )),
+        SurfaceTerm::Product { shape, .. } => Ok(structural_domain(
+            projection,
+            &frontend::DomainName(shape.value.0.clone()),
+        )),
+        SurfaceTerm::Tuple { .. } | SurfaceTerm::Sequence { .. } => Ok(synthetic_referent(
+            "structural-domain",
+            &[&format!("{:?}", term)],
+        )),
+        SurfaceTerm::Intrinsic(_) => Err(kernel::KernelError::new(
+            "intrinsic identity is only valid as an intrinsic application role",
         )),
         SurfaceTerm::Variable(_) | SurfaceTerm::Template(_) => Err(kernel::KernelError::new(
             "pure definitions require closed terms",

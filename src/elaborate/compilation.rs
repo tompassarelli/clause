@@ -13,8 +13,8 @@ use crate::{
 use super::{
     identifiers::{DesignationTable, synthetic_referent},
     lowering::{
-        BinderTable, LoweredContentGraph, LoweredDefinitionGraph, Projection,
-        lower_clause_graph_with, lower_clause_with, lower_definition, lower_focus,
+        BinderTable, LoweredContentGraph, LoweredDefinitionGraph, Projection, intrinsic_relation,
+        intrinsic_role, lower_clause_graph_with, lower_clause_with, lower_definition, lower_focus,
         lower_pure_definition, lower_shape_binding, membership_content, membership_group_role,
         membership_member_role, membership_relation, membership_shape,
     },
@@ -203,10 +203,12 @@ fn compile_context(
 ) -> kernel::Result<CompiledProgram> {
     declaration_map(&program.declarations)?;
     if !program.requests.is_empty()
-        || program
-            .declarations
-            .iter()
-            .any(|declaration| !matches!(declaration.kind, Kind::Grounding | Kind::RelationShape))
+        || program.declarations.iter().any(|declaration| {
+            !matches!(
+                declaration.kind,
+                Kind::Grounding | Kind::BindingShape | Kind::RelationShape
+            )
+        })
     {
         return Err(kernel::KernelError::new(
             "ModelContext fragments may contain groundings, RelationShapes, and direct Model content",
@@ -547,6 +549,45 @@ fn lower_relation_shapes(
             return Err(kernel::KernelError::new("duplicate RelationShape identity"));
         }
     }
+    for (name, known) in [
+        ("add", &["left", "right"][..]),
+        ("subtract", &["left", "right"][..]),
+        ("multiply", &["left", "right"][..]),
+        ("divide", &["left", "right"][..]),
+        ("less-than", &["left", "right"][..]),
+        ("less-or-equal", &["left", "right"][..]),
+        ("greater-than", &["left", "right"][..]),
+        ("greater-or-equal", &["left", "right"][..]),
+        ("equal", &["left", "right"][..]),
+        ("not-equal", &["left", "right"][..]),
+        ("length", &["input"][..]),
+        ("map", &["mapper", "sequence"][..]),
+        ("conditional", &["condition", "then", "else"][..]),
+    ] {
+        let relation = intrinsic_relation(name);
+        let result = intrinsic_role(name, "result");
+        let mut roles = known
+            .iter()
+            .map(|role| {
+                let id = intrinsic_role(name, role);
+                Ok((id.clone(), Role::new(id, Vec::new())?))
+            })
+            .collect::<kernel::Result<BTreeMap<_, _>>>()?;
+        roles.insert(result.clone(), Role::new(result.clone(), Vec::new())?);
+        let shape = RelationShape::new(
+            relation.clone(),
+            roles,
+            vec![LookupMode::finite(
+                known
+                    .iter()
+                    .map(|role| intrinsic_role(name, role))
+                    .collect(),
+                vec![result],
+                kernel::Cardinality::One,
+            )?],
+        )?;
+        shapes.insert(relation, shape);
+    }
     let membership = membership_shape()?;
     if shapes
         .insert(membership.referent().clone(), membership)
@@ -565,6 +606,14 @@ fn membership_predicate(group: ReferentId) -> kernel::Result<RolePredicate> {
         membership_member_role(),
         BTreeMap::from([(membership_group_role(), group)]),
     )
+}
+
+fn insert_intrinsic_identities(referents: &mut BTreeMap<ReferentId, Referent>) {
+    for name in ["length"] {
+        let source_name = format!("@clause/intrinsic/{name}");
+        let id = synthetic_referent("pure-intrinsic-identity", &[&source_name]);
+        referents.insert(id.clone(), Referent::new(id));
+    }
 }
 
 fn require_registered_dependencies(
@@ -651,6 +700,7 @@ fn lower_models(
             .cloned()
             .map(|id| (id.clone(), Referent::new(id)))
             .collect::<BTreeMap<_, _>>();
+        insert_intrinsic_identities(&mut referents);
         referents.insert(model_id.clone(), Referent::new(model_id.clone()));
         for id in projection
             .model_referents
@@ -885,6 +935,7 @@ fn lower_context_model(
         .cloned()
         .map(|id| (id.clone(), Referent::new(id)))
         .collect::<BTreeMap<_, _>>();
+    insert_intrinsic_identities(&mut referents);
     referents.insert(model_id.clone(), Referent::new(model_id.clone()));
     for id in projection
         .model_referents
@@ -1126,10 +1177,24 @@ fn member_literal_referents(
                     collect(term, projection, literals)?;
                 }
             }
+            SurfaceTerm::Tuple { values, .. } | SurfaceTerm::Sequence { values, .. } => {
+                for term in values {
+                    collect(term, projection, literals)?;
+                }
+            }
+            SurfaceTerm::Product { fields, .. } => {
+                for term in fields.values() {
+                    collect(term, projection, literals)?;
+                }
+            }
             SurfaceTerm::Referent(_)
             | SurfaceTerm::Local(_)
             | SurfaceTerm::Template(_)
-            | SurfaceTerm::Variable(_) => {}
+            | SurfaceTerm::Variable(_)
+            | SurfaceTerm::F32(_)
+            | SurfaceTerm::Int(_)
+            | SurfaceTerm::Bool(_)
+            | SurfaceTerm::Intrinsic(_) => {}
         }
         Ok(())
     }
@@ -1206,10 +1271,24 @@ fn declare_term_literal(term: &SurfaceTerm, table: &mut DesignationTable) {
                 declare_term_literal(term, table);
             }
         }
+        SurfaceTerm::Tuple { values, .. } | SurfaceTerm::Sequence { values, .. } => {
+            for term in values {
+                declare_term_literal(term, table);
+            }
+        }
+        SurfaceTerm::Product { fields, .. } => {
+            for term in fields.values() {
+                declare_term_literal(term, table);
+            }
+        }
         SurfaceTerm::Referent(_)
         | SurfaceTerm::Local(_)
         | SurfaceTerm::Template(_)
-        | SurfaceTerm::Variable(_) => {}
+        | SurfaceTerm::Variable(_)
+        | SurfaceTerm::F32(_)
+        | SurfaceTerm::Int(_)
+        | SurfaceTerm::Bool(_)
+        | SurfaceTerm::Intrinsic(_) => {}
     }
 }
 
