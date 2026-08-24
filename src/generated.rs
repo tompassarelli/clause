@@ -5,10 +5,7 @@
 use std::fmt::Write;
 
 use crate::{
-    kernel::{
-        KernelError, PatternId, QueryPlanColumn, ReferentId, RelationalContent, Result, RoleId,
-        Term,
-    },
+    kernel::{KernelError, PatternId, ReferentId, RelationalContent, Result, RoleId, Term},
     request::{QueryColumn, Request, ResolvedProgram, Selection},
     wire,
 };
@@ -374,19 +371,10 @@ fn request_source(
     indices: &std::collections::BTreeMap<crate::kernel::RevisionId, usize>,
 ) -> String {
     match request {
-        Request::Any {
-            revision,
-            pattern,
-            columns,
-        } => format!(
-            "request::Request::Any {{ revision: {}, pattern: {}, columns: vec![{}] }}",
+        Request::Any { revision, pattern } => format!(
+            "request::Request::Any {{ revision: {}, pattern: {} }}",
             revision_source(revision, indices),
-            clause_source(pattern),
-            columns
-                .iter()
-                .map(query_plan_column_source)
-                .collect::<Vec<_>>()
-                .join(",")
+            clause_source(pattern)
         ),
         Request::Select {
             revision,
@@ -469,20 +457,6 @@ fn query_column_source(column: &QueryColumn) -> String {
         .unwrap_or_else(|| "None".to_owned());
     format!(
         "request::QueryColumn::new({label}, {}, vec![{}])",
-        variable_source(column.binder()),
-        column
-            .origins()
-            .iter()
-            .map(role_source)
-            .collect::<Vec<_>>()
-            .join(",")
-    )
-}
-
-#[cfg(not(clause_generated))]
-fn query_plan_column_source(column: &QueryPlanColumn) -> String {
-    format!(
-        "kernel::QueryPlanColumn::new({}, vec![{}])",
         variable_source(column.binder()),
         column
             .origins()

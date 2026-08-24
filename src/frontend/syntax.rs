@@ -310,7 +310,6 @@ pub enum RequestDecl {
     Any {
         revision: Spanned<Name>,
         pattern: SurfaceClause,
-        columns: Vec<QueryColumnDecl>,
         span: Span,
     },
     Select {

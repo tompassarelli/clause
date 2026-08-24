@@ -1,4 +1,4 @@
-use super::{Request, RequestOutput, ResolvedProgram, RunLimits, RunOutput, Selection};
+use super::{Request, RequestOutput, ResolvedProgram, RunLimits, RunOutput, Selection, any_plan};
 use crate::{
     execution, intervention,
     kernel::{self, Revision, RevisionId},
@@ -12,10 +12,9 @@ pub(super) fn run(program: &ResolvedProgram, limits: RunLimits) -> kernel::Resul
             Request::Any {
                 revision: identity,
                 pattern,
-                columns,
             } => {
                 let selected = revision(program, identity)?;
-                let plan = kernel::QueryPlan::new(selected.model(), pattern, columns.clone())?;
+                let plan = any_plan(selected.model(), pattern)?;
                 RequestOutput::Any(execution::any(selected, &plan, limits.closure)?)
             }
             Request::Select {

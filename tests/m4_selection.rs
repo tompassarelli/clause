@@ -378,11 +378,11 @@ fn any_returns_only_bool_with_alpha_and_generated_parity() {
     let resolved = request::resolve(&compiled).expect("Any requests resolve");
     let [
         Request::Any {
-            columns: matching_columns,
+            pattern: matching_pattern,
             ..
         },
         Request::Any {
-            columns: rejecting_columns,
+            pattern: rejecting_pattern,
             ..
         },
     ] = resolved.requests()
@@ -392,25 +392,35 @@ fn any_returns_only_bool_with_alpha_and_generated_parity() {
 
     let relation = compiled.designations().global("selection/related").unwrap();
     let role = |label: &str| compiled.designations().role(&relation, label).unwrap();
+    let pattern_origins = |pattern: &clause::kernel::RelationalContent| {
+        let mut origins = std::collections::BTreeMap::new();
+        for (role, term) in pattern.roles() {
+            if let Some(binder) = term.pattern_id() {
+                origins
+                    .entry(binder.clone())
+                    .or_insert_with(Vec::new)
+                    .push(role.clone());
+            }
+        }
+        let mut origins = origins.into_values().collect::<Vec<_>>();
+        origins.sort();
+        origins
+    };
     let mut correlated_origins = vec![role("b"), role("c")];
     correlated_origins.sort();
+    let mut expected_matching_origins = vec![vec![role("a")], correlated_origins, vec![role("d")]];
+    expected_matching_origins.sort();
     assert_eq!(
-        matching_columns
-            .iter()
-            .map(|column| column.origins().to_vec())
-            .collect::<Vec<_>>(),
-        vec![vec![role("a")], correlated_origins, vec![role("d")]],
-        "Any preserves fresh anonymous and correlated named-hole role origins"
+        pattern_origins(matching_pattern),
+        expected_matching_origins,
+        "Any pattern retains fresh anonymous and correlated named-hole role groupings"
     );
     let mut all_hole_origins = vec![role("a"), role("b"), role("c"), role("d")];
     all_hole_origins.sort();
     assert_eq!(
-        rejecting_columns
-            .iter()
-            .map(|column| column.origins().to_vec())
-            .collect::<Vec<_>>(),
+        pattern_origins(rejecting_pattern),
         vec![all_hole_origins],
-        "one repeated named hole retains every correlated role origin"
+        "one repeated named hole retains every correlated role in the pattern"
     );
 
     let output =

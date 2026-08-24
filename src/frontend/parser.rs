@@ -772,7 +772,6 @@ pub fn parse(source: &str) -> Result<Program, ParseError> {
                         span: line_span(header),
                     },
                     pattern,
-                    columns,
                     span: line_span(header),
                 });
             }

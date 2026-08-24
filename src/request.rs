@@ -1,7 +1,7 @@
 //! Ordered request resolution, evaluation, and canonical projection.
 #![allow(unexpected_cfgs)]
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 #[cfg(not(clause_generated))]
 use crate::elaborate::CompiledProgram;
@@ -27,7 +27,6 @@ pub enum Request {
     Any {
         revision: RevisionId,
         pattern: RelationalContent,
-        columns: Vec<QueryPlanColumn>,
     },
     Select {
         revision: RevisionId,
@@ -148,15 +147,11 @@ impl ResolvedProgram {
                 }
             }
             match request {
-                Request::Any {
-                    revision,
-                    pattern,
-                    columns,
-                } => {
+                Request::Any { revision, pattern } => {
                     let selected = revisions
                         .get(revision)
                         .expect("request Revision presence was validated");
-                    let _ = kernel::QueryPlan::new(selected.model(), pattern, columns.clone())?;
+                    let _ = any_plan(selected.model(), pattern)?;
                 }
                 Request::Select {
                     revision,
@@ -201,6 +196,21 @@ impl Request {
             Self::Diff { base, successor } => vec![base, successor],
         }
     }
+}
+
+fn any_plan(
+    model: &kernel::Model,
+    pattern: &RelationalContent,
+) -> kernel::Result<kernel::QueryPlan> {
+    let binders = pattern
+        .roles()
+        .values()
+        .filter_map(Term::pattern_id)
+        .cloned()
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect();
+    kernel::QueryPlan::derive(model, pattern, binders)
 }
 
 /// Explicit resource bounds for the semantic engines selected by requests.
