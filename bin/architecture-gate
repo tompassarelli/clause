@@ -118,12 +118,10 @@ run_structural_diagnostic_behavior() {
   diagnostic_target_dir=${CARGO_TARGET_DIR:-"$project_root/target/architecture-gate"}
   if CARGO_TARGET_DIR="$diagnostic_target_dir" cargo test --quiet --locked \
     --manifest-path "$project_root/Cargo.toml" \
-    --test structural_frontend \
-    nested_wrong_domain_reports_the_rank_one_authored_proposal_path \
-    -- --exact; then
+    --test structural_frontend; then
     return
   fi
-  fail "rank-1 structural class, path, authored span, or source-free boundary failed"
+  fail "rank-1 structural class, path, authored span, or source-free tamper boundary failed"
 }
 
 if test "${1:-}" = "--self-test"; then

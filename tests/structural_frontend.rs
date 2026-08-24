@@ -15,11 +15,20 @@ Vec2
   x: F32
   y: F32
 
+Pair
+  first: F32
+  second: F32
+
+Pose
+  position: Vec2
+
 gravity: 9.81
 truth: true
 pair: (3.0, 4.0)
 vectors: [(3.0, 4.0), (5.0, 12.0)]
 labelled vector: Vec2 { x: 3.0, y: 4.0 }
+labelled pair: Pair { first: 3.0, second: 4.0 }
+pose: Pose { position: Vec2 { x: 3.0, y: 4.0 } }
 
 lengths:
   input: [(3.0, 4.0), (5.0, 12.0)]
@@ -37,6 +46,101 @@ frame collected:
 fn model_id() -> ReferentId {
     ReferentId::new(format!("ref-sha256-{}", "8".repeat(64)))
         .expect("fixed caller-owned Model identity")
+}
+
+const RELATIONAL_VALID: &str = r#"F32
+Marker
+
+Vec2
+  x: F32
+  y: F32
+
+Pose
+  position: Vec2
+
+check: RelationShape
+  {pose: Pose} checks {marker: Marker}
+  mode pose -> marker: many
+
+authored pose: Pose { position: Vec2 { x: 3.0, y: 4.0 } }
+
+scene
+  sample ∈ Pose
+  flag ∈ Marker
+  sample checks flag
+"#;
+
+const RELATIONAL_CONTEXT_VALID: &str = r#"F32
+Marker
+
+Vec2
+  x: F32
+  y: F32
+
+Pose
+  position: Vec2
+
+check: RelationShape
+  {pose: Pose} checks {marker: Marker}
+  mode pose -> marker: many
+
+sample ∈ Pose
+flag ∈ Marker
+authored pose: Pose { position: Vec2 { x: 3.0, y: 4.0 } }
+sample checks flag
+"#;
+
+fn take_authored_binding(
+    members: &mut Vec<frontend::Member>,
+    binding: &str,
+) -> frontend::SurfaceTerm {
+    let binding_index = members
+        .iter()
+        .position(|member| {
+            matches!(
+                member,
+                frontend::Member::PureDefinition(definition)
+                    if definition.name.value.as_str() == binding
+            )
+        })
+        .expect("authored structural binding exists");
+    let frontend::Member::PureDefinition(definition) = members.remove(binding_index) else {
+        unreachable!("located member is a pure definition");
+    };
+    definition.result
+}
+
+fn replace_relational_role(
+    members: &mut [frontend::Member],
+    role: &str,
+    term: frontend::SurfaceTerm,
+) {
+    let clause = members
+        .iter_mut()
+        .find_map(|member| match member {
+            frontend::Member::RelationalContent(clause) => Some(clause),
+            _ => None,
+        })
+        .expect("relational content exists");
+    clause
+        .roles
+        .insert(frontend::RoleName(role.to_owned()), term);
+}
+
+fn relational_program(source: &str, named: bool) -> frontend::Program {
+    let mut program = frontend::parse(source).expect("relational source parses");
+    let term = take_authored_binding(&mut program.top_level, "authored pose");
+    if named {
+        let model = program
+            .declarations
+            .iter_mut()
+            .find(|declaration| declaration.subject.value.as_str() == "scene")
+            .expect("scene Model exists");
+        replace_relational_role(&mut model.body, "pose", term);
+    } else {
+        replace_relational_role(&mut program.top_level, "pose", term);
+    }
+    program
 }
 
 #[test]
@@ -155,7 +259,7 @@ fn labelled_products_reject_undeclared_missing_and_wrong_domain_fields() {
         ),
     ];
     for (product, expected) in cases {
-        let source = SOURCE.replace("Vec2 { x: 3.0, y: 4.0 }", product);
+        let source = SOURCE.replacen("Vec2 { x: 3.0, y: 4.0 }", product, 1);
         let error = elaborate::compile_in(
             frontend::parse(&source).expect("malformed labelled product source parses"),
             ModelContext::new(model_id()),
@@ -249,6 +353,197 @@ pose: Pose { position: Vec2 { x: 3.0, y: 4.0 } }
     );
 }
 
+#[test]
+fn relational_failures_keep_authored_paths_in_named_and_context_models() {
+    fn assert_diagnostic(
+        valid: &elaborate::CompiledProgram,
+        error: &elaborate::CompileError,
+        invalid: &str,
+    ) {
+        let relation = valid
+            .designations()
+            .global("check")
+            .expect("check relation resolves");
+        let pose_role = valid
+            .designations()
+            .role(&relation, "pose")
+            .expect("check.pose resolves");
+        let pose = valid.designations().global("Pose").expect("Pose resolves");
+        let position = valid
+            .designations()
+            .scoped(&pose, "position")
+            .expect("Pose.position resolves");
+        let vec2 = valid.designations().global("Vec2").expect("Vec2 resolves");
+        let y = valid
+            .designations()
+            .scoped(&vec2, "y")
+            .expect("Vec2.y resolves");
+        let diagnostic = error
+            .diagnostic()
+            .expect("authored relational rejection has a source diagnostic");
+        assert_eq!(diagnostic.class(), StructuralFailureClass::DomainMismatch);
+        assert!(matches!(
+            diagnostic.path().subject(),
+            ProposalSubject::Content(_)
+        ));
+        assert_eq!(
+            diagnostic.path().segments(),
+            &[
+                ProposalPathSegment::Role(pose_role),
+                ProposalPathSegment::ProductField(position),
+                ProposalPathSegment::ProductField(y),
+            ]
+        );
+        let line = invalid
+            .lines()
+            .find(|line| line.contains("true"))
+            .expect("invalid relational line");
+        assert_eq!(
+            diagnostic.span(),
+            frontend::Span {
+                line: invalid
+                    .lines()
+                    .position(|candidate| candidate == line)
+                    .expect("invalid line has an index")
+                    + 1,
+                column: line.find("true").expect("true token") + 1,
+                width: "true".len(),
+            }
+        );
+    }
+
+    let valid_named = elaborate::compile(relational_program(RELATIONAL_VALID, true))
+        .expect("valid named Model source lowers");
+    let invalid_named = RELATIONAL_VALID.replace("y: 4.0", "y: true");
+    let named_error = elaborate::compile(relational_program(&invalid_named, true))
+        .expect_err("named Model structural proposal is rejected");
+    assert_diagnostic(&valid_named, &named_error, &invalid_named);
+
+    let valid_context = elaborate::compile_in(
+        relational_program(RELATIONAL_CONTEXT_VALID, false),
+        ModelContext::new(model_id()),
+    )
+    .expect("valid context source lowers");
+    let invalid_context = RELATIONAL_CONTEXT_VALID.replace("y: 4.0", "y: true");
+    let context_error = elaborate::compile_in(
+        relational_program(&invalid_context, false),
+        ModelContext::new(model_id()),
+    )
+    .expect_err("context structural proposal is rejected");
+    assert_diagnostic(&valid_context, &context_error, &invalid_context);
+}
+
+#[test]
+fn pure_definition_local_trace_survives_application_substitution() {
+    const VALID: &str = r#"F32
+
+Vec2
+  x: F32
+  y: F32
+
+authored vector: Vec2 { x: 3.0, y: 4.0 }
+
+magnitude:
+  vector: 3.0
+  if true then vector else vector
+"#;
+    fn program(source: &str) -> frontend::Program {
+        let mut program = frontend::parse(source).expect("local source parses");
+        let source_index = program
+            .top_level
+            .iter()
+            .position(|member| {
+                matches!(
+                    member,
+                    frontend::Member::PureDefinition(definition)
+                        if definition.name.value.as_str() == "authored vector"
+                )
+            })
+            .expect("authored vector binding exists");
+        let frontend::Member::PureDefinition(source) = program.top_level.remove(source_index)
+        else {
+            unreachable!("located member is a pure definition");
+        };
+        let target = program
+            .top_level
+            .iter_mut()
+            .find_map(|member| match member {
+                frontend::Member::PureDefinition(definition)
+                    if definition.name.value.as_str() == "magnitude" =>
+                {
+                    Some(definition)
+                }
+                _ => None,
+            })
+            .expect("magnitude definition exists");
+        target
+            .locals
+            .first_mut()
+            .expect("magnitude has one local")
+            .denotation = source.result;
+        program
+    }
+
+    let valid = elaborate::compile_in(program(VALID), ModelContext::new(model_id()))
+        .expect("valid local source lowers");
+    let magnitude = valid
+        .designations()
+        .scoped(&model_id(), "magnitude")
+        .expect("magnitude definition resolves");
+    let definition = valid
+        .context_revision()
+        .expect("valid context Revision")
+        .model()
+        .definition(&magnitude)
+        .expect("magnitude definition is sealed");
+    let Term::Application(application) = definition.denotation() else {
+        panic!("magnitude result is an application");
+    };
+    let input_role = valid
+        .context_revision()
+        .expect("valid context Revision")
+        .model()
+        .content(application)
+        .expect("length application is registered")
+        .roles()
+        .iter()
+        .filter_map(|(role, term)| {
+            matches!(term, Term::LabelledProduct { .. }).then_some(role.clone())
+        })
+        .min()
+        .expect("conditional has a structural branch role");
+    let vec2 = valid.designations().global("Vec2").expect("Vec2 resolves");
+    let y = valid
+        .designations()
+        .scoped(&vec2, "y")
+        .expect("Vec2.y resolves");
+
+    let invalid = VALID.replace("y: 4.0", "y: true");
+    let error = elaborate::compile_in(program(&invalid), ModelContext::new(model_id()))
+        .expect_err("substituted local proposal is rejected");
+    let diagnostic = error
+        .diagnostic()
+        .expect("substituted local retains its authored source anchor");
+    assert_eq!(diagnostic.class(), StructuralFailureClass::DomainMismatch);
+    assert!(matches!(
+        diagnostic.path().subject(),
+        ProposalSubject::Content(_)
+    ));
+    assert_eq!(
+        diagnostic.path().segments(),
+        &[
+            ProposalPathSegment::Role(input_role),
+            ProposalPathSegment::ProductField(y),
+        ]
+    );
+    let line = invalid
+        .lines()
+        .find(|line| line.contains("true"))
+        .expect("invalid local line");
+    assert_eq!(diagnostic.span().column, line.find("true").unwrap() + 1);
+    assert_eq!(diagnostic.span().width, "true".len());
+}
+
 fn structural_term_json(term: &Term) -> String {
     match term {
         Term::F32(value) => format!("[\"f32\",\"{:08x}\"]", value.bits()),
@@ -294,6 +589,9 @@ fn structural_term_json(term: &Term) -> String {
                 .collect::<Vec<_>>()
                 .join(",")
         ),
+        Term::Application(content) => {
+            format!("[\"application\",\"{}\"]", content.as_str())
+        }
         _ => panic!("test renderer received a non-structural term: {term:?}"),
     }
 }
@@ -389,6 +687,93 @@ fn rehashed_structural_wire_tampering_fails_exact_admission() {
     assert_eq!(
         source_free_failure.path().segments(),
         &[ProposalPathSegment::ProductField(wrong_field)]
+    );
+
+    let pose = definition("pose");
+    let Term::LabelledProduct {
+        shape: pose_shape,
+        fields: pose_fields,
+    } = pose.denotation()
+    else {
+        panic!("pose must remain a labelled product");
+    };
+    let position = pose_fields
+        .first_key_value()
+        .expect("Pose has one position field")
+        .0
+        .clone();
+    let labelled_pair = definition("labelled pair");
+    let Term::LabelledProduct {
+        shape: pair_shape,
+        fields: pair_fields,
+    } = labelled_pair.denotation()
+    else {
+        panic!("labelled pair must remain a labelled product");
+    };
+    let pose_definition = format!(
+        "[\"definition\",\"{}\",{}]",
+        pose.id().as_str(),
+        structural_term_json(pose.denotation())
+    );
+    let mut wrong_shape_fields = pose_fields.clone();
+    wrong_shape_fields.insert(
+        position.clone(),
+        Term::labelled_product(pair_shape.clone(), pair_fields.clone())
+            .expect("complete Pair term encodes"),
+    );
+    let wrong_shape = Term::labelled_product(pose_shape.clone(), wrong_shape_fields)
+        .expect("Pose with a complete wrong-shape field encodes");
+    let wrong_shape_definition = format!(
+        "[\"definition\",\"{}\",{}]",
+        pose.id().as_str(),
+        structural_term_json(&wrong_shape)
+    );
+    let wrong_shape_error =
+        rehashed_wire_error(&semantic, &pose_definition, &wrong_shape_definition);
+    assert_eq!(
+        wrong_shape_error
+            .structural_failure()
+            .expect("wrong complete shape retains typed evidence")
+            .class(),
+        StructuralFailureClass::DomainMismatch
+    );
+    assert_eq!(
+        wrong_shape_error
+            .structural_failure()
+            .expect("wrong complete shape retains typed evidence")
+            .path()
+            .segments(),
+        &[ProposalPathSegment::ProductField(position.clone())]
+    );
+
+    let frame_velocity = definition("frame velocity");
+    let Term::Application(application) = frame_velocity.denotation() else {
+        panic!("frame velocity remains an application");
+    };
+    let mut application_fields = pose_fields.clone();
+    application_fields.insert(position.clone(), Term::application(application.clone()));
+    let application_pose = Term::labelled_product(pose_shape.clone(), application_fields)
+        .expect("Pose with an application field encodes");
+    let application_definition = format!(
+        "[\"definition\",\"{}\",{}]",
+        pose.id().as_str(),
+        structural_term_json(&application_pose)
+    );
+    let application_error =
+        rehashed_wire_error(&semantic, &pose_definition, &application_definition);
+    let application_failure = application_error
+        .structural_failure()
+        .expect("mismatched application retains typed evidence");
+    assert_eq!(
+        application_failure.class(),
+        StructuralFailureClass::DomainMismatch
+    );
+    assert_eq!(
+        application_failure.path().segments(),
+        &[
+            ProposalPathSegment::ProductField(position),
+            ProposalPathSegment::Application(application.clone()),
+        ]
     );
 
     let (field, _) = fields.first_key_value().expect("Vec2 has fields");

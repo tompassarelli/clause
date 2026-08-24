@@ -769,6 +769,7 @@ fn validate_term_against(
         };
     }
     if let Term::Application(id) = term {
+        let application_path = path.child(ProposalPathSegment::Application(id.clone()));
         let target = contents
             .get(id)
             .ok_or_else(|| KernelError::new("recursive term names undeclared content"))?;
@@ -779,7 +780,7 @@ fn validate_term_against(
             Err(KernelError::structural(
                 "structural term does not match its expected domain",
                 StructuralFailureClass::DomainMismatch,
-                path.clone(),
+                application_path,
             ))
         };
     }
@@ -789,9 +790,14 @@ fn validate_term_against(
             | (StructuralForm::Int, Term::Int(_))
             | (StructuralForm::Bool, Term::Bool(_)) => Ok(()),
             (StructuralForm::Product(required), Term::LabelledProduct { shape, fields }) => {
-                if shape != expected
-                    || fields.keys().collect::<BTreeSet<_>>() != required.iter().collect()
-                {
+                if shape != expected {
+                    return Err(KernelError::structural(
+                        "structural term does not match its expected domain",
+                        StructuralFailureClass::DomainMismatch,
+                        path.clone(),
+                    ));
+                }
+                if fields.keys().collect::<BTreeSet<_>>() != required.iter().collect() {
                     return Err(KernelError::structural(
                         "labelled product must fill its exact structural contract",
                         StructuralFailureClass::FieldSetMismatch,

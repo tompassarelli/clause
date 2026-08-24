@@ -124,7 +124,7 @@ use super::{
     identifiers::{DesignationTable, synthetic_referent},
     lowering::{
         BinderTable, LoweredContentGraph, LoweredDefinitionGraph, Projection,
-        lower_clause_graph_with, lower_clause_with, lower_definition, lower_focus,
+        lower_clause_graph_traced, lower_clause_with, lower_definition, lower_focus,
         lower_pure_definition, lower_shape_binding, membership_content, membership_group_role,
         membership_member_role, membership_relation, membership_shape, structural_domain,
     },
@@ -823,7 +823,7 @@ fn lower_models(
     declarations: &[Declaration],
     shapes: &BTreeMap<ReferentId, RelationShape>,
     projection: &Projection,
-    _proposal_spans: &mut BTreeMap<ProposalPath, frontend::Span>,
+    proposal_spans: &mut BTreeMap<ProposalPath, frontend::Span>,
 ) -> kernel::Result<(
     BTreeMap<frontend::Name, Model>,
     BTreeMap<ReferentId, frontend::Span>,
@@ -935,7 +935,13 @@ fn lower_models(
         for member in &declaration.body {
             let (lowered, span) = match member {
                 Member::RelationalContent(surface) => {
-                    let graph = lower_clause_graph_with(projection, shell.model(), surface, None)?;
+                    let graph = lower_clause_graph_traced(
+                        projection,
+                        shell.model(),
+                        surface,
+                        None,
+                        proposal_spans,
+                    )?;
                     let root = register_content_graph(&mut contents, graph)?;
                     (vec![root], Some(surface.span))
                 }
@@ -1022,13 +1028,23 @@ fn lower_models(
             let premise_contents = premises
                 .iter()
                 .map(|surface| {
-                    let graph =
-                        lower_clause_graph_with(projection, shell.model(), surface, Some(binders))?;
+                    let graph = lower_clause_graph_traced(
+                        projection,
+                        shell.model(),
+                        surface,
+                        Some(binders),
+                        proposal_spans,
+                    )?;
                     register_content_graph(&mut contents, graph)
                 })
                 .collect::<kernel::Result<Vec<_>>>()?;
-            let conclusion_graph =
-                lower_clause_graph_with(projection, shell.model(), conclusion, Some(binders))?;
+            let conclusion_graph = lower_clause_graph_traced(
+                projection,
+                shell.model(),
+                conclusion,
+                Some(binders),
+                proposal_spans,
+            )?;
             let conclusion_content = register_content_graph(&mut contents, conclusion_graph)?;
             for content in premise_contents
                 .iter()
@@ -1154,7 +1170,13 @@ fn lower_context_model(
         match member {
             Member::Membership(_) => occurrence_index += 1,
             Member::RelationalContent(surface) => {
-                let graph = lower_clause_graph_with(projection, shell.model(), surface, None)?;
+                let graph = lower_clause_graph_traced(
+                    projection,
+                    shell.model(),
+                    surface,
+                    None,
+                    proposal_spans,
+                )?;
                 let content = register_content_graph(&mut contents, graph)?;
                 admit_authored_content(
                     &model_id,
