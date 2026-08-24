@@ -1,16 +1,124 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    fmt,
+};
 
 use crate::{
     frontend::{self, Declaration, Kind, Member, ShapePartDecl, SurfaceTerm},
     intrinsic::{Intrinsic, IntrinsicRole},
     kernel::{
         self, AssertionOccurrence, Definition, DerivationRule, Judgment, JudgmentKind,
-        JudgmentStatus, JudgmentTarget, LookupMode, Model, Pattern, Referent, ReferentId,
-        RelationShape, RelationalContent, Role, RolePredicate, StructuralContract, StructuralForm,
-        Term,
+        JudgmentStatus, JudgmentTarget, LookupMode, Model, Pattern, ProposalPath, Referent,
+        ReferentId, RelationShape, RelationalContent, Role, RolePredicate, StructuralContract,
+        StructuralFailureClass, StructuralForm, Term,
     },
     wire,
 };
+
+/// The disposition of a source-anchored compilation diagnostic.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CompileDiagnosticStatus {
+    RejectedProposal,
+}
+
+/// Deterministic derived evidence for one authored proposal rejection.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CompileDiagnostic {
+    rank: usize,
+    status: CompileDiagnosticStatus,
+    class: StructuralFailureClass,
+    path: ProposalPath,
+    presentation: Vec<String>,
+    span: frontend::Span,
+}
+
+impl CompileDiagnostic {
+    pub fn rank(&self) -> usize {
+        self.rank
+    }
+
+    pub fn status(&self) -> CompileDiagnosticStatus {
+        self.status
+    }
+
+    pub fn class(&self) -> StructuralFailureClass {
+        self.class
+    }
+
+    pub fn path(&self) -> &ProposalPath {
+        &self.path
+    }
+
+    pub fn presentation(&self) -> &[String] {
+        &self.presentation
+    }
+
+    pub fn span(&self) -> frontend::Span {
+        self.span
+    }
+}
+
+/// Compilation failure with optional source projection for a typed kernel
+/// rejection. The underlying kernel evidence remains available unchanged.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CompileError {
+    kernel: kernel::KernelError,
+    diagnostic: Option<CompileDiagnostic>,
+}
+
+impl CompileError {
+    fn from_kernel(
+        kernel: kernel::KernelError,
+        proposal_spans: &BTreeMap<ProposalPath, frontend::Span>,
+        designations: &DesignationTable,
+    ) -> Self {
+        let diagnostic = kernel.structural_failure().and_then(|failure| {
+            proposal_spans
+                .get(failure.path())
+                .copied()
+                .map(|span| CompileDiagnostic {
+                    rank: 1,
+                    status: CompileDiagnosticStatus::RejectedProposal,
+                    class: failure.class(),
+                    path: failure.path().clone(),
+                    presentation: designations.proposal_path_presentation(failure.path()),
+                    span,
+                })
+        });
+        Self { kernel, diagnostic }
+    }
+
+    pub fn diagnostic(&self) -> Option<&CompileDiagnostic> {
+        self.diagnostic.as_ref()
+    }
+
+    pub fn kernel_error(&self) -> &kernel::KernelError {
+        &self.kernel
+    }
+}
+
+impl From<kernel::KernelError> for CompileError {
+    fn from(kernel: kernel::KernelError) -> Self {
+        Self {
+            kernel,
+            diagnostic: None,
+        }
+    }
+}
+
+impl fmt::Display for CompileError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.kernel.fmt(formatter)
+    }
+}
+
+impl std::error::Error for CompileError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(&self.kernel)
+    }
+}
+
+pub type CompileResult<T> = std::result::Result<T, CompileError>;
 
 use super::{
     identifiers::{DesignationTable, synthetic_referent},
@@ -33,6 +141,7 @@ pub struct CompiledProgram {
     requests: Vec<frontend::RequestDecl>,
     projection: Projection,
     source_spans: BTreeMap<ReferentId, frontend::Span>,
+    proposal_spans: BTreeMap<ProposalPath, frontend::Span>,
 }
 
 impl CompiledProgram {
@@ -116,13 +225,18 @@ impl CompiledProgram {
         self.source_spans.get(occurrence).copied()
     }
 
+    /// Locate one semantic proposal path in the source projection.
+    pub fn proposal_span(&self, path: &ProposalPath) -> Option<frontend::Span> {
+        self.proposal_spans.get(path).copied()
+    }
+
     /// Compile after an explicit designation rename transaction. The table is
     /// projection state: retaining a designation changes source terms without
     /// changing the referents, roles, or binders sealed into the Revision.
     pub fn compile_with_designations(
         program: frontend::Program,
         designations: DesignationTable,
-    ) -> kernel::Result<Self> {
+    ) -> CompileResult<Self> {
         compile_named(program, designations)
     }
 
@@ -132,7 +246,7 @@ impl CompiledProgram {
         program: frontend::Program,
         context: ModelContext,
         designations: DesignationTable,
-    ) -> kernel::Result<Self> {
+    ) -> CompileResult<Self> {
         compile_context(program, context, designations)
     }
 }
@@ -153,14 +267,14 @@ impl ModelContext {
     }
 }
 
-pub fn compile(program: frontend::Program) -> kernel::Result<CompiledProgram> {
+pub fn compile(program: frontend::Program) -> CompileResult<CompiledProgram> {
     compile_named(program, DesignationTable::new())
 }
 
 pub fn compile_in(
     program: frontend::Program,
     context: ModelContext,
-) -> kernel::Result<CompiledProgram> {
+) -> CompileResult<CompiledProgram> {
     compile_context(program, context, DesignationTable::new())
 }
 
@@ -168,24 +282,31 @@ pub fn compile_in_with_designations(
     program: frontend::Program,
     context: ModelContext,
     designations: DesignationTable,
-) -> kernel::Result<CompiledProgram> {
+) -> CompileResult<CompiledProgram> {
     compile_context(program, context, designations)
 }
 
 fn compile_named(
     program: frontend::Program,
     designations: DesignationTable,
-) -> kernel::Result<CompiledProgram> {
+) -> CompileResult<CompiledProgram> {
     if !program.top_level.is_empty() {
         return Err(kernel::KernelError::new(
             "direct top-level Model content requires an explicit ModelContext",
-        ));
+        )
+        .into());
     }
     let declarations = declaration_map(&program.declarations)?;
     let mut projection = declare_projection(&program, designations)?;
     let relation_shapes = lower_relation_shapes(&program.declarations, &mut projection)?;
-    let (models, source_spans) =
-        lower_models(&program.declarations, &relation_shapes, &projection)?;
+    let mut proposal_spans = BTreeMap::new();
+    let (models, source_spans) = lower_models(
+        &program.declarations,
+        &relation_shapes,
+        &projection,
+        &mut proposal_spans,
+    )
+    .map_err(|error| CompileError::from_kernel(error, &proposal_spans, &projection.designations))?;
     let (revisions, source_spans) = {
         let mut resolver = Resolver::new(&declarations, models, &projection, source_spans);
         for declaration in &program.declarations {
@@ -207,6 +328,7 @@ fn compile_named(
         requests: program.requests,
         projection,
         source_spans,
+        proposal_spans,
     })
 }
 
@@ -214,7 +336,7 @@ fn compile_context(
     program: frontend::Program,
     context: ModelContext,
     designations: DesignationTable,
-) -> kernel::Result<CompiledProgram> {
+) -> CompileResult<CompiledProgram> {
     declaration_map(&program.declarations)?;
     if !program.requests.is_empty()
         || program.declarations.iter().any(|declaration| {
@@ -226,23 +348,28 @@ fn compile_context(
     {
         return Err(kernel::KernelError::new(
             "ModelContext fragments may contain groundings, RelationShapes, and direct Model content",
-        ));
+        )
+        .into());
     }
     let mut projection = declare_projection(&program, designations)?;
     declare_model_members(&context.model, &program.top_level, &mut projection)?;
     let relation_shapes = lower_relation_shapes(&program.declarations, &mut projection)?;
+    let mut proposal_spans = BTreeMap::new();
     let (model, source_spans) = lower_context_model(
         context.model,
         &program.top_level,
         &relation_shapes,
         &projection,
-    )?;
+        &mut proposal_spans,
+    )
+    .map_err(|error| CompileError::from_kernel(error, &proposal_spans, &projection.designations))?;
     Ok(CompiledProgram {
         revisions: BTreeMap::new(),
         context_revision: Some(wire::admit(model)),
         requests: Vec::new(),
         projection,
         source_spans,
+        proposal_spans,
     })
 }
 
@@ -696,6 +823,7 @@ fn lower_models(
     declarations: &[Declaration],
     shapes: &BTreeMap<ReferentId, RelationShape>,
     projection: &Projection,
+    _proposal_spans: &mut BTreeMap<ProposalPath, frontend::Span>,
 ) -> kernel::Result<(
     BTreeMap<frontend::Name, Model>,
     BTreeMap<ReferentId, frontend::Span>,
@@ -948,6 +1076,7 @@ fn lower_context_model(
     members: &[Member],
     shapes: &BTreeMap<ReferentId, RelationShape>,
     projection: &Projection,
+    proposal_spans: &mut BTreeMap<ProposalPath, frontend::Span>,
 ) -> kernel::Result<(Model, BTreeMap<ReferentId, frontend::Span>)> {
     let mut source_spans = BTreeMap::new();
     let mut referents = projection
@@ -1048,7 +1177,7 @@ fn lower_context_model(
             )?),
             Member::PureDefinition(definition) => definitions.push(register_definition_graph(
                 &mut contents,
-                lower_pure_definition(projection, shell.model(), definition)?,
+                lower_pure_definition(projection, shell.model(), definition, proposal_spans)?,
             )?),
             _ => unreachable!("direct top-level members were checked in the shell pass"),
         }

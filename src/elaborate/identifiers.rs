@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
-    kernel::{self, PatternId, ReferentId, RoleId},
+    kernel::{self, PatternId, ProposalPath, ProposalPathSegment, ReferentId, RoleId},
     wire::sha256_digest,
 };
 
@@ -240,6 +240,42 @@ impl DesignationTable {
         self.globals
             .iter()
             .find_map(|(name, candidate)| (candidate == id).then_some(name.as_str()))
+    }
+
+    pub(crate) fn proposal_path_presentation(&self, path: &ProposalPath) -> Vec<String> {
+        path.segments()
+            .iter()
+            .map(|segment| match segment {
+                ProposalPathSegment::ProductField(field) => self
+                    .scoped
+                    .iter()
+                    .find_map(|((scope, name), candidate)| {
+                        (candidate == field).then(|| {
+                            self.global_name(scope)
+                                .map(|scope| format!("{scope}.{name}"))
+                                .unwrap_or_else(|| name.clone())
+                        })
+                    })
+                    .unwrap_or_else(|| field.as_str().to_owned()),
+                ProposalPathSegment::Role(role) => self
+                    .roles
+                    .iter()
+                    .find_map(|((relation, name), candidate)| {
+                        (candidate == role).then(|| {
+                            self.global_name(relation)
+                                .map(|relation| format!("{relation}.{name}"))
+                                .unwrap_or_else(|| name.clone())
+                        })
+                    })
+                    .unwrap_or_else(|| role.as_str().to_owned()),
+                ProposalPathSegment::TupleIndex(index) => format!("tuple[{index}]"),
+                ProposalPathSegment::SequenceIndex(index) => format!("sequence[{index}]"),
+                ProposalPathSegment::SumPayload(tag) => format!("sum.{}", tag.as_str()),
+                ProposalPathSegment::Application(content) => {
+                    format!("application({})", content.as_str())
+                }
+            })
+            .collect()
     }
 }
 

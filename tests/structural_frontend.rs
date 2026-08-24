@@ -1,7 +1,10 @@
 use clause::{
-    elaborate::{self, ModelContext},
+    elaborate::{self, CompileDiagnosticStatus, ModelContext},
     frontend,
-    kernel::{ReferentId, StructuralForm, Term},
+    kernel::{
+        ProposalPathSegment, ProposalSubject, ReferentId, StructuralFailureClass, StructuralForm,
+        Term,
+    },
     wire,
 };
 use std::collections::BTreeSet;
@@ -162,6 +165,90 @@ fn labelled_products_reject_undeclared_missing_and_wrong_domain_fields() {
     }
 }
 
+#[test]
+fn nested_wrong_domain_reports_the_rank_one_authored_proposal_path() {
+    const VALID: &str = r#"F32
+
+Vec2
+  x: F32
+  y: F32
+
+Pose
+  position: Vec2
+
+pose: Pose { position: Vec2 { x: 3.0, y: 4.0 } }
+"#;
+    let valid = elaborate::compile_in(
+        frontend::parse(VALID).expect("valid nested product parses"),
+        ModelContext::new(model_id()),
+    )
+    .expect("valid nested product lowers");
+    let pose_definition = valid
+        .designations()
+        .scoped(&model_id(), "pose")
+        .expect("pose definition resolves");
+    let pose_shape = valid
+        .designations()
+        .global("Pose")
+        .expect("Pose shape resolves");
+    let position = valid
+        .designations()
+        .scoped(&pose_shape, "position")
+        .expect("Pose.position field resolves");
+    let vec2_shape = valid
+        .designations()
+        .global("Vec2")
+        .expect("Vec2 shape resolves");
+    let y = valid
+        .designations()
+        .scoped(&vec2_shape, "y")
+        .expect("Vec2.y field resolves");
+
+    let invalid = VALID.replace("y: 4.0", "y: true");
+    let error = elaborate::compile_in(
+        frontend::parse(&invalid).expect("wrong-domain nested product remains syntax"),
+        ModelContext::new(model_id()),
+    )
+    .expect_err("kernel must reject the wrong-domain proposal");
+    let diagnostic = error
+        .diagnostic()
+        .expect("authored kernel rejection has a compile diagnostic");
+    assert_eq!(diagnostic.rank(), 1);
+    assert_eq!(
+        diagnostic.status(),
+        CompileDiagnosticStatus::RejectedProposal
+    );
+    assert_eq!(diagnostic.class(), StructuralFailureClass::DomainMismatch);
+    assert_eq!(
+        diagnostic.path().subject(),
+        &ProposalSubject::Definition(pose_definition)
+    );
+    assert_eq!(
+        diagnostic.path().segments(),
+        &[
+            ProposalPathSegment::ProductField(position),
+            ProposalPathSegment::ProductField(y),
+        ]
+    );
+    assert_eq!(diagnostic.presentation(), ["Pose.position", "Vec2.y"]);
+    let line = invalid.lines().nth(9).expect("nested proposal line");
+    let expected = frontend::Span {
+        line: 10,
+        column: line.find("true").expect("authored true token") + 1,
+        width: "true".len(),
+    };
+    assert_eq!(diagnostic.span(), expected);
+    let valid_line = VALID.lines().nth(9).expect("valid nested proposal line");
+    assert_eq!(
+        valid.proposal_span(diagnostic.path()),
+        Some(frontend::Span {
+            line: 10,
+            column: valid_line.find("4.0").expect("authored valid y token") + 1,
+            width: "4.0".len(),
+        })
+    );
+}
+
 fn structural_term_json(term: &Term) -> String {
     match term {
         Term::F32(value) => format!("[\"f32\",\"{:08x}\"]", value.bits()),
@@ -211,7 +298,7 @@ fn structural_term_json(term: &Term) -> String {
     }
 }
 
-fn rehashed_wire_error(semantic: &str, before: &str, after: &str) -> String {
+fn rehashed_wire_error(semantic: &str, before: &str, after: &str) -> clause::kernel::KernelError {
     assert_eq!(
         semantic.matches(before).count(),
         1,
@@ -223,9 +310,7 @@ fn rehashed_wire_error(semantic: &str, before: &str, after: &str) -> String {
         "[\"{}\",\"rev-sha256-{identity}\",{tampered}]",
         wire::REVISION_TAG
     );
-    wire::reload(&artifact)
-        .expect_err("rehashed structural tampering must fail admission")
-        .to_string()
+    wire::reload(&artifact).expect_err("rehashed structural tampering must fail admission")
 }
 
 #[test]
@@ -265,11 +350,16 @@ fn rehashed_structural_wire_tampering_fails_exact_admission() {
         structural_term_json(&missing)
     );
     assert_eq!(
-        rehashed_wire_error(&semantic, &labelled_definition, &missing_definition),
+        rehashed_wire_error(&semantic, &labelled_definition, &missing_definition).to_string(),
         "labelled product must fill its exact structural contract"
     );
 
     let mut wrong_fields = fields.clone();
+    let wrong_field = wrong_fields
+        .first_key_value()
+        .expect("Vec2 has fields")
+        .0
+        .clone();
     *wrong_fields
         .first_entry()
         .expect("Vec2 has fields")
@@ -280,9 +370,25 @@ fn rehashed_structural_wire_tampering_fails_exact_admission() {
         labelled.id().as_str(),
         structural_term_json(&wrong)
     );
+    let source_free_error = rehashed_wire_error(&semantic, &labelled_definition, &wrong_definition);
     assert_eq!(
-        rehashed_wire_error(&semantic, &labelled_definition, &wrong_definition),
+        source_free_error.to_string(),
         "labelled product field does not satisfy its bound domain"
+    );
+    let source_free_failure = source_free_error
+        .structural_failure()
+        .expect("wire tamper retains typed source-free kernel evidence");
+    assert_eq!(
+        source_free_failure.class(),
+        StructuralFailureClass::DomainMismatch
+    );
+    assert_eq!(
+        source_free_failure.path().subject(),
+        &ProposalSubject::Definition(labelled.id().clone())
+    );
+    assert_eq!(
+        source_free_failure.path().segments(),
+        &[ProposalPathSegment::ProductField(wrong_field)]
     );
 
     let (field, _) = fields.first_key_value().expect("Vec2 has fields");
@@ -310,7 +416,7 @@ fn rehashed_structural_wire_tampering_fails_exact_admission() {
         bool_domain.as_str()
     );
     assert_eq!(
-        rehashed_wire_error(&semantic, &field_definition, &altered_field_definition),
+        rehashed_wire_error(&semantic, &field_definition, &altered_field_definition).to_string(),
         "labelled product field does not satisfy its bound domain"
     );
 
@@ -338,7 +444,7 @@ fn rehashed_structural_wire_tampering_fails_exact_admission() {
         structural_term_json(&wrong_element)
     );
     assert_eq!(
-        rehashed_wire_error(&semantic, &vectors_definition, &wrong_element_definition),
+        rehashed_wire_error(&semantic, &vectors_definition, &wrong_element_definition).to_string(),
         "structural term does not match its expected domain"
     );
 
@@ -350,7 +456,7 @@ fn rehashed_structural_wire_tampering_fails_exact_admission() {
         structural_term_json(&wrong_metadata)
     );
     assert_eq!(
-        rehashed_wire_error(&semantic, &vectors_definition, &wrong_metadata_definition),
+        rehashed_wire_error(&semantic, &vectors_definition, &wrong_metadata_definition).to_string(),
         "structural term does not match its expected domain"
     );
 }

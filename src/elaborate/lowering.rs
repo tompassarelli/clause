@@ -4,8 +4,8 @@ use crate::{
     frontend::{self, Name, SurfaceClause, SurfaceTerm},
     intrinsic::Intrinsic,
     kernel::{
-        self, Definition, Model, PatternId, ReferentId, RelationShape, RelationalContent, Role,
-        RoleId, Term,
+        self, Definition, Model, PatternId, ProposalPath, ProposalPathSegment, ProposalSubject,
+        ReferentId, RelationShape, RelationalContent, Role, RoleId, Term,
     },
 };
 
@@ -141,6 +141,7 @@ pub(crate) fn lower_pure_definition(
     projection: &Projection,
     model: &Model,
     surface: &frontend::PureDefinitionDecl,
+    proposal_spans: &mut BTreeMap<ProposalPath, frontend::Span>,
 ) -> kernel::Result<LoweredDefinitionGraph> {
     let id = projection
         .designations
@@ -171,7 +172,8 @@ pub(crate) fn lower_pure_definition(
     }
 
     let expected = structural_domain(projection, &surface.domain);
-    let denotation = lower_term(
+    let path = ProposalPath::new(ProposalSubject::Definition(id.clone()));
+    let denotation = lower_term_traced(
         projection,
         model,
         &expected,
@@ -179,6 +181,8 @@ pub(crate) fn lower_pure_definition(
         None,
         Some(&locals),
         &mut dependencies,
+        Some(&path),
+        proposal_spans,
     )?;
     Ok(LoweredDefinitionGraph {
         dependencies,
@@ -425,6 +429,35 @@ fn lower_term(
     locals: Option<&BTreeMap<Name, (ReferentId, Term)>>,
     dependencies: &mut Vec<RelationalContent>,
 ) -> kernel::Result<Term> {
+    let mut ignored = BTreeMap::new();
+    lower_term_traced(
+        projection,
+        model,
+        expected,
+        term,
+        binders,
+        locals,
+        dependencies,
+        None,
+        &mut ignored,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn lower_term_traced(
+    projection: &Projection,
+    model: &Model,
+    expected: &ReferentId,
+    term: &SurfaceTerm,
+    binders: Option<&BinderTable>,
+    locals: Option<&BTreeMap<Name, (ReferentId, Term)>>,
+    dependencies: &mut Vec<RelationalContent>,
+    path: Option<&ProposalPath>,
+    proposal_spans: &mut BTreeMap<ProposalPath, frontend::Span>,
+) -> kernel::Result<Term> {
+    if let Some(path) = path {
+        proposal_spans.insert(path.clone(), surface_term_span(term));
+    }
     let empty_locals = BTreeMap::new();
     let domain_locals = locals.unwrap_or(&empty_locals);
     match term {
@@ -458,9 +491,11 @@ fn lower_term(
             expected.clone(),
             values
                 .iter()
-                .map(|value| {
+                .enumerate()
+                .map(|(index, value)| {
                     let domain = definition_term_domain(projection, model, value, domain_locals)?;
-                    let lowered = lower_term(
+                    let child = path.map(|path| path.child(ProposalPathSegment::TupleIndex(index)));
+                    let lowered = lower_term_traced(
                         projection,
                         model,
                         &domain,
@@ -468,6 +503,8 @@ fn lower_term(
                         binders,
                         locals,
                         dependencies,
+                        child.as_ref(),
+                        proposal_spans,
                     )?;
                     Ok((domain, lowered))
                 })
@@ -496,9 +533,12 @@ fn lower_term(
                                     "labelled product field has no declared shape binding",
                                 )
                             })?;
+                        let child = path.map(|path| {
+                            path.child(ProposalPathSegment::ProductField(field.clone()))
+                        });
                         Ok((
                             field,
-                            lower_term(
+                            lower_term_traced(
                                 projection,
                                 model,
                                 &domain,
@@ -506,6 +546,8 @@ fn lower_term(
                                 binders,
                                 locals,
                                 dependencies,
+                                child.as_ref(),
+                                proposal_spans,
                             )?,
                         ))
                     })
@@ -522,9 +564,12 @@ fn lower_term(
             )?,
             values
                 .iter()
-                .map(|value| {
+                .enumerate()
+                .map(|(index, value)| {
                     let domain = definition_term_domain(projection, model, value, domain_locals)?;
-                    lower_term(
+                    let child =
+                        path.map(|path| path.child(ProposalPathSegment::SequenceIndex(index)));
+                    lower_term_traced(
                         projection,
                         model,
                         &domain,
@@ -532,6 +577,8 @@ fn lower_term(
                         binders,
                         locals,
                         dependencies,
+                        child.as_ref(),
+                        proposal_spans,
                     )
                 })
                 .collect::<kernel::Result<Vec<_>>>()?,
@@ -579,7 +626,7 @@ fn lower_term(
                                 ))
                             })?
                     } else {
-                        lower_term(
+                        lower_term_traced(
                             projection,
                             model,
                             expected,
@@ -587,6 +634,8 @@ fn lower_term(
                             binders,
                             locals,
                             dependencies,
+                            None,
+                            proposal_spans,
                         )?
                     };
                     let role = intrinsic
@@ -641,7 +690,7 @@ fn lower_term(
                             "application role has no authoring domain projection",
                         )
                     })?;
-                let lowered = lower_term(
+                let lowered = lower_term_traced(
                     projection,
                     model,
                     role_domain,
@@ -649,6 +698,8 @@ fn lower_term(
                     binders,
                     locals,
                     dependencies,
+                    None,
+                    proposal_spans,
                 )?;
                 if roles.insert(role_id, lowered).is_some() {
                     return Err(kernel::KernelError::new(
@@ -689,6 +740,25 @@ fn lower_term(
         SurfaceTerm::Template(_) => Err(kernel::KernelError::new(
             "correlated referent templates are only valid inside a focus block",
         )),
+    }
+}
+
+fn surface_term_span(term: &SurfaceTerm) -> frontend::Span {
+    match term {
+        SurfaceTerm::Referent(value) => value.span,
+        SurfaceTerm::Local(value) => value.span,
+        SurfaceTerm::Template(value) => value.span,
+        SurfaceTerm::Variable(value) => value.span,
+        SurfaceTerm::AnonymousHole(span) => *span,
+        SurfaceTerm::String(value) => value.span,
+        SurfaceTerm::F32(value) => value.span,
+        SurfaceTerm::Int(value) => value.span,
+        SurfaceTerm::Bool(value) => value.span,
+        SurfaceTerm::Tuple { span, .. }
+        | SurfaceTerm::Product { span, .. }
+        | SurfaceTerm::Sequence { span, .. } => *span,
+        SurfaceTerm::Intrinsic(value) => value.span,
+        SurfaceTerm::Application(value) => value.span,
     }
 }
 

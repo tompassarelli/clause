@@ -112,6 +112,20 @@ run_m4_behavior() {
   fail "exact M4/S1 descriptor, tamper, nested-hole, or generated-parity behavior failed"
 }
 
+run_structural_diagnostic_behavior() {
+  command -v cargo >/dev/null 2>&1 \
+    || fail "cargo is required for the ranked structural diagnostic check"
+  diagnostic_target_dir=${CARGO_TARGET_DIR:-"$project_root/target/architecture-gate"}
+  if CARGO_TARGET_DIR="$diagnostic_target_dir" cargo test --quiet --locked \
+    --manifest-path "$project_root/Cargo.toml" \
+    --test structural_frontend \
+    nested_wrong_domain_reports_the_rank_one_authored_proposal_path \
+    -- --exact; then
+    return
+  fi
+  fail "rank-1 structural class, path, authored span, or source-free boundary failed"
+}
+
 if test "${1:-}" = "--self-test"; then
   test "$#" -eq 1 || fail "--self-test takes no other arguments"
   self_test
@@ -180,6 +194,7 @@ clause_source="$project_root/src/kernel/clause.rs"
 model_source="$project_root/src/kernel/model.rs"
 schema_source="$project_root/src/kernel/schema.rs"
 compilation_source="$project_root/src/elaborate/compilation.rs"
+kernel_error_source="$project_root/src/kernel/error.rs"
 wire_source="$project_root/src/wire/decode.rs"
 closure_source="$project_root/src/derive/closure.rs"
 support_source="$project_root/src/derive/support.rs"
@@ -223,6 +238,17 @@ require_fixed "$compilation_source" 'source_spans: BTreeMap<ReferentId, frontend
   "source-to-occurrence span projection is absent"
 require_fixed "$compilation_source" 'pub fn source_span(&self, occurrence: &ReferentId)' \
   "source span cannot be recovered by occurrence identity"
+require_fixed "$kernel_error_source" 'pub enum StructuralFailureClass {' \
+  "kernel structural rejection has no typed class"
+require_fixed "$kernel_error_source" 'pub struct ProposalPath {' \
+  "kernel structural rejection has no canonical proposal path"
+require_fixed "$compilation_source" \
+  'proposal_spans: BTreeMap<ProposalPath, frontend::Span>,' \
+  "elaboration does not retain the same-lowering proposal source projection"
+require_fixed "$compilation_source" 'pub struct CompileDiagnostic {' \
+  "public rank-1 compile diagnostic is absent"
+forbid_ere "$kernel_error_source" 'frontend::|Span|line:|column:' \
+  "kernel structural evidence contains a source coordinate"
 require_fixed "$wire_source" 'Revision identity does not match the complete semantic-v7 payload' \
   "wire reload does not reject identity tamper"
 require_fixed "$wire_source" 'successor Revision reload requires its exact predecessor' \
@@ -234,6 +260,8 @@ require_fixed "$closure_source" 'pub max_join_attempts: usize,' \
 
 forbid_ere "$contract" '<!-- debt:(high|critical):' \
   "known high or critical architecture debt blocks publication"
+
+run_structural_diagnostic_behavior
 
 if test "$selected_rank" -ge 4; then
   require_fixed "$clause_source" 'Pattern(PatternId),' \

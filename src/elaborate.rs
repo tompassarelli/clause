@@ -10,7 +10,8 @@ mod lowering;
 mod resolution;
 
 pub use compilation::{
-    CompiledProgram, ModelContext, compile, compile_in, compile_in_with_designations,
+    CompileDiagnostic, CompileDiagnosticStatus, CompileError, CompileResult, CompiledProgram,
+    ModelContext, compile, compile_in, compile_in_with_designations,
 };
 pub use identifiers::DesignationTable;
 pub use lowering::lower_clause;

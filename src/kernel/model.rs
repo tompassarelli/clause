@@ -6,7 +6,10 @@ use super::{
         JudgmentStatus, JudgmentTarget, OpenWorldStatus, Pattern, RelationalContent, Term,
         Transition, UniversalLaw,
     },
-    error::{KernelError, Result},
+    error::{
+        KernelError, ProposalPath, ProposalPathSegment, ProposalSubject, Result,
+        StructuralFailureClass,
+    },
     identity::{ContentId, Name, PatternId, ReferentId},
     schema::{
         Cardinality, Referent, RelationShape, Role, RolePredicate, StructuralContract,
@@ -298,18 +301,31 @@ impl Model {
         admitted_contents.sort();
         admitted_contents.dedup();
 
-        for term in relational_contents
-            .values()
-            .flat_map(|content| content.roles().values())
-            .chain(definitions.iter().map(Definition::denotation))
-        {
+        for content in relational_contents.values() {
+            for (role, term) in content.roles() {
+                let path = ProposalPath::new(ProposalSubject::Content(content.id().clone()))
+                    .child(ProposalPathSegment::Role(role.clone()));
+                validate_structural_term(
+                    &structural_contracts,
+                    &definitions,
+                    &relational_contents,
+                    &relation_shapes,
+                    &admitted_ids,
+                    &path,
+                    term,
+                )?;
+            }
+        }
+        for definition in &definitions {
+            let path = ProposalPath::new(ProposalSubject::Definition(definition.id().clone()));
             validate_structural_term(
                 &structural_contracts,
                 &definitions,
                 &relational_contents,
                 &relation_shapes,
                 &admitted_ids,
-                term,
+                &path,
+                definition.denotation(),
             )?;
         }
 
@@ -642,18 +658,20 @@ fn validate_structural_term(
     contents: &BTreeMap<ContentId, RelationalContent>,
     shapes: &BTreeMap<ReferentId, RelationShape>,
     admitted: &BTreeSet<ContentId>,
+    path: &ProposalPath,
     term: &Term,
 ) -> Result<()> {
     match term {
-        Term::F32(_) => require_structural_form(contracts, StructuralForm::F32),
-        Term::Int(_) => require_structural_form(contracts, StructuralForm::Int),
-        Term::Bool(_) => require_structural_form(contracts, StructuralForm::Bool),
+        Term::F32(_) => require_structural_form(contracts, StructuralForm::F32, path),
+        Term::Int(_) => require_structural_form(contracts, StructuralForm::Int, path),
+        Term::Bool(_) => require_structural_form(contracts, StructuralForm::Bool, path),
         Term::Product { shape, fields } => validate_inline_product(
             contracts,
             definitions,
             contents,
             shapes,
             admitted,
+            path,
             shape,
             fields,
         ),
@@ -663,27 +681,39 @@ fn validate_structural_term(
             contents,
             shapes,
             admitted,
+            path,
             shape,
             term,
         ),
         Term::Sequence {
             element, values, ..
         } => {
-            for value in values {
+            for (index, value) in values.iter().enumerate() {
+                let child = path.child(ProposalPathSegment::SequenceIndex(index));
                 validate_term_against(
                     contracts,
                     definitions,
                     contents,
                     shapes,
                     admitted,
+                    &child,
                     element,
                     value,
                 )?;
             }
             Ok(())
         }
-        Term::Sum { value, .. } => {
-            validate_structural_term(contracts, definitions, contents, shapes, admitted, value)
+        Term::Sum { tag, value } => {
+            let child = path.child(ProposalPathSegment::SumPayload(tag.clone()));
+            validate_structural_term(
+                contracts,
+                definitions,
+                contents,
+                shapes,
+                admitted,
+                &child,
+                value,
+            )
         }
         Term::Referent(_) | Term::Pattern(_) | Term::Application(_) => Ok(()),
     }
@@ -692,6 +722,7 @@ fn validate_structural_term(
 fn require_structural_form(
     contracts: &BTreeMap<ReferentId, StructuralContract>,
     expected: StructuralForm,
+    path: &ProposalPath,
 ) -> Result<()> {
     if contracts
         .values()
@@ -699,8 +730,10 @@ fn require_structural_form(
     {
         Ok(())
     } else {
-        Err(KernelError::new(
+        Err(KernelError::structural(
             "structural scalar has no sealed representation contract",
+            StructuralFailureClass::ContractUnavailable,
+            path.clone(),
         ))
     }
 }
@@ -711,6 +744,7 @@ fn validate_term_against(
     contents: &BTreeMap<ContentId, RelationalContent>,
     shapes: &BTreeMap<ReferentId, RelationShape>,
     admitted: &BTreeSet<ContentId>,
+    path: &ProposalPath,
     expected: &ReferentId,
     term: &Term,
 ) -> Result<()> {
@@ -727,8 +761,10 @@ fn validate_term_against(
         {
             Ok(())
         } else {
-            Err(KernelError::new(
+            Err(KernelError::structural(
                 "structural term does not match its expected domain",
+                StructuralFailureClass::DomainMismatch,
+                path.clone(),
             ))
         };
     }
@@ -740,8 +776,10 @@ fn validate_term_against(
         return if structural_role_domain(result)? == Some(expected) {
             Ok(())
         } else {
-            Err(KernelError::new(
+            Err(KernelError::structural(
                 "structural term does not match its expected domain",
+                StructuralFailureClass::DomainMismatch,
+                path.clone(),
             ))
         };
     }
@@ -754,8 +792,10 @@ fn validate_term_against(
                 if shape != expected
                     || fields.keys().collect::<BTreeSet<_>>() != required.iter().collect()
                 {
-                    return Err(KernelError::new(
+                    return Err(KernelError::structural(
                         "labelled product must fill its exact structural contract",
+                        StructuralFailureClass::FieldSetMismatch,
+                        path.clone(),
                     ));
                 }
                 for (field, value) in fields {
@@ -768,23 +808,29 @@ fn validate_term_against(
                         .denotation()
                         .referent_id()
                         .expect("structural product definitions denote domains");
+                    let child = path.child(ProposalPathSegment::ProductField(field.clone()));
                     validate_term_against(
                         contracts,
                         definitions,
                         contents,
                         shapes,
                         admitted,
+                        &child,
                         domain,
                         value,
                     )
-                    .map_err(|_| {
-                        KernelError::new("labelled product field does not satisfy its bound domain")
+                    .map_err(|error| {
+                        error.with_message(
+                            "labelled product field does not satisfy its bound domain",
+                        )
                     })?;
                 }
                 Ok(())
             }
-            _ => Err(KernelError::new(
+            _ => Err(KernelError::structural(
                 "structural term does not match its expected domain",
+                StructuralFailureClass::DomainMismatch,
+                path.clone(),
             )),
         };
     }
@@ -795,6 +841,7 @@ fn validate_term_against(
             contents,
             shapes,
             admitted,
+            path,
             shape,
             fields,
         ),
@@ -803,21 +850,25 @@ fn validate_term_against(
             element,
             values,
         } if shape == expected => {
-            for value in values {
+            for (index, value) in values.iter().enumerate() {
+                let child = path.child(ProposalPathSegment::SequenceIndex(index));
                 validate_term_against(
                     contracts,
                     definitions,
                     contents,
                     shapes,
                     admitted,
+                    &child,
                     element,
                     value,
                 )?;
             }
             Ok(())
         }
-        _ => Err(KernelError::new(
+        _ => Err(KernelError::structural(
             "structural term does not match its expected domain",
+            StructuralFailureClass::DomainMismatch,
+            path.clone(),
         )),
     }
 }
@@ -828,6 +879,7 @@ fn validate_inline_product(
     contents: &BTreeMap<ContentId, RelationalContent>,
     shapes: &BTreeMap<ReferentId, RelationShape>,
     admitted: &BTreeSet<ContentId>,
+    path: &ProposalPath,
     _shape: &ReferentId,
     fields: &BTreeMap<Name, super::clause::ProductField>,
 ) -> Result<()> {
@@ -835,16 +887,20 @@ fn validate_inline_product(
         let expected_label =
             Name::new(format!("_{index:020}")).expect("fixed-width ordinal tuple label is valid");
         if label != &expected_label {
-            return Err(KernelError::new(
+            return Err(KernelError::structural(
                 "tuple does not use canonical structural positions",
+                StructuralFailureClass::NonCanonicalPosition,
+                path.child(ProposalPathSegment::TupleIndex(index)),
             ));
         }
+        let child = path.child(ProposalPathSegment::TupleIndex(index));
         validate_term_against(
             contracts,
             definitions,
             contents,
             shapes,
             admitted,
+            &child,
             field.domain(),
             field.value(),
         )?;
@@ -1240,12 +1296,15 @@ fn validate_admissibility(
             | Term::Sum { .. }
             | Term::Sequence { .. } => {
                 if let Some(expected) = structural_role_domain(&shape.roles()[role_id])? {
+                    let path = ProposalPath::new(ProposalSubject::Content(content.id().clone()))
+                        .child(ProposalPathSegment::Role(role_id.clone()));
                     validate_term_against(
                         structural_contracts,
                         definitions,
                         contents,
                         shapes,
                         admitted,
+                        &path,
                         expected,
                         term,
                     )?;

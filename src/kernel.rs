@@ -17,7 +17,10 @@ pub use clause::{
     InvariantAdmission, Judgment, JudgmentKind, JudgmentStatus, JudgmentTarget, OpenWorldStatus,
     Pattern, ProductField, RelationalContent, Term, Transition, UniversalLaw,
 };
-pub use error::{KernelError, Result};
+pub use error::{
+    KernelError, ProposalPath, ProposalPathSegment, ProposalSubject, Result, StructuralFailure,
+    StructuralFailureClass,
+};
 pub use find::FindPlan;
 pub use identity::{ContentId, Name, PatternId, ReferentId, RevisionId, RoleId};
 pub use model::{Model, SemanticAtom};
