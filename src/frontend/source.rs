@@ -55,6 +55,8 @@ pub(super) enum RawRequest<'a> {
     },
 }
 
+type ScanOutput<'a> = (Vec<RawDecl<'a>>, Vec<RawTopLevel<'a>>, Vec<RawRequest<'a>>);
+
 pub(super) fn error(span: Span, message: impl Into<String>) -> ParseError {
     ParseError {
         span,
@@ -494,9 +496,7 @@ fn parse_request<'a>(
     Err(error(line_span(line), "unknown request"))
 }
 
-pub(super) fn scan<'a>(
-    source: &'a str,
-) -> Result<(Vec<RawDecl<'a>>, Vec<RawTopLevel<'a>>, Vec<RawRequest<'a>>), ParseError> {
+pub(super) fn scan(source: &str) -> Result<ScanOutput<'_>, ParseError> {
     let lines = source
         .split('\n')
         .enumerate()

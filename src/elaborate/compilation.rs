@@ -410,7 +410,7 @@ fn declare_model_members(
                 projection.designations.global(&range.group.value.0)?;
                 for number in range.range.start..=range.range.end {
                     let local = format!("{}{}{}", range.prefix.value, number, range.suffix.value);
-                    let id = projection.designations.declare_scoped(&model, &local)?;
+                    let id = projection.designations.declare_scoped(model, &local)?;
                     projection
                         .model_referents
                         .entry(model.clone())
@@ -421,7 +421,7 @@ fn declare_model_members(
             Member::Membership(membership) => {
                 let member = projection
                     .designations
-                    .declare_scoped(&model, membership.member.value.as_str())?;
+                    .declare_scoped(model, membership.member.value.as_str())?;
                 projection
                     .designations
                     .global(membership.group.value.as_str())?;
@@ -435,7 +435,7 @@ fn declare_model_members(
                 for name in [&definition.name, &definition.denotation] {
                     let referent = projection
                         .designations
-                        .declare_scoped(&model, name.value.as_str())?;
+                        .declare_scoped(model, name.value.as_str())?;
                     projection
                         .model_referents
                         .entry(model.clone())
@@ -446,7 +446,7 @@ fn declare_model_members(
             Member::ShapeBinding(binding) => {
                 let referent = projection
                     .designations
-                    .declare_scoped(&model, binding.label.value.as_str())?;
+                    .declare_scoped(model, binding.label.value.as_str())?;
                 projection
                     .designations
                     .global(binding.domain.value.as_str())?;
