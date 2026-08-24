@@ -1210,12 +1210,12 @@ diff egress -> door-101-withdrawn
 Compared with the current surface, this removes:
 
 - `Space: Type`;
-- `egress/connects: Relation`;
+- `egress/connects: RelationShape`;
 - braces around role holes;
 - `mode`;
 - `egress: Model`;
 - brackets around `Door 101`;
-- `: Law`;
+- `: DerivationRule`;
 - `: Revision`;
 - `from:` and `withdraw:`;
 - `find all` around a clause that already contains a hole.
@@ -1329,17 +1329,17 @@ conceptually like:
 
 ```text
 form connects
-    door: iron-door
-    origin: Cellar
-    destination: Armory
+  door: iron-door
+  origin: Cellar
+  destination: Armory
 ```
 
 or:
 
 ```text
 member-of
-    member: iron-door
-    category: Door
+  member: iron-door
+  category: Door
 ```
 
 This form is for ambiguity repair, compiler bootstrap, machine interchange,
@@ -1490,20 +1490,8 @@ The new surface is not accepted merely because examples look attractive.
 
 ## 20. Implementation sequence
 
-### Milestone 0 — Freeze the constitution and evidence suite
-
-Before changing the parser, add golden examples for enumeration, derived shape
-views, focused relational content and occurrences, explicit flattening,
-relation schemas, recursive terms, holes and correlation, universal laws, derivation
-rules, invariants, goals, queries, revisions, transitions, effects, the
-hospital program, and the one-coin game.
-
-For every example retain source, grouped tree, elaborated role graph, canonical
-rendering, diagnostics, and expected result. Include positive `x ∈ Group`
-membership and `name: term` binding, editor-only `::` transformation contrasts,
-canonical two-space projection, rejected tabs and noncanonical
-four-space projection, and `state: locked` under focus. Oracles distinguish
-definition from membership content, ordinary relational content, and object field.
+Milestone 0 is complete and historical; its evidence record and the current
+implementation order are governed by the [roadmap](roadmap.md).
 
 ### Milestone 1 — New layout and focus profile
 
