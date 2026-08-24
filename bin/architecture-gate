@@ -4,6 +4,7 @@ set -eu
 script_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 project_root=$(CDPATH='' cd -- "$script_dir/.." && pwd)
 contract="$project_root/docs/architecture.md"
+m4_public_base=af9a0b9952f42f95851b47a071d9efb01a5fda0f
 
 fail() {
   printf 'FAIL architecture gate: %s\n' "$1" >&2
@@ -125,22 +126,40 @@ test -z "$candidate_status" \
 
 current=$(implemented_milestone)
 test -n "$current" || fail "roadmap has no implemented M1..M8 milestone"
-selected=${2:-$current}
-selected_rank=$(milestone_rank "$selected") \
-  || fail "unknown milestone '$selected' (expected M1..M8)"
 current_rank=$(milestone_rank "$current") \
   || fail "roadmap reported unknown implemented milestone '$current'"
-test "$selected_rank" -le "$current_rank" \
-  || fail "$selected is not marked Implemented in docs/roadmap.md (current: $current)"
 
 require_fixed "$contract" '<!-- clause-architecture-gate:v2 -->' \
   "architecture contract version is absent or unknown"
+require_fixed "$contract" \
+  "<!-- milestone:M4:public-base:$m4_public_base -->" \
+  "M4 public base identity is absent or unknown"
 require_fixed "$project_root/docs/foundation.md" \
   "This document is Clause's semantic authority." \
   "foundation no longer declares the single semantic authority"
 require_fixed "$contract" \
   "their architecture boundaries into a release decision; it may not add an" \
   "architecture contract no longer denies semantic authority"
+
+selected=${2:-}
+if test -z "$selected"; then
+  selected=$current
+  if test "$current_rank" -lt 4 \
+    && git -C "$project_root" merge-base --is-ancestor \
+      "$m4_public_base" "$candidate_head" 2>/dev/null; then
+    selected=M4
+  fi
+fi
+selected_rank=$(milestone_rank "$selected") \
+  || fail "unknown milestone '$selected' (expected M1..M8)"
+if test "$selected_rank" -gt "$current_rank" && test "$selected" != M4; then
+  fail "$selected is not marked Implemented in docs/roadmap.md (current: $current)"
+fi
+if test "$selected_rank" -ge 4; then
+  git -C "$project_root" merge-base --is-ancestor \
+    "$m4_public_base" "$candidate_head" 2>/dev/null \
+    || fail "candidate does not descend from exact public M4 base '$m4_public_base'"
+fi
 
 identity_source="$project_root/src/kernel/identity.rs"
 clause_source="$project_root/src/kernel/clause.rs"
@@ -150,6 +169,11 @@ compilation_source="$project_root/src/elaborate/compilation.rs"
 wire_source="$project_root/src/wire/decode.rs"
 closure_source="$project_root/src/derive/closure.rs"
 support_source="$project_root/src/derive/support.rs"
+query_source="$project_root/src/kernel/query.rs"
+request_source="$project_root/src/request.rs"
+request_rendering_source="$project_root/src/request/canonical_rendering.rs"
+generated_source="$project_root/src/generated.rs"
+m4_selection_test="$project_root/tests/m4_selection.rs"
 
 require_fixed "$identity_source" 'pub struct ReferentId(String);' \
   "one ReferentId domain is not explicit"
@@ -208,6 +232,44 @@ if test "$selected_rank" -ge 4; then
   forbid_tree_ere "$project_root/src/kernel" \
     'pub (struct|enum) (Hole|Variable)(Id)?\b' \
     "M4 turns a hole or variable into a referent species"
+  require_fixed "$query_source" 'pub struct QueryPlanColumn {' \
+    "M4 query plan has no checked column descriptor"
+  require_fixed "$query_source" 'binder: PatternId,' \
+    "M4 query plan column loses binder identity"
+  require_fixed "$query_source" 'origins: Vec<RoleId>,' \
+    "M4 query plan column loses stable role origins"
+  require_fixed "$query_source" 'query column requires at least one role origin' \
+    "M4 query plan accepts an origin-free column"
+  require_fixed "$query_source" 'query column role origins must be sorted and deduplicated' \
+    "M4 query plan does not canonicalize role origins"
+  require_fixed "$query_source" 'query column role origins do not match the pattern' \
+    "M4 query plan does not recompute role origins from the selected Model"
+  require_fixed "$query_source" 'nested query holes are not admitted by M4/S1' \
+    "M4/S1 no longer rejects nested holes explicitly"
+  forbid_ere "$query_source" '^[[:space:]]+label:' \
+    "presentation labels enter the semantic QueryPlan"
+  require_fixed "$request_source" 'pub struct QueryColumn {' \
+    "M4 request has no complete query column descriptor"
+  require_fixed "$request_source" 'let _ = kernel::QueryPlan::new(' \
+    "M4 request admission does not revalidate query columns"
+  require_fixed "$request_rendering_source" 'string(column.binder().as_str())' \
+    "M4 canonical output drops query binder identity"
+  require_fixed "$request_rendering_source" 'role_origins(column.origins())' \
+    "M4 canonical output drops query role origins"
+  require_fixed "$request_rendering_source" '.label()' \
+    "M4 canonical output drops the presentation label"
+  require_fixed "$generated_source" 'request::QueryColumn::new({label}, {}, vec![{}])' \
+    "generated Rust does not retain the complete query column descriptor"
+  require_fixed "$m4_selection_test" \
+    'binder, role origins, and label survive the execution boundary' \
+    "M4 execution descriptor-parity regression is absent"
+  require_fixed "$m4_selection_test" \
+    'query labels do not enter Model or Revision identity' \
+    "M4 label identity-invariance regression is absent"
+  require_fixed "$m4_selection_test" 'fs::remove_file(&authoring)' \
+    "M4 generated parity does not delete source before execution"
+  require_fixed "$m4_selection_test" 'assert_eq!(actual.stdout, expected_bytes.as_bytes())' \
+    "M4 source-deleted generated output parity is absent"
 fi
 
 if test "$selected_rank" -ge 5; then

@@ -10,6 +10,7 @@
 > ontology, syntax, or milestone.
 
 <!-- clause-architecture-gate:v2 -->
+<!-- milestone:M4:public-base:af9a0b9952f42f95851b47a071d9efb01a5fda0f -->
 
 ## Decision
 
@@ -17,9 +18,11 @@ A milestone is architecture-acceptable only when
 `bin/architecture-gate FULL_GIT_OBJECT_ID M<N>` passes from a clean worktree
 whose exact HEAD is that full candidate Git commit, and its roadmap exit proof
 also passes. The milestone argument is optional and defaults to the highest one
-marked implemented. The gate is a ratchet, not a substitute for feature tests.
-Unknown, incomplete, ambiguous, tampered, dirty, or unreviewed evidence fails
-closed.
+marked implemented or bound to an exact public milestone base above. A public
+base marker admits architecture evidence only; it does not replace the
+roadmap's feature exit proof. The gate is a ratchet, not a substitute for
+feature tests. Unknown, incomplete, ambiguous, tampered, dirty, or unreviewed
+evidence fails closed.
 
 The checked Model remains the only semantic authority. Source, Revisions,
 indexes, caches, schedules, runtime sessions, storage rows, target code, event
@@ -50,7 +53,7 @@ source-deleted parity, not specialized incremental target execution.
 | Milestone | Architecture evidence due in addition to inherited checks |
 | --- | --- |
 | M1–M3 | One referent domain; distinct content/occurrence/judgment/modes; exact named roles; deterministic source projection; strict canonical Revision reload; bounded reference evaluation and source-deleted parity. |
-| M4 | Holes remain scoped `PatternId` machinery, never referents; query columns retain role identity; correlation is exact; selection remains bounded. No compiled-performance claim is admitted. |
+| M4 | Holes remain scoped `PatternId` machinery, never referents; every query column retains its binder, complete top-level role-origin set, and presentation-only label through resolution, execution, canonical output, and source-deleted generation; correlation is exact; nested holes fail closed; selection remains bounded. No compiled-performance claim is admitted. |
 | M5 | Migration reports every source inference and proves source/designation → stable semantic identity → exact successor Revision continuity. |
 | M6 | `StateRevision` and `RuntimeSession` bind exact Model Revision, predecessor, Delta, inputs, policy, and replay. Add/retract dependency work is incremental; generic closure scanning is not the state hot path. |
 | M7 | Effects retain intent, authorization, attempt, receipt, observation, and admission as separate trace nodes. Generated JavaScript uses specialized layouts/indexes and contains no shadow domain logic; a matched reference/target measurement decides the hot-path claim. |
@@ -68,7 +71,7 @@ prose or a renamed marker cannot make the gate green.
 
 ## Current gap and debt boundary
 
-At public M3, `derive::saturate` rebuilds the assertion set and tries generic
+At public M4, `derive::saturate` rebuilds the assertion set and tries generic
 n-ary joins each round, while generated Rust embeds the target-neutral
 reference evaluator. This is a **medium** physical-strategy deferral, blocks M6,
 and does not block M4's bounded semantic selection slice. Its exit is an exact
