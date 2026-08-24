@@ -74,6 +74,61 @@ pub(crate) fn lower_definition(
     Ok(Definition::new(id, Term::referent(denotation)))
 }
 
+#[derive(Clone, Debug)]
+pub(crate) struct LoweredDefinitionGraph {
+    pub(crate) dependencies: Vec<RelationalContent>,
+    pub(crate) definition: Definition,
+}
+
+pub(crate) fn lower_pure_definition(
+    projection: &Projection,
+    model: &Model,
+    surface: &frontend::PureDefinitionDecl,
+) -> kernel::Result<LoweredDefinitionGraph> {
+    let id = projection
+        .designations
+        .scoped(model.id(), surface.name.value.as_str())?;
+    require_term_referent(model, &id, "pure definition name")?;
+
+    let mut locals = BTreeMap::new();
+    let mut dependencies = Vec::new();
+    for local in &surface.locals {
+        let expected = definition_term_domain(projection, model, &local.denotation, &locals)?;
+        let denotation = lower_term(
+            projection,
+            model,
+            &expected,
+            &local.denotation,
+            None,
+            Some(&locals),
+            &mut dependencies,
+        )?;
+        if locals
+            .insert(local.name.value.clone(), (expected, denotation))
+            .is_some()
+        {
+            return Err(kernel::KernelError::new(
+                "duplicate pure definition local binding",
+            ));
+        }
+    }
+
+    let expected = definition_term_domain(projection, model, &surface.result, &locals)?;
+    let denotation = lower_term(
+        projection,
+        model,
+        &expected,
+        &surface.result,
+        None,
+        Some(&locals),
+        &mut dependencies,
+    )?;
+    Ok(LoweredDefinitionGraph {
+        dependencies,
+        definition: Definition::new(id, denotation),
+    })
+}
+
 pub(crate) fn lower_shape_binding(
     projection: &Projection,
     model: &Model,
@@ -211,6 +266,7 @@ pub(crate) fn lower_clause_graph_with(
                     expected,
                     surface_term,
                     binders,
+                    None,
                     &mut dependencies,
                 )?,
             )
@@ -229,6 +285,7 @@ fn lower_term(
     expected: &ReferentId,
     term: &SurfaceTerm,
     binders: Option<&BinderTable>,
+    locals: Option<&BTreeMap<Name, (ReferentId, Term)>>,
     dependencies: &mut Vec<RelationalContent>,
 ) -> kernel::Result<Term> {
     match term {
@@ -256,9 +313,22 @@ fn lower_term(
             require_term_referent(model, &referent, "referent")?;
             Ok(Term::referent(referent))
         }
-        SurfaceTerm::Local(_) => Err(kernel::KernelError::new(
-            "pure definition locals require definition lowering",
-        )),
+        SurfaceTerm::Local(value) => {
+            let (actual, denotation) = locals
+                .and_then(|locals| locals.get(&value.value))
+                .ok_or_else(|| {
+                    kernel::KernelError::new(format!(
+                        "unbound pure definition local '{}'",
+                        value.value.as_str()
+                    ))
+                })?;
+            if actual != expected {
+                return Err(kernel::KernelError::new(
+                    "pure definition local does not satisfy its use domain",
+                ));
+            }
+            Ok(denotation.clone())
+        }
         SurfaceTerm::Application(application) => {
             let relation_id = projection
                 .designations
@@ -304,6 +374,7 @@ fn lower_term(
                     role_domain,
                     surface_term,
                     binders,
+                    locals,
                     dependencies,
                 )?;
                 if roles.insert(role_id, lowered).is_some() {
@@ -344,6 +415,76 @@ fn lower_term(
         }
         SurfaceTerm::Template(_) => Err(kernel::KernelError::new(
             "correlated referent templates are only valid inside a focus block",
+        )),
+    }
+}
+
+fn definition_term_domain(
+    projection: &Projection,
+    model: &Model,
+    term: &SurfaceTerm,
+    locals: &BTreeMap<Name, (ReferentId, Term)>,
+) -> kernel::Result<ReferentId> {
+    match term {
+        SurfaceTerm::Application(application) => {
+            let relation = projection
+                .designations
+                .global(application.relation.value.as_str())?;
+            let result = projection
+                .designations
+                .role(&relation, application.result.value.as_str())?;
+            projection
+                .role_domains
+                .get(&(relation, result))
+                .cloned()
+                .ok_or_else(|| {
+                    kernel::KernelError::new(
+                        "pure definition application has no result domain projection",
+                    )
+                })
+        }
+        SurfaceTerm::Local(value) => locals
+            .get(&value.value)
+            .map(|(domain, _)| domain.clone())
+            .ok_or_else(|| {
+                kernel::KernelError::new(format!(
+                    "unbound pure definition local '{}'",
+                    value.value.as_str()
+                ))
+            }),
+        SurfaceTerm::Referent(value) => {
+            let referent = projection
+                .designations
+                .scoped(model.id(), value.value.as_str())?;
+            let member = membership_member_role();
+            let group = membership_group_role();
+            let domains = model
+                .admitted_contents()
+                .iter()
+                .filter(|content| content.relation() == &membership_relation())
+                .filter(|content| {
+                    content.roles().get(&member) == Some(&Term::referent(referent.clone()))
+                })
+                .filter_map(|content| content.roles().get(&group)?.referent_id().cloned())
+                .collect::<BTreeSet<_>>();
+            let mut domains = domains.into_iter();
+            let Some(domain) = domains.next() else {
+                return Err(kernel::KernelError::new(
+                    "pure definition referent must have one admitted domain",
+                ));
+            };
+            if domains.next().is_some() {
+                return Err(kernel::KernelError::new(
+                    "pure definition referent must have one admitted domain",
+                ));
+            }
+            Ok(domain)
+        }
+        SurfaceTerm::String(_) => Err(kernel::KernelError::new(
+            "pure definition literals are not supported by this lowering boundary",
+        )),
+        SurfaceTerm::Variable(_) | SurfaceTerm::Template(_) => Err(kernel::KernelError::new(
+            "pure definitions require closed terms",
         )),
     }
 }
@@ -462,7 +603,15 @@ fn lower_focus_term(
         }
         _ => {
             let mut dependencies = Vec::new();
-            let term = lower_term(projection, model, expected, term, None, &mut dependencies)?;
+            let term = lower_term(
+                projection,
+                model,
+                expected,
+                term,
+                None,
+                None,
+                &mut dependencies,
+            )?;
             if !dependencies.is_empty() {
                 return Err(kernel::KernelError::new(
                     "recursive focused terms require focused graph lowering",

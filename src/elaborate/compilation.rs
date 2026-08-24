@@ -13,9 +13,10 @@ use crate::{
 use super::{
     identifiers::{DesignationTable, synthetic_referent},
     lowering::{
-        BinderTable, LoweredContentGraph, Projection, lower_clause_graph_with, lower_clause_with,
-        lower_definition, lower_focus, lower_shape_binding, membership_content,
-        membership_group_role, membership_member_role, membership_relation, membership_shape,
+        BinderTable, LoweredContentGraph, LoweredDefinitionGraph, Projection,
+        lower_clause_graph_with, lower_clause_with, lower_definition, lower_focus,
+        lower_pure_definition, lower_shape_binding, membership_content, membership_group_role,
+        membership_member_role, membership_relation, membership_shape,
     },
     resolution::Resolver,
 };
@@ -451,6 +452,16 @@ fn declare_model_members(
                         .insert(referent);
                 }
             }
+            Member::PureDefinition(definition) => {
+                let referent = projection
+                    .designations
+                    .declare_scoped(model, definition.name.value.as_str())?;
+                projection
+                    .model_referents
+                    .entry(model.clone())
+                    .or_default()
+                    .insert(referent);
+            }
             Member::ShapeBinding(binding) => {
                 let referent = projection
                     .designations
@@ -596,6 +607,16 @@ fn register_content_graph(
     }
     require_registered_dependencies(contents, &graph.root)?;
     Ok(graph.root)
+}
+
+fn register_definition_graph(
+    contents: &mut BTreeMap<kernel::ContentId, RelationalContent>,
+    graph: LoweredDefinitionGraph,
+) -> kernel::Result<kernel::Definition> {
+    for dependency in graph.dependencies {
+        register_unasserted_content(contents, dependency)?;
+    }
+    Ok(graph.definition)
 }
 
 fn lower_models(
@@ -896,7 +917,7 @@ fn lower_context_model(
                 occurrence_index += 1;
             }
             Member::RelationalContent(_) => occurrence_index += 1,
-            Member::Definition(_) => {}
+            Member::Definition(_) | Member::PureDefinition(_) => {}
             _ => {
                 return Err(kernel::KernelError::new(
                     "unsupported direct top-level Model member",
@@ -944,6 +965,10 @@ fn lower_context_model(
                 shell.model(),
                 &definition.name.value,
                 &definition.denotation.value,
+            )?),
+            Member::PureDefinition(definition) => definitions.push(register_definition_graph(
+                &mut contents,
+                lower_pure_definition(projection, shell.model(), definition)?,
             )?),
             _ => unreachable!("direct top-level members were checked in the shell pass"),
         }

@@ -105,6 +105,11 @@ impl Model {
             .values()
             .flat_map(|content| content.roles().values())
             .filter_map(Term::content_id)
+            .chain(
+                definitions
+                    .iter()
+                    .filter_map(|definition| definition.denotation().content_id()),
+            )
             .cloned()
             .collect::<BTreeSet<_>>();
         let mut complete_contents = occurrences
