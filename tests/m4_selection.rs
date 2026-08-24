@@ -32,6 +32,26 @@ find all ?d in selection:
   World relates A through B and B to ?d
 ";
 
+const ANY_SOURCE: &str = "Entity
+
+selection/related: RelationShape
+  {scope: Entity} relates {a: Entity} through {b: Entity} and {c: Entity} to {d: Entity}
+  mode scope -> a, b, c, d: many
+
+selection
+  World ∈ Entity
+  A ∈ Entity
+  B ∈ Entity
+  C ∈ Entity
+  D ∈ Entity
+  World relates A through B and B to C
+  World relates A through B and C to D
+  World relates C through B and B to A
+
+any World relates ?person through ?same and ?same to ?
+any World relates D through ?same and ?same to A
+";
+
 fn temporary(extension: &str) -> PathBuf {
     env::temp_dir().join(format!(
         "clause-m4-selection-{}.{}",
@@ -349,4 +369,67 @@ fn naked_selection_preserves_freshness_labels_identity_and_generated_parity() {
     assert_eq!(actual.stdout, expected_bytes.as_bytes());
     fs::remove_file(rust).expect("generated Rust cleans up");
     fs::remove_file(binary).expect("generated executable cleans up");
+}
+
+#[test]
+fn any_returns_only_bool_with_alpha_and_generated_parity() {
+    let compiled = elaborate::compile(frontend::parse(ANY_SOURCE).expect("Any source parses"))
+        .expect("Any source compiles");
+    let resolved = request::resolve(&compiled).expect("Any requests resolve");
+    let output =
+        request::run(&resolved, request::RunLimits::default()).expect("Any requests execute");
+    assert_eq!(
+        output.canonical_bytes(),
+        "[\"clause-run-v1\",[[\"any\",true],[\"any\",false]]]"
+    );
+
+    let renamed_source = ANY_SOURCE.replace("?same", "?opening");
+    let renamed = elaborate::compile(
+        frontend::parse(&renamed_source).expect("alpha-renamed Any source parses"),
+    )
+    .expect("alpha-renamed Any source compiles");
+    let model = frontend::Name("selection".into());
+    assert_eq!(
+        wire::serialize(compiled.revision(&model).unwrap()),
+        wire::serialize(renamed.revision(&model).unwrap()),
+        "Any labels do not enter Model or Revision identity"
+    );
+    let renamed_resolved = request::resolve(&renamed).expect("renamed Any requests resolve");
+    assert_eq!(
+        request::run(&renamed_resolved, request::RunLimits::default())
+            .expect("renamed Any requests execute")
+            .canonical_bytes(),
+        output.canonical_bytes(),
+        "alpha-renaming is Boolean and canonical-byte neutral"
+    );
+
+    let authoring = temporary("any.clause");
+    let rust = temporary("any.rs");
+    let binary = temporary("any.bin");
+    fs::write(&authoring, ANY_SOURCE).expect("Any authoring source writes");
+    fs::write(
+        &rust,
+        generated::emit_rust(&resolved).expect("resolved Any requests emit Rust"),
+    )
+    .expect("generated Any Rust writes");
+    fs::remove_file(&authoring).expect("Any authoring source deletes before generated compile");
+    let generated = Command::new("rustc")
+        .args(["--edition=2024", "--cfg", "clause_generated"])
+        .arg(&rust)
+        .arg("-o")
+        .arg(&binary)
+        .output()
+        .expect("generated Any Rust compiler starts");
+    assert!(
+        generated.status.success(),
+        "{}",
+        String::from_utf8_lossy(&generated.stderr)
+    );
+    let actual = Command::new(&binary)
+        .output()
+        .expect("source-deleted generated Any executable starts");
+    assert!(actual.status.success());
+    assert_eq!(actual.stdout, output.canonical_bytes().as_bytes());
+    fs::remove_file(rust).expect("generated Any Rust cleans up");
+    fs::remove_file(binary).expect("generated Any executable cleans up");
 }
