@@ -891,7 +891,7 @@ fn derivation_instantiates(
     target: &RelationalContent,
     contents: &BTreeMap<ContentId, RelationalContent>,
 ) -> Result<bool> {
-    if premise_ids.len() != rule.premises().forms().len() || !target.is_ground() {
+    if premise_ids.len() != rule.premises().forms().len() || !content_is_ground(contents, target) {
         return Ok(false);
     }
     let premises = premise_ids
@@ -902,7 +902,10 @@ fn derivation_instantiates(
                 .ok_or_else(|| KernelError::new("derived judgment premise is undeclared"))
         })
         .collect::<Result<Vec<_>>>()?;
-    if premises.iter().any(|content| !content.is_ground()) {
+    if premises
+        .iter()
+        .any(|content| !content_is_ground(contents, content))
+    {
         return Ok(false);
     }
     let patterns = rule
