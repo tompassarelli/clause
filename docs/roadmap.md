@@ -26,8 +26,9 @@ separate. Terms project this Model; source terms and files are not the Model.
 The current Rust implementation is a real but narrower foundation. It seals
 referent Models as immutable Revisions; navigates them with `find`, `why`,
 `prevent`, `achieve`, and `diff`; and projects exact requests and Revisions into
-standalone Rust. Its executable syntax is current truth, not the target human
-surface.
+standalone Rust. Its executable M1 forms are the first implemented target
+slice; retained declaration and request ceremony is implementation truth, not
+the target human surface.
 
 This roadmap distinguishes four things:
 

@@ -41,3 +41,28 @@ production/result orientation. An editor may transform typed `::` into `∈`,
 but `::` is not grammar. Canonical target indentation is two spaces, spaces
 only. The authoritative Model is the program; a Revision is immutable history
 and exact lineage evidence about that Model.
+
+## Run and develop
+
+Clause pins Rust 1.96.1. From the repository root:
+
+```sh
+cargo run --bin clause -- run examples/hospital.clause
+```
+
+The repository-local equivalent is:
+
+```sh
+bin/clause run examples/hospital.clause
+```
+
+Release checks are:
+
+```sh
+cargo fmt --all -- --check
+cargo check --all-targets
+cargo test --all-targets
+cargo clippy --all-targets -- -D warnings
+```
+
+Concurrent worktrees must use separate `CARGO_TARGET_DIR` values.
