@@ -77,6 +77,12 @@ math
   b ∈ Scalar
   c ∈ Scalar
   a + b * c < (a + b) * c
+
+association
+  a ∈ Scalar
+  b ∈ Scalar
+  c ∈ Scalar
+  a + b + c < c
 "#;
 
 const NESTED_AMBIGUITY_SOURCE: &str = r#"Quantity
@@ -117,6 +123,13 @@ fn role(program: &elaborate::CompiledProgram, relation: &ReferentId, name: &str)
         .designations()
         .role(relation, name)
         .unwrap_or_else(|error| panic!("role '{name}' resolves: {error}"))
+}
+
+fn scoped(program: &elaborate::CompiledProgram, revision: &Revision, name: &str) -> ReferentId {
+    program
+        .designations()
+        .scoped(revision.model().id(), name)
+        .unwrap_or_else(|error| panic!("scoped referent '{name}' resolves: {error}"))
 }
 
 fn application(term: &Term) -> &ContentId {
@@ -217,9 +230,9 @@ fn assert_grouped_precedence_tree(program: &elaborate::CompiledProgram, revision
     let less = relation(program, "<");
     let addition = relation(program, "+");
     let multiplication = relation(program, "*");
-    let a = relation(program, "a");
-    let b = relation(program, "b");
-    let c = relation(program, "c");
+    let a = scoped(program, revision, "a");
+    let b = scoped(program, revision, "b");
+    let c = scoped(program, revision, "c");
     let root = asserted_comparison(revision, &less);
     let root_left = role(program, &less, "left");
     let root_right = role(program, &less, "right");
@@ -370,6 +383,48 @@ fn parentheses_override_conventional_operator_precedence() {
     let reloaded = wire::reload(&wire::serialize(revision)).expect("grouped tree reloads");
     assert_eq!(&reloaded, revision);
     assert_grouped_precedence_tree(&program, &reloaded);
+}
+
+#[test]
+fn same_tier_ascii_operators_associate_left() {
+    let program = compile(GROUPED_SOURCE);
+    let revision = program
+        .revision(&frontend::Name("association".to_owned()))
+        .expect("association Revision resolves");
+    let less = relation(&program, "<");
+    let addition = relation(&program, "+");
+    let a = scoped(&program, revision, "a");
+    let b = scoped(&program, revision, "b");
+    let c = scoped(&program, revision, "c");
+    let root = asserted_comparison(revision, &less);
+    let root_left = role(&program, &less, "left");
+    let outer = revision
+        .model()
+        .content(application(&root.roles()[&root_left]))
+        .expect("outer addition is registered");
+    let left = role(&program, &addition, "left");
+    let right = role(&program, &addition, "right");
+    assert_eq!(outer.relation(), &addition);
+    assert_eq!(referent_term(&outer.roles()[&right]), &c);
+    let inner = revision
+        .model()
+        .content(application(&outer.roles()[&left]))
+        .expect("left-associated addition is registered");
+    assert_eq!(inner.relation(), &addition);
+    assert_eq!(referent_term(&inner.roles()[&left]), &a);
+    assert_eq!(referent_term(&inner.roles()[&right]), &b);
+}
+
+#[test]
+fn malformed_parentheses_are_rejected_at_the_grouping_boundary() {
+    for (expression, expected) in [
+        ("a + b * c < (a + b * c", "unterminated parenthesized term"),
+        ("a + b * c < a + b) * c", "unmatched closing parenthesis"),
+    ] {
+        let source = GROUPED_SOURCE.replace("a + b * c < (a + b) * c", expression);
+        let error = frontend::parse(&source).expect_err("malformed grouping must fail");
+        assert_eq!(error.message, expected);
+    }
 }
 
 #[test]

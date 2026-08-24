@@ -148,6 +148,113 @@ pub(super) fn lex_clause(line: SourceLine<'_>) -> Result<Vec<Token>, ParseError>
     Ok(tokens)
 }
 
+fn is_open_parenthesis(token: &Token) -> bool {
+    !token.quoted && !token.bracketed && token.raw == "("
+}
+
+fn is_close_parenthesis(token: &Token) -> bool {
+    !token.quoted && !token.bracketed && token.raw == ")"
+}
+
+fn recursive_clause_tokens(line: SourceLine<'_>) -> Result<Vec<Token>, ParseError> {
+    let mut grouped = Vec::new();
+    for token in lex_clause(line)? {
+        if token.quoted || token.bracketed {
+            grouped.push(token);
+            continue;
+        }
+        let mut start = 0;
+        for (offset, byte) in token.raw.bytes().enumerate() {
+            if !matches!(byte, b'(' | b')') {
+                continue;
+            }
+            if start < offset {
+                grouped.push(Token {
+                    raw: token.raw[start..offset].to_owned(),
+                    quoted: false,
+                    bracketed: false,
+                    span: Span {
+                        line: token.span.line,
+                        column: token.span.column + start,
+                        width: offset - start,
+                    },
+                });
+            }
+            grouped.push(Token {
+                raw: token.raw[offset..offset + 1].to_owned(),
+                quoted: false,
+                bracketed: false,
+                span: Span {
+                    line: token.span.line,
+                    column: token.span.column + offset,
+                    width: 1,
+                },
+            });
+            start = offset + 1;
+        }
+        if start < token.raw.len() {
+            grouped.push(Token {
+                raw: token.raw[start..].to_owned(),
+                quoted: false,
+                bracketed: false,
+                span: Span {
+                    line: token.span.line,
+                    column: token.span.column + start,
+                    width: token.raw.len() - start,
+                },
+            });
+        }
+    }
+
+    let mut opens = Vec::new();
+    for token in &grouped {
+        if is_open_parenthesis(token) {
+            opens.push(token.span);
+        } else if is_close_parenthesis(token) && opens.pop().is_none() {
+            return Err(error(token.span, "unmatched closing parenthesis"));
+        }
+    }
+    if let Some(span) = opens.first() {
+        return Err(error(*span, "unterminated parenthesized term"));
+    }
+    Ok(grouped)
+}
+
+fn balanced_tokens(tokens: &[Token]) -> bool {
+    let mut depth = 0usize;
+    for token in tokens {
+        if is_open_parenthesis(token) {
+            depth += 1;
+        } else if is_close_parenthesis(token) {
+            let Some(next) = depth.checked_sub(1) else {
+                return false;
+            };
+            depth = next;
+        }
+    }
+    depth == 0
+}
+
+fn parenthesized_tokens(tokens: &[Token]) -> Option<&[Token]> {
+    if !tokens.first().is_some_and(is_open_parenthesis)
+        || !tokens.last().is_some_and(is_close_parenthesis)
+    {
+        return None;
+    }
+    let mut depth = 0usize;
+    for (index, token) in tokens.iter().enumerate() {
+        if is_open_parenthesis(token) {
+            depth += 1;
+        } else if is_close_parenthesis(token) {
+            depth = depth.checked_sub(1)?;
+            if depth == 0 && index + 1 != tokens.len() {
+                return None;
+            }
+        }
+    }
+    (depth == 0).then(|| &tokens[1..tokens.len() - 1])
+}
+
 fn parse_term(token: &Token) -> Result<SurfaceTerm, ParseError> {
     if token.quoted {
         return Ok(SurfaceTerm::String(Spanned {
@@ -484,6 +591,66 @@ fn single_result_projection(spec: &RelationSpec) -> Option<(&Spanned<RoleName>, 
     (!projected.is_empty()).then_some((result, projected))
 }
 
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+struct TermChartKey {
+    line: usize,
+    column: usize,
+    width: usize,
+    expected: DomainName,
+    minimum_precedence: u8,
+}
+
+type TermChart = BTreeMap<TermChartKey, Option<Vec<SurfaceTerm>>>;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Association {
+    Left,
+    None,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct OperatorPrior {
+    precedence: u8,
+    association: Association,
+}
+
+fn operator_prior(operator: &str) -> Option<OperatorPrior> {
+    match operator {
+        "*" | "/" => Some(OperatorPrior {
+            precedence: 30,
+            association: Association::Left,
+        }),
+        "+" | "-" => Some(OperatorPrior {
+            precedence: 20,
+            association: Association::Left,
+        }),
+        "<" | "<=" | ">" | ">=" | "=" | "!=" => Some(OperatorPrior {
+            precedence: 10,
+            association: Association::None,
+        }),
+        _ => None,
+    }
+}
+
+fn binary_operator_projection(
+    parts: &[ShapePartDecl],
+) -> Option<(&Spanned<RoleName>, &str, &Spanned<RoleName>, OperatorPrior)> {
+    let [
+        ShapePartDecl::Role { id: left, .. },
+        ShapePartDecl::Literal(operator),
+        ShapePartDecl::Role { id: right, .. },
+    ] = parts
+    else {
+        return None;
+    };
+    Some((
+        left,
+        operator.value.as_str(),
+        right,
+        operator_prior(&operator.value)?,
+    ))
+}
+
 #[allow(clippy::too_many_arguments)]
 fn collect_recursive_matches(
     parts: &[ShapePartDecl],
@@ -494,7 +661,7 @@ fn collect_recursive_matches(
     current_memberships: &MembershipCatalog,
     memberships: &BTreeMap<Name, MembershipCatalog>,
     relations: &BTreeMap<Name, RelationSpec>,
-    fuel: usize,
+    chart: &mut TermChart,
     roles: &mut BTreeMap<RoleName, SurfaceTerm>,
     matches: &mut Vec<BTreeMap<RoleName, SurfaceTerm>>,
 ) {
@@ -516,7 +683,7 @@ fn collect_recursive_matches(
                     current_memberships,
                     memberships,
                     relations,
-                    fuel,
+                    chart,
                     roles,
                     matches,
                 );
@@ -533,7 +700,8 @@ fn collect_recursive_matches(
                     current_memberships,
                     memberships,
                     relations,
-                    fuel,
+                    0,
+                    chart,
                 ) {
                     roles.insert(id.value.clone(), term);
                     collect_recursive_matches(
@@ -545,7 +713,7 @@ fn collect_recursive_matches(
                         current_memberships,
                         memberships,
                         relations,
-                        fuel,
+                        chart,
                         roles,
                         matches,
                     );
@@ -562,7 +730,9 @@ fn collect_recursive_matches(
                 unreachable!("sentence-shape roles have literal separators");
             };
             for end in token_index + 1..tokens.len() {
-                if literal_matches(tokens, end, &next_literal.value).is_some() {
+                if balanced_tokens(&tokens[token_index..end])
+                    && literal_matches(tokens, end, &next_literal.value).is_some()
+                {
                     capture(end);
                 }
             }
@@ -576,6 +746,7 @@ fn recursive_shape_matches(
     current_memberships: &MembershipCatalog,
     memberships: &BTreeMap<Name, MembershipCatalog>,
     relations: &BTreeMap<Name, RelationSpec>,
+    chart: &mut TermChart,
 ) -> Vec<BTreeMap<RoleName, SurfaceTerm>> {
     let mut matches = Vec::new();
     collect_recursive_matches(
@@ -587,10 +758,85 @@ fn recursive_shape_matches(
         current_memberships,
         memberships,
         relations,
-        tokens.len(),
+        chart,
         &mut BTreeMap::new(),
         &mut matches,
     );
+    matches
+}
+
+#[allow(clippy::too_many_arguments)]
+fn binary_operator_matches(
+    tokens: &[Token],
+    left: &Spanned<RoleName>,
+    operator: &str,
+    right: &Spanned<RoleName>,
+    prior: OperatorPrior,
+    role_domains: &BTreeMap<RoleName, DomainName>,
+    current_memberships: &MembershipCatalog,
+    memberships: &BTreeMap<Name, MembershipCatalog>,
+    relations: &BTreeMap<Name, RelationSpec>,
+    minimum_precedence: u8,
+    chart: &mut TermChart,
+) -> Vec<BTreeMap<RoleName, SurfaceTerm>> {
+    if prior.precedence < minimum_precedence {
+        return Vec::new();
+    }
+    let left_minimum = match prior.association {
+        Association::Left => prior.precedence,
+        Association::None => prior.precedence + 1,
+    };
+    let right_minimum = prior.precedence + 1;
+    let mut matches = Vec::new();
+    let mut depth = 0usize;
+    for (index, token) in tokens.iter().enumerate() {
+        if is_open_parenthesis(token) {
+            depth += 1;
+            continue;
+        }
+        if is_close_parenthesis(token) {
+            depth -= 1;
+            continue;
+        }
+        if depth != 0
+            || token.quoted
+            || token.bracketed
+            || token.raw != operator
+            || index == 0
+            || index + 1 == tokens.len()
+        {
+            continue;
+        }
+        let left_terms = term_candidates(
+            &tokens[..index],
+            &role_domains[&left.value],
+            current_memberships,
+            memberships,
+            relations,
+            left_minimum,
+            chart,
+        );
+        let right_terms = term_candidates(
+            &tokens[index + 1..],
+            &role_domains[&right.value],
+            current_memberships,
+            memberships,
+            relations,
+            right_minimum,
+            chart,
+        );
+        for left_term in &left_terms {
+            for right_term in &right_terms {
+                let roles = BTreeMap::from([
+                    (left.value.clone(), left_term.clone()),
+                    (right.value.clone(), right_term.clone()),
+                ]);
+                if !matches.contains(&roles) {
+                    matches.push(roles);
+                }
+            }
+        }
+    }
     matches
 }
 
@@ -600,11 +846,39 @@ fn term_candidates(
     current_memberships: &MembershipCatalog,
     memberships: &BTreeMap<Name, MembershipCatalog>,
     relations: &BTreeMap<Name, RelationSpec>,
-    fuel: usize,
+    minimum_precedence: u8,
+    chart: &mut TermChart,
 ) -> Vec<SurfaceTerm> {
-    if tokens.is_empty() {
+    if tokens.is_empty() || !balanced_tokens(tokens) {
         return Vec::new();
     }
+    let span = token_span(tokens);
+    let key = TermChartKey {
+        line: span.line,
+        column: span.column,
+        width: span.width,
+        expected: expected.clone(),
+        minimum_precedence,
+    };
+    if let Some(entry) = chart.get(&key) {
+        return entry.clone().unwrap_or_default();
+    }
+    chart.insert(key.clone(), None);
+
+    if let Some(inner) = parenthesized_tokens(tokens) {
+        let candidates = term_candidates(
+            inner,
+            expected,
+            current_memberships,
+            memberships,
+            relations,
+            0,
+            chart,
+        );
+        chart.insert(key, Some(candidates.clone()));
+        return candidates;
+    }
+
     let mut candidates = Vec::new();
     if let Ok(term) = parse_role_term(tokens)
         && match term_domains(&term, current_memberships, memberships) {
@@ -615,9 +889,6 @@ fn term_candidates(
     {
         push_unique_term(&mut candidates, term);
     }
-    if fuel == 0 {
-        return candidates;
-    }
     for (relation, spec) in relations {
         let Some((result, projected)) = single_result_projection(spec) else {
             continue;
@@ -625,25 +896,42 @@ fn term_candidates(
         if spec.roles.get(&result.value) != Some(expected) {
             continue;
         }
-        let mut matches = Vec::new();
-        collect_recursive_matches(
-            projected,
-            tokens,
-            0,
-            0,
-            &spec.roles,
-            current_memberships,
-            memberships,
-            relations,
-            fuel - 1,
-            &mut BTreeMap::new(),
-            &mut matches,
-        );
+        let matches =
+            if let Some((left, operator, right, prior)) = binary_operator_projection(projected) {
+                binary_operator_matches(
+                    tokens,
+                    left,
+                    operator,
+                    right,
+                    prior,
+                    &spec.roles,
+                    current_memberships,
+                    memberships,
+                    relations,
+                    minimum_precedence,
+                    chart,
+                )
+            } else {
+                let mut matches = Vec::new();
+                collect_recursive_matches(
+                    projected,
+                    tokens,
+                    0,
+                    0,
+                    &spec.roles,
+                    current_memberships,
+                    memberships,
+                    relations,
+                    chart,
+                    &mut BTreeMap::new(),
+                    &mut matches,
+                );
+                matches
+            };
         for roles in matches {
             if !roles.values().all(term_is_ground) {
                 continue;
             }
-            let span = token_span(tokens);
             push_unique_term(
                 &mut candidates,
                 SurfaceTerm::Application(Box::new(SurfaceApplication {
@@ -658,6 +946,7 @@ fn term_candidates(
             );
         }
     }
+    chart.insert(key, Some(candidates.clone()));
     candidates
 }
 
@@ -674,15 +963,63 @@ fn reject_bracketed_clause_terms(tokens: &[Token]) -> Result<(), ParseError> {
     Ok(())
 }
 
+fn collect_application_paths(path: &str, term: &SurfaceTerm, paths: &mut BTreeSet<String>) {
+    let SurfaceTerm::Application(application) = term else {
+        return;
+    };
+    let known = application
+        .roles
+        .keys()
+        .map(RoleName::as_str)
+        .collect::<Vec<_>>()
+        .join(", ");
+    paths.insert(format!(
+        "{path} -> {} [{known} -> {}]",
+        application.relation.value.as_str(),
+        application.result.value.as_str()
+    ));
+    for (role, nested) in &application.roles {
+        collect_application_paths(
+            &format!(
+                "{path}/{}.{}",
+                application.relation.value.as_str(),
+                role.as_str()
+            ),
+            nested,
+            paths,
+        );
+    }
+}
+
+fn application_candidate_paths(
+    candidates: &[(Name, BTreeMap<RoleName, SurfaceTerm>)],
+) -> BTreeSet<String> {
+    let mut paths = BTreeSet::new();
+    for (relation, roles) in candidates {
+        for (role, term) in roles {
+            collect_application_paths(
+                &format!("{}.{}", relation.as_str(), role.as_str()),
+                term,
+                &mut paths,
+            );
+        }
+    }
+    paths
+}
+
 pub(super) fn relation_line_matches(
     line: SourceLine<'_>,
     relations: &BTreeMap<Name, RelationSpec>,
 ) -> Result<bool, ParseError> {
-    let tokens = lex_clause(line)?;
+    let tokens = recursive_clause_tokens(line)?;
     reject_bracketed_clause_terms(&tokens)?;
+    let ungrouped = tokens
+        .into_iter()
+        .filter(|token| !is_open_parenthesis(token) && !is_close_parenthesis(token))
+        .collect::<Vec<_>>();
     Ok(relations
         .values()
-        .any(|spec| !shape_matches(&spec.shape, &tokens).is_empty()))
+        .any(|spec| !shape_matches(&spec.shape, &ungrouped).is_empty()))
 }
 
 pub(super) fn clause(
@@ -711,14 +1048,20 @@ pub(super) fn clause_with_catalog(
     memberships: &BTreeMap<Name, MembershipCatalog>,
     variable_domains: &mut BTreeMap<VariableName, DomainName>,
 ) -> Result<SurfaceClause, ParseError> {
-    let tokens = lex_clause(line)?;
+    let tokens = recursive_clause_tokens(line)?;
     reject_bracketed_clause_terms(&tokens)?;
     let mut candidates = Vec::new();
     let mut first_term_error = None;
+    let mut chart = TermChart::new();
     for (relation, spec) in relations {
-        for terms in
-            recursive_shape_matches(spec, &tokens, current_memberships, memberships, relations)
-        {
+        for terms in recursive_shape_matches(
+            spec,
+            &tokens,
+            current_memberships,
+            memberships,
+            relations,
+            &mut chart,
+        ) {
             let mut accepted = true;
             for (role, term) in &terms {
                 let expected = spec.roles.get(role).expect("shape roles populate spec");
@@ -768,6 +1111,16 @@ pub(super) fn clause_with_catalog(
         ));
     }
     if candidates.len() > 1 {
+        let application_paths = application_candidate_paths(&candidates);
+        if !application_paths.is_empty() {
+            return Err(error(
+                line_span(line),
+                format!(
+                    "ambiguous clause; conflicting candidate paths: {}",
+                    application_paths.into_iter().collect::<Vec<_>>().join("; ")
+                ),
+            ));
+        }
         let descriptions = candidates
             .iter()
             .map(|(name, _)| {
