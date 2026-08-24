@@ -13,7 +13,8 @@ stabilized distinction reidentifiable across claims and Revisions, independent
 of structural equality. Relations are referents in relational position; claims
 arrange referents in named roles; laws derive, constrain, reject, or
 operationally orient claims. Terms and source files project the Model; they are
-not the Model.
+not the Model. Claim content and occurrence stay distinct from acceptance,
+status, and authority; identity stays distinct from structural equality.
 
 A `.clause` file is the authoring projection. The supported implementation
 currently uses one native `:` grammar for Types, Relations, Models, Laws,
