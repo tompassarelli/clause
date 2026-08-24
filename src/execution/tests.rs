@@ -394,14 +394,46 @@ fn select_correlates_named_holes_without_correlating_anonymous_holes() {
         Term::pattern(same.clone()),
         Term::pattern(second.clone()),
     ]);
-    let plan = crate::kernel::QueryPlan::new(revision.model(), &pattern, vec![first, same, second])
-        .unwrap();
+    let plan =
+        crate::kernel::QueryPlan::derive(revision.model(), &pattern, vec![first, same, second])
+            .unwrap();
+    let origins = |roles: &[&str]| {
+        let mut roles = roles.iter().map(|role| role_id(role)).collect::<Vec<_>>();
+        roles.sort();
+        roles
+    };
     let mut expected = vec![
         QueryRow {
-            values: vec![referent("A"), referent("B"), referent("C")],
+            cells: vec![
+                QueryCell {
+                    origins: origins(&["a"]),
+                    value: referent("A"),
+                },
+                QueryCell {
+                    origins: origins(&["b", "c"]),
+                    value: referent("B"),
+                },
+                QueryCell {
+                    origins: origins(&["d"]),
+                    value: referent("C"),
+                },
+            ],
         },
         QueryRow {
-            values: vec![referent("C"), referent("B"), referent("A")],
+            cells: vec![
+                QueryCell {
+                    origins: origins(&["a"]),
+                    value: referent("C"),
+                },
+                QueryCell {
+                    origins: origins(&["b", "c"]),
+                    value: referent("B"),
+                },
+                QueryCell {
+                    origins: origins(&["d"]),
+                    value: referent("A"),
+                },
+            ],
         },
     ];
     expected.sort();

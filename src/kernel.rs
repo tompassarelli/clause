@@ -21,7 +21,7 @@ pub use error::{KernelError, Result};
 pub use find::FindPlan;
 pub use identity::{ContentId, Name, PatternId, ReferentId, RevisionId, RoleId};
 pub use model::{Model, SemanticAtom};
-pub use query::QueryPlan;
+pub use query::{QueryPlan, QueryPlanColumn};
 pub use revision::{Delta, Revision, RevisionLineage};
 pub use schema::{
     Cardinality, LookupMode, Referent, RelationShape, Role, RolePredicate, StructuralContract,

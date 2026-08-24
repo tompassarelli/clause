@@ -23,20 +23,25 @@ pub(super) fn resolve(program: &CompiledProgram) -> kernel::Result<ResolvedProgr
                 let columns = columns
                     .iter()
                     .map(|column| {
-                        Ok(QueryColumn::new(
+                        Ok((
                             column.label.as_ref().map(|label| label.0.clone()),
                             program.request_column(index, column)?,
                         ))
                     })
                     .collect::<kernel::Result<Vec<_>>>()?;
-                let _ = kernel::QueryPlan::new(
+                let plan = kernel::QueryPlan::derive(
                     revision.model(),
                     &pattern,
-                    columns
-                        .iter()
-                        .map(|column| column.binder().clone())
-                        .collect(),
+                    columns.iter().map(|(_, binder)| binder.clone()).collect(),
                 )?;
+                let columns = columns
+                    .into_iter()
+                    .zip(plan.columns())
+                    .map(|((label, binder), column)| {
+                        debug_assert_eq!(&binder, column.binder());
+                        QueryColumn::new(label, binder, column.origins().to_vec())
+                    })
+                    .collect();
                 Request::Select {
                     revision: revision.identity().clone(),
                     pattern,

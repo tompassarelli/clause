@@ -451,8 +451,14 @@ fn query_column_source(column: &QueryColumn) -> String {
         .map(|label| format!("Some({label:?}.to_owned())"))
         .unwrap_or_else(|| "None".to_owned());
     format!(
-        "request::QueryColumn::new({label}, {})",
-        variable_source(column.binder())
+        "request::QueryColumn::new({label}, {}, vec![{}])",
+        variable_source(column.binder()),
+        column
+            .origins()
+            .iter()
+            .map(role_source)
+            .collect::<Vec<_>>()
+            .join(",")
     )
 }
 

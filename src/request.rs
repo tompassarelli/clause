@@ -9,7 +9,10 @@ use crate::{
     derive::{Limits, SupportLimits},
     execution::{Proof, QueryRow, WhyAll},
     intervention::{AchieveAll, AchieveOne, InterventionLimits, PreventAll, PreventOne},
-    kernel::{self, PatternId, ReferentId, RelationalContent, Revision, RevisionId, Term},
+    kernel::{
+        self, PatternId, QueryPlanColumn, ReferentId, RelationalContent, Revision, RevisionId,
+        RoleId, Term,
+    },
     semantic_diff::SemanticDiff,
 };
 
@@ -55,16 +58,21 @@ pub enum Request {
 }
 
 /// One source-independent query column. The optional label is presentation;
-/// the binder alone participates in matching.
+/// stable role origins retain the column's semantic address.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct QueryColumn {
     label: Option<String>,
     binder: PatternId,
+    origins: Vec<RoleId>,
 }
 
 impl QueryColumn {
-    pub fn new(label: Option<String>, binder: PatternId) -> Self {
-        Self { label, binder }
+    pub fn new(label: Option<String>, binder: PatternId, origins: Vec<RoleId>) -> Self {
+        Self {
+            label,
+            binder,
+            origins,
+        }
     }
 
     pub fn label(&self) -> Option<&str> {
@@ -73,6 +81,14 @@ impl QueryColumn {
 
     pub fn binder(&self) -> &PatternId {
         &self.binder
+    }
+
+    pub fn origins(&self) -> &[RoleId] {
+        &self.origins
+    }
+
+    fn plan_column(&self) -> QueryPlanColumn {
+        QueryPlanColumn::new(self.binder.clone(), self.origins.clone())
     }
 }
 
@@ -125,6 +141,21 @@ impl ResolvedProgram {
                         "request references an unavailable Revision",
                     ));
                 }
+            }
+            if let Request::Select {
+                revision,
+                pattern,
+                columns,
+            } = request
+            {
+                let selected = revisions
+                    .get(revision)
+                    .expect("request Revision presence was validated");
+                let _ = kernel::QueryPlan::new(
+                    selected.model(),
+                    pattern,
+                    columns.iter().map(QueryColumn::plan_column).collect(),
+                )?;
             }
         }
         Ok(Self {
@@ -195,7 +226,7 @@ pub struct EvaluationOutput {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RequestOutput {
     Select {
-        columns: Vec<Option<String>>,
+        columns: Vec<QueryColumn>,
         rows: Vec<QueryRow>,
     },
     Find(Vec<Term>),

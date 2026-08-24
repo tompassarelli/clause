@@ -10,7 +10,7 @@ use crate::{
     },
 };
 
-use super::QueryRow;
+use super::{QueryCell, QueryRow};
 
 pub(super) fn find(revision: &Revision, plan: &FindPlan, limits: Limits) -> Result<Vec<Term>> {
     revision.model().validate_content(plan.pattern(), true)?;
@@ -63,12 +63,16 @@ pub(super) fn select(
                 .iter()
                 .map(|column| {
                     substitution
-                        .get(column)
+                        .get(column.binder())
                         .cloned()
                         .ok_or_else(|| KernelError::new("query result did not bind every column"))
+                        .map(|value| QueryCell {
+                            origins: column.origins().to_vec(),
+                            value,
+                        })
                 })
                 .collect::<Result<Vec<_>>>()
-                .map(|values| QueryRow { values })
+                .map(|cells| QueryRow { cells })
         })
         .collect::<Result<Vec<_>>>()?;
     rows.sort();

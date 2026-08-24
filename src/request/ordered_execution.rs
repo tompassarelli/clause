@@ -20,14 +20,16 @@ pub(super) fn run(program: &ResolvedProgram, limits: RunLimits) -> kernel::Resul
                     pattern,
                     columns
                         .iter()
-                        .map(|column| column.binder().clone())
+                        .map(|column| {
+                            kernel::QueryPlanColumn::new(
+                                column.binder().clone(),
+                                column.origins().to_vec(),
+                            )
+                        })
                         .collect(),
                 )?;
                 RequestOutput::Select {
-                    columns: columns
-                        .iter()
-                        .map(|column| column.label().map(str::to_owned))
-                        .collect(),
+                    columns: columns.clone(),
                     rows: execution::select(selected, &plan, limits.closure)?,
                 }
             }

@@ -7,7 +7,8 @@
 use crate::{
     derive::{Limits, SupportLimits},
     kernel::{
-        PatternId, QueryPlan, ReferentId, RelationalContent, Result, Revision, RevisionId, Term,
+        PatternId, QueryPlan, ReferentId, RelationalContent, Result, Revision, RevisionId, RoleId,
+        Term,
     },
 };
 use std::collections::BTreeMap;
@@ -75,16 +76,32 @@ pub struct WhyAll {
     pub expansions: usize,
 }
 
-/// One canonical row from a relational selection. Values follow the query
-/// projection order rather than semantic role identity order.
+/// One value and the exact stable roles from which its binder was projected.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct QueryCell {
+    origins: Vec<RoleId>,
+    value: Term,
+}
+
+impl QueryCell {
+    pub fn origins(&self) -> &[RoleId] {
+        &self.origins
+    }
+
+    pub fn value(&self) -> &Term {
+        &self.value
+    }
+}
+
+/// One canonical role-addressed row from a relational selection.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct QueryRow {
-    values: Vec<Term>,
+    cells: Vec<QueryCell>,
 }
 
 impl QueryRow {
-    pub fn values(&self) -> &[Term] {
-        &self.values
+    pub fn cells(&self) -> &[QueryCell] {
+        &self.cells
     }
 }
 

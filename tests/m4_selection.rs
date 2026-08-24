@@ -1,7 +1,7 @@
 use clause::{
     elaborate, frontend, generated,
-    kernel::Term,
-    request::{self, Request, RequestOutput},
+    kernel::{Name, QueryPlan, QueryPlanColumn, Term},
+    request::{self, QueryColumn, Request, RequestOutput, ResolvedProgram},
     wire,
 };
 use std::{env, fs, path::PathBuf, process::Command};
@@ -123,14 +123,96 @@ fn naked_selection_preserves_freshness_labels_identity_and_generated_parity() {
         ]
     ));
 
+    let Request::Select {
+        pattern,
+        columns: resolved_columns,
+        ..
+    } = &resolved.requests()[1]
+    else {
+        panic!("source-middle request must resolve as a selection");
+    };
+
+    let relation = compiled.designations().global("selection/related").unwrap();
+    let role = |label: &str| compiled.designations().role(&relation, label).unwrap();
+    let mut correlated_origins = vec![role("b"), role("c")];
+    correlated_origins.sort();
+    let expected_origins = vec![vec![role("a")], correlated_origins, vec![role("d")]];
+    assert_eq!(
+        resolved_columns
+            .iter()
+            .map(|column| column.origins().to_vec())
+            .collect::<Vec<_>>(),
+        expected_origins,
+        "each column retains every exact stable role origin"
+    );
+
+    let rejected_origins = |origins: Vec<_>| {
+        let mut requests = resolved.requests().to_vec();
+        let mut columns = resolved_columns.clone();
+        columns[0] = QueryColumn::new(
+            columns[0].label().map(str::to_owned),
+            columns[0].binder().clone(),
+            origins,
+        );
+        requests[1] = Request::Select {
+            revision: compiled
+                .revision(&frontend::Name("selection".into()))
+                .unwrap()
+                .identity()
+                .clone(),
+            pattern: pattern.clone(),
+            columns,
+        };
+        ResolvedProgram::new(resolved.revisions().clone(), requests)
+            .expect_err("invalid role provenance must fail closed")
+            .to_string()
+    };
+    assert_eq!(
+        rejected_origins(Vec::new()),
+        "query column requires at least one role origin"
+    );
+    assert_eq!(
+        rejected_origins(vec![role("d")]),
+        "query column role origins do not match the pattern"
+    );
+
+    let mut nested_roles = pattern.roles().clone();
+    nested_roles.insert(
+        role("a"),
+        Term::Sum {
+            tag: Name::new("nested".to_owned()).unwrap(),
+            value: Box::new(Term::pattern(resolved_columns[0].binder().clone())),
+        },
+    );
+    let nested = clause::kernel::RelationalContent::new(relation.clone(), nested_roles).unwrap();
+    let error = QueryPlan::new(
+        compiled
+            .revision(&frontend::Name("selection".into()))
+            .unwrap()
+            .model(),
+        &nested,
+        resolved_columns
+            .iter()
+            .map(|column| QueryPlanColumn::new(column.binder().clone(), column.origins().to_vec()))
+            .collect(),
+    )
+    .expect_err("nested holes remain outside M4/S1");
+    assert_eq!(
+        error.to_string(),
+        "nested query holes are not admitted by M4/S1"
+    );
+
     let output =
         request::run(&resolved, request::RunLimits::default()).expect("M4 requests execute");
     let RequestOutput::Select { columns, rows } = &output.results[1] else {
         panic!("source-middle request must remain a selection");
     };
     assert_eq!(
-        columns,
-        &[None, Some("same".to_owned()), None],
+        columns
+            .iter()
+            .map(|column| column.label().map(str::to_owned))
+            .collect::<Vec<_>>(),
+        vec![None, Some("same".to_owned()), None],
         "bare holes are unlabelled and a repeated named hole projects once"
     );
 
@@ -150,7 +232,19 @@ fn naked_selection_preserves_freshness_labels_identity_and_generated_parity() {
     expected.sort();
     assert_eq!(
         rows.iter()
-            .map(|row| row.values().to_vec())
+            .map(|row| {
+                assert_eq!(
+                    row.cells()
+                        .iter()
+                        .map(|cell| cell.origins().to_vec())
+                        .collect::<Vec<_>>(),
+                    expected_origins
+                );
+                row.cells()
+                    .iter()
+                    .map(|cell| cell.value().clone())
+                    .collect::<Vec<_>>()
+            })
             .collect::<Vec<_>>(),
         expected,
         "anonymous holes stay fresh while the named hole correlates"
@@ -184,13 +278,41 @@ fn naked_selection_preserves_freshness_labels_identity_and_generated_parity() {
     else {
         panic!("renamed source-middle request must remain a selection");
     };
-    assert_eq!(renamed_columns, &[None, Some("opening".to_owned()), None]);
+    assert_eq!(
+        renamed_columns
+            .iter()
+            .map(|column| column.label().map(str::to_owned))
+            .collect::<Vec<_>>(),
+        vec![None, Some("opening".to_owned()), None]
+    );
+    assert_eq!(
+        renamed_columns
+            .iter()
+            .map(|column| (column.binder(), column.origins()))
+            .collect::<Vec<_>>(),
+        columns
+            .iter()
+            .map(|column| (column.binder(), column.origins()))
+            .collect::<Vec<_>>(),
+        "alpha-renaming changes only presentation labels"
+    );
     assert_eq!(
         renamed_rows, rows,
         "alpha-renaming preserves matched values"
     );
 
     let expected_bytes = output.canonical_bytes();
+    let header = format!(
+        "[\"select\",[[[\"{}\"],null],[[\"{}\",\"{}\"],\"same\"],[[\"{}\"],null]],",
+        expected_origins[0][0].as_str(),
+        expected_origins[1][0].as_str(),
+        expected_origins[1][1].as_str(),
+        expected_origins[2][0].as_str(),
+    );
+    assert!(
+        expected_bytes.contains(&header),
+        "canonical columns put exact role origins before optional labels"
+    );
     let authoring = temporary("clause");
     let rust = temporary("rs");
     let binary = temporary("bin");
