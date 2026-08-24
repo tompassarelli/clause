@@ -51,7 +51,7 @@ to author an entire application such as a server or terminal UI without a Rust
 boundary.
 
 Clause is committed to growing this core into one general-purpose,
-relation-centered programming system: recursive values and propositions,
+relation-centered programming system: recursive terms and relational content,
 exact state transitions, explicit effects and receipts, JavaScript and
 Three.js first, measured Wasm specialization later, and eventually a real
 North application vertical. This is product direction, not a claim about the

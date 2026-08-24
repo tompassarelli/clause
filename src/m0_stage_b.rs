@@ -2,7 +2,8 @@
 //! for the M0 distinction constitution.
 //!
 //! Stage B consumes only the lossless Stage-A tree. It classifies source form;
-//! it does not resolve terms, assign referent identities, or elaborate claims.
+//! it does not resolve terms, assign referent identities, create assertion
+//! occurrences, or elaborate relational content.
 
 use crate::m0_stage_a::{
     DiagnosticCode as StageADiagnosticCode, Document, IndentationGroup, LayoutLine, Line,
@@ -12,14 +13,26 @@ use crate::m0_stage_a::{
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BlockClass {
     Enumeration,
-    ClassificationOrDerivedShape,
-    FocusedClaimOrContract,
-    DefinitionOrLaw,
+    ClassificationProjection,
+    FocusedProjection,
+    AssertionOccurrence,
+    RelationContract,
+    Definition,
+    UniversalLaw,
+    DerivationRule,
+    Invariant,
     Query,
-    RevisionDelta,
+    Goal,
+    Observation,
+    Requirement,
+    Assumption,
+    Intention,
+    Effect,
+    Procedure,
     Transition,
-    EpistemicOrEffect,
+    Delta,
     StructuralEscape,
+    UnresolvedStructuralForm,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -27,13 +40,24 @@ pub enum ChildForm {
     BareTerm,
     Classification,
     Definition,
-    ClaimOrContract,
-    Law,
+    RelationalContent,
+    AssertionOccurrence,
+    RelationContract,
+    UniversalLaw,
+    DerivationRule,
+    Invariant,
     Query,
-    SignedDelta,
+    Goal,
+    Observation,
+    Requirement,
+    Assumption,
+    Intention,
+    Effect,
+    Procedure,
     Transition,
-    EpistemicOrEffect,
+    Delta,
     StructuralEscape,
+    UnresolvedStructuralForm,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -77,15 +101,26 @@ pub struct Classification {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StatementClass {
     GroundingTerm,
-    ClassificationClaim,
+    ClassificationContent,
     Definition,
-    Claim,
-    Law,
+    RelationalContent,
+    AssertionOccurrence,
+    RelationContract,
+    UniversalLaw,
+    DerivationRule,
+    Invariant,
     Query,
-    RevisionDelta,
+    Goal,
+    Observation,
+    Requirement,
+    Assumption,
+    Intention,
+    Effect,
+    Procedure,
     Transition,
-    EpistemicOrEffect,
+    Delta,
     StructuralEscape,
+    UnresolvedStructuralForm,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -237,7 +272,7 @@ fn classify_group(
             statements.push(ClassifiedStatement {
                 line: layout_line.line,
                 span: content_without_indent(line),
-                class: statement_class(document, line, form),
+                class: statement_class(form),
             });
             continue;
         }
@@ -303,28 +338,72 @@ fn classify_block(
     })
 }
 
-fn statement_class(document: &Document, line: &Line, form: ChildForm) -> StatementClass {
-    if is_revision_header(document, line) {
-        return StatementClass::RevisionDelta;
-    }
+fn statement_class(form: ChildForm) -> StatementClass {
     match form {
         ChildForm::BareTerm => StatementClass::GroundingTerm,
-        ChildForm::Classification => StatementClass::ClassificationClaim,
+        ChildForm::Classification => StatementClass::ClassificationContent,
         ChildForm::Definition => StatementClass::Definition,
-        ChildForm::ClaimOrContract => StatementClass::Claim,
-        ChildForm::Law => StatementClass::Law,
+        ChildForm::RelationalContent => StatementClass::RelationalContent,
+        ChildForm::AssertionOccurrence => StatementClass::AssertionOccurrence,
+        ChildForm::RelationContract => StatementClass::RelationContract,
+        ChildForm::UniversalLaw => StatementClass::UniversalLaw,
+        ChildForm::DerivationRule => StatementClass::DerivationRule,
+        ChildForm::Invariant => StatementClass::Invariant,
         ChildForm::Query => StatementClass::Query,
-        ChildForm::SignedDelta => StatementClass::RevisionDelta,
+        ChildForm::Goal => StatementClass::Goal,
+        ChildForm::Observation => StatementClass::Observation,
+        ChildForm::Requirement => StatementClass::Requirement,
+        ChildForm::Assumption => StatementClass::Assumption,
+        ChildForm::Intention => StatementClass::Intention,
+        ChildForm::Effect => StatementClass::Effect,
+        ChildForm::Procedure => StatementClass::Procedure,
         ChildForm::Transition => StatementClass::Transition,
-        ChildForm::EpistemicOrEffect => StatementClass::EpistemicOrEffect,
+        ChildForm::Delta => StatementClass::Delta,
         ChildForm::StructuralEscape => StatementClass::StructuralEscape,
+        ChildForm::UnresolvedStructuralForm => StatementClass::UnresolvedStructuralForm,
     }
 }
 
 fn block_class(document: &Document, header: &Line, children: &[ChildForm]) -> BlockClass {
     let first = first_name(document, header);
+    if is_assertion_header(document, header) {
+        return BlockClass::AssertionOccurrence;
+    }
+    if is_relation_contract_header(document, header) {
+        return BlockClass::RelationContract;
+    }
+    if first == Some("law") {
+        return BlockClass::UniversalLaw;
+    }
+    if line_ends_with_name(document, header, "if") {
+        return BlockClass::DerivationRule;
+    }
+    if first == Some("invariant") {
+        return BlockClass::Invariant;
+    }
     if first.is_some_and(is_query_word) {
         return BlockClass::Query;
+    }
+    if first == Some("goal") {
+        return BlockClass::Goal;
+    }
+    if first == Some("observe") {
+        return BlockClass::Observation;
+    }
+    if first.is_some_and(is_requirement_word) {
+        return BlockClass::Requirement;
+    }
+    if first.is_some_and(is_assumption_word) {
+        return BlockClass::Assumption;
+    }
+    if first == Some("intend") {
+        return BlockClass::Intention;
+    }
+    if is_effect_form(document, header) {
+        return BlockClass::Effect;
+    }
+    if first.is_some_and(is_procedure_word) {
+        return BlockClass::Procedure;
     }
     if first == Some("on")
         || has_token_pair(header, Punctuation::Tilde, Punctuation::GreaterThan)
@@ -332,24 +411,17 @@ fn block_class(document: &Document, header: &Line, children: &[ChildForm]) -> Bl
     {
         return BlockClass::Transition;
     }
-    if is_revision_header(document, header)
-        && children.iter().all(|form| *form == ChildForm::SignedDelta)
+    if is_revision_header(document, header) && children.iter().all(|form| *form == ChildForm::Delta)
     {
-        return BlockClass::RevisionDelta;
-    }
-    if first.is_some_and(is_epistemic_or_effect_word) {
-        return BlockClass::EpistemicOrEffect;
+        return BlockClass::Delta;
     }
     if is_structural_escape_header(document, header) {
         return BlockClass::StructuralEscape;
     }
-    if line_ends_with_name(document, header, "if")
-        || has_token_pair(header, Punctuation::Colon, Punctuation::Equals)
-        || children
-            .iter()
-            .all(|form| matches!(form, ChildForm::Definition | ChildForm::Law))
+    if has_token_pair(header, Punctuation::Colon, Punctuation::Equals)
+        || children.iter().all(|form| *form == ChildForm::Definition)
     {
-        return BlockClass::DefinitionOrLaw;
+        return BlockClass::Definition;
     }
     if children.iter().all(|form| *form == ChildForm::BareTerm) {
         return BlockClass::Enumeration;
@@ -358,38 +430,81 @@ fn block_class(document: &Document, header: &Line, children: &[ChildForm]) -> Bl
         .iter()
         .all(|form| *form == ChildForm::Classification)
     {
-        return BlockClass::ClassificationOrDerivedShape;
+        return BlockClass::ClassificationProjection;
     }
-    BlockClass::FocusedClaimOrContract
+    if children.iter().any(|form| {
+        matches!(
+            form,
+            ChildForm::BareTerm
+                | ChildForm::Classification
+                | ChildForm::Definition
+                | ChildForm::RelationalContent
+                | ChildForm::AssertionOccurrence
+                | ChildForm::RelationContract
+                | ChildForm::Transition
+                | ChildForm::Effect
+                | ChildForm::UnresolvedStructuralForm
+        )
+    }) {
+        return BlockClass::FocusedProjection;
+    }
+    BlockClass::UnresolvedStructuralForm
 }
 
-fn line_form(document: &Document, line: &Line, _has_children: bool) -> Option<ChildForm> {
+fn line_form(document: &Document, line: &Line, has_children: bool) -> Option<ChildForm> {
     if line.tokens.is_empty() {
         return None;
     }
     let first = first_name(document, line);
+    if first_name(document, line) == Some("assert")
+        || has_children && line_ends_with_name(document, line, "asserts")
+    {
+        return Some(ChildForm::AssertionOccurrence);
+    }
+    if is_relation_contract_header(document, line) {
+        return Some(ChildForm::RelationContract);
+    }
+    if first == Some("law") {
+        return Some(ChildForm::UniversalLaw);
+    }
+    if line_ends_with_name(document, line, "if") {
+        return Some(ChildForm::DerivationRule);
+    }
+    if first == Some("invariant") {
+        return Some(ChildForm::Invariant);
+    }
     if first.is_some_and(is_query_word) {
         return Some(ChildForm::Query);
+    }
+    if first == Some("goal") {
+        return Some(ChildForm::Goal);
+    }
+    if first == Some("observe") {
+        return Some(ChildForm::Observation);
+    }
+    if first.is_some_and(is_requirement_word) {
+        return Some(ChildForm::Requirement);
+    }
+    if first.is_some_and(is_assumption_word) {
+        return Some(ChildForm::Assumption);
+    }
+    if first == Some("intend") {
+        return Some(ChildForm::Intention);
+    }
+    if is_effect_form(document, line) {
+        return Some(ChildForm::Effect);
+    }
+    if first.is_some_and(is_procedure_word) {
+        return Some(ChildForm::Procedure);
     }
     if first == Some("on") || has_token_pair(line, Punctuation::Tilde, Punctuation::GreaterThan) {
         return Some(ChildForm::Transition);
     }
-    if first.is_some_and(is_epistemic_or_effect_word)
-        || line
-            .tokens
-            .iter()
-            .any(|token| token.kind == TokenKind::Punctuation(Punctuation::Exclamation))
-    {
-        return Some(ChildForm::EpistemicOrEffect);
-    }
     if is_structural_escape_header(document, line) {
         return Some(ChildForm::StructuralEscape);
     }
-    if line_ends_with_name(document, line, "if") {
-        return Some(ChildForm::Law);
-    }
     if first_token_is(line, Punctuation::Plus) || first_token_is(line, Punctuation::Minus) {
-        return Some(ChildForm::SignedDelta);
+        return Some(ChildForm::Delta);
     }
     if has_token_pair(line, Punctuation::Colon, Punctuation::Equals) {
         return Some(ChildForm::Definition);
@@ -398,16 +513,25 @@ fn line_form(document: &Document, line: &Line, _has_children: bool) -> Option<Ch
         return Some(ChildForm::Classification);
     }
     if has_token_pair(line, Punctuation::Minus, Punctuation::GreaterThan) {
-        return Some(ChildForm::ClaimOrContract);
+        return Some(ChildForm::RelationContract);
     }
     if line
         .tokens
         .iter()
-        .all(|token| token.kind == TokenKind::Name)
+        .any(|token| token.kind == TokenKind::Punctuation(Punctuation::Equals))
     {
+        return Some(ChildForm::RelationalContent);
+    }
+    if line.tokens.len() == 1 && line.tokens[0].kind == TokenKind::Name {
         return Some(ChildForm::BareTerm);
     }
-    Some(ChildForm::ClaimOrContract)
+    if line.tokens.iter().any(|token| {
+        token.kind == TokenKind::Punctuation(Punctuation::Question)
+            || token.kind == TokenKind::Punctuation(Punctuation::Equals)
+    }) {
+        return Some(ChildForm::RelationalContent);
+    }
+    Some(ChildForm::UnresolvedStructuralForm)
 }
 
 fn first_name<'a>(document: &'a Document, line: &Line) -> Option<&'a str> {
@@ -424,11 +548,37 @@ fn is_query_word(word: &str) -> bool {
     )
 }
 
-fn is_epistemic_or_effect_word(word: &str) -> bool {
-    matches!(
-        word,
-        "requires" | "observe" | "assume" | "require" | "intend" | "do"
-    )
+fn is_assertion_header(document: &Document, line: &Line) -> bool {
+    first_name(document, line) == Some("assert") || line_ends_with_name(document, line, "asserts")
+}
+
+fn is_requirement_word(word: &str) -> bool {
+    matches!(word, "require" | "requires")
+}
+
+fn is_assumption_word(word: &str) -> bool {
+    matches!(word, "assume" | "hypothesis")
+}
+
+fn is_procedure_word(word: &str) -> bool {
+    matches!(word, "do" | "procedure")
+}
+
+fn is_effect_form(document: &Document, line: &Line) -> bool {
+    first_name(document, line) == Some("effect")
+        || line
+            .tokens
+            .iter()
+            .any(|token| token.kind == TokenKind::Punctuation(Punctuation::Exclamation))
+}
+
+fn is_relation_contract_header(document: &Document, line: &Line) -> bool {
+    let mut names = line
+        .tokens
+        .iter()
+        .filter(|token| token.kind == TokenKind::Name)
+        .map(|token| token_text(document, *token));
+    names.next() == Some("relation") && names.next() == Some("contract")
 }
 
 fn is_revision_header(document: &Document, line: &Line) -> bool {
@@ -438,7 +588,7 @@ fn is_revision_header(document: &Document, line: &Line) -> bool {
 }
 
 fn is_structural_escape_header(document: &Document, line: &Line) -> bool {
-    first_name(document, line) == Some("claim")
+    first_name(document, line) == Some("form")
 }
 
 fn line_ends_with_name(document: &Document, line: &Line, name: &str) -> bool {
@@ -567,8 +717,8 @@ fn separates_enumeration_and_focus(
 ) -> bool {
     let is_pair = matches!(
         (previous.class, current.class),
-        (BlockClass::Enumeration, BlockClass::FocusedClaimOrContract)
-            | (BlockClass::FocusedClaimOrContract, BlockClass::Enumeration)
+        (BlockClass::Enumeration, BlockClass::FocusedProjection)
+            | (BlockClass::FocusedProjection, BlockClass::Enumeration)
     );
     is_pair
         && document.source[previous.header.start..previous.header.end]
@@ -651,6 +801,6 @@ pub fn warn_before_edit(
     Some(Diagnostic {
         code: DiagnosticCode::WouldReclassifyEnumeration,
         span: block.header,
-        repair: "split enumeration members and focused claims into separate blocks",
+        repair: "split enumeration members and focused relational content into separate blocks",
     })
 }

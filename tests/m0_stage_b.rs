@@ -44,7 +44,7 @@ fn classifies_constitutional_families_without_primitive_binding_membership_split
         "  game\n",
         "  three\n",
         "\n",
-        "claim connects\n",
+        "form connects\n",
         "  door := iron-door\n",
         "  origin := Cellar\n",
         "  destination := Armory\n",
@@ -69,13 +69,13 @@ fn classifies_constitutional_families_without_primitive_binding_membership_split
             .collect::<Vec<_>>(),
         vec![
             BlockClass::Enumeration,
-            BlockClass::ClassificationOrDerivedShape,
-            BlockClass::FocusedClaimOrContract,
-            BlockClass::DefinitionOrLaw,
+            BlockClass::ClassificationProjection,
+            BlockClass::FocusedProjection,
+            BlockClass::Definition,
             BlockClass::Query,
-            BlockClass::RevisionDelta,
+            BlockClass::Delta,
             BlockClass::Transition,
-            BlockClass::EpistemicOrEffect,
+            BlockClass::Requirement,
             BlockClass::StructuralEscape,
         ]
     );
@@ -85,20 +85,20 @@ fn classifies_constitutional_families_without_primitive_binding_membership_split
             .iter()
             .map(|statement| statement.class)
             .collect::<Vec<_>>(),
-        vec![StatementClass::Query, StatementClass::EpistemicOrEffect]
+        vec![StatementClass::Query, StatementClass::Effect]
     );
     assert_eq!(
         classification.blocks[2].child_forms,
         vec![
             ChildForm::BareTerm,
-            ChildForm::BareTerm,
+            ChildForm::UnresolvedStructuralForm,
             ChildForm::Definition
         ]
     );
 }
 
 #[test]
-fn distinguishes_classification_definition_and_equality_claim() {
+fn distinguishes_classification_definition_and_equality_content() {
     let document = m0_stage_a::read("Chess : Game\ngravity := 9.81\ngravity = 9.81\n");
     let classification = classify(&document);
     assert!(classification.is_accepted());
@@ -109,10 +109,110 @@ fn distinguishes_classification_definition_and_equality_claim() {
             .map(|statement| statement.class)
             .collect::<Vec<_>>(),
         vec![
-            StatementClass::ClassificationClaim,
+            StatementClass::ClassificationContent,
             StatementClass::Definition,
-            StatementClass::Claim,
+            StatementClass::RelationalContent,
         ]
+    );
+}
+
+#[test]
+fn keeps_law_rule_invariant_and_goal_modes_distinct() {
+    let source = concat!(
+        "law universal reachability\n",
+        "  premise\n",
+        "?origin reaches ?destination if\n",
+        "  premise\n",
+        "invariant acyclic\n",
+        "  premise\n",
+        "goal safe egress\n",
+        "  desired = safe\n",
+    );
+    let classification = classify(&m0_stage_a::read(source));
+
+    assert!(classification.is_accepted());
+    assert_eq!(
+        classification
+            .blocks
+            .iter()
+            .map(|block| block.class)
+            .collect::<Vec<_>>(),
+        vec![
+            BlockClass::UniversalLaw,
+            BlockClass::DerivationRule,
+            BlockClass::Invariant,
+            BlockClass::Goal,
+        ]
+    );
+}
+
+#[test]
+fn keeps_judgment_intention_effect_and_procedure_modes_distinct() {
+    let document = m0_stage_a::read(concat!(
+        "observe build-host supports wasm\n",
+        "require worker-pool safe\n",
+        "assume target supports threads\n",
+        "hypothesis target stable\n",
+        "intend North materializes\n",
+        "render! scene\n",
+        "do reconcile state\n",
+        "procedure cleanup\n",
+    ));
+    let classification = classify(&document);
+
+    assert!(classification.is_accepted());
+    assert_eq!(
+        classification
+            .statements
+            .iter()
+            .map(|statement| statement.class)
+            .collect::<Vec<_>>(),
+        vec![
+            StatementClass::Observation,
+            StatementClass::Requirement,
+            StatementClass::Assumption,
+            StatementClass::Assumption,
+            StatementClass::Intention,
+            StatementClass::Effect,
+            StatementClass::Procedure,
+            StatementClass::Procedure,
+        ]
+    );
+}
+
+#[test]
+fn distinguishes_content_explicit_assertion_and_structural_contracts() {
+    let source = concat!(
+        "door = open\n",
+        "assert door = open\n",
+        "Alice = asserts\n",
+        "Alice relates asserts to keyword\n",
+        "relation contract connects\n",
+        "position -> Vec2\n",
+        "Alice asserts\n",
+        "  door = open\n",
+    );
+    let classification = classify(&m0_stage_a::read(source));
+
+    assert!(classification.is_accepted());
+    assert_eq!(
+        classification
+            .statements
+            .iter()
+            .map(|statement| statement.class)
+            .collect::<Vec<_>>(),
+        vec![
+            StatementClass::RelationalContent,
+            StatementClass::AssertionOccurrence,
+            StatementClass::RelationalContent,
+            StatementClass::UnresolvedStructuralForm,
+            StatementClass::RelationContract,
+            StatementClass::RelationContract,
+        ]
+    );
+    assert_eq!(
+        classification.blocks[0].class,
+        BlockClass::AssertionOccurrence
     );
 }
 
@@ -194,7 +294,7 @@ fn formatter_preserves_classification_and_definition_and_separates_focus() {
 #[test]
 fn explicit_named_role_escape_round_trips_without_role_invention() {
     let source = concat!(
-        "claim connects\n",
+        "form connects\n",
         "  door := iron-door\n",
         "  origin := Cellar\n",
         "  destination := Armory\n",
@@ -233,7 +333,7 @@ fn editor_warns_before_enumeration_becomes_focus() {
 fn focused_definition_is_not_classification() {
     let document = m0_stage_a::read("iron-door\n  state := locked\n");
     let classification = classify(&document);
-    assert_eq!(classification.blocks[0].class, BlockClass::DefinitionOrLaw);
+    assert_eq!(classification.blocks[0].class, BlockClass::Definition);
     assert_eq!(
         classification.blocks[0].child_forms,
         vec![ChildForm::Definition]
