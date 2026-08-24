@@ -1,11 +1,17 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
-    frontend::{self, SurfaceClause, SurfaceTerm},
-    kernel::{self, Model, PatternId, ReferentId, RelationalContent, RoleId, Term},
+    frontend::{self, Name, SurfaceClause, SurfaceTerm},
+    kernel::{
+        self, Definition, Model, PatternId, ReferentId, RelationShape, RelationalContent, Role,
+        RoleId, Term,
+    },
 };
 
-use super::{compilation::CompiledProgram, identifiers::DesignationTable};
+use super::{
+    compilation::CompiledProgram,
+    identifiers::{DesignationTable, synthetic_referent, synthetic_role},
+};
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Projection {
@@ -13,10 +19,61 @@ pub(crate) struct Projection {
     pub(crate) types: BTreeSet<ReferentId>,
     pub(crate) entity_types: BTreeMap<ReferentId, ReferentId>,
     pub(crate) model_entities: BTreeMap<ReferentId, BTreeSet<ReferentId>>,
+    pub(crate) model_referents: BTreeMap<ReferentId, BTreeSet<ReferentId>>,
     pub(crate) role_types: BTreeMap<(ReferentId, RoleId), ReferentId>,
     pub(crate) focus_shapes: Vec<FocusShape>,
     pub(crate) rule_binders: BTreeMap<ReferentId, BinderTable>,
     pub(crate) request_binders: BTreeMap<usize, BinderTable>,
+}
+
+pub(crate) fn membership_relation() -> ReferentId {
+    synthetic_referent("membership", &["relation"])
+}
+
+pub(crate) fn membership_member_role() -> RoleId {
+    synthetic_role("membership", &["member"])
+}
+
+pub(crate) fn membership_group_role() -> RoleId {
+    synthetic_role("membership", &["group"])
+}
+
+pub(crate) fn membership_shape() -> kernel::Result<RelationShape> {
+    let member = Role::new(membership_member_role(), Vec::new())?;
+    let group = Role::new(membership_group_role(), Vec::new())?;
+    RelationShape::new(
+        membership_relation(),
+        BTreeMap::from([(member.id().clone(), member), (group.id().clone(), group)]),
+        Vec::new(),
+    )
+}
+
+pub(crate) fn membership_content(
+    member: ReferentId,
+    group: ReferentId,
+) -> kernel::Result<RelationalContent> {
+    RelationalContent::new(
+        membership_relation(),
+        BTreeMap::from([
+            (membership_member_role(), Term::referent(member)),
+            (membership_group_role(), Term::referent(group)),
+        ]),
+    )
+}
+
+pub(crate) fn lower_definition(
+    projection: &Projection,
+    model: &Model,
+    name: &Name,
+    denotation: &Name,
+) -> kernel::Result<Definition> {
+    let id = projection.designations.scoped(model.id(), name.as_str())?;
+    let denotation = projection
+        .designations
+        .scoped(model.id(), denotation.as_str())?;
+    require_term_referent(model, &id, "definition name")?;
+    require_term_referent(model, &denotation, "definition denotation")?;
+    Ok(Definition::new(id, Term::referent(denotation)))
 }
 
 #[derive(Clone, Debug)]
@@ -154,11 +211,9 @@ fn lower_term(
                 .designations
                 .scoped(model.id(), value.value.as_str())?;
             require_term_referent(model, &referent, "entity")?;
-            let actual = projection
-                .entity_types
-                .get(&referent)
-                .ok_or_else(|| kernel::KernelError::new("designation is not an authored entity"))?;
-            if actual != expected {
+            if let Some(actual) = projection.entity_types.get(&referent)
+                && actual != expected
+            {
                 return Err(kernel::KernelError::new(format!(
                     "entity '{}' does not satisfy the authored role type",
                     value.value.as_str()

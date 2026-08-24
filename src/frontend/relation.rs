@@ -12,7 +12,7 @@ pub(super) struct RelationSpec {
 fn parse_shape(line: SourceLine<'_>) -> Result<SentenceShapeDecl, ParseError> {
     let text = content(line);
     let mut parts = Vec::new();
-    let offset = 4;
+    let offset = 2;
     let mut cursor = 0;
     while cursor < text.len() {
         let open = text[cursor..]
@@ -152,8 +152,8 @@ fn parse_mode(
     let (known, sought) = sides
         .split_once(" -> ")
         .ok_or_else(|| error(line_span(line), "expected 'known -> sought' mode"))?;
-    let known = parse_role_list(line, 4 + "mode ".len(), known)?;
-    let sought = parse_role_list(line, 4 + "mode ".len() + known_text_width(&known), sought)?;
+    let known = parse_role_list(line, 2 + "mode ".len(), known)?;
+    let sought = parse_role_list(line, 2 + "mode ".len() + known_text_width(&known), sought)?;
     let mut every = BTreeSet::new();
     for role in known.iter().chain(&sought) {
         if !roles.contains_key(&role.value) {
@@ -199,12 +199,12 @@ pub(super) fn relation_spec(raw: &RawDecl<'_>) -> Result<RelationSpec, ParseErro
     let entries = nonblank(raw.body.iter().copied());
     if entries.is_empty()
         || entries.iter().any(|line| {
-            indent(*line).expect("source indentation was validated before parsing") != 4
+            indent(*line).expect("source indentation was validated before parsing") != 2
         })
     {
         return Err(error(
             line_span(raw.header),
-            "RelationShape requires four-space sentence and mode members",
+            "RelationShape requires two-space sentence and mode members",
         ));
     }
     let shape = parse_shape(entries[0])?;

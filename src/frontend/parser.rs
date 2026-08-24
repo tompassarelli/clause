@@ -3,6 +3,7 @@ use super::declaration::*;
 use super::model::*;
 use super::relation::*;
 use super::source::*;
+use super::syntax::{DefinitionDecl, MembershipDecl};
 use super::*;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -121,10 +122,10 @@ pub fn parse(source: &str) -> Result<Program, ParseError> {
                 let mut index = 0;
                 while index < entries.len() {
                     let line = entries[index];
-                    if indent(line)? != 4 {
+                    if indent(line)? != 2 {
                         return Err(error(
                             line_span(line),
-                            "Model members must use four-space indentation",
+                            "Model members must use two-space indentation",
                         ));
                     }
                     if let Some(group) = entity_group_line(line) {
@@ -134,7 +135,7 @@ pub fn parse(source: &str) -> Result<Program, ParseError> {
                         let template = template?;
                         index += 1;
                         let slot_start = index;
-                        while index < entries.len() && indent(entries[index])? == 8 {
+                        while index < entries.len() && indent(entries[index])? == 4 {
                             index += 1;
                         }
                         if slot_start == index {
@@ -169,14 +170,68 @@ pub fn parse(source: &str) -> Result<Program, ParseError> {
                             span: line_span(line),
                         }));
                         index += 1;
-                    } else if let Some(entity) = entity_line(line) {
-                        members.push(Member::Entity(entity?));
+                    } else if let Some(membership) = membership_line(line) {
+                        members.push(Member::Membership(membership?));
+                        index += 1;
+                    } else if let Some(definition) = definition_line(line) {
+                        members.push(Member::Definition(definition?));
                         index += 1;
                     } else if content(line).starts_with("for ") {
                         return Err(error(
                             line_span(line),
                             "focus binding has no preceding focus block",
                         ));
+                    } else if entries
+                        .get(index + 1)
+                        .is_some_and(|child| indent(*child).is_ok_and(|width| width == 4))
+                    {
+                        let focus = focused_name(line)?;
+                        index += 1;
+                        while index < entries.len() && indent(entries[index])? == 4 {
+                            let child = entries[index];
+                            if content(child).split_ascii_whitespace().count() == 1 {
+                                members.push(Member::Membership(MembershipDecl {
+                                    member: focus.clone(),
+                                    group: focused_name(child)?,
+                                    span: line_span(child),
+                                }));
+                            } else if let Some(definition) = definition_line(child) {
+                                let definition = definition?;
+                                members.push(Member::Definition(DefinitionDecl {
+                                    name: Spanned {
+                                        value: Name(format!(
+                                            "{} of {}",
+                                            definition.name.value.as_str(),
+                                            focus.value.as_str()
+                                        )),
+                                        span: definition.name.span,
+                                    },
+                                    denotation: definition.denotation,
+                                    span: definition.span,
+                                }));
+                            } else {
+                                let expanded =
+                                    format!("{} {}", focus.value.as_str(), content(child));
+                                let parsed = clause(
+                                    SourceLine {
+                                        number: child.number,
+                                        text: &expanded,
+                                    },
+                                    &raw.subject.value,
+                                    &relations,
+                                    &entities,
+                                    &mut variables,
+                                )?;
+                                if !ground(&parsed) {
+                                    return Err(error(
+                                        parsed.span,
+                                        "model assertions must be closed",
+                                    ));
+                                }
+                                members.push(Member::RelationalContent(parsed));
+                            }
+                            index += 1;
+                        }
                     } else {
                         let parsed = clause(
                             line,

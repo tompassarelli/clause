@@ -98,6 +98,8 @@ pub enum Member {
     LookupMode(ModeDecl),
     Entity(EntityDecl),
     EntityGroup(EntityGroupDecl),
+    Definition(DefinitionDecl),
+    Membership(MembershipDecl),
     Focus(FocusBlock),
     RelationalContent(SurfaceClause),
     When(Vec<SurfaceClause>),
@@ -105,6 +107,20 @@ pub enum Member {
     Apply(Name),
     Admit(Vec<SurfaceClause>),
     Withdraw(Vec<SurfaceClause>),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DefinitionDecl {
+    pub name: Spanned<Name>,
+    pub denotation: Spanned<Name>,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MembershipDecl {
+    pub member: Spanned<Name>,
+    pub group: Spanned<Name>,
+    pub span: Span,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

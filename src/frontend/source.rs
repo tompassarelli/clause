@@ -80,10 +80,10 @@ pub(super) fn indent(line: SourceLine<'_>) -> Result<usize, ParseError> {
         return Err(error(line_span(line), "blank lines must be empty"));
     }
     let width = line.text.bytes().take_while(|byte| *byte == b' ').count();
-    if !matches!(width, 0 | 4 | 8) {
+    if !matches!(width, 0 | 2 | 4) {
         return Err(error(
             child_span(line, 0, width.max(1)),
-            "indentation must be exactly zero, four, or eight ASCII spaces",
+            "indentation must be exactly zero, two, or four ASCII spaces",
         ));
     }
     Ok(width)
@@ -278,7 +278,7 @@ fn read_clause_block<'a>(
     let entries = nonblank(body);
     if entries.len() != 1
         || entries.first().is_some_and(|line| {
-            indent(*line).expect("source indentation was validated before parsing") != 4
+            indent(*line).expect("source indentation was validated before parsing") != 2
         })
     {
         let span = entries.first().map_or(
@@ -291,7 +291,7 @@ fn read_clause_block<'a>(
         );
         return Err(error(
             span,
-            format!("{description} requires exactly one four-space clause"),
+            format!("{description} requires exactly one two-space clause"),
         ));
     }
     Ok(entries[0])
@@ -397,17 +397,17 @@ fn parse_request<'a>(
             let using_lines = nonblank(take_body(lines, index));
             if using_lines.is_empty()
                 || using_lines.iter().any(|entry| {
-                    indent(*entry).expect("source indentation was validated before parsing") != 4
+                    indent(*entry).expect("source indentation was validated before parsing") != 2
                 })
             {
                 return Err(error(
                     line_span(using_header),
-                    "using requires one or more four-space relation references",
+                    "using requires one or more two-space relation references",
                 ));
             }
             let using = using_lines
                 .into_iter()
-                .map(|entry| qname(entry, 4, content(entry)))
+                .map(|entry| qname(entry, 2, content(entry)))
                 .collect::<Result<Vec<_>, _>>()?;
             return Ok(RawRequest::Intervention {
                 verb,

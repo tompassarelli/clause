@@ -4,6 +4,7 @@ use clause::{
     delta::RevisionDiff,
     elaborate, frontend,
     kernel::{Cardinality, ReferentId, RoleId, Term},
+    m0_stage_a, m0_stage_b,
     request::{self, Request, Selection},
     wire,
 };
@@ -34,6 +35,106 @@ fn role(program: &elaborate::CompiledProgram, relation: &ReferentId, value: &str
         .designations()
         .role(relation, value)
         .expect("role designation resolves")
+}
+
+#[test]
+fn canonical_binding_membership_focus_and_input_boundary() {
+    const PREFIX: &str = "Door: Type\nPlace: Type\nState: Type\nGame: Type\n\nworld/connects: RelationShape\n  {door: Door} connects {origin: Place} to {destination: Place}\n  mode door -> origin, destination: many\n\nworld: Model\n  gravity: 9.81\n  Chess ∈ Game\n  Cellar ∈ Place\n  Armory ∈ Place\n  locked ∈ State\n";
+    let focused_source = format!(
+        "{PREFIX}  iron-door\n    Door\n    connects Cellar to Armory\n    state: locked\n"
+    );
+    let expanded_source = format!(
+        "{PREFIX}  iron-door ∈ Door\n  iron-door connects Cellar to Armory\n  state of iron-door: locked\n"
+    );
+
+    let focused_program = program(&focused_source);
+    let expanded_program = program(&expanded_source);
+    let focused = focused_program
+        .revision(&frontend::Name("world".to_owned()))
+        .expect("focused world Revision");
+    let expanded = expanded_program
+        .revision(&frontend::Name("world".to_owned()))
+        .expect("expanded world Revision");
+    assert_eq!(focused.identity(), expanded.identity());
+    assert_eq!(wire::serialize(focused), wire::serialize(expanded));
+    assert_eq!(
+        wire::reload(&wire::serialize(focused)).expect("canonical focused wire reloads"),
+        focused.clone()
+    );
+
+    let model = global(&focused_program, "world");
+    let gravity = scoped(&focused_program, &model, "gravity");
+    let scalar = scoped(&focused_program, &model, "9.81");
+    let state = scoped(&focused_program, &model, "state of iron-door");
+    let locked = scoped(&focused_program, &model, "locked");
+    assert!(focused.model().definitions().iter().any(|definition| {
+        definition.id() == &gravity && definition.denotation() == &Term::referent(scalar.clone())
+    }));
+    assert!(focused.model().definitions().iter().any(|definition| {
+        definition.id() == &state && definition.denotation() == &Term::referent(locked.clone())
+    }));
+
+    let chess = scoped(&focused_program, &model, "Chess");
+    let game = global(&focused_program, "Game");
+    let chess_game = focused
+        .model()
+        .admitted_contents()
+        .iter()
+        .find(|content| {
+            let terms = content.roles().values().collect::<Vec<_>>();
+            terms.contains(&&Term::referent(chess.clone()))
+                && terms.contains(&&Term::referent(game.clone()))
+        })
+        .expect("Chess membership is ordinary admitted relational content");
+    let membership_shape = &focused.model().relation_shapes()[chess_game.relation()];
+    assert_eq!(membership_shape.roles().len(), 2);
+    assert!(
+        membership_shape
+            .roles()
+            .values()
+            .all(|role| role.admissibility().is_empty())
+    );
+    assert!(
+        focused
+            .model()
+            .definitions()
+            .iter()
+            .all(|definition| definition.id() != &chess)
+    );
+
+    let raw_editor_source = expanded_source.replace("Chess ∈ Game", "Chess :: Game");
+    assert!(frontend::parse(&raw_editor_source).is_err());
+    let rewritten = m0_stage_b::rewrite_editor_input(&raw_editor_source);
+    assert_eq!(rewritten.source, expanded_source);
+    assert_eq!(rewritten.replaced.len(), 1);
+    assert_eq!(
+        wire::serialize(
+            program(&rewritten.source)
+                .revision(&frontend::Name("world".to_owned()))
+                .expect("editor-normalized world Revision")
+        ),
+        wire::serialize(expanded)
+    );
+
+    assert!(frontend::parse(&expanded_source.replacen("  gravity", "    gravity", 1)).is_err());
+    assert!(frontend::parse(&expanded_source.replacen("  gravity", "\tgravity", 1)).is_err());
+    let operators = m0_stage_b::classify(&m0_stage_a::read(
+        "x != y\nrender! scene\na / b\negress/route\n",
+    ));
+    assert!(operators.is_accepted(), "{:#?}", operators.diagnostics);
+    assert_eq!(
+        operators
+            .statements
+            .iter()
+            .map(|statement| statement.class)
+            .collect::<Vec<_>>(),
+        vec![
+            m0_stage_b::StatementClass::RelationalContent,
+            m0_stage_b::StatementClass::Effect,
+            m0_stage_b::StatementClass::RelationalContent,
+            m0_stage_b::StatementClass::UnresolvedStructuralForm,
+        ]
+    );
 }
 
 #[test]

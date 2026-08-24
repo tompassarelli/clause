@@ -20,8 +20,8 @@ pub(super) struct LawLayout<'a> {
 pub(super) fn parse_law_layout<'a>(raw: &RawDecl<'a>) -> Result<LawLayout<'a>, ParseError> {
     let entries = nonblank(raw.body.iter().copied());
     if entries.len() < 3
-        || indent(entries[0])? != 4
-        || indent(entries[1])? != 4
+        || indent(entries[0])? != 2
+        || indent(entries[1])? != 2
         || content(entries[1]) != "when:"
     {
         return Err(error(
@@ -32,12 +32,12 @@ pub(super) fn parse_law_layout<'a>(raw: &RawDecl<'a>) -> Result<LawLayout<'a>, P
     let premises = entries[2..].to_vec();
     if premises.is_empty()
         || premises.iter().any(|line| {
-            indent(*line).expect("source indentation was validated before parsing") != 8
+            indent(*line).expect("source indentation was validated before parsing") != 4
         })
     {
         return Err(error(
             line_span(raw.header),
-            "when requires one or more eight-space clauses",
+            "when requires one or more four-space clauses",
         ));
     }
     Ok(LawLayout {
@@ -52,21 +52,21 @@ pub(super) fn parse_change_layout<'a>(raw: &RawDecl<'a>) -> Result<ChangeLayout<
         .first()
         .copied()
         .ok_or_else(|| error(line_span(raw.header), "Revision and Delta require 'from:'"))?;
-    if indent(first)? != 4 || !content(first).starts_with("from: ") {
+    if indent(first)? != 2 || !content(first).starts_with("from: ") {
         return Err(error(
             line_span(first),
             "first member must be 'from: revision'",
         ));
     }
     let from_text = &content(first)["from: ".len()..];
-    let from = qname(first, 4 + "from: ".len(), from_text)?;
+    let from = qname(first, 2 + "from: ".len(), from_text)?;
     let mut apply = None;
     let mut admit = None;
     let mut withdraw = None;
     let mut index = 1;
     while index < entries.len() {
         let member = entries[index];
-        if indent(member)? != 4 {
+        if indent(member)? != 2 {
             return Err(error(line_span(member), "unexpected nested member"));
         }
         match content(member) {
@@ -82,7 +82,7 @@ pub(super) fn parse_change_layout<'a>(raw: &RawDecl<'a>) -> Result<ChangeLayout<
                 }
                 apply = Some(qname(
                     member,
-                    4 + "apply: ".len(),
+                    2 + "apply: ".len(),
                     &text["apply: ".len()..],
                 )?);
                 index += 1;
@@ -94,7 +94,7 @@ pub(super) fn parse_change_layout<'a>(raw: &RawDecl<'a>) -> Result<ChangeLayout<
                 }
                 index += 1;
                 let start = index;
-                while index < entries.len() && indent(entries[index])? == 8 {
+                while index < entries.len() && indent(entries[index])? == 4 {
                     index += 1;
                 }
                 if start == index {

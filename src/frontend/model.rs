@@ -1,5 +1,6 @@
 use super::clause::{focus_term, lex_clause};
 use super::source::*;
+use super::syntax::{DefinitionDecl, MembershipDecl};
 use super::*;
 use std::collections::BTreeMap;
 
@@ -9,27 +10,64 @@ pub(super) struct EntityCatalog {
     pub(super) groups: Vec<EntityGroupDecl>,
 }
 
-pub(super) fn entity_line(line: SourceLine<'_>) -> Option<Result<EntityDecl, ParseError>> {
-    let text = content(line);
-    let (local_text, typ) = text.split_once(": ")?;
-    if local_text.contains(':') || typ.contains(':') {
-        return None;
+fn semantic_name(
+    line: SourceLine<'_>,
+    offset: usize,
+    text: &str,
+) -> Result<Spanned<Name>, ParseError> {
+    if text.is_empty()
+        || text.trim() != text
+        || text.chars().any(char::is_control)
+        || text.contains([':', '∈'])
+    {
+        return Err(error(
+            child_span(line, offset, text.len()),
+            format!("expected semantic name, found '{text}'"),
+        ));
     }
+    Ok(Spanned {
+        value: Name(text.to_owned()),
+        span: child_span(line, offset, text.len()),
+    })
+}
+
+pub(super) fn definition_line(line: SourceLine<'_>) -> Option<Result<DefinitionDecl, ParseError>> {
+    let text = content(line);
+    if text.contains("::") {
+        return Some(Err(error(line_span(line), "raw '::' is not Clause syntax")));
+    }
+    let (name, denotation) = text.split_once(": ")?;
     Some((|| {
-        let local = if let Some((inside, close, tail)) = bracket_contents(line, local_text)? {
-            if close != local_text.len() || !tail.is_empty() {
-                return Err(error(line_span(line), "malformed bracketed entity"));
-            }
-            entity_name(line, 5, inside)?
-        } else {
-            qname(line, 4, local_text)?
-        };
-        Ok(EntityDecl {
-            local,
-            typ: type_name(line, 4 + local_text.len() + 2, typ)?,
+        if name.contains(':') || denotation.contains(':') {
+            return Err(error(line_span(line), "binding requires one ':'"));
+        }
+        let base = indent(line)?;
+        Ok(DefinitionDecl {
+            name: semantic_name(line, base, name)?,
+            denotation: semantic_name(line, base + name.len() + 2, denotation)?,
             span: line_span(line),
         })
     })())
+}
+
+pub(super) fn membership_line(line: SourceLine<'_>) -> Option<Result<MembershipDecl, ParseError>> {
+    let text = content(line);
+    let (member, group) = text.split_once(" ∈ ")?;
+    Some((|| {
+        if member.contains('∈') || group.contains('∈') {
+            return Err(error(line_span(line), "membership requires one '∈'"));
+        }
+        let base = indent(line)?;
+        Ok(MembershipDecl {
+            member: semantic_name(line, base, member)?,
+            group: semantic_name(line, base + member.len() + " ∈ ".len(), group)?,
+            span: line_span(line),
+        })
+    })())
+}
+
+pub(super) fn focused_name(line: SourceLine<'_>) -> Result<Spanned<Name>, ParseError> {
+    semantic_name(line, indent(line)?, content(line))
 }
 
 fn bracket_contents<'a>(
@@ -89,7 +127,7 @@ pub(super) fn entity_group_line(
     }
     let prefix = &inside[..start_offset];
     let suffix = &range_end[end_digits..];
-    if entity_name(line, 4 + 1, &format!("{prefix}0{suffix}")).is_err() {
+    if entity_name(line, 2 + 1, &format!("{prefix}0{suffix}")).is_err() {
         return Some(Err(error(
             line_span(line),
             "finite entity group does not form valid bracketed entity names",
@@ -106,7 +144,7 @@ pub(super) fn entity_group_line(
                 value: suffix.to_owned(),
                 span: child_span(line, 5 + before_end.len() + 2 + end_digits, suffix.len()),
             },
-            typ: type_name(line, 4 + close + 2, typ)?,
+            typ: type_name(line, 2 + close + 2, typ)?,
             span: line_span(line),
         })
     })())
@@ -167,10 +205,10 @@ pub(super) fn focus_template(line: SourceLine<'_>) -> Option<Result<EntityTempla
 }
 
 pub(super) fn focus_slot(line: SourceLine<'_>) -> Result<FocusSlot, ParseError> {
-    if indent(line)? != 8 {
+    if indent(line)? != 4 {
         return Err(error(
             line_span(line),
-            "focus slots must use eight-space indentation",
+            "focus slots must use four-space indentation",
         ));
     }
     let text = content(line);
@@ -195,7 +233,7 @@ pub(super) fn focus_slot(line: SourceLine<'_>) -> Result<FocusSlot, ParseError> 
         number: line.number,
         text: value,
     })?;
-    let value_offset = 8 + label.len() + 2;
+    let value_offset = 4 + label.len() + 2;
     for token in &mut tokens {
         token.span.column += value_offset;
     }
@@ -209,7 +247,7 @@ pub(super) fn focus_slot(line: SourceLine<'_>) -> Result<FocusSlot, ParseError> 
     Ok(FocusSlot {
         label: Spanned {
             value: label,
-            span: child_span(line, 8, label_width),
+            span: child_span(line, 4, label_width),
         },
         value: focus_term(&tokens[0])?,
         span: line_span(line),
@@ -217,10 +255,10 @@ pub(super) fn focus_slot(line: SourceLine<'_>) -> Result<FocusSlot, ParseError> 
 }
 
 pub(super) fn focus_binding(line: SourceLine<'_>) -> Result<FocusBinding, ParseError> {
-    if indent(line)? != 4 {
+    if indent(line)? != 2 {
         return Err(error(
             line_span(line),
-            "focus binding must use four-space indentation",
+            "focus binding must use two-space indentation",
         ));
     }
     let text = content(line);
@@ -237,8 +275,8 @@ pub(super) fn focus_binding(line: SourceLine<'_>) -> Result<FocusBinding, ParseE
         )
     })?;
     Ok(FocusBinding {
-        variable: variable_name(line, 4 + "for ".len(), variable)?,
-        range: integer_range(line, 4 + "for ".len() + variable.len() + 2, range)?,
+        variable: variable_name(line, 2 + "for ".len(), variable)?,
+        range: integer_range(line, 2 + "for ".len() + variable.len() + 2, range)?,
         span: line_span(line),
     })
 }
@@ -246,9 +284,10 @@ pub(super) fn focus_binding(line: SourceLine<'_>) -> Result<FocusBinding, ParseE
 pub(super) fn model_entities(raw: &RawDecl<'_>) -> Result<EntityCatalog, ParseError> {
     let mut explicit = BTreeMap::new();
     let mut groups = Vec::new();
-    for line in nonblank(raw.body.iter().copied()) {
+    let entries = nonblank(raw.body.iter().copied());
+    for (index, line) in entries.iter().copied().enumerate() {
         match indent(line)? {
-            4 => {
+            2 => {
                 if let Some(group) = entity_group_line(line) {
                     let group = group?;
                     groups.push(group);
@@ -257,33 +296,55 @@ pub(super) fn model_entities(raw: &RawDecl<'_>) -> Result<EntityCatalog, ParseEr
                 } else if content(line).starts_with("for ") {
                     // The later Model pass verifies that it belongs to the
                     // immediately preceding focus block.
-                } else if let Some(entity) = entity_line(line) {
-                    let entity = entity?;
-                    if entity.local.value.0.contains('/') {
-                        return Err(error(
-                            entity.local.span,
-                            "model entity names cannot be qualified",
-                        ));
-                    }
-                    if explicit
-                        .insert(entity.local.value.clone(), entity.typ.value.clone())
-                        .is_some()
-                    {
-                        return Err(error(
-                            entity.local.span,
-                            format!("duplicate entity '{}'", entity.local.value.as_str()),
-                        ));
+                } else if let Some(membership) = membership_line(line) {
+                    let membership = membership?;
+                    insert_membership_type(&mut explicit, &membership)?;
+                } else if definition_line(line).is_some() {
+                    definition_line(line).expect("checked binding shape")?;
+                } else if entries.get(index + 1).is_some_and(|next| {
+                    indent(*next).expect("source indentation was validated") == 4
+                }) {
+                    let focus = focused_name(line)?;
+                    let first_child = entries[index + 1];
+                    if content(first_child).split_ascii_whitespace().count() == 1 {
+                        insert_membership_type(
+                            &mut explicit,
+                            &MembershipDecl {
+                                member: focus,
+                                group: focused_name(first_child)?,
+                                span: line_span(first_child),
+                            },
+                        )?;
                     }
                 }
             }
-            8 => {}
+            4 => {}
             _ => {
                 return Err(error(
                     line_span(line),
-                    "Model members must use four or eight-space indentation",
+                    "Model members must use two or four-space indentation",
                 ));
             }
         }
     }
     Ok(EntityCatalog { explicit, groups })
+}
+
+fn insert_membership_type(
+    explicit: &mut BTreeMap<Name, TypeName>,
+    membership: &MembershipDecl,
+) -> Result<(), ParseError> {
+    let typ = TypeName(membership.group.value.0.clone());
+    if let Some(previous) = explicit.insert(membership.member.value.clone(), typ.clone())
+        && previous != typ
+    {
+        return Err(error(
+            membership.member.span,
+            format!(
+                "referent '{}' has conflicting memberships",
+                membership.member.value.as_str()
+            ),
+        ));
+    }
+    Ok(())
 }

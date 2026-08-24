@@ -12,7 +12,11 @@ use crate::{
 
 use super::{
     identifiers::{DesignationTable, synthetic_referent, synthetic_role},
-    lowering::{BinderTable, Projection, lower_clause_with, lower_focus},
+    lowering::{
+        BinderTable, Projection, lower_clause_with, lower_definition, lower_focus,
+        membership_content, membership_group_role, membership_member_role, membership_relation,
+        membership_shape,
+    },
     resolution::Resolver,
 };
 
@@ -320,6 +324,31 @@ fn declare_model_projection(
                         .insert(id);
                 }
             }
+            Member::Membership(membership) => {
+                let member = projection
+                    .designations
+                    .declare_scoped(&model, membership.member.value.as_str())?;
+                projection
+                    .designations
+                    .global(membership.group.value.as_str())?;
+                projection
+                    .model_referents
+                    .entry(model.clone())
+                    .or_default()
+                    .insert(member);
+            }
+            Member::Definition(definition) => {
+                for name in [&definition.name, &definition.denotation] {
+                    let referent = projection
+                        .designations
+                        .declare_scoped(&model, name.value.as_str())?;
+                    projection
+                        .model_referents
+                        .entry(model.clone())
+                        .or_default()
+                        .insert(referent);
+                }
+            }
             _ => {}
         }
     }
@@ -362,7 +391,7 @@ fn lower_relation_shapes(
                     .clone();
                 Ok((
                     role.clone(),
-                    Role::new(role, vec![legacy_type_predicate(expected)?])?,
+                    Role::new(role, vec![membership_predicate(expected)?])?,
                 ))
             })
             .collect::<kernel::Result<BTreeMap<_, _>>>()?;
@@ -401,6 +430,15 @@ fn lower_relation_shapes(
             "legacy type classification relation collides with an authored RelationShape",
         ));
     }
+    let membership = membership_shape()?;
+    if shapes
+        .insert(membership.referent().clone(), membership)
+        .is_some()
+    {
+        return Err(kernel::KernelError::new(
+            "canonical membership relation collides with an authored RelationShape",
+        ));
+    }
     Ok(shapes)
 }
 
@@ -416,11 +454,11 @@ fn legacy_type_class_role() -> RoleId {
     synthetic_role("legacy-type-classification", &["class"])
 }
 
-fn legacy_type_predicate(class: ReferentId) -> kernel::Result<RolePredicate> {
+fn membership_predicate(group: ReferentId) -> kernel::Result<RolePredicate> {
     RolePredicate::new(
-        legacy_type_classification_relation(),
-        legacy_type_candidate_role(),
-        BTreeMap::from([(legacy_type_class_role(), class)]),
+        membership_relation(),
+        membership_member_role(),
+        BTreeMap::from([(membership_group_role(), group)]),
     )
 }
 
@@ -480,6 +518,13 @@ fn lower_models(
             .get(&model_id)
             .into_iter()
             .flatten()
+            .chain(
+                projection
+                    .model_referents
+                    .get(&model_id)
+                    .into_iter()
+                    .flatten(),
+            )
         {
             referents.insert(id.clone(), Referent::new(id.clone()));
         }
@@ -488,6 +533,39 @@ fn lower_models(
         }
         let (mut contents, mut occurrences, mut judgments) =
             legacy_type_memberships(&model_id, declaration, projection, &mut referents)?;
+        let mut occurrence_index = 0usize;
+        for member in &declaration.body {
+            match member {
+                Member::Membership(membership) => {
+                    let member_id = projection
+                        .designations
+                        .scoped(&model_id, membership.member.value.as_str())?;
+                    let group_id = projection
+                        .designations
+                        .global(membership.group.value.as_str())?;
+                    let content = membership_content(member_id, group_id)?;
+                    admit_authored_content(
+                        &model_id,
+                        content,
+                        occurrence_index,
+                        Some(membership.span),
+                        &mut referents,
+                        &mut contents,
+                        &mut occurrences,
+                        &mut judgments,
+                        &mut source_spans,
+                    )?;
+                    occurrence_index += 1;
+                }
+                Member::RelationalContent(_) => occurrence_index += 1,
+                Member::Focus(focus) => {
+                    occurrence_index += (focus.binding.range.end - focus.binding.range.start + 1)
+                        as usize
+                        * focus.slots.len();
+                }
+                _ => {}
+            }
+        }
         let shell = Model::with_distinctions(
             model_id.clone(),
             referents.clone(),
@@ -504,6 +582,7 @@ fn lower_models(
         )?;
         let shell = wire::admit(shell);
         let mut occurrence_index = 0usize;
+        let mut definitions = Vec::new();
         for member in &declaration.body {
             let (lowered, span) = match member {
                 Member::RelationalContent(surface) => (
@@ -514,43 +593,34 @@ fn lower_models(
                     lower_focus(projection, shell.model(), focus)?,
                     Some(focus.span),
                 ),
+                Member::Membership(_) => {
+                    occurrence_index += 1;
+                    (Vec::new(), None)
+                }
+                Member::Definition(definition) => {
+                    definitions.push(lower_definition(
+                        projection,
+                        shell.model(),
+                        &definition.name.value,
+                        &definition.denotation.value,
+                    )?);
+                    (Vec::new(), None)
+                }
                 _ => (Vec::new(), None),
             };
             for content in lowered {
-                contents.insert(content.id().clone(), content.clone());
-                let occurrence_id = synthetic_referent(
-                    "assertion-occurrence",
-                    &[model_id.as_str(), &occurrence_index.to_string()],
-                );
-                let judgment_id =
-                    synthetic_referent("assertion-judgment", &[occurrence_id.as_str()]);
+                admit_authored_content(
+                    &model_id,
+                    content,
+                    occurrence_index,
+                    span,
+                    &mut referents,
+                    &mut contents,
+                    &mut occurrences,
+                    &mut judgments,
+                    &mut source_spans,
+                )?;
                 occurrence_index += 1;
-                referents.insert(occurrence_id.clone(), Referent::new(occurrence_id.clone()));
-                referents.insert(judgment_id.clone(), Referent::new(judgment_id.clone()));
-                occurrences.push(AssertionOccurrence::new(
-                    occurrence_id.clone(),
-                    content.id().clone(),
-                    model_id.clone(),
-                    model_id.clone(),
-                ));
-                judgments.push(Judgment::new(
-                    judgment_id,
-                    model_id.clone(),
-                    model_id.clone(),
-                    JudgmentTarget::Occurrence(occurrence_id.clone()),
-                    JudgmentKind::Admitted {
-                        policy: model_id.clone(),
-                        basis: Vec::new(),
-                    },
-                    JudgmentStatus::Affirmed,
-                ));
-                if let Some(span) = span
-                    && source_spans.insert(occurrence_id, span).is_some()
-                {
-                    return Err(kernel::KernelError::new(
-                        "duplicate assertion occurrence source projection",
-                    ));
-                }
             }
         }
         let mut rules = Vec::new();
@@ -617,7 +687,7 @@ fn lower_models(
             contents,
             shapes.clone(),
             occurrences,
-            Vec::new(),
+            definitions,
             rules,
             Vec::new(),
             Vec::new(),
@@ -628,6 +698,53 @@ fn lower_models(
         models.insert(declaration.subject.value.clone(), model);
     }
     Ok((models, source_spans))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn admit_authored_content(
+    model: &ReferentId,
+    content: RelationalContent,
+    ordinal: usize,
+    span: Option<frontend::Span>,
+    referents: &mut BTreeMap<ReferentId, Referent>,
+    contents: &mut BTreeMap<kernel::ContentId, RelationalContent>,
+    occurrences: &mut Vec<AssertionOccurrence>,
+    judgments: &mut Vec<Judgment>,
+    source_spans: &mut BTreeMap<ReferentId, frontend::Span>,
+) -> kernel::Result<()> {
+    contents.insert(content.id().clone(), content.clone());
+    let occurrence = synthetic_referent(
+        "assertion-occurrence",
+        &[model.as_str(), &ordinal.to_string()],
+    );
+    let judgment = synthetic_referent("assertion-judgment", &[occurrence.as_str()]);
+    referents.insert(occurrence.clone(), Referent::new(occurrence.clone()));
+    referents.insert(judgment.clone(), Referent::new(judgment.clone()));
+    occurrences.push(AssertionOccurrence::new(
+        occurrence.clone(),
+        content.id().clone(),
+        model.clone(),
+        model.clone(),
+    ));
+    judgments.push(Judgment::new(
+        judgment,
+        model.clone(),
+        model.clone(),
+        JudgmentTarget::Occurrence(occurrence.clone()),
+        JudgmentKind::Admitted {
+            policy: model.clone(),
+            basis: Vec::new(),
+        },
+        JudgmentStatus::Affirmed,
+    ));
+    if let Some(span) = span
+        && source_spans.insert(occurrence, span).is_some()
+    {
+        return Err(kernel::KernelError::new(
+            "duplicate assertion occurrence source projection",
+        ));
+    }
+    Ok(())
 }
 
 type LegacyTypeMemberships = (
