@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
-    frontend::{self, AscriptionDecl, Kind, Member},
+    frontend::{self, Declaration, Kind, Member},
     kernel::{
         self, AssertionOccurrence, Delta, Judgment, JudgmentKind, JudgmentStatus, JudgmentTarget,
         Model, Referent, RelationalContent, Revision, SemanticAtom,
@@ -15,7 +15,7 @@ use super::{
 };
 
 pub(super) struct Resolver<'a> {
-    declarations: &'a BTreeMap<frontend::Name, &'a AscriptionDecl>,
+    declarations: &'a BTreeMap<frontend::Name, &'a Declaration>,
     models: BTreeMap<frontend::Name, Model>,
     projection: &'a Projection,
     pub(super) revisions: BTreeMap<frontend::Name, Revision>,
@@ -27,7 +27,7 @@ pub(super) struct Resolver<'a> {
 
 impl<'a> Resolver<'a> {
     pub(super) fn new(
-        declarations: &'a BTreeMap<frontend::Name, &'a AscriptionDecl>,
+        declarations: &'a BTreeMap<frontend::Name, &'a Declaration>,
         models: BTreeMap<frontend::Name, Model>,
         projection: &'a Projection,
         source_spans: BTreeMap<kernel::ReferentId, frontend::Span>,
@@ -44,7 +44,7 @@ impl<'a> Resolver<'a> {
         }
     }
 
-    fn declaration(&self, name: &frontend::Name, kind: Kind) -> kernel::Result<&'a AscriptionDecl> {
+    fn declaration(&self, name: &frontend::Name, kind: Kind) -> kernel::Result<&'a Declaration> {
         match self.declarations.get(name) {
             Some(declaration) if declaration.kind == kind => Ok(*declaration),
             Some(_) => Err(kernel::KernelError::new(format!(
@@ -127,7 +127,7 @@ impl<'a> Resolver<'a> {
     }
 }
 
-fn from(declaration: &AscriptionDecl) -> kernel::Result<&frontend::Name> {
+fn from(declaration: &Declaration) -> kernel::Result<&frontend::Name> {
     declaration
         .body
         .iter()
@@ -138,7 +138,7 @@ fn from(declaration: &AscriptionDecl) -> kernel::Result<&frontend::Name> {
         .ok_or_else(|| kernel::KernelError::new("Revision or Delta requires from:"))
 }
 
-fn apply(declaration: &AscriptionDecl) -> Option<&frontend::Name> {
+fn apply(declaration: &Declaration) -> Option<&frontend::Name> {
     declaration.body.iter().find_map(|member| match member {
         Member::Apply(name) => Some(name),
         _ => None,
@@ -148,7 +148,7 @@ fn apply(declaration: &AscriptionDecl) -> Option<&frontend::Name> {
 fn local_delta(
     projection: &Projection,
     base: &Revision,
-    declaration: &AscriptionDecl,
+    declaration: &Declaration,
 ) -> kernel::Result<(Delta, BTreeMap<kernel::ReferentId, frontend::Span>)> {
     let declaration_id = projection
         .designations
@@ -311,12 +311,12 @@ fn extend_source_spans(
 mod tests {
     use crate::{elaborate::compile, frontend};
 
-    const BASE: &str = "Module: Type\n\nimpact/imports: RelationShape\n    {consumer: Module} imports {dependency: Module}\n    mode consumer -> dependency: many\n\nimpact: Model\n    North: Module\n    South: Module\n    Store: Module\n    North imports Store\n";
+    const BASE: &str = "Module\n\nimpact/imports: RelationShape\n  {consumer: Module} imports {dependency: Module}\n  mode consumer -> dependency: many\n\nimpact\n  North ∈ Module\n  South ∈ Module\n  Store ∈ Module\n  North imports Store\n";
 
     #[test]
     fn direct_and_reusable_deltas_preserve_content_without_collapsing_occurrences() {
         let program = compile(frontend::parse(&format!(
-            "{BASE}\nimpact/direct: Revision\n    from: impact\n    admit:\n        South imports North\n\nimpact/add: Delta\n    from: impact\n    admit:\n        South imports North\n\nimpact/reusable: Revision\n    from: impact\n    apply: impact/add\n"
+            "{BASE}\nimpact/direct: Revision\n  from: impact\n  admit:\n    South imports North\n\nimpact/add: Delta\n  from: impact\n  admit:\n    South imports North\n\nimpact/reusable: Revision\n  from: impact\n  apply: impact/add\n"
         )).unwrap()).unwrap();
         let direct = program
             .revision(&frontend::Name("impact/direct".into()))
@@ -354,7 +354,7 @@ mod tests {
     #[test]
     fn repeated_content_admissions_preserve_each_authored_occurrence() {
         let program = compile(frontend::parse(&format!(
-            "{BASE}\nimpact/repeated: Revision\n    from: impact\n    admit:\n        North imports Store\n        North imports Store\n"
+            "{BASE}\nimpact/repeated: Revision\n  from: impact\n  admit:\n    North imports Store\n    North imports Store\n"
         )).unwrap()).unwrap();
         let base = program.revision(&frontend::Name("impact".into())).unwrap();
         let repeated = program

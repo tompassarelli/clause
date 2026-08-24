@@ -1,4 +1,4 @@
-use super::model::EntityCatalog;
+use super::model::MembershipCatalog;
 use super::source::*;
 use super::*;
 use std::collections::{BTreeMap, BTreeSet};
@@ -144,7 +144,7 @@ pub(super) fn parse_change_layout<'a>(raw: &RawDecl<'a>) -> Result<ChangeLayout<
 
 pub(super) fn declared_model_for_law(
     name: &Name,
-    models: &BTreeMap<Name, EntityCatalog>,
+    models: &BTreeMap<Name, MembershipCatalog>,
 ) -> Option<Name> {
     models
         .keys()
@@ -224,7 +224,7 @@ pub(super) fn revision_model(
     layouts: &BTreeMap<Name, ChangeLayout<'_>>,
 ) -> Name {
     match kinds[name] {
-        Kind::Model => name.clone(),
+        Kind::Enumeration | Kind::BindingShape | Kind::Model => name.clone(),
         Kind::Revision => revision_model(&layouts[name].from.value, kinds, layouts),
         _ => unreachable!("validated revision reference"),
     }

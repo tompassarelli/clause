@@ -3,18 +3,22 @@ use super::declaration::*;
 use super::model::*;
 use super::relation::*;
 use super::source::*;
-use super::syntax::{DefinitionDecl, MembershipDecl};
+use super::syntax::{DefinitionDecl, MembershipDecl, ShapeBindingDecl};
 use super::*;
 use std::collections::{BTreeMap, BTreeSet};
 
+const MODEL_OR_REVISION: &[Kind] = &[
+    Kind::Enumeration,
+    Kind::BindingShape,
+    Kind::Model,
+    Kind::Revision,
+];
+
 pub fn parse(source: &str) -> Result<Program, ParseError> {
-    let (raw_declarations, raw_requests) = scan(source)?;
-    let mut kinds = BTreeMap::new();
+    let (mut raw_declarations, raw_requests) = scan(source)?;
+    let mut declaration_names = BTreeSet::new();
     for declaration in &raw_declarations {
-        if kinds
-            .insert(declaration.subject.value.clone(), declaration.kind)
-            .is_some()
-        {
+        if !declaration_names.insert(declaration.subject.value.clone()) {
             return Err(error(
                 declaration.subject.span,
                 format!(
@@ -24,58 +28,59 @@ pub fn parse(source: &str) -> Result<Program, ParseError> {
             ));
         }
     }
-    let types = raw_declarations
+    let grounded = raw_declarations
         .iter()
-        .filter(|declaration| declaration.kind == Kind::Type)
+        .filter(|declaration| declaration.kind == Kind::Grounding || declaration.bare_block)
         .map(|declaration| declaration.subject.value.clone())
         .collect::<BTreeSet<_>>();
-    for declaration in raw_declarations
-        .iter()
-        .filter(|declaration| declaration.kind == Kind::Type)
-    {
-        if nonblank(declaration.body.iter().copied()).is_empty() {
-            continue;
-        }
-        return Err(error(
-            line_span(declaration.header),
-            "Type declarations cannot have members",
-        ));
-    }
     let mut relations = BTreeMap::new();
     for declaration in raw_declarations
         .iter()
         .filter(|declaration| declaration.kind == Kind::RelationShape)
     {
         let spec = relation_spec(declaration)?;
-        for typ in spec.roles.values() {
-            if !types.contains(&Name(typ.0.clone())) {
+        for domain in spec.roles.values() {
+            if !grounded.contains(&Name(domain.0.clone())) {
                 return Err(error(
                     line_span(declaration.header),
-                    format!("unknown role type '{}'", typ.as_str()),
+                    format!("unknown role domain '{}'", domain.as_str()),
                 ));
             }
         }
         relations.insert(declaration.subject.value.clone(), spec);
     }
-    let mut entities = BTreeMap::new();
-    for declaration in raw_declarations
+    for declaration in &mut raw_declarations {
+        if declaration.bare_block {
+            declaration.kind = infer_bare_block_kind(declaration, &relations)?;
+            declaration.bare_block = false;
+        }
+    }
+    let kinds = raw_declarations
         .iter()
-        .filter(|declaration| declaration.kind == Kind::Model)
-    {
-        let model_entities = model_entities(declaration)?;
-        for typ in model_entities
+        .map(|declaration| (declaration.subject.value.clone(), declaration.kind))
+        .collect::<BTreeMap<_, _>>();
+    let mut memberships = BTreeMap::new();
+    for declaration in raw_declarations.iter().filter(|declaration| {
+        matches!(
+            declaration.kind,
+            Kind::Enumeration | Kind::BindingShape | Kind::Model
+        )
+    }) {
+        let catalog = model_memberships(declaration, &grounded)?;
+        for domain in catalog
             .explicit
             .values()
-            .chain(model_entities.groups.iter().map(|group| &group.typ.value))
+            .flatten()
+            .chain(catalog.ranges.iter().map(|range| &range.group.value))
         {
-            if !types.contains(&Name(typ.0.clone())) {
+            if !grounded.contains(&Name(domain.0.clone())) {
                 return Err(error(
                     line_span(declaration.header),
-                    format!("unknown entity type '{}'", typ.as_str()),
+                    format!("unknown membership group '{}'", domain.as_str()),
                 ));
             }
         }
-        entities.insert(declaration.subject.value.clone(), model_entities);
+        memberships.insert(declaration.subject.value.clone(), catalog);
     }
     let mut layouts = BTreeMap::new();
     for declaration in raw_declarations
@@ -88,12 +93,7 @@ pub fn parse(source: &str) -> Result<Program, ParseError> {
         );
     }
     for (name, layout) in &layouts {
-        reference_kind(
-            &layout.from,
-            &kinds,
-            &[Kind::Model, Kind::Revision],
-            "revision base",
-        )?;
+        reference_kind(&layout.from, &kinds, MODEL_OR_REVISION, "revision base")?;
         if let Some(apply) = &layout.apply {
             reference_kind(apply, &kinds, &[Kind::Delta], "applied Delta")?;
             if kinds[name] == Kind::Delta {
@@ -106,7 +106,38 @@ pub fn parse(source: &str) -> Result<Program, ParseError> {
     let mut declarations = Vec::new();
     for raw in &raw_declarations {
         let body = match raw.kind {
-            Kind::Type => Vec::new(),
+            Kind::Grounding => Vec::new(),
+            Kind::Enumeration => nonblank(raw.body.iter().copied())
+                .into_iter()
+                .map(|line| {
+                    Ok(Member::Membership(MembershipDecl {
+                        member: semantic_name(line, 2, content(line))?,
+                        group: raw.subject.clone(),
+                        span: line_span(line),
+                    }))
+                })
+                .collect::<Result<Vec<_>, ParseError>>()?,
+            Kind::BindingShape => nonblank(raw.body.iter().copied())
+                .into_iter()
+                .map(|line| {
+                    let binding = definition_line(line)
+                        .expect("binding-shape classification checked every member")?;
+                    if !grounded.contains(&binding.denotation.value) {
+                        return Err(error(
+                            binding.denotation.span,
+                            format!(
+                                "unknown binding domain '{}'",
+                                binding.denotation.value.as_str()
+                            ),
+                        ));
+                    }
+                    Ok(Member::ShapeBinding(ShapeBindingDecl {
+                        label: binding.name,
+                        domain: binding.denotation,
+                        span: binding.span,
+                    }))
+                })
+                .collect::<Result<Vec<_>, ParseError>>()?,
             Kind::RelationShape => {
                 let spec = relations
                     .get(&raw.subject.value)
@@ -128,8 +159,8 @@ pub fn parse(source: &str) -> Result<Program, ParseError> {
                             "Model members must use two-space indentation",
                         ));
                     }
-                    if let Some(group) = entity_group_line(line) {
-                        members.push(Member::EntityGroup(group?));
+                    if let Some(range) = membership_range_line(line) {
+                        members.push(Member::MembershipRange(range?));
                         index += 1;
                     } else if let Some(template) = focus_template(line) {
                         let template = template?;
@@ -189,13 +220,7 @@ pub fn parse(source: &str) -> Result<Program, ParseError> {
                         index += 1;
                         while index < entries.len() && indent(entries[index])? == 4 {
                             let child = entries[index];
-                            if content(child).split_ascii_whitespace().count() == 1 {
-                                members.push(Member::Membership(MembershipDecl {
-                                    member: focus.clone(),
-                                    group: focused_name(child)?,
-                                    span: line_span(child),
-                                }));
-                            } else if let Some(definition) = definition_line(child) {
+                            if let Some(definition) = definition_line(child) {
                                 let definition = definition?;
                                 members.push(Member::Definition(DefinitionDecl {
                                     name: Spanned {
@@ -210,25 +235,34 @@ pub fn parse(source: &str) -> Result<Program, ParseError> {
                                     span: definition.span,
                                 }));
                             } else {
-                                let expanded =
-                                    format!("{} {}", focus.value.as_str(), content(child));
-                                let parsed = clause(
-                                    SourceLine {
-                                        number: child.number,
-                                        text: &expanded,
-                                    },
-                                    &raw.subject.value,
-                                    &relations,
-                                    &entities,
-                                    &mut variables,
-                                )?;
-                                if !ground(&parsed) {
-                                    return Err(error(
-                                        parsed.span,
-                                        "model assertions must be closed",
-                                    ));
+                                let group = focused_name(child)?;
+                                if grounded.contains(&group.value) {
+                                    members.push(Member::Membership(MembershipDecl {
+                                        member: focus.clone(),
+                                        group,
+                                        span: line_span(child),
+                                    }));
+                                } else {
+                                    let expanded =
+                                        format!("{} {}", focus.value.as_str(), content(child));
+                                    let parsed = clause(
+                                        SourceLine {
+                                            number: child.number,
+                                            text: &expanded,
+                                        },
+                                        &raw.subject.value,
+                                        &relations,
+                                        &memberships,
+                                        &mut variables,
+                                    )?;
+                                    if !ground(&parsed) {
+                                        return Err(error(
+                                            parsed.span,
+                                            "model assertions must be closed",
+                                        ));
+                                    }
+                                    members.push(Member::RelationalContent(parsed));
                                 }
-                                members.push(Member::RelationalContent(parsed));
                             }
                             index += 1;
                         }
@@ -237,7 +271,7 @@ pub fn parse(source: &str) -> Result<Program, ParseError> {
                             line,
                             &raw.subject.value,
                             &relations,
-                            &entities,
+                            &memberships,
                             &mut variables,
                         )?;
                         if !ground(&parsed) {
@@ -252,7 +286,7 @@ pub fn parse(source: &str) -> Result<Program, ParseError> {
             Kind::DerivationRule => {
                 let layout = parse_law_layout(raw)?;
                 let model =
-                    declared_model_for_law(&raw.subject.value, &entities).ok_or_else(|| {
+                    declared_model_for_law(&raw.subject.value, &memberships).ok_or_else(|| {
                         error(
                             raw.subject.span,
                             "DerivationRule name must be in a declared Model namespace",
@@ -263,14 +297,14 @@ pub fn parse(source: &str) -> Result<Program, ParseError> {
                     layout.conclusion,
                     &model,
                     &relations,
-                    &entities,
+                    &memberships,
                     &mut variable_types,
                 )?;
                 let premises = layout
                     .premises
                     .iter()
                     .copied()
-                    .map(|line| clause(line, &model, &relations, &entities, &mut variable_types))
+                    .map(|line| clause(line, &model, &relations, &memberships, &mut variable_types))
                     .collect::<Result<Vec<_>, _>>()?;
                 let premise_variables =
                     premises.iter().flat_map(variables).collect::<BTreeSet<_>>();
@@ -301,7 +335,9 @@ pub fn parse(source: &str) -> Result<Program, ParseError> {
                         let clauses = lines
                             .iter()
                             .copied()
-                            .map(|line| clause(line, &model, &relations, &entities, &mut variables))
+                            .map(|line| {
+                                clause(line, &model, &relations, &memberships, &mut variables)
+                            })
                             .collect::<Result<Vec<_>, _>>()?;
                         for parsed in &clauses {
                             if !ground(parsed) {
@@ -316,7 +352,9 @@ pub fn parse(source: &str) -> Result<Program, ParseError> {
                         let clauses = lines
                             .iter()
                             .copied()
-                            .map(|line| clause(line, &model, &relations, &entities, &mut variables))
+                            .map(|line| {
+                                clause(line, &model, &relations, &memberships, &mut variables)
+                            })
                             .collect::<Result<Vec<_>, _>>()?;
                         for parsed in &clauses {
                             if !ground(parsed) {
@@ -339,7 +377,7 @@ pub fn parse(source: &str) -> Result<Program, ParseError> {
                 members
             }
         };
-        declarations.push(AscriptionDecl {
+        declarations.push(Declaration {
             subject: raw.subject.clone(),
             kind: raw.kind,
             body,
@@ -356,15 +394,10 @@ pub fn parse(source: &str) -> Result<Program, ParseError> {
                 clause: line,
                 header,
             } => {
-                reference_kind(
-                    &revision,
-                    &kinds,
-                    &[Kind::Model, Kind::Revision],
-                    "request revision",
-                )?;
+                reference_kind(&revision, &kinds, MODEL_OR_REVISION, "request revision")?;
                 let model = revision_model(&revision.value, &kinds, &layouts);
                 let mut variables = BTreeMap::new();
-                let pattern = clause(line, &model, &relations, &entities, &mut variables)?;
+                let pattern = clause(line, &model, &relations, &memberships, &mut variables)?;
                 if !variables.contains_key(&sought.value) {
                     return Err(error(sought.span, "find variable must occur in its clause"));
                 }
@@ -381,15 +414,10 @@ pub fn parse(source: &str) -> Result<Program, ParseError> {
                 clause: line,
                 header,
             } => {
-                reference_kind(
-                    &revision,
-                    &kinds,
-                    &[Kind::Model, Kind::Revision],
-                    "request revision",
-                )?;
+                reference_kind(&revision, &kinds, MODEL_OR_REVISION, "request revision")?;
                 let model = revision_model(&revision.value, &kinds, &layouts);
                 let mut variables = BTreeMap::new();
-                let target = clause(line, &model, &relations, &entities, &mut variables)?;
+                let target = clause(line, &model, &relations, &memberships, &mut variables)?;
                 if !ground(&target) {
                     return Err(error(target.span, "why target must be closed"));
                 }
@@ -408,15 +436,10 @@ pub fn parse(source: &str) -> Result<Program, ParseError> {
                 using,
                 header,
             } => {
-                reference_kind(
-                    &revision,
-                    &kinds,
-                    &[Kind::Model, Kind::Revision],
-                    "request revision",
-                )?;
+                reference_kind(&revision, &kinds, MODEL_OR_REVISION, "request revision")?;
                 let model = revision_model(&revision.value, &kinds, &layouts);
                 let mut variables = BTreeMap::new();
-                let target = clause(line, &model, &relations, &entities, &mut variables)?;
+                let target = clause(line, &model, &relations, &memberships, &mut variables)?;
                 if !ground(&target) {
                     return Err(error(target.span, "intervention target must be closed"));
                 }
@@ -451,13 +474,8 @@ pub fn parse(source: &str) -> Result<Program, ParseError> {
                 successor,
                 header,
             } => {
-                reference_kind(&base, &kinds, &[Kind::Model, Kind::Revision], "diff base")?;
-                reference_kind(
-                    &successor,
-                    &kinds,
-                    &[Kind::Model, Kind::Revision],
-                    "diff successor",
-                )?;
+                reference_kind(&base, &kinds, MODEL_OR_REVISION, "diff base")?;
+                reference_kind(&successor, &kinds, MODEL_OR_REVISION, "diff successor")?;
                 requests.push(RequestDecl::Diff {
                     base,
                     successor,
@@ -476,48 +494,48 @@ pub fn parse(source: &str) -> Result<Program, ParseError> {
 mod tests {
     use super::*;
 
-    const SOURCE: &str = r#"Module: Type
-Change: Type
+    const SOURCE: &str = r#"Module
+Change
 
 impact/imports: RelationShape
-    {consumer: Module} imports {dependency: Module}
-    mode consumer -> dependency: many
+  {consumer: Module} imports {dependency: Module}
+  mode consumer -> dependency: many
 
 impact/affects: RelationShape
-    {change: Change} affects {consumer: Module}
-    mode change -> consumer: many
+  {change: Change} affects {consumer: Module}
+  mode change -> consumer: many
 
-impact: Model
-    North: Module
-    Store: Module
-    compiler-change: Change
-    North imports Store
+impact
+  North ∈ Module
+  Store ∈ Module
+  compiler-change ∈ Change
+  North imports Store
 
 impact/direct: DerivationRule
+  ?consumer imports ?dependency
+  when:
     ?consumer imports ?dependency
-    when:
-        ?consumer imports ?dependency
 
 impact/adopt: Revision
-    from: impact
-    admit:
-        Store imports North
+  from: impact
+  admit:
+    Store imports North
 
 find all ?consumer in impact:
-    compiler-change affects ?consumer
+  compiler-change affects ?consumer
 
 why all in impact:
-    North imports Store
+  North imports Store
 
 prevent all minimal in impact:
-    North imports Store
+  North imports Store
 using:
-    impact/imports
+  impact/imports
 
 achieve one minimal in impact/adopt:
-    Store imports North
+  Store imports North
 using:
-    impact/imports
+  impact/imports
 
 diff impact -> impact/adopt
 "#;
@@ -525,13 +543,11 @@ diff impact -> impact/adopt
     #[test]
     fn parses_the_singular_surface_in_declaration_independent_order() {
         let source = format!(
-            "find all ?consumer in impact:\n    compiler-change affects ?consumer\n\n{}\nModule: Type\nChange: Type\n",
-            SOURCE
-                .replace("Module: Type\nChange: Type\n\n", "")
-                .replace(
-                    "find all ?consumer in impact:\n    compiler-change affects ?consumer\n\n",
-                    ""
-                )
+            "find all ?consumer in impact:\n  compiler-change affects ?consumer\n\n{}\nModule\nChange\n",
+            SOURCE.replace("Module\nChange\n\n", "").replace(
+                "find all ?consumer in impact:\n  compiler-change affects ?consumer\n\n",
+                ""
+            )
         );
         let program = parse(&source).expect("native source parses");
         assert_eq!(program.declarations.len(), 7);
@@ -544,6 +560,44 @@ diff impact -> impact/adopt
         assert_eq!(relation.subject.value.as_str(), "impact/imports");
         assert!(matches!(relation.body[0], Member::Sentence(_)));
         assert!(matches!(program.requests[0], RequestDecl::Find { .. }));
+    }
+
+    #[test]
+    fn infers_grounding_enumeration_binding_shape_and_model_from_bare_form() {
+        let program = parse(
+            "F32\nGame\n  Chess\n  Soccer\n\nVec2\n  x: F32\n  y: F32\n\nDoor\nPlace\n\negress/connects: RelationShape\n  {connector: Door} connects {from: Place} to {to: Place}\n  mode connector, from -> to: many\n\negress\n  Cellar ∈ Place\n  Armory ∈ Place\n  iron-door\n    Door\n    connects Cellar to Armory\n",
+        )
+        .expect("each bare form has one checked structural interpretation");
+        let kind = |name: &str| {
+            program
+                .declarations
+                .iter()
+                .find(|declaration| declaration.subject.value.as_str() == name)
+                .map(|declaration| declaration.kind)
+        };
+        assert_eq!(kind("F32"), Some(Kind::Grounding));
+        assert_eq!(kind("Game"), Some(Kind::Enumeration));
+        assert_eq!(kind("Vec2"), Some(Kind::BindingShape));
+        assert_eq!(kind("egress"), Some(Kind::Model));
+        assert!(
+            program
+                .declarations
+                .iter()
+                .find(|declaration| declaration.subject.value.as_str() == "Game")
+                .is_some_and(|declaration| declaration
+                    .body
+                    .iter()
+                    .all(|member| matches!(member, Member::Membership(_))))
+        );
+    }
+
+    #[test]
+    fn top_level_membership_requires_a_stable_model_context() {
+        let error = parse("Game\nChess ∈ Game\n").expect_err("no Model owns the assertion");
+        assert_eq!(
+            error.message,
+            "top-level membership requires an enclosing bare Model block"
+        );
     }
 
     #[test]
@@ -574,8 +628,8 @@ diff impact -> impact/adopt
     #[test]
     fn parses_reusable_delta_and_revision_apply() {
         let source = SOURCE.replace(
-            "impact/adopt: Revision\n    from: impact\n    admit:\n        Store imports North",
-            "impact/remove: Delta\n    from: impact\n    withdraw:\n        North imports Store\n\nimpact/adopt: Revision\n    from: impact\n    apply: impact/remove",
+            "impact/adopt: Revision\n  from: impact\n  admit:\n    Store imports North",
+            "impact/remove: Delta\n  from: impact\n  withdraw:\n    North imports Store\n\nimpact/adopt: Revision\n  from: impact\n  apply: impact/remove",
         );
         let program = parse(&source).expect("Delta applies from the same base");
         assert!(
@@ -599,17 +653,17 @@ diff impact -> impact/adopt
         }
         assert!(
             parse(&SOURCE.replace(
-                "    {consumer: Module} imports {dependency: Module}",
-                "    sentence: {consumer} imports {dependency}",
+                "  {consumer: Module} imports {dependency: Module}",
+                "  sentence: {consumer} imports {dependency}",
             ))
             .is_err()
         );
     }
 
     #[test]
-    fn rejects_non_four_space_indentation_and_tabs() {
-        assert!(parse(&SOURCE.replace("    North: Module", "  North: Module")).is_err());
-        assert!(parse(&SOURCE.replace("    North: Module", "\tNorth: Module")).is_err());
+    fn rejects_non_two_space_indentation_and_tabs() {
+        assert!(parse(&SOURCE.replace("  North ∈ Module", "    North ∈ Module")).is_err());
+        assert!(parse(&SOURCE.replace("  North ∈ Module", "\tNorth ∈ Module")).is_err());
     }
 
     #[test]
@@ -638,7 +692,7 @@ diff impact -> impact/adopt
     }
 
     #[test]
-    fn rejects_unknown_or_wrongly_typed_entities_and_quoted_modules() {
+    fn rejects_unknown_or_wrong_domain_referents_and_quoted_modules() {
         assert!(parse(&SOURCE.replace("North imports Store", "Missing imports Store")).is_err());
         assert!(
             parse(&SOURCE.replace("North imports Store", "compiler-change imports Store")).is_err()
@@ -649,8 +703,8 @@ diff impact -> impact/adopt
     #[test]
     fn rejects_inconsistent_law_variables() {
         let source = SOURCE.replace(
-            "?consumer imports ?dependency\n    when:\n        ?consumer imports ?dependency",
-            "?consumer imports ?dependency\n    when:\n        compiler-change affects ?consumer",
+            "?consumer imports ?dependency\n  when:\n    ?consumer imports ?dependency",
+            "?consumer imports ?dependency\n  when:\n    compiler-change affects ?consumer",
         );
         assert!(parse(&source).is_err());
     }
@@ -658,13 +712,13 @@ diff impact -> impact/adopt
     #[test]
     fn preserves_duplicate_admissions_but_rejects_overlaps() {
         let duplicate = SOURCE.replace(
-            "        Store imports North",
-            "        Store imports North\n        Store imports North",
+            "    Store imports North",
+            "    Store imports North\n    Store imports North",
         );
         assert!(parse(&duplicate).is_ok());
         let overlap = SOURCE.replace(
-            "    admit:\n        Store imports North",
-            "    admit:\n        Store imports North\n    withdraw:\n        Store imports North",
+            "  admit:\n    Store imports North",
+            "  admit:\n    Store imports North\n  withdraw:\n    Store imports North",
         );
         assert!(parse(&overlap).is_err());
     }
@@ -672,19 +726,18 @@ diff impact -> impact/adopt
     #[test]
     fn accepts_apply_with_different_revision_aliases() {
         let source = SOURCE.replace(
-            "impact/adopt: Revision\n    from: impact\n    admit:\n        Store imports North",
-            "impact/alias-left: Revision\n    from: impact\n    admit:\n        Store imports North\n\nimpact/alias-right: Revision\n    from: impact\n    admit:\n        Store imports North\n\nimpact/remove: Delta\n    from: impact/alias-left\n    withdraw:\n        North imports Store\n\nimpact/adopt: Revision\n    from: impact/alias-right\n    apply: impact/remove",
+            "impact/adopt: Revision\n  from: impact\n  admit:\n    Store imports North",
+            "impact/alias-left: Revision\n  from: impact\n  admit:\n    Store imports North\n\nimpact/alias-right: Revision\n  from: impact\n  admit:\n    Store imports North\n\nimpact/remove: Delta\n  from: impact/alias-left\n  withdraw:\n    North imports Store\n\nimpact/adopt: Revision\n  from: impact/alias-right\n  apply: impact/remove",
         );
         assert!(parse(&source).is_ok());
     }
 
     #[test]
     fn rejects_cycles_and_bad_request_references() {
-        let cycle = SOURCE.replace("impact/adopt: Revision\n    from: impact\n    admit:\n        Store imports North", "impact/first: Revision\n    from: impact/second\n    admit:\n        Store imports North\n\nimpact/second: Revision\n    from: impact/first\n    admit:\n        Store imports North");
+        let cycle = SOURCE.replace("impact/adopt: Revision\n  from: impact\n  admit:\n    Store imports North", "impact/first: Revision\n  from: impact/second\n  admit:\n    Store imports North\n\nimpact/second: Revision\n  from: impact/first\n  admit:\n    Store imports North");
         assert!(parse(&cycle).is_err());
         assert!(
-            parse(&SOURCE.replace("using:\n    impact/imports", "using:\n    impact/missing"))
-                .is_err()
+            parse(&SOURCE.replace("using:\n  impact/imports", "using:\n  impact/missing")).is_err()
         );
     }
 
@@ -692,8 +745,8 @@ diff impact -> impact/adopt
     fn rejects_open_closed_requests_and_missing_find_variable() {
         assert!(
             parse(&SOURCE.replace(
-                "    North imports Store\nusing:",
-                "    ?north imports Store\nusing:"
+                "  North imports Store\nusing:",
+                "  ?north imports Store\nusing:"
             ))
             .is_err()
         );
@@ -708,8 +761,7 @@ diff impact -> impact/adopt
 
     #[test]
     fn parses_why_prefixed_qname_declarations() {
-        let program = parse("Type: Type\nwhy: Type\nwhy-not: Type\n")
-            .expect("why-prefixed names are declarations");
+        let program = parse("Type\nwhy\nwhy-not\n").expect("why-prefixed names are declarations");
         assert!(
             program
                 .declarations
@@ -727,8 +779,8 @@ diff impact -> impact/adopt
     #[test]
     fn dispatches_only_exact_why_request_heads() {
         let source = SOURCE.replace(
-            "why all in impact:\n    North imports Store",
-            "why in impact:\n    North imports Store\n\nwhy all in impact:\n    North imports Store",
+            "why all in impact:\n  North imports Store",
+            "why in impact:\n  North imports Store\n\nwhy all in impact:\n  North imports Store",
         );
         let program = parse(&source).expect("exact why request heads parse");
         assert!(matches!(
@@ -743,35 +795,35 @@ diff impact -> impact/adopt
 
     #[test]
     fn rejects_malformed_focus_ranges_bindings_and_slots() {
-        let base = r#"Item: Type
-Sensor: Type
+        let base = r#"Item
+Sensor
 
 pairing/pair: RelationShape
-    {item: Item} paired with {sensor: Sensor}
-    mode item -> sensor: many
+  {item: Item} paired with {sensor: Sensor}
+  mode item -> sensor: many
 
-pairing: Model
-    Sensor-A: Sensor
-    [Item 1..6]: Item
-    [Item {n}]:
-        paired with: Sensor-A
-    for n: 1..4
+pairing
+  Sensor-A ∈ Sensor
+  [Item 1..6] ∈ Item
+  [Item {n}]
+    paired with Sensor-A
+  for n: 1..4
 "#;
+        parse(base).expect("canonical finite membership and correlated focus parse");
         for replacement in [
-            "[Item 6..1]: Item",
-            "[Item 1..]: Item",
-            "[Item {n}]:\n        paired with: Sensor-A\n    for m: 1..4",
-            "[Item {n}]:\n        paired with Sensor-A\n    for n: 1..4",
-            "[Item {n}]:\n    paired with: Sensor-A\n    for n: 1..4",
+            "[Item 6..1] ∈ Item",
+            "[Item 1..] ∈ Item",
+            "[Item {n}]\n    paired with Sensor-A\n  for m: 1..4",
+            "[Item {n}]\n    paired with: Sensor-A\n  for n: 1..4",
+            "[Item {n}]\n  paired with Sensor-A\n  for n: 1..4",
         ] {
-            let source = base
-                .replace(
-                    "[Item 1..6]: Item\n    [Item {n}]:\n        paired with: Sensor-A\n    for n: 1..4",
-                    replacement,
-                );
+            let source = base.replace(
+                "[Item 1..6] ∈ Item\n  [Item {n}]\n    paired with Sensor-A\n  for n: 1..4",
+                replacement,
+            );
             assert!(parse(&source).is_err(), "{}", replacement);
         }
         assert!(parse(&base.replace("[Item 1..6]", "[Item 1")).is_err());
-        assert!(parse(&base.replace("[Item {n}]:", "[Item {n}] trailing:")).is_err());
+        assert!(parse(&base.replace("[Item {n}]", "[Item {n}] trailing:")).is_err());
     }
 }

@@ -10,6 +10,7 @@ pub(super) struct SourceLine<'a> {
 pub(super) struct RawDecl<'a> {
     pub(super) subject: Spanned<Name>,
     pub(super) kind: Kind,
+    pub(super) bare_block: bool,
     pub(super) header: SourceLine<'a>,
     pub(super) body: Vec<SourceLine<'a>>,
 }
@@ -120,6 +121,28 @@ pub(super) fn qname(
     })
 }
 
+pub(super) fn semantic_name(
+    line: SourceLine<'_>,
+    offset: usize,
+    text: &str,
+) -> Result<Spanned<Name>, ParseError> {
+    if text.is_empty()
+        || text.trim() != text
+        || text.chars().any(char::is_control)
+        || text.contains([':', '∈'])
+        || text.split(' ').any(str::is_empty)
+    {
+        return Err(error(
+            child_span(line, offset, text.len()),
+            format!("expected semantic name, found '{text}'"),
+        ));
+    }
+    Ok(Spanned {
+        value: Name(text.to_owned()),
+        span: child_span(line, offset, text.len()),
+    })
+}
+
 pub(super) fn role_name(
     line: SourceLine<'_>,
     offset: usize,
@@ -154,19 +177,19 @@ pub(super) fn variable_name(
     })
 }
 
-pub(super) fn type_name(
+pub(super) fn domain_name(
     line: SourceLine<'_>,
     offset: usize,
     text: &str,
-) -> Result<Spanned<TypeName>, ParseError> {
-    let name = qname(line, offset, text)?;
+) -> Result<Spanned<DomainName>, ParseError> {
+    let name = semantic_name(line, offset, text)?;
     Ok(Spanned {
-        value: TypeName(name.value.0),
+        value: DomainName(name.value.0),
         span: name.span,
     })
 }
 
-pub(super) fn entity_name(
+pub(super) fn referent_name(
     line: SourceLine<'_>,
     offset: usize,
     text: &str,
@@ -186,7 +209,7 @@ pub(super) fn entity_name(
     {
         return Err(error(
             child_span(line, offset, text.len()),
-            format!("expected bracketed entity name, found '[{text}]'"),
+            format!("expected bracketed referent name, found '[{text}]'"),
         ));
     }
     Ok(Spanned {
@@ -239,9 +262,7 @@ pub(super) fn integer_range(
 
 fn kind(text: &str) -> Option<Kind> {
     match text {
-        "Type" => Some(Kind::Type),
         "RelationShape" => Some(Kind::RelationShape),
-        "Model" => Some(Kind::Model),
         "DerivationRule" => Some(Kind::DerivationRule),
         "Revision" => Some(Kind::Revision),
         "Delta" => Some(Kind::Delta),
@@ -303,18 +324,41 @@ fn parse_declaration<'a>(
     index: &mut usize,
 ) -> Result<RawDecl<'a>, ParseError> {
     let text = content(line);
-    let (subject, kind_text) = text
-        .split_once(": ")
-        .ok_or_else(|| error(line_span(line), "expected '<name>: <Kind>' declaration"))?;
-    let declaration_kind =
-        kind(kind_text).ok_or_else(|| error(line_span(line), "unknown declaration kind"))?;
-    let subject = qname(line, 0, subject)?;
+    if text.contains(" ∈ ") {
+        return Err(error(
+            line_span(line),
+            "top-level membership requires an enclosing bare Model block",
+        ));
+    }
     *index += 1;
+    let body = take_body(lines, index);
+    let (subject, declaration_kind, bare_block) =
+        if let Some((subject, kind_text)) = text.split_once(": ") {
+            if matches!(kind_text, "Type" | "Model") {
+                return Err(error(
+                    line_span(line),
+                    format!(
+                        "'{kind_text}' is inferred from bare form and must not be declared with ':'"
+                    ),
+                ));
+            }
+            let declaration_kind = kind(kind_text)
+                .ok_or_else(|| error(line_span(line), "unknown declaration kind"))?;
+            (qname(line, 0, subject)?, declaration_kind, false)
+        } else {
+            let subject = semantic_name(line, 0, text)?;
+            if nonblank(body.iter().copied()).is_empty() {
+                (subject, Kind::Grounding, false)
+            } else {
+                (subject, Kind::Model, true)
+            }
+        };
     Ok(RawDecl {
         subject,
         kind: declaration_kind,
+        bare_block,
         header: line,
-        body: take_body(lines, index),
+        body,
     })
 }
 

@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, BTreeSet};
 pub(super) struct RelationSpec {
     pub(super) shape: SentenceShapeDecl,
     pub(super) modes: Vec<ModeDecl>,
-    pub(super) roles: BTreeMap<RoleName, TypeName>,
+    pub(super) roles: BTreeMap<RoleName, DomainName>,
 }
 
 fn parse_shape(line: SourceLine<'_>) -> Result<SentenceShapeDecl, ParseError> {
@@ -53,25 +53,25 @@ fn parse_shape(line: SourceLine<'_>) -> Result<SentenceShapeDecl, ParseError> {
             .ok_or_else(|| {
                 error(
                     child_span(line, offset + open, text.len() - open),
-                    "unterminated typed role",
+                    "unterminated role domain",
                 )
             })?;
         let inside = &text[open + 1..close];
-        let (role, typ) = inside.split_once(": ").ok_or_else(|| {
+        let (role, domain) = inside.split_once(": ").ok_or_else(|| {
             error(
                 child_span(line, offset + open, close - open + 1),
-                "expected '{role: Type}'",
+                "expected '{role: domain}'",
             )
         })?;
-        if role.contains(':') || typ.contains(':') {
+        if role.contains(':') || domain.contains(':') {
             return Err(error(
                 child_span(line, offset + open, close - open + 1),
-                "malformed typed role",
+                "malformed role domain",
             ));
         }
         parts.push(ShapePartDecl::Role {
             id: role_name(line, offset + open + 1, role)?,
-            typ: type_name(line, offset + open + 1 + role.len() + 2, typ)?,
+            domain: domain_name(line, offset + open + 1 + role.len() + 2, domain)?,
         });
         cursor = close + 1;
     }
@@ -137,7 +137,7 @@ fn parse_role_list(
 
 fn parse_mode(
     line: SourceLine<'_>,
-    roles: &BTreeMap<RoleName, TypeName>,
+    roles: &BTreeMap<RoleName, DomainName>,
 ) -> Result<ModeDecl, ParseError> {
     let text = content(line);
     let rest = text.strip_prefix("mode ").ok_or_else(|| {
@@ -210,8 +210,8 @@ pub(super) fn relation_spec(raw: &RawDecl<'_>) -> Result<RelationSpec, ParseErro
     let shape = parse_shape(entries[0])?;
     let mut roles = BTreeMap::new();
     for part in &shape.parts {
-        if let ShapePartDecl::Role { id, typ } = part {
-            roles.insert(id.value.clone(), typ.value.clone());
+        if let ShapePartDecl::Role { id, domain } = part {
+            roles.insert(id.value.clone(), domain.value.clone());
         }
     }
     let modes = entries[1..]

@@ -16,11 +16,9 @@ use super::{
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Projection {
     pub(crate) designations: DesignationTable,
-    pub(crate) types: BTreeSet<ReferentId>,
-    pub(crate) entity_types: BTreeMap<ReferentId, ReferentId>,
-    pub(crate) model_entities: BTreeMap<ReferentId, BTreeSet<ReferentId>>,
+    pub(crate) grounded: BTreeSet<ReferentId>,
     pub(crate) model_referents: BTreeMap<ReferentId, BTreeSet<ReferentId>>,
-    pub(crate) role_types: BTreeMap<(ReferentId, RoleId), ReferentId>,
+    pub(crate) role_domains: BTreeMap<(ReferentId, RoleId), ReferentId>,
     pub(crate) focus_shapes: Vec<FocusShape>,
     pub(crate) rule_binders: BTreeMap<ReferentId, BinderTable>,
     pub(crate) request_binders: BTreeMap<usize, BinderTable>,
@@ -74,6 +72,19 @@ pub(crate) fn lower_definition(
     require_term_referent(model, &id, "definition name")?;
     require_term_referent(model, &denotation, "definition denotation")?;
     Ok(Definition::new(id, Term::referent(denotation)))
+}
+
+pub(crate) fn lower_shape_binding(
+    projection: &Projection,
+    model: &Model,
+    label: &Name,
+    domain: &Name,
+) -> kernel::Result<Definition> {
+    let id = projection.designations.scoped(model.id(), label.as_str())?;
+    let domain = projection.designations.global(domain.as_str())?;
+    require_term_referent(model, &id, "shape binding")?;
+    require_term_referent(model, &domain, "shape binding domain")?;
+    Ok(Definition::new(id, Term::referent(domain)))
 }
 
 #[derive(Clone, Debug)]
@@ -161,10 +172,10 @@ pub(crate) fn lower_clause_with(
             )));
         }
         let expected = projection
-            .role_types
+            .role_domains
             .get(&(relation_id.clone(), role_id.clone()))
             .ok_or_else(|| {
-                kernel::KernelError::new("relation role has no authoring type projection")
+                kernel::KernelError::new("relation role has no authoring domain projection")
             })?;
         if roles
             .insert(
@@ -206,23 +217,15 @@ fn lower_term(
             require_term_referent(model, &referent, "string literal")?;
             Ok(Term::referent(referent))
         }
-        SurfaceTerm::Entity(value) => {
+        SurfaceTerm::Referent(value) => {
             let referent = projection
                 .designations
                 .scoped(model.id(), value.value.as_str())?;
-            require_term_referent(model, &referent, "entity")?;
-            if let Some(actual) = projection.entity_types.get(&referent)
-                && actual != expected
-            {
-                return Err(kernel::KernelError::new(format!(
-                    "entity '{}' does not satisfy the authored role type",
-                    value.value.as_str()
-                )));
-            }
+            require_term_referent(model, &referent, "referent")?;
             Ok(Term::referent(referent))
         }
         SurfaceTerm::Template(_) => Err(kernel::KernelError::new(
-            "correlated entity templates are only valid inside a focus block",
+            "correlated referent templates are only valid inside a focus block",
         )),
     }
 }
@@ -270,27 +273,8 @@ pub(crate) fn lower_focus(
                     )));
                 }
             };
-            let focused_type = projection
-                .entity_types
-                .get(&focused)
-                .ok_or_else(|| kernel::KernelError::new("focused designation is not an entity"))?;
-            let expected_focused =
-                &projection.role_types[&(shape.relation.clone(), shape.focused_role.clone())];
-            if focused_type != expected_focused {
-                let actual = projection
-                    .designations
-                    .global_name(focused_type)
-                    .expect("authored entity type retains a source designation");
-                let expected = projection
-                    .designations
-                    .global_name(expected_focused)
-                    .expect("authored role type retains a source designation");
-                return Err(kernel::KernelError::new(format!(
-                    "focused entity has Type '{actual}', not '{expected}'"
-                )));
-            }
             let expected_value =
-                &projection.role_types[&(shape.relation.clone(), shape.value_role.clone())];
+                &projection.role_domains[&(shape.relation.clone(), shape.value_role.clone())];
             let value = lower_focus_term(
                 projection,
                 model,
@@ -330,11 +314,6 @@ fn lower_focus_term(
                 )));
             }
             let referent = focus_referent(projection, model, template, number)?;
-            if projection.entity_types.get(&referent) != Some(expected) {
-                return Err(kernel::KernelError::new(
-                    "focused entity does not satisfy the authored role type",
-                ));
-            }
             Ok(Term::referent(referent))
         }
         _ => lower_term(projection, model, expected, term, None),
@@ -344,7 +323,7 @@ fn lower_focus_term(
 fn focus_referent(
     projection: &Projection,
     model: &Model,
-    template: &frontend::EntityTemplate,
+    template: &frontend::ReferentTemplate,
     number: u64,
 ) -> kernel::Result<ReferentId> {
     let local = format!(
@@ -352,7 +331,7 @@ fn focus_referent(
         template.prefix.value, number, template.suffix.value
     );
     let referent = projection.designations.scoped(model.id(), &local)?;
-    require_term_referent(model, &referent, "focused entity")?;
+    require_term_referent(model, &referent, "focused referent")?;
     Ok(referent)
 }
 
@@ -372,12 +351,12 @@ mod tests {
 
     use crate::{elaborate::compile, frontend};
 
-    const BASE: &str = "Module: Type\n\nimpact/imports: RelationShape\n    {consumer: Module} imports {dependency: Module}\n    mode consumer -> dependency: many\n\nimpact: Model\n    North: Module\n    South: Module\n    Store: Module\n    North imports Store\n";
+    const BASE: &str = "Module\n\nimpact/imports: RelationShape\n  {consumer: Module} imports {dependency: Module}\n  mode consumer -> dependency: many\n\nimpact\n  North ∈ Module\n  South ∈ Module\n  Store ∈ Module\n  North imports Store\n";
 
     #[test]
     fn repeated_holes_share_one_opaque_pattern_binder() {
         let source = format!(
-            "{BASE}\nimpact/reflexive: DerivationRule\n    ?item imports ?item\n    when:\n        ?item imports ?item\n"
+            "{BASE}\nimpact/reflexive: DerivationRule\n  ?item imports ?item\n  when:\n    ?item imports ?item\n"
         );
         let program = compile(frontend::parse(&source).unwrap()).unwrap();
         let rule = &program

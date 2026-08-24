@@ -1,4 +1,4 @@
-use super::model::EntityCatalog;
+use super::model::MembershipCatalog;
 use super::relation::RelationSpec;
 use super::source::*;
 use super::*;
@@ -93,13 +93,13 @@ pub(super) fn lex_clause(line: SourceLine<'_>) -> Result<Vec<Token>, ParseError>
                 if text.as_bytes()[index].is_ascii_whitespace() && text.as_bytes()[index] != b' ' {
                     return Err(error(
                         child_span(line, base + index, 1),
-                        "bracketed entity words must be separated by ASCII spaces",
+                        "bracketed referent words must be separated by ASCII spaces",
                     ));
                 }
                 if matches!(text.as_bytes()[index], b'[' | b'"') {
                     return Err(error(
                         child_span(line, base + index, 1),
-                        "malformed bracketed entity",
+                        "malformed bracketed referent",
                     ));
                 }
                 index += 1;
@@ -107,7 +107,7 @@ pub(super) fn lex_clause(line: SourceLine<'_>) -> Result<Vec<Token>, ParseError>
             if index == text.len() {
                 return Err(error(
                     child_span(line, base + start, text.len() - start),
-                    "unterminated bracketed entity",
+                    "unterminated bracketed referent",
                 ));
             }
             let value = &text[value_start..index];
@@ -115,7 +115,7 @@ pub(super) fn lex_clause(line: SourceLine<'_>) -> Result<Vec<Token>, ParseError>
             if index < text.len() && text.as_bytes()[index] != b' ' {
                 return Err(error(
                     child_span(line, base + index, 1),
-                    "bracketed entity must be followed by a space",
+                    "bracketed referent must be followed by a space",
                 ));
             }
             tokens.push(Token {
@@ -157,7 +157,7 @@ fn parse_term(token: &Token) -> Result<SurfaceTerm, ParseError> {
     }
     if let Some(name) = token.raw.strip_prefix('?') {
         if token.bracketed {
-            return Err(error(token.span, "variables cannot be bracketed entities"));
+            return Err(error(token.span, "variables cannot be bracketed referents"));
         }
         return Ok(SurfaceTerm::Variable(variable_name(
             SourceLine {
@@ -169,7 +169,7 @@ fn parse_term(token: &Token) -> Result<SurfaceTerm, ParseError> {
         )?));
     }
     if token.bracketed {
-        let name = entity_name(
+        let name = referent_name(
             SourceLine {
                 number: token.span.line,
                 text: "",
@@ -177,7 +177,7 @@ fn parse_term(token: &Token) -> Result<SurfaceTerm, ParseError> {
             token.span.column,
             &token.raw,
         )?;
-        return Ok(SurfaceTerm::Entity(Spanned {
+        return Ok(SurfaceTerm::Referent(Spanned {
             value: name.value,
             span: token.span,
         }));
@@ -185,10 +185,10 @@ fn parse_term(token: &Token) -> Result<SurfaceTerm, ParseError> {
     if !is_qname(&token.raw) {
         return Err(error(
             token.span,
-            format!("expected entity name or variable, found '{}'", token.raw),
+            format!("expected referent name or variable, found '{}'", token.raw),
         ));
     }
-    Ok(SurfaceTerm::Entity(Spanned {
+    Ok(SurfaceTerm::Referent(Spanned {
         value: Name(token.raw.clone()),
         span: token.span,
     }))
@@ -202,14 +202,14 @@ pub(super) fn focus_term(token: &Token) -> Result<SurfaceTerm, ParseError> {
     let close = token.raw[open + 1..]
         .find('}')
         .map(|offset| open + 1 + offset)
-        .ok_or_else(|| error(token.span, "unterminated correlated entity template"))?;
+        .ok_or_else(|| error(token.span, "unterminated correlated referent template"))?;
     if token.raw[..open].contains('}')
         || token.raw[close + 1..].contains(['{', '}'])
         || token.raw[open + 1..close].is_empty()
     {
         return Err(error(
             token.span,
-            "correlated entity template permits exactly one variable",
+            "correlated referent template permits exactly one variable",
         ));
     }
     let prefix = &token.raw[..open];
@@ -219,8 +219,8 @@ pub(super) fn focus_term(token: &Token) -> Result<SurfaceTerm, ParseError> {
         number: token.span.line,
         text: "",
     };
-    entity_name(source, token.span.column, &format!("{prefix}0{suffix}"))?;
-    Ok(SurfaceTerm::Template(EntityTemplate {
+    referent_name(source, token.span.column, &format!("{prefix}0{suffix}"))?;
+    Ok(SurfaceTerm::Template(ReferentTemplate {
         prefix: Spanned {
             value: prefix.to_owned(),
             span: child_span(source, token.span.column, prefix.len()),
@@ -234,62 +234,60 @@ pub(super) fn focus_term(token: &Token) -> Result<SurfaceTerm, ParseError> {
     }))
 }
 
-fn entity_type(
+fn term_domains(
     term: &SurfaceTerm,
     current_model: &Name,
-    entities: &BTreeMap<Name, EntityCatalog>,
-) -> Result<Option<TypeName>, ParseError> {
+    memberships: &BTreeMap<Name, MembershipCatalog>,
+) -> Result<Option<BTreeSet<DomainName>>, ParseError> {
     match term {
-        SurfaceTerm::String(_) => Ok(Some(TypeName("Text".to_owned()))),
+        SurfaceTerm::String(_) => Ok(Some(BTreeSet::from([DomainName("Text".to_owned())]))),
         SurfaceTerm::Variable(_) => Ok(None),
         SurfaceTerm::Template(template) => Err(error(
             template.span,
-            "correlated entity templates are only valid inside a focus block",
+            "correlated referent templates are only valid inside a focus block",
         )),
-        SurfaceTerm::Entity(entity) => {
-            if !entity.value.0.contains('/') {
-                let catalog = entities
+        SurfaceTerm::Referent(referent) => {
+            if !referent.value.0.contains('/') {
+                let catalog = memberships
                     .get(current_model)
                     .expect("current model was declared before its clauses");
-                if let Some(typ) = catalog.explicit.get(&entity.value) {
-                    return Ok(Some(typ.clone()));
+                if let Some(domains) = catalog.explicit.get(&referent.value) {
+                    return Ok(Some(domains.clone()));
                 }
-                let mut matched = catalog.groups.iter().filter_map(|group| {
-                    let name = entity.value.as_str();
-                    let prefix = group.prefix.value.as_str();
-                    let suffix = group.suffix.value.as_str();
-                    let number = name
-                        .strip_prefix(prefix)?
-                        .strip_suffix(suffix)?
-                        .parse::<u64>()
-                        .ok()?;
-                    (group.range.start <= number && number <= group.range.end)
-                        .then(|| group.typ.value.clone())
-                });
-                let Some(typ) = matched.next() else {
+                let matched = catalog
+                    .ranges
+                    .iter()
+                    .filter_map(|range| {
+                        let name = referent.value.as_str();
+                        let prefix = range.prefix.value.as_str();
+                        let suffix = range.suffix.value.as_str();
+                        let number = name
+                            .strip_prefix(prefix)?
+                            .strip_suffix(suffix)?
+                            .parse::<u64>()
+                            .ok()?;
+                        (range.range.start <= number && number <= range.range.end)
+                            .then(|| range.group.value.clone())
+                    })
+                    .collect::<BTreeSet<_>>();
+                if matched.is_empty() {
                     return Err(error(
-                        entity.span,
-                        format!("unknown entity '{}'", entity.value.as_str()),
-                    ));
-                };
-                if matched.any(|other| other != typ) {
-                    return Err(error(
-                        entity.span,
-                        format!("ambiguous grouped entity '{}'", entity.value.as_str()),
+                        referent.span,
+                        format!("unknown referent '{}'", referent.value.as_str()),
                     ));
                 }
-                return Ok(Some(typ));
+                return Ok(Some(matched));
             }
-            for (model, catalog) in entities {
-                for (local, typ) in &catalog.explicit {
-                    if entity.value.0 == format!("{}/{}", model.as_str(), local.as_str()) {
-                        return Ok(Some(typ.clone()));
+            for (model, catalog) in memberships {
+                for (local, domains) in &catalog.explicit {
+                    if referent.value.0 == format!("{}/{}", model.as_str(), local.as_str()) {
+                        return Ok(Some(domains.clone()));
                     }
                 }
             }
             Err(error(
-                entity.span,
-                format!("unknown qualified entity '{}'", entity.value.as_str()),
+                referent.span,
+                format!("unknown qualified referent '{}'", referent.value.as_str()),
             ))
         }
     }
@@ -308,12 +306,27 @@ fn shape_tokens(shape: &SentenceShapeDecl) -> Vec<Option<String>> {
     tokens
 }
 
+pub(super) fn relation_line_matches(
+    line: SourceLine<'_>,
+    relations: &BTreeMap<Name, RelationSpec>,
+) -> Result<bool, ParseError> {
+    let tokens = lex_clause(line)?;
+    Ok(relations.values().any(|spec| {
+        let pattern = shape_tokens(&spec.shape);
+        pattern.len() == tokens.len()
+            && pattern.iter().zip(&tokens).all(|(part, token)| match part {
+                Some(word) => !token.quoted && token.raw == *word,
+                None => true,
+            })
+    }))
+}
+
 pub(super) fn clause(
     line: SourceLine<'_>,
     current_model: &Name,
     relations: &BTreeMap<Name, RelationSpec>,
-    entities: &BTreeMap<Name, EntityCatalog>,
-    variable_types: &mut BTreeMap<VariableName, TypeName>,
+    memberships: &BTreeMap<Name, MembershipCatalog>,
+    variable_domains: &mut BTreeMap<VariableName, DomainName>,
 ) -> Result<SurfaceClause, ParseError> {
     let tokens = lex_clause(line)?;
     let mut candidates = Vec::new();
@@ -346,14 +359,14 @@ pub(super) fn clause(
                     role_index += 1;
                     let term = parse_term(token)?;
                     let expected = spec.roles.get(&role).expect("shape roles populate spec");
-                    if let Some(actual) = entity_type(&term, current_model, entities)?
-                        && &actual != expected
+                    if let Some(actual) = term_domains(&term, current_model, memberships)?
+                        && !actual.contains(expected)
                     {
                         matches = false;
                         break;
                     }
                     if let SurfaceTerm::Variable(variable) = &term
-                        && let Some(previous) = variable_types.get(&variable.value)
+                        && let Some(previous) = variable_domains.get(&variable.value)
                         && previous != expected
                     {
                         matches = false;
@@ -388,7 +401,7 @@ pub(super) fn clause(
     let spec = relations.get(&relation).expect("candidate relation exists");
     for (role, term) in &roles {
         if let SurfaceTerm::Variable(variable) = term {
-            variable_types.insert(variable.value.clone(), spec.roles[role].clone());
+            variable_domains.insert(variable.value.clone(), spec.roles[role].clone());
         }
     }
     Ok(SurfaceClause {
@@ -415,7 +428,7 @@ pub(super) fn clause_key(clause: &SurfaceClause) -> String {
         key.push_str(role.as_str());
         key.push('=');
         match term {
-            SurfaceTerm::Entity(value) => key.push_str(&format!("E:{}", value.value.0)),
+            SurfaceTerm::Referent(value) => key.push_str(&format!("R:{}", value.value.0)),
             SurfaceTerm::Template(value) => key.push_str(&format!(
                 "T:{}{{{}}}{}",
                 value.prefix.value, value.variable.value.0, value.suffix.value

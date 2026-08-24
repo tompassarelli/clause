@@ -1,34 +1,14 @@
-use super::clause::{focus_term, lex_clause};
+use super::clause::{focus_term, lex_clause, relation_line_matches};
+use super::relation::RelationSpec;
 use super::source::*;
 use super::syntax::{DefinitionDecl, MembershipDecl};
 use super::*;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Clone, Debug)]
-pub(super) struct EntityCatalog {
-    pub(super) explicit: BTreeMap<Name, TypeName>,
-    pub(super) groups: Vec<EntityGroupDecl>,
-}
-
-fn semantic_name(
-    line: SourceLine<'_>,
-    offset: usize,
-    text: &str,
-) -> Result<Spanned<Name>, ParseError> {
-    if text.is_empty()
-        || text.trim() != text
-        || text.chars().any(char::is_control)
-        || text.contains([':', '∈'])
-    {
-        return Err(error(
-            child_span(line, offset, text.len()),
-            format!("expected semantic name, found '{text}'"),
-        ));
-    }
-    Ok(Spanned {
-        value: Name(text.to_owned()),
-        span: child_span(line, offset, text.len()),
-    })
+pub(super) struct MembershipCatalog {
+    pub(super) explicit: BTreeMap<Name, BTreeSet<DomainName>>,
+    pub(super) ranges: Vec<MembershipRangeDecl>,
 }
 
 pub(super) fn definition_line(line: SourceLine<'_>) -> Option<Result<DefinitionDecl, ParseError>> {
@@ -70,6 +50,38 @@ pub(super) fn focused_name(line: SourceLine<'_>) -> Result<Spanned<Name>, ParseE
     semantic_name(line, indent(line)?, content(line))
 }
 
+pub(super) fn infer_bare_block_kind(
+    raw: &RawDecl<'_>,
+    relations: &BTreeMap<Name, RelationSpec>,
+) -> Result<Kind, ParseError> {
+    let entries = nonblank(raw.body.iter().copied());
+    let flat = entries
+        .iter()
+        .all(|line| indent(*line).is_ok_and(|width| width == 2));
+    if flat
+        && entries
+            .iter()
+            .all(|line| definition_line(*line).is_some_and(|binding| binding.is_ok()))
+    {
+        return Ok(Kind::BindingShape);
+    }
+    if flat {
+        let mut enumeration = true;
+        for line in &entries {
+            if semantic_name(*line, 2, content(*line)).is_err()
+                || relation_line_matches(*line, relations)?
+            {
+                enumeration = false;
+                break;
+            }
+        }
+        if enumeration {
+            return Ok(Kind::Enumeration);
+        }
+    }
+    Ok(Kind::Model)
+}
+
 fn bracket_contents<'a>(
     line: SourceLine<'a>,
     text: &'a str,
@@ -79,25 +91,28 @@ fn bracket_contents<'a>(
     }
     let close = text
         .find(']')
-        .ok_or_else(|| error(line_span(line), "unterminated bracketed entity"))?;
+        .ok_or_else(|| error(line_span(line), "unterminated bracketed referent"))?;
     if text[1..close].contains('[') {
-        return Err(error(line_span(line), "malformed bracketed entity"));
+        return Err(error(line_span(line), "malformed bracketed referent"));
     }
     Ok(Some((&text[1..close], close + 1, &text[close + 1..])))
 }
 
-pub(super) fn entity_group_line(
+pub(super) fn membership_range_line(
     line: SourceLine<'_>,
-) -> Option<Result<EntityGroupDecl, ParseError>> {
+) -> Option<Result<MembershipRangeDecl, ParseError>> {
     let text = content(line);
     let (inside, close, tail) = match bracket_contents(line, text) {
         Ok(Some(contents)) => contents,
         Ok(None) => return None,
         Err(error) => return Some(Err(error)),
     };
-    let typ = tail.strip_prefix(": ")?;
-    if typ.contains(':') || inside.contains('{') || inside.contains('}') {
-        return Some(Err(error(line_span(line), "malformed finite entity group")));
+    let group = tail.strip_prefix(" ∈ ")?;
+    if group.contains('∈') || inside.contains('{') || inside.contains('}') {
+        return Some(Err(error(
+            line_span(line),
+            "malformed finite membership range",
+        )));
     }
     let (before_end, range_end) = inside.split_once("..")?;
     let start_offset = before_end
@@ -115,49 +130,54 @@ pub(super) fn entity_group_line(
     if start_offset == before_end.len() || end_digits == 0 {
         return Some(Err(error(
             line_span(line),
-            "finite entity group requires one integer range",
+            "finite membership requires one integer range",
         )));
     }
     let range_text = &inside[start_offset..before_end.len() + 2 + end_digits];
     if range_end[end_digits..].contains("..") || before_end[..start_offset].contains("..") {
         return Some(Err(error(
             line_span(line),
-            "finite entity group permits exactly one integer range",
+            "finite membership permits exactly one integer range",
         )));
     }
     let prefix = &inside[..start_offset];
     let suffix = &range_end[end_digits..];
-    if entity_name(line, 2 + 1, &format!("{prefix}0{suffix}")).is_err() {
+    if referent_name(line, indent(line).ok()? + 1, &format!("{prefix}0{suffix}")).is_err() {
         return Some(Err(error(
             line_span(line),
-            "finite entity group does not form valid bracketed entity names",
+            "finite membership does not form valid bracketed referent names",
         )));
     }
     Some((|| {
-        Ok(EntityGroupDecl {
+        let base = indent(line)?;
+        Ok(MembershipRangeDecl {
             prefix: Spanned {
                 value: prefix.to_owned(),
-                span: child_span(line, 5, prefix.len()),
+                span: child_span(line, base + 1, prefix.len()),
             },
-            range: integer_range(line, 5 + start_offset, range_text)?,
+            range: integer_range(line, base + 1 + start_offset, range_text)?,
             suffix: Spanned {
                 value: suffix.to_owned(),
-                span: child_span(line, 5 + before_end.len() + 2 + end_digits, suffix.len()),
+                span: child_span(
+                    line,
+                    base + 1 + before_end.len() + 2 + end_digits,
+                    suffix.len(),
+                ),
             },
-            typ: type_name(line, 2 + close + 2, typ)?,
+            group: domain_name(line, base + close + " ∈ ".len(), group)?,
             span: line_span(line),
         })
     })())
 }
 
-pub(super) fn focus_template(line: SourceLine<'_>) -> Option<Result<EntityTemplate, ParseError>> {
+pub(super) fn focus_template(line: SourceLine<'_>) -> Option<Result<ReferentTemplate, ParseError>> {
     let text = content(line);
     let (inside, _close, tail) = match bracket_contents(line, text) {
         Ok(Some(contents)) => contents,
         Ok(None) => return None,
         Err(error) => return Some(Err(error)),
     };
-    if tail != ":" {
+    if !tail.is_empty() {
         return None;
     }
     let open = inside.find('{')?;
@@ -182,22 +202,25 @@ pub(super) fn focus_template(line: SourceLine<'_>) -> Option<Result<EntityTempla
     let prefix = &inside[..open];
     let variable = &inside[open + 1..close];
     let suffix = &inside[close + 1..];
-    if variable.is_empty() || entity_name(line, 5, &format!("{prefix}0{suffix}")).is_err() {
+    if variable.is_empty()
+        || referent_name(line, indent(line).ok()? + 1, &format!("{prefix}0{suffix}")).is_err()
+    {
         return Some(Err(error(
             line_span(line),
             "malformed correlated focus template",
         )));
     }
     Some((|| {
-        Ok(EntityTemplate {
+        let base = indent(line)?;
+        Ok(ReferentTemplate {
             prefix: Spanned {
                 value: prefix.to_owned(),
-                span: child_span(line, 5, prefix.len()),
+                span: child_span(line, base + 1, prefix.len()),
             },
-            variable: variable_name(line, 5 + open + 1, variable)?,
+            variable: variable_name(line, base + 1 + open + 1, variable)?,
             suffix: Spanned {
                 value: suffix.to_owned(),
-                span: child_span(line, 5 + close + 1, suffix.len()),
+                span: child_span(line, base + 1 + close + 1, suffix.len()),
             },
             span: line_span(line),
         })
@@ -212,44 +235,31 @@ pub(super) fn focus_slot(line: SourceLine<'_>) -> Result<FocusSlot, ParseError> 
         ));
     }
     let text = content(line);
-    let (label, value) = text
-        .split_once(": ")
-        .ok_or_else(|| error(line_span(line), "focus slot requires 'label: value'"))?;
-    if label.contains(':') || value.is_empty() {
-        return Err(error(line_span(line), "focus slot requires 'label: value'"));
-    }
-    let label = label.split_ascii_whitespace().collect::<Vec<_>>().join(" ");
+    let tokens = lex_clause(line)?;
+    let value = tokens
+        .last()
+        .ok_or_else(|| error(line_span(line), "focus slot requires a relational phrase"))?;
+    let value_start = value.span.column - 1 - indent(line)?;
+    let label = text[..value_start].trim_end();
     if label.is_empty()
+        || label.contains(':')
         || label
             .chars()
             .any(|character| matches!(character, '{' | '}' | '[' | ']' | '"' | '?'))
     {
         return Err(error(
             line_span(line),
-            "focus slot requires a sentence literal prefix",
+            "focus slot requires a relational phrase before its participant",
         ));
     }
-    let mut tokens = lex_clause(SourceLine {
-        number: line.number,
-        text: value,
-    })?;
-    let value_offset = 4 + label.len() + 2;
-    for token in &mut tokens {
-        token.span.column += value_offset;
-    }
-    if tokens.len() != 1 {
-        return Err(error(
-            line_span(line),
-            "focus slot value must be one surface term",
-        ));
-    }
+    let label = label.split_ascii_whitespace().collect::<Vec<_>>().join(" ");
     let label_width = label.len();
     Ok(FocusSlot {
         label: Spanned {
             value: label,
             span: child_span(line, 4, label_width),
         },
-        value: focus_term(&tokens[0])?,
+        value: focus_term(value)?,
         span: line_span(line),
     })
 }
@@ -281,16 +291,32 @@ pub(super) fn focus_binding(line: SourceLine<'_>) -> Result<FocusBinding, ParseE
     })
 }
 
-pub(super) fn model_entities(raw: &RawDecl<'_>) -> Result<EntityCatalog, ParseError> {
+pub(super) fn model_memberships(
+    raw: &RawDecl<'_>,
+    grounded: &BTreeSet<Name>,
+) -> Result<MembershipCatalog, ParseError> {
     let mut explicit = BTreeMap::new();
-    let mut groups = Vec::new();
+    let mut ranges = Vec::new();
     let entries = nonblank(raw.body.iter().copied());
+    if raw.kind == Kind::Enumeration {
+        for line in entries {
+            insert_membership(
+                &mut explicit,
+                &MembershipDecl {
+                    member: semantic_name(line, 2, content(line))?,
+                    group: raw.subject.clone(),
+                    span: line_span(line),
+                },
+            );
+        }
+        return Ok(MembershipCatalog { explicit, ranges });
+    }
     for (index, line) in entries.iter().copied().enumerate() {
         match indent(line)? {
             2 => {
-                if let Some(group) = entity_group_line(line) {
-                    let group = group?;
-                    groups.push(group);
+                if let Some(range) = membership_range_line(line) {
+                    let range = range?;
+                    ranges.push(range);
                 } else if let Some(template) = focus_template(line) {
                     template?;
                 } else if content(line).starts_with("for ") {
@@ -298,7 +324,7 @@ pub(super) fn model_entities(raw: &RawDecl<'_>) -> Result<EntityCatalog, ParseEr
                     // immediately preceding focus block.
                 } else if let Some(membership) = membership_line(line) {
                     let membership = membership?;
-                    insert_membership_type(&mut explicit, &membership)?;
+                    insert_membership(&mut explicit, &membership);
                 } else if definition_line(line).is_some() {
                     definition_line(line).expect("checked binding shape")?;
                 } else if entries.get(index + 1).is_some_and(|next| {
@@ -306,15 +332,17 @@ pub(super) fn model_entities(raw: &RawDecl<'_>) -> Result<EntityCatalog, ParseEr
                 }) {
                     let focus = focused_name(line)?;
                     let first_child = entries[index + 1];
-                    if content(first_child).split_ascii_whitespace().count() == 1 {
-                        insert_membership_type(
+                    if let Ok(group) = focused_name(first_child)
+                        && grounded.contains(&group.value)
+                    {
+                        insert_membership(
                             &mut explicit,
                             &MembershipDecl {
                                 member: focus,
-                                group: focused_name(first_child)?,
+                                group,
                                 span: line_span(first_child),
                             },
-                        )?;
+                        );
                     }
                 }
             }
@@ -327,24 +355,15 @@ pub(super) fn model_entities(raw: &RawDecl<'_>) -> Result<EntityCatalog, ParseEr
             }
         }
     }
-    Ok(EntityCatalog { explicit, groups })
+    Ok(MembershipCatalog { explicit, ranges })
 }
 
-fn insert_membership_type(
-    explicit: &mut BTreeMap<Name, TypeName>,
+pub(super) fn insert_membership(
+    explicit: &mut BTreeMap<Name, BTreeSet<DomainName>>,
     membership: &MembershipDecl,
-) -> Result<(), ParseError> {
-    let typ = TypeName(membership.group.value.0.clone());
-    if let Some(previous) = explicit.insert(membership.member.value.clone(), typ.clone())
-        && previous != typ
-    {
-        return Err(error(
-            membership.member.span,
-            format!(
-                "referent '{}' has conflicting memberships",
-                membership.member.value.as_str()
-            ),
-        ));
-    }
-    Ok(())
+) {
+    explicit
+        .entry(membership.member.value.clone())
+        .or_default()
+        .insert(DomainName(membership.group.value.0.clone()));
 }

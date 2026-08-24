@@ -1,21 +1,21 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
-    frontend::{self, AscriptionDecl, Kind, Member, ShapePartDecl, SurfaceTerm},
+    frontend::{self, Declaration, Kind, Member, ShapePartDecl, SurfaceTerm},
     kernel::{
         self, AssertionOccurrence, DerivationRule, Judgment, JudgmentKind, JudgmentStatus,
         JudgmentTarget, LookupMode, Model, Pattern, Referent, ReferentId, RelationShape,
-        RelationalContent, Role, RoleId, RolePredicate, Term,
+        RelationalContent, Role, RolePredicate,
     },
     wire,
 };
 
 use super::{
-    identifiers::{DesignationTable, synthetic_referent, synthetic_role},
+    identifiers::{DesignationTable, synthetic_referent},
     lowering::{
         BinderTable, Projection, lower_clause_with, lower_definition, lower_focus,
-        membership_content, membership_group_role, membership_member_role, membership_relation,
-        membership_shape,
+        lower_shape_binding, membership_content, membership_group_role, membership_member_role,
+        membership_relation, membership_shape,
     },
     resolution::Resolver,
 };
@@ -119,13 +119,13 @@ fn compile_projected(
         let mut resolver = Resolver::new(&declarations, models, &projection, source_spans);
         for declaration in &program.declarations {
             match declaration.kind {
-                Kind::Model | Kind::Revision => {
+                Kind::Enumeration | Kind::BindingShape | Kind::Model | Kind::Revision => {
                     resolver.revision(&declaration.subject.value)?;
                 }
                 Kind::Delta => {
                     resolver.delta(&declaration.subject.value)?;
                 }
-                Kind::Type | Kind::RelationShape | Kind::DerivationRule => {}
+                Kind::Grounding | Kind::RelationShape | Kind::DerivationRule => {}
             }
         }
         (resolver.revisions, resolver.source_spans)
@@ -139,8 +139,8 @@ fn compile_projected(
 }
 
 fn declaration_map(
-    declarations: &[AscriptionDecl],
-) -> kernel::Result<BTreeMap<frontend::Name, &AscriptionDecl>> {
+    declarations: &[Declaration],
+) -> kernel::Result<BTreeMap<frontend::Name, &Declaration>> {
     let mut by_name = BTreeMap::new();
     for declaration in declarations {
         if by_name
@@ -167,21 +167,28 @@ fn declare_projection(
     for declaration in &program.declarations {
         let name = declaration.subject.value.as_str();
         let id = match declaration.kind {
-            Kind::Model => projection.designations.declare_model(name)?,
-            Kind::Type
+            Kind::Enumeration | Kind::BindingShape | Kind::Model => {
+                projection.designations.declare_model(name)?
+            }
+            Kind::Grounding
             | Kind::RelationShape
             | Kind::DerivationRule
             | Kind::Revision
             | Kind::Delta => projection.designations.declare_global(name)?,
         };
-        if declaration.kind == Kind::Type {
-            projection.types.insert(id);
+        if matches!(
+            declaration.kind,
+            Kind::Grounding | Kind::Enumeration | Kind::BindingShape | Kind::Model
+        ) {
+            projection.grounded.insert(id);
         }
     }
     for declaration in &program.declarations {
         match declaration.kind {
             Kind::RelationShape => declare_relation_projection(declaration, &mut projection)?,
-            Kind::Model => declare_model_projection(declaration, &mut projection)?,
+            Kind::Enumeration | Kind::BindingShape | Kind::Model => {
+                declare_model_projection(declaration, &mut projection)?
+            }
             Kind::DerivationRule => declare_rule_projection(declaration, &mut projection)?,
             _ => {}
         }
@@ -204,7 +211,7 @@ fn declare_projection(
 }
 
 fn declare_rule_projection(
-    declaration: &AscriptionDecl,
+    declaration: &Declaration,
     projection: &mut Projection,
 ) -> kernel::Result<()> {
     let rule = projection
@@ -236,7 +243,7 @@ fn declare_rule_projection(
 }
 
 fn declare_relation_projection(
-    declaration: &AscriptionDecl,
+    declaration: &Declaration,
     projection: &mut Projection,
 ) -> kernel::Result<()> {
     let relation = projection
@@ -259,19 +266,19 @@ fn declare_relation_projection(
                     literal = Some(value.value.clone());
                 }
             }
-            ShapePartDecl::Role { id, typ } => {
+            ShapePartDecl::Role { id, domain } => {
                 let role = projection
                     .designations
                     .declare_role(&relation, &id.value.0)?;
-                let expected = projection.designations.global(&typ.value.0)?;
-                if !projection.types.contains(&expected) {
+                let expected = projection.designations.global(&domain.value.0)?;
+                if !projection.grounded.contains(&expected) {
                     return Err(kernel::KernelError::new(format!(
-                        "undeclared Type '{}'",
-                        typ.value.0
+                        "ungrounded role domain '{}'",
+                        domain.value.0
                     )));
                 }
                 projection
-                    .role_types
+                    .role_domains
                     .insert((relation.clone(), role.clone()), expected);
                 ordered_roles.push(role);
             }
@@ -291,7 +298,7 @@ fn declare_relation_projection(
 }
 
 fn declare_model_projection(
-    declaration: &AscriptionDecl,
+    declaration: &Declaration,
     projection: &mut Projection,
 ) -> kernel::Result<()> {
     let model = projection
@@ -299,26 +306,13 @@ fn declare_model_projection(
         .global(declaration.subject.value.as_str())?;
     for member in &declaration.body {
         match member {
-            Member::Entity(entity) => {
-                let id = projection
-                    .designations
-                    .declare_scoped(&model, entity.local.value.as_str())?;
-                let typ = projection.designations.global(&entity.typ.value.0)?;
-                projection.entity_types.insert(id.clone(), typ);
-                projection
-                    .model_entities
-                    .entry(model.clone())
-                    .or_default()
-                    .insert(id);
-            }
-            Member::EntityGroup(group) => {
-                let typ = projection.designations.global(&group.typ.value.0)?;
-                for number in group.range.start..=group.range.end {
-                    let local = format!("{}{}{}", group.prefix.value, number, group.suffix.value);
+            Member::MembershipRange(range) => {
+                projection.designations.global(&range.group.value.0)?;
+                for number in range.range.start..=range.range.end {
+                    let local = format!("{}{}{}", range.prefix.value, number, range.suffix.value);
                     let id = projection.designations.declare_scoped(&model, &local)?;
-                    projection.entity_types.insert(id.clone(), typ.clone());
                     projection
-                        .model_entities
+                        .model_referents
                         .entry(model.clone())
                         .or_default()
                         .insert(id);
@@ -349,6 +343,19 @@ fn declare_model_projection(
                         .insert(referent);
                 }
             }
+            Member::ShapeBinding(binding) => {
+                let referent = projection
+                    .designations
+                    .declare_scoped(&model, binding.label.value.as_str())?;
+                projection
+                    .designations
+                    .global(binding.domain.value.as_str())?;
+                projection
+                    .model_referents
+                    .entry(model.clone())
+                    .or_default()
+                    .insert(referent);
+            }
             _ => {}
         }
     }
@@ -356,7 +363,7 @@ fn declare_model_projection(
 }
 
 fn lower_relation_shapes(
-    declarations: &[AscriptionDecl],
+    declarations: &[Declaration],
     projection: &mut Projection,
 ) -> kernel::Result<BTreeMap<ReferentId, RelationShape>> {
     let mut shapes = BTreeMap::new();
@@ -385,9 +392,9 @@ fn lower_relation_shapes(
             .map(|id| {
                 let role = projection.designations.role(&relation, &id.value.0)?;
                 let expected = projection
-                    .role_types
+                    .role_domains
                     .get(&(relation.clone(), role.clone()))
-                    .expect("relation role type was recorded during declaration")
+                    .expect("relation role domain was recorded during declaration")
                     .clone();
                 Ok((
                     role.clone(),
@@ -421,15 +428,6 @@ fn lower_relation_shapes(
             return Err(kernel::KernelError::new("duplicate RelationShape identity"));
         }
     }
-    let classification = legacy_type_classification_shape()?;
-    if shapes
-        .insert(classification.referent().clone(), classification)
-        .is_some()
-    {
-        return Err(kernel::KernelError::new(
-            "legacy type classification relation collides with an authored RelationShape",
-        ));
-    }
     let membership = membership_shape()?;
     if shapes
         .insert(membership.referent().clone(), membership)
@@ -442,18 +440,6 @@ fn lower_relation_shapes(
     Ok(shapes)
 }
 
-fn legacy_type_classification_relation() -> ReferentId {
-    synthetic_referent("legacy-type-classification", &["relation"])
-}
-
-fn legacy_type_candidate_role() -> RoleId {
-    synthetic_role("legacy-type-classification", &["candidate"])
-}
-
-fn legacy_type_class_role() -> RoleId {
-    synthetic_role("legacy-type-classification", &["class"])
-}
-
 fn membership_predicate(group: ReferentId) -> kernel::Result<RolePredicate> {
     RolePredicate::new(
         membership_relation(),
@@ -462,37 +448,8 @@ fn membership_predicate(group: ReferentId) -> kernel::Result<RolePredicate> {
     )
 }
 
-fn legacy_type_classification_shape() -> kernel::Result<RelationShape> {
-    let candidate = Role::new(legacy_type_candidate_role(), Vec::new())?;
-    let class = Role::new(legacy_type_class_role(), Vec::new())?;
-    RelationShape::new(
-        legacy_type_classification_relation(),
-        BTreeMap::from([
-            (candidate.id().clone(), candidate),
-            (class.id().clone(), class),
-        ]),
-        Vec::new(),
-    )
-}
-
-fn legacy_type_membership(
-    candidate: &ReferentId,
-    class: &ReferentId,
-) -> kernel::Result<RelationalContent> {
-    RelationalContent::new(
-        legacy_type_classification_relation(),
-        BTreeMap::from([
-            (
-                legacy_type_candidate_role(),
-                Term::referent(candidate.clone()),
-            ),
-            (legacy_type_class_role(), Term::referent(class.clone())),
-        ]),
-    )
-}
-
 fn lower_models(
-    declarations: &[AscriptionDecl],
+    declarations: &[Declaration],
     shapes: &BTreeMap<ReferentId, RelationShape>,
     projection: &Projection,
 ) -> kernel::Result<(
@@ -501,12 +458,17 @@ fn lower_models(
 )> {
     let mut models = BTreeMap::new();
     let mut source_spans = BTreeMap::new();
-    for declaration in declarations.iter().filter(|item| item.kind == Kind::Model) {
+    for declaration in declarations.iter().filter(|item| {
+        matches!(
+            item.kind,
+            Kind::Enumeration | Kind::BindingShape | Kind::Model
+        )
+    }) {
         let model_id = projection
             .designations
             .global(declaration.subject.value.as_str())?;
         let mut referents = projection
-            .types
+            .grounded
             .iter()
             .chain(shapes.keys())
             .cloned()
@@ -514,17 +476,10 @@ fn lower_models(
             .collect::<BTreeMap<_, _>>();
         referents.insert(model_id.clone(), Referent::new(model_id.clone()));
         for id in projection
-            .model_entities
+            .model_referents
             .get(&model_id)
             .into_iter()
             .flatten()
-            .chain(
-                projection
-                    .model_referents
-                    .get(&model_id)
-                    .into_iter()
-                    .flatten(),
-            )
         {
             referents.insert(id.clone(), Referent::new(id.clone()));
         }
@@ -532,7 +487,7 @@ fn lower_models(
             collect_member_literal_referents(member, projection, &mut referents)?;
         }
         let (mut contents, mut occurrences, mut judgments) =
-            legacy_type_memberships(&model_id, declaration, projection, &mut referents)?;
+            literal_memberships(&model_id, declaration, projection, &mut referents)?;
         let mut occurrence_index = 0usize;
         for member in &declaration.body {
             match member {
@@ -556,6 +511,26 @@ fn lower_models(
                         &mut source_spans,
                     )?;
                     occurrence_index += 1;
+                }
+                Member::MembershipRange(range) => {
+                    let group = projection.designations.global(range.group.value.as_str())?;
+                    for number in range.range.start..=range.range.end {
+                        let local =
+                            format!("{}{}{}", range.prefix.value, number, range.suffix.value);
+                        let member = projection.designations.scoped(&model_id, &local)?;
+                        admit_authored_content(
+                            &model_id,
+                            membership_content(member, group.clone())?,
+                            occurrence_index,
+                            Some(range.span),
+                            &mut referents,
+                            &mut contents,
+                            &mut occurrences,
+                            &mut judgments,
+                            &mut source_spans,
+                        )?;
+                        occurrence_index += 1;
+                    }
                 }
                 Member::RelationalContent(_) => occurrence_index += 1,
                 Member::Focus(focus) => {
@@ -597,12 +572,25 @@ fn lower_models(
                     occurrence_index += 1;
                     (Vec::new(), None)
                 }
+                Member::MembershipRange(range) => {
+                    occurrence_index += (range.range.end - range.range.start + 1) as usize;
+                    (Vec::new(), None)
+                }
                 Member::Definition(definition) => {
                     definitions.push(lower_definition(
                         projection,
                         shell.model(),
                         &definition.name.value,
                         &definition.denotation.value,
+                    )?);
+                    (Vec::new(), None)
+                }
+                Member::ShapeBinding(binding) => {
+                    definitions.push(lower_shape_binding(
+                        projection,
+                        shell.model(),
+                        &binding.label.value,
+                        &binding.domain.value,
                     )?);
                     (Vec::new(), None)
                 }
@@ -747,34 +735,21 @@ fn admit_authored_content(
     Ok(())
 }
 
-type LegacyTypeMemberships = (
+type LiteralMemberships = (
     BTreeMap<kernel::ContentId, RelationalContent>,
     Vec<AssertionOccurrence>,
     Vec<Judgment>,
 );
 
-fn legacy_type_memberships(
+fn literal_memberships(
     model: &ReferentId,
-    declaration: &AscriptionDecl,
+    declaration: &Declaration,
     projection: &Projection,
     referents: &mut BTreeMap<ReferentId, Referent>,
-) -> kernel::Result<LegacyTypeMemberships> {
+) -> kernel::Result<LiteralMemberships> {
     let mut contents = BTreeMap::new();
     let mut occurrences = Vec::new();
     let mut judgments = Vec::new();
-    let mut memberships = projection
-        .model_entities
-        .get(model)
-        .into_iter()
-        .flatten()
-        .map(|entity| {
-            let class = projection
-                .entity_types
-                .get(entity)
-                .expect("declared model entity has a recorded legacy type");
-            (entity.clone(), class.clone())
-        })
-        .collect::<BTreeSet<_>>();
     let literals = declaration
         .body
         .iter()
@@ -785,41 +760,40 @@ fn legacy_type_memberships(
         .collect::<BTreeSet<_>>();
     if !literals.is_empty() {
         let text = projection.designations.global("Text")?;
-        if !projection.types.contains(&text) {
+        if !projection.grounded.contains(&text) {
             return Err(kernel::KernelError::new(
-                "model string literal requires declared Text Type",
+                "model string literal requires grounded Text",
             ));
         }
-        memberships.extend(literals.into_iter().map(|literal| (literal, text.clone())));
-    }
-    for (entity, class) in memberships {
-        let content = legacy_type_membership(&entity, &class)?;
-        let occurrence = synthetic_referent(
-            "legacy-type-membership-occurrence",
-            &[model.as_str(), entity.as_str()],
-        );
-        let judgment =
-            synthetic_referent("legacy-type-membership-judgment", &[occurrence.as_str()]);
-        referents.insert(occurrence.clone(), Referent::new(occurrence.clone()));
-        referents.insert(judgment.clone(), Referent::new(judgment.clone()));
-        contents.insert(content.id().clone(), content.clone());
-        occurrences.push(AssertionOccurrence::new(
-            occurrence.clone(),
-            content.id().clone(),
-            model.clone(),
-            model.clone(),
-        ));
-        judgments.push(Judgment::new(
-            judgment,
-            model.clone(),
-            model.clone(),
-            JudgmentTarget::Occurrence(occurrence),
-            JudgmentKind::Admitted {
-                policy: model.clone(),
-                basis: Vec::new(),
-            },
-            JudgmentStatus::Affirmed,
-        ));
+        for literal in literals {
+            let content = membership_content(literal.clone(), text.clone())?;
+            let occurrence = synthetic_referent(
+                "literal-membership-occurrence",
+                &[model.as_str(), literal.as_str()],
+            );
+            let judgment =
+                synthetic_referent("literal-membership-judgment", &[occurrence.as_str()]);
+            referents.insert(occurrence.clone(), Referent::new(occurrence.clone()));
+            referents.insert(judgment.clone(), Referent::new(judgment.clone()));
+            contents.insert(content.id().clone(), content.clone());
+            occurrences.push(AssertionOccurrence::new(
+                occurrence.clone(),
+                content.id().clone(),
+                model.clone(),
+                model.clone(),
+            ));
+            judgments.push(Judgment::new(
+                judgment,
+                model.clone(),
+                model.clone(),
+                JudgmentTarget::Occurrence(occurrence),
+                JudgmentKind::Admitted {
+                    policy: model.clone(),
+                    basis: Vec::new(),
+                },
+                JudgmentStatus::Affirmed,
+            ));
+        }
     }
     Ok((contents, occurrences, judgments))
 }
@@ -831,7 +805,7 @@ fn member_literal_referents(
     let literal = |term: &SurfaceTerm| -> kernel::Result<Option<ReferentId>> {
         match term {
             SurfaceTerm::String(value) => Ok(Some(projection.designations.literal(&value.value)?)),
-            SurfaceTerm::Entity(_) | SurfaceTerm::Template(_) | SurfaceTerm::Variable(_) => {
+            SurfaceTerm::Referent(_) | SurfaceTerm::Template(_) | SurfaceTerm::Variable(_) => {
                 Ok(None)
             }
         }
@@ -920,13 +894,14 @@ mod tests {
         derive::Limits,
         frontend,
         intervention::{self, AchieveAll, InterventionLimits},
+        kernel::Term,
     };
 
-    const BASE: &str = "Module: Type\n\nimpact/imports: RelationShape\n    {consumer: Module} imports {dependency: Module}\n    mode consumer -> dependency: many\n\nimpact: Model\n    North: Module\n    South: Module\n    Store: Module\n    North imports Store\n";
+    const BASE: &str = "Module\n\nimpact/imports: RelationShape\n  {consumer: Module} imports {dependency: Module}\n  mode consumer -> dependency: many\n\nimpact\n  North ∈ Module\n  South ∈ Module\n  Store ∈ Module\n  North imports Store\n";
 
     #[test]
     fn seals_base_and_preserves_request_order() {
-        let program = compile(frontend::parse(&format!("{BASE}\nwhy in impact:\n    North imports Store\n\nfind all ?dependency in impact:\n    North imports ?dependency\n")).unwrap()).unwrap();
+        let program = compile(frontend::parse(&format!("{BASE}\nwhy in impact:\n  North imports Store\n\nfind all ?dependency in impact:\n  North imports ?dependency\n")).unwrap()).unwrap();
         assert_eq!(program.revisions().len(), 1);
         assert!(matches!(
             program.requests()[0],
@@ -965,26 +940,26 @@ mod tests {
     }
 
     #[test]
-    fn legacy_role_domains_become_sealed_admitted_classifications() {
-        let source = "Alpha: Type
-Beta: Type
-Text: Type
+    fn role_domains_are_enforced_by_sealed_canonical_membership() {
+        let source = "Alpha
+Beta
+Text
 
 typed/pairs: RelationShape
-    {left: Alpha} pairs {right: Beta}
-    mode left -> right: many
+  {left: Alpha} pairs {right: Beta}
+  mode left -> right: many
 
 typed/labels: RelationShape
-    {owner: Alpha} labels {label: Text}
-    mode owner -> label: many
+  {owner: Alpha} labels {label: Text}
+  mode owner -> label: many
 
-typed: Model
-    Alpha-0: Alpha
-    Alpha-1: Alpha
-    Beta-0: Beta
-    Beta-1: Beta
-    Alpha-0 pairs Beta-0
-    Alpha-0 labels \"north\"
+typed
+  Alpha-0 ∈ Alpha
+  Alpha-1 ∈ Alpha
+  Beta-0 ∈ Beta
+  Beta-1 ∈ Beta
+  Alpha-0 pairs Beta-0
+  Alpha-0 labels \"north\"
 ";
         let program = compile(frontend::parse(source).unwrap()).unwrap();
         let revision = program.revision(&frontend::Name("typed".into())).unwrap();
@@ -1071,9 +1046,42 @@ typed: Model
             InterventionLimits::new(Limits::new(100, 10, 20_000), 100, 100),
         )
         .unwrap() else {
-            panic!("sealed classifier domains must yield a complete addition frontier");
+            panic!("sealed membership domains must yield a complete addition frontier");
         };
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].admissions(), &[target]);
+    }
+
+    #[test]
+    fn inferred_enumeration_and_binding_shape_lower_without_type_ontology() {
+        let program = compile(
+            frontend::parse("F32\n\nGame\n  Chess\n  Soccer\n\nVec2\n  x: F32\n  y: F32\n")
+                .unwrap(),
+        )
+        .unwrap();
+        let game = program.designations().global("Game").unwrap();
+        let chess = program.designations().scoped(&game, "Chess").unwrap();
+        let game_revision = program.revision(&frontend::Name("Game".into())).unwrap();
+        assert!(
+            game_revision
+                .model()
+                .admitted_contents()
+                .binary_search(&membership_content(chess, game).unwrap())
+                .is_ok()
+        );
+
+        let vec2 = program.designations().global("Vec2").unwrap();
+        let x = program.designations().scoped(&vec2, "x").unwrap();
+        let f32 = program.designations().global("F32").unwrap();
+        let vec2_revision = program.revision(&frontend::Name("Vec2".into())).unwrap();
+        assert!(
+            vec2_revision
+                .model()
+                .definitions()
+                .iter()
+                .any(|definition| {
+                    definition.id() == &x && definition.denotation() == &Term::referent(f32.clone())
+                })
+        );
     }
 }

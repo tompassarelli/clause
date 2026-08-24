@@ -14,8 +14,8 @@ mod syntax;
 
 pub use parser::parse;
 pub use syntax::{
-    AscriptionDecl, Cardinality, EntityDecl, EntityGroupDecl, EntityTemplate, FocusBinding,
-    FocusBlock, FocusSlot, IntegerRange, InterventionSelection, Kind, Member, ModeDecl, Name,
-    ParseError, Program, RequestDecl, RoleName, SentenceShapeDecl, ShapePartDecl, Span, Spanned,
-    SurfaceClause, SurfaceTerm, TypeName, VariableName,
+    Cardinality, Declaration, DomainName, FocusBinding, FocusBlock, FocusSlot, IntegerRange,
+    InterventionSelection, Kind, Member, MembershipRangeDecl, ModeDecl, Name, ParseError, Program,
+    ReferentTemplate, RequestDecl, RoleName, SentenceShapeDecl, ShapeBindingDecl, ShapePartDecl,
+    Span, Spanned, SurfaceClause, SurfaceTerm, VariableName,
 };
