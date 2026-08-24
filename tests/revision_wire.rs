@@ -1,4 +1,4 @@
-//! Exact typed Revision/Delta wire contract for semantic-v6.
+//! Exact typed Revision/Delta wire contract for semantic-v7.
 
 use std::collections::BTreeMap;
 
@@ -185,7 +185,7 @@ const PATTERN_CONTENT_ID: &str =
 const WEST_CONTENT_ID: &str =
     "content-sha256-6f99f9d878a067fc9a7e94bae2e2b8fef060d81629c845cb9b769107d83fb0d0";
 const EXPECTED_REVISION_ID: &str =
-    "rev-sha256-cc238a68e149ea19e1041a4ba50581db9a6e90a9261d3db8f8dc15c48c374ab6";
+    "rev-sha256-75b9d2923d7566e1697ff249fba9ffde5def40c56f27bc49d35ac5d5aa46aebf";
 
 fn expected_semantic() -> String {
     let referent = |seed: u8| format!("ref-sha256-{}", format!("{seed:02x}").repeat(32));
@@ -250,7 +250,7 @@ fn expected_semantic() -> String {
         referent(SOURCE_A),
     );
     format!(
-        "[\"clause-semantic-v6\",[\"lineage\",[\"root\"]],[\"model\",\"{}\"],[\"referents\",[{referents}]],[\"relational-contents\",[{contents}]],[\"relation-shapes\",[{shape}]],[\"occurrences\",[{occurrence}]],[\"definitions\",[]],[\"derivation-rules\",[{rule}]],[\"universal-laws\",[]],[\"invariants\",[]],[\"goals\",[]],[\"transitions\",[]],[\"judgments\",[{judgment}]]]",
+        "[\"clause-semantic-v7\",[\"lineage\",[\"root\"]],[\"model\",\"{}\"],[\"referents\",[{referents}]],[\"relational-contents\",[{contents}]],[\"relation-shapes\",[{shape}]],[\"occurrences\",[{occurrence}]],[\"definitions\",[]],[\"derivation-rules\",[{rule}]],[\"universal-laws\",[]],[\"invariants\",[]],[\"goals\",[]],[\"transitions\",[]],[\"judgments\",[{judgment}]]]",
         referent(MODEL),
     )
 }
@@ -289,7 +289,7 @@ fn replacement_delta(base: &clause::kernel::Revision) -> Delta {
 }
 
 #[test]
-fn exact_semantic_v6_bytes_hash_and_revision_v4_roundtrip_are_frozen() {
+fn exact_semantic_v7_bytes_hash_and_revision_v5_roundtrip_are_frozen() {
     assert_eq!(
         wire::sha256_hex(b"abc"),
         "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
@@ -409,8 +409,8 @@ fn reload_rejects_retired_tags_noncanonical_order_and_hash_mismatch() {
         SOURCE_A,
     ));
     let canonical = wire::serialize(&revision);
-    let retired_revision_tag = ["clause-revision-", "v3"].concat();
-    let retired_semantic_tag = ["clause-semantic-", "v5"].concat();
+    let retired_revision_tag = ["clause-revision-", "v4"].concat();
+    let retired_semantic_tag = ["clause-semantic-", "v6"].concat();
     assert!(
         wire::reload(&canonical.replacen(wire::REVISION_TAG, &retired_revision_tag, 1)).is_err()
     );

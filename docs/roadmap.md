@@ -128,7 +128,7 @@ honestly collapse:
 | `StateRevision` | Logically immutable runtime state produced from an exact predecessor and Delta and bound to an exact Model Revision. |
 | `RuntimeSession` | Exact Model Revision, initial state, tick policy, ordered input/event stream, transition results, capability realizations, and effect receipts. |
 
-Today's Revision-v4 wraps one complete semantic-v6 Model snapshot and either
+Today's Revision-v5 wraps one complete semantic-v7 Model snapshot and either
 root lineage or an exact predecessor Delta. Any future split migrates the
 representation and all in-tree consumers atomically; it does not pass through
 two public wire meanings. The historical M0 page records the earlier evidence
@@ -196,7 +196,7 @@ Public Clause currently implements:
 - one stable referent domain and role-labelled n-ary relational content;
 - separate assertion occurrences, judgments, definitions, derivation rules,
   universal laws, invariants, goals, and transitions;
-- canonical semantic-v6 / Revision-v4 persistence with exact predecessor
+- canonical semantic-v7 / Revision-v5 persistence with exact predecessor
   lineage and complete successor Deltas;
 - the compact M1 grounding, binding, membership, enumeration, and focus
   surface plus M2 exact role-labelled relation schemas and projection contracts,
@@ -219,7 +219,7 @@ for new canonical examples or independently extended as a second language.
 The Surface Reset sequence is now the primary critical path:
 
 ```text
-implemented distinction-first kernel + canonical v6/v4 wire
+implemented distinction-first kernel + canonical v7/v5 wire
     |
     v
 M1 layout, grounding, enumeration, definition, and focus
@@ -321,18 +321,18 @@ rent. The exit review protects the settled classification, definition, and
 indentation rulings. Unrelated imports
 preserve elaboration or produce an exact ambiguity repair.
 
-**Successor:** the atomic distinction-first kernel and canonical v6/v4 wire
+**Successor:** the atomic distinction-first kernel and canonical v7/v5 wire
 migration described below.
 
 ## Completed atomic kernel migration
 
-**Status:** implemented at the semantic-v6 / Revision-v4 checkpoint.
+**Status:** implemented at the semantic-v7 / Revision-v5 checkpoint.
 
 The constitutional kernel migration followed one serial edge and one atomic
 checkpoint:
 
 ```text
-kernel identity/schema/relational form/model/revision/delta + canonical v6/v4 wire
+kernel identity/schema/relational form/model/revision/delta + canonical v7/v5 wire
   -> derive/execution/intervention/diff/request
   -> frontend AST/parser
   -> elaboration
@@ -346,14 +346,14 @@ Semantic-v5 hashed the bytes of legacy `Type`, `Entity`, `Value`, and
 preserving them as live compatibility, separated relational content from its
 assertion occurrence and judgment, and persisted exact predecessor lineage.
 
-**Exit proof:** primitive encodings and semantic-v5 are absent; canonical v6/v4
+**Exit proof:** primitive encodings and semantic-v5 are absent; canonical v7/v5
 strictly reloads; binding, membership, equality, transition, and
 open-world absence remain distinct; exact Delta lineage and hospital results
 retain parity; and source-deleted generated Rust emits byte-identical results.
 
 ## M1 — Layout and focus profile
 
-**Depends on:** the atomic distinction-kernel and canonical v6/v4 migration.
+**Depends on:** the atomic distinction-kernel and canonical v7/v5 migration.
 
 Implement term-to-referent grounding, `∈` membership, `:` binding, enumeration
 blocks, homogeneous binding/derived-shape blocks, focused blocks,

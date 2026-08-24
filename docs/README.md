@@ -16,7 +16,7 @@ language specification.
 
 | Document | Status and authority | Relationship |
 | --- | --- | --- |
-| [M0 evidence checkpoint](history/m0.md) | **Historical; superseded.** Records an earlier surface-evidence checkpoint and has no authority over current syntax. | Superseded by the current foundation, surface, roadmap, and implemented semantic-v6 referent kernel. |
+| [M0 evidence checkpoint](history/m0.md) | **Historical; superseded.** Records an earlier surface-evidence checkpoint and has no authority over current syntax. | Superseded by the current foundation, surface, roadmap, and implemented semantic-v7 referent kernel. |
 
 ## Reading routes
 

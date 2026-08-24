@@ -7,8 +7,8 @@ use crate::kernel::{
 
 use super::{json::escape, sha256::sha256_digest};
 
-pub const SEMANTIC_TAG: &str = "clause-semantic-v6";
-pub const REVISION_TAG: &str = "clause-revision-v4";
+pub const SEMANTIC_TAG: &str = "clause-semantic-v7";
+pub const REVISION_TAG: &str = "clause-revision-v5";
 
 pub fn semantic_payload(revision: &Revision) -> String {
     payload(revision.lineage(), revision.model())
