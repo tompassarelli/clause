@@ -6,8 +6,8 @@ mod stage_a;
 use stage_a::{Delimiter, DiagnosticCode, LineEnding, Punctuation, TokenKind, read};
 
 #[test]
-fn preserves_classification_definition_bytes_tokens_and_trivia() {
-    let source = "title := \"red door\"\r\n  child : Group\n";
+fn preserves_binding_membership_bytes_tokens_and_trivia() {
+    let source = "title: \"red door\"\r\n  child ∈ Group\n";
     let document = read(source);
 
     assert_eq!(document.source, source);
@@ -17,86 +17,81 @@ fn preserves_classification_definition_bytes_tokens_and_trivia() {
         document.lines[0].tokens[1].kind,
         TokenKind::Punctuation(Punctuation::Colon)
     );
-    assert_eq!(
-        document.lines[0].tokens[2].kind,
-        TokenKind::Punctuation(Punctuation::Equals)
-    );
-    assert_eq!(document.lines[0].tokens[3].kind, TokenKind::Literal);
-    assert_eq!(
-        document.lines[1].tokens[1].kind,
-        TokenKind::Punctuation(Punctuation::Colon)
-    );
+    assert_eq!(document.lines[0].tokens[2].kind, TokenKind::Literal);
+    assert_eq!(document.lines[1].tokens[1].kind, TokenKind::Symbol);
+    let membership = document.lines[1].tokens[1].span;
+    assert_eq!(&document.source[membership.start..membership.end], "∈");
     assert_eq!(document.root.lines[0].children[0].indentation, 2);
     assert_eq!(document.root.lines[0].children[0].lines[0].line, 1);
-    assert!(document.diagnostics.is_empty());
+    assert!(document.is_accepted());
 }
 
 #[test]
-fn retains_every_retired_spelling_for_later_structural_diagnostics() {
-    let source = "a :: B\na ∈ B\na in B\na member of B\n";
+fn rejects_persisted_double_colon_without_rewriting_source_or_literals() {
+    let source = "member :: Group\nlabel: \"a::b\"\n";
+    let document = read(source);
+
+    assert_eq!(document.source, source);
+    assert_eq!(document.diagnostics.len(), 1);
+    assert_eq!(
+        document.diagnostics[0].code,
+        DiagnosticCode::PersistedDoubleColon
+    );
+    let span = document.diagnostics[0].span;
+    assert_eq!(&document.source[span.start..span.end], "::");
+    assert_eq!(document.diagnostics[0].replacement, Some("∈"));
+    assert!(!document.is_accepted());
+}
+
+#[test]
+fn preserves_flat_symbolic_operator_tokens_and_qualified_slashes() {
+    let source = concat!(
+        "x > y\n",
+        "x < y\n",
+        "x >= y\n",
+        "x <= y\n",
+        "x != y\n",
+        "x = y\n",
+        "a + b\n",
+        "a - b\n",
+        "a * b\n",
+        "a / b\n",
+        "egress/route\n",
+        "+ admitted\n",
+        "- withdrawn\n",
+        "render! scene\n",
+        "position -> Vec2\n",
+        "state ~> next\n",
+    );
     let document = read(source);
 
     assert_eq!(document.source, source);
     assert!(document.is_accepted());
-    assert_eq!(document.diagnostics, []);
     assert_eq!(
-        &document.source
-            [document.lines[0].tokens[1].span.start..document.lines[0].tokens[1].span.end],
-        ":"
-    );
-    assert_eq!(
-        &document.source
-            [document.lines[1].tokens[1].span.start..document.lines[1].tokens[1].span.end],
-        "∈"
-    );
-    assert_eq!(
-        &document.source
-            [document.lines[2].tokens[1].span.start..document.lines[2].tokens[1].span.end],
-        "in"
-    );
-    assert_eq!(
-        &document.source
-            [document.lines[3].tokens[1].span.start..document.lines[3].tokens[1].span.end],
-        "member"
-    );
-}
-
-#[test]
-fn preserves_canonical_ascii_relation_operators_as_punctuation() {
-    let source = "x > y\nx < y\nx >= y\nx <= y\nx = y\na + b\na - b\na * b\n";
-    let document = read(source);
-
-    assert_eq!(document.source, source);
-    assert!(document.is_accepted());
-    assert_eq!(
-        document
-            .lines
+        document.lines[4]
+            .tokens
             .iter()
-            .map(|line| {
-                line.tokens
-                    .iter()
-                    .filter_map(|token| match token.kind {
-                        TokenKind::Punctuation(punctuation) => Some(punctuation),
-                        _ => None,
-                    })
-                    .collect::<Vec<_>>()
-            })
+            .map(|token| token.kind)
             .collect::<Vec<_>>(),
         vec![
-            vec![Punctuation::GreaterThan],
-            vec![Punctuation::LessThan],
-            vec![Punctuation::GreaterThan, Punctuation::Equals],
-            vec![Punctuation::LessThan, Punctuation::Equals],
-            vec![Punctuation::Equals],
-            vec![Punctuation::Plus],
-            vec![Punctuation::Minus],
-            vec![Punctuation::Star],
+            TokenKind::Name,
+            TokenKind::Punctuation(Punctuation::Exclamation),
+            TokenKind::Punctuation(Punctuation::Equals),
+            TokenKind::Name,
         ]
+    );
+    assert_eq!(
+        document.lines[9].tokens[1].kind,
+        TokenKind::Punctuation(Punctuation::Slash)
+    );
+    assert_eq!(
+        document.lines[10].tokens[1].kind,
+        TokenKind::Punctuation(Punctuation::Slash)
     );
 }
 
 #[test]
-fn retains_delimiters_and_reports_only_layout_diagnostics() {
+fn retains_delimiters_and_rejects_tabs_and_noncanonical_indentation() {
     let source = "root\n\tchild(a, [b])\n    skipped\n";
     let document = read(source);
 
@@ -112,12 +107,6 @@ fn retains_delimiters_and_reports_only_layout_diagnostics() {
             .iter()
             .any(|token| token.kind == TokenKind::Delimiter(Delimiter::OpenBracket))
     );
-    assert!(
-        document.lines[1]
-            .tokens
-            .iter()
-            .any(|token| token.kind == TokenKind::Delimiter(Delimiter::CloseBracket))
-    );
     assert_eq!(
         document
             .diagnostics
@@ -126,21 +115,25 @@ fn retains_delimiters_and_reports_only_layout_diagnostics() {
             .collect::<Vec<_>>(),
         vec![
             DiagnosticCode::TabIndentation,
-            DiagnosticCode::NoncanonicalIndentation
+            DiagnosticCode::NoncanonicalIndentation,
         ]
     );
     assert!(!document.is_accepted());
 }
 
 #[test]
-fn diagnoses_an_orphan_indented_root_without_normalizing_layout() {
-    let orphan = read("  orphan\n");
-    let root = read("root\n");
+fn accepts_exact_two_space_layout_and_rejects_an_indented_root() {
+    let canonical = read("root\n  child\n    leaf\n");
+    assert!(canonical.is_accepted());
+    assert_eq!(canonical.root.lines[0].children[0].indentation, 2);
+    assert_eq!(
+        canonical.root.lines[0].children[0].lines[0].children[0].indentation,
+        4
+    );
 
+    let orphan = read("  orphan\n");
     assert_eq!(orphan.source, "  orphan\n");
-    assert_eq!(orphan.lines[0].indentation.len(), 2);
     assert_eq!(orphan.root.lines[0].line, 0);
-    assert_eq!(orphan.root.lines[0].children, []);
     assert_eq!(
         orphan
             .diagnostics
@@ -149,6 +142,4 @@ fn diagnoses_an_orphan_indented_root_without_normalizing_layout() {
             .collect::<Vec<_>>(),
         vec![DiagnosticCode::NoncanonicalIndentation]
     );
-    assert_eq!(root.lines[0].indentation.len(), 0);
-    assert!(root.diagnostics.is_empty());
 }

@@ -13,11 +13,9 @@ use crate::m0_stage_a::{
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BlockClass {
     Enumeration,
-    ClassificationProjection,
     FocusedProjection,
     AssertionOccurrence,
     RelationContract,
-    Definition,
     UniversalLaw,
     DerivationRule,
     Invariant,
@@ -38,8 +36,8 @@ pub enum BlockClass {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ChildForm {
     BareTerm,
-    Classification,
-    Definition,
+    Binding,
+    Membership,
     RelationalContent,
     AssertionOccurrence,
     RelationContract,
@@ -64,8 +62,7 @@ pub enum ChildForm {
 pub enum DiagnosticCode {
     StageATabIndentation,
     StageANoncanonicalIndentation,
-    RetiredDoubleColon,
-    RetiredMembershipSymbol,
+    PersistedDoubleColon,
     MembershipInAlias,
     MembershipMemberOfAlias,
     EmptyBlock,
@@ -101,8 +98,8 @@ pub struct Classification {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StatementClass {
     GroundingTerm,
-    ClassificationContent,
-    Definition,
+    Binding,
+    Membership,
     RelationalContent,
     AssertionOccurrence,
     RelationContract,
@@ -139,7 +136,7 @@ impl Classification {
 /// Classifies every indentation group, or returns a finite exact diagnostic.
 pub fn classify(document: &Document) -> Classification {
     let mut diagnostics = stage_a_diagnostics(document);
-    reject_retired_membership_spellings(document, &mut diagnostics);
+    reject_membership_aliases(document, &mut diagnostics);
 
     let mut blocks = Vec::new();
     let mut statements = Vec::new();
@@ -174,6 +171,10 @@ fn stage_a_diagnostics(document: &Document) -> Vec<Diagnostic> {
                     DiagnosticCode::StageANoncanonicalIndentation,
                     "indent each child exactly two spaces beyond its parent",
                 ),
+                StageADiagnosticCode::PersistedDoubleColon => (
+                    DiagnosticCode::PersistedDoubleColon,
+                    "replace `::` with `∈` before persistence or parsing",
+                ),
             };
             Diagnostic {
                 code,
@@ -184,37 +185,20 @@ fn stage_a_diagnostics(document: &Document) -> Vec<Diagnostic> {
         .collect()
 }
 
-fn reject_retired_membership_spellings(document: &Document, diagnostics: &mut Vec<Diagnostic>) {
+fn reject_membership_aliases(document: &Document, diagnostics: &mut Vec<Diagnostic>) {
     for line in &document.lines {
         let significant = line.tokens.as_slice();
-        if let Some(span) = token_pair_span(line, Punctuation::Colon, Punctuation::Colon) {
-            diagnostics.push(Diagnostic {
-                code: DiagnosticCode::RetiredDoubleColon,
-                span,
-                repair: "write classification with `:`",
-            });
-        }
-        if let Some(token) = significant
-            .iter()
-            .find(|token| token.kind == TokenKind::Symbol && token_text(document, **token) == "∈")
-        {
-            diagnostics.push(Diagnostic {
-                code: DiagnosticCode::RetiredMembershipSymbol,
-                span: token.span,
-                repair: "write classification with `:`",
-            });
-        }
         if is_in_membership_shape(document, significant) {
             diagnostics.push(Diagnostic {
                 code: DiagnosticCode::MembershipInAlias,
                 span: content_without_indent(line),
-                repair: "write classification with `:`",
+                repair: "write membership with `∈`",
             });
         } else if is_member_of_membership_shape(document, significant) {
             diagnostics.push(Diagnostic {
                 code: DiagnosticCode::MembershipMemberOfAlias,
                 span: content_without_indent(line),
-                repair: "write classification with `:`",
+                repair: "write membership with `∈`",
             });
         }
     }
@@ -329,6 +313,13 @@ fn classify_block(
     }
 
     let class = block_class(document, header_line, &child_forms);
+    if class == BlockClass::FocusedProjection {
+        for form in &mut child_forms {
+            if *form == ChildForm::BareTerm {
+                *form = ChildForm::Membership;
+            }
+        }
+    }
     Some(ClassifiedBlock {
         line: layout_line.line,
         header,
@@ -341,8 +332,8 @@ fn classify_block(
 fn statement_class(form: ChildForm) -> StatementClass {
     match form {
         ChildForm::BareTerm => StatementClass::GroundingTerm,
-        ChildForm::Classification => StatementClass::ClassificationContent,
-        ChildForm::Definition => StatementClass::Definition,
+        ChildForm::Binding => StatementClass::Binding,
+        ChildForm::Membership => StatementClass::Membership,
         ChildForm::RelationalContent => StatementClass::RelationalContent,
         ChildForm::AssertionOccurrence => StatementClass::AssertionOccurrence,
         ChildForm::RelationContract => StatementClass::RelationContract,
@@ -418,26 +409,15 @@ fn block_class(document: &Document, header: &Line, children: &[ChildForm]) -> Bl
     if is_structural_escape_header(document, header) {
         return BlockClass::StructuralEscape;
     }
-    if has_token_pair(header, Punctuation::Colon, Punctuation::Equals)
-        || children.iter().all(|form| *form == ChildForm::Definition)
-    {
-        return BlockClass::Definition;
-    }
     if children.iter().all(|form| *form == ChildForm::BareTerm) {
         return BlockClass::Enumeration;
-    }
-    if children
-        .iter()
-        .all(|form| *form == ChildForm::Classification)
-    {
-        return BlockClass::ClassificationProjection;
     }
     if children.iter().any(|form| {
         matches!(
             form,
             ChildForm::BareTerm
-                | ChildForm::Classification
-                | ChildForm::Definition
+                | ChildForm::Binding
+                | ChildForm::Membership
                 | ChildForm::RelationalContent
                 | ChildForm::AssertionOccurrence
                 | ChildForm::RelationContract
@@ -506,11 +486,11 @@ fn line_form(document: &Document, line: &Line, has_children: bool) -> Option<Chi
     if first_token_is(line, Punctuation::Plus) || first_token_is(line, Punctuation::Minus) {
         return Some(ChildForm::Delta);
     }
-    if has_token_pair(line, Punctuation::Colon, Punctuation::Equals) {
-        return Some(ChildForm::Definition);
+    if line_has_top_level_symbol(document, line, "∈") {
+        return Some(ChildForm::Membership);
     }
-    if has_single_top_level_colon(line) {
-        return Some(ChildForm::Classification);
+    if has_top_level_binding_colon(line) {
+        return Some(ChildForm::Binding);
     }
     if has_token_pair(line, Punctuation::Minus, Punctuation::GreaterThan) {
         return Some(ChildForm::RelationContract);
@@ -519,36 +499,75 @@ fn line_form(document: &Document, line: &Line, has_children: bool) -> Option<Chi
         .tokens
         .iter()
         .enumerate()
-        .any(|(index, token)| is_canonical_infix_operator(line, index, *token))
+        .any(|(index, token)| is_canonical_infix_operator(document, line, index, *token))
     {
         return Some(ChildForm::RelationalContent);
     }
     if line.tokens.len() == 1 && line.tokens[0].kind == TokenKind::Name {
         return Some(ChildForm::BareTerm);
     }
-    if line.tokens.iter().any(|token| {
-        token.kind == TokenKind::Punctuation(Punctuation::Question)
-            || token.kind == TokenKind::Punctuation(Punctuation::Equals)
-    }) {
+    if line
+        .tokens
+        .iter()
+        .any(|token| token.kind == TokenKind::Punctuation(Punctuation::Question))
+    {
         return Some(ChildForm::RelationalContent);
     }
     Some(ChildForm::UnresolvedStructuralForm)
 }
 
-fn is_canonical_infix_operator(line: &Line, index: usize, token: Token) -> bool {
+fn is_canonical_infix_operator(
+    document: &Document,
+    line: &Line,
+    index: usize,
+    token: Token,
+) -> bool {
     index > 0
         && index + 1 < line.tokens.len()
-        && matches!(
-            token.kind,
+        && match token.kind {
+            TokenKind::Punctuation(Punctuation::Slash) => {
+                let before = &document.source[line.tokens[index - 1].span.end..token.span.start];
+                let after = &document.source[token.span.end..line.tokens[index + 1].span.start];
+                before.contains(' ') && after.contains(' ')
+            }
             TokenKind::Punctuation(
                 Punctuation::Equals
-                    | Punctuation::GreaterThan
-                    | Punctuation::LessThan
-                    | Punctuation::Plus
-                    | Punctuation::Minus
-                    | Punctuation::Star
-            )
-        )
+                | Punctuation::GreaterThan
+                | Punctuation::LessThan
+                | Punctuation::Plus
+                | Punctuation::Minus
+                | Punctuation::Star,
+            ) => !adjacent_to_noncanonical_punctuation(line, index),
+            _ => false,
+        }
+}
+
+fn adjacent_to_noncanonical_punctuation(line: &Line, index: usize) -> bool {
+    let token = line.tokens[index];
+    line.tokens
+        .get(index.wrapping_sub(1))
+        .is_some_and(|previous| {
+            previous.span.end == token.span.start
+                && matches!(
+                    previous.kind,
+                    TokenKind::Punctuation(Punctuation::Colon | Punctuation::Equals)
+                )
+        })
+        || line.tokens.get(index + 1).is_some_and(|next| {
+            token.span.end == next.span.start
+                && matches!(
+                    next.kind,
+                    TokenKind::Punctuation(
+                        Punctuation::Colon
+                            | Punctuation::GreaterThan
+                            | Punctuation::LessThan
+                            | Punctuation::Plus
+                            | Punctuation::Minus
+                            | Punctuation::Star
+                            | Punctuation::Slash
+                    )
+                )
+        })
 }
 
 fn first_name<'a>(document: &'a Document, line: &Line) -> Option<&'a str> {
@@ -583,10 +602,13 @@ fn is_procedure_word(word: &str) -> bool {
 
 fn is_effect_form(document: &Document, line: &Line) -> bool {
     first_name(document, line) == Some("effect")
-        || line
-            .tokens
-            .iter()
-            .any(|token| token.kind == TokenKind::Punctuation(Punctuation::Exclamation))
+        || line.tokens.iter().enumerate().any(|(index, token)| {
+            token.kind == TokenKind::Punctuation(Punctuation::Exclamation)
+                && !line.tokens.get(index + 1).is_some_and(|next| {
+                    next.kind == TokenKind::Punctuation(Punctuation::Equals)
+                        && token.span.end == next.span.start
+                })
+        })
 }
 
 fn is_relation_contract_header(document: &Document, line: &Line) -> bool {
@@ -628,20 +650,9 @@ fn has_token_pair(line: &Line, first: Punctuation, second: Punctuation) -> bool 
     })
 }
 
-fn token_pair_span(line: &Line, first: Punctuation, second: Punctuation) -> Option<SourceSpan> {
-    line.tokens.windows(2).find_map(|tokens| {
-        (tokens[0].kind == TokenKind::Punctuation(first)
-            && tokens[1].kind == TokenKind::Punctuation(second)
-            && tokens[0].span.end == tokens[1].span.start)
-            .then_some(SourceSpan {
-                start: tokens[0].span.start,
-                end: tokens[1].span.end,
-            })
-    })
-}
-
-fn has_single_top_level_colon(line: &Line) -> bool {
+fn has_top_level_binding_colon(line: &Line) -> bool {
     let mut depth = 0usize;
+    let mut binding = None;
     for (index, token) in line.tokens.iter().enumerate() {
         match token.kind {
             TokenKind::Delimiter(crate::m0_stage_a::Delimiter::OpenParen)
@@ -662,9 +673,39 @@ fn has_single_top_level_colon(line: &Line) -> bool {
                     next.kind == TokenKind::Punctuation(Punctuation::Colon)
                         && token.span.end == next.span.start
                 });
-                if !adjacent_equals && !adjacent_colon {
-                    return true;
+                if index > 0 && index + 1 < line.tokens.len() && !adjacent_equals && !adjacent_colon
+                {
+                    if binding.is_some() {
+                        return false;
+                    }
+                    binding = Some(index);
                 }
+            }
+            _ => {}
+        }
+    }
+    binding.is_some()
+}
+
+fn line_has_top_level_symbol(document: &Document, line: &Line, symbol: &str) -> bool {
+    let mut depth = 0usize;
+    for (index, token) in line.tokens.iter().enumerate() {
+        match token.kind {
+            TokenKind::Delimiter(crate::m0_stage_a::Delimiter::OpenParen)
+            | TokenKind::Delimiter(crate::m0_stage_a::Delimiter::OpenBracket)
+            | TokenKind::Delimiter(crate::m0_stage_a::Delimiter::OpenBrace) => depth += 1,
+            TokenKind::Delimiter(crate::m0_stage_a::Delimiter::CloseParen)
+            | TokenKind::Delimiter(crate::m0_stage_a::Delimiter::CloseBracket)
+            | TokenKind::Delimiter(crate::m0_stage_a::Delimiter::CloseBrace) => {
+                depth = depth.saturating_sub(1);
+            }
+            TokenKind::Symbol
+                if depth == 0
+                    && index > 0
+                    && index + 1 < line.tokens.len()
+                    && token_text(document, *token) == symbol =>
+            {
+                return true;
             }
             _ => {}
         }
@@ -785,19 +826,49 @@ fn find_layout_line(group: &IndentationGroup, line_index: usize) -> Option<&Layo
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct EditorInput {
+pub struct EditorRewrite {
     pub source: String,
-    pub diagnostics: Vec<Diagnostic>,
+    pub replaced: Vec<SourceSpan>,
 }
 
-/// Validates editor input without rewriting source or manufacturing a semantic
-/// spelling. Quoted literals remain single Stage-A tokens.
-pub fn validate_editor_input(source: &str) -> EditorInput {
-    let document = crate::m0_stage_a::read(source);
-    let classification = classify(&document);
-    EditorInput {
-        source: source.to_owned(),
-        diagnostics: classification.diagnostics,
+/// Applies the editor-only `::` completion before source is persisted or read.
+/// Existing `∈`, binding colons, and quoted literals are left unchanged.
+pub fn rewrite_editor_input(source: &str) -> EditorRewrite {
+    let mut output = String::with_capacity(source.len());
+    let mut replaced = Vec::new();
+    let mut cursor = 0;
+    let mut quote = None;
+    let mut escaped = false;
+    while cursor < source.len() {
+        let character = source[cursor..]
+            .chars()
+            .next()
+            .expect("cursor remains in editor input");
+        if quote.is_none() && matches!(character, '\'' | '"') {
+            quote = Some(character);
+        } else if quote == Some(character) && !escaped {
+            quote = None;
+        }
+        if quote.is_none() && source[cursor..].starts_with("::") {
+            output.push('∈');
+            replaced.push(SourceSpan {
+                start: cursor,
+                end: cursor + 2,
+            });
+            cursor += 2;
+            escaped = false;
+            continue;
+        }
+        output.push(character);
+        cursor += character.len_utf8();
+        escaped = quote.is_some() && !escaped && character == '\\';
+        if character != '\\' {
+            escaped = false;
+        }
+    }
+    EditorRewrite {
+        source: output,
+        replaced,
     }
 }
 

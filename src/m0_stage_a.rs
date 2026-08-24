@@ -117,6 +117,7 @@ pub struct LayoutLine {
 pub enum DiagnosticCode {
     TabIndentation,
     NoncanonicalIndentation,
+    PersistedDoubleColon,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -180,6 +181,7 @@ pub fn read(source: &str) -> Document {
             }
         }
 
+        lexical_diagnostics(&tokens, &mut diagnostics);
         lines.push(Line {
             span: SourceSpan {
                 start: line_start,
@@ -363,6 +365,24 @@ fn punctuation(character: char) -> Option<Punctuation> {
         '/' => Punctuation::Slash,
         _ => return None,
     })
+}
+
+fn lexical_diagnostics(tokens: &[Token], diagnostics: &mut Vec<Diagnostic>) {
+    for pair in tokens.windows(2) {
+        if pair[0].kind == TokenKind::Punctuation(Punctuation::Colon)
+            && pair[1].kind == TokenKind::Punctuation(Punctuation::Colon)
+            && pair[0].span.end == pair[1].span.start
+        {
+            diagnostics.push(Diagnostic {
+                code: DiagnosticCode::PersistedDoubleColon,
+                span: SourceSpan {
+                    start: pair[0].span.start,
+                    end: pair[1].span.end,
+                },
+                replacement: Some("∈"),
+            });
+        }
+    }
 }
 
 fn build_layout(

@@ -1,4 +1,4 @@
-//! Contracts for Stage-B classification, formatting, and non-rewriting editor input.
+//! Contracts for Stage-B structural classification, formatting, and editor input.
 
 #[path = "../src/m0_stage_a.rs"]
 mod m0_stage_a;
@@ -7,27 +7,24 @@ mod m0_stage_b;
 
 use m0_stage_b::{
     BlockClass, ChildForm, DiagnosticCode, StatementClass, classify, format,
-    format_role_labelled_escape, validate_editor_input, warn_before_edit,
+    format_role_labelled_escape, rewrite_editor_input, warn_before_edit,
 };
 
 #[test]
-fn classifies_constitutional_families_without_primitive_binding_membership_split() {
+fn classifies_binding_membership_focus_and_structural_families() {
     let source = concat!(
         "Game\n",
         "  Chess\n",
         "  Soccer\n",
         "\n",
         "Vec2\n",
-        "  x : F32\n",
-        "  y : F32\n",
+        "  x: F32\n",
+        "  y: F32\n",
         "\n",
         "iron-door\n",
         "  Door\n",
         "  connects Cellar to Armory\n",
-        "  state := locked\n",
-        "\n",
-        "distance between ?a and ?b :=\n",
-        "  length(position of ?a - position of ?b)\n",
+        "  state: locked\n",
         "\n",
         "select ?person\n",
         "  ?person likes Chess\n",
@@ -37,24 +34,22 @@ fn classifies_constitutional_families_without_primitive_binding_membership_split
         "  + new relation value\n",
         "\n",
         "on frame ?dt\n",
-        "  state := old ~>\n",
-        "    state := new\n",
+        "  state: old ~>\n",
+        "    state: new\n",
         "\n",
         "requires\n",
         "  game\n",
         "  three\n",
         "\n",
         "form connects\n",
-        "  door := iron-door\n",
-        "  origin := Cellar\n",
-        "  destination := Armory\n",
+        "  door: iron-door\n",
+        "  origin: Cellar\n",
+        "  destination: Armory\n",
         "\n",
         "any ?door connects Cellar to Armory\n",
         "render! scene\n",
     );
-    let document = m0_stage_a::read(source);
-    assert!(document.is_accepted());
-    let classification = classify(&document);
+    let classification = classify(&m0_stage_a::read(source));
 
     assert!(
         classification.is_accepted(),
@@ -69,14 +64,25 @@ fn classifies_constitutional_families_without_primitive_binding_membership_split
             .collect::<Vec<_>>(),
         vec![
             BlockClass::Enumeration,
-            BlockClass::ClassificationProjection,
             BlockClass::FocusedProjection,
-            BlockClass::Definition,
+            BlockClass::FocusedProjection,
             BlockClass::Query,
             BlockClass::Delta,
             BlockClass::Transition,
             BlockClass::Requirement,
             BlockClass::StructuralEscape,
+        ]
+    );
+    assert_eq!(
+        classification.blocks[1].child_forms,
+        vec![ChildForm::Binding, ChildForm::Binding]
+    );
+    assert_eq!(
+        classification.blocks[2].child_forms,
+        vec![
+            ChildForm::Membership,
+            ChildForm::UnresolvedStructuralForm,
+            ChildForm::Binding,
         ]
     );
     assert_eq!(
@@ -87,20 +93,14 @@ fn classifies_constitutional_families_without_primitive_binding_membership_split
             .collect::<Vec<_>>(),
         vec![StatementClass::Query, StatementClass::Effect]
     );
-    assert_eq!(
-        classification.blocks[2].child_forms,
-        vec![
-            ChildForm::BareTerm,
-            ChildForm::UnresolvedStructuralForm,
-            ChildForm::Definition
-        ]
-    );
 }
 
 #[test]
-fn distinguishes_classification_definition_and_equality_content() {
-    let document = m0_stage_a::read("Chess : Game\ngravity := 9.81\ngravity = 9.81\n");
-    let classification = classify(&document);
+fn distinguishes_binding_membership_and_equality_content() {
+    let classification = classify(&m0_stage_a::read(
+        "gravity: 9.81\nChess ∈ Game\ngravity = 9.81\n",
+    ));
+
     assert!(classification.is_accepted());
     assert_eq!(
         classification
@@ -109,17 +109,19 @@ fn distinguishes_classification_definition_and_equality_content() {
             .map(|statement| statement.class)
             .collect::<Vec<_>>(),
         vec![
-            StatementClass::ClassificationContent,
-            StatementClass::Definition,
+            StatementClass::Binding,
+            StatementClass::Membership,
             StatementClass::RelationalContent,
         ]
     );
 }
 
 #[test]
-fn keeps_canonical_ascii_operators_as_relational_content() {
-    let document = m0_stage_a::read("x > y\nx < y\nx >= y\nx <= y\nx = y\na + b\na - b\na * b\n");
-    let classification = classify(&document);
+fn recognizes_flat_ascii_operators_without_effect_or_slash_collisions() {
+    let classification = classify(&m0_stage_a::read(concat!(
+        "x > y\n", "x < y\n", "x >= y\n", "x <= y\n", "x != y\n", "x = y\n", "a + b\n", "a - b\n",
+        "a * b\n", "a / b\n",
+    )));
 
     assert!(classification.is_accepted());
     assert_eq!(
@@ -128,15 +130,21 @@ fn keeps_canonical_ascii_operators_as_relational_content() {
             .iter()
             .map(|statement| statement.class)
             .collect::<Vec<_>>(),
-        vec![StatementClass::RelationalContent; 8]
+        vec![StatementClass::RelationalContent; 10]
     );
 }
 
 #[test]
-fn preserves_delta_signs_and_slash_qualified_names_as_distinct_forms() {
-    let document =
-        m0_stage_a::read("+ admitted content\n- withdrawn content\ndependency/transitive\n");
-    let classification = classify(&document);
+fn preserves_contextual_delta_effect_contract_transition_and_qualified_name_forms() {
+    let classification = classify(&m0_stage_a::read(concat!(
+        "+ admitted content\n",
+        "- withdrawn content\n",
+        "render! scene\n",
+        "position -> Vec2\n",
+        "state: old ~>\n",
+        "egress/route\n",
+        "egress /route\n",
+    )));
 
     assert!(classification.is_accepted());
     assert_eq!(
@@ -148,14 +156,18 @@ fn preserves_delta_signs_and_slash_qualified_names_as_distinct_forms() {
         vec![
             StatementClass::Delta,
             StatementClass::Delta,
+            StatementClass::Effect,
+            StatementClass::RelationContract,
+            StatementClass::Transition,
+            StatementClass::UnresolvedStructuralForm,
             StatementClass::UnresolvedStructuralForm,
         ]
     );
 }
 
 #[test]
-fn keeps_law_rule_invariant_and_goal_modes_distinct() {
-    let source = concat!(
+fn keeps_law_rule_invariant_goal_and_judgment_modes_distinct() {
+    let classification = classify(&m0_stage_a::read(concat!(
         "law universal reachability\n",
         "  premise\n",
         "?origin reaches ?destination if\n",
@@ -164,8 +176,12 @@ fn keeps_law_rule_invariant_and_goal_modes_distinct() {
         "  premise\n",
         "goal safe egress\n",
         "  desired = safe\n",
-    );
-    let classification = classify(&m0_stage_a::read(source));
+        "observe build-host supports wasm\n",
+        "require worker-pool safe\n",
+        "assume target supports threads\n",
+        "intend North materializes\n",
+        "do reconcile state\n",
+    )));
 
     assert!(classification.is_accepted());
     assert_eq!(
@@ -181,23 +197,6 @@ fn keeps_law_rule_invariant_and_goal_modes_distinct() {
             BlockClass::Goal,
         ]
     );
-}
-
-#[test]
-fn keeps_judgment_intention_effect_and_procedure_modes_distinct() {
-    let document = m0_stage_a::read(concat!(
-        "observe build-host supports wasm\n",
-        "require worker-pool safe\n",
-        "assume target supports threads\n",
-        "hypothesis target stable\n",
-        "intend North materializes\n",
-        "render! scene\n",
-        "do reconcile state\n",
-        "procedure cleanup\n",
-    ));
-    let classification = classify(&document);
-
-    assert!(classification.is_accepted());
     assert_eq!(
         classification
             .statements
@@ -208,58 +207,23 @@ fn keeps_judgment_intention_effect_and_procedure_modes_distinct() {
             StatementClass::Observation,
             StatementClass::Requirement,
             StatementClass::Assumption,
-            StatementClass::Assumption,
             StatementClass::Intention,
-            StatementClass::Effect,
-            StatementClass::Procedure,
             StatementClass::Procedure,
         ]
     );
 }
 
 #[test]
-fn distinguishes_content_explicit_assertion_and_structural_contracts() {
-    let source = concat!(
-        "door = open\n",
-        "assert door = open\n",
-        "Alice = asserts\n",
-        "Alice relates asserts to keyword\n",
-        "relation contract connects\n",
-        "position -> Vec2\n",
-        "Alice asserts\n",
-        "  door = open\n",
-    );
-    let classification = classify(&m0_stage_a::read(source));
-
-    assert!(classification.is_accepted());
+fn rejects_raw_double_colon_and_word_membership_aliases() {
+    let raw = classify(&m0_stage_a::read("iron-door :: Door\n"));
     assert_eq!(
-        classification
-            .statements
-            .iter()
-            .map(|statement| statement.class)
-            .collect::<Vec<_>>(),
-        vec![
-            StatementClass::RelationalContent,
-            StatementClass::AssertionOccurrence,
-            StatementClass::RelationalContent,
-            StatementClass::UnresolvedStructuralForm,
-            StatementClass::RelationContract,
-            StatementClass::RelationContract,
-        ]
+        raw.diagnostics[0].code,
+        DiagnosticCode::PersistedDoubleColon
     );
     assert_eq!(
-        classification.blocks[0].class,
-        BlockClass::AssertionOccurrence
+        raw.diagnostics[0].repair,
+        "replace `::` with `∈` before persistence or parsing"
     );
-}
-
-#[test]
-fn rejects_retired_membership_spellings_with_classification_repairs() {
-    let legacy = classify(&m0_stage_a::read(
-        "why all in egress:\n  target relation value\n",
-    ));
-    assert!(legacy.is_accepted());
-    assert_eq!(legacy.blocks[0].class, BlockClass::Query);
 
     for (source, code) in [
         ("Door 101 in Door\n", DiagnosticCode::MembershipInAlias),
@@ -267,44 +231,43 @@ fn rejects_retired_membership_spellings_with_classification_repairs() {
             "Door 101 member of Door\n",
             DiagnosticCode::MembershipMemberOfAlias,
         ),
-        ("Door 101 :: Door\n", DiagnosticCode::RetiredDoubleColon),
-        ("Door 101 ∈ Door\n", DiagnosticCode::RetiredMembershipSymbol),
     ] {
         let result = classify(&m0_stage_a::read(source));
         assert_eq!(result.diagnostics[0].code, code);
-        assert_eq!(
-            result.diagnostics[0].repair,
-            "write classification with `:`"
-        );
+        assert_eq!(result.diagnostics[0].repair, "write membership with `∈`");
     }
+
+    let legacy = classify(&m0_stage_a::read(
+        "why all in egress:\n  target relation value\n",
+    ));
+    assert!(legacy.is_accepted());
+    assert_eq!(legacy.blocks[0].class, BlockClass::Query);
 }
 
 #[test]
-fn editor_validation_preserves_every_byte_and_never_manufactures_membership() {
-    let source = "iron-door :: Door\nstate := locked\nlabel := \"a::b\"\n";
-    let checked = validate_editor_input(source);
-    assert_eq!(checked.source, source);
-    assert_eq!(checked.diagnostics.len(), 1);
+fn editor_normalization_precedes_reading_and_preserves_literals_and_bindings() {
+    let rewritten = rewrite_editor_input("iron-door :: Door\nstate: locked\nlabel: \"a::b\"\n");
     assert_eq!(
-        checked.diagnostics[0].code,
-        DiagnosticCode::RetiredDoubleColon
+        rewritten.source,
+        "iron-door ∈ Door\nstate: locked\nlabel: \"a::b\"\n"
     );
-    assert!(!checked.source.contains('∈'));
+    assert_eq!(rewritten.replaced.len(), 1);
 
-    let accepted = validate_editor_input("iron-door : Door\nstate := locked\n");
-    assert!(accepted.diagnostics.is_empty());
+    let document = m0_stage_a::read(&rewritten.source);
+    assert!(document.is_accepted());
+    assert!(classify(&document).is_accepted());
 }
 
 #[test]
-fn formatter_preserves_classification_and_definition_and_separates_focus() {
+fn formatter_emits_binding_membership_and_separates_enumeration_from_focus() {
     let source = concat!(
         "Thing\n",
         "  A\n",
         "  B\n",
         "Thing\n",
         "  relation -> Value\n",
-        "member : Category\n",
-        "gravity := 9.81\n",
+        "member ∈ Category\n",
+        "gravity: 9.81\n",
     );
     let document = m0_stage_a::read(source);
     let classification = classify(&document);
@@ -319,35 +282,84 @@ fn formatter_preserves_classification_and_definition_and_separates_focus() {
             "\n",
             "Thing\n",
             "  relation -> Value\n",
-            "member : Category\n",
-            "gravity := 9.81\n",
+            "member ∈ Category\n",
+            "gravity: 9.81\n",
         )
     );
-    assert!(!formatted.contains('∈'));
     assert!(!formatted.contains("::"));
     assert!(classify(&m0_stage_a::read(&formatted)).is_accepted());
 }
 
 #[test]
-fn explicit_named_role_escape_round_trips_without_role_invention() {
+fn explicit_role_labelled_escape_round_trips_with_binding_children() {
     let source = concat!(
         "form connects\n",
-        "  door := iron-door\n",
-        "  origin := Cellar\n",
-        "  destination := Armory\n",
+        "  door: iron-door\n",
+        "  origin: Cellar\n",
+        "  destination: Armory\n",
     );
     let document = m0_stage_a::read(source);
     let classification = classify(&document);
     let rendered = format_role_labelled_escape(&document, &classification.blocks[0])
         .expect("explicit structural form formats");
+
     assert_eq!(rendered, source);
     assert_eq!(
         classification.blocks[0].child_forms,
-        vec![
-            ChildForm::Definition,
-            ChildForm::Definition,
-            ChildForm::Definition
-        ]
+        vec![ChildForm::Binding, ChildForm::Binding, ChildForm::Binding]
+    );
+}
+
+#[test]
+fn focused_bare_child_is_membership_and_colon_child_is_binding() {
+    let classification = classify(&m0_stage_a::read(concat!(
+        "iron-door\n",
+        "  Door\n",
+        "  state: locked\n",
+    )));
+
+    assert!(classification.is_accepted());
+    assert_eq!(
+        classification.blocks[0].class,
+        BlockClass::FocusedProjection
+    );
+    assert_eq!(
+        classification.blocks[0].child_forms,
+        vec![ChildForm::Membership, ChildForm::Binding]
+    );
+}
+
+#[test]
+fn leaves_grouped_nested_and_application_forms_unresolved() {
+    let classification = classify(&m0_stage_a::read(concat!(
+        "call(state: locked)\n",
+        "contains(member ∈ Group)\n",
+        "invoke(argument)\n",
+    )));
+
+    assert!(classification.is_accepted());
+    assert_eq!(
+        classification
+            .statements
+            .iter()
+            .map(|statement| statement.class)
+            .collect::<Vec<_>>(),
+        vec![StatementClass::UnresolvedStructuralForm; 3]
+    );
+}
+
+#[test]
+fn rejects_tabs_and_noncanonical_layout_before_structural_classification() {
+    let tabbed = classify(&m0_stage_a::read("root\n\tchild\n"));
+    assert_eq!(
+        tabbed.diagnostics[0].code,
+        DiagnosticCode::StageATabIndentation
+    );
+
+    let skipped = classify(&m0_stage_a::read("root\n    child\n"));
+    assert_eq!(
+        skipped.diagnostics[0].code,
+        DiagnosticCode::StageANoncanonicalIndentation
     );
 }
 
@@ -363,16 +375,5 @@ fn editor_warns_before_enumeration_becomes_focus() {
             .expect("contract child changes block class")
             .code,
         DiagnosticCode::WouldReclassifyEnumeration
-    );
-}
-
-#[test]
-fn focused_definition_is_not_classification() {
-    let document = m0_stage_a::read("iron-door\n  state := locked\n");
-    let classification = classify(&document);
-    assert_eq!(classification.blocks[0].class, BlockClass::Definition);
-    assert_eq!(
-        classification.blocks[0].child_forms,
-        vec![ChildForm::Definition]
     );
 }
