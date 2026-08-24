@@ -324,6 +324,9 @@ fn parse_term(token: &Token) -> Result<SurfaceTerm, ParseError> {
         if token.bracketed {
             return Err(error(token.span, "variables cannot be bracketed referents"));
         }
+        if name.is_empty() {
+            return Ok(SurfaceTerm::AnonymousHole(token.span));
+        }
         return Ok(SurfaceTerm::Variable(variable_name(
             SourceLine {
                 number: token.span.line,
@@ -404,7 +407,7 @@ fn term_domains(
         SurfaceTerm::F32(_) => Ok(Some(BTreeSet::from([DomainName("F32".to_owned())]))),
         SurfaceTerm::Int(_) => Ok(Some(BTreeSet::from([DomainName("Int".to_owned())]))),
         SurfaceTerm::Bool(_) => Ok(Some(BTreeSet::from([DomainName("Bool".to_owned())]))),
-        SurfaceTerm::Variable(_) => Ok(None),
+        SurfaceTerm::Variable(_) | SurfaceTerm::AnonymousHole(_) => Ok(None),
         SurfaceTerm::Application(application) => {
             Ok(Some(BTreeSet::from([application.domain.clone()])))
         }
@@ -859,7 +862,9 @@ fn term_is_ground(term: &SurfaceTerm) -> bool {
         }
         SurfaceTerm::Product { fields, .. } => fields.values().all(term_is_ground),
         SurfaceTerm::Application(application) => application.roles.values().all(term_is_ground),
-        SurfaceTerm::Template(_) | SurfaceTerm::Variable(_) => false,
+        SurfaceTerm::Template(_) | SurfaceTerm::Variable(_) | SurfaceTerm::AnonymousHole(_) => {
+            false
+        }
     }
 }
 
@@ -872,6 +877,7 @@ fn term_key(term: &SurfaceTerm) -> String {
             value.prefix.value, value.variable.value.0, value.suffix.value
         ),
         SurfaceTerm::Variable(value) => format!("V:{}", value.value.0),
+        SurfaceTerm::AnonymousHole(span) => format!("H:{}:{}", span.line, span.column),
         SurfaceTerm::String(value) => format!("S:{:?}", value.value),
         SurfaceTerm::F32(value) => format!("F:{:08x}", value.value),
         SurfaceTerm::Int(value) => format!("I:{}", value.value),
@@ -1827,6 +1833,7 @@ pub(super) fn bind_local_references(term: &mut SurfaceTerm, locals: &BTreeSet<Na
         | SurfaceTerm::Local(_)
         | SurfaceTerm::Template(_)
         | SurfaceTerm::Variable(_)
+        | SurfaceTerm::AnonymousHole(_)
         | SurfaceTerm::String(_)
         | SurfaceTerm::F32(_)
         | SurfaceTerm::Int(_)
@@ -2118,6 +2125,7 @@ pub(super) fn variables(clause: &SurfaceClause) -> BTreeSet<VariableName> {
             SurfaceTerm::Referent(_)
             | SurfaceTerm::Local(_)
             | SurfaceTerm::Template(_)
+            | SurfaceTerm::AnonymousHole(_)
             | SurfaceTerm::String(_)
             | SurfaceTerm::F32(_)
             | SurfaceTerm::Int(_)
@@ -2131,4 +2139,62 @@ pub(super) fn variables(clause: &SurfaceClause) -> BTreeSet<VariableName> {
         collect(term, &mut variables);
     }
     variables
+}
+
+pub(super) fn clause_has_hole(line: SourceLine<'_>) -> Result<bool, ParseError> {
+    Ok(recursive_clause_tokens(line)?
+        .iter()
+        .any(|token| !token.quoted && token.raw.starts_with('?')))
+}
+
+pub(super) fn query_columns(clause: &SurfaceClause) -> Vec<QueryColumnDecl> {
+    fn collect(term: &SurfaceTerm, columns: &mut Vec<QueryColumnDecl>) {
+        match term {
+            SurfaceTerm::Variable(value) => columns.push(QueryColumnDecl {
+                label: Some(value.value.clone()),
+                span: value.span,
+            }),
+            SurfaceTerm::AnonymousHole(span) => columns.push(QueryColumnDecl {
+                label: None,
+                span: *span,
+            }),
+            SurfaceTerm::Application(value) => {
+                for term in value.roles.values() {
+                    collect(term, columns);
+                }
+            }
+            SurfaceTerm::Tuple { values, .. } | SurfaceTerm::Sequence { values, .. } => {
+                for term in values {
+                    collect(term, columns);
+                }
+            }
+            SurfaceTerm::Product { fields, .. } => {
+                for term in fields.values() {
+                    collect(term, columns);
+                }
+            }
+            SurfaceTerm::Referent(_)
+            | SurfaceTerm::Local(_)
+            | SurfaceTerm::Template(_)
+            | SurfaceTerm::String(_)
+            | SurfaceTerm::F32(_)
+            | SurfaceTerm::Int(_)
+            | SurfaceTerm::Bool(_)
+            | SurfaceTerm::Intrinsic(_) => {}
+        }
+    }
+
+    let mut columns = Vec::new();
+    for term in clause.roles.values() {
+        collect(term, &mut columns);
+    }
+    columns.sort_by_key(|column| (column.span.line, column.span.column));
+    let mut named = BTreeSet::new();
+    columns.retain(|column| {
+        column
+            .label
+            .as_ref()
+            .is_none_or(|label| named.insert(label.clone()))
+    });
+    columns
 }

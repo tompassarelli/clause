@@ -91,6 +91,18 @@ impl CompiledProgram {
             .get(variable)
     }
 
+    pub(crate) fn request_column(
+        &self,
+        index: usize,
+        column: &frontend::QueryColumnDecl,
+    ) -> kernel::Result<kernel::PatternId> {
+        self.projection
+            .request_binders
+            .get(&index)
+            .ok_or_else(|| kernel::KernelError::new("request has no pattern-binder projection"))?
+            .column(column)
+    }
+
     pub(crate) fn projection(&self) -> &Projection {
         &self.projection
     }
@@ -293,14 +305,22 @@ fn declare_projection(
     declare_literals(&program.top_level, &mut projection.designations);
     for (index, request) in program.requests.iter().enumerate() {
         declare_request_literals(request, &mut projection.designations);
-        if let frontend::RequestDecl::Find { pattern, .. } = request {
-            let ordinal = index.to_string();
-            let scope = synthetic_referent("request-pattern-scope", &[&ordinal]);
-            let binders = BinderTable::declare_alpha(
+        let ordinal = index.to_string();
+        let scope = synthetic_referent("request-pattern-scope", &[&ordinal]);
+        let binders = match request {
+            frontend::RequestDecl::Select { pattern, .. } => Some(BinderTable::declare_query(
+                &mut projection.designations,
+                &scope,
+                pattern,
+            )?),
+            frontend::RequestDecl::Find { pattern, .. } => Some(BinderTable::declare_alpha(
                 &mut projection.designations,
                 &scope,
                 std::iter::once(pattern),
-            )?;
+            )?),
+            _ => None,
+        };
+        if let Some(binders) = binders {
             projection.request_binders.insert(index, binders);
         }
     }
@@ -1336,6 +1356,7 @@ fn member_literal_referents(
             | SurfaceTerm::Local(_)
             | SurfaceTerm::Template(_)
             | SurfaceTerm::Variable(_)
+            | SurfaceTerm::AnonymousHole(_)
             | SurfaceTerm::F32(_)
             | SurfaceTerm::Int(_)
             | SurfaceTerm::Bool(_)
@@ -1393,7 +1414,8 @@ fn declare_literals(members: &[Member], table: &mut DesignationTable) {
 
 fn declare_request_literals(request: &frontend::RequestDecl, table: &mut DesignationTable) {
     let clause = match request {
-        frontend::RequestDecl::Find { pattern, .. } => Some(pattern),
+        frontend::RequestDecl::Select { pattern, .. }
+        | frontend::RequestDecl::Find { pattern, .. } => Some(pattern),
         frontend::RequestDecl::Why { target, .. }
         | frontend::RequestDecl::Prevent { target, .. }
         | frontend::RequestDecl::Achieve { target, .. } => Some(target),
@@ -1430,6 +1452,7 @@ fn declare_term_literal(term: &SurfaceTerm, table: &mut DesignationTable) {
         | SurfaceTerm::Local(_)
         | SurfaceTerm::Template(_)
         | SurfaceTerm::Variable(_)
+        | SurfaceTerm::AnonymousHole(_)
         | SurfaceTerm::F32(_)
         | SurfaceTerm::Int(_)
         | SurfaceTerm::Bool(_)

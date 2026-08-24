@@ -9,6 +9,28 @@ pub(super) fn run(program: &ResolvedProgram, limits: RunLimits) -> kernel::Resul
     let mut results = Vec::with_capacity(program.requests.len());
     for request in &program.requests {
         let output = match request {
+            Request::Select {
+                revision: identity,
+                pattern,
+                columns,
+            } => {
+                let selected = revision(program, identity)?;
+                let plan = kernel::QueryPlan::new(
+                    selected.model(),
+                    pattern,
+                    columns
+                        .iter()
+                        .map(|column| column.binder().clone())
+                        .collect(),
+                )?;
+                RequestOutput::Select {
+                    columns: columns
+                        .iter()
+                        .map(|column| column.label().map(str::to_owned))
+                        .collect(),
+                    rows: execution::select(selected, &plan, limits.closure)?,
+                }
+            }
             Request::Find {
                 revision: identity,
                 pattern,

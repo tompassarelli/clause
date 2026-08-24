@@ -35,6 +35,24 @@ pub(super) fn evaluation_bytes(output: &EvaluationOutput) -> String {
 
 fn request_output(value: &RequestOutput) -> String {
     match value {
+        RequestOutput::Select { columns, rows } => format!(
+            "[\"select\",[{}],[{}]]",
+            columns
+                .iter()
+                .map(|label| label
+                    .as_deref()
+                    .map(string)
+                    .unwrap_or_else(|| "null".to_owned()))
+                .collect::<Vec<_>>()
+                .join(","),
+            rows.iter()
+                .map(|row| format!(
+                    "[{}]",
+                    row.values().iter().map(term).collect::<Vec<_>>().join(",")
+                ))
+                .collect::<Vec<_>>()
+                .join(",")
+        ),
         RequestOutput::Find(items) => format!(
             "[\"find\",[{}]]",
             items.iter().map(term).collect::<Vec<_>>().join(",")

@@ -88,6 +88,16 @@ pub fn parse(source: &str) -> Result<Program, ParseError> {
         }
     }
     let raw_declarations = retained;
+    let mut raw_queries = Vec::new();
+    let mut retained = Vec::new();
+    for fragment in raw_top_level {
+        if clause_has_hole(fragment.line)? {
+            raw_queries.push(fragment);
+        } else {
+            retained.push(fragment);
+        }
+    }
+    let raw_top_level = retained;
     let mut raw_focuses = Vec::new();
     let mut retained = Vec::new();
     for declaration in raw_declarations {
@@ -449,6 +459,16 @@ pub fn parse(source: &str) -> Result<Program, ParseError> {
                     .copied()
                     .map(|line| clause(line, &model, &relations, &memberships, &mut variable_types))
                     .collect::<Result<Vec<_>, _>>()?;
+                if let Some(hole) = std::iter::once(&conclusion)
+                    .chain(premises.iter())
+                    .flat_map(query_columns)
+                    .find(|column| column.label.is_none())
+                {
+                    return Err(error(
+                        hole.span,
+                        "anonymous holes are only valid in naked queries",
+                    ));
+                }
                 let premise_variables =
                     premises.iter().flat_map(variables).collect::<BTreeSet<_>>();
                 if !variables(&conclusion).is_subset(&premise_variables) {
@@ -672,6 +692,62 @@ pub fn parse(source: &str) -> Result<Program, ParseError> {
     top_level.extend(ordered_top_level.into_iter().map(|(_, member)| member));
 
     let mut requests = Vec::new();
+    for raw in raw_queries {
+        let eligible = kinds
+            .iter()
+            .filter_map(|(name, kind)| (*kind == Kind::Model).then_some(name))
+            .collect::<Vec<_>>();
+        let mut candidates = Vec::new();
+        for model in &eligible {
+            let mut variables = BTreeMap::new();
+            if let Ok(pattern) = clause(raw.line, model, &relations, &memberships, &mut variables) {
+                candidates.push(((*model).clone(), pattern));
+            }
+        }
+        let candidate_names = eligible
+            .iter()
+            .map(|name| name.as_str())
+            .collect::<Vec<_>>()
+            .join(", ");
+        let (revision, pattern) = match candidates.as_slice() {
+            [] => {
+                return Err(error(
+                    line_span(raw.line),
+                    format!(
+                        "naked query matches no declared Model; candidates: {}",
+                        if candidate_names.is_empty() {
+                            "<none>"
+                        } else {
+                            &candidate_names
+                        }
+                    ),
+                ));
+            }
+            [(revision, pattern)] => (revision.clone(), pattern.clone()),
+            many => {
+                return Err(error(
+                    line_span(raw.line),
+                    format!(
+                        "naked query is ambiguous across Models: {}",
+                        many.iter()
+                            .map(|(name, _)| name.as_str())
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    ),
+                ));
+            }
+        };
+        let columns = query_columns(&pattern);
+        requests.push(RequestDecl::Select {
+            revision: Spanned {
+                value: revision,
+                span: line_span(raw.line),
+            },
+            pattern,
+            columns,
+            span: line_span(raw.line),
+        });
+    }
     for raw in raw_requests {
         match raw {
             RawRequest::Find {
@@ -770,6 +846,14 @@ pub fn parse(source: &str) -> Result<Program, ParseError> {
             }
         }
     }
+    requests.sort_by_key(|request| match request {
+        RequestDecl::Select { span, .. }
+        | RequestDecl::Find { span, .. }
+        | RequestDecl::Why { span, .. }
+        | RequestDecl::Prevent { span, .. }
+        | RequestDecl::Achieve { span, .. }
+        | RequestDecl::Diff { span, .. } => span.line,
+    });
     Ok(Program {
         declarations,
         top_level,

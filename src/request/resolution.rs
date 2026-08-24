@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use super::{Request, ResolvedProgram, Selection};
+use super::{QueryColumn, Request, ResolvedProgram, Selection};
 use crate::{
     elaborate::{self, CompiledProgram},
     frontend,
@@ -12,6 +12,37 @@ pub(super) fn resolve(program: &CompiledProgram) -> kernel::Result<ResolvedProgr
     let mut requests = Vec::with_capacity(program.requests().len());
     for (index, request) in program.requests().iter().enumerate() {
         let resolved = match request {
+            frontend::RequestDecl::Select {
+                revision,
+                pattern,
+                columns,
+                ..
+            } => {
+                let revision = program.revision(&revision.value)?;
+                let pattern = program.lower_request_clause(index, revision, pattern)?;
+                let columns = columns
+                    .iter()
+                    .map(|column| {
+                        Ok(QueryColumn::new(
+                            column.label.as_ref().map(|label| label.0.clone()),
+                            program.request_column(index, column)?,
+                        ))
+                    })
+                    .collect::<kernel::Result<Vec<_>>>()?;
+                let _ = kernel::QueryPlan::new(
+                    revision.model(),
+                    &pattern,
+                    columns
+                        .iter()
+                        .map(|column| column.binder().clone())
+                        .collect(),
+                )?;
+                Request::Select {
+                    revision: revision.identity().clone(),
+                    pattern,
+                    columns,
+                }
+            }
             frontend::RequestDecl::Find {
                 revision,
                 pattern,

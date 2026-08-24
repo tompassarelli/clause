@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 use crate::elaborate::CompiledProgram;
 use crate::{
     derive::{Limits, SupportLimits},
-    execution::{Proof, WhyAll},
+    execution::{Proof, QueryRow, WhyAll},
     intervention::{AchieveAll, AchieveOne, InterventionLimits, PreventAll, PreventOne},
     kernel::{self, PatternId, ReferentId, RelationalContent, Revision, RevisionId, Term},
     semantic_diff::SemanticDiff,
@@ -21,6 +21,11 @@ mod resolution;
 /// A request with every source navigation name resolved to a semantic identity.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Request {
+    Select {
+        revision: RevisionId,
+        pattern: RelationalContent,
+        columns: Vec<QueryColumn>,
+    },
     Find {
         revision: RevisionId,
         pattern: RelationalContent,
@@ -47,6 +52,28 @@ pub enum Request {
         base: RevisionId,
         successor: RevisionId,
     },
+}
+
+/// One source-independent query column. The optional label is presentation;
+/// the binder alone participates in matching.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct QueryColumn {
+    label: Option<String>,
+    binder: PatternId,
+}
+
+impl QueryColumn {
+    pub fn new(label: Option<String>, binder: PatternId) -> Self {
+        Self { label, binder }
+    }
+
+    pub fn label(&self) -> Option<&str> {
+        self.label.as_deref()
+    }
+
+    pub fn binder(&self) -> &PatternId {
+        &self.binder
+    }
 }
 
 /// The requested intervention termination contract.
@@ -117,7 +144,8 @@ impl ResolvedProgram {
 impl Request {
     pub fn revisions(&self) -> Vec<&RevisionId> {
         match self {
-            Self::Find { revision, .. }
+            Self::Select { revision, .. }
+            | Self::Find { revision, .. }
             | Self::Why { revision, .. }
             | Self::Prevent { revision, .. }
             | Self::Achieve { revision, .. } => vec![revision],
@@ -166,6 +194,10 @@ pub struct EvaluationOutput {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RequestOutput {
+    Select {
+        columns: Vec<Option<String>>,
+        rows: Vec<QueryRow>,
+    },
     Find(Vec<Term>),
     WhyOne(Option<Proof>),
     WhyAll(Option<WhyAll>),

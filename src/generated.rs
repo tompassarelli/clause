@@ -6,7 +6,7 @@ use std::fmt::Write;
 
 use crate::{
     kernel::{KernelError, PatternId, ReferentId, RelationalContent, Result, RoleId, Term},
-    request::{Request, ResolvedProgram, Selection},
+    request::{QueryColumn, Request, ResolvedProgram, Selection},
     wire,
 };
 
@@ -46,6 +46,11 @@ const KERNEL_CHILDREN: &[ChildModule] = &[
         name: "model",
         declaration: "mod model;",
         source: include_str!("kernel/model.rs"),
+    },
+    ChildModule {
+        name: "query",
+        declaration: "mod query;",
+        source: include_str!("kernel/query.rs"),
     },
     ChildModule {
         name: "revision",
@@ -366,6 +371,20 @@ fn request_source(
     indices: &std::collections::BTreeMap<crate::kernel::RevisionId, usize>,
 ) -> String {
     match request {
+        Request::Select {
+            revision,
+            pattern,
+            columns,
+        } => format!(
+            "request::Request::Select {{ revision: {}, pattern: {}, columns: vec![{}] }}",
+            revision_source(revision, indices),
+            clause_source(pattern),
+            columns
+                .iter()
+                .map(query_column_source)
+                .collect::<Vec<_>>()
+                .join(",")
+        ),
         Request::Find {
             revision,
             pattern,
@@ -423,6 +442,18 @@ fn request_source(
             revision_source(successor, indices)
         ),
     }
+}
+
+#[cfg(not(clause_generated))]
+fn query_column_source(column: &QueryColumn) -> String {
+    let label = column
+        .label()
+        .map(|label| format!("Some({label:?}.to_owned())"))
+        .unwrap_or_else(|| "None".to_owned());
+    format!(
+        "request::QueryColumn::new({label}, {})",
+        variable_source(column.binder())
+    )
 }
 
 #[cfg(not(clause_generated))]

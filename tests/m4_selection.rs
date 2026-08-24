@@ -1,0 +1,194 @@
+use clause::{
+    elaborate, frontend, generated,
+    kernel::Term,
+    request::{self, Request, RequestOutput},
+    wire,
+};
+use std::{env, fs, path::PathBuf, process::Command};
+
+const SOURCE: &str = "Entity
+
+selection/related: RelationShape
+  {scope: Entity} relates {a: Entity} through {b: Entity} and {c: Entity} to {d: Entity}
+  mode scope -> a, b, c, d: many
+  mode scope, a, b, c -> d: many
+
+selection
+  World ∈ Entity
+  A ∈ Entity
+  B ∈ Entity
+  C ∈ Entity
+  D ∈ Entity
+  World relates A through B and B to C
+  World relates A through B and C to D
+  World relates C through B and B to A
+
+why in selection:
+  World relates A through B and B to C
+
+World relates ? through ?same and ?same to ?
+
+find all ?d in selection:
+  World relates A through B and B to ?d
+";
+
+fn temporary(extension: &str) -> PathBuf {
+    env::temp_dir().join(format!(
+        "clause-m4-selection-{}.{}",
+        std::process::id(),
+        extension
+    ))
+}
+
+#[test]
+fn naked_selection_requires_one_exact_declared_model() {
+    let schema = "Entity
+
+selection/related: RelationShape
+  {scope: Entity} relates {a: Entity} through {b: Entity} and {c: Entity} to {d: Entity}
+  mode scope -> a, b, c, d: many
+";
+    let missing = format!(
+        "{schema}
+only
+  Present ∈ Entity
+
+World relates ? through ?same and ?same to ?
+"
+    );
+    let error = frontend::parse(&missing).expect_err("query has no eligible Model");
+    assert_eq!(
+        error.message,
+        "naked query matches no declared Model; candidates: only"
+    );
+
+    let ambiguous = format!(
+        "{schema}
+left
+  World ∈ Entity
+
+right
+  World ∈ Entity
+
+World relates ? through ?same and ?same to ?
+"
+    );
+    let error = frontend::parse(&ambiguous).expect_err("query has two eligible Models");
+    assert_eq!(
+        error.message,
+        "naked query is ambiguous across Models: left, right"
+    );
+}
+
+#[test]
+fn naked_selection_preserves_freshness_labels_identity_and_generated_parity() {
+    let compiled = elaborate::compile(frontend::parse(SOURCE).expect("M4 source parses"))
+        .expect("M4 source compiles");
+    let resolved = request::resolve(&compiled).expect("M4 requests resolve");
+    assert!(matches!(
+        resolved.requests(),
+        [
+            Request::Why { .. },
+            Request::Select { .. },
+            Request::Find { .. }
+        ]
+    ));
+
+    let output =
+        request::run(&resolved, request::RunLimits::default()).expect("M4 requests execute");
+    let RequestOutput::Select { columns, rows } = &output.results[1] else {
+        panic!("source-middle request must remain a selection");
+    };
+    assert_eq!(
+        columns,
+        &[None, Some("same".to_owned()), None],
+        "bare holes are unlabelled and a repeated named hole projects once"
+    );
+
+    let model = compiled.designations().global("selection").unwrap();
+    let term = |name: &str| {
+        Term::referent(
+            compiled
+                .designations()
+                .scoped(&model, name)
+                .expect("fixture referent resolves"),
+        )
+    };
+    let mut expected = vec![
+        vec![term("A"), term("B"), term("C")],
+        vec![term("C"), term("B"), term("A")],
+    ];
+    expected.sort();
+    assert_eq!(
+        rows.iter()
+            .map(|row| row.values().to_vec())
+            .collect::<Vec<_>>(),
+        expected,
+        "anonymous holes stay fresh while the named hole correlates"
+    );
+
+    let renamed_source = SOURCE.replace("?same", "?opening");
+    let renamed = elaborate::compile(
+        frontend::parse(&renamed_source).expect("alpha-renamed M4 source parses"),
+    )
+    .expect("alpha-renamed M4 source compiles");
+    let renamed_resolved = request::resolve(&renamed).expect("renamed requests resolve");
+    assert_eq!(
+        wire::serialize(
+            compiled
+                .revision(&frontend::Name("selection".into()))
+                .unwrap()
+        ),
+        wire::serialize(
+            renamed
+                .revision(&frontend::Name("selection".into()))
+                .unwrap()
+        ),
+        "query labels do not enter Model or Revision identity"
+    );
+    let renamed_output = request::run(&renamed_resolved, request::RunLimits::default())
+        .expect("renamed requests execute");
+    let RequestOutput::Select {
+        columns: renamed_columns,
+        rows: renamed_rows,
+    } = &renamed_output.results[1]
+    else {
+        panic!("renamed source-middle request must remain a selection");
+    };
+    assert_eq!(renamed_columns, &[None, Some("opening".to_owned()), None]);
+    assert_eq!(
+        renamed_rows, rows,
+        "alpha-renaming preserves matched values"
+    );
+
+    let expected_bytes = output.canonical_bytes();
+    let authoring = temporary("clause");
+    let rust = temporary("rs");
+    let binary = temporary("bin");
+    fs::write(&authoring, SOURCE).expect("authoring source writes");
+    fs::write(
+        &rust,
+        generated::emit_rust(&resolved).expect("resolved M4 requests emit Rust"),
+    )
+    .expect("generated Rust writes");
+    fs::remove_file(&authoring).expect("authoring source deletes before generated compile");
+    let generated = Command::new("rustc")
+        .args(["--edition=2024", "--cfg", "clause_generated"])
+        .arg(&rust)
+        .arg("-o")
+        .arg(&binary)
+        .output()
+        .expect("generated Rust compiler starts");
+    assert!(
+        generated.status.success(),
+        "{}",
+        String::from_utf8_lossy(&generated.stderr)
+    );
+    let actual = Command::new(&binary)
+        .output()
+        .expect("source-deleted generated executable starts");
+    assert!(actual.status.success());
+    assert_eq!(actual.stdout, expected_bytes.as_bytes());
+    fs::remove_file(rust).expect("generated Rust cleans up");
+    fs::remove_file(binary).expect("generated executable cleans up");
+}

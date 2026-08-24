@@ -16,7 +16,7 @@ pub use parser::parse;
 pub use syntax::{
     Cardinality, Declaration, DomainName, FocusBinding, FocusBlock, FocusSlot, IntegerRange,
     InterventionSelection, Kind, LocalDefinitionDecl, Member, MembershipRangeDecl, ModeDecl, Name,
-    ParseError, Program, PureDefinitionDecl, ReferentTemplate, RequestDecl, RoleName,
-    SentenceShapeDecl, ShapeBindingDecl, ShapePartDecl, Span, Spanned, SurfaceApplication,
-    SurfaceClause, SurfaceTerm, VariableName,
+    ParseError, Program, PureDefinitionDecl, QueryColumnDecl, ReferentTemplate, RequestDecl,
+    RoleName, SentenceShapeDecl, ShapeBindingDecl, ShapePartDecl, Span, Spanned,
+    SurfaceApplication, SurfaceClause, SurfaceTerm, VariableName,
 };

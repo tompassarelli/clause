@@ -253,6 +253,9 @@ pub enum SurfaceTerm {
     /// authoring-only structure and must be substituted before lowering.
     Template(ReferentTemplate),
     Variable(Spanned<VariableName>),
+    /// One fresh query hole. Its source position scopes identity without
+    /// creating a semantic referent or a human-visible label.
+    AnonymousHole(Span),
     String(Spanned<String>),
     /// Checked IEEE-754 binary32 bits. The parser rejects non-finite values
     /// and normalizes negative zero before this enters the ambiguity chart.
@@ -304,6 +307,12 @@ pub enum InterventionSelection {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RequestDecl {
+    Select {
+        revision: Spanned<Name>,
+        pattern: SurfaceClause,
+        columns: Vec<QueryColumnDecl>,
+        span: Span,
+    },
     Find {
         revision: Spanned<Name>,
         pattern: SurfaceClause,
@@ -335,4 +344,10 @@ pub enum RequestDecl {
         successor: Spanned<Name>,
         span: Span,
     },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct QueryColumnDecl {
+    pub label: Option<VariableName>,
+    pub span: Span,
 }

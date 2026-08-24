@@ -207,42 +207,122 @@ pub(crate) struct FocusShape {
     pub(crate) value_role: RoleId,
 }
 
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+enum BinderKey {
+    Named(frontend::VariableName),
+    Anonymous(usize, usize),
+}
+
 #[derive(Clone, Debug, Default)]
-pub(crate) struct BinderTable(BTreeMap<frontend::VariableName, PatternId>);
+pub(crate) struct BinderTable(BTreeMap<BinderKey, PatternId>);
 
 impl BinderTable {
+    fn declare<'a>(
+        designations: &mut DesignationTable,
+        scope: &ReferentId,
+        clauses: impl IntoIterator<Item = &'a SurfaceClause>,
+        include_anonymous: bool,
+    ) -> kernel::Result<Self> {
+        fn collect(
+            term: &SurfaceTerm,
+            include_anonymous: bool,
+            first: &mut BTreeMap<BinderKey, (usize, usize)>,
+        ) {
+            match term {
+                SurfaceTerm::Variable(variable) => {
+                    first
+                        .entry(BinderKey::Named(variable.value.clone()))
+                        .and_modify(|span| {
+                            *span = (*span).min((variable.span.line, variable.span.column));
+                        })
+                        .or_insert((variable.span.line, variable.span.column));
+                }
+                SurfaceTerm::AnonymousHole(span) if include_anonymous => {
+                    first.insert(
+                        BinderKey::Anonymous(span.line, span.column),
+                        (span.line, span.column),
+                    );
+                }
+                SurfaceTerm::Application(application) => {
+                    for term in application.roles.values() {
+                        collect(term, include_anonymous, first);
+                    }
+                }
+                SurfaceTerm::Tuple { values, .. } | SurfaceTerm::Sequence { values, .. } => {
+                    for term in values {
+                        collect(term, include_anonymous, first);
+                    }
+                }
+                SurfaceTerm::Product { fields, .. } => {
+                    for term in fields.values() {
+                        collect(term, include_anonymous, first);
+                    }
+                }
+                SurfaceTerm::Referent(_)
+                | SurfaceTerm::Local(_)
+                | SurfaceTerm::Template(_)
+                | SurfaceTerm::AnonymousHole(_)
+                | SurfaceTerm::String(_)
+                | SurfaceTerm::F32(_)
+                | SurfaceTerm::Int(_)
+                | SurfaceTerm::Bool(_)
+                | SurfaceTerm::Intrinsic(_) => {}
+            }
+        }
+
+        let mut first = BTreeMap::new();
+        for clause in clauses {
+            for term in clause.roles.values() {
+                collect(term, include_anonymous, &mut first);
+            }
+        }
+        let mut ordered = first.into_iter().collect::<Vec<_>>();
+        ordered.sort_by(|left, right| left.1.cmp(&right.1).then(left.0.cmp(&right.0)));
+        let mut binders = BTreeMap::new();
+        for (index, (key, _)) in ordered.into_iter().enumerate() {
+            let id = designations.declare_pattern(scope, &format!("binder-{index}"))?;
+            binders.insert(key, id);
+        }
+        Ok(Self(binders))
+    }
+
     pub(crate) fn declare_alpha<'a>(
         designations: &mut DesignationTable,
         scope: &ReferentId,
         clauses: impl IntoIterator<Item = &'a SurfaceClause>,
     ) -> kernel::Result<Self> {
-        let mut first = BTreeMap::<frontend::VariableName, (usize, usize)>::new();
-        for clause in clauses {
-            for term in clause.roles.values() {
-                if let SurfaceTerm::Variable(variable) = term {
-                    first
-                        .entry(variable.value.clone())
-                        .and_modify(|span| {
-                            *span = (*span).min((variable.span.line, variable.span.column))
-                        })
-                        .or_insert((variable.span.line, variable.span.column));
-                }
-            }
-        }
-        let mut ordered = first.into_iter().collect::<Vec<_>>();
-        ordered.sort_by_key(|(_, span)| *span);
-        let mut binders = BTreeMap::new();
-        for (index, (name, _)) in ordered.into_iter().enumerate() {
-            let id = designations.declare_pattern(scope, &format!("binder-{index}"))?;
-            binders.insert(name, id);
-        }
-        Ok(Self(binders))
+        Self::declare(designations, scope, clauses, false)
+    }
+
+    pub(crate) fn declare_query(
+        designations: &mut DesignationTable,
+        scope: &ReferentId,
+        clause: &SurfaceClause,
+    ) -> kernel::Result<Self> {
+        Self::declare(designations, scope, std::iter::once(clause), true)
     }
 
     pub(crate) fn get(&self, name: &frontend::VariableName) -> kernel::Result<PatternId> {
-        self.0.get(name).cloned().ok_or_else(|| {
-            kernel::KernelError::new(format!("unbound pattern variable '{}'", name.as_str()))
-        })
+        self.0
+            .get(&BinderKey::Named(name.clone()))
+            .cloned()
+            .ok_or_else(|| {
+                kernel::KernelError::new(format!("unbound pattern variable '{}'", name.as_str()))
+            })
+    }
+
+    pub(crate) fn anonymous(&self, span: frontend::Span) -> kernel::Result<PatternId> {
+        self.0
+            .get(&BinderKey::Anonymous(span.line, span.column))
+            .cloned()
+            .ok_or_else(|| kernel::KernelError::new("unbound anonymous query hole"))
+    }
+
+    pub(crate) fn column(&self, column: &frontend::QueryColumnDecl) -> kernel::Result<PatternId> {
+        match &column.label {
+            Some(label) => self.get(label),
+            None => self.anonymous(column.span),
+        }
     }
 }
 
@@ -353,6 +433,12 @@ fn lower_term(
                 kernel::KernelError::new("pattern variable is not valid in ground content")
             })?;
             Ok(Term::pattern(binders.get(&value.value)?))
+        }
+        SurfaceTerm::AnonymousHole(span) => {
+            let binders = binders.ok_or_else(|| {
+                kernel::KernelError::new("anonymous hole is not valid in ground content")
+            })?;
+            Ok(Term::pattern(binders.anonymous(*span)?))
         }
         SurfaceTerm::String(value) => {
             let text = projection.designations.global("Text")?;
@@ -708,9 +794,9 @@ fn definition_term_domain(
         SurfaceTerm::Intrinsic(_) => Err(kernel::KernelError::new(
             "intrinsic identity is only valid as an intrinsic application role",
         )),
-        SurfaceTerm::Variable(_) | SurfaceTerm::Template(_) => Err(kernel::KernelError::new(
-            "pure definitions require closed terms",
-        )),
+        SurfaceTerm::Variable(_) | SurfaceTerm::AnonymousHole(_) | SurfaceTerm::Template(_) => Err(
+            kernel::KernelError::new("pure definitions require closed terms"),
+        ),
     }
 }
 
