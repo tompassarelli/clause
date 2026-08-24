@@ -2,6 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
     frontend::{self, Declaration, Kind, Member, ShapePartDecl, SurfaceTerm},
+    intrinsic::{Intrinsic, IntrinsicRole},
     kernel::{
         self, AssertionOccurrence, DerivationRule, Judgment, JudgmentKind, JudgmentStatus,
         JudgmentTarget, LookupMode, Model, Pattern, Referent, ReferentId, RelationShape,
@@ -13,8 +14,8 @@ use crate::{
 use super::{
     identifiers::{DesignationTable, synthetic_referent},
     lowering::{
-        BinderTable, LoweredContentGraph, LoweredDefinitionGraph, Projection, intrinsic_relation,
-        intrinsic_role, lower_clause_graph_with, lower_clause_with, lower_definition, lower_focus,
+        BinderTable, LoweredContentGraph, LoweredDefinitionGraph, Projection,
+        lower_clause_graph_with, lower_clause_with, lower_definition, lower_focus,
         lower_pure_definition, lower_shape_binding, membership_content, membership_group_role,
         membership_member_role, membership_relation, membership_shape,
     },
@@ -549,27 +550,14 @@ fn lower_relation_shapes(
             return Err(kernel::KernelError::new("duplicate RelationShape identity"));
         }
     }
-    for (name, known) in [
-        ("add", &["left", "right"][..]),
-        ("subtract", &["left", "right"][..]),
-        ("multiply", &["left", "right"][..]),
-        ("divide", &["left", "right"][..]),
-        ("less-than", &["left", "right"][..]),
-        ("less-or-equal", &["left", "right"][..]),
-        ("greater-than", &["left", "right"][..]),
-        ("greater-or-equal", &["left", "right"][..]),
-        ("equal", &["left", "right"][..]),
-        ("not-equal", &["left", "right"][..]),
-        ("length", &["input"][..]),
-        ("map", &["mapper", "sequence"][..]),
-        ("conditional", &["condition", "then", "else"][..]),
-    ] {
-        let relation = intrinsic_relation(name);
-        let result = intrinsic_role(name, "result");
-        let mut roles = known
+    for intrinsic in Intrinsic::ALL {
+        let relation = intrinsic.relation();
+        let result = intrinsic.role(IntrinsicRole::Result);
+        let mut roles = intrinsic
+            .input_roles()
             .iter()
             .map(|role| {
-                let id = intrinsic_role(name, role);
+                let id = intrinsic.role(*role);
                 Ok((id.clone(), Role::new(id, Vec::new())?))
             })
             .collect::<kernel::Result<BTreeMap<_, _>>>()?;
@@ -578,9 +566,10 @@ fn lower_relation_shapes(
             relation.clone(),
             roles,
             vec![LookupMode::finite(
-                known
+                intrinsic
+                    .input_roles()
                     .iter()
-                    .map(|role| intrinsic_role(name, role))
+                    .map(|role| intrinsic.role(*role))
                     .collect(),
                 vec![result],
                 kernel::Cardinality::One,
@@ -609,8 +598,7 @@ fn membership_predicate(group: ReferentId) -> kernel::Result<RolePredicate> {
 }
 
 fn insert_intrinsic_identities(referents: &mut BTreeMap<ReferentId, Referent>) {
-    let source_name = "@clause/intrinsic/length";
-    let id = synthetic_referent("pure-intrinsic-identity", &[source_name]);
+    let id = Intrinsic::Length.callable_identity();
     referents.insert(id.clone(), Referent::new(id));
 }
 

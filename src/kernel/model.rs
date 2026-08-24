@@ -436,6 +436,12 @@ impl Model {
     pub fn definitions(&self) -> &[Definition] {
         &self.definitions
     }
+    pub fn definition(&self, id: &ReferentId) -> Option<&Definition> {
+        self.definitions
+            .binary_search_by(|definition| definition.id().cmp(id))
+            .ok()
+            .map(|index| &self.definitions[index])
+    }
     pub fn derivation_rules(&self) -> &[DerivationRule] {
         &self.derivation_rules
     }

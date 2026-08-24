@@ -10,6 +10,7 @@ use crate::{
 };
 use std::collections::BTreeMap;
 
+mod evaluate;
 mod explain;
 mod query;
 
@@ -94,6 +95,12 @@ pub fn find(
     limits: Limits,
 ) -> Result<Vec<Term>> {
     query::find(revision, plan, limits)
+}
+
+/// Normalize one closed pure term against the definitions and intrinsic
+/// applications sealed into an immutable Revision.
+pub fn evaluate(revision: &Revision, term: &Term) -> Result<Term> {
+    evaluate::evaluate(revision, term)
 }
 
 /// Return the deterministic chosen proof for a ground target, if it follows.

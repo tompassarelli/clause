@@ -5,6 +5,7 @@ pub mod execution;
 pub mod frontend;
 pub mod generated;
 pub mod intervention;
+mod intrinsic;
 pub mod kernel;
 pub mod m0_stage_a;
 pub mod m0_stage_b;

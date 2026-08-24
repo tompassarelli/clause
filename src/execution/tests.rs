@@ -1,9 +1,10 @@
 use super::*;
 use crate::{
+    intrinsic::{Intrinsic, IntrinsicRole},
     kernel::{
-        AssertionOccurrence, Cardinality, DerivationRule, Judgment, JudgmentKind, JudgmentStatus,
-        JudgmentTarget, LookupMode, Model, Pattern, PatternId, Referent, ReferentId, RelationShape,
-        RelationalContent, Revision, Role, RoleId, Term,
+        AssertionOccurrence, Cardinality, Definition, DerivationRule, Judgment, JudgmentKind,
+        JudgmentStatus, JudgmentTarget, LookupMode, Model, Pattern, PatternId, Referent,
+        ReferentId, RelationShape, RelationalContent, Revision, Role, RoleId, Term,
     },
     wire,
 };
@@ -320,4 +321,140 @@ fn proof_is_deterministic_when_assertion_order_changes() {
         why(&forward, &target, limits()).unwrap().unwrap().why,
         why(&reverse, &target, limits()).unwrap().unwrap().why
     );
+}
+
+fn intrinsic_shape(intrinsic: Intrinsic) -> RelationShape {
+    let result = intrinsic.role(IntrinsicRole::Result);
+    let mut roles = intrinsic
+        .input_roles()
+        .iter()
+        .map(|role| {
+            let id = intrinsic.role(*role);
+            (id.clone(), Role::new(id, Vec::new()).unwrap())
+        })
+        .collect::<BTreeMap<_, _>>();
+    roles.insert(
+        result.clone(),
+        Role::new(result.clone(), Vec::new()).unwrap(),
+    );
+    RelationShape::new(
+        intrinsic.relation(),
+        roles,
+        vec![
+            LookupMode::finite(
+                intrinsic
+                    .input_roles()
+                    .iter()
+                    .map(|role| intrinsic.role(*role))
+                    .collect(),
+                vec![result],
+                Cardinality::One,
+            )
+            .unwrap(),
+        ],
+    )
+    .unwrap()
+}
+
+fn intrinsic_content(intrinsic: Intrinsic, roles: &[(IntrinsicRole, Term)]) -> RelationalContent {
+    RelationalContent::new(
+        intrinsic.relation(),
+        roles
+            .iter()
+            .map(|(role, term)| (intrinsic.role(*role), term.clone()))
+            .collect(),
+    )
+    .unwrap()
+}
+
+#[test]
+fn evaluate_uses_indexed_intrinsics_short_circuits_and_memoizes() {
+    let model_id = referent_id("pure/model");
+    let result_id = referent_id("pure/result");
+    let length = intrinsic_content(
+        Intrinsic::Length,
+        &[(
+            IntrinsicRole::Input,
+            Term::tuple(vec![Term::f32(3.0).unwrap(), Term::f32(4.0).unwrap()]).unwrap(),
+        )],
+    );
+    let divide = intrinsic_content(
+        Intrinsic::Divide,
+        &[
+            (IntrinsicRole::Left, Term::f32(1.0).unwrap()),
+            (IntrinsicRole::Right, Term::f32(0.0).unwrap()),
+        ],
+    );
+    let conditional = intrinsic_content(
+        Intrinsic::Conditional,
+        &[
+            (IntrinsicRole::Condition, Term::boolean(true)),
+            (IntrinsicRole::Then, Term::application(length.id().clone())),
+            (IntrinsicRole::Else, Term::application(divide.id().clone())),
+        ],
+    );
+    let referents = [
+        model_id.clone(),
+        result_id.clone(),
+        Intrinsic::Length.relation(),
+        Intrinsic::Divide.relation(),
+        Intrinsic::Conditional.relation(),
+    ]
+    .into_iter()
+    .map(|id| (id.clone(), Referent::new(id)))
+    .collect();
+    let contents = [length.clone(), divide.clone(), conditional.clone()]
+        .into_iter()
+        .map(|content| (content.id().clone(), content))
+        .collect();
+    let shapes = [
+        intrinsic_shape(Intrinsic::Length),
+        intrinsic_shape(Intrinsic::Divide),
+        intrinsic_shape(Intrinsic::Conditional),
+    ]
+    .into_iter()
+    .map(|shape| (shape.referent().clone(), shape))
+    .collect();
+    let revision = wire::admit(
+        Model::with_distinctions(
+            model_id,
+            referents,
+            contents,
+            shapes,
+            Vec::new(),
+            vec![Definition::new(
+                result_id.clone(),
+                Term::application(conditional.id().clone()),
+            )],
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        )
+        .unwrap(),
+    );
+
+    assert!(revision.model().occurrences().is_empty());
+    assert!(revision.model().judgments().is_empty());
+    assert!(revision.model().admitted_contents().is_empty());
+    assert_eq!(
+        evaluate(&revision, &Term::referent(result_id)).unwrap(),
+        Term::f32(5.0).unwrap()
+    );
+    assert!(evaluate(&revision, &Term::application(divide.id().clone())).is_err());
+
+    let repeated = Term::tuple(vec![
+        Term::application(length.id().clone()),
+        Term::application(length.id().clone()),
+    ])
+    .unwrap();
+    let (evaluated, dispatches) = super::evaluate::evaluate_with_dispatches(&revision, &repeated)
+        .expect("shared application evaluates");
+    assert_eq!(
+        evaluated,
+        Term::tuple(vec![Term::f32(5.0).unwrap(), Term::f32(5.0).unwrap()]).unwrap()
+    );
+    assert_eq!(dispatches, 1);
 }

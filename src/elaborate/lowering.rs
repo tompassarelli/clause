@@ -2,6 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
     frontend::{self, Name, SurfaceClause, SurfaceTerm},
+    intrinsic::Intrinsic,
     kernel::{
         self, Definition, Model, PatternId, ReferentId, RelationShape, RelationalContent, Role,
         RoleId, Term,
@@ -34,16 +35,6 @@ pub(crate) fn membership_member_role() -> RoleId {
 
 pub(crate) fn membership_group_role() -> RoleId {
     synthetic_role("membership", &["group"])
-}
-
-const INTRINSIC_PREFIX: &str = "@clause/intrinsic/";
-
-pub(crate) fn intrinsic_relation(name: &str) -> ReferentId {
-    synthetic_referent("pure-intrinsic-relation", &[name])
-}
-
-pub(crate) fn intrinsic_role(name: &str, role: &str) -> RoleId {
-    synthetic_role("pure-intrinsic-role", &[name, role])
 }
 
 fn structural_domain(projection: &Projection, domain: &frontend::DomainName) -> ReferentId {
@@ -377,10 +368,9 @@ fn lower_term(
                 })
                 .collect::<kernel::Result<Vec<_>>>()?,
         ),
-        SurfaceTerm::Intrinsic(value) => Ok(Term::referent(synthetic_referent(
-            "pure-intrinsic-identity",
-            &[value.value.as_str()],
-        ))),
+        SurfaceTerm::Intrinsic(value) => Intrinsic::from_source_name(value.value.as_str())
+            .map(|intrinsic| Term::referent(intrinsic.callable_identity()))
+            .ok_or_else(|| kernel::KernelError::new("unknown pure intrinsic identity")),
         SurfaceTerm::Referent(value) => {
             let referent = projection
                 .designations
@@ -405,11 +395,8 @@ fn lower_term(
             Ok(denotation.clone())
         }
         SurfaceTerm::Application(application) => {
-            if let Some(name) = application
-                .relation
-                .value
-                .as_str()
-                .strip_prefix(INTRINSIC_PREFIX)
+            if let Some(intrinsic) =
+                Intrinsic::from_source_name(application.relation.value.as_str())
             {
                 let mut roles = BTreeMap::new();
                 for (surface_role, surface_term) in &application.roles {
@@ -434,9 +421,12 @@ fn lower_term(
                             dependencies,
                         )?
                     };
-                    roles.insert(intrinsic_role(name, surface_role.as_str()), lowered);
+                    let role = intrinsic
+                        .role_named(surface_role.as_str())
+                        .ok_or_else(|| kernel::KernelError::new("unknown pure intrinsic role"))?;
+                    roles.insert(role, lowered);
                 }
-                let content = RelationalContent::new(intrinsic_relation(name), roles)?;
+                let content = RelationalContent::new(intrinsic.relation(), roles)?;
                 if !dependencies
                     .iter()
                     .any(|dependency| dependency.id() == content.id())
@@ -542,12 +532,7 @@ fn definition_term_domain(
 ) -> kernel::Result<ReferentId> {
     match term {
         SurfaceTerm::Application(application) => {
-            if application
-                .relation
-                .value
-                .as_str()
-                .starts_with(INTRINSIC_PREFIX)
-            {
+            if Intrinsic::from_source_name(application.relation.value.as_str()).is_some() {
                 return Ok(structural_domain(projection, &application.domain));
             }
             let relation = projection
