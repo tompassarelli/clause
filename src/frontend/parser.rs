@@ -30,8 +30,16 @@ fn is_direct_focus(
         .iter()
         .any(|line| focused_name(*line).is_ok_and(|name| grounded.contains(&name.value)));
     let has_non_bare = entries.iter().try_fold(false, |found, line| {
-        Ok::<_, ParseError>(
-            found || definition_line(*line).is_some() || relation_line_matches(*line, relations)?,
+        if found || definition_line(*line).is_some() || relation_line_matches(*line, relations)? {
+            return Ok::<_, ParseError>(true);
+        }
+        let expanded = format!("{} {}", raw.subject.value.as_str(), content(*line));
+        relation_line_matches(
+            SourceLine {
+                number: line.number,
+                text: &expanded,
+            },
+            relations,
         )
     })?;
     Ok(has_grounded_category && has_non_bare)
@@ -79,13 +87,7 @@ pub fn parse(source: &str) -> Result<Program, ParseError> {
             retained.push(declaration);
         }
     }
-    let mut raw_declarations = retained;
-    for declaration in &mut raw_declarations {
-        if declaration.bare_block {
-            declaration.kind = infer_bare_block_kind(declaration, &relations)?;
-            declaration.bare_block = false;
-        }
-    }
+    let raw_declarations = retained;
     let mut raw_focuses = Vec::new();
     let mut retained = Vec::new();
     for declaration in raw_declarations {
@@ -95,7 +97,13 @@ pub fn parse(source: &str) -> Result<Program, ParseError> {
             retained.push(declaration);
         }
     }
-    let raw_declarations = retained;
+    let mut raw_declarations = retained;
+    for declaration in &mut raw_declarations {
+        if declaration.bare_block {
+            declaration.kind = infer_bare_block_kind(declaration, &relations)?;
+            declaration.bare_block = false;
+        }
+    }
     let grounded = raw_declarations
         .iter()
         .filter(|declaration| {

@@ -57,11 +57,21 @@ fn model_id() -> ReferentId {
 }
 
 fn compile_in(source: &str) -> elaborate::CompiledProgram {
-    elaborate::compile_in(
-        frontend::parse(source).expect("relation schema source parses"),
-        ModelContext::new(model_id()),
-    )
-    .expect("relation schema source elaborates")
+    let program = frontend::parse(source).expect("relation schema source parses");
+    let declarations = program
+        .declarations
+        .iter()
+        .map(|declaration| {
+            format!(
+                "{}:{:?}",
+                declaration.subject.value.as_str(),
+                declaration.kind
+            )
+        })
+        .collect::<Vec<_>>();
+    elaborate::compile_in(program, ModelContext::new(model_id())).unwrap_or_else(|error| {
+        panic!("relation schema source elaborates ({declarations:?}): {error}")
+    })
 }
 
 #[test]
