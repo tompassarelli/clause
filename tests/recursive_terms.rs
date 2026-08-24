@@ -428,6 +428,26 @@ fn malformed_parentheses_are_rejected_at_the_grouping_boundary() {
 }
 
 #[test]
+fn focused_and_flattened_recursive_clauses_have_identical_canonical_identity() {
+    let focused_source = GROUPED_SOURCE.replace(
+        "  a + b * c < (a + b) * c",
+        "  a\n    + b * c < (a + b) * c",
+    );
+    let focused_program = compile(&focused_source);
+    let flattened_program = compile(GROUPED_SOURCE);
+    let focused = focused_program
+        .revision(&frontend::Name("math".to_owned()))
+        .expect("focused math Revision resolves");
+    let flattened = flattened_program
+        .revision(&frontend::Name("math".to_owned()))
+        .expect("flattened math Revision resolves");
+
+    assert_eq!(focused.identity(), flattened.identity());
+    assert_eq!(wire::serialize(focused), wire::serialize(flattened));
+    assert_grouped_precedence_tree(&focused_program, focused);
+}
+
+#[test]
 fn nested_ambiguity_names_each_surviving_application_path() {
     let error = frontend::parse(NESTED_AMBIGUITY_SOURCE)
         .expect_err("overlapping nested applications remain ambiguous");
