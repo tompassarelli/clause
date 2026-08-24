@@ -5,7 +5,7 @@ use crate::{
     kernel::{
         self, AssertionOccurrence, DerivationRule, Judgment, JudgmentKind, JudgmentStatus,
         JudgmentTarget, LookupMode, Model, Pattern, Referent, ReferentId, RelationShape,
-        RelationalContent, Role, RolePredicate,
+        RelationalContent, Role, RolePredicate, Term,
     },
     wire,
 };
@@ -13,9 +13,9 @@ use crate::{
 use super::{
     identifiers::{DesignationTable, synthetic_referent},
     lowering::{
-        BinderTable, Projection, lower_clause_with, lower_definition, lower_focus,
-        lower_shape_binding, membership_content, membership_group_role, membership_member_role,
-        membership_relation, membership_shape,
+        BinderTable, LoweredContentGraph, Projection, lower_clause_graph_with, lower_clause_with,
+        lower_definition, lower_focus, lower_shape_binding, membership_content,
+        membership_group_role, membership_member_role, membership_relation, membership_shape,
     },
     resolution::Resolver,
 };
@@ -556,6 +556,48 @@ fn membership_predicate(group: ReferentId) -> kernel::Result<RolePredicate> {
     )
 }
 
+fn require_registered_dependencies(
+    contents: &BTreeMap<kernel::ContentId, RelationalContent>,
+    content: &RelationalContent,
+) -> kernel::Result<()> {
+    for term in content.roles().values() {
+        if let Term::Application(dependency) = term
+            && !contents.contains_key(dependency)
+        {
+            return Err(kernel::KernelError::new(
+                "recursive content must be registered in dependency postorder",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn register_unasserted_content(
+    contents: &mut BTreeMap<kernel::ContentId, RelationalContent>,
+    content: RelationalContent,
+) -> kernel::Result<()> {
+    require_registered_dependencies(contents, &content)?;
+    if let Some(existing) = contents.insert(content.id().clone(), content.clone())
+        && existing != content
+    {
+        return Err(kernel::KernelError::new(
+            "recursive content identity collision",
+        ));
+    }
+    Ok(())
+}
+
+fn register_content_graph(
+    contents: &mut BTreeMap<kernel::ContentId, RelationalContent>,
+    graph: LoweredContentGraph,
+) -> kernel::Result<RelationalContent> {
+    for dependency in graph.dependencies {
+        register_unasserted_content(contents, dependency)?;
+    }
+    require_registered_dependencies(contents, &graph.root)?;
+    Ok(graph.root)
+}
+
 fn lower_models(
     declarations: &[Declaration],
     shapes: &BTreeMap<ReferentId, RelationShape>,
@@ -668,10 +710,11 @@ fn lower_models(
         let mut definitions = Vec::new();
         for member in &declaration.body {
             let (lowered, span) = match member {
-                Member::RelationalContent(surface) => (
-                    vec![lower_clause_with(projection, shell.model(), surface, None)?],
-                    Some(surface.span),
-                ),
+                Member::RelationalContent(surface) => {
+                    let graph = lower_clause_graph_with(projection, shell.model(), surface, None)?;
+                    let root = register_content_graph(&mut contents, graph)?;
+                    (vec![root], Some(surface.span))
+                }
                 Member::Focus(focus) => (
                     lower_focus(projection, shell.model(), focus)?,
                     Some(focus.span),
@@ -754,10 +797,15 @@ fn lower_models(
             })?;
             let premise_contents = premises
                 .iter()
-                .map(|surface| lower_clause_with(projection, shell.model(), surface, Some(binders)))
+                .map(|surface| {
+                    let graph =
+                        lower_clause_graph_with(projection, shell.model(), surface, Some(binders))?;
+                    register_content_graph(&mut contents, graph)
+                })
                 .collect::<kernel::Result<Vec<_>>>()?;
-            let conclusion_content =
-                lower_clause_with(projection, shell.model(), conclusion, Some(binders))?;
+            let conclusion_graph =
+                lower_clause_graph_with(projection, shell.model(), conclusion, Some(binders))?;
+            let conclusion_content = register_content_graph(&mut contents, conclusion_graph)?;
             for content in premise_contents
                 .iter()
                 .chain(std::iter::once(&conclusion_content))
@@ -876,7 +924,8 @@ fn lower_context_model(
         match member {
             Member::Membership(_) => occurrence_index += 1,
             Member::RelationalContent(surface) => {
-                let content = lower_clause_with(projection, shell.model(), surface, None)?;
+                let graph = lower_clause_graph_with(projection, shell.model(), surface, None)?;
+                let content = register_content_graph(&mut contents, graph)?;
                 admit_authored_content(
                     &model_id,
                     content,
@@ -930,6 +979,7 @@ fn admit_authored_content(
     judgments: &mut Vec<Judgment>,
     source_spans: &mut BTreeMap<ReferentId, frontend::Span>,
 ) -> kernel::Result<()> {
+    require_registered_dependencies(contents, &content)?;
     contents.insert(content.id().clone(), content.clone());
     let occurrence = synthetic_referent(
         "assertion-occurrence",
@@ -1031,23 +1081,34 @@ fn member_literal_referents(
     member: &Member,
     projection: &Projection,
 ) -> kernel::Result<Vec<ReferentId>> {
-    let literal = |term: &SurfaceTerm| -> kernel::Result<Option<ReferentId>> {
+    fn collect(
+        term: &SurfaceTerm,
+        projection: &Projection,
+        literals: &mut Vec<ReferentId>,
+    ) -> kernel::Result<()> {
         match term {
-            SurfaceTerm::String(value) => Ok(Some(projection.designations.literal(&value.value)?)),
-            SurfaceTerm::Referent(_) | SurfaceTerm::Template(_) | SurfaceTerm::Variable(_) => {
-                Ok(None)
+            SurfaceTerm::String(value) => {
+                literals.push(projection.designations.literal(&value.value)?);
             }
+            SurfaceTerm::Application(value) => {
+                for term in value.roles.values() {
+                    collect(term, projection, literals)?;
+                }
+            }
+            SurfaceTerm::Referent(_) | SurfaceTerm::Template(_) | SurfaceTerm::Variable(_) => {}
         }
-    };
+        Ok(())
+    }
     let terms = match member {
         Member::RelationalContent(clause) => clause.roles.values().collect::<Vec<_>>(),
         Member::Focus(focus) => focus.slots.iter().map(|slot| &slot.value).collect(),
         _ => Vec::new(),
     };
-    terms
-        .into_iter()
-        .filter_map(|term| literal(term).transpose())
-        .collect()
+    let mut literals = Vec::new();
+    for term in terms {
+        collect(term, projection, &mut literals)?;
+    }
+    Ok(literals)
 }
 
 fn collect_member_literal_referents(
@@ -1102,8 +1163,16 @@ fn declare_request_literals(request: &frontend::RequestDecl, table: &mut Designa
 }
 
 fn declare_term_literal(term: &SurfaceTerm, table: &mut DesignationTable) {
-    if let SurfaceTerm::String(value) = term {
-        table.declare_literal(&value.value);
+    match term {
+        SurfaceTerm::String(value) => {
+            table.declare_literal(&value.value);
+        }
+        SurfaceTerm::Application(value) => {
+            for term in value.roles.values() {
+                declare_term_literal(term, table);
+            }
+        }
+        SurfaceTerm::Referent(_) | SurfaceTerm::Template(_) | SurfaceTerm::Variable(_) => {}
     }
 }
 

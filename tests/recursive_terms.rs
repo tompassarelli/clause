@@ -1,9 +1,10 @@
 use clause::{
     derive::{self, Limits},
     elaborate, frontend,
-    kernel::{ContentId, ReferentId, RelationalContent, Revision, RoleId, Term},
+    kernel::{Cardinality, ContentId, ReferentId, RelationalContent, Revision, RoleId, Term},
     wire,
 };
+use std::collections::BTreeSet;
 
 const SOURCE: &str = r#"Body
 Scalar
@@ -33,10 +34,28 @@ scene
   coin ∈ Body
   distance between player and coin < radius of player + radius of coin
 
-collision/inclusive: DerivationRule
+scene/collision-inclusive: DerivationRule
   distance between player and coin <= radius of player + radius of coin
   when:
     distance between player and coin < radius of player + radius of coin
+"#;
+
+const MULTI_MODE_SOURCE: &str = r#"Scalar
+
+arithmetic/add: RelationShape
+  {result: Scalar} is {left: Scalar} + {right: Scalar}
+  mode left, right -> result: one
+  mode result, right -> left: one
+
+comparison/less: RelationShape
+  {left: Scalar} < {right: Scalar}
+  mode left -> right: many
+
+numbers
+  a ∈ Scalar
+  b ∈ Scalar
+  c ∈ Scalar
+  a < b + c
 "#;
 
 fn compile(source: &str) -> elaborate::CompiledProgram {
@@ -79,6 +98,24 @@ fn asserted_comparison<'a>(revision: &'a Revision, relation: &ReferentId) -> &'a
     content_for_relation(revision.model().admitted_contents(), relation)
 }
 
+fn assert_application_contract(revision: &Revision, content: &RelationalContent) {
+    let shape = &revision.model().relation_shapes()[content.relation()];
+    let supplied = content.roles().keys().cloned().collect::<BTreeSet<_>>();
+    let matching = shape
+        .lookup()
+        .iter()
+        .filter(|mode| mode.known().iter().cloned().collect::<BTreeSet<_>>() == supplied)
+        .collect::<Vec<_>>();
+    let [mode] = matching.as_slice() else {
+        panic!("application known roles must select one exact mode");
+    };
+    assert_eq!(mode.cardinality(), &Cardinality::One);
+    let [result] = mode.sought() else {
+        panic!("application mode must have one result role");
+    };
+    assert!(!content.roles().contains_key(result));
+}
+
 fn assert_recursive_tree(program: &elaborate::CompiledProgram, revision: &Revision) {
     let less_than = relation(program, "<");
     let distance = relation(program, "distance");
@@ -100,6 +137,8 @@ fn assert_recursive_tree(program: &elaborate::CompiledProgram, revision: &Revisi
         .expect("addition application is registered before its parent");
     assert_eq!(distance_content.relation(), &distance);
     assert_eq!(addition_content.relation(), &addition);
+    assert_application_contract(revision, distance_content);
+    assert_application_contract(revision, addition_content);
 
     let addition_left = role(program, &addition, "left");
     let addition_right = role(program, &addition, "right");
@@ -112,6 +151,7 @@ fn assert_recursive_tree(program: &elaborate::CompiledProgram, revision: &Revisi
             .content(application(nested))
             .expect("radius application is registered before addition");
         assert_eq!(radius_content.relation(), &radius);
+        assert_application_contract(revision, radius_content);
     }
 
     assert!(
@@ -172,4 +212,27 @@ fn declared_symbols_do_not_accept_word_substitutions() {
             "declared ASCII operators must remain exact"
         );
     }
+}
+
+#[test]
+fn recursive_projection_selects_its_result_mode_from_a_bidirectional_relation() {
+    let program = compile(MULTI_MODE_SOURCE);
+    let revision = program
+        .revision(&frontend::Name("numbers".to_owned()))
+        .expect("numbers Revision resolves");
+    let less = relation(&program, "comparison/less");
+    let addition = relation(&program, "arithmetic/add");
+    let root = asserted_comparison(revision, &less);
+    let right = role(&program, &less, "right");
+    let nested = revision
+        .model()
+        .content(application(&root.roles()[&right]))
+        .expect("addition application is registered");
+
+    assert_eq!(nested.relation(), &addition);
+    assert_eq!(
+        revision.model().relation_shapes()[&addition].lookup().len(),
+        2
+    );
+    assert_application_contract(revision, nested);
 }

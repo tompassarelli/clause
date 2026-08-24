@@ -235,6 +235,18 @@ pub enum SurfaceTerm {
     Template(ReferentTemplate),
     Variable(Spanned<VariableName>),
     String(Spanned<String>),
+    Application(Box<SurfaceApplication>),
+}
+
+/// One recursively authored relation oriented through an exact single-result
+/// lookup contract. The application is term structure only; it does not assert
+/// its relational content independently of the containing clause.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SurfaceApplication {
+    pub relation: Spanned<Name>,
+    pub roles: BTreeMap<RoleName, SurfaceTerm>,
+    pub result: Spanned<RoleName>,
+    pub span: Span,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

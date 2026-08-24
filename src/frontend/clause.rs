@@ -237,6 +237,7 @@ fn term_domains(
     match term {
         SurfaceTerm::String(_) => Ok(Some(BTreeSet::from([DomainName("Text".to_owned())]))),
         SurfaceTerm::Variable(_) => Ok(None),
+        SurfaceTerm::Application(_) => Ok(None),
         SurfaceTerm::Template(template) => Err(error(
             template.span,
             "correlated referent templates are only valid inside a focus block",
@@ -411,6 +412,255 @@ fn shape_matches(
     matches
 }
 
+fn token_span(tokens: &[Token]) -> Span {
+    let first = tokens.first().expect("term tokens are nonempty");
+    let last = tokens.last().expect("term tokens are nonempty");
+    Span {
+        line: first.span.line,
+        column: first.span.column,
+        width: last.span.column + last.span.width - first.span.column,
+    }
+}
+
+fn term_is_ground(term: &SurfaceTerm) -> bool {
+    match term {
+        SurfaceTerm::Referent(_) | SurfaceTerm::String(_) => true,
+        SurfaceTerm::Application(application) => application.roles.values().all(term_is_ground),
+        SurfaceTerm::Template(_) | SurfaceTerm::Variable(_) => false,
+    }
+}
+
+fn term_key(term: &SurfaceTerm) -> String {
+    match term {
+        SurfaceTerm::Referent(value) => format!("R:{}", value.value.0),
+        SurfaceTerm::Template(value) => format!(
+            "T:{}{{{}}}{}",
+            value.prefix.value, value.variable.value.0, value.suffix.value
+        ),
+        SurfaceTerm::Variable(value) => format!("V:{}", value.value.0),
+        SurfaceTerm::String(value) => format!("S:{:?}", value.value),
+        SurfaceTerm::Application(value) => {
+            let mut key = format!("A:{}->{}", value.relation.value.0, value.result.value.0);
+            for (role, term) in &value.roles {
+                key.push('|');
+                key.push_str(role.as_str());
+                key.push('=');
+                key.push_str(&term_key(term));
+            }
+            key
+        }
+    }
+}
+
+fn push_unique_term(terms: &mut Vec<SurfaceTerm>, term: SurfaceTerm) {
+    let key = term_key(&term);
+    if !terms.iter().any(|candidate| term_key(candidate) == key) {
+        terms.push(term);
+    }
+}
+
+fn single_result_projection(spec: &RelationSpec) -> Option<(&Spanned<RoleName>, &[ShapePartDecl])> {
+    let ShapePartDecl::Role { id: result, .. } = spec.shape.parts.first()? else {
+        return None;
+    };
+    let mut modes = spec.modes.iter().filter(|mode| {
+        mode.cardinality == Cardinality::One
+            && mode.sought.len() == 1
+            && mode.sought[0].value == result.value
+            && mode.known.len() + mode.sought.len() == spec.roles.len()
+    });
+    modes.next()?;
+    if modes.next().is_some() {
+        return None;
+    }
+    let mut start = 1;
+    if matches!(
+        spec.shape.parts.get(start),
+        Some(ShapePartDecl::Literal(literal)) if literal.value == "is"
+    ) {
+        start += 1;
+    }
+    let projected = spec.shape.parts.get(start..)?;
+    (!projected.is_empty()).then_some((result, projected))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn collect_recursive_matches(
+    parts: &[ShapePartDecl],
+    tokens: &[Token],
+    part_index: usize,
+    token_index: usize,
+    role_domains: &BTreeMap<RoleName, DomainName>,
+    current_memberships: &MembershipCatalog,
+    memberships: &BTreeMap<Name, MembershipCatalog>,
+    relations: &BTreeMap<Name, RelationSpec>,
+    fuel: usize,
+    roles: &mut BTreeMap<RoleName, SurfaceTerm>,
+    matches: &mut Vec<BTreeMap<RoleName, SurfaceTerm>>,
+) {
+    let Some(part) = parts.get(part_index) else {
+        if token_index == tokens.len() && !matches.contains(roles) {
+            matches.push(roles.clone());
+        }
+        return;
+    };
+    match part {
+        ShapePartDecl::Literal(literal) => {
+            if let Some(next) = literal_matches(tokens, token_index, &literal.value) {
+                collect_recursive_matches(
+                    parts,
+                    tokens,
+                    part_index + 1,
+                    next,
+                    role_domains,
+                    current_memberships,
+                    memberships,
+                    relations,
+                    fuel,
+                    roles,
+                    matches,
+                );
+            }
+        }
+        ShapePartDecl::Role { id, .. } => {
+            let expected = role_domains
+                .get(&id.value)
+                .expect("relation role has a declared domain");
+            let mut capture = |end: usize| {
+                for term in term_candidates(
+                    &tokens[token_index..end],
+                    expected,
+                    current_memberships,
+                    memberships,
+                    relations,
+                    fuel,
+                ) {
+                    roles.insert(id.value.clone(), term);
+                    collect_recursive_matches(
+                        parts,
+                        tokens,
+                        part_index + 1,
+                        end,
+                        role_domains,
+                        current_memberships,
+                        memberships,
+                        relations,
+                        fuel,
+                        roles,
+                        matches,
+                    );
+                    roles.remove(&id.value);
+                }
+            };
+            if part_index + 1 == parts.len() {
+                if token_index < tokens.len() {
+                    capture(tokens.len());
+                }
+                return;
+            }
+            let ShapePartDecl::Literal(next_literal) = &parts[part_index + 1] else {
+                unreachable!("sentence-shape roles have literal separators");
+            };
+            for end in token_index + 1..tokens.len() {
+                if literal_matches(tokens, end, &next_literal.value).is_some() {
+                    capture(end);
+                }
+            }
+        }
+    }
+}
+
+fn recursive_shape_matches(
+    spec: &RelationSpec,
+    tokens: &[Token],
+    current_memberships: &MembershipCatalog,
+    memberships: &BTreeMap<Name, MembershipCatalog>,
+    relations: &BTreeMap<Name, RelationSpec>,
+) -> Vec<BTreeMap<RoleName, SurfaceTerm>> {
+    let mut matches = Vec::new();
+    collect_recursive_matches(
+        &spec.shape.parts,
+        tokens,
+        0,
+        0,
+        &spec.roles,
+        current_memberships,
+        memberships,
+        relations,
+        tokens.len(),
+        &mut BTreeMap::new(),
+        &mut matches,
+    );
+    matches
+}
+
+fn term_candidates(
+    tokens: &[Token],
+    expected: &DomainName,
+    current_memberships: &MembershipCatalog,
+    memberships: &BTreeMap<Name, MembershipCatalog>,
+    relations: &BTreeMap<Name, RelationSpec>,
+    fuel: usize,
+) -> Vec<SurfaceTerm> {
+    if tokens.is_empty() {
+        return Vec::new();
+    }
+    let mut candidates = Vec::new();
+    if let Ok(term) = parse_role_term(tokens)
+        && match term_domains(&term, current_memberships, memberships) {
+            Ok(Some(actual)) => actual.contains(expected),
+            Ok(None) => true,
+            Err(_) => false,
+        }
+    {
+        push_unique_term(&mut candidates, term);
+    }
+    if fuel == 0 {
+        return candidates;
+    }
+    for (relation, spec) in relations {
+        let Some((result, projected)) = single_result_projection(spec) else {
+            continue;
+        };
+        if spec.roles.get(&result.value) != Some(expected) {
+            continue;
+        }
+        let mut matches = Vec::new();
+        collect_recursive_matches(
+            projected,
+            tokens,
+            0,
+            0,
+            &spec.roles,
+            current_memberships,
+            memberships,
+            relations,
+            fuel - 1,
+            &mut BTreeMap::new(),
+            &mut matches,
+        );
+        for roles in matches {
+            if !roles.values().all(term_is_ground) {
+                continue;
+            }
+            let span = token_span(tokens);
+            push_unique_term(
+                &mut candidates,
+                SurfaceTerm::Application(Box::new(SurfaceApplication {
+                    relation: Spanned {
+                        value: relation.clone(),
+                        span,
+                    },
+                    roles,
+                    result: result.clone(),
+                    span,
+                })),
+            );
+        }
+    }
+    candidates
+}
+
 fn reject_bracketed_clause_terms(tokens: &[Token]) -> Result<(), ParseError> {
     if let Some(token) = tokens.iter().find(|token| token.bracketed) {
         return Err(error(
@@ -466,7 +716,9 @@ pub(super) fn clause_with_catalog(
     let mut candidates = Vec::new();
     let mut first_term_error = None;
     for (relation, spec) in relations {
-        for terms in shape_matches(&spec.shape, &tokens) {
+        for terms in
+            recursive_shape_matches(spec, &tokens, current_memberships, memberships, relations)
+        {
             let mut accepted = true;
             for (role, term) in &terms {
                 let expected = spec.roles.get(role).expect("shape roles populate spec");
@@ -492,6 +744,17 @@ pub(super) fn clause_with_catalog(
             }
             if accepted {
                 candidates.push((relation.clone(), terms));
+            }
+        }
+    }
+    if candidates.is_empty() {
+        for spec in relations.values() {
+            for terms in shape_matches(&spec.shape, &tokens) {
+                for term in terms.values() {
+                    if let Err(error) = term_domains(term, current_memberships, memberships) {
+                        first_term_error.get_or_insert(error);
+                    }
+                }
             }
         }
     }
@@ -543,10 +806,7 @@ pub(super) fn clause_with_catalog(
 }
 
 pub(super) fn ground(clause: &SurfaceClause) -> bool {
-    clause
-        .roles
-        .values()
-        .all(|term| !matches!(term, SurfaceTerm::Variable(_)))
+    clause.roles.values().all(term_is_ground)
 }
 
 pub(super) fn clause_key(clause: &SurfaceClause) -> String {
@@ -555,26 +815,29 @@ pub(super) fn clause_key(clause: &SurfaceClause) -> String {
         key.push('|');
         key.push_str(role.as_str());
         key.push('=');
-        match term {
-            SurfaceTerm::Referent(value) => key.push_str(&format!("R:{}", value.value.0)),
-            SurfaceTerm::Template(value) => key.push_str(&format!(
-                "T:{}{{{}}}{}",
-                value.prefix.value, value.variable.value.0, value.suffix.value
-            )),
-            SurfaceTerm::Variable(value) => key.push_str(&format!("V:{}", value.value.0)),
-            SurfaceTerm::String(value) => key.push_str(&format!("S:{:?}", value.value)),
-        }
+        key.push_str(&term_key(term));
     }
     key
 }
 
 pub(super) fn variables(clause: &SurfaceClause) -> BTreeSet<VariableName> {
-    clause
-        .roles
-        .values()
-        .filter_map(|term| match term {
-            SurfaceTerm::Variable(value) => Some(value.value.clone()),
-            _ => None,
-        })
-        .collect()
+    fn collect(term: &SurfaceTerm, variables: &mut BTreeSet<VariableName>) {
+        match term {
+            SurfaceTerm::Variable(value) => {
+                variables.insert(value.value.clone());
+            }
+            SurfaceTerm::Application(value) => {
+                for term in value.roles.values() {
+                    collect(term, variables);
+                }
+            }
+            SurfaceTerm::Referent(_) | SurfaceTerm::Template(_) | SurfaceTerm::String(_) => {}
+        }
+    }
+
+    let mut variables = BTreeSet::new();
+    for term in clause.roles.values() {
+        collect(term, &mut variables);
+    }
+    variables
 }

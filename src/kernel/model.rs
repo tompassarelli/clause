@@ -8,7 +8,7 @@ use super::{
     },
     error::{KernelError, Result},
     identity::{ContentId, PatternId, ReferentId},
-    schema::{Referent, RelationShape, RolePredicate},
+    schema::{Cardinality, Referent, RelationShape, Role, RolePredicate},
 };
 
 /// Every signed semantic constituent of a Model snapshot.
@@ -101,14 +101,48 @@ impl Model {
                 }
             }
         }
+        let application_targets = relational_contents
+            .values()
+            .flat_map(|content| content.roles().values())
+            .filter_map(Term::content_id)
+            .cloned()
+            .collect::<BTreeSet<_>>();
+        let mut complete_contents = occurrences
+            .iter()
+            .map(AssertionOccurrence::content)
+            .cloned()
+            .collect::<BTreeSet<_>>();
+        for pattern in derivation_rules
+            .iter()
+            .flat_map(|rule| [rule.premises(), rule.conclusion()])
+            .chain(universal_laws.iter().map(UniversalLaw::generalized))
+            .chain(invariants.iter().map(Invariant::condition))
+            .chain(goals.iter().map(Goal::desired))
+        {
+            complete_contents.extend(pattern.forms().iter().cloned());
+        }
+        for transition in &transitions {
+            complete_contents.insert(transition.from().clone());
+            complete_contents.insert(transition.to().clone());
+        }
+        complete_contents.extend(judgments.iter().filter_map(|judgment| {
+            if let JudgmentTarget::Content(content) = judgment.target() {
+                Some(content.clone())
+            } else {
+                None
+            }
+        }));
         for content in relational_contents.values() {
             validate_content_structure(
                 &referents,
                 &relational_contents,
                 &relation_shapes,
                 content,
+                !application_targets.contains(content.id())
+                    || complete_contents.contains(content.id()),
             )?;
         }
+        validate_application_acyclic(&relational_contents)?;
 
         sort_unique_by(
             &mut occurrences,
@@ -431,6 +465,7 @@ impl Model {
             &self.relational_contents,
             &self.relation_shapes,
             content,
+            true,
         )?;
         if !allow_patterns && !content_is_ground(&self.relational_contents, content) {
             return Err(KernelError::new("admitted content must be ground"));
@@ -592,22 +627,86 @@ fn validate_predicate(
     Ok(())
 }
 
+fn application_result_role<'a>(
+    shapes: &'a BTreeMap<ReferentId, RelationShape>,
+    content: &RelationalContent,
+) -> Result<&'a Role> {
+    let shape = shapes
+        .get(content.relation())
+        .ok_or_else(|| KernelError::new("relational-position referent has no admitted shape"))?;
+    let supplied = content.roles().keys().cloned().collect::<BTreeSet<_>>();
+    let matching = shape
+        .lookup()
+        .iter()
+        .filter(|mode| mode.known().iter().cloned().collect::<BTreeSet<_>>() == supplied)
+        .collect::<Vec<_>>();
+    let [mode] = matching.as_slice() else {
+        return Err(KernelError::new(
+            "recursive term must match exactly one lookup contract by its known roles",
+        ));
+    };
+    if mode.cardinality() != &Cardinality::One || mode.sought().len() != 1 {
+        return Err(KernelError::new(
+            "recursive term lookup contract must produce exactly one sought role",
+        ));
+    }
+    Ok(&shape.roles()[&mode.sought()[0]])
+}
+
 fn validate_content_structure(
     referents: &BTreeMap<ReferentId, Referent>,
     contents: &BTreeMap<ContentId, RelationalContent>,
     shapes: &BTreeMap<ReferentId, RelationShape>,
     content: &RelationalContent,
+    require_complete: bool,
 ) -> Result<()> {
     let shape = shapes
         .get(content.relation())
         .ok_or_else(|| KernelError::new("relational-position referent has no admitted shape"))?;
-    if content.roles().keys().ne(shape.roles().keys()) {
+    if require_complete && content.roles().keys().ne(shape.roles().keys()) {
         return Err(KernelError::new(
             "relational content must fill the complete named role map",
         ));
     }
+    if !require_complete {
+        application_result_role(shapes, content)?;
+    }
     for term in content.roles().values() {
         validate_term(referents, contents, term, true)?;
+    }
+    Ok(())
+}
+
+fn validate_application_acyclic(contents: &BTreeMap<ContentId, RelationalContent>) -> Result<()> {
+    fn visit(
+        id: &ContentId,
+        contents: &BTreeMap<ContentId, RelationalContent>,
+        active: &mut BTreeSet<ContentId>,
+        settled: &mut BTreeSet<ContentId>,
+    ) -> Result<()> {
+        if settled.contains(id) {
+            return Ok(());
+        }
+        if !active.insert(id.clone()) {
+            return Err(KernelError::new(
+                "recursive term application graph contains a cycle",
+            ));
+        }
+        let content = contents
+            .get(id)
+            .ok_or_else(|| KernelError::new("recursive term names undeclared content"))?;
+        for dependency in content.roles().values().filter_map(Term::content_id) {
+            visit(dependency, contents, active, settled)?;
+        }
+        active.remove(id);
+        settled.insert(id.clone());
+        Ok(())
+    }
+
+    let mut active = BTreeSet::new();
+    let mut settled = BTreeSet::new();
+    for id in contents.keys() {
+        visit(id, contents, &mut active, &mut settled)?;
     }
     Ok(())
 }
@@ -718,10 +817,14 @@ fn validate_admissibility(
                     }
                 }
             }
-            Term::Application(_) => {
-                if !shape.roles()[role_id].admissibility().is_empty() {
+            Term::Application(id) => {
+                let target = contents
+                    .get(id)
+                    .ok_or_else(|| KernelError::new("recursive term names undeclared content"))?;
+                let result = application_result_role(shapes, target)?;
+                if result.admissibility() != shape.roles()[role_id].admissibility() {
                     return Err(KernelError::new(
-                        "recursive term needs an admitted result contract for this role",
+                        "recursive term result does not satisfy the containing role admissibility contract",
                     ));
                 }
             }

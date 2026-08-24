@@ -150,6 +150,30 @@ pub(crate) fn lower_clause_with(
     surface: &SurfaceClause,
     binders: Option<&BinderTable>,
 ) -> kernel::Result<RelationalContent> {
+    let graph = lower_clause_graph_with(projection, model, surface, binders)?;
+    for dependency in &graph.dependencies {
+        if model.content(dependency.id()) != Some(dependency) {
+            return Err(kernel::KernelError::new(
+                "recursive term dependency is not registered in this Model",
+            ));
+        }
+    }
+    model.validate_content(&graph.root, binders.is_some())?;
+    Ok(graph.root)
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct LoweredContentGraph {
+    pub(crate) dependencies: Vec<RelationalContent>,
+    pub(crate) root: RelationalContent,
+}
+
+pub(crate) fn lower_clause_graph_with(
+    projection: &Projection,
+    model: &Model,
+    surface: &SurfaceClause,
+    binders: Option<&BinderTable>,
+) -> kernel::Result<LoweredContentGraph> {
     let relation_id = projection
         .designations
         .global(surface.relation.value.as_str())?;
@@ -160,6 +184,7 @@ pub(crate) fn lower_clause_with(
         ))
     })?;
     let mut roles = BTreeMap::new();
+    let mut dependencies = Vec::new();
     for (surface_role, surface_term) in &surface.roles {
         let role_id = projection
             .designations
@@ -180,16 +205,22 @@ pub(crate) fn lower_clause_with(
         if roles
             .insert(
                 role_id,
-                lower_term(projection, model, expected, surface_term, binders)?,
+                lower_term(
+                    projection,
+                    model,
+                    expected,
+                    surface_term,
+                    binders,
+                    &mut dependencies,
+                )?,
             )
             .is_some()
         {
             return Err(kernel::KernelError::new("duplicate relational role"));
         }
     }
-    let content = RelationalContent::new(relation_id, roles)?;
-    model.validate_content(&content, binders.is_some())?;
-    Ok(content)
+    let root = RelationalContent::new(relation_id, roles)?;
+    Ok(LoweredContentGraph { dependencies, root })
 }
 
 fn lower_term(
@@ -198,6 +229,7 @@ fn lower_term(
     expected: &ReferentId,
     term: &SurfaceTerm,
     binders: Option<&BinderTable>,
+    dependencies: &mut Vec<RelationalContent>,
 ) -> kernel::Result<Term> {
     match term {
         SurfaceTerm::Variable(value) => {
@@ -223,6 +255,89 @@ fn lower_term(
                 .scoped(model.id(), value.value.as_str())?;
             require_term_referent(model, &referent, "referent")?;
             Ok(Term::referent(referent))
+        }
+        SurfaceTerm::Application(application) => {
+            let relation_id = projection
+                .designations
+                .global(application.relation.value.as_str())?;
+            let relation = model.relation_shapes().get(&relation_id).ok_or_else(|| {
+                kernel::KernelError::new(format!(
+                    "undeclared RelationShape '{}'",
+                    application.relation.value.as_str()
+                ))
+            })?;
+            let result_role = projection
+                .designations
+                .role(&relation_id, application.result.value.as_str())?;
+            let result_domain = projection
+                .role_domains
+                .get(&(relation_id.clone(), result_role.clone()))
+                .ok_or_else(|| {
+                    kernel::KernelError::new(
+                        "application result has no authoring domain projection",
+                    )
+                })?;
+            if result_domain != expected {
+                return Err(kernel::KernelError::new(
+                    "recursive term result does not satisfy the containing role domain",
+                ));
+            }
+            let mut roles = BTreeMap::new();
+            for (surface_role, surface_term) in &application.roles {
+                let role_id = projection
+                    .designations
+                    .role(&relation_id, surface_role.as_str())?;
+                let role_domain = projection
+                    .role_domains
+                    .get(&(relation_id.clone(), role_id.clone()))
+                    .ok_or_else(|| {
+                        kernel::KernelError::new(
+                            "application role has no authoring domain projection",
+                        )
+                    })?;
+                let lowered = lower_term(
+                    projection,
+                    model,
+                    role_domain,
+                    surface_term,
+                    binders,
+                    dependencies,
+                )?;
+                if roles.insert(role_id, lowered).is_some() {
+                    return Err(kernel::KernelError::new(
+                        "duplicate recursive application role",
+                    ));
+                }
+            }
+            let supplied = roles.keys().cloned().collect::<BTreeSet<_>>();
+            let matching = relation
+                .lookup()
+                .iter()
+                .filter(|mode| {
+                    mode.cardinality() == &kernel::Cardinality::One
+                        && mode.sought() == std::slice::from_ref(&result_role)
+                        && mode.known().iter().cloned().collect::<BTreeSet<_>>() == supplied
+                })
+                .count();
+            if matching != 1 {
+                return Err(kernel::KernelError::new(
+                    "recursive term requires exactly one single-result lookup contract",
+                ));
+            }
+            let content = RelationalContent::new(relation_id, roles)?;
+            if let Some(existing) = dependencies
+                .iter()
+                .find(|dependency| dependency.id() == content.id())
+            {
+                if existing != &content {
+                    return Err(kernel::KernelError::new(
+                        "recursive content identity collision",
+                    ));
+                }
+            } else {
+                dependencies.push(content.clone());
+            }
+            Ok(Term::application(content.id().clone()))
         }
         SurfaceTerm::Template(_) => Err(kernel::KernelError::new(
             "correlated referent templates are only valid inside a focus block",
@@ -342,7 +457,16 @@ fn lower_focus_term(
             )?;
             Ok(Term::referent(referent))
         }
-        _ => lower_term(projection, model, expected, term, None),
+        _ => {
+            let mut dependencies = Vec::new();
+            let term = lower_term(projection, model, expected, term, None, &mut dependencies)?;
+            if !dependencies.is_empty() {
+                return Err(kernel::KernelError::new(
+                    "recursive focused terms require focused graph lowering",
+                ));
+            }
+            Ok(term)
+        }
     }
 }
 

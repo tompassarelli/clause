@@ -130,15 +130,17 @@ fn derived_judgments_validate_recursive_groundness() {
     let judgment_id = referent(27);
     let role_id = RoleId::from_digest([28; 32]);
     let binder = PatternId::from_digest([29; 32]);
+    let input_role = RoleId::from_digest([31; 32]);
+    let result_role = RoleId::from_digest([32; 32]);
 
     let leaf = RelationalContent::new(
         leaf_relation.clone(),
-        BTreeMap::from([(role_id.clone(), Term::referent(value.clone()))]),
+        BTreeMap::from([(input_role.clone(), Term::referent(value.clone()))]),
     )
     .unwrap();
     let nested = RelationalContent::new(
         nested_relation.clone(),
-        BTreeMap::from([(role_id.clone(), Term::application(leaf.id().clone()))]),
+        BTreeMap::from([(input_role.clone(), Term::application(leaf.id().clone()))]),
     )
     .unwrap();
     let premise_pattern = RelationalContent::new(
@@ -190,26 +192,45 @@ fn derived_judgments_validate_recursive_groundness() {
     .into_iter()
     .map(|id| (id.clone(), Referent::new(id)))
     .collect::<BTreeMap<_, _>>();
-    let shapes = [
-        premise_relation,
-        conclusion_relation,
-        nested_relation,
-        leaf_relation,
-    ]
-    .into_iter()
-    .map(|relation| {
-        let role = Role::new(role_id.clone(), Vec::new()).unwrap();
-        (
-            relation.clone(),
-            RelationShape::new(
-                relation,
-                BTreeMap::from([(role_id.clone(), role)]),
-                Vec::new(),
+    let root_shapes = [premise_relation, conclusion_relation]
+        .into_iter()
+        .map(|relation| {
+            let role = Role::new(role_id.clone(), Vec::new()).unwrap();
+            (
+                relation.clone(),
+                RelationShape::new(
+                    relation,
+                    BTreeMap::from([(role_id.clone(), role)]),
+                    Vec::new(),
+                )
+                .unwrap(),
             )
-            .unwrap(),
-        )
-    })
-    .collect::<BTreeMap<_, _>>();
+        });
+    let application_shapes = [nested_relation, leaf_relation]
+        .into_iter()
+        .map(|relation| {
+            let input = Role::new(input_role.clone(), Vec::new()).unwrap();
+            let result = Role::new(result_role.clone(), Vec::new()).unwrap();
+            (
+                relation.clone(),
+                RelationShape::new(
+                    relation,
+                    BTreeMap::from([(input_role.clone(), input), (result_role.clone(), result)]),
+                    vec![
+                        LookupMode::finite(
+                            vec![input_role.clone()],
+                            vec![result_role.clone()],
+                            Cardinality::One,
+                        )
+                        .unwrap(),
+                    ],
+                )
+                .unwrap(),
+            )
+        });
+    let shapes = root_shapes
+        .chain(application_shapes)
+        .collect::<BTreeMap<_, _>>();
     let build_model = |premise: RelationalContent| {
         let premise_id = premise.id().clone();
         Model::with_distinctions(
@@ -253,5 +274,184 @@ fn derived_judgments_validate_recursive_groundness() {
     assert_eq!(
         build_model(unresolved_premise).unwrap_err().to_string(),
         "derived judgment basis and target do not instantiate its derivation rule"
+    );
+}
+
+#[test]
+fn recursive_application_requires_one_unambiguous_result_contract() {
+    let model = referent(40);
+    let parent_relation = referent(41);
+    let application_relation = referent(42);
+    let value = referent(43);
+    let parent_role = RoleId::from_digest([44; 32]);
+    let input_role = RoleId::from_digest([45; 32]);
+    let result_role = RoleId::from_digest([46; 32]);
+    let child = RelationalContent::new(
+        application_relation.clone(),
+        BTreeMap::from([(input_role.clone(), Term::referent(value.clone()))]),
+    )
+    .unwrap();
+    let parent = RelationalContent::new(
+        parent_relation.clone(),
+        BTreeMap::from([(parent_role.clone(), Term::application(child.id().clone()))]),
+    )
+    .unwrap();
+    let referents = [
+        model.clone(),
+        parent_relation.clone(),
+        application_relation.clone(),
+        value,
+    ]
+    .into_iter()
+    .map(|id| (id.clone(), Referent::new(id)))
+    .collect::<BTreeMap<_, _>>();
+    let parent_shape = RelationShape::new(
+        parent_relation.clone(),
+        BTreeMap::from([(
+            parent_role.clone(),
+            Role::new(parent_role, Vec::new()).unwrap(),
+        )]),
+        Vec::new(),
+    )
+    .unwrap();
+    let application_shape = |lookup| {
+        RelationShape::new(
+            application_relation.clone(),
+            BTreeMap::from([
+                (
+                    input_role.clone(),
+                    Role::new(input_role.clone(), Vec::new()).unwrap(),
+                ),
+                (
+                    result_role.clone(),
+                    Role::new(result_role.clone(), Vec::new()).unwrap(),
+                ),
+            ]),
+            lookup,
+        )
+        .unwrap()
+    };
+    let build = |application_shape| {
+        Model::new(
+            model.clone(),
+            referents.clone(),
+            [child.clone(), parent.clone()]
+                .into_iter()
+                .map(|content| (content.id().clone(), content))
+                .collect(),
+            BTreeMap::from([
+                (parent_relation.clone(), parent_shape.clone()),
+                (application_relation.clone(), application_shape),
+            ]),
+            Vec::new(),
+            Vec::new(),
+        )
+    };
+    let one = LookupMode::finite(
+        vec![input_role.clone()],
+        vec![result_role.clone()],
+        Cardinality::One,
+    )
+    .unwrap();
+    assert!(build(application_shape(vec![one.clone()])).is_ok());
+
+    let maybe = LookupMode::finite(
+        vec![input_role.clone()],
+        vec![result_role.clone()],
+        Cardinality::Maybe,
+    )
+    .unwrap();
+    assert_eq!(
+        build(application_shape(vec![one, maybe]))
+            .unwrap_err()
+            .to_string(),
+        "recursive term must match exactly one lookup contract by its known roles"
+    );
+}
+
+#[test]
+fn partial_application_content_cannot_become_an_assertion_root() {
+    let model = referent(50);
+    let parent_relation = referent(51);
+    let application_relation = referent(52);
+    let value = referent(53);
+    let occurrence = referent(54);
+    let parent_role = RoleId::from_digest([55; 32]);
+    let input_role = RoleId::from_digest([56; 32]);
+    let result_role = RoleId::from_digest([57; 32]);
+    let child = RelationalContent::new(
+        application_relation.clone(),
+        BTreeMap::from([(input_role.clone(), Term::referent(value.clone()))]),
+    )
+    .unwrap();
+    let parent = RelationalContent::new(
+        parent_relation.clone(),
+        BTreeMap::from([(parent_role.clone(), Term::application(child.id().clone()))]),
+    )
+    .unwrap();
+    let referents = [
+        model.clone(),
+        parent_relation.clone(),
+        application_relation.clone(),
+        value,
+        occurrence.clone(),
+    ]
+    .into_iter()
+    .map(|id| (id.clone(), Referent::new(id)))
+    .collect::<BTreeMap<_, _>>();
+    let shapes = BTreeMap::from([
+        (
+            parent_relation.clone(),
+            RelationShape::new(
+                parent_relation,
+                BTreeMap::from([(
+                    parent_role.clone(),
+                    Role::new(parent_role, Vec::new()).unwrap(),
+                )]),
+                Vec::new(),
+            )
+            .unwrap(),
+        ),
+        (
+            application_relation.clone(),
+            RelationShape::new(
+                application_relation,
+                BTreeMap::from([
+                    (
+                        input_role.clone(),
+                        Role::new(input_role.clone(), Vec::new()).unwrap(),
+                    ),
+                    (
+                        result_role.clone(),
+                        Role::new(result_role.clone(), Vec::new()).unwrap(),
+                    ),
+                ]),
+                vec![
+                    LookupMode::finite(vec![input_role], vec![result_role], Cardinality::One)
+                        .unwrap(),
+                ],
+            )
+            .unwrap(),
+        ),
+    ]);
+    let result = Model::new(
+        model.clone(),
+        referents,
+        [child.clone(), parent]
+            .into_iter()
+            .map(|content| (content.id().clone(), content))
+            .collect(),
+        shapes,
+        vec![AssertionOccurrence::new(
+            occurrence,
+            child.id().clone(),
+            model.clone(),
+            model,
+        )],
+        Vec::new(),
+    );
+    assert_eq!(
+        result.unwrap_err().to_string(),
+        "relational content must fill the complete named role map"
     );
 }
