@@ -13,10 +13,10 @@ kinds.
 
 ## Surface at a glance
 
-The compact surface is the target language; the native parser has not migrated
-to it yet.
+The compact M1 surface is executable. Later compact relation-schema, query,
+transition, effect, and target forms remain on the roadmap.
 
-**Target surface:**
+**Compact surface:**
 
 ```clause
 gravity: 9.81
@@ -32,18 +32,18 @@ iron-door
 and `->` orients a result. Editors may turn typed `::` into `∈`, but raw `::`
 is not Clause syntax. Target layout uses two spaces and no tabs.
 
-**Current executable profile:**
+**Self-contained executable profile:**
 
 ```clause
-Game: Type
+Game
 
-catalog: Model
-    Chess: Game
+catalog
+  Chess ∈ Game
 ```
 
-This ceremonial four-space profile remains the parser's compatibility and
-behavior oracle. It lowers into the current referent kernel; it is not the
-target authoring design.
+Bare forms establish the domain and Model from their structure. A caller can
+also compile direct top-level forms into an explicitly supplied stable Model
+context. Both paths lower into the same referent kernel.
 
 ## Implementation status
 
@@ -55,8 +55,9 @@ target authoring design.
   predecessor and verifies the complete Delta.
 - `find`, `why`, `prevent`, `achieve`, `diff`, and standalone generated-Rust
   materialization run through the current profile.
-- Compact parsing, complete transition/effect execution, generated JavaScript,
-  and the Three.js game proof remain in development.
+- Compact M1 parsing is executable. Compact relation schemas and recursive
+  terms, complete transition/effect execution, generated JavaScript, and the
+  Three.js game proof remain in development.
 
 ## Run Clause
 
@@ -72,7 +73,7 @@ The repository-local equivalent is:
 bin/clause run examples/hospital.clause
 ```
 
-Both commands consume the current executable profile shown above.
+Both commands consume the compact executable profile shown above.
 
 ## Documentation
 
