@@ -2,16 +2,38 @@
   "schema": "clause-m0-contrast-v1",
   "id": "mixfix-ungrouped-ambiguous",
   "axis": "mixfix-precedence-ambiguity",
-  "decision": {"status": "unresolved", "candidate": "ungrouped-no-precedence"},
+  "decision": {
+    "status": "unresolved",
+    "candidate": "ungrouped-no-precedence"
+  },
   "source": {
-    "lines": ["result: a blends b with c"],
+    "lines": [
+      "result := a blends b with c"
+    ],
     "line_break": "LF",
     "ends_with_line_break": true
   },
-  "context": {"domains": {"a": "Value", "b": "Value", "c": "Value", "$blends": "Value,Value->Value", "$with": "Value,Value->Value"}},
-  "structural_intent": "ambiguous-binding-term",
-  "required": ["colon means binding", "both type-correct trees are reported", "repair supplies explicit grouping or declared fixity"],
-  "forbidden": ["silent-left-association", "silent-right-association", "source-order-choice", "probabilistic-choice"],
+  "context": {
+    "domains": {
+      "a": "Value",
+      "b": "Value",
+      "c": "Value",
+      "$blends": "Value,Value->Value",
+      "$with": "Value,Value->Value"
+    }
+  },
+  "structural_intent": "ambiguous-definition-term",
+  "required": [
+    ":= means definition",
+    "both type-correct trees are reported",
+    "repair supplies explicit grouping or declared fixity"
+  ],
+  "forbidden": [
+    "silent-left-association",
+    "silent-right-association",
+    "source-order-choice",
+    "probabilistic-choice"
+  ],
   "diagnostic": {
     "code": "term.ambiguous-grouping",
     "candidates": [
@@ -21,8 +43,25 @@
           "kind": "relation-application",
           "relation": "$with",
           "roles": {
-            "left": {"kind": "relation-application", "relation": "$blends", "roles": {"left": {"kind": "symbol", "name": "a"}, "right": {"kind": "symbol", "name": "b"}}, "output_role": "value"},
-            "right": {"kind": "symbol", "name": "c"}
+            "left": {
+              "kind": "relation-application",
+              "relation": "$blends",
+              "roles": {
+                "left": {
+                  "kind": "symbol",
+                  "name": "a"
+                },
+                "right": {
+                  "kind": "symbol",
+                  "name": "b"
+                }
+              },
+              "output_role": "value"
+            },
+            "right": {
+              "kind": "symbol",
+              "name": "c"
+            }
           },
           "output_role": "value"
         }
@@ -33,8 +72,25 @@
           "kind": "relation-application",
           "relation": "$blends",
           "roles": {
-            "left": {"kind": "symbol", "name": "a"},
-            "right": {"kind": "relation-application", "relation": "$with", "roles": {"left": {"kind": "symbol", "name": "b"}, "right": {"kind": "symbol", "name": "c"}}, "output_role": "value"}
+            "left": {
+              "kind": "symbol",
+              "name": "a"
+            },
+            "right": {
+              "kind": "relation-application",
+              "relation": "$with",
+              "roles": {
+                "left": {
+                  "kind": "symbol",
+                  "name": "b"
+                },
+                "right": {
+                  "kind": "symbol",
+                  "name": "c"
+                }
+              },
+              "output_role": "value"
+            }
           },
           "output_role": "value"
         }

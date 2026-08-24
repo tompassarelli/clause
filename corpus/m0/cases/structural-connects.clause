@@ -1,4 +1,4 @@
 clause connects
-  door: iron-door
-  origin: Cellar
-  destination: Armory
+  door := iron-door
+  origin := Cellar
+  destination := Armory

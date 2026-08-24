@@ -1,0 +1,60 @@
+{
+  "schema": "clause-m0-contrast-v1",
+  "id": "definition-position-projection",
+  "axis": "definition-projection",
+  "decision": {
+    "status": "accepted-target",
+    "canonical": "definition-denotation"
+  },
+  "source": {
+    "lines": [
+      "spawn := position of player"
+    ],
+    "line_break": "LF",
+    "ends_with_line_break": true
+  },
+  "context": {
+    "relations": [
+      "$position"
+    ],
+    "contracts": [
+      {
+        "relation": "$position",
+        "cardinality": "exactly-one"
+      }
+    ]
+  },
+  "structural_intent": "definition-to-relation-projection",
+  "required": [
+    ":= is definition/denotation",
+    "position retains relation identity and named roles"
+  ],
+  "forbidden": [
+    "dot-field-access",
+    "object",
+    "property-read",
+    "equality",
+    "classification"
+  ],
+  "elaborated": [
+    {
+      "kind": "definition",
+      "term": {
+        "kind": "name",
+        "name": "spawn"
+      },
+      "denotation": {
+        "kind": "relation-projection",
+        "relation": "$position",
+        "roles": {
+          "member": {
+            "kind": "term",
+            "name": "player"
+          }
+        },
+        "output_role": "value",
+        "cardinality": "exactly-one"
+      }
+    }
+  ]
+}

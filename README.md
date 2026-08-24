@@ -8,14 +8,21 @@ positive laws; sealing it produces a canonical Revision with a content-derived
 identity. A successor Revision is another value, produced by exact admissions
 and withdrawals from an exact base.
 
+Clause has one semantic domain of addressable referents. A referent is a
+stabilized distinction reidentifiable across claims and Revisions, independent
+of structural equality. Relations are referents in relational position; claims
+arrange referents in named roles; laws derive, constrain, reject, or
+operationally orient claims. Terms and source files project the Model; they are
+not the Model.
+
 A `.clause` file is the authoring projection. The supported implementation
 currently uses one native `:` grammar for Types, Relations, Models, Laws,
 Revisions, and their members. That grammar is executable truth and a migration
 oracle, not the target human surface. The [Clause Surface
 Reset](SURFACE.md) replaces the earlier surface recommendations with grounded
-symbols, bindings, membership, focused semantic forms, recursive
-role-labelled clauses, and explicit semantic moods. M0 has frozen membership
-and indentation for that target profile without claiming parser implementation.
+referents, named-role claims, laws, classification, definition, focused forms,
+and explicit semantic moods. M0 freezes that constitution and indentation
+without pretending the current typed parser/kernel/wire already implements it.
 
 An emitted `.rs` file is an executable projection: it carries the referenced
 sealed Revisions and the resolved request sequence, not the authoring source or
@@ -36,14 +43,13 @@ model, dependency order, prototype gates, and acceptance criteria.
 
 ## Target surface direction
 
-The target ontology is relational: focus layout projects semantically distinct
-membership, ordinary relation, and binding forms without creating an object,
-field, owner, or nested record. `:` means binding and never silently means
-membership or an ordinary relational assertion.
-Membership is written only as `x ∈ Y`. Canonical source uses two-space,
-spaces-only indentation; tabs are diagnosed. Editors may make typed `::`
-immediately complete to `∈`, but `member of`, `::`, and `in` are rejected as
-membership source aliases, and formatters and agents emit `∈` directly.
+The target constitution is distinction-first and relational: focus layout
+projects membership claims, ordinary claims, and definitions without creating
+an object, field, owner, or nested record. `x : Group` is classification sugar
+for an ordinary membership relation. `name := term` is
+definition/denotation. `∈` and `::` are not canonical source, and editors never
+rewrite input to `∈`. Canonical source uses two-space, spaces-only indentation;
+tabs are diagnosed.
 
 The controlling focus specimen is:
 
@@ -51,15 +57,15 @@ The controlling focus specimen is:
 iron-door
   Door
   connects Cellar to Armory
-  state: locked
+  state := locked
 ```
 
-It elaborates to `iron-door ∈ Door`, the ordinary relational claim
-`iron-door connects Cellar to Armory`, and the focused binding
-`state of iron-door: locked`. The binding names a stable relational handle; it
-is neither an object field nor another graph edge.
+It elaborates to `iron-door : Door`, the ordinary relational claim
+`iron-door connects Cellar to Armory`, and the focused definition
+`state of iron-door := locked`. The definition orients a term without becoming
+an object field or another graph edge.
 
-Membership spelling, indentation, and focused binding are settled. The current
+Classification, definition, indentation, and focused projection are settled. The current
 parser does not implement this target profile. [M0.md](M0.md) defines the
 protected evidence contract for later parser work.
 
@@ -155,7 +161,7 @@ support bound cannot produce a complete status. For `all minimal`, candidate,
 solution, closure, support-expansion, or support-frontier exhaustion produces
 an explicit incomplete result. Its retained interventions are individually
 verified, but the retained set is not claimed to be the complete antichain.
-`find` fails on closure exhaustion rather than returning a partial binding set.
+`find` fails on closure exhaustion rather than returning partial role assignments.
 All frontiers in the hospital program exhaust their finite bases and report
 complete.
 

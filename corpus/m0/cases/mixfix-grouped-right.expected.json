@@ -2,27 +2,67 @@
   "schema": "clause-m0-contrast-v1",
   "id": "mixfix-grouped-right",
   "axis": "explicit-mixfix-grouping",
-  "decision": {"status": "unresolved", "candidate": "parenthesized-right"},
+  "decision": {
+    "status": "unresolved",
+    "candidate": "parenthesized-right"
+  },
   "source": {
-    "lines": ["result: a blends (b with c)"],
+    "lines": [
+      "result := a blends (b with c)"
+    ],
     "line_break": "LF",
     "ends_with_line_break": true
   },
-  "context": {"domains": {"a": "Value", "b": "Value", "c": "Value", "$blends": "Value,Value->Value", "$with": "Value,Value->Value"}},
-  "structural_intent": "binding-to-right-grouped-term",
-  "required": ["colon means binding", "right parentheses survive term rendering"],
-  "forbidden": ["left-grouping", "parenthesis-erasure", "source-order-choice"],
+  "context": {
+    "domains": {
+      "a": "Value",
+      "b": "Value",
+      "c": "Value",
+      "$blends": "Value,Value->Value",
+      "$with": "Value,Value->Value"
+    }
+  },
+  "structural_intent": "definition-to-right-grouped-term",
+  "required": [
+    ":= means definition",
+    "right parentheses survive term rendering"
+  ],
+  "forbidden": [
+    "left-grouping",
+    "parenthesis-erasure",
+    "source-order-choice"
+  ],
   "canonical_term": "a blends (b with c)",
   "elaborated": [
     {
-      "kind": "binding",
-      "left": {"kind": "name", "name": "result"},
-      "right": {
+      "kind": "definition",
+      "term": {
+        "kind": "name",
+        "name": "result"
+      },
+      "denotation": {
         "kind": "relation-application",
         "relation": "$blends",
         "roles": {
-          "left": {"kind": "symbol", "name": "a"},
-          "right": {"kind": "relation-application", "relation": "$with", "roles": {"left": {"kind": "symbol", "name": "b"}, "right": {"kind": "symbol", "name": "c"}}, "output_role": "value"}
+          "left": {
+            "kind": "symbol",
+            "name": "a"
+          },
+          "right": {
+            "kind": "relation-application",
+            "relation": "$with",
+            "roles": {
+              "left": {
+                "kind": "symbol",
+                "name": "b"
+              },
+              "right": {
+                "kind": "symbol",
+                "name": "c"
+              }
+            },
+            "output_role": "value"
+          }
         },
         "output_role": "value"
       }

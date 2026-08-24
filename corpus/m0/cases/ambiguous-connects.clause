@@ -1,7 +1,7 @@
-door connects:
-  door: Door connects origin: Space to destination: Space
+door connects :=
+  door : Door connects origin : Space to destination : Space
 
-portal connects:
-  portal: Portal connects origin: Space to destination: Space
+portal connects :=
+  portal : Portal connects origin : Space to destination : Space
 
 mystery connects Cellar to Armory

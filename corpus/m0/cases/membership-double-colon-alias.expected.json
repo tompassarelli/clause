@@ -2,13 +2,27 @@
   "schema": "clause-m0-contrast-v1",
   "id": "membership-double-colon-alias",
   "axis": "membership-input-boundary",
-  "decision": {"status": "rejected-target", "diagnostic": "`::` is not Clause grammar", "repair": "replace with ∈; editor completion must occur before storage and parsing"},
+  "decision": {
+    "status": "rejected-target",
+    "diagnostic": "`::` is not Clause grammar",
+    "repair": "write iron-door : Door"
+  },
   "source": {
-    "lines": ["iron-door :: Door"],
+    "lines": [
+      "iron-door :: Door"
+    ],
     "line_break": "LF",
     "ends_with_line_break": true
   },
   "structural_intent": "invalid-membership-alias",
-  "required": ["parser rejects persisted double colon"],
-  "forbidden": ["membership elaboration", "parser alias", "stored double colon"]
+  "required": [
+    "parser rejects persisted double colon",
+    "editor preserves source and reports the retired spelling"
+  ],
+  "forbidden": [
+    "membership elaboration",
+    "parser alias",
+    "stored double colon",
+    "rewrite to ∈"
+  ]
 }

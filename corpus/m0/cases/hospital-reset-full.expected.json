@@ -1,0 +1,486 @@
+{
+  "schema": "clause-m0-contrast-v1",
+  "id": "hospital-reset-full",
+  "axis": "full-hospital-reset-program",
+  "decision": {
+    "status": "rejected-target",
+    "diagnostic": "noncanonical indentation: expected 2 spaces, found 4",
+    "repair": "use the canonical two-space hospital projection"
+  },
+  "source": {
+    "lines": [
+      "Space",
+      "    ICU-A",
+      "    East-Corridor",
+      "    West-Corridor",
+      "    North-Exit",
+      "    Isolation-Room",
+      "",
+      "Door",
+      "    Door 101",
+      "    Door 102",
+      "    Door 103",
+      "    Door 104",
+      "    Door 105",
+      "    Door 106",
+      "",
+      "Inspection",
+      "    Fire-Marshal Inspection",
+      "",
+      "connects :=",
+      "    door : Door connects origin : Space to destination : Space",
+      "    door origin -> destination*",
+      "",
+      "passed :=",
+      "    door : Door passed inspection : Inspection",
+      "    door -> inspection*",
+      "",
+      "route :=",
+      "    origin : Space has a usable egress path to destination : Space",
+      "    origin -> destination*",
+      "",
+      "Door 101",
+      "    connects ICU-A to East-Corridor",
+      "    passed Fire-Marshal Inspection",
+      "",
+      "Door 102",
+      "    connects East-Corridor to North-Exit",
+      "    passed Fire-Marshal Inspection",
+      "",
+      "Door 103",
+      "    connects ICU-A to West-Corridor",
+      "    passed Fire-Marshal Inspection",
+      "",
+      "Door 104",
+      "    connects West-Corridor to North-Exit",
+      "    passed Fire-Marshal Inspection",
+      "",
+      "Door 105",
+      "    connects Isolation-Room to East-Corridor",
+      "",
+      "Door 106",
+      "    connects Isolation-Room to West-Corridor",
+      "",
+      "?origin has a usable egress path to ?destination if",
+      "    ?door connects ?origin to ?destination",
+      "    ?door passed Fire-Marshal Inspection",
+      "",
+      "?origin has a usable egress path to ?destination if",
+      "    ?door connects ?origin to ?intermediate",
+      "    ?door passed Fire-Marshal Inspection",
+      "    ?intermediate has a usable egress path to ?destination",
+      "",
+      "ICU-A has a usable egress path to ?destination",
+      "",
+      "why",
+      "    ICU-A has a usable egress path to North-Exit",
+      "",
+      "door-101-withdrawn from egress",
+      "    - Door 101 passed Fire-Marshal Inspection",
+      "",
+      "diff egress -> door-101-withdrawn"
+    ],
+    "line_break": "LF",
+    "ends_with_line_break": true
+  },
+  "surface_names": {
+    "$inspection:fire-marshal": "Fire-Marshal Inspection",
+    "$revision:egress-minus-door-101-passed": "door-101-withdrawn"
+  },
+  "source_grouping": [
+    {
+      "kind": "enumeration",
+      "heading": "Space",
+      "children": 5
+    },
+    {
+      "kind": "enumeration",
+      "heading": "Door",
+      "children": 6
+    },
+    {
+      "kind": "enumeration",
+      "heading": "Inspection",
+      "children": 1
+    },
+    {
+      "kind": "relation-schema-binding",
+      "anchor": "connects"
+    },
+    {
+      "kind": "relation-schema-binding",
+      "anchor": "passed"
+    },
+    {
+      "kind": "relation-schema-binding",
+      "anchor": "route"
+    },
+    {
+      "kind": "focused-claims",
+      "focuses": [
+        "Door 101",
+        "Door 102",
+        "Door 103",
+        "Door 104",
+        "Door 105",
+        "Door 106"
+      ]
+    },
+    {
+      "kind": "inferred-laws",
+      "count": 2
+    },
+    {
+      "kind": "requests",
+      "order": [
+        "$request:hospital-find",
+        "$request:hospital-why",
+        "$request:hospital-diff"
+      ]
+    }
+  ],
+  "structural_intent": "full-reset-hospital-projection",
+  "shared_semantics_group": "hospital-declarations-and-revisions",
+  "shared_semantics": {
+    "categories": {
+      "$category:space": [
+        "$space:icu-a",
+        "$space:east",
+        "$space:west",
+        "$space:north-exit",
+        "$space:isolation"
+      ],
+      "$category:door": [
+        "$door:101",
+        "$door:102",
+        "$door:103",
+        "$door:104",
+        "$door:105",
+        "$door:106"
+      ],
+      "$category:inspection": [
+        "$inspection:fire-marshal"
+      ]
+    },
+    "relations": {
+      "$connects": {
+        "roles": {
+          "door": "$category:door",
+          "origin": "$category:space",
+          "destination": "$category:space"
+        },
+        "projection": {
+          "inputs": [
+            "door",
+            "origin"
+          ],
+          "output": "destination",
+          "cardinality": "zero-or-more"
+        }
+      },
+      "$passed": {
+        "roles": {
+          "door": "$category:door",
+          "inspection": "$category:inspection"
+        },
+        "projection": {
+          "inputs": [
+            "door"
+          ],
+          "output": "inspection",
+          "cardinality": "zero-or-more"
+        }
+      },
+      "$route": {
+        "roles": {
+          "origin": "$category:space",
+          "destination": "$category:space"
+        },
+        "projection": {
+          "inputs": [
+            "origin"
+          ],
+          "output": "destination",
+          "cardinality": "zero-or-more"
+        }
+      }
+    },
+    "clauses": {
+      "$connects:101": {
+        "relation": "$connects",
+        "roles": {
+          "door": "$door:101",
+          "origin": "$space:icu-a",
+          "destination": "$space:east"
+        }
+      },
+      "$connects:102": {
+        "relation": "$connects",
+        "roles": {
+          "door": "$door:102",
+          "origin": "$space:east",
+          "destination": "$space:north-exit"
+        }
+      },
+      "$connects:103": {
+        "relation": "$connects",
+        "roles": {
+          "door": "$door:103",
+          "origin": "$space:icu-a",
+          "destination": "$space:west"
+        }
+      },
+      "$connects:104": {
+        "relation": "$connects",
+        "roles": {
+          "door": "$door:104",
+          "origin": "$space:west",
+          "destination": "$space:north-exit"
+        }
+      },
+      "$connects:105": {
+        "relation": "$connects",
+        "roles": {
+          "door": "$door:105",
+          "origin": "$space:isolation",
+          "destination": "$space:east"
+        }
+      },
+      "$connects:106": {
+        "relation": "$connects",
+        "roles": {
+          "door": "$door:106",
+          "origin": "$space:isolation",
+          "destination": "$space:west"
+        }
+      },
+      "$passed:101": {
+        "relation": "$passed",
+        "roles": {
+          "door": "$door:101",
+          "inspection": "$inspection:fire-marshal"
+        }
+      },
+      "$passed:102": {
+        "relation": "$passed",
+        "roles": {
+          "door": "$door:102",
+          "inspection": "$inspection:fire-marshal"
+        }
+      },
+      "$passed:103": {
+        "relation": "$passed",
+        "roles": {
+          "door": "$door:103",
+          "inspection": "$inspection:fire-marshal"
+        }
+      },
+      "$passed:104": {
+        "relation": "$passed",
+        "roles": {
+          "door": "$door:104",
+          "inspection": "$inspection:fire-marshal"
+        }
+      }
+    },
+    "laws": [
+      {
+        "identity": "$law:route-direct",
+        "conclusion": {
+          "relation": "$route",
+          "roles": {
+            "origin": "$hole:origin",
+            "destination": "$hole:destination"
+          }
+        },
+        "premises": [
+          {
+            "relation": "$connects",
+            "roles": {
+              "door": "$hole:door",
+              "origin": "$hole:origin",
+              "destination": "$hole:destination"
+            }
+          },
+          {
+            "relation": "$passed",
+            "roles": {
+              "door": "$hole:door",
+              "inspection": "$inspection:fire-marshal"
+            }
+          }
+        ]
+      },
+      {
+        "identity": "$law:route-recursive",
+        "conclusion": {
+          "relation": "$route",
+          "roles": {
+            "origin": "$hole:origin",
+            "destination": "$hole:destination"
+          }
+        },
+        "premises": [
+          {
+            "relation": "$connects",
+            "roles": {
+              "door": "$hole:door",
+              "origin": "$hole:origin",
+              "destination": "$hole:intermediate"
+            }
+          },
+          {
+            "relation": "$passed",
+            "roles": {
+              "door": "$hole:door",
+              "inspection": "$inspection:fire-marshal"
+            }
+          },
+          {
+            "relation": "$route",
+            "roles": {
+              "origin": "$hole:intermediate",
+              "destination": "$hole:destination"
+            }
+          }
+        ]
+      }
+    ],
+    "base_revision": {
+      "identity": "$revision:egress",
+      "assertions": [
+        "$connects:101",
+        "$connects:102",
+        "$connects:103",
+        "$connects:104",
+        "$connects:105",
+        "$connects:106",
+        "$passed:101",
+        "$passed:102",
+        "$passed:103",
+        "$passed:104"
+      ]
+    },
+    "successor_revision": {
+      "identity": "$revision:egress-minus-door-101-passed",
+      "base": "$revision:egress",
+      "delta": {
+        "admissions": [],
+        "withdrawals": [
+          "$passed:101"
+        ]
+      }
+    }
+  },
+  "shared_results_group": "hospital-find-why-diff",
+  "shared_results": {
+    "$result:hospital-find": {
+      "kind": "relation",
+      "column": "destination",
+      "rows": [
+        "East-Corridor",
+        "North-Exit",
+        "West-Corridor"
+      ],
+      "order": "canonical"
+    },
+    "$result:hospital-why": {
+      "kind": "explanation",
+      "revision": "$revision:egress",
+      "target": {
+        "relation": "$route",
+        "roles": {
+          "origin": "$space:icu-a",
+          "destination": "$space:north-exit"
+        }
+      },
+      "support_frontier": {
+        "status": "complete",
+        "minimality": "inclusion",
+        "supports": [
+          [
+            "$connects:101",
+            "$passed:101",
+            "$connects:102",
+            "$passed:102"
+          ],
+          [
+            "$connects:103",
+            "$passed:103",
+            "$connects:104",
+            "$passed:104"
+          ]
+        ]
+      }
+    },
+    "$result:hospital-diff": {
+      "kind": "semantic-diff",
+      "base": "$revision:egress",
+      "successor": "$revision:egress-minus-door-101-passed",
+      "authored": {
+        "added": [],
+        "removed": [
+          "$passed:101"
+        ]
+      },
+      "entailed": {
+        "added": [],
+        "removed": [
+          "$route:icu-east"
+        ]
+      },
+      "support_changes": {
+        "$route:icu-east": {
+          "removed": [
+            [
+              "$connects:101",
+              "$passed:101"
+            ]
+          ],
+          "retained": []
+        },
+        "$route:icu-north": {
+          "removed": [
+            [
+              "$connects:101",
+              "$passed:101",
+              "$connects:102",
+              "$passed:102"
+            ]
+          ],
+          "retained": [
+            [
+              "$connects:103",
+              "$passed:103",
+              "$connects:104",
+              "$passed:104"
+            ]
+          ]
+        }
+      }
+    }
+  },
+  "required": [
+    "all source bytes remain available as a noncanonical layout contrast",
+    "classification and definition spellings are constitutionally distinct",
+    "no elaboration precedes layout repair"
+  ],
+  "forbidden": [
+    "elaboration",
+    "canonical-four-space-layout",
+    "object",
+    "field",
+    "owned-record"
+  ],
+  "canonical_structural_rendering": {
+    "encoding": "clause-m0-role-graph-json",
+    "value": "shared_semantics"
+  },
+  "result": {
+    "ordered": [
+      "$result:hospital-find",
+      "$result:hospital-why",
+      "$result:hospital-diff"
+    ]
+  }
+}

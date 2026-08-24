@@ -1,8 +1,17 @@
 # Clause Surface Reset
 
-## Relational authoring without object smuggling
+## Distinction-first relational authoring
 
-**Status:** committed target direction; membership and indentation frozen by M0
+**Status:** constitutional target; referents, claims, laws, classification,
+definition, and indentation frozen by M0
+
+Clause has one semantic domain: addressable referents. A referent is a
+stabilized distinction that can be reidentified across claims and Revisions;
+structural equality never collapses that identity. Relations are referents in
+relational position. Claims arrange referents in named roles. Laws derive,
+constrain, reject, or operationally orient claims. Terms project referents but
+are not themselves referents, and a claim remains distinct from its acceptance,
+status, and authority.
 
 **Audience:** Clause implementers, reviewers, formatter/tooling authors, and
 corpus designers
@@ -11,14 +20,11 @@ corpus designers
 milestone authority. This file is an editorially normalized tracked copy of the
 operator's current surface draft, so decisions do not depend on an external
 document. Its relational invariants control direction over earlier
-human-surface recommendations. `:` means binding and nothing else. Membership
-has exactly one grammar and stored-source spelling: `x ∈ Y`. Canonical
-indentation is two spaces, spaces only, and tabs are diagnosed. Typing `::` is
-an editor/input gesture that immediately replaces itself with `∈`; it is
-never parser input or stored source. The formatter and agents emit `∈`
-directly, and neither `::` nor `in` is a grammar alias. In a focused block,
-`state: locked` is a binding of the stable handle `state of focus`, distinct
-from an ordinary relational claim.
+human-surface recommendations. `Chess : Game` is classification sugar for an
+ordinary membership relation; `gravity := 9.81` is definition/denotation.
+Neither spelling creates a primitive type or value domain. `∈` and `::` are
+not canonical source and editors must not rewrite input to `∈`. Canonical
+indentation is two spaces, spaces only, and tabs are diagnosed.
 
 **Scope:** this supersedes the human-surface recommendations and specimens in
 the earlier strategy packet. It does not discard Clause's semantic core,
@@ -30,14 +36,16 @@ interventions, or target strategy.
 Clause should stop asking authors to declare an ontology for the language
 before they can describe the domain.
 
-The canonical surface should be organized around five authored things:
+The canonical surface should be organized around four semantic commitments:
 
-1. **grounded symbols** — names admitted into the program;
-2. **bindings** — names oriented to values, terms, or structural domains;
-3. **membership** — one semantic thing belonging to another;
-4. **clauses** — role-labelled relations among co-equal participants;
-5. **moods** — assertion, derivation, query, transition, effect, explanation,
-   and intervention.
+1. **referents** — stabilized, addressable distinctions;
+2. **claims** — referents arranged in named roles, including membership;
+3. **laws** — derivation, constraint, rejection, and operational orientation;
+4. **definitions** — explicit denotation from a term to what it designates.
+
+Source terms name or compose these commitments but do not create another
+semantic domain. Acceptance, status, authority, and occurrence metadata qualify
+claims without becoming claim content.
 
 The decisive surface thesis is:
 
@@ -59,9 +67,9 @@ It also means we must stop writing relational entities as records.
 Reject this as canonical Clause:
 
 ```clause
-iron-door: Door
+iron-door : Door
   connects: Cellar to Armory
-  state: locked
+  state := locked
 ```
 
 That form smuggles in four ideas Clause does not need:
@@ -74,24 +82,23 @@ That form smuggles in four ideas Clause does not need:
 The canonical relational form is:
 
 ```clause
-iron-door
+iron-door : Door
   Door
   connects Cellar to Armory
-  state: locked
+  state := locked
 ```
 
 Its exact elaboration is:
 
 ```clause
-iron-door ∈ Door
+iron-door : Door
 iron-door connects Cellar to Armory
-state of iron-door: locked
+state of iron-door := locked
 ```
 
-The first form is membership, the second is an ordinary co-equal relational
-claim, and the third is a focused binding. Focus supplies `iron-door` to each
-form without turning the membership or relation into fields and without
-turning the binding handle into an owned object property.
+The first form elaborates to an ordinary membership claim, the second is an
+ordinary co-equal relational claim, and the third is a definition. Focus
+supplies `iron-door` without turning any form into an owned object property.
 
 The compiler may later lower `state` to an enum field, `connects` to an
 adjacency index, and membership to a bitset. Those are physical strategies.
@@ -201,13 +208,13 @@ The notation is justified visually and compositionally:
 Alice likes ?opening
 ```
 
-Retract `:=` as a second binding operator. `:` is binding. `=` is equality. Do
-not introduce two binding glyphs.
+Use `:` for classification/membership sugar, `:=` for definition/denotation,
+and `=` for equality. Identity remains distinct from all three.
 
 ## 3. The ontology the surface should expose
 
-Clause still has a type system internally. It should not force authors to
-describe every domain concept as a type declaration.
+Clause implementations may derive a type-system view. The surface must not
+force authors to declare types as a second semantic domain.
 
 The surface must distinguish three semantic strata without turning each into a
 keyword ceremony.
@@ -225,17 +232,17 @@ String
 
 These are built-in value domains with representation and operation contracts.
 
-A user-defined structural value domain is inferred from a homogeneous binding
+A user-defined structural value view is inferred from a homogeneous definition
 block:
 
 ```clause
 Vec2
-  x: F32
-  y: F32
+  x := F32
+  y := F32
 ```
 
-This means `Vec2` is a value shape with labels `x` and `y`, each bound to
-`F32`. It does **not** mean every semantic thing in Clause is a record.
+This means `Vec2` has definitions for labels `x` and `y`, each denoting `F32`.
+It does **not** add a primitive value or record domain.
 
 ### 3.2 Semantic symbols
 
@@ -267,8 +274,8 @@ Game
 means:
 
 ```clause
-Chess ∈ Game
-Soccer ∈ Game
+Chess : Game
+Soccer : Game
 ```
 
 A member may itself be a category:
@@ -301,83 +308,60 @@ component arrays, or indexes. That is a lowering decision.
 
 ### 3.4 The rule
 
-> **Value shapes may have bound labels. Semantic symbols have relations.
+> **Value shapes may derive named relational roles. Semantic symbols have relations.
 > Categories have relational contracts. Do not turn semantic entities into
 > records merely because a backend may store them that way.**
 
-## 4. `:` means binding
+## 4. Classification and definition are different
 
-This must remain brutally simple:
+The two forms are deliberately separate:
 
-```text
-left: right
+```clause
+Chess : Game
+gravity := 9.81
 ```
 
-means: bind the name or term pattern on the left to the value, term, domain,
-schema, or result on the right.
+`:` is classification sugar. It elaborates to an ordinary membership relation
+whose member and group are named roles; it does not bind a name, declare a
+primitive type, or assert equality. `:=` is definition/denotation: a source term
+is oriented to what it designates. Definition does not collapse the term into
+the referent and does not confer acceptance or authority on a claim.
 
 Examples:
 
 ```clause
-gravity: 9.81
-spawn: (0, 0)
-receipt: render! scene
+spawn : Position
+spawn := (0, 0)
+receipt := render! scene
 ```
 
-In a value-shape block:
+The first line classifies `spawn`; the second defines it. A structural view may
+use both without creating an object or record ontology:
 
 ```clause
 Vec2
-  x: F32
-  y: F32
+  x : F32
+  y : F32
 ```
 
-`x` is bound to the domain `F32` as a structural slot declaration.
-
-A pure definition is also a binding:
+A pure definition uses `:=`:
 
 ```clause
-distance between ?a and ?b:
+distance between ?a and ?b :=
   length(position of ?a - position of ?b)
 ```
 
-The term pattern on the left is bound to the pure computation on the right.
-
-An explicit relation schema may bind a stable human anchor to a phrase pattern:
+An explicit relation schema retains named roles and classifies their referents:
 
 ```clause
-connects:
-  door: Door connects origin: Space to destination: Space
+connects :=
+  door : Door connects origin : Space to destination : Space
 ```
 
-The inner colons bind role names to participant domains.
-
-`:` must never mean:
-
-- opens an indented block;
-- is an instance of;
-- is a member of;
-- has a field;
-- assign a mutable property;
-- equality;
-- state transition.
-
-Therefore `iron-door: Door` is not membership syntax. It is a binding and must
-never silently elaborate to `iron-door ∈ Door`.
-
-Within focus, `state: locked` is the canonical focused binding. It elaborates
-to `state of iron-door: locked`: `state of iron-door` is a stable handle whose
-current binding is `locked`. It is distinct from both the membership claim and
-the ordinary `connects` relation claim, and it never denotes an object field.
-
-### 4.1 Membership input boundary
-
-`x ∈ Y` is the only membership production and stored form. An editor may
-recognize typed `::` and replace it immediately with `∈`, before persistence
-or parsing. If `::` reaches the parser it is rejected, as is `in` when offered
-as a membership operator. This completion does not change `:`: a single colon
-remains binding only. Canonical formatting and agent-authored source always use
-`∈` directly.
+Neither `∈` nor `::` is canonical source. Editors, formatters, and agents emit
+`:` classification and `:=` definition directly; they do not rewrite any input
+to `∈`. A migration tool may recognize retired spellings only to produce an
+explicit report and corrected source, never as a second live grammar.
 
 ## 5. Layout has three inferred forms
 
@@ -402,9 +386,9 @@ Famous Chess Openings
 It lowers to:
 
 ```clause
-Sicilian Defense ∈ Famous Chess Openings
-Ruy Lopez ∈ Famous Chess Openings
-Queen's Gambit ∈ Famous Chess Openings
+Sicilian Defense : Famous Chess Openings
+Ruy Lopez : Famous Chess Openings
+Queen's Gambit : Famous Chess Openings
 ```
 
 This preserves the ordinary prior that an indented list contains members of
@@ -412,19 +396,18 @@ its heading. Reserved list forms declare their own expansion; for example,
 `requires` relates the current program to each listed package rather than
 asserting ordinary domain membership.
 
-### 5.2 Binding/shape block
+### 5.2 Definition/shape block
 
-A homogeneous block of bindings defines a structural value shape or binding
-namespace:
+A homogeneous block of definitions can project a structural shape:
 
 ```clause
 Vec2
-  x: F32
-  y: F32
+  x : F32
+  y : F32
 ```
 
-The children do not become graph claims. They are bindings in the structural
-definition of `Vec2`.
+Each child is classification sugar. The optional structural view derives from
+those membership claims; it is not a primitive record schema.
 
 ### 5.3 Focused block
 
@@ -435,20 +418,21 @@ forms establishes its heading as the focus participant:
 iron-door
   Door
   connects Cellar to Armory
-  state: locked
+  state := locked
 ```
 
 It lowers to:
 
 ```clause
-iron-door ∈ Door
+iron-door : Door
 iron-door connects Cellar to Armory
-state of iron-door: locked
+state of iron-door := locked
 ```
 
-Within a focused block, a bare category name is membership of the focus, an
-ordinary relation fragment supplies the focus role, and `name: value` binds a
-stable focused handle. These forms remain semantically distinct.
+Within a focused block, a bare category name classifies the focus through the
+ordinary membership relation, an ordinary relation fragment supplies the focus
+role, and `name := value` defines a stable focused term. These forms remain
+semantically distinct.
 
 ### 5.4 Mixed blocks have one deterministic reading
 
@@ -465,8 +449,8 @@ Thing
 means:
 
 ```clause
-Thing ∈ A
-Thing ∈ B
+Thing : A
+Thing : B
 Thing relation value
 ```
 
@@ -490,14 +474,14 @@ block, because that edit changes the interpretation of the existing bare
 lines.
 
 This structural rule resolves the apparent conflict between `Game / Chess` and
-`iron-door / Door / state: locked` without fuzzy English parsing and without
+`iron-door / Door / state := locked` without fuzzy English parsing and without
 making membership direction depend on capitalization.
 
 ### 5.5 Layout equivalence is an invariant
 
 For every focused block, the compiler must be able to print its fully expanded
-semantic forms without collapsing membership, ordinary relations, or focused
-bindings into one node kind.
+semantic forms without collapsing membership claims, ordinary claims, or
+definitions into one node kind.
 
 Moving between focused and expanded forms must not change:
 
@@ -514,7 +498,8 @@ Clause should adopt this vocabulary and reject synonyms that blur the axes.
 
 | Form | Meaning |
 | --- | --- |
-| `:` | binding |
+| `:` | classification sugar for ordinary membership |
+| `:=` | definition/denotation |
 | `=` | equality proposition |
 | `->` | result/projection direction or return contract |
 | `?` | anonymous clause hole |
@@ -569,7 +554,7 @@ Layout already groups their bodies.
 Clause is not a natural-language parser. Domain phrases are exact declared
 mixfix shapes.
 
-A public or ambiguous relation can use an explicit schema binding:
+A public or ambiguous relation can use an explicit schema definition:
 
 ```clause
 connects:
@@ -669,7 +654,7 @@ means: the first participant is absent; solve that role.
 ?person likes Chess
 ```
 
-means: solve the same role and expose its bindings under the name `person`.
+means: solve the same role and expose its assignments under the name `person`.
 
 ```clause
 Alice likes ?opening
@@ -677,7 +662,7 @@ Alice likes ?opening
 
 means: solve the opening role.
 
-Each bare `?` is fresh. Repeating a named hole requires the same binding:
+Each bare `?` is fresh. Repeating a named hole requires the same referent:
 
 ```clause
 ?person likes ?opening
@@ -705,20 +690,20 @@ A recursive law is equally direct:
   ?intermediate has a usable egress path to ?destination
 ```
 
-### 8.2 Optional human labels are bindings
+### 8.2 Optional human labels are definitions
 
-Most laws should receive hidden stable semantic identities from the Store and
-tooling. When a human name is useful:
+Most laws should receive stable semantic identities independently of a human
+label. When a human name is useful:
 
 ```clause
-recursive route:
+recursive route :=
   ?origin has a usable egress path to ?destination if
     ?door connects ?origin to ?intermediate
     ?intermediate has a usable egress path to ?destination
 ```
 
-The colon binds the label `recursive route` to the law. It does not declare a
-`Law` object.
+The definition orients the label `recursive route` to the law. It does not
+declare a `Law` object or enter the law's claim content.
 
 ### 8.3 Category-wide facts remain ordinary laws
 
@@ -726,7 +711,7 @@ Do not invent field defaults. To say every coin has radius 8:
 
 ```clause
 ?coin radius 8 if
-  ?coin ∈ Coin
+  ?coin : Coin
 ```
 
 That is a universal relational law. It is not a default value installed into a
@@ -739,7 +724,7 @@ Coin
   radius -> F32
 
 ?coin radius 8 if
-  ?coin ∈ Coin
+  ?coin : Coin
 ```
 
 ## 9. Queries begin with the relation
@@ -975,10 +960,10 @@ load! "assets/coin.glb"
 play! collect-sound
 ```
 
-Binding an effect result is legitimate:
+Defining an effect result name is legitimate:
 
 ```clause
-receipt: render! scene
+receipt := render! scene
 ```
 
 The result is a receipt or resource handle, not proof that the intended
@@ -1052,8 +1037,8 @@ any ?door connects Cellar to Armory
 
 ```clause
 on unlock iron-door
-  state of iron-door: locked ~>
-    state of iron-door: unlocked
+  state of iron-door := locked ~>
+    state of iron-door := unlocked
 ```
 
 ### Explicit flattening
@@ -1061,9 +1046,9 @@ on unlock iron-door
 The authored focus block is exactly equivalent to:
 
 ```clause
-iron-door ∈ Door
+iron-door : Door
 iron-door connects Cellar to Armory
-state of iron-door: locked
+state of iron-door := locked
 ```
 
 No record, constructor, instance, field, or object is part of the meaning.
@@ -1298,7 +1283,8 @@ semantics here.
 
 ### Stage B — block classification
 
-Classify homogeneous blocks as enumeration; binding or shape; focused forms or
+Classify homogeneous blocks as enumeration; definition or derived shape;
+focused forms or
 contracts; definition or law; query; event or transition; revision delta; or
 epistemic/effect mood. Reject structurally unresolved forms or require the
 formatter to split them.
@@ -1314,8 +1300,8 @@ current focus role. It may not use probabilistic NLP.
 
 ### Stage D — role-labelled elaboration
 
-Elaborate all sugar into stable semantic nodes: grounded identities, membership
-clauses, relation identity, named participant roles, bindings, laws, query
+Elaborate all sugar into stable semantic nodes: referent identities, membership
+claims, relation identity, named participant roles, definitions, laws, query
 projections, transitions, exact deltas, and effect requests.
 
 ### Stage E — existing semantic core
@@ -1336,22 +1322,22 @@ codemod, then remove the ceremonial forms unless a real consumer requires them.
 
 | Current | Replacement |
 | --- | --- |
-| `Space: Type` | `Space` |
-| `thing: Space` for membership | focused bare `Space` or explicit `thing ∈ Space`; report the inferred migration |
-| `name: Relation` | inferred phrase schema; optional `name:` schema binding |
-| `{role: Type}` | `role: Type` inside schema only |
+| `Space: Type` | `Space : Type` classification, or a bare grounded term when no classification is intended |
+| `thing ∈ Space` | `thing : Space`; report the membership migration |
+| `name: Relation` | `name : Relation`; inferred phrase schema may omit it |
+| `{role: Type}` | `role : Type` inside schema only |
 | `mode ...` | arrow and cardinality contract |
 | `name: Model` | authoring or revision context inferred or externally named |
 | `[Door 101]` | `Door 101` |
-| `name: Law` | conclusion `if` premises; optional label binding |
+| `name: Law` | `name : Law`, or conclusion `if` premises with separate identity |
 | `name: Revision` | `name from base` plus signed clauses |
-| `from:` | `from` in the revision header |
-| `withdraw:` | `-` |
-| `declare:` | naked ground claims in admission context |
+| `from:` | `from` in the revision header; current executable profile remains migration evidence |
+| `withdraw:` | `-`; current executable profile remains migration evidence |
+| `declare:` | naked ground claims in admission context; current executable profile remains migration evidence |
 | `find all ?x` | naked hole clause or `select` |
 | `use game` | `requires` block |
 | object-like `property: value` claims | relational `property value` under focus |
-| `:=` | `:` |
+| `name: value` used as a binding | `name := value` definition |
 
 The migration tool should preserve semantic IDs and print a report for every
 inference it made.
@@ -1362,27 +1348,28 @@ The new surface is not accepted merely because examples look attractive.
 
 ### Relational honesty
 
-- `iron-door` focus form and its expanded membership, relational claim, and
-  focused binding produce identical checked semantics while retaining their
+- `iron-door` focus form and its expanded membership claim, ordinary claim, and
+  focused definition produce identical checked semantics while retaining their
   three distinct semantic forms.
 - No semantic node created by a focus block contains child fields or owned
   nested records.
-- `iron-door: Door` never silently means membership.
+- `iron-door : Door` elaborates to ordinary membership and never to definition,
+  equality, primitive typing, or field ownership.
 
 ### Block determinism
 
 - all-bare enumeration lowers child-to-parent membership;
-- binding blocks remain structural bindings, not graph assertions;
+- definition/shape blocks remain derived relational views, not object schemas;
 - any non-bare child makes the block a focused block;
 - bare children inside a focused block classify the focus;
-- `name: value` inside a focused block binds `name of focus`, not a field or
+- `name := value` inside a focused block defines `name of focus`, not a field or
   graph edge;
 - the formatter separates enumeration blocks from contract or claim blocks and
   warns before edits that would reclassify an existing block.
 
 ### Hole semantics
 
-- `? likes Chess` returns one anonymous column of bindings;
+- `? likes Chess` returns one anonymous column of role assignments;
 - `?person likes Chess` names that column;
 - repeated `?name` occurrences correlate by identity;
 - each anonymous `?` is fresh;
@@ -1416,34 +1403,35 @@ The new surface is not accepted merely because examples look attractive.
 
 ### Milestone 0 — Freeze the constitution and corpus
 
-Before changing the parser, add golden examples for enumeration, shape
-bindings, focused graph claims, explicit flattening, relation schemas, recursive
+Before changing the parser, add golden examples for enumeration, derived shape
+views, focused graph claims, explicit flattening, relation schemas, recursive
 terms, holes and correlation, laws, queries, revisions, transitions, effects,
 the hospital program, and the one-coin game.
 
 For every example retain source, grouped tree, elaborated role graph, canonical
-rendering, diagnostics, and expected result. Include positive `∈` membership,
-negative parser cases for `member of`, `::`, and `in`, canonical two-space
-projection, rejected tabs and noncanonical four-space projection, and the settled
-`state: locked` focused binding. Its oracle distinguishes binding from
-membership, ordinary relational claims, and object fields.
+rendering, diagnostics, and expected result. Include positive `x : Group`
+classification and `name := term` definition, retired `∈`, `::`, and `in`
+contrasts, canonical two-space projection, rejected tabs and noncanonical
+four-space projection, and `state := locked` under focus. Oracles distinguish
+definition from membership claim, ordinary claim, and object field.
 
 ### Milestone 1 — New layout and focus profile
 
-Implement bare symbol grounding, enumeration blocks, binding or shape blocks,
+Implement bare symbol grounding, enumeration blocks, definition or derived
+shape blocks,
 focused blocks, explicit flattening display, and multiword semantic names
 without brackets. Lower into the current semantic core.
 
 ### Milestone 2 — Compact relation schemas
 
-Implement schema pattern bindings, named roles, focused role designation,
+Implement schema role patterns, named roles, focused role designation,
 arrow/cardinality contracts, ambiguity diagnostics, and stable hidden relation
 identities. Remove required `Relation` and `mode` syntax in the new profile.
 
 ### Milestone 3 — Recursive term grammar
 
 Permit every role to contain recursive terms with explicit grouping and
-canonical formatting. Add value shapes, pure bindings, projections, and
+canonical formatting. Add derived value shapes, pure definitions, projections,
 definitions. This milestone recovers the recursive-relational thesis.
 
 ### Milestone 4 — Holes, rules, and relational selection
@@ -1486,8 +1474,9 @@ Phrases are exact declared grammar, not statistical English interpretation.
 
 ### An object language with prettier property syntax
 
-Ordinary focused claims remain co-equal clauses. Focused membership and binding
-retain their distinct semantic forms; none creates objects with fields.
+Ordinary focused claims remain co-equal claims. Focused classification and
+definition retain their distinct semantic forms; none creates objects with
+fields.
 
 ### A generic triple interpreter in the hot path
 
@@ -1525,18 +1514,18 @@ Treat this document as a surface reset, not a patch list.
 
 Implementation proceeds from these invariants:
 
-1. Bare names ground semantic symbols.
-2. Categories emerge through membership and contracts; they are not declared
-   with `Type`.
-3. Semantic entities do not have fields.
-4. `:` means binding and nothing else.
-5. Enumeration, binding, and focused blocks are structurally distinct.
+1. Bare terms may denote addressable referents; the term is not the referent.
+2. Categories emerge through ordinary membership claims and contracts; they
+   are not a primitive `Type` domain.
+3. Referents do not acquire fields merely from layout.
+4. `:` is classification/membership sugar; `:=` is definition/denotation.
+5. Enumeration, definition/shape, and focused blocks are structurally distinct.
 6. Indentation is erasable projection over semantic forms; it does not collapse
-   membership, ordinary relations, and focused bindings.
+   membership claims, ordinary claims, and definitions.
 7. Relation phrases are exact, role-labelled, recursively compositional
    grammar.
 8. `?` is a hole; `?name` is a named or reusable hole.
-9. A naked hole-bearing clause selects all bindings.
+9. A naked hole-bearing clause selects all matching role assignments.
 10. `select` projects; `any` tests existence; random selection is explicit.
 11. `=` is equality.
 12. `->` is production or projection.

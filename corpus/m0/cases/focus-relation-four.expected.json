@@ -2,13 +2,28 @@
   "schema": "clause-m0-contrast-v1",
   "id": "focus-relation-four",
   "axis": "indentation-width",
-  "decision": {"status": "rejected-target", "diagnostic": "noncanonical indentation: expected 2 spaces, found 4", "repair": "indent each child by 2 spaces"},
+  "decision": {
+    "status": "rejected-target",
+    "diagnostic": "noncanonical indentation: expected 2 spaces, found 4",
+    "repair": "indent each child by 2 spaces"
+  },
   "source": {
-    "lines": ["iron-door", "    Door", "    connects Cellar to Armory", "    state: locked"],
+    "lines": [
+      "iron-door",
+      "    Door",
+      "    connects Cellar to Armory",
+      "    state := locked"
+    ],
     "line_break": "LF",
     "ends_with_line_break": true
   },
   "structural_intent": "invalid-layout",
-  "required": ["diagnose noncanonical indentation before elaboration"],
-  "forbidden": ["elaboration", "silent-normalization", "accepted-source"]
+  "required": [
+    "diagnose noncanonical indentation before elaboration"
+  ],
+  "forbidden": [
+    "elaboration",
+    "silent-normalization",
+    "accepted-source"
+  ]
 }

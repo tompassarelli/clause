@@ -2,9 +2,14 @@
   "schema": "clause-m0-contrast-v1",
   "id": "effect-load-resource",
   "axis": "opaque-resource-result-with-receipt",
-  "decision": {"status": "unresolved", "candidate": "bound-resource-effect-result"},
+  "decision": {
+    "status": "unresolved",
+    "candidate": "defined-resource-effect-result"
+  },
   "source": {
-    "lines": ["mesh: load! \"assets/coin.glb\""],
+    "lines": [
+      "mesh := load! \"assets/coin.glb\""
+    ],
     "line_break": "LF",
     "ends_with_line_break": true
   },
@@ -12,42 +17,68 @@
     "program": "$program:asset-loader-exact",
     "runtime_session": "$session:game-1",
     "required_capability": "$capability:asset-load-exact",
-    "runtime_grants": ["$capability:asset-load-exact"]
+    "runtime_grants": [
+      "$capability:asset-load-exact"
+    ]
   },
   "structural_intent": "bind-opaque-resource-result",
   "effect_request": {
     "kind": "effect-request",
     "identity": "$effect-request:load-coin-mesh",
     "operation": "$load",
-    "arguments": [{"kind": "Text", "value": "assets/coin.glb"}],
+    "arguments": [
+      {
+        "kind": "Text",
+        "value": "assets/coin.glb"
+      }
+    ],
     "capability": "$capability:asset-load-exact",
     "result_contract": "opaque-resource-handle"
   },
   "required": [
     "load remains an explicit effect even when it returns a resource handle",
     "the host attempt produces a receipt with exact request provenance",
-    "the bound handle is opaque and scoped to one RuntimeSession",
-    "colon only binds the runtime result"
+    "the defined handle is opaque and scoped to one RuntimeSession",
+    ":= only defines the runtime result"
   ],
-  "forbidden": ["host-object-in-ProgramRevision", "host-object-in-ModelRevision", "host-object-in-StateRevision", "asset-loaded-truth", "field-assignment", "permanent-resource-lifetime"],
+  "forbidden": [
+    "host-object-in-ProgramRevision",
+    "host-object-in-ModelRevision",
+    "host-object-in-StateRevision",
+    "asset-loaded-truth",
+    "field-assignment",
+    "permanent-resource-lifetime"
+  ],
   "elaborated": [
     {
       "kind": "effect-request",
       "identity": "$effect-request:load-coin-mesh",
       "operation": "$load",
-      "arguments": [{"kind": "Text", "value": "assets/coin.glb"}],
+      "arguments": [
+        {
+          "kind": "Text",
+          "value": "assets/coin.glb"
+        }
+      ],
       "capability": "$capability:asset-load-exact",
       "result_contract": "opaque-resource-handle"
     },
     {
-      "kind": "runtime-result-binding",
-      "left": "mesh",
-      "right": "$resource:coin-mesh/1"
+      "kind": "runtime-result-definition",
+      "term": "mesh",
+      "denotation": "$resource:coin-mesh/1"
     }
   ],
   "result": {
-    "authorization": {"capability": "$capability:asset-load-exact", "status": "granted"},
-    "attempt": {"identity": "$effect-attempt:load-coin-mesh/1", "request": "$effect-request:load-coin-mesh", "status": "completed"},
+    "authorization": {
+      "capability": "$capability:asset-load-exact",
+      "status": "granted"
+    },
+    "attempt": {
+      "identity": "$effect-attempt:load-coin-mesh/1",
+      "request": "$effect-request:load-coin-mesh",
+      "status": "completed"
+    },
     "receipt": {
       "kind": "effect-receipt",
       "identity": "$receipt:load-coin-mesh/1",
@@ -63,8 +94,15 @@
       "runtime_session": "$session:game-1",
       "provenance": "$receipt:load-coin-mesh/1",
       "recorded_in": "$session:game-1",
-      "excluded_from_identity": ["ProgramRevision", "ModelRevision", "StateRevision"]
+      "excluded_from_identity": [
+        "ProgramRevision",
+        "ModelRevision",
+        "StateRevision"
+      ]
     },
-    "binding": {"name": "mesh", "value": "$resource:coin-mesh/1"}
+    "definition": {
+      "name": "mesh",
+      "value": "$resource:coin-mesh/1"
+    }
   }
 }

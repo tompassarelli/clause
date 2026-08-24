@@ -1,1 +1,1 @@
-result: (a blends b) with c
+result := (a blends b) with c

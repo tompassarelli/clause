@@ -1,0 +1,40 @@
+{
+  "schema": "clause-m0-contrast-v1",
+  "id": "focused-definition",
+  "axis": "focused-definition",
+  "decision": {
+    "status": "accepted-target",
+    "canonical": "focused-definition"
+  },
+  "source": {
+    "lines": [
+      "iron-door",
+      "  state := locked"
+    ],
+    "line_break": "LF",
+    "ends_with_line_break": true
+  },
+  "structural_intent": "focused-definition",
+  "required": [
+    ":= is definition/denotation",
+    "state of iron-door is a stable term",
+    "locked is its denotation"
+  ],
+  "forbidden": [
+    "ordinary-state-claim",
+    "object-field",
+    "membership",
+    "equality"
+  ],
+  "elaborated": [
+    {
+      "kind": "definition",
+      "term": {
+        "kind": "focused-term",
+        "relation": "$state",
+        "focus": "iron-door"
+      },
+      "denotation": "locked"
+    }
+  ]
+}

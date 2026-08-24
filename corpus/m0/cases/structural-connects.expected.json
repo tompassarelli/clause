@@ -2,22 +2,48 @@
   "schema": "clause-m0-contrast-v1",
   "id": "structural-connects",
   "axis": "structural-escape-spelling",
-  "decision": {"status": "unresolved", "candidate": "clause-heading-with-role-bindings", "layout_style": "canonical-two-space"},
+  "decision": {
+    "status": "unresolved",
+    "candidate": "clause-heading-with-role-definitions",
+    "layout_style": "canonical-two-space"
+  },
   "source": {
-    "lines": ["clause connects", "  door: iron-door", "  origin: Cellar", "  destination: Armory"],
+    "lines": [
+      "clause connects",
+      "  door := iron-door",
+      "  origin := Cellar",
+      "  destination := Armory"
+    ],
     "line_break": "LF",
     "ends_with_line_break": true
   },
-  "context": {"schemas": ["$connects"]},
+  "context": {
+    "schemas": [
+      "$connects"
+    ]
+  },
   "structural_intent": "explicit-role-labelled-claim",
   "equivalence_group": "connects-claim",
   "required": [
-    "each colon binds a role name to a term",
+    "each := defines a named role term",
     "explicit structure selects one relation identity",
     "round-trip preserves all role names"
   ],
-  "forbidden": ["object", "record", "field", "second-semantic-authority"],
+  "forbidden": [
+    "object",
+    "record",
+    "field",
+    "second-semantic-authority"
+  ],
   "elaborated": [
-    {"kind": "relation-claim", "relation": "$connects", "roles": {"door": "iron-door", "origin": "Cellar", "destination": "Armory"}}
+    {
+      "kind": "relation-claim",
+      "relation": "$connects",
+      "roles": {
+        "door": "iron-door",
+        "origin": "Cellar",
+        "destination": "Armory"
+      }
+    }
   ]
 }

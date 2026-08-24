@@ -2,14 +2,18 @@
   "schema": "clause-m0-contrast-v1",
   "id": "ambiguous-connects",
   "axis": "exact-phrase-ambiguity",
-  "decision": {"status": "unresolved", "candidate": "overlapping-exact-shapes", "layout_style": "canonical-two-space"},
+  "decision": {
+    "status": "unresolved",
+    "candidate": "overlapping-exact-shapes",
+    "layout_style": "canonical-two-space"
+  },
   "source": {
     "lines": [
-      "door connects:",
-      "  door: Door connects origin: Space to destination: Space",
+      "door connects :=",
+      "  door : Door connects origin : Space to destination : Space",
       "",
-      "portal connects:",
-      "  portal: Portal connects origin: Space to destination: Space",
+      "portal connects :=",
+      "  portal : Portal connects origin : Space to destination : Space",
       "",
       "mystery connects Cellar to Armory"
     ],
@@ -23,15 +27,34 @@
     "the focus-role domain conflict is reported",
     "repair requires explicit structure or disambiguating checked context"
   ],
-  "forbidden": ["capitalization-choice", "English-plausibility-choice", "source-order-choice", "silent-elaboration"],
+  "forbidden": [
+    "capitalization-choice",
+    "English-plausibility-choice",
+    "source-order-choice",
+    "silent-elaboration"
+  ],
   "diagnostic": {
     "code": "phrase.ambiguous",
     "candidates": [
-      {"relation": "$door-connects", "focus_role": "door", "focus_domain": "Door"},
-      {"relation": "$portal-connects", "focus_role": "portal", "focus_domain": "Portal"}
+      {
+        "relation": "$door-connects",
+        "focus_role": "door",
+        "focus_domain": "Door"
+      },
+      {
+        "relation": "$portal-connects",
+        "focus_role": "portal",
+        "focus_domain": "Portal"
+      }
     ],
     "role_conflicts": [
-      {"position": "focus", "domains": ["Door", "Portal"]}
+      {
+        "position": "focus",
+        "domains": [
+          "Door",
+          "Portal"
+        ]
+      }
     ],
     "repair": "use an explicit role-labelled rendering or checked context that leaves one candidate"
   },

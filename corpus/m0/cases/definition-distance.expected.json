@@ -2,32 +2,58 @@
   "schema": "clause-m0-contrast-v1",
   "id": "definition-distance",
   "axis": "recursive-definition-surface",
-  "decision": {"status": "unresolved", "candidate": "pattern-colon-body", "layout_style": "canonical-two-space"},
+  "decision": {
+    "status": "accepted-target",
+    "canonical": "definition-denotation"
+  },
   "source": {
-    "lines": ["distance between ?a and ?b:", "  length(position of ?a - position of ?b)"],
+    "lines": [
+      "distance between ?a and ?b :=",
+      "  length(position of ?a - position of ?b)"
+    ],
     "line_break": "LF",
     "ends_with_line_break": true
   },
-  "context": {"relations": ["$distance", "$position"], "functions": ["$length", "$subtract"]},
-  "structural_intent": "pure-definition-binding",
+  "context": {
+    "relations": [
+      "$distance",
+      "$position"
+    ],
+    "functions": [
+      "$length",
+      "$subtract"
+    ]
+  },
+  "structural_intent": "pure-definition",
   "required": [
-    "outer colon means binding",
+    "outer := means definition",
     "named holes correlate by identity across pattern and body",
     "each projection is a recursive relation term"
   ],
-  "forbidden": ["Law-object", "field-access", "flat-token-template", "fresh-hole-on-repeat"],
+  "forbidden": [
+    "Law-object",
+    "field-access",
+    "flat-token-template",
+    "fresh-hole-on-repeat"
+  ],
   "elaborated": [
     {
-      "kind": "binding",
-      "left": {
+      "kind": "definition",
+      "term": {
         "kind": "pattern-application",
         "relation": "$distance",
         "roles": {
-          "first": {"kind": "named-hole", "identity": "$hole:a"},
-          "second": {"kind": "named-hole", "identity": "$hole:b"}
+          "first": {
+            "kind": "named-hole",
+            "identity": "$hole:a"
+          },
+          "second": {
+            "kind": "named-hole",
+            "identity": "$hole:b"
+          }
         }
       },
-      "right": {
+      "denotation": {
         "kind": "function-application",
         "function": "$length",
         "arguments": [
@@ -35,8 +61,28 @@
             "kind": "function-application",
             "function": "$subtract",
             "arguments": [
-              {"kind": "relation-projection", "relation": "$position", "roles": {"member": {"kind": "named-hole", "identity": "$hole:a"}}, "output_role": "value"},
-              {"kind": "relation-projection", "relation": "$position", "roles": {"member": {"kind": "named-hole", "identity": "$hole:b"}}, "output_role": "value"}
+              {
+                "kind": "relation-projection",
+                "relation": "$position",
+                "roles": {
+                  "member": {
+                    "kind": "named-hole",
+                    "identity": "$hole:a"
+                  }
+                },
+                "output_role": "value"
+              },
+              {
+                "kind": "relation-projection",
+                "relation": "$position",
+                "roles": {
+                  "member": {
+                    "kind": "named-hole",
+                    "identity": "$hole:b"
+                  }
+                },
+                "output_role": "value"
+              }
             ]
           }
         ]

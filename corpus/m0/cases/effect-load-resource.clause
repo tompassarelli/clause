@@ -1,1 +1,1 @@
-mesh: load! "assets/coin.glb"
+mesh := load! "assets/coin.glb"

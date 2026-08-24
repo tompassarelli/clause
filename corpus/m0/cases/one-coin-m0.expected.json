@@ -1,0 +1,575 @@
+{
+  "schema": "clause-m0-contrast-v1",
+  "id": "one-coin-m0",
+  "axis": "complete-one-coin-semantic-program",
+  "decision": {
+    "status": "accepted-target",
+    "canonical": "distinction-constitution-one-coin",
+    "layout_style": "canonical-two-space"
+  },
+  "source": {
+    "lines": [
+      "requires",
+      "  game",
+      "  three",
+      "",
+      "Vec2",
+      "  x : F32",
+      "  y : F32",
+      "",
+      "CoinState",
+      "  active",
+      "  collected",
+      "",
+      "Player",
+      "  position -> Vec2",
+      "  velocity -> Vec2",
+      "  radius -> F32",
+      "  score -> Int",
+      "",
+      "Coin",
+      "  position -> Vec2",
+      "  radius -> F32",
+      "  value -> Int",
+      "  state -> CoinState",
+      "",
+      "player : Player",
+      "player position (0, 0)",
+      "player velocity (0, 0)",
+      "player radius 12",
+      "player score 0",
+      "",
+      "coin : Coin",
+      "coin position (120, 40)",
+      "coin radius 8",
+      "coin value 10",
+      "coin state active",
+      "",
+      "distance between ?a and ?b :=",
+      "  length(position of ?a - position of ?b)",
+      "",
+      "?a overlaps ?b if",
+      "  distance between ?a and ?b < radius of ?a + radius of ?b",
+      "",
+      "player collects coin if",
+      "  coin state active",
+      "  player overlaps coin",
+      "",
+      "on frame ?dt",
+      "  player velocity ? ~>",
+      "    player velocity (input movement * 300)",
+      "",
+      "  player position ?position ~>",
+      "    player position (?position + velocity of player * ?dt)",
+      "",
+      "  coin state active ~>",
+      "    coin state collected",
+      "  if",
+      "    player collects coin",
+      "",
+      "  player score ?score ~>",
+      "    player score (?score + value of coin)",
+      "  if",
+      "    player collects coin",
+      "",
+      "  receipt := render! scene",
+      "",
+      "scene includes sprite \"player\" at position of player",
+      "",
+      "scene includes sprite \"coin\" at position of coin if",
+      "  coin state active"
+    ],
+    "line_break": "LF",
+    "ends_with_line_break": true
+  },
+  "source_grouping": [
+    {
+      "kind": "program-requirements",
+      "children": [
+        "game",
+        "three"
+      ]
+    },
+    {
+      "kind": "derived-shape-view",
+      "anchor": "Vec2",
+      "members": [
+        "x",
+        "y"
+      ]
+    },
+    {
+      "kind": "enumeration",
+      "heading": "CoinState",
+      "children": [
+        "active",
+        "collected"
+      ]
+    },
+    {
+      "kind": "relation-contracts",
+      "categories": [
+        "Player",
+        "Coin"
+      ]
+    },
+    {
+      "kind": "referents-and-claims",
+      "members": [
+        "player",
+        "coin"
+      ]
+    },
+    {
+      "kind": "recursive-definition",
+      "identity": "$definition:distance"
+    },
+    {
+      "kind": "inferred-laws",
+      "identities": [
+        "$law:overlaps",
+        "$law:collects"
+      ]
+    },
+    {
+      "kind": "event-transition",
+      "trigger": "frame",
+      "replacements": 4,
+      "effect_definitions": [
+        "receipt"
+      ]
+    },
+    {
+      "kind": "derived-scene",
+      "clauses": 2
+    }
+  ],
+  "structural_intent": "one-coin-complete-m0-semantic-oracle",
+  "program": {
+    "identity": "$program:one-coin-exact",
+    "requirements": [
+      "$package:game",
+      "$package:three"
+    ],
+    "definitions_and_laws": [
+      {
+        "identity": "$definition:distance",
+        "kind": "definition",
+        "pattern": [
+          "$hole:a",
+          "$hole:b"
+        ],
+        "body": {
+          "kind": "call",
+          "callee": "length",
+          "arguments": [
+            {
+              "kind": "subtract",
+              "left": {
+                "relation": "$position",
+                "roles": {
+                  "member": "$hole:a"
+                }
+              },
+              "right": {
+                "relation": "$position",
+                "roles": {
+                  "member": "$hole:b"
+                }
+              }
+            }
+          ]
+        }
+      },
+      {
+        "identity": "$law:overlaps",
+        "conclusion": {
+          "relation": "$overlaps",
+          "roles": {
+            "left": "$hole:a",
+            "right": "$hole:b"
+          }
+        },
+        "premises": [
+          {
+            "kind": "less-than",
+            "left": {
+              "definition": "$definition:distance",
+              "arguments": [
+                "$hole:a",
+                "$hole:b"
+              ]
+            },
+            "right": {
+              "kind": "add",
+              "left": {
+                "relation": "$radius",
+                "roles": {
+                  "member": "$hole:a"
+                }
+              },
+              "right": {
+                "relation": "$radius",
+                "roles": {
+                  "member": "$hole:b"
+                }
+              }
+            }
+          }
+        ]
+      },
+      {
+        "identity": "$law:collects",
+        "conclusion": {
+          "relation": "$collects",
+          "roles": {
+            "player": "$player",
+            "coin": "$coin"
+          }
+        },
+        "premises": [
+          {
+            "relation": "$state",
+            "roles": {
+              "member": "$coin",
+              "value": "$coin-state:active"
+            }
+          },
+          {
+            "relation": "$overlaps",
+            "roles": {
+              "left": "$player",
+              "right": "$coin"
+            }
+          }
+        ]
+      }
+    ],
+    "derived_shape_views": {
+      "$shape:vec2": {
+        "members": {
+          "x": "F32",
+          "y": "F32"
+        }
+      }
+    },
+    "membership_views": {
+      "$category:player": [
+        "$player"
+      ],
+      "$category:coin": [
+        "$coin"
+      ],
+      "$category:coin-state": [
+        "$coin-state:active",
+        "$coin-state:collected"
+      ]
+    },
+    "derived_relation_contracts": {
+      "$position": {
+        "roles": {
+          "member": [
+            "$category:player",
+            "$category:coin"
+          ],
+          "value": "$shape:vec2"
+        },
+        "functional_key": [
+          "member"
+        ]
+      },
+      "$velocity": {
+        "roles": {
+          "member": "$category:player",
+          "value": "$shape:vec2"
+        },
+        "functional_key": [
+          "member"
+        ]
+      },
+      "$radius": {
+        "roles": {
+          "member": [
+            "$category:player",
+            "$category:coin"
+          ],
+          "value": "F32"
+        },
+        "functional_key": [
+          "member"
+        ]
+      },
+      "$score": {
+        "roles": {
+          "member": "$category:player",
+          "value": "Int"
+        },
+        "functional_key": [
+          "member"
+        ]
+      },
+      "$value": {
+        "roles": {
+          "member": "$category:coin",
+          "value": "Int"
+        },
+        "functional_key": [
+          "member"
+        ]
+      },
+      "$state": {
+        "roles": {
+          "member": "$category:coin",
+          "value": "$category:coin-state"
+        },
+        "functional_key": [
+          "member"
+        ]
+      }
+    },
+    "claims": [
+      {
+        "relation": "$membership",
+        "roles": {
+          "member": "$player",
+          "group": "$category:player"
+        }
+      },
+      {
+        "relation": "$position",
+        "roles": {
+          "member": "$player",
+          "value": [
+            0,
+            0
+          ]
+        }
+      },
+      {
+        "relation": "$velocity",
+        "roles": {
+          "member": "$player",
+          "value": [
+            0,
+            0
+          ]
+        }
+      },
+      {
+        "relation": "$radius",
+        "roles": {
+          "member": "$player",
+          "value": 12
+        }
+      },
+      {
+        "relation": "$score",
+        "roles": {
+          "member": "$player",
+          "value": 0
+        }
+      },
+      {
+        "relation": "$membership",
+        "roles": {
+          "member": "$coin",
+          "group": "$category:coin"
+        }
+      },
+      {
+        "relation": "$position",
+        "roles": {
+          "member": "$coin",
+          "value": [
+            120,
+            40
+          ]
+        }
+      },
+      {
+        "relation": "$radius",
+        "roles": {
+          "member": "$coin",
+          "value": 8
+        }
+      },
+      {
+        "relation": "$value",
+        "roles": {
+          "member": "$coin",
+          "value": 10
+        }
+      },
+      {
+        "relation": "$state",
+        "roles": {
+          "member": "$coin",
+          "value": "$coin-state:active"
+        }
+      }
+    ]
+  },
+  "transition_contract": {
+    "trigger": {
+      "relation": "$frame",
+      "roles": {
+        "dt": "$hole:dt"
+      }
+    },
+    "matching_snapshot": "one-exact-pre-state",
+    "replacements": [
+      {
+        "relation": "$velocity",
+        "key": {
+          "member": "$player"
+        },
+        "old": "$any",
+        "new": "input-movement-times-300"
+      },
+      {
+        "relation": "$position",
+        "key": {
+          "member": "$player"
+        },
+        "old": "$hole:position",
+        "new": "position-plus-velocity-times-dt"
+      },
+      {
+        "relation": "$state",
+        "key": {
+          "member": "$coin"
+        },
+        "old": "$coin-state:active",
+        "new": "$coin-state:collected",
+        "guard": "$law:collects"
+      },
+      {
+        "relation": "$score",
+        "key": {
+          "member": "$player"
+        },
+        "old": "$hole:score",
+        "new": "score-plus-coin-value",
+        "guard": "$law:collects"
+      }
+    ],
+    "commit": "one-atomic-successor",
+    "post_commit_effect": {
+      "operation": "$render",
+      "argument": "$scene",
+      "result_contract": "receipt",
+      "definition": "receipt"
+    }
+  },
+  "derived_scene": {
+    "identity": "$scene",
+    "clauses": [
+      {
+        "sprite": "player",
+        "position": {
+          "relation": "$position",
+          "roles": {
+            "member": "$player"
+          }
+        }
+      },
+      {
+        "sprite": "coin",
+        "position": {
+          "relation": "$position",
+          "roles": {
+            "member": "$coin"
+          }
+        },
+        "guard": {
+          "relation": "$state",
+          "roles": {
+            "member": "$coin",
+            "value": "$coin-state:active"
+          }
+        }
+      }
+    ]
+  },
+  "required": [
+    "classification is written with : and elaborates to ordinary membership claims",
+    "Player and Coin are referents with derived relation contracts, never primitive classes or objects",
+    "player and coin remain addressable referents in co-equal named-role claims",
+    "recursive collision terms retain their checked tree and hole identities",
+    "all replacements match one pre-state and commit atomically before the render request",
+    "the receipt definition remains outside semantic state identity",
+    "the derived scene is a relational projection of state"
+  ],
+  "forbidden": [
+    "object",
+    "field",
+    "class",
+    "owned-record",
+    "member-of-membership-alias",
+    "double-colon-membership-alias",
+    "in-membership-alias",
+    "generated-javascript",
+    "threejs-adapter",
+    "browser-host",
+    "host-runtime",
+    "m7-implementation",
+    "runtime-execution-claim",
+    "canonical-∈",
+    "primitive-type-domain",
+    "identity-by-structural-equality"
+  ],
+  "m7_exclusions": {
+    "generated_javascript": false,
+    "threejs_adapter": false,
+    "browser_or_node_host": false,
+    "host_runtime": false,
+    "source_maps": false,
+    "asset_or_input_adapter": false
+  },
+  "canonical_structural_rendering": {
+    "encoding": "clause-m0-role-graph-json",
+    "value": [
+      "program",
+      "transition_contract",
+      "derived_scene"
+    ]
+  },
+  "elaborated": [
+    {
+      "kind": "checked-program-projection",
+      "identity": "$program:one-coin-exact"
+    },
+    {
+      "kind": "event-transition",
+      "trigger": "$frame",
+      "pre_state": "exact",
+      "successor_commit": "atomic",
+      "effect_phase": "post-commit"
+    },
+    {
+      "kind": "derived-relation",
+      "identity": "$scene",
+      "from": "state-relations"
+    },
+    {
+      "kind": "effect-request",
+      "operation": "$render",
+      "arguments": [
+        "$scene"
+      ],
+      "result_contract": "receipt"
+    }
+  ],
+  "result": {
+    "kind": "m0-semantic-oracle",
+    "execution": "not-implemented",
+    "target_artifact": "not-claimed",
+    "preserves": [
+      "program-identity",
+      "relation-role-identities",
+      "pre-state-matching",
+      "atomic-successor",
+      "post-commit-receipt-boundary"
+    ]
+  }
+}

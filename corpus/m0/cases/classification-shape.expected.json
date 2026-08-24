@@ -1,0 +1,58 @@
+{
+  "schema": "clause-m0-contrast-v1",
+  "id": "classification-shape",
+  "axis": "block-classification",
+  "decision": {
+    "status": "accepted-target",
+    "canonical": "derived-shape-classification",
+    "layout_style": "canonical-two-space"
+  },
+  "source": {
+    "lines": [
+      "Vec2",
+      "  x : F32",
+      "  y : F32"
+    ],
+    "line_break": "LF",
+    "ends_with_line_break": true
+  },
+  "structural_intent": "homogeneous-classification-shape",
+  "required": [
+    "colon is classification sugar",
+    "shape is a derived view of membership claims",
+    "x and y remain addressable role terms"
+  ],
+  "forbidden": [
+    "primitive-record",
+    "object-field",
+    "definition",
+    "identity-by-structure"
+  ],
+  "elaborated": [
+    {
+      "kind": "claim",
+      "relation": "$membership",
+      "roles": {
+        "member": "x of Vec2",
+        "group": "F32"
+      }
+    },
+    {
+      "kind": "claim",
+      "relation": "$membership",
+      "roles": {
+        "member": "y of Vec2",
+        "group": "F32"
+      }
+    },
+    {
+      "kind": "derived-view",
+      "view": "structural-shape",
+      "referent": "Vec2",
+      "roles": [
+        "x",
+        "y"
+      ]
+    }
+  ]
+}

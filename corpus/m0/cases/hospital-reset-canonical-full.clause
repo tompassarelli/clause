@@ -1,0 +1,71 @@
+ICU-A : Space
+East-Corridor : Space
+West-Corridor : Space
+North-Exit : Space
+Isolation-Room : Space
+
+Door 101 : Door
+Door 102 : Door
+Door 103 : Door
+Door 104 : Door
+Door 105 : Door
+Door 106 : Door
+
+Fire-Marshal Inspection : Inspection
+
+connects :=
+  door : Door connects origin : Space to destination : Space
+  door origin -> destination*
+
+passed :=
+  door : Door passed inspection : Inspection
+  door -> inspection*
+
+route :=
+  origin : Space has a usable egress path to destination : Space
+  origin -> destination*
+
+Door 101 connects ICU-A to East-Corridor
+Door 101 passed Fire-Marshal Inspection
+Door 102 connects East-Corridor to North-Exit
+Door 102 passed Fire-Marshal Inspection
+Door 103 connects ICU-A to West-Corridor
+Door 103 passed Fire-Marshal Inspection
+Door 104 connects West-Corridor to North-Exit
+Door 104 passed Fire-Marshal Inspection
+Door 105 connects Isolation-Room to East-Corridor
+Door 106 connects Isolation-Room to West-Corridor
+
+?origin has a usable egress path to ?destination if
+  ?door connects ?origin to ?destination
+  ?door passed Fire-Marshal Inspection
+
+?origin has a usable egress path to ?destination if
+  ?door connects ?origin to ?intermediate
+  ?door passed Fire-Marshal Inspection
+  ?intermediate has a usable egress path to ?destination
+
+door-101-withdrawn from egress
+  - Door 101 passed Fire-Marshal Inspection
+
+ICU-A has a usable egress path to ?destination
+
+why
+  ICU-A has a usable egress path to North-Exit
+
+prevent all minimal
+  ICU-A has a usable egress path to North-Exit
+using
+  passed
+
+prevent all minimal from door-101-withdrawn
+  ICU-A has a usable egress path to North-Exit
+using
+  passed
+
+achieve all minimal
+  Isolation-Room has a usable egress path to North-Exit
+using
+  passed
+
+diff egress -> door-101-withdrawn

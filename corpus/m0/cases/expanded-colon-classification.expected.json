@@ -1,34 +1,34 @@
 {
   "schema": "clause-m0-contrast-v1",
-  "id": "focus-relation-two",
-  "axis": "indentation-width",
+  "id": "expanded-colon-classification",
+  "axis": "classification-spelling",
   "decision": {
     "status": "accepted-target",
-    "canonical": "two-space"
+    "canonical": "colon-classification"
   },
   "source": {
     "lines": [
-      "iron-door",
-      "  Door",
-      "  connects Cellar to Armory",
-      "  state := locked"
+      "iron-door : Door",
+      "iron-door connects Cellar to Armory",
+      "state of iron-door := locked"
     ],
     "line_break": "LF",
     "ends_with_line_break": true
   },
-  "structural_intent": "focused-mixed-forms",
+  "structural_intent": "expanded-mixed-forms",
   "equivalence_group": "iron-door-focus-expansion",
   "required": [
-    "layout is erasable",
-    "bare child classifies focus through membership",
-    "connects remains an ordinary relation claim",
-    "state := locked defines the stable state-of-focus term"
+    "classification elaborates to an ordinary membership claim with member and group roles",
+    "connects is an ordinary named-role claim",
+    "state of iron-door is a definition",
+    "formatter and agents emit : and := directly"
   ],
   "forbidden": [
     "object",
     "field",
-    "owned-child",
-    "semantic-form-collapse"
+    "primitive-type-ascription",
+    "semantic-form-collapse",
+    "canonical-∈"
   ],
   "elaborated": [
     {

@@ -2,9 +2,19 @@
   "schema": "clause-m0-contrast-v1",
   "id": "effect-postcommit-failure",
   "axis": "post-commit-effect-failure",
-  "decision": {"status": "unresolved", "candidate": "event-post-commit-effect", "layout_style": "canonical-two-space"},
+  "decision": {
+    "status": "unresolved",
+    "candidate": "event-post-commit-effect",
+    "layout_style": "canonical-two-space"
+  },
   "source": {
-    "lines": ["on collect coin", "  coin state active ~>", "    coin state collected", "", "  receipt: render! scene"],
+    "lines": [
+      "on collect coin",
+      "  coin state active ~>",
+      "    coin state collected",
+      "",
+      "  receipt := render! scene"
+    ],
     "line_break": "LF",
     "ends_with_line_break": true
   },
@@ -12,12 +22,32 @@
     "program": "$program:one-coin-exact",
     "model": "$model:one-coin-exact",
     "pre_state": "$state:coin-active",
-    "functional_contract": {"relation": "$state", "key_roles": ["member"], "value_role": "value", "checker_proved": true},
-    "scene_projection": {
-      "pre_state": {"identity": "$render-plan:coin-active", "sprites": ["player", "coin"]},
-      "post_state": {"identity": "$render-plan:coin-collected", "sprites": ["player"]}
+    "functional_contract": {
+      "relation": "$state",
+      "key_roles": [
+        "member"
+      ],
+      "value_role": "value",
+      "checker_proved": true
     },
-    "runtime_grants": ["$capability:render-exact"],
+    "scene_projection": {
+      "pre_state": {
+        "identity": "$render-plan:coin-active",
+        "sprites": [
+          "player",
+          "coin"
+        ]
+      },
+      "post_state": {
+        "identity": "$render-plan:coin-collected",
+        "sprites": [
+          "player"
+        ]
+      }
+    },
+    "runtime_grants": [
+      "$capability:render-exact"
+    ],
     "host_outcome": "adapter-error"
   },
   "structural_intent": "commit-state-then-record-effect-failure",
@@ -26,7 +56,9 @@
     "kind": "effect-request",
     "identity": "$effect-request:render-collected-scene",
     "operation": "$render",
-    "arguments": ["$render-plan:coin-collected"],
+    "arguments": [
+      "$render-plan:coin-collected"
+    ],
     "capability": "$capability:render-exact",
     "result_contract": "receipt"
   },
@@ -36,23 +68,52 @@
     "a host failure produces a failed receipt",
     "effect failure does not roll back or replace the committed State successor"
   ],
-  "forbidden": ["pre-state-render-plan", "effect-before-state-commit", "state-rollback", "automatic-retry", "failure-as-modeled-state", "missing-failure-receipt"],
+  "forbidden": [
+    "pre-state-render-plan",
+    "effect-before-state-commit",
+    "state-rollback",
+    "automatic-retry",
+    "failure-as-modeled-state",
+    "missing-failure-receipt"
+  ],
   "elaborated": [
     {
       "kind": "event-transition",
-      "trigger": {"relation": "$collect", "roles": {"item": "coin"}},
+      "trigger": {
+        "relation": "$collect",
+        "roles": {
+          "item": "coin"
+        }
+      },
       "pre_state": "$state:coin-active",
       "matching_snapshot": "pre-state",
       "replacements": [
         {
           "relation": "$state",
-          "key": {"member": "coin"},
-          "matched": {"relation": "$state", "roles": {"member": "coin", "value": "active"}},
-          "successor": {"relation": "$state", "roles": {"member": "coin", "value": "collected"}},
+          "key": {
+            "member": "coin"
+          },
+          "matched": {
+            "relation": "$state",
+            "roles": {
+              "member": "coin",
+              "value": "active"
+            }
+          },
+          "successor": {
+            "relation": "$state",
+            "roles": {
+              "member": "coin",
+              "value": "collected"
+            }
+          },
           "functional_key_proved": true
         }
       ],
-      "state_successor": {"identity": "$state:coin-collected", "commit": "atomic"},
+      "state_successor": {
+        "identity": "$state:coin-collected",
+        "commit": "atomic"
+      },
       "effects": [
         {
           "request": "$effect-request:render-collected-scene",
@@ -61,19 +122,40 @@
         }
       ]
     },
-    {"kind": "runtime-result-binding", "left": "receipt", "right": "$effect-result:render-collected"}
+    {
+      "kind": "runtime-result-definition",
+      "term": "receipt",
+      "denotation": "$effect-result:render-collected"
+    }
   ],
   "result": {
-    "state_successor": {"identity": "$state:coin-collected", "status": "committed"},
+    "state_successor": {
+      "identity": "$state:coin-collected",
+      "status": "committed"
+    },
     "effect_execution": {
       "phase": "post-commit",
       "observed_state": "$state:coin-collected",
       "input": "$render-plan:coin-collected",
-      "authorization": {"capability": "$capability:render-exact", "status": "granted"},
-      "attempt": {"identity": "$effect-attempt:render-collected/failure-run", "status": "completed"},
-      "receipt": {"identity": "$receipt:render-collected/failure", "status": "failed", "error": "adapter-error", "admitted_truth": false}
+      "authorization": {
+        "capability": "$capability:render-exact",
+        "status": "granted"
+      },
+      "attempt": {
+        "identity": "$effect-attempt:render-collected/failure-run",
+        "status": "completed"
+      },
+      "receipt": {
+        "identity": "$receipt:render-collected/failure",
+        "status": "failed",
+        "error": "adapter-error",
+        "admitted_truth": false
+      }
     },
-    "binding": {"name": "receipt", "value": "$receipt:render-collected/failure"},
+    "definition": {
+      "name": "receipt",
+      "value": "$receipt:render-collected/failure"
+    },
     "state_identity_includes_receipt": false
   }
 }

@@ -1,0 +1,69 @@
+requires
+  game
+  three
+
+Vec2
+  x : F32
+  y : F32
+
+CoinState
+  active
+  collected
+
+Player
+  position -> Vec2
+  velocity -> Vec2
+  radius -> F32
+  score -> Int
+
+Coin
+  position -> Vec2
+  radius -> F32
+  value -> Int
+  state -> CoinState
+
+player : Player
+player position (0, 0)
+player velocity (0, 0)
+player radius 12
+player score 0
+
+coin : Coin
+coin position (120, 40)
+coin radius 8
+coin value 10
+coin state active
+
+distance between ?a and ?b :=
+  length(position of ?a - position of ?b)
+
+?a overlaps ?b if
+  distance between ?a and ?b < radius of ?a + radius of ?b
+
+player collects coin if
+  coin state active
+  player overlaps coin
+
+on frame ?dt
+  player velocity ? ~>
+    player velocity (input movement * 300)
+
+  player position ?position ~>
+    player position (?position + velocity of player * ?dt)
+
+  coin state active ~>
+    coin state collected
+  if
+    player collects coin
+
+  player score ?score ~>
+    player score (?score + value of coin)
+  if
+    player collects coin
+
+  receipt := render! scene
+
+scene includes sprite "player" at position of player
+
+scene includes sprite "coin" at position of coin if
+  coin state active
