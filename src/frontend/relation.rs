@@ -101,7 +101,10 @@ fn parse_shape(line: SourceLine<'_>) -> Result<SentenceShapeDecl, ParseError> {
     })
 }
 
-fn parse_compact_shape(line: SourceLine<'_>) -> Result<SentenceShapeDecl, ParseError> {
+fn parse_compact_shape(
+    line: SourceLine<'_>,
+    grounded: &BTreeSet<Name>,
+) -> Result<SentenceShapeDecl, ParseError> {
     let text = content(line);
     let base = indent(line)?;
     let mut offset = base;
@@ -139,18 +142,70 @@ fn parse_compact_shape(line: SourceLine<'_>) -> Result<SentenceShapeDecl, ParseE
             .strip_suffix(':')
             .expect("role marker ends with ':'");
         let domain_index = marker + 1;
-        let Some((domain_text, domain_offset)) = tokens.get(domain_index).copied() else {
+        let Some((_, domain_offset)) = tokens.get(domain_index).copied() else {
             return Err(error(
                 line_span(line),
                 "compact relation role needs a domain",
             ));
         };
-        if domain_text.ends_with(':') {
+        if tokens[domain_index].0.ends_with(':') {
             return Err(error(
-                child_span(line, domain_offset, domain_text.len()),
+                child_span(line, domain_offset, tokens[domain_index].0.len()),
                 "compact relation role needs a domain before the next role",
             ));
         }
+        let next_marker = markers.get(ordinal + 1).copied().unwrap_or(tokens.len());
+        let domain_splits = if next_marker == tokens.len() {
+            vec![next_marker]
+        } else {
+            (domain_index + 1..next_marker).collect::<Vec<_>>()
+        };
+        let candidates = domain_splits
+            .into_iter()
+            .filter_map(|split| {
+                let name = tokens[domain_index..split]
+                    .iter()
+                    .map(|(token, _)| *token)
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                grounded
+                    .contains(&Name(name.clone()))
+                    .then_some((split, name))
+            })
+            .collect::<Vec<_>>();
+        let (domain_end, domain_text) = match candidates.as_slice() {
+            [] => {
+                let unresolved = tokens[domain_index..next_marker]
+                    .iter()
+                    .map(|(token, _)| *token)
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                return Err(error(
+                    child_span(line, domain_offset, unresolved.len()),
+                    format!(
+                        "compact relation role has no uniquely grounded domain in '{unresolved}'"
+                    ),
+                ));
+            }
+            [candidate] => candidate.clone(),
+            candidates => {
+                let names = candidates
+                    .iter()
+                    .map(|(_, name)| format!("'{name}'"))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                return Err(error(
+                    child_span(
+                        line,
+                        domain_offset,
+                        tokens[next_marker - 1].1 + tokens[next_marker - 1].0.len() - domain_offset,
+                    ),
+                    format!(
+                        "compact relation role domain is ambiguous among {names}; use an explicit structural relation shape"
+                    ),
+                ));
+            }
+        };
         let role = role_name(line, role_offset, role_text)?;
         if !roles.insert(role.value.clone()) {
             return Err(error(
@@ -160,11 +215,11 @@ fn parse_compact_shape(line: SourceLine<'_>) -> Result<SentenceShapeDecl, ParseE
         }
         parts.push(ShapePartDecl::Role {
             id: role,
-            domain: domain_name(line, domain_offset, domain_text)?,
+            domain: domain_name(line, domain_offset, &domain_text)?,
         });
 
-        if let Some(next_marker) = markers.get(ordinal + 1).copied() {
-            let literal_tokens = &tokens[domain_index + 1..next_marker];
+        if next_marker != tokens.len() {
+            let literal_tokens = &tokens[domain_end..next_marker];
             if literal_tokens.is_empty() {
                 return Err(error(
                     line_span(line),
@@ -180,11 +235,6 @@ fn parse_compact_shape(line: SourceLine<'_>) -> Result<SentenceShapeDecl, ParseE
                 value: literal.clone(),
                 span: child_span(line, literal_tokens[0].1, literal.len()),
             }));
-        } else if domain_index + 1 != tokens.len() {
-            return Err(error(
-                line_span(line),
-                "compact relation phrase must end with a role domain",
-            ));
         }
     }
     Ok(SentenceShapeDecl {
@@ -353,7 +403,10 @@ fn known_text_width(roles: &[Spanned<RoleName>]) -> usize {
         + " -> ".len()
 }
 
-pub(super) fn relation_spec(raw: &RawDecl<'_>) -> Result<RelationSpec, ParseError> {
+pub(super) fn relation_spec(
+    raw: &RawDecl<'_>,
+    grounded: &BTreeSet<Name>,
+) -> Result<RelationSpec, ParseError> {
     let entries = nonblank(raw.body.iter().copied());
     if entries.is_empty()
         || entries.iter().any(|line| {
@@ -367,7 +420,7 @@ pub(super) fn relation_spec(raw: &RawDecl<'_>) -> Result<RelationSpec, ParseErro
     }
     let compact = content(raw.header).ends_with(':');
     let shape = if compact {
-        parse_compact_shape(entries[0])?
+        parse_compact_shape(entries[0], grounded)?
     } else {
         parse_shape(entries[0])?
     };

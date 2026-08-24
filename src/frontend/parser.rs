@@ -71,7 +71,7 @@ pub fn parse(source: &str) -> Result<Program, ParseError> {
     {
         relations.insert(
             declaration.subject.value.clone(),
-            relation_spec(declaration)?,
+            relation_spec(declaration, &provisional_grounded)?,
         );
     }
 
@@ -838,6 +838,56 @@ diff impact -> impact/adopt
         };
 
         assert_eq!(contract(&compact), contract(&ceremonial));
+    }
+
+    #[test]
+    fn compact_relation_domains_resolve_exact_grounded_multiword_names() {
+        let compact = parse(
+            "security door\ninterior space\n\nconnects:\n  door: security door connects origin: interior space to destination: interior space\n  door origin -> destination*\n",
+        )
+        .expect("grounded multiword compact domains resolve");
+        let relation = compact
+            .declarations
+            .iter()
+            .find(|declaration| declaration.subject.value.as_str() == "connects")
+            .expect("compact relation exists");
+        let Member::Sentence(sentence) = &relation.body[0] else {
+            panic!("compact relation starts with its sentence shape");
+        };
+        let domains = sentence
+            .parts
+            .iter()
+            .filter_map(|part| match part {
+                ShapePartDecl::Role { domain, .. } => Some(domain.value.as_str()),
+                ShapePartDecl::Literal(_) => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            domains,
+            ["security door", "interior space", "interior space"]
+        );
+        let literals = sentence
+            .parts
+            .iter()
+            .filter_map(|part| match part {
+                ShapePartDecl::Literal(literal) => Some(literal.value.as_str()),
+                ShapePartDecl::Role { .. } => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(literals, ["connects", "to"]);
+    }
+
+    #[test]
+    fn compact_relation_domains_reject_ambiguous_grounded_segmentations() {
+        let error = parse(
+            "security\nsecurity door\ninterior space\n\nconnects:\n  door: security door connects origin: interior space to destination: interior space\n  door origin -> destination*\n",
+        )
+        .expect_err("two grounded domain prefixes must remain ambiguous")
+        .to_string();
+
+        assert!(error.contains("ambiguous"), "{error}");
+        assert!(error.contains("'security'"), "{error}");
+        assert!(error.contains("'security door'"), "{error}");
     }
 
     #[test]
