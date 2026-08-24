@@ -257,6 +257,157 @@ fn find_returns_recursive_derived_referents_in_canonical_order() {
     assert!(result.iter().all(|term| matches!(term, Term::Referent(_))));
 }
 
+fn selection_clause(values: [Term; 5]) -> RelationalContent {
+    RelationalContent::new(
+        referent_id("selection/related"),
+        ["scope", "a", "b", "c", "d"]
+            .into_iter()
+            .zip(values)
+            .map(|(role, value)| (role_id(role), value))
+            .collect(),
+    )
+    .unwrap()
+}
+
+fn selection_revision(assertions: Vec<RelationalContent>) -> Revision {
+    let model_id = referent_id("selection");
+    let relation_id = referent_id("selection/related");
+    let source = referent_id("selection/source");
+    let policy = referent_id("selection/policy");
+    let roles = ["scope", "a", "b", "c", "d"]
+        .into_iter()
+        .map(|name| {
+            let id = role_id(name);
+            (id.clone(), Role::new(id, Vec::new()).unwrap())
+        })
+        .collect::<BTreeMap<_, _>>();
+    let shape = RelationShape::new(
+        relation_id.clone(),
+        roles,
+        vec![
+            LookupMode::finite(
+                vec![role_id("scope")],
+                ["a", "b", "c", "d"].into_iter().map(role_id).collect(),
+                Cardinality::Many,
+            )
+            .unwrap(),
+        ],
+    )
+    .unwrap();
+    let mut referents = BTreeMap::new();
+    for id in [
+        model_id.clone(),
+        relation_id.clone(),
+        source.clone(),
+        policy.clone(),
+        referent_id("World"),
+        referent_id("A"),
+        referent_id("B"),
+        referent_id("C"),
+        referent_id("D"),
+    ] {
+        declare(&mut referents, id);
+    }
+    let relational_contents = assertions
+        .iter()
+        .map(|content| (content.id().clone(), content.clone()))
+        .collect();
+    let mut occurrences = Vec::new();
+    let mut judgments = Vec::new();
+    for assertion in assertions {
+        let occurrence_id =
+            referent_id(&format!("selection/occurrence/{}", assertion.id().as_str()));
+        let judgment_id = referent_id(&format!("selection/judgment/{}", assertion.id().as_str()));
+        declare(&mut referents, occurrence_id.clone());
+        declare(&mut referents, judgment_id.clone());
+        occurrences.push(AssertionOccurrence::new(
+            occurrence_id.clone(),
+            assertion.id().clone(),
+            source.clone(),
+            model_id.clone(),
+        ));
+        judgments.push(Judgment::new(
+            judgment_id,
+            model_id.clone(),
+            model_id.clone(),
+            JudgmentTarget::Occurrence(occurrence_id),
+            JudgmentKind::Admitted {
+                policy: policy.clone(),
+                basis: Vec::new(),
+            },
+            JudgmentStatus::Affirmed,
+        ));
+    }
+    wire::admit(
+        Model::with_distinctions(
+            model_id,
+            referents,
+            relational_contents,
+            BTreeMap::from([(relation_id, shape)]),
+            BTreeMap::new(),
+            occurrences,
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            judgments,
+        )
+        .unwrap(),
+    )
+}
+
+#[test]
+fn select_correlates_named_holes_without_correlating_anonymous_holes() {
+    let world = referent("World");
+    let revision = selection_revision(vec![
+        selection_clause([
+            world.clone(),
+            referent("A"),
+            referent("B"),
+            referent("B"),
+            referent("C"),
+        ]),
+        selection_clause([
+            world.clone(),
+            referent("A"),
+            referent("B"),
+            referent("C"),
+            referent("D"),
+        ]),
+        selection_clause([
+            world.clone(),
+            referent("C"),
+            referent("B"),
+            referent("B"),
+            referent("A"),
+        ]),
+    ]);
+    let first = pattern_id("anonymous/first");
+    let same = pattern_id("named/same");
+    let second = pattern_id("anonymous/second");
+    let pattern = selection_clause([
+        world,
+        Term::pattern(first.clone()),
+        Term::pattern(same.clone()),
+        Term::pattern(same.clone()),
+        Term::pattern(second.clone()),
+    ]);
+    let plan = crate::kernel::QueryPlan::new(revision.model(), &pattern, vec![first, same, second])
+        .unwrap();
+    let mut expected = vec![
+        QueryRow {
+            values: vec![referent("A"), referent("B"), referent("C")],
+        },
+        QueryRow {
+            values: vec![referent("C"), referent("B"), referent("A")],
+        },
+    ];
+    expected.sort();
+    assert_eq!(select(&revision, &plan, limits()).unwrap(), expected);
+}
+
 #[test]
 fn why_projects_one_canonical_revision_scoped_proof() {
     let revision = revision(vec![asserted("map/links", "North", "Store")], chain_rules());

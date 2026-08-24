@@ -6,7 +6,9 @@
 //! request layer.
 use crate::{
     derive::{Limits, SupportLimits},
-    kernel::{PatternId, ReferentId, RelationalContent, Result, Revision, RevisionId, Term},
+    kernel::{
+        PatternId, QueryPlan, ReferentId, RelationalContent, Result, Revision, RevisionId, Term,
+    },
 };
 use std::collections::BTreeMap;
 
@@ -73,6 +75,19 @@ pub struct WhyAll {
     pub expansions: usize,
 }
 
+/// One canonical row from a relational selection. Values follow the query
+/// projection order rather than semantic role identity order.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct QueryRow {
+    values: Vec<Term>,
+}
+
+impl QueryRow {
+    pub fn values(&self) -> &[Term] {
+        &self.values
+    }
+}
+
 impl WhyAll {
     pub fn alternative_count(&self) -> usize {
         self.alternatives.len()
@@ -95,6 +110,11 @@ pub fn find(
     limits: Limits,
 ) -> Result<Vec<Term>> {
     query::find(revision, plan, limits)
+}
+
+/// Evaluate one hole-bearing clause over the complete bounded derived closure.
+pub fn select(revision: &Revision, plan: &QueryPlan, limits: Limits) -> Result<Vec<QueryRow>> {
+    query::select(revision, plan, limits)
 }
 
 /// Normalize one closed pure term against the definitions and intrinsic
