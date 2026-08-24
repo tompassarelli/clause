@@ -330,6 +330,7 @@ fn parse_term(token: &Token) -> Result<SurfaceTerm, ParseError> {
         return Ok(SurfaceTerm::Variable(variable_name(
             SourceLine {
                 number: token.span.line,
+                column: 1,
                 text: "",
             },
             token.span.column - 1,
@@ -380,6 +381,7 @@ pub(super) fn focus_term(token: &Token) -> Result<SurfaceTerm, ParseError> {
     let suffix = &token.raw[close + 1..];
     let source = SourceLine {
         number: token.span.line,
+        column: 1,
         text: "",
     };
     referent_name(source, token.span.column, &format!("{prefix}0{suffix}"))?;
@@ -495,6 +497,7 @@ fn parse_role_term(tokens: &[Token]) -> Result<SurfaceTerm, ParseError> {
     semantic_name(
         SourceLine {
             number: span.line,
+            column: 1,
             text: "",
         },
         span.column - 1,
@@ -1730,6 +1733,7 @@ pub(super) fn closed_term_text_with_catalog(
 ) -> Result<(SurfaceTerm, DomainName), ParseError> {
     let synthetic = SourceLine {
         number: line.number,
+        column: 1,
         text,
     };
     let mut tokens = recursive_clause_tokens(synthetic)?;

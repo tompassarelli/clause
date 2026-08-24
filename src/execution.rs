@@ -130,6 +130,11 @@ pub fn find(
 }
 
 /// Evaluate one hole-bearing clause over the complete bounded derived closure.
+pub fn any(revision: &Revision, plan: &QueryPlan, limits: Limits) -> Result<bool> {
+    query::any(revision, plan, limits)
+}
+
+/// Evaluate one hole-bearing clause over the complete bounded derived closure.
 pub fn select(revision: &Revision, plan: &QueryPlan, limits: Limits) -> Result<Vec<QueryRow>> {
     query::select(revision, plan, limits)
 }

@@ -80,6 +80,21 @@ pub(super) fn select(
     Ok(rows)
 }
 
+pub(super) fn any(revision: &Revision, plan: &QueryPlan, limits: Limits) -> Result<bool> {
+    revision.model().validate_content(plan.pattern(), true)?;
+    let closure = derive::saturate(revision, limits)?;
+    Ok(closure.contents().iter().any(|candidate| {
+        unify_content(
+            revision.model(),
+            plan.pattern(),
+            candidate,
+            &BTreeMap::new(),
+            &mut BTreeSet::new(),
+        )
+        .is_some()
+    }))
+}
+
 fn unify_content(
     model: &Model,
     pattern: &RelationalContent,

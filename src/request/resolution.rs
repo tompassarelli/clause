@@ -12,6 +12,25 @@ pub(super) fn resolve(program: &CompiledProgram) -> kernel::Result<ResolvedProgr
     let mut requests = Vec::with_capacity(program.requests().len());
     for (index, request) in program.requests().iter().enumerate() {
         let resolved = match request {
+            frontend::RequestDecl::Any {
+                revision,
+                pattern,
+                columns,
+                ..
+            } => {
+                let revision = program.revision(&revision.value)?;
+                let pattern = program.lower_request_clause(index, revision, pattern)?;
+                let binders = columns
+                    .iter()
+                    .map(|column| program.request_column(index, column))
+                    .collect::<kernel::Result<Vec<_>>>()?;
+                let plan = kernel::QueryPlan::derive(revision.model(), &pattern, binders)?;
+                Request::Any {
+                    revision: revision.identity().clone(),
+                    pattern,
+                    columns: plan.columns().to_vec(),
+                }
+            }
             frontend::RequestDecl::Select {
                 revision,
                 pattern,

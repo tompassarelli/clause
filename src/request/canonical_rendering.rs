@@ -35,6 +35,7 @@ pub(super) fn evaluation_bytes(output: &EvaluationOutput) -> String {
 
 fn request_output(value: &RequestOutput) -> String {
     match value {
+        RequestOutput::Any(value) => format!("[\"any\",{value}]"),
         RequestOutput::Select { columns, rows } => format!(
             "[\"select\",[{}],[{}]]",
             columns

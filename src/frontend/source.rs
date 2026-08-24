@@ -3,6 +3,7 @@ use super::*;
 #[derive(Clone, Copy, Debug)]
 pub(super) struct SourceLine<'a> {
     pub(super) number: usize,
+    pub(super) column: usize,
     pub(super) text: &'a str,
 }
 
@@ -28,6 +29,10 @@ enum RawItem<'a> {
 
 #[derive(Clone, Debug)]
 pub(super) enum RawRequest<'a> {
+    Any {
+        clause: SourceLine<'a>,
+        header: SourceLine<'a>,
+    },
     Find {
         revision: Spanned<Name>,
         sought: Spanned<VariableName>,
@@ -67,7 +72,7 @@ pub(super) fn error(span: Span, message: impl Into<String>) -> ParseError {
 pub(super) fn line_span(line: SourceLine<'_>) -> Span {
     Span {
         line: line.number,
-        column: 1,
+        column: line.column,
         width: line.text.len(),
     }
 }
@@ -75,7 +80,7 @@ pub(super) fn line_span(line: SourceLine<'_>) -> Span {
 pub(super) fn child_span(line: SourceLine<'_>, offset: usize, width: usize) -> Span {
     Span {
         line: line.number,
-        column: offset + 1,
+        column: line.column + offset,
         width,
     }
 }
@@ -406,6 +411,19 @@ fn parse_request<'a>(
 ) -> Result<RawRequest<'a>, ParseError> {
     let text = content(line);
     *index += 1;
+    if let Some(clause) = text.strip_prefix("any ") {
+        if clause.is_empty() {
+            return Err(error(line_span(line), "any requires one relational clause"));
+        }
+        return Ok(RawRequest::Any {
+            clause: SourceLine {
+                number: line.number,
+                column: line.column + "any ".len(),
+                text: clause,
+            },
+            header: line,
+        });
+    }
     if let Some(rest) = text.strip_prefix("find all ?") {
         let (sought_text, revision_text) = rest
             .split_once(" in ")
@@ -519,6 +537,7 @@ pub(super) fn scan(source: &str) -> Result<ScanOutput<'_>, ParseError> {
         .enumerate()
         .map(|(index, text)| SourceLine {
             number: index + 1,
+            column: 1,
             text,
         })
         .collect::<Vec<_>>();
@@ -542,7 +561,8 @@ pub(super) fn scan(source: &str) -> Result<ScanOutput<'_>, ParseError> {
             ));
         }
         let text = content(line);
-        if text.starts_with("find ")
+        if text.starts_with("any ")
+            || text.starts_with("find ")
             || text.starts_with("why in ")
             || text.starts_with("why all in ")
             || text.starts_with("prevent ")

@@ -307,6 +307,12 @@ pub enum InterventionSelection {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RequestDecl {
+    Any {
+        revision: Spanned<Name>,
+        pattern: SurfaceClause,
+        columns: Vec<QueryColumnDecl>,
+        span: Span,
+    },
     Select {
         revision: Spanned<Name>,
         pattern: SurfaceClause,

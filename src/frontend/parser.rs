@@ -37,6 +37,7 @@ fn is_direct_focus(
         relation_line_matches(
             SourceLine {
                 number: line.number,
+                column: 1,
                 text: &expanded,
             },
             relations,
@@ -401,6 +402,7 @@ pub fn parse(source: &str) -> Result<Program, ParseError> {
                                     let parsed = clause(
                                         SourceLine {
                                             number: child.number,
+                                            column: 1,
                                             text: &expanded,
                                         },
                                         &raw.subject.value,
@@ -675,6 +677,7 @@ pub fn parse(source: &str) -> Result<Program, ParseError> {
                 let mut parsed = clause_with_catalog(
                     SourceLine {
                         number: line.number,
+                        column: 1,
                         text: &expanded,
                     },
                     &top_memberships,
@@ -692,7 +695,7 @@ pub fn parse(source: &str) -> Result<Program, ParseError> {
     top_level.extend(ordered_top_level.into_iter().map(|(_, member)| member));
 
     let mut requests = Vec::new();
-    for raw in raw_queries {
+    let implicit_query = |line: SourceLine<'_>, description: &str| {
         let eligible = kinds
             .iter()
             .filter_map(|(name, kind)| (*kind == Kind::Model).then_some(name))
@@ -700,7 +703,7 @@ pub fn parse(source: &str) -> Result<Program, ParseError> {
         let mut candidates = Vec::new();
         for model in &eligible {
             let mut variables = BTreeMap::new();
-            if let Ok(pattern) = clause(raw.line, model, &relations, &memberships, &mut variables) {
+            if let Ok(pattern) = clause(line, model, &relations, &memberships, &mut variables) {
                 candidates.push(((*model).clone(), pattern));
             }
         }
@@ -712,9 +715,9 @@ pub fn parse(source: &str) -> Result<Program, ParseError> {
         let (revision, pattern) = match candidates.as_slice() {
             [] => {
                 return Err(error(
-                    line_span(raw.line),
+                    line_span(line),
                     format!(
-                        "naked query matches no declared Model; candidates: {}",
+                        "{description} matches no declared Model; candidates: {}",
                         if candidate_names.is_empty() {
                             "<none>"
                         } else {
@@ -726,9 +729,9 @@ pub fn parse(source: &str) -> Result<Program, ParseError> {
             [(revision, pattern)] => (revision.clone(), pattern.clone()),
             many => {
                 return Err(error(
-                    line_span(raw.line),
+                    line_span(line),
                     format!(
-                        "naked query is ambiguous across Models: {}",
+                        "{description} is ambiguous across Models: {}",
                         many.iter()
                             .map(|(name, _)| name.as_str())
                             .collect::<Vec<_>>()
@@ -737,6 +740,10 @@ pub fn parse(source: &str) -> Result<Program, ParseError> {
                 ));
             }
         };
+        Ok((revision, pattern))
+    };
+    for raw in raw_queries {
+        let (revision, pattern) = implicit_query(raw.line, "naked query")?;
         let columns = query_columns(&pattern);
         requests.push(RequestDecl::Select {
             revision: Spanned {
@@ -750,6 +757,25 @@ pub fn parse(source: &str) -> Result<Program, ParseError> {
     }
     for raw in raw_requests {
         match raw {
+            RawRequest::Any {
+                clause: line,
+                header,
+            } => {
+                let (revision, pattern) = implicit_query(line, "any query")?;
+                let columns = query_columns(&pattern);
+                if columns.is_empty() {
+                    return Err(error(line_span(header), "any requires at least one hole"));
+                }
+                requests.push(RequestDecl::Any {
+                    revision: Spanned {
+                        value: revision,
+                        span: line_span(header),
+                    },
+                    pattern,
+                    columns,
+                    span: line_span(header),
+                });
+            }
             RawRequest::Find {
                 revision,
                 sought,
@@ -847,7 +873,8 @@ pub fn parse(source: &str) -> Result<Program, ParseError> {
         }
     }
     requests.sort_by_key(|request| match request {
-        RequestDecl::Select { span, .. }
+        RequestDecl::Any { span, .. }
+        | RequestDecl::Select { span, .. }
         | RequestDecl::Find { span, .. }
         | RequestDecl::Why { span, .. }
         | RequestDecl::Prevent { span, .. }

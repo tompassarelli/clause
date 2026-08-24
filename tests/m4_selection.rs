@@ -49,7 +49,7 @@ selection
   World relates C through B and B to A
 
 any World relates ?person through ?same and ?same to ?
-any World relates D through ?same and ?same to A
+any World relates ?same through ?same and ?same to ?same
 ";
 
 fn temporary(extension: &str) -> PathBuf {
@@ -376,8 +376,50 @@ fn any_returns_only_bool_with_alpha_and_generated_parity() {
     let compiled = elaborate::compile(frontend::parse(ANY_SOURCE).expect("Any source parses"))
         .expect("Any source compiles");
     let resolved = request::resolve(&compiled).expect("Any requests resolve");
+    let [
+        Request::Any {
+            columns: matching_columns,
+            ..
+        },
+        Request::Any {
+            columns: rejecting_columns,
+            ..
+        },
+    ] = resolved.requests()
+    else {
+        panic!("source must resolve to exactly two Any requests");
+    };
+
+    let relation = compiled.designations().global("selection/related").unwrap();
+    let role = |label: &str| compiled.designations().role(&relation, label).unwrap();
+    let mut correlated_origins = vec![role("b"), role("c")];
+    correlated_origins.sort();
+    assert_eq!(
+        matching_columns
+            .iter()
+            .map(|column| column.origins().to_vec())
+            .collect::<Vec<_>>(),
+        vec![vec![role("a")], correlated_origins, vec![role("d")]],
+        "Any preserves fresh anonymous and correlated named-hole role origins"
+    );
+    let mut all_hole_origins = vec![role("a"), role("b"), role("c"), role("d")];
+    all_hole_origins.sort();
+    assert_eq!(
+        rejecting_columns
+            .iter()
+            .map(|column| column.origins().to_vec())
+            .collect::<Vec<_>>(),
+        vec![all_hole_origins],
+        "one repeated named hole retains every correlated role origin"
+    );
+
     let output =
         request::run(&resolved, request::RunLimits::default()).expect("Any requests execute");
+    assert_eq!(
+        output.results,
+        vec![RequestOutput::Any(true), RequestOutput::Any(false)],
+        "Any exposes only one Boolean per authored request"
+    );
     assert_eq!(
         output.canonical_bytes(),
         "[\"clause-run-v1\",[[\"any\",true],[\"any\",false]]]"
@@ -414,7 +456,13 @@ fn any_returns_only_bool_with_alpha_and_generated_parity() {
     .expect("generated Any Rust writes");
     fs::remove_file(&authoring).expect("Any authoring source deletes before generated compile");
     let generated = Command::new("rustc")
-        .args(["--edition=2024", "--cfg", "clause_generated"])
+        .args([
+            "--edition=2024",
+            "--cfg",
+            "clause_generated",
+            "--crate-name",
+            "clause_m4_any",
+        ])
         .arg(&rust)
         .arg("-o")
         .arg(&binary)

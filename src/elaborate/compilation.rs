@@ -307,19 +307,19 @@ fn declare_projection(
         declare_request_literals(request, &mut projection.designations);
         let ordinal = index.to_string();
         let scope = synthetic_referent("request-pattern-scope", &[&ordinal]);
-        let binders = match request {
-            frontend::RequestDecl::Select { pattern, .. } => Some(BinderTable::declare_query(
-                &mut projection.designations,
-                &scope,
-                pattern,
-            )?),
-            frontend::RequestDecl::Find { pattern, .. } => Some(BinderTable::declare_alpha(
-                &mut projection.designations,
-                &scope,
-                std::iter::once(pattern),
-            )?),
-            _ => None,
-        };
+        let binders =
+            match request {
+                frontend::RequestDecl::Any { pattern, .. }
+                | frontend::RequestDecl::Select { pattern, .. } => Some(
+                    BinderTable::declare_query(&mut projection.designations, &scope, pattern)?,
+                ),
+                frontend::RequestDecl::Find { pattern, .. } => Some(BinderTable::declare_alpha(
+                    &mut projection.designations,
+                    &scope,
+                    std::iter::once(pattern),
+                )?),
+                _ => None,
+            };
         if let Some(binders) = binders {
             projection.request_binders.insert(index, binders);
         }
@@ -1414,7 +1414,8 @@ fn declare_literals(members: &[Member], table: &mut DesignationTable) {
 
 fn declare_request_literals(request: &frontend::RequestDecl, table: &mut DesignationTable) {
     let clause = match request {
-        frontend::RequestDecl::Select { pattern, .. }
+        frontend::RequestDecl::Any { pattern, .. }
+        | frontend::RequestDecl::Select { pattern, .. }
         | frontend::RequestDecl::Find { pattern, .. } => Some(pattern),
         frontend::RequestDecl::Why { target, .. }
         | frontend::RequestDecl::Prevent { target, .. }

@@ -24,6 +24,11 @@ mod resolution;
 /// A request with every source navigation name resolved to a semantic identity.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Request {
+    Any {
+        revision: RevisionId,
+        pattern: RelationalContent,
+        columns: Vec<QueryPlanColumn>,
+    },
     Select {
         revision: RevisionId,
         pattern: RelationalContent,
@@ -142,20 +147,32 @@ impl ResolvedProgram {
                     ));
                 }
             }
-            if let Request::Select {
-                revision,
-                pattern,
-                columns,
-            } = request
-            {
-                let selected = revisions
-                    .get(revision)
-                    .expect("request Revision presence was validated");
-                let _ = kernel::QueryPlan::new(
-                    selected.model(),
+            match request {
+                Request::Any {
+                    revision,
                     pattern,
-                    columns.iter().map(QueryColumn::plan_column).collect(),
-                )?;
+                    columns,
+                } => {
+                    let selected = revisions
+                        .get(revision)
+                        .expect("request Revision presence was validated");
+                    let _ = kernel::QueryPlan::new(selected.model(), pattern, columns.clone())?;
+                }
+                Request::Select {
+                    revision,
+                    pattern,
+                    columns,
+                } => {
+                    let selected = revisions
+                        .get(revision)
+                        .expect("request Revision presence was validated");
+                    let _ = kernel::QueryPlan::new(
+                        selected.model(),
+                        pattern,
+                        columns.iter().map(QueryColumn::plan_column).collect(),
+                    )?;
+                }
+                _ => {}
             }
         }
         Ok(Self {
@@ -175,7 +192,8 @@ impl ResolvedProgram {
 impl Request {
     pub fn revisions(&self) -> Vec<&RevisionId> {
         match self {
-            Self::Select { revision, .. }
+            Self::Any { revision, .. }
+            | Self::Select { revision, .. }
             | Self::Find { revision, .. }
             | Self::Why { revision, .. }
             | Self::Prevent { revision, .. }
@@ -225,6 +243,7 @@ pub struct EvaluationOutput {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RequestOutput {
+    Any(bool),
     Select {
         columns: Vec<QueryColumn>,
         rows: Vec<QueryRow>,
