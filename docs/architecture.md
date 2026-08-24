@@ -117,4 +117,7 @@ bin/architecture-gate --self-test
 The self-test attacks the gate's own authority marker, milestone parser,
 shadow-identity denial, severe-debt denial, pending-obligation boundary, and
 full-object-identity comparison. It does not rerun a milestone's feature or
-regression suite.
+regression suite. The M4 decision separately runs the one exact M4/S1
+selection regression that covers descriptor parity, origin tamper rejection,
+nested-hole denial, label identity invariance, and source-deleted generated
+output parity.
