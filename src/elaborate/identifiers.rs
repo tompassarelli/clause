@@ -27,14 +27,16 @@ impl DesignationTable {
         validate_designation(after)?;
         let id = self
             .globals
-            .remove(before)
+            .get(before)
+            .cloned()
             .ok_or_else(|| kernel::KernelError::new("rename source designation is unknown"))?;
-        if self.globals.insert(after.to_owned(), id.clone()).is_some() {
-            self.globals.insert(before.to_owned(), id);
+        if before != after && self.globals.contains_key(after) {
             return Err(kernel::KernelError::new(
                 "rename destination designation already exists",
             ));
         }
+        self.globals.remove(before);
+        self.globals.insert(after.to_owned(), id);
         Ok(())
     }
 
@@ -48,15 +50,17 @@ impl DesignationTable {
         let old = (model.clone(), before.to_owned());
         let id = self
             .scoped
-            .remove(&old)
+            .get(&old)
+            .cloned()
             .ok_or_else(|| kernel::KernelError::new("rename source designation is unknown"))?;
         let new = (model.clone(), after.to_owned());
-        if self.scoped.insert(new, id.clone()).is_some() {
-            self.scoped.insert(old, id);
+        if old != new && self.scoped.contains_key(&new) {
             return Err(kernel::KernelError::new(
                 "rename destination designation already exists",
             ));
         }
+        self.scoped.remove(&old);
+        self.scoped.insert(new, id);
         Ok(())
     }
 
@@ -70,15 +74,17 @@ impl DesignationTable {
         let old = (relation.clone(), before.to_owned());
         let id = self
             .roles
-            .remove(&old)
+            .get(&old)
+            .cloned()
             .ok_or_else(|| kernel::KernelError::new("rename source role is unknown"))?;
         let new = (relation.clone(), after.to_owned());
-        if self.roles.insert(new, id.clone()).is_some() {
-            self.roles.insert(old, id);
+        if old != new && self.roles.contains_key(&new) {
             return Err(kernel::KernelError::new(
                 "rename destination role already exists",
             ));
         }
+        self.roles.remove(&old);
+        self.roles.insert(new, id);
         Ok(())
     }
 
@@ -92,15 +98,17 @@ impl DesignationTable {
         let old = (scope.clone(), before.to_owned());
         let id = self
             .patterns
-            .remove(&old)
+            .get(&old)
+            .cloned()
             .ok_or_else(|| kernel::KernelError::new("rename source pattern is unknown"))?;
         let new = (scope.clone(), after.to_owned());
-        if self.patterns.insert(new, id.clone()).is_some() {
-            self.patterns.insert(old, id);
+        if old != new && self.patterns.contains_key(&new) {
             return Err(kernel::KernelError::new(
                 "rename destination pattern already exists",
             ));
         }
+        self.patterns.remove(&old);
+        self.patterns.insert(new, id);
         Ok(())
     }
 
@@ -272,4 +280,164 @@ fn validate_designation(value: &str) -> kernel::Result<()> {
 fn write_field(preimage: &mut Vec<u8>, value: &str) {
     preimage.extend_from_slice(&(value.len() as u64).to_be_bytes());
     preimage.extend_from_slice(value.as_bytes());
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn populated_table() -> (DesignationTable, ReferentId, ReferentId, ReferentId) {
+        let mut table = DesignationTable::new();
+        table.declare_global("Global source").unwrap();
+        table.declare_global("Global destination").unwrap();
+        let model = table.declare_model("Model").unwrap();
+        table.declare_scoped(&model, "Scoped source").unwrap();
+        table.declare_scoped(&model, "Scoped destination").unwrap();
+        table.declare_literal("literal");
+        let relation = table.declare_global("Relation").unwrap();
+        table.declare_role(&relation, "role source").unwrap();
+        table.declare_role(&relation, "role destination").unwrap();
+        let scope = table.declare_global("Pattern scope").unwrap();
+        table.declare_pattern(&scope, "pattern source").unwrap();
+        table
+            .declare_pattern(&scope, "pattern destination")
+            .unwrap();
+        (table, model, relation, scope)
+    }
+
+    fn assert_table_unchanged(actual: &DesignationTable, expected: &DesignationTable) {
+        assert_eq!(actual.globals, expected.globals);
+        assert_eq!(actual.scoped, expected.scoped);
+        assert_eq!(actual.literals, expected.literals);
+        assert_eq!(actual.models, expected.models);
+        assert_eq!(actual.roles, expected.roles);
+        assert_eq!(actual.patterns, expected.patterns);
+    }
+
+    #[test]
+    fn occupied_global_rename_preserves_the_entire_table() {
+        let (mut table, _, _, _) = populated_table();
+        let source = table.global("Global source").unwrap();
+        let destination = table.global("Global destination").unwrap();
+        let before = table.clone();
+
+        assert!(
+            table
+                .retain_global("Global source", "Global destination")
+                .is_err()
+        );
+
+        assert_eq!(table.global("Global source").unwrap(), source);
+        assert_eq!(table.global("Global destination").unwrap(), destination);
+        assert_table_unchanged(&table, &before);
+    }
+
+    #[test]
+    fn occupied_scoped_rename_preserves_the_entire_table() {
+        let (mut table, model, _, _) = populated_table();
+        let source = table.scoped(&model, "Scoped source").unwrap();
+        let destination = table.scoped(&model, "Scoped destination").unwrap();
+        let before = table.clone();
+
+        assert!(
+            table
+                .retain_scoped(&model, "Scoped source", "Scoped destination")
+                .is_err()
+        );
+
+        assert_eq!(table.scoped(&model, "Scoped source").unwrap(), source);
+        assert_eq!(
+            table.scoped(&model, "Scoped destination").unwrap(),
+            destination
+        );
+        assert_table_unchanged(&table, &before);
+    }
+
+    #[test]
+    fn occupied_role_rename_preserves_the_entire_table() {
+        let (mut table, _, relation, _) = populated_table();
+        let source = table.role(&relation, "role source").unwrap();
+        let destination = table.role(&relation, "role destination").unwrap();
+        let before = table.clone();
+
+        assert!(
+            table
+                .retain_role(&relation, "role source", "role destination")
+                .is_err()
+        );
+
+        assert_eq!(table.role(&relation, "role source").unwrap(), source);
+        assert_eq!(
+            table.role(&relation, "role destination").unwrap(),
+            destination
+        );
+        assert_table_unchanged(&table, &before);
+    }
+
+    #[test]
+    fn occupied_pattern_rename_preserves_the_entire_table() {
+        let (mut table, _, _, scope) = populated_table();
+        let source_key = (scope.clone(), "pattern source".to_owned());
+        let destination_key = (scope.clone(), "pattern destination".to_owned());
+        let source = table.patterns.get(&source_key).unwrap().clone();
+        let destination = table.patterns.get(&destination_key).unwrap().clone();
+        let before = table.clone();
+
+        assert!(
+            table
+                .retain_pattern(&scope, "pattern source", "pattern destination")
+                .is_err()
+        );
+
+        assert_eq!(table.patterns.get(&source_key), Some(&source));
+        assert_eq!(table.patterns.get(&destination_key), Some(&destination));
+        assert_table_unchanged(&table, &before);
+    }
+
+    #[test]
+    fn successful_renames_preserve_ids() {
+        let (mut table, model, relation, scope) = populated_table();
+        let global = table.global("Global source").unwrap();
+        let scoped = table.scoped(&model, "Scoped source").unwrap();
+        let role = table.role(&relation, "role source").unwrap();
+        let pattern_key = (scope.clone(), "pattern source".to_owned());
+        let pattern = table.patterns.get(&pattern_key).unwrap().clone();
+
+        table
+            .retain_global("Global source", "Global source")
+            .unwrap();
+        table
+            .retain_scoped(&model, "Scoped source", "Scoped source")
+            .unwrap();
+        table
+            .retain_role(&relation, "role source", "role source")
+            .unwrap();
+        table
+            .retain_pattern(&scope, "pattern source", "pattern source")
+            .unwrap();
+        table
+            .retain_global("Global source", "Global renamed")
+            .unwrap();
+        table
+            .retain_scoped(&model, "Scoped source", "Scoped renamed")
+            .unwrap();
+        table
+            .retain_role(&relation, "role source", "role renamed")
+            .unwrap();
+        table
+            .retain_pattern(&scope, "pattern source", "pattern renamed")
+            .unwrap();
+
+        assert!(table.global("Global source").is_err());
+        assert_eq!(table.global("Global renamed").unwrap(), global);
+        assert!(table.scoped(&model, "Scoped source").is_err());
+        assert_eq!(table.scoped(&model, "Scoped renamed").unwrap(), scoped);
+        assert!(table.role(&relation, "role source").is_err());
+        assert_eq!(table.role(&relation, "role renamed").unwrap(), role);
+        assert!(!table.patterns.contains_key(&pattern_key));
+        assert_eq!(
+            table.patterns.get(&(scope, "pattern renamed".to_owned())),
+            Some(&pattern)
+        );
+    }
 }
