@@ -64,7 +64,8 @@ cargo fmt --all -- --check
 cargo check --all-targets
 cargo test --all-targets
 cargo clippy --all-targets -- -D warnings
-bin/architecture-gate
+candidate=$(git rev-parse --verify 'HEAD^{commit}')
+bin/architecture-gate "$candidate"
 ```
 
 Concurrent worktrees must use separate `CARGO_TARGET_DIR` values.

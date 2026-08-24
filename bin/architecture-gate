@@ -1,8 +1,8 @@
 #!/bin/sh
 set -eu
 
-script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-project_root=$(CDPATH= cd -- "$script_dir/.." && pwd)
+script_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
+project_root=$(CDPATH='' cd -- "$script_dir/.." && pwd)
 contract="$project_root/docs/architecture.md"
 
 fail() {
@@ -20,6 +20,10 @@ has_fixed() {
 
 require_fixed() {
   has_fixed "$1" "$2" || fail "$3"
+}
+
+is_exact_candidate() {
+  test "$1" = "$2"
 }
 
 forbid_ere() {
@@ -64,8 +68,8 @@ self_test() {
   esac
   trap 'rm -f -- "${fixture:?}"' EXIT HUP INT TERM
 
-  printf '%s\n' '<!-- clause-architecture-gate:v1 -->' > "$fixture"
-  has_fixed "$fixture" '<!-- clause-architecture-gate:v1 -->' \
+  printf '%s\n' '<!-- clause-architecture-gate:v2 -->' > "$fixture"
+  has_fixed "$fixture" '<!-- clause-architecture-gate:v2 -->' \
     || fail "self-test rejected the authority marker"
   has_fixed "$fixture" '<!-- missing -->' \
     && fail "self-test accepted a missing authority marker"
@@ -84,7 +88,13 @@ self_test() {
   has_fixed "$fixture" '<!-- obligation:incremental-runtime-trace:pending:M6 -->' \
     || fail "self-test missed a due obligation"
 
-  printf 'PASS architecture gate self-test (five adversarial decisions)\n'
+  fixture_oid=0123456789abcdef0123456789abcdef01234567
+  is_exact_candidate "$fixture_oid" "$fixture_oid" \
+    || fail "self-test rejected an exact candidate object ID"
+  is_exact_candidate "${fixture_oid%?}" "$fixture_oid" \
+    && fail "self-test accepted an abbreviated candidate object ID"
+
+  printf 'PASS architecture gate self-test (six adversarial decisions)\n'
 }
 
 if test "${1:-}" = "--self-test"; then
@@ -93,15 +103,29 @@ if test "${1:-}" = "--self-test"; then
   exit 0
 fi
 
-test "$#" -le 1 || fail "usage: bin/architecture-gate [M1..M8|--self-test]"
+test "$#" -ge 1 && test "$#" -le 2 \
+  || fail "usage: bin/architecture-gate FULL_GIT_OBJECT_ID [M1..M8] | --self-test"
 require_file "$contract" "docs/architecture.md"
 require_file "$project_root/docs/foundation.md" "docs/foundation.md"
 require_file "$project_root/docs/roadmap.md" "docs/roadmap.md"
 require_file "$project_root/src/kernel/identity.rs" "kernel identity source"
 
+candidate_root=$(git -C "$project_root" rev-parse --show-toplevel 2>/dev/null) \
+  || fail "architecture gate must run inside the candidate Git worktree"
+test "$candidate_root" = "$project_root" \
+  || fail "architecture gate did not resolve the candidate worktree root"
+candidate_head=$(git -C "$project_root" rev-parse --verify 'HEAD^{commit}' 2>/dev/null) \
+  || fail "candidate Git worktree has no exact HEAD commit"
+is_exact_candidate "$1" "$candidate_head" \
+  || fail "requested candidate '$1' does not match exact HEAD '$candidate_head'"
+candidate_status=$(git -C "$project_root" status --porcelain=v1 --untracked-files=all) \
+  || fail "cannot inspect candidate index and worktree cleanliness"
+test -z "$candidate_status" \
+  || fail "candidate index or worktree is not clean at '$candidate_head'"
+
 current=$(implemented_milestone)
 test -n "$current" || fail "roadmap has no implemented M1..M8 milestone"
-selected=${1:-$current}
+selected=${2:-$current}
 selected_rank=$(milestone_rank "$selected") \
   || fail "unknown milestone '$selected' (expected M1..M8)"
 current_rank=$(milestone_rank "$current") \
@@ -109,7 +133,7 @@ current_rank=$(milestone_rank "$current") \
 test "$selected_rank" -le "$current_rank" \
   || fail "$selected is not marked Implemented in docs/roadmap.md (current: $current)"
 
-require_fixed "$contract" '<!-- clause-architecture-gate:v1 -->' \
+require_fixed "$contract" '<!-- clause-architecture-gate:v2 -->' \
   "architecture contract version is absent or unknown"
 require_fixed "$project_root/docs/foundation.md" \
   "This document is Clause's semantic authority." \
@@ -207,5 +231,5 @@ if test "$selected_rank" -ge 8; then
   fail "M8 single-live-surface absence proof remains pending"
 fi
 
-printf 'PASS architecture gate %s (public roadmap current: %s; A1-A10; no due deferral)\n' \
-  "$selected" "$current"
+printf 'PASS architecture gate %s (candidate: %s; public roadmap current: %s; A1-A10; no due deferral)\n' \
+  "$selected" "$candidate_head" "$current"

@@ -9,14 +9,17 @@
 > their architecture boundaries into a release decision; it may not add an
 > ontology, syntax, or milestone.
 
-<!-- clause-architecture-gate:v1 -->
+<!-- clause-architecture-gate:v2 -->
 
 ## Decision
 
-A milestone is architecture-acceptable only when `bin/architecture-gate M<N>`
-passes at the exact candidate Revision and its roadmap exit proof also passes.
-The gate is a ratchet, not a substitute for feature tests. Unknown, incomplete,
-ambiguous, tampered, or unreviewed evidence fails closed.
+A milestone is architecture-acceptable only when
+`bin/architecture-gate FULL_GIT_OBJECT_ID M<N>` passes from a clean worktree
+whose exact HEAD is that full candidate Git commit, and its roadmap exit proof
+also passes. The milestone argument is optional and defaults to the highest one
+marked implemented. The gate is a ratchet, not a substitute for feature tests.
+Unknown, incomplete, ambiguous, tampered, dirty, or unreviewed evidence fails
+closed.
 
 The checked Model remains the only semantic authority. Source, Revisions,
 indexes, caches, schedules, runtime sessions, storage rows, target code, event
@@ -102,11 +105,13 @@ format/focus only, rename, second coin, score change, and malformed `Vec2`.
 From the repository root:
 
 ```sh
-bin/architecture-gate          # highest roadmap milestone marked Implemented
-bin/architecture-gate M4       # exact candidate milestone
+candidate=$(git rev-parse --verify 'HEAD^{commit}')
+bin/architecture-gate "$candidate"       # highest milestone marked Implemented
+bin/architecture-gate "$candidate" M4    # exact candidate milestone
 bin/architecture-gate --self-test
 ```
 
 The self-test attacks the gate's own authority marker, milestone parser,
-shadow-identity denial, severe-debt denial, and pending-obligation boundary. It
-does not rerun a milestone's feature or regression suite.
+shadow-identity denial, severe-debt denial, pending-obligation boundary, and
+full-object-identity comparison. It does not rerun a milestone's feature or
+regression suite.
