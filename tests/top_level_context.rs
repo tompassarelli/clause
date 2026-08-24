@@ -90,9 +90,9 @@ fn top_level_binding_is_a_stable_definition_in_the_same_model() {
         .expect("context Revision")
         .model();
     let gravity = scoped(&program, &id, "gravity");
-    let scalar = scoped(&program, &id, "9.81");
     assert!(model.definitions().iter().any(|definition| {
-        definition.id() == &gravity && definition.denotation() == &Term::referent(scalar.clone())
+        definition.id() == &gravity
+            && definition.denotation() == &Term::f32(9.81).expect("9.81 is finite")
     }));
     assert!(model.admitted_contents().is_empty());
     assert!(model.occurrences().is_empty());
