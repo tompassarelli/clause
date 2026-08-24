@@ -208,6 +208,10 @@ fn naked_selection_preserves_freshness_labels_identity_and_generated_parity() {
         panic!("source-middle request must remain a selection");
     };
     assert_eq!(
+        columns, resolved_columns,
+        "binder, role origins, and label survive the execution boundary"
+    );
+    assert_eq!(
         columns
             .iter()
             .map(|column| column.label().map(str::to_owned))
@@ -303,15 +307,18 @@ fn naked_selection_preserves_freshness_labels_identity_and_generated_parity() {
 
     let expected_bytes = output.canonical_bytes();
     let header = format!(
-        "[\"select\",[[[\"{}\"],null],[[\"{}\",\"{}\"],\"same\"],[[\"{}\"],null]],",
+        "[\"select\",[[\"{}\",[\"{}\"],null],[\"{}\",[\"{}\",\"{}\"],\"same\"],[\"{}\",[\"{}\"],null]],",
+        resolved_columns[0].binder().as_str(),
         expected_origins[0][0].as_str(),
+        resolved_columns[1].binder().as_str(),
         expected_origins[1][0].as_str(),
         expected_origins[1][1].as_str(),
+        resolved_columns[2].binder().as_str(),
         expected_origins[2][0].as_str(),
     );
     assert!(
         expected_bytes.contains(&header),
-        "canonical columns put exact role origins before optional labels"
+        "canonical columns retain binder, exact role origins, and optional label"
     );
     let authoring = temporary("clause");
     let rust = temporary("rs");

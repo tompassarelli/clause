@@ -40,7 +40,8 @@ fn request_output(value: &RequestOutput) -> String {
             columns
                 .iter()
                 .map(|column| format!(
-                    "[[{}],{}]",
+                    "[{},[{}],{}]",
+                    string(column.binder().as_str()),
                     role_origins(column.origins()),
                     column
                         .label()
