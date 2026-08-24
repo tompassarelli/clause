@@ -15,9 +15,10 @@ iron-door
 ```
 
 The compact M1 grounding, binding, membership, enumeration, and focus surface,
-plus M2's exact role-labelled relation schemas, are executable. Recursive
-terms, complete state/effect execution, generated JavaScript, and the Three.js
-game proof are the next roadmap capabilities.
+M2's exact role-labelled relation schemas, and M3's recursive terms, checked
+structural values, pure definitions, and source-deleted generated evaluation
+are executable. State/effect execution, generated JavaScript, and the Three.js
+game proof remain roadmap capabilities.
 
 `:` binds, `∈` expresses membership, `=` expresses equality, and `->` orients
 a result. An editor may transform typed `::` into `∈`; raw `::` is not Clause

@@ -199,9 +199,11 @@ Public Clause currently implements:
 - canonical semantic-v7 / Revision-v5 persistence with exact predecessor
   lineage and complete successor Deltas;
 - the compact M1 grounding, binding, membership, enumeration, and focus
-  surface plus M2 exact role-labelled relation schemas and projection contracts,
-  alongside retained `RelationShape`, `DerivationRule`, `Revision`, `mode`, and
-  explicit request ceremony as migration forms awaiting later milestones;
+  surface, M2 exact role-labelled relation schemas and projection contracts,
+  and M3 recursive terms, checked structural values, closed pure definitions,
+  indexed pure evaluation, and source-deleted generated evaluation, alongside
+  retained `RelationShape`, `DerivationRule`, `Revision`, `mode`, and explicit
+  request ceremony as migration forms awaiting later milestones;
 - admitted relational content and bounded positive recursive derivation rules;
 - immutable Revisions and exact successor Deltas;
 - recursive closure queries and bounded complete support enumeration;
@@ -389,11 +391,12 @@ roles.
 
 **Depends on:** M2.
 
+**Status:** Implemented.
+
 Permit every relation role to contain recursive terms with explicit grouping
-and canonical formatting. Add derived structural value views, pure definitions,
-single-valued relation projections, pure definitions, numeric and boolean
-values, tuples, sums, collections, patterns, immutable locals, modules, and the
-smallest ordinary algorithms needed by the one-coin specimen.
+and canonical formatting. Add checked scalar and structural values, closed pure
+definitions with immutable locals, single-valued relation projections, and the
+smallest ordinary algorithms needed by the headless one-coin specimen.
 
 The value/term stratum may use record-like structural shapes. Semantic symbols
 remain relational. Dot access is reserved, if admitted at all, for explicit
@@ -402,7 +405,12 @@ foreign-host interoperation.
 **Exit proof:** nested distance/collision expressions, hospital relations, a
 nontrivial data transform, and a headless one-coin pure simulation use one
 recursive checked tree. Canonical grouping and source/role diagnostics remain
-stable, and no ordinary algorithm must be encoded as generic runtime triples.
+stable; the transform produces `[5, 13]`; the one-coin frame produces position
+`(150, 0)`, collected `true`, and score `10`; their exact evaluator budgets are
+`3` and `9` operations, with one dispatch for a shared application; generated
+Rust evaluates the sealed Revision after source deletion with byte-identical
+canonical output; and no ordinary algorithm is encoded as generic runtime
+triples.
 
 ## M4 — Holes, derivation rules, and relational selection
 
