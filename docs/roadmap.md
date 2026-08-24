@@ -373,7 +373,7 @@ results and source-deleted parity remain unchanged.
 Implement exact schema role patterns, named roles, focus-role designation,
 projection/cardinality contracts, deterministic ambiguity diagnostics, stable
 hidden relation identities, and the explicit role-labelled escape hatch.
-Remove required `Relation`, brace-role, and `mode` ceremony in the new profile.
+Remove required `RelationShape`, brace-role, and `mode` ceremony in the new profile.
 
 Physical strategy remains separate: a functional relation may lower to a field
 or column, but the checked meaning remains an ordinary role-labelled relation.

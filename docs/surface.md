@@ -1504,7 +1504,7 @@ without brackets. Lower into the current semantic core.
 
 Implement schema role patterns, named roles, focused role designation,
 arrow/cardinality contracts, ambiguity diagnostics, and stable hidden relation
-identities. Remove required `Relation` and `mode` syntax in the new profile.
+identities. Remove required `RelationShape` and `mode` syntax in the new profile.
 
 ### Milestone 3 — Recursive term grammar
 
