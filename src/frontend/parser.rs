@@ -91,7 +91,7 @@ pub fn parse(source: &str) -> Result<Program, ParseError> {
     let mut raw_queries = Vec::new();
     let mut retained = Vec::new();
     for fragment in raw_top_level {
-        if clause_has_hole(fragment.line)? {
+        if clause_has_hole(fragment.line)? && relation_line_matches(fragment.line, &relations)? {
             raw_queries.push(fragment);
         } else {
             retained.push(fragment);

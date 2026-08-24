@@ -148,7 +148,7 @@ pub(super) fn semantic_name(
     if text.is_empty()
         || text.trim() != text
         || text.chars().any(char::is_control)
-        || text.contains([':', '∈'])
+        || text.contains([':', '∈', '?'])
         || text.split(' ').any(str::is_empty)
     {
         return Err(error(
@@ -345,6 +345,9 @@ fn parse_declaration<'a>(
     let text = content(line);
     *index += 1;
     let body = take_body(lines, index);
+    if nonblank(body.iter().copied()).is_empty() && super::clause::clause_has_hole(line)? {
+        return Ok(RawItem::TopLevel(RawTopLevel { line }));
+    }
     if text.contains(" ∈ ") {
         if nonblank(body.iter().copied()).is_empty() {
             return Ok(RawItem::TopLevel(RawTopLevel { line }));

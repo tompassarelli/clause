@@ -78,6 +78,35 @@ World relates ? through ?same and ?same to ?
         error.message,
         "naked query is ambiguous across Models: left, right"
     );
+
+    let referent_hole = "Entity
+
+only
+  ? ∈ Entity
+";
+    let error = frontend::parse(referent_hole).expect_err("a hole cannot become a referent");
+    assert_eq!(error.message, "expected semantic name, found '?'");
+
+    let rule_hole = format!(
+        "{schema}
+only
+  World ∈ Entity
+  A ∈ Entity
+  B ∈ Entity
+  C ∈ Entity
+  World relates A through B and B to C
+
+only/legacy: DerivationRule
+  World relates ? through B and B to C
+  when:
+    World relates A through B and B to C
+"
+    );
+    let error = frontend::parse(&rule_hole).expect_err("bare rule holes are not in this slice");
+    assert_eq!(
+        error.message,
+        "anonymous holes are only valid in naked queries"
+    );
 }
 
 #[test]
