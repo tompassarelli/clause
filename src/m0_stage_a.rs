@@ -66,6 +66,8 @@ pub enum Punctuation {
     Equals,
     Tilde,
     GreaterThan,
+    LessThan,
+    Star,
     Slash,
 }
 
@@ -356,6 +358,8 @@ fn punctuation(character: char) -> Option<Punctuation> {
         '=' => Punctuation::Equals,
         '~' => Punctuation::Tilde,
         '>' => Punctuation::GreaterThan,
+        '<' => Punctuation::LessThan,
+        '*' => Punctuation::Star,
         '/' => Punctuation::Slash,
         _ => return None,
     })

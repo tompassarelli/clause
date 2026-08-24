@@ -39,6 +39,14 @@ source, and editors do not rewrite input to `∈`. Formatters and agents emit `:
 classification and `:=` definition directly. M0 also freezes two spaces,
 spaces only, as canonical indentation; tabs are diagnosed.
 
+Canonical authoring uses easy-to-type ASCII operators when a relation has a
+strong, unambiguous conventional prior: `>`, `<`, `>=`, `<=`, `=`, and spaced
+infix `+`, `-`, and `*`. These remain named-role relational forms rather than
+primitive numeric or arithmetic ontology. Structurally leading `+` and `-`
+remain Delta signs, slash-qualified semantic names remain names, and domain
+relations such as `connects` and `parent-of` remain words. Punctuation is not
+invented where convention conflicts.
+
 The earlier packet remains provenance, not live surface authority. Its four
 unique input identities were:
 

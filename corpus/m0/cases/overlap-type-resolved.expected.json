@@ -8,7 +8,7 @@
     "line_break": "LF",
     "ends_with_line_break": true
   },
-  "context": {"domains": {"$distance": "F32", "$radius": "F32", "$add": "F32,F32->F32", "$less-than": "F32,F32->Bool"}},
+  "context": {"domains": {"$distance": "F32", "$radius": "F32", "$referent:addition": "F32,F32->F32", "$referent:less-than": "F32,F32->Bool"}},
   "structural_intent": "type-disambiguated-boolean-proposition",
   "equivalence_group": "overlap-expression",
   "required": ["all structural candidates are checked", "exactly one type-correct tree survives", "no global precedence is inferred from this case"],
@@ -16,22 +16,25 @@
   "resolution": {
     "candidates": [
       {"grouping": "distance < (radius + radius)", "result_domain": "Bool", "outcome": "survives"},
-      {"grouping": "(distance < radius) + radius", "result_domain": null, "outcome": "rejected", "conflict": {"function": "$add", "argument": 1, "expected": "F32", "observed": "Bool"}}
+      {"grouping": "(distance < radius) + radius", "result_domain": null, "outcome": "rejected", "conflict": {"relation": "$referent:addition", "role": "augend", "expected": "F32", "observed": "Bool"}}
     ]
   },
   "elaborated": [
     {
-      "kind": "proposition",
-      "relation": "$less-than",
+      "kind": "relational-content",
+      "surface_operator": "<",
+      "relation": "$referent:less-than",
       "roles": {
-        "left": {"kind": "relation-application", "relation": "$distance", "roles": {"first": {"kind": "symbol", "name": "player"}, "second": {"kind": "symbol", "name": "coin"}}, "output_role": "value"},
-        "right": {
-          "kind": "function-application",
-          "function": "$add",
-          "arguments": [
-            {"kind": "relation-projection", "relation": "$radius", "roles": {"member": {"kind": "symbol", "name": "player"}}, "output_role": "value"},
-            {"kind": "relation-projection", "relation": "$radius", "roles": {"member": {"kind": "symbol", "name": "coin"}}, "output_role": "value"}
-          ]
+        "lesser": {"kind": "relation-application", "relation": "$distance", "roles": {"first": {"kind": "symbol", "name": "player"}, "second": {"kind": "symbol", "name": "coin"}}, "output_role": "value"},
+        "greater": {
+          "kind": "relation-application",
+          "surface_operator": "+",
+          "relation": "$referent:addition",
+          "roles": {
+            "augend": {"kind": "relation-projection", "relation": "$radius", "roles": {"member": {"kind": "symbol", "name": "player"}}, "output_role": "value"},
+            "addend": {"kind": "relation-projection", "relation": "$radius", "roles": {"member": {"kind": "symbol", "name": "coin"}}, "output_role": "value"}
+          },
+          "output_role": "sum"
         }
       }
     }

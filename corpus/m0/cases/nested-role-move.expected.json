@@ -8,9 +8,9 @@
     "line_break": "LF",
     "ends_with_line_break": true
   },
-  "context": {"relations": ["$moves-to", "$position", "$velocity"], "functions": ["$add"]},
+  "context": {"relations": ["$moves-to", "$position", "$velocity", "$referent:addition"]},
   "structural_intent": "relational-content-with-recursive-role",
-  "required": ["destination is one recursive term", "parentheses survive term rendering", "nested projections retain relation identities"],
+  "required": ["destination is one recursive term", "+ elaborates to augend and addend roles with sum as the solved role", "parentheses survive term rendering", "nested projections retain relation identities"],
   "forbidden": ["flat-token-template", "field-access", "implicit-temporary-object"],
   "canonical_term": "(position of player + velocity of player)",
   "elaborated": [
@@ -20,12 +20,14 @@
       "roles": {
         "mover": {"kind": "symbol", "name": "player"},
         "destination": {
-          "kind": "function-application",
-          "function": "$add",
-          "arguments": [
-            {"kind": "relation-projection", "relation": "$position", "roles": {"member": {"kind": "symbol", "name": "player"}}, "output_role": "value"},
-            {"kind": "relation-projection", "relation": "$velocity", "roles": {"member": {"kind": "symbol", "name": "player"}}, "output_role": "value"}
-          ]
+          "kind": "relation-application",
+          "surface_operator": "+",
+          "relation": "$referent:addition",
+          "roles": {
+            "augend": {"kind": "relation-projection", "relation": "$position", "roles": {"member": {"kind": "symbol", "name": "player"}}, "output_role": "value"},
+            "addend": {"kind": "relation-projection", "relation": "$velocity", "roles": {"member": {"kind": "symbol", "name": "player"}}, "output_role": "value"}
+          },
+          "output_role": "sum"
         }
       }
     }

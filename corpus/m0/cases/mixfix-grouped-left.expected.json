@@ -15,11 +15,11 @@
   },
   "context": {
     "domains": {
-      "a": "Value",
-      "b": "Value",
-      "c": "Value",
-      "$blends": "Value,Value->Value",
-      "$with": "Value,Value->Value"
+      "a": "Blendable",
+      "b": "Blendable",
+      "c": "Blendable",
+      "$blends": "Blendable,Blendable->Blendable",
+      "$with": "Blendable,Blendable->Blendable"
     }
   },
   "structural_intent": "definition-to-left-grouped-term",

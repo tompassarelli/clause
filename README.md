@@ -68,6 +68,13 @@ definition/denotation. `∈` and `::` are not canonical source, and editors neve
 rewrite input to `∈`. Canonical source uses two-space, spaces-only indentation;
 tabs are diagnosed.
 
+Strong conventional relations keep their easy-to-type ASCII operators:
+`x > y`, `x < y`, `x >= y`, `x <= y`, `x = y`, `a + b`, `a - b`, and
+`a * b`. They still elaborate to named-role relational content; Clause does not
+word-expand them to forms such as `greater-than` or `multiplied-by`. Domain
+relations such as `connects` remain words. Structurally leading `+` and `-`
+remain Delta signs, and slash-qualified semantic names remain names.
+
 The controlling focus specimen is:
 
 ```clause

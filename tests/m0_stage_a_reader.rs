@@ -62,6 +62,40 @@ fn retains_every_retired_spelling_for_later_structural_diagnostics() {
 }
 
 #[test]
+fn preserves_canonical_ascii_relation_operators_as_punctuation() {
+    let source = "x > y\nx < y\nx >= y\nx <= y\nx = y\na + b\na - b\na * b\n";
+    let document = read(source);
+
+    assert_eq!(document.source, source);
+    assert!(document.is_accepted());
+    assert_eq!(
+        document
+            .lines
+            .iter()
+            .map(|line| {
+                line.tokens
+                    .iter()
+                    .filter_map(|token| match token.kind {
+                        TokenKind::Punctuation(punctuation) => Some(punctuation),
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>(),
+        vec![
+            vec![Punctuation::GreaterThan],
+            vec![Punctuation::LessThan],
+            vec![Punctuation::GreaterThan, Punctuation::Equals],
+            vec![Punctuation::LessThan, Punctuation::Equals],
+            vec![Punctuation::Equals],
+            vec![Punctuation::Plus],
+            vec![Punctuation::Minus],
+            vec![Punctuation::Star],
+        ]
+    );
+}
+
+#[test]
 fn retains_delimiters_and_reports_only_layout_diagnostics() {
     let source = "root\n\tchild(a, [b])\n    skipped\n";
     let document = read(source);

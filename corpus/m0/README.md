@@ -30,6 +30,11 @@ reconstruction mechanical. `decision` is one of:
 `required` and `forbidden` are normative for every case.
 `elaborated` is an abstract semantic expansion independent of surface spelling.
 Handles beginning with `$` are corpus symbols, not Store identities.
+Strong conventional relations use canonical ASCII operators in source while
+their oracles retain addressable relation referents and named roles. The frozen
+set covers comparisons, equality, and the already-authored spaced infix `+`,
+`-`, and `*`; leading `+`/`-` remain Delta signs and slash-qualified referent
+names remain names.
 
 | Case | Purpose |
 | --- | --- |
@@ -110,16 +115,16 @@ Handles beginning with `$` are corpus symbols, not Store identities.
 | `hospital-current-full` | current executable hospital profile retained as migration/parity evidence |
 | `hospital-reset-full` | distinction-surface hospital projection with the same six query results |
 | `hospital-reset-canonical-full` | canonical reset rendering preserves the same result oracle |
-| `absence-undetermined` | empty existence result leaves content undetermined under open-world semantics |
+| `absence-undetermined` | empty `any x > y` result leaves content undetermined under open-world semantics |
 | `definition-not-transition` | `:=` denotes without mutation, Delta, or successor Revision |
 | `derivation-invariant-distinct` | oriented derivation and Revision admission remain separate modes |
 | `goal-not-current` | desired content grants no current-truth, derivation, or effect authority |
 | `referent-declaration` | declaration establishes one referent without implicit roles or constraints |
 | `referent-rename` | preferred-term change preserves referent and content identities |
 | `relation-described` | a relation referent participates in content without executing itself |
-| `shared-content-occurrences` | two assertion occurrences share content while retaining provenance |
+| `shared-content-occurrences` | two `x > y` assertion occurrences share content while retaining provenance |
 | `structural-equality-distinct` | equal known structure does not merge referent identity |
-| `unresolved-use` | ordinary use resolves an existing referent and never declares a typo |
+| `unresolved-use` | `x > typo` resolves existing referents and never declares the typo |
 | `one-coin-m0` | complete target specimen for referents, relational content, derivation rules, transitions, and effects |
 
 Do not “bless” these files from parser output. A later fixture checker may

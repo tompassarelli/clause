@@ -8,7 +8,7 @@
   },
   "source": {
     "lines": [
-      "x greater-than typo"
+      "x > typo"
     ],
     "line_break": "LF",
     "ends_with_line_break": true
@@ -17,7 +17,7 @@
     "position": "use",
     "declared_referents": {
       "x": "$referent:x",
-      "greater-than": "$referent:greater-than"
+      ">": "$referent:greater-than"
     }
   },
   "structural_intent": "resolve-existing-participants",

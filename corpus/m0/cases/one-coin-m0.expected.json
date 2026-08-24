@@ -160,25 +160,31 @@
           "$hole:b"
         ],
         "body": {
-          "kind": "call",
-          "callee": "length",
-          "arguments": [
-            {
-              "kind": "subtract",
-              "left": {
-                "relation": "$position",
-                "roles": {
-                  "member": "$hole:a"
+          "kind": "relation-application",
+          "relation": "$referent:length",
+          "roles": {
+            "vector": {
+              "kind": "relation-application",
+              "surface_operator": "-",
+              "relation": "$referent:subtraction",
+              "roles": {
+                "minuend": {
+                  "relation": "$position",
+                  "roles": {
+                    "member": "$hole:a"
+                  }
+                },
+                "subtrahend": {
+                  "relation": "$position",
+                  "roles": {
+                    "member": "$hole:b"
+                  }
                 }
               },
-              "right": {
-                "relation": "$position",
-                "roles": {
-                  "member": "$hole:b"
-                }
-              }
+              "output_role": "difference"
             }
-          ]
+          },
+          "output_role": "length"
         }
       },
       {
@@ -192,27 +198,36 @@
         },
         "premises": [
           {
-            "kind": "less-than",
-            "left": {
-              "definition": "$definition:distance",
-              "arguments": [
-                "$hole:a",
-                "$hole:b"
-              ]
-            },
-            "right": {
-              "kind": "add",
-              "left": {
-                "relation": "$radius",
-                "roles": {
-                  "member": "$hole:a"
-                }
+            "kind": "relational-content",
+            "surface_operator": "<",
+            "relation": "$referent:less-than",
+            "roles": {
+              "lesser": {
+                "definition": "$definition:distance",
+                "arguments": [
+                  "$hole:a",
+                  "$hole:b"
+                ]
               },
-              "right": {
-                "relation": "$radius",
+              "greater": {
+                "kind": "relation-application",
+                "surface_operator": "+",
+                "relation": "$referent:addition",
                 "roles": {
-                  "member": "$hole:b"
-                }
+                  "augend": {
+                    "relation": "$radius",
+                    "roles": {
+                      "member": "$hole:a"
+                    }
+                  },
+                  "addend": {
+                    "relation": "$radius",
+                    "roles": {
+                      "member": "$hole:b"
+                    }
+                  }
+                },
+                "output_role": "sum"
               }
             }
           }
@@ -424,7 +439,23 @@
           "member": "$player"
         },
         "old": "$any",
-        "new": "input-movement-times-300"
+        "new": {
+          "kind": "relation-application",
+          "surface_operator": "*",
+          "relation": "$referent:multiplication",
+          "roles": {
+            "multiplicand": {
+              "kind": "relation-projection",
+              "relation": "$movement",
+              "roles": {
+                "source": "$input"
+              },
+              "output_role": "value"
+            },
+            "multiplier": 300
+          },
+          "output_role": "product"
+        }
       },
       {
         "relation": "$position",
@@ -432,7 +463,32 @@
           "member": "$player"
         },
         "old": "$hole:position",
-        "new": "position-plus-velocity-times-dt"
+        "new": {
+          "kind": "relation-application",
+          "surface_operator": "+",
+          "relation": "$referent:addition",
+          "roles": {
+            "augend": "$hole:position",
+            "addend": {
+              "kind": "relation-application",
+              "surface_operator": "*",
+              "relation": "$referent:multiplication",
+              "roles": {
+                "multiplicand": {
+                  "kind": "relation-projection",
+                  "relation": "$velocity",
+                  "roles": {
+                    "member": "$player"
+                  },
+                  "output_role": "value"
+                },
+                "multiplier": "$hole:dt"
+              },
+              "output_role": "product"
+            }
+          },
+          "output_role": "sum"
+        }
       },
       {
         "relation": "$state",
@@ -449,7 +505,23 @@
           "member": "$player"
         },
         "old": "$hole:score",
-        "new": "score-plus-coin-value",
+        "new": {
+          "kind": "relation-application",
+          "surface_operator": "+",
+          "relation": "$referent:addition",
+          "roles": {
+            "augend": "$hole:score",
+            "addend": {
+              "kind": "relation-projection",
+              "relation": "$value",
+              "roles": {
+                "member": "$coin"
+              },
+              "output_role": "value"
+            }
+          },
+          "output_role": "sum"
+        },
         "guard": "$rule:collects"
       }
     ],
@@ -496,6 +568,7 @@
     "Player and Coin are referents with derived relation contracts, never primitive classes or objects",
     "player and coin remain addressable referents in co-equal named-role relational content",
     "recursive collision terms retain their checked tree and hole identities",
+    "comparison and arithmetic operators retain named-role relation applications",
     "all replacements match one pre-state and commit atomically before the render request",
     "the receipt definition remains outside semantic state identity",
     "the derived scene is a relational projection of state"

@@ -17,17 +17,16 @@
   "context": {
     "relations": [
       "$distance",
-      "$position"
-    ],
-    "functions": [
-      "$length",
-      "$subtract"
+      "$position",
+      "$referent:length",
+      "$referent:subtraction"
     ]
   },
   "structural_intent": "pure-definition",
   "required": [
     "outer := means definition",
     "named holes correlate by identity across pattern and body",
+    "- elaborates to minuend and subtrahend roles with difference as the solved role",
     "each projection is a recursive relation term"
   ],
   "forbidden": [
@@ -54,14 +53,15 @@
         }
       },
       "denotation": {
-        "kind": "function-application",
-        "function": "$length",
-        "arguments": [
-          {
-            "kind": "function-application",
-            "function": "$subtract",
-            "arguments": [
-              {
+        "kind": "relation-application",
+        "relation": "$referent:length",
+        "roles": {
+          "vector": {
+            "kind": "relation-application",
+            "surface_operator": "-",
+            "relation": "$referent:subtraction",
+            "roles": {
+              "minuend": {
                 "kind": "relation-projection",
                 "relation": "$position",
                 "roles": {
@@ -72,7 +72,7 @@
                 },
                 "output_role": "value"
               },
-              {
+              "subtrahend": {
                 "kind": "relation-projection",
                 "relation": "$position",
                 "roles": {
@@ -83,9 +83,11 @@
                 },
                 "output_role": "value"
               }
-            ]
+            },
+            "output_role": "difference"
           }
-        ]
+        },
+        "output_role": "length"
       }
     }
   ]

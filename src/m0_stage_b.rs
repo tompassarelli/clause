@@ -518,7 +518,8 @@ fn line_form(document: &Document, line: &Line, has_children: bool) -> Option<Chi
     if line
         .tokens
         .iter()
-        .any(|token| token.kind == TokenKind::Punctuation(Punctuation::Equals))
+        .enumerate()
+        .any(|(index, token)| is_canonical_infix_operator(line, index, *token))
     {
         return Some(ChildForm::RelationalContent);
     }
@@ -532,6 +533,22 @@ fn line_form(document: &Document, line: &Line, has_children: bool) -> Option<Chi
         return Some(ChildForm::RelationalContent);
     }
     Some(ChildForm::UnresolvedStructuralForm)
+}
+
+fn is_canonical_infix_operator(line: &Line, index: usize, token: Token) -> bool {
+    index > 0
+        && index + 1 < line.tokens.len()
+        && matches!(
+            token.kind,
+            TokenKind::Punctuation(
+                Punctuation::Equals
+                    | Punctuation::GreaterThan
+                    | Punctuation::LessThan
+                    | Punctuation::Plus
+                    | Punctuation::Minus
+                    | Punctuation::Star
+            )
+        )
 }
 
 fn first_name<'a>(document: &'a Document, line: &Line) -> Option<&'a str> {

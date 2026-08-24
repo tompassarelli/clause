@@ -8,7 +8,7 @@
   },
   "source": {
     "lines": [
-      "any x greater-than y"
+      "any x > y"
     ],
     "line_break": "LF",
     "ends_with_line_break": true
@@ -18,8 +18,17 @@
     "matching_admitted_content": []
   },
   "structural_intent": "test-bounded-existence-without-negation",
+  "query_content": {
+    "surface_operator": ">",
+    "relation": "$referent:greater-than",
+    "roles": {
+      "greater": "$referent:x",
+      "lesser": "$referent:y"
+    }
+  },
   "required": [
     "the existence result is false in the selected Revision",
+    "> elaborates to the greater and lesser roles of one relation referent",
     "the epistemic status of the content remains undetermined",
     "no negative relational content or rejecting judgment is fabricated"
   ],

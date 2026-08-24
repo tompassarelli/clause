@@ -9,10 +9,10 @@
   "source": {
     "lines": [
       "Alice asserts",
-      "  x greater-than y",
+      "  x > y",
       "",
       "Bob asserts",
-      "  x greater-than y"
+      "  x > y"
     ],
     "line_break": "LF",
     "ends_with_line_break": true
@@ -31,6 +31,7 @@
   ],
   "relational_content": {
     "identity": "$content:x-greater-than-y",
+    "surface_operator": ">",
     "relation": "$referent:greater-than",
     "roles": {
       "greater": "$referent:x",

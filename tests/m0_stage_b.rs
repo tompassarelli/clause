@@ -117,6 +117,43 @@ fn distinguishes_classification_definition_and_equality_content() {
 }
 
 #[test]
+fn keeps_canonical_ascii_operators_as_relational_content() {
+    let document = m0_stage_a::read("x > y\nx < y\nx >= y\nx <= y\nx = y\na + b\na - b\na * b\n");
+    let classification = classify(&document);
+
+    assert!(classification.is_accepted());
+    assert_eq!(
+        classification
+            .statements
+            .iter()
+            .map(|statement| statement.class)
+            .collect::<Vec<_>>(),
+        vec![StatementClass::RelationalContent; 8]
+    );
+}
+
+#[test]
+fn preserves_delta_signs_and_slash_qualified_names_as_distinct_forms() {
+    let document =
+        m0_stage_a::read("+ admitted content\n- withdrawn content\ndependency/transitive\n");
+    let classification = classify(&document);
+
+    assert!(classification.is_accepted());
+    assert_eq!(
+        classification
+            .statements
+            .iter()
+            .map(|statement| statement.class)
+            .collect::<Vec<_>>(),
+        vec![
+            StatementClass::Delta,
+            StatementClass::Delta,
+            StatementClass::UnresolvedStructuralForm,
+        ]
+    );
+}
+
+#[test]
 fn keeps_law_rule_invariant_and_goal_modes_distinct() {
     let source = concat!(
         "law universal reachability\n",

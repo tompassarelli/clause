@@ -36,6 +36,7 @@
   "structural_intent": "one-phase-transaction-over-one-pre-state",
   "required": [
     "both guards are evaluated against the same exact pre-state",
+    "+ elaborates to a named-role addition relation application",
     "both old relational-content items match against that pre-state",
     "the coin replacement cannot invalidate the score guard during evaluation",
     "both accepted replacements commit as one successor"
@@ -65,12 +66,14 @@
             "roles": {
               "member": "player",
               "value": {
-                "kind": "call",
-                "function": "$add",
-                "arguments": [
-                  {"kind": "named-hole", "identity": "$hole:score"},
-                  {"kind": "projection", "relation": "$value", "roles": {"member": "coin"}, "output_role": "value"}
-                ]
+                "kind": "relation-application",
+                "surface_operator": "+",
+                "relation": "$referent:addition",
+                "roles": {
+                  "augend": {"kind": "named-hole", "identity": "$hole:score"},
+                  "addend": {"kind": "relation-projection", "relation": "$value", "roles": {"member": "coin"}, "output_role": "value"}
+                },
+                "output_role": "sum"
               }
             }
           },

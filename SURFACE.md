@@ -514,13 +514,38 @@ Clause should adopt this vocabulary and reject synonyms that blur the axes.
 | `:` | classification sugar for ordinary membership |
 | `:=` | definition/denotation |
 | `=` | equality proposition |
+| `>`, `<`, `>=`, `<=` | conventional ordered comparisons |
+| spaced infix `+`, `-`, `*` | conventional arithmetic relations |
 | `->` | result/projection direction or return contract |
 | `?` | anonymous clause hole |
 | `?name` | named clause hole |
 | `~>` | a proposition in the current state succeeds to another proposition |
-| `+` | exact admission/addition |
+| leading `+` in a Delta | exact admission/addition |
 | `-` | exact withdrawal/removal |
 | `!` | external effect/capability boundary |
+
+Use these ASCII operators directly when their conventional relation and role
+orientation are unambiguous:
+
+```clause
+x > y
+x < y
+x >= y
+x <= y
+x = y
+a + b
+a - b
+a * b
+```
+
+They elaborate to addressable relation referents and stable named-role
+relational content just like word-shaped relations. Do not print
+`x greater-than y` or similar word expansions as canonical source. Do not
+invent punctuation where conventions conflict or do not determine the intended
+roles; domain relations such as `connects` and `parent-of` remain words with
+exact declared shapes. Structurally leading `+` and `-` remain Delta signs.
+Slash-qualified semantic names remain names; they are not silently parsed as
+division.
 
 Words carry semantic moods:
 

@@ -106,6 +106,23 @@ definition/denotation. `=` authors equality content. The retired `∈`, `::`,
 `in`, and `member of` membership spellings are rejected contrasts, not live
 aliases or editor rewrites.
 
+## Canonical relation operators
+
+When a relation has a strong, unambiguous conventional operator, canonical
+source uses its easy-to-type ASCII spelling. Thus `x > y`, `x < y`, `x >= y`,
+`x <= y`, `x = y`, `a + b`, `a - b`, and `a * b` are canonical;
+word-expanded substitutes such as `x greater-than y` or `a multiplied-by b`
+are not. Each operator still names an addressable relation
+referent and elaborates to relational content with stable named roles. Operator
+syntax creates no primitive numeric, ordering, equality, or arithmetic domain.
+
+Punctuation is not invented where convention conflicts or fails to determine
+the intended roles. Domain relations such as `connects` and `parent-of` remain
+words with exact declared shapes. Position disambiguates operator reuse:
+structurally leading `+` and `-` remain exact Delta signs, while spaced infix
+`+` and `-` are arithmetic relations. Slash-qualified semantic names remain
+names rather than being reinterpreted as division.
+
 ## Open-world negation
 
 Clause is open-world by default. Failure to find, derive, observe, or accept
