@@ -294,6 +294,25 @@ fn term_json(term: &Term) -> String {
         Term::Referent(id) => format!("[\"referent\",\"{}\"]", escape(id.as_str())),
         Term::Pattern(id) => format!("[\"pattern\",\"{}\"]", escape(id.as_str())),
         Term::Application(id) => format!("[\"application\",\"{}\"]", escape(id.as_str())),
+        Term::F32(value) => format!("[\"f32\",\"{:08x}\"]", value.bits()),
+        Term::Int(value) => format!("[\"int\",\"{value}\"]"),
+        Term::Bool(value) => format!("[\"bool\",\"{value}\"]"),
+        Term::Product(fields) => format!(
+            "[\"product\",[{}]]",
+            join(fields.iter().map(|(label, value)| format!(
+                "[\"{}\",{}]",
+                escape(label.as_str()),
+                term_json(value)
+            )))
+        ),
+        Term::Sum { tag, value } => format!(
+            "[\"sum\",\"{}\",{}]",
+            escape(tag.as_str()),
+            term_json(value)
+        ),
+        Term::Sequence(values) => {
+            format!("[\"sequence\",[{}]]", join(values.iter().map(term_json)))
+        }
     }
 }
 

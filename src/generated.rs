@@ -403,6 +403,37 @@ fn term_source(value: &Term) -> String {
             "kernel::Term::application(kernel::ContentId::new({:?}.into()).expect(\"generated content\"))",
             id.as_str()
         ),
+        Term::F32(value) => format!(
+            "kernel::Term::f32_bits({}).expect(\"generated finite F32\")",
+            value.bits()
+        ),
+        Term::Int(value) => format!("kernel::Term::int({value})"),
+        Term::Bool(value) => format!("kernel::Term::boolean({value})"),
+        Term::Product(fields) => {
+            let fields = fields
+                .iter()
+                .map(|(label, value)| {
+                    format!(
+                        "(kernel::Name::new({:?}.into()).expect(\"generated product label\"), {})",
+                        label.as_str(),
+                        term_source(value)
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(",");
+            format!(
+                "kernel::Term::product(std::collections::BTreeMap::from([{fields}])).expect(\"generated structural product\")"
+            )
+        }
+        Term::Sum { tag, value } => format!(
+            "kernel::Term::sum(kernel::Name::new({:?}.into()).expect(\"generated sum tag\"), {}).expect(\"generated structural sum\")",
+            tag.as_str(),
+            term_source(value)
+        ),
+        Term::Sequence(values) => format!(
+            "kernel::Term::sequence(vec![{}]).expect(\"generated structural sequence\")",
+            values.iter().map(term_source).collect::<Vec<_>>().join(",")
+        ),
     }
 }
 #[cfg(not(clause_generated))]

@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use crate::kernel::{
     AssertionOccurrence, Cardinality, ContentId, Definition, Delta, DerivationRule, Goal,
     Invariant, InvariantAdmission, Judgment, JudgmentKind, JudgmentStatus, JudgmentTarget,
-    KernelError, LookupMode, Model, Pattern, PatternId, Referent, ReferentId, RelationShape,
+    KernelError, LookupMode, Model, Name, Pattern, PatternId, Referent, ReferentId, RelationShape,
     RelationalContent, Result, Revision, RevisionId, RevisionLineage, Role, RoleId, RolePredicate,
     SemanticAtom, Term, Transition, UniversalLaw,
 };
@@ -465,13 +465,78 @@ fn decode_judgment_kind(value: &Json) -> Result<JudgmentKind> {
 }
 
 fn decode_term(value: &Json) -> Result<Term> {
-    let item = list(value, 2, "term")?;
-    match string(&item[0], "term tag")? {
-        "referent" => Ok(Term::referent(decode_referent_id(&item[1])?)),
-        "pattern" => Ok(Term::pattern(PatternId::new(
-            string(&item[1], "pattern identity")?.to_owned(),
-        )?)),
-        "application" => Ok(Term::application(decode_content_id(&item[1])?)),
+    let item = array(value, "term")?;
+    let tag = item
+        .first()
+        .ok_or_else(|| KernelError::new("invalid term"))?;
+    match string(tag, "term tag")? {
+        "referent" => {
+            let item = list(value, 2, "referent term")?;
+            Ok(Term::referent(decode_referent_id(&item[1])?))
+        }
+        "pattern" => {
+            let item = list(value, 2, "pattern term")?;
+            Ok(Term::pattern(PatternId::new(
+                string(&item[1], "pattern identity")?.to_owned(),
+            )?))
+        }
+        "application" => {
+            let item = list(value, 2, "application term")?;
+            Ok(Term::application(decode_content_id(&item[1])?))
+        }
+        "f32" => {
+            let item = list(value, 2, "F32 term")?;
+            let bits = string(&item[1], "F32 bits")?;
+            if bits.len() != 8 {
+                return Err(KernelError::new("invalid F32 bits"));
+            }
+            let bits =
+                u32::from_str_radix(bits, 16).map_err(|_| KernelError::new("invalid F32 bits"))?;
+            Term::f32_bits(bits)
+        }
+        "int" => {
+            let item = list(value, 2, "Int term")?;
+            let value = string(&item[1], "Int value")?
+                .parse::<i64>()
+                .map_err(|_| KernelError::new("invalid Int value"))?;
+            Ok(Term::int(value))
+        }
+        "bool" => {
+            let item = list(value, 2, "Bool term")?;
+            match string(&item[1], "Bool value")? {
+                "true" => Ok(Term::boolean(true)),
+                "false" => Ok(Term::boolean(false)),
+                _ => Err(KernelError::new("invalid Bool value")),
+            }
+        }
+        "product" => {
+            let item = list(value, 2, "product term")?;
+            let mut fields = BTreeMap::new();
+            for field in array(&item[1], "product fields")? {
+                let field = list(field, 2, "product field")?;
+                let label = Name::new(string(&field[0], "product label")?.to_owned())?;
+                if fields.insert(label, decode_term(&field[1])?).is_some() {
+                    return Err(KernelError::new("duplicate product label"));
+                }
+            }
+            Term::product(fields)
+        }
+        "sum" => {
+            let item = list(value, 3, "sum term")?;
+            Term::sum(
+                Name::new(string(&item[1], "sum tag")?.to_owned())?,
+                decode_term(&item[2])?,
+            )
+        }
+        "sequence" => {
+            let item = list(value, 2, "sequence term")?;
+            Term::sequence(
+                array(&item[1], "sequence values")?
+                    .iter()
+                    .map(decode_term)
+                    .collect::<Result<Vec<_>>>()?,
+            )
+        }
         _ => Err(KernelError::new("invalid term tag")),
     }
 }

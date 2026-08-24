@@ -455,3 +455,126 @@ fn partial_application_content_cannot_become_an_assertion_root() {
         "relational content must fill the complete named role map"
     );
 }
+
+#[test]
+fn structural_terms_are_checked_canonical_and_ordered() {
+    assert!(Term::f32(f32::NAN).is_err());
+    assert!(Term::f32(f32::INFINITY).is_err());
+    assert_eq!(Term::f32(-0.0).unwrap(), Term::f32(0.0).unwrap());
+
+    let tuple = Term::tuple((0..11).map(Term::int).collect()).unwrap();
+    let Term::Product(fields) = &tuple else {
+        panic!("tuple lowers to one labelled structural product");
+    };
+    assert_eq!(
+        fields.keys().map(Name::as_str).collect::<Vec<_>>(),
+        (0..11)
+            .map(|index| format!("_{index:020}"))
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(
+        fields.values().cloned().collect::<Vec<_>>(),
+        (0..11).map(Term::int).collect::<Vec<_>>()
+    );
+    assert!(tuple.is_ground());
+
+    let binder = Term::pattern(PatternId::from_digest([70; 32]));
+    assert_eq!(
+        Term::sequence(vec![binder.clone()])
+            .unwrap_err()
+            .to_string(),
+        "pattern is not valid inside a structural term"
+    );
+    assert_eq!(
+        Term::sum(Name::new("some".into()).unwrap(), binder)
+            .unwrap_err()
+            .to_string(),
+        "pattern is not valid inside a structural term"
+    );
+
+    let relation = referent(71);
+    let role = RoleId::from_digest([72; 32]);
+    let forward = RelationalContent::new(
+        relation.clone(),
+        BTreeMap::from([(
+            role.clone(),
+            Term::sequence(vec![Term::int(1), Term::int(2)]).unwrap(),
+        )]),
+    )
+    .unwrap();
+    let repeated = RelationalContent::new(
+        relation.clone(),
+        BTreeMap::from([(
+            role.clone(),
+            Term::sequence(vec![Term::int(1), Term::int(2)]).unwrap(),
+        )]),
+    )
+    .unwrap();
+    let reversed = RelationalContent::new(
+        relation,
+        BTreeMap::from([(
+            role,
+            Term::sequence(vec![Term::int(2), Term::int(1)]).unwrap(),
+        )]),
+    )
+    .unwrap();
+    assert_eq!(forward.id(), repeated.id());
+    assert_ne!(forward.id(), reversed.id());
+}
+
+#[test]
+fn structural_definition_recursively_registers_and_validates_applications() {
+    let model = referent(80);
+    let relation = referent(81);
+    let value = referent(82);
+    let definition = referent(83);
+    let input = RoleId::from_digest([84; 32]);
+    let result = RoleId::from_digest([85; 32]);
+    let application = RelationalContent::new(
+        relation.clone(),
+        BTreeMap::from([(input.clone(), Term::referent(value.clone()))]),
+    )
+    .unwrap();
+    let shape = RelationShape::new(
+        relation.clone(),
+        BTreeMap::from([
+            (input.clone(), Role::new(input.clone(), Vec::new()).unwrap()),
+            (
+                result.clone(),
+                Role::new(result.clone(), Vec::new()).unwrap(),
+            ),
+        ]),
+        vec![LookupMode::finite(vec![input], vec![result], Cardinality::One).unwrap()],
+    )
+    .unwrap();
+    let referents = [model.clone(), relation.clone(), value, definition.clone()]
+        .into_iter()
+        .map(|id| (id.clone(), Referent::new(id)))
+        .collect();
+    let structural = Term::sequence(vec![
+        Term::product(BTreeMap::from([(
+            Name::new("result".into()).unwrap(),
+            Term::application(application.id().clone()),
+        )]))
+        .unwrap(),
+    ])
+    .unwrap();
+    let model = Model::with_distinctions(
+        model,
+        referents,
+        BTreeMap::from([(application.id().clone(), application.clone())]),
+        BTreeMap::from([(relation, shape)]),
+        Vec::new(),
+        vec![Definition::new(definition, structural)],
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+    )
+    .unwrap();
+
+    assert_eq!(model.content(application.id()), Some(&application));
+    assert!(model.content_is_ground(&application));
+}

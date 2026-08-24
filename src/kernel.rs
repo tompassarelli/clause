@@ -12,9 +12,9 @@ mod revision;
 mod schema;
 
 pub use clause::{
-    AssertionOccurrence, Definition, DerivationRule, Goal, Invariant, InvariantAdmission, Judgment,
-    JudgmentKind, JudgmentStatus, JudgmentTarget, OpenWorldStatus, Pattern, RelationalContent,
-    Term, Transition, UniversalLaw,
+    AssertionOccurrence, Definition, DerivationRule, FiniteF32, Goal, Invariant,
+    InvariantAdmission, Judgment, JudgmentKind, JudgmentStatus, JudgmentTarget, OpenWorldStatus,
+    Pattern, RelationalContent, Term, Transition, UniversalLaw,
 };
 pub use error::{KernelError, Result};
 pub use find::FindPlan;

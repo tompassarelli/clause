@@ -101,17 +101,18 @@ impl Model {
                 }
             }
         }
-        let application_targets = relational_contents
+        let mut application_targets = BTreeSet::new();
+        for term in relational_contents
             .values()
             .flat_map(|content| content.roles().values())
-            .filter_map(Term::content_id)
-            .chain(
-                definitions
-                    .iter()
-                    .filter_map(|definition| definition.denotation().content_id()),
-            )
-            .cloned()
-            .collect::<BTreeSet<_>>();
+            .chain(definitions.iter().map(Definition::denotation))
+        {
+            term.walk(&mut |term| {
+                if let Term::Application(id) = term {
+                    application_targets.insert(id.clone());
+                }
+            });
+        }
         let mut complete_contents = occurrences
             .iter()
             .map(AssertionOccurrence::content)
@@ -201,7 +202,7 @@ impl Model {
                 &referents,
                 &relational_contents,
                 definition.denotation(),
-                true,
+                false,
             )?;
         }
         for rule in &derivation_rules {
@@ -700,8 +701,16 @@ fn validate_application_acyclic(contents: &BTreeMap<ContentId, RelationalContent
         let content = contents
             .get(id)
             .ok_or_else(|| KernelError::new("recursive term names undeclared content"))?;
-        for dependency in content.roles().values().filter_map(Term::content_id) {
-            visit(dependency, contents, active, settled)?;
+        let mut dependencies = Vec::new();
+        for term in content.roles().values() {
+            term.walk(&mut |term| {
+                if let Term::Application(id) = term {
+                    dependencies.push(id.clone());
+                }
+            });
+        }
+        for dependency in dependencies {
+            visit(&dependency, contents, active, settled)?;
         }
         active.remove(id);
         settled.insert(id.clone());
@@ -722,12 +731,26 @@ fn validate_term(
     term: &Term,
     allow_patterns: bool,
 ) -> Result<()> {
-    match term {
-        Term::Referent(id) => require_referent(referents, id, "term"),
-        Term::Application(id) => require_content(contents, id, "recursive term"),
-        Term::Pattern(_) if allow_patterns => Ok(()),
-        Term::Pattern(_) => Err(KernelError::new("pattern is not valid in ground content")),
-    }
+    term.validate_structure()?;
+    let mut result = Ok(());
+    term.walk(&mut |term| {
+        if result.is_err() {
+            return;
+        }
+        result = match term {
+            Term::Referent(id) => require_referent(referents, id, "term"),
+            Term::Application(id) => require_content(contents, id, "recursive term"),
+            Term::Pattern(_) if allow_patterns => Ok(()),
+            Term::Pattern(_) => Err(KernelError::new("pattern is not valid in ground content")),
+            Term::F32(_)
+            | Term::Int(_)
+            | Term::Bool(_)
+            | Term::Product(_)
+            | Term::Sum { .. }
+            | Term::Sequence(_) => Ok(()),
+        };
+    });
+    result
 }
 
 fn content_is_ground(
@@ -748,7 +771,7 @@ fn term_is_ground(
     visiting: &mut BTreeSet<ContentId>,
 ) -> bool {
     match term {
-        Term::Referent(_) => true,
+        Term::Referent(_) | Term::F32(_) | Term::Int(_) | Term::Bool(_) => true,
         Term::Pattern(_) => false,
         Term::Application(id) => {
             let Some(content) = contents.get(id) else {
@@ -764,6 +787,13 @@ fn term_is_ground(
             visiting.remove(id);
             ground
         }
+        Term::Product(fields) => fields
+            .values()
+            .all(|term| term_is_ground(contents, term, visiting)),
+        Term::Sum { value, .. } => term_is_ground(contents, value, visiting),
+        Term::Sequence(values) => values
+            .iter()
+            .all(|term| term_is_ground(contents, term, visiting)),
     }
 }
 
@@ -834,6 +864,18 @@ fn validate_admissibility(
                 }
             }
             Term::Pattern(_) => {}
+            Term::F32(_)
+            | Term::Int(_)
+            | Term::Bool(_)
+            | Term::Product(_)
+            | Term::Sum { .. }
+            | Term::Sequence(_) => {
+                if !shape.roles()[role_id].admissibility().is_empty() {
+                    return Err(KernelError::new(
+                        "structural term cannot satisfy relational admissibility predicates",
+                    ));
+                }
+            }
         }
     }
     Ok(())
@@ -1100,8 +1142,26 @@ fn match_form(
                 }
                 None => return false,
             },
-            Term::Referent(_) | Term::Application(_) if expected != actual => return false,
-            Term::Referent(_) | Term::Application(_) => {}
+            Term::Referent(_)
+            | Term::Application(_)
+            | Term::F32(_)
+            | Term::Int(_)
+            | Term::Bool(_)
+            | Term::Product(_)
+            | Term::Sum { .. }
+            | Term::Sequence(_)
+                if expected != actual =>
+            {
+                return false;
+            }
+            Term::Referent(_)
+            | Term::Application(_)
+            | Term::F32(_)
+            | Term::Int(_)
+            | Term::Bool(_)
+            | Term::Product(_)
+            | Term::Sum { .. }
+            | Term::Sequence(_) => {}
         }
     }
     true

@@ -4,7 +4,7 @@ use crate::wire::sha256_digest;
 
 use super::{
     error::{KernelError, Result},
-    identity::{ContentId, PatternId, ReferentId, RoleId},
+    identity::{ContentId, Name, PatternId, ReferentId, RoleId},
 };
 
 /// A recursive resolved term. Pattern binders remain scoped machinery rather
@@ -14,6 +14,40 @@ pub enum Term {
     Referent(ReferentId),
     Pattern(PatternId),
     Application(ContentId),
+    F32(FiniteF32),
+    Int(i64),
+    Bool(bool),
+    Product(BTreeMap<Name, Term>),
+    Sum { tag: Name, value: Box<Term> },
+    Sequence(Vec<Term>),
+}
+
+/// The exact IEEE-754 binary32 bits of a finite structural number.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct FiniteF32(u32);
+
+impl FiniteF32 {
+    pub fn from_bits(bits: u32) -> Result<Self> {
+        if !f32::from_bits(bits).is_finite() {
+            Err(KernelError::new("F32 term must be finite"))
+        } else if bits == (-0.0_f32).to_bits() {
+            Ok(Self(0.0_f32.to_bits()))
+        } else {
+            Ok(Self(bits))
+        }
+    }
+
+    pub fn from_f32(value: f32) -> Result<Self> {
+        Self::from_bits(value.to_bits())
+    }
+
+    pub fn bits(self) -> u32 {
+        self.0
+    }
+
+    pub fn value(self) -> f32 {
+        f32::from_bits(self.0)
+    }
 }
 
 impl Term {
@@ -25,6 +59,95 @@ impl Term {
     }
     pub fn application(content: ContentId) -> Self {
         Self::Application(content)
+    }
+    pub fn f32(value: f32) -> Result<Self> {
+        Ok(Self::F32(FiniteF32::from_f32(value)?))
+    }
+    pub fn f32_bits(bits: u32) -> Result<Self> {
+        Ok(Self::F32(FiniteF32::from_bits(bits)?))
+    }
+    pub fn int(value: i64) -> Self {
+        Self::Int(value)
+    }
+    pub fn boolean(value: bool) -> Self {
+        Self::Bool(value)
+    }
+    pub fn product(fields: BTreeMap<Name, Term>) -> Result<Self> {
+        let term = Self::Product(fields);
+        term.validate_structure()?;
+        Ok(term)
+    }
+    pub fn tuple(values: Vec<Term>) -> Result<Self> {
+        Self::product(
+            values
+                .into_iter()
+                .enumerate()
+                .map(|(index, value)| {
+                    (
+                        Name::new(format!("_{index:020}"))
+                            .expect("fixed-width ordinal tuple label is valid"),
+                        value,
+                    )
+                })
+                .collect(),
+        )
+    }
+    pub fn sum(tag: Name, value: Term) -> Result<Self> {
+        let term = Self::Sum {
+            tag,
+            value: Box::new(value),
+        };
+        term.validate_structure()?;
+        Ok(term)
+    }
+    pub fn sequence(values: Vec<Term>) -> Result<Self> {
+        let term = Self::Sequence(values);
+        term.validate_structure()?;
+        Ok(term)
+    }
+    pub fn walk(&self, visitor: &mut impl FnMut(&Term)) {
+        visitor(self);
+        match self {
+            Self::Product(fields) => {
+                for value in fields.values() {
+                    value.walk(visitor);
+                }
+            }
+            Self::Sum { value, .. } => value.walk(visitor),
+            Self::Sequence(values) => {
+                for value in values {
+                    value.walk(visitor);
+                }
+            }
+            Self::Referent(_)
+            | Self::Pattern(_)
+            | Self::Application(_)
+            | Self::F32(_)
+            | Self::Int(_)
+            | Self::Bool(_) => {}
+        }
+    }
+    pub fn validate_structure(&self) -> Result<()> {
+        fn validate_member(term: &Term) -> Result<()> {
+            if matches!(term, Term::Pattern(_)) {
+                return Err(KernelError::new(
+                    "pattern is not valid inside a structural term",
+                ));
+            }
+            term.validate_structure()
+        }
+
+        match self {
+            Self::Product(fields) => fields.values().try_for_each(validate_member),
+            Self::Sum { value, .. } => validate_member(value),
+            Self::Sequence(values) => values.iter().try_for_each(validate_member),
+            Self::Referent(_)
+            | Self::Pattern(_)
+            | Self::Application(_)
+            | Self::F32(_)
+            | Self::Int(_)
+            | Self::Bool(_) => Ok(()),
+        }
     }
     pub fn referent_id(&self) -> Option<&ReferentId> {
         match self {
@@ -47,7 +170,13 @@ impl Term {
     /// Whether groundness is decidable from this term alone. Applications
     /// require a Model lookup and are conservatively non-ground here.
     pub fn is_ground(&self) -> bool {
-        matches!(self, Self::Referent(_))
+        match self {
+            Self::Referent(_) | Self::F32(_) | Self::Int(_) | Self::Bool(_) => true,
+            Self::Pattern(_) | Self::Application(_) => false,
+            Self::Product(fields) => fields.values().all(Self::is_ground),
+            Self::Sum { value, .. } => value.is_ground(),
+            Self::Sequence(values) => values.iter().all(Self::is_ground),
+        }
     }
 }
 
@@ -116,22 +245,58 @@ fn content_preimage(relation: &ReferentId, roles: &BTreeMap<RoleId, Term>) -> Ve
     field(&mut bytes, relation.as_str());
     for (role, term) in roles {
         field(&mut bytes, role.as_str());
-        match term {
-            Term::Referent(id) => {
-                bytes.push(b'r');
-                field(&mut bytes, id.as_str());
+        term_preimage(&mut bytes, term);
+    }
+    bytes
+}
+
+fn term_preimage(bytes: &mut Vec<u8>, term: &Term) {
+    match term {
+        Term::Referent(id) => {
+            bytes.push(b'r');
+            field(bytes, id.as_str());
+        }
+        Term::Pattern(id) => {
+            bytes.push(b'p');
+            field(bytes, id.as_str());
+        }
+        Term::Application(id) => {
+            bytes.push(b'a');
+            field(bytes, id.as_str());
+        }
+        Term::F32(value) => {
+            bytes.push(b'f');
+            bytes.extend_from_slice(&value.bits().to_be_bytes());
+        }
+        Term::Int(value) => {
+            bytes.push(b'i');
+            bytes.extend_from_slice(&value.to_be_bytes());
+        }
+        Term::Bool(value) => {
+            bytes.push(b'b');
+            bytes.push(u8::from(*value));
+        }
+        Term::Product(fields) => {
+            bytes.push(b'P');
+            bytes.extend_from_slice(&(fields.len() as u64).to_be_bytes());
+            for (label, value) in fields {
+                field(bytes, label.as_str());
+                term_preimage(bytes, value);
             }
-            Term::Pattern(id) => {
-                bytes.push(b'p');
-                field(&mut bytes, id.as_str());
-            }
-            Term::Application(id) => {
-                bytes.push(b'a');
-                field(&mut bytes, id.as_str());
+        }
+        Term::Sum { tag, value } => {
+            bytes.push(b'S');
+            field(bytes, tag.as_str());
+            term_preimage(bytes, value);
+        }
+        Term::Sequence(values) => {
+            bytes.push(b'Q');
+            bytes.extend_from_slice(&(values.len() as u64).to_be_bytes());
+            for value in values {
+                term_preimage(bytes, value);
             }
         }
     }
-    bytes
 }
 
 fn field(bytes: &mut Vec<u8>, value: &str) {

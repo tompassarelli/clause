@@ -5,9 +5,10 @@ use std::collections::BTreeMap;
 use clause::{
     delta::RevisionDiff,
     kernel::{
-        AssertionOccurrence, Cardinality, Delta, DerivationRule, Judgment, JudgmentKind,
-        JudgmentStatus, JudgmentTarget, LookupMode, Model, OpenWorldStatus, Pattern, PatternId,
-        Referent, ReferentId, RelationShape, RelationalContent, Role, RoleId, SemanticAtom, Term,
+        AssertionOccurrence, Cardinality, Definition, Delta, DerivationRule, Judgment,
+        JudgmentKind, JudgmentStatus, JudgmentTarget, LookupMode, Model, Name, OpenWorldStatus,
+        Pattern, PatternId, Referent, ReferentId, RelationShape, RelationalContent, Role, RoleId,
+        SemanticAtom, Term,
     },
     wire,
 };
@@ -326,6 +327,77 @@ fn exact_semantic_v6_bytes_hash_and_revision_v4_roundtrip_are_frozen() {
     assert_eq!(wire::serialize(&revision), expected_wire);
     assert_eq!(wire::reload(&expected_wire).unwrap(), revision);
     assert_eq!(revision.predecessor(), None);
+}
+
+#[test]
+fn structural_terms_roundtrip_and_malformed_encodings_fail_closed() {
+    let model_id = referent_id(0x40);
+    let definition_id = referent_id(0x41);
+    let structural = Term::product(BTreeMap::from([
+        (Name::new("flag".into()).unwrap(), Term::boolean(true)),
+        (
+            Name::new("number".into()).unwrap(),
+            Term::f32(-0.0).unwrap(),
+        ),
+        (
+            Name::new("tuple".into()).unwrap(),
+            Term::tuple((0..11).map(Term::int).collect()).unwrap(),
+        ),
+        (
+            Name::new("variant".into()).unwrap(),
+            Term::sum(Name::new("some".into()).unwrap(), Term::int(5)).unwrap(),
+        ),
+    ]))
+    .unwrap();
+    let referents = [model_id.clone(), definition_id.clone()]
+        .into_iter()
+        .map(|id| (id.clone(), Referent::new(id)))
+        .collect();
+    let model = Model::with_distinctions(
+        model_id,
+        referents,
+        BTreeMap::new(),
+        BTreeMap::new(),
+        Vec::new(),
+        vec![Definition::new(definition_id, structural)],
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+    )
+    .unwrap();
+    let revision = wire::admit(model);
+    let canonical = wire::serialize(&revision);
+
+    assert!(canonical.contains("[\"f32\",\"00000000\"]"));
+    assert!(canonical.contains("[\"sum\",\"some\",[\"int\",\"5\"]]"));
+    assert_eq!(wire::reload(&canonical).unwrap(), revision);
+
+    let infinite = wire::semantic_payload(&revision).replacen(
+        "[\"f32\",\"00000000\"]",
+        "[\"f32\",\"7f800000\"]",
+        1,
+    );
+    assert_eq!(
+        wire::reload(&wire_for_semantic(&infinite))
+            .unwrap_err()
+            .to_string(),
+        "F32 term must be finite"
+    );
+
+    let duplicate = wire::semantic_payload(&revision).replacen(
+        "[[\"flag\",[\"bool\",\"true\"]]",
+        "[[\"flag\",[\"bool\",\"true\"]],[\"flag\",[\"bool\",\"false\"]]",
+        1,
+    );
+    assert_eq!(
+        wire::reload(&wire_for_semantic(&duplicate))
+            .unwrap_err()
+            .to_string(),
+        "duplicate product label"
+    );
 }
 
 #[test]

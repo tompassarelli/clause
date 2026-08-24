@@ -67,6 +67,24 @@ fn term(value: &Term) -> String {
         Term::Referent(id) => format!("[\"referent\",{}]", string(id.as_str())),
         Term::Pattern(id) => format!("[\"pattern\",{}]", string(id.as_str())),
         Term::Application(id) => format!("[\"application\",{}]", string(id.as_str())),
+        Term::F32(value) => format!("[\"f32\",\"{:08x}\"]", value.bits()),
+        Term::Int(value) => format!("[\"int\",\"{value}\"]"),
+        Term::Bool(value) => format!("[\"bool\",\"{value}\"]"),
+        Term::Product(fields) => format!(
+            "[\"product\",[{}]]",
+            fields
+                .iter()
+                .map(|(label, value)| format!("[{},{}]", string(label.as_str()), term(value)))
+                .collect::<Vec<_>>()
+                .join(",")
+        ),
+        Term::Sum { tag, value } => {
+            format!("[\"sum\",{},{}]", string(tag.as_str()), term(value))
+        }
+        Term::Sequence(values) => format!(
+            "[\"sequence\",[{}]]",
+            values.iter().map(term).collect::<Vec<_>>().join(",")
+        ),
     }
 }
 fn clause(value: &RelationalContent) -> String {

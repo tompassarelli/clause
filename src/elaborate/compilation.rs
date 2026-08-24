@@ -572,9 +572,15 @@ fn require_registered_dependencies(
     content: &RelationalContent,
 ) -> kernel::Result<()> {
     for term in content.roles().values() {
-        if let Term::Application(dependency) = term
-            && !contents.contains_key(dependency)
-        {
+        let mut missing = None;
+        term.walk(&mut |term| {
+            if let Term::Application(dependency) = term
+                && !contents.contains_key(dependency)
+            {
+                missing = Some(dependency.clone());
+            }
+        });
+        if missing.is_some() {
             return Err(kernel::KernelError::new(
                 "recursive content must be registered in dependency postorder",
             ));
