@@ -2,9 +2,9 @@
   "schema": "clause-m0-contrast-v1",
   "id": "revision-admit-existing",
   "axis": "exact-delta-admission",
-  "decision": {"status": "unresolved", "candidate": "existing-admission-diagnostic", "layout_style": "provisional-four-space"},
+  "decision": {"status": "unresolved", "candidate": "existing-admission-diagnostic", "layout_style": "canonical-two-space"},
   "source": {
-    "lines": ["candidate from egress", "    + Door 101 passed Fire-Marshal Inspection"],
+    "lines": ["candidate from egress", "  + Door 101 passed Fire-Marshal Inspection"],
     "line_break": "LF",
     "ends_with_line_break": true
   },

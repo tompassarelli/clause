@@ -2,9 +2,9 @@
   "schema": "clause-m0-contrast-v1",
   "id": "effect-postcommit-success",
   "axis": "post-commit-effect-success",
-  "decision": {"status": "unresolved", "candidate": "event-post-commit-effect", "layout_style": "provisional-four-space"},
+  "decision": {"status": "unresolved", "candidate": "event-post-commit-effect", "layout_style": "canonical-two-space"},
   "source": {
-    "lines": ["on collect coin", "    coin state active ~>", "        coin state collected", "", "    receipt: render! scene"],
+    "lines": ["on collect coin", "  coin state active ~>", "    coin state collected", "", "  receipt: render! scene"],
     "line_break": "LF",
     "ends_with_line_break": true
   },

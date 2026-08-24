@@ -2,9 +2,9 @@
   "schema": "clause-m0-contrast-v1",
   "id": "structural-connects",
   "axis": "structural-escape-spelling",
-  "decision": {"status": "unresolved", "candidate": "clause-heading-with-role-bindings", "layout_style": "provisional-four-space"},
+  "decision": {"status": "unresolved", "candidate": "clause-heading-with-role-bindings", "layout_style": "canonical-two-space"},
   "source": {
-    "lines": ["clause connects", "    door: iron-door", "    origin: Cellar", "    destination: Armory"],
+    "lines": ["clause connects", "  door: iron-door", "  origin: Cellar", "  destination: Armory"],
     "line_break": "LF",
     "ends_with_line_break": true
   },

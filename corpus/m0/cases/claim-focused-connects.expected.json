@@ -2,9 +2,9 @@
   "schema": "clause-m0-contrast-v1",
   "id": "claim-focused-connects",
   "axis": "focus-role-resolution",
-  "decision": {"status": "unresolved", "candidate": "focused-phrase", "layout_style": "provisional-four-space"},
+  "decision": {"status": "unresolved", "candidate": "focused-phrase", "layout_style": "canonical-two-space"},
   "source": {
-    "lines": ["iron-door", "    connects Cellar to Armory"],
+    "lines": ["iron-door", "  connects Cellar to Armory"],
     "line_break": "LF",
     "ends_with_line_break": true
   },

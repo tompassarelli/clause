@@ -2,9 +2,9 @@
   "schema": "clause-m0-contrast-v1",
   "id": "why-explanation",
   "axis": "explanation-query-surface",
-  "decision": {"status": "unresolved", "candidate": "why-block", "layout_style": "provisional-four-space"},
+  "decision": {"status": "unresolved", "candidate": "why-block", "layout_style": "canonical-two-space"},
   "source": {
-    "lines": ["why", "    ICU-A has a usable egress path to North-Exit"],
+    "lines": ["why", "  ICU-A has a usable egress path to North-Exit"],
     "line_break": "LF",
     "ends_with_line_break": true
   },

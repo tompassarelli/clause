@@ -2,9 +2,9 @@
   "schema": "clause-m0-contrast-v1",
   "id": "transition-nonfunctional-replacement",
   "axis": "succession-requires-proved-functional-key",
-  "decision": {"status": "unresolved", "candidate": "invalid-nonfunctional-succession", "layout_style": "provisional-four-space"},
+  "decision": {"status": "unresolved", "candidate": "invalid-nonfunctional-succession", "layout_style": "canonical-two-space"},
   "source": {
-    "lines": ["on heartbeat", "    patient symptom ?symptom ~>", "        patient symptom stable"],
+    "lines": ["on heartbeat", "  patient symptom ?symptom ~>", "    patient symptom stable"],
     "line_break": "LF",
     "ends_with_line_break": true
   },

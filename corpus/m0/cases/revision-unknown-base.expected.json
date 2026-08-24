@@ -2,9 +2,9 @@
   "schema": "clause-m0-contrast-v1",
   "id": "revision-unknown-base",
   "axis": "exact-revision-ancestry",
-  "decision": {"status": "unresolved", "candidate": "unknown-base-diagnostic", "layout_style": "provisional-four-space"},
+  "decision": {"status": "unresolved", "candidate": "unknown-base-diagnostic", "layout_style": "canonical-two-space"},
   "source": {
-    "lines": ["candidate from missing-revision", "    + Door 105 passed Fire-Marshal Inspection"],
+    "lines": ["candidate from missing-revision", "  + Door 105 passed Fire-Marshal Inspection"],
     "line_break": "LF",
     "ends_with_line_break": true
   },

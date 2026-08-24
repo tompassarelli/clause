@@ -1,15 +1,17 @@
 {
   "schema": "clause-m0-contrast-v1",
   "id": "focused-colon-binding",
-  "axis": "focused-projection-binding-sugar",
-  "decision": {"status": "unresolved", "candidate": "state-colon-locked"},
+  "axis": "focused-binding",
+  "decision": {"status": "accepted-target", "canonical": "focused-handle-binding"},
   "source": {
-    "lines": ["iron-door", "    state: locked"],
+    "lines": ["iron-door", "  state: locked"],
     "line_break": "LF",
     "ends_with_line_break": true
   },
-  "structural_intent": "candidate-focused-binding",
-  "required": ["colon means binding", "admission requires an explicit checked carrier"],
+  "structural_intent": "focused-binding",
+  "required": ["colon means binding", "state of iron-door is a stable checked handle", "current binding is locked"],
   "forbidden": ["ordinary-state-relation-claim", "object-field", "membership"],
-  "elaborated": null
+  "elaborated": [
+    {"kind": "binding", "handle": {"kind": "focused-relation-handle", "relation": "$state", "focus": "iron-door"}, "value": "locked"}
+  ]
 }

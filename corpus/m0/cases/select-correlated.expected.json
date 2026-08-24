@@ -2,9 +2,9 @@
   "schema": "clause-m0-contrast-v1",
   "id": "select-correlated",
   "axis": "explicit-query-projection",
-  "decision": {"status": "unresolved", "candidate": "select-projection-block", "layout_style": "provisional-four-space"},
+  "decision": {"status": "unresolved", "candidate": "select-projection-block", "layout_style": "canonical-two-space"},
   "source": {
-    "lines": ["select ?person", "    ?person likes ?opening", "    Alice likes ?opening"],
+    "lines": ["select ?person", "  ?person likes ?opening", "  Alice likes ?opening"],
     "line_break": "LF",
     "ends_with_line_break": true
   },

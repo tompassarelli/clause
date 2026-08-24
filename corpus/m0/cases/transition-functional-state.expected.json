@@ -1,32 +1,30 @@
 {
   "schema": "clause-m0-contrast-v1",
   "id": "transition-functional-state",
-  "axis": "functional-status-succession",
-  "decision": {"status": "unresolved", "candidate": "on-complete-clause-succession", "layout_style": "provisional-four-space"},
+  "axis": "focused-binding-succession",
+  "decision": {"status": "unresolved", "candidate": "on-complete-binding-succession", "layout_style": "canonical-two-space"},
   "source": {
-    "lines": ["on unlock iron-door", "    iron-door state locked ~>", "        iron-door state unlocked"],
+    "lines": ["on unlock iron-door", "  state of iron-door: locked ~>", "    state of iron-door: unlocked"],
     "line_break": "LF",
     "ends_with_line_break": true
   },
   "context": {
     "current_state": "$state:door-locked",
     "event": {"relation": "$unlock", "roles": {"door": "iron-door"}},
-    "functional_contract": {
-      "relation": "$state",
-      "key_roles": ["member"],
-      "value_role": "value",
-      "cardinality": "exactly-one",
+    "binding_contract": {
+      "handle": {"kind": "focused-relation-handle", "relation": "$state", "focus": "iron-door"},
+      "cardinality": "exactly-one-current-binding",
       "checker_proved": true
     },
-    "assertions": [{"relation": "$state", "roles": {"member": "iron-door", "value": "locked"}}]
+    "bindings": [{"handle": {"kind": "focused-relation-handle", "relation": "$state", "focus": "iron-door"}, "value": "locked"}]
   },
-  "structural_intent": "event-scoped-functional-status-replacement",
+  "structural_intent": "event-scoped-focused-binding-replacement",
   "required": [
-    "locked and unlocked remain values in complete co-equal state clauses",
-    "the checker-proved door key licenses one replacement",
-    "the locked clause is withdrawn and the unlocked clause admitted in one successor"
+    "locked and unlocked remain values bound to one stable state-of-iron-door handle",
+    "the checked handle licenses one current-binding replacement",
+    "the locked binding is replaced by the unlocked binding in one successor"
   ],
-  "forbidden": ["object-field-mutation", "assignment", "equality", "nested-owned-state", "intermediate-state-publication"],
+  "forbidden": ["object-field-mutation", "ordinary-state-graph-edge", "equality", "nested-owned-state", "intermediate-state-publication"],
   "elaborated": [
     {
       "kind": "event-transition",
@@ -34,12 +32,11 @@
       "pre_state": "$state:door-locked",
       "replacements": [
         {
-          "kind": "functional-replacement",
-          "relation": "$state",
-          "key": {"member": "iron-door"},
-          "matched": {"relation": "$state", "roles": {"member": "iron-door", "value": "locked"}},
-          "successor": {"relation": "$state", "roles": {"member": "iron-door", "value": "unlocked"}},
-          "functional_key_proved": true
+          "kind": "binding-replacement",
+          "handle": {"kind": "focused-relation-handle", "relation": "$state", "focus": "iron-door"},
+          "matched": {"kind": "binding", "value": "locked"},
+          "successor": {"kind": "binding", "value": "unlocked"},
+          "stable_handle_proved": true
         }
       ],
       "matching_snapshot": "pre-state",

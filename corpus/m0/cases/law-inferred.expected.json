@@ -2,12 +2,12 @@
   "schema": "clause-m0-contrast-v1",
   "id": "law-inferred",
   "axis": "law-inference-surface",
-  "decision": {"status": "unresolved", "candidate": "conclusion-if-premises", "layout_style": "provisional-four-space"},
+  "decision": {"status": "unresolved", "candidate": "conclusion-if-premises", "layout_style": "canonical-two-space"},
   "source": {
     "lines": [
       "?origin has a usable egress path to ?destination if",
-      "    ?door connects ?origin to ?destination",
-      "    ?door passed Fire-Marshal Inspection"
+      "  ?door connects ?origin to ?destination",
+      "  ?door passed Fire-Marshal Inspection"
     ],
     "line_break": "LF",
     "ends_with_line_break": true

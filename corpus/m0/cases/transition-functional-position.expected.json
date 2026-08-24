@@ -2,9 +2,9 @@
   "schema": "clause-m0-contrast-v1",
   "id": "transition-functional-position",
   "axis": "functional-complete-clause-succession",
-  "decision": {"status": "unresolved", "candidate": "on-complete-clause-succession", "layout_style": "provisional-four-space"},
+  "decision": {"status": "unresolved", "candidate": "on-complete-clause-succession", "layout_style": "canonical-two-space"},
   "source": {
-    "lines": ["on frame ?dt", "    player position ?position ~>", "        player position (?position + velocity of player * ?dt)"],
+    "lines": ["on frame ?dt", "  player position ?position ~>", "    player position (?position + velocity of player * ?dt)"],
     "line_break": "LF",
     "ends_with_line_break": true
   },

@@ -24,14 +24,16 @@ A milestone or specimen is not implemented merely because it appears here.
 
 This tracked roadmap is the sole normative language and product roadmap.
 [SURFACE.md](SURFACE.md) durably preserves the operator's current **Clause
-Surface Reset** draft. That draft supersedes the human-surface recommendations
-and specimens in the earlier strategy packet, but it is explicitly provisional
-and undergoing revision. Its co-equal relational ontology controls direction,
+Surface Reset**. It supersedes the human-surface recommendations and specimens
+in the earlier strategy packet. Its co-equal relational ontology controls direction,
 and `:` is binding rather than membership, field syntax, equality, or a block
-opener. Other exact punctuation does not become a parser contract until M0
-freezes it with corpus and elaboration evidence. In particular, membership
-spelling, canonical indentation width, and any distinct focused
-projection-binding sugar remain unsettled.
+opener. M0 freezes `x ∈ Y` as the only membership grammar and stored-source
+spelling and two spaces, spaces only, as canonical indentation; tabs are
+diagnosed. Typed `::` is only an editor/input completion immediately replaced
+by `∈`, never parser input. `in` is not a membership alias, and formatters and
+agents emit `∈` directly. In focus, `name: value` is a settled binding of the
+stable handle `name of focus`, distinct from membership and an ordinary
+relational claim.
 
 The earlier packet remains provenance, not live surface authority. Its four
 unique input identities were:
@@ -121,28 +123,33 @@ The following relational invariants are committed direction now:
 3. Semantic entities have relations, not fields.
 4. `:` means binding and nothing else; it never silently means membership or a
    relational assertion.
-5. Enumeration, structural binding, and focused-claim blocks are distinct.
-6. Indentation never creates ownership or nested object identity.
-7. Focused and fully expanded clauses elaborate to identical role-labelled
+5. `∈` is the only membership source spelling; `::` and `in` are not grammar
+   aliases.
+6. Enumeration, structural binding, and focused blocks are distinct. A focused
+   bare category lowers to membership, an ordinary relation fragment remains a
+   relational claim, and `name: value` binds the stable handle `name of focus`.
+7. Indentation is two spaces, spaces only; tabs are diagnosed, and layout never
+   creates ownership or nested object identity.
+8. Focused and fully expanded clauses elaborate to identical role-labelled
    semantics and canonical identity.
-8. Relation phrases are exact declared grammar, never probabilistic NLP.
-9. Every relation role accepts a recursively parsed term of the expected
+9. Relation phrases are exact declared grammar, never probabilistic NLP.
+10. Every relation role accepts a recursively parsed term of the expected
    category.
-10. Stable semantic identity and named roles remain in the checked core even
+11. Stable semantic identity and named roles remain in the checked core even
    when hidden from ordinary source.
-11. Inference is permitted only when one lexical, structural, and type-correct
+12. Inference is permitted only when one lexical, structural, and type-correct
     elaboration survives; otherwise the diagnostic requires explicit structure.
-12. Search, bounds, nondeterminism, time, authority changes, effects, and
+13. Search, bounds, nondeterminism, time, authority changes, effects, and
     externally observable order are never hidden for aesthetic compression.
-13. Runtime representation is free to specialize; semantic meaning is not.
+14. Runtime representation is free to specialize; semantic meaning is not.
 
 The current draft additionally proposes `=` for equality, `->` for
 projection/production, `?`/`?name` for holes, `~>` for state
 succession, `+`/`-` for exact deltas, `!` for effects, naked hole clauses for
 selection, and `select`/`any` for projection/existence. These spellings are
-provisional until M0. `member of` is likewise only the current membership
-candidate. No implementation lane may quietly freeze these spellings, an
-indentation width, or a distinct focused projection-binding form first.
+provisional until separately ruled. Membership and indentation are already
+settled above. No implementation lane may add another membership spelling or
+collapse focused binding into a field or graph claim.
 
 ## Current foundation
 
@@ -217,15 +224,17 @@ the parser grammar, deliver:
 - golden sources for enumeration, value-shape bindings, focused graph claims,
   explicit flattening, relation schemas, recursive terms, holes/correlation,
   laws, selection, revisions, transitions, effects, hospital egress, and the
-  one-coin game, including paired contrasts for membership spelling,
-  indentation width, and any focused projection-binding sugar;
+  one-coin game, including accepted `∈` membership and rejected `member of`,
+  `::`, and `in` membership aliases, canonical two-space layout, tab
+  diagnostics, and any
+  the settled focused binding form;
 - for every specimen: lossless grouped tree, elaborated role graph, canonical
   structural rendering, diagnostics, expected semantic result, and applicable
   generated-result oracle;
 - a Stage A lossless layout reader contract containing lines, indentation
   groups, delimiters, literals, names, punctuation, and source spans without
-  deciding object/type/relation semantics or silently selecting a canonical
-  indentation width before the contrast evidence is reviewed;
+  deciding object/type/relation semantics; it applies the frozen two-space,
+  spaces-only grouping rule and reports tabs;
 - a deterministic Stage B classification contract for enumeration, structural
   binding, focused claim/contract, law/definition, query, revision delta,
   transition, and epistemic/effect forms;
@@ -236,10 +245,13 @@ the parser grammar, deliver:
 - exact focused-versus-expanded equivalence oracles proving identical roles,
   proposition and Revision identity after elaboration, results, and generated
   output, with source span the only permitted provenance difference; the
-  controlling focus specimen uses ordinary `state locked`, which expands to
-  the co-equal relation claim `focus state locked`;
-- explicit unresolved verdicts for `member of` versus another exact membership
-  form, indentation policy, and any separate focused projection-binding sugar;
+  controlling focus specimen contains `state: locked`, which expands to the
+  binding `state of focus: locked`, distinct from its membership and ordinary
+  relational claim;
+- explicit accepted/rejected verdicts for membership, indentation, and focused
+  binding;
+- an editor boundary where typed `::` is replaced immediately by `∈`, before
+  storage or parsing, and formatter/agent rules that emit only `∈`;
 - formatter separation of enumeration and focus blocks plus a diagnostic before
   an edit reclassifies an existing all-bare block;
 - bounded corpus measurements for scaffolding, punctuation, ambiguity,
@@ -250,17 +262,17 @@ the parser grammar, deliver:
   composition, typed effects, structural extensibility, semantic identity,
   data-oriented layout, and deterministic state/update architectures.
 
-M0 may implement a lossless reader and fixture harness. It may not implement or
-publish the provisional canonical grammar beyond invariants needed to make the
-corpus and elaboration contracts executable.
+M0 may implement a lossless reader and fixture harness. This constitutional
+amendment changes no parser or runtime implementation.
 
 **Exit proof:** the complete corpus parses losslessly under the selected and
 reviewed layout policy; every block has one
 structural classification or a finite exact diagnostic; canonical structural
-rendering round-trips; focus/expanded pairs produce identical role graphs and
-semantic identities; and every proposed canonical token has written semantic
-rent. The exit review, not a preparatory fixture, settles membership spelling,
-indentation width, and focused projection-binding admission. Unrelated imports
+rendering round-trips; focus/expanded pairs preserve their distinct membership,
+ordinary-relation, and binding forms and semantic identities; and every
+proposed canonical token has written semantic
+rent. The exit review protects the settled membership and indentation rulings
+and the settled focused-binding ruling. Unrelated imports
 preserve elaboration or produce an exact ambiguity repair.
 
 **Next safe checkpoint:** an independently reviewed M0 corpus and Stage A/B
@@ -270,8 +282,8 @@ contract, not a new parser profile.
 
 **Depends on:** frozen M0 rulings.
 
-Implement bare symbol grounding, the M0-selected membership form, enumeration
-blocks, homogeneous binding/value shape blocks, focused claim/contract blocks,
+Implement bare symbol grounding, `∈` membership, enumeration
+blocks, homogeneous binding/value shape blocks, focused blocks,
 explicit flattening display, and multiword semantic names without bracket
 syntax. Lower into the current semantic core. No semantic node created by focus
 may contain owned child fields or nested records; `iron-door: Door` must never
@@ -346,8 +358,8 @@ preserve current `why`, `prevent`, `achieve`, and `diff` behavior; and provide a
 formatter/codemod from the current Model/Law/Revision syntax. The migration
 reports every inference and preserves stable semantic IDs. A legacy
 classification such as `thing: Space` is never reinterpreted in place: the
-codemod writes the M0-selected membership form or unambiguous list/focus sugar
-and reports that inference.
+codemod writes `thing ∈ Space` or unambiguous list/focus sugar and reports
+that inference.
 
 Do not keep the old grammar indefinitely as a second first-class language. A
 temporary profile exists only to prove parity and migrate in-tree consumers.
@@ -497,7 +509,7 @@ The reset supersedes these earlier recommendations as target syntax:
 | `type: Vec2` or `type Vec2:` | inferred `Vec2` binding/shape block |
 | `Space: Type` | bare grounding/category use |
 | `name: Relation` with brace roles and `mode` | exact schema binding with named roles and projection/cardinality contract |
-| `player: Player` or `thing: Space` classification | never reinterpret `:`; migrate to the M0-selected membership form or unambiguous list/focus sugar and report it |
+| `player: Player` or `thing: Space` classification | never reinterpret `:`; migrate to `player ∈ Player` / `thing ∈ Space` or unambiguous list/focus sugar and report it |
 | object-like `property: value` claims | relational `property value` under focus |
 | `position of player = value` for admission | subject-first relation claim; `=` reserved for equality |
 | `name: Law` and `when:` | conclusion plus `if`; optional label binding |
@@ -522,7 +534,7 @@ Every milestone preserves gates already crossed:
 2. **Recursive structurality:** every eligible role accepts a recursive checked
    term rather than one lexical token.
 3. **Canonicality:** authored sugar lowers away; parse/format/parse and canonical
-   identity are stable after M0 selects and reviews an indentation policy.
+   identity are stable under the reviewed two-space indentation policy.
 4. **Locality:** imports never silently change old meaning; ambiguity reports
    candidates, role conflicts, and exact repairs.
 5. **Category honesty:** values, propositions, definitions, laws, queries,

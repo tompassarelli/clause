@@ -1,2 +1,2 @@
 select one ?person
-    ?person likes Go
+  ?person likes Go

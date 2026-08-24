@@ -11,12 +11,11 @@ and withdrawals from an exact base.
 A `.clause` file is the authoring projection. The supported implementation
 currently uses one native `:` grammar for Types, Relations, Models, Laws,
 Revisions, and their members. That grammar is executable truth and a migration
-oracle, not the target human surface. The provisional [Clause Surface
+oracle, not the target human surface. The [Clause Surface
 Reset](SURFACE.md) replaces the earlier surface recommendations with grounded
-symbols, bindings, membership, focused co-equal claims, recursive
-role-labelled clauses, and explicit semantic moods. It remains revising M0
-design input: no proposed spelling is implemented merely because it appears in
-that draft.
+symbols, bindings, membership, focused semantic forms, recursive
+role-labelled clauses, and explicit semantic moods. M0 has frozen membership
+and indentation for that target profile without claiming parser implementation.
 
 An emitted `.rs` file is an executable projection: it carries the referenced
 sealed Revisions and the resolved request sequence, not the authoring source or
@@ -37,26 +36,32 @@ model, dependency order, prototype gates, and acceptance criteria.
 
 ## Target surface direction
 
-The target ontology is relational: focus layout projects co-equal claims and
-never creates an object, field, owner, or nested record. `:` means binding and
-never silently means membership or an ordinary relational assertion.
+The target ontology is relational: focus layout projects semantically distinct
+membership, ordinary relation, and binding forms without creating an object,
+field, owner, or nested record. `:` means binding and never silently means
+membership or an ordinary relational assertion.
+Membership is written only as `x ∈ Y`. Canonical source uses two-space,
+spaces-only indentation; tabs are diagnosed. Editors may make typed `::`
+immediately complete to `∈`, but `member of`, `::`, and `in` are rejected as
+membership source aliases, and formatters and agents emit `∈` directly.
 
 The controlling focus specimen is:
 
 ```clause
 iron-door
-    Door
-    connects Cellar to Armory
-    state locked
+  Door
+  connects Cellar to Armory
+  state: locked
 ```
 
-It elaborates to membership plus two ordinary role-labelled relation claims;
-`state locked` is exactly the co-equal claim `iron-door state locked`.
+It elaborates to `iron-door ∈ Door`, the ordinary relational claim
+`iron-door connects Cellar to Armory`, and the focused binding
+`state of iron-door: locked`. The binding names a stable relational handle; it
+is neither an object field nor another graph edge.
 
-Membership spelling, canonical indentation width, and any distinct focused
-projection-binding sugar remain explicit M0 contrast questions. The current
-parser does not implement this profile. [M0.md](M0.md) defines the evidence
-contract that must be independently reviewed before parser work.
+Membership spelling, indentation, and focused binding are settled. The current
+parser does not implement this target profile. [M0.md](M0.md) defines the
+protected evidence contract for later parser work.
 
 ## Repository and artifact map
 

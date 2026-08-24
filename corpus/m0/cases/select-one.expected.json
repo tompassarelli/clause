@@ -2,9 +2,9 @@
   "schema": "clause-m0-contrast-v1",
   "id": "select-one",
   "axis": "query-result-contract",
-  "decision": {"status": "unresolved", "candidate": "select-exact-one", "layout_style": "provisional-four-space"},
+  "decision": {"status": "unresolved", "candidate": "select-exact-one", "layout_style": "canonical-two-space"},
   "source": {
-    "lines": ["select one ?person", "    ?person likes Go"],
+    "lines": ["select one ?person", "  ?person likes Go"],
     "line_break": "LF",
     "ends_with_line_break": true
   },

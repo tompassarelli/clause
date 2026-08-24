@@ -1,2 +1,2 @@
 select first ?person
-    ?person likes Chess
+  ?person likes Chess

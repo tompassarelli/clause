@@ -2,9 +2,9 @@
   "schema": "clause-m0-contrast-v1",
   "id": "requires-packages",
   "axis": "reserved-program-package-requirements",
-  "decision": {"status": "unresolved", "candidate": "requires-package-list", "layout_style": "provisional-four-space"},
+  "decision": {"status": "unresolved", "candidate": "requires-package-list", "layout_style": "canonical-two-space"},
   "source": {
-    "lines": ["requires", "    game", "    three"],
+    "lines": ["requires", "  game", "  three"],
     "line_break": "LF",
     "ends_with_line_break": true
   },

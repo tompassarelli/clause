@@ -2,14 +2,14 @@
   "schema": "clause-m0-contrast-v1",
   "id": "ambiguous-connects",
   "axis": "exact-phrase-ambiguity",
-  "decision": {"status": "unresolved", "candidate": "overlapping-exact-shapes", "layout_style": "provisional-four-space"},
+  "decision": {"status": "unresolved", "candidate": "overlapping-exact-shapes", "layout_style": "canonical-two-space"},
   "source": {
     "lines": [
       "door connects:",
-      "    door: Door connects origin: Space to destination: Space",
+      "  door: Door connects origin: Space to destination: Space",
       "",
       "portal connects:",
-      "    portal: Portal connects origin: Space to destination: Space",
+      "  portal: Portal connects origin: Space to destination: Space",
       "",
       "mystery connects Cellar to Armory"
     ],

@@ -1,0 +1,14 @@
+{
+  "schema": "clause-m0-contrast-v1",
+  "id": "indentation-tab",
+  "axis": "indentation-policy",
+  "decision": {"status": "rejected-target", "diagnostic": "tab indentation is forbidden", "repair": "replace the tab with 2 spaces"},
+  "source": {
+    "lines": ["Game", "\tChess"],
+    "line_break": "LF",
+    "ends_with_line_break": true
+  },
+  "structural_intent": "invalid-layout",
+  "required": ["diagnose the tab before elaboration"],
+  "forbidden": ["elaboration", "tab expansion", "silent normalization"]
+}

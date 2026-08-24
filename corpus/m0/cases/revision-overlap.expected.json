@@ -2,9 +2,9 @@
   "schema": "clause-m0-contrast-v1",
   "id": "revision-overlap",
   "axis": "signed-delta-consistency",
-  "decision": {"status": "unresolved", "candidate": "overlapping-sign-diagnostic", "layout_style": "provisional-four-space"},
+  "decision": {"status": "unresolved", "candidate": "overlapping-sign-diagnostic", "layout_style": "canonical-two-space"},
   "source": {
-    "lines": ["candidate from egress", "    + Door 101 passed Fire-Marshal Inspection", "    - Door 101 passed Fire-Marshal Inspection"],
+    "lines": ["candidate from egress", "  + Door 101 passed Fire-Marshal Inspection", "  - Door 101 passed Fire-Marshal Inspection"],
     "line_break": "LF",
     "ends_with_line_break": true
   },

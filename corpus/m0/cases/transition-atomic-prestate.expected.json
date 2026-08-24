@@ -2,19 +2,19 @@
   "schema": "clause-m0-contrast-v1",
   "id": "transition-atomic-prestate",
   "axis": "single-pre-state-atomic-successor",
-  "decision": {"status": "unresolved", "candidate": "guarded-event-transaction", "layout_style": "provisional-four-space"},
+  "decision": {"status": "unresolved", "candidate": "guarded-event-transaction", "layout_style": "canonical-two-space"},
   "source": {
     "lines": [
       "on collection tick",
-      "    coin state active ~>",
-      "        coin state collected",
-      "    if",
-      "        player collects coin",
+      "  coin state active ~>",
+      "    coin state collected",
+      "  if",
+      "    player collects coin",
       "",
-      "    player score ?score ~>",
-      "        player score (?score + value of coin)",
-      "    if",
-      "        player collects coin"
+      "  player score ?score ~>",
+      "    player score (?score + value of coin)",
+      "  if",
+      "    player collects coin"
     ],
     "line_break": "LF",
     "ends_with_line_break": true

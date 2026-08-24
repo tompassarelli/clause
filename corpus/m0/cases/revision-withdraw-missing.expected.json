@@ -2,9 +2,9 @@
   "schema": "clause-m0-contrast-v1",
   "id": "revision-withdraw-missing",
   "axis": "exact-delta-withdrawal",
-  "decision": {"status": "unresolved", "candidate": "missing-withdrawal-diagnostic", "layout_style": "provisional-four-space"},
+  "decision": {"status": "unresolved", "candidate": "missing-withdrawal-diagnostic", "layout_style": "canonical-two-space"},
   "source": {
-    "lines": ["candidate from egress", "    - Door 105 passed Fire-Marshal Inspection"],
+    "lines": ["candidate from egress", "  - Door 105 passed Fire-Marshal Inspection"],
     "line_break": "LF",
     "ends_with_line_break": true
   },

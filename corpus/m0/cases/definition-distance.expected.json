@@ -2,9 +2,9 @@
   "schema": "clause-m0-contrast-v1",
   "id": "definition-distance",
   "axis": "recursive-definition-surface",
-  "decision": {"status": "unresolved", "candidate": "pattern-colon-body", "layout_style": "provisional-four-space"},
+  "decision": {"status": "unresolved", "candidate": "pattern-colon-body", "layout_style": "canonical-two-space"},
   "source": {
-    "lines": ["distance between ?a and ?b:", "    length(position of ?a - position of ?b)"],
+    "lines": ["distance between ?a and ?b:", "  length(position of ?a - position of ?b)"],
     "line_break": "LF",
     "ends_with_line_break": true
   },

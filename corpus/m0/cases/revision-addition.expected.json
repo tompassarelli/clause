@@ -2,9 +2,9 @@
   "schema": "clause-m0-contrast-v1",
   "id": "revision-addition",
   "axis": "revision-surface-reset",
-  "decision": {"status": "unresolved", "candidate": "header-from-signed-admission", "layout_style": "provisional-four-space"},
+  "decision": {"status": "unresolved", "candidate": "header-from-signed-admission", "layout_style": "canonical-two-space"},
   "source": {
-    "lines": ["isolation-route-candidate from egress", "    + Door 105 passed Fire-Marshal Inspection"],
+    "lines": ["isolation-route-candidate from egress", "  + Door 105 passed Fire-Marshal Inspection"],
     "line_break": "LF",
     "ends_with_line_break": true
   },

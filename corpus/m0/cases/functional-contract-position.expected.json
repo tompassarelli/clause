@@ -2,9 +2,9 @@
   "schema": "clause-m0-contrast-v1",
   "id": "functional-contract-position",
   "axis": "projection-contract-spelling",
-  "decision": {"status": "unresolved", "candidate": "focused-arrow", "layout_style": "provisional-four-space"},
+  "decision": {"status": "unresolved", "candidate": "focused-arrow", "layout_style": "canonical-two-space"},
   "source": {
-    "lines": ["Player", "    position -> Vec2"],
+    "lines": ["Player", "  position -> Vec2"],
     "line_break": "LF",
     "ends_with_line_break": true
   },

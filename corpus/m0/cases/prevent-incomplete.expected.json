@@ -2,9 +2,9 @@
   "schema": "clause-m0-contrast-v1",
   "id": "prevent-incomplete",
   "axis": "intervention-completeness",
-  "decision": {"status": "unresolved", "candidate": "bounded-prevent-result", "layout_style": "provisional-four-space"},
+  "decision": {"status": "unresolved", "candidate": "bounded-prevent-result", "layout_style": "canonical-two-space"},
   "source": {
-    "lines": ["prevent all minimal", "    ICU-A has a usable egress path to North-Exit", "using", "    passed"],
+    "lines": ["prevent all minimal", "  ICU-A has a usable egress path to North-Exit", "using", "  passed"],
     "line_break": "LF",
     "ends_with_line_break": true
   },

@@ -2,23 +2,24 @@
   "schema": "clause-m0-contrast-v1",
   "id": "focus-relation-two",
   "axis": "indentation-width",
-  "decision": {"status": "unresolved", "candidate": "two-space"},
+  "decision": {"status": "accepted-target", "canonical": "two-space"},
   "source": {
-    "lines": ["iron-door", "  Door", "  connects Cellar to Armory", "  state locked"],
+    "lines": ["iron-door", "  Door", "  connects Cellar to Armory", "  state: locked"],
     "line_break": "LF",
     "ends_with_line_break": true
   },
-  "structural_intent": "focused-claims",
-  "equivalence_group": "iron-door-coequal",
+  "structural_intent": "focused-mixed-forms",
+  "equivalence_group": "iron-door-focus-expansion",
   "required": [
     "layout is erasable",
     "bare child classifies focus through membership",
-    "state locked is an ordinary relation claim"
+    "connects remains an ordinary relation claim",
+    "state colon locked binds the stable state-of-focus handle"
   ],
-  "forbidden": ["object", "field", "owned-child", "focused-binding"],
+  "forbidden": ["object", "field", "owned-child", "semantic-form-collapse"],
   "elaborated": [
     {"kind": "membership", "relation": "$membership", "roles": {"member": "iron-door", "category": "Door"}},
     {"kind": "relation-claim", "relation": "$connects", "roles": {"door": "iron-door", "origin": "Cellar", "destination": "Armory"}},
-    {"kind": "relation-claim", "relation": "$state", "roles": {"member": "iron-door", "value": "locked"}}
+    {"kind": "binding", "handle": {"kind": "focused-relation-handle", "relation": "$state", "focus": "iron-door"}, "value": "locked"}
   ]
 }

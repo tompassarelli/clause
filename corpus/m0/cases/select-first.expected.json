@@ -2,9 +2,9 @@
   "schema": "clause-m0-contrast-v1",
   "id": "select-first",
   "axis": "query-result-contract",
-  "decision": {"status": "unresolved", "candidate": "select-canonical-first", "layout_style": "provisional-four-space"},
+  "decision": {"status": "unresolved", "candidate": "select-canonical-first", "layout_style": "canonical-two-space"},
   "source": {
-    "lines": ["select first ?person", "    ?person likes Chess"],
+    "lines": ["select first ?person", "  ?person likes Chess"],
     "line_break": "LF",
     "ends_with_line_break": true
   },

@@ -1,8 +1,9 @@
 # Clause M0 contrast corpus
 
 This directory is evidence for the [M0 contract](../../M0.md). It deliberately
-contains unresolved source candidates. Nothing here claims that the current
-parser accepts the source or that a candidate is canonical.
+contains accepted target forms, rejected boundary cases, unresolved candidates,
+and current-profile migration evidence. Target acceptance does not claim that
+the current parser implements the form.
 
 Every case consists of `cases/ID.clause` and
 `cases/ID.expected.json`. Expected JSON uses
@@ -13,26 +14,32 @@ Every case consists of `cases/ID.clause` and
 reconstruction mechanical. `decision` is one of:
 
 - `fixed-invariant` — the stated semantic boundary is direction now; or
+- `accepted-target` — canonical target source, independent of current parser
+  implementation; or
+- `rejected-target` — source the target parser must diagnose; or
 - `unresolved` — the source is a contrast candidate whose admission remains
   an M0 decision; or
 - `implemented-legacy` — the source is current executable migration evidence,
   not a target candidate.
 
 `required` and `forbidden` are normative for every case.
-`elaborated` is an abstract role graph independent of surface spelling.
+`elaborated` is an abstract semantic expansion independent of surface spelling.
 Handles beginning with `$` are corpus symbols, not Store identities.
 
 | Case | Purpose |
 | --- | --- |
-| `focus-relation-four` | controlling focus semantics with four-space projection |
-| `focus-relation-two` | same focus semantics with two-space projection |
-| `expanded-member-of` | worded membership candidate with expanded co-equal claims |
-| `expanded-symbolic-membership` | symbolic membership candidate with the same graph |
-| `enumeration-four` | child-to-heading membership with four-space projection |
-| `enumeration-two` | same enumeration semantics with two-space projection |
+| `focus-relation-two` | canonical focus combining membership, an ordinary relation, and a focused binding |
+| `focus-relation-four` | rejected noncanonical four-space projection |
+| `expanded-symbolic-membership` | canonical `∈` membership with the same graph |
+| `expanded-member-of` | rejected worded membership candidate retained with its verdict |
+| `membership-double-colon-alias` | rejected persisted `::`; editor completion must precede parsing |
+| `membership-in-alias` | rejected `in` membership alias |
+| `enumeration-two` | canonical child-to-heading membership |
+| `enumeration-four` | rejected noncanonical four-space enumeration |
+| `indentation-tab` | tab indentation is diagnosed, never normalized |
 | `binding-shape` | homogeneous colon bindings stay structural |
 | `legacy-colon-binding` | `thing: Space` is never membership |
-| `focused-colon-binding` | possible projection binding remains unresolved and is not `state locked` |
+| `focused-colon-binding` | accepted binding of the stable `state of focus` handle, never a field or graph edge |
 | `relation-schema-connects` | compact three-role schema and operational projection candidate |
 | `functional-contract-position` | focused binary relation contract, never a field |
 | `claim-focused-connects` | focus supplies the declared `door` role |
@@ -79,7 +86,7 @@ Handles beginning with `$` are corpus symbols, not Store identities.
 | `achieve-incomplete` | retained additions remain certified under incomplete search |
 | `diff-semantic-degradation` | authored, entailed, proof, and support changes remain distinct |
 | `transition-functional-position` | complete-clause position succession uses a proved functional key |
-| `transition-functional-state` | status replacement preserves complete old and new clauses |
+| `transition-functional-state` | status replacement preserves one stable handle and complete old/new bindings |
 | `transition-admit-keypress` | key press emits one exact multi-valued admission |
 | `transition-withdraw-keyrelease` | key release emits one exact multi-valued withdrawal |
 | `transition-atomic-prestate` | guarded replacements share one pre-state and atomic successor |

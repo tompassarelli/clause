@@ -2,9 +2,9 @@
   "schema": "clause-m0-contrast-v1",
   "id": "relation-schema-connects",
   "axis": "relation-schema-surface",
-  "decision": {"status": "unresolved", "candidate": "compact-schema-binding", "layout_style": "provisional-four-space"},
+  "decision": {"status": "unresolved", "candidate": "compact-schema-binding", "layout_style": "canonical-two-space"},
   "source": {
-    "lines": ["connects:", "    door: Door connects origin: Space to destination: Space", "    door origin -> destination*"],
+    "lines": ["connects:", "  door: Door connects origin: Space to destination: Space", "  door origin -> destination*"],
     "line_break": "LF",
     "ends_with_line_break": true
   },

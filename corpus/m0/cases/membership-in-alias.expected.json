@@ -1,0 +1,14 @@
+{
+  "schema": "clause-m0-contrast-v1",
+  "id": "membership-in-alias",
+  "axis": "membership-spelling",
+  "decision": {"status": "rejected-target", "diagnostic": "`in` is not a membership operator", "repair": "write iron-door ∈ Door"},
+  "source": {
+    "lines": ["iron-door in Door"],
+    "line_break": "LF",
+    "ends_with_line_break": true
+  },
+  "structural_intent": "invalid-membership-alias",
+  "required": ["parser rejects in as membership"],
+  "forbidden": ["membership elaboration", "parser alias"]
+}

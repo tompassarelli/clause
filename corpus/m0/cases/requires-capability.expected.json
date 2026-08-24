@@ -2,9 +2,9 @@
   "schema": "clause-m0-contrast-v1",
   "id": "requires-capability",
   "axis": "program-capability-requirement",
-  "decision": {"status": "unresolved", "candidate": "requires-capability-entry", "layout_style": "provisional-four-space"},
+  "decision": {"status": "unresolved", "candidate": "requires-capability-entry", "layout_style": "canonical-two-space"},
   "source": {
-    "lines": ["requires", "    capability render"],
+    "lines": ["requires", "  capability render"],
     "line_break": "LF",
     "ends_with_line_break": true
   },

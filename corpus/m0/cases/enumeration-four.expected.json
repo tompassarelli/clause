@@ -2,18 +2,13 @@
   "schema": "clause-m0-contrast-v1",
   "id": "enumeration-four",
   "axis": "indentation-width",
-  "decision": {"status": "unresolved", "candidate": "four-space"},
+  "decision": {"status": "rejected-target", "diagnostic": "noncanonical indentation: expected 2 spaces, found 4", "repair": "indent each child by 2 spaces"},
   "source": {
     "lines": ["Game", "    Chess", "    Soccer"],
     "line_break": "LF",
     "ends_with_line_break": true
   },
-  "structural_intent": "enumeration",
-  "equivalence_group": "game-enumeration",
-  "required": ["all-bare children lower child to heading membership"],
-  "forbidden": ["heading-member-of-child", "object", "owned-child"],
-  "elaborated": [
-    {"kind": "membership", "relation": "$membership", "roles": {"member": "Chess", "category": "Game"}},
-    {"kind": "membership", "relation": "$membership", "roles": {"member": "Soccer", "category": "Game"}}
-  ]
+  "structural_intent": "invalid-layout",
+  "required": ["diagnose noncanonical indentation before elaboration"],
+  "forbidden": ["elaboration", "silent-normalization", "accepted-source"]
 }

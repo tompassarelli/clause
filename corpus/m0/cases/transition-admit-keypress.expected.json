@@ -2,9 +2,9 @@
   "schema": "clause-m0-contrast-v1",
   "id": "transition-admit-keypress",
   "axis": "event-exact-admission",
-  "decision": {"status": "unresolved", "candidate": "on-signed-ground-delta", "layout_style": "provisional-four-space"},
+  "decision": {"status": "unresolved", "candidate": "on-signed-ground-delta", "layout_style": "canonical-two-space"},
   "source": {
-    "lines": ["on KeyLeft pressed", "    + player intends movement left"],
+    "lines": ["on KeyLeft pressed", "  + player intends movement left"],
     "line_break": "LF",
     "ends_with_line_break": true
   },

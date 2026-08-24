@@ -1,2 +1,2 @@
 requires
-    capability render
+  capability render

@@ -2,9 +2,9 @@
   "schema": "clause-m0-contrast-v1",
   "id": "revision-withdrawal-renamed",
   "axis": "revision-label-identity",
-  "decision": {"status": "unresolved", "candidate": "renamed-header-from-signed-withdrawal", "layout_style": "provisional-four-space"},
+  "decision": {"status": "unresolved", "candidate": "renamed-header-from-signed-withdrawal", "layout_style": "canonical-two-space"},
   "source": {
-    "lines": ["egress-without-door-101-inspection from egress", "    - Door 101 passed Fire-Marshal Inspection"],
+    "lines": ["egress-without-door-101-inspection from egress", "  - Door 101 passed Fire-Marshal Inspection"],
     "line_break": "LF",
     "ends_with_line_break": true
   },

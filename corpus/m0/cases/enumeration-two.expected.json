@@ -2,7 +2,7 @@
   "schema": "clause-m0-contrast-v1",
   "id": "enumeration-two",
   "axis": "indentation-width",
-  "decision": {"status": "unresolved", "candidate": "two-space"},
+  "decision": {"status": "accepted-target", "canonical": "two-space"},
   "source": {
     "lines": ["Game", "  Chess", "  Soccer"],
     "line_break": "LF",

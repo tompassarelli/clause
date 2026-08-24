@@ -2,9 +2,9 @@
   "schema": "clause-m0-contrast-v1",
   "id": "achieve-all-minimal",
   "axis": "intervention-query-surface",
-  "decision": {"status": "unresolved", "candidate": "achieve-all-minimal-block", "layout_style": "provisional-four-space"},
+  "decision": {"status": "unresolved", "candidate": "achieve-all-minimal-block", "layout_style": "canonical-two-space"},
   "source": {
-    "lines": ["achieve all minimal", "    Isolation-Room has a usable egress path to North-Exit", "using", "    passed"],
+    "lines": ["achieve all minimal", "  Isolation-Room has a usable egress path to North-Exit", "using", "  passed"],
     "line_break": "LF",
     "ends_with_line_break": true
   },

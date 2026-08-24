@@ -2,9 +2,9 @@
   "schema": "clause-m0-contrast-v1",
   "id": "revision-mixed-delta",
   "axis": "atomic-signed-delta",
-  "decision": {"status": "unresolved", "candidate": "mixed-signed-successor", "layout_style": "provisional-four-space"},
+  "decision": {"status": "unresolved", "candidate": "mixed-signed-successor", "layout_style": "canonical-two-space"},
   "source": {
-    "lines": ["door-inspection-swap from egress", "    - Door 101 passed Fire-Marshal Inspection", "    + Door 105 passed Fire-Marshal Inspection"],
+    "lines": ["door-inspection-swap from egress", "  - Door 101 passed Fire-Marshal Inspection", "  + Door 105 passed Fire-Marshal Inspection"],
     "line_break": "LF",
     "ends_with_line_break": true
   },
