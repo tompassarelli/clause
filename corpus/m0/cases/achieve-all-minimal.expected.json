@@ -10,13 +10,13 @@
   },
   "context": {
     "current_revision": "$revision:egress",
-    "target": {"handle": "$target:isolation-north", "clause": {"relation": "$route", "roles": {"origin": "Isolation-Room", "destination": "North-Exit"}}},
+    "target": {"handle": "$target:isolation-north", "content": {"relation": "$route", "roles": {"origin": "Isolation-Room", "destination": "North-Exit"}}},
     "finite_typed_basis": {"relation": "$passed", "absent_ground_members": ["$passed:105", "$passed:106"]}
   },
   "structural_intent": "complete-minimal-admission-query",
   "equivalence_group": "achieve-isolation-north",
   "required": ["using names one finite typed relation basis", "each addition is exact-base and individually verified", "all inclusion-minimal additions form a complete antichain"],
-  "forbidden": ["untyped-grounding", "minimum-cardinality-claim", "arbitrary-fact-basis", "random-result-order"],
+  "forbidden": ["untyped-grounding", "minimum-cardinality-certification", "arbitrary-fact-basis", "random-result-order"],
   "elaborated": [
     {"kind": "query", "mood": "achieve", "revision": "$revision:egress", "target": "$target:isolation-north", "selection": "all-minimal", "using": ["$passed"]}
   ],

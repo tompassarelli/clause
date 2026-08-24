@@ -10,18 +10,18 @@
   },
   "context": {
     "revisions": {"egress": "$revision:egress"},
-    "assertion_presence": [
-      {"clause": {"relation": "$passed", "roles": {"door": "Door 101", "inspection": "Fire-Marshal Inspection"}}, "present": true},
-      {"clause": {"relation": "$passed", "roles": {"door": "Door 105", "inspection": "Fire-Marshal Inspection"}}, "present": false}
+    "content_presence": [
+      {"content": {"relation": "$passed", "roles": {"door": "Door 101", "inspection": "Fire-Marshal Inspection"}}, "present": true},
+      {"content": {"relation": "$passed", "roles": {"door": "Door 105", "inspection": "Fire-Marshal Inspection"}}, "present": false}
     ]
   },
   "structural_intent": "invalid-successor-missing-withdrawal",
-  "required": ["withdrawal is checked against the exact base assertion set", "the full Delta is rejected atomically"],
+  "required": ["withdrawal is checked against the exact base admitted-content set", "the full Delta is rejected atomically"],
   "forbidden": ["withdraw-if-present", "silent-no-op", "partial-successor", "content-derived-successor"],
   "diagnostic": {
     "code": "delta.withdrawal.missing",
     "base": "$revision:egress",
-    "clause": {"relation": "$passed", "roles": {"door": "Door 105", "inspection": "Fire-Marshal Inspection"}}
+    "content": {"relation": "$passed", "roles": {"door": "Door 105", "inspection": "Fire-Marshal Inspection"}}
   },
   "elaborated": null
 }

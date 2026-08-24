@@ -12,10 +12,10 @@
     "current_state": "$state:key-left-down",
     "event": {"relation": "$key-state", "roles": {"key": "KeyLeft", "state": "released"}},
     "relation_contract": {"relation": "$intends-movement", "cardinality": "zero-or-more", "checker_proved_functional_key": false},
-    "assertion_presence": [{"clause": {"relation": "$intends-movement", "roles": {"actor": "player", "direction": "left"}}, "present": true}]
+    "content_presence": [{"content": {"relation": "$intends-movement", "roles": {"actor": "player", "direction": "left"}}, "present": true}]
   },
   "structural_intent": "event-scoped-exact-withdrawal",
-  "required": ["the sign withdraws one exact ground clause", "multi-valued relation updates remain exact deltas", "the withdrawal commits in the event successor"],
+  "required": ["the sign withdraws one exact ground relational-content item", "multi-valued relation updates remain exact deltas", "the withdrawal commits in the event successor"],
   "forbidden": ["field-assignment", "functional-overwrite", "toggle", "withdraw-if-present", "mutable-set-operation-semantics"],
   "elaborated": [
     {
@@ -24,7 +24,7 @@
       "pre_state": "$state:key-left-down",
       "delta": {
         "admissions": [],
-        "withdrawals": [{"kind": "relation-claim", "relation": "$intends-movement", "roles": {"actor": "player", "direction": "left"}}]
+        "withdrawals": [{"kind": "relational-content", "relation": "$intends-movement", "roles": {"actor": "player", "direction": "left"}}]
       },
       "atomic": true
     }

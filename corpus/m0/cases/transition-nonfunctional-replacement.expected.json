@@ -17,9 +17,9 @@
       "checker_proved_functional_key": false
     }
   },
-  "structural_intent": "reject-unkeyed-complete-clause-replacement",
+  "structural_intent": "reject-unkeyed-complete-relational-content-replacement",
   "required": [
-    "succession requires a checker-proved key selecting at most one old clause",
+    "succession requires a checker-proved key selecting at most one old relational-content item",
     "a named hole does not manufacture a functional key",
     "the diagnostic directs multi-valued updates to exact signed deltas"
   ],

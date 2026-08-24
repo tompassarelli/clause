@@ -13,7 +13,7 @@
     "same_declarations": true
   },
   "structural_intent": "forward-revision-comparison",
-  "required": ["left resolves as exact base Revision", "right resolves as exact successor Revision", "authored assertion difference preserves direction"],
+  "required": ["left resolves as exact base Revision", "right resolves as exact successor Revision", "authored assertion-occurrence difference preserves direction"],
   "forbidden": ["reverse-diff", "label-string-comparison", "mutable-base", "random-order"],
   "elaborated": [
     {
@@ -29,7 +29,7 @@
     "successor": "$revision:egress-minus-door-101-passed",
     "authored": {
       "added": [],
-      "removed": [{"kind": "relation-claim", "relation": "$passed", "roles": {"door": "Door 101", "inspection": "Fire-Marshal Inspection"}}]
+      "removed": [{"kind": "relational-content", "relation": "$passed", "roles": {"door": "Door 101", "inspection": "Fire-Marshal Inspection"}}]
     },
     "completeness": "complete"
   }

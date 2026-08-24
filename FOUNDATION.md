@@ -56,9 +56,9 @@ by itself assert, accept, or authorize relational content.
 Clause keeps three layers separate:
 
 1. **Relational content** consists of a relation referent in relational
-   position and referents or terms arranged in named roles. Content is not a
-   claim and carries no commitment by itself.
-2. **Assertion or claim occurrence** is the source/context act that commits to
+   position and referents or terms arranged in named roles. Content is not an
+   assertion occurrence and carries no commitment by itself.
+2. **Assertion occurrence** is the source/context act that commits to
    relational content in a particular scope, Revision, source span, event, or
    provenance context. Two occurrences may commit to identical content without
    becoming one occurrence.
@@ -114,14 +114,14 @@ a rejecting judgment, an incompatibility constraint, and absence of evidence
 are four different things.
 
 Closed-world reasoning is permitted only under an explicit finite scope and a
-named law or operational policy. Its result retains that scope and authority;
+named universal law or operational policy. Its result retains that scope and authority;
 it never becomes an unqualified global negation.
 
-## Laws, rules, invariants, and goals
+## Universal laws, derivation rules, invariants, and goals
 
 Each is an addressable referent, but their roles are not interchangeable:
 
-- A **law** universally generalizes a relational pattern within its explicit
+- A **universal law** universally generalizes a relational pattern within its explicit
   scope. It does not by itself perform or authorize a derivation.
 - A **derivation rule** authorizes an oriented derivation from matched premise
   content to conclusion content under named scope and authority.
@@ -149,7 +149,8 @@ not additional semantic domains.
   boundary; mutation is modeled as an exact successor, not identity change in
   place.
 - Type checking is a relational admissibility proof. Evaluation is a derived
-  operational process over resolved content, laws, rules, and explicit effects.
+  operational process over resolved content, universal laws, derivation rules,
+  and explicit effects.
 
 Representations become semantic only when content explicitly addresses them.
 Mirroring Rust, JavaScript, database, or host-language type universes is a
@@ -159,7 +160,7 @@ Clause Model.
 ## Incremental evaluation
 
 Evaluation consumes exact deltas of referents, relational content, assertion
-occurrences, judgments, and governing laws, derivation rules, invariants, and
+occurrences, judgments, and governing universal laws, derivation rules, invariants, and
 goals. It rechecks only affected dependencies while retaining canonical
 results, proof/support provenance, and complete versus incomplete status.
 Retraction invalidates consequences whose supports disappear; an addition does
@@ -189,7 +190,7 @@ must be atomic, version-breaking, and preserve audited lineage, explanation,
 intervention, incremental support behavior, exact identity rules, and
 source-deleted generated-code parity.
 
-Clause currently has no Store implementation, so this document claims no Store
+Clause currently has no Store implementation, so this document asserts no Store
 closure. Store is treated as a neutral persistence and query substrate, not as
 Clause's semantic authority. Any future adapter requires a typed Clause envelope
 above it for stable referent terms, relational content, assertion-occurrence

@@ -17,7 +17,7 @@
       "kind": "query",
       "mood": "select",
       "cardinality": "all",
-      "clauses": [
+      "relational_content": [
         {"kind": "relation-pattern", "relation": "$likes", "roles": {"person": {"kind": "named-hole", "identity": "$hole:person", "result_name": "person"}, "opening": {"kind": "named-hole", "identity": "$hole:opening", "result_name": "opening"}}}
       ],
       "projection": [{"hole": "$hole:person", "name": "person"}, {"hole": "$hole:opening", "name": "opening"}]

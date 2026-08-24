@@ -10,7 +10,7 @@
   },
   "context": {
     "current_revision": "$revision:egress",
-    "clauses": {
+    "relational_content": {
       "$target:icu-north": {"relation": "$route", "roles": {"origin": "ICU-A", "destination": "North-Exit"}},
       "$route:east-north": {"relation": "$route", "roles": {"origin": "East-Corridor", "destination": "North-Exit"}},
       "$route:west-north": {"relation": "$route", "roles": {"origin": "West-Corridor", "destination": "North-Exit"}},
@@ -24,16 +24,16 @@
       "$passed:104": {"relation": "$passed", "roles": {"door": "Door 104", "inspection": "Fire-Marshal Inspection"}}
     },
     "proofs": {
-      "$proof:east": {"conclusion": "$target:icu-north", "law": "$law:route-recursive", "premises": ["$connects:101", "$passed:101", {"proof": "$proof:east-north"}]},
-      "$proof:east-north": {"conclusion": "$route:east-north", "law": "$law:route-direct", "premises": ["$connects:102", "$passed:102"]},
-      "$proof:west": {"conclusion": "$target:icu-north", "law": "$law:route-recursive", "premises": ["$connects:103", "$passed:103", {"proof": "$proof:west-north"}]},
-      "$proof:west-north": {"conclusion": "$route:west-north", "law": "$law:route-direct", "premises": ["$connects:104", "$passed:104"]}
+      "$proof:east": {"conclusion": "$target:icu-north", "derivation_rule": "$rule:route-recursive", "premises": ["$connects:101", "$passed:101", {"proof": "$proof:east-north"}]},
+      "$proof:east-north": {"conclusion": "$route:east-north", "derivation_rule": "$rule:route-direct", "premises": ["$connects:102", "$passed:102"]},
+      "$proof:west": {"conclusion": "$target:icu-north", "derivation_rule": "$rule:route-recursive", "premises": ["$connects:103", "$passed:103", {"proof": "$proof:west-north"}]},
+      "$proof:west-north": {"conclusion": "$route:west-north", "derivation_rule": "$rule:route-direct", "premises": ["$connects:104", "$passed:104"]}
     }
   },
   "structural_intent": "revision-scoped-explanation-query",
   "equivalence_group": "why-icu-north",
   "required": ["authoring context supplies one exact Revision", "two alternative proof trees remain distinct", "support frontier is complete and inclusion-minimal"],
-  "forbidden": ["single-proof-flattening", "unscoped-global-truth", "support-order-randomness", "proof-as-assertion"],
+  "forbidden": ["single-proof-flattening", "unscoped-global-truth", "support-order-randomness", "proof-as-assertion-occurrence"],
   "elaborated": [
     {"kind": "query", "mood": "why", "revision": "$revision:egress", "target": "$target:icu-north", "result_contract": "explanation-graph"}
   ],

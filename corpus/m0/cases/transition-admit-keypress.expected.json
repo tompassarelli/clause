@@ -12,10 +12,10 @@
     "current_state": "$state:key-left-up",
     "event": {"relation": "$key-state", "roles": {"key": "KeyLeft", "state": "pressed"}},
     "relation_contract": {"relation": "$intends-movement", "cardinality": "zero-or-more", "checker_proved_functional_key": false},
-    "assertion_presence": [{"clause": {"relation": "$intends-movement", "roles": {"actor": "player", "direction": "left"}}, "present": false}]
+    "content_presence": [{"content": {"relation": "$intends-movement", "roles": {"actor": "player", "direction": "left"}}, "present": false}]
   },
   "structural_intent": "event-scoped-exact-admission",
-  "required": ["the sign admits one exact ground clause", "multi-valued relation updates do not require functional replacement", "the admission commits in the event successor"],
+  "required": ["the sign admits one exact ground relational-content item", "multi-valued relation updates do not require functional replacement", "the admission commits in the event successor"],
   "forbidden": ["field-assignment", "functional-overwrite", "toggle", "admit-if-absent", "mutable-set-operation-semantics"],
   "elaborated": [
     {
@@ -23,7 +23,7 @@
       "trigger": {"relation": "$key-state", "roles": {"key": "KeyLeft", "state": "pressed"}},
       "pre_state": "$state:key-left-up",
       "delta": {
-        "admissions": [{"kind": "relation-claim", "relation": "$intends-movement", "roles": {"actor": "player", "direction": "left"}}],
+        "admissions": [{"kind": "relational-content", "relation": "$intends-movement", "roles": {"actor": "player", "direction": "left"}}],
         "withdrawals": []
       },
       "atomic": true

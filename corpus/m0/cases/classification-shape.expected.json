@@ -19,7 +19,7 @@
   "structural_intent": "homogeneous-classification-shape",
   "required": [
     "colon is classification sugar",
-    "shape is a derived view of membership claims",
+    "shape is a derived view of membership content",
     "x and y remain addressable role terms"
   ],
   "forbidden": [
@@ -30,7 +30,7 @@
   ],
   "elaborated": [
     {
-      "kind": "claim",
+      "kind": "relational-content",
       "relation": "$membership",
       "roles": {
         "member": "x of Vec2",
@@ -38,7 +38,7 @@
       }
     },
     {
-      "kind": "claim",
+      "kind": "relational-content",
       "relation": "$membership",
       "roles": {
         "member": "y of Vec2",

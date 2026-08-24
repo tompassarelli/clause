@@ -18,7 +18,7 @@
       "mood": "select",
       "cardinality": "exactly-one",
       "on_cardinality_mismatch": "fail",
-      "clauses": [
+      "relational_content": [
         {"kind": "relation-pattern", "relation": "$likes", "roles": {"person": {"kind": "named-hole", "identity": "$hole:person", "result_name": "person"}, "opening": {"kind": "symbol", "name": "Go"}}}
       ],
       "projection": [{"hole": "$hole:person", "name": "person"}]

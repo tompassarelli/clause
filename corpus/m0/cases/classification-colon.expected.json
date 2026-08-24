@@ -27,7 +27,7 @@
   ],
   "elaborated": [
     {
-      "kind": "claim",
+      "kind": "relational-content",
       "relation": "$membership",
       "roles": {
         "member": "thing",

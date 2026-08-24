@@ -105,8 +105,8 @@ iron-door connects Cellar to Armory
 state of iron-door := locked
 ```
 
-The first form elaborates to an ordinary membership claim, the second is an
-ordinary co-equal relational claim, and the third is a definition. Focus
+The first form elaborates to ordinary membership relational content, the second is
+ordinary co-equal relational content, and the third is a definition. Focus
 supplies `iron-door` without turning any form into an owned object property.
 
 The compiler may later lower `state` to an enum field, `connects` to an
@@ -179,8 +179,8 @@ player
   velocity (0, 0)
 ```
 
-`player` is a grounded symbol. `Player`, `position`, and `velocity` are claims
-about it. Nothing is instantiated and no field is assigned.
+`player` is a grounded symbol. `Player`, `position`, and `velocity` contribute
+relational content about it. Nothing is instantiated and no field is assigned.
 
 Retract `position of player = (0, 0)` when the intended meaning is
 initialization or admission. Adopt `player position (0, 0)`, or under focus:
@@ -338,7 +338,7 @@ gravity := 9.81
 whose member and group are named roles; it does not bind a name, declare a
 primitive type, or assert equality. `:=` is definition/denotation: a source term
 is oriented to what it designates. Definition does not collapse the term into
-the referent and does not confer acceptance or authority on a claim.
+the referent and does not confer acceptance or authority on relational content.
 
 Examples:
 
@@ -420,7 +420,7 @@ Vec2
 ```
 
 Each child is classification sugar. The optional structural view derives from
-those membership claims; it is not a primitive record schema.
+that membership relational content; it is not a primitive record schema.
 
 ### 5.3 Focused block
 
@@ -469,7 +469,7 @@ Thing relation value
 
 It does **not** enumerate `A` and `B` beneath `Thing`.
 
-When a category needs both member enumeration and contracts or claims, write
+When a category needs both member enumeration and contracts or relational content, write
 separate blocks:
 
 ```clause
@@ -482,8 +482,8 @@ Thing
 ```
 
 The canonical formatter should preserve this separation. An editor should warn
-before an edit changes an all-bare enumeration block into a focused claim
-block, because that edit changes the interpretation of the existing bare
+before an edit changes an all-bare enumeration block into a focused
+relational-content block, because that edit changes the interpretation of the existing bare
 lines.
 
 This structural rule resolves the apparent conflict between `Game / Chess` and
@@ -493,7 +493,7 @@ making membership direction depend on capitalization.
 ### 5.5 Layout equivalence is an invariant
 
 For every focused block, the compiler must be able to print its fully expanded
-semantic forms without collapsing membership claims, ordinary claims, or
+semantic forms without collapsing membership relational content, ordinary relational content, or
 definitions into one node kind.
 
 Moving between focused and expanded forms must not change:
@@ -539,7 +539,7 @@ Words carry semantic moods:
 | `prevent` | counterfactual withdrawal synthesis |
 | `achieve` | counterfactual addition synthesis |
 | `diff` | revision comparison |
-| `observe` | evidence-backed claim mood |
+| `observe` | evidence-backed observation mood |
 | `assume` | scoped premise mood |
 | `require` | proof obligation mood |
 | `intend` | actor intention mood, distinct from a goal |
@@ -640,8 +640,9 @@ selects a proposition form or a one-valued projection.
 
 Canonical Clause should prefer `position of player` over `player.position`.
 Dot access makes the object syntactically sovereign and hides the fact that
-`position` is an ordinary relation with its own identity, roles, laws, queries,
-and strategies. Reserve dot syntax for explicit foreign-host interoperation,
+`position` is an ordinary relation with its own identity, roles, universal
+laws, derivation rules, queries, and strategies. Reserve dot syntax for
+explicit foreign-host interoperation,
 if it exists at all.
 
 Exactly one is the default return cardinality. `*` means zero or more; `+`
@@ -863,9 +864,9 @@ and intervention structure.
 
 ## 10. Models and Revisions become forms, not declared kinds
 
-Ground clauses admitted in the current authoring or revision context are
-assertions by default. Do not wrap them in `declare` unless the authority
-distinction must be visible.
+Ground relational content in the current authoring or Revision context creates
+assertion occurrences by default. Do not wrap it in `declare` unless the
+authority distinction must be visible.
 
 A successor Revision is recognizable from exact ancestry and signed deltas:
 
@@ -1055,7 +1056,7 @@ relation contract connects
   phrase {door} connects {origin} to {destination}
 ```
 
-### Grounded semantic node and claims
+### Grounded relational content
 
 ```clause
 iron-door
@@ -1299,7 +1300,7 @@ Every surface form must have a canonical role-labelled structural rendering,
 conceptually like:
 
 ```text
-clause connects
+form connects
     door: iron-door
     origin: Cellar
     destination: Armory
@@ -1366,7 +1367,7 @@ transitions, exact deltas, and effect requests.
 
 ### Stage E — existing semantic core
 
-Where possible, lower the new surface into current Clause Models, Laws,
+Where possible, lower the new surface into current Clause model and rule representations,
 Revisions, requests, proof structures, and Rust projection before redesigning
 the core.
 
@@ -1393,10 +1394,10 @@ codemod, then remove the ceremonial forms unless a real consumer requires them.
 | `name: Revision` | `name from base` plus signed clauses |
 | `from:` | `from` in the revision header; current executable profile remains migration evidence |
 | `withdraw:` | `-`; current executable profile remains migration evidence |
-| `declare:` | naked ground claims in admission context; current executable profile remains migration evidence |
+| `declare:` | ground relational content creating assertion occurrences in admission context; current executable profile remains migration evidence |
 | `find all ?x` | naked hole clause or `select` |
 | `use game` | `requires` block |
-| object-like `property: value` claims | relational `property value` under focus |
+| object-like `property: value` content | relational `property value` under focus |
 | `name: value` used as a binding | `name := value` definition |
 
 The migration tool should preserve semantic IDs and print a report for every
@@ -1408,7 +1409,7 @@ The new surface is not accepted merely because examples look attractive.
 
 ### Relational honesty
 
-- `iron-door` focus form and its expanded membership claim, ordinary claim, and
+- `iron-door` focus form and its expanded membership content, ordinary relational content, and
   focused definition produce identical checked semantics while retaining their
   three distinct semantic forms.
 - No semantic node created by a focus block contains child fields or owned
@@ -1424,7 +1425,7 @@ The new surface is not accepted merely because examples look attractive.
 - bare children inside a focused block classify the focus;
 - `name := value` inside a focused block defines `name of focus`, not a field or
   graph edge;
-- the formatter separates enumeration blocks from contract or claim blocks and
+- the formatter separates enumeration blocks from contract or relational-content blocks and
   warns before edits that would reclassify an existing block.
 
 ### Hole semantics
@@ -1465,7 +1466,7 @@ The new surface is not accepted merely because examples look attractive.
 
 Before changing the parser, add golden examples for enumeration, derived shape
 views, focused relational content and occurrences, explicit flattening,
-relation schemas, recursive terms, holes and correlation, laws, derivation
+relation schemas, recursive terms, holes and correlation, universal laws, derivation
 rules, invariants, goals, queries, revisions, transitions, effects, the
 hospital program, and the one-coin game.
 
@@ -1474,7 +1475,7 @@ rendering, diagnostics, and expected result. Include positive `x : Group`
 classification and `name := term` definition, retired `∈`, `::`, and `in`
 contrasts, canonical two-space projection, rejected tabs and noncanonical
 four-space projection, and `state := locked` under focus. Oracles distinguish
-definition from membership claim, ordinary claim, and object field.
+definition from membership content, ordinary relational content, and object field.
 
 ### Milestone 1 — New layout and focus profile
 
@@ -1499,15 +1500,15 @@ projections. This milestone recovers the recursive-relational thesis.
 
 Implement `?` and `?name` holes, repeated-hole correlation, naked single-clause
 selection, `select` projection blocks, `any` existence, `select one` and
-`select first`, `if` law inference, and hidden or optional law labels. Replace
+`select first`, `if` derivation-rule recognition, and hidden or optional derivation-rule labels. Replace
 `find` in canonical examples. Do not collapse derivation rules into universal
-laws, invariants, or goals.
+universal laws, invariants, or goals.
 
 ### Milestone 5 — Revision surface reset
 
 Implement `name from base`, `+` and `-` clauses, current `why`, `prevent`,
-`achieve`, and `diff` parity, and migration from current Model, Law, and Revision
-syntax.
+`achieve`, and `diff` parity, and migration from current model, rule, and
+Revision syntax.
 
 ### Milestone 6 — State transitions
 
@@ -1536,7 +1537,7 @@ Phrases are exact declared grammar, not statistical English interpretation.
 
 ### An object language with prettier property syntax
 
-Ordinary focused claims remain co-equal claims. Focused classification and
+Ordinary focused relational content remains co-equal relational content. Focused classification and
 definition retain their distinct semantic forms; none creates objects with
 fields.
 
@@ -1577,13 +1578,13 @@ Treat this document as a surface reset, not a patch list.
 Implementation proceeds from these invariants:
 
 1. Bare terms may denote addressable referents; the term is not the referent.
-2. Categories emerge through ordinary membership claims and contracts; they
+2. Categories emerge through ordinary membership relational content and contracts; they
    are not a primitive `Type` domain.
 3. Referents do not acquire fields merely from layout.
 4. `:` is classification/membership sugar; `:=` is definition/denotation.
 5. Enumeration, definition/shape, and focused blocks are structurally distinct.
 6. Indentation is erasable projection over semantic forms; it does not collapse
-   membership claims, ordinary claims, and definitions.
+   membership relational content, ordinary relational content, and definitions.
 7. Relation phrases are exact, role-labelled, recursively compositional
    grammar.
 8. `?` is a hole; `?name` is a named or reusable hole.

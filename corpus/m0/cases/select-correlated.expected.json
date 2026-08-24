@@ -11,7 +11,7 @@
   "context": {"facts": [["Alice", "likes", "Chess"], ["Bob", "likes", "Go"], ["Carol", "likes", "Chess"]], "bounded": true},
   "structural_intent": "explicit-projection-correlated-query",
   "required": [
-    "repeated named hole opening has one identity across both clauses",
+    "repeated named hole opening has one identity across both relational-content items",
     "only the listed person hole is projected",
     "rows use canonical order"
   ],
@@ -21,7 +21,7 @@
       "kind": "query",
       "mood": "select",
       "cardinality": "all",
-      "clauses": [
+      "relational_content": [
         {"kind": "relation-pattern", "relation": "$likes", "roles": {"person": {"kind": "named-hole", "identity": "$hole:person", "result_name": "person"}, "opening": {"kind": "named-hole", "identity": "$hole:opening", "result_name": "opening"}}},
         {"kind": "relation-pattern", "relation": "$likes", "roles": {"person": {"kind": "symbol", "name": "Alice"}, "opening": {"kind": "named-hole", "identity": "$hole:opening", "result_name": "opening"}}}
       ],

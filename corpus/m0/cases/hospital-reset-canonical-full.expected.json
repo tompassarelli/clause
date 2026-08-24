@@ -102,12 +102,12 @@
       ]
     },
     {
-      "kind": "expanded-relation-claims",
+      "kind": "expanded-relational-content",
       "connects": 6,
       "passed": 4
     },
     {
-      "kind": "inferred-laws",
+      "kind": "derivation-rules",
       "count": 2
     },
     {
@@ -193,7 +193,7 @@
         }
       }
     },
-    "clauses": {
+    "relational_content": {
       "$connects:101": {
         "relation": "$connects",
         "roles": {
@@ -271,9 +271,9 @@
         }
       }
     },
-    "laws": [
+    "derivation_rules": [
       {
-        "identity": "$law:route-direct",
+        "identity": "$rule:route-direct",
         "conclusion": {
           "relation": "$route",
           "roles": {
@@ -300,7 +300,7 @@
         ]
       },
       {
-        "identity": "$law:route-recursive",
+        "identity": "$rule:route-recursive",
         "conclusion": {
           "relation": "$route",
           "roles": {
@@ -336,7 +336,7 @@
     ],
     "base_revision": {
       "identity": "$revision:egress",
-      "assertions": [
+      "admitted_content": [
         "$connects:101",
         "$connects:102",
         "$connects:103",
@@ -597,10 +597,10 @@
     ]
   },
   "required": [
-    "every classification uses : and elaborates to an ordinary membership claim",
+    "every classification uses : and elaborates to ordinary membership relational content",
     "every schema anchor uses := definition while role colons classify referents",
     "two-space spaces-only layout is retained",
-    "current and target sources preserve stable referents, named-role claims, laws, exact Revision lineage, and six ordered results",
+    "current and target sources preserve stable referents, named-role relational content, derivation rules, exact Revision lineage, and six ordered results",
     "source-deleted generated Rust parity remains an acceptance obligation after semantic migration"
   ],
   "forbidden": [

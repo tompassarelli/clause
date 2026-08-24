@@ -2,7 +2,7 @@
   "schema": "clause-m0-contrast-v1",
   "id": "query-anonymous-hole",
   "axis": "naked-query-surface",
-  "decision": {"status": "unresolved", "candidate": "anonymous-hole-clause"},
+  "decision": {"status": "unresolved", "candidate": "anonymous-hole-content"},
   "source": {
     "lines": ["? likes Chess"],
     "line_break": "LF",
@@ -10,14 +10,14 @@
   },
   "context": {"facts": [["Alice", "likes", "Chess"], ["Bob", "likes", "Go"], ["Carol", "likes", "Chess"]], "bounded": true},
   "structural_intent": "implicit-select-all-query",
-  "required": ["anonymous hole receives a fresh identity", "naked hole clause projects all holes", "rows use canonical order"],
+  "required": ["anonymous hole receives a fresh identity", "naked relational content projects all holes", "rows use canonical order"],
   "forbidden": ["named-result-column", "random-witness", "unbounded-search"],
   "elaborated": [
     {
       "kind": "query",
       "mood": "select",
       "cardinality": "all",
-      "clauses": [
+      "relational_content": [
         {"kind": "relation-pattern", "relation": "$likes", "roles": {"person": {"kind": "anonymous-hole", "identity": "$anon:1"}, "opening": {"kind": "symbol", "name": "Chess"}}}
       ],
       "projection": [{"hole": "$anon:1", "name": null}]

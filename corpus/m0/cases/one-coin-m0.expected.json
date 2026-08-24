@@ -114,7 +114,7 @@
       ]
     },
     {
-      "kind": "referents-and-claims",
+      "kind": "referents-and-relational-content",
       "members": [
         "player",
         "coin"
@@ -125,10 +125,10 @@
       "identity": "$definition:distance"
     },
     {
-      "kind": "inferred-laws",
+      "kind": "derivation-rules",
       "identities": [
-        "$law:overlaps",
-        "$law:collects"
+        "$rule:overlaps",
+        "$rule:collects"
       ]
     },
     {
@@ -141,7 +141,7 @@
     },
     {
       "kind": "derived-scene",
-      "clauses": 2
+      "relational_content": 2
     }
   ],
   "structural_intent": "one-coin-complete-m0-semantic-oracle",
@@ -151,7 +151,7 @@
       "$package:game",
       "$package:three"
     ],
-    "definitions_and_laws": [
+    "definitions_and_derivation_rules": [
       {
         "identity": "$definition:distance",
         "kind": "definition",
@@ -182,7 +182,7 @@
         }
       },
       {
-        "identity": "$law:overlaps",
+        "identity": "$rule:overlaps",
         "conclusion": {
           "relation": "$overlaps",
           "roles": {
@@ -219,7 +219,7 @@
         ]
       },
       {
-        "identity": "$law:collects",
+        "identity": "$rule:collects",
         "conclusion": {
           "relation": "$collects",
           "roles": {
@@ -327,7 +327,7 @@
         ]
       }
     },
-    "claims": [
+    "relational_content": [
       {
         "relation": "$membership",
         "roles": {
@@ -441,7 +441,7 @@
         },
         "old": "$coin-state:active",
         "new": "$coin-state:collected",
-        "guard": "$law:collects"
+        "guard": "$rule:collects"
       },
       {
         "relation": "$score",
@@ -450,7 +450,7 @@
         },
         "old": "$hole:score",
         "new": "score-plus-coin-value",
-        "guard": "$law:collects"
+        "guard": "$rule:collects"
       }
     ],
     "commit": "one-atomic-successor",
@@ -463,7 +463,7 @@
   },
   "derived_scene": {
     "identity": "$scene",
-    "clauses": [
+    "relational_content": [
       {
         "sprite": "player",
         "position": {
@@ -492,9 +492,9 @@
     ]
   },
   "required": [
-    "classification is written with : and elaborates to ordinary membership claims",
+    "classification is written with : and elaborates to ordinary membership relational content",
     "Player and Coin are referents with derived relation contracts, never primitive classes or objects",
-    "player and coin remain addressable referents in co-equal named-role claims",
+    "player and coin remain addressable referents in co-equal named-role relational content",
     "recursive collision terms retain their checked tree and hole identities",
     "all replacements match one pre-state and commit atomically before the render request",
     "the receipt definition remains outside semantic state identity",
@@ -513,7 +513,7 @@
     "browser-host",
     "host-runtime",
     "m7-implementation",
-    "runtime-execution-claim",
+    "fabricated-runtime-execution-evidence",
     "canonical-∈",
     "primitive-type-domain",
     "identity-by-structural-equality"
@@ -563,7 +563,7 @@
   "result": {
     "kind": "m0-semantic-oracle",
     "execution": "not-implemented",
-    "target_artifact": "not-claimed",
+    "target_artifact": "not-represented",
     "preserves": [
       "program-identity",
       "relation-role-identities",

@@ -21,7 +21,7 @@
   "required": [
     "layout is erasable",
     "bare child classifies focus through membership",
-    "connects remains an ordinary relation claim",
+    "connects remains an ordinary relational content",
     "state := locked defines the stable state-of-focus term"
   ],
   "forbidden": [
@@ -32,7 +32,7 @@
   ],
   "elaborated": [
     {
-      "kind": "claim",
+      "kind": "relational-content",
       "relation": "$membership",
       "roles": {
         "member": "iron-door",
@@ -40,7 +40,7 @@
       }
     },
     {
-      "kind": "claim",
+      "kind": "relational-content",
       "relation": "$connects",
       "roles": {
         "door": "iron-door",

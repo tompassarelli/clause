@@ -1,0 +1,40 @@
+{
+  "schema": "clause-m0-contrast-v1",
+  "id": "absence-undetermined",
+  "axis": "open-world-absence",
+  "decision": {
+    "status": "accepted-target",
+    "canonical": "bounded-existence-query"
+  },
+  "source": {
+    "lines": [
+      "any x greater-than y"
+    ],
+    "line_break": "LF",
+    "ends_with_line_break": true
+  },
+  "context": {
+    "revision": "$revision:open-world-empty",
+    "matching_admitted_content": []
+  },
+  "structural_intent": "test-bounded-existence-without-negation",
+  "required": [
+    "the existence result is false in the selected Revision",
+    "the epistemic status of the content remains undetermined",
+    "no negative relational content or rejecting judgment is fabricated"
+  ],
+  "forbidden": [
+    "closed-world-default",
+    "absence-is-denial",
+    "absence-is-impossibility",
+    "implicit-negative-occurrence"
+  ],
+  "result": {
+    "kind": "existence",
+    "exists": false,
+    "scope": "$revision:open-world-empty",
+    "content_status": "undetermined",
+    "negative_content": null,
+    "judgment": null
+  }
+}

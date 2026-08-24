@@ -4,12 +4,12 @@
   "axis": "structural-escape-spelling",
   "decision": {
     "status": "unresolved",
-    "candidate": "clause-heading-with-role-definitions",
+    "candidate": "form-heading-with-role-definitions",
     "layout_style": "canonical-two-space"
   },
   "source": {
     "lines": [
-      "clause connects",
+      "form connects",
       "  door := iron-door",
       "  origin := Cellar",
       "  destination := Armory"
@@ -22,8 +22,8 @@
       "$connects"
     ]
   },
-  "structural_intent": "explicit-role-labelled-claim",
-  "equivalence_group": "connects-claim",
+  "structural_intent": "explicit-role-labelled-relational-content",
+  "equivalence_group": "connects-content",
   "required": [
     "each := defines a named role term",
     "explicit structure selects one relation identity",
@@ -37,7 +37,7 @@
   ],
   "elaborated": [
     {
-      "kind": "relation-claim",
+      "kind": "relational-content",
       "relation": "$connects",
       "roles": {
         "door": "iron-door",

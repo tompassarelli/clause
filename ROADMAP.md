@@ -90,7 +90,7 @@ These contracts remain load-bearing while the surface changes:
 - assertion, entailment, proof, and support diff across exact Revisions;
 - canonical request ordering and result bytes;
 - source-to-IR provenance and role-aware diagnostics;
-- source-deleted executable parity for every claimed target;
+- source-deleted executable parity for every declared target;
 - separation of modeled state change, effect intent, authorization, attempt,
   receipt, observation, and admitted truth.
 
@@ -105,7 +105,7 @@ honestly collapse:
 
 | Authority | Meaning |
 | --- | --- |
-| `Model` | Canonical authoritative program: referents, relational content, assertion occurrences, judgments, definitions, laws, derivation rules, invariants, goals, transitions, effects, dependencies, capabilities, target requirements, and selected initial content. |
+| `Model` | Canonical authoritative program: referents, relational content, assertion occurrences, judgments, definitions, universal laws, derivation rules, invariants, goals, transitions, effects, dependencies, capabilities, target requirements, and selected initial content. |
 | `Revision` | Immutable content-addressed Model version with exact lineage and provenance; evidence about program history, not the program itself. |
 | `StateRevision` | Logically immutable runtime state produced from an exact predecessor and Delta and bound to an exact Model Revision. |
 | `RuntimeSession` | Exact Model Revision, initial state, tick policy, ordered input/event stream, transition results, capability realizations, and effect receipts. |
@@ -115,7 +115,7 @@ future split migrates the representation and all in-tree consumers atomically;
 it does not pass through two public wire meanings. M0 records the typed
 frontend/kernel and semantic-v5 wire as legacy migration evidence.
 
-Clause has no Store implementation and claims no Store closure. Store is a
+Clause has no Store implementation and asserts no Store closure. Store is a
 neutral persistence and query substrate. A future adapter must add a typed
 Clause envelope for referents, relational content, assertion-occurrence
 attestations, judgments, modality, evidence, authority, admission/rejection,
@@ -138,7 +138,7 @@ The following relational invariants are committed direction now:
 5. `∈`, `::`, and `in` are not canonical membership source.
 6. Enumeration, derived definition/shape, and focused blocks are distinct. A focused
    bare category lowers to membership, an ordinary relation fragment remains a
-   relational claim, and `name := value` defines `name of focus`.
+   relational content, and `name := value` defines `name of focus`.
 7. Indentation is two spaces, spaces only; tabs are diagnosed, and layout never
    creates ownership or nested object identity.
 8. Focused and fully expanded clauses elaborate to identical role-labelled
@@ -167,7 +167,7 @@ succession, `+`/`-` for exact deltas, `!` for effects, naked hole clauses for
 selection, and `select`/`any` for projection/existence. These spellings are
 provisional until separately ruled. Classification, definition, and indentation
 are settled above. No implementation lane may add another membership spelling
-or collapse a definition into a field or claim.
+or collapse a definition into a field or relational content.
 
 ## Current foundation
 
@@ -176,7 +176,7 @@ Public Clause currently implements:
 - typed Models, entity identities, and role-labelled n-ary relations;
 - a flat declaration surface using `Type`, `Relation`, `Model`, `Law`,
   `Revision`, `mode`, bracketed multiword entities, and explicit request words;
-- asserted clauses and bounded positive recursive laws;
+- admitted relational content and bounded positive recursive derivation rules;
 - immutable Revisions and exact successor Deltas;
 - recursive closure queries and bounded complete support enumeration;
 - bounded prevention and achievement over explicit finite intervention bases;
@@ -271,7 +271,7 @@ the parser grammar, deliver:
   output, with source span the only permitted provenance difference; the
   controlling focus specimen contains `state := locked`, which expands to the
   definition `state of focus := locked`, distinct from its membership and
-  ordinary relational claim;
+  ordinary relational content;
 - explicit accepted/rejected verdicts for classification, definition,
   indentation, and focused projection;
 - an editor boundary that preserves input and never manufactures `∈`, with
@@ -567,8 +567,8 @@ The reset supersedes these earlier recommendations as target syntax:
 | `Space: Type` | bare `Space` grounding, or `Space : Category` only when that domain classification is intended |
 | `name: Relation` with brace roles and `mode` | explicit relation-contract form with exact named roles and projection/cardinality contract; no primitive `Relation` classification |
 | `player ∈ Player` or `thing ∈ Space` classification | `player : Player` / `thing : Space`; report the migration |
-| object-like `property: value` claims | relational `property value` under focus |
-| `position of player = value` for admission | subject-first relation claim; `=` reserved for equality |
+| object-like `property: value` content | relational `property value` under focus |
+| `position of player = value` for admission | subject-first relational content; `=` reserved for equality |
 | `name: Law` and `when:` | explicit universal-law mode, or conclusion plus `if` for an oriented derivation rule; optional label definition |
 | `find all ?x` | naked hole clause or explicit `select` |
 | “logic variable” as the primary account of `?name` | visible hole/reusable-result semantics |
@@ -594,19 +594,19 @@ Every milestone preserves gates already crossed:
    identity are stable under the reviewed two-space indentation policy.
 4. **Locality:** imports never silently change old meaning; ambiguity reports
    candidates, role conflicts, and exact repairs.
-5. **Category honesty:** values, propositions, definitions, laws, queries,
+5. **Category honesty:** values, propositions, definitions, universal laws, queries,
    transitions, procedures, effects, and evidence remain distinct.
 6. **Identity honesty:** layout, focus expansion, and rename operations preserve
    stable semantic identity when the editor transaction says they are the same
    meaning.
 7. **Lineage honesty:** exact bases, deltas, alternative supports, proof changes,
    and intervention certificates survive every surface migration.
-8. **Bound honesty:** partial derivation or search never claims completeness or
+8. **Bound honesty:** partial derivation or search never certifies completeness or
    optimality it did not prove.
 9. **Operational honesty:** modeled transition, authorized intent, attempted
    effect, receipt, and observation remain distinct.
 10. **Projection parity:** selected judgments reproduce from sealed artifacts
-    after source deletion on every claimed target.
+    after source deletion on every declared target.
 11. **Physical freedom:** relational meaning may lower to specialized storage;
     the runtime does not pay a generic triple tax without evidence.
 12. **General-purpose reach:** ordinary computation, state, effects, and a real
@@ -621,9 +621,9 @@ Every milestone preserves gates already crossed:
 | Role-labelled elaborator | referents, definitions, membership content, assertion occurrences, relations, universal laws, derivation rules, invariants, goals, queries, deltas, transitions, effects | physical storage strategy |
 | Checked Model | referent/content/occurrence/judgment/mode IDs, derived admissibility views, exact authority and provenance | host resources or Revision-as-program identity |
 | Term lowering | pure terms, definitions, patterns, collections, target-neutral IR | proposition search or effect realization |
-| Proposition/lineage | laws, derivation rules, invariants, closure, proof/support, exact intervention verification | heuristic authority or external effects |
+| Proposition/lineage | universal laws, derivation rules, invariants, closure, proof/support, exact intervention verification | heuristic authority or external effects |
 | Transition runtime | events, snapshot matching, conflicts, deltas, replay | callback mutation or incidental source-order conflict resolution |
-| Effect runtime | capabilities, resources, async outcomes, receipts | claiming intent as fact |
+| Effect runtime | capabilities, resources, async outcomes, receipts | treating intention as admitted content |
 | Target planner | JavaScript, Rust, later Wasm, indexes, schedules, layouts | changing source meaning to fit a target |
 | Tooling | formatter, editor, explicit expansion, migration, source maps, debugger | a second semantic authority |
 
@@ -650,7 +650,7 @@ Clause reaches the committed category only when the same sealed program can:
 
 - express ordinary values and algorithms without relational contortions;
 - state grounded symbols, membership, role-labelled propositions, and recursive
-  laws without object smuggling;
+  universal laws without object smuggling;
 - move forward to role assignments, backward to reasons, across exact Revisions, and
   counterfactually to certified Deltas;
 - evolve deterministic state through conflict-checked successor clauses;

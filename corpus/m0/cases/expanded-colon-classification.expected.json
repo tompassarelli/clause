@@ -18,8 +18,8 @@
   "structural_intent": "expanded-mixed-forms",
   "equivalence_group": "iron-door-focus-expansion",
   "required": [
-    "classification elaborates to an ordinary membership claim with member and group roles",
-    "connects is an ordinary named-role claim",
+    "classification elaborates to ordinary membership relational content with member and group roles",
+    "connects is an ordinary named-role relational content",
     "state of iron-door is a definition",
     "formatter and agents emit : and := directly"
   ],
@@ -32,7 +32,7 @@
   ],
   "elaborated": [
     {
-      "kind": "claim",
+      "kind": "relational-content",
       "relation": "$membership",
       "roles": {
         "member": "iron-door",
@@ -40,7 +40,7 @@
       }
     },
     {
-      "kind": "claim",
+      "kind": "relational-content",
       "relation": "$connects",
       "roles": {
         "door": "iron-door",

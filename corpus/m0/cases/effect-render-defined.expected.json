@@ -39,7 +39,7 @@
   "required": [
     ":= defines the result term and says nothing about authorization",
     "the definition does not change request, attempt, or receipt identity",
-    "the denotation is a receipt rather than a truth claim"
+    "the denotation is a receipt rather than an assertion occurrence of current truth"
   ],
   "forbidden": [
     "assignment",

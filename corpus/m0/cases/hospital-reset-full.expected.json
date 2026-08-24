@@ -116,7 +116,7 @@
       "anchor": "route"
     },
     {
-      "kind": "focused-claims",
+      "kind": "focused-relational-content",
       "focuses": [
         "Door 101",
         "Door 102",
@@ -127,7 +127,7 @@
       ]
     },
     {
-      "kind": "inferred-laws",
+      "kind": "derivation-rules",
       "count": 2
     },
     {
@@ -205,7 +205,7 @@
         }
       }
     },
-    "clauses": {
+    "relational_content": {
       "$connects:101": {
         "relation": "$connects",
         "roles": {
@@ -283,9 +283,9 @@
         }
       }
     },
-    "laws": [
+    "derivation_rules": [
       {
-        "identity": "$law:route-direct",
+        "identity": "$rule:route-direct",
         "conclusion": {
           "relation": "$route",
           "roles": {
@@ -312,7 +312,7 @@
         ]
       },
       {
-        "identity": "$law:route-recursive",
+        "identity": "$rule:route-recursive",
         "conclusion": {
           "relation": "$route",
           "roles": {
@@ -348,7 +348,7 @@
     ],
     "base_revision": {
       "identity": "$revision:egress",
-      "assertions": [
+      "admitted_content": [
         "$connects:101",
         "$connects:102",
         "$connects:103",

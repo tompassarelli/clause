@@ -10,7 +10,7 @@
   },
   "context": {
     "revisions": {"egress": "$revision:egress"},
-    "assertion_presence": [{"clause": {"relation": "$passed", "roles": {"door": "Door 101", "inspection": "Fire-Marshal Inspection"}}, "present": true}]
+    "content_presence": [{"content": {"relation": "$passed", "roles": {"door": "Door 101", "inspection": "Fire-Marshal Inspection"}}, "present": true}]
   },
   "structural_intent": "exact-successor-revision",
   "equivalence_group": "egress-withdraw-door-101",
@@ -24,7 +24,7 @@
       "base": "$revision:egress",
       "delta": {
         "admissions": [],
-        "withdrawals": [{"kind": "relation-claim", "relation": "$passed", "roles": {"door": "Door 101", "inspection": "Fire-Marshal Inspection"}}]
+        "withdrawals": [{"kind": "relational-content", "relation": "$passed", "roles": {"door": "Door 101", "inspection": "Fire-Marshal Inspection"}}]
       },
       "atomic": true
     }

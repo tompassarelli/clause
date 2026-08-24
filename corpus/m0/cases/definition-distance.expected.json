@@ -31,7 +31,7 @@
     "each projection is a recursive relation term"
   ],
   "forbidden": [
-    "Law-object",
+    "primitive-derivation-rule-object",
     "field-access",
     "flat-token-template",
     "fresh-hole-on-repeat"

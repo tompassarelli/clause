@@ -10,15 +10,15 @@
   },
   "context": {
     "revisions": {"egress": "$revision:egress"},
-    "assertion_presence": [{"clause": {"relation": "$passed", "roles": {"door": "Door 101", "inspection": "Fire-Marshal Inspection"}}, "present": true}]
+    "content_presence": [{"content": {"relation": "$passed", "roles": {"door": "Door 101", "inspection": "Fire-Marshal Inspection"}}, "present": true}]
   },
   "structural_intent": "invalid-successor-existing-admission",
-  "required": ["admission is checked against the exact base assertion set", "the full Delta is rejected atomically"],
-  "forbidden": ["set-like-silent-no-op", "duplicate-assertion", "partial-successor", "content-derived-successor"],
+  "required": ["admission is checked against the exact base admitted-content set", "the full Delta is rejected atomically"],
+  "forbidden": ["set-like-silent-no-op", "duplicate-content-admission", "partial-successor", "content-derived-successor"],
   "diagnostic": {
     "code": "delta.admission.existing",
     "base": "$revision:egress",
-    "clause": {"relation": "$passed", "roles": {"door": "Door 101", "inspection": "Fire-Marshal Inspection"}}
+    "content": {"relation": "$passed", "roles": {"door": "Door 101", "inspection": "Fire-Marshal Inspection"}}
   },
   "elaborated": null
 }

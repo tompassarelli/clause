@@ -26,7 +26,7 @@
       {"relation": "$state", "key_roles": ["member"], "value_role": "value", "checker_proved": true},
       {"relation": "$score", "key_roles": ["member"], "value_role": "value", "checker_proved": true}
     ],
-    "pre_state_assertions": [
+    "pre_state_admitted_content": [
       {"relation": "$state", "roles": {"member": "coin", "value": "active"}},
       {"relation": "$score", "roles": {"member": "player", "value": 0}},
       {"relation": "$value", "roles": {"member": "coin", "value": 10}},
@@ -36,7 +36,7 @@
   "structural_intent": "one-phase-transaction-over-one-pre-state",
   "required": [
     "both guards are evaluated against the same exact pre-state",
-    "both old clauses match against that pre-state",
+    "both old relational-content items match against that pre-state",
     "the coin replacement cannot invalidate the score guard during evaluation",
     "both accepted replacements commit as one successor"
   ],

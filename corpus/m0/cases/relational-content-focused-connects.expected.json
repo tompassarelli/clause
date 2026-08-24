@@ -1,6 +1,6 @@
 {
   "schema": "clause-m0-contrast-v1",
-  "id": "claim-focused-connects",
+  "id": "relational-content-focused-connects",
   "axis": "focus-role-resolution",
   "decision": {"status": "unresolved", "candidate": "focused-phrase", "layout_style": "canonical-two-space"},
   "source": {
@@ -9,11 +9,11 @@
     "ends_with_line_break": true
   },
   "context": {"schemas": ["$connects"], "focus_role": "door"},
-  "structural_intent": "focused-relation-claim",
-  "equivalence_group": "connects-claim",
+  "structural_intent": "focused-relational-content",
+  "equivalence_group": "connects-content",
   "required": ["focus supplies only the declared door role", "all other roles remain recursively parsed terms"],
   "forbidden": ["object", "method", "field", "owned-child"],
   "elaborated": [
-    {"kind": "relation-claim", "relation": "$connects", "roles": {"door": "iron-door", "origin": "Cellar", "destination": "Armory"}}
+    {"kind": "relational-content", "relation": "$connects", "roles": {"door": "iron-door", "origin": "Cellar", "destination": "Armory"}}
   ]
 }

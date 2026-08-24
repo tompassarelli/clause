@@ -1,0 +1,6 @@
+?x reachable ?z if
+  ?x reachable ?y
+  ?y reachable ?z
+
+invariant no self route
+  no ?x reachable ?x

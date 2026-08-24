@@ -2,7 +2,7 @@
   "schema": "clause-m0-contrast-v1",
   "id": "query-named-hole",
   "axis": "naked-query-surface",
-  "decision": {"status": "unresolved", "candidate": "named-hole-clause"},
+  "decision": {"status": "unresolved", "candidate": "named-hole-content"},
   "source": {
     "lines": ["?person likes Chess"],
     "line_break": "LF",
@@ -17,7 +17,7 @@
       "kind": "query",
       "mood": "select",
       "cardinality": "all",
-      "clauses": [
+      "relational_content": [
         {"kind": "relation-pattern", "relation": "$likes", "roles": {"person": {"kind": "named-hole", "identity": "$hole:person", "result_name": "person"}, "opening": {"kind": "symbol", "name": "Chess"}}}
       ],
       "projection": [{"hole": "$hole:person", "name": "person"}]

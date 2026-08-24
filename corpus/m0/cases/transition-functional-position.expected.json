@@ -1,8 +1,8 @@
 {
   "schema": "clause-m0-contrast-v1",
   "id": "transition-functional-position",
-  "axis": "functional-complete-clause-succession",
-  "decision": {"status": "unresolved", "candidate": "on-complete-clause-succession", "layout_style": "canonical-two-space"},
+  "axis": "functional-complete-relational-content-succession",
+  "decision": {"status": "unresolved", "candidate": "on-complete-relational-content-succession", "layout_style": "canonical-two-space"},
   "source": {
     "lines": ["on frame ?dt", "  player position ?position ~>", "    player position (?position + velocity of player * ?dt)"],
     "line_break": "LF",
@@ -18,19 +18,19 @@
       "cardinality": "exactly-one",
       "checker_proved": true
     },
-    "assertions": [
+    "admitted_content": [
       {"relation": "$position", "roles": {"member": "player", "value": [0.0, 0.0]}},
       {"relation": "$velocity", "roles": {"member": "player", "value": [300.0, 0.0]}}
     ]
   },
   "structural_intent": "event-scoped-functional-replacement",
   "required": [
-    "the left and right sides of succession are complete position clauses",
-    "the old clause matches only against the exact pre-state",
+    "the left and right sides of succession are complete position relational content",
+    "the old relational-content item matches only against the exact pre-state",
     "the checker-proved member key makes replacement single-valued",
     "the successor is committed atomically after matching"
   ],
-  "forbidden": ["field-assignment", "in-place-mutation-semantics", "partial-clause-right-hand-side", "post-state-rematch", "source-order-commit"],
+  "forbidden": ["field-assignment", "in-place-mutation-semantics", "partial-relational-content-right-hand-side", "post-state-rematch", "source-order-commit"],
   "elaborated": [
     {
       "kind": "event-transition",

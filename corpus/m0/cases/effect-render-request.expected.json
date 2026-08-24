@@ -31,7 +31,7 @@
     "the attempt produces a receipt linked to the exact request",
     "the receipt is evidence of the attempt outcome rather than admitted truth"
   ],
-  "forbidden": ["pure-call", "modeled-state-mutation", "scene-is-rendered-assertion", "receipt-as-proof", "permanent-external-condition"],
+  "forbidden": ["pure-call", "modeled-state-mutation", "fabricated-rendered-scene-occurrence", "receipt-as-proof", "permanent-external-condition"],
   "elaborated": [
     {
       "kind": "effect-request",

@@ -1,0 +1,40 @@
+{
+  "schema": "clause-m0-contrast-v1",
+  "id": "referent-declaration",
+  "axis": "declaration-establishes-referent",
+  "decision": {
+    "status": "accepted-target",
+    "canonical": "bare-declaration"
+  },
+  "source": {
+    "lines": [
+      "x"
+    ],
+    "line_break": "LF",
+    "ends_with_line_break": true
+  },
+  "context": {
+    "position": "declaration"
+  },
+  "structural_intent": "establish-addressable-referent",
+  "required": [
+    "declaration position establishes one stable ReferentId",
+    "the declared spelling is a term rather than semantic identity",
+    "no role or admissibility constraint is invented"
+  ],
+  "forbidden": [
+    "Thing-root-type",
+    "implicit-classification",
+    "implicit-role-shape",
+    "structural-identity"
+  ],
+  "elaborated": [
+    {
+      "kind": "referent-declaration",
+      "referent": "$referent:x",
+      "preferred_term": "x",
+      "roles": [],
+      "constraints": []
+    }
+  ]
+}

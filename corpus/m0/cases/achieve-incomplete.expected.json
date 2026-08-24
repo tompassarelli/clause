@@ -10,13 +10,13 @@
   },
   "context": {
     "current_revision": "$revision:egress",
-    "target": {"handle": "$target:isolation-north", "clause": {"relation": "$route", "roles": {"origin": "Isolation-Room", "destination": "North-Exit"}}},
+    "target": {"handle": "$target:isolation-north", "content": {"relation": "$route", "roles": {"origin": "Isolation-Room", "destination": "North-Exit"}}},
     "finite_typed_basis": {"relation": "$passed", "absent_ground_members": ["$passed:105", "$passed:106"]},
     "limits": {"max_candidate_checks": 1, "max_solutions": 100}
   },
   "structural_intent": "incomplete-minimal-admission-query",
-  "required": ["candidate exhaustion is explicit", "retained addition is individually typed and verified", "retained prefix does not claim a complete antichain"],
-  "forbidden": ["complete-status", "frontier-exhaustion-claim", "random-witness", "silent-truncation"],
+  "required": ["candidate exhaustion is explicit", "retained addition is individually typed and verified", "retained prefix does not certify a complete antichain"],
+  "forbidden": ["complete-status", "frontier-exhaustion-certification", "random-witness", "silent-truncation"],
   "elaborated": [
     {"kind": "query", "mood": "achieve", "revision": "$revision:egress", "target": "$target:isolation-north", "selection": "all-minimal", "using": ["$passed"]}
   ],
@@ -28,6 +28,6 @@
     "reason": "candidate-budget-exhausted",
     "minimality": "individually-certified",
     "retained_prefix": [["$passed:105"]],
-    "frontier_claim": "not-made"
+    "frontier_certification": "not-made"
   }
 }

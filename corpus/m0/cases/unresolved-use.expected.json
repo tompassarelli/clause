@@ -1,0 +1,41 @@
+{
+  "schema": "clause-m0-contrast-v1",
+  "id": "unresolved-use",
+  "axis": "use-does-not-declare",
+  "decision": {
+    "status": "rejected-target",
+    "canonical": null
+  },
+  "source": {
+    "lines": [
+      "x greater-than typo"
+    ],
+    "line_break": "LF",
+    "ends_with_line_break": true
+  },
+  "context": {
+    "position": "use",
+    "declared_referents": {
+      "x": "$referent:x",
+      "greater-than": "$referent:greater-than"
+    }
+  },
+  "structural_intent": "resolve-existing-participants",
+  "required": [
+    "use position requires an existing referent",
+    "the unresolved spelling is diagnosed exactly",
+    "failure leaves the admitted referent set unchanged"
+  ],
+  "forbidden": [
+    "typo-creates-referent",
+    "capitalization-inference",
+    "probabilistic-name-repair",
+    "partial-elaboration"
+  ],
+  "elaborated": [],
+  "diagnostic": {
+    "code": "unresolved-referent-use",
+    "term": "typo",
+    "created_referents": []
+  }
+}

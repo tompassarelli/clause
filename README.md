@@ -54,14 +54,14 @@ Clause is committed to growing this core into one general-purpose,
 relation-centered programming system: recursive terms and relational content,
 exact state transitions, explicit effects and receipts, JavaScript and
 Three.js first, measured Wasm specialization later, and eventually a real
-North application vertical. This is product direction, not a claim about the
+North application vertical. This is product direction, not a description of the
 current implementation. See the [Clause roadmap](ROADMAP.md) for the authority
 model, dependency order, prototype gates, and acceptance criteria.
 
 ## Target surface direction
 
 The target constitution is distinction-first and relational: focus layout
-projects membership claims, ordinary claims, and definitions without creating
+projects membership content, ordinary relational content, and definitions without creating
 an object, field, owner, or nested record. `x : Group` is classification sugar
 for an ordinary membership relation. `name := term` is
 definition/denotation. `∈` and `::` are not canonical source, and editors never
@@ -77,7 +77,7 @@ iron-door
   state := locked
 ```
 
-It elaborates to `iron-door : Door`, the ordinary relational claim
+It elaborates to `iron-door : Door`, the ordinary relational content
 `iron-door connects Cellar to Armory`, and the focused definition
 `state of iron-door := locked`. The definition orients a term without becoming
 an object field or another graph edge.
@@ -124,12 +124,12 @@ intervention synthesis, or generated Rust.
 Requests execute once in authored order. The hospital program demonstrates six
 distinct navigations over the same semantics:
 
-1. **Forward — `find`.** Bounded recursive closure applies both route laws and
+1. **Forward — `find`.** Bounded recursive closure applies both route derivation rules and
    finds `East-Corridor`, `North-Exit`, and `West-Corridor` from `ICU-A`.
 2. **Backward — `why all`.** The result is a complete frontier of two
    inclusion-minimal supports for reaching `North-Exit`: the east path through
    Doors 101 and 102, and the west path through Doors 103 and 104. Each support
-   retains its proof tree and presents its assertions in canonical proof-path
+   retains its proof tree and presents its supporting relational content in canonical proof-path
    order.
 3. **Counterfactual withdrawal — `prevent`.** Restricting changes to
    `egress/passed`, the base Revision has four complete minimal pairs: one
@@ -161,26 +161,26 @@ Minimal always means **inclusion-minimal**, not minimum-cardinality. No proper
 subset of a returned support still entails its consequence, and no proper
 subset of a returned intervention still prevents or achieves its target. A
 minimum result would instead have the least cardinality among all successful
-sets; Clause makes no such claim. `one minimal` returns one canonical certified
+sets; Clause offers no such guarantee. `one minimal` returns one canonical certified
 result. `all minimal` returns an antichain and says `Complete` only after the
 entire admitted finite search has been exhausted.
 
 In the current executable profile, an intervention's `using:` block defines a
 finite basis using legacy typed relation declarations. `prevent` considers
-currently asserted clauses of those extensional relations. `achieve` constructs
-ground clauses from the selected relation's exact legacy role domains and
-entities admitted by the selected Revision, then excludes clauses already
-asserted. Every returned Delta is checked by applying it to its exact base
+currently admitted relational content of those extensional relations. `achieve`
+constructs ground relational content from the selected relation's exact legacy
+role domains and entities admitted by the selected Revision, then excludes
+content already admitted. Every returned Delta is checked by applying it to its exact base
 Revision and evaluating the target again.
 
-The default runner bounds closure at 100 assertions, 10 rounds, and 10,000 join
+The default runner bounds closure at 100 admitted or derived content items, 10 rounds, and 10,000 join
 attempts; support enumeration at 100 expansions and 100 supports per clause;
 and intervention enumeration at 100 candidate checks and 100 solutions.
 `why all` reports whether its support frontier is complete; exhausting a
 support bound cannot produce a complete status. For `all minimal`, candidate,
 solution, closure, support-expansion, or support-frontier exhaustion produces
 an explicit incomplete result. Its retained interventions are individually
-verified, but the retained set is not claimed to be the complete antichain.
+verified, but the retained set is not certified as the complete antichain.
 `find` fails on closure exhaustion rather than returning partial role assignments.
 All frontiers in the hospital program exhaust their finite bases and report
 complete.
@@ -220,7 +220,7 @@ test "$actual" = "$expected"
 `clause seal SOURCE REVISION_NAME OUTPUT` separately writes one Revision's
 canonical wire form. Revision navigation names, request order, source spans,
 and ellipsis syntax do not enter that identity; typed declarations, entities,
-relation roles and modes, asserted clauses, and laws do.
+relation roles and modes, admitted relational content, and derivation rules do.
 
 ## Develop
 

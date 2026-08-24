@@ -1,0 +1,37 @@
+{
+  "schema": "clause-m0-contrast-v1",
+  "id": "goal-not-current",
+  "axis": "goal-modality",
+  "decision": {
+    "status": "accepted-target",
+    "canonical": "explicit-goal"
+  },
+  "source": {
+    "lines": [
+      "goal",
+      "  iron-door state unlocked"
+    ],
+    "line_break": "LF",
+    "ends_with_line_break": true
+  },
+  "structural_intent": "desired-relational-content",
+  "required": [
+    "the goal retains desired content under a planning context",
+    "the desired content need not currently hold",
+    "the goal grants neither derivation nor effect authority"
+  ],
+  "forbidden": [
+    "goal-is-assertion-occurrence",
+    "goal-is-admission",
+    "goal-is-authorization",
+    "goal-is-effect-receipt"
+  ],
+  "goal": {
+    "identity": "$goal:door-unlocked",
+    "condition": "$content:iron-door-unlocked",
+    "planning_context": "$planning:door",
+    "currently_admitted": false,
+    "derivation_authority": false,
+    "effect_authority": false
+  }
+}

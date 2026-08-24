@@ -20,7 +20,7 @@
     "line_break": "LF",
     "ends_with_line_break": true
   },
-  "structural_intent": "ambiguous-relation-claim",
+  "structural_intent": "ambiguous-relational-content",
   "required": [
     "resolution is exact rather than probabilistic",
     "all surviving candidates are reported",

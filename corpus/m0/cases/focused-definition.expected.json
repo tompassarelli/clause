@@ -21,7 +21,7 @@
     "locked is its denotation"
   ],
   "forbidden": [
-    "ordinary-state-claim",
+    "ordinary-relational-content",
     "object-field",
     "membership",
     "equality"

@@ -18,7 +18,7 @@
       "mood": "select",
       "cardinality": "first",
       "selection_order": "canonical",
-      "clauses": [
+      "relational_content": [
         {"kind": "relation-pattern", "relation": "$likes", "roles": {"person": {"kind": "named-hole", "identity": "$hole:person", "result_name": "person"}, "opening": {"kind": "symbol", "name": "Chess"}}}
       ],
       "projection": [{"hole": "$hole:person", "name": "person"}]

@@ -1,7 +1,7 @@
 {
   "schema": "clause-m0-contrast-v1",
-  "id": "law-labelled",
-  "axis": "optional-law-label-definition",
+  "id": "derivation-rule-labelled",
+  "axis": "optional-derivation-rule-label-definition",
   "decision": {
     "status": "accepted-target",
     "canonical": "defined-human-label",
@@ -18,20 +18,20 @@
     "line_break": "LF",
     "ends_with_line_break": true
   },
-  "structural_intent": "labelled-inferred-positive-law",
+  "structural_intent": "labelled-inferred-positive-derivation-rule",
   "required": [
-    "outer := defines the human label for the law",
+    "outer := defines the human label for the derivation rule",
     "the label is separate from stable semantic identity",
-    "labelled and unlabelled forms retain the same semantic law tree"
+    "labelled and unlabelled forms retain the same derivation rule tree"
   ],
   "forbidden": [
-    "Law-kind-keyword",
+    "universal-law-keyword",
     "label-derived-semantic-identity",
-    "second-semantic-law"
+    "second-derivation-rule"
   ],
-  "semantic_law": {
-    "kind": "positive-law",
-    "identity": "$law:egress-direct",
+  "derivation_rule": {
+    "kind": "positive-derivation-rule",
+    "identity": "$rule:egress-direct",
     "conclusion": {
       "kind": "relation-pattern",
       "relation": "$route",
@@ -90,12 +90,12 @@
       },
       "denotation": {
         "kind": "semantic-reference",
-        "identity": "$law:egress-direct"
+        "identity": "$rule:egress-direct"
       }
     },
     {
-      "kind": "law-admission",
-      "law": "$law:egress-direct"
+      "kind": "derivation-rule-admission",
+      "derivation_rule": "$rule:egress-direct"
     }
   ]
 }

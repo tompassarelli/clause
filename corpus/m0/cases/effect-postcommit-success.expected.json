@@ -72,7 +72,7 @@
     "pre-state-render-plan",
     "effect-before-state-commit",
     "receipt-in-StateRevision",
-    "rendered-world-assertion",
+    "fabricated-rendered-world-content",
     "line-order-state-mutation"
   ],
   "elaborated": [

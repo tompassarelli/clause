@@ -17,7 +17,7 @@
       "kind": "query",
       "mood": "select",
       "cardinality": "all",
-      "clauses": [
+      "relational_content": [
         {"kind": "relation-pattern", "relation": "$likes", "roles": {"person": {"kind": "anonymous-hole", "identity": "$anon:1"}, "opening": {"kind": "anonymous-hole", "identity": "$anon:2"}}}
       ],
       "projection": [{"hole": "$anon:1", "name": null}, {"hole": "$anon:2", "name": null}]

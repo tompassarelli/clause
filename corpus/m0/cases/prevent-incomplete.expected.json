@@ -10,13 +10,13 @@
   },
   "context": {
     "current_revision": "$revision:egress",
-    "target": {"handle": "$target:icu-north", "clause": {"relation": "$route", "roles": {"origin": "ICU-A", "destination": "North-Exit"}}},
+    "target": {"handle": "$target:icu-north", "content": {"relation": "$route", "roles": {"origin": "ICU-A", "destination": "North-Exit"}}},
     "finite_basis": {"relation": "$passed", "members": ["$passed:101", "$passed:102", "$passed:103", "$passed:104"]},
     "limits": {"max_candidate_checks": 1, "max_solutions": 100}
   },
   "structural_intent": "incomplete-minimal-withdrawal-query",
-  "required": ["candidate exhaustion is explicit", "retained prefix contains only verified minimal interventions", "empty retained prefix does not claim impossibility"],
-  "forbidden": ["complete-status", "frontier-exhaustion-claim", "retry-as-proof", "silent-truncation"],
+  "required": ["candidate exhaustion is explicit", "retained prefix contains only verified minimal interventions", "empty retained prefix does not certify impossibility"],
+  "forbidden": ["complete-status", "frontier-exhaustion-certification", "retry-as-proof", "silent-truncation"],
   "elaborated": [
     {"kind": "query", "mood": "prevent", "revision": "$revision:egress", "target": "$target:icu-north", "selection": "all-minimal", "using": ["$passed"]}
   ],
@@ -28,6 +28,6 @@
     "reason": "candidate-budget-exhausted",
     "minimality": "individually-certified",
     "retained_prefix": [],
-    "frontier_claim": "not-made"
+    "frontier_certification": "not-made"
   }
 }

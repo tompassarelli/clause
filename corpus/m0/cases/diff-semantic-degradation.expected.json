@@ -10,7 +10,7 @@
   },
   "context": {
     "revision_bindings": {"egress": "$revision:egress", "door-101-withdrawn": "$revision:egress-minus-door-101-passed"},
-    "clauses": {
+    "relational_content": {
       "$connects:101": {"relation": "$connects", "roles": {"door": "Door 101", "origin": "ICU-A", "destination": "East-Corridor"}},
       "$passed:101": {"relation": "$passed", "roles": {"door": "Door 101", "inspection": "Fire-Marshal Inspection"}},
       "$connects:102": {"relation": "$connects", "roles": {"door": "Door 102", "origin": "East-Corridor", "destination": "North-Exit"}},

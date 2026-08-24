@@ -8,7 +8,7 @@
     "line_break": "LF",
     "ends_with_line_break": true
   },
-  "context": {"revisions": {"egress": "$revision:egress"}, "assertion_presence": [{"clause": {"relation": "$passed", "roles": {"door": "Door 105", "inspection": "Fire-Marshal Inspection"}}, "present": false}]},
+  "context": {"revisions": {"egress": "$revision:egress"}, "content_presence": [{"content": {"relation": "$passed", "roles": {"door": "Door 105", "inspection": "Fire-Marshal Inspection"}}, "present": false}]},
   "structural_intent": "exact-successor-revision",
   "equivalence_group": "egress-admit-door-105",
   "surface_binding": {"label": "isolation-route-candidate", "semantic": "$revision:egress-plus-door-105-passed"},
@@ -20,7 +20,7 @@
       "identity": "$revision:egress-plus-door-105-passed",
       "base": "$revision:egress",
       "delta": {
-        "admissions": [{"kind": "relation-claim", "relation": "$passed", "roles": {"door": "Door 105", "inspection": "Fire-Marshal Inspection"}}],
+        "admissions": [{"kind": "relational-content", "relation": "$passed", "roles": {"door": "Door 105", "inspection": "Fire-Marshal Inspection"}}],
         "withdrawals": []
       },
       "atomic": true

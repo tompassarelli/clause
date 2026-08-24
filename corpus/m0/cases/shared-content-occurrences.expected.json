@@ -1,0 +1,55 @@
+{
+  "schema": "clause-m0-contrast-v1",
+  "id": "shared-content-occurrences",
+  "axis": "content-occurrence-provenance",
+  "decision": {
+    "status": "accepted-target",
+    "canonical": "explicit-assertion-occurrences"
+  },
+  "source": {
+    "lines": [
+      "Alice asserts",
+      "  x greater-than y",
+      "",
+      "Bob asserts",
+      "  x greater-than y"
+    ],
+    "line_break": "LF",
+    "ends_with_line_break": true
+  },
+  "structural_intent": "two-occurrences-one-relational-content",
+  "required": [
+    "both assertion occurrences canonicalize to one relational-content identity",
+    "each source act retains a distinct occurrence identity",
+    "source and provenance survive content canonicalization"
+  ],
+  "forbidden": [
+    "occurrence-deduplication",
+    "source-erasure",
+    "occurrence-implies-admission",
+    "content-carries-authority"
+  ],
+  "relational_content": {
+    "identity": "$content:x-greater-than-y",
+    "relation": "$referent:greater-than",
+    "roles": {
+      "greater": "$referent:x",
+      "lesser": "$referent:y"
+    }
+  },
+  "assertion_occurrences": [
+    {
+      "identity": "$occurrence:alice/1",
+      "content": "$content:x-greater-than-y",
+      "source": "$referent:Alice",
+      "provenance": "$source-span:1-2"
+    },
+    {
+      "identity": "$occurrence:bob/1",
+      "content": "$content:x-greater-than-y",
+      "source": "$referent:Bob",
+      "provenance": "$source-span:4-5"
+    }
+  ],
+  "judgments": []
+}

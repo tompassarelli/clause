@@ -9,13 +9,13 @@
     "ends_with_line_break": true
   },
   "context": {"relations": ["$moves-to", "$position", "$velocity"], "functions": ["$add"]},
-  "structural_intent": "relation-claim-with-recursive-role",
+  "structural_intent": "relational-content-with-recursive-role",
   "required": ["destination is one recursive term", "parentheses survive term rendering", "nested projections retain relation identities"],
   "forbidden": ["flat-token-template", "field-access", "implicit-temporary-object"],
   "canonical_term": "(position of player + velocity of player)",
   "elaborated": [
     {
-      "kind": "relation-claim",
+      "kind": "relational-content",
       "relation": "$moves-to",
       "roles": {
         "mover": {"kind": "symbol", "name": "player"},

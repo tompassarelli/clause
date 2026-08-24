@@ -1,4 +1,4 @@
-clause connects
+form connects
   door := iron-door
   origin := Cellar
   destination := Armory

@@ -1,0 +1,53 @@
+{
+  "schema": "clause-m0-contrast-v1",
+  "id": "derivation-invariant-distinct",
+  "axis": "derivation-versus-admission",
+  "decision": {
+    "status": "accepted-target",
+    "canonical": "explicit-derivation-and-invariant-modes"
+  },
+  "source": {
+    "lines": [
+      "?x reachable ?z if",
+      "  ?x reachable ?y",
+      "  ?y reachable ?z",
+      "",
+      "invariant no self route",
+      "  no ?x reachable ?x"
+    ],
+    "line_break": "LF",
+    "ends_with_line_break": true
+  },
+  "context": {
+    "candidate_revision": "$revision:candidate-cycle",
+    "admitted_content": [
+      "$content:a-reachable-b",
+      "$content:b-reachable-a"
+    ]
+  },
+  "structural_intent": "preserve-distinct-rule-and-invariant-authority",
+  "required": [
+    "the derivation rule produces supported self-reachability content",
+    "the invariant independently rejects the violating candidate Revision",
+    "derivation and admission use distinct checked modes"
+  ],
+  "forbidden": [
+    "universal-law-is-derivation-rule",
+    "rule-is-invariant",
+    "derivation-implies-admission",
+    "invariant-derives-head"
+  ],
+  "derivation_rule": {
+    "identity": "$rule:reachable-transitive",
+    "result": "$content:a-reachable-a",
+    "support": [
+      "$content:a-reachable-b",
+      "$content:b-reachable-a"
+    ]
+  },
+  "invariant": {
+    "identity": "$invariant:no-self-route",
+    "violating_content": "$content:a-reachable-a",
+    "admission": "rejected"
+  }
+}

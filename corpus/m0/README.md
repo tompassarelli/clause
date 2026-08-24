@@ -1,12 +1,13 @@
 # Clause M0 contrast corpus
 
 This corpus freezes Clause's single semantic domain of addressable referents,
-relational claims, and laws. It preserves term versus referent, claim versus
-acceptance/status/authority, and identity versus structural equality.
+relational content, assertion occurrences, universal laws, and derivation
+rules. It preserves term versus referent, content versus occurrence versus
+judgment, and identity versus structural equality.
 
 This directory is evidence for the [M0 contract](../../M0.md). It deliberately
 contains accepted target forms, rejected boundary cases, unresolved candidates,
-and current-profile migration evidence. Target acceptance does not claim that
+and current-profile migration evidence. Target acceptance does not assert that
 the current parser implements the form.
 
 Every case consists of `cases/ID.clause` and
@@ -32,7 +33,7 @@ Handles beginning with `$` are corpus symbols, not Store identities.
 
 | Case | Purpose |
 | --- | --- |
-| `focus-relation-two` | canonical focus combining a membership claim, an ordinary claim, and a focused definition |
+| `focus-relation-two` | canonical focus combining membership content, ordinary relational content, and a focused definition |
 | `focus-relation-four` | rejected noncanonical four-space projection |
 | `expanded-colon-classification` | canonical `:` classification with the same named-role graph |
 | `expanded-member-of` | rejected worded membership candidate retained with its verdict |
@@ -43,11 +44,11 @@ Handles beginning with `$` are corpus symbols, not Store identities.
 | `indentation-tab` | tab indentation is diagnosed, never normalized |
 | `classification-shape` | homogeneous classifications support a derived shape view without primitive records |
 | `classification-colon` | `thing : Space` elaborates to ordinary membership |
-| `focused-definition` | `state := locked` defines the stable focused term, never a field or claim |
+| `focused-definition` | `state := locked` defines the stable focused term, never a field or relational content item |
 | `relation-schema-connects` | compact three-role schema and operational projection candidate |
 | `functional-contract-position` | focused binary relation contract, never a field |
-| `claim-focused-connects` | focus supplies the declared `door` role |
-| `claim-expanded-connects` | expanded claim has the same role graph |
+| `relational-content-focused-connects` | focus supplies the declared `door` role |
+| `relational-content-expanded-connects` | expanded relational content has the same role graph |
 | `structural-connects` | explicit role-labelled escape candidate round-trips |
 | `ambiguous-connects` | overlapping exact shapes name both candidates and role conflict |
 | `missing-focus-connects` | root fragment diagnoses the absent focus role |
@@ -63,12 +64,12 @@ Handles beginning with `$` are corpus symbols, not Store identities.
 | `query-named-hole` | named hole becomes a named result column |
 | `query-named-pair` | two named holes produce two-column rows |
 | `query-anonymous-fresh` | each anonymous hole is fresh |
-| `select-correlated` | repeated internal hole correlates clauses but is not projected |
+| `select-correlated` | repeated internal hole correlates relational content but is not projected |
 | `any-exists` | existential query returns Bool, never a random witness |
 | `select-one` | exact-one cardinality contract |
 | `select-first` | canonical-first selection is deterministic |
-| `law-inferred` | conclusion plus `if` body infers a positive law |
-| `law-labelled` | optional `:=` label definition leaves semantic law identity intact |
+| `derivation-rule-inferred` | conclusion plus `if` body proves an oriented derivation rule |
+| `derivation-rule-labelled` | optional `:=` label definition leaves derivation-rule identity intact |
 | `revision-withdrawal` | exact-base successor with one signed withdrawal |
 | `revision-withdrawal-renamed` | human rename leaves semantic Revision unchanged |
 | `revision-withdrawal-legacy` | current profile preserves withdrawal semantics for migration |
@@ -76,9 +77,9 @@ Handles beginning with `$` are corpus symbols, not Store identities.
 | `revision-addition-legacy` | current profile preserves admission semantics for migration |
 | `revision-mixed-delta` | admission and withdrawal commit as one atomic successor |
 | `revision-unknown-base` | unresolved base prevents elaboration |
-| `revision-withdraw-missing` | withdrawal must name an assertion in the exact base |
+| `revision-withdraw-missing` | withdrawal must name admitted relational content in the exact base |
 | `revision-admit-existing` | admission must be absent from the exact base |
-| `revision-overlap` | one clause cannot be both admitted and withdrawn |
+| `revision-overlap` | one relational content item cannot be both admitted and withdrawn |
 | `diff-revisions` | diff preserves exact base-to-successor direction |
 | `why-explanation` | explanation retains two complete minimal supports and proofs |
 | `why-explanation-legacy` | current profile preserves explanation semantics for migration |
@@ -86,10 +87,10 @@ Handles beginning with `$` are corpus symbols, not Store identities.
 | `prevent-all-minimal-legacy` | current profile preserves prevention semantics for migration |
 | `achieve-all-minimal` | two complete typed singleton additions |
 | `achieve-all-minimal-legacy` | current profile preserves achievement semantics for migration |
-| `prevent-incomplete` | candidate exhaustion cannot claim a complete prevention frontier |
+| `prevent-incomplete` | candidate exhaustion cannot certify a complete prevention frontier |
 | `achieve-incomplete` | retained additions remain certified under incomplete search |
 | `diff-semantic-degradation` | authored, entailed, proof, and support changes remain distinct |
-| `transition-functional-position` | complete-clause position succession uses a proved functional key |
+| `transition-functional-position` | complete-relational-content position succession uses a proved functional key |
 | `transition-functional-state` | status replacement preserves one stable handle and complete old/new bindings |
 | `transition-admit-keypress` | key press emits one exact multi-valued admission |
 | `transition-withdraw-keyrelease` | key release emits one exact multi-valued withdrawal |
@@ -109,7 +110,17 @@ Handles beginning with `$` are corpus symbols, not Store identities.
 | `hospital-current-full` | current executable hospital profile retained as migration/parity evidence |
 | `hospital-reset-full` | distinction-surface hospital projection with the same six query results |
 | `hospital-reset-canonical-full` | canonical reset rendering preserves the same result oracle |
-| `one-coin-m0` | complete target specimen for referents, claims, laws, transitions, and effects |
+| `absence-undetermined` | empty existence result leaves content undetermined under open-world semantics |
+| `definition-not-transition` | `:=` denotes without mutation, Delta, or successor Revision |
+| `derivation-invariant-distinct` | oriented derivation and Revision admission remain separate modes |
+| `goal-not-current` | desired content grants no current-truth, derivation, or effect authority |
+| `referent-declaration` | declaration establishes one referent without implicit roles or constraints |
+| `referent-rename` | preferred-term change preserves referent and content identities |
+| `relation-described` | a relation referent participates in content without executing itself |
+| `shared-content-occurrences` | two assertion occurrences share content while retaining provenance |
+| `structural-equality-distinct` | equal known structure does not merge referent identity |
+| `unresolved-use` | ordinary use resolves an existing referent and never declares a typo |
+| `one-coin-m0` | complete target specimen for referents, relational content, derivation rules, transitions, and effects |
 
 Do not “bless” these files from parser output. A later fixture checker may
 compare exact projections and print diffs, but reviewed corpus remains the
