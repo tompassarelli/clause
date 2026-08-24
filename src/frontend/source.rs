@@ -139,6 +139,12 @@ pub(super) fn semantic_name(
     offset: usize,
     text: &str,
 ) -> Result<Spanned<Name>, ParseError> {
+    if text.contains(['[', ']']) {
+        return Err(error(
+            child_span(line, offset, text.len()),
+            "bracketed concrete referents are retired; brackets are reserved for ranges and templates",
+        ));
+    }
     if text.is_empty()
         || text.trim() != text
         || text.chars().any(char::is_control)

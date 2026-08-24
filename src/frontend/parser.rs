@@ -779,6 +779,20 @@ diff impact -> impact/adopt
     }
 
     #[test]
+    fn rejects_bracketed_concrete_memberships_at_every_scope() {
+        for source in [
+            "Item\n[Item 1] ∈ Item\n",
+            "Item\n\npairing\n  [Item 1] ∈ Item\n",
+        ] {
+            let error = parse(source).unwrap_err().to_string();
+            assert!(
+                error.contains("bracketed concrete referents are retired"),
+                "{error}"
+            );
+        }
+    }
+
+    #[test]
     fn keeps_when_and_intervention_selection() {
         let program = parse(SOURCE).expect("native source parses");
         let law = program
