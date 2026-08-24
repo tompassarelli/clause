@@ -38,7 +38,19 @@ fn is_direct_focus(
 }
 
 pub fn parse(source: &str) -> Result<Program, ParseError> {
-    let (raw_declarations, mut raw_top_level, raw_requests) = scan(source)?;
+    let (mut raw_declarations, mut raw_top_level, raw_requests) = scan(source)?;
+    for declaration in &mut raw_declarations {
+        if declaration.bare_block && content(declaration.header).ends_with(':') {
+            if !compact_relation_candidate(declaration) {
+                return Err(error(
+                    line_span(declaration.header),
+                    "':' only establishes a binding; this block is not a compact relation schema",
+                ));
+            }
+            declaration.kind = Kind::RelationShape;
+            declaration.bare_block = false;
+        }
+    }
     let provisional_grounded = raw_declarations
         .iter()
         .filter(|declaration| declaration.kind == Kind::Grounding || declaration.bare_block)
@@ -767,6 +779,63 @@ diff impact -> impact/adopt
                     .iter()
                     .all(|member| matches!(member, Member::Membership(_))))
         );
+    }
+
+    #[test]
+    fn compact_relation_block_matches_the_ceremonial_relation_ast() {
+        let compact = parse(
+            "Door\nSpace\n\nconnects:\n  door: Door connects origin: Space to destination: Space\n  door origin -> destination*\n",
+        )
+        .expect("compact relation schema parses");
+        let ceremonial = parse(
+            "Door\nSpace\n\nconnects: RelationShape\n  {door: Door} connects {origin: Space} to {destination: Space}\n  mode door, origin -> destination: many\n",
+        )
+        .expect("ceremonial relation schema parses");
+
+        let contract = |program: &Program| {
+            let relation = program
+                .declarations
+                .iter()
+                .find(|declaration| declaration.subject.value.as_str() == "connects")
+                .expect("connects relation exists");
+            assert_eq!(relation.kind, Kind::RelationShape);
+            let Member::Sentence(sentence) = &relation.body[0] else {
+                panic!("relation starts with a sentence shape");
+            };
+            let parts = sentence
+                .parts
+                .iter()
+                .map(|part| match part {
+                    ShapePartDecl::Role { id, domain } => {
+                        format!("{}:{}", id.value.as_str(), domain.value.as_str())
+                    }
+                    ShapePartDecl::Literal(value) => format!("={}", value.value),
+                })
+                .collect::<Vec<_>>();
+            let Member::LookupMode(mode) = &relation.body[1] else {
+                panic!("relation ends with a lookup mode");
+            };
+            (
+                parts,
+                mode.known
+                    .iter()
+                    .map(|role| role.value.as_str().to_owned())
+                    .collect::<Vec<_>>(),
+                mode.sought
+                    .iter()
+                    .map(|role| role.value.as_str().to_owned())
+                    .collect::<Vec<_>>(),
+                mode.cardinality,
+            )
+        };
+
+        assert_eq!(contract(&compact), contract(&ceremonial));
+    }
+
+    #[test]
+    fn rejects_colon_used_only_as_block_punctuation() {
+        let error = parse("Game:\n  Chess\n  Soccer\n").unwrap_err().to_string();
+        assert!(error.contains("':' only establishes a binding"), "{error}");
     }
 
     #[test]

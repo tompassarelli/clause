@@ -371,6 +371,14 @@ fn parse_declaration<'a>(
                 return Err(error(line_span(line), "unknown declaration kind"));
             };
             (qname(line, 0, subject)?, declaration_kind, false)
+        } else if let Some(subject) = text.strip_suffix(':') {
+            if nonblank(body.iter().copied()).is_empty() {
+                return Err(error(
+                    line_span(line),
+                    "binding block requires an indented body",
+                ));
+            }
+            (semantic_name(line, 0, subject)?, Kind::Model, true)
         } else {
             let subject = semantic_name(line, 0, text)?;
             if nonblank(body.iter().copied()).is_empty() {

@@ -101,6 +101,98 @@ fn parse_shape(line: SourceLine<'_>) -> Result<SentenceShapeDecl, ParseError> {
     })
 }
 
+fn parse_compact_shape(line: SourceLine<'_>) -> Result<SentenceShapeDecl, ParseError> {
+    let text = content(line);
+    let base = indent(line)?;
+    let mut offset = base;
+    let tokens = text
+        .split(' ')
+        .map(|token| {
+            let current = offset;
+            offset += token.len() + 1;
+            (token, current)
+        })
+        .collect::<Vec<_>>();
+    if tokens.iter().any(|(token, _)| token.is_empty()) {
+        return Err(error(
+            line_span(line),
+            "compact relation roles require single spaces",
+        ));
+    }
+    let markers = tokens
+        .iter()
+        .enumerate()
+        .filter_map(|(index, (token, _))| token.ends_with(':').then_some(index))
+        .collect::<Vec<_>>();
+    if markers.len() < 2 || markers.first() != Some(&0) {
+        return Err(error(
+            line_span(line),
+            "compact relation phrase must begin with a role and contain at least two roles",
+        ));
+    }
+
+    let mut parts = Vec::new();
+    let mut roles = BTreeSet::new();
+    for (ordinal, marker) in markers.iter().copied().enumerate() {
+        let (role_token, role_offset) = tokens[marker];
+        let role_text = role_token
+            .strip_suffix(':')
+            .expect("role marker ends with ':'");
+        let domain_index = marker + 1;
+        let Some((domain_text, domain_offset)) = tokens.get(domain_index).copied() else {
+            return Err(error(
+                line_span(line),
+                "compact relation role needs a domain",
+            ));
+        };
+        if domain_text.ends_with(':') {
+            return Err(error(
+                child_span(line, domain_offset, domain_text.len()),
+                "compact relation role needs a domain before the next role",
+            ));
+        }
+        let role = role_name(line, role_offset, role_text)?;
+        if !roles.insert(role.value.clone()) {
+            return Err(error(
+                role.span,
+                format!("duplicate inline role '{}'", role.value.as_str()),
+            ));
+        }
+        parts.push(ShapePartDecl::Role {
+            id: role,
+            domain: domain_name(line, domain_offset, domain_text)?,
+        });
+
+        if let Some(next_marker) = markers.get(ordinal + 1).copied() {
+            let literal_tokens = &tokens[domain_index + 1..next_marker];
+            if literal_tokens.is_empty() {
+                return Err(error(
+                    line_span(line),
+                    "roles require a nonempty literal between them",
+                ));
+            }
+            let literal = literal_tokens
+                .iter()
+                .map(|(token, _)| *token)
+                .collect::<Vec<_>>()
+                .join(" ");
+            parts.push(ShapePartDecl::Literal(Spanned {
+                value: literal.clone(),
+                span: child_span(line, literal_tokens[0].1, literal.len()),
+            }));
+        } else if domain_index + 1 != tokens.len() {
+            return Err(error(
+                line_span(line),
+                "compact relation phrase must end with a role domain",
+            ));
+        }
+    }
+    Ok(SentenceShapeDecl {
+        parts,
+        span: line_span(line),
+    })
+}
+
 fn parse_role_list(
     line: SourceLine<'_>,
     offset: usize,
@@ -135,6 +227,57 @@ fn parse_role_list(
     Ok(roles)
 }
 
+fn parse_compact_role_list(
+    line: SourceLine<'_>,
+    offset: usize,
+    text: &str,
+) -> Result<Vec<Spanned<RoleName>>, ParseError> {
+    if text.is_empty() || text.split(' ').any(str::is_empty) {
+        return Err(error(
+            child_span(line, offset, text.len()),
+            "compact projection roles require single spaces",
+        ));
+    }
+    let mut position = 0;
+    let mut seen = BTreeSet::new();
+    text.split(' ')
+        .map(|item| {
+            let role = role_name(line, offset + position, item)?;
+            position += item.len() + 1;
+            if !seen.insert(role.value.clone()) {
+                return Err(error(
+                    role.span,
+                    format!("duplicate mode role '{}'", role.value.as_str()),
+                ));
+            }
+            Ok(role)
+        })
+        .collect()
+}
+
+fn validate_mode_roles(
+    known: &[Spanned<RoleName>],
+    sought: &[Spanned<RoleName>],
+    roles: &BTreeMap<RoleName, DomainName>,
+) -> Result<(), ParseError> {
+    let mut every = BTreeSet::new();
+    for role in known.iter().chain(sought) {
+        if !roles.contains_key(&role.value) {
+            return Err(error(
+                role.span,
+                format!("unknown mode role '{}'", role.value.as_str()),
+            ));
+        }
+        if !every.insert(role.value.clone()) {
+            return Err(error(
+                role.span,
+                format!("role '{}' is both known and sought", role.value.as_str()),
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn parse_mode(
     line: SourceLine<'_>,
     roles: &BTreeMap<RoleName, DomainName>,
@@ -154,21 +297,7 @@ fn parse_mode(
         .ok_or_else(|| error(line_span(line), "expected 'known -> sought' mode"))?;
     let known = parse_role_list(line, 2 + "mode ".len(), known)?;
     let sought = parse_role_list(line, 2 + "mode ".len() + known_text_width(&known), sought)?;
-    let mut every = BTreeSet::new();
-    for role in known.iter().chain(&sought) {
-        if !roles.contains_key(&role.value) {
-            return Err(error(
-                role.span,
-                format!("unknown mode role '{}'", role.value.as_str()),
-            ));
-        }
-        if !every.insert(role.value.clone()) {
-            return Err(error(
-                role.span,
-                format!("role '{}' is both known and sought", role.value.as_str()),
-            ));
-        }
-    }
+    validate_mode_roles(&known, &sought, roles)?;
     let cardinality = match cardinality {
         "one" => Cardinality::One,
         "maybe" => Cardinality::Maybe,
@@ -181,6 +310,35 @@ fn parse_mode(
             ));
         }
     };
+    Ok(ModeDecl {
+        known,
+        sought,
+        cardinality,
+        span: line_span(line),
+    })
+}
+
+fn parse_compact_mode(
+    line: SourceLine<'_>,
+    roles: &BTreeMap<RoleName, DomainName>,
+) -> Result<ModeDecl, ParseError> {
+    let text = content(line);
+    let (known_text, sought_with_cardinality) = text
+        .split_once(" -> ")
+        .ok_or_else(|| error(line_span(line), "expected 'known -> sought' projection"))?;
+    let (sought_text, cardinality) = if let Some(sought) = sought_with_cardinality.strip_suffix('*')
+    {
+        (sought, Cardinality::Many)
+    } else if let Some(sought) = sought_with_cardinality.strip_suffix('+') {
+        (sought, Cardinality::Some)
+    } else {
+        (sought_with_cardinality, Cardinality::One)
+    };
+    let base = indent(line)?;
+    let known = parse_compact_role_list(line, base, known_text)?;
+    let sought =
+        parse_compact_role_list(line, base + known_text.len() + " -> ".len(), sought_text)?;
+    validate_mode_roles(&known, &sought, roles)?;
     Ok(ModeDecl {
         known,
         sought,
@@ -207,7 +365,12 @@ pub(super) fn relation_spec(raw: &RawDecl<'_>) -> Result<RelationSpec, ParseErro
             "RelationShape requires two-space sentence and mode members",
         ));
     }
-    let shape = parse_shape(entries[0])?;
+    let compact = content(raw.header).ends_with(':');
+    let shape = if compact {
+        parse_compact_shape(entries[0])?
+    } else {
+        parse_shape(entries[0])?
+    };
     let mut roles = BTreeMap::new();
     for part in &shape.parts {
         if let ShapePartDecl::Role { id, domain } = part {
@@ -217,7 +380,13 @@ pub(super) fn relation_spec(raw: &RawDecl<'_>) -> Result<RelationSpec, ParseErro
     let modes = entries[1..]
         .iter()
         .copied()
-        .map(|line| parse_mode(line, &roles))
+        .map(|line| {
+            if compact {
+                parse_compact_mode(line, &roles)
+            } else {
+                parse_mode(line, &roles)
+            }
+        })
         .collect::<Result<Vec<_>, _>>()?;
     if modes.is_empty() {
         return Err(error(
@@ -230,4 +399,12 @@ pub(super) fn relation_spec(raw: &RawDecl<'_>) -> Result<RelationSpec, ParseErro
         modes,
         roles,
     })
+}
+
+pub(super) fn compact_relation_candidate(raw: &RawDecl<'_>) -> bool {
+    let entries = nonblank(raw.body.iter().copied());
+    content(raw.header).ends_with(':')
+        && entries.len() == 2
+        && content(entries[0]).matches(": ").count() >= 2
+        && content(entries[1]).contains(" -> ")
 }
