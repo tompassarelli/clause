@@ -478,7 +478,10 @@ pub(super) fn compact_relation_candidate(raw: &RawDecl<'_>) -> bool {
     }
 
     let shape_tokens = content(*shape).split(' ').collect::<Vec<_>>();
-    if shape_tokens.iter().any(|token| token.is_empty()) {
+    if shape_tokens
+        .iter()
+        .any(|token| token.is_empty() || token.contains(','))
+    {
         return false;
     }
     let markers = shape_tokens

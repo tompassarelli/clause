@@ -199,8 +199,9 @@ Public Clause currently implements:
 - canonical semantic-v6 / Revision-v4 persistence with exact predecessor
   lineage and complete successor Deltas;
 - the compact M1 grounding, binding, membership, enumeration, and focus
-  surface, alongside retained `RelationShape`, `DerivationRule`, `Revision`,
-  `mode`, and explicit request ceremony awaiting later milestones;
+  surface plus M2 exact role-labelled relation schemas and projection contracts,
+  alongside retained `RelationShape`, `DerivationRule`, `Revision`, `mode`, and
+  explicit request ceremony as migration forms awaiting later milestones;
 - admitted relational content and bounded positive recursive derivation rules;
 - immutable Revisions and exact successor Deltas;
 - recursive closure queries and bounded complete support enumeration;

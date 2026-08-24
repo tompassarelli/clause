@@ -933,6 +933,7 @@ diff impact -> impact/adopt
     fn compact_schema_candidates_require_exact_role_tokens() {
         for source in [
             "Item\n\nsettings\n  left: Item, right: Item\n  left -> right\n",
+            "Item\n\nsettings\n  left: Item , right: Item\n  left -> right\n",
             "Item\n\nsettings\n  left: Item pairs right: Item\n  left, -> right\n",
         ] {
             let (declarations, _, _) = scan(source).expect("candidate source scans");
@@ -941,6 +942,7 @@ diff impact -> impact/adopt
                 .find(|declaration| declaration.subject.value.as_str() == "settings")
                 .expect("settings block exists");
             assert!(!compact_relation_candidate(settings));
+            assert!(parse(source).is_err());
         }
     }
 
