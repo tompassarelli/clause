@@ -63,7 +63,7 @@ impl CompileDiagnostic {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CompileError {
     kernel: kernel::KernelError,
-    diagnostic: Option<CompileDiagnostic>,
+    diagnostic: Option<Box<CompileDiagnostic>>,
 }
 
 impl CompileError {
@@ -73,10 +73,8 @@ impl CompileError {
         designations: &DesignationTable,
     ) -> Self {
         let diagnostic = kernel.structural_failure().and_then(|failure| {
-            proposal_spans
-                .get(failure.path())
-                .copied()
-                .map(|span| CompileDiagnostic {
+            proposal_spans.get(failure.path()).copied().map(|span| {
+                Box::new(CompileDiagnostic {
                     rank: 1,
                     status: CompileDiagnosticStatus::RejectedProposal,
                     class: failure.class(),
@@ -84,12 +82,13 @@ impl CompileError {
                     presentation: designations.proposal_path_presentation(failure.path()),
                     span,
                 })
+            })
         });
         Self { kernel, diagnostic }
     }
 
     pub fn diagnostic(&self) -> Option<&CompileDiagnostic> {
-        self.diagnostic.as_ref()
+        self.diagnostic.as_deref()
     }
 
     pub fn kernel_error(&self) -> &kernel::KernelError {

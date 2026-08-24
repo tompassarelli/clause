@@ -738,6 +738,7 @@ fn require_structural_form(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn validate_term_against(
     contracts: &BTreeMap<ReferentId, StructuralContract>,
     definitions: &[Definition],
@@ -879,6 +880,7 @@ fn validate_term_against(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn validate_inline_product(
     contracts: &BTreeMap<ReferentId, StructuralContract>,
     definitions: &[Definition],
