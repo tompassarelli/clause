@@ -6,6 +6,8 @@ pub mod frontend;
 pub mod generated;
 pub mod intervention;
 pub mod kernel;
+pub mod m0_stage_a;
+pub mod m0_stage_b;
 pub mod request;
 pub mod semantic_diff;
 pub mod wire;
