@@ -349,7 +349,7 @@ fn term_domains(
             template.span,
             "correlated referent templates are only valid inside a focus block",
         )),
-        SurfaceTerm::Referent(referent) => {
+        SurfaceTerm::Referent(referent) | SurfaceTerm::Local(referent) => {
             if !referent.value.0.contains('/') {
                 if let Some(domains) = current_memberships.explicit.get(&referent.value) {
                     return Ok(Some(domains.clone()));
@@ -531,7 +531,7 @@ fn token_span(tokens: &[Token]) -> Span {
 
 fn term_is_ground(term: &SurfaceTerm) -> bool {
     match term {
-        SurfaceTerm::Referent(_) | SurfaceTerm::String(_) => true,
+        SurfaceTerm::Referent(_) | SurfaceTerm::Local(_) | SurfaceTerm::String(_) => true,
         SurfaceTerm::Application(application) => application.roles.values().all(term_is_ground),
         SurfaceTerm::Template(_) | SurfaceTerm::Variable(_) => false,
     }
@@ -540,6 +540,7 @@ fn term_is_ground(term: &SurfaceTerm) -> bool {
 fn term_key(term: &SurfaceTerm) -> String {
     match term {
         SurfaceTerm::Referent(value) => format!("R:{}", value.value.0),
+        SurfaceTerm::Local(value) => format!("L:{}", value.value.0),
         SurfaceTerm::Template(value) => format!(
             "T:{}{{{}}}{}",
             value.prefix.value, value.variable.value.0, value.suffix.value
@@ -950,6 +951,118 @@ fn term_candidates(
     candidates
 }
 
+pub(super) fn closed_term_with_catalog(
+    line: SourceLine<'_>,
+    current_memberships: &MembershipCatalog,
+    relations: &BTreeMap<Name, RelationSpec>,
+    memberships: &BTreeMap<Name, MembershipCatalog>,
+) -> Result<(SurfaceTerm, DomainName), ParseError> {
+    let tokens = recursive_clause_tokens(line)?;
+    closed_term_candidates(
+        tokens,
+        line_span(line),
+        current_memberships,
+        relations,
+        memberships,
+    )
+}
+
+pub(super) fn closed_term_text_with_catalog(
+    line: SourceLine<'_>,
+    offset: usize,
+    text: &str,
+    current_memberships: &MembershipCatalog,
+    relations: &BTreeMap<Name, RelationSpec>,
+    memberships: &BTreeMap<Name, MembershipCatalog>,
+) -> Result<(SurfaceTerm, DomainName), ParseError> {
+    let synthetic = SourceLine {
+        number: line.number,
+        text,
+    };
+    let mut tokens = recursive_clause_tokens(synthetic)?;
+    for token in &mut tokens {
+        token.span.column += offset;
+    }
+    closed_term_candidates(
+        tokens,
+        child_span(line, offset, text.len()),
+        current_memberships,
+        relations,
+        memberships,
+    )
+}
+
+fn closed_term_candidates(
+    tokens: Vec<Token>,
+    span: Span,
+    current_memberships: &MembershipCatalog,
+    relations: &BTreeMap<Name, RelationSpec>,
+    memberships: &BTreeMap<Name, MembershipCatalog>,
+) -> Result<(SurfaceTerm, DomainName), ParseError> {
+    reject_bracketed_clause_terms(&tokens)?;
+    let domains = current_memberships
+        .explicit
+        .values()
+        .flatten()
+        .chain(
+            relations
+                .values()
+                .flat_map(|relation| relation.roles.values()),
+        )
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    let mut chart = TermChart::new();
+    let mut candidates = Vec::new();
+    for domain in domains {
+        for term in term_candidates(
+            &tokens,
+            &domain,
+            current_memberships,
+            memberships,
+            relations,
+            0,
+            &mut chart,
+        ) {
+            if term_is_ground(&term)
+                && !candidates.iter().any(|(other_domain, other_term)| {
+                    other_domain == &domain && term_key(other_term) == term_key(&term)
+                })
+            {
+                candidates.push((domain.clone(), term));
+            }
+        }
+    }
+    match candidates.as_slice() {
+        [(domain, term)] => Ok((term.clone(), domain.clone())),
+        [] => Err(error(
+            span,
+            "no declared recursive term accepts this definition expression",
+        )),
+        _ => Err(error(
+            span,
+            "ambiguous definition expression; expected one recursive term",
+        )),
+    }
+}
+
+pub(super) fn bind_local_references(term: &mut SurfaceTerm, locals: &BTreeSet<Name>) {
+    match term {
+        SurfaceTerm::Referent(value) if locals.contains(&value.value) => {
+            *term = SurfaceTerm::Local(value.clone());
+        }
+        SurfaceTerm::Application(application) => {
+            for nested in application.roles.values_mut() {
+                bind_local_references(nested, locals);
+            }
+        }
+        SurfaceTerm::Referent(_)
+        | SurfaceTerm::Local(_)
+        | SurfaceTerm::Template(_)
+        | SurfaceTerm::Variable(_)
+        | SurfaceTerm::String(_) => {}
+    }
+}
+
 fn reject_bracketed_clause_terms(tokens: &[Token]) -> Result<(), ParseError> {
     if let Some(token) = tokens.iter().find(|token| token.bracketed) {
         return Err(error(
@@ -1184,7 +1297,10 @@ pub(super) fn variables(clause: &SurfaceClause) -> BTreeSet<VariableName> {
                     collect(term, variables);
                 }
             }
-            SurfaceTerm::Referent(_) | SurfaceTerm::Template(_) | SurfaceTerm::String(_) => {}
+            SurfaceTerm::Referent(_)
+            | SurfaceTerm::Local(_)
+            | SurfaceTerm::Template(_)
+            | SurfaceTerm::String(_) => {}
         }
     }
 

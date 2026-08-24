@@ -1095,7 +1095,10 @@ fn member_literal_referents(
                     collect(term, projection, literals)?;
                 }
             }
-            SurfaceTerm::Referent(_) | SurfaceTerm::Template(_) | SurfaceTerm::Variable(_) => {}
+            SurfaceTerm::Referent(_)
+            | SurfaceTerm::Local(_)
+            | SurfaceTerm::Template(_)
+            | SurfaceTerm::Variable(_) => {}
         }
         Ok(())
     }
@@ -1172,7 +1175,10 @@ fn declare_term_literal(term: &SurfaceTerm, table: &mut DesignationTable) {
                 declare_term_literal(term, table);
             }
         }
-        SurfaceTerm::Referent(_) | SurfaceTerm::Template(_) | SurfaceTerm::Variable(_) => {}
+        SurfaceTerm::Referent(_)
+        | SurfaceTerm::Local(_)
+        | SurfaceTerm::Template(_)
+        | SurfaceTerm::Variable(_) => {}
     }
 }
 

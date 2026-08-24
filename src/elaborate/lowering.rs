@@ -256,6 +256,9 @@ fn lower_term(
             require_term_referent(model, &referent, "referent")?;
             Ok(Term::referent(referent))
         }
+        SurfaceTerm::Local(_) => Err(kernel::KernelError::new(
+            "pure definition locals require definition lowering",
+        )),
         SurfaceTerm::Application(application) => {
             let relation_id = projection
                 .designations

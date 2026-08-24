@@ -1,4 +1,7 @@
-use super::clause::{focus_term, lex_clause, relation_line_matches};
+use super::clause::{
+    bind_local_references, closed_term_text_with_catalog, closed_term_with_catalog, focus_term,
+    lex_clause, relation_line_matches,
+};
 use super::relation::RelationSpec;
 use super::source::*;
 use super::syntax::{DefinitionDecl, MembershipDecl};
@@ -9,6 +12,85 @@ use std::collections::{BTreeMap, BTreeSet};
 pub(super) struct MembershipCatalog {
     pub(super) explicit: BTreeMap<Name, BTreeSet<DomainName>>,
     pub(super) ranges: Vec<MembershipRangeDecl>,
+}
+
+pub(super) fn pure_definition_block(
+    raw: &RawDecl<'_>,
+    current_memberships: &MembershipCatalog,
+    relations: &BTreeMap<Name, RelationSpec>,
+    memberships: &BTreeMap<Name, MembershipCatalog>,
+) -> Result<PureDefinitionDecl, ParseError> {
+    let entries = nonblank(raw.body.iter().copied());
+    if entries.len() < 2 || entries.iter().any(|line| indent(*line) != Ok(2)) {
+        return Err(error(
+            line_span(raw.header),
+            "':' only establishes a binding; it cannot introduce a block",
+        ));
+    }
+
+    let mut catalog = current_memberships.clone();
+    let mut local_names = BTreeSet::new();
+    let mut locals = Vec::new();
+    for line in &entries[..entries.len() - 1] {
+        let text = content(*line);
+        let Some((name, expression)) = text.split_once(": ") else {
+            return Err(error(
+                line_span(raw.header),
+                "':' only establishes a binding; it cannot introduce a block",
+            ));
+        };
+        if name.contains(':') || expression.contains(':') {
+            return Err(error(
+                line_span(raw.header),
+                "':' only establishes a binding; it cannot introduce a block",
+            ));
+        }
+        let base = indent(*line)?;
+        let name = semantic_name(*line, base, name)?;
+        if name.value == raw.subject.value
+            || catalog.explicit.contains_key(&name.value)
+            || !local_names.insert(name.value.clone())
+        {
+            return Err(error(
+                name.span,
+                "pure definition local bindings must be unique and cannot shadow",
+            ));
+        }
+        let expression_offset = base + name.value.as_str().len() + 2;
+        let (mut denotation, domain) = closed_term_text_with_catalog(
+            *line,
+            expression_offset,
+            expression,
+            &catalog,
+            relations,
+            memberships,
+        )?;
+        bind_local_references(&mut denotation, &local_names);
+        catalog
+            .explicit
+            .insert(name.value.clone(), BTreeSet::from([domain]));
+        locals.push(LocalDefinitionDecl {
+            name,
+            denotation,
+            span: line_span(*line),
+        });
+    }
+
+    let result_line = entries[entries.len() - 1];
+    if content(result_line).contains(": ") {
+        return Err(error(
+            line_span(raw.header),
+            "pure definition block requires one final result term",
+        ));
+    }
+    let (mut result, _) = closed_term_with_catalog(result_line, &catalog, relations, memberships)?;
+    bind_local_references(&mut result, &local_names);
+    Ok(PureDefinitionDecl {
+        name: raw.subject.clone(),
+        locals,
+        result,
+        span: line_span(raw.header),
+    })
 }
 
 pub(super) fn definition_line(line: SourceLine<'_>) -> Option<Result<DefinitionDecl, ParseError>> {

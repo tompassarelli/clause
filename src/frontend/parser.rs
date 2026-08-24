@@ -48,20 +48,20 @@ fn is_direct_focus(
 pub fn parse(source: &str) -> Result<Program, ParseError> {
     let (mut raw_declarations, mut raw_top_level, raw_requests) = scan(source)?;
     for declaration in &mut raw_declarations {
-        if declaration.bare_block && content(declaration.header).ends_with(':') {
-            return Err(error(
-                line_span(declaration.header),
-                "':' only establishes a binding; it cannot introduce a block",
-            ));
-        }
-        if declaration.bare_block && compact_relation_candidate(declaration) {
+        if declaration.bare_block
+            && !content(declaration.header).ends_with(':')
+            && compact_relation_candidate(declaration)
+        {
             declaration.kind = Kind::RelationShape;
             declaration.bare_block = false;
         }
     }
     let provisional_grounded = raw_declarations
         .iter()
-        .filter(|declaration| declaration.kind == Kind::Grounding || declaration.bare_block)
+        .filter(|declaration| {
+            declaration.kind == Kind::Grounding
+                || declaration.bare_block && !content(declaration.header).ends_with(':')
+        })
         .map(|declaration| declaration.subject.value.clone())
         .collect::<BTreeSet<_>>();
     let mut relations = BTreeMap::new();
@@ -93,6 +93,16 @@ pub fn parse(source: &str) -> Result<Program, ParseError> {
     for declaration in raw_declarations {
         if is_direct_focus(&declaration, &provisional_grounded, &relations)? {
             raw_focuses.push(declaration);
+        } else {
+            retained.push(declaration);
+        }
+    }
+    let raw_declarations = retained;
+    let mut raw_definition_blocks = Vec::new();
+    let mut retained = Vec::new();
+    for declaration in raw_declarations {
+        if declaration.bare_block && content(declaration.header).ends_with(':') {
+            raw_definition_blocks.push(declaration);
         } else {
             retained.push(declaration);
         }
@@ -537,6 +547,15 @@ pub fn parse(source: &str) -> Result<Program, ParseError> {
         };
         ordered_top_level.push((fragment.line.number, member));
     }
+    for definition in raw_definition_blocks {
+        let member = Member::PureDefinition(pure_definition_block(
+            &definition,
+            &top_memberships,
+            &relations,
+            &memberships,
+        )?);
+        ordered_top_level.push((definition.header.number, member));
+    }
     for focus in raw_focuses {
         for line in nonblank(focus.body.iter().copied()) {
             let member = if let Some(definition) = definition_line(line) {
@@ -927,6 +946,35 @@ diff impact -> impact/adopt
             .unwrap_err()
             .to_string();
         assert!(error.contains("':' only establishes a binding"), "{error}");
+    }
+
+    #[test]
+    fn parses_one_closed_pure_definition_block_with_an_authoring_local() {
+        let program = parse(
+            "Scalar\n\n+\n  result: Scalar is left: Scalar + right: Scalar\n  left right -> result\n\n9.81 ∈ Scalar\ngravity ∈ Scalar\nmeasured gravity ∈ Scalar\ngravity: 9.81\n\nenergy:\n  base: gravity + measured gravity\n  base + base\n",
+        )
+        .expect("closed pure definition parses");
+        let definition = program
+            .top_level
+            .iter()
+            .find_map(|member| match member {
+                Member::PureDefinition(definition) => Some(definition),
+                _ => None,
+            })
+            .expect("pure definition remains one binding member");
+        assert_eq!(definition.name.value.as_str(), "energy");
+        let [local] = definition.locals.as_slice() else {
+            panic!("pure definition has one ordered local");
+        };
+        assert_eq!(local.name.value.as_str(), "base");
+        assert!(matches!(local.denotation, SurfaceTerm::Application(_)));
+        let SurfaceTerm::Application(result) = &definition.result else {
+            panic!("pure definition result remains recursive term structure");
+        };
+        assert_eq!(result.roles.len(), 2);
+        assert!(result.roles.values().all(|term| {
+            matches!(term, SurfaceTerm::Local(local) if local.value.as_str() == "base")
+        }));
     }
 
     #[test]

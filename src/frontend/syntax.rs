@@ -104,6 +104,7 @@ pub enum Member {
     MembershipRange(MembershipRangeDecl),
     ShapeBinding(ShapeBindingDecl),
     Definition(DefinitionDecl),
+    PureDefinition(PureDefinitionDecl),
     Membership(MembershipDecl),
     Focus(FocusBlock),
     RelationalContent(SurfaceClause),
@@ -118,6 +119,21 @@ pub enum Member {
 pub struct DefinitionDecl {
     pub name: Spanned<Name>,
     pub denotation: Spanned<Name>,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PureDefinitionDecl {
+    pub name: Spanned<Name>,
+    pub locals: Vec<LocalDefinitionDecl>,
+    pub result: SurfaceTerm,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LocalDefinitionDecl {
+    pub name: Spanned<Name>,
+    pub denotation: SurfaceTerm,
     pub span: Span,
 }
 
@@ -230,6 +246,8 @@ pub struct FocusBinding {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SurfaceTerm {
     Referent(Spanned<Name>),
+    /// A reference to an immutable binding inside one pure definition block.
+    Local(Spanned<Name>),
     /// A bracketed referent identity correlated with a focus binder.  This is
     /// authoring-only structure and must be substituted before lowering.
     Template(ReferentTemplate),
