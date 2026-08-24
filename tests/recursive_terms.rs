@@ -58,6 +58,48 @@ numbers
   a < b + c
 "#;
 
+const GROUPED_SOURCE: &str = r#"Scalar
+
++
+  result: Scalar is left: Scalar + right: Scalar
+  left right -> result
+
+*
+  result: Scalar is left: Scalar * right: Scalar
+  left right -> result
+
+<
+  left: Scalar < right: Scalar
+  left -> right*
+
+math
+  a ∈ Scalar
+  b ∈ Scalar
+  c ∈ Scalar
+  a + b * c < (a + b) * c
+"#;
+
+const NESTED_AMBIGUITY_SOURCE: &str = r#"Quantity
+
+first-combination
+  result: Quantity is left: Quantity with right: Quantity
+  left right -> result
+
+second-combination
+  result: Quantity is left: Quantity with right: Quantity
+  left right -> result
+
+<
+  left: Quantity < right: Quantity
+  left -> right*
+
+ambiguous
+  a ∈ Quantity
+  b ∈ Quantity
+  c ∈ Quantity
+  a with b < c
+"#;
+
 fn compile(source: &str) -> elaborate::CompiledProgram {
     elaborate::compile(frontend::parse(source).expect("recursive term source parses"))
         .expect("recursive term source elaborates")
@@ -82,6 +124,13 @@ fn application(term: &Term) -> &ContentId {
         panic!("recursive participant must lower to Term::Application: {term:?}");
     };
     content
+}
+
+fn referent_term(term: &Term) -> &ReferentId {
+    let Term::Referent(referent) = term else {
+        panic!("recursive leaf must be a referent: {term:?}");
+    };
+    referent
 }
 
 fn content_for_relation<'a>(
@@ -164,6 +213,79 @@ fn assert_recursive_tree(program: &elaborate::CompiledProgram, revision: &Revisi
     );
 }
 
+fn assert_grouped_precedence_tree(program: &elaborate::CompiledProgram, revision: &Revision) {
+    let less = relation(program, "<");
+    let addition = relation(program, "+");
+    let multiplication = relation(program, "*");
+    let a = relation(program, "a");
+    let b = relation(program, "b");
+    let c = relation(program, "c");
+    let root = asserted_comparison(revision, &less);
+    let root_left = role(program, &less, "left");
+    let root_right = role(program, &less, "right");
+    let addition_left = role(program, &addition, "left");
+    let addition_right = role(program, &addition, "right");
+    let multiplication_left = role(program, &multiplication, "left");
+    let multiplication_right = role(program, &multiplication, "right");
+
+    let left_addition = revision
+        .model()
+        .content(application(&root.roles()[&root_left]))
+        .expect("left addition is registered");
+    assert_eq!(left_addition.relation(), &addition);
+    assert_eq!(referent_term(&left_addition.roles()[&addition_left]), &a);
+    let left_multiplication = revision
+        .model()
+        .content(application(&left_addition.roles()[&addition_right]))
+        .expect("higher-precedence multiplication is registered");
+    assert_eq!(left_multiplication.relation(), &multiplication);
+    assert_eq!(
+        referent_term(&left_multiplication.roles()[&multiplication_left]),
+        &b
+    );
+    assert_eq!(
+        referent_term(&left_multiplication.roles()[&multiplication_right]),
+        &c
+    );
+
+    let right_multiplication = revision
+        .model()
+        .content(application(&root.roles()[&root_right]))
+        .expect("right multiplication is registered");
+    assert_eq!(right_multiplication.relation(), &multiplication);
+    let grouped_addition = revision
+        .model()
+        .content(application(
+            &right_multiplication.roles()[&multiplication_left],
+        ))
+        .expect("parenthesized addition is registered");
+    assert_eq!(grouped_addition.relation(), &addition);
+    assert_eq!(referent_term(&grouped_addition.roles()[&addition_left]), &a);
+    assert_eq!(
+        referent_term(&grouped_addition.roles()[&addition_right]),
+        &b
+    );
+    assert_eq!(
+        referent_term(&right_multiplication.roles()[&multiplication_right]),
+        &c
+    );
+
+    let application_contents = revision
+        .model()
+        .relational_contents()
+        .values()
+        .filter(|content| content.relation() == &addition || content.relation() == &multiplication)
+        .collect::<Vec<_>>();
+    assert_eq!(application_contents.len(), 4);
+    assert!(application_contents.iter().all(|application| {
+        !revision
+            .model()
+            .admitted_contents()
+            .iter()
+            .any(|admitted| admitted.id() == application.id())
+    }));
+}
+
 #[test]
 fn ground_recursive_operator_tree_round_trips_and_drives_rule() {
     let program = compile(SOURCE);
@@ -235,4 +357,27 @@ fn recursive_projection_selects_its_result_mode_from_a_bidirectional_relation() 
         2
     );
     assert_application_contract(revision, nested);
+}
+
+#[test]
+fn parentheses_override_conventional_operator_precedence() {
+    let program = compile(GROUPED_SOURCE);
+    let revision = program
+        .revision(&frontend::Name("math".to_owned()))
+        .expect("math Revision resolves");
+    assert_grouped_precedence_tree(&program, revision);
+
+    let reloaded = wire::reload(&wire::serialize(revision)).expect("grouped tree reloads");
+    assert_eq!(&reloaded, revision);
+    assert_grouped_precedence_tree(&program, &reloaded);
+}
+
+#[test]
+fn nested_ambiguity_names_each_surviving_application_path() {
+    let error = frontend::parse(NESTED_AMBIGUITY_SOURCE)
+        .expect_err("overlapping nested applications remain ambiguous");
+    assert_eq!(
+        error.message,
+        "ambiguous clause; conflicting candidate paths: <.left -> first-combination [left, right -> result]; <.left -> second-combination [left, right -> result]"
+    );
 }

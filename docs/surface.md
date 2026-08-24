@@ -542,6 +542,22 @@ a * b
 a / b
 ```
 
+Parentheses group recursive terms explicitly. Exact ASCII operators use their
+established programming-language priors so ordinary arithmetic does not require
+schema qualification or redundant grouping:
+
+| Precedence, high to low | Association |
+| --- | --- |
+| parenthesized term | explicit |
+| `*`, `/` | left |
+| `+`, `-` | left |
+| `<`, `<=`, `>`, `>=`, `=`, `!=` | non-associative |
+
+These priors group only exact declared relation shapes; they do not synthesize
+an undeclared operator or bypass role-domain checking. Chained comparisons must
+use explicit grouping or an independently declared n-ary relation whose meaning
+is not guessed from punctuation.
+
 They elaborate to addressable relation referents and stable named-role
 relational content just like word-shaped relations. Do not print
 `x greater-than y` or similar word expansions as canonical source. Do not

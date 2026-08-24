@@ -626,8 +626,10 @@ Every milestone preserves gates already crossed:
     after source deletion on every declared target.
 11. **Physical freedom:** relational meaning may lower to specialized storage;
     the compiler and runtime may be sophisticated when that machinery absorbs
-    complexity for authors, preserves reliability and performance, and avoids
-    a generic triple tax. Internal minimalism is not an objective by itself.
+    complexity for authors, preserves reliability and performance, makes defect
+    prevention and diagnosis more local, and causes authoring leverage to
+    improve as modeled systems grow. Internal minimalism is not an objective by
+    itself; authored and maintenance burden are the optimization target.
 12. **General-purpose reach:** ordinary computation, state, effects, and a real
     JavaScript/Three.js application do not escape into a shadow implementation.
 13. **Scaling leverage:** authored complexity and bug-resolution effort grow
