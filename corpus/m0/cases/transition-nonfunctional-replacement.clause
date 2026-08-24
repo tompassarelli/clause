@@ -1,3 +1,0 @@
-on heartbeat
-  patient symptom ?symptom ~>
-    patient symptom stable

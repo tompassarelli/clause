@@ -1,9 +1,0 @@
-replay run-42
-  program one-coin-program
-  model one-coin-model
-  state game-start
-  tick fixed 16ms
-  event 1 KeyLeft pressed
-  event 2 pulse 1
-  event 3 KeyLeft released
-  event 4 pulse 2

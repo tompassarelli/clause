@@ -1,5 +1,0 @@
-on collect coin
-  coin state active ~>
-    coin state collected
-
-  receipt := render! scene

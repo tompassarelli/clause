@@ -1,4 +1,0 @@
-egress/door-101-withdrawn: Revision
-    from: egress
-    withdraw:
-        [Door 101] passed Fire-Marshal-Inspection

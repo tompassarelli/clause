@@ -1,3 +1,0 @@
-connects :=
-  door : Door connects origin : Space to destination : Space
-  door origin -> destination*

@@ -1,6 +1,0 @@
-on frame ?dt
-  player position ?position ~>
-    player position (?position + wind * ?dt)
-
-  player position ?position ~>
-    player position (?position + velocity of player * ?dt)

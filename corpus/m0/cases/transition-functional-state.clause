@@ -1,3 +1,0 @@
-on unlock iron-door
-  state of iron-door := locked ~>
-    state of iron-door := unlocked

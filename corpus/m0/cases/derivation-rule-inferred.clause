@@ -1,3 +1,0 @@
-?origin has a usable egress path to ?destination if
-  ?door connects ?origin to ?destination
-  ?door passed Fire-Marshal Inspection

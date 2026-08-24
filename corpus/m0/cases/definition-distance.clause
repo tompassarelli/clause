@@ -1,2 +1,0 @@
-distance between ?a and ?b :=
-  length(position of ?a - position of ?b)

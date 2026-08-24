@@ -1,3 +1,0 @@
-iron-door : Door
-iron-door connects Cellar to Armory
-state of iron-door := locked

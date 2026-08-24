@@ -1,4 +1,0 @@
-prevent all minimal in egress:
-    ICU-A has a usable egress path to North-Exit
-using:
-    egress/passed
