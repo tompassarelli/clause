@@ -161,11 +161,7 @@ impl ResolvedProgram {
                     let selected = revisions
                         .get(revision)
                         .expect("request Revision presence was validated");
-                    let _ = kernel::QueryPlan::new(
-                        selected.model(),
-                        pattern,
-                        columns.iter().map(QueryColumn::plan_column).collect(),
-                    )?;
+                    let _ = select_plan(selected.model(), pattern, columns)?;
                 }
                 _ => {}
             }
@@ -211,6 +207,73 @@ fn any_plan(
         .into_iter()
         .collect();
     kernel::QueryPlan::derive(model, pattern, binders)
+}
+
+fn projected_plan(
+    model: &kernel::Model,
+    pattern: &RelationalContent,
+    projected: Vec<PatternId>,
+) -> kernel::Result<kernel::QueryPlan> {
+    if projected.is_empty() {
+        return Err(kernel::KernelError::new(
+            "query projection requires at least one hole",
+        ));
+    }
+    let mut seen = BTreeSet::new();
+    if projected.iter().any(|binder| !seen.insert(binder.clone())) {
+        return Err(kernel::KernelError::new(
+            "query projection cannot repeat a hole column",
+        ));
+    }
+    let mut binders = projected;
+    for binder in pattern
+        .roles()
+        .values()
+        .filter_map(Term::pattern_id)
+        .cloned()
+        .collect::<BTreeSet<_>>()
+    {
+        if seen.insert(binder.clone()) {
+            binders.push(binder);
+        }
+    }
+    kernel::QueryPlan::derive(model, pattern, binders)
+}
+
+fn select_plan(
+    model: &kernel::Model,
+    pattern: &RelationalContent,
+    columns: &[QueryColumn],
+) -> kernel::Result<kernel::QueryPlan> {
+    for column in columns {
+        if column.origins().is_empty() {
+            return Err(kernel::KernelError::new(
+                "query column requires at least one role origin",
+            ));
+        }
+        if column.origins().windows(2).any(|pair| pair[0] >= pair[1]) {
+            return Err(kernel::KernelError::new(
+                "query column role origins must be sorted and deduplicated",
+            ));
+        }
+    }
+    let plan = projected_plan(
+        model,
+        pattern,
+        columns
+            .iter()
+            .map(|column| column.binder().clone())
+            .collect(),
+    )?;
+    for (column, expected) in columns.iter().zip(plan.columns()) {
+        debug_assert_eq!(column.binder(), expected.binder());
+        if column.plan_column() != *expected {
+            return Err(kernel::KernelError::new(
+                "query column role origins do not match the pattern",
+            ));
+        }
+    }
+    Ok(plan)
 }
 
 /// Explicit resource bounds for the semantic engines selected by requests.

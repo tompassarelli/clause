@@ -29,6 +29,11 @@ enum RawItem<'a> {
 
 #[derive(Clone, Debug)]
 pub(super) enum RawRequest<'a> {
+    Select {
+        projected: Spanned<VariableName>,
+        clause: SourceLine<'a>,
+        header: SourceLine<'a>,
+    },
     Any {
         clause: SourceLine<'a>,
         header: SourceLine<'a>,
@@ -411,6 +416,15 @@ fn parse_request<'a>(
 ) -> Result<RawRequest<'a>, ParseError> {
     let text = content(line);
     *index += 1;
+    if let Some(projected) = text.strip_prefix("select ?") {
+        let projected = variable_name(line, "select ?".len(), projected)?;
+        let clause = read_clause_block(lines, index, "select request")?;
+        return Ok(RawRequest::Select {
+            projected,
+            clause,
+            header: line,
+        });
+    }
     if let Some(clause) = text.strip_prefix("any ") {
         if clause.is_empty() {
             return Err(error(line_span(line), "any requires one relational clause"));
@@ -561,7 +575,8 @@ pub(super) fn scan(source: &str) -> Result<ScanOutput<'_>, ParseError> {
             ));
         }
         let text = content(line);
-        if text.starts_with("any ")
+        if text.starts_with("select ")
+            || text.starts_with("any ")
             || text.starts_with("find ")
             || text.starts_with("why in ")
             || text.starts_with("why all in ")

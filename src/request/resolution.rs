@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use super::{QueryColumn, Request, ResolvedProgram, Selection, any_plan};
+use super::{QueryColumn, Request, ResolvedProgram, Selection, any_plan, projected_plan};
 use crate::{
     elaborate::{self, CompiledProgram},
     frontend,
@@ -40,14 +40,15 @@ pub(super) fn resolve(program: &CompiledProgram) -> kernel::Result<ResolvedProgr
                         ))
                     })
                     .collect::<kernel::Result<Vec<_>>>()?;
-                let plan = kernel::QueryPlan::derive(
+                let projected_count = columns.len();
+                let plan = projected_plan(
                     revision.model(),
                     &pattern,
                     columns.iter().map(|(_, binder)| binder.clone()).collect(),
                 )?;
                 let columns = columns
                     .into_iter()
-                    .zip(plan.columns())
+                    .zip(&plan.columns()[..projected_count])
                     .map(|((label, binder), column)| {
                         debug_assert_eq!(&binder, column.binder());
                         QueryColumn::new(label, binder, column.origins().to_vec())

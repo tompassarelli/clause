@@ -757,6 +757,28 @@ pub fn parse(source: &str) -> Result<Program, ParseError> {
     }
     for raw in raw_requests {
         match raw {
+            RawRequest::Select {
+                projected,
+                clause: line,
+                header,
+            } => {
+                let (revision, pattern) = implicit_query(line, "select query")?;
+                let column = query_columns(&pattern)
+                    .into_iter()
+                    .find(|column| column.label.as_ref() == Some(&projected.value))
+                    .ok_or_else(|| {
+                        error(projected.span, "select variable must occur in its clause")
+                    })?;
+                requests.push(RequestDecl::Select {
+                    revision: Spanned {
+                        value: revision,
+                        span: line_span(header),
+                    },
+                    pattern,
+                    columns: vec![column],
+                    span: line_span(header),
+                });
+            }
             RawRequest::Any {
                 clause: line,
                 header,

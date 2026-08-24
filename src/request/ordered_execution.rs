@@ -1,4 +1,6 @@
-use super::{Request, RequestOutput, ResolvedProgram, RunLimits, RunOutput, Selection, any_plan};
+use super::{
+    Request, RequestOutput, ResolvedProgram, RunLimits, RunOutput, Selection, any_plan, select_plan,
+};
 use crate::{
     execution, intervention,
     kernel::{self, Revision, RevisionId},
@@ -23,22 +25,15 @@ pub(super) fn run(program: &ResolvedProgram, limits: RunLimits) -> kernel::Resul
                 columns,
             } => {
                 let selected = revision(program, identity)?;
-                let plan = kernel::QueryPlan::new(
-                    selected.model(),
-                    pattern,
-                    columns
-                        .iter()
-                        .map(|column| {
-                            kernel::QueryPlanColumn::new(
-                                column.binder().clone(),
-                                column.origins().to_vec(),
-                            )
-                        })
-                        .collect(),
-                )?;
+                let plan = select_plan(selected.model(), pattern, columns)?;
                 RequestOutput::Select {
                     columns: columns.clone(),
-                    rows: execution::select(selected, &plan, limits.closure)?,
+                    rows: execution::select_projected(
+                        selected,
+                        &plan,
+                        columns.len(),
+                        limits.closure,
+                    )?,
                 }
             }
             Request::Find {

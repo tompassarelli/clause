@@ -44,7 +44,20 @@ pub(super) fn select(
     plan: &QueryPlan,
     limits: Limits,
 ) -> Result<Vec<QueryRow>> {
+    select_projected(revision, plan, plan.columns().len(), limits)
+}
+
+pub(super) fn select_projected(
+    revision: &Revision,
+    plan: &QueryPlan,
+    projected: usize,
+    limits: Limits,
+) -> Result<Vec<QueryRow>> {
     revision.model().validate_content(plan.pattern(), true)?;
+    let columns = plan
+        .columns()
+        .get(..projected)
+        .ok_or_else(|| KernelError::new("query projection exceeds the complete plan"))?;
     let closure = derive::saturate(revision, limits)?;
     let mut rows = closure
         .contents()
@@ -59,7 +72,7 @@ pub(super) fn select(
             )
         })
         .map(|substitution| {
-            plan.columns()
+            columns
                 .iter()
                 .map(|column| {
                     substitution

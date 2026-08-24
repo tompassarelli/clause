@@ -139,6 +139,15 @@ pub fn select(revision: &Revision, plan: &QueryPlan, limits: Limits) -> Result<V
     query::select(revision, plan, limits)
 }
 
+pub(crate) fn select_projected(
+    revision: &Revision,
+    plan: &QueryPlan,
+    projected: usize,
+    limits: Limits,
+) -> Result<Vec<QueryRow>> {
+    query::select_projected(revision, plan, projected, limits)
+}
+
 /// Normalize one closed pure term against the definitions and intrinsic
 /// applications sealed into an immutable Revision.
 pub fn evaluate(revision: &Revision, term: &Term) -> Result<Term> {
