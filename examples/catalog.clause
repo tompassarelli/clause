@@ -1,16 +1,16 @@
-Set: Type
-Letter: Type
+Set
+Letter
 
 catalog/contains: RelationShape
-    {set: Set} contains {member: Letter}
-    mode set -> member: many
+  {set: Set} contains {member: Letter}
+  mode set -> member: many
 
-catalog: Model
-    letters: Set
-    a: Letter
-    b: Letter
-    letters contains a
-    letters contains b
+catalog
+  letters ∈ Set
+  a ∈ Letter
+  b ∈ Letter
+  letters contains a
+  letters contains b
 
 find all ?member in catalog:
-    letters contains ?member
+  letters contains ?member

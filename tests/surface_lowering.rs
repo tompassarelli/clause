@@ -39,7 +39,7 @@ fn role(program: &elaborate::CompiledProgram, relation: &ReferentId, value: &str
 
 #[test]
 fn canonical_binding_membership_focus_and_input_boundary() {
-    const PREFIX: &str = "Door: Type\nPlace: Type\nState: Type\nGame: Type\n\nworld/connects: RelationShape\n  {door: Door} connects {origin: Place} to {destination: Place}\n  mode door -> origin, destination: many\n\nworld: Model\n  gravity: 9.81\n  Chess ∈ Game\n  Cellar ∈ Place\n  Armory ∈ Place\n  locked ∈ State\n";
+    const PREFIX: &str = "Door\nPlace\nState\nGame\n\nworld/connects: RelationShape\n  {door: Door} connects {origin: Place} to {destination: Place}\n  mode door -> origin, destination: many\n\nworld\n  gravity: 9.81\n  Chess ∈ Game\n  Cellar ∈ Place\n  Armory ∈ Place\n  locked ∈ State\n";
     let focused_source = format!(
         "{PREFIX}  iron-door\n    Door\n    connects Cellar to Armory\n    state: locked\n"
     );
@@ -170,7 +170,7 @@ fn thirteen_native_rows_lower_to_typed_revisions_and_requests() {
     assert_eq!(imports.lookup()[0].cardinality(), &Cardinality::Many);
 
     // n-ary relation
-    let nary = "Route: Type\nModule: Type\nZone: Type\nrouting/carries: RelationShape\n    {route: Route} carries {module: Module} through {zone: Zone}\n    mode route -> module, zone: many\nrouting: Model\n    R1: Route\n    Core: Module\n    East: Zone\n    R1 carries Core through East\n";
+    let nary = "Route\nModule\nZone\nrouting/carries: RelationShape\n  {route: Route} carries {module: Module} through {zone: Zone}\n  mode route -> module, zone: many\nrouting\n  R1 ∈ Route\n  Core ∈ Module\n  East ∈ Zone\n  R1 carries Core through East\n";
     let routing = program(nary);
     let carries_id = global(&routing, "routing/carries");
     let carries = routing
@@ -222,8 +222,8 @@ fn thirteen_native_rows_lower_to_typed_revisions_and_requests() {
     // Equivalent content admitted by a reusable Delta remains semantically
     // equal without collapsing the two authored assertion occurrences.
     let reusable = SOURCE.replace(
-        "impact/adopt-south: Revision\n    from: impact\n    admit:\n        South imports North",
-        "impact/add-south: Delta\n    from: impact\n    admit:\n        South imports North\n\nimpact/adopt-south: Revision\n    from: impact\n    apply: impact/add-south",
+        "impact/adopt-south: Revision\n  from: impact\n  admit:\n    South imports North",
+        "impact/add-south: Delta\n  from: impact\n  admit:\n    South imports North\n\nimpact/adopt-south: Revision\n  from: impact\n  apply: impact/add-south",
     );
     let reusable = program(&reusable);
     let reusable_successor = reusable
@@ -270,8 +270,8 @@ fn native_parser_preserves_repeated_occurrences_and_rejects_invalid_rows() {
     let sentence = ["sen", "tence:"].concat();
     assert!(
         frontend::parse(&SOURCE.replacen(
-            "    {consumer: Module} imports {dependency: Module}",
-            &format!("    {sentence} {{consumer}} imports {{dependency}}"),
+            "  {consumer: Module} imports {dependency: Module}",
+            &format!("  {sentence} {{consumer}} imports {{dependency}}"),
             1,
         ))
         .is_err()
@@ -309,30 +309,32 @@ fn native_parser_preserves_repeated_occurrences_and_rejects_invalid_rows() {
     );
     assert!(frontend::parse(&SOURCE.replacen("North imports Store", "North imports", 1)).is_err());
     assert!(frontend::parse(&SOURCE.replacen(
-        "impact/direct-dependency: DerivationRule\n    ?consumer depends on ?dependency\n    when:\n        ?consumer imports ?dependency",
-        "impact/direct-dependency: DerivationRule\n    ?consumer depends on ?dependency\n    when:\n        ?consumer imports ?consumer",
+        "impact/direct-dependency: DerivationRule\n  ?consumer depends on ?dependency\n  when:\n    ?consumer imports ?dependency",
+        "impact/direct-dependency: DerivationRule\n  ?consumer depends on ?dependency\n  when:\n    ?consumer imports ?consumer",
         1,
     )).is_err());
     let duplicate_relation = SOURCE.replace(
         "impact/depends: RelationShape",
-        "impact/imports-also: RelationShape\n    {consumer: Module} imports {dependency: Module}\n    mode consumer -> dependency: many\n\nimpact/depends: RelationShape",
+        "impact/imports-also: RelationShape\n  {consumer: Module} imports {dependency: Module}\n  mode consumer -> dependency: many\n\nimpact/depends: RelationShape",
     );
     assert!(frontend::parse(&duplicate_relation).is_err());
-    assert!(frontend::parse(&SOURCE.replacen("    North: Module", "  North: Module", 1)).is_err());
+    assert!(
+        frontend::parse(&SOURCE.replacen("  North ∈ Module", "    North ∈ Module", 1)).is_err()
+    );
 
     let cycle = SOURCE.replace(
-        "impact/adopt-south: Revision\n    from: impact\n    admit:\n        South imports North",
-        "impact/first: Revision\n    from: impact/second\n    admit:\n        South imports North\n\nimpact/second: Revision\n    from: impact/first\n    admit:\n        South imports North",
+        "impact/adopt-south: Revision\n  from: impact\n  admit:\n    South imports North",
+        "impact/first: Revision\n  from: impact/second\n  admit:\n    South imports North\n\nimpact/second: Revision\n  from: impact/first\n  admit:\n    South imports North",
     );
     assert!(frontend::parse(&cycle).is_err());
     let base_mismatch = SOURCE.replace(
-        "impact/adopt-south: Revision\n    from: impact\n    admit:\n        South imports North",
-        "impact/remove: Delta\n    from: impact\n    withdraw:\n        North imports Store\n\nimpact/other: Revision\n    from: impact\n    admit:\n        South imports North\n\nimpact/adopt-south: Revision\n    from: impact/other\n    apply: impact/remove",
+        "impact/adopt-south: Revision\n  from: impact\n  admit:\n    South imports North",
+        "impact/remove: Delta\n  from: impact\n  withdraw:\n    North imports Store\n\nimpact/other: Revision\n  from: impact\n  admit:\n    South imports North\n\nimpact/adopt-south: Revision\n  from: impact/other\n  apply: impact/remove",
     );
     assert!(elaborate::compile(frontend::parse(&base_mismatch).unwrap()).is_err());
     let duplicate = SOURCE.replacen(
-        "        South imports North",
-        "        South imports North\n        South imports North",
+        "    South imports North",
+        "    South imports North\n    South imports North",
         1,
     );
     let duplicate = program(&duplicate);
@@ -365,8 +367,8 @@ fn native_parser_preserves_repeated_occurrences_and_rejects_invalid_rows() {
         2,
     );
     let overlap = SOURCE.replace(
-        "    admit:\n        South imports North",
-        "    admit:\n        South imports North\n    withdraw:\n        South imports North",
+        "  admit:\n    South imports North",
+        "  admit:\n    South imports North\n  withdraw:\n    South imports North",
     );
     assert!(frontend::parse(&overlap).is_err());
 }

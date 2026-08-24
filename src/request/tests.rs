@@ -1,49 +1,49 @@
 use super::{Request, RequestOutput, RunLimits, Selection, resolve, run};
 use crate::{elaborate, frontend};
 
-const SOURCE: &str = "Item: Type
+const SOURCE: &str = "Item
 link: RelationShape
-    {left: Item} links {right: Item}
-    mode left -> right: many
-graph: Model
-    A: Item
-    B: Item
-    A links B
+  {left: Item} links {right: Item}
+  mode left -> right: many
+graph
+  A ∈ Item
+  B ∈ Item
+  A links B
 graph/add: Revision
-    from: graph
-    admit:
-        B links A
+  from: graph
+  admit:
+    B links A
 find all ?right in graph:
-    A links ?right
+  A links ?right
 why in graph:
-    A links B
+  A links B
 diff graph -> graph/add
 ";
 
-const INTERVENTIONS: &str = "Item: Type
+const INTERVENTIONS: &str = "Item
 link: RelationShape
-    {left: Item} links {right: Item}
-    mode left -> right: many
-graph: Model
-    A: Item
-    B: Item
-    A links B
+  {left: Item} links {right: Item}
+  mode left -> right: many
+graph
+  A ∈ Item
+  B ∈ Item
+  A links B
 prevent one minimal in graph:
-    A links B
+  A links B
 using:
-    link
+  link
 prevent all minimal in graph:
-    A links B
+  A links B
 using:
-    link
+  link
 achieve one minimal in graph:
-    B links A
+  B links A
 using:
-    link
+  link
 achieve all minimal in graph:
-    B links A
+  B links A
 using:
-    link
+  link
 ";
 
 fn program(source: &str) -> super::ResolvedProgram {

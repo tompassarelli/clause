@@ -4,7 +4,7 @@ use std::{fs, process::Command};
 
 #[test]
 fn embeds_resolved_requests_not_source() {
-    let source = "Item: Type\nlink: RelationShape\n    {left: Item} links {right: Item}\n    mode left -> right: many\ngraph: Model\n    A: Item\n    B: Item\n    A links B\nfind all ?right in graph:\n    A links ?right\n";
+    let source = "Item\nlink: RelationShape\n  {left: Item} links {right: Item}\n  mode left -> right: many\ngraph\n  A ∈ Item\n  B ∈ Item\n  A links B\nfind all ?right in graph:\n  A links ?right\n";
     let program =
         request::resolve(&elaborate::compile(frontend::parse(source).unwrap()).unwrap()).unwrap();
     let emitted = emit_rust(&program).unwrap();
@@ -14,7 +14,7 @@ fn embeds_resolved_requests_not_source() {
 
 #[test]
 fn generated_program_matches_source_deleted_request_transcript() {
-    let source = "Item: Type\nlink: RelationShape\n    {left: Item} links {right: Item}\n    mode left -> right: many\ngraph: Model\n    A: Item\n    B: Item\n    A links B\ngraph/add: Revision\n    from: graph\n    admit:\n        B links A\nfind all ?right in graph:\n    A links ?right\nwhy all in graph:\n    A links B\ndiff graph -> graph/add\n";
+    let source = "Item\nlink: RelationShape\n  {left: Item} links {right: Item}\n  mode left -> right: many\ngraph\n  A ∈ Item\n  B ∈ Item\n  A links B\ngraph/add: Revision\n  from: graph\n  admit:\n    B links A\nfind all ?right in graph:\n  A links ?right\nwhy all in graph:\n  A links B\ndiff graph -> graph/add\n";
     let program =
         request::resolve(&elaborate::compile(frontend::parse(source).unwrap()).unwrap()).unwrap();
     let expected = request::run(&program, request::RunLimits::default())

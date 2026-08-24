@@ -13,30 +13,30 @@ use clause::{
 
 const SOURCE: &str = include_str!("../examples/impact.clause");
 
-const ACHIEVEMENT_SOURCE: &str = r#"Start: Type
-Option: Type
-State: Type
+const ACHIEVEMENT_SOURCE: &str = r#"Start
+Option
+State
 
 choice/selects: RelationShape
-    {start: Start} selects {option: Option}
-    mode start -> option: many
+  {start: Start} selects {option: Option}
+  mode start -> option: many
 
 choice/reached: RelationShape
-    {start: Start} reached {state: State}
-    mode start -> state: many
+  {start: Start} reached {state: State}
+  mode start -> state: many
 
-choice: Model
-    South: Start
-    Beagle: Option
-    North: Option
-    Relay: Option
-    Store: Option
-    Ready: State
+choice
+  South ∈ Start
+  Beagle ∈ Option
+  North ∈ Option
+  Relay ∈ Option
+  Store ∈ Option
+  Ready ∈ State
 
 choice/selection-reaches-ready: DerivationRule
-    ?start reached Ready
-    when:
-        ?start selects ?option
+  ?start reached Ready
+  when:
+    ?start selects ?option
 "#;
 
 fn impact() -> elaborate::CompiledProgram {
@@ -264,7 +264,7 @@ fn north_has_two_independent_minimal_supports_and_four_prevention_sets() {
 fn successor_retains_consequence_while_losing_one_support() {
     let source = SOURCE.replace(
         "impact/adopt-south: Revision",
-        "impact/redundant-path-withdrawn: Revision\n    from: impact\n    withdraw:\n        North imports Relay\n        Relay imports Beagle\n\nimpact/adopt-south: Revision",
+        "impact/redundant-path-withdrawn: Revision\n  from: impact\n  withdraw:\n    North imports Relay\n    Relay imports Beagle\n\nimpact/adopt-south: Revision",
     );
     let program = elaborate::compile(frontend::parse(&source).expect("impact source parses"))
         .expect("impact source lowers");

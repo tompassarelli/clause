@@ -1,71 +1,71 @@
-Module: Type
-Change: Type
+Module
+Change
 
 impact/imports: RelationShape
-    {consumer: Module} imports {dependency: Module}
-    mode consumer -> dependency: many
+  {consumer: Module} imports {dependency: Module}
+  mode consumer -> dependency: many
 
 impact/depends: RelationShape
-    {consumer: Module} depends on {dependency: Module}
-    mode consumer -> dependency: many
+  {consumer: Module} depends on {dependency: Module}
+  mode consumer -> dependency: many
 
 impact/changes: RelationShape
-    {change: Change} changes {component: Module}
-    mode change -> component: many
+  {change: Change} changes {component: Module}
+  mode change -> component: many
 
 impact/affected: RelationShape
-    {change: Change} affects {consumer: Module}
-    mode change -> consumer: many
+  {change: Change} affects {consumer: Module}
+  mode change -> consumer: many
 
-impact: Model
-    North: Module
-    Store: Module
-    Relay: Module
-    Beagle: Module
-    South: Module
-    compiler-change: Change
-    North imports Store
-    North imports Relay
-    Store imports Beagle
-    Relay imports Beagle
-    compiler-change changes Beagle
+impact
+  North ∈ Module
+  Store ∈ Module
+  Relay ∈ Module
+  Beagle ∈ Module
+  South ∈ Module
+  compiler-change ∈ Change
+  North imports Store
+  North imports Relay
+  Store imports Beagle
+  Relay imports Beagle
+  compiler-change changes Beagle
 
 impact/direct-dependency: DerivationRule
-    ?consumer depends on ?dependency
-    when:
-        ?consumer imports ?dependency
+  ?consumer depends on ?dependency
+  when:
+    ?consumer imports ?dependency
 
 impact/recursive-dependency: DerivationRule
-    ?consumer depends on ?dependency
-    when:
-        ?consumer imports ?intermediate
-        ?intermediate depends on ?dependency
+  ?consumer depends on ?dependency
+  when:
+    ?consumer imports ?intermediate
+    ?intermediate depends on ?dependency
 
 impact/impact: DerivationRule
-    ?change affects ?consumer
-    when:
-        ?change changes ?component
-        ?consumer depends on ?component
+  ?change affects ?consumer
+  when:
+    ?change changes ?component
+    ?consumer depends on ?component
 
 impact/adopt-south: Revision
-    from: impact
-    admit:
-        South imports North
+  from: impact
+  admit:
+    South imports North
 
 find all ?consumer in impact:
-    compiler-change affects ?consumer
+  compiler-change affects ?consumer
 
 why all in impact:
-    compiler-change affects North
+  compiler-change affects North
 
 prevent all minimal in impact:
-    compiler-change affects North
+  compiler-change affects North
 using:
-    impact/imports
+  impact/imports
 
 achieve one minimal in impact/adopt-south:
-    compiler-change affects South
+  compiler-change affects South
 using:
-    impact/imports
+  impact/imports
 
 diff impact -> impact/adopt-south

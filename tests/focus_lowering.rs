@@ -2,41 +2,41 @@
 
 use clause::{elaborate, frontend, wire};
 
-const ELLIPSIS: &str = r#"Item: Type
-Sensor: Type
+const ELLIPSIS: &str = r#"Item
+Sensor
 
 pairing/pair: RelationShape
-    {item: Item} paired with {sensor: Sensor}
-    mode item -> sensor: many
+  {item: Item} paired with {sensor: Sensor}
+  mode item -> sensor: many
 
-pairing: Model
-    [Item 1..4]: Item
-    [Sensor 1..4]: Sensor
-    [Item {n}]:
-        paired with: [Sensor {n}]
-    for n: 1..4
+pairing
+  [Item 1..4] ∈ Item
+  [Sensor 1..4] ∈ Sensor
+  [Item {n}]
+    paired with [Sensor {n}]
+  for n: 1..4
 "#;
 
-const EXPLICIT: &str = r#"Item: Type
-Sensor: Type
+const EXPLICIT: &str = r#"Item
+Sensor
 
 pairing/pair: RelationShape
-    {item: Item} paired with {sensor: Sensor}
-    mode item -> sensor: many
+  {item: Item} paired with {sensor: Sensor}
+  mode item -> sensor: many
 
-pairing: Model
-    [Item 1]: Item
-    [Item 2]: Item
-    [Item 3]: Item
-    [Item 4]: Item
-    [Sensor 1]: Sensor
-    [Sensor 2]: Sensor
-    [Sensor 3]: Sensor
-    [Sensor 4]: Sensor
-    [Item 1] paired with [Sensor 1]
-    [Item 2] paired with [Sensor 2]
-    [Item 3] paired with [Sensor 3]
-    [Item 4] paired with [Sensor 4]
+pairing
+  [Item 1] ∈ Item
+  [Item 2] ∈ Item
+  [Item 3] ∈ Item
+  [Item 4] ∈ Item
+  [Sensor 1] ∈ Sensor
+  [Sensor 2] ∈ Sensor
+  [Sensor 3] ∈ Sensor
+  [Sensor 4] ∈ Sensor
+  [Item 1] paired with [Sensor 1]
+  [Item 2] paired with [Sensor 2]
+  [Item 3] paired with [Sensor 3]
+  [Item 4] paired with [Sensor 4]
 "#;
 
 fn program(source: &str) -> elaborate::CompiledProgram {
@@ -84,8 +84,8 @@ fn focused_slots_report_sorted_ambiguity_and_checked_template_errors() {
     let ambiguous = ELLIPSIS
         .replace("pairing/pair: RelationShape", "a/pair: RelationShape")
         .replace(
-            "pairing: Model",
-            "b/pair: RelationShape\n    {item: Item} paired with {sensor: Sensor}\n    mode item -> sensor: many\n\npairing: Model",
+            "pairing",
+            "b/pair: RelationShape\n  {item: Item} paired with {sensor: Sensor}\n  mode item -> sensor: many\n\npairing",
         );
     assert!(
         elaborate::compile(frontend::parse(&ambiguous).unwrap())

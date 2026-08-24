@@ -3,84 +3,84 @@
 use clause::{elaborate, frontend, generated, request};
 use std::{env, fs, path::PathBuf, process::Command};
 
-const SOURCE: &str = "Node: Type
-Gate: Type
-State: Type
+const SOURCE: &str = "Node
+Gate
+State
 
 network/connects: RelationShape
-    {gate: Gate} connects {origin: Node} to {destination: Node}
-    mode gate, origin -> destination: many
+  {gate: Gate} connects {origin: Node} to {destination: Node}
+  mode gate, origin -> destination: many
 
 network/open: RelationShape
-    {gate: Gate} is {state: State}
-    mode gate -> state: many
+  {gate: Gate} is {state: State}
+  mode gate -> state: many
 
 network/reaches: RelationShape
-    {origin: Node} reaches {destination: Node}
-    mode origin -> destination: many
+  {origin: Node} reaches {destination: Node}
+  mode origin -> destination: many
 
-scenario: Model
-    A: Node
-    B: Node
-    C: Node
-    D: Node
-    E: Node
-    Active: State
-    AB: Gate
-    BD: Gate
-    AC: Gate
-    CD: Gate
-    EB: Gate
-    EC: Gate
-    AB connects A to B
-    BD connects B to D
-    AC connects A to C
-    CD connects C to D
-    EB connects E to B
-    EC connects E to C
-    AB is Active
-    BD is Active
-    AC is Active
-    CD is Active
+scenario
+  A ∈ Node
+  B ∈ Node
+  C ∈ Node
+  D ∈ Node
+  E ∈ Node
+  Active ∈ State
+  AB ∈ Gate
+  BD ∈ Gate
+  AC ∈ Gate
+  CD ∈ Gate
+  EB ∈ Gate
+  EC ∈ Gate
+  AB connects A to B
+  BD connects B to D
+  AC connects A to C
+  CD connects C to D
+  EB connects E to B
+  EC connects E to C
+  AB is Active
+  BD is Active
+  AC is Active
+  CD is Active
 
 scenario/direct: DerivationRule
-    ?origin reaches ?destination
-    when:
-        ?gate connects ?origin to ?destination
-        ?gate is Active
+  ?origin reaches ?destination
+  when:
+    ?gate connects ?origin to ?destination
+    ?gate is Active
 
 scenario/recursive: DerivationRule
-    ?origin reaches ?destination
-    when:
-        ?gate connects ?origin to ?intermediate
-        ?gate is Active
-        ?intermediate reaches ?destination
+  ?origin reaches ?destination
+  when:
+    ?gate connects ?origin to ?intermediate
+    ?gate is Active
+    ?intermediate reaches ?destination
 
 scenario/ab-withdrawn: Revision
-    from: scenario
-    withdraw:
-        AB is Active
+  from: scenario
+  withdraw:
+    AB is Active
 
 find all ?destination in scenario:
-    A reaches ?destination
+  A reaches ?destination
 
 why all in scenario:
-    A reaches D
+  A reaches D
 
 prevent all minimal in scenario:
-    A reaches D
+  A reaches D
 using:
-    network/open
+  network/open
 
 prevent all minimal in scenario/ab-withdrawn:
-    A reaches D
+  A reaches D
 using:
-    network/open
+  network/open
 
 achieve all minimal in scenario:
-    E reaches D
+  E reaches D
 using:
-    network/open
+  network/open
 
 diff scenario -> scenario/ab-withdrawn
 ";
@@ -165,7 +165,7 @@ mod emit_rust_cli {
         time::{SystemTime, UNIX_EPOCH},
     };
 
-    const SOURCE: &str = "Item: Type\nlink: RelationShape\n    {left: Item} links {right: Item}\n    mode left -> right: many\ngraph: Model\n    A: Item\n    B: Item\n    A links B\ngraph/add: Revision\n    from: graph\n    admit:\n        B links A\nfind all ?right in graph:\n    A links ?right\nwhy all in graph:\n    A links B\ndiff graph -> graph/add\n";
+    const SOURCE: &str = "Item\nlink: RelationShape\n  {left: Item} links {right: Item}\n  mode left -> right: many\ngraph\n  A ∈ Item\n  B ∈ Item\n  A links B\ngraph/add: Revision\n  from: graph\n  admit:\n    B links A\nfind all ?right in graph:\n  A links ?right\nwhy all in graph:\n  A links B\ndiff graph -> graph/add\n";
 
     fn temporary(extension: &str) -> PathBuf {
         let nonce = SystemTime::now()
