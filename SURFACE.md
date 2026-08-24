@@ -521,7 +521,7 @@ Clause should adopt this vocabulary and reject synonyms that blur the axes.
 | `?name` | named clause hole |
 | `~>` | a proposition in the current state succeeds to another proposition |
 | leading `+` in a Delta | exact admission/addition |
-| `-` | exact withdrawal/removal |
+| leading `-` in a Delta | exact withdrawal/removal |
 | `!` | external effect/capability boundary |
 
 Use these ASCII operators directly when their conventional relation and role
