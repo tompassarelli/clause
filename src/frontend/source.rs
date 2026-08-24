@@ -15,6 +15,17 @@ pub(super) struct RawDecl<'a> {
     pub(super) body: Vec<SourceLine<'a>>,
 }
 
+#[derive(Clone, Copy, Debug)]
+pub(super) struct RawTopLevel<'a> {
+    pub(super) line: SourceLine<'a>,
+}
+
+#[derive(Clone, Debug)]
+enum RawItem<'a> {
+    Declaration(RawDecl<'a>),
+    TopLevel(RawTopLevel<'a>),
+}
+
 #[derive(Clone, Debug)]
 pub(super) enum RawRequest<'a> {
     Find {
@@ -322,16 +333,19 @@ fn parse_declaration<'a>(
     line: SourceLine<'a>,
     lines: &[SourceLine<'a>],
     index: &mut usize,
-) -> Result<RawDecl<'a>, ParseError> {
+) -> Result<RawItem<'a>, ParseError> {
     let text = content(line);
-    if text.contains(" ∈ ") {
-        return Err(error(
-            line_span(line),
-            "top-level membership requires an enclosing bare Model block",
-        ));
-    }
     *index += 1;
     let body = take_body(lines, index);
+    if text.contains(" ∈ ") {
+        if nonblank(body.iter().copied()).is_empty() {
+            return Ok(RawItem::TopLevel(RawTopLevel { line }));
+        }
+        return Err(error(
+            line_span(line),
+            "top-level membership cannot have an indented body",
+        ));
+    }
     let (subject, declaration_kind, bare_block) =
         if let Some((subject, kind_text)) = text.split_once(": ") {
             if matches!(kind_text, "Type" | "Model") {
@@ -342,8 +356,12 @@ fn parse_declaration<'a>(
                     ),
                 ));
             }
-            let declaration_kind = kind(kind_text)
-                .ok_or_else(|| error(line_span(line), "unknown declaration kind"))?;
+            let Some(declaration_kind) = kind(kind_text) else {
+                if nonblank(body.iter().copied()).is_empty() {
+                    return Ok(RawItem::TopLevel(RawTopLevel { line }));
+                }
+                return Err(error(line_span(line), "unknown declaration kind"));
+            };
             (qname(line, 0, subject)?, declaration_kind, false)
         } else {
             let subject = semantic_name(line, 0, text)?;
@@ -353,13 +371,13 @@ fn parse_declaration<'a>(
                 (subject, Kind::Model, true)
             }
         };
-    Ok(RawDecl {
+    Ok(RawItem::Declaration(RawDecl {
         subject,
         kind: declaration_kind,
         bare_block,
         header: line,
         body,
-    })
+    }))
 }
 
 fn parse_request<'a>(
@@ -478,7 +496,7 @@ fn parse_request<'a>(
 
 pub(super) fn scan<'a>(
     source: &'a str,
-) -> Result<(Vec<RawDecl<'a>>, Vec<RawRequest<'a>>), ParseError> {
+) -> Result<(Vec<RawDecl<'a>>, Vec<RawTopLevel<'a>>, Vec<RawRequest<'a>>), ParseError> {
     let lines = source
         .split('\n')
         .enumerate()
@@ -491,6 +509,7 @@ pub(super) fn scan<'a>(
         indent(*line)?;
     }
     let mut declarations = Vec::new();
+    let mut top_level = Vec::new();
     let mut requests = Vec::new();
     let mut index = 0;
     while index < lines.len() {
@@ -515,8 +534,11 @@ pub(super) fn scan<'a>(
         {
             requests.push(parse_request(line, &lines, &mut index)?);
         } else {
-            declarations.push(parse_declaration(line, &lines, &mut index)?);
+            match parse_declaration(line, &lines, &mut index)? {
+                RawItem::Declaration(declaration) => declarations.push(declaration),
+                RawItem::TopLevel(fragment) => top_level.push(fragment),
+            }
         }
     }
-    Ok((declarations, requests))
+    Ok((declarations, top_level, requests))
 }

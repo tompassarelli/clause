@@ -9,5 +9,8 @@ mod identifiers;
 mod lowering;
 mod resolution;
 
-pub use compilation::{CompiledProgram, compile};
+pub use compilation::{
+    CompiledProgram, ModelContext, compile, compile_in, compile_in_with_designations,
+};
+pub use identifiers::DesignationTable;
 pub use lowering::lower_clause;

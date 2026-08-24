@@ -83,6 +83,9 @@ pub enum Kind {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Program {
     pub declarations: Vec<Declaration>,
+    /// Direct Model content whose semantic scope is supplied by the caller at
+    /// compilation time rather than declared in this source projection.
+    pub top_level: Vec<Member>,
     pub requests: Vec<RequestDecl>,
 }
 

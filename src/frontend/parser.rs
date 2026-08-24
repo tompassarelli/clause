@@ -14,8 +14,107 @@ const MODEL_OR_REVISION: &[Kind] = &[
     Kind::Revision,
 ];
 
+fn is_direct_focus(
+    raw: &RawDecl<'_>,
+    grounded: &BTreeSet<Name>,
+    relations: &BTreeMap<Name, RelationSpec>,
+) -> Result<bool, ParseError> {
+    if raw.kind != Kind::Model {
+        return Ok(false);
+    }
+    let entries = nonblank(raw.body.iter().copied());
+    if entries.is_empty() || entries.iter().any(|line| !matches!(indent(*line), Ok(2))) {
+        return Ok(false);
+    }
+    let has_grounded_category = entries
+        .iter()
+        .any(|line| focused_name(*line).is_ok_and(|name| grounded.contains(&name.value)));
+    let has_non_bare = entries.iter().try_fold(false, |found, line| {
+        Ok::<_, ParseError>(
+            found || definition_line(*line).is_some() || relation_line_matches(*line, relations)?,
+        )
+    })?;
+    Ok(has_grounded_category && has_non_bare)
+}
+
 pub fn parse(source: &str) -> Result<Program, ParseError> {
-    let (mut raw_declarations, raw_requests) = scan(source)?;
+    let (raw_declarations, mut raw_top_level, raw_requests) = scan(source)?;
+    let provisional_grounded = raw_declarations
+        .iter()
+        .filter(|declaration| declaration.kind == Kind::Grounding || declaration.bare_block)
+        .map(|declaration| declaration.subject.value.clone())
+        .collect::<BTreeSet<_>>();
+    let mut relations = BTreeMap::new();
+    for declaration in raw_declarations
+        .iter()
+        .filter(|declaration| declaration.kind == Kind::RelationShape)
+    {
+        relations.insert(
+            declaration.subject.value.clone(),
+            relation_spec(declaration)?,
+        );
+    }
+
+    let mut retained = Vec::new();
+    for declaration in raw_declarations {
+        if declaration.kind == Kind::Grounding
+            && relation_line_matches(declaration.header, &relations)?
+        {
+            raw_top_level.push(RawTopLevel {
+                line: declaration.header,
+            });
+        } else {
+            retained.push(declaration);
+        }
+    }
+    let mut raw_declarations = retained;
+    for declaration in &mut raw_declarations {
+        if declaration.bare_block {
+            declaration.kind = infer_bare_block_kind(declaration, &relations)?;
+            declaration.bare_block = false;
+        }
+    }
+    let mut raw_focuses = Vec::new();
+    let mut retained = Vec::new();
+    for declaration in raw_declarations {
+        if is_direct_focus(&declaration, &provisional_grounded, &relations)? {
+            raw_focuses.push(declaration);
+        } else {
+            retained.push(declaration);
+        }
+    }
+    let raw_declarations = retained;
+    let grounded = raw_declarations
+        .iter()
+        .filter(|declaration| {
+            matches!(
+                declaration.kind,
+                Kind::Grounding | Kind::Enumeration | Kind::BindingShape | Kind::Model
+            )
+        })
+        .map(|declaration| declaration.subject.value.clone())
+        .collect::<BTreeSet<_>>();
+    for (name, spec) in &relations {
+        for domain in spec.roles.values() {
+            if !grounded.contains(&Name(domain.0.clone())) {
+                return Err(error(
+                    raw_declarations
+                        .iter()
+                        .find(|declaration| declaration.subject.value == *name)
+                        .map_or(
+                            Span {
+                                line: 1,
+                                column: 1,
+                                width: 0,
+                            },
+                            |declaration| line_span(declaration.header),
+                        ),
+                    format!("unknown role domain '{}'", domain.as_str()),
+                ));
+            }
+        }
+    }
+
     let mut declaration_names = BTreeSet::new();
     for declaration in &raw_declarations {
         if !declaration_names.insert(declaration.subject.value.clone()) {
@@ -28,31 +127,41 @@ pub fn parse(source: &str) -> Result<Program, ParseError> {
             ));
         }
     }
-    let grounded = raw_declarations
-        .iter()
-        .filter(|declaration| declaration.kind == Kind::Grounding || declaration.bare_block)
-        .map(|declaration| declaration.subject.value.clone())
-        .collect::<BTreeSet<_>>();
-    let mut relations = BTreeMap::new();
-    for declaration in raw_declarations
-        .iter()
-        .filter(|declaration| declaration.kind == Kind::RelationShape)
-    {
-        let spec = relation_spec(declaration)?;
-        for domain in spec.roles.values() {
-            if !grounded.contains(&Name(domain.0.clone())) {
+    let mut top_memberships = MembershipCatalog {
+        explicit: BTreeMap::new(),
+        ranges: Vec::new(),
+    };
+    for fragment in &raw_top_level {
+        if let Some(membership) = membership_line(fragment.line) {
+            let membership = membership?;
+            if !grounded.contains(&membership.group.value) {
                 return Err(error(
-                    line_span(declaration.header),
-                    format!("unknown role domain '{}'", domain.as_str()),
+                    membership.group.span,
+                    format!(
+                        "unknown membership group '{}'",
+                        membership.group.value.as_str()
+                    ),
                 ));
             }
+            insert_membership(&mut top_memberships.explicit, &membership);
+        } else if let Some(definition) = definition_line(fragment.line) {
+            definition?;
         }
-        relations.insert(declaration.subject.value.clone(), spec);
     }
-    for declaration in &mut raw_declarations {
-        if declaration.bare_block {
-            declaration.kind = infer_bare_block_kind(declaration, &relations)?;
-            declaration.bare_block = false;
+    for focus in &raw_focuses {
+        for line in nonblank(focus.body.iter().copied()) {
+            if let Ok(group) = focused_name(line)
+                && grounded.contains(&group.value)
+            {
+                insert_membership(
+                    &mut top_memberships.explicit,
+                    &MembershipDecl {
+                        member: focus.subject.clone(),
+                        group,
+                        span: line_span(line),
+                    },
+                );
+            }
         }
     }
     let kinds = raw_declarations
@@ -385,6 +494,74 @@ pub fn parse(source: &str) -> Result<Program, ParseError> {
         });
     }
 
+    let mut top_level = Vec::new();
+    let mut ordered_top_level = Vec::new();
+    for fragment in raw_top_level {
+        let member = if let Some(membership) = membership_line(fragment.line) {
+            Member::Membership(membership?)
+        } else if let Some(definition) = definition_line(fragment.line) {
+            Member::Definition(definition?)
+        } else {
+            let mut variables = BTreeMap::new();
+            let parsed = clause_with_catalog(
+                fragment.line,
+                &top_memberships,
+                &relations,
+                &memberships,
+                &mut variables,
+            )?;
+            if !ground(&parsed) {
+                return Err(error(parsed.span, "model assertions must be closed"));
+            }
+            Member::RelationalContent(parsed)
+        };
+        ordered_top_level.push((fragment.line.number, member));
+    }
+    for focus in raw_focuses {
+        for line in nonblank(focus.body.iter().copied()) {
+            let member = if let Some(definition) = definition_line(line) {
+                let definition = definition?;
+                Member::Definition(DefinitionDecl {
+                    name: Spanned {
+                        value: Name(format!(
+                            "{} of {}",
+                            definition.name.value.as_str(),
+                            focus.subject.value.as_str()
+                        )),
+                        span: definition.name.span,
+                    },
+                    denotation: definition.denotation,
+                    span: definition.span,
+                })
+            } else if let Ok(group) = focused_name(line)
+                && grounded.contains(&group.value)
+            {
+                Member::Membership(MembershipDecl {
+                    member: focus.subject.clone(),
+                    group,
+                    span: line_span(line),
+                })
+            } else {
+                let expanded = format!("{} {}", focus.subject.value.as_str(), content(line));
+                let mut parsed = clause_with_catalog(
+                    SourceLine {
+                        number: line.number,
+                        text: &expanded,
+                    },
+                    &top_memberships,
+                    &relations,
+                    &memberships,
+                    &mut BTreeMap::new(),
+                )?;
+                parsed.span = line_span(line);
+                Member::RelationalContent(parsed)
+            };
+            ordered_top_level.push((line.number, member));
+        }
+    }
+    ordered_top_level.sort_by_key(|(line, _)| *line);
+    top_level.extend(ordered_top_level.into_iter().map(|(_, member)| member));
+
     let mut requests = Vec::new();
     for raw in raw_requests {
         match raw {
@@ -486,6 +663,7 @@ pub fn parse(source: &str) -> Result<Program, ParseError> {
     }
     Ok(Program {
         declarations,
+        top_level,
         requests,
     })
 }
@@ -592,12 +770,12 @@ diff impact -> impact/adopt
     }
 
     #[test]
-    fn top_level_membership_requires_a_stable_model_context() {
-        let error = parse("Game\nChess ∈ Game\n").expect_err("no Model owns the assertion");
-        assert_eq!(
-            error.message,
-            "top-level membership requires an enclosing bare Model block"
-        );
+    fn top_level_membership_is_preserved_for_a_stable_model_context() {
+        let program = parse("Game\nChess ∈ Game\n").expect("contextual form parses");
+        assert!(matches!(
+            program.top_level.as_slice(),
+            [Member::Membership(_)]
+        ));
     }
 
     #[test]

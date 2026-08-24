@@ -236,7 +236,7 @@ pub(super) fn focus_term(token: &Token) -> Result<SurfaceTerm, ParseError> {
 
 fn term_domains(
     term: &SurfaceTerm,
-    current_model: &Name,
+    current_memberships: &MembershipCatalog,
     memberships: &BTreeMap<Name, MembershipCatalog>,
 ) -> Result<Option<BTreeSet<DomainName>>, ParseError> {
     match term {
@@ -248,13 +248,10 @@ fn term_domains(
         )),
         SurfaceTerm::Referent(referent) => {
             if !referent.value.0.contains('/') {
-                let catalog = memberships
-                    .get(current_model)
-                    .expect("current model was declared before its clauses");
-                if let Some(domains) = catalog.explicit.get(&referent.value) {
+                if let Some(domains) = current_memberships.explicit.get(&referent.value) {
                     return Ok(Some(domains.clone()));
                 }
-                let matched = catalog
+                let matched = current_memberships
                     .ranges
                     .iter()
                     .filter_map(|range| {
@@ -328,6 +325,25 @@ pub(super) fn clause(
     memberships: &BTreeMap<Name, MembershipCatalog>,
     variable_domains: &mut BTreeMap<VariableName, DomainName>,
 ) -> Result<SurfaceClause, ParseError> {
+    let current_memberships = memberships
+        .get(current_model)
+        .expect("current model was declared before its clauses");
+    clause_with_catalog(
+        line,
+        current_memberships,
+        relations,
+        memberships,
+        variable_domains,
+    )
+}
+
+pub(super) fn clause_with_catalog(
+    line: SourceLine<'_>,
+    current_memberships: &MembershipCatalog,
+    relations: &BTreeMap<Name, RelationSpec>,
+    memberships: &BTreeMap<Name, MembershipCatalog>,
+    variable_domains: &mut BTreeMap<VariableName, DomainName>,
+) -> Result<SurfaceClause, ParseError> {
     let tokens = lex_clause(line)?;
     let mut candidates = Vec::new();
     for (relation, spec) in relations {
@@ -359,7 +375,7 @@ pub(super) fn clause(
                     role_index += 1;
                     let term = parse_term(token)?;
                     let expected = spec.roles.get(&role).expect("shape roles populate spec");
-                    if let Some(actual) = term_domains(&term, current_model, memberships)?
+                    if let Some(actual) = term_domains(&term, current_memberships, memberships)?
                         && !actual.contains(expected)
                     {
                         matches = false;

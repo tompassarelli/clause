@@ -26,6 +26,7 @@ use super::{
 #[derive(Clone, Debug)]
 pub struct CompiledProgram {
     revisions: BTreeMap<frontend::Name, kernel::Revision>,
+    context_revision: Option<kernel::Revision>,
     requests: Vec<frontend::RequestDecl>,
     projection: Projection,
     source_spans: BTreeMap<ReferentId, frontend::Span>,
@@ -37,6 +38,15 @@ impl CompiledProgram {
     }
     pub fn requests(&self) -> &[frontend::RequestDecl] {
         &self.requests
+    }
+
+    /// The root Revision compiled in an exact caller-owned Model context.
+    pub fn context_revision(&self) -> Option<&kernel::Revision> {
+        self.context_revision.as_ref()
+    }
+
+    pub fn context_model(&self) -> Option<&kernel::Model> {
+        self.context_revision.as_ref().map(kernel::Revision::model)
     }
 
     pub fn revision(&self, name: &frontend::Name) -> kernel::Result<&kernel::Revision> {
@@ -98,18 +108,64 @@ impl CompiledProgram {
         program: frontend::Program,
         designations: DesignationTable,
     ) -> kernel::Result<Self> {
-        compile_projected(program, designations)
+        compile_named(program, designations)
+    }
+
+    /// Compile direct Model content while preserving a caller-maintained
+    /// designation projection across an explicit rename transaction.
+    pub fn compile_in_with_designations(
+        program: frontend::Program,
+        context: ModelContext,
+        designations: DesignationTable,
+    ) -> kernel::Result<Self> {
+        compile_context(program, context, designations)
+    }
+}
+
+/// Exact semantic scope for a source fragment that does not declare a Model.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ModelContext {
+    model: ReferentId,
+}
+
+impl ModelContext {
+    pub fn new(model: ReferentId) -> Self {
+        Self { model }
+    }
+
+    pub fn id(&self) -> &ReferentId {
+        &self.model
     }
 }
 
 pub fn compile(program: frontend::Program) -> kernel::Result<CompiledProgram> {
-    compile_projected(program, DesignationTable::new())
+    compile_named(program, DesignationTable::new())
 }
 
-fn compile_projected(
+pub fn compile_in(
+    program: frontend::Program,
+    context: ModelContext,
+) -> kernel::Result<CompiledProgram> {
+    compile_context(program, context, DesignationTable::new())
+}
+
+pub fn compile_in_with_designations(
+    program: frontend::Program,
+    context: ModelContext,
+    designations: DesignationTable,
+) -> kernel::Result<CompiledProgram> {
+    compile_context(program, context, designations)
+}
+
+fn compile_named(
     program: frontend::Program,
     designations: DesignationTable,
 ) -> kernel::Result<CompiledProgram> {
+    if !program.top_level.is_empty() {
+        return Err(kernel::KernelError::new(
+            "direct top-level Model content requires an explicit ModelContext",
+        ));
+    }
     let declarations = declaration_map(&program.declarations)?;
     let mut projection = declare_projection(&program, designations)?;
     let relation_shapes = lower_relation_shapes(&program.declarations, &mut projection)?;
@@ -132,7 +188,42 @@ fn compile_projected(
     };
     Ok(CompiledProgram {
         revisions,
+        context_revision: None,
         requests: program.requests,
+        projection,
+        source_spans,
+    })
+}
+
+fn compile_context(
+    program: frontend::Program,
+    context: ModelContext,
+    designations: DesignationTable,
+) -> kernel::Result<CompiledProgram> {
+    declaration_map(&program.declarations)?;
+    if !program.requests.is_empty()
+        || program
+            .declarations
+            .iter()
+            .any(|declaration| !matches!(declaration.kind, Kind::Grounding | Kind::RelationShape))
+    {
+        return Err(kernel::KernelError::new(
+            "ModelContext fragments may contain groundings, RelationShapes, and direct Model content",
+        ));
+    }
+    let mut projection = declare_projection(&program, designations)?;
+    declare_model_members(&context.model, &program.top_level, &mut projection)?;
+    let relation_shapes = lower_relation_shapes(&program.declarations, &mut projection)?;
+    let (model, source_spans) = lower_context_model(
+        context.model,
+        &program.top_level,
+        &relation_shapes,
+        &projection,
+    )?;
+    Ok(CompiledProgram {
+        revisions: BTreeMap::new(),
+        context_revision: Some(wire::admit(model)),
+        requests: Vec::new(),
         projection,
         source_spans,
     })
@@ -194,6 +285,7 @@ fn declare_projection(
         }
         declare_literals(&declaration.body, &mut projection.designations);
     }
+    declare_literals(&program.top_level, &mut projection.designations);
     for (index, request) in program.requests.iter().enumerate() {
         declare_request_literals(request, &mut projection.designations);
         if let frontend::RequestDecl::Find { pattern, .. } = request {
@@ -304,7 +396,15 @@ fn declare_model_projection(
     let model = projection
         .designations
         .global(declaration.subject.value.as_str())?;
-    for member in &declaration.body {
+    declare_model_members(&model, &declaration.body, projection)
+}
+
+fn declare_model_members(
+    model: &ReferentId,
+    members: &[Member],
+    projection: &mut Projection,
+) -> kernel::Result<()> {
+    for member in members {
         match member {
             Member::MembershipRange(range) => {
                 projection.designations.global(&range.group.value.0)?;
@@ -487,7 +587,7 @@ fn lower_models(
             collect_member_literal_referents(member, projection, &mut referents)?;
         }
         let (mut contents, mut occurrences, mut judgments) =
-            literal_memberships(&model_id, declaration, projection, &mut referents)?;
+            literal_memberships(&model_id, &declaration.body, projection, &mut referents)?;
         let mut occurrence_index = 0usize;
         for member in &declaration.body {
             match member {
@@ -688,6 +788,128 @@ fn lower_models(
     Ok((models, source_spans))
 }
 
+fn lower_context_model(
+    model_id: ReferentId,
+    members: &[Member],
+    shapes: &BTreeMap<ReferentId, RelationShape>,
+    projection: &Projection,
+) -> kernel::Result<(Model, BTreeMap<ReferentId, frontend::Span>)> {
+    let mut source_spans = BTreeMap::new();
+    let mut referents = projection
+        .grounded
+        .iter()
+        .chain(shapes.keys())
+        .cloned()
+        .map(|id| (id.clone(), Referent::new(id)))
+        .collect::<BTreeMap<_, _>>();
+    referents.insert(model_id.clone(), Referent::new(model_id.clone()));
+    for id in projection
+        .model_referents
+        .get(&model_id)
+        .into_iter()
+        .flatten()
+    {
+        referents.insert(id.clone(), Referent::new(id.clone()));
+    }
+    for member in members {
+        collect_member_literal_referents(member, projection, &mut referents)?;
+    }
+    let (mut contents, mut occurrences, mut judgments) =
+        literal_memberships(&model_id, members, projection, &mut referents)?;
+    let mut occurrence_index = 0usize;
+    for member in members {
+        match member {
+            Member::Membership(membership) => {
+                let member_id = projection
+                    .designations
+                    .scoped(&model_id, membership.member.value.as_str())?;
+                let group_id = projection
+                    .designations
+                    .global(membership.group.value.as_str())?;
+                admit_authored_content(
+                    &model_id,
+                    membership_content(member_id, group_id)?,
+                    occurrence_index,
+                    Some(membership.span),
+                    &mut referents,
+                    &mut contents,
+                    &mut occurrences,
+                    &mut judgments,
+                    &mut source_spans,
+                )?;
+                occurrence_index += 1;
+            }
+            Member::RelationalContent(_) => occurrence_index += 1,
+            Member::Definition(_) => {}
+            _ => {
+                return Err(kernel::KernelError::new(
+                    "unsupported direct top-level Model member",
+                ));
+            }
+        }
+    }
+    let shell = wire::admit(Model::with_distinctions(
+        model_id.clone(),
+        referents.clone(),
+        contents.clone(),
+        shapes.clone(),
+        occurrences.clone(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        judgments.clone(),
+    )?);
+    let mut occurrence_index = 0usize;
+    let mut definitions = Vec::new();
+    for member in members {
+        match member {
+            Member::Membership(_) => occurrence_index += 1,
+            Member::RelationalContent(surface) => {
+                let content = lower_clause_with(projection, shell.model(), surface, None)?;
+                admit_authored_content(
+                    &model_id,
+                    content,
+                    occurrence_index,
+                    Some(surface.span),
+                    &mut referents,
+                    &mut contents,
+                    &mut occurrences,
+                    &mut judgments,
+                    &mut source_spans,
+                )?;
+                occurrence_index += 1;
+            }
+            Member::Definition(definition) => definitions.push(lower_definition(
+                projection,
+                shell.model(),
+                &definition.name.value,
+                &definition.denotation.value,
+            )?),
+            _ => unreachable!("direct top-level members were checked in the shell pass"),
+        }
+    }
+    Ok((
+        Model::with_distinctions(
+            model_id,
+            referents,
+            contents,
+            shapes.clone(),
+            occurrences,
+            definitions,
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            judgments,
+        )?,
+        source_spans,
+    ))
+}
+
 #[allow(clippy::too_many_arguments)]
 fn admit_authored_content(
     model: &ReferentId,
@@ -743,15 +965,14 @@ type LiteralMemberships = (
 
 fn literal_memberships(
     model: &ReferentId,
-    declaration: &Declaration,
+    members: &[Member],
     projection: &Projection,
     referents: &mut BTreeMap<ReferentId, Referent>,
 ) -> kernel::Result<LiteralMemberships> {
     let mut contents = BTreeMap::new();
     let mut occurrences = Vec::new();
     let mut judgments = Vec::new();
-    let literals = declaration
-        .body
+    let literals = members
         .iter()
         .map(|member| member_literal_referents(member, projection))
         .collect::<kernel::Result<Vec<_>>>()?
