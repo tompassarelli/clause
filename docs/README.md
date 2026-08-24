@@ -11,6 +11,7 @@ language specification.
 | [Semantic foundation](foundation.md) | **Current.** Normative for Clause's distinction-first semantic model. | Governs the surface and roadmap. Supersedes foundations built from primitive types, values, objects, fields, functions, or sets. |
 | [Target surface](surface.md) | **Current target.** Normative for authoring syntax and canonical formatting; parser migration is incomplete. | Governed by the foundation. Supersedes the ceremonial declaration surface and the historical M0 spellings. |
 | [Roadmap](roadmap.md) | **Current.** Normative for implementation sequence, dependency order, and acceptance gates. | Governed by the foundation and target surface. Amends the earlier strategy sequence around the referent kernel and JavaScript/Three.js proof. |
+| [Architecture assurance](architecture.md) | **Current derived acceptance contract.** Non-semantic; makes the architecture ratchet executable. | Governed by the foundation, surface, and roadmap. It cannot add ontology, syntax, or milestone scope. |
 
 ## History
 
@@ -63,6 +64,7 @@ cargo fmt --all -- --check
 cargo check --all-targets
 cargo test --all-targets
 cargo clippy --all-targets -- -D warnings
+bin/architecture-gate
 ```
 
 Concurrent worktrees must use separate `CARGO_TARGET_DIR` values.

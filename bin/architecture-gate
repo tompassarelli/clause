@@ -1,0 +1,211 @@
+#!/bin/sh
+set -eu
+
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+project_root=$(CDPATH= cd -- "$script_dir/.." && pwd)
+contract="$project_root/docs/architecture.md"
+
+fail() {
+  printf 'FAIL architecture gate: %s\n' "$1" >&2
+  exit 1
+}
+
+require_file() {
+  test -f "$1" || fail "missing $2"
+}
+
+has_fixed() {
+  grep -F -q -- "$2" "$1"
+}
+
+require_fixed() {
+  has_fixed "$1" "$2" || fail "$3"
+}
+
+forbid_ere() {
+  if grep -E -q -- "$2" "$1"; then
+    fail "$3"
+  fi
+}
+
+forbid_tree_ere() {
+  if grep -R -E -q --include='*.rs' -- "$2" "$1"; then
+    fail "$3"
+  fi
+}
+
+milestone_rank() {
+  case "$1" in
+    M1) printf '1\n' ;;
+    M2) printf '2\n' ;;
+    M3) printf '3\n' ;;
+    M4) printf '4\n' ;;
+    M5) printf '5\n' ;;
+    M6) printf '6\n' ;;
+    M7) printf '7\n' ;;
+    M8) printf '8\n' ;;
+    *) return 1 ;;
+  esac
+}
+
+implemented_milestone() {
+  awk '
+    /^## M[1-8] / { section = substr($2, 1, 2) }
+    /^\*\*Status:\*\* Implemented\.$/ { implemented = section }
+    END { if (implemented != "") print implemented }
+  ' "$project_root/docs/roadmap.md"
+}
+
+self_test() {
+  fixture=$(mktemp "${TMPDIR:-/tmp}/clause-architecture-gate.XXXXXX")
+  case "$fixture" in
+    "${TMPDIR:-/tmp}"/clause-architecture-gate.*) ;;
+    *) fail "self-test temporary path is outside its fixed prefix" ;;
+  esac
+  trap 'rm -f -- "${fixture:?}"' EXIT HUP INT TERM
+
+  printf '%s\n' '<!-- clause-architecture-gate:v1 -->' > "$fixture"
+  has_fixed "$fixture" '<!-- clause-architecture-gate:v1 -->' \
+    || fail "self-test rejected the authority marker"
+  has_fixed "$fixture" '<!-- missing -->' \
+    && fail "self-test accepted a missing authority marker"
+  milestone_rank M4 >/dev/null \
+    || fail "self-test rejected a known milestone"
+  milestone_rank M9 >/dev/null 2>&1 \
+    && fail "self-test accepted an unknown milestone"
+
+  printf '%s\n' 'pub struct VariableId(String);' > "$fixture"
+  grep -E -q 'pub (struct|enum) (Type|Entity|Value|Variable|Object|Field|Triple)(Id)?\b' "$fixture" \
+    || fail "self-test missed a shadow identity"
+  printf '%s\n' '<!-- debt:high:shadow-runtime -->' > "$fixture"
+  grep -E -q '<!-- debt:(high|critical):' "$fixture" \
+    || fail "self-test missed severe debt"
+  printf '%s\n' '<!-- obligation:incremental-runtime-trace:pending:M6 -->' > "$fixture"
+  has_fixed "$fixture" '<!-- obligation:incremental-runtime-trace:pending:M6 -->' \
+    || fail "self-test missed a due obligation"
+
+  printf 'PASS architecture gate self-test (five adversarial decisions)\n'
+}
+
+if test "${1:-}" = "--self-test"; then
+  test "$#" -eq 1 || fail "--self-test takes no other arguments"
+  self_test
+  exit 0
+fi
+
+test "$#" -le 1 || fail "usage: bin/architecture-gate [M1..M8|--self-test]"
+require_file "$contract" "docs/architecture.md"
+require_file "$project_root/docs/foundation.md" "docs/foundation.md"
+require_file "$project_root/docs/roadmap.md" "docs/roadmap.md"
+require_file "$project_root/src/kernel/identity.rs" "kernel identity source"
+
+current=$(implemented_milestone)
+test -n "$current" || fail "roadmap has no implemented M1..M8 milestone"
+selected=${1:-$current}
+selected_rank=$(milestone_rank "$selected") \
+  || fail "unknown milestone '$selected' (expected M1..M8)"
+current_rank=$(milestone_rank "$current") \
+  || fail "roadmap reported unknown implemented milestone '$current'"
+test "$selected_rank" -le "$current_rank" \
+  || fail "$selected is not marked Implemented in docs/roadmap.md (current: $current)"
+
+require_fixed "$contract" '<!-- clause-architecture-gate:v1 -->' \
+  "architecture contract version is absent or unknown"
+require_fixed "$project_root/docs/foundation.md" \
+  "This document is Clause's semantic authority." \
+  "foundation no longer declares the single semantic authority"
+require_fixed "$contract" \
+  "their architecture boundaries into a release decision; it may not add an" \
+  "architecture contract no longer denies semantic authority"
+
+identity_source="$project_root/src/kernel/identity.rs"
+clause_source="$project_root/src/kernel/clause.rs"
+model_source="$project_root/src/kernel/model.rs"
+schema_source="$project_root/src/kernel/schema.rs"
+compilation_source="$project_root/src/elaborate/compilation.rs"
+wire_source="$project_root/src/wire/decode.rs"
+closure_source="$project_root/src/derive/closure.rs"
+support_source="$project_root/src/derive/support.rs"
+
+require_fixed "$identity_source" 'pub struct ReferentId(String);' \
+  "one ReferentId domain is not explicit"
+require_fixed "$identity_source" 'pub struct ContentId(String);' \
+  "content identity boundary is absent"
+require_fixed "$identity_source" 'pub struct RoleId(String);' \
+  "role identity boundary is absent"
+require_fixed "$clause_source" 'roles: BTreeMap<RoleId, Term>,' \
+  "relational content is not an n-ary named-role map"
+require_fixed "$clause_source" 'pub struct AssertionOccurrence {' \
+  "assertion occurrence is not a separate checked type"
+require_fixed "$clause_source" 'pub struct Judgment {' \
+  "judgment is not a separate checked type"
+require_fixed "$clause_source" 'pub enum JudgmentKind {' \
+  "judgment modality is not explicit"
+require_fixed "$model_source" 'RelationalContent(RelationalContent),' \
+  "Model does not preserve relational content separately"
+require_fixed "$model_source" 'AssertionOccurrence(AssertionOccurrence),' \
+  "Model does not preserve occurrence separately"
+require_fixed "$model_source" 'Judgment(Judgment),' \
+  "Model does not preserve judgment separately"
+require_fixed "$schema_source" 'roles: BTreeMap<RoleId, Role>,' \
+  "relation shape does not preserve every named role"
+
+forbid_tree_ere "$project_root/src/kernel" \
+  'pub (struct|enum) (Type|Entity|Value|Variable|Object|Field|Triple)(Id)?\b' \
+  "kernel introduces a shadow ontology or generic triple"
+forbid_tree_ere "$project_root/src/kernel" \
+  'crate::(frontend|generated|request|execution|intervention|semantic_diff)' \
+  "semantic kernel imports a source, target, request, or runtime authority"
+forbid_tree_ere "$project_root/src" \
+  'pub (struct|enum) (Exception|Throw|Catch)\b' \
+  "implementation exposes implicit exception semantics"
+
+require_fixed "$compilation_source" 'source_spans: BTreeMap<ReferentId, frontend::Span>,' \
+  "source-to-occurrence span projection is absent"
+require_fixed "$compilation_source" 'pub fn source_span(&self, occurrence: &ReferentId)' \
+  "source span cannot be recovered by occurrence identity"
+require_fixed "$wire_source" 'Revision identity does not match the complete semantic-v7 payload' \
+  "wire reload does not reject identity tamper"
+require_fixed "$wire_source" 'successor Revision reload requires its exact predecessor' \
+  "successor reload does not require exact lineage"
+require_fixed "$support_source" 'pub struct SupportProof {' \
+  "explanation/support provenance is not a checked projection"
+require_fixed "$closure_source" 'pub max_join_attempts: usize,' \
+  "reference closure has no exact work bound"
+
+forbid_ere "$contract" '<!-- debt:(high|critical):' \
+  "known high or critical architecture debt blocks publication"
+
+if test "$selected_rank" -ge 4; then
+  require_fixed "$clause_source" 'Pattern(PatternId),' \
+    "M4 holes are not scoped pattern machinery"
+  require_fixed "$identity_source" 'pub struct PatternId(String);' \
+    "M4 pattern identity boundary is absent"
+  forbid_tree_ere "$project_root/src/kernel" \
+    'pub (struct|enum) (Hole|Variable)(Id)?\b' \
+    "M4 turns a hole or variable into a referent species"
+fi
+
+if test "$selected_rank" -ge 5; then
+  require_fixed "$contract" '<!-- obligation:source-migration:pending:M5 -->' \
+    "M5 source-migration obligation marker changed without an executable gate update"
+  fail "M5 source/designation-to-Revision migration trace remains pending"
+fi
+if test "$selected_rank" -ge 6; then
+  require_fixed "$contract" '<!-- obligation:incremental-runtime-trace:pending:M6 -->' \
+    "M6 incremental-runtime obligation marker changed without an executable gate update"
+  fail "M6 incremental add/retract plan and runtime replay trace remain pending"
+fi
+if test "$selected_rank" -ge 7; then
+  require_fixed "$contract" '<!-- obligation:specialized-target-effect-trace:pending:M7 -->' \
+    "M7 target/effect obligation marker changed without an executable gate update"
+  fail "M7 specialized target plan and effect trace remain pending"
+fi
+if test "$selected_rank" -ge 8; then
+  require_fixed "$contract" '<!-- obligation:single-live-surface:pending:M8 -->' \
+    "M8 retirement obligation marker changed without an executable gate update"
+  fail "M8 single-live-surface absence proof remains pending"
+fi
+
+printf 'PASS architecture gate %s (public roadmap current: %s; A1-A10; no due deferral)\n' \
+  "$selected" "$current"
