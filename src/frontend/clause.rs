@@ -2021,9 +2021,7 @@ pub(super) fn clause_with_catalog(
         }
     }
     if candidates.is_empty() {
-        if let Err(structural_error) = structural_term(&tokens, current_memberships, memberships) {
-            return Err(structural_error);
-        }
+        structural_term(&tokens, current_memberships, memberships)?;
         reject_bracketed_clause_terms(&tokens)?;
         if let Some(error) = first_term_error {
             return Err(error);

@@ -46,7 +46,8 @@ fn checked_structures_and_intrinsics_lower_without_an_evaluator() {
     let revision = program.context_revision().expect("context Revision");
     let model = revision.model();
 
-    let checks: [(&str, fn(&Term) -> bool); 5] = [
+    type TermCheck = fn(&Term) -> bool;
+    let checks: [(&str, TermCheck); 5] = [
         ("gravity", |term: &Term| matches!(term, Term::F32(_))),
         ("truth", |term: &Term| matches!(term, Term::Bool(true))),
         ("pair", |term: &Term| matches!(term, Term::Product { .. })),
