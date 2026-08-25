@@ -105,11 +105,11 @@ run_m4_behavior() {
   if CARGO_TARGET_DIR="$m4_target_dir" cargo test --quiet --locked \
     --manifest-path "$project_root/Cargo.toml" \
     --test m4_selection \
-    naked_selection_preserves_freshness_labels_identity_and_generated_parity \
+    law_backed_nested_one_coin_closes_the_m4_acceptance_seam \
     -- --exact; then
     return
   fi
-  fail "exact M4/S1 descriptor, tamper, nested-hole, or generated-parity behavior failed"
+  fail "exact M4/S1 law-backed recursive selection, tamper, bound, or generated-parity behavior failed"
 }
 
 run_m4_rule_to_proof_behavior() {
@@ -261,7 +261,7 @@ require_fixed "$compilation_source" 'pub struct CompileDiagnostic {' \
   "public rank-1 compile diagnostic is absent"
 forbid_ere "$kernel_error_source" 'frontend::|Span|line:|column:' \
   "kernel structural evidence contains a source coordinate"
-require_fixed "$wire_source" 'Revision identity does not match the complete semantic-v8 payload' \
+require_fixed "$wire_source" 'Revision identity does not match the complete semantic-v9 payload' \
   "wire reload does not reject identity tamper"
 require_fixed "$wire_source" 'successor Revision reload requires its exact predecessor' \
   "successor reload does not require exact lineage"
@@ -289,6 +289,8 @@ if test "$selected_rank" -ge 4; then
     "M4 query plan column loses binder identity"
   require_fixed "$query_source" 'origins: Vec<RoleId>,' \
     "M4 query plan column loses stable role origins"
+  require_fixed "$query_source" 'dependencies: Vec<RelationalContent>,' \
+    "M4 query plan loses request-local recursive application dependencies"
   forbid_ere "$query_source" '^[[:space:]]+label:' \
     "presentation labels enter the semantic QueryPlan"
   require_fixed "$request_source" 'pub struct QueryColumn {' \
@@ -299,6 +301,10 @@ if test "$selected_rank" -ge 4; then
     "M4 request column loses binder identity"
   require_fixed "$request_source" 'origins: Vec<RoleId>,' \
     "M4 request column loses stable role origins"
+  require_fixed "$request_source" 'pub enum QuerySelection {' \
+    "M4 request loses its explicit result-cardinality contract"
+  require_fixed "$request_source" 'dependencies: Vec<RelationalContent>,' \
+    "M4 request loses recursive application dependencies"
   run_m4_behavior
   run_m4_rule_to_proof_behavior
 fi

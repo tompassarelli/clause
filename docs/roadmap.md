@@ -201,9 +201,11 @@ Public Clause currently implements:
 - the compact M1 grounding, binding, membership, enumeration, and focus
   surface, M2 exact role-labelled relation schemas and projection contracts,
   and M3 recursive terms, checked structural values, closed pure definitions,
-  indexed pure evaluation, and source-deleted generated evaluation, alongside
-  retained `RelationShape`, `DerivationRule`, `Revision`, `mode`, and explicit
-  request ceremony as migration forms awaiting later milestones;
+  indexed pure evaluation, and source-deleted generated evaluation, plus M4
+  recursive holes, explicit query cardinality, universal laws, and separately
+  authorized derivation rules, alongside retained `RelationShape`, `Revision`,
+  `mode`, and explicit request ceremony as migration forms awaiting later
+  milestones;
 - admitted relational content and bounded positive recursive derivation rules;
 - immutable Revisions and exact successor Deltas;
 - recursive closure queries and bounded complete support enumeration;
@@ -416,6 +418,8 @@ triples.
 
 **Depends on:** M3.
 
+**Status:** Implemented.
+
 Implement fresh anonymous holes, named reusable/result holes, repeated-hole
 correlation, naked single-clause selection, explicit `select` projection,
 `any` existence, exact-one selection, canonical at-most-one `first` selection
@@ -430,10 +434,15 @@ Random witness selection is a distinct effectful operation. `find` ceases to be
 the canonical relational query word but may remain a tooling/library verb.
 `why`, `prevent`, `achieve`, and `diff` retain distinct semantic operations.
 
-**Exit proof:** anonymous and named holes have exact column/correlation
-semantics; `any` returns only Bool; recursive hospital derivation rules and
-queries retain their bounded results/proofs; no general English parser or
-universal unbounded logic search is introduced.
+**Exit proof:** one bounded one-coin fixture correlates holes recursively through
+distance, radius, and addition applications; a separately authorized universal
+law derives one overlap with exact governing-law, authority, and scope proof
+trace; `select one` returns exactly the coin and `any` returns true. Alpha-renamed
+holes preserve semantic-v9 bytes, strict canonical reload rejects tampering,
+repeated bounded execution is deterministic, and source-deleted generated Rust
+prints byte-identical canonical output. The inherited hospital derivations and
+queries retain their bounded results and proofs; no general English parser or
+unbounded logic search is introduced.
 
 ## M5 — Revision surface reset and migration parity
 

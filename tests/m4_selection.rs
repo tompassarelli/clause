@@ -1,6 +1,6 @@
 use clause::{
     elaborate, frontend, generated,
-    kernel::{Name, QueryPlan, QueryPlanColumn, Term},
+    kernel::Term,
     request::{self, QueryColumn, QuerySelection, Request, RequestOutput, ResolvedProgram},
     wire,
 };
@@ -118,16 +118,28 @@ radius
   left right -> result
 
 collision
-  subject: Body collides at separation: Scalar within reach: Scalar
-  separation reach -> subject*
+  subject: Body collides with other: Body at separation: Scalar within reach: Scalar
+  other separation reach -> subject*
+
+overlap
+  subject: Body overlaps other: Body
+  other -> subject*
 
 scene
   player ∈ Body
   coin ∈ Body
-  coin collides at distance between player and coin within radius of player + radius of coin
+  coin collides with player at distance between coin and player within radius of coin + radius of player
 
-select ?body
-  ?body collides at (distance between player and ?body) within (radius of player + radius of ?body)
+law collision overlap
+  ?body overlaps ?other if
+    ?body collides with ?other at (distance between ?body and ?other) within (radius of ?body + radius of ?other)
+
+derive collision overlap
+
+select one ?body
+  ?body collides with player at (distance between ?body and player) within (radius of ?body + radius of player)
+
+any ?body overlaps player
 ";
 
 fn temporary(extension: &str) -> PathBuf {
@@ -427,7 +439,7 @@ fn naked_selection_preserves_freshness_labels_identity_and_generated_parity() {
 }
 
 #[test]
-fn nested_application_holes_use_a_request_local_graph_and_recursive_correlation() {
+fn law_backed_nested_one_coin_closes_the_m4_acceptance_seam() {
     let compiled = elaborate::compile(
         frontend::parse(NESTED_APPLICATION_SOURCE).expect("nested query source parses"),
     )
@@ -437,11 +449,13 @@ fn nested_application_holes_use_a_request_local_graph_and_recursive_correlation(
         Request::Select {
             dependencies,
             columns,
+            selection: QuerySelection::ExactlyOne,
             ..
         },
+        Request::Any { .. },
     ] = resolved.requests()
     else {
-        panic!("nested source resolves to one selection");
+        panic!("nested source resolves to exact-one selection and existence query");
     };
     assert!(!dependencies.is_empty());
     let revision = compiled.revision(&frontend::Name("scene".into())).unwrap();
@@ -465,10 +479,53 @@ fn nested_application_holes_use_a_request_local_graph_and_recursive_correlation(
     assert_eq!(columns.len(), 1);
     assert_eq!(columns[0].label(), Some("body"));
 
-    let output = request::run(&resolved, request::RunLimits::default())
-        .expect("nested query executes through recursive matching");
-    let [RequestOutput::Select { rows, .. }] = output.results.as_slice() else {
-        panic!("nested query returns one selection result");
+    let law = &revision.model().universal_laws()[0];
+    let rule = &revision.model().derivation_rules()[0];
+    assert_ne!(rule.id(), law.id(), "law and operational rule stay distinct");
+    assert_eq!(rule.governing_law(), law.id());
+    assert_eq!(rule.authority(), revision.model().id());
+    assert_eq!(rule.scope(), revision.model().id());
+
+    let closure_limits = clause::derive::Limits::new(16, 4, 64);
+    let closure = clause::derive::saturate(revision, closure_limits)
+        .expect("authorized collision law saturates within its explicit bound");
+    let overlap = compiled.designations().global("overlap").unwrap();
+    let overlaps = closure
+        .contents()
+        .iter()
+        .filter(|content| content.relation() == &overlap)
+        .collect::<Vec<_>>();
+    assert_eq!(overlaps.len(), 1, "one authorized overlap is derived");
+    let proof = closure
+        .proof(overlaps[0])
+        .expect("derived overlap retains an exact proof");
+    let clause::derive::Witness::Derived {
+        rule: witnessed_rule,
+        governing_law,
+        authority,
+        scope,
+        ..
+    } = proof.witness()
+    else {
+        panic!("overlap must be produced by the authorized law projection");
+    };
+    assert_eq!(witnessed_rule, rule.id());
+    assert_eq!(governing_law, law.id());
+    assert_eq!(authority, rule.authority());
+    assert_eq!(scope, rule.scope());
+
+    let mut limits = request::RunLimits::default();
+    limits.closure = closure_limits;
+    let output = request::run(&resolved, limits)
+        .expect("nested law-backed queries execute within their explicit bound");
+    assert_eq!(
+        request::run(&resolved, limits).expect("bounded execution repeats deterministically"),
+        output
+    );
+    let [RequestOutput::SelectOne { rows, .. }, RequestOutput::Any(true)] =
+        output.results.as_slice()
+    else {
+        panic!("the acceptance query returns exactly one row and true");
     };
     let scene = compiled.designations().global("scene").unwrap();
     let coin = Term::referent(compiled.designations().scoped(&scene, "coin").unwrap());
@@ -480,26 +537,46 @@ fn nested_application_holes_use_a_request_local_graph_and_recursive_correlation(
         "one named binder correlates the direct subject and every nested application leaf"
     );
 
-    let mut malformed = resolved.requests().to_vec();
-    let Request::Select { dependencies, .. } = &mut malformed[0] else {
-        unreachable!();
-    };
-    dependencies.pop();
+    let renamed_source = NESTED_APPLICATION_SOURCE
+        .replace("?body", "?candidate")
+        .replace("?other", "?counterpart");
+    let renamed = elaborate::compile(
+        frontend::parse(&renamed_source).expect("alpha-renamed acceptance source parses"),
+    )
+    .expect("alpha-renamed acceptance source compiles");
     assert_eq!(
-        ResolvedProgram::new(resolved.revisions().clone(), malformed)
-            .expect_err("missing request dependency fails closed")
-            .to_string(),
-        "query term names undeclared content"
+        wire::serialize(revision),
+        wire::serialize(renamed.revision(&frontend::Name("scene".into())).unwrap()),
+        "law and request hole labels do not enter semantic-v9 bytes"
+    );
+
+    let canonical_revision = wire::serialize(revision);
+    let reloaded = wire::reload(&canonical_revision).expect("canonical semantic-v9 reloads");
+    assert_eq!(&reloaded, revision);
+    assert_eq!(wire::serialize(&reloaded), canonical_revision);
+    let governing = format!(
+        "[\"governing-law\",\"{}\"]",
+        rule.governing_law().as_str()
+    );
+    let forged = format!("[\"governing-law\",\"{}\"]", rule.authority().as_str());
+    let tampered = canonical_revision.replacen(&governing, &forged, 1);
+    assert_ne!(tampered, canonical_revision);
+    assert!(
+        wire::reload(&tampered).is_err(),
+        "tampered governing-law identity fails strict admission"
     );
 
     let expected = output.canonical_bytes();
+    let authoring = temporary("closure.clause");
     let rust = temporary("nested.rs");
     let binary = temporary("nested.bin");
+    fs::write(&authoring, NESTED_APPLICATION_SOURCE).expect("acceptance source writes");
     fs::write(
         &rust,
         generated::emit_rust(&resolved).expect("nested request emits Rust"),
     )
     .expect("generated nested Rust writes");
+    fs::remove_file(&authoring).expect("acceptance source deletes before generated compile");
     let generated = Command::new("rustc")
         .args([
             "--edition=2024",
