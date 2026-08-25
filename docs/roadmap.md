@@ -418,9 +418,10 @@ triples.
 
 Implement fresh anonymous holes, named reusable/result holes, repeated-hole
 correlation, naked single-clause selection, explicit `select` projection,
-`any` existence, exact-one and canonical-first selection, and `if`-oriented
-positive derivation rules with hidden or optional human labels. Universal laws,
-Revision-admission invariants, and goals remain distinct modes.
+`any` existence, exact-one selection, canonical at-most-one `first` selection
+(empty on no solution), and `if`-oriented positive derivation rules with hidden
+or optional human labels. Universal laws, Revision-admission invariants, and
+goals remain distinct modes.
 
 Random witness selection is a distinct effectful operation. `find` ceases to be
 the canonical relational query word but may remain a tooling/library verb.

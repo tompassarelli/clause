@@ -318,6 +318,14 @@ pub enum InterventionSelection {
     AllMinimal,
 }
 
+/// The result-cardinality contract for one relational selection.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum QuerySelection {
+    All,
+    ExactlyOne,
+    CanonicalFirst,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RequestDecl {
     Any {
@@ -329,6 +337,7 @@ pub enum RequestDecl {
         revision: Spanned<Name>,
         pattern: SurfaceClause,
         columns: Vec<QueryColumnDecl>,
+        selection: QuerySelection,
         span: Span,
     },
     Find {

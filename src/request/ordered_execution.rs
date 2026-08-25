@@ -1,5 +1,6 @@
 use super::{
-    Request, RequestOutput, ResolvedProgram, RunLimits, RunOutput, Selection, any_plan, select_plan,
+    QuerySelection, Request, RequestOutput, ResolvedProgram, RunLimits, RunOutput, Selection,
+    any_plan, select_plan,
 };
 use crate::{
     execution, intervention,
@@ -23,17 +24,34 @@ pub(super) fn run(program: &ResolvedProgram, limits: RunLimits) -> kernel::Resul
                 revision: identity,
                 pattern,
                 columns,
+                selection,
             } => {
                 let selected = revision(program, identity)?;
                 let plan = select_plan(selected.model(), pattern, columns)?;
-                RequestOutput::Select {
-                    columns: columns.clone(),
-                    rows: execution::select_projected(
-                        selected,
-                        &plan,
-                        columns.len(),
-                        limits.closure,
-                    )?,
+                let mut rows =
+                    execution::select_projected(selected, &plan, columns.len(), limits.closure)?;
+                match selection {
+                    QuerySelection::All => RequestOutput::Select {
+                        columns: columns.clone(),
+                        rows,
+                    },
+                    QuerySelection::ExactlyOne if rows.len() == 1 => RequestOutput::SelectOne {
+                        columns: columns.clone(),
+                        rows,
+                    },
+                    QuerySelection::ExactlyOne => {
+                        return Err(kernel::KernelError::new(format!(
+                            "select one requires exactly one row, found {}",
+                            rows.len()
+                        )));
+                    }
+                    QuerySelection::CanonicalFirst => {
+                        rows.truncate(1);
+                        RequestOutput::SelectFirst {
+                            columns: columns.clone(),
+                            rows,
+                        }
+                    }
                 }
             }
             Request::Find {

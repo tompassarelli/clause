@@ -1,6 +1,8 @@
 use std::collections::BTreeMap;
 
-use super::{QueryColumn, Request, ResolvedProgram, Selection, any_plan, projected_plan};
+use super::{
+    QueryColumn, QuerySelection, Request, ResolvedProgram, Selection, any_plan, projected_plan,
+};
 use crate::{
     elaborate::{self, CompiledProgram},
     frontend,
@@ -27,6 +29,7 @@ pub(super) fn resolve(program: &CompiledProgram) -> kernel::Result<ResolvedProgr
                 revision,
                 pattern,
                 columns,
+                selection,
                 ..
             } => {
                 let revision = program.revision(&revision.value)?;
@@ -58,6 +61,7 @@ pub(super) fn resolve(program: &CompiledProgram) -> kernel::Result<ResolvedProgr
                     revision: revision.identity().clone(),
                     pattern,
                     columns,
+                    selection: lower_query_selection(*selection),
                 }
             }
             frontend::RequestDecl::Find {
@@ -185,5 +189,13 @@ fn lower_selection(value: frontend::InterventionSelection) -> Selection {
     match value {
         frontend::InterventionSelection::OneMinimal => Selection::OneMinimal,
         frontend::InterventionSelection::AllMinimal => Selection::AllMinimal,
+    }
+}
+
+fn lower_query_selection(value: frontend::QuerySelection) -> QuerySelection {
+    match value {
+        frontend::QuerySelection::All => QuerySelection::All,
+        frontend::QuerySelection::ExactlyOne => QuerySelection::ExactlyOne,
+        frontend::QuerySelection::CanonicalFirst => QuerySelection::CanonicalFirst,
     }
 }

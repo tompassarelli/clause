@@ -856,7 +856,9 @@ select first ?person
   ?person likes Chess
 ```
 
-returns the canonical first result.
+returns at most one result: empty when the query has no solution, otherwise the
+canonical first row after complete result sorting and deduplication. It is
+neither exact-one selection nor random witness choice.
 
 Random choice is not `any`:
 

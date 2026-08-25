@@ -850,6 +850,7 @@ pub fn parse(source: &str) -> Result<Program, ParseError> {
             },
             pattern,
             columns,
+            selection: QuerySelection::All,
             span: line_span(raw.line),
         });
     }
@@ -857,6 +858,7 @@ pub fn parse(source: &str) -> Result<Program, ParseError> {
         match raw {
             RawRequest::Select {
                 projected,
+                selection,
                 clause: line,
                 header,
             } => {
@@ -874,6 +876,7 @@ pub fn parse(source: &str) -> Result<Program, ParseError> {
                     },
                     pattern,
                     columns: vec![column],
+                    selection,
                     span: line_span(header),
                 });
             }

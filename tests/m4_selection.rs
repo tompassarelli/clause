@@ -1,7 +1,7 @@
 use clause::{
     elaborate, frontend, generated,
     kernel::{Name, QueryPlan, QueryPlanColumn, Term},
-    request::{self, QueryColumn, Request, RequestOutput, ResolvedProgram},
+    request::{self, QueryColumn, QuerySelection, Request, RequestOutput, ResolvedProgram},
     wire,
 };
 use std::{env, fs, path::PathBuf, process::Command};
@@ -70,6 +70,36 @@ selection
 
 select ?person
   World relates ?person through ?same and ?same to ?
+";
+
+const CARDINALITY_SOURCE: &str = "Entity
+
+selection/related: RelationShape
+  {scope: Entity} relates {a: Entity} through {b: Entity} and {c: Entity} to {d: Entity}
+  mode scope -> a, b, c, d: many
+  mode scope, b, c -> a, d: many
+  mode scope, b, c, d -> a: many
+
+selection
+  World ∈ Entity
+  A ∈ Entity
+  B ∈ Entity
+  C ∈ Entity
+  D ∈ Entity
+  World relates A through B and B to C
+  World relates C through B and B to A
+
+select ?person
+  World relates ?person through B and B to ?destination
+
+select one ?person
+  World relates ?person through B and B to C
+
+select first ?person
+  World relates ?person through B and B to ?destination
+
+select first ?person
+  World relates ?person through C and C to D
 ";
 
 fn temporary(extension: &str) -> PathBuf {
@@ -202,6 +232,7 @@ fn naked_selection_preserves_freshness_labels_identity_and_generated_parity() {
                 .clone(),
             pattern: pattern.clone(),
             columns,
+            selection: QuerySelection::All,
         };
         ResolvedProgram::new(resolved.revisions().clone(), requests)
             .expect_err("invalid role provenance must fail closed")
@@ -658,4 +689,121 @@ fn explicit_projection_keeps_hidden_binders_private_and_matches_with_them() {
     assert_eq!(actual.stdout, expected_bytes.as_bytes());
     fs::remove_file(rust).expect("generated Rust cleans up");
     fs::remove_file(binary).expect("generated executable cleans up");
+}
+
+#[test]
+fn selection_cardinalities_preserve_canonical_rows_and_generated_parity() {
+    let compiled =
+        elaborate::compile(frontend::parse(CARDINALITY_SOURCE).expect("cardinality source parses"))
+            .expect("cardinality source compiles");
+    let resolved = request::resolve(&compiled).expect("cardinality requests resolve");
+    assert!(matches!(
+        resolved.requests(),
+        [
+            Request::Select {
+                selection: QuerySelection::All,
+                ..
+            },
+            Request::Select {
+                selection: QuerySelection::ExactlyOne,
+                ..
+            },
+            Request::Select {
+                selection: QuerySelection::CanonicalFirst,
+                ..
+            },
+            Request::Select {
+                selection: QuerySelection::CanonicalFirst,
+                ..
+            },
+        ]
+    ));
+
+    let output = request::run(&resolved, request::RunLimits::default())
+        .expect("all cardinality contracts are satisfied");
+    let [
+        RequestOutput::Select { rows: all, .. },
+        RequestOutput::SelectOne { rows: one, .. },
+        RequestOutput::SelectFirst { rows: first, .. },
+        RequestOutput::SelectFirst {
+            rows: empty_first, ..
+        },
+    ] = output.results.as_slice()
+    else {
+        panic!("cardinality requests retain their exact output contracts");
+    };
+    assert_eq!(all.len(), 2);
+    assert_eq!(one.len(), 1);
+    assert_eq!(first, &all[..1]);
+    assert!(empty_first.is_empty());
+
+    let canonical = output.canonical_bytes();
+    assert_eq!(canonical.matches("[\"select\",").count(), 1);
+    assert_eq!(canonical.matches("[\"select-one\",").count(), 1);
+    assert_eq!(canonical.matches("[\"select-first\",").count(), 2);
+
+    let rust = temporary("cardinality.rs");
+    let binary = temporary("cardinality.bin");
+    fs::write(
+        &rust,
+        generated::emit_rust(&resolved).expect("cardinality requests emit Rust"),
+    )
+    .expect("generated cardinality Rust writes");
+    let generated = Command::new("rustc")
+        .args([
+            "--edition=2024",
+            "--cfg",
+            "clause_generated",
+            "--crate-name",
+            "clause_m4_cardinality",
+        ])
+        .arg(&rust)
+        .arg("-o")
+        .arg(&binary)
+        .output()
+        .expect("generated cardinality Rust compiler starts");
+    assert!(
+        generated.status.success(),
+        "{}",
+        String::from_utf8_lossy(&generated.stderr)
+    );
+    let actual = Command::new(&binary)
+        .output()
+        .expect("generated cardinality executable starts");
+    assert!(actual.status.success());
+    assert_eq!(actual.stdout, canonical.as_bytes());
+    fs::remove_file(rust).expect("generated cardinality Rust cleans up");
+    fs::remove_file(binary).expect("generated cardinality executable cleans up");
+}
+
+#[test]
+fn select_one_rejects_empty_and_multiple_complete_rows() {
+    let compile = |source: &str| {
+        let compiled = elaborate::compile(frontend::parse(source).expect("source parses"))
+            .expect("source compiles");
+        request::resolve(&compiled).expect("request resolves")
+    };
+    let multiple = CARDINALITY_SOURCE
+        .split("select one ?person")
+        .next()
+        .expect("fixture has a query prefix")
+        .to_owned()
+        + "select one ?person\n  World relates ?person through B and B to ?destination\n";
+    assert_eq!(
+        request::run(&compile(&multiple), request::RunLimits::default())
+            .expect_err("two distinct rows violate select one")
+            .to_string(),
+        "select one requires exactly one row, found 2"
+    );
+
+    let empty = multiple.replace(
+        "World relates ?person through B and B to ?destination",
+        "World relates ?person through C and C to D",
+    );
+    assert_eq!(
+        request::run(&compile(&empty), request::RunLimits::default())
+            .expect_err("no rows violate select one")
+            .to_string(),
+        "select one requires exactly one row, found 0"
+    );
 }

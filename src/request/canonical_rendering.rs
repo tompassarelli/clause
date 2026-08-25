@@ -1,4 +1,4 @@
-use super::{EvaluationOutput, RequestOutput, RunOutput};
+use super::{EvaluationOutput, QueryColumn, RequestOutput, RunOutput};
 use crate::{
     execution::{self, Proof, WhyAll},
     intervention::{AchieveAll, AchieveOne, Incomplete, Intervention, PreventAll, PreventOne},
@@ -36,37 +36,9 @@ pub(super) fn evaluation_bytes(output: &EvaluationOutput) -> String {
 fn request_output(value: &RequestOutput) -> String {
     match value {
         RequestOutput::Any(value) => format!("[\"any\",{value}]"),
-        RequestOutput::Select { columns, rows } => format!(
-            "[\"select\",[{}],[{}]]",
-            columns
-                .iter()
-                .map(|column| format!(
-                    "[{},[{}],{}]",
-                    string(column.binder().as_str()),
-                    role_origins(column.origins()),
-                    column
-                        .label()
-                        .map(string)
-                        .unwrap_or_else(|| "null".to_owned())
-                ))
-                .collect::<Vec<_>>()
-                .join(","),
-            rows.iter()
-                .map(|row| format!(
-                    "[{}]",
-                    row.cells()
-                        .iter()
-                        .map(|cell| format!(
-                            "[[{}],{}]",
-                            role_origins(cell.origins()),
-                            term(cell.value())
-                        ))
-                        .collect::<Vec<_>>()
-                        .join(",")
-                ))
-                .collect::<Vec<_>>()
-                .join(",")
-        ),
+        RequestOutput::Select { columns, rows } => selection("select", columns, rows),
+        RequestOutput::SelectOne { columns, rows } => selection("select-one", columns, rows),
+        RequestOutput::SelectFirst { columns, rows } => selection("select-first", columns, rows),
         RequestOutput::Find(items) => format!(
             "[\"find\",[{}]]",
             items.iter().map(term).collect::<Vec<_>>().join(",")
@@ -96,6 +68,41 @@ fn request_output(value: &RequestOutput) -> String {
         }
         RequestOutput::Diff(diff) => diff_json(diff),
     }
+}
+
+fn selection(tag: &str, columns: &[QueryColumn], rows: &[execution::QueryRow]) -> String {
+    format!(
+        "[{},[{}],[{}]]",
+        string(tag),
+        columns
+            .iter()
+            .map(|column| format!(
+                "[{},[{}],{}]",
+                string(column.binder().as_str()),
+                role_origins(column.origins()),
+                column
+                    .label()
+                    .map(string)
+                    .unwrap_or_else(|| "null".to_owned())
+            ))
+            .collect::<Vec<_>>()
+            .join(","),
+        rows.iter()
+            .map(|row| format!(
+                "[{}]",
+                row.cells()
+                    .iter()
+                    .map(|cell| format!(
+                        "[[{}],{}]",
+                        role_origins(cell.origins()),
+                        term(cell.value())
+                    ))
+                    .collect::<Vec<_>>()
+                    .join(",")
+            ))
+            .collect::<Vec<_>>()
+            .join(",")
+    )
 }
 
 fn role_origins(origins: &[RoleId]) -> String {

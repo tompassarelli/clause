@@ -6,7 +6,7 @@ use std::fmt::Write;
 
 use crate::{
     kernel::{KernelError, PatternId, ReferentId, RelationalContent, Result, RoleId, Term},
-    request::{QueryColumn, Request, ResolvedProgram, Selection},
+    request::{QueryColumn, QuerySelection, Request, ResolvedProgram, Selection},
     wire,
 };
 
@@ -380,15 +380,17 @@ fn request_source(
             revision,
             pattern,
             columns,
+            selection,
         } => format!(
-            "request::Request::Select {{ revision: {}, pattern: {}, columns: vec![{}] }}",
+            "request::Request::Select {{ revision: {}, pattern: {}, columns: vec![{}], selection: {} }}",
             revision_source(revision, indices),
             clause_source(pattern),
             columns
                 .iter()
                 .map(query_column_source)
                 .collect::<Vec<_>>()
-                .join(",")
+                .join(","),
+            query_selection_source(*selection),
         ),
         Request::Find {
             revision,
@@ -472,6 +474,15 @@ fn selection_source(selection: Selection) -> &'static str {
     match selection {
         Selection::OneMinimal => "request::Selection::OneMinimal",
         Selection::AllMinimal => "request::Selection::AllMinimal",
+    }
+}
+
+#[cfg(not(clause_generated))]
+fn query_selection_source(selection: QuerySelection) -> &'static str {
+    match selection {
+        QuerySelection::All => "request::QuerySelection::All",
+        QuerySelection::ExactlyOne => "request::QuerySelection::ExactlyOne",
+        QuerySelection::CanonicalFirst => "request::QuerySelection::CanonicalFirst",
     }
 }
 #[cfg(not(clause_generated))]

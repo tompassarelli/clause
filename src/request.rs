@@ -32,6 +32,7 @@ pub enum Request {
         revision: RevisionId,
         pattern: RelationalContent,
         columns: Vec<QueryColumn>,
+        selection: QuerySelection,
     },
     Find {
         revision: RevisionId,
@@ -103,6 +104,14 @@ pub enum Selection {
     AllMinimal,
 }
 
+/// The requested relational result-cardinality contract.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum QuerySelection {
+    All,
+    ExactlyOne,
+    CanonicalFirst,
+}
+
 /// A source-independent ordered program and the exact revisions it references.
 #[derive(Clone, Debug)]
 pub struct ResolvedProgram {
@@ -157,6 +166,7 @@ impl ResolvedProgram {
                     revision,
                     pattern,
                     columns,
+                    ..
                 } => {
                     let selected = revisions
                         .get(revision)
@@ -318,6 +328,14 @@ pub struct EvaluationOutput {
 pub enum RequestOutput {
     Any(bool),
     Select {
+        columns: Vec<QueryColumn>,
+        rows: Vec<QueryRow>,
+    },
+    SelectOne {
+        columns: Vec<QueryColumn>,
+        rows: Vec<QueryRow>,
+    },
+    SelectFirst {
         columns: Vec<QueryColumn>,
         rows: Vec<QueryRow>,
     },

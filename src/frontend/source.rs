@@ -40,6 +40,7 @@ enum RawItem<'a> {
 pub(super) enum RawRequest<'a> {
     Select {
         projected: Spanned<VariableName>,
+        selection: QuerySelection,
         clause: SourceLine<'a>,
         header: SourceLine<'a>,
     },
@@ -488,11 +489,21 @@ fn parse_request<'a>(
 ) -> Result<RawRequest<'a>, ParseError> {
     let text = content(line);
     *index += 1;
-    if let Some(projected) = text.strip_prefix("select ?") {
-        let projected = variable_name(line, "select ?".len(), projected)?;
+    let selection = if text.starts_with("select one ?") {
+        Some((QuerySelection::ExactlyOne, "select one ?"))
+    } else if text.starts_with("select first ?") {
+        Some((QuerySelection::CanonicalFirst, "select first ?"))
+    } else if text.starts_with("select ?") {
+        Some((QuerySelection::All, "select ?"))
+    } else {
+        None
+    };
+    if let Some((selection, prefix)) = selection {
+        let projected = variable_name(line, prefix.len(), &text[prefix.len()..])?;
         let clause = read_clause_block(lines, index, "select request")?;
         return Ok(RawRequest::Select {
             projected,
+            selection,
             clause,
             header: line,
         });
