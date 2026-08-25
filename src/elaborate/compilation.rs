@@ -1044,6 +1044,96 @@ fn canonical_rule_alpha(
     Ok(canonical.expect("one permutation exists even for a ground universal law"))
 }
 
+fn canonical_event_state_alpha(
+    event_base: &ReferentId,
+    payload_bindings: &[frontend::Spanned<frontend::VariableName>],
+    state_bindings: &[frontend::VariableName],
+    transitions: &[frontend::EventTransitionDecl],
+    shell: &Model,
+    projection: &mut Projection,
+) -> kernel::Result<Vec<frontend::VariableName>> {
+    if canonical_rule_alpha_candidates(state_bindings.len()).is_none() {
+        return Err(kernel::KernelError::new(format!(
+            "event inferred pre-state bindings exceed {MAX_CANONICAL_RULE_ALPHA_CANDIDATES}-candidate identity bound"
+        )));
+    }
+    let provisional_scope = synthetic_referent(
+        "state-transition-event-provisional-pattern-scope",
+        &[event_base.as_str()],
+    );
+    let payload = payload_bindings
+        .iter()
+        .map(|binding| binding.value.clone())
+        .collect::<Vec<_>>();
+    let mut state = state_bindings.to_vec();
+    let mut canonical: Option<(
+        Vec<(kernel::ContentId, Vec<kernel::ContentId>, kernel::ContentId)>,
+        Vec<frontend::VariableName>,
+    )> = None;
+    visit_permutations(&mut state, 0, &mut |order| {
+        let variables = payload
+            .iter()
+            .cloned()
+            .chain(order.iter().cloned())
+            .collect::<Vec<_>>();
+        let provisional_binders = BinderTable::declare_alpha_ordered(
+            &mut projection.designations,
+            &provisional_scope,
+            &variables,
+        )?;
+        let mut structure = transitions
+            .iter()
+            .map(|transition| {
+                let before = lower_clause_graph_with(
+                    projection,
+                    shell,
+                    &transition.before,
+                    Some(&provisional_binders),
+                )?
+                .root
+                .id()
+                .clone();
+                let mut guards = transition
+                    .guards
+                    .iter()
+                    .map(|guard| {
+                        lower_clause_graph_with(
+                            projection,
+                            shell,
+                            guard,
+                            Some(&provisional_binders),
+                        )
+                        .map(|graph| graph.root.id().clone())
+                    })
+                    .collect::<kernel::Result<Vec<_>>>()?;
+                guards.sort();
+                guards.dedup();
+                let after = lower_clause_graph_with(
+                    projection,
+                    shell,
+                    &transition.after,
+                    Some(&provisional_binders),
+                )?
+                .root
+                .id()
+                .clone();
+                Ok((before, guards, after))
+            })
+            .collect::<kernel::Result<Vec<_>>>()?;
+        structure.sort();
+        if canonical
+            .as_ref()
+            .is_none_or(|best| structure < best.0)
+        {
+            canonical = Some((structure, order.to_vec()));
+        }
+        Ok(())
+    })?;
+    Ok(canonical
+        .expect("one permutation exists even for a ground event")
+        .1)
+}
+
 fn validate_functional_replacement(
     shapes: &BTreeMap<ReferentId, RelationShape>,
     before: &RelationalContent,
@@ -1592,7 +1682,14 @@ fn lower_models(
                 .iter()
                 .map(|binding| binding.value.clone())
                 .collect::<Vec<_>>();
-            variables.extend(event.state_bindings.iter().cloned());
+            variables.extend(canonical_event_state_alpha(
+                &event_base,
+                &event.payload_bindings,
+                &event.state_bindings,
+                &event.transitions,
+                shell.model(),
+                projection,
+            )?);
             let binders = BinderTable::declare_alpha_ordered(
                 &mut projection.designations,
                 &event_base,
@@ -1613,7 +1710,7 @@ fn lower_models(
                 )?;
                 let before = register_content_graph(&mut contents, before_graph)?;
                 register_unasserted_content(&mut contents, before.clone())?;
-                let guards = authored
+                let mut guards = authored
                     .guards
                     .iter()
                     .map(|guard| {
@@ -1629,6 +1726,8 @@ fn lower_models(
                         Ok(guard)
                     })
                     .collect::<kernel::Result<Vec<_>>>()?;
+                guards.sort_by(|left, right| left.id().cmp(right.id()));
+                guards.dedup_by(|left, right| left.id() == right.id());
                 let after_graph = lower_clause_graph_traced(
                     projection,
                     shell.model(),

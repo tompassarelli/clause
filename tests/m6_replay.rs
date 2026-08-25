@@ -26,6 +26,10 @@ const ONE_COIN_SOURCE: &str = "Entity\nState\nOwner\nPolicy\n\ncoin/state: Relat
 
 const FUNCTIONAL_CONFLICT_SOURCE: &str = "Entity\nState\nPolicy\n\ncoin/state: RelationShape\n  {coin: Entity} state {state: State}\n  mode coin -> state: one\n\ngame\n  coin ∈ Entity\n  active ∈ State\n  idle ∈ State\n  collected ∈ State\n  replay-policy ∈ Policy\n  coin state active\n\non collect\n  coin state active ~>\n    coin state collected\n  coin state active ~>\n    coin state idle\n";
 
+const ALPHA_STATE_BINDER_SOURCE: &str = "Entity\nState\nOwner\nPolicy\n\ncoin/state: RelationShape\n  {coin: Entity} state {state: State}\n  mode coin -> state: one\n\ncoin/owner: RelationShape\n  {coin: Entity} owner {owner: Owner}\n  mode coin -> owner: one\n\ngame\n  coin ∈ Entity\n  active ∈ State\n  collected ∈ State\n  player ∈ Owner\n  replay-policy ∈ Policy\n  coin state active\n  coin owner player\n\non collect\n  ?coin state active ~>\n    ?coin state collected\n  if\n    ?coin owner ?owner\n";
+
+const CANONICAL_GUARD_SOURCE: &str = "Entity\nState\nOwner\nPolicy\n\ncoin/state: RelationShape\n  {coin: Entity} state {state: State}\n  mode coin -> state: one\n\ncoin/owner: RelationShape\n  {coin: Entity} owner {owner: Owner}\n  mode coin -> owner: one\n\ngame\n  coin ∈ Entity\n  active ∈ State\n  collected ∈ State\n  player ∈ Owner\n  replay-policy ∈ Policy\n  coin state active\n  coin owner player\n\non collect ?actor\n  ?coin state active ~>\n    ?coin state collected\n  if\n    ?coin owner ?actor\n    ?coin state active\n";
+
 fn temporary(extension: &str) -> PathBuf {
     let nonce = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -470,6 +474,113 @@ fn authored_functional_matches_reject_conflicting_keyed_writes() {
         error
             .to_string()
             .contains("conflicting writes to one functional relation key")
+    );
+}
+
+#[test]
+fn inferred_state_binders_are_alpha_stable_and_role_distinct() {
+    let renamed = ALPHA_STATE_BINDER_SOURCE
+        .replace("?coin", "?zebra")
+        .replace("?owner", "?aardvark");
+    let original = elaborate::compile(
+        frontend::parse(ALPHA_STATE_BINDER_SOURCE).expect("original event source parses"),
+    )
+    .expect("original event source elaborates");
+    let renamed = elaborate::compile(
+        frontend::parse(&renamed).expect("alpha-renamed event source parses"),
+    )
+    .expect("alpha-renamed event source elaborates");
+    let [original_journey] = original.runtime_journeys() else {
+        panic!("original event produces one runtime journey");
+    };
+    let [renamed_journey] = renamed.runtime_journeys() else {
+        panic!("renamed event produces one runtime journey");
+    };
+    let original_revision = original_journey.revision();
+    let renamed_revision = renamed_journey.revision();
+    let [original_transition] = original_revision.model().transitions() else {
+        panic!("original event produces one transition");
+    };
+    let [renamed_transition] = renamed_revision.model().transitions() else {
+        panic!("renamed event produces one transition");
+    };
+    let owner_relation = original
+        .designations()
+        .global("coin/owner")
+        .expect("owner relation is designated");
+    let coin_role = original
+        .designations()
+        .role(&owner_relation, "coin")
+        .expect("owner relation coin role is designated");
+    let owner_role = original
+        .designations()
+        .role(&owner_relation, "owner")
+        .expect("owner relation owner role is designated");
+    let original_guard = &original_revision.model().relational_contents()
+        [original_transition.guards().first().expect("one guard")];
+    let renamed_guard = &renamed_revision.model().relational_contents()
+        [renamed_transition.guards().first().expect("one guard")];
+    let coin_pattern = original_guard.roles()[&coin_role]
+        .pattern_id()
+        .expect("coin role retains a binder");
+    let owner_pattern = original_guard.roles()[&owner_role]
+        .pattern_id()
+        .expect("owner role retains a binder");
+    assert_ne!(coin_pattern, owner_pattern);
+    assert_eq!(
+        renamed_guard.roles()[&coin_role].pattern_id(),
+        Some(coin_pattern)
+    );
+    assert_eq!(
+        renamed_guard.roles()[&owner_role].pattern_id(),
+        Some(owner_pattern)
+    );
+    assert_eq!(
+        original_revision.model().relational_contents(),
+        renamed_revision.model().relational_contents()
+    );
+    assert_eq!(original_transition, renamed_transition);
+    assert_eq!(original_revision.identity(), renamed_revision.identity());
+    assert_eq!(
+        wire::serialize(original_revision),
+        wire::serialize(renamed_revision)
+    );
+}
+
+#[test]
+fn guard_conjunctions_are_canonical_before_transition_identity() {
+    let reordered_and_duplicated = CANONICAL_GUARD_SOURCE.replace(
+        "    ?coin owner ?actor\n    ?coin state active\n",
+        "    ?coin state active\n    ?coin owner ?actor\n    ?coin owner ?actor\n",
+    );
+    let canonical = elaborate::compile(
+        frontend::parse(CANONICAL_GUARD_SOURCE).expect("canonical guard source parses"),
+    )
+    .expect("canonical guard source elaborates");
+    let reordered = elaborate::compile(
+        frontend::parse(&reordered_and_duplicated).expect("reordered guard source parses"),
+    )
+    .expect("reordered guard source elaborates");
+    let [canonical_journey] = canonical.runtime_journeys() else {
+        panic!("canonical guard source produces one runtime journey");
+    };
+    let [reordered_journey] = reordered.runtime_journeys() else {
+        panic!("reordered guard source produces one runtime journey");
+    };
+    let canonical_revision = canonical_journey.revision();
+    let reordered_revision = reordered_journey.revision();
+    let [canonical_transition] = canonical_revision.model().transitions() else {
+        panic!("canonical guard source produces one transition");
+    };
+    let [reordered_transition] = reordered_revision.model().transitions() else {
+        panic!("reordered guard source produces one transition");
+    };
+    assert_eq!(canonical_transition.guards().len(), 2);
+    assert_eq!(canonical_transition, reordered_transition);
+    assert_eq!(canonical_revision.identity(), reordered_revision.identity());
+    assert_eq!(
+        wire::serialize(canonical_revision),
+        wire::serialize(reordered_revision)
     );
 }
 
