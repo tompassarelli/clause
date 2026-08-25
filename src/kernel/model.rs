@@ -1257,13 +1257,14 @@ fn intrinsic_result_domain(
                 },
             )
         }
-        Intrinsic::Equal | Intrinsic::NotEqual => Ok(
-            if domain(IntrinsicRole::Left)? == domain(IntrinsicRole::Right)? {
-                unique(&StructuralForm::Bool)
-            } else {
-                None
-            },
-        ),
+        Intrinsic::Equal | Intrinsic::NotEqual => {
+            let left = domain(IntrinsicRole::Left)?;
+            let right = domain(IntrinsicRole::Right)?;
+            Ok(match (left, right) {
+                (Some(left), Some(right)) if left == right => unique(&StructuralForm::Bool),
+                _ => None,
+            })
+        }
         Intrinsic::Length => Ok(
             if domain(IntrinsicRole::Input)?
                 .as_ref()

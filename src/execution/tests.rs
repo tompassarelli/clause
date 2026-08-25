@@ -827,6 +827,49 @@ frame score:
         mismatch.structural_failure().map(|failure| failure.class()),
         Some(crate::kernel::StructuralFailureClass::DomainMismatch)
     );
+    let unknown_left = referent_id("pure/untyped-equality/left");
+    let unknown_right = referent_id("pure/untyped-equality/right");
+    let untyped_equality = intrinsic_content(
+        Intrinsic::Equal,
+        &[
+            (IntrinsicRole::Left, Term::referent(unknown_left.clone())),
+            (IntrinsicRole::Right, Term::referent(unknown_right.clone())),
+        ],
+    );
+    let mut untyped_atoms = atoms.clone();
+    for referent in [unknown_left, unknown_right, Intrinsic::Equal.relation()] {
+        untyped_atoms.insert(SemanticAtom::Referent(Referent::new(referent)));
+    }
+    untyped_atoms.insert(SemanticAtom::RelationShape(intrinsic_shape(
+        Intrinsic::Equal,
+    )));
+    untyped_atoms.insert(SemanticAtom::RelationalContent(untyped_equality.clone()));
+    let untyped_frame = Term::labelled_product(
+        frame_shape.clone(),
+        BTreeMap::from([
+            (position.clone(), definition_term("frame next position")),
+            (
+                collected.clone(),
+                Term::application(untyped_equality.id().clone()),
+            ),
+            (score.clone(), definition_term("frame score")),
+        ]),
+    )
+    .unwrap();
+    for definition in [
+        Definition::new(position.clone(), Term::referent(tuple_domain.clone())),
+        Definition::new(collected.clone(), Term::referent(bool_domain.clone())),
+        Definition::new(score.clone(), Term::referent(int_domain.clone())),
+        Definition::new(frame_id.clone(), untyped_frame),
+    ] {
+        untyped_atoms.insert(SemanticAtom::Definition(definition));
+    }
+    let mismatch = Model::from_atoms(model_id.clone(), untyped_atoms)
+        .expect_err("Frame rejects equality whose operand domains are unknown");
+    assert_eq!(
+        mismatch.structural_failure().map(|failure| failure.class()),
+        Some(crate::kernel::StructuralFailureClass::DomainMismatch)
+    );
     for definition in [
         Definition::new(position.clone(), Term::referent(tuple_domain.clone())),
         Definition::new(collected.clone(), Term::referent(bool_domain)),
