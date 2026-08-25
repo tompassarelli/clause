@@ -286,8 +286,7 @@ fn hospital_program_has_the_complete_six_request_semantic_and_materialization_jo
         ]),
     );
 
-    let RunResult::Diff(diff) = &output.results[5]
-    else {
+    let RunResult::Diff(diff) = &output.results[5] else {
         panic!("sixth request is semantic diff");
     };
     assert_eq!(diff.authored().base_revision(), base.identity());

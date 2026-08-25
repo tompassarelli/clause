@@ -399,8 +399,7 @@ fn canonical_positive_if_rules_drive_existing_proof_and_intervention_semantics()
         canonical_sets(withdrawals(base_prevent)),
         canonical_sets(withdrawals(legacy_base_prevent))
     );
-    let RequestOutput::PreventAll(legacy_successor_prevent) =
-        revision_output(&legacy_output, 3)
+    let RequestOutput::PreventAll(legacy_successor_prevent) = revision_output(&legacy_output, 3)
     else {
         panic!("retained legacy successor prevention remains complete");
     };

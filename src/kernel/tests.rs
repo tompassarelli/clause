@@ -516,8 +516,8 @@ fn structural_terms_are_checked_canonical_and_ordered() {
         )
         .unwrap(),
         Term::Sequence {
-            shape: sequence_shape,
-            element: integer_domain,
+            shape: sequence_shape.clone(),
+            element: integer_domain.clone(),
             values: vec![binder.clone()],
         }
     );

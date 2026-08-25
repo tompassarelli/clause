@@ -455,10 +455,9 @@ fn naked_selection_preserves_freshness_labels_identity_and_generated_parity() {
 #[test]
 fn law_backed_nested_one_coin_closes_the_m4_acceptance_seam() {
     let ground_source = NESTED_APPLICATION_SOURCE.replace("\nderive collision overlap\n", "\n");
-    let ground = elaborate::compile(
-        frontend::parse(&ground_source).expect("inert-law source parses"),
-    )
-    .expect("inert-law source compiles");
+    let ground =
+        elaborate::compile(frontend::parse(&ground_source).expect("inert-law source parses"))
+            .expect("inert-law source compiles");
     let ground_resolved = request::resolve(&ground).expect("inert-law queries resolve");
     let ground_output = request::run(&ground_resolved, request::RunLimits::default())
         .expect("inert-law queries execute");
@@ -512,7 +511,11 @@ fn law_backed_nested_one_coin_closes_the_m4_acceptance_seam() {
 
     let law = &revision.model().universal_laws()[0];
     let rule = &revision.model().derivation_rules()[0];
-    assert_ne!(rule.id(), law.id(), "law and operational rule stay distinct");
+    assert_ne!(
+        rule.id(),
+        law.id(),
+        "law and operational rule stay distinct"
+    );
     assert_eq!(rule.governing_law(), law.id());
     assert_eq!(rule.authority(), revision.model().id());
     assert_eq!(rule.scope(), revision.model().id());
@@ -574,8 +577,10 @@ fn law_backed_nested_one_coin_closes_the_m4_acceptance_seam() {
     assert_eq!(authority, rule.authority());
     assert_eq!(scope, rule.scope());
 
-    let mut limits = request::RunLimits::default();
-    limits.closure = closure_limits;
+    let limits = request::RunLimits {
+        closure: closure_limits,
+        ..request::RunLimits::default()
+    };
     let output = request::run(&resolved, limits)
         .expect("nested law-backed queries execute within their explicit bound");
     assert_eq!(
@@ -610,9 +615,7 @@ fn law_backed_nested_one_coin_closes_the_m4_acceptance_seam() {
         .witnesses
         .iter()
         .find_map(|edge| match &edge.witness {
-            clause::execution::Witness::Asserted { provenance }
-                if provenance.len() == 2 =>
-            {
+            clause::execution::Witness::Asserted { provenance } if provenance.len() == 2 => {
                 Some(provenance)
             }
             _ => None,
@@ -649,10 +652,7 @@ fn law_backed_nested_one_coin_closes_the_m4_acceptance_seam() {
     let reloaded = wire::reload(&canonical_revision).expect("canonical semantic-v9 reloads");
     assert_eq!(&reloaded, revision);
     assert_eq!(wire::serialize(&reloaded), canonical_revision);
-    let governing = format!(
-        "[\"governing-law\",\"{}\"]",
-        rule.governing_law().as_str()
-    );
+    let governing = format!("[\"governing-law\",\"{}\"]", rule.governing_law().as_str());
     let forged = format!("[\"governing-law\",\"{}\"]", rule.authority().as_str());
     let tampered = canonical_revision.replacen(&governing, &forged, 1);
     assert_ne!(tampered, canonical_revision);
@@ -1085,8 +1085,7 @@ fn selection_cardinalities_preserve_canonical_rows_and_generated_parity() {
         panic!("third cardinality result is canonical-first");
     };
     let RequestOutput::SelectFirst {
-        rows: empty_first,
-        ..
+        rows: empty_first, ..
     } = output.results[3]
         .revision()
         .expect("empty canonical-first selection is Revision-scoped")

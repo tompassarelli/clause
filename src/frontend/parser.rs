@@ -1437,7 +1437,7 @@ diff impact -> impact/adopt
             "Item\n\nsettings\n  left: Item , right: Item\n  left -> right\n",
             "Item\n\nsettings\n  left: Item pairs right: Item\n  left, -> right\n",
         ] {
-            let (declarations, _, _, _) = scan(source).expect("candidate source scans");
+            let (declarations, _, _, _, _, _) = scan(source).expect("candidate source scans");
             let settings = declarations
                 .iter()
                 .find(|declaration| declaration.subject.value.as_str() == "settings")

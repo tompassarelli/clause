@@ -1,6 +1,6 @@
 use crate::kernel::{
-    ContentId, JudgmentKind, JudgmentStatus, JudgmentTarget, KernelError, Model, PatternId,
-    ReferentId, RelationalContent, Result, Revision, Term,
+    ContentId, DerivationRule, JudgmentKind, JudgmentStatus, JudgmentTarget, KernelError, Model,
+    PatternId, ReferentId, RelationalContent, Result, Revision, Term,
 };
 use std::collections::BTreeMap;
 
@@ -119,6 +119,16 @@ struct Candidate {
     dependencies: BTreeMap<ContentId, RelationalContent>,
 }
 
+struct RuleCandidateContext<'a> {
+    rule: &'a DerivationRule,
+    patterns: &'a [&'a RelationalContent],
+    conclusion: &'a RelationalContent,
+    assertions: &'a [RelationalContent],
+    model: &'a Model,
+    applications: &'a BTreeMap<ContentId, RelationalContent>,
+    limits: &'a Limits,
+}
+
 /// Saturate a Revision's admitted assertions under its positive, range-restricted laws.
 pub fn saturate(revision: &Revision, limits: Limits) -> Result<Closure> {
     let mut proofs = BTreeMap::new();
@@ -155,23 +165,19 @@ pub fn saturate(revision: &Revision, limits: Limits) -> Result<Closure> {
                 .map(|id| revision.model().content(id).expect("checked rule premise"))
                 .collect::<Vec<_>>();
             for conclusion in rule.conclusion().forms() {
-                collect_rule_candidates(
-                    rule.id(),
-                    rule.governing_law(),
-                    rule.authority(),
-                    rule.scope(),
-                    &premises,
-                    revision
+                let context = RuleCandidateContext {
+                    rule,
+                    patterns: &premises,
+                    conclusion: revision
                         .model()
                         .content(conclusion)
                         .expect("checked rule conclusion"),
-                    &assertions,
-                    revision.model(),
-                    &applications,
-                    &limits,
-                    &mut join_attempts,
-                    &mut candidates,
-                )?;
+                    assertions: &assertions,
+                    model: revision.model(),
+                    applications: &applications,
+                    limits: &limits,
+                };
+                collect_rule_candidates(&context, &mut join_attempts, &mut candidates)?;
             }
         }
         candidates.retain(|clause, _| !proofs.contains_key(clause));
@@ -261,30 +267,12 @@ pub(super) fn assertion_provenance(
 }
 
 fn collect_rule_candidates(
-    rule: &crate::kernel::ReferentId,
-    governing_law: &crate::kernel::ReferentId,
-    authority: &crate::kernel::ReferentId,
-    scope: &crate::kernel::ReferentId,
-    patterns: &[&RelationalContent],
-    conclusion: &RelationalContent,
-    assertions: &[RelationalContent],
-    model: &Model,
-    applications: &BTreeMap<ContentId, RelationalContent>,
-    limits: &Limits,
+    context: &RuleCandidateContext<'_>,
     join_attempts: &mut usize,
     candidates: &mut BTreeMap<RelationalContent, Candidate>,
 ) -> Result<()> {
     collect_joins(
-        rule,
-        governing_law,
-        authority,
-        scope,
-        patterns,
-        conclusion,
-        assertions,
-        model,
-        applications,
-        limits,
+        context,
         join_attempts,
         candidates,
         0,
@@ -293,33 +281,24 @@ fn collect_rule_candidates(
     )
 }
 
-#[allow(clippy::too_many_arguments)]
 fn collect_joins(
-    rule: &crate::kernel::ReferentId,
-    governing_law: &crate::kernel::ReferentId,
-    authority: &crate::kernel::ReferentId,
-    scope: &crate::kernel::ReferentId,
-    patterns: &[&RelationalContent],
-    conclusion: &RelationalContent,
-    assertions: &[RelationalContent],
-    model: &Model,
-    applications: &BTreeMap<ContentId, RelationalContent>,
-    limits: &Limits,
+    context: &RuleCandidateContext<'_>,
     join_attempts: &mut usize,
     candidates: &mut BTreeMap<RelationalContent, Candidate>,
     premise_index: usize,
     substitution: BTreeMap<PatternId, Term>,
     premises: Vec<RelationalContent>,
 ) -> Result<()> {
-    if premise_index == patterns.len() {
-        let instantiated = crate::kernel::matching::instantiate(conclusion, &substitution, |id| {
-            model.content(id)
-        })?;
+    if premise_index == context.patterns.len() {
+        let instantiated =
+            crate::kernel::matching::instantiate(context.conclusion, &substitution, |id| {
+                context.model.content(id)
+            })?;
         let candidate = Candidate {
-            rule: rule.clone(),
-            governing_law: governing_law.clone(),
-            authority: authority.clone(),
-            scope: scope.clone(),
+            rule: context.rule.id().clone(),
+            governing_law: context.rule.governing_law().clone(),
+            authority: context.rule.authority().clone(),
+            scope: context.rule.scope().clone(),
             premises,
             substitution,
             dependencies: instantiated.dependencies,
@@ -333,13 +312,13 @@ fn collect_joins(
         }
         return Ok(());
     }
-    let pattern = patterns[premise_index];
-    for assertion in assertions {
-        if *join_attempts >= limits.max_join_attempts {
+    let pattern = context.patterns[premise_index];
+    for assertion in context.assertions {
+        if *join_attempts >= context.limits.max_join_attempts {
             return Err(limit_error(
                 "join attempt",
                 "max_join_attempts",
-                limits.max_join_attempts,
+                context.limits.max_join_attempts,
             ));
         }
         *join_attempts += 1;
@@ -348,24 +327,20 @@ fn collect_joins(
             assertion,
             &substitution,
             true,
-            |id| model.content(id),
-            |id| applications.get(id).or_else(|| model.content(id)),
+            |id| context.model.content(id),
+            |id| {
+                context
+                    .applications
+                    .get(id)
+                    .or_else(|| context.model.content(id))
+            },
         ) else {
             continue;
         };
         let mut next_premises = premises.clone();
         next_premises.push(assertion.clone());
         collect_joins(
-            rule,
-            governing_law,
-            authority,
-            scope,
-            patterns,
-            conclusion,
-            assertions,
-            model,
-            applications,
-            limits,
+            context,
             join_attempts,
             candidates,
             premise_index + 1,
