@@ -45,7 +45,19 @@ and exact lineage evidence about that Model.
 
 ## Run and develop
 
-Clause pins Rust 1.96.1. From the repository root:
+Clause pins Rust 1.96.1. Enter the sanctioned development and release
+environment from the repository root:
+
+```sh
+nix develop
+```
+
+The flake references packaged development tools only; it does not vendor their
+source or add product dependencies. Nixpkgs and rust-overlay are MIT-licensed,
+the Rust toolchain is dual MIT/Apache-2.0, and the GPL-licensed GCC
+wrapper/compiler is used only by the development and release environment.
+
+Then run Clause with:
 
 ```sh
 cargo run --bin clause -- run examples/hospital.clause
