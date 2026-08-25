@@ -14,6 +14,8 @@ pub(super) struct RawDecl<'a> {
     pub(super) bare_block: bool,
     pub(super) header: SourceLine<'a>,
     pub(super) body: Vec<SourceLine<'a>>,
+    /// Exact ancestry carried by the canonical `name from base` header.
+    pub(super) canonical_base: Option<Spanned<Name>>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -389,6 +391,24 @@ fn parse_declaration<'a>(
     *index += 1;
     let body = take_body(lines, index);
     let entries = nonblank(body.iter().copied());
+    if let Some((subject, base)) = text.split_once(" from ")
+        && is_qname(subject)
+        && is_qname(base)
+        && !entries.is_empty()
+        && entries.iter().all(|entry| {
+            indent(*entry).is_ok_and(|width| width == 2)
+                && (content(*entry).starts_with("+ ") || content(*entry).starts_with("- "))
+        })
+    {
+        return Ok(RawItem::Declaration(RawDecl {
+            subject: qname(line, 0, subject)?,
+            kind: Kind::Revision,
+            bare_block: false,
+            header: line,
+            body,
+            canonical_base: Some(qname(line, subject.len() + " from ".len(), base)?),
+        }));
+    }
     if let Some(label) = text.strip_prefix("law ") {
         let label = semantic_name(line, "law ".len(), label)?;
         if label.value.as_str().contains('/') {
@@ -480,10 +500,14 @@ fn parse_declaration<'a>(
         }
         let label = semantic_name(line, 0, label)?;
         if label.value.as_str().contains('/') {
-            return Err(error(
-                label.span,
-                "derivation rule label must be unqualified",
-            ));
+            return Ok(RawItem::Declaration(RawDecl {
+                subject: qname(line, 0, label.value.as_str())?,
+                kind: Kind::DerivationRule,
+                bare_block: false,
+                header: line,
+                body,
+                canonical_base: None,
+            }));
         }
         return Ok(RawItem::Rule(RawRule {
             label: Some(label),
@@ -547,6 +571,7 @@ fn parse_declaration<'a>(
         bare_block,
         header: line,
         body,
+        canonical_base: None,
     }))
 }
 

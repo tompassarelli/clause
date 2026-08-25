@@ -19,6 +19,23 @@ pub(super) struct LawLayout<'a> {
 
 pub(super) fn parse_law_layout<'a>(raw: &RawDecl<'a>) -> Result<LawLayout<'a>, ParseError> {
     let entries = nonblank(raw.body.iter().copied());
+    if entries.len() >= 2
+        && indent(entries[0])? == 2
+        && content(entries[0]).ends_with(" if")
+        && entries[1..]
+            .iter()
+            .all(|line| indent(*line).is_ok_and(|width| width == 4))
+    {
+        let conclusion = entries[0];
+        return Ok(LawLayout {
+            conclusion: SourceLine {
+                number: conclusion.number,
+                column: conclusion.column,
+                text: &conclusion.text[..conclusion.text.len() - " if".len()],
+            },
+            premises: entries[1..].to_vec(),
+        });
+    }
     if entries.len() < 3
         || indent(entries[0])? != 2
         || indent(entries[1])? != 2
@@ -47,6 +64,34 @@ pub(super) fn parse_law_layout<'a>(raw: &RawDecl<'a>) -> Result<LawLayout<'a>, P
 }
 
 pub(super) fn parse_change_layout<'a>(raw: &RawDecl<'a>) -> Result<ChangeLayout<'a>, ParseError> {
+    if let Some(from) = &raw.canonical_base {
+        let mut admit = Vec::new();
+        let mut withdraw = Vec::new();
+        for line in nonblank(raw.body.iter().copied()) {
+            let text = content(line);
+            let (target, clause) = if let Some(clause) = text.strip_prefix("+ ") {
+                (&mut admit, clause)
+            } else if let Some(clause) = text.strip_prefix("- ") {
+                (&mut withdraw, clause)
+            } else {
+                return Err(error(
+                    line_span(line),
+                    "canonical revision clause requires an exact '+' or '-' sign",
+                ));
+            };
+            target.push(SourceLine {
+                number: line.number,
+                column: line.column + 4,
+                text: clause,
+            });
+        }
+        return Ok(ChangeLayout {
+            from: from.clone(),
+            apply: None,
+            admit: (!admit.is_empty()).then_some(admit),
+            withdraw: (!withdraw.is_empty()).then_some(withdraw),
+        });
+    }
     let entries = nonblank(raw.body.iter().copied());
     let first = entries
         .first()

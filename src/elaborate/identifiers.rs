@@ -8,7 +8,7 @@ use crate::{
 /// Source designations are a mutable projection over opaque semantic
 /// identities. Reusing this table across an explicit rename transaction keeps
 /// the referent stable while changing its preferred term.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct DesignationTable {
     globals: BTreeMap<String, ReferentId>,
     scoped: BTreeMap<(ReferentId, String), ReferentId>,
@@ -21,6 +21,14 @@ pub struct DesignationTable {
 impl DesignationTable {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub(crate) fn identity_count(&self) -> usize {
+        self.globals.len()
+            + self.scoped.len()
+            + self.literals.len()
+            + self.roles.len()
+            + self.patterns.len()
     }
 
     pub fn retain_global(&mut self, before: &str, after: &str) -> kernel::Result<()> {

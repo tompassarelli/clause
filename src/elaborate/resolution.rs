@@ -10,9 +10,63 @@ use crate::{
 };
 
 use super::{
-    identifiers::synthetic_referent,
+    identifiers::{DesignationTable, synthetic_referent},
     lowering::{Projection, lower_clause_with},
 };
+
+/// One exact legacy-to-canonical Revision identity witness.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MigrationRevision {
+    pub name: frontend::Name,
+    pub identity: kernel::RevisionId,
+}
+
+/// Deterministic proof that two source projections elaborate identically.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MigrationParityReport {
+    pub designation_identities: usize,
+    pub revisions: Vec<MigrationRevision>,
+}
+
+pub(super) fn migration_parity(
+    legacy: &BTreeMap<frontend::Name, Revision>,
+    canonical: &BTreeMap<frontend::Name, Revision>,
+    legacy_designations: &DesignationTable,
+    canonical_designations: &DesignationTable,
+) -> kernel::Result<MigrationParityReport> {
+    if legacy_designations != canonical_designations {
+        return Err(kernel::KernelError::new(
+            "migration changed an opaque designation identity",
+        ));
+    }
+    if legacy.keys().ne(canonical.keys()) {
+        return Err(kernel::KernelError::new(
+            "migration changed the complete named Revision set",
+        ));
+    }
+    let mut revisions = Vec::with_capacity(legacy.len());
+    for (name, before) in legacy {
+        let after = canonical
+            .get(name)
+            .expect("equal Revision keys were checked above");
+        if before.identity() != after.identity()
+            || wire::serialize(before) != wire::serialize(after)
+        {
+            return Err(kernel::KernelError::new(format!(
+                "migration changed Revision '{}' identity or canonical bytes",
+                name.as_str()
+            )));
+        }
+        revisions.push(MigrationRevision {
+            name: name.clone(),
+            identity: before.identity().clone(),
+        });
+    }
+    Ok(MigrationParityReport {
+        designation_identities: legacy_designations.identity_count(),
+        revisions,
+    })
+}
 
 pub(super) struct Resolver<'a> {
     declarations: &'a BTreeMap<frontend::Name, &'a Declaration>,

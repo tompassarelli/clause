@@ -130,7 +130,7 @@ use super::{
         membership_group_role, membership_member_role, membership_relation, membership_shape,
         structural_domain,
     },
-    resolution::Resolver,
+    resolution::{MigrationParityReport, Resolver, migration_parity},
 };
 
 /// Sealed revisions indexed by authored navigation names, plus the source
@@ -233,6 +233,20 @@ impl CompiledProgram {
 
     pub fn designations(&self) -> &DesignationTable {
         &self.projection.designations
+    }
+
+    /// Prove exact opaque designation, Revision identity, Delta lineage, and
+    /// canonical-wire parity against another source projection.
+    pub fn migration_parity(
+        &self,
+        canonical: &CompiledProgram,
+    ) -> kernel::Result<MigrationParityReport> {
+        migration_parity(
+            &self.revisions,
+            &canonical.revisions,
+            &self.projection.designations,
+            &canonical.projection.designations,
+        )
     }
 
     /// Locate one assertion occurrence in the parsed source projection.

@@ -15,3 +15,4 @@ pub use compilation::{
 };
 pub use identifiers::DesignationTable;
 pub use lowering::lower_clause;
+pub use resolution::{MigrationParityReport, MigrationRevision};

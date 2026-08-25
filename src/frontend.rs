@@ -6,12 +6,14 @@
 
 mod clause;
 mod declaration;
+mod migration;
 mod model;
 mod parser;
 mod relation;
 mod source;
 mod syntax;
 
+pub use migration::{Migration, MigrationInference, migrate};
 pub use parser::parse;
 pub use syntax::{
     Cardinality, Declaration, DeriveDecl, DomainName, FocusBinding, FocusBlock, FocusSlot,
