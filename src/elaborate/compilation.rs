@@ -847,6 +847,36 @@ fn register_definition_graph(
     Ok(graph.definition)
 }
 
+struct CanonicalRuleAlpha {
+    premises: Vec<kernel::ContentId>,
+    conclusion: kernel::ContentId,
+    variables: Vec<frontend::VariableName>,
+}
+
+const MAX_CANONICAL_RULE_ALPHA_CANDIDATES: usize = 40_320;
+
+fn canonical_rule_alpha_candidates(variable_count: usize) -> Option<usize> {
+    let candidates =
+        (1..=variable_count).try_fold(1usize, |count, factor| count.checked_mul(factor))?;
+    (candidates <= MAX_CANONICAL_RULE_ALPHA_CANDIDATES).then_some(candidates)
+}
+
+fn visit_permutations<T, F>(values: &mut [T], index: usize, visit: &mut F) -> kernel::Result<()>
+where
+    F: FnMut(&[T]) -> kernel::Result<()>,
+{
+    if index == values.len() {
+        return visit(values);
+    }
+    for candidate in index..values.len() {
+        values.swap(index, candidate);
+        let result = visit_permutations(values, index + 1, visit);
+        values.swap(index, candidate);
+        result?;
+    }
+    Ok(())
+}
+
 fn lower_models(
     declarations: &[Declaration],
     canonical_rules: &[RuleDecl],
@@ -1123,48 +1153,70 @@ fn lower_models(
                 "derivation-rule-provisional-pattern-scope",
                 &[model_id.as_str()],
             );
-            let provisional_binders = BinderTable::declare_alpha(
-                &mut projection.designations,
-                &provisional_scope,
+            let mut variables = BinderTable::alpha_variables(
                 rule_decl
                     .premises
                     .iter()
                     .chain(std::iter::once(&rule_decl.conclusion)),
-            )?;
-            let provisional_premises = rule_decl
-                .premises
-                .iter()
-                .map(|surface| {
-                    lower_clause_graph_with(
-                        projection,
-                        shell.model(),
-                        surface,
-                        Some(&provisional_binders),
-                    )
-                    .map(|graph| graph.root.id().clone())
-                })
-                .collect::<kernel::Result<Vec<_>>>()?;
-            let provisional_conclusion = lower_clause_graph_with(
-                projection,
-                shell.model(),
-                &rule_decl.conclusion,
-                Some(&provisional_binders),
-            )?
-            .root
-            .id()
-            .clone();
+            );
+            if canonical_rule_alpha_candidates(variables.len()).is_none() {
+                return Err(kernel::KernelError::new(format!(
+                    "canonical derivation rule exceeds {MAX_CANONICAL_RULE_ALPHA_CANDIDATES}-candidate identity bound"
+                )));
+            }
+            let mut canonical: Option<CanonicalRuleAlpha> = None;
+            visit_permutations(&mut variables, 0, &mut |order| {
+                let provisional_binders = BinderTable::declare_alpha_ordered(
+                    &mut projection.designations,
+                    &provisional_scope,
+                    order,
+                )?;
+                let mut premises = rule_decl
+                    .premises
+                    .iter()
+                    .map(|surface| {
+                        lower_clause_graph_with(
+                            projection,
+                            shell.model(),
+                            surface,
+                            Some(&provisional_binders),
+                        )
+                        .map(|graph| graph.root.id().clone())
+                    })
+                    .collect::<kernel::Result<Vec<_>>>()?;
+                premises.sort();
+                premises.dedup();
+                let conclusion = lower_clause_graph_with(
+                    projection,
+                    shell.model(),
+                    &rule_decl.conclusion,
+                    Some(&provisional_binders),
+                )?
+                .root
+                .id()
+                .clone();
+                if canonical.as_ref().is_none_or(|best| {
+                    (&premises, &conclusion) < (&best.premises, &best.conclusion)
+                }) {
+                    canonical = Some(CanonicalRuleAlpha {
+                        premises,
+                        conclusion,
+                        variables: order.to_vec(),
+                    });
+                }
+                Ok(())
+            })?;
+            let canonical = canonical
+                .expect("one permutation exists even for a ground canonical derivation rule");
             let rule_id = derivation_rule_referent(
                 &model_id,
-                &provisional_premises,
-                std::slice::from_ref(&provisional_conclusion),
+                &canonical.premises,
+                std::slice::from_ref(&canonical.conclusion),
             );
-            let binders = BinderTable::declare_alpha(
+            let binders = BinderTable::declare_alpha_ordered(
                 &mut projection.designations,
                 &rule_id,
-                rule_decl
-                    .premises
-                    .iter()
-                    .chain(std::iter::once(&rule_decl.conclusion)),
+                &canonical.variables,
             )?;
             if projection
                 .rule_binders
@@ -1820,6 +1872,12 @@ mod tests {
     };
 
     const BASE: &str = "Module\n\nimpact/imports: RelationShape\n  {consumer: Module} imports {dependency: Module}\n  mode consumer -> dependency: many\n\nimpact\n  North ∈ Module\n  South ∈ Module\n  Store ∈ Module\n  North imports Store\n";
+
+    #[test]
+    fn canonical_rule_alpha_search_has_an_exact_work_bound() {
+        assert_eq!(canonical_rule_alpha_candidates(8), Some(40_320));
+        assert_eq!(canonical_rule_alpha_candidates(9), None);
+    }
 
     #[test]
     fn seals_base_and_preserves_request_order() {

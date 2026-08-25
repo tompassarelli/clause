@@ -54,6 +54,23 @@ catalog
   ?entity has tag \"premise\"
 ";
 
+const RULE_IDENTITY_BOUND_SOURCE: &str = "Thing
+
+wide/links: RelationShape
+  {a: Thing} links {b: Thing} through-c {c: Thing} through-d {d: Thing} through-e {e: Thing} through-f {f: Thing} through-g {g: Thing} through-h {h: Thing} through-i {i: Thing}
+  mode a -> b, c, d, e, f, g, h, i: many
+
+wide/reaches: RelationShape
+  {a: Thing} reaches {b: Thing}
+  mode a -> b: many
+
+world
+  item ∈ Thing
+
+?a reaches ?b if
+  ?a links ?b through-c ?c through-d ?d through-e ?e through-f ?f through-g ?g through-h ?h through-i ?i
+";
+
 fn canonical_source(label: Option<&str>) -> String {
     let recursive = match label {
         Some(label) => format!(
@@ -404,6 +421,31 @@ fn canonical_positive_if_rules_drive_existing_proof_and_intervention_semantics()
         "renaming an optional label does not change hidden rule identity"
     );
 
+    let reordered_source = source.replace(
+        "    ?door connects ?origin to ?intermediate
+    ?door passed Fire-Marshal-Inspection
+    ?intermediate has a usable egress path to ?destination",
+        "    ?intermediate has a usable egress path to ?destination
+    ?door passed Fire-Marshal-Inspection
+    ?door connects ?origin to ?intermediate",
+    );
+    assert_ne!(
+        reordered_source, source,
+        "recursive premises were reordered"
+    );
+    let reordered = compile(&reordered_source);
+    let reordered_base = revision(&reordered, "egress");
+    assert_eq!(
+        rule_ids(&base),
+        rule_ids(&reordered_base),
+        "unordered premise authoring does not change hidden rule identity"
+    );
+    assert_eq!(
+        base.identity(),
+        reordered_base.identity(),
+        "unordered premise authoring preserves the complete admitted Revision"
+    );
+
     let alpha_source = canonical_source(None)
         .replace("?origin", "?from")
         .replace("?destination", "?to")
@@ -476,6 +518,14 @@ fn canonical_positive_if_rules_drive_existing_proof_and_intervention_semantics()
     assert_eq!(
         error.to_string(),
         "canonical derivation rule requires a declared Model"
+    );
+
+    let identity_bound = frontend::parse(RULE_IDENTITY_BOUND_SOURCE)
+        .expect("over-bound canonical rule still has valid syntax");
+    let error = elaborate::compile(identity_bound).expect_err("rule identity search is bounded");
+    assert_eq!(
+        error.to_string(),
+        "canonical derivation rule exceeds 40320-candidate identity bound"
     );
 
     let expected = output.canonical_bytes();

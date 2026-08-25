@@ -121,4 +121,5 @@ regression suite. The M4 decision separately runs exact M4/S1 selection and
 M4/S2 rule-to-proof regressions. Together they cover descriptor parity, origin
 tamper rejection, nested-hole denial, canonical rule identity, retained-rule
 proof and intervention parity, optional-label isolation, and source-deleted
-generated output parity.
+generated output parity. M4/S2 admits at most 40,320 alpha-identity candidates
+per rule, then fails closed so canonicalization has an exact work bound.

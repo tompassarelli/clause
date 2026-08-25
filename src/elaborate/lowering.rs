@@ -273,63 +273,63 @@ enum BinderKey {
 pub(crate) struct BinderTable(BTreeMap<BinderKey, PatternId>);
 
 impl BinderTable {
+    fn collect(
+        term: &SurfaceTerm,
+        include_anonymous: bool,
+        first: &mut BTreeMap<BinderKey, (usize, usize)>,
+    ) {
+        match term {
+            SurfaceTerm::Variable(variable) => {
+                first
+                    .entry(BinderKey::Named(variable.value.clone()))
+                    .and_modify(|span| {
+                        *span = (*span).min((variable.span.line, variable.span.column));
+                    })
+                    .or_insert((variable.span.line, variable.span.column));
+            }
+            SurfaceTerm::AnonymousHole(span) if include_anonymous => {
+                first.insert(
+                    BinderKey::Anonymous(span.line, span.column),
+                    (span.line, span.column),
+                );
+            }
+            SurfaceTerm::Application(application) => {
+                for term in application.roles.values() {
+                    Self::collect(term, include_anonymous, first);
+                }
+            }
+            SurfaceTerm::Tuple { values, .. } | SurfaceTerm::Sequence { values, .. } => {
+                for term in values {
+                    Self::collect(term, include_anonymous, first);
+                }
+            }
+            SurfaceTerm::Product { fields, .. } => {
+                for term in fields.values() {
+                    Self::collect(term, include_anonymous, first);
+                }
+            }
+            SurfaceTerm::Referent(_)
+            | SurfaceTerm::Local(_)
+            | SurfaceTerm::Template(_)
+            | SurfaceTerm::AnonymousHole(_)
+            | SurfaceTerm::String(_)
+            | SurfaceTerm::F32(_)
+            | SurfaceTerm::Int(_)
+            | SurfaceTerm::Bool(_)
+            | SurfaceTerm::Intrinsic(_) => {}
+        }
+    }
+
     fn declare<'a>(
         designations: &mut DesignationTable,
         scope: &ReferentId,
         clauses: impl IntoIterator<Item = &'a SurfaceClause>,
         include_anonymous: bool,
     ) -> kernel::Result<Self> {
-        fn collect(
-            term: &SurfaceTerm,
-            include_anonymous: bool,
-            first: &mut BTreeMap<BinderKey, (usize, usize)>,
-        ) {
-            match term {
-                SurfaceTerm::Variable(variable) => {
-                    first
-                        .entry(BinderKey::Named(variable.value.clone()))
-                        .and_modify(|span| {
-                            *span = (*span).min((variable.span.line, variable.span.column));
-                        })
-                        .or_insert((variable.span.line, variable.span.column));
-                }
-                SurfaceTerm::AnonymousHole(span) if include_anonymous => {
-                    first.insert(
-                        BinderKey::Anonymous(span.line, span.column),
-                        (span.line, span.column),
-                    );
-                }
-                SurfaceTerm::Application(application) => {
-                    for term in application.roles.values() {
-                        collect(term, include_anonymous, first);
-                    }
-                }
-                SurfaceTerm::Tuple { values, .. } | SurfaceTerm::Sequence { values, .. } => {
-                    for term in values {
-                        collect(term, include_anonymous, first);
-                    }
-                }
-                SurfaceTerm::Product { fields, .. } => {
-                    for term in fields.values() {
-                        collect(term, include_anonymous, first);
-                    }
-                }
-                SurfaceTerm::Referent(_)
-                | SurfaceTerm::Local(_)
-                | SurfaceTerm::Template(_)
-                | SurfaceTerm::AnonymousHole(_)
-                | SurfaceTerm::String(_)
-                | SurfaceTerm::F32(_)
-                | SurfaceTerm::Int(_)
-                | SurfaceTerm::Bool(_)
-                | SurfaceTerm::Intrinsic(_) => {}
-            }
-        }
-
         let mut first = BTreeMap::new();
         for clause in clauses {
             for term in clause.roles.values() {
-                collect(term, include_anonymous, &mut first);
+                Self::collect(term, include_anonymous, &mut first);
             }
         }
         let mut ordered = first.into_iter().collect::<Vec<_>>();
@@ -338,6 +338,44 @@ impl BinderTable {
         for (index, (key, _)) in ordered.into_iter().enumerate() {
             let id = designations.declare_pattern(scope, &format!("binder-{index}"))?;
             binders.insert(key, id);
+        }
+        Ok(Self(binders))
+    }
+
+    pub(crate) fn alpha_variables<'a>(
+        clauses: impl IntoIterator<Item = &'a SurfaceClause>,
+    ) -> Vec<frontend::VariableName> {
+        let mut first = BTreeMap::new();
+        for clause in clauses {
+            for term in clause.roles.values() {
+                Self::collect(term, false, &mut first);
+            }
+        }
+        first
+            .into_keys()
+            .filter_map(|key| match key {
+                BinderKey::Named(variable) => Some(variable),
+                BinderKey::Anonymous(_, _) => None,
+            })
+            .collect()
+    }
+
+    pub(crate) fn declare_alpha_ordered(
+        designations: &mut DesignationTable,
+        scope: &ReferentId,
+        variables: &[frontend::VariableName],
+    ) -> kernel::Result<Self> {
+        let mut binders = BTreeMap::new();
+        for (index, variable) in variables.iter().enumerate() {
+            let id = designations.declare_pattern(scope, &format!("binder-{index}"))?;
+            if binders
+                .insert(BinderKey::Named(variable.clone()), id)
+                .is_some()
+            {
+                return Err(kernel::KernelError::new(
+                    "duplicate canonical rule variable",
+                ));
+            }
         }
         Ok(Self(binders))
     }
