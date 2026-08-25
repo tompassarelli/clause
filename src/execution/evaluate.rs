@@ -228,21 +228,23 @@ impl<'a> Evaluator<'a> {
         let Term::Sequence { values, .. } = sequence else {
             return Err(KernelError::new("map requires a Sequence input"));
         };
-        let mut f32_domains = self
+        let element = match self
             .revision
             .model()
-            .structural_contracts()
-            .values()
-            .filter(|contract| contract.form() == &StructuralForm::F32)
-            .map(|contract| contract.referent().clone());
-        let element = f32_domains
-            .next()
-            .ok_or_else(|| KernelError::new("map requires one sealed F32 result domain"))?;
-        if f32_domains.next().is_some() {
-            return Err(KernelError::new(
-                "map requires one unambiguous sealed F32 result domain",
-            ));
-        }
+            .structural_referents(&StructuralForm::F32)
+        {
+            [] => {
+                return Err(KernelError::new(
+                    "map requires one sealed F32 result domain",
+                ));
+            }
+            [element] => element.clone(),
+            _ => {
+                return Err(KernelError::new(
+                    "map requires one unambiguous sealed F32 result domain",
+                ));
+            }
+        };
         let shape = structural_sequence_domain(&element);
         Term::sequence(
             shape,

@@ -1,5 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
+use crate::intrinsic::{Intrinsic, IntrinsicRole};
+
 use super::{
     clause::{
         AssertionOccurrence, Definition, DerivationRule, Goal, Invariant, Judgment, JudgmentKind,
@@ -41,6 +43,7 @@ pub struct Model {
     relational_contents: BTreeMap<ContentId, RelationalContent>,
     relation_shapes: BTreeMap<ReferentId, RelationShape>,
     structural_contracts: BTreeMap<ReferentId, StructuralContract>,
+    structural_referents: BTreeMap<StructuralForm, Vec<ReferentId>>,
     occurrences: Vec<AssertionOccurrence>,
     definitions: Vec<Definition>,
     derivation_rules: Vec<DerivationRule>,
@@ -119,6 +122,13 @@ impl Model {
         }
         for contract in structural_contracts.values() {
             validate_structural_contract(&referents, contract)?;
+        }
+        let mut structural_referents = BTreeMap::<StructuralForm, Vec<ReferentId>>::new();
+        for contract in structural_contracts.values() {
+            structural_referents
+                .entry(contract.form().clone())
+                .or_default()
+                .push(contract.referent().clone());
         }
         let mut application_targets = BTreeSet::new();
         for term in relational_contents
@@ -346,6 +356,7 @@ impl Model {
             relational_contents,
             relation_shapes,
             structural_contracts,
+            structural_referents,
             occurrences,
             definitions,
             derivation_rules,
@@ -497,6 +508,12 @@ impl Model {
     }
     pub fn structural_contracts(&self) -> &BTreeMap<ReferentId, StructuralContract> {
         &self.structural_contracts
+    }
+    pub(crate) fn structural_referents(&self, form: &StructuralForm) -> &[ReferentId] {
+        self.structural_referents
+            .get(form)
+            .map(Vec::as_slice)
+            .unwrap_or_default()
     }
     pub fn occurrences(&self) -> &[AssertionOccurrence] {
         &self.occurrences
@@ -786,8 +803,10 @@ fn validate_term_against(
         let target = contents
             .get(id)
             .ok_or_else(|| KernelError::new("recursive term names undeclared content"))?;
-        let result = application_result_role(shapes, target)?;
-        return if structural_role_domain(result)? == Some(expected) {
+        return if application_result_domain(contracts, definitions, contents, shapes, target)?
+            .as_ref()
+            == Some(expected)
+        {
             Ok(())
         } else {
             Err(KernelError::structural(
@@ -1084,6 +1103,340 @@ fn application_result_role<'a>(
         ));
     }
     Ok(&shape.roles()[&mode.sought()[0]])
+}
+
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum NumericRepresentation {
+    F32,
+    Int,
+    TupleF32,
+    TupleInt,
+}
+
+fn application_result_domain(
+    contracts: &BTreeMap<ReferentId, StructuralContract>,
+    definitions: &[Definition],
+    contents: &BTreeMap<ContentId, RelationalContent>,
+    shapes: &BTreeMap<ReferentId, RelationShape>,
+    content: &RelationalContent,
+) -> Result<Option<ReferentId>> {
+    application_result_domain_inner(
+        contracts,
+        definitions,
+        contents,
+        shapes,
+        &mut BTreeSet::new(),
+        content,
+    )
+}
+
+fn application_result_domain_inner(
+    contracts: &BTreeMap<ReferentId, StructuralContract>,
+    definitions: &[Definition],
+    contents: &BTreeMap<ContentId, RelationalContent>,
+    shapes: &BTreeMap<ReferentId, RelationShape>,
+    active_definitions: &mut BTreeSet<ReferentId>,
+    content: &RelationalContent,
+) -> Result<Option<ReferentId>> {
+    let result = application_result_role(shapes, content)?;
+    if let Some(domain) = structural_role_domain(result)? {
+        return Ok(Some(domain.clone()));
+    }
+    let Some(intrinsic) = Intrinsic::from_relation(content.relation()) else {
+        return Ok(None);
+    };
+    if result.id() != &intrinsic.role(IntrinsicRole::Result)
+        || content.roles().keys().cloned().collect::<BTreeSet<_>>()
+            != intrinsic
+                .input_roles()
+                .iter()
+                .map(|role| intrinsic.role(*role))
+                .collect::<BTreeSet<_>>()
+    {
+        return Ok(None);
+    }
+    intrinsic_result_domain(
+        contracts,
+        definitions,
+        contents,
+        shapes,
+        active_definitions,
+        content,
+        intrinsic,
+    )
+}
+
+fn intrinsic_result_domain(
+    contracts: &BTreeMap<ReferentId, StructuralContract>,
+    definitions: &[Definition],
+    contents: &BTreeMap<ContentId, RelationalContent>,
+    shapes: &BTreeMap<ReferentId, RelationShape>,
+    active_definitions: &mut BTreeSet<ReferentId>,
+    content: &RelationalContent,
+    intrinsic: Intrinsic,
+) -> Result<Option<ReferentId>> {
+    let mut domain = |role| {
+        let term = content
+            .roles()
+            .get(&intrinsic.role(role))
+            .expect("exact intrinsic roles precede result-domain derivation");
+        structural_term_domain(
+            contracts,
+            definitions,
+            contents,
+            shapes,
+            active_definitions,
+            term,
+        )
+    };
+    let unique = |form| unique_structural_referent(contracts, form).cloned();
+    match intrinsic {
+        Intrinsic::Add | Intrinsic::Subtract => {
+            let left = domain(IntrinsicRole::Left)?;
+            let right = domain(IntrinsicRole::Right)?;
+            Ok(match (left, right) {
+                (Some(left), Some(right))
+                    if left == right && numeric_representation(contracts, &left).is_some() =>
+                {
+                    Some(left)
+                }
+                _ => None,
+            })
+        }
+        Intrinsic::Multiply | Intrinsic::Divide => {
+            let left = domain(IntrinsicRole::Left)?;
+            let right = domain(IntrinsicRole::Right)?;
+            Ok(match (left, right) {
+                (Some(left), Some(right))
+                    if left == right
+                        && matches!(
+                            numeric_representation(contracts, &left),
+                            Some(NumericRepresentation::F32 | NumericRepresentation::Int)
+                        ) =>
+                {
+                    Some(left)
+                }
+                (Some(left), Some(right))
+                    if matches!(
+                        (
+                            numeric_representation(contracts, &left),
+                            numeric_representation(contracts, &right),
+                        ),
+                        (
+                            Some(NumericRepresentation::TupleF32),
+                            Some(NumericRepresentation::F32),
+                        ) | (
+                            Some(NumericRepresentation::TupleInt),
+                            Some(NumericRepresentation::Int),
+                        )
+                    ) =>
+                {
+                    Some(left)
+                }
+                _ => None,
+            })
+        }
+        Intrinsic::LessThan
+        | Intrinsic::LessOrEqual
+        | Intrinsic::GreaterThan
+        | Intrinsic::GreaterOrEqual => {
+            let left = domain(IntrinsicRole::Left)?;
+            let right = domain(IntrinsicRole::Right)?;
+            Ok(
+                if left == right
+                    && left.as_ref().is_some_and(|domain| {
+                        matches!(
+                            numeric_representation(contracts, domain),
+                            Some(NumericRepresentation::F32 | NumericRepresentation::Int)
+                        )
+                    })
+                {
+                    unique(&StructuralForm::Bool)
+                } else {
+                    None
+                },
+            )
+        }
+        Intrinsic::Equal | Intrinsic::NotEqual => Ok(
+            if domain(IntrinsicRole::Left)? == domain(IntrinsicRole::Right)? {
+                unique(&StructuralForm::Bool)
+            } else {
+                None
+            },
+        ),
+        Intrinsic::Length => Ok(
+            if domain(IntrinsicRole::Input)?
+                .as_ref()
+                .is_some_and(|domain| {
+                    matches!(
+                        numeric_representation(contracts, domain),
+                        Some(NumericRepresentation::TupleF32 | NumericRepresentation::TupleInt)
+                    )
+                })
+            {
+                unique(&StructuralForm::F32)
+            } else {
+                None
+            },
+        ),
+        Intrinsic::Conditional => {
+            let condition = domain(IntrinsicRole::Condition)?;
+            let then_domain = domain(IntrinsicRole::Then)?;
+            let else_domain = domain(IntrinsicRole::Else)?;
+            Ok(
+                if condition.as_ref()
+                    == unique_structural_referent(contracts, &StructuralForm::Bool)
+                    && then_domain == else_domain
+                {
+                    then_domain
+                } else {
+                    None
+                },
+            )
+        }
+        Intrinsic::Map => {
+            let mapper = content.roles().get(&intrinsic.role(IntrinsicRole::Mapper));
+            let sequence = content
+                .roles()
+                .get(&intrinsic.role(IntrinsicRole::Sequence));
+            let f32 = unique(&StructuralForm::F32);
+            Ok(match (mapper, sequence, f32) {
+                (Some(Term::Referent(mapper)), Some(Term::Sequence { element, .. }), Some(f32))
+                    if mapper == &Intrinsic::Length.callable_identity()
+                        && matches!(
+                            numeric_representation(contracts, element),
+                            Some(NumericRepresentation::TupleF32 | NumericRepresentation::TupleInt)
+                        ) =>
+                {
+                    Some(super::schema::structural_sequence_domain(&f32))
+                }
+                _ => None,
+            })
+        }
+    }
+}
+
+fn structural_term_domain(
+    contracts: &BTreeMap<ReferentId, StructuralContract>,
+    definitions: &[Definition],
+    contents: &BTreeMap<ContentId, RelationalContent>,
+    shapes: &BTreeMap<ReferentId, RelationShape>,
+    active_definitions: &mut BTreeSet<ReferentId>,
+    term: &Term,
+) -> Result<Option<ReferentId>> {
+    match term {
+        Term::Application(id) => contents
+            .get(id)
+            .map(|content| {
+                application_result_domain_inner(
+                    contracts,
+                    definitions,
+                    contents,
+                    shapes,
+                    active_definitions,
+                    content,
+                )
+            })
+            .transpose()
+            .map(Option::flatten),
+        Term::Referent(id) => {
+            let Some(definition) = definitions
+                .binary_search_by(|definition| definition.id().cmp(id))
+                .ok()
+                .map(|index| &definitions[index])
+            else {
+                return Ok(None);
+            };
+            if !active_definitions.insert(id.clone()) {
+                return Ok(None);
+            }
+            let domain = structural_term_domain(
+                contracts,
+                definitions,
+                contents,
+                shapes,
+                active_definitions,
+                definition.denotation(),
+            );
+            active_definitions.remove(id);
+            domain
+        }
+        Term::F32(_) => Ok(unique_structural_referent(contracts, &StructuralForm::F32).cloned()),
+        Term::Int(_) => Ok(unique_structural_referent(contracts, &StructuralForm::Int).cloned()),
+        Term::Bool(_) => Ok(unique_structural_referent(contracts, &StructuralForm::Bool).cloned()),
+        Term::Product { shape, .. }
+            if matches!(
+                contracts.get(shape).map(StructuralContract::form),
+                Some(StructuralForm::Tuple(_))
+            ) =>
+        {
+            Ok(Some(shape.clone()))
+        }
+        Term::LabelledProduct { shape, .. }
+            if matches!(
+                contracts.get(shape).map(StructuralContract::form),
+                Some(StructuralForm::Product(_))
+            ) =>
+        {
+            Ok(Some(shape.clone()))
+        }
+        Term::Sequence { shape, .. } => Ok(Some(shape.clone())),
+        Term::Pattern(_)
+        | Term::Product { .. }
+        | Term::LabelledProduct { .. }
+        | Term::Sum { .. } => Ok(None),
+    }
+}
+
+fn unique_structural_referent<'a>(
+    contracts: &'a BTreeMap<ReferentId, StructuralContract>,
+    form: &StructuralForm,
+) -> Option<&'a ReferentId> {
+    let mut matches = contracts
+        .values()
+        .filter(|contract| contract.form() == form)
+        .map(StructuralContract::referent);
+    let referent = matches.next()?;
+    matches.next().is_none().then_some(referent)
+}
+
+fn numeric_representation(
+    contracts: &BTreeMap<ReferentId, StructuralContract>,
+    domain: &ReferentId,
+) -> Option<NumericRepresentation> {
+    match contracts.get(domain)?.form() {
+        StructuralForm::F32 => Some(NumericRepresentation::F32),
+        StructuralForm::Int => Some(NumericRepresentation::Int),
+        StructuralForm::Tuple(domains) => {
+            let mut representations =
+                domains
+                    .iter()
+                    .map(|domain| match contracts.get(domain)?.form() {
+                        StructuralForm::F32 => Some(NumericRepresentation::F32),
+                        StructuralForm::Int => Some(NumericRepresentation::Int),
+                        StructuralForm::Bool
+                        | StructuralForm::Tuple(_)
+                        | StructuralForm::Product(_) => None,
+                    });
+            match representations.next().flatten()? {
+                NumericRepresentation::F32
+                    if representations.all(|item| item == Some(NumericRepresentation::F32)) =>
+                {
+                    Some(NumericRepresentation::TupleF32)
+                }
+                NumericRepresentation::Int
+                    if representations.all(|item| item == Some(NumericRepresentation::Int)) =>
+                {
+                    Some(NumericRepresentation::TupleInt)
+                }
+                NumericRepresentation::F32
+                | NumericRepresentation::Int
+                | NumericRepresentation::TupleF32
+                | NumericRepresentation::TupleInt => None,
+            }
+        }
+        StructuralForm::Bool | StructuralForm::Product(_) => None,
+    }
 }
 
 fn structural_role_domain(role: &Role) -> Result<Option<&ReferentId>> {

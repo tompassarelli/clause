@@ -735,12 +735,6 @@ frame score:
     );
     assert_eq!(map_operations, 3);
 
-    let (score_result, coin_operations) = evaluate_named("frame score");
-    assert_eq!(score_result, Term::int(10));
-    assert_eq!(coin_operations, 9);
-    let (position_result, _) = evaluate_named("frame next position");
-    let (collected_result, _) = evaluate_named("frame collected");
-
     let expected_position_id = program
         .designations()
         .scoped(&model_id, "expected next position")
@@ -779,8 +773,15 @@ frame score:
     let collected = referent_id("pure/frame/collected");
     let score = referent_id("pure/frame/score");
     let frame_id = referent_id("pure/frame/value");
-    assert_eq!(position_result, expected_position);
-    assert_eq!(collected_result, Term::boolean(true));
+    let definition_term = |name: &str| {
+        let id = program.designations().scoped(&model_id, name).unwrap();
+        revision
+            .model()
+            .definition(&id)
+            .expect("Frame field definition lowers")
+            .denotation()
+            .clone()
+    };
     let mut atoms = revision.model().atoms();
     for referent in [
         frame_shape.clone(),
@@ -802,43 +803,64 @@ frame score:
         )
         .unwrap(),
     ));
+    let frame_term = Term::labelled_product(
+        frame_shape.clone(),
+        BTreeMap::from([
+            (position.clone(), definition_term("frame next position")),
+            (collected.clone(), definition_term("frame collected")),
+            (score.clone(), definition_term("frame score")),
+        ]),
+    )
+    .unwrap();
+    let mut wrong_atoms = atoms.clone();
+    for definition in [
+        Definition::new(position.clone(), Term::referent(bool_domain.clone())),
+        Definition::new(collected.clone(), Term::referent(bool_domain.clone())),
+        Definition::new(score.clone(), Term::referent(int_domain.clone())),
+        Definition::new(frame_id.clone(), frame_term.clone()),
+    ] {
+        wrong_atoms.insert(SemanticAtom::Definition(definition));
+    }
+    let mismatch = Model::from_atoms(model_id.clone(), wrong_atoms)
+        .expect_err("Frame rejects an application outside its sealed field domain");
+    assert_eq!(
+        mismatch.structural_failure().map(|failure| failure.class()),
+        Some(crate::kernel::StructuralFailureClass::DomainMismatch)
+    );
     for definition in [
         Definition::new(position.clone(), Term::referent(tuple_domain.clone())),
         Definition::new(collected.clone(), Term::referent(bool_domain)),
         Definition::new(score.clone(), Term::referent(int_domain)),
-        Definition::new(
-            frame_id.clone(),
-            Term::labelled_product(
-                frame_shape.clone(),
-                BTreeMap::from([
-                    (position.clone(), position_result),
-                    (collected.clone(), collected_result),
-                    (score.clone(), score_result),
-                ]),
-            )
-            .unwrap(),
-        ),
+        Definition::new(frame_id.clone(), frame_term),
     ] {
         atoms.insert(SemanticAtom::Definition(definition));
     }
-    let frame_revision = wire::reload(&wire::serialize(&wire::admit(
-        Model::from_atoms(model_id, atoms).expect("tuple-backed Frame enters the Model"),
-    )))
-    .expect("tuple-backed Frame survives exact wire reload");
-    let (frame, frame_operations) =
-        super::evaluate::evaluate_with_operations(&frame_revision, &Term::referent(frame_id))
-            .expect("composite Frame evaluates");
-    assert_eq!(
-        frame,
-        Term::labelled_product(
-            frame_shape,
-            BTreeMap::from([
-                (position, expected_position,),
-                (collected, Term::boolean(true)),
-                (score, Term::int(10)),
-            ]),
-        )
-        .unwrap()
+    let frame_revision = wire::admit(
+        Model::from_atoms(model_id, atoms).expect("application-backed Frame enters the Model"),
     );
-    assert_eq!(frame_operations, 0);
+    let expected_frame = Term::labelled_product(
+        frame_shape,
+        BTreeMap::from([
+            (position, expected_position),
+            (collected, Term::boolean(true)),
+            (score, Term::int(10)),
+        ]),
+    )
+    .unwrap();
+    let evaluate_frame = |revision: &Revision| {
+        super::evaluate::evaluate_with_operations(revision, &Term::referent(frame_id.clone()))
+            .expect("composite Frame evaluates")
+    };
+    let first = evaluate_frame(&frame_revision);
+    let second = evaluate_frame(&frame_revision);
+    let canonical = wire::serialize(&frame_revision);
+    let reloaded = wire::reload(&canonical).expect("application-backed Frame reloads");
+    let after_reload = evaluate_frame(&reloaded);
+    for (frame, operations) in [&first, &second, &after_reload] {
+        assert_eq!(frame, &expected_frame);
+        assert_eq!(*operations, 9);
+    }
+    assert_eq!(first, second);
+    assert_eq!(first, after_reload);
+    assert_eq!(wire::serialize(&reloaded), canonical);
 }
