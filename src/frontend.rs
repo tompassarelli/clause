@@ -17,6 +17,6 @@ pub use syntax::{
     Cardinality, Declaration, DomainName, FocusBinding, FocusBlock, FocusSlot, IntegerRange,
     InterventionSelection, Kind, LocalDefinitionDecl, Member, MembershipRangeDecl, ModeDecl, Name,
     ParseError, Program, PureDefinitionDecl, QueryColumnDecl, ReferentTemplate, RequestDecl,
-    RoleName, SentenceShapeDecl, ShapeBindingDecl, ShapePartDecl, Span, Spanned,
+    RoleName, RuleDecl, SentenceShapeDecl, ShapeBindingDecl, ShapePartDecl, Span, Spanned,
     SurfaceApplication, SurfaceClause, SurfaceTerm, VariableName,
 };

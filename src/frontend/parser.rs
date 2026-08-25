@@ -3,7 +3,7 @@ use super::declaration::*;
 use super::model::*;
 use super::relation::*;
 use super::source::*;
-use super::syntax::{DefinitionDecl, MembershipDecl, ShapeBindingDecl};
+use super::syntax::{DefinitionDecl, MembershipDecl, RuleDecl, ShapeBindingDecl};
 use super::*;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -46,8 +46,102 @@ fn is_direct_focus(
     Ok(has_grounded_category && has_non_bare)
 }
 
+fn canonical_rule(
+    raw: &RawRule<'_>,
+    kinds: &BTreeMap<Name, Kind>,
+    relations: &BTreeMap<Name, RelationSpec>,
+    memberships: &BTreeMap<Name, MembershipCatalog>,
+) -> Result<RuleDecl, ParseError> {
+    let eligible = kinds
+        .iter()
+        .filter_map(|(name, kind)| (*kind == Kind::Model).then_some(name))
+        .collect::<Vec<_>>();
+    let mut candidates = Vec::new();
+    for model in &eligible {
+        let mut variable_types = BTreeMap::new();
+        let Ok(conclusion) = clause(
+            raw.conclusion,
+            model,
+            relations,
+            memberships,
+            &mut variable_types,
+        ) else {
+            continue;
+        };
+        let premises = raw
+            .premises
+            .iter()
+            .copied()
+            .map(|line| clause(line, model, relations, memberships, &mut variable_types))
+            .collect::<Result<Vec<_>, _>>();
+        if let Ok(premises) = premises {
+            candidates.push(((*model).clone(), conclusion, premises));
+        }
+    }
+    let candidate_names = eligible
+        .iter()
+        .map(|name| name.as_str())
+        .collect::<Vec<_>>()
+        .join(", ");
+    let (model, conclusion, premises) = match candidates.as_slice() {
+        [] => {
+            return Err(error(
+                line_span(raw.conclusion),
+                format!(
+                    "derivation rule matches no declared Model; candidates: {}",
+                    if candidate_names.is_empty() {
+                        "<none>"
+                    } else {
+                        &candidate_names
+                    }
+                ),
+            ));
+        }
+        [(model, conclusion, premises)] => (model.clone(), conclusion.clone(), premises.clone()),
+        many => {
+            return Err(error(
+                line_span(raw.conclusion),
+                format!(
+                    "derivation rule is ambiguous across Models: {}",
+                    many.iter()
+                        .map(|(name, _, _)| name.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
+            ));
+        }
+    };
+    if let Some(hole) = std::iter::once(&conclusion)
+        .chain(premises.iter())
+        .flat_map(query_columns)
+        .find(|column| column.label.is_none())
+    {
+        return Err(error(
+            hole.span,
+            "anonymous holes are only valid in naked queries",
+        ));
+    }
+    let premise_variables = premises.iter().flat_map(variables).collect::<BTreeSet<_>>();
+    if !variables(&conclusion).is_subset(&premise_variables) {
+        return Err(error(
+            conclusion.span,
+            "derivation rule conclusion variables must be range-restricted by if",
+        ));
+    }
+    Ok(RuleDecl {
+        label: raw.label.clone(),
+        model: Spanned {
+            value: model,
+            span: line_span(raw.header),
+        },
+        conclusion,
+        premises,
+        span: line_span(raw.header),
+    })
+}
+
 pub fn parse(source: &str) -> Result<Program, ParseError> {
-    let (mut raw_declarations, mut raw_top_level, raw_requests) = scan(source)?;
+    let (mut raw_declarations, mut raw_top_level, raw_rules, raw_requests) = scan(source)?;
     for declaration in &mut raw_declarations {
         if declaration.bare_block
             && !content(declaration.header).ends_with(':')
@@ -236,6 +330,10 @@ pub fn parse(source: &str) -> Result<Program, ParseError> {
         }
         memberships.insert(declaration.subject.value.clone(), catalog);
     }
+    let rules = raw_rules
+        .iter()
+        .map(|rule| canonical_rule(rule, &kinds, &relations, &memberships))
+        .collect::<Result<Vec<_>, _>>()?;
     let mut layouts = BTreeMap::new();
     for declaration in raw_declarations
         .iter()
@@ -904,6 +1002,7 @@ pub fn parse(source: &str) -> Result<Program, ParseError> {
     });
     Ok(Program {
         declarations,
+        rules,
         top_level,
         requests,
     })
@@ -1186,7 +1285,7 @@ diff impact -> impact/adopt
             "Item\n\nsettings\n  left: Item , right: Item\n  left -> right\n",
             "Item\n\nsettings\n  left: Item pairs right: Item\n  left, -> right\n",
         ] {
-            let (declarations, _, _) = scan(source).expect("candidate source scans");
+            let (declarations, _, _, _) = scan(source).expect("candidate source scans");
             let settings = declarations
                 .iter()
                 .find(|declaration| declaration.subject.value.as_str() == "settings")

@@ -112,6 +112,20 @@ run_m4_behavior() {
   fail "exact M4/S1 descriptor, tamper, nested-hole, or generated-parity behavior failed"
 }
 
+run_m4_rule_to_proof_behavior() {
+  command -v cargo >/dev/null 2>&1 \
+    || fail "cargo is required for the exact M4/S2 behavior check"
+  m4_target_dir=${CARGO_TARGET_DIR:-"$project_root/target/architecture-gate"}
+  if CARGO_TARGET_DIR="$m4_target_dir" cargo test --quiet --locked \
+    --manifest-path "$project_root/Cargo.toml" \
+    --test m4_rule_to_proof \
+    canonical_positive_if_rules_drive_existing_proof_and_intervention_semantics \
+    -- --exact; then
+    return
+  fi
+  fail "exact M4/S2 canonical rule, identity, proof, intervention, or generated-parity behavior failed"
+}
+
 run_structural_diagnostic_behavior() {
   command -v cargo >/dev/null 2>&1 \
     || fail "cargo is required for the ranked structural diagnostic check"
@@ -286,6 +300,7 @@ if test "$selected_rank" -ge 4; then
   require_fixed "$request_source" 'origins: Vec<RoleId>,' \
     "M4 request column loses stable role origins"
   run_m4_behavior
+  run_m4_rule_to_proof_behavior
 fi
 
 if test "$selected_rank" -ge 5; then

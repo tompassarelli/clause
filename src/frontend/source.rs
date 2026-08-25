@@ -22,9 +22,18 @@ pub(super) struct RawTopLevel<'a> {
 }
 
 #[derive(Clone, Debug)]
+pub(super) struct RawRule<'a> {
+    pub(super) label: Option<Spanned<Name>>,
+    pub(super) conclusion: SourceLine<'a>,
+    pub(super) premises: Vec<SourceLine<'a>>,
+    pub(super) header: SourceLine<'a>,
+}
+
+#[derive(Clone, Debug)]
 enum RawItem<'a> {
     Declaration(RawDecl<'a>),
     TopLevel(RawTopLevel<'a>),
+    Rule(RawRule<'a>),
 }
 
 #[derive(Clone, Debug)]
@@ -65,7 +74,12 @@ pub(super) enum RawRequest<'a> {
     },
 }
 
-type ScanOutput<'a> = (Vec<RawDecl<'a>>, Vec<RawTopLevel<'a>>, Vec<RawRequest<'a>>);
+type ScanOutput<'a> = (
+    Vec<RawDecl<'a>>,
+    Vec<RawTopLevel<'a>>,
+    Vec<RawRule<'a>>,
+    Vec<RawRequest<'a>>,
+);
 
 pub(super) fn error(span: Span, message: impl Into<String>) -> ParseError {
     ParseError {
@@ -355,11 +369,69 @@ fn parse_declaration<'a>(
     let text = content(line);
     *index += 1;
     let body = take_body(lines, index);
-    if nonblank(body.iter().copied()).is_empty() && super::clause::clause_has_hole(line)? {
+    let entries = nonblank(body.iter().copied());
+    if text.ends_with(" if") {
+        if entries.is_empty()
+            || entries.iter().any(|premise| {
+                indent(*premise).expect("source indentation was validated before parsing") != 2
+            })
+        {
+            return Err(error(
+                line_span(line),
+                "derivation rule requires one or more two-space premises after if",
+            ));
+        }
+        return Ok(RawItem::Rule(RawRule {
+            label: None,
+            conclusion: SourceLine {
+                number: line.number,
+                column: line.column,
+                text: &line.text[..line.text.len() - " if".len()],
+            },
+            premises: entries,
+            header: line,
+        }));
+    }
+    if let Some(label) = text.strip_suffix(':')
+        && entries
+            .first()
+            .is_some_and(|conclusion| content(*conclusion).ends_with(" if"))
+    {
+        let conclusion = entries[0];
+        if indent(conclusion)? != 2
+            || entries.len() < 2
+            || entries[1..].iter().any(|premise| {
+                indent(*premise).expect("source indentation was validated before parsing") != 4
+            })
+        {
+            return Err(error(
+                line_span(line),
+                "labelled derivation rule requires one two-space conclusion and one or more four-space premises",
+            ));
+        }
+        let label = semantic_name(line, 0, label)?;
+        if label.value.as_str().contains('/') {
+            return Err(error(
+                label.span,
+                "derivation rule label must be unqualified",
+            ));
+        }
+        return Ok(RawItem::Rule(RawRule {
+            label: Some(label),
+            conclusion: SourceLine {
+                number: conclusion.number,
+                column: conclusion.column,
+                text: &conclusion.text[..conclusion.text.len() - " if".len()],
+            },
+            premises: entries[1..].to_vec(),
+            header: line,
+        }));
+    }
+    if entries.is_empty() && super::clause::clause_has_hole(line)? {
         return Ok(RawItem::TopLevel(RawTopLevel { line }));
     }
     if text.contains(" ∈ ") {
-        if nonblank(body.iter().copied()).is_empty() {
+        if entries.is_empty() {
             return Ok(RawItem::TopLevel(RawTopLevel { line }));
         }
         return Err(error(
@@ -385,7 +457,7 @@ fn parse_declaration<'a>(
             };
             (qname(line, 0, subject)?, declaration_kind, false)
         } else if let Some(subject) = text.strip_suffix(':') {
-            if nonblank(body.iter().copied()).is_empty() {
+            if entries.is_empty() {
                 return Err(error(
                     line_span(line),
                     "binding block requires an indented body",
@@ -394,7 +466,7 @@ fn parse_declaration<'a>(
             (semantic_name(line, 0, subject)?, Kind::Model, true)
         } else {
             let subject = semantic_name(line, 0, text)?;
-            if nonblank(body.iter().copied()).is_empty() {
+            if entries.is_empty() {
                 (subject, Kind::Grounding, false)
             } else {
                 (subject, Kind::Model, true)
@@ -560,6 +632,7 @@ pub(super) fn scan(source: &str) -> Result<ScanOutput<'_>, ParseError> {
     }
     let mut declarations = Vec::new();
     let mut top_level = Vec::new();
+    let mut rules = Vec::new();
     let mut requests = Vec::new();
     let mut index = 0;
     while index < lines.len() {
@@ -589,8 +662,9 @@ pub(super) fn scan(source: &str) -> Result<ScanOutput<'_>, ParseError> {
             match parse_declaration(line, &lines, &mut index)? {
                 RawItem::Declaration(declaration) => declarations.push(declaration),
                 RawItem::TopLevel(fragment) => top_level.push(fragment),
+                RawItem::Rule(rule) => rules.push(rule),
             }
         }
     }
-    Ok((declarations, top_level, requests))
+    Ok((declarations, top_level, rules, requests))
 }

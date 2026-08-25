@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
-    kernel::{self, PatternId, ProposalPath, ProposalPathSegment, ReferentId, RoleId},
+    kernel::{self, ContentId, PatternId, ProposalPath, ProposalPathSegment, ReferentId, RoleId},
     wire::sha256_digest,
 };
 
@@ -284,6 +284,33 @@ pub(super) fn synthetic_referent(namespace: &str, fields: &[&str]) -> ReferentId
     write_field(&mut preimage, namespace);
     for field in fields {
         write_field(&mut preimage, field);
+    }
+    ReferentId::from_digest(sha256_digest(&preimage))
+}
+
+pub(super) fn derivation_rule_referent(
+    model: &ReferentId,
+    premises: &[ContentId],
+    conclusions: &[ContentId],
+) -> ReferentId {
+    fn canonical(ids: &[ContentId]) -> Vec<&str> {
+        let mut values = ids.iter().map(ContentId::as_str).collect::<Vec<_>>();
+        values.sort_unstable();
+        values.dedup();
+        values
+    }
+
+    let premises = canonical(premises);
+    let conclusions = canonical(conclusions);
+    let mut preimage = b"clause-derivation-rule-v1\0".to_vec();
+    write_field(&mut preimage, model.as_str());
+    preimage.extend_from_slice(&(premises.len() as u64).to_be_bytes());
+    for premise in premises {
+        write_field(&mut preimage, premise);
+    }
+    preimage.extend_from_slice(&(conclusions.len() as u64).to_be_bytes());
+    for conclusion in conclusions {
+        write_field(&mut preimage, conclusion);
     }
     ReferentId::from_digest(sha256_digest(&preimage))
 }

@@ -4,7 +4,7 @@ use std::{
 };
 
 use crate::{
-    frontend::{self, Declaration, Kind, Member, ShapePartDecl, SurfaceTerm},
+    frontend::{self, Declaration, Kind, Member, RuleDecl, ShapePartDecl, SurfaceTerm},
     intrinsic::{Intrinsic, IntrinsicRole},
     kernel::{
         self, AssertionOccurrence, Definition, DerivationRule, Judgment, JudgmentKind,
@@ -120,12 +120,13 @@ impl std::error::Error for CompileError {
 pub type CompileResult<T> = std::result::Result<T, CompileError>;
 
 use super::{
-    identifiers::{DesignationTable, synthetic_referent},
+    identifiers::{DesignationTable, derivation_rule_referent, synthetic_referent},
     lowering::{
         BinderTable, LoweredContentGraph, LoweredDefinitionGraph, Projection,
-        lower_clause_graph_traced, lower_clause_with, lower_definition, lower_focus,
-        lower_pure_definition, lower_shape_binding, membership_content, membership_group_role,
-        membership_member_role, membership_relation, membership_shape, structural_domain,
+        lower_clause_graph_traced, lower_clause_graph_with, lower_clause_with, lower_definition,
+        lower_focus, lower_pure_definition, lower_shape_binding, membership_content,
+        membership_group_role, membership_member_role, membership_relation, membership_shape,
+        structural_domain,
     },
     resolution::Resolver,
 };
@@ -301,8 +302,9 @@ fn compile_named(
     let mut proposal_spans = BTreeMap::new();
     let (models, source_spans) = lower_models(
         &program.declarations,
+        &program.rules,
         &relation_shapes,
-        &projection,
+        &mut projection,
         &mut proposal_spans,
     )
     .map_err(|error| CompileError::from_kernel(error, &proposal_spans, &projection.designations))?;
@@ -338,6 +340,7 @@ fn compile_context(
 ) -> CompileResult<CompiledProgram> {
     declaration_map(&program.declarations)?;
     if !program.requests.is_empty()
+        || !program.rules.is_empty()
         || program.declarations.iter().any(|declaration| {
             !matches!(
                 declaration.kind,
@@ -427,6 +430,32 @@ fn declare_projection(
             _ => {}
         }
         declare_literals(&declaration.body, &mut projection.designations);
+    }
+    for rule in &program.rules {
+        if !program.declarations.iter().any(|declaration| {
+            declaration.kind == Kind::Model && declaration.subject.value == rule.model.value
+        }) {
+            return Err(kernel::KernelError::new(
+                "canonical derivation rule requires a declared Model",
+            ));
+        }
+        let model = projection.designations.global(rule.model.value.as_str())?;
+        if let Some(label) = &rule.label {
+            let referent = projection
+                .designations
+                .declare_scoped(&model, label.value.as_str())?;
+            projection
+                .model_referents
+                .entry(model)
+                .or_default()
+                .insert(referent);
+        }
+        declare_clause_literals(
+            rule.premises
+                .iter()
+                .chain(std::iter::once(&rule.conclusion)),
+            &mut projection.designations,
+        );
     }
     declare_literals(&program.top_level, &mut projection.designations);
     for (index, request) in program.requests.iter().enumerate() {
@@ -820,8 +849,9 @@ fn register_definition_graph(
 
 fn lower_models(
     declarations: &[Declaration],
+    canonical_rules: &[RuleDecl],
     shapes: &BTreeMap<ReferentId, RelationShape>,
-    projection: &Projection,
+    projection: &mut Projection,
     proposal_spans: &mut BTreeMap<ProposalPath, frontend::Span>,
 ) -> kernel::Result<(
     BTreeMap<frontend::Name, Model>,
@@ -835,6 +865,10 @@ fn lower_models(
             Kind::Enumeration | Kind::BindingShape | Kind::Model
         )
     }) {
+        let scoped_canonical_rules = canonical_rules
+            .iter()
+            .filter(|rule| rule.model.value == declaration.subject.value)
+            .collect::<Vec<_>>();
         let model_id = projection
             .designations
             .global(declaration.subject.value.as_str())?;
@@ -858,8 +892,28 @@ fn lower_models(
         for member in &declaration.body {
             collect_member_literal_referents(member, projection, &mut referents)?;
         }
-        let (mut contents, mut occurrences, mut judgments) =
-            literal_memberships(&model_id, &declaration.body, projection, &mut referents)?;
+        let canonical_rule_literals = scoped_canonical_rules
+            .iter()
+            .flat_map(|rule| {
+                rule.premises
+                    .iter()
+                    .chain(std::iter::once(&rule.conclusion))
+            })
+            .map(|clause| clause_literal_referents(clause, projection))
+            .collect::<kernel::Result<Vec<_>>>()?
+            .into_iter()
+            .flatten()
+            .collect::<BTreeSet<_>>();
+        for id in &canonical_rule_literals {
+            referents.insert(id.clone(), Referent::new(id.clone()));
+        }
+        let (mut contents, mut occurrences, mut judgments) = literal_memberships(
+            &model_id,
+            &declaration.body,
+            canonical_rule_literals,
+            projection,
+            &mut referents,
+        )?;
         let mut occurrence_index = 0usize;
         for member in &declaration.body {
             match member {
@@ -1064,6 +1118,111 @@ fn lower_models(
                 Pattern::new(vec![conclusion_content.id().clone()])?,
             )?);
         }
+        for rule_decl in scoped_canonical_rules {
+            let provisional_scope = synthetic_referent(
+                "derivation-rule-provisional-pattern-scope",
+                &[model_id.as_str()],
+            );
+            let provisional_binders = BinderTable::declare_alpha(
+                &mut projection.designations,
+                &provisional_scope,
+                rule_decl
+                    .premises
+                    .iter()
+                    .chain(std::iter::once(&rule_decl.conclusion)),
+            )?;
+            let provisional_premises = rule_decl
+                .premises
+                .iter()
+                .map(|surface| {
+                    lower_clause_graph_with(
+                        projection,
+                        shell.model(),
+                        surface,
+                        Some(&provisional_binders),
+                    )
+                    .map(|graph| graph.root.id().clone())
+                })
+                .collect::<kernel::Result<Vec<_>>>()?;
+            let provisional_conclusion = lower_clause_graph_with(
+                projection,
+                shell.model(),
+                &rule_decl.conclusion,
+                Some(&provisional_binders),
+            )?
+            .root
+            .id()
+            .clone();
+            let rule_id = derivation_rule_referent(
+                &model_id,
+                &provisional_premises,
+                std::slice::from_ref(&provisional_conclusion),
+            );
+            let binders = BinderTable::declare_alpha(
+                &mut projection.designations,
+                &rule_id,
+                rule_decl
+                    .premises
+                    .iter()
+                    .chain(std::iter::once(&rule_decl.conclusion)),
+            )?;
+            if projection
+                .rule_binders
+                .insert(rule_id.clone(), binders.clone())
+                .is_some()
+            {
+                return Err(kernel::KernelError::new(
+                    "duplicate canonical derivation rule identity",
+                ));
+            }
+            referents.insert(rule_id.clone(), Referent::new(rule_id.clone()));
+            let premise_contents = rule_decl
+                .premises
+                .iter()
+                .map(|surface| {
+                    let graph = lower_clause_graph_traced(
+                        projection,
+                        shell.model(),
+                        surface,
+                        Some(&binders),
+                        proposal_spans,
+                    )?;
+                    register_content_graph(&mut contents, graph)
+                })
+                .collect::<kernel::Result<Vec<_>>>()?;
+            let conclusion_graph = lower_clause_graph_traced(
+                projection,
+                shell.model(),
+                &rule_decl.conclusion,
+                Some(&binders),
+                proposal_spans,
+            )?;
+            let conclusion_content = register_content_graph(&mut contents, conclusion_graph)?;
+            for content in premise_contents
+                .iter()
+                .chain(std::iter::once(&conclusion_content))
+            {
+                contents.insert(content.id().clone(), content.clone());
+            }
+            rules.push(DerivationRule::new(
+                rule_id.clone(),
+                model_id.clone(),
+                model_id.clone(),
+                Pattern::new(
+                    premise_contents
+                        .iter()
+                        .map(|content| content.id().clone())
+                        .collect(),
+                )?,
+                Pattern::new(vec![conclusion_content.id().clone()])?,
+            )?);
+            if let Some(label) = &rule_decl.label {
+                let label_id = projection
+                    .designations
+                    .scoped(&model_id, label.value.as_str())?;
+                definitions.push(Definition::new(label_id, Term::referent(rule_id)));
+            }
+        }
         let structural_contracts =
             extend_structural_closure(projection, &mut referents, &contents, &mut definitions)?;
         let model = Model::with_distinctions(
@@ -1114,8 +1273,13 @@ fn lower_context_model(
     for member in members {
         collect_member_literal_referents(member, projection, &mut referents)?;
     }
-    let (mut contents, mut occurrences, mut judgments) =
-        literal_memberships(&model_id, members, projection, &mut referents)?;
+    let (mut contents, mut occurrences, mut judgments) = literal_memberships(
+        &model_id,
+        members,
+        std::iter::empty(),
+        projection,
+        &mut referents,
+    )?;
     let mut occurrence_index = 0usize;
     for member in members {
         match member {
@@ -1421,6 +1585,7 @@ type LiteralMemberships = (
 fn literal_memberships(
     model: &ReferentId,
     members: &[Member],
+    additional_literals: impl IntoIterator<Item = ReferentId>,
     projection: &Projection,
     referents: &mut BTreeMap<ReferentId, Referent>,
 ) -> kernel::Result<LiteralMemberships> {
@@ -1433,6 +1598,7 @@ fn literal_memberships(
         .collect::<kernel::Result<Vec<_>>>()?
         .into_iter()
         .flatten()
+        .chain(additional_literals)
         .collect::<BTreeSet<_>>();
     if !literals.is_empty() {
         let text = projection.designations.global("Text")?;
@@ -1478,42 +1644,6 @@ fn member_literal_referents(
     member: &Member,
     projection: &Projection,
 ) -> kernel::Result<Vec<ReferentId>> {
-    fn collect(
-        term: &SurfaceTerm,
-        projection: &Projection,
-        literals: &mut Vec<ReferentId>,
-    ) -> kernel::Result<()> {
-        match term {
-            SurfaceTerm::String(value) => {
-                literals.push(projection.designations.literal(&value.value)?);
-            }
-            SurfaceTerm::Application(value) => {
-                for term in value.roles.values() {
-                    collect(term, projection, literals)?;
-                }
-            }
-            SurfaceTerm::Tuple { values, .. } | SurfaceTerm::Sequence { values, .. } => {
-                for term in values {
-                    collect(term, projection, literals)?;
-                }
-            }
-            SurfaceTerm::Product { fields, .. } => {
-                for term in fields.values() {
-                    collect(term, projection, literals)?;
-                }
-            }
-            SurfaceTerm::Referent(_)
-            | SurfaceTerm::Local(_)
-            | SurfaceTerm::Template(_)
-            | SurfaceTerm::Variable(_)
-            | SurfaceTerm::AnonymousHole(_)
-            | SurfaceTerm::F32(_)
-            | SurfaceTerm::Int(_)
-            | SurfaceTerm::Bool(_)
-            | SurfaceTerm::Intrinsic(_) => {}
-        }
-        Ok(())
-    }
     let terms = match member {
         Member::RelationalContent(clause) => clause.roles.values().collect::<Vec<_>>(),
         Member::Focus(focus) => focus.slots.iter().map(|slot| &slot.value).collect(),
@@ -1521,9 +1651,57 @@ fn member_literal_referents(
     };
     let mut literals = Vec::new();
     for term in terms {
-        collect(term, projection, &mut literals)?;
+        collect_term_literal_referents(term, projection, &mut literals)?;
     }
     Ok(literals)
+}
+
+fn clause_literal_referents(
+    clause: &frontend::SurfaceClause,
+    projection: &Projection,
+) -> kernel::Result<Vec<ReferentId>> {
+    let mut literals = Vec::new();
+    for term in clause.roles.values() {
+        collect_term_literal_referents(term, projection, &mut literals)?;
+    }
+    Ok(literals)
+}
+
+fn collect_term_literal_referents(
+    term: &SurfaceTerm,
+    projection: &Projection,
+    literals: &mut Vec<ReferentId>,
+) -> kernel::Result<()> {
+    match term {
+        SurfaceTerm::String(value) => {
+            literals.push(projection.designations.literal(&value.value)?);
+        }
+        SurfaceTerm::Application(value) => {
+            for term in value.roles.values() {
+                collect_term_literal_referents(term, projection, literals)?;
+            }
+        }
+        SurfaceTerm::Tuple { values, .. } | SurfaceTerm::Sequence { values, .. } => {
+            for term in values {
+                collect_term_literal_referents(term, projection, literals)?;
+            }
+        }
+        SurfaceTerm::Product { fields, .. } => {
+            for term in fields.values() {
+                collect_term_literal_referents(term, projection, literals)?;
+            }
+        }
+        SurfaceTerm::Referent(_)
+        | SurfaceTerm::Local(_)
+        | SurfaceTerm::Template(_)
+        | SurfaceTerm::Variable(_)
+        | SurfaceTerm::AnonymousHole(_)
+        | SurfaceTerm::F32(_)
+        | SurfaceTerm::Int(_)
+        | SurfaceTerm::Bool(_)
+        | SurfaceTerm::Intrinsic(_) => {}
+    }
+    Ok(())
 }
 
 fn collect_member_literal_referents(
@@ -1558,6 +1736,17 @@ fn declare_literals(members: &[Member], table: &mut DesignationTable) {
                 }
             }
             _ => {}
+        }
+    }
+}
+
+fn declare_clause_literals<'a>(
+    clauses: impl IntoIterator<Item = &'a frontend::SurfaceClause>,
+    table: &mut DesignationTable,
+) {
+    for clause in clauses {
+        for term in clause.roles.values() {
+            declare_term_literal(term, table);
         }
     }
 }

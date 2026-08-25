@@ -83,10 +83,23 @@ pub enum Kind {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Program {
     pub declarations: Vec<Declaration>,
+    pub rules: Vec<RuleDecl>,
     /// Direct Model content whose semantic scope is supplied by the caller at
     /// compilation time rather than declared in this source projection.
     pub top_level: Vec<Member>,
     pub requests: Vec<RequestDecl>,
+}
+
+/// One positive, range-restricted derivation rule authored through the
+/// conclusion-plus-`if` surface. Its optional label is presentation binding;
+/// elaboration derives rule identity independently from it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RuleDecl {
+    pub label: Option<Spanned<Name>>,
+    pub model: Spanned<Name>,
+    pub conclusion: SurfaceClause,
+    pub premises: Vec<SurfaceClause>,
+    pub span: Span,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
