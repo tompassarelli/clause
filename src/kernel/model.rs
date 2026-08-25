@@ -150,7 +150,11 @@ impl Model {
         for pattern in derivation_rules
             .iter()
             .flat_map(|rule| [rule.premises(), rule.conclusion()])
-            .chain(universal_laws.iter().map(UniversalLaw::generalized))
+            .chain(
+                universal_laws
+                    .iter()
+                    .flat_map(|law| [law.premises(), law.conclusion()]),
+            )
             .chain(invariants.iter().map(Invariant::condition))
             .chain(goals.iter().map(Goal::desired))
         {
@@ -237,14 +241,32 @@ impl Model {
         }
         for rule in &derivation_rules {
             require_referent(&referents, rule.id(), "derivation rule")?;
+            require_referent(
+                &referents,
+                rule.governing_law(),
+                "derivation rule governing law",
+            )?;
             require_referent(&referents, rule.scope(), "derivation rule scope")?;
             require_referent(&referents, rule.authority(), "derivation rule authority")?;
             validate_rule(&relational_contents, &relation_shapes, rule)?;
+            let law = universal_laws
+                .iter()
+                .find(|law| law.id() == rule.governing_law())
+                .ok_or_else(|| KernelError::new("derivation rule governing law is undeclared"))?;
+            if law.scope() != rule.scope()
+                || law.premises() != rule.premises()
+                || law.conclusion() != rule.conclusion()
+            {
+                return Err(KernelError::new(
+                    "derivation rule must exactly project its governing law pattern and scope",
+                ));
+            }
         }
         for law in &universal_laws {
             require_referent(&referents, law.id(), "universal law")?;
             require_referent(&referents, law.scope(), "universal law scope")?;
-            validate_pattern(&relational_contents, &relation_shapes, law.generalized())?;
+            validate_pattern(&relational_contents, &relation_shapes, law.premises())?;
+            validate_pattern(&relational_contents, &relation_shapes, law.conclusion())?;
         }
         for invariant in &invariants {
             require_referent(&referents, invariant.id(), "invariant")?;

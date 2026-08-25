@@ -84,10 +84,33 @@ pub enum Kind {
 pub struct Program {
     pub declarations: Vec<Declaration>,
     pub rules: Vec<RuleDecl>,
+    pub laws: Vec<LawDecl>,
+    pub derivations: Vec<DeriveDecl>,
     /// Direct Model content whose semantic scope is supplied by the caller at
     /// compilation time rather than declared in this source projection.
     pub top_level: Vec<Member>,
     pub requests: Vec<RequestDecl>,
+}
+
+/// One universal law authored as semantic ground. The label is a scoped
+/// source binding; elaboration derives law identity from its alpha-normalized
+/// premises and conclusion.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LawDecl {
+    pub label: Spanned<Name>,
+    pub model: Spanned<Name>,
+    pub conclusion: SurfaceClause,
+    pub premises: Vec<SurfaceClause>,
+    pub span: Span,
+}
+
+/// One explicit authorization of the separately authored law named by
+/// `label`. It projects an operational derivation rule without changing the
+/// law's semantic identity.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DeriveDecl {
+    pub label: Spanned<Name>,
+    pub span: Span,
 }
 
 /// One positive, range-restricted derivation rule authored through the

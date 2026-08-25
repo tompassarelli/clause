@@ -173,14 +173,24 @@ fn derived_judgments_validate_recursive_groundness() {
         )]),
     )
     .unwrap();
+    let law_id = ReferentId::from_digest([31; 32]);
+    let premise_pattern_value = Pattern::new(vec![premise_pattern.id().clone()]).unwrap();
+    let conclusion_pattern_value = Pattern::new(vec![conclusion_pattern.id().clone()]).unwrap();
     let rule = DerivationRule::new(
         rule_id.clone(),
+        law_id.clone(),
         model.clone(),
         model.clone(),
-        Pattern::new(vec![premise_pattern.id().clone()]).unwrap(),
-        Pattern::new(vec![conclusion_pattern.id().clone()]).unwrap(),
+        premise_pattern_value.clone(),
+        conclusion_pattern_value.clone(),
     )
     .unwrap();
+    let law = UniversalLaw::new(
+        law_id.clone(),
+        model.clone(),
+        premise_pattern_value,
+        conclusion_pattern_value,
+    );
     let referents = [
         model.clone(),
         premise_relation.clone(),
@@ -189,6 +199,7 @@ fn derived_judgments_validate_recursive_groundness() {
         leaf_relation.clone(),
         value,
         rule_id.clone(),
+        law_id,
         judgment_id.clone(),
     ]
     .into_iter()
@@ -254,7 +265,7 @@ fn derived_judgments_validate_recursive_groundness() {
             Vec::new(),
             Vec::new(),
             vec![rule.clone()],
-            Vec::new(),
+            vec![law.clone()],
             Vec::new(),
             Vec::new(),
             Vec::new(),

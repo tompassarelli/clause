@@ -30,10 +30,26 @@ pub(super) struct RawRule<'a> {
 }
 
 #[derive(Clone, Debug)]
+pub(super) struct RawLaw<'a> {
+    pub(super) label: Spanned<Name>,
+    pub(super) conclusion: SourceLine<'a>,
+    pub(super) premises: Vec<SourceLine<'a>>,
+    pub(super) header: SourceLine<'a>,
+}
+
+#[derive(Clone, Debug)]
+pub(super) struct RawDerive {
+    pub(super) label: Spanned<Name>,
+    pub(super) span: Span,
+}
+
+#[derive(Clone, Debug)]
 enum RawItem<'a> {
     Declaration(RawDecl<'a>),
     TopLevel(RawTopLevel<'a>),
     Rule(RawRule<'a>),
+    Law(RawLaw<'a>),
+    Derive(RawDerive),
 }
 
 #[derive(Clone, Debug)]
@@ -79,6 +95,8 @@ type ScanOutput<'a> = (
     Vec<RawDecl<'a>>,
     Vec<RawTopLevel<'a>>,
     Vec<RawRule<'a>>,
+    Vec<RawLaw<'a>>,
+    Vec<RawDerive>,
     Vec<RawRequest<'a>>,
 );
 
@@ -371,6 +389,56 @@ fn parse_declaration<'a>(
     *index += 1;
     let body = take_body(lines, index);
     let entries = nonblank(body.iter().copied());
+    if let Some(label) = text.strip_prefix("law ") {
+        let label = semantic_name(line, "law ".len(), label)?;
+        if label.value.as_str().contains('/') {
+            return Err(error(label.span, "universal law label must be unqualified"));
+        }
+        let Some(conclusion) = entries.first().copied() else {
+            return Err(error(
+                line_span(line),
+                "universal law requires one two-space conclusion ending in 'if' and one or more four-space premises",
+            ));
+        };
+        if indent(conclusion)? != 2
+            || !content(conclusion).ends_with(" if")
+            || entries.len() < 2
+            || entries[1..].iter().any(|premise| {
+                indent(*premise).expect("source indentation was validated before parsing") != 4
+            })
+        {
+            return Err(error(
+                line_span(line),
+                "universal law requires one two-space conclusion ending in 'if' and one or more four-space premises",
+            ));
+        }
+        return Ok(RawItem::Law(RawLaw {
+            label,
+            conclusion: SourceLine {
+                number: conclusion.number,
+                column: conclusion.column,
+                text: &conclusion.text[..conclusion.text.len() - " if".len()],
+            },
+            premises: entries[1..].to_vec(),
+            header: line,
+        }));
+    }
+    if let Some(label) = text.strip_prefix("derive ") {
+        if !entries.is_empty() {
+            return Err(error(
+                line_span(line),
+                "derive authorization cannot have a body",
+            ));
+        }
+        let label = semantic_name(line, "derive ".len(), label)?;
+        if label.value.as_str().contains('/') {
+            return Err(error(label.span, "derive label must be unqualified"));
+        }
+        return Ok(RawItem::Derive(RawDerive {
+            label,
+            span: line_span(line),
+        }));
+    }
     if text.ends_with(" if") {
         if entries.is_empty()
             || entries.iter().any(|premise| {
@@ -644,6 +712,8 @@ pub(super) fn scan(source: &str) -> Result<ScanOutput<'_>, ParseError> {
     let mut declarations = Vec::new();
     let mut top_level = Vec::new();
     let mut rules = Vec::new();
+    let mut laws = Vec::new();
+    let mut derivations = Vec::new();
     let mut requests = Vec::new();
     let mut index = 0;
     while index < lines.len() {
@@ -674,8 +744,10 @@ pub(super) fn scan(source: &str) -> Result<ScanOutput<'_>, ParseError> {
                 RawItem::Declaration(declaration) => declarations.push(declaration),
                 RawItem::TopLevel(fragment) => top_level.push(fragment),
                 RawItem::Rule(rule) => rules.push(rule),
+                RawItem::Law(law) => laws.push(law),
+                RawItem::Derive(derive) => derivations.push(derive),
             }
         }
     }
-    Ok((declarations, top_level, rules, requests))
+    Ok((declarations, top_level, rules, laws, derivations, requests))
 }

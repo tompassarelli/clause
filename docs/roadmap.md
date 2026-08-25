@@ -128,7 +128,7 @@ honestly collapse:
 | `StateRevision` | Logically immutable runtime state produced from an exact predecessor and Delta and bound to an exact Model Revision. |
 | `RuntimeSession` | Exact Model Revision, initial state, tick policy, ordered input/event stream, transition results, capability realizations, and effect receipts. |
 
-Today's Revision-v5 wraps one complete semantic-v8 Model snapshot and either
+Today's Revision-v5 wraps one complete semantic-v9 Model snapshot and either
 root lineage or an exact predecessor Delta. Any future split migrates the
 representation and all in-tree consumers atomically; it does not pass through
 two public wire meanings. The historical M0 page records the earlier evidence
@@ -196,7 +196,7 @@ Public Clause currently implements:
 - one stable referent domain and role-labelled n-ary relational content;
 - separate assertion occurrences, judgments, definitions, derivation rules,
   universal laws, invariants, goals, and transitions;
-- canonical semantic-v8 / Revision-v5 persistence with exact predecessor
+- canonical semantic-v9 / Revision-v5 persistence with exact predecessor
   lineage and complete successor Deltas;
 - the compact M1 grounding, binding, membership, enumeration, and focus
   surface, M2 exact role-labelled relation schemas and projection contracts,
@@ -420,8 +420,11 @@ Implement fresh anonymous holes, named reusable/result holes, repeated-hole
 correlation, naked single-clause selection, explicit `select` projection,
 `any` existence, exact-one selection, canonical at-most-one `first` selection
 (empty on no solution), and `if`-oriented positive derivation rules with hidden
-or optional human labels. Universal laws, Revision-admission invariants, and
-goals remain distinct modes.
+or optional human labels. Authored `law <label>` declarations are semantic
+ground only; a separate
+`derive <label>` projects an operational rule retaining governing-law,
+authority, and scope. Revision-admission invariants and goals remain distinct
+modes.
 
 Random witness selection is a distinct effectful operation. `find` ceases to be
 the canonical relational query word but may remain a tooling/library verb.

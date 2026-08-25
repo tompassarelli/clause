@@ -7,7 +7,7 @@ use crate::kernel::{
 
 use super::{json::escape, sha256::sha256_digest};
 
-pub const SEMANTIC_TAG: &str = "clause-semantic-v8";
+pub const SEMANTIC_TAG: &str = "clause-semantic-v9";
 pub const REVISION_TAG: &str = "clause-revision-v5";
 
 pub fn semantic_payload(revision: &Revision) -> String {
@@ -222,8 +222,9 @@ fn definition_json(value: &Definition) -> String {
 
 fn rule_json(value: &DerivationRule) -> String {
     format!(
-        "[\"derivation-rule\",\"{}\",[\"scope\",\"{}\"],[\"authority\",\"{}\"],[\"premises\",{}],[\"conclusion\",{}]]",
+        "[\"derivation-rule\",\"{}\",[\"governing-law\",\"{}\"],[\"scope\",\"{}\"],[\"authority\",\"{}\"],[\"premises\",{}],[\"conclusion\",{}]]",
         escape(value.id().as_str()),
+        escape(value.governing_law().as_str()),
         escape(value.scope().as_str()),
         escape(value.authority().as_str()),
         pattern_json(value.premises()),
@@ -233,10 +234,11 @@ fn rule_json(value: &DerivationRule) -> String {
 
 fn law_json(value: &UniversalLaw) -> String {
     format!(
-        "[\"universal-law\",\"{}\",[\"scope\",\"{}\"],[\"generalized\",{}]]",
+        "[\"universal-law\",\"{}\",[\"scope\",\"{}\"],[\"premises\",{}],[\"conclusion\",{}]]",
         escape(value.id().as_str()),
         escape(value.scope().as_str()),
-        pattern_json(value.generalized())
+        pattern_json(value.premises()),
+        pattern_json(value.conclusion())
     )
 }
 

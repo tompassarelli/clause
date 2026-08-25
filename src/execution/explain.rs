@@ -112,10 +112,16 @@ fn add_support_clause(
         SupportWitness::Asserted => Witness::Asserted,
         SupportWitness::Derived {
             rule,
+            governing_law,
+            authority,
+            scope,
             premises,
             substitution,
         } => Witness::Derived {
             rule: rule.clone(),
+            governing_law: governing_law.clone(),
+            authority: authority.clone(),
+            scope: scope.clone(),
             premises: premises
                 .iter()
                 .map(|premise| add_support_clause(premise, clauses, indices, witnesses))
@@ -150,10 +156,16 @@ fn add_clause(
         derive::Witness::Asserted => Witness::Asserted,
         derive::Witness::Derived {
             rule,
+            governing_law,
+            authority,
+            scope,
             premises,
             substitution,
         } => Witness::Derived {
             rule: rule.clone(),
+            governing_law: governing_law.clone(),
+            authority: authority.clone(),
+            scope: scope.clone(),
             premises: premises
                 .iter()
                 .map(|premise| add_clause(premise, closure, clauses, indices, witnesses))

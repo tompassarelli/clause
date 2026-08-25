@@ -416,6 +416,7 @@ impl AssertionOccurrence {
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct DerivationRule {
     id: ReferentId,
+    governing_law: ReferentId,
     scope: ReferentId,
     authority: ReferentId,
     premises: Pattern,
@@ -425,6 +426,7 @@ pub struct DerivationRule {
 impl DerivationRule {
     pub fn new(
         id: ReferentId,
+        governing_law: ReferentId,
         scope: ReferentId,
         authority: ReferentId,
         premises: Pattern,
@@ -432,6 +434,7 @@ impl DerivationRule {
     ) -> Result<Self> {
         Ok(Self {
             id,
+            governing_law,
             scope,
             authority,
             premises,
@@ -440,6 +443,9 @@ impl DerivationRule {
     }
     pub fn id(&self) -> &ReferentId {
         &self.id
+    }
+    pub fn governing_law(&self) -> &ReferentId {
+        &self.governing_law
     }
     pub fn scope(&self) -> &ReferentId {
         &self.scope
@@ -459,14 +465,16 @@ impl DerivationRule {
 pub struct UniversalLaw {
     id: ReferentId,
     scope: ReferentId,
-    generalized: Pattern,
+    premises: Pattern,
+    conclusion: Pattern,
 }
 impl UniversalLaw {
-    pub fn new(id: ReferentId, scope: ReferentId, generalized: Pattern) -> Self {
+    pub fn new(id: ReferentId, scope: ReferentId, premises: Pattern, conclusion: Pattern) -> Self {
         Self {
             id,
             scope,
-            generalized,
+            premises,
+            conclusion,
         }
     }
     pub fn id(&self) -> &ReferentId {
@@ -475,8 +483,11 @@ impl UniversalLaw {
     pub fn scope(&self) -> &ReferentId {
         &self.scope
     }
-    pub fn generalized(&self) -> &Pattern {
-        &self.generalized
+    pub fn premises(&self) -> &Pattern {
+        &self.premises
+    }
+    pub fn conclusion(&self) -> &Pattern {
+        &self.conclusion
     }
 }
 

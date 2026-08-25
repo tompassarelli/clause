@@ -7,6 +7,7 @@ use crate::{
         AssertionOccurrence, Cardinality, Delta, DerivationRule, Judgment, JudgmentKind,
         JudgmentStatus, JudgmentTarget, LookupMode, Model, Pattern, PatternId, Referent,
         ReferentId, RelationShape, RelationalContent, Role, RoleId, SemanticAtom, Term,
+        UniversalLaw,
     },
     wire,
 };
@@ -47,6 +48,10 @@ impl FixtureRelation {
 
     fn rule_id(self) -> ReferentId {
         referent(20 + self.offset())
+    }
+
+    fn law_id(self) -> ReferentId {
+        referent(50 + self.offset())
     }
 
     fn occurrence_id(self) -> ReferentId {
@@ -156,28 +161,48 @@ fn judgment(relation: FixtureRelation) -> Judgment {
 }
 
 fn model(assertions: Vec<FixtureRelation>, reverse_laws: bool) -> Model {
-    let mut laws = SUPPORT_RELATIONS
+    let mut projections = SUPPORT_RELATIONS
         .into_iter()
         .map(|relation| {
             let premise = relational_pattern(relation);
             let conclusion = relational_pattern(FixtureRelation::Result);
-            DerivationRule::new(
-                relation.rule_id(),
-                model_id(),
-                model_id(),
-                Pattern::new(vec![premise.id().clone()]).unwrap(),
-                Pattern::new(vec![conclusion.id().clone()]).unwrap(),
+            let premise_pattern = Pattern::new(vec![premise.id().clone()]).unwrap();
+            let conclusion_pattern = Pattern::new(vec![conclusion.id().clone()]).unwrap();
+            (
+                DerivationRule::new(
+                    relation.rule_id(),
+                    relation.law_id(),
+                    model_id(),
+                    model_id(),
+                    premise_pattern.clone(),
+                    conclusion_pattern.clone(),
+                )
+                .unwrap(),
+                UniversalLaw::new(
+                    relation.law_id(),
+                    model_id(),
+                    premise_pattern,
+                    conclusion_pattern,
+                ),
             )
-            .unwrap()
         })
         .collect::<Vec<_>>();
     if reverse_laws {
-        laws.reverse();
+        projections.reverse();
     }
+    let derivation_rules = projections
+        .iter()
+        .map(|(rule, _)| rule.clone())
+        .collect::<Vec<_>>();
+    let universal_laws = projections
+        .into_iter()
+        .map(|(_, law)| law)
+        .collect::<Vec<_>>();
     let referents = [model_id(), north(), beagle()]
         .into_iter()
         .chain(RELATIONS.into_iter().map(FixtureRelation::id))
         .chain(SUPPORT_RELATIONS.into_iter().map(FixtureRelation::rule_id))
+        .chain(SUPPORT_RELATIONS.into_iter().map(FixtureRelation::law_id))
         .chain(
             assertions
                 .iter()
@@ -206,8 +231,8 @@ fn model(assertions: Vec<FixtureRelation>, reverse_laws: bool) -> Model {
         BTreeMap::new(),
         occurrences,
         Vec::new(),
-        laws,
-        Vec::new(),
+        derivation_rules,
+        universal_laws,
         Vec::new(),
         Vec::new(),
         Vec::new(),

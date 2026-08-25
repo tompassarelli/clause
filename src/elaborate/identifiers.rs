@@ -315,6 +315,33 @@ pub(super) fn derivation_rule_referent(
     ReferentId::from_digest(sha256_digest(&preimage))
 }
 
+pub(super) fn universal_law_referent(
+    model: &ReferentId,
+    premises: &[ContentId],
+    conclusions: &[ContentId],
+) -> ReferentId {
+    fn canonical(ids: &[ContentId]) -> Vec<&str> {
+        let mut values = ids.iter().map(ContentId::as_str).collect::<Vec<_>>();
+        values.sort_unstable();
+        values.dedup();
+        values
+    }
+
+    let premises = canonical(premises);
+    let conclusions = canonical(conclusions);
+    let mut preimage = b"clause-universal-law-v1\0".to_vec();
+    write_field(&mut preimage, model.as_str());
+    preimage.extend_from_slice(&(premises.len() as u64).to_be_bytes());
+    for premise in premises {
+        write_field(&mut preimage, premise);
+    }
+    preimage.extend_from_slice(&(conclusions.len() as u64).to_be_bytes());
+    for conclusion in conclusions {
+        write_field(&mut preimage, conclusion);
+    }
+    ReferentId::from_digest(sha256_digest(&preimage))
+}
+
 pub(super) fn synthetic_role(namespace: &str, fields: &[&str]) -> RoleId {
     RoleId::from_digest(synthetic_digest(namespace, fields))
 }

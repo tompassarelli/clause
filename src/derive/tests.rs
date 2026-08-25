@@ -3,7 +3,7 @@ use crate::{
     kernel::{
         AssertionOccurrence, Cardinality, DerivationRule, Judgment, JudgmentKind, JudgmentStatus,
         JudgmentTarget, LookupMode, Model, Pattern, PatternId, Referent, ReferentId, RelationShape,
-        RelationalContent, Revision, Role, RoleId, Term,
+        RelationalContent, Revision, Role, RoleId, Term, UniversalLaw,
     },
     wire,
 };
@@ -61,18 +61,29 @@ fn rule(
     identity: &str,
     premises: Vec<RelationalContent>,
     conclusion: RelationalContent,
-) -> (DerivationRule, Vec<RelationalContent>) {
+) -> (DerivationRule, UniversalLaw, Vec<RelationalContent>) {
+    let law_id = referent_id(&format!("{identity}/governing-law"));
+    let premise_pattern =
+        Pattern::new(premises.iter().map(|item| item.id().clone()).collect()).unwrap();
+    let conclusion_pattern = Pattern::new(vec![conclusion.id().clone()]).unwrap();
     let rule = DerivationRule::new(
         referent_id(identity),
+        law_id.clone(),
         referent_id("map/scope"),
         referent_id("map/authority"),
-        Pattern::new(premises.iter().map(|item| item.id().clone()).collect()).unwrap(),
-        Pattern::new(vec![conclusion.id().clone()]).unwrap(),
+        premise_pattern.clone(),
+        conclusion_pattern.clone(),
     )
     .unwrap();
+    let law = UniversalLaw::new(
+        law_id,
+        referent_id("map/scope"),
+        premise_pattern,
+        conclusion_pattern,
+    );
     let mut contents = premises;
     contents.push(conclusion);
-    (rule, contents)
+    (rule, law, contents)
 }
 
 fn declare(referents: &mut BTreeMap<ReferentId, Referent>, id: ReferentId) {
@@ -93,7 +104,7 @@ fn declare_content_referents(
 
 fn revision(
     assertions: Vec<RelationalContent>,
-    rule_fixtures: Vec<(DerivationRule, Vec<RelationalContent>)>,
+    rule_fixtures: Vec<(DerivationRule, UniversalLaw, Vec<RelationalContent>)>,
 ) -> Revision {
     let model_id = referent_id("map");
     let reaches = referent_id("map/reaches");
@@ -124,8 +135,10 @@ fn revision(
         relational_contents.insert(content.id().clone(), content.clone());
     }
     let mut rules = Vec::new();
-    for (rule, contents) in rule_fixtures {
+    let mut laws = Vec::new();
+    for (rule, law, contents) in rule_fixtures {
         declare(&mut referents, rule.id().clone());
+        declare(&mut referents, law.id().clone());
         declare(&mut referents, rule.scope().clone());
         declare(&mut referents, rule.authority().clone());
         for content in contents {
@@ -133,6 +146,7 @@ fn revision(
             relational_contents.insert(content.id().clone(), content);
         }
         rules.push(rule);
+        laws.push(law);
     }
     let mut occurrences = Vec::new();
     let mut judgments = Vec::new();
@@ -177,7 +191,7 @@ fn revision(
         occurrences,
         Vec::new(),
         rules,
-        Vec::new(),
+        laws,
         Vec::new(),
         Vec::new(),
         Vec::new(),

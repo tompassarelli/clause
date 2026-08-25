@@ -29,6 +29,9 @@ pub enum Witness {
     Asserted,
     Derived {
         rule: ReferentId,
+        governing_law: ReferentId,
+        authority: ReferentId,
+        scope: ReferentId,
         premises: Vec<usize>,
         substitution: BTreeMap<PatternId, Term>,
     },

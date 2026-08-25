@@ -571,8 +571,9 @@ Words carry semantic moods:
 
 | Word | Meaning |
 | --- | --- |
-| `law` | explicit universally generalized content mode |
-| `if` | oriented derivation-rule body |
+| `law` | explicit universally generalized semantic ground |
+| `derive` | authorization of a distinct operational projection of a named law |
+| `if` | premise boundary inside a law or oriented derivation-rule body |
 | `invariant` | candidate-Revision admission gate |
 | `goal` | desired content without current-truth or derivation authority |
 | `on` | event/time-triggered transition scope |
@@ -791,11 +792,27 @@ That is a derivation rule with a universally matchable pattern. It is not, by
 that fact alone, a universal law and is not a default value installed into a
 record schema.
 
-A universal law generalizes content within an explicit scope. A derivation rule
-authorizes oriented consequence production. An invariant gates admission of a
-candidate Revision. A goal describes desired content without asserting current
-truth or authorizing derivation. Their final surface spellings remain separate
-M0 evidence questions; an implementation may not accept a collapsed mode.
+A universal law generalizes content within an explicit scope. Its canonical
+source names the semantic ground without using `:`, which remains binding-only:
+
+```clause
+law coin radius
+  ?coin radius 8 if
+    ?coin ∈ Coin
+```
+
+That declaration does not execute. A separate top-level authorization projects
+an oriented derivation rule while retaining the exact governing-law, authority,
+and scope identities:
+
+```clause
+derive coin radius
+```
+
+The law label is a scoped source binding; alpha-renaming pattern binders does
+not change the law identity. An invariant gates admission of a candidate
+Revision. A goal describes desired content without asserting current truth or
+authorizing derivation. An implementation may not collapse these modes.
 
 A category contract and a derivation rule remain distinct:
 

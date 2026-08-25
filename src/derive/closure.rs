@@ -41,6 +41,9 @@ pub enum Witness {
     Asserted,
     Derived {
         rule: crate::kernel::ReferentId,
+        governing_law: crate::kernel::ReferentId,
+        authority: crate::kernel::ReferentId,
+        scope: crate::kernel::ReferentId,
         premises: Vec<RelationalContent>,
         substitution: BTreeMap<PatternId, Term>,
     },
@@ -78,6 +81,9 @@ pub(super) fn limit_error(kind: &str, name: &str, value: usize) -> KernelError {
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 struct Candidate {
     rule: crate::kernel::ReferentId,
+    governing_law: crate::kernel::ReferentId,
+    authority: crate::kernel::ReferentId,
+    scope: crate::kernel::ReferentId,
     premises: Vec<RelationalContent>,
     substitution: BTreeMap<PatternId, Term>,
     dependencies: BTreeMap<ContentId, RelationalContent>,
@@ -124,6 +130,9 @@ pub fn saturate(revision: &Revision, limits: Limits) -> Result<Closure> {
             for conclusion in rule.conclusion().forms() {
                 collect_rule_candidates(
                     rule.id(),
+                    rule.governing_law(),
+                    rule.authority(),
+                    rule.scope(),
                     &premises,
                     revision
                         .model()
@@ -168,6 +177,9 @@ pub fn saturate(revision: &Revision, limits: Limits) -> Result<Closure> {
                     generation,
                     witness: Witness::Derived {
                         rule: candidate.rule,
+                        governing_law: candidate.governing_law,
+                        authority: candidate.authority,
+                        scope: candidate.scope,
                         premises: candidate.premises,
                         substitution: candidate.substitution,
                     },
@@ -185,6 +197,9 @@ pub fn saturate(revision: &Revision, limits: Limits) -> Result<Closure> {
 
 fn collect_rule_candidates(
     rule: &crate::kernel::ReferentId,
+    governing_law: &crate::kernel::ReferentId,
+    authority: &crate::kernel::ReferentId,
+    scope: &crate::kernel::ReferentId,
     patterns: &[&RelationalContent],
     conclusion: &RelationalContent,
     assertions: &[RelationalContent],
@@ -196,6 +211,9 @@ fn collect_rule_candidates(
 ) -> Result<()> {
     collect_joins(
         rule,
+        governing_law,
+        authority,
+        scope,
         patterns,
         conclusion,
         assertions,
@@ -213,6 +231,9 @@ fn collect_rule_candidates(
 #[allow(clippy::too_many_arguments)]
 fn collect_joins(
     rule: &crate::kernel::ReferentId,
+    governing_law: &crate::kernel::ReferentId,
+    authority: &crate::kernel::ReferentId,
+    scope: &crate::kernel::ReferentId,
     patterns: &[&RelationalContent],
     conclusion: &RelationalContent,
     assertions: &[RelationalContent],
@@ -231,6 +252,9 @@ fn collect_joins(
         })?;
         let candidate = Candidate {
             rule: rule.clone(),
+            governing_law: governing_law.clone(),
+            authority: authority.clone(),
+            scope: scope.clone(),
             premises,
             substitution,
             dependencies: instantiated.dependencies,
@@ -268,6 +292,9 @@ fn collect_joins(
         next_premises.push(assertion.clone());
         collect_joins(
             rule,
+            governing_law,
+            authority,
+            scope,
             patterns,
             conclusion,
             assertions,

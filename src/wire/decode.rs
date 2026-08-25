@@ -14,7 +14,7 @@ use super::{
     json::{Json, JsonParser, array, json, list, require_string, string},
 };
 
-/// Strictly reload one canonical root Revision-v5 / semantic-v8 artifact.
+/// Strictly reload one canonical root Revision-v5 / semantic-v9 artifact.
 ///
 /// A successor carries an exact Delta claim whose completeness cannot be
 /// checked without its predecessor snapshot. Use [`reload_successor`] for
@@ -57,7 +57,7 @@ fn decode_canonical(bytes: &str) -> Result<Revision> {
     let (lineage, model) = decode_payload(&envelope[2])?;
     if claimed != revision_id(&lineage, &model) {
         return Err(KernelError::new(
-            "Revision identity does not match the complete semantic-v8 payload",
+            "Revision identity does not match the complete semantic-v9 payload",
         ));
     }
     validate_lineage_snapshot(&lineage, &model)?;
@@ -379,24 +379,30 @@ fn decode_definition(value: &Json) -> Result<Definition> {
 }
 
 fn decode_rule(value: &Json) -> Result<DerivationRule> {
-    let item = list(value, 6, "derivation rule")?;
+    let item = list(value, 7, "derivation rule")?;
     require_string(&item[0], "derivation-rule", "derivation rule tag")?;
     DerivationRule::new(
         decode_referent_id(&item[1])?,
-        decode_referent_id(tagged_group(&item[2], "scope", "rule scope")?)?,
-        decode_referent_id(tagged_group(&item[3], "authority", "rule authority")?)?,
-        decode_pattern(tagged_group(&item[4], "premises", "rule premises")?)?,
-        decode_pattern(tagged_group(&item[5], "conclusion", "rule conclusion")?)?,
+        decode_referent_id(tagged_group(
+            &item[2],
+            "governing-law",
+            "rule governing law",
+        )?)?,
+        decode_referent_id(tagged_group(&item[3], "scope", "rule scope")?)?,
+        decode_referent_id(tagged_group(&item[4], "authority", "rule authority")?)?,
+        decode_pattern(tagged_group(&item[5], "premises", "rule premises")?)?,
+        decode_pattern(tagged_group(&item[6], "conclusion", "rule conclusion")?)?,
     )
 }
 
 fn decode_law(value: &Json) -> Result<UniversalLaw> {
-    let item = list(value, 4, "universal law")?;
+    let item = list(value, 5, "universal law")?;
     require_string(&item[0], "universal-law", "universal law tag")?;
     Ok(UniversalLaw::new(
         decode_referent_id(&item[1])?,
         decode_referent_id(tagged_group(&item[2], "scope", "law scope")?)?,
-        decode_pattern(tagged_group(&item[3], "generalized", "law pattern")?)?,
+        decode_pattern(tagged_group(&item[3], "premises", "law premises")?)?,
+        decode_pattern(tagged_group(&item[4], "conclusion", "law conclusion")?)?,
     ))
 }
 

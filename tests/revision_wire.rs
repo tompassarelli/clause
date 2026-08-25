@@ -1,4 +1,4 @@
-//! Exact typed Revision/Delta wire contract for semantic-v8.
+//! Exact typed Revision/Delta wire contract for semantic-v9.
 
 use std::collections::BTreeMap;
 
@@ -8,7 +8,7 @@ use clause::{
         AssertionOccurrence, Cardinality, Definition, Delta, DerivationRule, Judgment,
         JudgmentKind, JudgmentStatus, JudgmentTarget, LookupMode, Model, Name, OpenWorldStatus,
         Pattern, PatternId, Referent, ReferentId, RelationShape, RelationalContent, Role, RoleId,
-        SemanticAtom, StructuralContract, StructuralForm, Term,
+        SemanticAtom, StructuralContract, StructuralForm, Term, UniversalLaw,
     },
     wire,
 };
@@ -31,6 +31,7 @@ const WEST_JUDGMENT: u8 = 0x0f;
 const SOURCE_B: u8 = 0x10;
 const SECOND_OCCURRENCE: u8 = 0x11;
 const SECOND_JUDGMENT: u8 = 0x12;
+const REFLEXIVE_LAW: u8 = 0x13;
 
 const ROUTE_ROLE: u8 = 0x21;
 const MODULE_ROLE: u8 = 0x22;
@@ -142,6 +143,7 @@ fn fixture_model(label: u8, occurrence_id: u8, judgment_id: u8, source: u8) -> M
         occurrence_id,
         judgment_id,
         REFLEXIVE_RULE,
+        REFLEXIVE_LAW,
     ]
     .map(|seed| {
         let id = referent_id(seed);
@@ -151,7 +153,8 @@ fn fixture_model(label: u8, occurrence_id: u8, judgment_id: u8, source: u8) -> M
     let contents = [ground.clone(), pattern_content.clone()]
         .map(|content| (content.id().clone(), content))
         .into();
-    let pattern = Pattern::new(vec![pattern_content.id().clone()]).unwrap();
+    let premise = Pattern::new(vec![pattern_content.id().clone()]).unwrap();
+    let conclusion = premise.clone();
     Model::with_distinctions(
         referent_id(MODEL),
         referents,
@@ -163,14 +166,20 @@ fn fixture_model(label: u8, occurrence_id: u8, judgment_id: u8, source: u8) -> M
         vec![
             DerivationRule::new(
                 referent_id(REFLEXIVE_RULE),
+                referent_id(REFLEXIVE_LAW),
                 referent_id(SCOPE),
                 referent_id(AUTHORITY),
-                pattern.clone(),
-                pattern,
+                premise.clone(),
+                conclusion.clone(),
             )
             .unwrap(),
         ],
-        Vec::new(),
+        vec![UniversalLaw::new(
+            referent_id(REFLEXIVE_LAW),
+            referent_id(SCOPE),
+            premise,
+            conclusion,
+        )],
         Vec::new(),
         Vec::new(),
         Vec::new(),
@@ -186,16 +195,31 @@ const PATTERN_CONTENT_ID: &str =
 const WEST_CONTENT_ID: &str =
     "content-sha256-6f99f9d878a067fc9a7e94bae2e2b8fef060d81629c845cb9b769107d83fb0d0";
 const EXPECTED_REVISION_ID: &str =
-    "rev-sha256-13874889015d0e6238edecc469e09a937803861ff935452885b92f28a7a198e9";
+    "rev-sha256-095b13529b8ef1930ee1971b4d65a231a9b03d121176bca1c9c8e4ecd0858bb7";
 
 fn expected_semantic() -> String {
     let referent = |seed: u8| format!("ref-sha256-{}", format!("{seed:02x}").repeat(32));
     let role = |seed: u8| format!("role-sha256-{}", format!("{seed:02x}").repeat(32));
     let pattern = |seed: u8| format!("pattern-sha256-{}", format!("{seed:02x}").repeat(32));
-    let referents = (MODEL..=REFLEXIVE_RULE)
-        .map(|seed| format!("[\"referent\",\"{}\"]", referent(seed)))
-        .collect::<Vec<_>>()
-        .join(",");
+    let referents = [
+        MODEL,
+        CARRIES,
+        ROUTE,
+        MODULE,
+        EAST,
+        SOURCE_A,
+        SCOPE,
+        AUTHORITY,
+        POLICY,
+        EAST_OCCURRENCE,
+        EAST_JUDGMENT,
+        REFLEXIVE_RULE,
+        REFLEXIVE_LAW,
+    ]
+    .into_iter()
+    .map(|seed| format!("[\"referent\",\"{}\"]", referent(seed)))
+    .collect::<Vec<_>>()
+    .join(",");
     let ground_roles = format!(
         "[\"{}\",[\"referent\",\"{}\"]],[\"{}\",[\"referent\",\"{}\"]],[\"{}\",[\"referent\",\"{}\"]]",
         role(ROUTE_ROLE),
@@ -236,10 +260,16 @@ fn expected_semantic() -> String {
         referent(SCOPE),
     );
     let rule = format!(
-        "[\"derivation-rule\",\"{}\",[\"scope\",\"{}\"],[\"authority\",\"{}\"],[\"premises\",[\"pattern\",[\"{PATTERN_CONTENT_ID}\"]]],[\"conclusion\",[\"pattern\",[\"{PATTERN_CONTENT_ID}\"]]]]",
+        "[\"derivation-rule\",\"{}\",[\"governing-law\",\"{}\"],[\"scope\",\"{}\"],[\"authority\",\"{}\"],[\"premises\",[\"pattern\",[\"{PATTERN_CONTENT_ID}\"]]],[\"conclusion\",[\"pattern\",[\"{PATTERN_CONTENT_ID}\"]]]]",
         referent(REFLEXIVE_RULE),
+        referent(REFLEXIVE_LAW),
         referent(SCOPE),
         referent(AUTHORITY),
+    );
+    let law = format!(
+        "[\"universal-law\",\"{}\",[\"scope\",\"{}\"],[\"premises\",[\"pattern\",[\"{PATTERN_CONTENT_ID}\"]]],[\"conclusion\",[\"pattern\",[\"{PATTERN_CONTENT_ID}\"]]]]",
+        referent(REFLEXIVE_LAW),
+        referent(SCOPE),
     );
     let judgment = format!(
         "[\"judgment\",\"{}\",[\"authority\",\"{}\"],[\"scope\",\"{}\"],[\"target\",[\"occurrence\",\"{}\"]],[\"kind\",[\"admitted\",\"{}\",[\"{}\"]]],[\"status\",\"affirmed\"]]",
@@ -251,7 +281,7 @@ fn expected_semantic() -> String {
         referent(SOURCE_A),
     );
     format!(
-        "[\"clause-semantic-v8\",[\"lineage\",[\"root\"]],[\"model\",\"{}\"],[\"referents\",[{referents}]],[\"relational-contents\",[{contents}]],[\"relation-shapes\",[{shape}]],[\"structural-contracts\",[]],[\"occurrences\",[{occurrence}]],[\"definitions\",[]],[\"derivation-rules\",[{rule}]],[\"universal-laws\",[]],[\"invariants\",[]],[\"goals\",[]],[\"transitions\",[]],[\"judgments\",[{judgment}]]]",
+        "[\"clause-semantic-v9\",[\"lineage\",[\"root\"]],[\"model\",\"{}\"],[\"referents\",[{referents}]],[\"relational-contents\",[{contents}]],[\"relation-shapes\",[{shape}]],[\"structural-contracts\",[]],[\"occurrences\",[{occurrence}]],[\"definitions\",[]],[\"derivation-rules\",[{rule}]],[\"universal-laws\",[{law}]],[\"invariants\",[]],[\"goals\",[]],[\"transitions\",[]],[\"judgments\",[{judgment}]]]",
         referent(MODEL),
     )
 }
@@ -290,7 +320,7 @@ fn replacement_delta(base: &clause::kernel::Revision) -> Delta {
 }
 
 #[test]
-fn exact_semantic_v8_bytes_hash_and_revision_v5_roundtrip_are_frozen() {
+fn exact_semantic_v9_bytes_hash_and_revision_v5_roundtrip_are_frozen() {
     assert_eq!(
         wire::sha256_hex(b"abc"),
         "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
@@ -310,6 +340,7 @@ fn exact_semantic_v8_bytes_hash_and_revision_v5_roundtrip_are_frozen() {
     assert_eq!(occurrence.source(), &referent_id(SOURCE_A));
     assert_eq!(occurrence.scope(), &referent_id(SCOPE));
     let rule = &revision.model().derivation_rules()[0];
+    assert_eq!(rule.governing_law(), &referent_id(REFLEXIVE_LAW));
     assert_eq!(rule.authority(), &referent_id(AUTHORITY));
     assert_eq!(rule.scope(), &referent_id(SCOPE));
     assert_eq!(rule.premises(), rule.conclusion());
@@ -502,7 +533,7 @@ fn reload_rejects_retired_tags_noncanonical_order_and_hash_mismatch() {
     ));
     let canonical = wire::serialize(&revision);
     let retired_revision_tag = ["clause-revision-", "v4"].concat();
-    let retired_semantic_tag = ["clause-semantic-", "v7"].concat();
+    let retired_semantic_tag = ["clause-semantic-", "v8"].concat();
     assert!(
         wire::reload(&canonical.replacen(wire::REVISION_TAG, &retired_revision_tag, 1)).is_err()
     );
@@ -543,6 +574,42 @@ fn reload_rejects_typed_content_tampering_even_with_a_recomputed_revision_hash()
     let tampered = expected_semantic().replacen(&original, &replacement, 1);
     assert_ne!(tampered, expected_semantic());
     assert!(wire::reload(&wire_for_semantic(&tampered)).is_err());
+
+    let governing_law = format!(
+        "[\"governing-law\",\"{}\"]",
+        referent_id(REFLEXIVE_LAW).as_str(),
+    );
+    let forged_governing_law = format!(
+        "[\"governing-law\",\"{}\"]",
+        referent_id(AUTHORITY).as_str(),
+    );
+    let tampered = expected_semantic().replacen(&governing_law, &forged_governing_law, 1);
+    assert_ne!(tampered, expected_semantic());
+    assert_eq!(
+        wire::reload(&wire_for_semantic(&tampered))
+            .unwrap_err()
+            .to_string(),
+        "derivation rule governing law is undeclared"
+    );
+
+    let law_scope = format!(
+        "[\"universal-law\",\"{}\",[\"scope\",\"{}\"]",
+        referent_id(REFLEXIVE_LAW).as_str(),
+        referent_id(SCOPE).as_str(),
+    );
+    let forged_law_scope = format!(
+        "[\"universal-law\",\"{}\",[\"scope\",\"{}\"]",
+        referent_id(REFLEXIVE_LAW).as_str(),
+        referent_id(AUTHORITY).as_str(),
+    );
+    let tampered = expected_semantic().replacen(&law_scope, &forged_law_scope, 1);
+    assert_ne!(tampered, expected_semantic());
+    assert_eq!(
+        wire::reload(&wire_for_semantic(&tampered))
+            .unwrap_err()
+            .to_string(),
+        "derivation rule must exactly project its governing law pattern and scope"
+    );
 }
 
 #[test]

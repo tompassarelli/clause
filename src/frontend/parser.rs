@@ -3,7 +3,9 @@ use super::declaration::*;
 use super::model::*;
 use super::relation::*;
 use super::source::*;
-use super::syntax::{DefinitionDecl, MembershipDecl, RuleDecl, ShapeBindingDecl};
+use super::syntax::{
+    DefinitionDecl, DeriveDecl, LawDecl, MembershipDecl, RuleDecl, ShapeBindingDecl,
+};
 use super::*;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -140,8 +142,109 @@ fn canonical_rule(
     })
 }
 
+fn canonical_law(
+    raw: &RawLaw<'_>,
+    kinds: &BTreeMap<Name, Kind>,
+    relations: &BTreeMap<Name, RelationSpec>,
+    memberships: &BTreeMap<Name, MembershipCatalog>,
+) -> Result<LawDecl, ParseError> {
+    let eligible = kinds
+        .iter()
+        .filter_map(|(name, kind)| (*kind == Kind::Model).then_some(name))
+        .collect::<Vec<_>>();
+    let mut candidates = Vec::new();
+    for model in &eligible {
+        let mut variable_types = BTreeMap::new();
+        let Ok(conclusion) = clause(
+            raw.conclusion,
+            model,
+            relations,
+            memberships,
+            &mut variable_types,
+        ) else {
+            continue;
+        };
+        let premises = raw
+            .premises
+            .iter()
+            .copied()
+            .map(|line| clause(line, model, relations, memberships, &mut variable_types))
+            .collect::<Result<Vec<_>, _>>();
+        if let Ok(premises) = premises {
+            candidates.push(((*model).clone(), conclusion, premises));
+        }
+    }
+    let candidate_names = eligible
+        .iter()
+        .map(|name| name.as_str())
+        .collect::<Vec<_>>()
+        .join(", ");
+    let (model, conclusion, premises) = match candidates.as_slice() {
+        [] => {
+            return Err(error(
+                line_span(raw.conclusion),
+                format!(
+                    "universal law matches no declared Model; candidates: {}",
+                    if candidate_names.is_empty() {
+                        "<none>"
+                    } else {
+                        &candidate_names
+                    }
+                ),
+            ));
+        }
+        [(model, conclusion, premises)] => (model.clone(), conclusion.clone(), premises.clone()),
+        many => {
+            return Err(error(
+                line_span(raw.conclusion),
+                format!(
+                    "universal law is ambiguous across Models: {}",
+                    many.iter()
+                        .map(|(name, _, _)| name.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
+            ));
+        }
+    };
+    if let Some(hole) = std::iter::once(&conclusion)
+        .chain(premises.iter())
+        .flat_map(query_columns)
+        .find(|column| column.label.is_none())
+    {
+        return Err(error(
+            hole.span,
+            "anonymous holes are only valid in naked queries",
+        ));
+    }
+    let premise_variables = premises.iter().flat_map(variables).collect::<BTreeSet<_>>();
+    if !variables(&conclusion).is_subset(&premise_variables) {
+        return Err(error(
+            conclusion.span,
+            "universal law conclusion variables must be range-restricted by if",
+        ));
+    }
+    Ok(LawDecl {
+        label: raw.label.clone(),
+        model: Spanned {
+            value: model,
+            span: line_span(raw.header),
+        },
+        conclusion,
+        premises,
+        span: line_span(raw.header),
+    })
+}
+
 pub fn parse(source: &str) -> Result<Program, ParseError> {
-    let (mut raw_declarations, mut raw_top_level, raw_rules, raw_requests) = scan(source)?;
+    let (
+        mut raw_declarations,
+        mut raw_top_level,
+        raw_rules,
+        raw_laws,
+        raw_derivations,
+        raw_requests,
+    ) = scan(source)?;
     for declaration in &mut raw_declarations {
         if declaration.bare_block
             && !content(declaration.header).ends_with(':')
@@ -333,6 +436,50 @@ pub fn parse(source: &str) -> Result<Program, ParseError> {
     let rules = raw_rules
         .iter()
         .map(|rule| canonical_rule(rule, &kinds, &relations, &memberships))
+        .collect::<Result<Vec<_>, _>>()?;
+    let laws = raw_laws
+        .iter()
+        .map(|law| canonical_law(law, &kinds, &relations, &memberships))
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut law_labels = BTreeSet::new();
+    for law in &laws {
+        if !law_labels.insert(law.label.value.clone()) {
+            return Err(error(
+                law.label.span,
+                format!(
+                    "duplicate universal law label '{}'",
+                    law.label.value.as_str()
+                ),
+            ));
+        }
+    }
+    let mut derived = BTreeSet::new();
+    let derivations = raw_derivations
+        .into_iter()
+        .map(|derive| {
+            if !law_labels.contains(&derive.label.value) {
+                return Err(error(
+                    derive.label.span,
+                    format!(
+                        "derive names undeclared universal law '{}'",
+                        derive.label.value.as_str()
+                    ),
+                ));
+            }
+            if !derived.insert(derive.label.value.clone()) {
+                return Err(error(
+                    derive.label.span,
+                    format!(
+                        "duplicate derive authorization '{}'",
+                        derive.label.value.as_str()
+                    ),
+                ));
+            }
+            Ok(DeriveDecl {
+                label: derive.label,
+                span: derive.span,
+            })
+        })
         .collect::<Result<Vec<_>, _>>()?;
     let mut layouts = BTreeMap::new();
     for declaration in raw_declarations
@@ -1006,6 +1153,8 @@ pub fn parse(source: &str) -> Result<Program, ParseError> {
     Ok(Program {
         declarations,
         rules,
+        laws,
+        derivations,
         top_level,
         requests,
     })

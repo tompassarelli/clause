@@ -4,13 +4,13 @@ use std::{
 };
 
 use crate::{
-    frontend::{self, Declaration, Kind, Member, RuleDecl, ShapePartDecl, SurfaceTerm},
+    frontend::{self, Declaration, Kind, LawDecl, Member, RuleDecl, ShapePartDecl, SurfaceTerm},
     intrinsic::{Intrinsic, IntrinsicRole},
     kernel::{
         self, AssertionOccurrence, Definition, DerivationRule, Judgment, JudgmentKind,
         JudgmentStatus, JudgmentTarget, LookupMode, Model, Pattern, ProposalPath, Referent,
         ReferentId, RelationShape, RelationalContent, Role, RolePredicate, StructuralContract,
-        StructuralFailureClass, StructuralForm, Term,
+        StructuralFailureClass, StructuralForm, Term, UniversalLaw,
     },
     wire,
 };
@@ -120,7 +120,9 @@ impl std::error::Error for CompileError {
 pub type CompileResult<T> = std::result::Result<T, CompileError>;
 
 use super::{
-    identifiers::{DesignationTable, derivation_rule_referent, synthetic_referent},
+    identifiers::{
+        DesignationTable, derivation_rule_referent, synthetic_referent, universal_law_referent,
+    },
     lowering::{
         BinderTable, LoweredContentGraph, LoweredDefinitionGraph, Projection,
         lower_clause_graph_traced, lower_clause_graph_with, lower_clause_with, lower_definition,
@@ -316,6 +318,8 @@ fn compile_named(
     let (models, source_spans) = lower_models(
         &program.declarations,
         &program.rules,
+        &program.laws,
+        &program.derivations,
         &relation_shapes,
         &mut projection,
         &mut proposal_spans,
@@ -354,6 +358,8 @@ fn compile_context(
     declaration_map(&program.declarations)?;
     if !program.requests.is_empty()
         || !program.rules.is_empty()
+        || !program.laws.is_empty()
+        || !program.derivations.is_empty()
         || program.declarations.iter().any(|declaration| {
             !matches!(
                 declaration.kind,
@@ -467,6 +473,28 @@ fn declare_projection(
             rule.premises
                 .iter()
                 .chain(std::iter::once(&rule.conclusion)),
+            &mut projection.designations,
+        );
+    }
+    for law in &program.laws {
+        if !program.declarations.iter().any(|declaration| {
+            declaration.kind == Kind::Model && declaration.subject.value == law.model.value
+        }) {
+            return Err(kernel::KernelError::new(
+                "canonical universal law requires a declared Model",
+            ));
+        }
+        let model = projection.designations.global(law.model.value.as_str())?;
+        let label = projection
+            .designations
+            .declare_scoped(&model, law.label.value.as_str())?;
+        projection
+            .model_referents
+            .entry(model)
+            .or_default()
+            .insert(label);
+        declare_clause_literals(
+            law.premises.iter().chain(std::iter::once(&law.conclusion)),
             &mut projection.designations,
         );
     }
@@ -890,9 +918,64 @@ where
     Ok(())
 }
 
+fn canonical_rule_alpha(
+    description: &str,
+    provisional_namespace: &str,
+    model_id: &ReferentId,
+    premises: &[frontend::SurfaceClause],
+    conclusion: &frontend::SurfaceClause,
+    shell: &Model,
+    projection: &mut Projection,
+) -> kernel::Result<CanonicalRuleAlpha> {
+    let provisional_scope = synthetic_referent(provisional_namespace, &[model_id.as_str()]);
+    let mut variables =
+        BinderTable::alpha_variables(premises.iter().chain(std::iter::once(conclusion)));
+    if canonical_rule_alpha_candidates(variables.len()).is_none() {
+        return Err(kernel::KernelError::new(format!(
+            "{description} exceeds {MAX_CANONICAL_RULE_ALPHA_CANDIDATES}-candidate identity bound"
+        )));
+    }
+    let mut canonical: Option<CanonicalRuleAlpha> = None;
+    visit_permutations(&mut variables, 0, &mut |order| {
+        let provisional_binders = BinderTable::declare_alpha_ordered(
+            &mut projection.designations,
+            &provisional_scope,
+            order,
+        )?;
+        let mut premise_ids = premises
+            .iter()
+            .map(|surface| {
+                lower_clause_graph_with(projection, shell, surface, Some(&provisional_binders))
+                    .map(|graph| graph.root.id().clone())
+            })
+            .collect::<kernel::Result<Vec<_>>>()?;
+        premise_ids.sort();
+        premise_ids.dedup();
+        let conclusion_id =
+            lower_clause_graph_with(projection, shell, conclusion, Some(&provisional_binders))?
+                .root
+                .id()
+                .clone();
+        if canonical
+            .as_ref()
+            .is_none_or(|best| (&premise_ids, &conclusion_id) < (&best.premises, &best.conclusion))
+        {
+            canonical = Some(CanonicalRuleAlpha {
+                premises: premise_ids,
+                conclusion: conclusion_id,
+                variables: order.to_vec(),
+            });
+        }
+        Ok(())
+    })?;
+    Ok(canonical.expect("one permutation exists even for a ground universal law"))
+}
+
 fn lower_models(
     declarations: &[Declaration],
     canonical_rules: &[RuleDecl],
+    canonical_laws: &[LawDecl],
+    derivations: &[frontend::DeriveDecl],
     shapes: &BTreeMap<ReferentId, RelationShape>,
     projection: &mut Projection,
     proposal_spans: &mut BTreeMap<ProposalPath, frontend::Span>,
@@ -911,6 +994,10 @@ fn lower_models(
         let scoped_canonical_rules = canonical_rules
             .iter()
             .filter(|rule| rule.model.value == declaration.subject.value)
+            .collect::<Vec<_>>();
+        let scoped_canonical_laws = canonical_laws
+            .iter()
+            .filter(|law| law.model.value == declaration.subject.value)
             .collect::<Vec<_>>();
         let model_id = projection
             .designations
@@ -947,13 +1034,26 @@ fn lower_models(
             .into_iter()
             .flatten()
             .collect::<BTreeSet<_>>();
-        for id in &canonical_rule_literals {
+        let canonical_law_literals = scoped_canonical_laws
+            .iter()
+            .flat_map(|law| law.premises.iter().chain(std::iter::once(&law.conclusion)))
+            .map(|clause| clause_literal_referents(clause, projection))
+            .collect::<kernel::Result<Vec<_>>>()?
+            .into_iter()
+            .flatten()
+            .collect::<BTreeSet<_>>();
+        for id in canonical_rule_literals
+            .iter()
+            .chain(canonical_law_literals.iter())
+        {
             referents.insert(id.clone(), Referent::new(id.clone()));
         }
         let (mut contents, mut occurrences, mut judgments) = literal_memberships(
             &model_id,
             &declaration.body,
-            canonical_rule_literals,
+            canonical_rule_literals
+                .into_iter()
+                .chain(canonical_law_literals),
             projection,
             &mut referents,
         )?;
@@ -1089,6 +1189,7 @@ fn lower_models(
             }
         }
         let mut rules = Vec::new();
+        let mut laws = Vec::new();
         for rule_decl in declarations.iter().filter(|item| {
             item.kind == Kind::DerivationRule
                 && item
@@ -1148,80 +1249,50 @@ fn lower_models(
             {
                 contents.insert(content.id().clone(), content.clone());
             }
+            let premise_pattern = Pattern::new(
+                premise_contents
+                    .iter()
+                    .map(|item| item.id().clone())
+                    .collect(),
+            )?;
+            let conclusion_pattern = Pattern::new(vec![conclusion_content.id().clone()])?;
+            let law_id = universal_law_referent(
+                &model_id,
+                premise_pattern.forms(),
+                conclusion_pattern.forms(),
+            );
+            referents.insert(law_id.clone(), Referent::new(law_id.clone()));
+            laws.push(UniversalLaw::new(
+                law_id.clone(),
+                model_id.clone(),
+                premise_pattern.clone(),
+                conclusion_pattern.clone(),
+            ));
             rules.push(DerivationRule::new(
                 rule_id,
+                law_id,
                 model_id.clone(),
                 model_id.clone(),
-                Pattern::new(
-                    premise_contents
-                        .into_iter()
-                        .map(|item| item.id().clone())
-                        .collect(),
-                )?,
-                Pattern::new(vec![conclusion_content.id().clone()])?,
+                premise_pattern,
+                conclusion_pattern,
             )?);
         }
         for rule_decl in scoped_canonical_rules {
-            let provisional_scope = synthetic_referent(
+            let canonical = canonical_rule_alpha(
+                "canonical derivation rule",
                 "derivation-rule-provisional-pattern-scope",
-                &[model_id.as_str()],
-            );
-            let mut variables = BinderTable::alpha_variables(
-                rule_decl
-                    .premises
-                    .iter()
-                    .chain(std::iter::once(&rule_decl.conclusion)),
-            );
-            if canonical_rule_alpha_candidates(variables.len()).is_none() {
-                return Err(kernel::KernelError::new(format!(
-                    "canonical derivation rule exceeds {MAX_CANONICAL_RULE_ALPHA_CANDIDATES}-candidate identity bound"
-                )));
-            }
-            let mut canonical: Option<CanonicalRuleAlpha> = None;
-            visit_permutations(&mut variables, 0, &mut |order| {
-                let provisional_binders = BinderTable::declare_alpha_ordered(
-                    &mut projection.designations,
-                    &provisional_scope,
-                    order,
-                )?;
-                let mut premises = rule_decl
-                    .premises
-                    .iter()
-                    .map(|surface| {
-                        lower_clause_graph_with(
-                            projection,
-                            shell.model(),
-                            surface,
-                            Some(&provisional_binders),
-                        )
-                        .map(|graph| graph.root.id().clone())
-                    })
-                    .collect::<kernel::Result<Vec<_>>>()?;
-                premises.sort();
-                premises.dedup();
-                let conclusion = lower_clause_graph_with(
-                    projection,
-                    shell.model(),
-                    &rule_decl.conclusion,
-                    Some(&provisional_binders),
-                )?
-                .root
-                .id()
-                .clone();
-                if canonical.as_ref().is_none_or(|best| {
-                    (&premises, &conclusion) < (&best.premises, &best.conclusion)
-                }) {
-                    canonical = Some(CanonicalRuleAlpha {
-                        premises,
-                        conclusion,
-                        variables: order.to_vec(),
-                    });
-                }
-                Ok(())
-            })?;
-            let canonical = canonical
-                .expect("one permutation exists even for a ground canonical derivation rule");
+                &model_id,
+                &rule_decl.premises,
+                &rule_decl.conclusion,
+                shell.model(),
+                projection,
+            )?;
             let rule_id = derivation_rule_referent(
+                &model_id,
+                &canonical.premises,
+                std::slice::from_ref(&canonical.conclusion),
+            );
+            let law_id = universal_law_referent(
                 &model_id,
                 &canonical.premises,
                 std::slice::from_ref(&canonical.conclusion),
@@ -1241,6 +1312,7 @@ fn lower_models(
                 ));
             }
             referents.insert(rule_id.clone(), Referent::new(rule_id.clone()));
+            referents.insert(law_id.clone(), Referent::new(law_id.clone()));
             let premise_contents = rule_decl
                 .premises
                 .iter()
@@ -1269,23 +1341,128 @@ fn lower_models(
             {
                 contents.insert(content.id().clone(), content.clone());
             }
+            let premise_pattern = Pattern::new(
+                premise_contents
+                    .iter()
+                    .map(|content| content.id().clone())
+                    .collect(),
+            )?;
+            let conclusion_pattern = Pattern::new(vec![conclusion_content.id().clone()])?;
+            laws.push(UniversalLaw::new(
+                law_id.clone(),
+                model_id.clone(),
+                premise_pattern.clone(),
+                conclusion_pattern.clone(),
+            ));
             rules.push(DerivationRule::new(
                 rule_id.clone(),
+                law_id,
                 model_id.clone(),
                 model_id.clone(),
-                Pattern::new(
-                    premise_contents
-                        .iter()
-                        .map(|content| content.id().clone())
-                        .collect(),
-                )?,
-                Pattern::new(vec![conclusion_content.id().clone()])?,
+                premise_pattern,
+                conclusion_pattern,
             )?);
             if let Some(label) = &rule_decl.label {
                 let label_id = projection
                     .designations
                     .scoped(&model_id, label.value.as_str())?;
                 definitions.push(Definition::new(label_id, Term::referent(rule_id)));
+            }
+        }
+        for law_decl in scoped_canonical_laws {
+            let canonical = canonical_rule_alpha(
+                "canonical universal law",
+                "universal-law-provisional-pattern-scope",
+                &model_id,
+                &law_decl.premises,
+                &law_decl.conclusion,
+                shell.model(),
+                projection,
+            )?;
+            let law_id = universal_law_referent(
+                &model_id,
+                &canonical.premises,
+                std::slice::from_ref(&canonical.conclusion),
+            );
+            let binders = BinderTable::declare_alpha_ordered(
+                &mut projection.designations,
+                &law_id,
+                &canonical.variables,
+            )?;
+            referents.insert(law_id.clone(), Referent::new(law_id.clone()));
+            let premise_contents = law_decl
+                .premises
+                .iter()
+                .map(|surface| {
+                    let graph = lower_clause_graph_traced(
+                        projection,
+                        shell.model(),
+                        surface,
+                        Some(&binders),
+                        proposal_spans,
+                    )?;
+                    register_content_graph(&mut contents, graph)
+                })
+                .collect::<kernel::Result<Vec<_>>>()?;
+            let conclusion_graph = lower_clause_graph_traced(
+                projection,
+                shell.model(),
+                &law_decl.conclusion,
+                Some(&binders),
+                proposal_spans,
+            )?;
+            let conclusion_content = register_content_graph(&mut contents, conclusion_graph)?;
+            for content in premise_contents
+                .iter()
+                .chain(std::iter::once(&conclusion_content))
+            {
+                contents.insert(content.id().clone(), content.clone());
+            }
+            let premise_pattern = Pattern::new(
+                premise_contents
+                    .iter()
+                    .map(|content| content.id().clone())
+                    .collect(),
+            )?;
+            let conclusion_pattern = Pattern::new(vec![conclusion_content.id().clone()])?;
+            if laws.iter().any(|law| law.id() == &law_id) {
+                return Err(kernel::KernelError::new(
+                    "duplicate canonical universal law identity",
+                ));
+            }
+            laws.push(UniversalLaw::new(
+                law_id.clone(),
+                model_id.clone(),
+                premise_pattern.clone(),
+                conclusion_pattern.clone(),
+            ));
+            let label_id = projection
+                .designations
+                .scoped(&model_id, law_decl.label.value.as_str())?;
+            definitions.push(Definition::new(label_id, Term::referent(law_id.clone())));
+            if derivations
+                .iter()
+                .any(|derive| derive.label.value == law_decl.label.value)
+            {
+                let rule_id = derivation_rule_referent(
+                    &model_id,
+                    &canonical.premises,
+                    std::slice::from_ref(&canonical.conclusion),
+                );
+                if rules.iter().any(|rule| rule.id() == &rule_id) {
+                    return Err(kernel::KernelError::new(
+                        "duplicate canonical derivation rule identity",
+                    ));
+                }
+                referents.insert(rule_id.clone(), Referent::new(rule_id.clone()));
+                rules.push(DerivationRule::new(
+                    rule_id,
+                    law_id,
+                    model_id.clone(),
+                    model_id.clone(),
+                    premise_pattern,
+                    conclusion_pattern,
+                )?);
             }
         }
         let structural_contracts =
@@ -1299,7 +1476,7 @@ fn lower_models(
             occurrences,
             definitions,
             rules,
-            Vec::new(),
+            laws,
             Vec::new(),
             Vec::new(),
             Vec::new(),

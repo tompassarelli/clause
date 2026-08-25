@@ -212,11 +212,17 @@ fn witness(value: &execution::Witness) -> String {
         execution::Witness::Asserted => "[\"asserted\"]".into(),
         execution::Witness::Derived {
             rule,
+            governing_law,
+            authority,
+            scope,
             premises,
             substitution,
         } => format!(
-            "[\"derived\",{},[{}],[{}]]",
+            "[\"derived\",{},{},{},{},[{}],[{}]]",
             string(rule.as_str()),
+            string(governing_law.as_str()),
+            string(authority.as_str()),
+            string(scope.as_str()),
             premises
                 .iter()
                 .map(usize::to_string)
@@ -288,11 +294,17 @@ fn derive_witness(value: &crate::derive::Witness) -> String {
         crate::derive::Witness::Asserted => "[\"asserted\"]".into(),
         crate::derive::Witness::Derived {
             rule,
+            governing_law,
+            authority,
+            scope,
             premises,
             substitution,
         } => format!(
-            "[\"derived\",{},[{}],[{}]]",
+            "[\"derived\",{},{},{},{},[{}],[{}]]",
             string(rule.as_str()),
+            string(governing_law.as_str()),
+            string(authority.as_str()),
+            string(scope.as_str()),
             premises.iter().map(clause).collect::<Vec<_>>().join(","),
             substitution
                 .iter()
@@ -314,11 +326,17 @@ fn support_witness(value: &crate::derive::SupportWitness) -> String {
         crate::derive::SupportWitness::Asserted => "[\"asserted\"]".into(),
         crate::derive::SupportWitness::Derived {
             rule,
+            governing_law,
+            authority,
+            scope,
             premises,
             substitution,
         } => format!(
-            "[\"derived\",{},[{}],[{}]]",
+            "[\"derived\",{},{},{},{},[{}],[{}]]",
             string(rule.as_str()),
+            string(governing_law.as_str()),
+            string(authority.as_str()),
+            string(scope.as_str()),
             premises
                 .iter()
                 .map(support_proof)

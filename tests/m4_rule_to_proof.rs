@@ -246,7 +246,15 @@ fn canonical_positive_if_rules_drive_existing_proof_and_intervention_semantics()
     let successor = revision(&compiled, "egress/door-101-withdrawn");
 
     assert_eq!(base.model().derivation_rules().len(), 2);
-    assert!(base.model().universal_laws().is_empty());
+    assert_eq!(base.model().universal_laws().len(), 2);
+    assert!(base.model().derivation_rules().iter().all(|rule| {
+        base.model().universal_laws().iter().any(|law| {
+            law.id() == rule.governing_law()
+                && law.scope() == rule.scope()
+                && law.premises() == rule.premises()
+                && law.conclusion() == rule.conclusion()
+        })
+    }));
     assert!(base.model().invariants().is_empty());
     assert!(base.model().goals().is_empty());
 
@@ -558,4 +566,153 @@ fn canonical_positive_if_rules_drive_existing_proof_and_intervention_semantics()
     assert_eq!(actual.stdout, expected.as_bytes());
     fs::remove_file(rust).expect("generated Rust cleans up");
     fs::remove_file(binary).expect("generated executable cleans up");
+}
+
+#[test]
+fn authored_law_is_ground_until_separately_authorized_and_retains_exact_provenance() {
+    const LAW: &str = "Text
+Entity
+
+tags/has: RelationShape
+  {entity: Entity} has tag {tag: Text}
+  mode entity -> tag: many
+
+catalog
+  Item ∈ Entity
+  Item has tag \"premise\"
+
+law canonical tagging
+  ?entity has tag \"derived\" if
+    ?entity has tag \"premise\"
+
+why in catalog:
+  Item has tag \"derived\"
+";
+    let ground_only = compile(LAW);
+    let ground_revision = revision(&ground_only, "catalog");
+    assert_eq!(ground_revision.model().universal_laws().len(), 1);
+    assert!(ground_revision.model().derivation_rules().is_empty());
+
+    let relation = relation(&ground_only, "tags/has");
+    let item = referent(&ground_only, &ground_revision, "Item");
+    let derived = ground_only
+        .designations()
+        .literal("derived")
+        .expect("law-only literal remains designated");
+    let target = RelationalContent::new(
+        relation.clone(),
+        BTreeMap::from([
+            (
+                role(&ground_only, &relation, "entity"),
+                Term::referent(item.clone()),
+            ),
+            (
+                role(&ground_only, &relation, "tag"),
+                Term::referent(derived.clone()),
+            ),
+        ]),
+    )
+    .expect("law conclusion target is typed");
+    assert!(
+        clause::derive::saturate(&ground_revision, clause::derive::Limits::new(16, 4, 64),)
+            .expect("plain law closure is bounded")
+            .proof(&target)
+            .is_none(),
+        "an authored universal law does not execute by itself"
+    );
+
+    let authorized_source = format!("{LAW}\nderive canonical tagging\n");
+    let authorized = compile(&authorized_source);
+    let authorized_revision = revision(&authorized, "catalog");
+    let law = &authorized_revision.model().universal_laws()[0];
+    let rule = &authorized_revision.model().derivation_rules()[0];
+    assert_eq!(rule.governing_law(), law.id());
+    assert_eq!(rule.authority(), authorized_revision.model().id());
+    assert_eq!(rule.scope(), authorized_revision.model().id());
+    assert_eq!(rule.premises(), law.premises());
+    assert_eq!(rule.conclusion(), law.conclusion());
+    let label = authorized
+        .designations()
+        .scoped(authorized_revision.model().id(), "canonical tagging")
+        .expect("law label is a scoped source binding");
+    assert_eq!(
+        authorized_revision
+            .model()
+            .definition(&label)
+            .expect("law label lowers as a definition")
+            .denotation(),
+        &Term::referent(law.id().clone())
+    );
+
+    let alpha = compile(
+        &authorized_source
+            .replace("?entity", "?subject")
+            .replace("canonical tagging", "renamed tagging"),
+    );
+    let alpha_revision = revision(&alpha, "catalog");
+    assert_eq!(
+        law.id(),
+        alpha_revision.model().universal_laws()[0].id(),
+        "law identity is independent of binder and source-label spelling"
+    );
+
+    let proof = clause::execution::why(
+        &authorized_revision,
+        &target,
+        clause::derive::Limits::new(16, 4, 64),
+    )
+    .expect("authorized law proof executes")
+    .expect("authorized law entails its conclusion");
+    let clause::execution::Witness::Derived {
+        rule: witnessed_rule,
+        governing_law,
+        authority,
+        scope,
+        ..
+    } = &proof.why.witnesses[proof.why.root].witness
+    else {
+        panic!("authorized conclusion has a derived witness");
+    };
+    assert_eq!(witnessed_rule, rule.id());
+    assert_eq!(governing_law, law.id());
+    assert_eq!(authority, rule.authority());
+    assert_eq!(scope, rule.scope());
+
+    let reloaded = clause::wire::reload(&clause::wire::serialize(&authorized_revision))
+        .expect("semantic-v9 law/rule authority reloads");
+    assert_eq!(reloaded, authorized_revision);
+
+    let resolved = request::resolve(&authorized).expect("authorized law request resolves");
+    let expected = request::run(&resolved, request::RunLimits::default())
+        .expect("authorized law request executes")
+        .canonical_bytes();
+    let authoring = temporary("law_clause");
+    let rust = temporary("law_rs");
+    let binary = temporary("law_bin");
+    fs::write(&authoring, &authorized_source).expect("law authoring source writes");
+    fs::write(
+        &rust,
+        generated::emit_rust(&resolved).expect("authorized law emits Rust"),
+    )
+    .expect("generated law Rust writes");
+    fs::remove_file(&authoring).expect("law source deletes before generated compile");
+    let generated = Command::new("rustc")
+        .args(["--edition=2024", "--cfg", "clause_generated"])
+        .arg(&rust)
+        .arg("-o")
+        .arg(&binary)
+        .output()
+        .expect("generated law Rust compiler starts");
+    assert!(
+        generated.status.success(),
+        "{}",
+        String::from_utf8_lossy(&generated.stderr)
+    );
+    let actual = Command::new(&binary)
+        .output()
+        .expect("generated law executable starts");
+    assert!(actual.status.success());
+    assert_eq!(actual.stdout, expected.as_bytes());
+    fs::remove_file(rust).expect("generated law Rust cleans up");
+    fs::remove_file(binary).expect("generated law executable cleans up");
 }

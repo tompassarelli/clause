@@ -3,7 +3,7 @@ use crate::{
     kernel::{
         AssertionOccurrence, Cardinality, DerivationRule, Judgment, JudgmentKind, JudgmentStatus,
         JudgmentTarget, LookupMode, Model, Pattern, PatternId, Referent, ReferentId, RelationShape,
-        RevisionLineage, Role, RoleId, RolePredicate, SemanticAtom,
+        RevisionLineage, Role, RoleId, RolePredicate, SemanticAtom, UniversalLaw,
     },
     wire,
 };
@@ -121,7 +121,7 @@ fn variable(value: &str) -> Term {
     Term::pattern(pattern_id(value))
 }
 
-type RuleFixture = (DerivationRule, Vec<RelationalContent>);
+type RuleFixture = (DerivationRule, UniversalLaw, Vec<RelationalContent>);
 
 fn rule(
     model: &ReferentId,
@@ -137,17 +137,20 @@ fn rule(
     )
     .unwrap();
     let conclusion_pattern = Pattern::new(vec![conclusion.id().clone()]).unwrap();
+    let law_id = referent_id(&format!("{id}/governing-law"));
     let rule = DerivationRule::new(
         referent_id(id),
+        law_id.clone(),
         model.clone(),
         model.clone(),
-        premise_pattern,
-        conclusion_pattern,
+        premise_pattern.clone(),
+        conclusion_pattern.clone(),
     )
     .unwrap();
+    let law = UniversalLaw::new(law_id, model.clone(), premise_pattern, conclusion_pattern);
     let mut contents = premises;
     contents.push(conclusion);
-    (rule, contents)
+    (rule, law, contents)
 }
 fn law(
     model: &ReferentId,
@@ -173,7 +176,11 @@ fn rev(
                 .flat_map(|(candidate, class)| [candidate.clone(), class.clone()]),
         )
         .chain(relations.iter().map(|relation| relation.referent().clone()))
-        .chain(rules.iter().map(|(rule, _)| rule.id().clone()))
+        .chain(
+            rules
+                .iter()
+                .flat_map(|(rule, law, _)| [rule.id().clone(), law.id().clone()]),
+        )
     {
         referents.insert(id.clone(), Referent::new(id));
     }
@@ -189,8 +196,10 @@ fn rev(
         .map(|content| (content.id().clone(), content))
         .collect::<BTreeMap<_, _>>();
     let mut derivation_rules = Vec::new();
-    for (rule, forms) in rules {
+    let mut universal_laws = Vec::new();
+    for (rule, law, forms) in rules {
         derivation_rules.push(rule);
+        universal_laws.push(law);
         for content in forms {
             contents.insert(content.id().clone(), content);
         }
@@ -236,7 +245,7 @@ fn rev(
             occurrences,
             Vec::new(),
             derivation_rules,
-            Vec::new(),
+            universal_laws,
             Vec::new(),
             Vec::new(),
             Vec::new(),

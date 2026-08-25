@@ -63,6 +63,9 @@ pub enum SupportWitness {
     Asserted,
     Derived {
         rule: crate::kernel::ReferentId,
+        governing_law: crate::kernel::ReferentId,
+        authority: crate::kernel::ReferentId,
+        scope: crate::kernel::ReferentId,
         premises: Vec<SupportProof>,
         substitution: BTreeMap<PatternId, Term>,
     },
@@ -129,6 +132,9 @@ impl SupportFrontier {
 struct GroundDerivation {
     conclusion: RelationalContent,
     rule: crate::kernel::ReferentId,
+    governing_law: crate::kernel::ReferentId,
+    authority: crate::kernel::ReferentId,
+    scope: crate::kernel::ReferentId,
     premises: Vec<RelationalContent>,
     substitution: BTreeMap<PatternId, Term>,
 }
@@ -173,6 +179,9 @@ pub fn support_frontier(
         for conclusion in rule.conclusion().forms() {
             collect_ground_derivations(
                 rule.id(),
+                rule.governing_law(),
+                rule.authority(),
+                rule.scope(),
                 &premises,
                 revision
                     .model()
@@ -294,6 +303,9 @@ fn expand_derivation(
             conclusion: derivation.conclusion.clone(),
             witness: SupportWitness::Derived {
                 rule: derivation.rule.clone(),
+                governing_law: derivation.governing_law.clone(),
+                authority: derivation.authority.clone(),
+                scope: derivation.scope.clone(),
                 premises: selected.clone(),
                 substitution: derivation.substitution.clone(),
             },
@@ -441,6 +453,9 @@ fn sorted_subset(left: &[RelationalContent], right: &[RelationalContent]) -> boo
 #[allow(clippy::too_many_arguments)]
 fn collect_ground_derivations(
     rule: &crate::kernel::ReferentId,
+    governing_law: &crate::kernel::ReferentId,
+    authority: &crate::kernel::ReferentId,
+    scope: &crate::kernel::ReferentId,
     patterns: &[&RelationalContent],
     conclusion: &RelationalContent,
     assertions: &[RelationalContent],
@@ -460,6 +475,9 @@ fn collect_ground_derivations(
         derivations.insert(GroundDerivation {
             conclusion: instantiated.root,
             rule: rule.clone(),
+            governing_law: governing_law.clone(),
+            authority: authority.clone(),
+            scope: scope.clone(),
             premises,
             substitution,
         });
@@ -489,6 +507,9 @@ fn collect_ground_derivations(
         next_premises.push(assertion.clone());
         collect_ground_derivations(
             rule,
+            governing_law,
+            authority,
+            scope,
             patterns,
             conclusion,
             assertions,

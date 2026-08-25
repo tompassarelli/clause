@@ -259,7 +259,7 @@ fn checked_structures_and_intrinsics_lower_without_an_evaluator() {
     }
 
     let reloaded =
-        wire::reload(&wire::serialize(revision)).expect("structural semantic-v8 wire reloads");
+        wire::reload(&wire::serialize(revision)).expect("structural semantic-v9 wire reloads");
     assert_eq!(&reloaded, revision);
 }
 
