@@ -394,9 +394,13 @@ fn select_correlates_named_holes_without_correlating_anonymous_holes() {
         Term::pattern(same.clone()),
         Term::pattern(second.clone()),
     ]);
-    let plan =
-        crate::kernel::QueryPlan::derive(revision.model(), &pattern, vec![first, same, second])
-            .unwrap();
+    let plan = crate::kernel::QueryPlan::derive(
+        revision.model(),
+        &pattern,
+        Vec::new(),
+        vec![first, same, second],
+    )
+    .unwrap();
     let origins = |roles: &[&str]| {
         let mut roles = roles.iter().map(|role| role_id(role)).collect::<Vec<_>>();
         roles.sort();

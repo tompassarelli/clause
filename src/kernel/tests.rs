@@ -503,15 +503,19 @@ fn structural_terms_are_checked_canonical_and_ordered() {
             integer_domain.clone(),
             vec![binder.clone()]
         )
-        .unwrap_err()
-        .to_string(),
-        "pattern is not valid inside a structural term"
+        .unwrap(),
+        Term::Sequence {
+            shape: sequence_shape,
+            element: integer_domain,
+            values: vec![binder.clone()],
+        }
     );
     assert_eq!(
-        Term::sum(Name::new("some".into()).unwrap(), binder)
-            .unwrap_err()
-            .to_string(),
-        "pattern is not valid inside a structural term"
+        Term::sum(Name::new("some".into()).unwrap(), binder).unwrap(),
+        Term::Sum {
+            tag: Name::new("some".into()).unwrap(),
+            value: Box::new(Term::pattern(PatternId::from_digest([70; 32]))),
+        }
     );
 
     let relation = referent(71);

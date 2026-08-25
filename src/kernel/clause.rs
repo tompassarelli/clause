@@ -189,11 +189,6 @@ impl Term {
     }
     pub fn validate_structure(&self) -> Result<()> {
         fn validate_member(term: &Term) -> Result<()> {
-            if matches!(term, Term::Pattern(_)) {
-                return Err(KernelError::new(
-                    "pattern is not valid inside a structural term",
-                ));
-            }
             term.validate_structure()
         }
 

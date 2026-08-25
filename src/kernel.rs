@@ -7,6 +7,7 @@ mod clause;
 mod error;
 mod find;
 mod identity;
+pub(crate) mod matching;
 mod model;
 mod query;
 mod revision;

@@ -581,6 +581,78 @@ impl Model {
         )
     }
 
+    pub(crate) fn validate_query_content(
+        &self,
+        content: &RelationalContent,
+        dependencies: &[RelationalContent],
+    ) -> Result<()> {
+        let mut contents = self.relational_contents.clone();
+        let mut local = BTreeSet::new();
+        for dependency in dependencies {
+            if !local.insert(dependency.id().clone()) {
+                return Err(KernelError::new(
+                    "query application graph repeats a dependency identity",
+                ));
+            }
+            if let Some(existing) = contents.insert(dependency.id().clone(), dependency.clone())
+                && existing != *dependency
+            {
+                return Err(KernelError::new(
+                    "query application graph conflicts with Model content",
+                ));
+            }
+        }
+        validate_application_acyclic(&contents)?;
+        for dependency in dependencies {
+            validate_content_structure(
+                &self.referents,
+                &contents,
+                &self.relation_shapes,
+                dependency,
+                false,
+            )?;
+        }
+        validate_content_structure(
+            &self.referents,
+            &contents,
+            &self.relation_shapes,
+            content,
+            true,
+        )?;
+
+        let mut reachable = BTreeSet::new();
+        collect_application_dependencies(content, &contents, &mut reachable)?;
+        if !local.is_subset(&reachable) {
+            return Err(KernelError::new(
+                "query application graph contains an unreachable dependency",
+            ));
+        }
+
+        let admitted = self
+            .admitted_contents
+            .iter()
+            .map(|item| item.id().clone())
+            .collect();
+        for dependency in dependencies {
+            validate_admissibility(
+                &contents,
+                &self.relation_shapes,
+                &self.structural_contracts,
+                &self.definitions,
+                &admitted,
+                dependency,
+            )?;
+        }
+        validate_admissibility(
+            &contents,
+            &self.relation_shapes,
+            &self.structural_contracts,
+            &self.definitions,
+            &admitted,
+            content,
+        )
+    }
+
     pub fn term_is_ground(&self, term: &Term) -> bool {
         term_is_ground(&self.relational_contents, term, &mut BTreeSet::new())
     }
@@ -778,6 +850,9 @@ fn validate_term_against(
     expected: &ReferentId,
     term: &Term,
 ) -> Result<()> {
+    if matches!(term, Term::Pattern(_)) {
+        return Ok(());
+    }
     if let Term::Referent(candidate) = term {
         let membership = RelationalContent::new(
             membership_relation(),
@@ -1530,6 +1605,31 @@ fn validate_application_acyclic(contents: &BTreeMap<ContentId, RelationalContent
     Ok(())
 }
 
+fn collect_application_dependencies(
+    content: &RelationalContent,
+    contents: &BTreeMap<ContentId, RelationalContent>,
+    reachable: &mut BTreeSet<ContentId>,
+) -> Result<()> {
+    let mut dependencies = Vec::new();
+    for term in content.roles().values() {
+        term.walk(&mut |term| {
+            if let Term::Application(id) = term {
+                dependencies.push(id.clone());
+            }
+        });
+    }
+    for id in dependencies {
+        if !reachable.insert(id.clone()) {
+            continue;
+        }
+        let dependency = contents
+            .get(&id)
+            .ok_or_else(|| KernelError::new("query term names undeclared content"))?;
+        collect_application_dependencies(dependency, contents, reachable)?;
+    }
+    Ok(())
+}
+
 fn validate_term(
     referents: &BTreeMap<ReferentId, Referent>,
     contents: &BTreeMap<ContentId, RelationalContent>,
@@ -1725,24 +1825,29 @@ fn validate_rule(
         let content = contents
             .get(id)
             .ok_or_else(|| KernelError::new("derivation premise is undeclared"))?;
-        record_patterns(content, shapes, &mut requirements, Some(&mut premises))?;
+        record_patterns(
+            content,
+            contents,
+            shapes,
+            &mut requirements,
+            Some(&mut premises),
+        )?;
     }
     validate_pattern(contents, shapes, rule.conclusion())?;
+    let mut conclusions = BTreeSet::new();
     for id in rule.conclusion().forms() {
         let conclusion = contents
             .get(id)
             .ok_or_else(|| KernelError::new("derivation conclusion is undeclared"))?;
-        record_patterns(conclusion, shapes, &mut requirements, None)?;
+        record_patterns(
+            conclusion,
+            contents,
+            shapes,
+            &mut requirements,
+            Some(&mut conclusions),
+        )?;
     }
-    if rule
-        .conclusion()
-        .forms()
-        .iter()
-        .filter_map(|id| contents.get(id))
-        .flat_map(|content| content.roles().values())
-        .filter_map(Term::pattern_id)
-        .any(|id| !premises.contains(id))
-    {
+    if !conclusions.is_subset(&premises) {
         return Err(KernelError::new(
             "every conclusion pattern must occur in a premise",
         ));
@@ -1760,33 +1865,138 @@ fn validate_pattern(
         let content = contents
             .get(id)
             .ok_or_else(|| KernelError::new("pattern names undeclared relational content"))?;
-        record_patterns(content, shapes, &mut requirements, None)?;
+        record_patterns(content, contents, shapes, &mut requirements, None)?;
     }
     Ok(())
 }
 
 fn record_patterns(
     content: &RelationalContent,
+    contents: &BTreeMap<ContentId, RelationalContent>,
+    shapes: &BTreeMap<ReferentId, RelationShape>,
+    requirements: &mut BTreeMap<PatternId, Vec<RolePredicate>>,
+    seen: Option<&mut BTreeSet<PatternId>>,
+) -> Result<()> {
+    record_patterns_inner(
+        content,
+        contents,
+        shapes,
+        requirements,
+        seen,
+        &mut BTreeSet::new(),
+    )
+}
+
+fn record_patterns_inner(
+    content: &RelationalContent,
+    contents: &BTreeMap<ContentId, RelationalContent>,
     shapes: &BTreeMap<ReferentId, RelationShape>,
     requirements: &mut BTreeMap<PatternId, Vec<RolePredicate>>,
     mut seen: Option<&mut BTreeSet<PatternId>>,
+    active: &mut BTreeSet<ContentId>,
 ) -> Result<()> {
     for (role, term) in content.roles() {
-        let Term::Pattern(id) = term else { continue };
-        let current = shapes[content.relation()].roles()[role]
-            .admissibility()
-            .to_vec();
-        if requirements
-            .insert(id.clone(), current.clone())
-            .is_some_and(|previous| previous != current)
-        {
-            return Err(KernelError::new(
-                "pattern occurs under inconsistent role admissibility",
-            ));
+        let current = shapes[content.relation()].roles()[role].admissibility();
+        record_term_patterns(
+            term,
+            current,
+            contents,
+            shapes,
+            requirements,
+            seen.as_deref_mut(),
+            active,
+        )?;
+    }
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn record_term_patterns(
+    term: &Term,
+    current: &[RolePredicate],
+    contents: &BTreeMap<ContentId, RelationalContent>,
+    shapes: &BTreeMap<ReferentId, RelationShape>,
+    requirements: &mut BTreeMap<PatternId, Vec<RolePredicate>>,
+    mut seen: Option<&mut BTreeSet<PatternId>>,
+    active: &mut BTreeSet<ContentId>,
+) -> Result<()> {
+    match term {
+        Term::Pattern(id) => {
+            if requirements
+                .insert(id.clone(), current.to_vec())
+                .is_some_and(|previous| previous != current)
+            {
+                return Err(KernelError::new(
+                    "pattern occurs under inconsistent role admissibility",
+                ));
+            }
+            if let Some(seen) = seen.as_deref_mut() {
+                seen.insert(id.clone());
+            }
         }
-        if let Some(seen) = seen.as_deref_mut() {
-            seen.insert(id.clone());
+        Term::Application(id) => {
+            if !active.insert(id.clone()) {
+                return Err(KernelError::new(
+                    "recursive term application graph contains a cycle",
+                ));
+            }
+            let dependency = contents
+                .get(id)
+                .ok_or_else(|| KernelError::new("recursive term names undeclared content"))?;
+            let result = record_patterns_inner(
+                dependency,
+                contents,
+                shapes,
+                requirements,
+                seen.as_deref_mut(),
+                active,
+            );
+            active.remove(id);
+            result?;
         }
+        Term::Product { fields, .. } => {
+            for field in fields.values() {
+                record_term_patterns(
+                    field.value(),
+                    current,
+                    contents,
+                    shapes,
+                    requirements,
+                    seen.as_deref_mut(),
+                    active,
+                )?;
+            }
+        }
+        Term::LabelledProduct { fields, .. } => {
+            for value in fields.values() {
+                record_term_patterns(
+                    value,
+                    current,
+                    contents,
+                    shapes,
+                    requirements,
+                    seen.as_deref_mut(),
+                    active,
+                )?;
+            }
+        }
+        Term::Sum { value, .. } => {
+            record_term_patterns(value, current, contents, shapes, requirements, seen, active)?
+        }
+        Term::Sequence { values, .. } => {
+            for value in values {
+                record_term_patterns(
+                    value,
+                    current,
+                    contents,
+                    shapes,
+                    requirements,
+                    seen.as_deref_mut(),
+                    active,
+                )?;
+            }
+        }
+        Term::Referent(_) | Term::F32(_) | Term::Int(_) | Term::Bool(_) => {}
     }
     Ok(())
 }
@@ -1909,6 +2119,7 @@ fn derivation_instantiates(
         0,
         &mut BTreeSet::new(),
         &BTreeMap::new(),
+        contents,
     ))
 }
 
@@ -1921,22 +2132,35 @@ fn match_premises(
     index: usize,
     used: &mut BTreeSet<usize>,
     substitution: &BTreeMap<PatternId, Term>,
+    contents: &BTreeMap<ContentId, RelationalContent>,
 ) -> bool {
     if index == patterns.len() {
-        let final_substitution = substitution.clone();
         return conclusions.iter().any(|conclusion| {
-            let mut candidate = final_substitution.clone();
-            match_form(conclusion, target, &mut candidate, false)
+            super::matching::unify(
+                conclusion,
+                target,
+                substitution,
+                false,
+                |id| contents.get(id),
+                |id| contents.get(id),
+            )
+            .is_some()
         });
     }
     for (candidate, premise) in premises.iter().enumerate() {
         if used.contains(&candidate) {
             continue;
         }
-        let mut next = substitution.clone();
-        if !match_form(patterns[index], premise, &mut next, true) {
+        let Some(next) = super::matching::unify(
+            patterns[index],
+            premise,
+            substitution,
+            true,
+            |id| contents.get(id),
+            |id| contents.get(id),
+        ) else {
             continue;
-        }
+        };
         used.insert(candidate);
         if match_premises(
             patterns,
@@ -1946,59 +2170,13 @@ fn match_premises(
             index + 1,
             used,
             &next,
+            contents,
         ) {
             return true;
         }
         used.remove(&candidate);
     }
     false
-}
-
-fn match_form(
-    pattern: &RelationalContent,
-    actual: &RelationalContent,
-    substitution: &mut BTreeMap<PatternId, Term>,
-    allow_new_bindings: bool,
-) -> bool {
-    if pattern.relation() != actual.relation() || pattern.roles().keys().ne(actual.roles().keys()) {
-        return false;
-    }
-    for (role, expected) in pattern.roles() {
-        let actual = &actual.roles()[role];
-        match expected {
-            Term::Pattern(id) => match substitution.get(id) {
-                Some(bound) if bound != actual => return false,
-                Some(_) => {}
-                None if allow_new_bindings => {
-                    substitution.insert(id.clone(), actual.clone());
-                }
-                None => return false,
-            },
-            Term::Referent(_)
-            | Term::Application(_)
-            | Term::F32(_)
-            | Term::Int(_)
-            | Term::Bool(_)
-            | Term::Product { .. }
-            | Term::LabelledProduct { .. }
-            | Term::Sum { .. }
-            | Term::Sequence { .. }
-                if expected != actual =>
-            {
-                return false;
-            }
-            Term::Referent(_)
-            | Term::Application(_)
-            | Term::F32(_)
-            | Term::Int(_)
-            | Term::Bool(_)
-            | Term::Product { .. }
-            | Term::LabelledProduct { .. }
-            | Term::Sum { .. }
-            | Term::Sequence { .. } => {}
-        }
-    }
-    true
 }
 
 fn judgment_targets(

@@ -18,11 +18,12 @@ pub(super) fn resolve(program: &CompiledProgram) -> kernel::Result<ResolvedProgr
                 revision, pattern, ..
             } => {
                 let revision = program.revision(&revision.value)?;
-                let pattern = program.lower_request_clause(index, revision, pattern)?;
-                let _ = any_plan(revision.model(), &pattern)?;
+                let graph = program.lower_request_clause_graph(index, revision, pattern)?;
+                let _ = any_plan(revision.model(), &graph.root, &graph.dependencies)?;
                 Request::Any {
                     revision: revision.identity().clone(),
-                    pattern,
+                    pattern: graph.root,
+                    dependencies: graph.dependencies,
                 }
             }
             frontend::RequestDecl::Select {
@@ -33,7 +34,7 @@ pub(super) fn resolve(program: &CompiledProgram) -> kernel::Result<ResolvedProgr
                 ..
             } => {
                 let revision = program.revision(&revision.value)?;
-                let pattern = program.lower_request_clause(index, revision, pattern)?;
+                let graph = program.lower_request_clause_graph(index, revision, pattern)?;
                 let columns = columns
                     .iter()
                     .map(|column| {
@@ -46,7 +47,8 @@ pub(super) fn resolve(program: &CompiledProgram) -> kernel::Result<ResolvedProgr
                 let projected_count = columns.len();
                 let plan = projected_plan(
                     revision.model(),
-                    &pattern,
+                    &graph.root,
+                    &graph.dependencies,
                     columns.iter().map(|(_, binder)| binder.clone()).collect(),
                 )?;
                 let columns = columns
@@ -59,7 +61,8 @@ pub(super) fn resolve(program: &CompiledProgram) -> kernel::Result<ResolvedProgr
                     .collect();
                 Request::Select {
                     revision: revision.identity().clone(),
-                    pattern,
+                    pattern: graph.root,
+                    dependencies: graph.dependencies,
                     columns,
                     selection: lower_query_selection(*selection),
                 }

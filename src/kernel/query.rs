@@ -1,8 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::{
-    KernelError, LookupMode, Model, PatternId, ReferentId, RelationalContent, Result, RoleId,
-    RolePredicate, Term,
+    ContentId, KernelError, LookupMode, Model, PatternId, ReferentId, RelationalContent, Result,
+    RoleId, RolePredicate, Term,
 };
 
 /// One bounded single-clause relational selection plan.
@@ -13,6 +13,7 @@ use super::{
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct QueryPlan {
     pattern: RelationalContent,
+    dependencies: Vec<RelationalContent>,
     columns: Vec<QueryPlanColumn>,
     relation: ReferentId,
     known: Vec<RoleId>,
@@ -48,6 +49,7 @@ impl QueryPlan {
     pub fn new(
         model: &Model,
         pattern: &RelationalContent,
+        mut dependencies: Vec<RelationalContent>,
         columns: Vec<QueryPlanColumn>,
     ) -> Result<Self> {
         if columns.is_empty() {
@@ -77,34 +79,25 @@ impl QueryPlan {
             }
         }
 
-        let origins = pattern_origins(model, pattern)?;
-        model.validate_content(pattern, true)?;
+        dependencies.sort_by(|left, right| left.id().cmp(right.id()));
+        let origins = pattern_origins(model, pattern, &dependencies)?;
+        model.validate_query_content(pattern, &dependencies)?;
 
         let shape = model
             .relation_shapes()
             .get(pattern.relation())
             .expect("validated query relation has a shape");
         let mut discovered = BTreeSet::new();
-        let mut requirements = BTreeMap::<PatternId, Vec<RolePredicate>>::new();
         let mut known = Vec::new();
         let mut sought = Vec::new();
         for (role, term) in pattern.roles() {
-            let Some(pattern) = term.pattern_id() else {
+            if term.pattern_id().is_none() {
                 known.push(role.clone());
                 continue;
-            };
-            sought.push(role.clone());
-            discovered.insert(pattern.clone());
-            let requirement = shape.roles()[role].admissibility().to_vec();
-            if requirements
-                .insert(pattern.clone(), requirement.clone())
-                .is_some_and(|previous| previous != requirement)
-            {
-                return Err(KernelError::new(
-                    "query hole occurs under inconsistent role admissibility",
-                ));
             }
+            sought.push(role.clone());
         }
+        discovered.extend(origins.keys().cloned());
         if discovered != projected {
             return Err(KernelError::new(
                 "query projection must name every hole exactly once",
@@ -128,6 +121,7 @@ impl QueryPlan {
             .ok_or_else(|| KernelError::new("no declared mode admits this query orientation"))?;
         Ok(Self {
             pattern: pattern.clone(),
+            dependencies,
             columns,
             relation: pattern.relation().clone(),
             known,
@@ -139,9 +133,16 @@ impl QueryPlan {
     pub fn derive(
         model: &Model,
         pattern: &RelationalContent,
-        binders: Vec<PatternId>,
+        dependencies: Vec<RelationalContent>,
+        mut binders: Vec<PatternId>,
     ) -> Result<Self> {
-        let origins = pattern_origins(model, pattern)?;
+        let origins = pattern_origins(model, pattern, &dependencies)?;
+        let mut seen = binders.iter().cloned().collect::<BTreeSet<_>>();
+        for binder in origins.keys() {
+            if seen.insert(binder.clone()) {
+                binders.push(binder.clone());
+            }
+        }
         let columns = binders
             .into_iter()
             .map(|binder| {
@@ -156,11 +157,27 @@ impl QueryPlan {
                 Ok(QueryPlanColumn::new(binder, origins))
             })
             .collect::<Result<Vec<_>>>()?;
-        Self::new(model, pattern, columns)
+        Self::new(model, pattern, dependencies, columns)
     }
 
     pub fn pattern(&self) -> &RelationalContent {
         &self.pattern
+    }
+
+    pub fn dependencies(&self) -> &[RelationalContent] {
+        &self.dependencies
+    }
+
+    pub(crate) fn pattern_content<'a>(
+        &'a self,
+        model: &'a Model,
+        id: &ContentId,
+    ) -> Option<&'a RelationalContent> {
+        self.dependencies
+            .binary_search_by(|content| content.id().cmp(id))
+            .ok()
+            .map(|index| &self.dependencies[index])
+            .or_else(|| model.content(id))
     }
 
     pub fn columns(&self) -> &[QueryPlanColumn] {
@@ -187,36 +204,50 @@ impl QueryPlan {
 fn pattern_origins(
     model: &Model,
     pattern: &RelationalContent,
+    dependencies: &[RelationalContent],
 ) -> Result<BTreeMap<PatternId, BTreeSet<RoleId>>> {
     let mut origins = BTreeMap::<PatternId, BTreeSet<RoleId>>::new();
+    let mut requirements = BTreeMap::<PatternId, Vec<RolePredicate>>::new();
     for (role, term) in pattern.roles() {
-        if let Some(pattern) = term.pattern_id() {
-            origins
-                .entry(pattern.clone())
-                .or_default()
-                .insert(role.clone());
-            continue;
-        }
-        let mut nested = BTreeSet::new();
-        collect_patterns(model, term, &mut BTreeSet::new(), &mut nested)?;
-        if !nested.is_empty() {
-            return Err(KernelError::new(
-                "nested query holes are not admitted by M4/S1",
-            ));
-        }
+        collect_patterns(
+            model,
+            dependencies,
+            term,
+            role,
+            model.relation_shapes()[pattern.relation()].roles()[role].admissibility(),
+            &mut BTreeSet::new(),
+            &mut origins,
+            &mut requirements,
+        )?;
     }
     Ok(origins)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn collect_patterns(
     model: &Model,
+    dependencies: &[RelationalContent],
     term: &Term,
+    origin: &RoleId,
+    current: &[RolePredicate],
     active: &mut BTreeSet<crate::kernel::ContentId>,
-    patterns: &mut BTreeSet<PatternId>,
+    origins: &mut BTreeMap<PatternId, BTreeSet<RoleId>>,
+    requirements: &mut BTreeMap<PatternId, Vec<RolePredicate>>,
 ) -> Result<()> {
     match term {
         Term::Pattern(id) => {
-            patterns.insert(id.clone());
+            origins
+                .entry(id.clone())
+                .or_default()
+                .insert(origin.clone());
+            if requirements
+                .insert(id.clone(), current.to_vec())
+                .is_some_and(|previous| previous != current)
+            {
+                return Err(KernelError::new(
+                    "query hole occurs under inconsistent role admissibility",
+                ));
+            }
         }
         Term::Application(id) => {
             if !active.insert(id.clone()) {
@@ -224,28 +255,76 @@ fn collect_patterns(
                     "query pattern application graph contains a cycle",
                 ));
             }
-            let content = model
-                .content(id)
+            let content = dependencies
+                .iter()
+                .find(|content| content.id() == id)
+                .or_else(|| model.content(id))
                 .ok_or_else(|| KernelError::new("query term names undeclared content"))?;
-            for term in content.roles().values() {
-                collect_patterns(model, term, active, patterns)?;
+            let shape = &model.relation_shapes()[content.relation()];
+            for (role, term) in content.roles() {
+                collect_patterns(
+                    model,
+                    dependencies,
+                    term,
+                    role,
+                    shape.roles()[role].admissibility(),
+                    active,
+                    origins,
+                    requirements,
+                )?;
             }
             active.remove(id);
         }
         Term::Product { fields, .. } => {
             for field in fields.values() {
-                collect_patterns(model, field.value(), active, patterns)?;
+                collect_patterns(
+                    model,
+                    dependencies,
+                    field.value(),
+                    origin,
+                    current,
+                    active,
+                    origins,
+                    requirements,
+                )?;
             }
         }
         Term::LabelledProduct { fields, .. } => {
             for term in fields.values() {
-                collect_patterns(model, term, active, patterns)?;
+                collect_patterns(
+                    model,
+                    dependencies,
+                    term,
+                    origin,
+                    current,
+                    active,
+                    origins,
+                    requirements,
+                )?;
             }
         }
-        Term::Sum { value, .. } => collect_patterns(model, value, active, patterns)?,
+        Term::Sum { value, .. } => collect_patterns(
+            model,
+            dependencies,
+            value,
+            origin,
+            current,
+            active,
+            origins,
+            requirements,
+        )?,
         Term::Sequence { values, .. } => {
             for term in values {
-                collect_patterns(model, term, active, patterns)?;
+                collect_patterns(
+                    model,
+                    dependencies,
+                    term,
+                    origin,
+                    current,
+                    active,
+                    origins,
+                    requirements,
+                )?;
             }
         }
         Term::Referent(_) | Term::F32(_) | Term::Int(_) | Term::Bool(_) => {}

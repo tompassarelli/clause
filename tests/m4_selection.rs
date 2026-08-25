@@ -102,6 +102,34 @@ select first ?person
   World relates ?person through C and C to D
 ";
 
+const NESTED_APPLICATION_SOURCE: &str = "Body
+Scalar
+
+distance
+  result: Scalar distance between left: Body and right: Body
+  left right -> result
+
+radius
+  result: Scalar radius of subject: Body
+  subject -> result
+
++
+  result: Scalar is left: Scalar + right: Scalar
+  left right -> result
+
+collision
+  subject: Body collides at separation: Scalar within reach: Scalar
+  separation reach -> subject*
+
+scene
+  player ∈ Body
+  coin ∈ Body
+  coin collides at distance between player and coin within radius of player + radius of coin
+
+select ?body
+  ?body collides at (distance between player and ?body) within (radius of player + radius of ?body)
+";
+
 fn temporary(extension: &str) -> PathBuf {
     env::temp_dir().join(format!(
         "clause-m4-selection-{}.{}",
@@ -195,6 +223,7 @@ fn naked_selection_preserves_freshness_labels_identity_and_generated_parity() {
 
     let Request::Select {
         pattern,
+        dependencies,
         columns: resolved_columns,
         ..
     } = &resolved.requests()[1]
@@ -231,6 +260,7 @@ fn naked_selection_preserves_freshness_labels_identity_and_generated_parity() {
                 .identity()
                 .clone(),
             pattern: pattern.clone(),
+            dependencies: dependencies.clone(),
             columns,
             selection: QuerySelection::All,
         };
@@ -245,32 +275,6 @@ fn naked_selection_preserves_freshness_labels_identity_and_generated_parity() {
     assert_eq!(
         rejected_origins(vec![role("d")]),
         "query column role origins do not match the pattern"
-    );
-
-    let mut nested_roles = pattern.roles().clone();
-    nested_roles.insert(
-        role("a"),
-        Term::Sum {
-            tag: Name::new("nested".to_owned()).unwrap(),
-            value: Box::new(Term::pattern(resolved_columns[0].binder().clone())),
-        },
-    );
-    let nested = clause::kernel::RelationalContent::new(relation.clone(), nested_roles).unwrap();
-    let error = QueryPlan::new(
-        compiled
-            .revision(&frontend::Name("selection".into()))
-            .unwrap()
-            .model(),
-        &nested,
-        resolved_columns
-            .iter()
-            .map(|column| QueryPlanColumn::new(column.binder().clone(), column.origins().to_vec()))
-            .collect(),
-    )
-    .expect_err("nested holes remain outside M4/S1");
-    assert_eq!(
-        error.to_string(),
-        "nested query holes are not admitted by M4/S1"
     );
 
     let output =
@@ -420,6 +424,107 @@ fn naked_selection_preserves_freshness_labels_identity_and_generated_parity() {
     assert_eq!(actual.stdout, expected_bytes.as_bytes());
     fs::remove_file(rust).expect("generated Rust cleans up");
     fs::remove_file(binary).expect("generated executable cleans up");
+}
+
+#[test]
+fn nested_application_holes_use_a_request_local_graph_and_recursive_correlation() {
+    let compiled = elaborate::compile(
+        frontend::parse(NESTED_APPLICATION_SOURCE).expect("nested query source parses"),
+    )
+    .expect("nested query source compiles");
+    let resolved = request::resolve(&compiled).expect("nested query resolves");
+    let [
+        Request::Select {
+            dependencies,
+            columns,
+            ..
+        },
+    ] = resolved.requests()
+    else {
+        panic!("nested source resolves to one selection");
+    };
+    assert!(!dependencies.is_empty());
+    let revision = compiled.revision(&frontend::Name("scene".into())).unwrap();
+    let hole_bearing = dependencies
+        .iter()
+        .filter(|dependency| {
+            let mut found = false;
+            for term in dependency.roles().values() {
+                term.walk(&mut |term| found |= term.pattern_id().is_some());
+            }
+            found
+        })
+        .collect::<Vec<_>>();
+    assert!(!hole_bearing.is_empty());
+    assert!(
+        hole_bearing
+            .iter()
+            .all(|dependency| revision.model().content(dependency.id()).is_none()),
+        "hole-bearing application dependencies remain request-local"
+    );
+    assert_eq!(columns.len(), 1);
+    assert_eq!(columns[0].label(), Some("body"));
+
+    let output = request::run(&resolved, request::RunLimits::default())
+        .expect("nested query executes through recursive matching");
+    let [RequestOutput::Select { rows, .. }] = output.results.as_slice() else {
+        panic!("nested query returns one selection result");
+    };
+    let scene = compiled.designations().global("scene").unwrap();
+    let coin = Term::referent(compiled.designations().scoped(&scene, "coin").unwrap());
+    assert_eq!(
+        rows.iter()
+            .map(|row| row.cells()[0].value().clone())
+            .collect::<Vec<_>>(),
+        vec![coin],
+        "one named binder correlates the direct subject and every nested application leaf"
+    );
+
+    let mut malformed = resolved.requests().to_vec();
+    let Request::Select { dependencies, .. } = &mut malformed[0] else {
+        unreachable!();
+    };
+    dependencies.pop();
+    assert_eq!(
+        ResolvedProgram::new(resolved.revisions().clone(), malformed)
+            .expect_err("missing request dependency fails closed")
+            .to_string(),
+        "query term names undeclared content"
+    );
+
+    let expected = output.canonical_bytes();
+    let rust = temporary("nested.rs");
+    let binary = temporary("nested.bin");
+    fs::write(
+        &rust,
+        generated::emit_rust(&resolved).expect("nested request emits Rust"),
+    )
+    .expect("generated nested Rust writes");
+    let generated = Command::new("rustc")
+        .args([
+            "--edition=2024",
+            "--cfg",
+            "clause_generated",
+            "--crate-name",
+            "clause_m4_nested",
+        ])
+        .arg(&rust)
+        .arg("-o")
+        .arg(&binary)
+        .output()
+        .expect("generated nested Rust compiler starts");
+    assert!(
+        generated.status.success(),
+        "{}",
+        String::from_utf8_lossy(&generated.stderr)
+    );
+    let actual = Command::new(&binary)
+        .output()
+        .expect("generated nested executable starts");
+    assert!(actual.status.success());
+    assert_eq!(actual.stdout, expected.as_bytes());
+    fs::remove_file(rust).expect("generated nested Rust cleans up");
+    fs::remove_file(binary).expect("generated nested executable cleans up");
 }
 
 #[test]

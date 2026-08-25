@@ -1292,9 +1292,6 @@ fn term_candidates(
                 matches
             };
         for roles in matches {
-            if !roles.values().all(term_is_ground) {
-                continue;
-            }
             push_unique_term(
                 &mut candidates,
                 SurfaceTerm::Application(Box::new(SurfaceApplication {

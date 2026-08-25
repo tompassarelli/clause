@@ -15,19 +15,21 @@ pub(super) fn run(program: &ResolvedProgram, limits: RunLimits) -> kernel::Resul
             Request::Any {
                 revision: identity,
                 pattern,
+                dependencies,
             } => {
                 let selected = revision(program, identity)?;
-                let plan = any_plan(selected.model(), pattern)?;
+                let plan = any_plan(selected.model(), pattern, dependencies)?;
                 RequestOutput::Any(execution::any(selected, &plan, limits.closure)?)
             }
             Request::Select {
                 revision: identity,
                 pattern,
+                dependencies,
                 columns,
                 selection,
             } => {
                 let selected = revision(program, identity)?;
-                let plan = select_plan(selected.model(), pattern, columns)?;
+                let plan = select_plan(selected.model(), pattern, dependencies, columns)?;
                 let mut rows =
                     execution::select_projected(selected, &plan, columns.len(), limits.closure)?;
                 match selection {

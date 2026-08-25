@@ -1,4 +1,6 @@
-use crate::kernel::{KernelError, PatternId, RelationalContent, Result, Revision, Term};
+use crate::kernel::{
+    ContentId, KernelError, Model, PatternId, RelationalContent, Result, Revision, Term,
+};
 use std::collections::BTreeMap;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -48,6 +50,7 @@ pub enum Witness {
 pub struct Closure {
     assertions: Vec<RelationalContent>,
     proofs: BTreeMap<RelationalContent, Proof>,
+    applications: BTreeMap<ContentId, RelationalContent>,
 }
 
 impl Closure {
@@ -57,6 +60,14 @@ impl Closure {
 
     pub fn proof(&self, clause: &RelationalContent) -> Option<&Proof> {
         self.proofs.get(clause)
+    }
+
+    pub(crate) fn content<'a>(
+        &'a self,
+        model: &'a Model,
+        id: &ContentId,
+    ) -> Option<&'a RelationalContent> {
+        self.applications.get(id).or_else(|| model.content(id))
     }
 }
 
@@ -69,6 +80,7 @@ struct Candidate {
     rule: crate::kernel::ReferentId,
     premises: Vec<RelationalContent>,
     substitution: BTreeMap<PatternId, Term>,
+    dependencies: BTreeMap<ContentId, RelationalContent>,
 }
 
 /// Saturate a Revision's admitted assertions under its positive, range-restricted laws.
@@ -97,6 +109,7 @@ pub fn saturate(revision: &Revision, limits: Limits) -> Result<Closure> {
     }
 
     let mut join_attempts = 0usize;
+    let mut applications = BTreeMap::new();
     let mut generation = 1usize;
     loop {
         let assertions = proofs.keys().cloned().collect::<Vec<_>>();
@@ -117,6 +130,8 @@ pub fn saturate(revision: &Revision, limits: Limits) -> Result<Closure> {
                         .content(conclusion)
                         .expect("checked rule conclusion"),
                     &assertions,
+                    revision.model(),
+                    &applications,
                     &limits,
                     &mut join_attempts,
                     &mut candidates,
@@ -138,6 +153,15 @@ pub fn saturate(revision: &Revision, limits: Limits) -> Result<Closure> {
             ));
         }
         for (clause, candidate) in candidates {
+            for (id, dependency) in candidate.dependencies {
+                if let Some(existing) = applications.insert(id, dependency.clone())
+                    && existing != dependency
+                {
+                    return Err(KernelError::new(
+                        "derived recursive term has conflicting content identity",
+                    ));
+                }
+            }
             proofs.insert(
                 clause,
                 Proof {
@@ -155,6 +179,7 @@ pub fn saturate(revision: &Revision, limits: Limits) -> Result<Closure> {
     Ok(Closure {
         assertions: proofs.keys().cloned().collect(),
         proofs,
+        applications,
     })
 }
 
@@ -163,6 +188,8 @@ fn collect_rule_candidates(
     patterns: &[&RelationalContent],
     conclusion: &RelationalContent,
     assertions: &[RelationalContent],
+    model: &Model,
+    applications: &BTreeMap<ContentId, RelationalContent>,
     limits: &Limits,
     join_attempts: &mut usize,
     candidates: &mut BTreeMap<RelationalContent, Candidate>,
@@ -172,6 +199,8 @@ fn collect_rule_candidates(
         patterns,
         conclusion,
         assertions,
+        model,
+        applications,
         limits,
         join_attempts,
         candidates,
@@ -187,6 +216,8 @@ fn collect_joins(
     patterns: &[&RelationalContent],
     conclusion: &RelationalContent,
     assertions: &[RelationalContent],
+    model: &Model,
+    applications: &BTreeMap<ContentId, RelationalContent>,
     limits: &Limits,
     join_attempts: &mut usize,
     candidates: &mut BTreeMap<RelationalContent, Candidate>,
@@ -195,16 +226,19 @@ fn collect_joins(
     premises: Vec<RelationalContent>,
 ) -> Result<()> {
     if premise_index == patterns.len() {
-        let conclusion = super::matching::instantiate(conclusion, &substitution);
+        let instantiated = crate::kernel::matching::instantiate(conclusion, &substitution, |id| {
+            model.content(id)
+        })?;
         let candidate = Candidate {
             rule: rule.clone(),
             premises,
             substitution,
+            dependencies: instantiated.dependencies,
         };
-        match candidates.get_mut(&conclusion) {
+        match candidates.get_mut(&instantiated.root) {
             Some(chosen) if candidate < *chosen => *chosen = candidate,
             None => {
-                candidates.insert(conclusion, candidate);
+                candidates.insert(instantiated.root, candidate);
             }
             _ => {}
         }
@@ -220,8 +254,14 @@ fn collect_joins(
             ));
         }
         *join_attempts += 1;
-        let Some(next_substitution) = super::matching::unify(pattern, assertion, &substitution)
-        else {
+        let Some(next_substitution) = crate::kernel::matching::unify(
+            pattern,
+            assertion,
+            &substitution,
+            true,
+            |id| model.content(id),
+            |id| applications.get(id).or_else(|| model.content(id)),
+        ) else {
             continue;
         };
         let mut next_premises = premises.clone();
@@ -231,6 +271,8 @@ fn collect_joins(
             patterns,
             conclusion,
             assertions,
+            model,
+            applications,
             limits,
             join_attempts,
             candidates,

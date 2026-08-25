@@ -27,10 +27,12 @@ pub enum Request {
     Any {
         revision: RevisionId,
         pattern: RelationalContent,
+        dependencies: Vec<RelationalContent>,
     },
     Select {
         revision: RevisionId,
         pattern: RelationalContent,
+        dependencies: Vec<RelationalContent>,
         columns: Vec<QueryColumn>,
         selection: QuerySelection,
     },
@@ -156,22 +158,27 @@ impl ResolvedProgram {
                 }
             }
             match request {
-                Request::Any { revision, pattern } => {
+                Request::Any {
+                    revision,
+                    pattern,
+                    dependencies,
+                } => {
                     let selected = revisions
                         .get(revision)
                         .expect("request Revision presence was validated");
-                    let _ = any_plan(selected.model(), pattern)?;
+                    let _ = any_plan(selected.model(), pattern, dependencies)?;
                 }
                 Request::Select {
                     revision,
                     pattern,
+                    dependencies,
                     columns,
                     ..
                 } => {
                     let selected = revisions
                         .get(revision)
                         .expect("request Revision presence was validated");
-                    let _ = select_plan(selected.model(), pattern, columns)?;
+                    let _ = select_plan(selected.model(), pattern, dependencies, columns)?;
                 }
                 _ => {}
             }
@@ -207,21 +214,15 @@ impl Request {
 fn any_plan(
     model: &kernel::Model,
     pattern: &RelationalContent,
+    dependencies: &[RelationalContent],
 ) -> kernel::Result<kernel::QueryPlan> {
-    let binders = pattern
-        .roles()
-        .values()
-        .filter_map(Term::pattern_id)
-        .cloned()
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .collect();
-    kernel::QueryPlan::derive(model, pattern, binders)
+    kernel::QueryPlan::derive(model, pattern, dependencies.to_vec(), Vec::new())
 }
 
 fn projected_plan(
     model: &kernel::Model,
     pattern: &RelationalContent,
+    dependencies: &[RelationalContent],
     projected: Vec<PatternId>,
 ) -> kernel::Result<kernel::QueryPlan> {
     if projected.is_empty() {
@@ -235,24 +236,13 @@ fn projected_plan(
             "query projection cannot repeat a hole column",
         ));
     }
-    let mut binders = projected;
-    for binder in pattern
-        .roles()
-        .values()
-        .filter_map(Term::pattern_id)
-        .cloned()
-        .collect::<BTreeSet<_>>()
-    {
-        if seen.insert(binder.clone()) {
-            binders.push(binder);
-        }
-    }
-    kernel::QueryPlan::derive(model, pattern, binders)
+    kernel::QueryPlan::derive(model, pattern, dependencies.to_vec(), projected)
 }
 
 fn select_plan(
     model: &kernel::Model,
     pattern: &RelationalContent,
+    dependencies: &[RelationalContent],
     columns: &[QueryColumn],
 ) -> kernel::Result<kernel::QueryPlan> {
     for column in columns {
@@ -270,6 +260,7 @@ fn select_plan(
     let plan = projected_plan(
         model,
         pattern,
+        dependencies,
         columns
             .iter()
             .map(|column| column.binder().clone())

@@ -43,6 +43,11 @@ const KERNEL_CHILDREN: &[ChildModule] = &[
         source: include_str!("kernel/identity.rs"),
     },
     ChildModule {
+        name: "matching",
+        declaration: "pub(crate) mod matching;",
+        source: include_str!("kernel/matching.rs"),
+    },
+    ChildModule {
         name: "model",
         declaration: "mod model;",
         source: include_str!("kernel/model.rs"),
@@ -94,11 +99,6 @@ const DERIVE_CHILDREN: &[ChildModule] = &[
         name: "closure",
         declaration: "mod closure;",
         source: include_str!("derive/closure.rs"),
-    },
-    ChildModule {
-        name: "matching",
-        declaration: "mod matching;",
-        source: include_str!("derive/matching.rs"),
     },
     ChildModule {
         name: "support",
@@ -349,7 +349,11 @@ fn production_module(name: &str, source: &str, children: &[ChildModule]) -> Resu
         }
         source = source.replacen(
             child.declaration,
-            &format!("mod {} {{\n{}\n}}", child.name, child.source),
+            &format!(
+                "{} {{\n{}\n}}",
+                child.declaration.trim_end_matches(';'),
+                child.source
+            ),
             1,
         );
     }
@@ -371,20 +375,35 @@ fn request_source(
     indices: &std::collections::BTreeMap<crate::kernel::RevisionId, usize>,
 ) -> String {
     match request {
-        Request::Any { revision, pattern } => format!(
-            "request::Request::Any {{ revision: {}, pattern: {} }}",
+        Request::Any {
+            revision,
+            pattern,
+            dependencies,
+        } => format!(
+            "request::Request::Any {{ revision: {}, pattern: {}, dependencies: vec![{}] }}",
             revision_source(revision, indices),
-            clause_source(pattern)
+            clause_source(pattern),
+            dependencies
+                .iter()
+                .map(clause_source)
+                .collect::<Vec<_>>()
+                .join(",")
         ),
         Request::Select {
             revision,
             pattern,
+            dependencies,
             columns,
             selection,
         } => format!(
-            "request::Request::Select {{ revision: {}, pattern: {}, columns: vec![{}], selection: {} }}",
+            "request::Request::Select {{ revision: {}, pattern: {}, dependencies: vec![{}], columns: vec![{}], selection: {} }}",
             revision_source(revision, indices),
             clause_source(pattern),
+            dependencies
+                .iter()
+                .map(clause_source)
+                .collect::<Vec<_>>()
+                .join(","),
             columns
                 .iter()
                 .map(query_column_source)

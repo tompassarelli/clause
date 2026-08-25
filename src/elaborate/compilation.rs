@@ -188,6 +188,19 @@ impl CompiledProgram {
         lower_clause_with(&self.projection, revision.model(), surface, Some(binders))
     }
 
+    pub(crate) fn lower_request_clause_graph(
+        &self,
+        index: usize,
+        revision: &kernel::Revision,
+        surface: &frontend::SurfaceClause,
+    ) -> kernel::Result<LoweredContentGraph> {
+        let binders =
+            self.projection.request_binders.get(&index).ok_or_else(|| {
+                kernel::KernelError::new("request has no pattern-binder projection")
+            })?;
+        lower_clause_graph_with(&self.projection, revision.model(), surface, Some(binders))
+    }
+
     pub(crate) fn request_pattern(
         &self,
         index: usize,

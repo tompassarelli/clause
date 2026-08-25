@@ -179,6 +179,8 @@ pub fn support_frontier(
                     .content(conclusion)
                     .expect("checked rule conclusion"),
                 closure.contents(),
+                revision.model(),
+                &closure,
                 &limits.closure,
                 &mut join_attempts,
                 &mut derivations,
@@ -442,6 +444,8 @@ fn collect_ground_derivations(
     patterns: &[&RelationalContent],
     conclusion: &RelationalContent,
     assertions: &[RelationalContent],
+    model: &crate::kernel::Model,
+    closure: &super::closure::Closure,
     limits: &Limits,
     join_attempts: &mut usize,
     derivations: &mut BTreeSet<GroundDerivation>,
@@ -450,8 +454,11 @@ fn collect_ground_derivations(
     premises: Vec<RelationalContent>,
 ) -> Result<()> {
     if premise_index == patterns.len() {
+        let instantiated = crate::kernel::matching::instantiate(conclusion, &substitution, |id| {
+            model.content(id)
+        })?;
         derivations.insert(GroundDerivation {
-            conclusion: super::matching::instantiate(conclusion, &substitution),
+            conclusion: instantiated.root,
             rule: rule.clone(),
             premises,
             substitution,
@@ -468,8 +475,14 @@ fn collect_ground_derivations(
             ));
         }
         *join_attempts += 1;
-        let Some(next_substitution) = super::matching::unify(pattern, assertion, &substitution)
-        else {
+        let Some(next_substitution) = crate::kernel::matching::unify(
+            pattern,
+            assertion,
+            &substitution,
+            true,
+            |id| model.content(id),
+            |id| closure.content(model, id),
+        ) else {
             continue;
         };
         let mut next_premises = premises.clone();
@@ -479,6 +492,8 @@ fn collect_ground_derivations(
             patterns,
             conclusion,
             assertions,
+            model,
+            closure,
             limits,
             join_attempts,
             derivations,
