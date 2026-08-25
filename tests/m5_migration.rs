@@ -174,3 +174,31 @@ fn ordinary_multiword_heading_containing_from_is_not_revision_ancestry() {
     );
     assert_eq!(program.declarations[0].kind, frontend::Kind::Grounding);
 }
+
+#[test]
+fn migration_rejects_applied_delta_revisions_instead_of_returning_legacy_ceremony() {
+    let applied = LEGACY.replacen(
+        "egress/door-101-withdrawn: Revision\n  from: egress\n  withdraw:\n    Door 101 passed Fire-Marshal-Inspection",
+        "egress/door-101-delta: Delta\n  from: egress\n  withdraw:\n    Door 101 passed Fire-Marshal-Inspection\n\negress/door-101-withdrawn: Revision\n  from: egress\n  apply: egress/door-101-delta",
+        1,
+    );
+    let apply_line = applied
+        .lines()
+        .position(|line| line == "  apply: egress/door-101-delta")
+        .expect("applied-Delta fixture contains its exact apply line")
+        + 1;
+    let error = frontend::migrate(&applied)
+        .expect_err("applied Delta cannot produce a nominally canonical migration");
+    assert_eq!(
+        error.span,
+        frontend::Span {
+            line: apply_line,
+            column: 1,
+            width: "  apply: egress/door-101-delta".len(),
+        }
+    );
+    assert_eq!(
+        error.message,
+        "migration cannot canonicalize an applied Delta revision"
+    );
+}

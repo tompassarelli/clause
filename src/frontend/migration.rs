@@ -100,10 +100,19 @@ pub fn migrate(source: &str) -> Result<Migration, ParseError> {
             index += 1;
             continue;
         };
-        if body.iter().any(|line| line.starts_with("  apply: ")) {
-            output.extend(lines[start..end].iter().map(|line| (*line).to_owned()));
-            index = end;
-            continue;
+        if let Some((offset, apply)) = body
+            .iter()
+            .enumerate()
+            .find(|(_, line)| line.starts_with("  apply: "))
+        {
+            return Err(super::source::error(
+                Span {
+                    line: start + offset + 2,
+                    column: 1,
+                    width: apply.len(),
+                },
+                "migration cannot canonicalize an applied Delta revision",
+            ));
         }
         let base = &from_line["  from: ".len()..];
         let header = format!("{subject} from {base}");
