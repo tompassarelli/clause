@@ -500,6 +500,12 @@ fn parse_declaration<'a>(
         }
         let label = semantic_name(line, 0, label)?;
         if label.value.as_str().contains('/') {
+            if !is_qname(label.value.as_str()) {
+                return Err(error(
+                    label.span,
+                    "derivation rule label must be unqualified",
+                ));
+            }
             return Ok(RawItem::Declaration(RawDecl {
                 subject: qname(line, 0, label.value.as_str())?,
                 kind: Kind::DerivationRule,
