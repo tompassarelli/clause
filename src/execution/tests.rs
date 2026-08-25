@@ -616,6 +616,11 @@ fn evaluate_uses_indexed_intrinsics_short_circuits_and_memoizes() {
     let structural_contracts = [
         StructuralContract::new(f32_domain.clone(), StructuralForm::F32).unwrap(),
         StructuralContract::new(bool_domain, StructuralForm::Bool).unwrap(),
+        StructuralContract::new(
+            tuple_shape.clone(),
+            StructuralForm::Tuple(vec![f32_domain.clone(), f32_domain.clone()]),
+        )
+        .unwrap(),
     ]
     .into_iter()
     .map(|contract| (contract.referent().clone(), contract))
