@@ -16,10 +16,10 @@ mod syntax;
 pub use migration::{Migration, MigrationInference, migrate};
 pub use parser::parse;
 pub use syntax::{
-    Cardinality, Declaration, DeriveDecl, DomainName, EventDecl, FocusBinding, FocusBlock,
-    FocusSlot, IntegerRange, InterventionSelection, Kind, LawDecl, LocalDefinitionDecl, Member,
-    MembershipRangeDecl, ModeDecl, Name, ParseError, Program, PureDefinitionDecl, QueryColumnDecl,
-    QuerySelection, ReferentTemplate, RequestDecl, RoleName, RuleDecl, SentenceShapeDecl,
-    ShapeBindingDecl, ShapePartDecl, Span, Spanned, SurfaceApplication, SurfaceClause, SurfaceTerm,
-    VariableName,
+    Cardinality, Declaration, DeriveDecl, DomainName, EventDecl, EventTransitionDecl, FocusBinding,
+    FocusBlock, FocusSlot, IntegerRange, InterventionSelection, Kind, LawDecl, LocalDefinitionDecl,
+    Member, MembershipRangeDecl, ModeDecl, Name, ParseError, Program, PureDefinitionDecl,
+    QueryColumnDecl, QuerySelection, ReferentTemplate, RequestDecl, RoleName, RuleDecl,
+    SentenceShapeDecl, ShapeBindingDecl, ShapePartDecl, Span, Spanned, SurfaceApplication,
+    SurfaceClause, SurfaceTerm, VariableName,
 };

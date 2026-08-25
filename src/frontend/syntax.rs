@@ -95,14 +95,24 @@ pub struct Program {
     pub requests: Vec<RequestDecl>,
 }
 
-/// One concrete event and its checked relational state succession.
+/// One event scope whose variables are bound by matching every transition
+/// source against the same pre-state.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EventDecl {
     pub label: Spanned<Name>,
     pub model: Spanned<Name>,
+    pub bindings: Vec<Spanned<VariableName>>,
+    pub transitions: Vec<EventTransitionDecl>,
+    pub span: Span,
+}
+
+/// One candidate write in an event transaction. Elaboration grounds every
+/// pair from the event's shared pre-state bindings before sealing it into the
+/// Model.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EventTransitionDecl {
     pub before: SurfaceClause,
     pub after: SurfaceClause,
-    pub span: Span,
 }
 
 /// One universal law authored as semantic ground. The label is a scoped

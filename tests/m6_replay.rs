@@ -22,7 +22,9 @@ use clause::{
     wire,
 };
 
-const ONE_COIN_SOURCE: &str = "Entity\nState\nPolicy\n\ncoin/state: RelationShape\n  {coin: Entity} state {state: State}\n  mode coin -> state: one\n\ngame\n  coin ∈ Entity\n  active ∈ State\n  collected ∈ State\n  replay-policy ∈ Policy\n  coin state active\n\non collect\n  coin state active ~>\n    coin state collected\n";
+const ONE_COIN_SOURCE: &str = "Entity\nState\nOwner\nPolicy\n\ncoin/state: RelationShape\n  {coin: Entity} state {state: State}\n  mode coin -> state: one\n\ncoin/owner: RelationShape\n  {coin: Entity} owner {owner: Owner}\n  mode coin -> owner: one\n\ngame\n  coin ∈ Entity\n  active ∈ State\n  collected ∈ State\n  player ∈ Owner\n  collector ∈ Owner\n  replay-policy ∈ Policy\n  coin state active\n  coin owner player\n\non collect ?coin\n  ?coin state active ~>\n    ?coin state collected\n  ?coin owner player ~>\n    ?coin owner collector\n";
+
+const FUNCTIONAL_CONFLICT_SOURCE: &str = "Entity\nState\nPolicy\n\ncoin/state: RelationShape\n  {coin: Entity} state {state: State}\n  mode coin -> state: one\n\ngame\n  coin ∈ Entity\n  active ∈ State\n  idle ∈ State\n  collected ∈ State\n  replay-policy ∈ Policy\n  coin state active\n  coin state idle\n\non collect ?coin ?state\n  ?coin state ?state ~>\n    ?coin state collected\n";
 
 fn temporary(extension: &str) -> PathBuf {
     let nonce = SystemTime::now()
@@ -309,6 +311,8 @@ fn occurrence_exact_incremental_replay_is_canonical_and_rejects_tampering() {
             .touched_contents()
             .contains(disconnected.id())
     );
+    assert_eq!(after_first.latest().work().added_supports(), 1);
+    assert_eq!(after_first.latest().work().support_accounting_steps(), 1);
 
     let first_diff = StateDiff::between(root.latest(), after_first.latest(), &revision).unwrap();
     assert_eq!(first_diff.occurrence_withdrawals().len(), 1);
@@ -441,15 +445,78 @@ fn occurrence_exact_incremental_replay_is_canonical_and_rejects_tampering() {
 }
 
 #[test]
+fn empty_event_ticks_are_rejected_by_live_replay_and_reload() {
+    let revision = fixture();
+    let message = "runtime tick needs at least one event";
+    assert!(
+        RuntimeSession::start(&revision, policy())
+            .unwrap()
+            .transition(&revision, Vec::new())
+            .unwrap_err()
+            .to_string()
+            .contains(message)
+    );
+    assert!(
+        RuntimeSession::replay(&revision, policy(), [Vec::new()])
+            .unwrap_err()
+            .to_string()
+            .contains(message)
+    );
+
+    let one = event(COLLECT_ONE_EVENT, ACTIVE_ONE, COLLECTED_ONE);
+    let canonical = RuntimeSession::replay(&revision, policy(), [vec![one.clone()]])
+        .unwrap()
+        .canonical_bytes();
+    let malformed = canonical.replace(
+        &format!("[\"events\",[{}]]", event_wire(&one)),
+        "[\"events\",[]]",
+    );
+    assert!(
+        reload_session(&malformed, &revision)
+            .unwrap_err()
+            .to_string()
+            .contains(message)
+    );
+}
+
+#[test]
+fn authored_functional_matches_reject_conflicting_keyed_writes() {
+    let compiled = elaborate::compile(
+        frontend::parse(FUNCTIONAL_CONFLICT_SOURCE).expect("functional conflict source parses"),
+    )
+    .expect("functional conflict source elaborates into checked artifacts");
+    let [journey] = compiled.runtime_journeys() else {
+        panic!("one authored conflict event produces one runtime journey");
+    };
+    assert_eq!(journey.ticks().len(), 1);
+    assert_eq!(journey.ticks()[0].len(), 2);
+    let policy_id = compiled
+        .designations()
+        .scoped(journey.revision().model().id(), "replay-policy")
+        .expect("authored policy has a checked scoped referent");
+    let error = journey
+        .replay(RuntimePolicy::new(policy_id, 128, 512).unwrap())
+        .unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("conflicting writes to one functional relation key")
+    );
+}
+
+#[test]
 fn authored_one_coin_runtime_survives_source_deletion_with_canonical_replay_parity() {
     let parsed = frontend::parse(ONE_COIN_SOURCE).expect("one-coin Clause source parses");
     assert_eq!(parsed.events.len(), 1);
+    assert_eq!(parsed.events[0].bindings.len(), 1);
+    assert_eq!(parsed.events[0].transitions.len(), 2);
     let compiled = elaborate::compile(parsed).expect("one-coin Clause source elaborates");
     let [journey] = compiled.runtime_journeys() else {
         panic!("one authored event Model produces one runtime journey");
     };
-    assert_eq!(journey.revision().model().transitions().len(), 1);
+    assert_eq!(journey.revision().model().transitions().len(), 2);
     assert_eq!(journey.ticks().len(), 1);
+    assert_eq!(journey.ticks()[0].len(), 2);
     let policy_id = compiled
         .designations()
         .scoped(journey.revision().model().id(), "replay-policy")
@@ -462,13 +529,20 @@ fn authored_one_coin_runtime_survives_source_deletion_with_canonical_replay_pari
     assert_eq!(expected.inputs().len(), 1);
     let diff = StateDiff::between(&expected.states()[0], expected.latest(), journey.revision())
         .expect("authored runtime state diff is checked");
-    assert_eq!(diff.occurrence_withdrawals().len(), 1);
-    assert_eq!(diff.occurrence_admissions().len(), 1);
+    assert_eq!(diff.occurrence_withdrawals().len(), 2);
+    assert_eq!(diff.occurrence_admissions().len(), 2);
     assert_eq!(
         reload_session(&expected.canonical_bytes(), journey.revision()).unwrap(),
         expected
     );
 
+    let invalid_policy = RuntimePolicy::new(referent(255), 128, 512).unwrap();
+    assert!(
+        generated::emit_runtime_rust(journey, invalid_policy)
+            .unwrap_err()
+            .to_string()
+            .contains("runtime policy identity is absent from the checked Model")
+    );
     let emitted = generated::emit_runtime_rust(journey, policy)
         .expect("checked authored runtime emits standalone Rust");
     assert!(emitted.contains("runtime::RuntimeSession::replay"));

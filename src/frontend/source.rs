@@ -48,8 +48,8 @@ pub(super) struct RawDerive {
 #[derive(Clone, Debug)]
 pub(super) struct RawEvent<'a> {
     pub(super) label: Spanned<Name>,
-    pub(super) before: SourceLine<'a>,
-    pub(super) after: SourceLine<'a>,
+    pub(super) bindings: Vec<Spanned<VariableName>>,
+    pub(super) transitions: Vec<(SourceLine<'a>, SourceLine<'a>)>,
     pub(super) header: SourceLine<'a>,
 }
 
@@ -116,38 +116,62 @@ fn parse_event<'a>(
     lines: &[SourceLine<'a>],
     index: &mut usize,
 ) -> Result<RawEvent<'a>, ParseError> {
-    let label_text = content(line)
+    let header_text = content(line)
         .strip_prefix("on ")
         .expect("event dispatch checked the prefix");
+    let mut words = header_text.split(' ');
+    let label_text = words.next().expect("event header is nonempty");
     let label = semantic_name(line, "on ".len(), label_text)?;
+    let mut offset = "on ".len() + label_text.len() + 1;
+    let mut bindings = Vec::new();
+    for word in words {
+        let variable = word.strip_prefix('?').ok_or_else(|| {
+            error(
+                child_span(line, offset, word.len()),
+                "event bindings must begin with '?'",
+            )
+        })?;
+        bindings.push(variable_name(line, offset + 1, variable)?);
+        offset += word.len() + 1;
+    }
     *index += 1;
     let entries = nonblank(take_body(lines, index));
-    if entries.len() != 2 || indent(entries[0])? != 2 || indent(entries[1])? != 4 {
+    if entries.is_empty() || entries.len() % 2 != 0 {
         return Err(error(
             line_span(line),
-            "event requires one two-space source clause ending in '~>' and one four-space successor clause",
+            "event requires one or more two-space source clauses ending in '~>', each followed by one four-space successor clause",
         ));
     }
-    let before_text = content(entries[0]).strip_suffix(" ~>").ok_or_else(|| {
-        error(
-            line_span(entries[0]),
-            "event source clause must end in '~>'",
-        )
-    })?;
-    if before_text.is_empty() {
-        return Err(error(
-            line_span(entries[0]),
-            "event source clause cannot be empty",
+    let mut transitions = Vec::new();
+    for pair in entries.chunks_exact(2) {
+        if indent(pair[0])? != 2 || indent(pair[1])? != 4 {
+            return Err(error(
+                line_span(line),
+                "event requires one or more two-space source clauses ending in '~>', each followed by one four-space successor clause",
+            ));
+        }
+        let before_text = content(pair[0])
+            .strip_suffix(" ~>")
+            .ok_or_else(|| error(line_span(pair[0]), "event source clause must end in '~>'"))?;
+        if before_text.is_empty() {
+            return Err(error(
+                line_span(pair[0]),
+                "event source clause cannot be empty",
+            ));
+        }
+        transitions.push((
+            SourceLine {
+                number: pair[0].number,
+                column: pair[0].column,
+                text: &pair[0].text[..pair[0].text.len() - " ~>".len()],
+            },
+            pair[1],
         ));
     }
     Ok(RawEvent {
         label,
-        before: SourceLine {
-            number: entries[0].number,
-            column: entries[0].column,
-            text: &entries[0].text[..entries[0].text.len() - " ~>".len()],
-        },
-        after: entries[1],
+        bindings,
+        transitions,
         header: line,
     })
 }

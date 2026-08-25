@@ -14,7 +14,7 @@ use crate::{
     kernel::{
         AssertionOccurrence, ContentId, DerivationRule, JudgmentKind, JudgmentStatus,
         JudgmentTarget, KernelError, Model, ReferentId, RelationalContent, Result, Revision,
-        RevisionId, Term,
+        RevisionId, RoleId, Term,
     },
     wire::{
         json::{Json, JsonParser, array, json, list, require_string, string},
@@ -259,6 +259,7 @@ pub struct TransitionWork {
     join_attempts: usize,
     added_supports: usize,
     removed_supports: usize,
+    support_accounting_steps: usize,
     touched_contents: BTreeSet<ContentId>,
 }
 
@@ -279,6 +280,12 @@ impl TransitionWork {
         self.removed_supports
     }
 
+    /// Constant-bounded support-total reads performed while admitting new
+    /// supports. This excludes proof joins and support propagation.
+    pub fn support_accounting_steps(&self) -> usize {
+        self.support_accounting_steps
+    }
+
     pub fn touched_contents(&self) -> &BTreeSet<ContentId> {
         &self.touched_contents
     }
@@ -289,6 +296,7 @@ struct IncrementalState {
     occurrences: BTreeMap<ReferentId, AssertionOccurrence>,
     catalog: BTreeMap<ContentId, RelationalContent>,
     supports: BTreeMap<ContentId, BTreeMap<Vec<ReferentId>, GroundSupport>>,
+    support_count: usize,
     relation_index: BTreeMap<ReferentId, BTreeSet<ContentId>>,
     rule_index: BTreeMap<ReferentId, Vec<(usize, usize)>>,
     root_index: BTreeMap<ReferentId, BTreeSet<SupportKey>>,
@@ -301,6 +309,7 @@ impl IncrementalState {
             occurrences: BTreeMap::new(),
             catalog: revision.model().relational_contents().clone(),
             supports: BTreeMap::new(),
+            support_count: 0,
             relation_index: BTreeMap::new(),
             rule_index: compile_rule_index(revision.model()),
             root_index: BTreeMap::new(),
@@ -381,6 +390,10 @@ impl IncrementalState {
             if by_root.remove(&key.roots).is_none() {
                 continue;
             }
+            self.support_count = self
+                .support_count
+                .checked_sub(1)
+                .expect("removed support was included in the exact total");
             self.work.removed_supports += 1;
             self.work.touched_contents.insert(key.conclusion.clone());
             for root in &key.roots {
@@ -635,7 +648,7 @@ impl IncrementalState {
                 "runtime support has conflicting content identity",
             ));
         }
-        let current_count = self.supports.values().map(BTreeMap::len).sum::<usize>();
+        self.work.support_accounting_steps += 1;
         let by_root = self.supports.entry(content.id().clone()).or_default();
         match by_root.get_mut(&support.key.roots) {
             Some(existing) if support.proof < existing.proof => {
@@ -645,7 +658,7 @@ impl IncrementalState {
             }
             Some(_) => Ok(false),
             None => {
-                if current_count >= policy.max_supports {
+                if self.support_count >= policy.max_supports {
                     return Err(KernelError::new(
                         "runtime incremental support limit exceeded",
                     ));
@@ -657,6 +670,10 @@ impl IncrementalState {
                         .insert(support.key.clone());
                 }
                 by_root.insert(support.key.roots.clone(), support.clone());
+                self.support_count = self
+                    .support_count
+                    .checked_add(1)
+                    .ok_or_else(|| KernelError::new("runtime support total overflow"))?;
                 self.relation_index
                     .entry(content.relation().clone())
                     .or_default()
@@ -870,9 +887,6 @@ impl RuntimeSession {
     }
 
     pub fn transition(&self, revision: &Revision, events: Vec<TransitionEvent>) -> Result<Self> {
-        if events.is_empty() {
-            return Err(KernelError::new("runtime tick needs at least one event"));
-        }
         if revision.identity() != &self.model_revision {
             return Err(KernelError::new(
                 "RuntimeSession names the wrong Model Revision",
@@ -1243,7 +1257,7 @@ fn admitted_occurrences(model: &Model) -> Vec<AssertionOccurrence> {
         .collect()
 }
 
-fn validate_policy(model: &Model, policy: &RuntimePolicy) -> Result<()> {
+pub(crate) fn validate_policy(model: &Model, policy: &RuntimePolicy) -> Result<()> {
     if !model.referents().contains_key(policy.id()) {
         return Err(KernelError::new(
             "runtime policy identity is absent from the checked Model",
@@ -1257,9 +1271,13 @@ fn validate_events(
     state: &IncrementalState,
     events: &[TransitionEvent],
 ) -> Result<StateDelta> {
+    if events.is_empty() {
+        return Err(KernelError::new("runtime tick needs at least one event"));
+    }
     let mut event_ids = BTreeSet::new();
     let mut targets = BTreeSet::new();
     let mut successors = BTreeSet::new();
+    let mut functional_keys = BTreeSet::new();
     let mut withdrawals = Vec::new();
     let mut admissions = Vec::new();
     for event in events {
@@ -1308,6 +1326,13 @@ fn validate_events(
                 "runtime transition does not match its exact pre-state content",
             ));
         }
+        for key in functional_replacement_keys(model, transition) {
+            if !functional_keys.insert(key) {
+                return Err(KernelError::new(
+                    "runtime tick has conflicting writes to one functional relation key",
+                ));
+            }
+        }
         withdrawals.push(active.id().clone());
         admissions.push(AssertionOccurrence::new(
             event.successor_occurrence.clone(),
@@ -1317,6 +1342,47 @@ fn validate_events(
         ));
     }
     StateDelta::new(withdrawals, admissions)
+}
+
+fn functional_replacement_keys(
+    model: &Model,
+    transition: &crate::kernel::Transition,
+) -> Vec<(ReferentId, Vec<(RoleId, Term)>)> {
+    let Some(before) = model.content(transition.from()) else {
+        return Vec::new();
+    };
+    let Some(after) = model.content(transition.to()) else {
+        return Vec::new();
+    };
+    if before.relation() != after.relation() {
+        return Vec::new();
+    }
+    model
+        .relation_shapes()
+        .get(before.relation())
+        .into_iter()
+        .flat_map(|shape| shape.lookup())
+        .filter(|mode| {
+            mode.cardinality() == &crate::kernel::Cardinality::One
+                && mode
+                    .known()
+                    .iter()
+                    .all(|role| before.roles().get(role) == after.roles().get(role))
+                && mode
+                    .sought()
+                    .iter()
+                    .any(|role| before.roles().get(role) != after.roles().get(role))
+        })
+        .map(|mode| {
+            (
+                before.relation().clone(),
+                mode.known()
+                    .iter()
+                    .map(|role| (role.clone(), before.roles()[role].clone()))
+                    .collect(),
+            )
+        })
+        .collect()
 }
 
 fn validate_explicit_delta(

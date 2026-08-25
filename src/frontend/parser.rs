@@ -489,35 +489,63 @@ pub fn parse(source: &str) -> Result<Program, ParseError> {
             if !event_labels.insert(event.label.value.clone()) {
                 return Err(error(event.label.span, "duplicate event label"));
             }
+            let mut declared = BTreeSet::new();
+            for binding in &event.bindings {
+                if !declared.insert(binding.value.clone()) {
+                    return Err(error(binding.span, "duplicate event binding"));
+                }
+            }
             let eligible = kinds
                 .iter()
                 .filter_map(|(name, kind)| (*kind == Kind::Model).then_some(name))
                 .collect::<Vec<_>>();
             let mut candidates = Vec::new();
             for model in eligible {
-                let mut variables = BTreeMap::new();
-                let Ok(before) = clause(
-                    event.before,
-                    model,
-                    &relations,
-                    &memberships,
-                    &mut variables,
-                ) else {
+                let mut variable_types = BTreeMap::new();
+                let parsed = event
+                    .transitions
+                    .iter()
+                    .map(|(before, after)| {
+                        let before = clause(
+                            *before,
+                            model,
+                            &relations,
+                            &memberships,
+                            &mut variable_types,
+                        )?;
+                        let after = clause(
+                            *after,
+                            model,
+                            &relations,
+                            &memberships,
+                            &mut variable_types,
+                        )?;
+                        Ok(EventTransitionDecl { before, after })
+                    })
+                    .collect::<Result<Vec<_>, ParseError>>();
+                let Ok(transitions) = parsed else {
                     continue;
                 };
-                let Ok(after) =
-                    clause(event.after, model, &relations, &memberships, &mut variables)
-                else {
-                    continue;
-                };
-                if ground(&before) && ground(&after) {
-                    candidates.push((model.clone(), before, after));
+                let before_variables = transitions
+                    .iter()
+                    .flat_map(|transition| variables(&transition.before))
+                    .collect::<BTreeSet<_>>();
+                let all_variables = transitions
+                    .iter()
+                    .flat_map(|transition| {
+                        variables(&transition.before)
+                            .into_iter()
+                            .chain(variables(&transition.after))
+                    })
+                    .collect::<BTreeSet<_>>();
+                if before_variables == declared && all_variables == declared {
+                    candidates.push((model.clone(), transitions));
                 }
             }
-            let [(model, before, after)] = candidates.as_slice() else {
+            let [(model, transitions)] = candidates.as_slice() else {
                 return Err(error(
                     line_span(event.header),
-                    "event transition must be closed and match exactly one declared Model",
+                    "event bindings must be declared in the header, bound by pre-state matches, and match exactly one declared Model",
                 ));
             };
             Ok(EventDecl {
@@ -526,8 +554,8 @@ pub fn parse(source: &str) -> Result<Program, ParseError> {
                     value: model.clone(),
                     span: line_span(event.header),
                 },
-                before: before.clone(),
-                after: after.clone(),
+                bindings: event.bindings,
+                transitions: transitions.clone(),
                 span: line_span(event.header),
             })
         })

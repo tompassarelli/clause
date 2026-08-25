@@ -328,6 +328,7 @@ pub fn emit_runtime_rust(
             "generated runtime requires a root Model Revision",
         ));
     }
+    crate::runtime::validate_policy(journey.revision().model(), &policy)?;
     let modules = target_neutral_modules(true)?;
     let revision = wire::serialize(journey.revision());
     let ticks = journey

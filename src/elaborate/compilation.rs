@@ -384,14 +384,11 @@ fn compile_named(
     };
     let runtime_journeys = model_events
         .into_iter()
-        .map(|(model, events)| {
+        .map(|(model, ticks)| {
             let revision = revisions.get(&model).cloned().ok_or_else(|| {
                 kernel::KernelError::new("event Model has no compiled root Revision")
             })?;
-            Ok(RuntimeJourney {
-                revision,
-                ticks: events.into_iter().map(|event| vec![event]).collect(),
-            })
+            Ok(RuntimeJourney { revision, ticks })
         })
         .collect::<kernel::Result<Vec<_>>>()?;
     Ok(CompiledProgram {
@@ -565,7 +562,13 @@ fn declare_projection(
             .entry(model)
             .or_default()
             .insert(event_id);
-        declare_clause_literals([&event.before, &event.after], &mut projection.designations);
+        declare_clause_literals(
+            event
+                .transitions
+                .iter()
+                .flat_map(|transition| [&transition.before, &transition.after]),
+            &mut projection.designations,
+        );
     }
     declare_literals(&program.top_level, &mut projection.designations);
     for (index, request) in program.requests.iter().enumerate() {
@@ -1040,6 +1043,42 @@ fn canonical_rule_alpha(
     Ok(canonical.expect("one permutation exists even for a ground universal law"))
 }
 
+fn validate_functional_replacement(
+    shapes: &BTreeMap<ReferentId, RelationShape>,
+    before: &RelationalContent,
+    after: &RelationalContent,
+) -> kernel::Result<()> {
+    if before.relation() != after.relation() {
+        return Err(kernel::KernelError::new(
+            "authored transition must replace one functional relation",
+        ));
+    }
+    let shape = shapes
+        .get(before.relation())
+        .ok_or_else(|| kernel::KernelError::new("authored transition relation has no shape"))?;
+    let matching = shape
+        .lookup()
+        .iter()
+        .filter(|mode| {
+            mode.cardinality() == &kernel::Cardinality::One
+                && mode
+                    .known()
+                    .iter()
+                    .all(|role| before.roles().get(role) == after.roles().get(role))
+                && mode
+                    .sought()
+                    .iter()
+                    .any(|role| before.roles().get(role) != after.roles().get(role))
+        })
+        .count();
+    if matching != 1 {
+        return Err(kernel::KernelError::new(
+            "authored transition requires exactly one checker-enforced functional replacement key",
+        ));
+    }
+    Ok(())
+}
+
 fn lower_models(
     declarations: &[Declaration],
     canonical_rules: &[RuleDecl],
@@ -1052,7 +1091,7 @@ fn lower_models(
 ) -> kernel::Result<(
     BTreeMap<frontend::Name, Model>,
     BTreeMap<ReferentId, frontend::Span>,
-    BTreeMap<frontend::Name, Vec<TransitionEvent>>,
+    BTreeMap<frontend::Name, Vec<Vec<TransitionEvent>>>,
 )> {
     let mut models = BTreeMap::new();
     let mut source_spans = BTreeMap::new();
@@ -1542,71 +1581,138 @@ fn lower_models(
             }
         }
         let mut transitions = Vec::new();
-        let mut compiled_events = Vec::new();
+        let mut compiled_ticks = Vec::new();
         for event in scoped_events {
-            let before_graph = lower_clause_graph_traced(
-                projection,
-                shell.model(),
-                &event.before,
-                None,
-                proposal_spans,
-            )?;
-            let before = register_content_graph(&mut contents, before_graph)?;
-            let after_graph = lower_clause_graph_traced(
-                projection,
-                shell.model(),
-                &event.after,
-                None,
-                proposal_spans,
-            )?;
-            let after = register_content_graph(&mut contents, after_graph)?;
-            contents.insert(before.id().clone(), before.clone());
-            contents.insert(after.id().clone(), after.clone());
-            let targets = occurrences
-                .iter()
-                .filter(|occurrence| occurrence.content() == before.id())
-                .collect::<Vec<_>>();
-            let [target] = targets.as_slice() else {
-                return Err(kernel::KernelError::new(format!(
-                    "event '{}' source clause must identify exactly one authored occurrence",
-                    event.label.value.as_str()
-                )));
-            };
-            let event_id = projection
+            let event_base = projection
                 .designations
                 .scoped(&model_id, event.label.value.as_str())?;
-            let transition_id = synthetic_referent(
-                "state-transition",
-                &[model_id.as_str(), before.id().as_str(), after.id().as_str()],
-            );
-            let successor_id = synthetic_referent(
-                "event-successor-occurrence",
-                &[event_id.as_str(), target.id().as_str(), after.id().as_str()],
-            );
-            for id in [&event_id, &transition_id, &successor_id] {
-                referents.insert(id.clone(), Referent::new(id.clone()));
-            }
-            let transition = Transition::new(
-                transition_id.clone(),
-                before.id().clone(),
-                after.id().clone(),
-            )?;
-            if !transitions
+            let variables = event
+                .bindings
                 .iter()
-                .any(|existing: &Transition| existing == &transition)
-            {
-                transitions.push(transition);
+                .map(|binding| binding.value.clone())
+                .collect::<Vec<_>>();
+            let binders = BinderTable::declare_alpha_ordered(
+                &mut projection.designations,
+                &event_base,
+                &variables,
+            )?;
+            let mut patterns = Vec::new();
+            for authored in &event.transitions {
+                let before_graph = lower_clause_graph_traced(
+                    projection,
+                    shell.model(),
+                    &authored.before,
+                    Some(&binders),
+                    proposal_spans,
+                )?;
+                let before = register_content_graph(&mut contents, before_graph)?;
+                let after_graph = lower_clause_graph_traced(
+                    projection,
+                    shell.model(),
+                    &authored.after,
+                    Some(&binders),
+                    proposal_spans,
+                )?;
+                let after = register_content_graph(&mut contents, after_graph)?;
+                patterns.push((before, after));
             }
-            compiled_events.push(TransitionEvent::new(
-                event_id,
-                transition_id,
-                target.id().clone(),
-                successor_id,
-                model_id.clone(),
-            ));
+            let mut matches = vec![(BTreeMap::new(), Vec::new())];
+            for (before, _) in &patterns {
+                let mut next = Vec::new();
+                for (substitution, targets) in matches {
+                    for target in &occurrences {
+                        let actual = contents
+                            .get(target.content())
+                            .expect("authored occurrence content was registered");
+                        let Some(substitution) = kernel::matching::unify(
+                            before,
+                            actual,
+                            &substitution,
+                            true,
+                            |id| contents.get(id),
+                            |id| contents.get(id),
+                        ) else {
+                            continue;
+                        };
+                        let mut selected = targets.clone();
+                        selected.push(target.clone());
+                        next.push((substitution, selected));
+                    }
+                }
+                matches = next;
+            }
+            if matches.is_empty() {
+                return Err(kernel::KernelError::new(format!(
+                    "event '{}' pre-state patterns have no joint authored match",
+                    event.label.value.as_str()
+                )));
+            }
+            let write_count = matches.len() * patterns.len();
+            let mut tick = Vec::with_capacity(write_count);
+            for (substitution, targets) in matches {
+                for ((_before_pattern, after_pattern), target) in patterns.iter().zip(targets) {
+                    let before = contents
+                        .get(target.content())
+                        .expect("matched occurrence content was registered")
+                        .clone();
+                    let instantiated =
+                        kernel::matching::instantiate(after_pattern, &substitution, |id| {
+                            contents.get(id)
+                        })?;
+                    for dependency in instantiated.dependencies.into_values() {
+                        register_unasserted_content(&mut contents, dependency)?;
+                    }
+                    let after = instantiated.root;
+                    contents.insert(after.id().clone(), after.clone());
+                    validate_functional_replacement(shapes, &before, &after)?;
+                    let transition_id = synthetic_referent(
+                        "state-transition",
+                        &[model_id.as_str(), before.id().as_str(), after.id().as_str()],
+                    );
+                    let event_id = if write_count == 1 {
+                        event_base.clone()
+                    } else {
+                        synthetic_referent(
+                            "event-bound-write",
+                            &[
+                                event_base.as_str(),
+                                transition_id.as_str(),
+                                target.id().as_str(),
+                            ],
+                        )
+                    };
+                    let successor_id = synthetic_referent(
+                        "event-successor-occurrence",
+                        &[event_id.as_str(), target.id().as_str(), after.id().as_str()],
+                    );
+                    for id in [&event_id, &transition_id, &successor_id] {
+                        referents.insert(id.clone(), Referent::new(id.clone()));
+                    }
+                    let transition = Transition::new(
+                        transition_id.clone(),
+                        before.id().clone(),
+                        after.id().clone(),
+                    )?;
+                    if !transitions
+                        .iter()
+                        .any(|existing: &Transition| existing == &transition)
+                    {
+                        transitions.push(transition);
+                    }
+                    tick.push(TransitionEvent::new(
+                        event_id,
+                        transition_id,
+                        target.id().clone(),
+                        successor_id,
+                        model_id.clone(),
+                    ));
+                }
+            }
+            tick.sort();
+            compiled_ticks.push(tick);
         }
-        if !compiled_events.is_empty() {
-            model_events.insert(declaration.subject.value.clone(), compiled_events);
+        if !compiled_ticks.is_empty() {
+            model_events.insert(declaration.subject.value.clone(), compiled_ticks);
         }
         let structural_contracts =
             extend_structural_closure(projection, &mut referents, &contents, &mut definitions)?;

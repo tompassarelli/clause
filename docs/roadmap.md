@@ -486,11 +486,15 @@ successor, and then derives post-state views. Source order never accidentally
 resolves declarative multi-writes. Effects occur only after commit and observe
 post-state unless a different phase is explicit.
 
-Ordinary `on` blocks now author closed clause-to-clause `~>` succession. Checked
-elaboration resolves each source clause to one exact occurrence and Model
-transition; standalone generated Rust reloads that canonical Revision and
-replays the ordered events through the same frozen `RuntimeSession` API after
-the Clause source has been removed.
+Ordinary `on` blocks now declare event-scoped bindings and one or more
+clause-to-clause `~>` writes. Checked elaboration jointly matches every source
+clause against one pre-state, grounds the shared bindings, requires one
+checker-enforced functional replacement key per write, and seals the complete
+block as one ordered event tick. The runtime rejects duplicate occurrence and
+functional-key writers before committing the one successor. Standalone
+generated Rust reloads that canonical Revision and replays the ordered events
+through the same frozen `RuntimeSession` API after the Clause source has been
+removed.
 
 **Exit proof:** the same program, initial StateRevision, tick policy, and event
 log produce byte-identical states; conflicting writes fail deterministically;
