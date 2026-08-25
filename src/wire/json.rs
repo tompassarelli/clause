@@ -1,6 +1,6 @@
 use crate::kernel::{KernelError, Result};
 
-pub(super) fn escape(value: &str) -> String {
+pub(crate) fn escape(value: &str) -> String {
     let mut output = String::new();
     for ch in value.chars() {
         match ch {
@@ -17,12 +17,12 @@ pub(super) fn escape(value: &str) -> String {
 }
 
 #[derive(Clone, Debug)]
-pub(super) enum Json {
+pub(crate) enum Json {
     String(String),
     Array(Vec<Json>),
 }
 
-pub(super) fn json(value: &Json) -> String {
+pub(crate) fn json(value: &Json) -> String {
     match value {
         Json::String(text) => format!("\"{}\"", escape(text)),
         Json::Array(values) => format!(
@@ -32,14 +32,14 @@ pub(super) fn json(value: &Json) -> String {
     }
 }
 
-pub(super) fn array<'a>(value: &'a Json, where_: &str) -> Result<&'a [Json]> {
+pub(crate) fn array<'a>(value: &'a Json, where_: &str) -> Result<&'a [Json]> {
     match value {
         Json::Array(values) => Ok(values),
         _ => Err(KernelError::new(format!("invalid {where_}"))),
     }
 }
 
-pub(super) fn list<'a>(value: &'a Json, count: usize, where_: &str) -> Result<&'a [Json]> {
+pub(crate) fn list<'a>(value: &'a Json, count: usize, where_: &str) -> Result<&'a [Json]> {
     let values = array(value, where_)?;
     if values.len() == count {
         Ok(values)
@@ -48,14 +48,14 @@ pub(super) fn list<'a>(value: &'a Json, count: usize, where_: &str) -> Result<&'
     }
 }
 
-pub(super) fn string<'a>(value: &'a Json, where_: &str) -> Result<&'a str> {
+pub(crate) fn string<'a>(value: &'a Json, where_: &str) -> Result<&'a str> {
     match value {
         Json::String(text) => Ok(text),
         _ => Err(KernelError::new(format!("invalid {where_}"))),
     }
 }
 
-pub(super) fn require_string(value: &Json, expected: &str, where_: &str) -> Result<()> {
+pub(crate) fn require_string(value: &Json, expected: &str, where_: &str) -> Result<()> {
     if string(value, where_)? == expected {
         Ok(())
     } else {
@@ -63,20 +63,20 @@ pub(super) fn require_string(value: &Json, expected: &str, where_: &str) -> Resu
     }
 }
 
-pub(super) struct JsonParser<'a> {
+pub(crate) struct JsonParser<'a> {
     input: &'a [u8],
     at: usize,
 }
 
 impl<'a> JsonParser<'a> {
-    pub(super) fn new(input: &'a str) -> Self {
+    pub(crate) fn new(input: &'a str) -> Self {
         Self {
             input: input.as_bytes(),
             at: 0,
         }
     }
 
-    pub(super) fn parse(mut self) -> Result<Json> {
+    pub(crate) fn parse(mut self) -> Result<Json> {
         let value = self.value()?;
         if self.at == self.input.len() {
             Ok(value)

@@ -5,6 +5,7 @@ script_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 project_root=$(CDPATH='' cd -- "$script_dir/.." && pwd)
 contract="$project_root/docs/architecture.md"
 m4_public_base=af9a0b9952f42f95851b47a071d9efb01a5fda0f
+m5_public_base=23786abdb26c47638d819eea400555b0446a5451
 
 fail() {
   printf 'FAIL architecture gate: %s\n' "$1" >&2
@@ -136,6 +137,34 @@ run_m4_rule_to_proof_behavior() {
   fail "exact M4/S2 inert law, rule authority, proof provenance, intervention, or generated-parity behavior failed"
 }
 
+run_m5_behavior() {
+  command -v cargo >/dev/null 2>&1 \
+    || fail "cargo is required for the exact M5 migration check"
+  m5_target_dir=${CARGO_TARGET_DIR:-"$project_root/target/architecture-gate"}
+  if CARGO_TARGET_DIR="$m5_target_dir" cargo test --quiet --locked \
+    --manifest-path "$project_root/Cargo.toml" \
+    --test m5_migration \
+    hospital_revision_migration_preserves_identity_wire_delta_and_six_outputs \
+    -- --exact; then
+    return
+  fi
+  fail "exact M5 source migration, identity, wire, Delta, output, or source-deleted parity failed"
+}
+
+run_m6_behavior() {
+  command -v cargo >/dev/null 2>&1 \
+    || fail "cargo is required for the exact M6 replay check"
+  m6_target_dir=${CARGO_TARGET_DIR:-"$project_root/target/architecture-gate"}
+  if CARGO_TARGET_DIR="$m6_target_dir" cargo test --quiet --locked \
+    --manifest-path "$project_root/Cargo.toml" \
+    --test m6_replay \
+    occurrence_exact_incremental_replay_is_canonical_and_rejects_tampering \
+    -- --exact; then
+    return
+  fi
+  fail "exact M6 occurrence support, affected-region retraction, replay, diff, conflict, or tamper behavior failed"
+}
+
 run_structural_diagnostic_behavior() {
   command -v cargo >/dev/null 2>&1 \
     || fail "cargo is required for the ranked structural diagnostic check"
@@ -184,6 +213,9 @@ require_fixed "$contract" '<!-- clause-architecture-gate:v2 -->' \
 require_fixed "$contract" \
   "<!-- milestone:M4:public-base:$m4_public_base -->" \
   "M4 public base identity is absent or unknown"
+require_fixed "$contract" \
+  "<!-- milestone:M5:public-base:$m5_public_base -->" \
+  "M5 public base identity is absent or unknown"
 require_fixed "$project_root/docs/foundation.md" \
   "This document is Clause's semantic authority." \
   "foundation no longer declares the single semantic authority"
@@ -211,6 +243,12 @@ if test "$selected_rank" -ge 4; then
     || fail "candidate does not descend from exact public M4 base '$m4_public_base'"
 fi
 
+if test "$selected_rank" -ge 5; then
+  git -C "$project_root" merge-base --is-ancestor \
+    "$m5_public_base" "$candidate_head" 2>/dev/null \
+    || fail "candidate does not descend from exact public M5 base '$m5_public_base'"
+fi
+
 identity_source="$project_root/src/kernel/identity.rs"
 clause_source="$project_root/src/kernel/clause.rs"
 model_source="$project_root/src/kernel/model.rs"
@@ -223,6 +261,7 @@ support_source="$project_root/src/derive/support.rs"
 query_source="$project_root/src/kernel/query.rs"
 request_source="$project_root/src/request.rs"
 generated_source="$project_root/src/generated.rs"
+runtime_source="$project_root/src/runtime.rs"
 
 require_fixed "$identity_source" 'pub struct ReferentId(String);' \
   "one ReferentId domain is not explicit"
@@ -327,14 +366,26 @@ if test "$selected_rank" -ge 4; then
 fi
 
 if test "$selected_rank" -ge 5; then
-  require_fixed "$contract" '<!-- obligation:source-migration:pending:M5 -->' \
-    "M5 source-migration obligation marker changed without an executable gate update"
-  fail "M5 source/designation-to-Revision migration trace remains pending"
+  require_fixed "$contract" '<!-- obligation:source-migration:fulfilled:M5:test=m5_migration -->' \
+    "M5 source-migration obligation lacks its executable evidence marker"
+  run_m5_behavior
 fi
 if test "$selected_rank" -ge 6; then
-  require_fixed "$contract" '<!-- obligation:incremental-runtime-trace:pending:M6 -->' \
-    "M6 incremental-runtime obligation marker changed without an executable gate update"
-  fail "M6 incremental add/retract plan and runtime replay trace remain pending"
+  require_fixed "$contract" '<!-- obligation:incremental-runtime-trace:fulfilled:M6:test=m6_replay -->' \
+    "M6 incremental-runtime obligation lacks its executable evidence marker"
+  require_fixed "$runtime_source" 'pub struct StateRevision {' \
+    "M6 runtime has no immutable StateRevision"
+  require_fixed "$runtime_source" 'pub struct RuntimeSession {' \
+    "M6 runtime has no immutable RuntimeSession"
+  require_fixed "$runtime_source" 'rule_index: BTreeMap<ReferentId, Vec<(usize, usize)>>,' \
+    "M6 runtime has no compiled relation/rule dependency index"
+  require_fixed "$runtime_source" 'root_index: BTreeMap<ReferentId, BTreeSet<SupportKey>>,' \
+    "M6 runtime has no occurrence-exact reverse support index"
+  forbid_ere "$runtime_source" 'derive::saturate|support_frontier' \
+    "M6 runtime state path delegates to the generic reference closure"
+  forbid_ere "$contract" '<!-- debt:medium:[^:]+:block=M6 -->' \
+    "M6 still carries a medium architecture deferral that blocks implementation"
+  run_m6_behavior
 fi
 if test "$selected_rank" -ge 7; then
   require_fixed "$contract" '<!-- obligation:specialized-target-effect-trace:pending:M7 -->' \

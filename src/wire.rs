@@ -6,7 +6,7 @@
 
 mod canonical;
 mod decode;
-mod json;
+pub(crate) mod json;
 mod sha256;
 
 pub use canonical::{

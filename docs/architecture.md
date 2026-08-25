@@ -11,6 +11,7 @@
 
 <!-- clause-architecture-gate:v2 -->
 <!-- milestone:M4:public-base:af9a0b9952f42f95851b47a071d9efb01a5fda0f -->
+<!-- milestone:M5:public-base:23786abdb26c47638d819eea400555b0446a5451 -->
 
 ## Decision
 
@@ -59,8 +60,8 @@ source-deleted parity, not specialized incremental target execution.
 | M7 | Effects retain intent, authorization, attempt, receipt, observation, and admission as separate trace nodes. Generated JavaScript uses specialized layouts/indexes and contains no shadow domain logic; a matched reference/target measurement decides the hot-path claim. |
 | M8 | One live surface and ontology remain. Ceremonial grammar, compatibility paths, stale fixtures, and shadow consumers are absent after exact migration parity. |
 
-<!-- obligation:source-migration:pending:M5 -->
-<!-- obligation:incremental-runtime-trace:pending:M6 -->
+<!-- obligation:source-migration:fulfilled:M5:test=m5_migration -->
+<!-- obligation:incremental-runtime-trace:fulfilled:M6:test=m6_replay -->
 <!-- obligation:specialized-target-effect-trace:pending:M7 -->
 <!-- obligation:single-live-surface:pending:M8 -->
 
@@ -71,14 +72,13 @@ prose or a renamed marker cannot make the gate green.
 
 ## Current gap and debt boundary
 
-At public M4, `derive::saturate` rebuilds the assertion set and tries generic
-n-ary joins each round, while generated Rust embeds the target-neutral
-reference evaluator. This is a **medium** physical-strategy deferral, blocks M6,
-and does not block M4's bounded semantic selection slice. Its exit is an exact
-add/retract dependency plan with proof-support preservation at M6 and a
-specialized measured target plan at M7.
+`derive::saturate` remains the bounded reference oracle. M6 runtime state uses
+compiled relation/rule and occurrence-root reverse indexes, semi-naive support
+addition, and occurrence-exact affected-support retraction. Its canonical
+runtime bytes and public API are frozen for the remaining source-deleted
+generated-parity seam; M6 is not marked implemented until that seam passes.
 
-<!-- debt:medium:reference-evaluator:block=M6 -->
+<!-- debt:medium:source-deleted-runtime-parity:block=M6 -->
 
 No high or critical core architecture debt is currently known. Any such finding
 must add a gate-recognized `debt:high` or `debt:critical` marker; the gate

@@ -10,5 +10,6 @@ pub mod kernel;
 pub mod m0_stage_a;
 pub mod m0_stage_b;
 pub mod request;
+pub mod runtime;
 pub mod semantic_diff;
 pub mod wire;

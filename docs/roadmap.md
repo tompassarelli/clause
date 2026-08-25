@@ -451,6 +451,8 @@ search is introduced.
 
 **Depends on:** M4.
 
+**Status:** Implemented.
+
 Implement revision forms recognized by exact ancestry and signed clauses;
 preserve current `why`, `prevent`, `achieve`, and `diff` behavior; and provide a
 formatter/codemod from the current Model/DerivationRule/Revision syntax. The migration
@@ -471,6 +473,9 @@ source-deleted Rust parity.
 ## M6 — State, events, transitions, and replay
 
 **Depends on:** M5.
+
+**Status:** Runtime candidate implemented; source-deleted generated parity is
+pending against the frozen canonical runtime bytes and APIs.
 
 Add `StateRevision`, event scopes, clause-to-clause succession, keyed
 replacement for checker-enforced functional relations, explicit Delta fallback,
