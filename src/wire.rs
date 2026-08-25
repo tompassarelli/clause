@@ -1,7 +1,7 @@
-//! Canonical RelationalContent semantic-v7 / Revision-v5 wire.
+//! Canonical RelationalContent semantic-v8 / Revision-v5 wire.
 //!
 //! The semantic payload is an ordered JSON array whose exact UTF-8 bytes are
-//! the revision identity preimage. Reload admits only the v5 envelope and v7
+//! the revision identity preimage. Reload admits only the v5 envelope and v8
 //! payload and accepts no alternate ordering or JSON spelling.
 
 mod canonical;

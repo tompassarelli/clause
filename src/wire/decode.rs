@@ -14,7 +14,7 @@ use super::{
     json::{Json, JsonParser, array, json, list, require_string, string},
 };
 
-/// Strictly reload one canonical root Revision-v5 / semantic-v7 artifact.
+/// Strictly reload one canonical root Revision-v5 / semantic-v8 artifact.
 ///
 /// A successor carries an exact Delta claim whose completeness cannot be
 /// checked without its predecessor snapshot. Use [`reload_successor`] for
@@ -57,7 +57,7 @@ fn decode_canonical(bytes: &str) -> Result<Revision> {
     let (lineage, model) = decode_payload(&envelope[2])?;
     if claimed != revision_id(&lineage, &model) {
         return Err(KernelError::new(
-            "Revision identity does not match the complete semantic-v7 payload",
+            "Revision identity does not match the complete semantic-v8 payload",
         ));
     }
     validate_lineage_snapshot(&lineage, &model)?;

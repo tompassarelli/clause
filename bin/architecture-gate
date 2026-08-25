@@ -261,7 +261,7 @@ require_fixed "$compilation_source" 'pub struct CompileDiagnostic {' \
   "public rank-1 compile diagnostic is absent"
 forbid_ere "$kernel_error_source" 'frontend::|Span|line:|column:' \
   "kernel structural evidence contains a source coordinate"
-require_fixed "$wire_source" 'Revision identity does not match the complete semantic-v7 payload' \
+require_fixed "$wire_source" 'Revision identity does not match the complete semantic-v8 payload' \
   "wire reload does not reject identity tamper"
 require_fixed "$wire_source" 'successor Revision reload requires its exact predecessor' \
   "successor reload does not require exact lineage"
