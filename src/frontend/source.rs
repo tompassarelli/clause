@@ -46,6 +46,14 @@ pub(super) struct RawDerive {
 }
 
 #[derive(Clone, Debug)]
+pub(super) struct RawEvent<'a> {
+    pub(super) label: Spanned<Name>,
+    pub(super) before: SourceLine<'a>,
+    pub(super) after: SourceLine<'a>,
+    pub(super) header: SourceLine<'a>,
+}
+
+#[derive(Clone, Debug)]
 enum RawItem<'a> {
     Declaration(RawDecl<'a>),
     TopLevel(RawTopLevel<'a>),
@@ -99,8 +107,50 @@ type ScanOutput<'a> = (
     Vec<RawRule<'a>>,
     Vec<RawLaw<'a>>,
     Vec<RawDerive>,
+    Vec<RawEvent<'a>>,
     Vec<RawRequest<'a>>,
 );
+
+fn parse_event<'a>(
+    line: SourceLine<'a>,
+    lines: &[SourceLine<'a>],
+    index: &mut usize,
+) -> Result<RawEvent<'a>, ParseError> {
+    let label_text = content(line)
+        .strip_prefix("on ")
+        .expect("event dispatch checked the prefix");
+    let label = semantic_name(line, "on ".len(), label_text)?;
+    *index += 1;
+    let entries = nonblank(take_body(lines, index));
+    if entries.len() != 2 || indent(entries[0])? != 2 || indent(entries[1])? != 4 {
+        return Err(error(
+            line_span(line),
+            "event requires one two-space source clause ending in '~>' and one four-space successor clause",
+        ));
+    }
+    let before_text = content(entries[0]).strip_suffix(" ~>").ok_or_else(|| {
+        error(
+            line_span(entries[0]),
+            "event source clause must end in '~>'",
+        )
+    })?;
+    if before_text.is_empty() {
+        return Err(error(
+            line_span(entries[0]),
+            "event source clause cannot be empty",
+        ));
+    }
+    Ok(RawEvent {
+        label,
+        before: SourceLine {
+            number: entries[0].number,
+            column: entries[0].column,
+            text: &entries[0].text[..entries[0].text.len() - " ~>".len()],
+        },
+        after: entries[1],
+        header: line,
+    })
+}
 
 pub(super) fn error(span: Span, message: impl Into<String>) -> ParseError {
     ParseError {
@@ -745,6 +795,7 @@ pub(super) fn scan(source: &str) -> Result<ScanOutput<'_>, ParseError> {
     let mut rules = Vec::new();
     let mut laws = Vec::new();
     let mut derivations = Vec::new();
+    let mut events = Vec::new();
     let mut requests = Vec::new();
     let mut index = 0;
     while index < lines.len() {
@@ -760,7 +811,9 @@ pub(super) fn scan(source: &str) -> Result<ScanOutput<'_>, ParseError> {
             ));
         }
         let text = content(line);
-        if text.starts_with("select ")
+        if text.starts_with("on ") {
+            events.push(parse_event(line, &lines, &mut index)?);
+        } else if text.starts_with("select ")
             || text.starts_with("any ")
             || text.starts_with("find ")
             || text.starts_with("why in ")
@@ -780,5 +833,13 @@ pub(super) fn scan(source: &str) -> Result<ScanOutput<'_>, ParseError> {
             }
         }
     }
-    Ok((declarations, top_level, rules, laws, derivations, requests))
+    Ok((
+        declarations,
+        top_level,
+        rules,
+        laws,
+        derivations,
+        events,
+        requests,
+    ))
 }

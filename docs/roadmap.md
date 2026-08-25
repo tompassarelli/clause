@@ -474,8 +474,7 @@ source-deleted Rust parity.
 
 **Depends on:** M5.
 
-**Status:** Runtime candidate implemented; source-deleted generated parity is
-pending against the frozen canonical runtime bytes and APIs.
+**Status:** Implemented.
 
 Add `StateRevision`, event scopes, clause-to-clause succession, keyed
 replacement for checker-enforced functional relations, explicit Delta fallback,
@@ -486,6 +485,12 @@ candidate deltas, rejects or resolves conflicts by declared policy, commits one
 successor, and then derives post-state views. Source order never accidentally
 resolves declarative multi-writes. Effects occur only after commit and observe
 post-state unless a different phase is explicit.
+
+Ordinary `on` blocks now author closed clause-to-clause `~>` succession. Checked
+elaboration resolves each source clause to one exact occurrence and Model
+transition; standalone generated Rust reloads that canonical Revision and
+replays the ordered events through the same frozen `RuntimeSession` API after
+the Clause source has been removed.
 
 **Exit proof:** the same program, initial StateRevision, tick policy, and event
 log produce byte-identical states; conflicting writes fail deterministically;

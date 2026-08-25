@@ -86,10 +86,23 @@ pub struct Program {
     pub rules: Vec<RuleDecl>,
     pub laws: Vec<LawDecl>,
     pub derivations: Vec<DeriveDecl>,
+    /// Ordered concrete event ticks. Each event contains one complete
+    /// clause-to-clause state succession.
+    pub events: Vec<EventDecl>,
     /// Direct Model content whose semantic scope is supplied by the caller at
     /// compilation time rather than declared in this source projection.
     pub top_level: Vec<Member>,
     pub requests: Vec<RequestDecl>,
+}
+
+/// One concrete event and its checked relational state succession.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EventDecl {
+    pub label: Spanned<Name>,
+    pub model: Spanned<Name>,
+    pub before: SurfaceClause,
+    pub after: SurfaceClause,
+    pub span: Span,
 }
 
 /// One universal law authored as semantic ground. The label is a scoped

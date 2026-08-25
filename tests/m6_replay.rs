@@ -1,8 +1,15 @@
 //! M6 deterministic incremental state/replay acceptance.
 
-use std::collections::BTreeMap;
+use std::{
+    collections::BTreeMap,
+    env, fs,
+    path::PathBuf,
+    process::Command,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use clause::{
+    elaborate, frontend, generated,
     kernel::{
         AssertionOccurrence, DerivationRule, Judgment, JudgmentKind, JudgmentStatus,
         JudgmentTarget, Model, Pattern, PatternId, Referent, ReferentId, RelationShape,
@@ -14,6 +21,19 @@ use clause::{
     },
     wire,
 };
+
+const ONE_COIN_SOURCE: &str = "Entity\nState\nPolicy\n\ncoin/state: RelationShape\n  {coin: Entity} state {state: State}\n  mode coin -> state: one\n\ngame\n  coin ∈ Entity\n  active ∈ State\n  collected ∈ State\n  replay-policy ∈ Policy\n  coin state active\n\non collect\n  coin state active ~>\n    coin state collected\n";
+
+fn temporary(extension: &str) -> PathBuf {
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock after epoch")
+        .as_nanos();
+    env::temp_dir().join(format!(
+        "clause-m6-generated-runtime-{}-{nonce}.{extension}",
+        std::process::id()
+    ))
+}
 
 const MODEL: u8 = 1;
 const SUBJECT: u8 = 2;
@@ -418,4 +438,71 @@ fn occurrence_exact_incremental_replay_is_canonical_and_rejects_tampering() {
             .to_string()
             .contains("conflicting writes")
     );
+}
+
+#[test]
+fn authored_one_coin_runtime_survives_source_deletion_with_canonical_replay_parity() {
+    let parsed = frontend::parse(ONE_COIN_SOURCE).expect("one-coin Clause source parses");
+    assert_eq!(parsed.events.len(), 1);
+    let compiled = elaborate::compile(parsed).expect("one-coin Clause source elaborates");
+    let [journey] = compiled.runtime_journeys() else {
+        panic!("one authored event Model produces one runtime journey");
+    };
+    assert_eq!(journey.revision().model().transitions().len(), 1);
+    assert_eq!(journey.ticks().len(), 1);
+    let policy_id = compiled
+        .designations()
+        .scoped(journey.revision().model().id(), "replay-policy")
+        .expect("authored policy has a checked scoped referent");
+    let policy = RuntimePolicy::new(policy_id, 128, 512).expect("runtime policy is bounded");
+
+    let expected = journey
+        .replay(policy.clone())
+        .expect("checked authored transition feeds the canonical runtime fold");
+    assert_eq!(expected.inputs().len(), 1);
+    let diff = StateDiff::between(&expected.states()[0], expected.latest(), journey.revision())
+        .expect("authored runtime state diff is checked");
+    assert_eq!(diff.occurrence_withdrawals().len(), 1);
+    assert_eq!(diff.occurrence_admissions().len(), 1);
+    assert_eq!(
+        reload_session(&expected.canonical_bytes(), journey.revision()).unwrap(),
+        expected
+    );
+
+    let emitted = generated::emit_runtime_rust(journey, policy)
+        .expect("checked authored runtime emits standalone Rust");
+    assert!(emitted.contains("runtime::RuntimeSession::replay"));
+    assert!(emitted.contains("runtime::StateDiff::between"));
+    assert!(emitted.contains("runtime::reload_session"));
+    assert!(emitted.contains("runtime::TransitionEvent::new"));
+    assert!(!emitted.contains("coin state active"));
+    assert!(!emitted.contains("mod frontend"));
+    assert!(!emitted.contains("mod elaborate"));
+
+    let source = temporary("clause");
+    let rust = temporary("rs");
+    let binary = temporary("bin");
+    fs::write(&source, ONE_COIN_SOURCE).expect("authored one-coin source writes");
+    fs::remove_file(&source).expect("authored source deletes before generated compilation");
+    fs::write(&rust, emitted).expect("generated runtime Rust writes");
+    let built = Command::new("rustc")
+        .args(["--edition=2024", "--cfg", "clause_generated"])
+        .arg(&rust)
+        .arg("-o")
+        .arg(&binary)
+        .output()
+        .expect("generated runtime Rust compiler starts");
+    assert!(
+        built.status.success(),
+        "{}",
+        String::from_utf8_lossy(&built.stderr)
+    );
+    let actual = Command::new(&binary)
+        .output()
+        .expect("source-deleted generated runtime starts");
+    assert!(actual.status.success());
+    assert_eq!(actual.stdout, expected.canonical_bytes().as_bytes());
+
+    fs::remove_file(&rust).expect("generated runtime Rust cleans up");
+    fs::remove_file(&binary).expect("generated runtime binary cleans up");
 }

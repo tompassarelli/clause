@@ -243,6 +243,7 @@ pub fn parse(source: &str) -> Result<Program, ParseError> {
         raw_rules,
         raw_laws,
         raw_derivations,
+        raw_events,
         raw_requests,
     ) = scan(source)?;
     for declaration in &mut raw_declarations {
@@ -478,6 +479,56 @@ pub fn parse(source: &str) -> Result<Program, ParseError> {
             Ok(DeriveDecl {
                 label: derive.label,
                 span: derive.span,
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut event_labels = BTreeSet::new();
+    let events = raw_events
+        .into_iter()
+        .map(|event| {
+            if !event_labels.insert(event.label.value.clone()) {
+                return Err(error(event.label.span, "duplicate event label"));
+            }
+            let eligible = kinds
+                .iter()
+                .filter_map(|(name, kind)| (*kind == Kind::Model).then_some(name))
+                .collect::<Vec<_>>();
+            let mut candidates = Vec::new();
+            for model in eligible {
+                let mut variables = BTreeMap::new();
+                let Ok(before) = clause(
+                    event.before,
+                    model,
+                    &relations,
+                    &memberships,
+                    &mut variables,
+                ) else {
+                    continue;
+                };
+                let Ok(after) =
+                    clause(event.after, model, &relations, &memberships, &mut variables)
+                else {
+                    continue;
+                };
+                if ground(&before) && ground(&after) {
+                    candidates.push((model.clone(), before, after));
+                }
+            }
+            let [(model, before, after)] = candidates.as_slice() else {
+                return Err(error(
+                    line_span(event.header),
+                    "event transition must be closed and match exactly one declared Model",
+                ));
+            };
+            Ok(EventDecl {
+                label: event.label,
+                model: Spanned {
+                    value: model.clone(),
+                    span: line_span(event.header),
+                },
+                before: before.clone(),
+                after: after.clone(),
+                span: line_span(event.header),
             })
         })
         .collect::<Result<Vec<_>, _>>()?;
@@ -1155,6 +1206,7 @@ pub fn parse(source: &str) -> Result<Program, ParseError> {
         rules,
         laws,
         derivations,
+        events,
         top_level,
         requests,
     })

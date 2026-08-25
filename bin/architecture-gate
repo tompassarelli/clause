@@ -159,10 +159,15 @@ run_m6_behavior() {
     --manifest-path "$project_root/Cargo.toml" \
     --test m6_replay \
     occurrence_exact_incremental_replay_is_canonical_and_rejects_tampering \
+    -- --exact \
+    && CARGO_TARGET_DIR="$m6_target_dir" cargo test --quiet --locked \
+    --manifest-path "$project_root/Cargo.toml" \
+    --test m6_replay \
+    authored_one_coin_runtime_survives_source_deletion_with_canonical_replay_parity \
     -- --exact; then
     return
   fi
-  fail "exact M6 occurrence support, affected-region retraction, replay, diff, conflict, or tamper behavior failed"
+  fail "exact M6 occurrence support, event authoring, replay, diff, conflict, tamper, or source-deleted generated parity failed"
 }
 
 run_structural_diagnostic_behavior() {

@@ -192,7 +192,7 @@ const REQUEST_CHILDREN: &[ChildModule] = &[
 /// invokes the same ordered request evaluator as the interpreter.
 #[cfg(not(clause_generated))]
 pub fn emit_rust(program: &ResolvedProgram, limits: crate::request::RunLimits) -> Result<String> {
-    let modules = target_neutral_modules()?;
+    let modules = target_neutral_modules(false)?;
     let mut body = String::new();
     let revisions = revision_order(program)?;
     let indices = revisions
@@ -294,7 +294,7 @@ pub fn emit_evaluation_rust(
         }
     }
 
-    let modules = target_neutral_modules()?;
+    let modules = target_neutral_modules(false)?;
     let serialized = wire::serialize(revision);
     let requested = definitions
         .iter()
@@ -316,8 +316,63 @@ pub fn emit_evaluation_rust(
     Ok(format!("{modules}\nfn main() {{ {body} }}"))
 }
 
+/// Emit a standalone program that strictly reloads one checked Model Revision
+/// and replays its authored event ticks through the canonical runtime fold.
 #[cfg(not(clause_generated))]
-fn target_neutral_modules() -> Result<String> {
+pub fn emit_runtime_rust(
+    journey: &crate::elaborate::RuntimeJourney,
+    policy: crate::runtime::RuntimePolicy,
+) -> Result<String> {
+    if journey.revision().predecessor().is_some() {
+        return Err(KernelError::new(
+            "generated runtime requires a root Model Revision",
+        ));
+    }
+    let modules = target_neutral_modules(true)?;
+    let revision = wire::serialize(journey.revision());
+    let ticks = journey
+        .ticks()
+        .iter()
+        .map(|tick| {
+            format!(
+                "vec![{}]",
+                tick.iter().map(event_source).collect::<Vec<_>>().join(",")
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(",");
+    let policy = format!(
+        "runtime::RuntimePolicy::new({}, {}, {}).expect(\"checked runtime policy reloads\")",
+        relation_source(policy.id()),
+        policy.max_supports(),
+        policy.max_join_attempts(),
+    );
+    let body = format!(
+        "let revision = wire::reload({revision:?}).expect(\"sealed runtime Revision reloads\");\n\
+         let policy = {policy};\n\
+         let session = runtime::RuntimeSession::replay(&revision, policy, vec![{ticks}]).expect(\"authored runtime journey replays\");\n\
+         let _diffs = session.states().windows(2).map(|states| runtime::StateDiff::between(&states[0], &states[1], &revision).expect(\"generated runtime state diff is checked\")).collect::<Vec<_>>();\n\
+         let canonical = session.canonical_bytes();\n\
+         let replayed = runtime::reload_session(&canonical, &revision).expect(\"generated runtime history strictly reloads\");\n\
+         print!(\"{{}}\", replayed.canonical_bytes());"
+    );
+    Ok(format!("{modules}\nfn main() {{ {body} }}"))
+}
+
+#[cfg(not(clause_generated))]
+fn event_source(event: &crate::runtime::TransitionEvent) -> String {
+    format!(
+        "runtime::TransitionEvent::new({}, {}, {}, {}, {})",
+        relation_source(event.id()),
+        relation_source(event.transition()),
+        relation_source(event.target_occurrence()),
+        relation_source(event.successor_occurrence()),
+        relation_source(event.scope()),
+    )
+}
+
+#[cfg(not(clause_generated))]
+fn target_neutral_modules(include_runtime: bool) -> Result<String> {
     let mut modules = String::new();
     for (name, source, children) in [
         ("kernel", include_str!("kernel.rs"), KERNEL_CHILDREN),
@@ -345,6 +400,11 @@ fn target_neutral_modules() -> Result<String> {
         let body = production_module(name, source, children)?;
         writeln!(modules, "mod {name} {{\n{body}\n}}")
             .expect("writing generated modules to a String cannot fail");
+    }
+    if include_runtime {
+        let body = production_module("runtime", include_str!("runtime.rs"), NO_CHILDREN)?;
+        writeln!(modules, "mod runtime {{\n{body}\n}}")
+            .expect("writing generated runtime module to a String cannot fail");
     }
     Ok(modules)
 }

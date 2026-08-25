@@ -10,8 +10,9 @@ use crate::{
         self, AssertionOccurrence, Definition, DerivationRule, Judgment, JudgmentKind,
         JudgmentStatus, JudgmentTarget, LookupMode, Model, Pattern, ProposalPath, Referent,
         ReferentId, RelationShape, RelationalContent, Role, RolePredicate, StructuralContract,
-        StructuralFailureClass, StructuralForm, Term, UniversalLaw,
+        StructuralFailureClass, StructuralForm, Term, Transition, UniversalLaw,
     },
+    runtime::{RuntimePolicy, RuntimeSession, TransitionEvent},
     wire,
 };
 
@@ -141,9 +142,31 @@ pub struct CompiledProgram {
     revisions: BTreeMap<frontend::Name, kernel::Revision>,
     context_revision: Option<kernel::Revision>,
     requests: Vec<frontend::RequestDecl>,
+    runtime_journeys: Vec<RuntimeJourney>,
     projection: Projection,
     source_spans: BTreeMap<ReferentId, frontend::Span>,
     proposal_spans: BTreeMap<ProposalPath, frontend::Span>,
+}
+
+/// One checked Model Revision and its authored, ordered event ticks.
+#[derive(Clone, Debug)]
+pub struct RuntimeJourney {
+    revision: kernel::Revision,
+    ticks: Vec<Vec<TransitionEvent>>,
+}
+
+impl RuntimeJourney {
+    pub fn revision(&self) -> &kernel::Revision {
+        &self.revision
+    }
+
+    pub fn ticks(&self) -> &[Vec<TransitionEvent>] {
+        &self.ticks
+    }
+
+    pub fn replay(&self, policy: RuntimePolicy) -> kernel::Result<RuntimeSession> {
+        RuntimeSession::replay(&self.revision, policy, self.ticks.clone())
+    }
 }
 
 impl CompiledProgram {
@@ -152,6 +175,10 @@ impl CompiledProgram {
     }
     pub fn requests(&self) -> &[frontend::RequestDecl] {
         &self.requests
+    }
+
+    pub fn runtime_journeys(&self) -> &[RuntimeJourney] {
+        &self.runtime_journeys
     }
 
     /// The root Revision compiled in an exact caller-owned Model context.
@@ -329,11 +356,12 @@ fn compile_named(
     let mut projection = declare_projection(&program, designations)?;
     let relation_shapes = lower_relation_shapes(&program.declarations, &mut projection)?;
     let mut proposal_spans = BTreeMap::new();
-    let (models, source_spans) = lower_models(
+    let (models, source_spans, model_events) = lower_models(
         &program.declarations,
         &program.rules,
         &program.laws,
         &program.derivations,
+        &program.events,
         &relation_shapes,
         &mut projection,
         &mut proposal_spans,
@@ -354,10 +382,23 @@ fn compile_named(
         }
         (resolver.revisions, resolver.source_spans)
     };
+    let runtime_journeys = model_events
+        .into_iter()
+        .map(|(model, events)| {
+            let revision = revisions.get(&model).cloned().ok_or_else(|| {
+                kernel::KernelError::new("event Model has no compiled root Revision")
+            })?;
+            Ok(RuntimeJourney {
+                revision,
+                ticks: events.into_iter().map(|event| vec![event]).collect(),
+            })
+        })
+        .collect::<kernel::Result<Vec<_>>>()?;
     Ok(CompiledProgram {
         revisions,
         context_revision: None,
         requests: program.requests,
+        runtime_journeys,
         projection,
         source_spans,
         proposal_spans,
@@ -374,6 +415,7 @@ fn compile_context(
         || !program.rules.is_empty()
         || !program.laws.is_empty()
         || !program.derivations.is_empty()
+        || !program.events.is_empty()
         || program.declarations.iter().any(|declaration| {
             !matches!(
                 declaration.kind,
@@ -402,6 +444,7 @@ fn compile_context(
         revisions: BTreeMap::new(),
         context_revision: Some(wire::admit(model)),
         requests: Vec::new(),
+        runtime_journeys: Vec::new(),
         projection,
         source_spans,
         proposal_spans,
@@ -511,6 +554,18 @@ fn declare_projection(
             law.premises.iter().chain(std::iter::once(&law.conclusion)),
             &mut projection.designations,
         );
+    }
+    for event in &program.events {
+        let model = projection.designations.global(event.model.value.as_str())?;
+        let event_id = projection
+            .designations
+            .declare_scoped(&model, event.label.value.as_str())?;
+        projection
+            .model_referents
+            .entry(model)
+            .or_default()
+            .insert(event_id);
+        declare_clause_literals([&event.before, &event.after], &mut projection.designations);
     }
     declare_literals(&program.top_level, &mut projection.designations);
     for (index, request) in program.requests.iter().enumerate() {
@@ -990,15 +1045,18 @@ fn lower_models(
     canonical_rules: &[RuleDecl],
     canonical_laws: &[LawDecl],
     derivations: &[frontend::DeriveDecl],
+    events: &[frontend::EventDecl],
     shapes: &BTreeMap<ReferentId, RelationShape>,
     projection: &mut Projection,
     proposal_spans: &mut BTreeMap<ProposalPath, frontend::Span>,
 ) -> kernel::Result<(
     BTreeMap<frontend::Name, Model>,
     BTreeMap<ReferentId, frontend::Span>,
+    BTreeMap<frontend::Name, Vec<TransitionEvent>>,
 )> {
     let mut models = BTreeMap::new();
     let mut source_spans = BTreeMap::new();
+    let mut model_events = BTreeMap::new();
     for declaration in declarations.iter().filter(|item| {
         matches!(
             item.kind,
@@ -1012,6 +1070,10 @@ fn lower_models(
         let scoped_canonical_laws = canonical_laws
             .iter()
             .filter(|law| law.model.value == declaration.subject.value)
+            .collect::<Vec<_>>();
+        let scoped_events = events
+            .iter()
+            .filter(|event| event.model.value == declaration.subject.value)
             .collect::<Vec<_>>();
         let model_id = projection
             .designations
@@ -1479,6 +1541,73 @@ fn lower_models(
                 )?);
             }
         }
+        let mut transitions = Vec::new();
+        let mut compiled_events = Vec::new();
+        for event in scoped_events {
+            let before_graph = lower_clause_graph_traced(
+                projection,
+                shell.model(),
+                &event.before,
+                None,
+                proposal_spans,
+            )?;
+            let before = register_content_graph(&mut contents, before_graph)?;
+            let after_graph = lower_clause_graph_traced(
+                projection,
+                shell.model(),
+                &event.after,
+                None,
+                proposal_spans,
+            )?;
+            let after = register_content_graph(&mut contents, after_graph)?;
+            contents.insert(before.id().clone(), before.clone());
+            contents.insert(after.id().clone(), after.clone());
+            let targets = occurrences
+                .iter()
+                .filter(|occurrence| occurrence.content() == before.id())
+                .collect::<Vec<_>>();
+            let [target] = targets.as_slice() else {
+                return Err(kernel::KernelError::new(format!(
+                    "event '{}' source clause must identify exactly one authored occurrence",
+                    event.label.value.as_str()
+                )));
+            };
+            let event_id = projection
+                .designations
+                .scoped(&model_id, event.label.value.as_str())?;
+            let transition_id = synthetic_referent(
+                "state-transition",
+                &[model_id.as_str(), before.id().as_str(), after.id().as_str()],
+            );
+            let successor_id = synthetic_referent(
+                "event-successor-occurrence",
+                &[event_id.as_str(), target.id().as_str(), after.id().as_str()],
+            );
+            for id in [&event_id, &transition_id, &successor_id] {
+                referents.insert(id.clone(), Referent::new(id.clone()));
+            }
+            let transition = Transition::new(
+                transition_id.clone(),
+                before.id().clone(),
+                after.id().clone(),
+            )?;
+            if !transitions
+                .iter()
+                .any(|existing: &Transition| existing == &transition)
+            {
+                transitions.push(transition);
+            }
+            compiled_events.push(TransitionEvent::new(
+                event_id,
+                transition_id,
+                target.id().clone(),
+                successor_id,
+                model_id.clone(),
+            ));
+        }
+        if !compiled_events.is_empty() {
+            model_events.insert(declaration.subject.value.clone(), compiled_events);
+        }
         let structural_contracts =
             extend_structural_closure(projection, &mut referents, &contents, &mut definitions)?;
         let model = Model::with_distinctions(
@@ -1493,12 +1622,12 @@ fn lower_models(
             laws,
             Vec::new(),
             Vec::new(),
-            Vec::new(),
+            transitions,
             judgments,
         )?;
         models.insert(declaration.subject.value.clone(), model);
     }
-    Ok((models, source_spans))
+    Ok((models, source_spans, model_events))
 }
 
 fn lower_context_model(

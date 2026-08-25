@@ -56,7 +56,7 @@ source-deleted parity, not specialized incremental target execution.
 | M1–M3 | One referent domain; distinct content/occurrence/judgment/modes; exact named roles; deterministic source projection; strict canonical Revision reload; bounded reference evaluation and source-deleted parity. |
 | M4 | Holes remain scoped `PatternId` machinery, never referents; every query column retains its binder, complete recursive role-origin set, and presentation-only label through resolution, execution, canonical output, and source-deleted generation. Each query result retains its exact input Revision; asserted proof leaves retain exact occurrence, source, scope, and judgment identities, including duplicate source acts. Nested applications remain request-local, recursive correlation is exact, cardinality is explicit, laws remain inert until a distinct authorized rule projects them, and native/generated execution preserves identical caller bounds. No compiled-performance claim is admitted. |
 | M5 | Migration reports every source inference and proves source/designation → stable semantic identity → exact successor Revision continuity. |
-| M6 | `StateRevision` and `RuntimeSession` bind exact Model Revision, predecessor, Delta, inputs, policy, and replay. Add/retract dependency work is incremental; generic closure scanning is not the state hot path. |
+| M6 | `StateRevision` and `RuntimeSession` bind exact Model Revision, predecessor, Delta, inputs, policy, and replay. Add/retract dependency work is incremental; generic closure scanning is not the state hot path. Ordinary event/`~>` authoring elaborates to checked transitions and source-deleted generated Rust replays their canonical artifacts through the same runtime API. |
 | M7 | Effects retain intent, authorization, attempt, receipt, observation, and admission as separate trace nodes. Generated JavaScript uses specialized layouts/indexes and contains no shadow domain logic; a matched reference/target measurement decides the hot-path claim. |
 | M8 | One live surface and ontology remain. Ceremonial grammar, compatibility paths, stale fixtures, and shadow consumers are absent after exact migration parity. |
 
@@ -74,11 +74,10 @@ prose or a renamed marker cannot make the gate green.
 
 `derive::saturate` remains the bounded reference oracle. M6 runtime state uses
 compiled relation/rule and occurrence-root reverse indexes, semi-naive support
-addition, and occurrence-exact affected-support retraction. Its canonical
-runtime bytes and public API are frozen for the remaining source-deleted
-generated-parity seam; M6 is not marked implemented until that seam passes.
-
-<!-- debt:medium:source-deleted-runtime-parity:block=M6 -->
+addition, and occurrence-exact affected-support retraction. Ordinary event
+authoring, checked transition elaboration, strict runtime replay, canonical
+state history, and source-deleted generated-Rust parity share the frozen public
+API and bytes.
 
 No high or critical core architecture debt is currently known. Any such finding
 must add a gate-recognized `debt:high` or `debt:critical` marker; the gate

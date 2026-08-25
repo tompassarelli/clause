@@ -11,7 +11,7 @@ mod resolution;
 
 pub use compilation::{
     CompileDiagnostic, CompileDiagnosticStatus, CompileError, CompileResult, CompiledProgram,
-    ModelContext, compile, compile_in, compile_in_with_designations,
+    ModelContext, RuntimeJourney, compile, compile_in, compile_in_with_designations,
 };
 pub use identifiers::DesignationTable;
 pub use lowering::lower_clause;
