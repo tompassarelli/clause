@@ -13,18 +13,18 @@ use clause::{
     kernel::{
         AssertionOccurrence, DerivationRule, Judgment, JudgmentKind, JudgmentStatus,
         JudgmentTarget, Model, Pattern, PatternId, Referent, ReferentId, RelationShape,
-        RelationalContent, Role, RoleId, Term, Transition, UniversalLaw,
+        RelationalContent, Role, RoleId, Term, UniversalLaw,
     },
     runtime::{
-        Presence, RuntimePolicy, RuntimeSession, StateDelta, StateDiff, TransitionEvent,
-        reload_session,
+        Presence, RuntimeInput, RuntimePolicy, RuntimeSession, StateDelta, StateDiff,
+        TransitionEvent, reload_session,
     },
     wire,
 };
 
-const ONE_COIN_SOURCE: &str = "Entity\nState\nOwner\nPolicy\n\ncoin/state: RelationShape\n  {coin: Entity} state {state: State}\n  mode coin -> state: one\n\ncoin/owner: RelationShape\n  {coin: Entity} owner {owner: Owner}\n  mode coin -> owner: one\n\ngame\n  coin ∈ Entity\n  active ∈ State\n  collected ∈ State\n  player ∈ Owner\n  collector ∈ Owner\n  replay-policy ∈ Policy\n  coin state active\n  coin owner player\n\non collect ?coin\n  ?coin state active ~>\n    ?coin state collected\n  ?coin owner player ~>\n    ?coin owner collector\n";
+const ONE_COIN_SOURCE: &str = "Entity\nState\nOwner\nPolicy\n\ncoin/state: RelationShape\n  {coin: Entity} state {state: State}\n  mode coin -> state: one\n\ncoin/owner: RelationShape\n  {coin: Entity} owner {owner: Owner}\n  mode coin -> owner: one\n\ngame\n  coin ∈ Entity\n  active ∈ State\n  collected ∈ State\n  player ∈ Owner\n  collector ∈ Owner\n  replay-policy ∈ Policy\n  coin state active\n  coin owner player\n\non collect ?actor\n  ?coin state active ~>\n    ?coin state collected\n  if\n    ?coin owner ?actor\n  ?coin owner ?actor ~>\n    ?coin owner collector\n";
 
-const FUNCTIONAL_CONFLICT_SOURCE: &str = "Entity\nState\nPolicy\n\ncoin/state: RelationShape\n  {coin: Entity} state {state: State}\n  mode coin -> state: one\n\ngame\n  coin ∈ Entity\n  active ∈ State\n  idle ∈ State\n  collected ∈ State\n  replay-policy ∈ Policy\n  coin state active\n  coin state idle\n\non collect ?coin ?state\n  ?coin state ?state ~>\n    ?coin state collected\n";
+const FUNCTIONAL_CONFLICT_SOURCE: &str = "Entity\nState\nPolicy\n\ncoin/state: RelationShape\n  {coin: Entity} state {state: State}\n  mode coin -> state: one\n\ngame\n  coin ∈ Entity\n  active ∈ State\n  idle ∈ State\n  collected ∈ State\n  replay-policy ∈ Policy\n  coin state active\n\non collect\n  coin state active ~>\n    coin state collected\n  coin state active ~>\n    coin state idle\n";
 
 fn temporary(extension: &str) -> PathBuf {
     let nonce = SystemTime::now()
@@ -231,14 +231,7 @@ fn fixture() -> clause::kernel::Revision {
         laws,
         Vec::new(),
         Vec::new(),
-        vec![
-            Transition::new(
-                referent(COLLECT_TRANSITION),
-                active.id().clone(),
-                collected.id().clone(),
-            )
-            .unwrap(),
-        ],
+        Vec::new(),
         vec![
             judgment(ACTIVE_ONE_JUDGMENT, ACTIVE_ONE),
             judgment(ACTIVE_TWO_JUDGMENT, ACTIVE_TWO),
@@ -253,25 +246,17 @@ fn policy() -> RuntimePolicy {
     RuntimePolicy::new(referent(POLICY), 128, 512).unwrap()
 }
 
-fn event(event: u8, target: u8, successor: u8) -> TransitionEvent {
-    TransitionEvent::new(
-        referent(event),
-        referent(COLLECT_TRANSITION),
-        referent(target),
-        referent(successor),
-        referent(MODEL),
+fn replacement_delta(target: u8, successor: u8) -> StateDelta {
+    StateDelta::new(
+        vec![referent(target)],
+        vec![AssertionOccurrence::new(
+            referent(successor),
+            ground(COLLECTED).id().clone(),
+            referent(COLLECT_ONE_EVENT),
+            referent(MODEL),
+        )],
     )
-}
-
-fn event_wire(event: &TransitionEvent) -> String {
-    format!(
-        "[\"event\",\"{}\",[\"transition\",\"{}\"],[\"target\",\"{}\"],[\"successor\",\"{}\"],[\"scope\",\"{}\"]]",
-        event.id().as_str(),
-        event.transition().as_str(),
-        event.target_occurrence().as_str(),
-        event.successor_occurrence().as_str(),
-        event.scope().as_str(),
-    )
+    .unwrap()
 }
 
 #[test]
@@ -281,17 +266,15 @@ fn occurrence_exact_incremental_replay_is_canonical_and_rejects_tampering() {
     let consequence = ground(CONSEQUENCE);
     let disconnected = ground(DISCONNECTED);
     let collected = ground(COLLECTED);
-    let first_event = event(COLLECT_ONE_EVENT, ACTIVE_ONE, COLLECTED_ONE);
-    let second_event = event(COLLECT_TWO_EVENT, ACTIVE_TWO, COLLECTED_TWO);
+    let first_delta = replacement_delta(ACTIVE_ONE, COLLECTED_ONE);
+    let second_delta = replacement_delta(ACTIVE_TWO, COLLECTED_TWO);
 
     let root = RuntimeSession::start(&revision, policy()).unwrap();
     assert_eq!(root.latest().support_roots(active.id()).len(), 2);
     assert_eq!(root.latest().support_roots(consequence.id()).len(), 2);
     let disconnected_support = root.latest().support_roots(disconnected.id());
 
-    let after_first = root
-        .transition(&revision, vec![first_event.clone()])
-        .unwrap();
+    let after_first = root.apply_delta(&revision, first_delta.clone()).unwrap();
     assert!(after_first.latest().contains_content(active.id()));
     assert!(after_first.latest().contains_content(consequence.id()));
     assert!(after_first.latest().contains_content(collected.id()));
@@ -330,7 +313,7 @@ fn occurrence_exact_incremental_replay_is_canonical_and_rejects_tampering() {
     assert!(first_diff.authorized_equivalences().is_empty());
 
     let after_second = after_first
-        .transition(&revision, vec![second_event.clone()])
+        .apply_delta(&revision, second_delta.clone())
         .unwrap();
     assert!(!after_second.latest().contains_content(active.id()));
     assert!(!after_second.latest().contains_content(consequence.id()));
@@ -340,10 +323,13 @@ fn occurrence_exact_incremental_replay_is_canonical_and_rejects_tampering() {
         disconnected_support
     );
 
-    let replayed = RuntimeSession::replay(
+    let replayed = RuntimeSession::replay_inputs(
         &revision,
         policy(),
-        vec![vec![first_event.clone()], vec![second_event.clone()]],
+        [
+            RuntimeInput::Delta(first_delta.clone()),
+            RuntimeInput::Delta(second_delta.clone()),
+        ],
     )
     .unwrap();
     assert_eq!(replayed, after_second);
@@ -388,25 +374,6 @@ fn occurrence_exact_incremental_replay_is_canonical_and_rejects_tampering() {
     );
     assert!(reload_session(&tampered_delta, &revision).is_err());
 
-    let batched = root
-        .transition(&revision, vec![first_event.clone(), second_event.clone()])
-        .unwrap();
-    let ordered_tick = format!(
-        "[\"inputs\",[[\"events\",[{},{}]]]]",
-        event_wire(&first_event),
-        event_wire(&second_event)
-    );
-    let reversed_tick = format!(
-        "[\"inputs\",[[\"events\",[{},{}]]]]",
-        event_wire(&second_event),
-        event_wire(&first_event)
-    );
-    let tampered_order = batched
-        .canonical_bytes()
-        .replacen(&ordered_tick, &reversed_tick, 1);
-    assert_ne!(tampered_order, batched.canonical_bytes());
-    assert!(reload_session(&tampered_order, &revision).is_err());
-
     let explicit = root
         .apply_delta(
             &revision,
@@ -427,20 +394,6 @@ fn occurrence_exact_incremental_replay_is_canonical_and_rejects_tampering() {
     assert_eq!(
         reload_session(&explicit.canonical_bytes(), &revision).unwrap(),
         explicit
-    );
-
-    let conflict = root.transition(
-        &revision,
-        vec![
-            first_event,
-            event(COLLECT_TWO_EVENT, ACTIVE_ONE, COLLECTED_TWO),
-        ],
-    );
-    assert!(
-        conflict
-            .unwrap_err()
-            .to_string()
-            .contains("conflicting writes")
     );
 }
 
@@ -463,14 +416,20 @@ fn empty_event_ticks_are_rejected_by_live_replay_and_reload() {
             .contains(message)
     );
 
-    let one = event(COLLECT_ONE_EVENT, ACTIVE_ONE, COLLECTED_ONE);
-    let canonical = RuntimeSession::replay(&revision, policy(), [vec![one.clone()]])
-        .unwrap()
-        .canonical_bytes();
-    let malformed = canonical.replace(
-        &format!("[\"events\",[{}]]", event_wire(&one)),
-        "[\"events\",[]]",
+    let one = replacement_delta(ACTIVE_ONE, COLLECTED_ONE);
+    let canonical =
+        RuntimeSession::replay_inputs(&revision, policy(), [RuntimeInput::Delta(one.clone())])
+            .unwrap()
+            .canonical_bytes();
+    let encoded = format!(
+        "[\"delta\",[\"state-delta\",[\"withdraw\",[\"{}\"]],[\"admit\",[[\"occurrence\",\"{}\",\"{}\",\"{}\",\"{}\"]]]]]",
+        one.withdrawals()[0].as_str(),
+        one.admissions()[0].id().as_str(),
+        one.admissions()[0].content().as_str(),
+        one.admissions()[0].source().as_str(),
+        one.admissions()[0].scope().as_str(),
     );
+    let malformed = canonical.replace(&encoded, "[\"events\",[]]");
     assert!(
         reload_session(&malformed, &revision)
             .unwrap_err()
@@ -488,14 +447,24 @@ fn authored_functional_matches_reject_conflicting_keyed_writes() {
     let [journey] = compiled.runtime_journeys() else {
         panic!("one authored conflict event produces one runtime journey");
     };
-    assert_eq!(journey.ticks().len(), 1);
-    assert_eq!(journey.ticks()[0].len(), 2);
+    assert_eq!(journey.revision().model().transitions().len(), 2);
+    let event_id = compiled
+        .designations()
+        .scoped(journey.revision().model().id(), "collect")
+        .expect("authored event has a checked scoped referent");
     let policy_id = compiled
         .designations()
         .scoped(journey.revision().model().id(), "replay-policy")
         .expect("authored policy has a checked scoped referent");
     let error = journey
-        .replay(RuntimePolicy::new(policy_id, 128, 512).unwrap())
+        .replay(
+            RuntimePolicy::new(policy_id, 128, 512).unwrap(),
+            [vec![TransitionEvent::new(
+                referent(201),
+                event_id,
+                Vec::new(),
+            )]],
+        )
         .unwrap_err();
     assert!(
         error
@@ -505,18 +474,37 @@ fn authored_functional_matches_reject_conflicting_keyed_writes() {
 }
 
 #[test]
-fn authored_one_coin_runtime_survives_source_deletion_with_canonical_replay_parity() {
+fn authored_event_payload_state_guards_survive_source_deletion_with_replay_parity() {
     let parsed = frontend::parse(ONE_COIN_SOURCE).expect("one-coin Clause source parses");
     assert_eq!(parsed.events.len(), 1);
-    assert_eq!(parsed.events[0].bindings.len(), 1);
+    assert_eq!(parsed.events[0].payload_bindings.len(), 1);
+    assert_eq!(parsed.events[0].state_bindings.len(), 1);
+    assert_eq!(parsed.events[0].payload_bindings[0].value.as_str(), "actor");
+    assert_eq!(parsed.events[0].state_bindings[0].as_str(), "coin");
     assert_eq!(parsed.events[0].transitions.len(), 2);
+    assert_eq!(parsed.events[0].transitions[0].guards.len(), 1);
     let compiled = elaborate::compile(parsed).expect("one-coin Clause source elaborates");
     let [journey] = compiled.runtime_journeys() else {
         panic!("one authored event Model produces one runtime journey");
     };
     assert_eq!(journey.revision().model().transitions().len(), 2);
-    assert_eq!(journey.ticks().len(), 1);
-    assert_eq!(journey.ticks()[0].len(), 2);
+    let event_id = compiled
+        .designations()
+        .scoped(journey.revision().model().id(), "collect")
+        .expect("authored event has a checked scoped referent");
+    let player = compiled
+        .designations()
+        .scoped(journey.revision().model().id(), "player")
+        .expect("authored payload value has a checked scoped referent");
+    let collector = compiled
+        .designations()
+        .scoped(journey.revision().model().id(), "collector")
+        .expect("tampered payload value has a checked scoped referent");
+    let input = TransitionEvent::new(
+        referent(200),
+        event_id,
+        vec![Term::referent(player.clone())],
+    );
     let policy_id = compiled
         .designations()
         .scoped(journey.revision().model().id(), "replay-policy")
@@ -524,7 +512,7 @@ fn authored_one_coin_runtime_survives_source_deletion_with_canonical_replay_pari
     let policy = RuntimePolicy::new(policy_id, 128, 512).expect("runtime policy is bounded");
 
     let expected = journey
-        .replay(policy.clone())
+        .replay(policy.clone(), [vec![input.clone()]])
         .expect("checked authored transition feeds the canonical runtime fold");
     assert_eq!(expected.inputs().len(), 1);
     let diff = StateDiff::between(&expected.states()[0], expected.latest(), journey.revision())
@@ -535,15 +523,26 @@ fn authored_one_coin_runtime_survives_source_deletion_with_canonical_replay_pari
         reload_session(&expected.canonical_bytes(), journey.revision()).unwrap(),
         expected
     );
+    let payload = format!("[\"payload\",[[\"referent\",\"{}\"]]]", player.as_str());
+    let tampered_payload = expected.canonical_bytes().replace(
+        &payload,
+        &format!("[\"payload\",[[\"referent\",\"{}\"]]]", collector.as_str()),
+    );
+    assert!(
+        reload_session(&tampered_payload, journey.revision())
+            .unwrap_err()
+            .to_string()
+            .contains("no joint pre-state and guard match")
+    );
 
     let invalid_policy = RuntimePolicy::new(referent(255), 128, 512).unwrap();
     assert!(
-        generated::emit_runtime_rust(journey, invalid_policy)
+        generated::emit_runtime_rust(journey, invalid_policy, vec![vec![input.clone()]])
             .unwrap_err()
             .to_string()
             .contains("runtime policy identity is absent from the checked Model")
     );
-    let emitted = generated::emit_runtime_rust(journey, policy)
+    let emitted = generated::emit_runtime_rust(journey, policy, vec![vec![input]])
         .expect("checked authored runtime emits standalone Rust");
     assert!(emitted.contains("runtime::RuntimeSession::replay"));
     assert!(emitted.contains("runtime::StateDiff::between"));

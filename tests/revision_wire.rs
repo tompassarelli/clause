@@ -1,4 +1,4 @@
-//! Exact typed Revision/Delta wire contract for semantic-v9.
+//! Exact typed Revision/Delta wire contract for semantic-v10.
 
 use std::collections::BTreeMap;
 
@@ -281,7 +281,7 @@ fn expected_semantic() -> String {
         referent(SOURCE_A),
     );
     format!(
-        "[\"clause-semantic-v9\",[\"lineage\",[\"root\"]],[\"model\",\"{}\"],[\"referents\",[{referents}]],[\"relational-contents\",[{contents}]],[\"relation-shapes\",[{shape}]],[\"structural-contracts\",[]],[\"occurrences\",[{occurrence}]],[\"definitions\",[]],[\"derivation-rules\",[{rule}]],[\"universal-laws\",[{law}]],[\"invariants\",[]],[\"goals\",[]],[\"transitions\",[]],[\"judgments\",[{judgment}]]]",
+        "[\"clause-semantic-v10\",[\"lineage\",[\"root\"]],[\"model\",\"{}\"],[\"referents\",[{referents}]],[\"relational-contents\",[{contents}]],[\"relation-shapes\",[{shape}]],[\"structural-contracts\",[]],[\"occurrences\",[{occurrence}]],[\"definitions\",[]],[\"derivation-rules\",[{rule}]],[\"universal-laws\",[{law}]],[\"invariants\",[]],[\"goals\",[]],[\"transitions\",[]],[\"judgments\",[{judgment}]]]",
         referent(MODEL),
     )
 }

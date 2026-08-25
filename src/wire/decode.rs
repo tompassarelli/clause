@@ -14,7 +14,7 @@ use super::{
     json::{Json, JsonParser, array, json, list, require_string, string},
 };
 
-/// Strictly reload one canonical root Revision-v5 / semantic-v9 artifact.
+/// Strictly reload one canonical root Revision-v6 / semantic-v10 artifact.
 ///
 /// A successor carries an exact Delta claim whose completeness cannot be
 /// checked without its predecessor snapshot. Use [`reload_successor`] for
@@ -57,7 +57,7 @@ fn decode_canonical(bytes: &str) -> Result<Revision> {
     let (lineage, model) = decode_payload(&envelope[2])?;
     if claimed != revision_id(&lineage, &model) {
         return Err(KernelError::new(
-            "Revision identity does not match the complete semantic-v9 payload",
+            "Revision identity does not match the complete semantic-v10 payload",
         ));
     }
     validate_lineage_snapshot(&lineage, &model)?;
@@ -443,12 +443,27 @@ fn decode_pattern(value: &Json) -> Result<Pattern> {
 }
 
 fn decode_transition(value: &Json) -> Result<Transition> {
-    let item = list(value, 4, "transition")?;
+    let item = list(value, 7, "transition")?;
     require_string(&item[0], "transition", "transition tag")?;
-    Transition::new(
+    Transition::for_event(
         decode_referent_id(&item[1])?,
-        decode_content_id(tagged_group(&item[2], "from", "transition source")?)?,
-        decode_content_id(tagged_group(&item[3], "to", "transition destination")?)?,
+        decode_referent_id(tagged_group(&item[2], "event", "transition event")?)?,
+        array(
+            tagged_group(&item[3], "payload-bindings", "transition payload bindings")?,
+            "transition payload bindings",
+        )?
+        .iter()
+        .map(decode_pattern_id)
+        .collect::<Result<Vec<_>>>()?,
+        array(
+            tagged_group(&item[4], "guards", "transition guards")?,
+            "transition guards",
+        )?
+        .iter()
+        .map(decode_content_id)
+        .collect::<Result<Vec<_>>>()?,
+        decode_content_id(tagged_group(&item[5], "from", "transition source")?)?,
+        decode_content_id(tagged_group(&item[6], "to", "transition destination")?)?,
     )
 }
 
@@ -529,7 +544,7 @@ fn decode_judgment_kind(value: &Json) -> Result<JudgmentKind> {
     }
 }
 
-fn decode_term(value: &Json) -> Result<Term> {
+pub(crate) fn decode_term(value: &Json) -> Result<Term> {
     let item = array(value, "term")?;
     let tag = item
         .first()
@@ -674,6 +689,10 @@ fn decode_content_id(value: &Json) -> Result<ContentId> {
 }
 fn decode_role_id(value: &Json) -> Result<RoleId> {
     RoleId::new(string(value, "role identity")?.to_owned())
+}
+
+fn decode_pattern_id(value: &Json) -> Result<PatternId> {
+    PatternId::new(string(value, "pattern identity")?.into())
 }
 fn decode_revision_id(value: &str) -> Result<RevisionId> {
     let hex = value

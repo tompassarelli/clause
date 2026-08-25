@@ -148,11 +148,11 @@ pub struct CompiledProgram {
     proposal_spans: BTreeMap<ProposalPath, frontend::Span>,
 }
 
-/// One checked Model Revision and its authored, ordered event ticks.
+/// One checked Model Revision whose event transactions accept explicit runtime
+/// occurrences and payloads.
 #[derive(Clone, Debug)]
 pub struct RuntimeJourney {
     revision: kernel::Revision,
-    ticks: Vec<Vec<TransitionEvent>>,
 }
 
 impl RuntimeJourney {
@@ -160,12 +160,12 @@ impl RuntimeJourney {
         &self.revision
     }
 
-    pub fn ticks(&self) -> &[Vec<TransitionEvent>] {
-        &self.ticks
-    }
-
-    pub fn replay(&self, policy: RuntimePolicy) -> kernel::Result<RuntimeSession> {
-        RuntimeSession::replay(&self.revision, policy, self.ticks.clone())
+    pub fn replay(
+        &self,
+        policy: RuntimePolicy,
+        ticks: impl IntoIterator<Item = Vec<TransitionEvent>>,
+    ) -> kernel::Result<RuntimeSession> {
+        RuntimeSession::replay(&self.revision, policy, ticks)
     }
 }
 
@@ -384,11 +384,11 @@ fn compile_named(
     };
     let runtime_journeys = model_events
         .into_iter()
-        .map(|(model, ticks)| {
+        .map(|model| {
             let revision = revisions.get(&model).cloned().ok_or_else(|| {
                 kernel::KernelError::new("event Model has no compiled root Revision")
             })?;
-            Ok(RuntimeJourney { revision, ticks })
+            Ok(RuntimeJourney { revision })
         })
         .collect::<kernel::Result<Vec<_>>>()?;
     Ok(CompiledProgram {
@@ -563,10 +563,11 @@ fn declare_projection(
             .or_default()
             .insert(event_id);
         declare_clause_literals(
-            event
-                .transitions
-                .iter()
-                .flat_map(|transition| [&transition.before, &transition.after]),
+            event.transitions.iter().flat_map(|transition| {
+                [&transition.before, &transition.after]
+                    .into_iter()
+                    .chain(transition.guards.iter())
+            }),
             &mut projection.designations,
         );
     }
@@ -1091,11 +1092,11 @@ fn lower_models(
 ) -> kernel::Result<(
     BTreeMap<frontend::Name, Model>,
     BTreeMap<ReferentId, frontend::Span>,
-    BTreeMap<frontend::Name, Vec<Vec<TransitionEvent>>>,
+    BTreeSet<frontend::Name>,
 )> {
     let mut models = BTreeMap::new();
     let mut source_spans = BTreeMap::new();
-    let mut model_events = BTreeMap::new();
+    let mut model_events = BTreeSet::new();
     for declaration in declarations.iter().filter(|item| {
         matches!(
             item.kind,
@@ -1581,22 +1582,27 @@ fn lower_models(
             }
         }
         let mut transitions = Vec::new();
-        let mut compiled_ticks = Vec::new();
+        let has_events = !scoped_events.is_empty();
         for event in scoped_events {
             let event_base = projection
                 .designations
                 .scoped(&model_id, event.label.value.as_str())?;
-            let variables = event
-                .bindings
+            let mut variables = event
+                .payload_bindings
                 .iter()
                 .map(|binding| binding.value.clone())
                 .collect::<Vec<_>>();
+            variables.extend(event.state_bindings.iter().cloned());
             let binders = BinderTable::declare_alpha_ordered(
                 &mut projection.designations,
                 &event_base,
                 &variables,
             )?;
-            let mut patterns = Vec::new();
+            let payload_bindings = event
+                .payload_bindings
+                .iter()
+                .map(|binding| binders.named(&binding.value))
+                .collect::<kernel::Result<Vec<_>>>()?;
             for authored in &event.transitions {
                 let before_graph = lower_clause_graph_traced(
                     projection,
@@ -1606,6 +1612,23 @@ fn lower_models(
                     proposal_spans,
                 )?;
                 let before = register_content_graph(&mut contents, before_graph)?;
+                register_unasserted_content(&mut contents, before.clone())?;
+                let guards = authored
+                    .guards
+                    .iter()
+                    .map(|guard| {
+                        let graph = lower_clause_graph_traced(
+                            projection,
+                            shell.model(),
+                            guard,
+                            Some(&binders),
+                            proposal_spans,
+                        )?;
+                        let guard = register_content_graph(&mut contents, graph)?;
+                        register_unasserted_content(&mut contents, guard.clone())?;
+                        Ok(guard)
+                    })
+                    .collect::<kernel::Result<Vec<_>>>()?;
                 let after_graph = lower_clause_graph_traced(
                     projection,
                     shell.model(),
@@ -1614,105 +1637,29 @@ fn lower_models(
                     proposal_spans,
                 )?;
                 let after = register_content_graph(&mut contents, after_graph)?;
-                patterns.push((before, after));
+                register_unasserted_content(&mut contents, after.clone())?;
+                validate_functional_replacement(shapes, &before, &after)?;
+                let mut identity_parts = vec![
+                    model_id.as_str(),
+                    event_base.as_str(),
+                    before.id().as_str(),
+                    after.id().as_str(),
+                ];
+                identity_parts.extend(guards.iter().map(|guard| guard.id().as_str()));
+                let transition_id = synthetic_referent("state-transition", &identity_parts);
+                referents.insert(transition_id.clone(), Referent::new(transition_id.clone()));
+                transitions.push(Transition::for_event(
+                    transition_id,
+                    event_base.clone(),
+                    payload_bindings.clone(),
+                    guards.iter().map(|guard| guard.id().clone()).collect(),
+                    before.id().clone(),
+                    after.id().clone(),
+                )?);
             }
-            let mut matches = vec![(BTreeMap::new(), Vec::new())];
-            for (before, _) in &patterns {
-                let mut next = Vec::new();
-                for (substitution, targets) in matches {
-                    for target in &occurrences {
-                        let actual = contents
-                            .get(target.content())
-                            .expect("authored occurrence content was registered");
-                        let Some(substitution) = kernel::matching::unify(
-                            before,
-                            actual,
-                            &substitution,
-                            true,
-                            |id| contents.get(id),
-                            |id| contents.get(id),
-                        ) else {
-                            continue;
-                        };
-                        let mut selected = targets.clone();
-                        selected.push(target.clone());
-                        next.push((substitution, selected));
-                    }
-                }
-                matches = next;
-            }
-            if matches.is_empty() {
-                return Err(kernel::KernelError::new(format!(
-                    "event '{}' pre-state patterns have no joint authored match",
-                    event.label.value.as_str()
-                )));
-            }
-            let write_count = matches.len() * patterns.len();
-            let mut tick = Vec::with_capacity(write_count);
-            for (substitution, targets) in matches {
-                for ((_before_pattern, after_pattern), target) in patterns.iter().zip(targets) {
-                    let before = contents
-                        .get(target.content())
-                        .expect("matched occurrence content was registered")
-                        .clone();
-                    let instantiated =
-                        kernel::matching::instantiate(after_pattern, &substitution, |id| {
-                            contents.get(id)
-                        })?;
-                    for dependency in instantiated.dependencies.into_values() {
-                        register_unasserted_content(&mut contents, dependency)?;
-                    }
-                    let after = instantiated.root;
-                    contents.insert(after.id().clone(), after.clone());
-                    validate_functional_replacement(shapes, &before, &after)?;
-                    let transition_id = synthetic_referent(
-                        "state-transition",
-                        &[model_id.as_str(), before.id().as_str(), after.id().as_str()],
-                    );
-                    let event_id = if write_count == 1 {
-                        event_base.clone()
-                    } else {
-                        synthetic_referent(
-                            "event-bound-write",
-                            &[
-                                event_base.as_str(),
-                                transition_id.as_str(),
-                                target.id().as_str(),
-                            ],
-                        )
-                    };
-                    let successor_id = synthetic_referent(
-                        "event-successor-occurrence",
-                        &[event_id.as_str(), target.id().as_str(), after.id().as_str()],
-                    );
-                    for id in [&event_id, &transition_id, &successor_id] {
-                        referents.insert(id.clone(), Referent::new(id.clone()));
-                    }
-                    let transition = Transition::new(
-                        transition_id.clone(),
-                        before.id().clone(),
-                        after.id().clone(),
-                    )?;
-                    if !transitions
-                        .iter()
-                        .any(|existing: &Transition| existing == &transition)
-                    {
-                        transitions.push(transition);
-                    }
-                    tick.push(TransitionEvent::new(
-                        event_id,
-                        transition_id,
-                        target.id().clone(),
-                        successor_id,
-                        model_id.clone(),
-                    ));
-                }
-            }
-            tick.sort();
-            compiled_ticks.push(tick);
         }
-        if !compiled_ticks.is_empty() {
-            model_events.insert(declaration.subject.value.clone(), compiled_ticks);
+        if has_events {
+            model_events.insert(declaration.subject.value.clone());
         }
         let structural_contracts =
             extend_structural_closure(projection, &mut referents, &contents, &mut definitions)?;

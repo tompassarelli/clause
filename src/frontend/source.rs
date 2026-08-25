@@ -48,9 +48,16 @@ pub(super) struct RawDerive {
 #[derive(Clone, Debug)]
 pub(super) struct RawEvent<'a> {
     pub(super) label: Spanned<Name>,
-    pub(super) bindings: Vec<Spanned<VariableName>>,
-    pub(super) transitions: Vec<(SourceLine<'a>, SourceLine<'a>)>,
+    pub(super) payload_bindings: Vec<Spanned<VariableName>>,
+    pub(super) transitions: Vec<RawEventTransition<'a>>,
     pub(super) header: SourceLine<'a>,
+}
+
+#[derive(Clone, Debug)]
+pub(super) struct RawEventTransition<'a> {
+    pub(super) before: SourceLine<'a>,
+    pub(super) after: SourceLine<'a>,
+    pub(super) guards: Vec<SourceLine<'a>>,
 }
 
 #[derive(Clone, Debug)]
@@ -123,7 +130,7 @@ fn parse_event<'a>(
     let label_text = words.next().expect("event header is nonempty");
     let label = semantic_name(line, "on ".len(), label_text)?;
     let mut offset = "on ".len() + label_text.len() + 1;
-    let mut bindings = Vec::new();
+    let mut payload_bindings = Vec::new();
     for word in words {
         let variable = word.strip_prefix('?').ok_or_else(|| {
             error(
@@ -131,46 +138,75 @@ fn parse_event<'a>(
                 "event bindings must begin with '?'",
             )
         })?;
-        bindings.push(variable_name(line, offset + 1, variable)?);
+        payload_bindings.push(variable_name(line, offset + 1, variable)?);
         offset += word.len() + 1;
     }
     *index += 1;
     let entries = nonblank(take_body(lines, index));
-    if entries.is_empty() || entries.len() % 2 != 0 {
+    if entries.is_empty() {
         return Err(error(
             line_span(line),
-            "event requires one or more two-space source clauses ending in '~>', each followed by one four-space successor clause",
+            "event requires one or more checked transition clauses",
         ));
     }
     let mut transitions = Vec::new();
-    for pair in entries.chunks_exact(2) {
-        if indent(pair[0])? != 2 || indent(pair[1])? != 4 {
+    let mut entry = 0;
+    while entry < entries.len() {
+        let before = entries[entry];
+        let Some(after) = entries.get(entry + 1).copied() else {
+            return Err(error(
+                line_span(before),
+                "event transition source requires one four-space successor clause",
+            ));
+        };
+        if indent(before)? != 2 || indent(after)? != 4 {
             return Err(error(
                 line_span(line),
-                "event requires one or more two-space source clauses ending in '~>', each followed by one four-space successor clause",
+                "event requires two-space transition sources and four-space successors",
             ));
         }
-        let before_text = content(pair[0])
+        let before_text = content(before)
             .strip_suffix(" ~>")
-            .ok_or_else(|| error(line_span(pair[0]), "event source clause must end in '~>'"))?;
+            .ok_or_else(|| error(line_span(before), "event source clause must end in '~>'"))?;
         if before_text.is_empty() {
             return Err(error(
-                line_span(pair[0]),
+                line_span(before),
                 "event source clause cannot be empty",
             ));
         }
-        transitions.push((
-            SourceLine {
-                number: pair[0].number,
-                column: pair[0].column,
-                text: &pair[0].text[..pair[0].text.len() - " ~>".len()],
+        entry += 2;
+        let mut guards = Vec::new();
+        if entries.get(entry).is_some_and(|line| {
+            indent(*line).is_ok_and(|depth| depth == 2) && content(*line) == "if"
+        }) {
+            entry += 1;
+            while let Some(guard) = entries.get(entry).copied() {
+                if indent(guard)? != 4 {
+                    break;
+                }
+                guards.push(guard);
+                entry += 1;
+            }
+            if guards.is_empty() {
+                return Err(error(
+                    line_span(before),
+                    "event 'if' requires one or more four-space guard clauses",
+                ));
+            }
+        }
+        transitions.push(RawEventTransition {
+            before: SourceLine {
+                number: before.number,
+                column: before.column,
+                text: &before.text[..before.text.len() - " ~>".len()],
             },
-            pair[1],
-        ));
+            after,
+            guards,
+        });
     }
     Ok(RawEvent {
         label,
-        bindings,
+        payload_bindings,
         transitions,
         header: line,
     })

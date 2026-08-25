@@ -317,11 +317,12 @@ pub fn emit_evaluation_rust(
 }
 
 /// Emit a standalone program that strictly reloads one checked Model Revision
-/// and replays its authored event ticks through the canonical runtime fold.
+/// and replays caller-supplied event occurrences through the canonical fold.
 #[cfg(not(clause_generated))]
 pub fn emit_runtime_rust(
     journey: &crate::elaborate::RuntimeJourney,
     policy: crate::runtime::RuntimePolicy,
+    ticks: Vec<Vec<crate::runtime::TransitionEvent>>,
 ) -> Result<String> {
     if journey.revision().predecessor().is_some() {
         return Err(KernelError::new(
@@ -331,8 +332,7 @@ pub fn emit_runtime_rust(
     crate::runtime::validate_policy(journey.revision().model(), &policy)?;
     let modules = target_neutral_modules(true)?;
     let revision = wire::serialize(journey.revision());
-    let ticks = journey
-        .ticks()
+    let ticks = ticks
         .iter()
         .map(|tick| {
             format!(
@@ -363,12 +363,15 @@ pub fn emit_runtime_rust(
 #[cfg(not(clause_generated))]
 fn event_source(event: &crate::runtime::TransitionEvent) -> String {
     format!(
-        "runtime::TransitionEvent::new({}, {}, {}, {}, {})",
+        "runtime::TransitionEvent::new({}, {}, vec![{}])",
         relation_source(event.id()),
-        relation_source(event.transition()),
-        relation_source(event.target_occurrence()),
-        relation_source(event.successor_occurrence()),
-        relation_source(event.scope()),
+        relation_source(event.event()),
+        event
+            .payload()
+            .iter()
+            .map(term_source)
+            .collect::<Vec<_>>()
+            .join(","),
     )
 }
 

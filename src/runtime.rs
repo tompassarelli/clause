@@ -22,8 +22,8 @@ use crate::{
     },
 };
 
-pub const STATE_REVISION_TAG: &str = "clause-state-revision-v1";
-pub const RUNTIME_SESSION_TAG: &str = "clause-runtime-session-v1";
+pub const STATE_REVISION_TAG: &str = "clause-state-revision-v2";
+pub const RUNTIME_SESSION_TAG: &str = "clause-runtime-session-v2";
 
 macro_rules! digest_identity {
     ($name:ident, $prefix:literal, $message:literal) => {
@@ -114,51 +114,29 @@ impl RuntimePolicy {
     }
 }
 
-/// One ordered event that invokes a checked Model transition in one scope.
+/// One explicit ordered occurrence of a checked event with its payload.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct TransitionEvent {
     id: ReferentId,
-    transition: ReferentId,
-    target_occurrence: ReferentId,
-    successor_occurrence: ReferentId,
-    scope: ReferentId,
+    event: ReferentId,
+    payload: Vec<Term>,
 }
 
 impl TransitionEvent {
-    pub fn new(
-        id: ReferentId,
-        transition: ReferentId,
-        target_occurrence: ReferentId,
-        successor_occurrence: ReferentId,
-        scope: ReferentId,
-    ) -> Self {
-        Self {
-            id,
-            transition,
-            target_occurrence,
-            successor_occurrence,
-            scope,
-        }
+    pub fn new(id: ReferentId, event: ReferentId, payload: Vec<Term>) -> Self {
+        Self { id, event, payload }
     }
 
     pub fn id(&self) -> &ReferentId {
         &self.id
     }
 
-    pub fn transition(&self) -> &ReferentId {
-        &self.transition
+    pub fn event(&self) -> &ReferentId {
+        &self.event
     }
 
-    pub fn target_occurrence(&self) -> &ReferentId {
-        &self.target_occurrence
-    }
-
-    pub fn successor_occurrence(&self) -> &ReferentId {
-        &self.successor_occurrence
-    }
-
-    pub fn scope(&self) -> &ReferentId {
-        &self.scope
+    pub fn payload(&self) -> &[Term] {
+        &self.payload
     }
 }
 
@@ -298,6 +276,7 @@ struct IncrementalState {
     supports: BTreeMap<ContentId, BTreeMap<Vec<ReferentId>, GroundSupport>>,
     support_count: usize,
     relation_index: BTreeMap<ReferentId, BTreeSet<ContentId>>,
+    occurrence_index: BTreeMap<ContentId, BTreeSet<ReferentId>>,
     rule_index: BTreeMap<ReferentId, Vec<(usize, usize)>>,
     root_index: BTreeMap<ReferentId, BTreeSet<SupportKey>>,
     work: TransitionWork,
@@ -311,6 +290,7 @@ impl IncrementalState {
             supports: BTreeMap::new(),
             support_count: 0,
             relation_index: BTreeMap::new(),
+            occurrence_index: BTreeMap::new(),
             rule_index: compile_rule_index(revision.model()),
             root_index: BTreeMap::new(),
             work: TransitionWork::default(),
@@ -328,9 +308,19 @@ impl IncrementalState {
         revision: &Revision,
         policy: &RuntimePolicy,
         delta: &StateDelta,
+        grounded_contents: Vec<RelationalContent>,
     ) -> Result<Self> {
         let mut state = self.clone();
         state.work = TransitionWork::default();
+        for content in grounded_contents {
+            if let Some(existing) = state.catalog.insert(content.id().clone(), content.clone())
+                && existing != content
+            {
+                return Err(KernelError::new(
+                    "runtime event grounded conflicting content identity",
+                ));
+            }
+        }
         for withdrawal in &delta.withdrawals {
             state.remove_occurrence(withdrawal)?;
         }
@@ -360,6 +350,10 @@ impl IncrementalState {
             .clone();
         self.occurrences
             .insert(occurrence.id().clone(), occurrence.clone());
+        self.occurrence_index
+            .entry(occurrence.content().clone())
+            .or_default()
+            .insert(occurrence.id().clone());
         let key = SupportKey {
             conclusion: content.id().clone(),
             roots: vec![occurrence.id().clone()],
@@ -377,10 +371,16 @@ impl IncrementalState {
     }
 
     fn remove_occurrence(&mut self, occurrence: &ReferentId) -> Result<()> {
-        if self.occurrences.remove(occurrence).is_none() {
+        let Some(removed) = self.occurrences.remove(occurrence) else {
             return Err(KernelError::new(
                 "StateDelta withdraws an inactive occurrence",
             ));
+        };
+        if let Some(occurrences) = self.occurrence_index.get_mut(removed.content()) {
+            occurrences.remove(occurrence);
+            if occurrences.is_empty() {
+                self.occurrence_index.remove(removed.content());
+            }
         }
         let affected = self.root_index.remove(occurrence).unwrap_or_default();
         for key in affected {
@@ -719,14 +719,16 @@ impl StateRevision {
                 "runtime transition names the wrong Model Revision",
             ));
         }
-        let delta = match &input {
+        let (delta, grounded_contents) = match &input {
             RuntimeInput::Events(events) => validate_events(revision.model(), &self.state, events)?,
             RuntimeInput::Delta(delta) => {
                 validate_explicit_delta(revision.model(), &self.state, delta)?;
-                delta.clone()
+                (delta.clone(), Vec::new())
             }
         };
-        let next_state = self.state.successor(revision, &self.policy, &delta)?;
+        let next_state = self
+            .state
+            .successor(revision, &self.policy, &delta, grounded_contents)?;
         let mut successor = Self {
             identity: StateRevisionId::from_digest([0; 32]),
             model_revision: self.model_revision.clone(),
@@ -904,6 +906,23 @@ impl RuntimeSession {
             return Err(KernelError::new(
                 "RuntimeSession names the wrong Model Revision",
             ));
+        }
+        if let RuntimeInput::Events(events) = &input {
+            let prior = self
+                .inputs
+                .iter()
+                .filter_map(|input| match input {
+                    RuntimeInput::Events(events) => Some(events.as_slice()),
+                    RuntimeInput::Delta(_) => None,
+                })
+                .flatten()
+                .map(TransitionEvent::id)
+                .collect::<BTreeSet<_>>();
+            if events.iter().any(|event| prior.contains(event.id())) {
+                return Err(KernelError::new(
+                    "runtime history repeats an event occurrence identity",
+                ));
+            }
         }
         let successor = self.latest().successor(revision, input.clone())?;
         let mut next = self.clone();
@@ -1270,7 +1289,7 @@ fn validate_events(
     model: &Model,
     state: &IncrementalState,
     events: &[TransitionEvent],
-) -> Result<StateDelta> {
+) -> Result<(StateDelta, Vec<RelationalContent>)> {
     if events.is_empty() {
         return Err(KernelError::new("runtime tick needs at least one event"));
     }
@@ -1280,80 +1299,242 @@ fn validate_events(
     let mut functional_keys = BTreeSet::new();
     let mut withdrawals = Vec::new();
     let mut admissions = Vec::new();
+    let mut grounded_contents = BTreeMap::new();
     for event in events {
-        for (id, kind) in [
-            (&event.id, "event"),
-            (&event.successor_occurrence, "successor occurrence"),
-            (&event.scope, "event scope"),
-        ] {
-            if !model.referents().contains_key(id) {
-                return Err(KernelError::new(format!(
-                    "runtime {kind} identity is absent from the checked Model"
-                )));
-            }
-        }
         if !event_ids.insert(event.id.clone()) {
-            return Err(KernelError::new("runtime tick repeats an event identity"));
-        }
-        if !targets.insert(event.target_occurrence.clone()) {
             return Err(KernelError::new(
-                "runtime tick has conflicting writes to one pre-state occurrence",
+                "runtime tick repeats an event occurrence identity",
             ));
         }
-        if !successors.insert(event.successor_occurrence.clone())
-            || state.occurrences.contains_key(&event.successor_occurrence)
-        {
+        if !model.referents().contains_key(&event.event) {
             return Err(KernelError::new(
-                "runtime tick has a conflicting successor occurrence identity",
+                "runtime event pattern is absent from the checked Model",
             ));
         }
-        let active = state
-            .occurrences
-            .get(&event.target_occurrence)
-            .ok_or_else(|| KernelError::new("runtime event targets an inactive occurrence"))?;
-        if active.scope() != &event.scope {
-            return Err(KernelError::new(
-                "runtime event scope does not match its pre-state occurrence",
-            ));
-        }
-        let transition = model
+        let transitions = model
             .transitions()
             .iter()
-            .find(|transition| transition.id() == &event.transition)
-            .ok_or_else(|| KernelError::new("runtime event names an unknown Model transition"))?;
-        if transition.from() != active.content() {
+            .filter(|transition| transition.event() == &event.event)
+            .collect::<Vec<_>>();
+        let Some(first) = transitions.first() else {
             return Err(KernelError::new(
-                "runtime transition does not match its exact pre-state content",
+                "runtime event names no checked transaction",
+            ));
+        };
+        if event.payload.len() != first.payload_bindings().len() {
+            return Err(KernelError::new(
+                "runtime event payload does not match its checked binding shape",
             ));
         }
-        for key in functional_replacement_keys(model, transition) {
-            if !functional_keys.insert(key) {
-                return Err(KernelError::new(
-                    "runtime tick has conflicting writes to one functional relation key",
-                ));
+        for term in &event.payload {
+            validate_event_payload(model, term)?;
+        }
+        let substitution = first
+            .payload_bindings()
+            .iter()
+            .cloned()
+            .zip(event.payload.iter().cloned())
+            .collect::<BTreeMap<_, _>>();
+        let mut matches = vec![(substitution, Vec::<AssertionOccurrence>::new())];
+        for transition in &transitions {
+            let before = model
+                .content(transition.from())
+                .expect("checked transition source is registered");
+            let mut next = Vec::new();
+            let contents = state
+                .relation_index
+                .get(before.relation())
+                .cloned()
+                .unwrap_or_default();
+            for (substitution, selected) in matches {
+                for content_id in &contents {
+                    let actual = state
+                        .catalog
+                        .get(content_id)
+                        .expect("pre-state relation index names registered content");
+                    let Some(substitution) = crate::kernel::matching::unify(
+                        before,
+                        actual,
+                        &substitution,
+                        true,
+                        |id| model.content(id),
+                        |id| state.catalog.get(id).or_else(|| model.content(id)),
+                    ) else {
+                        continue;
+                    };
+                    for occurrence in state.occurrence_index.get(content_id).into_iter().flatten() {
+                        let target = state
+                            .occurrences
+                            .get(occurrence)
+                            .expect("occurrence index names active occurrence");
+                        let mut selected = selected.clone();
+                        selected.push(target.clone());
+                        next.push((substitution.clone(), selected));
+                    }
+                }
+            }
+            matches = next;
+            for guard_id in transition.guards() {
+                let guard = model
+                    .content(guard_id)
+                    .expect("checked transition guard is registered");
+                let candidates = state
+                    .relation_index
+                    .get(guard.relation())
+                    .cloned()
+                    .unwrap_or_default();
+                let mut next = Vec::new();
+                for (substitution, selected) in matches {
+                    for actual_id in &candidates {
+                        let actual = state
+                            .catalog
+                            .get(actual_id)
+                            .expect("pre-state relation index names registered content");
+                        if let Some(substitution) = crate::kernel::matching::unify(
+                            guard,
+                            actual,
+                            &substitution,
+                            true,
+                            |id| model.content(id),
+                            |id| state.catalog.get(id).or_else(|| model.content(id)),
+                        ) {
+                            next.push((substitution, selected.clone()));
+                        }
+                    }
+                }
+                matches = next;
             }
         }
-        withdrawals.push(active.id().clone());
-        admissions.push(AssertionOccurrence::new(
-            event.successor_occurrence.clone(),
-            transition.to().clone(),
-            event.id.clone(),
-            event.scope.clone(),
-        ));
+        if matches.is_empty() {
+            return Err(KernelError::new(
+                "runtime event transaction has no joint pre-state and guard match",
+            ));
+        }
+        if matches.len() != 1 {
+            return Err(KernelError::new(
+                "runtime event transaction match is ambiguous",
+            ));
+        }
+        let (substitution, selected) = matches.pop().expect("one event match remains");
+        for (transition, target) in transitions.into_iter().zip(selected) {
+            let after_pattern = model
+                .content(transition.to())
+                .expect("checked transition destination is registered");
+            let instantiated =
+                crate::kernel::matching::instantiate(after_pattern, &substitution, |id| {
+                    model.content(id)
+                })?;
+            let after_id = instantiated.root.id().clone();
+            let dependencies = instantiated.dependencies.into_values().collect::<Vec<_>>();
+            model.validate_query_content(&instantiated.root, &dependencies)?;
+            for content in dependencies
+                .into_iter()
+                .chain(std::iter::once(instantiated.root))
+            {
+                if let Some(existing) =
+                    grounded_contents.insert(content.id().clone(), content.clone())
+                    && existing != content
+                {
+                    return Err(KernelError::new(
+                        "runtime event grounded conflicting content identity",
+                    ));
+                }
+            }
+            let after = grounded_contents
+                .get(&after_id)
+                .expect("grounded transition destination was registered");
+            let before = state
+                .catalog
+                .get(target.content())
+                .expect("selected pre-state occurrence content is registered");
+            for key in functional_replacement_keys(model, before, after) {
+                if !functional_keys.insert(key) {
+                    return Err(KernelError::new(
+                        "runtime tick has conflicting writes to one functional relation key",
+                    ));
+                }
+            }
+            if !targets.insert(target.id().clone()) {
+                return Err(KernelError::new(
+                    "runtime tick has conflicting writes to one pre-state occurrence",
+                ));
+            }
+            let successor = event_successor(event, transition.id(), target.id(), after.id());
+            if !successors.insert(successor.clone()) || state.occurrences.contains_key(&successor) {
+                return Err(KernelError::new(
+                    "runtime tick has a conflicting successor occurrence identity",
+                ));
+            }
+            withdrawals.push(target.id().clone());
+            admissions.push(AssertionOccurrence::new(
+                successor,
+                after.id().clone(),
+                event.id.clone(),
+                model.id().clone(),
+            ));
+        }
     }
-    StateDelta::new(withdrawals, admissions)
+    Ok((
+        StateDelta::new(withdrawals, admissions)?,
+        grounded_contents.into_values().collect(),
+    ))
+}
+
+fn validate_event_payload(model: &Model, term: &Term) -> Result<()> {
+    if !model.term_is_ground(term) {
+        return Err(KernelError::new("runtime event payload must be ground"));
+    }
+    let mut result = Ok(());
+    term.walk(&mut |term| {
+        if result.is_err() {
+            return;
+        }
+        let referents = match term {
+            Term::Referent(id) => vec![id],
+            Term::Product { shape, fields } => std::iter::once(shape)
+                .chain(fields.values().map(|field| field.domain()))
+                .collect(),
+            Term::LabelledProduct { shape, fields } => {
+                std::iter::once(shape).chain(fields.keys()).collect()
+            }
+            Term::Sequence { shape, element, .. } => vec![shape, element],
+            _ => Vec::new(),
+        };
+        if referents
+            .into_iter()
+            .any(|id| !model.referents().contains_key(id))
+        {
+            result = Err(KernelError::new(
+                "runtime event payload names a referent absent from the checked Model",
+            ));
+        }
+    });
+    result
+}
+
+fn event_successor(
+    event: &TransitionEvent,
+    transition: &ReferentId,
+    target: &ReferentId,
+    content: &ContentId,
+) -> ReferentId {
+    ReferentId::from_digest(sha256_digest(
+        format!(
+            "clause-runtime-event-successor-v1\0{}\0{}\0{}\0{}",
+            event.id.as_str(),
+            transition.as_str(),
+            target.as_str(),
+            content.as_str()
+        )
+        .as_bytes(),
+    ))
 }
 
 fn functional_replacement_keys(
     model: &Model,
-    transition: &crate::kernel::Transition,
+    before: &RelationalContent,
+    after: &RelationalContent,
 ) -> Vec<(ReferentId, Vec<(RoleId, Term)>)> {
-    let Some(before) = model.content(transition.from()) else {
-        return Vec::new();
-    };
-    let Some(after) = model.content(transition.to()) else {
-        return Vec::new();
-    };
     if before.relation() != after.relation() {
         return Vec::new();
     }
@@ -1509,48 +1690,32 @@ fn decode_input(value: &Json) -> Result<RuntimeInput> {
 
 fn event_json(event: &TransitionEvent) -> String {
     format!(
-        "[\"event\",\"{}\",[\"transition\",\"{}\"],[\"target\",\"{}\"],[\"successor\",\"{}\"],[\"scope\",\"{}\"]]",
+        "[\"event-occurrence\",\"{}\",[\"event\",\"{}\"],[\"payload\",[{}]]]",
         event.id.as_str(),
-        event.transition.as_str(),
-        event.target_occurrence.as_str(),
-        event.successor_occurrence.as_str(),
-        event.scope.as_str(),
+        event.event.as_str(),
+        join(event.payload.iter().map(crate::wire::term_json)),
     )
 }
 
 fn decode_event(value: &Json) -> Result<TransitionEvent> {
-    let item = list(value, 6, "runtime event")?;
-    require_string(&item[0], "event", "runtime event tag")?;
+    let item = list(value, 4, "runtime event")?;
+    require_string(&item[0], "event-occurrence", "runtime event tag")?;
     Ok(TransitionEvent::new(
         ReferentId::new(string(&item[1], "runtime event identity")?.into())?,
         ReferentId::new(
             string(
-                tagged(&item[2], "transition", "runtime event transition")?,
-                "runtime event transition identity",
+                tagged(&item[2], "event", "runtime event pattern")?,
+                "runtime event pattern identity",
             )?
             .into(),
         )?,
-        ReferentId::new(
-            string(
-                tagged(&item[3], "target", "runtime event target")?,
-                "runtime event target identity",
-            )?
-            .into(),
-        )?,
-        ReferentId::new(
-            string(
-                tagged(&item[4], "successor", "runtime event successor")?,
-                "runtime event successor identity",
-            )?
-            .into(),
-        )?,
-        ReferentId::new(
-            string(
-                tagged(&item[5], "scope", "runtime event scope")?,
-                "runtime event scope identity",
-            )?
-            .into(),
-        )?,
+        array(
+            tagged(&item[3], "payload", "runtime event payload")?,
+            "runtime event payload",
+        )?
+        .iter()
+        .map(crate::wire::decode_term)
+        .collect::<Result<Vec<_>>>()?,
     ))
 }
 

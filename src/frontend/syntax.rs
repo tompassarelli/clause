@@ -95,13 +95,14 @@ pub struct Program {
     pub requests: Vec<RequestDecl>,
 }
 
-/// One event scope whose variables are bound by matching every transition
-/// source against the same pre-state.
+/// One event scope with distinct event-payload and transactional pre-state
+/// binders.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EventDecl {
     pub label: Spanned<Name>,
     pub model: Spanned<Name>,
-    pub bindings: Vec<Spanned<VariableName>>,
+    pub payload_bindings: Vec<Spanned<VariableName>>,
+    pub state_bindings: Vec<VariableName>,
     pub transitions: Vec<EventTransitionDecl>,
     pub span: Span,
 }
@@ -113,6 +114,7 @@ pub struct EventDecl {
 pub struct EventTransitionDecl {
     pub before: SurfaceClause,
     pub after: SurfaceClause,
+    pub guards: Vec<SurfaceClause>,
 }
 
 /// One universal law authored as semantic ground. The label is a scoped

@@ -128,7 +128,7 @@ honestly collapse:
 | `StateRevision` | Logically immutable runtime state produced from an exact predecessor and Delta and bound to an exact Model Revision. |
 | `RuntimeSession` | Exact Model Revision, initial state, tick policy, ordered input/event stream, transition results, capability realizations, and effect receipts. |
 
-Today's Revision-v5 wraps one complete semantic-v9 Model snapshot and either
+Today's Revision-v6 wraps one complete semantic-v10 Model snapshot and either
 root lineage or an exact predecessor Delta. Any future split migrates the
 representation and all in-tree consumers atomically; it does not pass through
 two public wire meanings. The historical M0 page records the earlier evidence
@@ -196,7 +196,7 @@ Public Clause currently implements:
 - one stable referent domain and role-labelled n-ary relational content;
 - separate assertion occurrences, judgments, definitions, derivation rules,
   universal laws, invariants, goals, and transitions;
-- canonical semantic-v9 / Revision-v5 persistence with exact predecessor
+- canonical semantic-v10 / Revision-v6 persistence with exact predecessor
   lineage and complete successor Deltas;
 - the compact M1 grounding, binding, membership, enumeration, and focus
   surface, M2 exact role-labelled relation schemas and projection contracts,
@@ -440,7 +440,7 @@ law derives one overlap with exact governing-law, authority, and scope proof
 trace; its asserted support leaves retain exact occurrence, source, scope, and
 judgment identities even for duplicate source acts. `select one` returns exactly
 the coin and `any` returns true, each bound to its exact input Revision.
-Alpha-renamed holes preserve semantic-v9 bytes, strict canonical reload rejects
+Alpha-renamed holes preserve semantic-v10 bytes, strict canonical reload rejects
 tampering, repeated bounded execution is deterministic, and source-deleted
 generated Rust prints byte-identical canonical output or fails at the identical
 caller-supplied bound. The inherited hospital derivations and queries retain
@@ -486,15 +486,16 @@ successor, and then derives post-state views. Source order never accidentally
 resolves declarative multi-writes. Effects occur only after commit and observe
 post-state unless a different phase is explicit.
 
-Ordinary `on` blocks now declare event-scoped bindings and one or more
-clause-to-clause `~>` writes. Checked elaboration jointly matches every source
-clause against one pre-state, grounds the shared bindings, requires one
-checker-enforced functional replacement key per write, and seals the complete
-block as one ordered event tick. The runtime rejects duplicate occurrence and
-functional-key writers before committing the one successor. Standalone
-generated Rust reloads that canonical Revision and replays the ordered events
-through the same frozen `RuntimeSession` API after the Clause source has been
-removed.
+Ordinary `on` headers now declare event-payload bindings; transition sources
+and relational `if` guards may introduce additional transaction-wide pre-state
+bindings. Checked elaboration preserves those patterns and guards in the Model
+instead of matching the root state or manufacturing ticks. Each explicit
+runtime event occurrence supplies its ordered payload; the canonical fold
+jointly matches all sources and guards against one pre-state, grounds every
+candidate write, rejects ambiguity and duplicate occurrence or functional-key
+writers, and commits one successor. Standalone generated Rust reloads that
+canonical Revision and supplies the same explicit occurrences through the same
+`RuntimeSession` API after the Clause source has been removed.
 
 **Exit proof:** the same program, initial StateRevision, tick policy, and event
 log produce byte-identical states; conflicting writes fail deterministically;

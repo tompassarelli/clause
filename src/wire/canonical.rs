@@ -7,8 +7,8 @@ use crate::kernel::{
 
 use super::{json::escape, sha256::sha256_digest};
 
-pub const SEMANTIC_TAG: &str = "clause-semantic-v9";
-pub const REVISION_TAG: &str = "clause-revision-v5";
+pub const SEMANTIC_TAG: &str = "clause-semantic-v10";
+pub const REVISION_TAG: &str = "clause-revision-v6";
 
 pub fn semantic_payload(revision: &Revision) -> String {
     payload(revision.lineage(), revision.model())
@@ -271,8 +271,11 @@ fn pattern_json(value: &Pattern) -> String {
 
 fn transition_json(value: &Transition) -> String {
     format!(
-        "[\"transition\",\"{}\",[\"from\",\"{}\"],[\"to\",\"{}\"]]",
+        "[\"transition\",\"{}\",[\"event\",\"{}\"],[\"payload-bindings\",[{}]],[\"guards\",[{}]],[\"from\",\"{}\"],[\"to\",\"{}\"]]",
         escape(value.id().as_str()),
+        escape(value.event().as_str()),
+        strings(value.payload_bindings().iter().map(|id| id.as_str())),
+        strings(value.guards().iter().map(|id| id.as_str())),
         escape(value.from().as_str()),
         escape(value.to().as_str())
     )
@@ -318,7 +321,7 @@ fn judgment_kind_json(kind: &JudgmentKind) -> String {
     }
 }
 
-fn term_json(term: &Term) -> String {
+pub(crate) fn term_json(term: &Term) -> String {
     match term {
         Term::Referent(id) => format!("[\"referent\",\"{}\"]", escape(id.as_str())),
         Term::Pattern(id) => format!("[\"pattern\",\"{}\"]", escape(id.as_str())),

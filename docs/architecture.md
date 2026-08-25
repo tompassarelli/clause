@@ -122,7 +122,7 @@ an inert law before authorization, and a repeated nested hole whose decoy row
 would pass if recursive occurrences were treated as fresh. Together they cover
 Revision-scoped result transcripts, occurrence/source/scope/judgment proof
 leaves, descriptor and cardinality parity, recursive request-local nested holes,
-strict semantic-v9 tamper rejection, distinct law/rule authority,
+strict semantic-v10 tamper rejection, distinct law/rule authority,
 governing-law/authority/scope proof trace, retained hospital proof and
 intervention parity, alpha-label isolation, identical native/generated failure
 at caller bounds, and source-deleted generated output parity. M4/S2 admits at

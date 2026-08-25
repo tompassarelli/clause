@@ -373,6 +373,13 @@ impl BinderTable {
         Ok(Self(binders))
     }
 
+    pub(crate) fn named(&self, variable: &frontend::VariableName) -> kernel::Result<PatternId> {
+        self.0
+            .get(&BinderKey::Named(variable.clone()))
+            .cloned()
+            .ok_or_else(|| kernel::KernelError::new("event binding was not declared"))
+    }
+
     pub(crate) fn declare_alpha<'a>(
         designations: &mut DesignationTable,
         scope: &ReferentId,

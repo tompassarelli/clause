@@ -490,7 +490,7 @@ pub fn parse(source: &str) -> Result<Program, ParseError> {
                 return Err(error(event.label.span, "duplicate event label"));
             }
             let mut declared = BTreeSet::new();
-            for binding in &event.bindings {
+            for binding in &event.payload_bindings {
                 if !declared.insert(binding.value.clone()) {
                     return Err(error(binding.span, "duplicate event binding"));
                 }
@@ -505,22 +505,40 @@ pub fn parse(source: &str) -> Result<Program, ParseError> {
                 let parsed = event
                     .transitions
                     .iter()
-                    .map(|(before, after)| {
+                    .map(|transition| {
                         let before = clause(
-                            *before,
+                            transition.before,
                             model,
                             &relations,
                             &memberships,
                             &mut variable_types,
                         )?;
                         let after = clause(
-                            *after,
+                            transition.after,
                             model,
                             &relations,
                             &memberships,
                             &mut variable_types,
                         )?;
-                        Ok(EventTransitionDecl { before, after })
+                        let guards = transition
+                            .guards
+                            .iter()
+                            .copied()
+                            .map(|guard| {
+                                clause(
+                                    guard,
+                                    model,
+                                    &relations,
+                                    &memberships,
+                                    &mut variable_types,
+                                )
+                            })
+                            .collect::<Result<Vec<_>, _>>()?;
+                        Ok(EventTransitionDecl {
+                            before,
+                            after,
+                            guards,
+                        })
                     })
                     .collect::<Result<Vec<_>, ParseError>>();
                 let Ok(transitions) = parsed else {
@@ -528,24 +546,32 @@ pub fn parse(source: &str) -> Result<Program, ParseError> {
                 };
                 let before_variables = transitions
                     .iter()
-                    .flat_map(|transition| variables(&transition.before))
-                    .collect::<BTreeSet<_>>();
-                let all_variables = transitions
-                    .iter()
                     .flat_map(|transition| {
                         variables(&transition.before)
                             .into_iter()
-                            .chain(variables(&transition.after))
+                            .chain(transition.guards.iter().flat_map(variables))
                     })
                     .collect::<BTreeSet<_>>();
-                if before_variables == declared && all_variables == declared {
-                    candidates.push((model.clone(), transitions));
+                let successor_variables = transitions
+                    .iter()
+                    .flat_map(|transition| variables(&transition.after))
+                    .collect::<BTreeSet<_>>();
+                let available = declared
+                    .union(&before_variables)
+                    .cloned()
+                    .collect::<BTreeSet<_>>();
+                if successor_variables.is_subset(&available) {
+                    let state_bindings = before_variables
+                        .difference(&declared)
+                        .cloned()
+                        .collect::<Vec<_>>();
+                    candidates.push((model.clone(), transitions, state_bindings));
                 }
             }
-            let [(model, transitions)] = candidates.as_slice() else {
+            let [(model, transitions, state_bindings)] = candidates.as_slice() else {
                 return Err(error(
                     line_span(event.header),
-                    "event bindings must be declared in the header, bound by pre-state matches, and match exactly one declared Model",
+                    "event payload and pre-state bindings must range-restrict every successor and match exactly one declared Model",
                 ));
             };
             Ok(EventDecl {
@@ -554,7 +580,8 @@ pub fn parse(source: &str) -> Result<Program, ParseError> {
                     value: model.clone(),
                     span: line_span(event.header),
                 },
-                bindings: event.bindings,
+                payload_bindings: event.payload_bindings,
+                state_bindings: state_bindings.clone(),
                 transitions: transitions.clone(),
                 span: line_span(event.header),
             })

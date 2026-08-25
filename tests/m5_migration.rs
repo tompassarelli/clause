@@ -128,7 +128,7 @@ fn hospital_revision_migration_preserves_identity_wire_delta_and_six_outputs() {
     let canonical = compile(&migration.source);
     let parity = legacy
         .migration_parity(&canonical)
-        .expect("opaque IDs and semantic-v9/revision-v5 bytes are identical");
+        .expect("opaque IDs and semantic-v10/revision-v6 bytes are identical");
     assert_eq!(parity.revisions.len(), 2);
 
     let legacy_successor = legacy

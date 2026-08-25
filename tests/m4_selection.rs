@@ -645,11 +645,11 @@ fn law_backed_nested_one_coin_closes_the_m4_acceptance_seam() {
     assert_eq!(
         wire::serialize(revision),
         wire::serialize(renamed.revision(&frontend::Name("scene".into())).unwrap()),
-        "law and request hole labels do not enter semantic-v9 bytes"
+        "law and request hole labels do not enter semantic-v10 bytes"
     );
 
     let canonical_revision = wire::serialize(revision);
-    let reloaded = wire::reload(&canonical_revision).expect("canonical semantic-v9 reloads");
+    let reloaded = wire::reload(&canonical_revision).expect("canonical semantic-v10 reloads");
     assert_eq!(&reloaded, revision);
     assert_eq!(wire::serialize(&reloaded), canonical_revision);
     let governing = format!("[\"governing-law\",\"{}\"]", rule.governing_law().as_str());

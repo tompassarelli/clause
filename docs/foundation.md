@@ -214,7 +214,7 @@ Model, membership, and focus forms. Retained `RelationShape`,
 evidence while later surface milestones replace their ceremony. Lowering
 resolves both profiles into the implemented referent kernel. Canonical
 persistence is now
-`clause-semantic-v9` inside `clause-revision-v5`, with exact predecessor
+`clause-semantic-v10` inside `clause-revision-v6`, with exact predecessor
 lineage, separate content, occurrences, and judgments, and strict successor
 reload. The legacy surface does not restore a primitive semantic Type, Entity,
 Value, Variable, or Relation universe.

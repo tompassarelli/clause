@@ -688,7 +688,7 @@ why in catalog:
     assert_eq!(scope, rule.scope());
 
     let reloaded = clause::wire::reload(&clause::wire::serialize(&authorized_revision))
-        .expect("semantic-v9 law/rule authority reloads");
+        .expect("semantic-v10 law/rule authority reloads");
     assert_eq!(reloaded, authorized_revision);
 
     let resolved = request::resolve(&authorized).expect("authorized law request resolves");

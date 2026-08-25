@@ -163,6 +163,7 @@ impl Model {
         for transition in &transitions {
             complete_contents.insert(transition.from().clone());
             complete_contents.insert(transition.to().clone());
+            complete_contents.extend(transition.guards().iter().cloned());
         }
         complete_contents.extend(judgments.iter().filter_map(|judgment| {
             if let JudgmentTarget::Content(content) = judgment.target() {
@@ -285,12 +286,64 @@ impl Model {
         }
         for transition in &transitions {
             require_referent(&referents, transition.id(), "transition")?;
+            require_referent(&referents, transition.event(), "transition event")?;
             require_content(&relational_contents, transition.from(), "transition source")?;
             require_content(
                 &relational_contents,
                 transition.to(),
                 "transition destination",
             )?;
+            for guard in transition.guards() {
+                require_content(&relational_contents, guard, "transition guard")?;
+            }
+        }
+        let mut event_contracts = BTreeMap::<
+            ReferentId,
+            (Vec<PatternId>, BTreeSet<PatternId>, BTreeSet<PatternId>),
+        >::new();
+        for transition in &transitions {
+            let contract = event_contracts
+                .entry(transition.event().clone())
+                .or_insert_with(|| {
+                    (
+                        transition.payload_bindings().to_vec(),
+                        transition.payload_bindings().iter().cloned().collect(),
+                        BTreeSet::new(),
+                    )
+                });
+            if contract.0 != transition.payload_bindings() {
+                return Err(KernelError::new(
+                    "one checked event must use one ordered payload binding shape",
+                ));
+            }
+            collect_content_patterns(
+                transition.from(),
+                &relational_contents,
+                &mut contract.1,
+                &mut BTreeSet::new(),
+            );
+            for guard in transition.guards() {
+                collect_content_patterns(
+                    guard,
+                    &relational_contents,
+                    &mut contract.1,
+                    &mut BTreeSet::new(),
+                );
+            }
+            collect_content_patterns(
+                transition.to(),
+                &relational_contents,
+                &mut contract.2,
+                &mut BTreeSet::new(),
+            );
+        }
+        if event_contracts
+            .values()
+            .any(|(_, available, successors)| !successors.is_subset(available))
+        {
+            return Err(KernelError::new(
+                "transition successor has a binder absent from its event payload and pre-state patterns",
+            ));
         }
         for judgment in &judgments {
             require_referent(&referents, judgment.id(), "judgment")?;
@@ -1702,6 +1755,31 @@ fn content_is_ground(
         .roles()
         .values()
         .all(|term| term_is_ground(contents, term, &mut visiting))
+}
+
+fn collect_content_patterns(
+    id: &ContentId,
+    contents: &BTreeMap<ContentId, RelationalContent>,
+    patterns: &mut BTreeSet<PatternId>,
+    visiting: &mut BTreeSet<ContentId>,
+) {
+    if !visiting.insert(id.clone()) {
+        return;
+    }
+    if let Some(content) = contents.get(id) {
+        for term in content.roles().values() {
+            term.walk(&mut |term| match term {
+                Term::Pattern(id) => {
+                    patterns.insert(id.clone());
+                }
+                Term::Application(id) => {
+                    collect_content_patterns(id, contents, patterns, visiting);
+                }
+                _ => {}
+            });
+        }
+    }
+    visiting.remove(id);
 }
 
 fn term_is_ground(

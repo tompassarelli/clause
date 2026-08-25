@@ -594,17 +594,50 @@ impl Definition {
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct Transition {
     id: ReferentId,
+    event: ReferentId,
+    payload_bindings: Vec<PatternId>,
+    guards: Vec<ContentId>,
     from: ContentId,
     to: ContentId,
 }
 impl Transition {
     pub fn new(id: ReferentId, from: ContentId, to: ContentId) -> Result<Self> {
+        Self::for_event(id.clone(), id, Vec::new(), Vec::new(), from, to)
+    }
+
+    pub fn for_event(
+        id: ReferentId,
+        event: ReferentId,
+        payload_bindings: Vec<PatternId>,
+        mut guards: Vec<ContentId>,
+        from: ContentId,
+        to: ContentId,
+    ) -> Result<Self> {
         if from == to {
             return Err(KernelError::new(
                 "transition must change relational content",
             ));
         }
-        Ok(Self { id, from, to })
+        if payload_bindings
+            .iter()
+            .collect::<std::collections::BTreeSet<_>>()
+            .len()
+            != payload_bindings.len()
+        {
+            return Err(KernelError::new(
+                "event payload bindings must be unique and ordered",
+            ));
+        }
+        guards.sort();
+        guards.dedup();
+        Ok(Self {
+            id,
+            event,
+            payload_bindings,
+            guards,
+            from,
+            to,
+        })
     }
     pub fn id(&self) -> &ReferentId {
         &self.id
@@ -614,6 +647,15 @@ impl Transition {
     }
     pub fn to(&self) -> &ContentId {
         &self.to
+    }
+    pub fn event(&self) -> &ReferentId {
+        &self.event
+    }
+    pub fn payload_bindings(&self) -> &[PatternId] {
+        &self.payload_bindings
+    }
+    pub fn guards(&self) -> &[ContentId] {
+        &self.guards
     }
 }
 
