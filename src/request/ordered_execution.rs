@@ -11,7 +11,7 @@ use crate::{
 pub(super) fn run(program: &ResolvedProgram, limits: RunLimits) -> kernel::Result<RunOutput> {
     let mut results = Vec::with_capacity(program.requests.len());
     for request in &program.requests {
-        let result = match request {
+        let (producer, result) = match request {
             Request::Any {
                 revision: identity,
                 pattern,
@@ -19,7 +19,10 @@ pub(super) fn run(program: &ResolvedProgram, limits: RunLimits) -> kernel::Resul
             } => {
                 let selected = revision(program, identity)?;
                 let plan = any_plan(selected.model(), pattern, dependencies)?;
-                RequestOutput::Any(execution::any(selected, &plan, limits.closure)?)
+                (
+                    selected,
+                    RequestOutput::Any(execution::any(selected, &plan, limits.closure)?),
+                )
             }
             Request::Select {
                 revision: identity,
@@ -32,7 +35,7 @@ pub(super) fn run(program: &ResolvedProgram, limits: RunLimits) -> kernel::Resul
                 let plan = select_plan(selected.model(), pattern, dependencies, columns)?;
                 let mut rows =
                     execution::select_projected(selected, &plan, columns.len(), limits.closure)?;
-                match selection {
+                let output = match selection {
                     QuerySelection::All => RequestOutput::Select {
                         columns: columns.clone(),
                         rows,
@@ -54,7 +57,8 @@ pub(super) fn run(program: &ResolvedProgram, limits: RunLimits) -> kernel::Resul
                             rows,
                         }
                     }
-                }
+                };
+                (selected, output)
             }
             Request::Find {
                 revision: identity,
@@ -62,105 +66,119 @@ pub(super) fn run(program: &ResolvedProgram, limits: RunLimits) -> kernel::Resul
                 sought,
             } => {
                 let selected = revision(program, identity)?;
-                RequestOutput::Find(execution::find(
+                (
                     selected,
-                    &kernel::FindPlan::new(selected.model(), pattern, sought.clone())?,
-                    limits.closure,
-                )?)
+                    RequestOutput::Find(execution::find(
+                        selected,
+                        &kernel::FindPlan::new(selected.model(), pattern, sought.clone())?,
+                        limits.closure,
+                    )?),
+                )
             }
             Request::Why {
                 revision: identity,
                 target,
                 all: false,
-            } => RequestOutput::WhyOne(execution::why(
-                revision(program, identity)?,
-                target,
-                limits.closure,
-            )?),
+            } => {
+                let selected = revision(program, identity)?;
+                (
+                    selected,
+                    RequestOutput::WhyOne(execution::why(selected, target, limits.closure)?),
+                )
+            }
             Request::Why {
                 revision: identity,
                 target,
                 all: true,
-            } => RequestOutput::WhyAll(execution::why_all(
-                revision(program, identity)?,
-                target,
-                limits.support,
-            )?),
+            } => {
+                let selected = revision(program, identity)?;
+                (
+                    selected,
+                    RequestOutput::WhyAll(execution::why_all(selected, target, limits.support)?),
+                )
+            }
             Request::Prevent {
                 revision: identity,
                 target,
                 selection: Selection::OneMinimal,
                 using,
-            } => RequestOutput::PreventOne(intervention::prevent_one_minimal(
-                revision(program, identity)?,
-                target.clone(),
-                using.clone(),
-                limits.intervention,
-            )?),
+            } => {
+                let selected = revision(program, identity)?;
+                (
+                    selected,
+                    RequestOutput::PreventOne(intervention::prevent_one_minimal(
+                        selected,
+                        target.clone(),
+                        using.clone(),
+                        limits.intervention,
+                    )?),
+                )
+            }
             Request::Prevent {
                 revision: identity,
                 target,
                 selection: Selection::AllMinimal,
                 using,
-            } => RequestOutput::PreventAll(intervention::prevent_all_minimal(
-                revision(program, identity)?,
-                target.clone(),
-                using.clone(),
-                limits.intervention,
-            )?),
+            } => {
+                let selected = revision(program, identity)?;
+                (
+                    selected,
+                    RequestOutput::PreventAll(intervention::prevent_all_minimal(
+                        selected,
+                        target.clone(),
+                        using.clone(),
+                        limits.intervention,
+                    )?),
+                )
+            }
             Request::Achieve {
                 revision: identity,
                 target,
                 selection: Selection::OneMinimal,
                 using,
-            } => RequestOutput::AchieveOne(intervention::achieve_one_minimal(
-                revision(program, identity)?,
-                target.clone(),
-                using.clone(),
-                limits.intervention,
-            )?),
+            } => {
+                let selected = revision(program, identity)?;
+                (
+                    selected,
+                    RequestOutput::AchieveOne(intervention::achieve_one_minimal(
+                        selected,
+                        target.clone(),
+                        using.clone(),
+                        limits.intervention,
+                    )?),
+                )
+            }
             Request::Achieve {
                 revision: identity,
                 target,
                 selection: Selection::AllMinimal,
                 using,
-            } => RequestOutput::AchieveAll(intervention::achieve_all_minimal(
-                revision(program, identity)?,
-                target.clone(),
-                using.clone(),
-                limits.intervention,
-            )?),
+            } => {
+                let selected = revision(program, identity)?;
+                (
+                    selected,
+                    RequestOutput::AchieveAll(intervention::achieve_all_minimal(
+                        selected,
+                        target.clone(),
+                        using.clone(),
+                        limits.intervention,
+                    )?),
+                )
+            }
             Request::Diff { base, successor } => {
-                results.push(RunResult::Diff {
-                    base: base.clone(),
-                    successor: successor.clone(),
-                    output: SemanticDiff::between(
-                        revision(program, base)?,
-                        revision(program, successor)?,
-                        limits.support,
-                    )?,
-                });
+                results.push(RunResult::Diff(SemanticDiff::between(
+                    revision(program, base)?,
+                    revision(program, successor)?,
+                    limits.support,
+                )?));
                 continue;
             }
         };
-        results.push(RunResult::Revision(RevisionOutput::new(
-            revision_scope(request).clone(),
-            result,
+        results.push(RunResult::Revision(RevisionOutput::produced_by(
+            producer, result,
         )));
     }
     Ok(RunOutput { results })
-}
-
-fn revision_scope(request: &Request) -> &RevisionId {
-    match request {
-        Request::Any { revision, .. }
-        | Request::Select { revision, .. }
-        | Request::Find { revision, .. }
-        | Request::Why { revision, .. }
-        | Request::Prevent { revision, .. }
-        | Request::Achieve { revision, .. } => revision,
-        Request::Diff { .. } => unreachable!("diff output preserves both Revision inputs"),
-    }
 }
 
 fn revision<'a>(

@@ -70,7 +70,7 @@ fn resolves_typed_requests_in_authored_order_and_encodes_one_aggregate() {
         output.results[1].revision().unwrap().output(),
         RequestOutput::WhyOne(_)
     ));
-    assert!(matches!(output.results[2], RunResult::Diff { .. }));
+    assert!(matches!(output.results[2], RunResult::Diff(_)));
     assert_eq!(output.canonical_bytes().matches("[\"find\"").count(), 1);
     assert!(output.canonical_bytes().starts_with("[\"clause-run-v2\","));
 }

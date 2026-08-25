@@ -308,19 +308,17 @@ pub struct RunOutput {
     pub results: Vec<RunResult>,
 }
 
-/// One request result with every Revision input needed to interpret it after
+/// One request result with its producer-owned Revision lineage retained after
 /// separation from the resolved program.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RunResult {
     Revision(RevisionOutput),
-    Diff {
-        base: RevisionId,
-        successor: RevisionId,
-        output: SemanticDiff,
-    },
+    Diff(SemanticDiff),
 }
 
-/// A query or intervention result bound to its exact input Revision.
+/// A query or intervention result bound to its exact producer Revision.
+/// Construction remains inside ordered execution so callers cannot pair an
+/// arbitrary payload with an unrelated identity.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RevisionOutput {
     revision: RevisionId,
@@ -359,8 +357,11 @@ pub enum RequestOutput {
 }
 
 impl RevisionOutput {
-    pub fn new(revision: RevisionId, output: RequestOutput) -> Self {
-        Self { revision, output }
+    fn produced_by(revision: &Revision, output: RequestOutput) -> Self {
+        Self {
+            revision: revision.identity().clone(),
+            output,
+        }
     }
 
     pub fn revision(&self) -> &RevisionId {
@@ -376,7 +377,7 @@ impl RunResult {
     pub fn revision(&self) -> Option<&RevisionOutput> {
         match self {
             Self::Revision(output) => Some(output),
-            Self::Diff { .. } => None,
+            Self::Diff(_) => None,
         }
     }
 }

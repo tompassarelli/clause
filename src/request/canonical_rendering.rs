@@ -40,14 +40,10 @@ fn run_result(value: &RunResult) -> String {
             string(&output.revision().to_string()),
             request_output(output.output())
         ),
-        RunResult::Diff {
-            base,
-            successor,
-            output,
-        } => format!(
+        RunResult::Diff(output) => format!(
             "[\"revisions\",{},{},{}]",
-            string(&base.to_string()),
-            string(&successor.to_string()),
+            string(&output.authored().base_revision().to_string()),
+            string(&output.authored().successor_revision().to_string()),
             diff_json(output)
         ),
     }

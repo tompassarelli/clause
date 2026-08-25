@@ -732,8 +732,13 @@ fn law_backed_nested_one_coin_closes_the_m4_acceptance_seam() {
     let bounded = Command::new(&bounded_binary)
         .output()
         .expect("bounded generated executable starts");
-    assert!(!bounded.status.success());
-    assert!(String::from_utf8_lossy(&bounded.stderr).contains(&native_error));
+    assert_eq!(bounded.status.code(), Some(1));
+    assert!(bounded.stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(bounded.stderr).expect("generated failure is UTF-8"),
+        format!("{native_error}\n"),
+        "generated execution preserves the native checked error without panicking"
+    );
     fs::remove_file(rust).expect("generated nested Rust cleans up");
     fs::remove_file(binary).expect("generated nested executable cleans up");
     fs::remove_file(bounded_rust).expect("bounded generated Rust cleans up");

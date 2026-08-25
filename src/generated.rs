@@ -225,8 +225,13 @@ pub fn emit_rust(program: &ResolvedProgram, limits: crate::request::RunLimits) -
     writeln!(body, "let program = request::ResolvedProgram::new(std::collections::BTreeMap::from([{}]), vec![{}]).expect(\"generated requests resolve\");", revisions.iter().enumerate().map(|(index, _)| format!("(r{index}.identity().clone(), r{index}.clone())")).collect::<Vec<_>>().join(","), program.requests().iter().map(|request| request_source(request, &indices)).collect::<Vec<_>>().join(",")).expect("writing the generated request registry to a String cannot fail");
     writeln!(body, "let limits = {};", run_limits_source(limits))
         .expect("writing generated request limits to a String cannot fail");
-    writeln!(body, "print!(\"{{}}\", request::run(&program, limits).expect(\"generated requests run\").canonical_bytes());").expect("writing the generated entry point to a String cannot fail");
-    Ok(format!("{modules}\nfn main() {{ {body} }}"))
+    writeln!(body, "let output = request::run(&program, limits)?;")
+        .expect("writing generated request execution to a String cannot fail");
+    writeln!(body, "print!(\"{{}}\", output.canonical_bytes());")
+        .expect("writing the generated request transcript to a String cannot fail");
+    Ok(format!(
+        "{modules}\nfn run() -> kernel::Result<()> {{ {body} Ok(()) }}\nfn main() -> std::process::ExitCode {{ match run() {{ Ok(()) => std::process::ExitCode::SUCCESS, Err(error) => {{ eprintln!(\"{{error}}\"); std::process::ExitCode::FAILURE }} }} }}"
+    ))
 }
 
 #[cfg(not(clause_generated))]
