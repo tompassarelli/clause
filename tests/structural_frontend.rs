@@ -230,6 +230,24 @@ fn checked_structures_and_intrinsics_lower_without_an_evaluator() {
         .designations()
         .global("F32")
         .expect("F32 domain resolves");
+    let pair = program
+        .designations()
+        .scoped(&model_id(), "pair")
+        .expect("pair definition resolves");
+    let Term::Product {
+        shape: pair_domain, ..
+    } = model.definition(&pair).expect("pair lowers").denotation()
+    else {
+        panic!("pair lowers as a tuple");
+    };
+    assert_eq!(
+        model
+            .structural_contracts()
+            .get(pair_domain)
+            .expect("tuple contract is sealed")
+            .form(),
+        &StructuralForm::Tuple(vec![f32_domain.clone(), f32_domain.clone()])
+    );
     for field in [x, y] {
         assert_eq!(
             model
@@ -241,7 +259,7 @@ fn checked_structures_and_intrinsics_lower_without_an_evaluator() {
     }
 
     let reloaded =
-        wire::reload(&wire::serialize(revision)).expect("structural semantic-v7 wire reloads");
+        wire::reload(&wire::serialize(revision)).expect("structural semantic-v8 wire reloads");
     assert_eq!(&reloaded, revision);
 }
 

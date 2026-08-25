@@ -89,7 +89,7 @@ pub(crate) fn structural_domain(
             .into_iter()
             .map(|member| structural_domain(projection, &frontend::DomainName(member.to_owned())))
             .collect::<Vec<_>>();
-        return structural_tuple_domain(&domains);
+        return kernel::structural_tuple_domain(&domains);
     }
     if let Some([element]) = structural_signature_members(domain.as_str(), "sequence")
         .map(Vec::into_boxed_slice)
@@ -126,13 +126,6 @@ fn structural_signature_members<'a>(domain: &'a str, name: &str) -> Option<Vec<&
         members.push(&inner[start..]);
         members
     })
-}
-
-fn structural_tuple_domain(domains: &[ReferentId]) -> ReferentId {
-    synthetic_referent(
-        "structural-tuple-domain",
-        &domains.iter().map(ReferentId::as_str).collect::<Vec<_>>(),
-    )
 }
 
 pub(crate) fn membership_shape() -> kernel::Result<RelationShape> {
@@ -996,7 +989,7 @@ fn definition_term_domain(
                 .iter()
                 .map(|value| definition_term_domain(projection, model, value, locals))
                 .collect::<kernel::Result<Vec<_>>>()?;
-            Ok(structural_tuple_domain(&domains))
+            Ok(kernel::structural_tuple_domain(&domains))
         }
         SurfaceTerm::Sequence { values, .. } => {
             let element = definition_term_domain(

@@ -251,6 +251,15 @@ fn decode_structural_contract(value: &Json) -> Result<StructuralContract> {
             list(&item[2], 1, "Bool structural form")?;
             StructuralForm::Bool
         }
+        "tuple" => {
+            let form = list(&item[2], 2, "tuple structural form")?;
+            StructuralForm::Tuple(
+                array(&form[1], "structural tuple domains")?
+                    .iter()
+                    .map(decode_referent_id)
+                    .collect::<Result<Vec<_>>>()?,
+            )
+        }
         "product" => {
             let form = list(&item[2], 2, "product structural form")?;
             StructuralForm::Product(

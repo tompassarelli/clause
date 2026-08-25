@@ -21,6 +21,13 @@ pub(crate) fn structural_sequence_domain(element: &ReferentId) -> ReferentId {
     synthetic_referent("structural-sequence-domain", &[element.as_str()])
 }
 
+pub(crate) fn structural_tuple_domain(domains: &[ReferentId]) -> ReferentId {
+    synthetic_referent(
+        "structural-tuple-domain",
+        &domains.iter().map(ReferentId::as_str).collect::<Vec<_>>(),
+    )
+}
+
 /// One addressable semantic distinction. Designations and every fact about a
 /// referent live outside this identity-bearing value.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -42,6 +49,8 @@ pub enum StructuralForm {
     F32,
     Int,
     Bool,
+    /// The ordered, duplicate-preserving representation domains of a tuple.
+    Tuple(Vec<ReferentId>),
     /// The exact shape-scoped binding referents required by a labelled product.
     Product(BTreeSet<ReferentId>),
 }
@@ -54,9 +63,15 @@ impl StructuralContract {
                     "structural product contract needs at least one field",
                 ));
             }
+            StructuralForm::Tuple(domains) if domains.is_empty() => {
+                return Err(KernelError::new(
+                    "structural tuple contract needs at least one domain",
+                ));
+            }
             StructuralForm::F32
             | StructuralForm::Int
             | StructuralForm::Bool
+            | StructuralForm::Tuple(_)
             | StructuralForm::Product(_) => {}
         }
         Ok(Self { referent, form })

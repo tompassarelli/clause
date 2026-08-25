@@ -612,6 +612,11 @@ fn validate_structural_contract(
                 require_referent(referents, field, "structural product field binding")?;
             }
         }
+        StructuralForm::Tuple(domains) => {
+            for domain in domains {
+                require_referent(referents, domain, "structural tuple element domain")?;
+            }
+        }
         StructuralForm::F32 | StructuralForm::Int | StructuralForm::Bool => {}
     }
     Ok(())
@@ -646,6 +651,13 @@ fn validate_structural_contract_definitions(
                     }
                 }
             }
+            StructuralForm::Tuple(domains) => {
+                if domains.iter().any(|domain| !contracts.contains_key(domain)) {
+                    return Err(KernelError::new(
+                        "structural tuple element domain has no sealed representation contract",
+                    ));
+                }
+            }
             StructuralForm::F32 | StructuralForm::Int | StructuralForm::Bool => {}
         }
     }
@@ -665,7 +677,7 @@ fn validate_structural_term(
         Term::F32(_) => require_structural_form(contracts, StructuralForm::F32, path),
         Term::Int(_) => require_structural_form(contracts, StructuralForm::Int, path),
         Term::Bool(_) => require_structural_form(contracts, StructuralForm::Bool, path),
-        Term::Product { shape, fields } => validate_inline_product(
+        Term::Product { shape, .. } => validate_term_against(
             contracts,
             definitions,
             contents,
@@ -673,7 +685,7 @@ fn validate_structural_term(
             admitted,
             path,
             shape,
-            fields,
+            term,
         ),
         Term::LabelledProduct { shape, .. } => validate_term_against(
             contracts,
@@ -790,6 +802,25 @@ fn validate_term_against(
             (StructuralForm::F32, Term::F32(_))
             | (StructuralForm::Int, Term::Int(_))
             | (StructuralForm::Bool, Term::Bool(_)) => Ok(()),
+            (StructuralForm::Tuple(required), Term::Product { shape, fields }) => {
+                if shape != expected {
+                    return Err(KernelError::structural(
+                        "structural term does not match its expected domain",
+                        StructuralFailureClass::DomainMismatch,
+                        path.clone(),
+                    ));
+                }
+                validate_inline_product(
+                    contracts,
+                    definitions,
+                    contents,
+                    shapes,
+                    admitted,
+                    path,
+                    required,
+                    fields,
+                )
+            }
             (StructuralForm::Product(required), Term::LabelledProduct { shape, fields }) => {
                 if shape != expected {
                     return Err(KernelError::structural(
@@ -842,16 +873,6 @@ fn validate_term_against(
         };
     }
     match term {
-        Term::Product { shape, fields } if shape == expected => validate_inline_product(
-            contracts,
-            definitions,
-            contents,
-            shapes,
-            admitted,
-            path,
-            shape,
-            fields,
-        ),
         Term::Sequence {
             shape,
             element,
@@ -888,9 +909,16 @@ fn validate_inline_product(
     shapes: &BTreeMap<ReferentId, RelationShape>,
     admitted: &BTreeSet<ContentId>,
     path: &ProposalPath,
-    _shape: &ReferentId,
+    required: &[ReferentId],
     fields: &BTreeMap<Name, super::clause::ProductField>,
 ) -> Result<()> {
+    if fields.len() != required.len() {
+        return Err(KernelError::structural(
+            "tuple does not fill its exact structural contract",
+            StructuralFailureClass::FieldSetMismatch,
+            path.clone(),
+        ));
+    }
     for (index, (label, field)) in fields.iter().enumerate() {
         let expected_label =
             Name::new(format!("_{index:020}")).expect("fixed-width ordinal tuple label is valid");
@@ -902,6 +930,13 @@ fn validate_inline_product(
             ));
         }
         let child = path.child(ProposalPathSegment::TupleIndex(index));
+        if field.domain() != &required[index] {
+            return Err(KernelError::structural(
+                "tuple field does not satisfy its bound domain",
+                StructuralFailureClass::DomainMismatch,
+                child,
+            ));
+        }
         validate_term_against(
             contracts,
             definitions,
@@ -911,7 +946,8 @@ fn validate_inline_product(
             &child,
             field.domain(),
             field.value(),
-        )?;
+        )
+        .map_err(|error| error.with_message("tuple field does not satisfy its bound domain"))?;
     }
     Ok(())
 }

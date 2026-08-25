@@ -32,6 +32,7 @@ pub use schema::{
 };
 pub(crate) use schema::{
     membership_group_role, membership_member_role, membership_relation, structural_sequence_domain,
+    structural_tuple_domain,
 };
 
 #[cfg(test)]

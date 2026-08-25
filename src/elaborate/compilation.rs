@@ -1541,6 +1541,24 @@ fn extend_term_structural_closure(
                     .or_insert_with(|| Referent::new(field.domain().clone()));
                 extend_term_structural_closure(projection, field.value(), referents, contracts)?;
             }
+            let contract = StructuralContract::new(
+                shape.clone(),
+                StructuralForm::Tuple(
+                    fields
+                        .values()
+                        .map(|field| field.domain().clone())
+                        .collect(),
+                ),
+            )?;
+            if let Some(existing) = contracts.get(shape) {
+                if existing != &contract {
+                    return Err(kernel::KernelError::new(
+                        "structural referent has conflicting representation contracts",
+                    ));
+                }
+            } else {
+                contracts.insert(shape.clone(), contract);
+            }
         }
         Term::LabelledProduct { shape, fields } => {
             referents

@@ -1,4 +1,4 @@
-//! Exact typed Revision/Delta wire contract for semantic-v7.
+//! Exact typed Revision/Delta wire contract for semantic-v8.
 
 use std::collections::BTreeMap;
 
@@ -186,7 +186,7 @@ const PATTERN_CONTENT_ID: &str =
 const WEST_CONTENT_ID: &str =
     "content-sha256-6f99f9d878a067fc9a7e94bae2e2b8fef060d81629c845cb9b769107d83fb0d0";
 const EXPECTED_REVISION_ID: &str =
-    "rev-sha256-92f8acbfedcfe7ec37912325460ecc30e7bf85f792baa8145a3b3fad9e1aa85a";
+    "rev-sha256-13874889015d0e6238edecc469e09a937803861ff935452885b92f28a7a198e9";
 
 fn expected_semantic() -> String {
     let referent = |seed: u8| format!("ref-sha256-{}", format!("{seed:02x}").repeat(32));
@@ -251,7 +251,7 @@ fn expected_semantic() -> String {
         referent(SOURCE_A),
     );
     format!(
-        "[\"clause-semantic-v7\",[\"lineage\",[\"root\"]],[\"model\",\"{}\"],[\"referents\",[{referents}]],[\"relational-contents\",[{contents}]],[\"relation-shapes\",[{shape}]],[\"structural-contracts\",[]],[\"occurrences\",[{occurrence}]],[\"definitions\",[]],[\"derivation-rules\",[{rule}]],[\"universal-laws\",[]],[\"invariants\",[]],[\"goals\",[]],[\"transitions\",[]],[\"judgments\",[{judgment}]]]",
+        "[\"clause-semantic-v8\",[\"lineage\",[\"root\"]],[\"model\",\"{}\"],[\"referents\",[{referents}]],[\"relational-contents\",[{contents}]],[\"relation-shapes\",[{shape}]],[\"structural-contracts\",[]],[\"occurrences\",[{occurrence}]],[\"definitions\",[]],[\"derivation-rules\",[{rule}]],[\"universal-laws\",[]],[\"invariants\",[]],[\"goals\",[]],[\"transitions\",[]],[\"judgments\",[{judgment}]]]",
         referent(MODEL),
     )
 }
@@ -290,7 +290,7 @@ fn replacement_delta(base: &clause::kernel::Revision) -> Delta {
 }
 
 #[test]
-fn exact_semantic_v7_bytes_hash_and_revision_v5_roundtrip_are_frozen() {
+fn exact_semantic_v8_bytes_hash_and_revision_v5_roundtrip_are_frozen() {
     assert_eq!(
         wire::sha256_hex(b"abc"),
         "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
@@ -365,16 +365,30 @@ fn structural_terms_roundtrip_and_malformed_encodings_fail_closed() {
         bool_domain.clone(),
         f32_domain.clone(),
         int_domain.clone(),
-        outer_shape,
-        tuple_shape,
+        outer_shape.clone(),
+        tuple_shape.clone(),
     ]
     .into_iter()
     .map(|id| (id.clone(), Referent::new(id)))
     .collect();
     let structural_contracts = [
         StructuralContract::new(bool_domain.clone(), StructuralForm::Bool).unwrap(),
-        StructuralContract::new(f32_domain, StructuralForm::F32).unwrap(),
-        StructuralContract::new(int_domain, StructuralForm::Int).unwrap(),
+        StructuralContract::new(f32_domain.clone(), StructuralForm::F32).unwrap(),
+        StructuralContract::new(int_domain.clone(), StructuralForm::Int).unwrap(),
+        StructuralContract::new(
+            tuple_shape.clone(),
+            StructuralForm::Tuple(vec![int_domain.clone(); 11]),
+        )
+        .unwrap(),
+        StructuralContract::new(
+            outer_shape.clone(),
+            StructuralForm::Tuple(vec![
+                bool_domain.clone(),
+                f32_domain.clone(),
+                tuple_shape.clone(),
+            ]),
+        )
+        .unwrap(),
     ]
     .into_iter()
     .map(|contract| (contract.referent().clone(), contract))
@@ -406,7 +420,48 @@ fn structural_terms_roundtrip_and_malformed_encodings_fail_closed() {
 
     assert!(canonical.contains("[\"f32\",\"00000000\"]"));
     assert!(canonical.contains("[\"sum\",\"some\",[\"int\",\"5\"]]"));
+    assert!(canonical.contains(&format!(
+        "[\"tuple\",[{}]]",
+        vec![format!("\"{}\"", int_domain.as_str()); 11].join(",")
+    )));
     assert_eq!(wire::reload(&canonical).unwrap(), revision);
+
+    let outer_contract = format!(
+        "[\"structural-contract\",\"{}\",[\"tuple\",[\"{}\",\"{}\",\"{}\"]]]",
+        outer_shape.as_str(),
+        bool_domain.as_str(),
+        f32_domain.as_str(),
+        tuple_shape.as_str(),
+    );
+    let reordered_contract = format!(
+        "[\"structural-contract\",\"{}\",[\"tuple\",[\"{}\",\"{}\",\"{}\"]]]",
+        outer_shape.as_str(),
+        f32_domain.as_str(),
+        bool_domain.as_str(),
+        tuple_shape.as_str(),
+    );
+    let reordered =
+        wire::semantic_payload(&revision).replacen(&outer_contract, &reordered_contract, 1);
+    assert_eq!(
+        wire::reload(&wire_for_semantic(&reordered))
+            .unwrap_err()
+            .to_string(),
+        "tuple field does not satisfy its bound domain"
+    );
+    let shortened_contract = format!(
+        "[\"structural-contract\",\"{}\",[\"tuple\",[\"{}\",\"{}\"]]]",
+        outer_shape.as_str(),
+        bool_domain.as_str(),
+        f32_domain.as_str(),
+    );
+    let shortened =
+        wire::semantic_payload(&revision).replacen(&outer_contract, &shortened_contract, 1);
+    assert_eq!(
+        wire::reload(&wire_for_semantic(&shortened))
+            .unwrap_err()
+            .to_string(),
+        "tuple does not fill its exact structural contract"
+    );
 
     let infinite = wire::semantic_payload(&revision).replacen(
         "[\"f32\",\"00000000\"]",
@@ -447,7 +502,7 @@ fn reload_rejects_retired_tags_noncanonical_order_and_hash_mismatch() {
     ));
     let canonical = wire::serialize(&revision);
     let retired_revision_tag = ["clause-revision-", "v4"].concat();
-    let retired_semantic_tag = ["clause-semantic-", "v6"].concat();
+    let retired_semantic_tag = ["clause-semantic-", "v7"].concat();
     assert!(
         wire::reload(&canonical.replacen(wire::REVISION_TAG, &retired_revision_tag, 1)).is_err()
     );

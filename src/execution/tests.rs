@@ -4,12 +4,12 @@ use crate::{
     kernel::{
         AssertionOccurrence, Cardinality, Definition, DerivationRule, Judgment, JudgmentKind,
         JudgmentStatus, JudgmentTarget, LookupMode, Model, Pattern, PatternId, Referent,
-        ReferentId, RelationShape, RelationalContent, Revision, Role, RoleId, StructuralContract,
-        StructuralForm, Term,
+        ReferentId, RelationShape, RelationalContent, Revision, Role, RoleId, SemanticAtom,
+        StructuralContract, StructuralForm, Term,
     },
     wire,
 };
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 fn referent_id(value: &str) -> ReferentId {
     ReferentId::from_digest(wire::sha256_digest(value.as_bytes()))
@@ -676,7 +676,7 @@ fn evaluate_uses_indexed_intrinsics_short_circuits_and_memoizes() {
 }
 
 #[test]
-fn pure_map_and_one_coin_score_have_exact_deterministic_work_budgets() {
+fn pure_map_and_one_coin_frame_have_exact_deterministic_work_budgets() {
     const SOURCE: &str = r#"F32
 
 lengths:
@@ -691,6 +691,7 @@ frame next position:
   position: (0.0, 0.0)
   dt: 0.5
   position + frame velocity * dt
+expected next position: (150.0, 0.0)
 
 frame collision:
   coin: (160.0, 0.0)
@@ -727,14 +728,117 @@ frame score:
         lengths,
         Term::sequence(
             crate::kernel::structural_sequence_domain(&f32_domain),
-            f32_domain,
+            f32_domain.clone(),
             vec![Term::f32(5.0).unwrap(), Term::f32(13.0).unwrap()],
         )
         .unwrap()
     );
     assert_eq!(map_operations, 3);
 
-    let (score, coin_operations) = evaluate_named("frame score");
-    assert_eq!(score, Term::int(10));
+    let (score_result, coin_operations) = evaluate_named("frame score");
+    assert_eq!(score_result, Term::int(10));
     assert_eq!(coin_operations, 9);
+    let (position_result, _) = evaluate_named("frame next position");
+    let (collected_result, _) = evaluate_named("frame collected");
+
+    let expected_position_id = program
+        .designations()
+        .scoped(&model_id, "expected next position")
+        .unwrap();
+    let expected_position = revision
+        .model()
+        .definition(&expected_position_id)
+        .expect("expected next position definition lowers")
+        .denotation()
+        .clone();
+    let Term::Product {
+        shape: tuple_domain,
+        ..
+    } = &expected_position
+    else {
+        panic!("expected next position lowers as a tuple");
+    };
+    let bool_domain = revision
+        .model()
+        .structural_contracts()
+        .values()
+        .find(|contract| contract.form() == &StructuralForm::Bool)
+        .expect("Bool representation is sealed")
+        .referent()
+        .clone();
+    let int_domain = revision
+        .model()
+        .structural_contracts()
+        .values()
+        .find(|contract| contract.form() == &StructuralForm::Int)
+        .expect("Int representation is sealed")
+        .referent()
+        .clone();
+    let frame_shape = referent_id("pure/frame");
+    let position = referent_id("pure/frame/position");
+    let collected = referent_id("pure/frame/collected");
+    let score = referent_id("pure/frame/score");
+    let frame_id = referent_id("pure/frame/value");
+    assert_eq!(position_result, expected_position);
+    assert_eq!(collected_result, Term::boolean(true));
+    let mut atoms = revision.model().atoms();
+    for referent in [
+        frame_shape.clone(),
+        position.clone(),
+        collected.clone(),
+        score.clone(),
+        frame_id.clone(),
+    ] {
+        atoms.insert(SemanticAtom::Referent(Referent::new(referent)));
+    }
+    atoms.insert(SemanticAtom::StructuralContract(
+        StructuralContract::new(
+            frame_shape.clone(),
+            StructuralForm::Product(BTreeSet::from([
+                position.clone(),
+                collected.clone(),
+                score.clone(),
+            ])),
+        )
+        .unwrap(),
+    ));
+    for definition in [
+        Definition::new(position.clone(), Term::referent(tuple_domain.clone())),
+        Definition::new(collected.clone(), Term::referent(bool_domain)),
+        Definition::new(score.clone(), Term::referent(int_domain)),
+        Definition::new(
+            frame_id.clone(),
+            Term::labelled_product(
+                frame_shape.clone(),
+                BTreeMap::from([
+                    (position.clone(), position_result),
+                    (collected.clone(), collected_result),
+                    (score.clone(), score_result),
+                ]),
+            )
+            .unwrap(),
+        ),
+    ] {
+        atoms.insert(SemanticAtom::Definition(definition));
+    }
+    let frame_revision = wire::reload(&wire::serialize(&wire::admit(
+        Model::from_atoms(model_id, atoms).expect("tuple-backed Frame enters the Model"),
+    )))
+    .expect("tuple-backed Frame survives exact wire reload");
+    let (frame, frame_operations) =
+        super::evaluate::evaluate_with_operations(&frame_revision, &Term::referent(frame_id))
+            .expect("composite Frame evaluates");
+    assert_eq!(
+        frame,
+        Term::labelled_product(
+            frame_shape,
+            BTreeMap::from([
+                (position, expected_position,),
+                (collected, Term::boolean(true)),
+                (score, Term::int(10)),
+            ]),
+        )
+        .unwrap()
+    );
+    assert_eq!(frame_operations, 0);
 }

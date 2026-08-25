@@ -7,7 +7,7 @@ use crate::kernel::{
 
 use super::{json::escape, sha256::sha256_digest};
 
-pub const SEMANTIC_TAG: &str = "clause-semantic-v7";
+pub const SEMANTIC_TAG: &str = "clause-semantic-v8";
 pub const REVISION_TAG: &str = "clause-revision-v5";
 
 pub fn semantic_payload(revision: &Revision) -> String {
@@ -134,6 +134,10 @@ fn structural_contract_json(contract: &StructuralContract) -> String {
         StructuralForm::F32 => "[\"f32\"]".to_owned(),
         StructuralForm::Int => "[\"int\"]".to_owned(),
         StructuralForm::Bool => "[\"bool\"]".to_owned(),
+        StructuralForm::Tuple(domains) => format!(
+            "[\"tuple\",[{}]]",
+            strings(domains.iter().map(|domain| domain.as_str()))
+        ),
         StructuralForm::Product(fields) => format!(
             "[\"product\",[{}]]",
             strings(fields.iter().map(|field| field.as_str()))
