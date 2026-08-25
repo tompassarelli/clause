@@ -191,4 +191,32 @@ fn closed_pure_definition_shares_its_local_application_without_exporting_it() {
     let reloaded = wire::reload(&canonical).expect("pure definition wire reloads");
     assert_eq!(reloaded, revision.clone());
     assert_eq!(wire::serialize(&reloaded), canonical);
+
+    let renamed_program = compile_in(&SOURCE.replace("base", "subtotal"), id);
+    assert_eq!(
+        renamed_program
+            .context_revision()
+            .expect("renamed local compiles into the caller-owned Revision"),
+        revision,
+        "authoring-local spelling must not enter semantic identity"
+    );
+
+    let no_result = SOURCE.replace("  base + base\n", "");
+    let error = frontend::parse(&no_result).expect_err("a local cannot double as the result");
+    assert!(
+        error
+            .to_string()
+            .contains("pure definition block requires one final result term"),
+        "{error}"
+    );
+
+    let malformed = SOURCE.replace(
+        "  base: gravity + measured gravity\n",
+        "  gravity + measured gravity\n",
+    );
+    let error = frontend::parse(&malformed).expect_err("pre-result rows must be bindings");
+    assert!(
+        error.to_string().contains("':' only establishes a binding"),
+        "{error}"
+    );
 }
