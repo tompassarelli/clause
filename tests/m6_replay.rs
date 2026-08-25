@@ -486,10 +486,9 @@ fn inferred_state_binders_are_alpha_stable_and_role_distinct() {
         frontend::parse(ALPHA_STATE_BINDER_SOURCE).expect("original event source parses"),
     )
     .expect("original event source elaborates");
-    let renamed = elaborate::compile(
-        frontend::parse(&renamed).expect("alpha-renamed event source parses"),
-    )
-    .expect("alpha-renamed event source elaborates");
+    let renamed =
+        elaborate::compile(frontend::parse(&renamed).expect("alpha-renamed event source parses"))
+            .expect("alpha-renamed event source elaborates");
     let [original_journey] = original.runtime_journeys() else {
         panic!("original event produces one runtime journey");
     };

@@ -1121,10 +1121,7 @@ fn canonical_event_state_alpha(
             })
             .collect::<kernel::Result<Vec<_>>>()?;
         structure.sort();
-        if canonical
-            .as_ref()
-            .is_none_or(|best| structure < best.0)
-        {
+        if canonical.as_ref().is_none_or(|best| structure < best.0) {
             canonical = Some((structure, order.to_vec()));
         }
         Ok(())
