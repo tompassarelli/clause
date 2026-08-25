@@ -26,7 +26,9 @@ pub struct ClauseNode {
 /// One canonical witness for a derived or asserted clause.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum Witness {
-    Asserted,
+    Asserted {
+        provenance: Vec<crate::derive::AssertionProvenance>,
+    },
     Derived {
         rule: ReferentId,
         governing_law: ReferentId,

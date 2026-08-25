@@ -1,4 +1,4 @@
-use super::closure::{Limits, limit_error, saturate};
+use super::closure::{AssertionProvenance, Limits, assertion_provenance, limit_error, saturate};
 use crate::kernel::{PatternId, RelationalContent, Result, Revision, RevisionId, Term};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -50,7 +50,7 @@ impl SupportProof {
     fn contains(&self, clause: &RelationalContent) -> bool {
         self.conclusion == *clause
             || match &self.witness {
-                SupportWitness::Asserted => false,
+                SupportWitness::Asserted { .. } => false,
                 SupportWitness::Derived { premises, .. } => {
                     premises.iter().any(|premise| premise.contains(clause))
                 }
@@ -60,7 +60,9 @@ impl SupportProof {
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum SupportWitness {
-    Asserted,
+    Asserted {
+        provenance: Vec<AssertionProvenance>,
+    },
     Derived {
         rule: crate::kernel::ReferentId,
         governing_law: crate::kernel::ReferentId,
@@ -203,18 +205,19 @@ pub fn support_frontier(
         .model()
         .admitted_contents()
         .iter()
-        .cloned()
         .map(|assertion| {
             let proof = SupportProof {
                 conclusion: assertion.clone(),
-                witness: SupportWitness::Asserted,
+                witness: SupportWitness::Asserted {
+                    provenance: assertion_provenance(revision.model(), assertion)?,
+                },
             };
-            (
+            Ok((
                 assertion.clone(),
-                BTreeMap::from([(vec![assertion], proof)]),
-            )
+                BTreeMap::from([(vec![assertion.clone()], proof)]),
+            ))
         })
-        .collect::<BTreeMap<_, _>>();
+        .collect::<Result<BTreeMap<_, _>>>()?;
     let mut explored = BTreeSet::<SupportProof>::new();
     let mut expansions = 0;
     let mut status = SupportStatus::Complete;
@@ -370,7 +373,7 @@ fn collect_ordered_proof_assertions(
     assertions: &mut Vec<RelationalContent>,
 ) {
     match &proof.witness {
-        SupportWitness::Asserted => {
+        SupportWitness::Asserted { .. } => {
             if seen.insert(proof.conclusion.clone()) {
                 assertions.push(proof.conclusion.clone());
             }
@@ -385,7 +388,7 @@ fn collect_ordered_proof_assertions(
 
 fn collect_proof_assertions(proof: &SupportProof, assertions: &mut BTreeSet<RelationalContent>) {
     match &proof.witness {
-        SupportWitness::Asserted => {
+        SupportWitness::Asserted { .. } => {
             assertions.insert(proof.conclusion.clone());
         }
         SupportWitness::Derived { premises, .. } => {

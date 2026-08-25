@@ -4,7 +4,7 @@ use clause::{
     elaborate, frontend, generated,
     intervention::{AchieveAll, PreventAll},
     kernel::{ReferentId, RelationalContent, Revision, RoleId, Term},
-    request::{self, Request, RequestOutput},
+    request::{self, Request, RequestOutput, RunOutput},
 };
 use std::{collections::BTreeMap, env, fs, path::PathBuf, process::Command};
 
@@ -203,6 +203,13 @@ fn canonical_sets(mut alternatives: Vec<Vec<RelationalContent>>) -> Vec<Vec<Rela
     alternatives
 }
 
+fn revision_output(output: &RunOutput, index: usize) -> &RequestOutput {
+    output.results[index]
+        .revision()
+        .expect("query result is Revision-scoped")
+        .output()
+}
+
 fn support_sets(why: &clause::execution::WhyAll) -> Vec<Vec<RelationalContent>> {
     why.alternatives
         .iter()
@@ -282,7 +289,7 @@ fn canonical_positive_if_rules_drive_existing_proof_and_intervention_semantics()
         .expect("canonical requests execute through existing engines");
     assert_eq!(output.results.len(), 6);
 
-    let RequestOutput::Select { columns, rows } = &output.results[0] else {
+    let RequestOutput::Select { columns, rows } = revision_output(&output, 0) else {
         panic!("naked canonical query remains Select");
     };
     assert_eq!(columns.len(), 1);
@@ -300,7 +307,7 @@ fn canonical_positive_if_rules_drive_existing_proof_and_intervention_semantics()
     expected_destinations.sort();
     assert_eq!(destinations, expected_destinations);
 
-    let RequestOutput::WhyAll(Some(why)) = &output.results[1] else {
+    let RequestOutput::WhyAll(Some(why)) = revision_output(&output, 1) else {
         panic!("canonical rule proof is complete");
     };
     assert!(why.is_complete());
@@ -320,7 +327,7 @@ fn canonical_positive_if_rules_drive_existing_proof_and_intervention_semantics()
     ]);
     assert_eq!(canonical_sets(support_sets(why)), expected_supports);
 
-    let RequestOutput::PreventAll(base_prevent) = &output.results[2] else {
+    let RequestOutput::PreventAll(base_prevent) = revision_output(&output, 2) else {
         panic!("canonical base prevention is complete");
     };
     assert_eq!(
@@ -345,7 +352,7 @@ fn canonical_positive_if_rules_drive_existing_proof_and_intervention_semantics()
         ])
     );
 
-    let RequestOutput::PreventAll(successor_prevent) = &output.results[3] else {
+    let RequestOutput::PreventAll(successor_prevent) = revision_output(&output, 3) else {
         panic!("canonical successor prevention is complete");
     };
     assert_eq!(
@@ -356,7 +363,7 @@ fn canonical_positive_if_rules_drive_existing_proof_and_intervention_semantics()
         ])
     );
 
-    let RequestOutput::AchieveAll(achieve) = &output.results[4] else {
+    let RequestOutput::AchieveAll(achieve) = revision_output(&output, 4) else {
         panic!("canonical achievement is complete");
     };
     assert_eq!(
@@ -374,32 +381,34 @@ fn canonical_positive_if_rules_drive_existing_proof_and_intervention_semantics()
         request::RunLimits::default(),
     )
     .expect("retained legacy requests execute");
-    let RequestOutput::Find(legacy_destinations) = &legacy_output.results[0] else {
+    let RequestOutput::Find(legacy_destinations) = revision_output(&legacy_output, 0) else {
         panic!("retained legacy fixture keeps Find until M5");
     };
     assert_eq!(&destinations, legacy_destinations);
-    let RequestOutput::WhyAll(Some(legacy_why)) = &legacy_output.results[1] else {
+    let RequestOutput::WhyAll(Some(legacy_why)) = revision_output(&legacy_output, 1) else {
         panic!("retained legacy proof remains complete");
     };
     assert_eq!(
         canonical_sets(support_sets(why)),
         canonical_sets(support_sets(legacy_why))
     );
-    let RequestOutput::PreventAll(legacy_base_prevent) = &legacy_output.results[2] else {
+    let RequestOutput::PreventAll(legacy_base_prevent) = revision_output(&legacy_output, 2) else {
         panic!("retained legacy base prevention remains complete");
     };
     assert_eq!(
         canonical_sets(withdrawals(base_prevent)),
         canonical_sets(withdrawals(legacy_base_prevent))
     );
-    let RequestOutput::PreventAll(legacy_successor_prevent) = &legacy_output.results[3] else {
+    let RequestOutput::PreventAll(legacy_successor_prevent) =
+        revision_output(&legacy_output, 3)
+    else {
         panic!("retained legacy successor prevention remains complete");
     };
     assert_eq!(
         canonical_sets(withdrawals(successor_prevent)),
         canonical_sets(withdrawals(legacy_successor_prevent))
     );
-    let RequestOutput::AchieveAll(legacy_achieve) = &legacy_output.results[4] else {
+    let RequestOutput::AchieveAll(legacy_achieve) = revision_output(&legacy_output, 4) else {
         panic!("retained legacy achievement remains complete");
     };
     assert_eq!(
@@ -543,7 +552,8 @@ fn canonical_positive_if_rules_drive_existing_proof_and_intervention_semantics()
     fs::write(&authoring, &source).expect("canonical authoring source writes");
     fs::write(
         &rust,
-        generated::emit_rust(&resolved).expect("canonical requests emit Rust"),
+        generated::emit_rust(&resolved, request::RunLimits::default())
+            .expect("canonical requests emit Rust"),
     )
     .expect("generated Rust writes");
     fs::remove_file(&authoring).expect("authoring source deletes before generated compile");
@@ -692,7 +702,8 @@ why in catalog:
     fs::write(&authoring, &authorized_source).expect("law authoring source writes");
     fs::write(
         &rust,
-        generated::emit_rust(&resolved).expect("authorized law emits Rust"),
+        generated::emit_rust(&resolved, request::RunLimits::default())
+            .expect("authorized law emits Rust"),
     )
     .expect("generated law Rust writes");
     fs::remove_file(&authoring).expect("law source deletes before generated compile");

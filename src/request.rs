@@ -305,7 +305,26 @@ pub fn resolve(program: &CompiledProgram) -> kernel::Result<ResolvedProgram> {
 /// One result per authored request, retained in exact source order.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RunOutput {
-    pub results: Vec<RequestOutput>,
+    pub results: Vec<RunResult>,
+}
+
+/// One request result with every Revision input needed to interpret it after
+/// separation from the resolved program.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum RunResult {
+    Revision(RevisionOutput),
+    Diff {
+        base: RevisionId,
+        successor: RevisionId,
+        output: SemanticDiff,
+    },
+}
+
+/// A query or intervention result bound to its exact input Revision.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RevisionOutput {
+    revision: RevisionId,
+    output: RequestOutput,
 }
 
 /// Canonical results for an ordered selection of pure definitions in one Revision.
@@ -337,7 +356,29 @@ pub enum RequestOutput {
     PreventAll(PreventAll),
     AchieveOne(AchieveOne),
     AchieveAll(AchieveAll),
-    Diff(SemanticDiff),
+}
+
+impl RevisionOutput {
+    pub fn new(revision: RevisionId, output: RequestOutput) -> Self {
+        Self { revision, output }
+    }
+
+    pub fn revision(&self) -> &RevisionId {
+        &self.revision
+    }
+
+    pub fn output(&self) -> &RequestOutput {
+        &self.output
+    }
+}
+
+impl RunResult {
+    pub fn revision(&self) -> Option<&RevisionOutput> {
+        match self {
+            Self::Revision(output) => Some(output),
+            Self::Diff { .. } => None,
+        }
+    }
 }
 
 /// Evaluate requests once, in their authored order, using only the selected semantic engine.

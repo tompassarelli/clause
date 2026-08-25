@@ -106,10 +106,15 @@ run_m4_behavior() {
     --manifest-path "$project_root/Cargo.toml" \
     --test m4_selection \
     law_backed_nested_one_coin_closes_the_m4_acceptance_seam \
+    -- --exact \
+    && CARGO_TARGET_DIR="$m4_target_dir" cargo test --quiet --locked \
+    --manifest-path "$project_root/Cargo.toml" \
+    --test m4_selection \
+    selection_cardinalities_preserve_canonical_rows_and_generated_parity \
     -- --exact; then
     return
   fi
-  fail "exact M4/S1 law-backed recursive selection, tamper, bound, or generated-parity behavior failed"
+  fail "exact M4/S1 revision trace, recursive selection, cardinality, tamper, bound, or generated-parity behavior failed"
 }
 
 run_m4_rule_to_proof_behavior() {
@@ -120,10 +125,15 @@ run_m4_rule_to_proof_behavior() {
     --manifest-path "$project_root/Cargo.toml" \
     --test m4_rule_to_proof \
     canonical_positive_if_rules_drive_existing_proof_and_intervention_semantics \
+    -- --exact \
+    && CARGO_TARGET_DIR="$m4_target_dir" cargo test --quiet --locked \
+    --manifest-path "$project_root/Cargo.toml" \
+    --test m4_rule_to_proof \
+    authored_law_is_ground_until_separately_authorized_and_retains_exact_provenance \
     -- --exact; then
     return
   fi
-  fail "exact M4/S2 canonical rule, identity, proof, intervention, or generated-parity behavior failed"
+  fail "exact M4/S2 inert law, rule authority, proof provenance, intervention, or generated-parity behavior failed"
 }
 
 run_structural_diagnostic_behavior() {
@@ -212,6 +222,7 @@ closure_source="$project_root/src/derive/closure.rs"
 support_source="$project_root/src/derive/support.rs"
 query_source="$project_root/src/kernel/query.rs"
 request_source="$project_root/src/request.rs"
+generated_source="$project_root/src/generated.rs"
 
 require_fixed "$identity_source" 'pub struct ReferentId(String);' \
   "one ReferentId domain is not explicit"
@@ -305,6 +316,12 @@ if test "$selected_rank" -ge 4; then
     "M4 request loses its explicit result-cardinality contract"
   require_fixed "$request_source" 'dependencies: Vec<RelationalContent>,' \
     "M4 request loses recursive application dependencies"
+  require_fixed "$request_source" 'pub struct RevisionOutput {' \
+    "M4 query output loses its exact input Revision"
+  require_fixed "$closure_source" 'pub struct AssertionProvenance {' \
+    "M4 asserted proof leaves lose occurrence-exact provenance"
+  require_fixed "$generated_source" 'fn run_limits_source(limits: crate::request::RunLimits)' \
+    "M4 generated requests discard caller-supplied deterministic limits"
   run_m4_behavior
   run_m4_rule_to_proof_behavior
 fi

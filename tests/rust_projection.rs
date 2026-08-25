@@ -122,7 +122,8 @@ fn six_resolved_requests_preserve_order_and_survive_source_deletion() {
         .expect("all resolved requests execute")
         .canonical_bytes();
 
-    let emitted = generated::emit_rust(&resolved).expect("sealed requests emit Rust");
+    let emitted = generated::emit_rust(&resolved, request::RunLimits::default())
+        .expect("sealed requests emit Rust");
     assert!(emitted.contains("wire::reload("));
     assert!(emitted.contains("wire::reload_successor"));
     assert!(!emitted.contains("find all ?destination in scenario"));

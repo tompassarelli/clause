@@ -1,5 +1,6 @@
 use crate::kernel::{
-    ContentId, KernelError, Model, PatternId, RelationalContent, Result, Revision, Term,
+    ContentId, JudgmentKind, JudgmentStatus, JudgmentTarget, KernelError, Model, PatternId,
+    ReferentId, RelationalContent, Result, Revision, Term,
 };
 use std::collections::BTreeMap;
 
@@ -26,6 +27,33 @@ pub struct Proof {
     witness: Witness,
 }
 
+/// The exact semantic acts supporting one asserted content leaf.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct AssertionProvenance {
+    occurrence: ReferentId,
+    source: ReferentId,
+    scope: ReferentId,
+    judgment: ReferentId,
+}
+
+impl AssertionProvenance {
+    pub fn occurrence(&self) -> &ReferentId {
+        &self.occurrence
+    }
+
+    pub fn source(&self) -> &ReferentId {
+        &self.source
+    }
+
+    pub fn scope(&self) -> &ReferentId {
+        &self.scope
+    }
+
+    pub fn judgment(&self) -> &ReferentId {
+        &self.judgment
+    }
+}
+
 impl Proof {
     pub fn generation(&self) -> usize {
         self.generation
@@ -38,7 +66,9 @@ impl Proof {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Witness {
-    Asserted,
+    Asserted {
+        provenance: Vec<AssertionProvenance>,
+    },
     Derived {
         rule: crate::kernel::ReferentId,
         governing_law: crate::kernel::ReferentId,
@@ -91,21 +121,18 @@ struct Candidate {
 
 /// Saturate a Revision's admitted assertions under its positive, range-restricted laws.
 pub fn saturate(revision: &Revision, limits: Limits) -> Result<Closure> {
-    let mut proofs = revision
-        .model()
-        .admitted_contents()
-        .iter()
-        .cloned()
-        .map(|assertion| {
-            (
-                assertion,
-                Proof {
-                    generation: 0,
-                    witness: Witness::Asserted,
+    let mut proofs = BTreeMap::new();
+    for assertion in revision.model().admitted_contents() {
+        proofs.insert(
+            assertion.clone(),
+            Proof {
+                generation: 0,
+                witness: Witness::Asserted {
+                    provenance: assertion_provenance(revision.model(), assertion)?,
                 },
-            )
-        })
-        .collect::<BTreeMap<_, _>>();
+            },
+        );
+    }
     if proofs.len() > limits.max_assertions {
         return Err(limit_error(
             "assertion",
@@ -193,6 +220,44 @@ pub fn saturate(revision: &Revision, limits: Limits) -> Result<Closure> {
         proofs,
         applications,
     })
+}
+
+pub(super) fn assertion_provenance(
+    model: &Model,
+    assertion: &RelationalContent,
+) -> Result<Vec<AssertionProvenance>> {
+    let mut provenance = Vec::new();
+    for occurrence in model
+        .occurrences()
+        .iter()
+        .filter(|occurrence| occurrence.content() == assertion.id())
+    {
+        for judgment in model.judgments().iter().filter(|judgment| {
+            judgment.authority() == model.id()
+                && judgment.scope() == model.id()
+                && judgment.status() == &JudgmentStatus::Affirmed
+                && matches!(judgment.kind(), JudgmentKind::Admitted { .. })
+                && match judgment.target() {
+                    JudgmentTarget::Occurrence(id) => id == occurrence.id(),
+                    JudgmentTarget::Content(id) => id == assertion.id(),
+                }
+        }) {
+            provenance.push(AssertionProvenance {
+                occurrence: occurrence.id().clone(),
+                source: occurrence.source().clone(),
+                scope: occurrence.scope().clone(),
+                judgment: judgment.id().clone(),
+            });
+        }
+    }
+    provenance.sort();
+    provenance.dedup();
+    if provenance.is_empty() {
+        return Err(KernelError::new(
+            "admitted assertion has no exact occurrence and judgment provenance",
+        ));
+    }
+    Ok(provenance)
 }
 
 fn collect_rule_candidates(

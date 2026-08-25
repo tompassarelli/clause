@@ -22,7 +22,8 @@ fn impact_source_seals_runs_and_generated_requests_survive_source_removal() {
     let expected = request::run(&resolved, request::RunLimits::default())
         .expect("typed requests execute")
         .canonical_bytes();
-    assert!(expected.starts_with("[\"clause-run-v1\",[[\"find\","));
+    assert!(expected.starts_with("[\"clause-run-v2\",[[\"revision\","));
+    assert!(expected.contains("[\"find\","));
     for tag in [
         "\"why-all\"",
         "\"prevent-all\"",
@@ -78,7 +79,8 @@ fn impact_source_seals_runs_and_generated_requests_survive_source_removal() {
     fs::remove_file(&source).expect("authoring source removes before generation");
     fs::write(
         &generated_source,
-        generated::emit_rust(&resolved).expect("resolved requests emit Rust"),
+        generated::emit_rust(&resolved, request::RunLimits::default())
+            .expect("resolved requests emit Rust"),
     )
     .expect("generated source writes");
     let compile = Command::new("rustc")

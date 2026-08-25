@@ -437,12 +437,15 @@ the canonical relational query word but may remain a tooling/library verb.
 **Exit proof:** one bounded one-coin fixture correlates holes recursively through
 distance, radius, and addition applications; a separately authorized universal
 law derives one overlap with exact governing-law, authority, and scope proof
-trace; `select one` returns exactly the coin and `any` returns true. Alpha-renamed
-holes preserve semantic-v9 bytes, strict canonical reload rejects tampering,
-repeated bounded execution is deterministic, and source-deleted generated Rust
-prints byte-identical canonical output. The inherited hospital derivations and
-queries retain their bounded results and proofs; no general English parser or
-unbounded logic search is introduced.
+trace; its asserted support leaves retain exact occurrence, source, scope, and
+judgment identities even for duplicate source acts. `select one` returns exactly
+the coin and `any` returns true, each bound to its exact input Revision.
+Alpha-renamed holes preserve semantic-v9 bytes, strict canonical reload rejects
+tampering, repeated bounded execution is deterministic, and source-deleted
+generated Rust prints byte-identical canonical output or fails at the identical
+caller-supplied bound. The inherited hospital derivations and queries retain
+their bounded results and proofs; no general English parser or unbounded logic
+search is introduced.
 
 ## M5 — Revision surface reset and migration parity
 

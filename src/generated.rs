@@ -191,7 +191,7 @@ const REQUEST_CHILDREN: &[ChildModule] = &[
 /// Emit a standalone program that reloads the referenced Revisions and
 /// invokes the same ordered request evaluator as the interpreter.
 #[cfg(not(clause_generated))]
-pub fn emit_rust(program: &ResolvedProgram) -> Result<String> {
+pub fn emit_rust(program: &ResolvedProgram, limits: crate::request::RunLimits) -> Result<String> {
     let modules = target_neutral_modules()?;
     let mut body = String::new();
     let revisions = revision_order(program)?;
@@ -223,8 +223,42 @@ pub fn emit_rust(program: &ResolvedProgram) -> Result<String> {
         }
     }
     writeln!(body, "let program = request::ResolvedProgram::new(std::collections::BTreeMap::from([{}]), vec![{}]).expect(\"generated requests resolve\");", revisions.iter().enumerate().map(|(index, _)| format!("(r{index}.identity().clone(), r{index}.clone())")).collect::<Vec<_>>().join(","), program.requests().iter().map(|request| request_source(request, &indices)).collect::<Vec<_>>().join(",")).expect("writing the generated request registry to a String cannot fail");
-    writeln!(body, "print!(\"{{}}\", request::run(&program, request::RunLimits::default()).expect(\"generated requests run\").canonical_bytes());").expect("writing the generated entry point to a String cannot fail");
+    writeln!(body, "let limits = {};", run_limits_source(limits))
+        .expect("writing generated request limits to a String cannot fail");
+    writeln!(body, "print!(\"{{}}\", request::run(&program, limits).expect(\"generated requests run\").canonical_bytes());").expect("writing the generated entry point to a String cannot fail");
     Ok(format!("{modules}\nfn main() {{ {body} }}"))
+}
+
+#[cfg(not(clause_generated))]
+fn limits_source(limits: crate::derive::Limits) -> String {
+    format!(
+        "derive::Limits::new({}, {}, {})",
+        limits.max_assertions, limits.max_rounds, limits.max_join_attempts
+    )
+}
+
+#[cfg(not(clause_generated))]
+fn support_limits_source(limits: crate::derive::SupportLimits) -> String {
+    format!(
+        "derive::SupportLimits::new({}, {}, {})",
+        limits_source(limits.closure),
+        limits.max_expansions,
+        limits.max_supports_per_clause
+    )
+}
+
+#[cfg(not(clause_generated))]
+fn run_limits_source(limits: crate::request::RunLimits) -> String {
+    let intervention = limits.intervention;
+    format!(
+        "request::RunLimits {{ closure: {}, support: {}, intervention: intervention::InterventionLimits::new({}, {}, {}).with_support_limits({}) }}",
+        limits_source(limits.closure),
+        support_limits_source(limits.support),
+        limits_source(intervention.closure()),
+        intervention.max_candidates(),
+        intervention.max_solutions(),
+        support_limits_source(intervention.support())
+    )
 }
 
 /// Emit a standalone program that strictly reloads one root Revision and

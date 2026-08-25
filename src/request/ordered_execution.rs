@@ -1,6 +1,6 @@
 use super::{
-    QuerySelection, Request, RequestOutput, ResolvedProgram, RunLimits, RunOutput, Selection,
-    any_plan, select_plan,
+    QuerySelection, Request, RequestOutput, ResolvedProgram, RevisionOutput, RunLimits, RunOutput,
+    RunResult, Selection, any_plan, select_plan,
 };
 use crate::{
     execution, intervention,
@@ -11,7 +11,7 @@ use crate::{
 pub(super) fn run(program: &ResolvedProgram, limits: RunLimits) -> kernel::Result<RunOutput> {
     let mut results = Vec::with_capacity(program.requests.len());
     for request in &program.requests {
-        let output = match request {
+        let result = match request {
             Request::Any {
                 revision: identity,
                 pattern,
@@ -130,15 +130,37 @@ pub(super) fn run(program: &ResolvedProgram, limits: RunLimits) -> kernel::Resul
                 using.clone(),
                 limits.intervention,
             )?),
-            Request::Diff { base, successor } => RequestOutput::Diff(SemanticDiff::between(
-                revision(program, base)?,
-                revision(program, successor)?,
-                limits.support,
-            )?),
+            Request::Diff { base, successor } => {
+                results.push(RunResult::Diff {
+                    base: base.clone(),
+                    successor: successor.clone(),
+                    output: SemanticDiff::between(
+                        revision(program, base)?,
+                        revision(program, successor)?,
+                        limits.support,
+                    )?,
+                });
+                continue;
+            }
         };
-        results.push(output);
+        results.push(RunResult::Revision(RevisionOutput::new(
+            revision_scope(request).clone(),
+            result,
+        )));
     }
     Ok(RunOutput { results })
+}
+
+fn revision_scope(request: &Request) -> &RevisionId {
+    match request {
+        Request::Any { revision, .. }
+        | Request::Select { revision, .. }
+        | Request::Find { revision, .. }
+        | Request::Why { revision, .. }
+        | Request::Prevent { revision, .. }
+        | Request::Achieve { revision, .. } => revision,
+        Request::Diff { .. } => unreachable!("diff output preserves both Revision inputs"),
+    }
 }
 
 fn revision<'a>(

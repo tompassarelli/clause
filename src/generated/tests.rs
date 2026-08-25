@@ -7,7 +7,7 @@ fn embeds_resolved_requests_not_source() {
     let source = "Item\nlink: RelationShape\n  {left: Item} links {right: Item}\n  mode left -> right: many\ngraph\n  A ∈ Item\n  B ∈ Item\n  A links B\nfind all ?right in graph:\n  A links ?right\n";
     let program =
         request::resolve(&elaborate::compile(frontend::parse(source).unwrap()).unwrap()).unwrap();
-    let emitted = emit_rust(&program).unwrap();
+    let emitted = emit_rust(&program, request::RunLimits::default()).unwrap();
     assert!(emitted.contains("request::Request::Find"));
     assert!(!emitted.contains("find all ?right"));
 }
@@ -24,7 +24,11 @@ fn generated_program_matches_source_deleted_request_transcript() {
         std::env::temp_dir().join(format!("clause-request-generated-{}", std::process::id()));
     let rust = root.with_extension("rs");
     let binary = root.with_extension("bin");
-    fs::write(&rust, emit_rust(&program).unwrap()).unwrap();
+    fs::write(
+        &rust,
+        emit_rust(&program, request::RunLimits::default()).unwrap(),
+    )
+    .unwrap();
     let compiled = Command::new("rustc")
         .args(["--edition=2024", "--cfg", "clause_generated"])
         .arg(&rust)

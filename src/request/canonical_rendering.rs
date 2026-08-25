@@ -1,4 +1,4 @@
-use super::{EvaluationOutput, QueryColumn, RequestOutput, RunOutput};
+use super::{EvaluationOutput, QueryColumn, RequestOutput, RunOutput, RunResult};
 use crate::{
     execution::{self, Proof, WhyAll},
     intervention::{AchieveAll, AchieveOne, Incomplete, Intervention, PreventAll, PreventOne},
@@ -8,11 +8,11 @@ use crate::{
 
 pub(super) fn canonical_bytes(output: &RunOutput) -> String {
     format!(
-        "[\"clause-run-v1\",[{}]]",
+        "[\"clause-run-v2\",[{}]]",
         output
             .results
             .iter()
-            .map(request_output)
+            .map(run_result)
             .collect::<Vec<_>>()
             .join(",")
     )
@@ -31,6 +31,26 @@ pub(super) fn evaluation_bytes(output: &EvaluationOutput) -> String {
             .collect::<Vec<_>>()
             .join(",")
     )
+}
+
+fn run_result(value: &RunResult) -> String {
+    match value {
+        RunResult::Revision(output) => format!(
+            "[\"revision\",{},{}]",
+            string(&output.revision().to_string()),
+            request_output(output.output())
+        ),
+        RunResult::Diff {
+            base,
+            successor,
+            output,
+        } => format!(
+            "[\"revisions\",{},{},{}]",
+            string(&base.to_string()),
+            string(&successor.to_string()),
+            diff_json(output)
+        ),
+    }
 }
 
 fn request_output(value: &RequestOutput) -> String {
@@ -66,7 +86,6 @@ fn request_output(value: &RequestOutput) -> String {
         RequestOutput::AchieveAll(result) => {
             format!("[\"achieve-all\",{}]", achieve_all(result))
         }
-        RequestOutput::Diff(diff) => diff_json(diff),
     }
 }
 
@@ -209,7 +228,7 @@ fn graph(value: &execution::WhyGraph) -> String {
 }
 fn witness(value: &execution::Witness) -> String {
     match value {
-        execution::Witness::Asserted => "[\"asserted\"]".into(),
+        execution::Witness::Asserted { provenance } => asserted(provenance),
         execution::Witness::Derived {
             rule,
             governing_law,
@@ -291,7 +310,7 @@ fn derive_proof(value: &crate::derive::Proof) -> String {
 }
 fn derive_witness(value: &crate::derive::Witness) -> String {
     match value {
-        crate::derive::Witness::Asserted => "[\"asserted\"]".into(),
+        crate::derive::Witness::Asserted { provenance } => asserted(provenance),
         crate::derive::Witness::Derived {
             rule,
             governing_law,
@@ -323,7 +342,7 @@ fn support_proof(value: &crate::derive::SupportProof) -> String {
 }
 fn support_witness(value: &crate::derive::SupportWitness) -> String {
     match value {
-        crate::derive::SupportWitness::Asserted => "[\"asserted\"]".into(),
+        crate::derive::SupportWitness::Asserted { provenance } => asserted(provenance),
         crate::derive::SupportWitness::Derived {
             rule,
             governing_law,
@@ -349,6 +368,23 @@ fn support_witness(value: &crate::derive::SupportWitness) -> String {
                 .join(",")
         ),
     }
+}
+
+fn asserted(provenance: &[crate::derive::AssertionProvenance]) -> String {
+    format!(
+        "[\"asserted\",[{}]]",
+        provenance
+            .iter()
+            .map(|item| format!(
+                "[{},{},{},{}]",
+                string(item.occurrence().as_str()),
+                string(item.source().as_str()),
+                string(item.scope().as_str()),
+                string(item.judgment().as_str())
+            ))
+            .collect::<Vec<_>>()
+            .join(",")
+    )
 }
 fn support_frontier(value: &crate::derive::SupportFrontier) -> String {
     format!(

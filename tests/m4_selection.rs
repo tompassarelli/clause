@@ -128,7 +128,10 @@ overlap
 scene
   player ∈ Body
   coin ∈ Body
+  rock ∈ Body
   coin collides with player at distance between coin and player within radius of coin + radius of player
+  coin collides with player at distance between coin and player within radius of coin + radius of player
+  rock collides with player at distance between coin and player within radius of coin + radius of player
 
 law collision overlap
   ?body overlaps ?other if
@@ -140,6 +143,9 @@ select one ?body
   ?body collides with player at (distance between ?body and player) within (radius of ?body + radius of player)
 
 any ?body overlaps player
+
+why all in scene:
+  coin overlaps player
 ";
 
 fn temporary(extension: &str) -> PathBuf {
@@ -291,7 +297,11 @@ fn naked_selection_preserves_freshness_labels_identity_and_generated_parity() {
 
     let output =
         request::run(&resolved, request::RunLimits::default()).expect("M4 requests execute");
-    let RequestOutput::Select { columns, rows } = &output.results[1] else {
+    let RequestOutput::Select { columns, rows } = output.results[1]
+        .revision()
+        .expect("selection is Revision-scoped")
+        .output()
+    else {
         panic!("source-middle request must remain a selection");
     };
     assert_eq!(
@@ -365,7 +375,10 @@ fn naked_selection_preserves_freshness_labels_identity_and_generated_parity() {
     let RequestOutput::Select {
         columns: renamed_columns,
         rows: renamed_rows,
-    } = &renamed_output.results[1]
+    } = renamed_output.results[1]
+        .revision()
+        .expect("renamed selection is Revision-scoped")
+        .output()
     else {
         panic!("renamed source-middle request must remain a selection");
     };
@@ -413,7 +426,8 @@ fn naked_selection_preserves_freshness_labels_identity_and_generated_parity() {
     fs::write(&authoring, SOURCE).expect("authoring source writes");
     fs::write(
         &rust,
-        generated::emit_rust(&resolved).expect("resolved M4 requests emit Rust"),
+        generated::emit_rust(&resolved, request::RunLimits::default())
+            .expect("resolved M4 requests emit Rust"),
     )
     .expect("generated Rust writes");
     fs::remove_file(&authoring).expect("authoring source deletes before generated compile");
@@ -440,6 +454,22 @@ fn naked_selection_preserves_freshness_labels_identity_and_generated_parity() {
 
 #[test]
 fn law_backed_nested_one_coin_closes_the_m4_acceptance_seam() {
+    let ground_source = NESTED_APPLICATION_SOURCE.replace("\nderive collision overlap\n", "\n");
+    let ground = elaborate::compile(
+        frontend::parse(&ground_source).expect("inert-law source parses"),
+    )
+    .expect("inert-law source compiles");
+    let ground_resolved = request::resolve(&ground).expect("inert-law queries resolve");
+    let ground_output = request::run(&ground_resolved, request::RunLimits::default())
+        .expect("inert-law queries execute");
+    assert!(matches!(
+        ground_output.results[1]
+            .revision()
+            .expect("inert-law Any result is Revision-scoped")
+            .output(),
+        RequestOutput::Any(false)
+    ));
+
     let compiled = elaborate::compile(
         frontend::parse(NESTED_APPLICATION_SOURCE).expect("nested query source parses"),
     )
@@ -453,9 +483,10 @@ fn law_backed_nested_one_coin_closes_the_m4_acceptance_seam() {
             ..
         },
         Request::Any { .. },
+        Request::Why { all: true, .. },
     ] = resolved.requests()
     else {
-        panic!("nested source resolves to exact-one selection and existence query");
+        panic!("nested source resolves to selection, existence, and explanation queries");
     };
     assert!(!dependencies.is_empty());
     let revision = compiled.revision(&frontend::Name("scene".into())).unwrap();
@@ -489,6 +520,35 @@ fn law_backed_nested_one_coin_closes_the_m4_acceptance_seam() {
     let closure_limits = clause::derive::Limits::new(16, 4, 64);
     let closure = clause::derive::saturate(revision, closure_limits)
         .expect("authorized collision law saturates within its explicit bound");
+    let scene = compiled.designations().global("scene").unwrap();
+    let coin = Term::referent(compiled.designations().scoped(&scene, "coin").unwrap());
+    let collision = compiled.designations().global("collision").unwrap();
+    let subject = compiled.designations().role(&collision, "subject").unwrap();
+    let asserted_collision = revision
+        .model()
+        .admitted_contents()
+        .iter()
+        .find(|content| {
+            content.relation() == &collision && content.roles().get(&subject) == Some(&coin)
+        })
+        .expect("coin collision is asserted");
+    let clause::derive::Witness::Asserted { provenance } = closure
+        .proof(asserted_collision)
+        .expect("asserted collision retains a proof leaf")
+        .witness()
+    else {
+        panic!("collision must remain asserted");
+    };
+    assert_eq!(
+        provenance.len(),
+        2,
+        "duplicate assertion occurrences remain distinct provenance acts"
+    );
+    assert_ne!(provenance[0].occurrence(), provenance[1].occurrence());
+    assert_ne!(provenance[0].judgment(), provenance[1].judgment());
+    assert!(provenance.iter().all(|item| {
+        item.source() == revision.model().id() && item.scope() == revision.model().id()
+    }));
     let overlap = compiled.designations().global("overlap").unwrap();
     let overlaps = closure
         .contents()
@@ -522,13 +582,48 @@ fn law_backed_nested_one_coin_closes_the_m4_acceptance_seam() {
         request::run(&resolved, limits).expect("bounded execution repeats deterministically"),
         output
     );
-    let [RequestOutput::SelectOne { rows, .. }, RequestOutput::Any(true)] =
-        output.results.as_slice()
+    let RequestOutput::SelectOne { rows, .. } = output.results[0]
+        .revision()
+        .expect("exact-one selection is Revision-scoped")
+        .output()
+    else {
+        panic!("the acceptance query returns exactly one row");
+    };
+    let RequestOutput::Any(true) = output.results[1]
+        .revision()
+        .expect("existence query is Revision-scoped")
+        .output()
     else {
         panic!("the acceptance query returns exactly one row and true");
     };
-    let scene = compiled.designations().global("scene").unwrap();
-    let coin = Term::referent(compiled.designations().scoped(&scene, "coin").unwrap());
+    let RequestOutput::WhyAll(Some(why)) = output.results[2]
+        .revision()
+        .expect("explanation query is Revision-scoped")
+        .output()
+    else {
+        panic!("the derived overlap retains complete support");
+    };
+    assert!(why.is_complete());
+    let asserted_leaf = why.alternatives[0]
+        .proof
+        .why
+        .witnesses
+        .iter()
+        .find_map(|edge| match &edge.witness {
+            clause::execution::Witness::Asserted { provenance }
+                if provenance.len() == 2 =>
+            {
+                Some(provenance)
+            }
+            _ => None,
+        })
+        .expect("support explanation retains both duplicate source acts");
+    assert_eq!(asserted_leaf, provenance);
+    assert!(output.results.iter().all(|result| {
+        result
+            .revision()
+            .is_some_and(|result| result.revision() == revision.identity())
+    }));
     assert_eq!(
         rows.iter()
             .map(|row| row.cells()[0].value().clone())
@@ -573,7 +668,7 @@ fn law_backed_nested_one_coin_closes_the_m4_acceptance_seam() {
     fs::write(&authoring, NESTED_APPLICATION_SOURCE).expect("acceptance source writes");
     fs::write(
         &rust,
-        generated::emit_rust(&resolved).expect("nested request emits Rust"),
+        generated::emit_rust(&resolved, limits).expect("nested request emits Rust"),
     )
     .expect("generated nested Rust writes");
     fs::remove_file(&authoring).expect("acceptance source deletes before generated compile");
@@ -600,8 +695,49 @@ fn law_backed_nested_one_coin_closes_the_m4_acceptance_seam() {
         .expect("generated nested executable starts");
     assert!(actual.status.success());
     assert_eq!(actual.stdout, expected.as_bytes());
+
+    let mut failing_limits = limits;
+    failing_limits.closure = clause::derive::Limits::new(16, 4, 0);
+    let native_error = request::run(&resolved, failing_limits)
+        .expect_err("native execution fails closed at the caller's join bound")
+        .to_string();
+    assert_eq!(
+        native_error,
+        "closure join attempt limit exceeded (max_join_attempts=0)"
+    );
+    let bounded_rust = temporary("bounded.rs");
+    let bounded_binary = temporary("bounded.bin");
+    let bounded_source =
+        generated::emit_rust(&resolved, failing_limits).expect("bounded request emits Rust");
+    assert!(bounded_source.contains("derive::Limits::new(16, 4, 0)"));
+    fs::write(&bounded_rust, bounded_source).expect("bounded generated Rust writes");
+    let bounded_compile = Command::new("rustc")
+        .args([
+            "--edition=2024",
+            "--cfg",
+            "clause_generated",
+            "--crate-name",
+            "clause_m4_bounded",
+        ])
+        .arg(&bounded_rust)
+        .arg("-o")
+        .arg(&bounded_binary)
+        .output()
+        .expect("bounded generated Rust compiler starts");
+    assert!(
+        bounded_compile.status.success(),
+        "{}",
+        String::from_utf8_lossy(&bounded_compile.stderr)
+    );
+    let bounded = Command::new(&bounded_binary)
+        .output()
+        .expect("bounded generated executable starts");
+    assert!(!bounded.status.success());
+    assert!(String::from_utf8_lossy(&bounded.stderr).contains(&native_error));
     fs::remove_file(rust).expect("generated nested Rust cleans up");
     fs::remove_file(binary).expect("generated nested executable cleans up");
+    fs::remove_file(bounded_rust).expect("bounded generated Rust cleans up");
+    fs::remove_file(bounded_binary).expect("bounded generated executable cleans up");
 }
 
 #[test]
@@ -658,14 +794,27 @@ fn any_returns_only_bool_with_alpha_and_generated_parity() {
 
     let output =
         request::run(&resolved, request::RunLimits::default()).expect("Any requests execute");
-    assert_eq!(
-        output.results,
-        vec![RequestOutput::Any(true), RequestOutput::Any(false)],
-        "Any exposes only one Boolean per authored request"
-    );
+    assert!(matches!(
+        output.results[0]
+            .revision()
+            .expect("Any is Revision-scoped")
+            .output(),
+        RequestOutput::Any(true)
+    ));
+    assert!(matches!(
+        output.results[1]
+            .revision()
+            .expect("Any is Revision-scoped")
+            .output(),
+        RequestOutput::Any(false)
+    ));
     assert_eq!(
         output.canonical_bytes(),
-        "[\"clause-run-v1\",[[\"any\",true],[\"any\",false]]]"
+        format!(
+            "[\"clause-run-v2\",[[\"revision\",\"{}\",[\"any\",true]],[\"revision\",\"{}\",[\"any\",false]]]]",
+            resolved.requests()[0].revisions()[0],
+            resolved.requests()[1].revisions()[0]
+        )
     );
 
     let renamed_source = ANY_SOURCE.replace("?same", "?opening");
@@ -694,7 +843,8 @@ fn any_returns_only_bool_with_alpha_and_generated_parity() {
     fs::write(&authoring, ANY_SOURCE).expect("Any authoring source writes");
     fs::write(
         &rust,
-        generated::emit_rust(&resolved).expect("resolved Any requests emit Rust"),
+        generated::emit_rust(&resolved, request::RunLimits::default())
+            .expect("resolved Any requests emit Rust"),
     )
     .expect("generated Any Rust writes");
     fs::remove_file(&authoring).expect("Any authoring source deletes before generated compile");
@@ -788,7 +938,11 @@ fn explicit_projection_keeps_hidden_binders_private_and_matches_with_them() {
 
     let output =
         request::run(&resolved, request::RunLimits::default()).expect("selection executes");
-    let [RequestOutput::Select { columns, rows }] = output.results.as_slice() else {
+    let RequestOutput::Select { columns, rows } = output.results[0]
+        .revision()
+        .expect("selection is Revision-scoped")
+        .output()
+    else {
         panic!("source must produce exactly one explicit selection result");
     };
     assert_eq!(columns, resolved_columns);
@@ -842,7 +996,8 @@ fn explicit_projection_keeps_hidden_binders_private_and_matches_with_them() {
     fs::write(&authoring, EXPLICIT_PROJECTION_SOURCE).expect("authoring source writes");
     fs::write(
         &rust,
-        generated::emit_rust(&resolved).expect("explicit projection emits Rust"),
+        generated::emit_rust(&resolved, request::RunLimits::default())
+            .expect("explicit projection emits Rust"),
     )
     .expect("generated Rust writes");
     fs::remove_file(&authoring).expect("authoring source deletes before generated compile");
@@ -903,16 +1058,36 @@ fn selection_cardinalities_preserve_canonical_rows_and_generated_parity() {
 
     let output = request::run(&resolved, request::RunLimits::default())
         .expect("all cardinality contracts are satisfied");
-    let [
-        RequestOutput::Select { rows: all, .. },
-        RequestOutput::SelectOne { rows: one, .. },
-        RequestOutput::SelectFirst { rows: first, .. },
-        RequestOutput::SelectFirst {
-            rows: empty_first, ..
-        },
-    ] = output.results.as_slice()
+    let RequestOutput::Select { rows: all, .. } = output.results[0]
+        .revision()
+        .expect("all selection is Revision-scoped")
+        .output()
     else {
-        panic!("cardinality requests retain their exact output contracts");
+        panic!("first cardinality result is all");
+    };
+    let RequestOutput::SelectOne { rows: one, .. } = output.results[1]
+        .revision()
+        .expect("exact-one selection is Revision-scoped")
+        .output()
+    else {
+        panic!("second cardinality result is exact-one");
+    };
+    let RequestOutput::SelectFirst { rows: first, .. } = output.results[2]
+        .revision()
+        .expect("canonical-first selection is Revision-scoped")
+        .output()
+    else {
+        panic!("third cardinality result is canonical-first");
+    };
+    let RequestOutput::SelectFirst {
+        rows: empty_first,
+        ..
+    } = output.results[3]
+        .revision()
+        .expect("empty canonical-first selection is Revision-scoped")
+        .output()
+    else {
+        panic!("fourth cardinality result is empty canonical-first");
     };
     assert_eq!(all.len(), 2);
     assert_eq!(one.len(), 1);
@@ -928,7 +1103,8 @@ fn selection_cardinalities_preserve_canonical_rows_and_generated_parity() {
     let binary = temporary("cardinality.bin");
     fs::write(
         &rust,
-        generated::emit_rust(&resolved).expect("cardinality requests emit Rust"),
+        generated::emit_rust(&resolved, request::RunLimits::default())
+            .expect("cardinality requests emit Rust"),
     )
     .expect("generated cardinality Rust writes");
     let generated = Command::new("rustc")

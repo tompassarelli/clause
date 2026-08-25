@@ -134,7 +134,7 @@ fn emit_rust(source: &Path, output: &Path) -> Result<(), CliError> {
     let compiled = compile(source)?;
     let resolved = request::resolve(&compiled)
         .map_err(|error| CliError::failure(format!("resolve requests: {error}")))?;
-    let emitted = generated::emit_rust(&resolved)
+    let emitted = generated::emit_rust(&resolved, request::RunLimits::default())
         .map_err(|error| CliError::failure(format!("emit Rust: {error}")))?;
     fs::write(output, emitted)
         .map_err(|error| CliError::failure(format!("write Rust '{}': {error}", output.display())))

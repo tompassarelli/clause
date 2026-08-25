@@ -1,4 +1,4 @@
-use super::{Request, RequestOutput, RunLimits, Selection, resolve, run};
+use super::{Request, RequestOutput, RunLimits, RunResult, Selection, resolve, run};
 use crate::{elaborate, frontend};
 
 const SOURCE: &str = "Item
@@ -63,15 +63,16 @@ fn resolves_typed_requests_in_authored_order_and_encodes_one_aggregate() {
     ));
     let output = run(&program, RunLimits::default()).unwrap();
     assert!(matches!(
-        output.results.as_slice(),
-        [
-            RequestOutput::Find(_),
-            RequestOutput::WhyOne(_),
-            RequestOutput::Diff(_)
-        ]
+        output.results[0].revision().unwrap().output(),
+        RequestOutput::Find(_)
     ));
+    assert!(matches!(
+        output.results[1].revision().unwrap().output(),
+        RequestOutput::WhyOne(_)
+    ));
+    assert!(matches!(output.results[2], RunResult::Diff { .. }));
     assert_eq!(output.canonical_bytes().matches("[\"find\"").count(), 1);
-    assert!(output.canonical_bytes().starts_with("[\"clause-run-v1\","));
+    assert!(output.canonical_bytes().starts_with("[\"clause-run-v2\","));
 }
 
 #[test]
@@ -131,12 +132,19 @@ fn dispatches_one_and_all_intervention_contracts() {
     ));
     let output = run(&program, RunLimits::default()).unwrap();
     assert!(matches!(
-        output.results.as_slice(),
-        [
-            RequestOutput::PreventOne(_),
-            RequestOutput::PreventAll(_),
-            RequestOutput::AchieveOne(_),
-            RequestOutput::AchieveAll(_),
-        ]
+        output.results[0].revision().unwrap().output(),
+        RequestOutput::PreventOne(_)
+    ));
+    assert!(matches!(
+        output.results[1].revision().unwrap().output(),
+        RequestOutput::PreventAll(_)
+    ));
+    assert!(matches!(
+        output.results[2].revision().unwrap().output(),
+        RequestOutput::AchieveOne(_)
+    ));
+    assert!(matches!(
+        output.results[3].revision().unwrap().output(),
+        RequestOutput::AchieveAll(_)
     ));
 }

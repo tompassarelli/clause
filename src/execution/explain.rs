@@ -109,7 +109,9 @@ fn add_support_clause(
     clauses.push(clause.clone());
     indices.insert(clause.clone(), conclusion);
     let witness = match proof.witness() {
-        SupportWitness::Asserted => Witness::Asserted,
+        SupportWitness::Asserted { provenance } => Witness::Asserted {
+            provenance: provenance.clone(),
+        },
         SupportWitness::Derived {
             rule,
             governing_law,
@@ -153,7 +155,9 @@ fn add_clause(
         .proof(clause)
         .ok_or_else(|| KernelError::new("closure clause has no chosen witness"))?;
     let witness = match proof.witness() {
-        derive::Witness::Asserted => Witness::Asserted,
+        derive::Witness::Asserted { provenance } => Witness::Asserted {
+            provenance: provenance.clone(),
+        },
         derive::Witness::Derived {
             rule,
             governing_law,

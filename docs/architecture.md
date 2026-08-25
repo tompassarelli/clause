@@ -53,7 +53,7 @@ source-deleted parity, not specialized incremental target execution.
 | Milestone | Architecture evidence due in addition to inherited checks |
 | --- | --- |
 | M1–M3 | One referent domain; distinct content/occurrence/judgment/modes; exact named roles; deterministic source projection; strict canonical Revision reload; bounded reference evaluation and source-deleted parity. |
-| M4 | Holes remain scoped `PatternId` machinery, never referents; every query column retains its binder, complete recursive role-origin set, and presentation-only label through resolution, execution, canonical output, and source-deleted generation. Nested applications remain request-local, recursive correlation is exact, cardinality is explicit, laws remain inert until a distinct authorized rule projects them, and selection stays bounded. No compiled-performance claim is admitted. |
+| M4 | Holes remain scoped `PatternId` machinery, never referents; every query column retains its binder, complete recursive role-origin set, and presentation-only label through resolution, execution, canonical output, and source-deleted generation. Each query result retains its exact input Revision; asserted proof leaves retain exact occurrence, source, scope, and judgment identities, including duplicate source acts. Nested applications remain request-local, recursive correlation is exact, cardinality is explicit, laws remain inert until a distinct authorized rule projects them, and native/generated execution preserves identical caller bounds. No compiled-performance claim is admitted. |
 | M5 | Migration reports every source inference and proves source/designation → stable semantic identity → exact successor Revision continuity. |
 | M6 | `StateRevision` and `RuntimeSession` bind exact Model Revision, predecessor, Delta, inputs, policy, and replay. Add/retract dependency work is incremental; generic closure scanning is not the state hot path. |
 | M7 | Effects retain intent, authorization, attempt, receipt, observation, and admission as separate trace nodes. Generated JavaScript uses specialized layouts/indexes and contains no shadow domain logic; a matched reference/target measurement decides the hot-path claim. |
@@ -118,11 +118,14 @@ The self-test attacks the gate's own authority marker, milestone parser,
 shadow-identity denial, severe-debt denial, pending-obligation boundary, and
 full-object-identity comparison. It does not rerun a milestone's feature or
 regression suite. The M4 decision separately runs exact M4/S1 selection and
-M4/S2 rule-to-proof regressions. Together they cover descriptor and cardinality
-parity, recursive request-local nested holes, strict semantic-v9 tamper
-rejection, inert law and distinct rule authority,
+M4/S2 rule-to-proof regressions. The gate names exact tests for canonical-first,
+an inert law before authorization, and a repeated nested hole whose decoy row
+would pass if recursive occurrences were treated as fresh. Together they cover
+Revision-scoped result transcripts, occurrence/source/scope/judgment proof
+leaves, descriptor and cardinality parity, recursive request-local nested holes,
+strict semantic-v9 tamper rejection, distinct law/rule authority,
 governing-law/authority/scope proof trace, retained hospital proof and
-intervention parity, alpha-label isolation, deterministic bounds, and
-source-deleted generated output parity. M4/S2 admits at most 40,320
-alpha-identity candidates per rule, then fails closed so canonicalization has an
-exact work bound.
+intervention parity, alpha-label isolation, identical native/generated failure
+at caller bounds, and source-deleted generated output parity. M4/S2 admits at
+most 40,320 alpha-identity candidates per rule, then fails closed so
+canonicalization has an exact work bound.

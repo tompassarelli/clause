@@ -3,7 +3,7 @@
 mod closure;
 mod support;
 
-pub use closure::{Closure, Limits, Proof, Witness, saturate};
+pub use closure::{AssertionProvenance, Closure, Limits, Proof, Witness, saturate};
 pub use support::{
     Support, SupportFrontier, SupportLimits, SupportProof, SupportStatus, SupportWitness,
     support_frontier,

@@ -4,7 +4,7 @@ use clause::{
     elaborate, frontend,
     intervention::{AchieveAll, PreventAll},
     kernel::{ReferentId, RelationalContent, Revision, RoleId, Term},
-    request::{self, Request, RequestOutput, Selection},
+    request::{self, Request, RequestOutput, RunOutput, RunResult, Selection},
     wire,
 };
 use std::{collections::BTreeMap, env, fs, path::PathBuf, process::Command};
@@ -128,6 +128,13 @@ fn canonical_sets(mut alternatives: Vec<Vec<RelationalContent>>) -> Vec<Vec<Rela
     alternatives
 }
 
+fn revision_output(output: &RunOutput, index: usize) -> &RequestOutput {
+    output.results[index]
+        .revision()
+        .expect("query result is Revision-scoped")
+        .output()
+}
+
 fn support_sets(why: &clause::execution::WhyAll) -> Vec<Vec<RelationalContent>> {
     why.alternatives
         .iter()
@@ -199,7 +206,7 @@ fn hospital_program_has_the_complete_six_request_semantic_and_materialization_jo
         .expect("hospital requests execute through generic semantics");
     assert_eq!(output.results.len(), 6);
 
-    let RequestOutput::Find(destinations) = &output.results[0] else {
+    let RequestOutput::Find(destinations) = revision_output(&output, 0) else {
         panic!("first request is recursive find");
     };
     let mut expected_destinations = vec![
@@ -210,7 +217,7 @@ fn hospital_program_has_the_complete_six_request_semantic_and_materialization_jo
     expected_destinations.sort();
     assert_eq!(destinations, &expected_destinations);
 
-    let RequestOutput::WhyAll(Some(why)) = &output.results[1] else {
+    let RequestOutput::WhyAll(Some(why)) = revision_output(&output, 1) else {
         panic!("second request is complete why all");
     };
     assert!(why.is_complete());
@@ -232,7 +239,7 @@ fn hospital_program_has_the_complete_six_request_semantic_and_materialization_jo
         ]),
     );
 
-    let RequestOutput::PreventAll(base_prevent) = &output.results[2] else {
+    let RequestOutput::PreventAll(base_prevent) = revision_output(&output, 2) else {
         panic!("third request is base prevention");
     };
     assert_eq!(
@@ -257,7 +264,7 @@ fn hospital_program_has_the_complete_six_request_semantic_and_materialization_jo
         ]),
     );
 
-    let RequestOutput::PreventAll(successor_prevent) = &output.results[3] else {
+    let RequestOutput::PreventAll(successor_prevent) = revision_output(&output, 3) else {
         panic!("fourth request is successor prevention");
     };
     assert_eq!(
@@ -268,7 +275,7 @@ fn hospital_program_has_the_complete_six_request_semantic_and_materialization_jo
         ]),
     );
 
-    let RequestOutput::AchieveAll(achieve) = &output.results[4] else {
+    let RequestOutput::AchieveAll(achieve) = revision_output(&output, 4) else {
         panic!("fifth request is complete achievement");
     };
     assert_eq!(
@@ -279,9 +286,16 @@ fn hospital_program_has_the_complete_six_request_semantic_and_materialization_jo
         ]),
     );
 
-    let RequestOutput::Diff(diff) = &output.results[5] else {
+    let RunResult::Diff {
+        base: diff_base,
+        successor: diff_successor,
+        output: diff,
+    } = &output.results[5]
+    else {
         panic!("sixth request is semantic diff");
     };
+    assert_eq!(diff_base, base.identity());
+    assert_eq!(diff_successor, successor.identity());
     assert!(diff.authored().added().is_empty());
     assert_eq!(
         diff.authored().removed(),
