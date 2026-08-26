@@ -69,46 +69,62 @@ test("one Clause-owned coin collection replays into an absent coin render plan",
       ...(state.coin.active ? [{ id: "coin", position: state.coin.position, visible: true, revision }] : []),
     ],
   });
-  let state = initialState;
-  const forwarded = [];
-  const plans = [];
-  const runtime = {
-    transition(event, revision) {
-      forwarded.push({ event, revision });
-      state = event.order === 0
-        ? { player: { position: [10, 0], score: state.player.score + state.coin.value }, coin: { ...state.coin, active: false } }
-        : { player: { ...state.player }, coin: { ...state.coin } };
-      return { revisionId: revision, state, effects: [] };
-    },
+  const inputLog = [
+    { name: "frame", payload: { input: "right", dt: 1 } },
+    { name: "frame", payload: { input: "right", dt: 1 } },
+  ];
+  const execute = (entries) => {
+    let state = initialState;
+    const forwarded = [];
+    const plans = [];
+    const runtime = {
+      transition(event, revision) {
+        forwarded.push({ event, revision });
+        state = event.order === 0
+          ? { player: { position: [10, 0], score: state.player.score + state.coin.value }, coin: { ...state.coin, active: false } }
+          : { player: { ...state.player }, coin: { ...state.coin } };
+        return { revisionId: revision, state, effects: [] };
+      },
+    };
+    const bridge = createEventBridge({
+      artifact,
+      runtime,
+      onState: (nextState, revision) => plans.push(renderPlanFor(artifact, nextState, revision)),
+    });
+    for (const { name, payload } of entries) expect(bridge.dispatch(name, payload)).toBe(true);
+    return {
+      accepted: bridge.events().map(({ id, event, name, payload, order, revisionId }) => ({ id, event, name, payload, order, revisionId })),
+      finalState: state,
+      forwarded: forwarded.map(({ event, revision }) => ({
+        occurrence: event.id,
+        event: event.event,
+        input: event.payload,
+        order: event.order,
+        revision,
+      })),
+      plans,
+    };
   };
-  const bridge = createEventBridge({
-    artifact,
-    runtime,
-    onState: (nextState, revision) => plans.push(renderPlanFor(artifact, nextState, revision)),
-  });
 
   expect(renderPlanFor(artifact, initialState)).toEqual([
     { id: "player", position: [0, 0], visible: true, revision: revisionId },
     { id: "coin", position: [10, 0], visible: true, revision: revisionId },
   ]);
-  expect(bridge.dispatch("frame", { input: "right", dt: 1 })).toBe(true);
-  expect(bridge.dispatch("frame", { input: "right", dt: 1 })).toBe(true);
+  const first = execute(inputLog);
+  const replayLog = JSON.parse(JSON.stringify(first.accepted.map(({ name, payload }) => ({ name, payload }))));
+  const replay = execute(replayLog);
 
-  expect(forwarded.map(({ event, revision }) => ({
-    occurrence: event.id,
-    event: event.event,
-    input: event.payload,
-    order: event.order,
-    revision,
-  }))).toEqual([
+  expect(first.forwarded).toEqual([
     { occurrence: "occurrence-0", event: "ref-clause-frame", input: { input: "right", dt: 1 }, order: 0, revision: revisionId },
     { occurrence: "occurrence-1", event: "ref-clause-frame", input: { input: "right", dt: 1 }, order: 1, revision: revisionId },
   ]);
-  expect(bridge.events().map((event) => event.id)).toEqual(["occurrence-0", "occurrence-1"]);
-  expect(plans).toEqual([
+  expect(first.accepted.map((event) => event.id)).toEqual(["occurrence-0", "occurrence-1"]);
+  expect(first.accepted.every((event) => event.id !== event.event)).toBe(true);
+  expect(first.plans).toEqual([
     [{ id: "player", position: [10, 0], visible: true, revision: revisionId }],
     [{ id: "player", position: [10, 0], visible: true, revision: revisionId }],
   ]);
-  expect(state.player.score).toBe(10);
-  expect(state.coin.active).toBe(false);
+  expect(first.finalState.player.score).toBe(10);
+  expect(first.finalState.coin.active).toBe(false);
+  expect(JSON.stringify(replay)).toBe(JSON.stringify(first));
 });
