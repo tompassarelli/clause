@@ -42,3 +42,73 @@ test("effect traces require Clause validation and lifecycle stop is idempotent",
   const lifecycle = startLifecycle({ input, artifact, runtime: { transition: () => ({ revisionId, state: {}, effects: [] }) }, binding: { apply() {}, dispose() { disposed += 1; } }, render() {} });
   lifecycle.stop(); lifecycle.stop(); expect(scheduled).toBe(1); expect(disposed).toBe(1);
 });
+
+test("one Clause-owned coin collection replays into an absent coin render plan", () => {
+  const initialState = Object.freeze({
+    player: Object.freeze({ position: Object.freeze([0, 0]), score: 0 }),
+    coin: Object.freeze({ position: Object.freeze([10, 0]), active: true, value: 10 }),
+  });
+  const artifact = loadArtifact({
+    kind: "clause-js-runtime-v1",
+    revisionId,
+    initialState,
+    events: { frame: "ref-clause-frame" },
+    createRuntime: () => {},
+    createEvent: (name, event, payload, order, revision) => ({
+      id: `occurrence-${order}`,
+      event,
+      name,
+      payload,
+      order,
+      revisionId: revision,
+    }),
+    validateTransitionResult: (result, event, revision) => result.revisionId === revision && event.event === "ref-clause-frame",
+    validateEffectTrace: () => true,
+    renderPlan: (state, revision) => [
+      { id: "player", position: state.player.position, visible: true, revision },
+      ...(state.coin.active ? [{ id: "coin", position: state.coin.position, visible: true, revision }] : []),
+    ],
+  });
+  let state = initialState;
+  const forwarded = [];
+  const plans = [];
+  const runtime = {
+    transition(event, revision) {
+      forwarded.push({ event, revision });
+      state = event.order === 0
+        ? { player: { position: [10, 0], score: state.player.score + state.coin.value }, coin: { ...state.coin, active: false } }
+        : { player: { ...state.player }, coin: { ...state.coin } };
+      return { revisionId: revision, state, effects: [] };
+    },
+  };
+  const bridge = createEventBridge({
+    artifact,
+    runtime,
+    onState: (nextState, revision) => plans.push(renderPlanFor(artifact, nextState, revision)),
+  });
+
+  expect(renderPlanFor(artifact, initialState)).toEqual([
+    { id: "player", position: [0, 0], visible: true, revision: revisionId },
+    { id: "coin", position: [10, 0], visible: true, revision: revisionId },
+  ]);
+  expect(bridge.dispatch("frame", { input: "right", dt: 1 })).toBe(true);
+  expect(bridge.dispatch("frame", { input: "right", dt: 1 })).toBe(true);
+
+  expect(forwarded.map(({ event, revision }) => ({
+    occurrence: event.id,
+    event: event.event,
+    input: event.payload,
+    order: event.order,
+    revision,
+  }))).toEqual([
+    { occurrence: "occurrence-0", event: "ref-clause-frame", input: { input: "right", dt: 1 }, order: 0, revision: revisionId },
+    { occurrence: "occurrence-1", event: "ref-clause-frame", input: { input: "right", dt: 1 }, order: 1, revision: revisionId },
+  ]);
+  expect(bridge.events().map((event) => event.id)).toEqual(["occurrence-0", "occurrence-1"]);
+  expect(plans).toEqual([
+    [{ id: "player", position: [10, 0], visible: true, revision: revisionId }],
+    [{ id: "player", position: [10, 0], visible: true, revision: revisionId }],
+  ]);
+  expect(state.player.score).toBe(10);
+  expect(state.coin.active).toBe(false);
+});
