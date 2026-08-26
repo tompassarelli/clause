@@ -195,7 +195,7 @@ const PATTERN_CONTENT_ID: &str =
 const WEST_CONTENT_ID: &str =
     "content-sha256-6f99f9d878a067fc9a7e94bae2e2b8fef060d81629c845cb9b769107d83fb0d0";
 const EXPECTED_REVISION_ID: &str =
-    "rev-sha256-095b13529b8ef1930ee1971b4d65a231a9b03d121176bca1c9c8e4ecd0858bb7";
+    "rev-sha256-f9582764e01c94cd1528f5a05d458b6ff0f1782eb89e45535f4be6f14d808de4";
 
 fn expected_semantic() -> String {
     let referent = |seed: u8| format!("ref-sha256-{}", format!("{seed:02x}").repeat(32));
