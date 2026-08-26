@@ -274,9 +274,10 @@ ProgramSnapshot
 ```
 
 A ProgramChangeOccurrence identifies the base revision or root, resulting
-snapshot, exact proposed admissions and withdrawals when available,
-constitutive responsibility/provenance, and semantics epoch. The authored
-change and the canonical endpoint difference need not be identical.
+snapshot, canonical endpoint admissions and withdrawals, constitutive
+responsibility/provenance, and semantics epoch. It may exist for a rejected or
+unratified proposal and need not produce a revision. The authored change and
+the canonical endpoint difference need not be identical.
 
 A ProgramRevision binds only the constitutive causal-node fields:
 
@@ -335,8 +336,14 @@ elaborate(LosslessSyntax, ElaborationContext)
 validate(ProgramSnapshotCandidate, ValidationContext)
   -> ValidationResult
 
-admit(validated candidate, base ProgramRevision, AdmissionContext)
-  -> ProgramChangeOccurrence + ProgramRevision
+record change(validated candidate, base ProgramRevision, AdmissionContext)
+  -> ProgramChangeOccurrence
+
+constitute(validated occurrence, base ProgramRevision or root)
+  -> ProgramRevision
+
+Judgments and lifecycle decisions determine acceptance/currentness; revision
+existence itself is lifecycle-neutral.
 ```
 
 `ElaborationContext` owns the semantics epoch, designation catalog, namespace,

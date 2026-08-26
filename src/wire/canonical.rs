@@ -1,9 +1,9 @@
 use crate::kernel::{
     AssertionOccurrence, ClauseSemanticsId, Definition, Delta, DerivationRule, Goal, Invariant,
-    Judgment, JudgmentKind, JudgmentTarget, LookupMode, Model, Pattern, ProgramSnapshot,
-    ProgramSnapshotId, Referent, RelationShape, RelationalContent, Revision, RevisionId,
-    RevisionLineage, RoleId, RolePredicate, SemanticAtom, StructuralContract, StructuralForm, Term,
-    Transition, UniversalLaw,
+    Judgment, JudgmentKind, JudgmentTarget, LookupMode, Model, Pattern, ProgramChangeOccurrenceId,
+    ProgramId, ProgramRevisionId, ProgramSnapshot, ProgramSnapshotId, Referent, RelationShape,
+    RelationalContent, Revision, RevisionId, RevisionLineage, RoleId, RolePredicate, SemanticAtom,
+    StructuralContract, StructuralForm, Term, Transition, UniversalLaw,
 };
 
 use super::{json::escape, sha256::sha256_digest};
@@ -50,6 +50,38 @@ pub fn program_snapshot_id(model: &Model, semantics: &ClauseSemanticsId) -> Prog
 pub fn program_snapshot(model: Model, semantics: ClauseSemanticsId) -> ProgramSnapshot {
     let identity = program_snapshot_id(&model, &semantics);
     ProgramSnapshot::from_parts(identity, semantics, model)
+}
+
+pub fn program_revision_payload(
+    program: &ProgramId,
+    semantics: &ClauseSemanticsId,
+    predecessor: Option<&ProgramRevisionId>,
+    snapshot: &ProgramSnapshotId,
+    change: &ProgramChangeOccurrenceId,
+) -> String {
+    format!(
+        "[\"clause/program-revision/v1\",[\"semantics\",\"{}\"],[\"program\",\"{}\"],[\"predecessor\",{}],[\"snapshot\",\"{}\"],[\"change-occurrence\",\"{}\"]]",
+        escape(semantics.as_str()),
+        escape(program.as_str()),
+        predecessor.map_or_else(
+            || "[\"root\"]".to_owned(),
+            |p| format!("[\"revision\",\"{}\"]", escape(p.as_str()))
+        ),
+        escape(snapshot.as_str()),
+        escape(change.as_str())
+    )
+}
+
+pub fn program_revision_id(
+    program: &ProgramId,
+    semantics: &ClauseSemanticsId,
+    predecessor: Option<&ProgramRevisionId>,
+    snapshot: &ProgramSnapshotId,
+    change: &ProgramChangeOccurrenceId,
+) -> ProgramRevisionId {
+    ProgramRevisionId::from_digest(sha256_digest(
+        program_revision_payload(program, semantics, predecessor, snapshot, change).as_bytes(),
+    ))
 }
 
 fn payload(lineage: &RevisionLineage, model: &Model) -> String {

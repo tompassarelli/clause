@@ -50,7 +50,7 @@ migration proceeds.
 | Documentation authority reset | Complete | Six public documents, one authority per fact, no historical spec in the live tree |
 | M1–M6 capability line | Implemented | Current semantic-v10 / Revision-v6 representation and milestone tests |
 | M7 effect and JavaScript vertical | Partial | Effect traces, grounded RenderPlan projection, frozen RenderPlan ESM, provisional host contracts |
-| Program identity/history migration | In progress | ClauseSemanticsId, ProgramId/ProgramSnapshotId, typed ProgramSnapshot, and canonical snapshot-v1 preimage exist; live Revision-v6 still stores Model and ProgramRevision/history split remains pending |
+| Program identity/history migration | In progress | ClauseSemanticsId, typed ProgramId/ProgramSnapshot/ProgramDelta/ProgramChangeOccurrence/ProgramRevision and canonical snapshot/revision preimages exist; live Revision-v6 still stores Model and typed compilation/runtime migration remains pending |
 | Canonical agent-first syntax | Accepted design | Parser migration pending; legacy executable surface is isolated in `syntax.md` |
 | M8 single live surface | Pending | No compatibility grammar or stale consumer may remain at exit |
 

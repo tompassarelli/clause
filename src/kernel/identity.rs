@@ -205,21 +205,51 @@ impl ClauseSemanticsId {
 
 /// Durable identity of an evolving Clause program lineage.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub struct ProgramId(String);
+pub struct ProgramId(ReferentId);
 
 impl ProgramId {
-    pub fn new(value: String) -> Result<Self> {
-        validate_prefixed_hex(&value, "program-sha256-")
-            .then_some(Self(value))
-            .ok_or_else(|| KernelError::new("invalid program identity"))
+    pub fn new(value: ReferentId) -> Self {
+        Self(value)
     }
 
-    pub fn from_digest(bytes: [u8; 32]) -> Self {
-        Self(format_digest("program-sha256-", bytes))
+    pub fn from_referent(value: ReferentId) -> Self {
+        Self::new(value)
+    }
+
+    pub fn referent(&self) -> &ReferentId {
+        &self.0
+    }
+
+    pub fn into_referent(self) -> ReferentId {
+        self.0
     }
 
     pub fn as_str(&self) -> &str {
+        self.0.as_str()
+    }
+}
+
+impl From<ReferentId> for ProgramId {
+    fn from(value: ReferentId) -> Self {
+        Self::new(value)
+    }
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct ProgramChangeOccurrenceId(ReferentId);
+
+impl ProgramChangeOccurrenceId {
+    pub fn new(value: ReferentId) -> Self {
+        Self(value)
+    }
+    pub fn from_referent(value: ReferentId) -> Self {
+        Self::new(value)
+    }
+    pub fn referent(&self) -> &ReferentId {
         &self.0
+    }
+    pub fn as_str(&self) -> &str {
+        self.0.as_str()
     }
 }
 
@@ -240,6 +270,29 @@ impl ProgramSnapshotId {
 
     pub fn as_str(&self) -> &str {
         &self.0
+    }
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct ProgramRevisionId(String);
+
+impl ProgramRevisionId {
+    pub fn new(value: String) -> Result<Self> {
+        validate_prefixed_hex(&value, "program-revision-sha256-")
+            .then_some(Self(value))
+            .ok_or_else(|| KernelError::new("invalid program revision identity"))
+    }
+    pub(crate) fn from_digest(bytes: [u8; 32]) -> Self {
+        Self(format_digest("program-revision-sha256-", bytes))
+    }
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Display for ProgramRevisionId {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.0)
     }
 }
 
