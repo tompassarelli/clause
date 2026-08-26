@@ -7,10 +7,11 @@ use crate::{
     frontend::{self, Declaration, Kind, Member, ShapePartDecl, SurfaceTerm},
     intrinsic::{Intrinsic, IntrinsicRole},
     kernel::{
-        self, AssertionOccurrence, Definition, DerivationRule, Judgment, JudgmentKind,
-        JudgmentStatus, JudgmentTarget, LookupMode, Model, Pattern, ProposalPath, Referent,
-        ReferentId, RelationShape, RelationalContent, Role, RolePredicate, StructuralContract,
-        StructuralFailureClass, StructuralForm, Term, Transition, UniversalLaw,
+        self, AssertionOccurrence, ClauseSemanticsId, Definition, DerivationRule, Judgment,
+        JudgmentKind, JudgmentStatus, JudgmentTarget, LookupMode, Model, Pattern, ProgramSnapshot,
+        ProposalPath, Referent, ReferentId, RelationShape, RelationalContent, Role, RolePredicate,
+        SemanticAtom, StructuralContract, StructuralFailureClass, StructuralForm, Term, Transition,
+        UniversalLaw,
     },
     runtime::{RuntimePolicy, RuntimeSession, TransitionEvent},
     wire,
@@ -119,6 +120,67 @@ impl std::error::Error for CompileError {
 }
 
 pub type CompileResult<T> = std::result::Result<T, CompileError>;
+
+/// Unchecked semantic payload produced by elaboration. Construction performs
+/// no whole-payload admission; callers must pass it through [`validate`].
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProgramSnapshotCandidate {
+    semantics: ClauseSemanticsId,
+    root: ReferentId,
+    scope: ReferentId,
+    atoms: Vec<SemanticAtom>,
+}
+
+impl ProgramSnapshotCandidate {
+    pub fn new(
+        semantics: ClauseSemanticsId,
+        root: ReferentId,
+        scope: ReferentId,
+        atoms: Vec<SemanticAtom>,
+    ) -> Self {
+        Self {
+            semantics,
+            root,
+            scope,
+            atoms,
+        }
+    }
+    pub fn semantics(&self) -> &ClauseSemanticsId {
+        &self.semantics
+    }
+    pub fn root(&self) -> &ReferentId {
+        &self.root
+    }
+    pub fn scope(&self) -> &ReferentId {
+        &self.scope
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ValidationResult {
+    snapshot: ProgramSnapshot,
+}
+
+impl ValidationResult {
+    pub fn snapshot(&self) -> &ProgramSnapshot {
+        &self.snapshot
+    }
+    pub fn into_snapshot(self) -> ProgramSnapshot {
+        self.snapshot
+    }
+}
+
+pub fn validate(candidate: ProgramSnapshotCandidate) -> kernel::Result<ValidationResult> {
+    let ProgramSnapshotCandidate {
+        semantics,
+        scope,
+        atoms,
+        ..
+    } = candidate;
+    let model = Model::from_atoms(scope, atoms)?;
+    let snapshot = wire::program_snapshot(model, semantics);
+    Ok(ValidationResult { snapshot })
+}
 
 use super::{
     identifiers::{
@@ -1785,7 +1847,17 @@ fn lower_models(
             transitions,
             judgments,
         )?;
-        models.insert(declaration.subject.value.clone(), model);
+        let candidate = ProgramSnapshotCandidate::new(
+            ClauseSemanticsId::current(),
+            model.id().clone(),
+            model.id().clone(),
+            model.atoms().into_iter().collect(),
+        );
+        let snapshot = validate(candidate)?.into_snapshot();
+        models.insert(
+            declaration.subject.value.clone(),
+            snapshot.checked_payload().clone(),
+        );
     }
     Ok((models, source_spans, model_events))
 }
@@ -1914,24 +1986,29 @@ fn lower_context_model(
     }
     let structural_contracts =
         extend_structural_closure(projection, &mut referents, &contents, &mut definitions)?;
-    Ok((
-        Model::with_distinctions(
-            model_id,
-            referents,
-            contents,
-            shapes.clone(),
-            structural_contracts,
-            occurrences,
-            definitions,
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-            judgments,
-        )?,
-        source_spans,
-    ))
+    let model = Model::with_distinctions(
+        model_id,
+        referents,
+        contents,
+        shapes.clone(),
+        structural_contracts,
+        occurrences,
+        definitions,
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        judgments,
+    )?;
+    let candidate = ProgramSnapshotCandidate::new(
+        ClauseSemanticsId::current(),
+        model.id().clone(),
+        model.id().clone(),
+        model.atoms().into_iter().collect(),
+    );
+    let snapshot = validate(candidate)?.into_snapshot();
+    Ok((snapshot.checked_payload().clone(), source_spans))
 }
 
 fn extend_structural_closure(

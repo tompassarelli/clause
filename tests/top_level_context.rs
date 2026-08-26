@@ -1,12 +1,42 @@
+use std::collections::BTreeMap;
+
 use clause::{
     elaborate::{self, ElaborationContext},
     frontend,
-    kernel::{ReferentId, Term},
+    kernel::{ReferentId, RelationalContent, RoleId, SemanticAtom, Term},
     wire,
 };
 
 fn scope_id(byte: &str) -> ReferentId {
     ReferentId::new(format!("ref-sha256-{}", byte.repeat(64))).expect("fixed scope identity")
+}
+
+#[test]
+fn invalid_snapshot_candidates_fail_closed() {
+    let scope = scope_id("a");
+    let duplicate = SemanticAtom::Referent(clause::kernel::Referent::new(scope.clone()));
+    let candidate = elaborate::ProgramSnapshotCandidate::new(
+        clause::kernel::ClauseSemanticsId::current(),
+        scope.clone(),
+        scope.clone(),
+        vec![duplicate.clone(), duplicate],
+    );
+    assert!(elaborate::validate(candidate).is_err());
+
+    let relation = scope_id("c");
+    let role = RoleId::from_digest([0xef; 32]);
+    let content = RelationalContent::new(
+        relation,
+        BTreeMap::from([(role, Term::referent(scope_id("0")))]),
+    )
+    .expect("content is structurally formed");
+    let candidate = elaborate::ProgramSnapshotCandidate::new(
+        clause::kernel::ClauseSemanticsId::current(),
+        scope.clone(),
+        scope,
+        vec![SemanticAtom::RelationalContent(content)],
+    );
+    assert!(elaborate::validate(candidate).is_err());
 }
 
 fn compile_in(source: &str, id: ReferentId) -> elaborate::CompiledProgram {

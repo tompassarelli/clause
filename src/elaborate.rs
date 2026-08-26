@@ -11,7 +11,8 @@ mod resolution;
 
 pub use compilation::{
     CompileDiagnostic, CompileDiagnosticStatus, CompileError, CompileResult, CompiledProgram,
-    ElaborationContext, RuntimeJourney, SourceMap, compile, compile_in,
+    ElaborationContext, ProgramSnapshotCandidate, RuntimeJourney, SourceMap, ValidationResult,
+    compile, compile_in, validate,
 };
 pub use identifiers::DesignationTable;
 pub use lowering::lower_clause;
