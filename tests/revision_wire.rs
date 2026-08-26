@@ -320,7 +320,7 @@ fn replacement_delta(base: &clause::kernel::Revision) -> Delta {
 }
 
 #[test]
-fn exact_semantic_v9_bytes_hash_and_revision_v5_roundtrip_are_frozen() {
+fn exact_semantic_v10_bytes_hash_and_revision_v6_roundtrip_are_frozen() {
     assert_eq!(
         wire::sha256_hex(b"abc"),
         "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
