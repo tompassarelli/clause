@@ -754,6 +754,24 @@ fn effect_evidence_is_post_commit_distinct_and_canonical() {
             )],
         )
         .unwrap();
+    let cross_event_request = EffectRequest::new(
+        model.id().clone(),
+        player.clone(),
+        policy.clone(),
+        event_occurrence.clone(),
+        model.id().clone(),
+        0,
+    );
+    assert!(
+        EffectTrace::denied(
+            journey.revision(),
+            committed.latest(),
+            cross_event_request,
+        )
+        .unwrap_err()
+        .to_string()
+        .contains("does not match the requested event")
+    );
     let state_bytes = committed.latest().canonical_bytes();
     let denied = EffectTrace::denied(journey.revision(), committed.latest(), request()).unwrap();
     assert_eq!(denied.authorization().decision(), AuthorizationDecision::Denied);

@@ -1649,13 +1649,18 @@ fn validate_effect_lineage(
             "effect trace needs the exact committed successor StateRevision",
         ));
     }
-    if !post_commit
+    let Some(event) = post_commit
         .events()
         .iter()
-        .any(|event| event.id() == &lineage.event)
-    {
+        .find(|event| event.id() == &lineage.event)
+    else {
         return Err(KernelError::new(
             "effect trace event is absent from the committed StateRevision input",
+        ));
+    };
+    if event.event() != &lineage.request {
+        return Err(KernelError::new(
+            "effect trace event occurrence does not match the requested event",
         ));
     }
     for (id, kind) in [
