@@ -196,10 +196,10 @@ fn top_level_binding_separators(
             )
         });
     }
-    if let Some(error) = delimiter_error {
-        if !separators.is_empty() {
-            return Err(error);
-        }
+    if let Some(error) = delimiter_error
+        && !separators.is_empty()
+    {
+        return Err(error);
     }
     Ok(separators)
 }
