@@ -1,12 +1,106 @@
 //! Canonical total render plans bound to exact Model and runtime state Revisions.
 
 use crate::{
-    kernel::{FiniteF32, KernelError, ReferentId, Result, Revision, RevisionId},
+    kernel::{FiniteF32, KernelError, ReferentId, Result, Revision, RevisionId, RoleId, Term},
     runtime::{StateRevision, StateRevisionId},
     wire::json::{JsonParser, array, json, list, require_string, string},
 };
 
 pub const RENDER_PLAN_TAG: &str = "clause-render-plan-v1";
+
+/// The authored relation and roles used by the bounded direct scene
+/// projector.  The relation must carry exactly one item referent and one
+/// finite two-component tuple position.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SceneProjectionSpec {
+    relation: ReferentId,
+    item_role: RoleId,
+    position_role: RoleId,
+}
+
+impl SceneProjectionSpec {
+    pub fn new(relation: ReferentId, item_role: RoleId, position_role: RoleId) -> Result<Self> {
+        if item_role == position_role {
+            return Err(KernelError::new("scene projection roles must be distinct"));
+        }
+        Ok(Self {
+            relation,
+            item_role,
+            position_role,
+        })
+    }
+}
+
+/// Project only currently supported, grounded authored scene facts into the
+/// canonical total plan.  No support root is treated as semantic provenance.
+pub fn project_render_plan(
+    revision: &Revision,
+    state: &StateRevision,
+    spec: &SceneProjectionSpec,
+) -> Result<RenderPlan> {
+    if state.model_revision() != revision.identity() {
+        return Err(KernelError::new(
+            "scene projection names the wrong Model Revision",
+        ));
+    }
+    let mut items = Vec::new();
+    for content in state.supported_contents() {
+        if content.relation() != &spec.relation {
+            continue;
+        }
+        if !content.is_ground() {
+            return Err(KernelError::new(
+                "scene projection requires grounded content",
+            ));
+        }
+        if content.roles().len() != 2
+            || !content.roles().contains_key(&spec.item_role)
+            || !content.roles().contains_key(&spec.position_role)
+        {
+            return Err(KernelError::new(
+                "scene projection relation roles do not match",
+            ));
+        }
+        let item = match content.roles().get(&spec.item_role) {
+            Some(Term::Referent(id)) => id.clone(),
+            _ => return Err(KernelError::new("scene projection item is not a referent")),
+        };
+        let position = position_f32x2(content.roles().get(&spec.position_role))?;
+        items.push(RenderItem::new(item, position)?);
+    }
+    items.sort_by(|left, right| left.id().cmp(right.id()));
+    RenderPlan::new(revision, state, items)
+}
+
+fn position_f32x2(term: Option<&Term>) -> Result<[FiniteF32; 2]> {
+    let values = match term {
+        Some(Term::Product { fields, .. }) if fields.len() == 2 => fields
+            .values()
+            .map(|field| field.value())
+            .collect::<Vec<_>>(),
+        Some(Term::LabelledProduct { fields, .. }) if fields.len() == 2 => {
+            fields.values().collect::<Vec<_>>()
+        }
+        _ => {
+            return Err(KernelError::new(
+                "scene projection position is not a two-component tuple",
+            ));
+        }
+    };
+    if values.len() != 2 {
+        return Err(KernelError::new("scene projection position is not F32x2"));
+    }
+    let mut values = values.into_iter().map(|value| match value {
+        Term::F32(value) => Ok(*value),
+        _ => Err(KernelError::new(
+            "scene projection position component is not F32",
+        )),
+    });
+    Ok([
+        values.next().expect("two values checked")?,
+        values.next().expect("two values checked")?,
+    ])
+}
 
 /// One desired scene item in an exact state-bound snapshot.
 #[derive(Clone, Debug, Eq, PartialEq)]

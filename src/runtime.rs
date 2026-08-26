@@ -840,6 +840,18 @@ impl StateRevision {
             .unwrap_or_default()
     }
 
+    /// Return the exact authored relational content that currently has at
+    /// least one support.  This narrow crate-internal view keeps the
+    /// incremental catalog private while allowing typed projections to
+    /// inspect state-bearing facts rather than inferred roots.
+    pub(crate) fn supported_contents(&self) -> Vec<RelationalContent> {
+        self.state
+            .supports
+            .keys()
+            .filter_map(|id| self.state.catalog.get(id).cloned())
+            .collect()
+    }
+
     pub fn work(&self) -> &TransitionWork {
         &self.state.work
     }
