@@ -258,6 +258,10 @@ impl ProgramSnapshot {
     pub fn checked_payload(&self) -> &Model {
         &self.model
     }
+
+    pub(crate) fn into_checked_payload(self) -> Model {
+        self.model
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

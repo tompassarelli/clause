@@ -484,9 +484,11 @@ later declaration.
 ## Implementation migration
 
 The public implementation at semantic-v10 / Revision-v6 predates this syntax.
-It currently parses to `frontend::Program`, elaborates through
-`CompiledProgram` and `ElaborationContext`, and seals `kernel::Model` inside
-`kernel::Revision`. Those are implementation names under migration; the
+It currently parses to `frontend::Program`, elaborates under
+`ElaborationContext` into an identity-free `ProgramSnapshotCandidate`, validates
+once to a checked `ProgramSnapshot`, and then uses an explicit legacy bridge to
+place the checked payload in `CompiledProgram` / `kernel::Revision`. Those
+bridge names are implementation vocabulary under migration; the
 [foundation](foundation.md) defines the accepted semantic layers.
 
 | Area | Canonical source | Currently executable legacy surface |

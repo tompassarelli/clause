@@ -33,12 +33,17 @@ content they concern; none silently becomes another ProgramSnapshot.
 
 ## Current implementation mapping
 
-The public code predates the accepted Program ontology. Its current pipeline is:
+The live compiler now crosses an explicit checked-snapshot boundary while its
+public result remains on the frozen Revision-v6 bridge:
 
 ```text
 frontend::parse
   -> frontend::Program
-  -> elaborate::compile / compile_in(ElaborationContext)
+  -> elaborate under ElaborationContext
+  -> ProgramSnapshotCandidate + separate SourceMap
+  -> validate(candidate)
+  -> ValidationResult { ProgramSnapshot }
+  -> explicit legacy checked-payload bridge
   -> CompiledProgram
   -> kernel::Revision { RevisionLineage, kernel::Model }
   -> RuntimeSession / StateRevision / generated projections
@@ -49,8 +54,10 @@ These names describe live code, not final semantics:
 | Current implementation type | Current job | Accepted destination |
 | --- | --- | --- |
 | `frontend::Program` | parsed source AST | lossless syntax plus source projection inputs |
-| `ElaborationContext` | caller-owned semantic scope and designation inputs | retained as the honest elaboration boundary; validation/admission contexts remain deferred until candidate/revision APIs can accept explicit inputs |
-| `CompiledProgram` | aggregate of named revisions, requests, runtime journeys, and designations | compilation result around one or more ProgramSnapshot candidates and explicit admission results |
+| `ElaborationContext` | caller-owned semantic root scope and designation inputs | retained as the honest elaboration boundary |
+| `ProgramSnapshotCandidate` | unchecked semantics epoch, root scope, and duplicate-preserving semantic atoms | consumed exactly once by validation; it has no identity and carries no source, lineage, authority, or policy data |
+| `ValidationResult` | owns the checked `ProgramSnapshot` produced by comprehensive kernel validation | retained; no `ValidationContext` exists until validation has a genuine contextual input |
+| `CompiledProgram` | legacy aggregate of named Revision-v6 values, requests, runtime journeys, designations, and SourceMap | migrate consumers to checked snapshots and explicit admission results |
 | `kernel::Model` | current checked semantic payload container | `ProgramSnapshot` payload; it is not a model-theoretic Model |
 | `kernel::Revision` | current envelope whose ID hashes lineage and Model payload | split `ProgramSnapshot`, `ProgramChangeOccurrence`, and `ProgramRevision` identities |
 | current designation table | source mapping plus explicit ID-retention helpers | durable, lineage-aware Designation allocation and SourceMap evidence |
@@ -62,10 +69,12 @@ Canonical persistence is currently `clause-semantic-v10` inside
 payload, so it is neither the accepted `ProgramSnapshotId` nor the accepted
 `ProgramRevisionId`. The identity/history seam now includes typed
 `ProgramId`, `ProgramSnapshot`, `ProgramDelta`, `ProgramChangeOccurrence`, and
-`ProgramRevision` with canonical preimages. Live Revision-v6 still stores
-Model and drives consumers; typed compilation/runtime migration, persistence,
-refs, lifecycle, deployment, and durable Designation representations remain
-pending.
+`ProgramRevision` with canonical preimages. Elaboration now constructs an
+identity-free `ProgramSnapshotCandidate`; validation performs the complete
+kernel check once and hashes one checked snapshot. An explicit private bridge
+then extracts that checked payload for unchanged Revision-v6 consumers. Typed
+admission/runtime migration, persistence, refs, lifecycle, deployment, and
+durable Designation representations remain pending.
 
 This mapping is the migration contract. Code using the old names remains real
 and test-backed, but it cannot override the semantic vocabulary in the
@@ -82,7 +91,7 @@ read(SourceUnit)
 elaborate(LosslessSyntax, ElaborationContext)
   -> ProgramSnapshotCandidate
 
-validate(ProgramSnapshotCandidate, ValidationContext)
+validate(ProgramSnapshotCandidate)
   -> ValidationResult
 
 record change(validated candidate, base ProgramRevision, AdmissionContext)
@@ -98,9 +107,13 @@ execute(ProgramRevision, RuntimePolicy, SessionStartOccurrence)
   -> RuntimeSession -> StateRevision successors
 ```
 
-Each context has a distinct checked type. Source identity, namespace,
-ProgramId, authority, policy, semantics epoch, and runtime session identity may
-be related explicitly, but are never interchangeable defaults.
+Every contextual authority receives a distinct checked type only when the
+operation has a real input for it. Validation currently needs only the
+candidate, so `ValidationContext` is intentionally absent. `AdmissionContext`
+remains a target type until admission accepts ProgramId, base revision,
+authority, policy, and constitutive occurrence allocation. Source identity,
+namespace, ProgramId, authority, policy, semantics epoch, and runtime session
+identity may be related explicitly, but are never interchangeable defaults.
 
 ## Constitution
 
@@ -179,10 +192,12 @@ addition, and occurrence-exact affected-support retraction. Authored legacy
 events, strict replay, canonical state history, and source-deleted generated
 Rust share the current frozen wire.
 
-The next architecture edge is the identity/parity oracle plus the complete
-Model/Revision/context consumer census. Their joined result owns the
-ProgramSnapshot and ProgramRevision split. Surface migration resumes only on
-that corrected identity boundary.
+The Program identity/history foundation, identity/parity oracle, consumer
+census, SourceMap split, and typed elaboration boundary are complete. The
+current release edge is the identity-free ProgramSnapshot candidate and
+single-pass checked snapshot boundary. The next edge gives RuntimeSession and
+StateRevision immutable policy-, semantics-, and occurrence-pinned identities;
+surface migration resumes from that corrected runtime boundary.
 
 ## Running the gate
 

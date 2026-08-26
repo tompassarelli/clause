@@ -333,7 +333,7 @@ read(SourceUnit)
 elaborate(LosslessSyntax, ElaborationContext)
   -> ProgramSnapshotCandidate
 
-validate(ProgramSnapshotCandidate, ValidationContext)
+validate(ProgramSnapshotCandidate)
   -> ValidationResult
 
 record change(validated candidate, base ProgramRevision, AdmissionContext)
@@ -346,11 +346,18 @@ Judgments and lifecycle decisions determine acceptance/currentness; revision
 existence itself is lifecycle-neutral.
 ```
 
-`ElaborationContext` owns the semantics epoch, designation catalog, namespace,
-and imported identities/contracts. `ValidationContext` owns structural and
-semantic admission checks and relevant resource bounds. `AdmissionContext`
-owns ProgramId, base revision, authority, policy, and constitutive change
-occurrence. SourceMap owns source artifacts, spans, trivia, and diagnostics.
+The current `ElaborationContext` owns only caller-selected root scope and
+designation inputs. The candidate owns its exact semantics epoch and unchecked
+semantic atoms; SourceMap separately owns source and proposal spans used for
+diagnostics. Validation has no policy- or resource-relative input today, so it
+takes only the candidate and no ceremonial `ValidationContext` exists.
+
+`AdmissionContext` is the target boundary for ProgramId, base revision,
+authority, policy, and constitutive change-occurrence allocation. It becomes a
+real type only when the admission API accepts those inputs and returns Program
+history artifacts. Future namespace, import, SourceArtifactId, trivia, or
+resource-bound inputs belong in their exact typed boundary rather than being
+predeclared as optional fields.
 
 There is no broad `ProgramContext` bag whose optional identities can silently
 stand in for one another. NamespaceId, AuthorityId, PolicyId,

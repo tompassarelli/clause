@@ -176,6 +176,12 @@ pub fn validate(candidate: ProgramSnapshotCandidate) -> kernel::Result<Validatio
     Ok(ValidationResult { snapshot })
 }
 
+/// Temporary Revision-v6 bridge for consumers that still require the checked
+/// payload without its ProgramSnapshot envelope.
+fn legacy_revision_payload(snapshot: ProgramSnapshot) -> Model {
+    snapshot.into_checked_payload()
+}
+
 fn candidate_from_parts(
     root_scope: ReferentId,
     referents: BTreeMap<ReferentId, Referent>,
@@ -1885,7 +1891,7 @@ fn lower_models(
         let snapshot = validate(candidate)?.into_snapshot();
         models.insert(
             declaration.subject.value.clone(),
-            snapshot.checked_payload().clone(),
+            legacy_revision_payload(snapshot),
         );
     }
     Ok((models, source_spans, model_events))
@@ -2031,7 +2037,7 @@ fn lower_context_model(
         judgments,
     );
     let snapshot = validate(candidate)?.into_snapshot();
-    Ok((snapshot.checked_payload().clone(), source_spans))
+    Ok((legacy_revision_payload(snapshot), source_spans))
 }
 
 fn extend_structural_closure(

@@ -259,6 +259,52 @@ fn source_map_span_changes_do_not_change_frozen_revision_identity() {
         wire::serialize(compact_revision),
         wire::serialize(shifted_revision)
     );
+
+    let semantics = clause::kernel::ClauseSemanticsId::current();
+    let compact_candidate = elaborate::ProgramSnapshotCandidate::new(
+        semantics.clone(),
+        compact_revision.model().id().clone(),
+        compact_revision.model().atoms().into_iter().collect(),
+    );
+    let shifted_candidate = elaborate::ProgramSnapshotCandidate::new(
+        semantics,
+        shifted_revision.model().id().clone(),
+        shifted_revision.model().atoms().into_iter().collect(),
+    );
+    assert_eq!(compact_candidate, shifted_candidate);
+    let compact_snapshot = elaborate::validate(compact_candidate)
+        .expect("compact candidate validates")
+        .into_snapshot();
+    let shifted_snapshot = elaborate::validate(shifted_candidate)
+        .expect("shifted candidate validates")
+        .into_snapshot();
+    assert_eq!(compact_snapshot.identity(), shifted_snapshot.identity());
+}
+
+#[test]
+fn candidate_semantics_epoch_changes_snapshot_identity() {
+    let program = compile_in("Game\n\nChess ∈ Game\n", scope_id("8"));
+    let revision = program.context_revision().expect("context Revision");
+    let atoms: Vec<_> = revision.model().atoms().into_iter().collect();
+    let first = elaborate::ProgramSnapshotCandidate::new(
+        clause::kernel::ClauseSemanticsId::new("clause-semantics-v1".to_owned())
+            .expect("first semantics epoch"),
+        revision.model().id().clone(),
+        atoms.clone(),
+    );
+    let second = elaborate::ProgramSnapshotCandidate::new(
+        clause::kernel::ClauseSemanticsId::new("clause-semantics-v2".to_owned())
+            .expect("second semantics epoch"),
+        revision.model().id().clone(),
+        atoms,
+    );
+    let first = elaborate::validate(first)
+        .expect("first candidate validates")
+        .into_snapshot();
+    let second = elaborate::validate(second)
+        .expect("second candidate validates")
+        .into_snapshot();
+    assert_ne!(first.identity(), second.identity());
 }
 
 #[test]

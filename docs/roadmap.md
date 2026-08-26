@@ -50,7 +50,7 @@ migration proceeds.
 | Documentation authority reset | Complete | Six public documents, one authority per fact, no historical spec in the live tree |
 | M1–M6 capability line | Implemented | Current semantic-v10 / Revision-v6 representation and milestone tests |
 | M7 effect and JavaScript vertical | Partial | Effect traces, grounded RenderPlan projection, frozen RenderPlan ESM, provisional host contracts |
-| Program identity/history migration | In progress | ClauseSemanticsId, typed ProgramId/ProgramSnapshot/ProgramDelta/ProgramChangeOccurrence/ProgramRevision and canonical snapshot/revision preimages exist; live Revision-v6 still stores Model and typed compilation/runtime migration remains pending |
+| Program identity/history migration | In progress | ClauseSemanticsId, typed Program identities/history, canonical preimages, separate SourceMap/ElaborationContext, and single-pass ProgramSnapshotCandidate validation exist; an explicit bridge still feeds checked payloads to Revision-v6 while admission/runtime migration remains pending |
 | Canonical agent-first syntax | Accepted design | Parser migration pending; legacy executable surface is isolated in `syntax.md` |
 | M8 single live surface | Pending | No compatibility grammar or stale consumer may remain at exit |
 
@@ -304,10 +304,14 @@ derived current views.
 
 ### 5. Typed compilation and runtime boundaries
 
-Split SourceMap, ElaborationContext, ValidationContext, and AdmissionContext.
-Then bind RuntimeSession and StateRevision to exact program, policy, semantics,
-session-start, and transition-occurrence identities. Program migration creates
-explicit evidence and a new session.
+SourceMap and ElaborationContext are split, and elaboration now produces an
+identity-free ProgramSnapshotCandidate consumed by single-pass validation.
+Validation has no contextual inputs, so no ceremonial ValidationContext is
+present. Add AdmissionContext only when admission accepts Program lineage, base
+revision, authority, policy, and occurrence allocation and returns the typed
+history artifacts. Then bind RuntimeSession and StateRevision to exact program,
+policy, semantics, session-start, and transition-occurrence identities.
+Program migration creates explicit evidence and a new session.
 
 ### 6. Canonical surface rebuild
 
