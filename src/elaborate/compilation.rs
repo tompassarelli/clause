@@ -171,12 +171,7 @@ pub fn validate(candidate: ProgramSnapshotCandidate) -> kernel::Result<Validatio
         atoms,
         ..
     } = candidate;
-    let model = Model::from_atoms(root_scope.clone(), atoms)?;
-    if !model.referents().contains_key(&root_scope) {
-        return Err(kernel::KernelError::new(
-            "program snapshot root scope is absent from checked referents",
-        ));
-    }
+    let model = Model::from_atoms(root_scope, atoms)?;
     let snapshot = wire::program_snapshot(model, semantics);
     Ok(ValidationResult { snapshot })
 }

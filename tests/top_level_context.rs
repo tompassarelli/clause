@@ -22,6 +22,13 @@ fn invalid_snapshot_candidates_fail_closed() {
     );
     assert!(elaborate::validate(candidate).is_err());
 
+    let candidate = elaborate::ProgramSnapshotCandidate::new(
+        clause::kernel::ClauseSemanticsId::current(),
+        scope_id("b"),
+        vec![],
+    );
+    assert!(elaborate::validate(candidate).is_err());
+
     let relation = scope_id("c");
     let role = RoleId::from_digest([0xef; 32]);
     let content = RelationalContent::new(
