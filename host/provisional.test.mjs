@@ -8,9 +8,9 @@ const playerId = refId("1");
 const coinId = refId("2");
 
 const item = (id, xBits, yBits) => ["item", id, ["position-f32x2", xBits, yBits]];
-const plan = (stateRevisionId, items) => [
+const plan = (stateRevisionId, items, modelRevisionId = revisionId) => [
   "clause-render-plan-v1",
-  ["model-revision", revisionId],
+  ["model-revision", modelRevisionId],
   ["state-revision", stateRevisionId],
   ["items", items],
 ];
@@ -187,7 +187,8 @@ test("mesh reconciliation hides omissions and rejects invalid plans before mutat
   }
   const THREE = { Mesh, BoxGeometry: Geometry, CylinderGeometry: Geometry, MeshBasicMaterial: Material };
   const scene = { add() {}, remove() {} };
-  const binding = createTwoMeshBinding(THREE, scene, { playerId, coinId });
+  expect(() => createTwoMeshBinding(THREE, scene, { revisionId: "wrong", playerId, coinId })).toThrow();
+  const binding = createTwoMeshBinding(THREE, scene, { revisionId, playerId, coinId });
   const first = plan(stateId("b"), [
     item(playerId, "3f800000", "40000000"),
     item(coinId, "40400000", "40800000"),
@@ -214,7 +215,19 @@ test("mesh reconciliation hides omissions and rejects invalid plans before mutat
     coin: [binding.meshes.coin.position.x, binding.meshes.coin.position.y, binding.meshes.coin.position.z, binding.meshes.coin.visible],
   })).toBe(before);
 
-  const duplicate = plan(stateId("e"), [
+  const wrongRevision = `rev-sha256-${"b".repeat(64)}`;
+  const crossRevision = plan(
+    stateId("e"),
+    [item(playerId, "41a00000", "00000000")],
+    wrongRevision,
+  );
+  expect(() => binding.apply(crossRevision)).toThrow();
+  expect(JSON.stringify({
+    player: [binding.meshes.player.position.x, binding.meshes.player.position.y, binding.meshes.player.position.z, binding.meshes.player.visible],
+    coin: [binding.meshes.coin.position.x, binding.meshes.coin.position.y, binding.meshes.coin.position.z, binding.meshes.coin.visible],
+  })).toBe(before);
+
+  const duplicate = plan(stateId("f"), [
     item(playerId, "41200000", "00000000"),
     item(playerId, "00000000", "00000000"),
   ]);

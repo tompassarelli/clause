@@ -339,7 +339,7 @@ class Mesh {
 }
 const THREE = { Mesh, BoxGeometry: Geometry, CylinderGeometry: Geometry, MeshBasicMaterial: Material };
 const scene = { add() {}, remove() {} };
-const binding = createTwoMeshBinding(THREE, scene, { playerId, coinId });
+const binding = createTwoMeshBinding(THREE, scene, { revisionId, playerId, coinId });
 binding.apply(initial);
 binding.apply(collected);
 binding.apply(collected);

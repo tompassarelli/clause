@@ -149,8 +149,9 @@ export function createEventBridge({ artifact, runtime, revisionId = artifact.rev
 }
 
 /** Reconcile a total desired-scene plan to two stable meshes. */
-export function createTwoMeshBinding(THREE, scene, { playerId, coinId }) {
+export function createTwoMeshBinding(THREE, scene, { revisionId, playerId, coinId }) {
   if (!THREE || !scene || typeof scene.add !== "function") throw new Error("Three.js scene is required");
+  requireRevisionId(revisionId, "binding Model Revision identity");
   requireReferentId(playerId, "player identity");
   requireReferentId(coinId, "coin identity");
   if (playerId === coinId) throw new Error("player and coin identities must be distinct");
@@ -159,7 +160,7 @@ export function createTwoMeshBinding(THREE, scene, { playerId, coinId }) {
   scene.add(player); scene.add(coin);
   const meshes = new Map([[playerId, player], [coinId, coin]]);
   const apply = (plan) => {
-    const desired = validateRenderPlan(plan);
+    const desired = validateRenderPlan(plan, revisionId);
     if (desired.items.some((item) => !meshes.has(item.id))) throw new Error("RenderPlan names an unregistered mesh identity");
     const byId = new Map(desired.items.map((item) => [item.id, item]));
     for (const [id, mesh] of meshes) {
