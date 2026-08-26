@@ -509,8 +509,16 @@ protected behavior.
 
 Add explicit effect boundaries, receipts and opaque resources, capability and
 package requirements, generated JavaScript ES modules, source maps, browser and
-Node hosts, assets/input/audio adapters needed by the vertical, a pure
+Bun hosts, assets/input/audio adapters needed by the vertical, a pure
 StateRevision-to-RenderPlan projection, and a Three.js reconciler.
+
+The bounded projection checkpoint accepts an ordinary declared scene relation
+whose roles carry a Model referent and an exact labelled `Vec2`, then derives a
+canonical total RenderPlan only from currently supported grounded runtime
+content. The dedicated `scene includes sprite ...` target syntax, live
+generated-JavaScript transitions, browser/Three.js execution, source maps, and
+the specialized target-performance proof remain ordered work; this checkpoint
+does not complete M7.
 
 The first proof of general-purpose direction is the one-coin game from
 [target surface](surface.md): movement, collision, collection, score, deterministic

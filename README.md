@@ -18,8 +18,12 @@ The compact M1 grounding, binding, membership, enumeration, and focus surface,
 M2's exact role-labelled relation schemas, and M3's recursive terms, checked
 structural values, pure definitions, and source-deleted generated evaluation
 are executable. M4 adds recursive relational holes, explicit query cardinality,
-and separately authorized law-backed derivation. State/effect execution,
-generated JavaScript, and the Three.js game proof remain roadmap capabilities.
+and separately authorized law-backed derivation. M6 adds deterministic authored
+events, state transitions, incremental successor state, and replay. The bounded
+M7 path now carries explicit effect traces, canonical RenderPlan ESM snapshots,
+and grounded StateRevision scene projection. Dedicated scene syntax, live
+generated-JavaScript transitions, real browser/Three.js execution, source maps,
+and the full M7 proof remain roadmap capabilities.
 
 `:` binds, `∈` expresses membership, `=` expresses equality, and `->` orients
 a result. An editor may transform typed `::` into `∈`; raw `::` is not Clause

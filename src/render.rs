@@ -1,7 +1,10 @@
 //! Canonical total render plans bound to exact Model and runtime state Revisions.
 
 use crate::{
-    kernel::{FiniteF32, KernelError, ReferentId, Result, Revision, RevisionId, RoleId, Term},
+    kernel::{
+        FiniteF32, KernelError, ReferentId, Result, Revision, RevisionId, RoleId, StructuralForm,
+        Term,
+    },
     runtime::{StateRevision, StateRevisionId},
     wire::json::{JsonParser, array, json, list, require_string, string},
 };
@@ -16,23 +19,41 @@ pub struct SceneProjectionSpec {
     relation: ReferentId,
     item_role: RoleId,
     position_role: RoleId,
+    position_shape: ReferentId,
+    x_field: ReferentId,
+    y_field: ReferentId,
 }
 
 impl SceneProjectionSpec {
-    pub fn new(relation: ReferentId, item_role: RoleId, position_role: RoleId) -> Result<Self> {
+    pub fn new(
+        relation: ReferentId,
+        item_role: RoleId,
+        position_role: RoleId,
+        position_shape: ReferentId,
+        x_field: ReferentId,
+        y_field: ReferentId,
+    ) -> Result<Self> {
         if item_role == position_role {
             return Err(KernelError::new("scene projection roles must be distinct"));
+        }
+        if x_field == y_field {
+            return Err(KernelError::new(
+                "scene projection position fields must be distinct",
+            ));
         }
         Ok(Self {
             relation,
             item_role,
             position_role,
+            position_shape,
+            x_field,
+            y_field,
         })
     }
 }
 
-/// Project only currently supported, grounded authored scene facts into the
-/// canonical total plan.  No support root is treated as semantic provenance.
+/// Project only currently supported, grounded scene facts into the canonical
+/// total plan. No support root is treated as semantic provenance.
 pub fn project_render_plan(
     revision: &Revision,
     state: &StateRevision,
@@ -41,6 +62,34 @@ pub fn project_render_plan(
     if state.model_revision() != revision.identity() {
         return Err(KernelError::new(
             "scene projection names the wrong Model Revision",
+        ));
+    }
+    let relation = revision
+        .model()
+        .relation_shapes()
+        .get(&spec.relation)
+        .ok_or_else(|| KernelError::new("scene projection relation is absent from the Model"))?;
+    if relation.roles().len() != 2
+        || !relation.roles().contains_key(&spec.item_role)
+        || !relation.roles().contains_key(&spec.position_role)
+    {
+        return Err(KernelError::new(
+            "scene projection relation roles do not match",
+        ));
+    }
+    let position_contract = revision
+        .model()
+        .structural_contracts()
+        .get(&spec.position_shape)
+        .ok_or_else(|| KernelError::new("scene projection position shape is absent"))?;
+    let StructuralForm::Product(fields) = position_contract.form() else {
+        return Err(KernelError::new(
+            "scene projection position shape is not a labelled product",
+        ));
+    };
+    if fields.len() != 2 || !fields.contains(&spec.x_field) || !fields.contains(&spec.y_field) {
+        return Err(KernelError::new(
+            "scene projection position shape does not match x/y fields",
         ));
     }
     let mut items = Vec::new();
@@ -65,41 +114,35 @@ pub fn project_render_plan(
             Some(Term::Referent(id)) => id.clone(),
             _ => return Err(KernelError::new("scene projection item is not a referent")),
         };
-        let position = position_f32x2(content.roles().get(&spec.position_role))?;
+        let position = position_f32x2(content.roles().get(&spec.position_role), spec)?;
         items.push(RenderItem::new(item, position)?);
     }
     items.sort_by(|left, right| left.id().cmp(right.id()));
     RenderPlan::new(revision, state, items)
 }
 
-fn position_f32x2(term: Option<&Term>) -> Result<[FiniteF32; 2]> {
-    let values = match term {
-        Some(Term::Product { fields, .. }) if fields.len() == 2 => fields
-            .values()
-            .map(|field| field.value())
-            .collect::<Vec<_>>(),
-        Some(Term::LabelledProduct { fields, .. }) if fields.len() == 2 => {
-            fields.values().collect::<Vec<_>>()
-        }
-        _ => {
-            return Err(KernelError::new(
-                "scene projection position is not a two-component tuple",
-            ));
-        }
+fn position_f32x2(term: Option<&Term>, spec: &SceneProjectionSpec) -> Result<[FiniteF32; 2]> {
+    let Some(Term::LabelledProduct { shape, fields }) = term else {
+        return Err(KernelError::new(
+            "scene projection position is not the labelled Vec2 shape",
+        ));
     };
-    if values.len() != 2 {
-        return Err(KernelError::new("scene projection position is not F32x2"));
+    if shape != &spec.position_shape
+        || fields.len() != 2
+        || !fields.contains_key(&spec.x_field)
+        || !fields.contains_key(&spec.y_field)
+    {
+        return Err(KernelError::new(
+            "scene projection position does not match its exact Vec2 shape",
+        ));
     }
-    let mut values = values.into_iter().map(|value| match value {
-        Term::F32(value) => Ok(*value),
+    let component = |field: &ReferentId| match fields.get(field) {
+        Some(Term::F32(value)) => Ok(*value),
         _ => Err(KernelError::new(
             "scene projection position component is not F32",
         )),
-    });
-    Ok([
-        values.next().expect("two values checked")?,
-        values.next().expect("two values checked")?,
-    ])
+    };
+    Ok([component(&spec.x_field)?, component(&spec.y_field)?])
 }
 
 /// One desired scene item in an exact state-bound snapshot.

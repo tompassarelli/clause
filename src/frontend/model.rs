@@ -100,11 +100,14 @@ pub(super) fn definition_line(line: SourceLine<'_>) -> Option<Result<DefinitionD
     if text.contains("::") {
         return Some(Err(error(line_span(line), "raw '::' is not Clause syntax")));
     }
-    let (name, denotation) = text.split_once(": ")?;
+    let separators = top_level_binding_separators(text);
+    let &separator = separators.first()?;
     Some((|| {
-        if name.contains(':') || denotation.contains(':') {
+        if separators.len() != 1 {
             return Err(error(line_span(line), "binding requires one ':'"));
         }
+        let name = &text[..separator];
+        let denotation = &text[separator + 2..];
         let base = indent(line)?;
         Ok(DefinitionDecl {
             name: semantic_name(line, base, name)?,
@@ -112,6 +115,37 @@ pub(super) fn definition_line(line: SourceLine<'_>) -> Option<Result<DefinitionD
             span: line_span(line),
         })
     })())
+}
+
+fn top_level_binding_separators(text: &str) -> Vec<usize> {
+    let mut delimiters = Vec::new();
+    let mut quoted = false;
+    let mut escaped = false;
+    let mut separators = Vec::new();
+    for (index, character) in text.char_indices() {
+        if quoted {
+            if escaped {
+                escaped = false;
+            } else if character == '\\' {
+                escaped = true;
+            } else if character == '"' {
+                quoted = false;
+            }
+            continue;
+        }
+        match character {
+            '"' => quoted = true,
+            '(' | '[' | '{' => delimiters.push(character),
+            ')' | ']' | '}' => {
+                delimiters.pop();
+            }
+            ':' if delimiters.is_empty() && text[index..].starts_with(": ") => {
+                separators.push(index);
+            }
+            _ => {}
+        }
+    }
+    separators
 }
 
 pub(super) fn membership_line(line: SourceLine<'_>) -> Option<Result<MembershipDecl, ParseError>> {

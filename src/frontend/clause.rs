@@ -1243,6 +1243,11 @@ fn term_candidates(
     }
 
     let mut candidates = Vec::new();
+    if let Ok(Some((term, domain))) = structural_term(tokens, current_memberships, memberships)
+        && &domain == expected
+    {
+        push_unique_term(&mut candidates, term);
+    }
     if let Ok(term) = parse_role_term(tokens)
         && match term_domains(&term, current_memberships, memberships) {
             Ok(Some(actual)) => actual.contains(expected),
