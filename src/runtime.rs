@@ -24,6 +24,7 @@ use crate::{
 
 pub const STATE_REVISION_TAG: &str = "clause-state-revision-v2";
 pub const RUNTIME_SESSION_TAG: &str = "clause-runtime-session-v2";
+pub const EFFECT_TRACE_TAG: &str = "clause-effect-trace-v1";
 
 macro_rules! digest_identity {
     ($name:ident, $prefix:literal, $message:literal) => {
@@ -77,6 +78,23 @@ digest_identity!(
     RuntimeSessionId,
     "session-sha256-",
     "invalid RuntimeSession identity"
+);
+digest_identity!(
+    AuthorizationId,
+    "authorization-sha256-",
+    "invalid Authorization identity"
+);
+digest_identity!(AttemptId, "attempt-sha256-", "invalid Attempt identity");
+digest_identity!(ReceiptId, "receipt-sha256-", "invalid Receipt identity");
+digest_identity!(
+    ObservationId,
+    "observation-sha256-",
+    "invalid Observation identity"
+);
+digest_identity!(
+    EffectTraceId,
+    "effect-trace-sha256-",
+    "invalid effect trace identity"
 );
 
 /// The complete deterministic runtime policy bound into every state/session.
@@ -1046,6 +1064,821 @@ pub fn reload_session(bytes: &str, revision: &Revision) -> Result<RuntimeSession
         ));
     }
     Ok(session)
+}
+
+/// Runtime-local lineage shared by every node in one effect evidence chain.
+/// These links are evidence about execution; they do not add Model content or
+/// admit a State change.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EffectLineage {
+    producer: ReferentId,
+    request: ReferentId,
+    input_model_revision: RevisionId,
+    post_commit_state: StateRevisionId,
+    authority: ReferentId,
+    event: ReferentId,
+    phase: ReferentId,
+    order: u64,
+}
+
+impl EffectLineage {
+    pub fn producer(&self) -> &ReferentId {
+        &self.producer
+    }
+
+    pub fn request(&self) -> &ReferentId {
+        &self.request
+    }
+
+    pub fn input_model_revision(&self) -> &RevisionId {
+        &self.input_model_revision
+    }
+
+    pub fn post_commit_state(&self) -> &StateRevisionId {
+        &self.post_commit_state
+    }
+
+    pub fn authority(&self) -> &ReferentId {
+        &self.authority
+    }
+
+    pub fn event(&self) -> &ReferentId {
+        &self.event
+    }
+
+    pub fn phase(&self) -> &ReferentId {
+        &self.phase
+    }
+
+    pub fn order(&self) -> u64 {
+        self.order
+    }
+}
+
+/// The existing checked identities that locate one requested external effect.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EffectRequest {
+    producer: ReferentId,
+    request: ReferentId,
+    authority: ReferentId,
+    event: ReferentId,
+    phase: ReferentId,
+    order: u64,
+}
+
+impl EffectRequest {
+    pub fn new(
+        producer: ReferentId,
+        request: ReferentId,
+        authority: ReferentId,
+        event: ReferentId,
+        phase: ReferentId,
+        order: u64,
+    ) -> Self {
+        Self {
+            producer,
+            request,
+            authority,
+            event,
+            phase,
+            order,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AuthorizationDecision {
+    Denied,
+    Authorized,
+}
+
+impl AuthorizationDecision {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Denied => "denied",
+            Self::Authorized => "authorized",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ReceiptOutcome {
+    Succeeded,
+    Failed,
+}
+
+impl ReceiptOutcome {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Succeeded => "succeeded",
+            Self::Failed => "failed",
+        }
+    }
+}
+
+/// An adapter's explicit result. Failure is a recorded outcome, not an
+/// exception. Evidence must name an existing checked referent.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum EffectOutcome {
+    Succeeded { evidence: ReferentId },
+    Failed { evidence: ReferentId },
+}
+
+impl EffectOutcome {
+    fn receipt_outcome(&self) -> ReceiptOutcome {
+        match self {
+            Self::Succeeded { .. } => ReceiptOutcome::Succeeded,
+            Self::Failed { .. } => ReceiptOutcome::Failed,
+        }
+    }
+
+    fn evidence(&self) -> &ReferentId {
+        match self {
+            Self::Succeeded { evidence } | Self::Failed { evidence } => evidence,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Authorization {
+    identity: AuthorizationId,
+    lineage: EffectLineage,
+    decision: AuthorizationDecision,
+}
+
+impl Authorization {
+    fn new(lineage: EffectLineage, decision: AuthorizationDecision) -> Self {
+        let identity = AuthorizationId::from_digest(sha256_digest(
+            authorization_preimage(&lineage, decision).as_bytes(),
+        ));
+        Self {
+            identity,
+            lineage,
+            decision,
+        }
+    }
+
+    pub fn identity(&self) -> &AuthorizationId {
+        &self.identity
+    }
+
+    pub fn lineage(&self) -> &EffectLineage {
+        &self.lineage
+    }
+
+    pub fn decision(&self) -> AuthorizationDecision {
+        self.decision
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Attempt {
+    identity: AttemptId,
+    authorization: AuthorizationId,
+    lineage: EffectLineage,
+}
+
+impl Attempt {
+    fn new(authorization: &Authorization) -> Self {
+        let authorization_id = authorization.identity.clone();
+        let lineage = authorization.lineage.clone();
+        let identity = AttemptId::from_digest(sha256_digest(
+            attempt_preimage(&authorization_id, &lineage).as_bytes(),
+        ));
+        Self {
+            identity,
+            authorization: authorization_id,
+            lineage,
+        }
+    }
+
+    pub fn identity(&self) -> &AttemptId {
+        &self.identity
+    }
+
+    pub fn authorization(&self) -> &AuthorizationId {
+        &self.authorization
+    }
+
+    pub fn lineage(&self) -> &EffectLineage {
+        &self.lineage
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Receipt {
+    identity: ReceiptId,
+    attempt: AttemptId,
+    lineage: EffectLineage,
+    outcome: ReceiptOutcome,
+}
+
+impl Receipt {
+    fn new(attempt: &Attempt, outcome: ReceiptOutcome) -> Self {
+        let attempt_id = attempt.identity.clone();
+        let lineage = attempt.lineage.clone();
+        let identity = ReceiptId::from_digest(sha256_digest(
+            receipt_preimage(&attempt_id, &lineage, outcome).as_bytes(),
+        ));
+        Self {
+            identity,
+            attempt: attempt_id,
+            lineage,
+            outcome,
+        }
+    }
+
+    pub fn identity(&self) -> &ReceiptId {
+        &self.identity
+    }
+
+    pub fn attempt(&self) -> &AttemptId {
+        &self.attempt
+    }
+
+    pub fn lineage(&self) -> &EffectLineage {
+        &self.lineage
+    }
+
+    pub fn outcome(&self) -> ReceiptOutcome {
+        self.outcome
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Observation {
+    identity: ObservationId,
+    receipt: ReceiptId,
+    lineage: EffectLineage,
+    evidence: ReferentId,
+}
+
+impl Observation {
+    fn new(receipt: &Receipt, evidence: ReferentId) -> Self {
+        let receipt_id = receipt.identity.clone();
+        let lineage = receipt.lineage.clone();
+        let identity = ObservationId::from_digest(sha256_digest(
+            observation_preimage(&receipt_id, &lineage, &evidence).as_bytes(),
+        ));
+        Self {
+            identity,
+            receipt: receipt_id,
+            lineage,
+            evidence,
+        }
+    }
+
+    pub fn identity(&self) -> &ObservationId {
+        &self.identity
+    }
+
+    pub fn receipt(&self) -> &ReceiptId {
+        &self.receipt
+    }
+
+    pub fn lineage(&self) -> &EffectLineage {
+        &self.lineage
+    }
+
+    pub fn evidence(&self) -> &ReferentId {
+        &self.evidence
+    }
+}
+
+/// One canonical runtime evidence chain. The absence of Attempt, Receipt, and
+/// Observation is part of a denied authorization's checked representation.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EffectTrace {
+    identity: EffectTraceId,
+    authorization: Authorization,
+    attempt: Option<Attempt>,
+    receipt: Option<Receipt>,
+    observation: Option<Observation>,
+}
+
+impl EffectTrace {
+    /// Record a denied authorization. No adapter is accepted or invoked by
+    /// this path, so denial cannot create an attempt or external effect.
+    pub fn denied(
+        revision: &Revision,
+        post_commit: &StateRevision,
+        request: EffectRequest,
+    ) -> Result<Self> {
+        let lineage = effect_lineage(revision, post_commit, request)?;
+        Ok(Self::from_parts(
+            Authorization::new(lineage, AuthorizationDecision::Denied),
+            None,
+            None,
+            None,
+        ))
+    }
+
+    /// Execute one authorized adapter only after validating the exact
+    /// post-commit StateRevision and its event lineage.
+    pub fn attempt<F>(
+        revision: &Revision,
+        post_commit: &StateRevision,
+        request: EffectRequest,
+        realize: F,
+    ) -> Result<Self>
+    where
+        F: FnOnce(&EffectLineage) -> EffectOutcome,
+    {
+        let lineage = effect_lineage(revision, post_commit, request)?;
+        let authorization = Authorization::new(lineage, AuthorizationDecision::Authorized);
+        let attempt = Attempt::new(&authorization);
+        let outcome = realize(attempt.lineage());
+        if !revision.model().referents().contains_key(outcome.evidence()) {
+            return Err(KernelError::new(
+                "effect observation evidence is absent from the checked Model",
+            ));
+        }
+        let receipt = Receipt::new(&attempt, outcome.receipt_outcome());
+        let observation = Observation::new(&receipt, outcome.evidence().clone());
+        Ok(Self::from_parts(
+            authorization,
+            Some(attempt),
+            Some(receipt),
+            Some(observation),
+        ))
+    }
+
+    fn from_parts(
+        authorization: Authorization,
+        attempt: Option<Attempt>,
+        receipt: Option<Receipt>,
+        observation: Option<Observation>,
+    ) -> Self {
+        let mut trace = Self {
+            identity: EffectTraceId::from_digest([0; 32]),
+            authorization,
+            attempt,
+            receipt,
+            observation,
+        };
+        trace.identity = EffectTraceId::from_digest(sha256_digest(trace.payload().as_bytes()));
+        trace
+    }
+
+    pub fn identity(&self) -> &EffectTraceId {
+        &self.identity
+    }
+
+    pub fn authorization(&self) -> &Authorization {
+        &self.authorization
+    }
+
+    pub fn attempt_record(&self) -> Option<&Attempt> {
+        self.attempt.as_ref()
+    }
+
+    pub fn receipt(&self) -> Option<&Receipt> {
+        self.receipt.as_ref()
+    }
+
+    pub fn observation(&self) -> Option<&Observation> {
+        self.observation.as_ref()
+    }
+
+    pub fn canonical_bytes(&self) -> String {
+        format!(
+            "[\"{EFFECT_TRACE_TAG}\",\"{}\",{}]",
+            self.identity,
+            self.payload()
+        )
+    }
+
+    fn payload(&self) -> String {
+        format!(
+            "[[\"authorization\",{}],[\"attempt\",{}],[\"receipt\",{}],[\"observation\",{}]]",
+            authorization_json(&self.authorization),
+            optional_json(self.attempt.as_ref().map(attempt_json)),
+            optional_json(self.receipt.as_ref().map(receipt_json)),
+            optional_json(self.observation.as_ref().map(observation_json)),
+        )
+    }
+}
+
+/// Strictly reload runtime effect evidence without projecting it into Model or
+/// State admission.
+pub fn reload_effect_trace(
+    bytes: &str,
+    revision: &Revision,
+    post_commit: &StateRevision,
+) -> Result<EffectTrace> {
+    let value = JsonParser::new(bytes).parse()?;
+    if json(&value) != bytes {
+        return Err(KernelError::new("effect trace wire is not canonical JSON"));
+    }
+    let envelope = list(&value, 3, "effect trace envelope")?;
+    require_string(&envelope[0], EFFECT_TRACE_TAG, "effect trace envelope tag")?;
+    let claimed = EffectTraceId::new(string(&envelope[1], "effect trace identity")?.into())?;
+    let payload = list(&envelope[2], 4, "effect trace payload")?;
+    let authorization = decode_authorization(
+        tagged(&payload[0], "authorization", "effect authorization")?,
+        revision,
+        post_commit,
+    )?;
+    let attempt = optional(
+        tagged(&payload[1], "attempt", "effect attempt")?,
+        "effect attempt",
+    )?
+    .map(|value| decode_attempt(value, &authorization))
+    .transpose()?;
+    let receipt = optional(
+        tagged(&payload[2], "receipt", "effect receipt")?,
+        "effect receipt",
+    )?
+    .map(|value| {
+        let attempt = attempt
+            .as_ref()
+            .ok_or_else(|| KernelError::new("effect receipt has no attempt"))?;
+        decode_receipt(value, attempt)
+    })
+    .transpose()?;
+    let observation = optional(
+        tagged(&payload[3], "observation", "effect observation")?,
+        "effect observation",
+    )?
+    .map(|value| {
+        let receipt = receipt
+            .as_ref()
+            .ok_or_else(|| KernelError::new("effect observation has no receipt"))?;
+        decode_observation(value, receipt, revision)
+    })
+    .transpose()?;
+    match authorization.decision {
+        AuthorizationDecision::Denied
+            if attempt.is_some() || receipt.is_some() || observation.is_some() =>
+        {
+            return Err(KernelError::new(
+                "denied effect authorization contains execution evidence",
+            ));
+        }
+        AuthorizationDecision::Authorized
+            if attempt.is_none() || receipt.is_none() || observation.is_none() =>
+        {
+            return Err(KernelError::new(
+                "authorized effect trace is missing execution evidence",
+            ));
+        }
+        _ => {}
+    }
+    let trace = EffectTrace::from_parts(authorization, attempt, receipt, observation);
+    if trace.identity != claimed || trace.canonical_bytes() != bytes {
+        return Err(KernelError::new(
+            "effect trace does not match its exact canonical lineage",
+        ));
+    }
+    Ok(trace)
+}
+
+fn effect_lineage(
+    revision: &Revision,
+    post_commit: &StateRevision,
+    request: EffectRequest,
+) -> Result<EffectLineage> {
+    let lineage = EffectLineage {
+        producer: request.producer,
+        request: request.request,
+        input_model_revision: revision.identity().clone(),
+        post_commit_state: post_commit.identity().clone(),
+        authority: request.authority,
+        event: request.event,
+        phase: request.phase,
+        order: request.order,
+    };
+    validate_effect_lineage(&lineage, revision, post_commit)?;
+    Ok(lineage)
+}
+
+fn validate_effect_lineage(
+    lineage: &EffectLineage,
+    revision: &Revision,
+    post_commit: &StateRevision,
+) -> Result<()> {
+    if lineage.input_model_revision != *revision.identity()
+        || post_commit.model_revision() != revision.identity()
+    {
+        return Err(KernelError::new(
+            "effect trace names the wrong Model Revision",
+        ));
+    }
+    if lineage.post_commit_state != *post_commit.identity() || post_commit.predecessor().is_none() {
+        return Err(KernelError::new(
+            "effect trace needs the exact committed successor StateRevision",
+        ));
+    }
+    if !post_commit
+        .events()
+        .iter()
+        .any(|event| event.id() == &lineage.event)
+    {
+        return Err(KernelError::new(
+            "effect trace event is absent from the committed StateRevision input",
+        ));
+    }
+    for (id, kind) in [
+        (&lineage.producer, "producer"),
+        (&lineage.request, "request"),
+        (&lineage.authority, "authority"),
+        (&lineage.phase, "phase"),
+    ] {
+        if !revision.model().referents().contains_key(id) {
+            return Err(KernelError::new(format!(
+                "effect trace {kind} is absent from the checked Model"
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn lineage_json(lineage: &EffectLineage) -> String {
+    format!(
+        "[\"effect-lineage\",[\"producer\",\"{}\"],[\"request\",\"{}\"],[\"model-revision\",\"{}\"],[\"state-revision\",\"{}\"],[\"authority\",\"{}\"],[\"event\",\"{}\"],[\"phase\",\"{}\"],[\"order\",\"{}\"]]",
+        lineage.producer.as_str(),
+        lineage.request.as_str(),
+        lineage.input_model_revision,
+        lineage.post_commit_state,
+        lineage.authority.as_str(),
+        lineage.event.as_str(),
+        lineage.phase.as_str(),
+        lineage.order,
+    )
+}
+
+fn decode_lineage(
+    value: &Json,
+    revision: &Revision,
+    post_commit: &StateRevision,
+) -> Result<EffectLineage> {
+    let item = list(value, 9, "effect lineage")?;
+    require_string(&item[0], "effect-lineage", "effect lineage tag")?;
+    let model_revision = string(
+        tagged(&item[3], "model-revision", "effect Model Revision")?,
+        "effect Model Revision identity",
+    )?;
+    let state_revision = string(
+        tagged(&item[4], "state-revision", "effect StateRevision")?,
+        "effect StateRevision identity",
+    )?;
+    if model_revision != revision.identity().to_string()
+        || state_revision != post_commit.identity().as_str()
+    {
+        return Err(KernelError::new("effect trace has broken Revision lineage"));
+    }
+    let lineage = EffectLineage {
+        producer: ReferentId::new(
+            string(
+                tagged(&item[1], "producer", "effect producer")?,
+                "effect producer identity",
+            )?
+            .into(),
+        )?,
+        request: ReferentId::new(
+            string(
+                tagged(&item[2], "request", "effect request")?,
+                "effect request identity",
+            )?
+            .into(),
+        )?,
+        input_model_revision: revision.identity().clone(),
+        post_commit_state: post_commit.identity().clone(),
+        authority: ReferentId::new(
+            string(
+                tagged(&item[5], "authority", "effect authority")?,
+                "effect authority identity",
+            )?
+            .into(),
+        )?,
+        event: ReferentId::new(
+            string(
+                tagged(&item[6], "event", "effect event")?,
+                "effect event identity",
+            )?
+            .into(),
+        )?,
+        phase: ReferentId::new(
+            string(
+                tagged(&item[7], "phase", "effect phase")?,
+                "effect phase identity",
+            )?
+            .into(),
+        )?,
+        order: string(
+            tagged(&item[8], "order", "effect order")?,
+            "effect order value",
+        )?
+        .parse()
+        .map_err(|_| KernelError::new("invalid effect order"))?,
+    };
+    validate_effect_lineage(&lineage, revision, post_commit)?;
+    Ok(lineage)
+}
+
+fn authorization_preimage(lineage: &EffectLineage, decision: AuthorizationDecision) -> String {
+    format!(
+        "[{},[\"decision\",\"{}\"]]",
+        lineage_json(lineage),
+        decision.as_str()
+    )
+}
+
+fn authorization_json(value: &Authorization) -> String {
+    format!(
+        "[\"authorization\",\"{}\",{}]",
+        value.identity,
+        authorization_preimage(&value.lineage, value.decision)
+    )
+}
+
+fn decode_authorization(
+    value: &Json,
+    revision: &Revision,
+    post_commit: &StateRevision,
+) -> Result<Authorization> {
+    let item = list(value, 3, "Authorization record")?;
+    require_string(&item[0], "authorization", "Authorization record tag")?;
+    let claimed = AuthorizationId::new(string(&item[1], "Authorization identity")?.into())?;
+    let body = list(&item[2], 2, "Authorization body")?;
+    let lineage = decode_lineage(&body[0], revision, post_commit)?;
+    let decision = match string(
+        tagged(&body[1], "decision", "Authorization decision")?,
+        "Authorization decision value",
+    )? {
+        "denied" => AuthorizationDecision::Denied,
+        "authorized" => AuthorizationDecision::Authorized,
+        _ => return Err(KernelError::new("invalid Authorization decision")),
+    };
+    let authorization = Authorization::new(lineage, decision);
+    if authorization.identity != claimed {
+        return Err(KernelError::new("Authorization identity does not match"));
+    }
+    Ok(authorization)
+}
+
+fn attempt_preimage(authorization: &AuthorizationId, lineage: &EffectLineage) -> String {
+    format!(
+        "[[\"authorization\",\"{}\"],{}]",
+        authorization,
+        lineage_json(lineage)
+    )
+}
+
+fn attempt_json(value: &Attempt) -> String {
+    format!(
+        "[\"attempt\",\"{}\",{}]",
+        value.identity,
+        attempt_preimage(&value.authorization, &value.lineage)
+    )
+}
+
+fn decode_attempt(value: &Json, authorization: &Authorization) -> Result<Attempt> {
+    let item = list(value, 3, "Attempt record")?;
+    require_string(&item[0], "attempt", "Attempt record tag")?;
+    let claimed = AttemptId::new(string(&item[1], "Attempt identity")?.into())?;
+    let body = list(&item[2], 2, "Attempt body")?;
+    if string(
+        tagged(&body[0], "authorization", "Attempt authorization")?,
+        "Attempt Authorization identity",
+    )? != authorization.identity.as_str()
+    {
+        return Err(KernelError::new("Attempt has broken Authorization lineage"));
+    }
+    if json(&body[1]) != lineage_json(&authorization.lineage) {
+        return Err(KernelError::new("Attempt has divergent effect lineage"));
+    }
+    let attempt = Attempt::new(authorization);
+    if attempt.identity != claimed {
+        return Err(KernelError::new("Attempt identity does not match"));
+    }
+    Ok(attempt)
+}
+
+fn receipt_preimage(
+    attempt: &AttemptId,
+    lineage: &EffectLineage,
+    outcome: ReceiptOutcome,
+) -> String {
+    format!(
+        "[[\"attempt\",\"{}\"],{},[\"outcome\",\"{}\"]]",
+        attempt,
+        lineage_json(lineage),
+        outcome.as_str()
+    )
+}
+
+fn receipt_json(value: &Receipt) -> String {
+    format!(
+        "[\"receipt\",\"{}\",{}]",
+        value.identity,
+        receipt_preimage(&value.attempt, &value.lineage, value.outcome)
+    )
+}
+
+fn decode_receipt(value: &Json, attempt: &Attempt) -> Result<Receipt> {
+    let item = list(value, 3, "Receipt record")?;
+    require_string(&item[0], "receipt", "Receipt record tag")?;
+    let claimed = ReceiptId::new(string(&item[1], "Receipt identity")?.into())?;
+    let body = list(&item[2], 3, "Receipt body")?;
+    if string(
+        tagged(&body[0], "attempt", "Receipt attempt")?,
+        "Receipt Attempt identity",
+    )? != attempt.identity.as_str()
+    {
+        return Err(KernelError::new("Receipt has broken Attempt lineage"));
+    }
+    if json(&body[1]) != lineage_json(&attempt.lineage) {
+        return Err(KernelError::new("Receipt has divergent effect lineage"));
+    }
+    let outcome = match string(
+        tagged(&body[2], "outcome", "Receipt outcome")?,
+        "Receipt outcome value",
+    )? {
+        "succeeded" => ReceiptOutcome::Succeeded,
+        "failed" => ReceiptOutcome::Failed,
+        _ => return Err(KernelError::new("invalid Receipt outcome")),
+    };
+    let receipt = Receipt::new(attempt, outcome);
+    if receipt.identity != claimed {
+        return Err(KernelError::new("Receipt identity does not match"));
+    }
+    Ok(receipt)
+}
+
+fn observation_preimage(
+    receipt: &ReceiptId,
+    lineage: &EffectLineage,
+    evidence: &ReferentId,
+) -> String {
+    format!(
+        "[[\"receipt\",\"{}\"],{},[\"evidence\",\"{}\"]]",
+        receipt,
+        lineage_json(lineage),
+        evidence.as_str()
+    )
+}
+
+fn observation_json(value: &Observation) -> String {
+    format!(
+        "[\"observation\",\"{}\",{}]",
+        value.identity,
+        observation_preimage(&value.receipt, &value.lineage, &value.evidence)
+    )
+}
+
+fn decode_observation(
+    value: &Json,
+    receipt: &Receipt,
+    revision: &Revision,
+) -> Result<Observation> {
+    let item = list(value, 3, "Observation record")?;
+    require_string(&item[0], "observation", "Observation record tag")?;
+    let claimed = ObservationId::new(string(&item[1], "Observation identity")?.into())?;
+    let body = list(&item[2], 3, "Observation body")?;
+    if string(
+        tagged(&body[0], "receipt", "Observation receipt")?,
+        "Observation Receipt identity",
+    )? != receipt.identity.as_str()
+    {
+        return Err(KernelError::new("Observation has broken Receipt lineage"));
+    }
+    if json(&body[1]) != lineage_json(&receipt.lineage) {
+        return Err(KernelError::new("Observation has divergent effect lineage"));
+    }
+    let evidence = ReferentId::new(
+        string(
+            tagged(&body[2], "evidence", "Observation evidence")?,
+            "Observation evidence identity",
+        )?
+        .into(),
+    )?;
+    if !revision.model().referents().contains_key(&evidence) {
+        return Err(KernelError::new(
+            "effect observation evidence is absent from the checked Model",
+        ));
+    }
+    let observation = Observation::new(receipt, evidence);
+    if observation.identity != claimed {
+        return Err(KernelError::new("Observation identity does not match"));
+    }
+    Ok(observation)
+}
+
+fn optional_json(value: Option<String>) -> String {
+    match value {
+        Some(value) => format!("[\"some\",{value}]"),
+        None => "[\"none\"]".into(),
+    }
+}
+
+fn optional<'a>(value: &'a Json, where_: &str) -> Result<Option<&'a Json>> {
+    let item = array(value, where_)?;
+    match item {
+        [tag] if string(tag, where_)? == "none" => Ok(None),
+        [tag, value] if string(tag, where_)? == "some" => Ok(Some(value)),
+        _ => Err(KernelError::new(format!("invalid {where_}"))),
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

@@ -16,8 +16,9 @@ use clause::{
         RelationalContent, Role, RoleId, Term, UniversalLaw,
     },
     runtime::{
-        Presence, RuntimeInput, RuntimePolicy, RuntimeSession, StateDelta, StateDiff,
-        TransitionEvent, reload_session,
+        AuthorizationDecision, EffectOutcome, EffectRequest, EffectTrace, Presence,
+        ReceiptOutcome, RuntimeInput, RuntimePolicy, RuntimeSession, StateDelta, StateDiff,
+        TransitionEvent, reload_effect_trace, reload_session,
     },
     wire,
 };
@@ -688,4 +689,153 @@ fn authored_event_payload_state_guards_survive_source_deletion_with_replay_parit
 
     fs::remove_file(&rust).expect("generated runtime Rust cleans up");
     fs::remove_file(&binary).expect("generated runtime binary cleans up");
+}
+
+#[test]
+fn effect_evidence_is_post_commit_distinct_and_canonical() {
+    use std::cell::Cell;
+
+    let compiled = elaborate::compile(
+        frontend::parse(ONE_COIN_SOURCE).expect("one-coin Clause source parses"),
+    )
+    .expect("one-coin Clause source elaborates");
+    let [journey] = compiled.runtime_journeys() else {
+        panic!("one authored event Model produces one runtime journey");
+    };
+    let model = journey.revision().model();
+    let event = compiled
+        .designations()
+        .scoped(model.id(), "collect")
+        .expect("authored event has a checked referent");
+    let player = compiled
+        .designations()
+        .scoped(model.id(), "player")
+        .expect("effect evidence has a checked referent");
+    let collector = compiled
+        .designations()
+        .scoped(model.id(), "collector")
+        .expect("failure evidence has a checked referent");
+    let policy = compiled
+        .designations()
+        .scoped(model.id(), "replay-policy")
+        .expect("effect authority has a checked referent");
+    let event_occurrence = referent(200);
+    let root = RuntimeSession::start(
+        journey.revision(),
+        RuntimePolicy::new(policy.clone(), 128, 512).unwrap(),
+    )
+    .unwrap();
+    let request = || {
+        EffectRequest::new(
+            model.id().clone(),
+            event.clone(),
+            policy.clone(),
+            event_occurrence.clone(),
+            model.id().clone(),
+            0,
+        )
+    };
+    assert!(
+        EffectTrace::denied(journey.revision(), root.latest(), request())
+            .unwrap_err()
+            .to_string()
+            .contains("committed successor")
+    );
+
+    let committed = root
+        .transition(
+            journey.revision(),
+            vec![TransitionEvent::new(
+                event_occurrence.clone(),
+                event.clone(),
+                vec![Term::referent(player.clone())],
+            )],
+        )
+        .unwrap();
+    let state_bytes = committed.latest().canonical_bytes();
+    let denied = EffectTrace::denied(journey.revision(), committed.latest(), request()).unwrap();
+    assert_eq!(denied.authorization().decision(), AuthorizationDecision::Denied);
+    assert!(denied.attempt_record().is_none());
+    assert!(denied.receipt().is_none());
+    assert!(denied.observation().is_none());
+    assert_eq!(committed.latest().canonical_bytes(), state_bytes);
+    assert_eq!(
+        reload_effect_trace(
+            &denied.canonical_bytes(),
+            journey.revision(),
+            committed.latest()
+        )
+        .unwrap(),
+        denied
+    );
+
+    let calls = Cell::new(0);
+    let succeeded = EffectTrace::attempt(
+        journey.revision(),
+        committed.latest(),
+        request(),
+        |_| {
+            calls.set(calls.get() + 1);
+            EffectOutcome::Succeeded {
+                evidence: player.clone(),
+            }
+        },
+    )
+    .unwrap();
+    let failed = EffectTrace::attempt(
+        journey.revision(),
+        committed.latest(),
+        request(),
+        |_| {
+            calls.set(calls.get() + 1);
+            EffectOutcome::Failed {
+                evidence: collector,
+            }
+        },
+    )
+    .unwrap();
+    assert_eq!(calls.get(), 2);
+    assert_eq!(
+        succeeded.authorization().decision(),
+        AuthorizationDecision::Authorized
+    );
+    assert_eq!(succeeded.receipt().unwrap().outcome(), ReceiptOutcome::Succeeded);
+    assert_eq!(failed.receipt().unwrap().outcome(), ReceiptOutcome::Failed);
+    assert_ne!(
+        succeeded.receipt().unwrap().identity(),
+        failed.receipt().unwrap().identity()
+    );
+    assert_eq!(
+        succeeded.authorization().lineage().post_commit_state(),
+        committed.latest().identity()
+    );
+    assert_eq!(committed.latest().canonical_bytes(), state_bytes);
+    assert_eq!(
+        reload_effect_trace(
+            &succeeded.canonical_bytes(),
+            journey.revision(),
+            committed.latest()
+        )
+        .unwrap(),
+        succeeded
+    );
+    assert_eq!(
+        reload_effect_trace(
+            &failed.canonical_bytes(),
+            journey.revision(),
+            committed.latest()
+        )
+        .unwrap(),
+        failed
+    );
+
+    let tampered = succeeded
+        .canonical_bytes()
+        .replace("[\"outcome\",\"succeeded\"]", "[\"outcome\",\"failed\"]");
+    assert!(
+        reload_effect_trace(&tampered, journey.revision(), committed.latest())
+            .unwrap_err()
+            .to_string()
+            .contains("Receipt identity")
+    );
 }
