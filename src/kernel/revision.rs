@@ -1,8 +1,42 @@
 use super::{
     error::{KernelError, Result},
-    identity::RevisionId,
+    identity::{ClauseSemanticsId, ProgramSnapshotId, RevisionId},
     model::{Model, SemanticAtom},
 };
+
+/// Typed seam for the exact checked program content selected by a revision.
+/// Construction and hashing remain in the wire/admission layer during the
+/// migration; this value deliberately carries no lineage or mutable evidence.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProgramSnapshot {
+    identity: ProgramSnapshotId,
+    semantics: ClauseSemanticsId,
+    model: Model,
+}
+
+impl ProgramSnapshot {
+    pub(crate) fn from_parts(
+        identity: ProgramSnapshotId,
+        semantics: ClauseSemanticsId,
+        model: Model,
+    ) -> Self {
+        Self {
+            identity,
+            semantics,
+            model,
+        }
+    }
+
+    pub fn identity(&self) -> &ProgramSnapshotId {
+        &self.identity
+    }
+    pub fn semantics(&self) -> &ClauseSemanticsId {
+        &self.semantics
+    }
+    pub fn model(&self) -> &Model {
+        &self.model
+    }
+}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RevisionLineage {

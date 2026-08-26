@@ -1,17 +1,40 @@
 use crate::kernel::{
-    AssertionOccurrence, Definition, Delta, DerivationRule, Goal, Invariant, Judgment,
-    JudgmentKind, JudgmentTarget, LookupMode, Model, Pattern, Referent, RelationShape,
-    RelationalContent, Revision, RevisionId, RevisionLineage, RoleId, RolePredicate, SemanticAtom,
-    StructuralContract, StructuralForm, Term, Transition, UniversalLaw,
+    AssertionOccurrence, ClauseSemanticsId, Definition, Delta, DerivationRule, Goal, Invariant,
+    Judgment, JudgmentKind, JudgmentTarget, LookupMode, Model, Pattern, ProgramSnapshot,
+    ProgramSnapshotId, Referent, RelationShape, RelationalContent, Revision, RevisionId,
+    RevisionLineage, RoleId, RolePredicate, SemanticAtom, StructuralContract, StructuralForm, Term,
+    Transition, UniversalLaw,
 };
 
 use super::{json::escape, sha256::sha256_digest};
 
 pub const SEMANTIC_TAG: &str = "clause-semantic-v10";
 pub const REVISION_TAG: &str = "clause-revision-v6";
+pub const PROGRAM_SNAPSHOT_TAG: &str = "clause-program-snapshot-v1";
 
 pub fn semantic_payload(revision: &Revision) -> String {
     payload(revision.lineage(), revision.model())
+}
+
+/// Canonical checked snapshot payload. Unlike the legacy semantic-v10
+/// revision payload, this intentionally excludes lineage and revision data.
+pub fn program_snapshot_payload(model: &Model, semantics: &ClauseSemanticsId) -> String {
+    format!(
+        "[\"{PROGRAM_SNAPSHOT_TAG}\",[\"semantics\",\"{}\"],{}]",
+        escape(semantics.as_str()),
+        content_payload(model)
+    )
+}
+
+pub fn program_snapshot_id(model: &Model, semantics: &ClauseSemanticsId) -> ProgramSnapshotId {
+    ProgramSnapshotId::from_digest(sha256_digest(
+        program_snapshot_payload(model, semantics).as_bytes(),
+    ))
+}
+
+pub fn program_snapshot(model: Model, semantics: ClauseSemanticsId) -> ProgramSnapshot {
+    let identity = program_snapshot_id(&model, &semantics);
+    ProgramSnapshot::from_parts(identity, semantics, model)
 }
 
 fn payload(lineage: &RevisionLineage, model: &Model) -> String {
@@ -36,6 +59,30 @@ fn payload(lineage: &RevisionLineage, model: &Model) -> String {
         "[\"{SEMANTIC_TAG}\",[\"lineage\",{}],[\"model\",\"{}\"],[\"referents\",[{referents}]],[\"relational-contents\",[{contents}]],[\"relation-shapes\",[{shapes}]],[\"structural-contracts\",[{structural_contracts}]],[\"occurrences\",[{occurrences}]],[\"definitions\",[{definitions}]],[\"derivation-rules\",[{rules}]],[\"universal-laws\",[{laws}]],[\"invariants\",[{invariants}]],[\"goals\",[{goals}]],[\"transitions\",[{transitions}]],[\"judgments\",[{judgments}]]]",
         lineage_json(lineage),
         escape(model.id().as_str()),
+    )
+}
+
+fn content_payload(model: &Model) -> String {
+    let referents = join(model.referents().values().map(referent_json));
+    let contents = join(model.relational_contents().values().map(content_json));
+    let shapes = join(model.relation_shapes().values().map(shape_json));
+    let structural_contracts = join(
+        model
+            .structural_contracts()
+            .values()
+            .map(structural_contract_json),
+    );
+    let occurrences = join(model.occurrences().iter().map(occurrence_json));
+    let definitions = join(model.definitions().iter().map(definition_json));
+    let rules = join(model.derivation_rules().iter().map(rule_json));
+    let laws = join(model.universal_laws().iter().map(law_json));
+    let invariants = join(model.invariants().iter().map(invariant_json));
+    let goals = join(model.goals().iter().map(goal_json));
+    let transitions = join(model.transitions().iter().map(transition_json));
+    let judgments = join(model.judgments().iter().map(judgment_json));
+    format!(
+        "[\"model\",\"{}\"],[\"referents\",[{referents}]],[\"relational-contents\",[{contents}]],[\"relation-shapes\",[{shapes}]],[\"structural-contracts\",[{structural_contracts}]],[\"occurrences\",[{occurrences}]],[\"definitions\",[{definitions}]],[\"derivation-rules\",[{rules}]],[\"universal-laws\",[{laws}]],[\"invariants\",[{invariants}]],[\"goals\",[{goals}]],[\"transitions\",[{transitions}]],[\"judgments\",[{judgments}]]",
+        escape(model.id().as_str())
     )
 }
 

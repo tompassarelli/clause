@@ -177,6 +177,90 @@ impl RevisionId {
     }
 }
 
+/// Identifies the language semantics and canonical checked representation
+/// used to interpret a program snapshot.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct ClauseSemanticsId(String);
+
+impl ClauseSemanticsId {
+    pub fn new(value: String) -> Result<Self> {
+        if value.is_empty()
+            || !value
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b"-._".contains(&b))
+        {
+            return Err(KernelError::new("invalid Clause semantics identity"));
+        }
+        Ok(Self(value))
+    }
+
+    pub fn current() -> Self {
+        Self("clause-semantics-v1".to_owned())
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+/// Durable identity of an evolving Clause program lineage.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct ProgramId(String);
+
+impl ProgramId {
+    pub fn new(value: String) -> Result<Self> {
+        validate_prefixed_hex(&value, "program-sha256-")
+            .then_some(Self(value))
+            .ok_or_else(|| KernelError::new("invalid program identity"))
+    }
+
+    pub fn from_digest(bytes: [u8; 32]) -> Self {
+        Self(format_digest("program-sha256-", bytes))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+/// Content identity of one canonical checked program snapshot.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct ProgramSnapshotId(String);
+
+impl ProgramSnapshotId {
+    pub fn new(value: String) -> Result<Self> {
+        validate_prefixed_hex(&value, "program-snapshot-sha256-")
+            .then_some(Self(value))
+            .ok_or_else(|| KernelError::new("invalid program snapshot identity"))
+    }
+
+    pub fn from_digest(bytes: [u8; 32]) -> Self {
+        Self(format_digest("program-snapshot-sha256-", bytes))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+fn validate_prefixed_hex(value: &str, prefix: &str) -> bool {
+    value.strip_prefix(prefix).is_some_and(|hex| {
+        hex.len() == 64
+            && hex
+                .bytes()
+                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    })
+}
+
+fn format_digest(prefix: &str, bytes: [u8; 32]) -> String {
+    let mut value = prefix.to_owned();
+    for byte in bytes {
+        use std::fmt::Write;
+        write!(value, "{byte:02x}").expect("writing a digest to String cannot fail");
+    }
+    value
+}
+
 impl fmt::Display for RevisionId {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str("rev-sha256-")?;

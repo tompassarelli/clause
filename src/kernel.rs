@@ -23,10 +23,13 @@ pub use error::{
     StructuralFailureClass,
 };
 pub use find::FindPlan;
-pub use identity::{ContentId, Name, PatternId, ReferentId, RevisionId, RoleId};
+pub use identity::{
+    ClauseSemanticsId, ContentId, Name, PatternId, ProgramId, ProgramSnapshotId, ReferentId,
+    RevisionId, RoleId,
+};
 pub use model::{Model, SemanticAtom};
 pub use query::{QueryPlan, QueryPlanColumn};
-pub use revision::{Delta, Revision, RevisionLineage};
+pub use revision::{Delta, ProgramSnapshot, Revision, RevisionLineage};
 pub use schema::{
     Cardinality, LookupMode, Referent, RelationShape, Role, RolePredicate, StructuralContract,
     StructuralForm,

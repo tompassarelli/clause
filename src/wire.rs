@@ -11,7 +11,8 @@ mod sha256;
 
 pub(crate) use canonical::term_json;
 pub use canonical::{
-    REVISION_TAG, SEMANTIC_TAG, admit, admit_successor, revision_id, semantic_payload, serialize,
+    REVISION_TAG, SEMANTIC_TAG, admit, admit_successor, program_snapshot, program_snapshot_id,
+    program_snapshot_payload, revision_id, semantic_payload, serialize,
 };
 pub(crate) use decode::decode_term;
 pub use decode::{reload, reload_successor};
