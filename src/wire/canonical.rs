@@ -38,27 +38,10 @@ pub fn program_snapshot(model: Model, semantics: ClauseSemanticsId) -> ProgramSn
 }
 
 fn payload(lineage: &RevisionLineage, model: &Model) -> String {
-    let referents = join(model.referents().values().map(referent_json));
-    let contents = join(model.relational_contents().values().map(content_json));
-    let shapes = join(model.relation_shapes().values().map(shape_json));
-    let structural_contracts = join(
-        model
-            .structural_contracts()
-            .values()
-            .map(structural_contract_json),
-    );
-    let occurrences = join(model.occurrences().iter().map(occurrence_json));
-    let definitions = join(model.definitions().iter().map(definition_json));
-    let rules = join(model.derivation_rules().iter().map(rule_json));
-    let laws = join(model.universal_laws().iter().map(law_json));
-    let invariants = join(model.invariants().iter().map(invariant_json));
-    let goals = join(model.goals().iter().map(goal_json));
-    let transitions = join(model.transitions().iter().map(transition_json));
-    let judgments = join(model.judgments().iter().map(judgment_json));
     format!(
-        "[\"{SEMANTIC_TAG}\",[\"lineage\",{}],[\"model\",\"{}\"],[\"referents\",[{referents}]],[\"relational-contents\",[{contents}]],[\"relation-shapes\",[{shapes}]],[\"structural-contracts\",[{structural_contracts}]],[\"occurrences\",[{occurrences}]],[\"definitions\",[{definitions}]],[\"derivation-rules\",[{rules}]],[\"universal-laws\",[{laws}]],[\"invariants\",[{invariants}]],[\"goals\",[{goals}]],[\"transitions\",[{transitions}]],[\"judgments\",[{judgments}]]]",
+        "[\"{SEMANTIC_TAG}\",[\"lineage\",{}],{}]",
         lineage_json(lineage),
-        escape(model.id().as_str()),
+        content_payload(model),
     )
 }
 

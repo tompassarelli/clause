@@ -33,7 +33,7 @@ impl ProgramSnapshot {
     pub fn semantics(&self) -> &ClauseSemanticsId {
         &self.semantics
     }
-    pub fn model(&self) -> &Model {
+    pub fn checked_payload(&self) -> &Model {
         &self.model
     }
 }

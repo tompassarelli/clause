@@ -33,7 +33,14 @@ fn snapshot_identity_includes_semantics_epoch() {
 #[test]
 fn snapshot_preimage_excludes_legacy_lineage_and_revision_identity() {
     let revision = revision("Door\n\nworld\n  iron-door ∈ Door\n");
-    let payload = wire::program_snapshot_payload(revision.model(), &ClauseSemanticsId::current());
+    let semantics = ClauseSemanticsId::current();
+    let snapshot = wire::program_snapshot(revision.model().clone(), semantics.clone());
+    assert_eq!(
+        snapshot.identity(),
+        &wire::program_snapshot_id(snapshot.checked_payload(), &semantics)
+    );
+    assert_eq!(snapshot.semantics(), &semantics);
+    let payload = wire::program_snapshot_payload(snapshot.checked_payload(), &semantics);
     assert!(payload.starts_with("[\"clause-program-snapshot-v1\""));
     assert!(!payload.contains("lineage"));
     assert!(!payload.contains("rev-sha256-"));
