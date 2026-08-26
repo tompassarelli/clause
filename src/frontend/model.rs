@@ -96,28 +96,46 @@ pub(super) fn pure_definition_block(
 }
 
 pub(super) fn definition_line(line: SourceLine<'_>) -> Option<Result<DefinitionDecl, ParseError>> {
-    let text = content(line);
-    if text.contains("::") {
-        return Some(Err(error(line_span(line), "raw '::' is not Clause syntax")));
-    }
-    let separators = top_level_binding_separators(text);
-    let &separator = separators.first()?;
-    Some((|| {
-        if separators.len() != 1 {
-            return Err(error(line_span(line), "binding requires one ':'"));
-        }
-        let name = &text[..separator];
-        let denotation = &text[separator + 2..];
+    binding_parts(line).map(|parts| {
+        let parts = parts?;
         let base = indent(line)?;
         Ok(DefinitionDecl {
-            name: semantic_name(line, base, name)?,
-            denotation: semantic_name(line, base + name.len() + 2, denotation)?,
+            name: semantic_name(line, base, parts.name)?,
+            denotation: semantic_name(line, base + parts.separator + 2, parts.denotation)?,
             span: line_span(line),
         })
-    })())
+    })
 }
 
-fn top_level_binding_separators(text: &str) -> Vec<usize> {
+#[derive(Clone, Copy)]
+pub(super) struct BindingParts<'a> {
+    pub(super) name: &'a str,
+    pub(super) denotation: &'a str,
+    pub(super) separator: usize,
+}
+
+pub(super) fn binding_parts(line: SourceLine<'_>) -> Option<Result<BindingParts<'_>, ParseError>> {
+    let text = content(line);
+    let separators = match top_level_binding_separators(line, text) {
+        Ok(separators) => separators,
+        Err(error) => return Some(Err(error)),
+    };
+    let &separator = separators.first()?;
+    Some(if separators.len() == 1 {
+        Ok(BindingParts {
+            name: &text[..separator],
+            denotation: &text[separator + 2..],
+            separator,
+        })
+    } else {
+        Err(error(line_span(line), "binding requires one ':'"))
+    })
+}
+
+fn top_level_binding_separators(
+    line: SourceLine<'_>,
+    text: &str,
+) -> Result<Vec<usize>, ParseError> {
     let mut delimiters = Vec::new();
     let mut quoted = false;
     let mut escaped = false;
@@ -135,9 +153,23 @@ fn top_level_binding_separators(text: &str) -> Vec<usize> {
         }
         match character {
             '"' => quoted = true,
-            '(' | '[' | '{' => delimiters.push(character),
+            ':' if text[index..].starts_with("::") => {
+                return Err(error(line_span(line), "raw '::' is not Clause syntax"));
+            }
+            '(' | '[' | '{' => delimiters.push((character, index)),
             ')' | ']' | '}' => {
-                delimiters.pop();
+                let Some((open, _)) = delimiters.pop() else {
+                    return Err(error(
+                        child_span(line, indent(line)? + index, character.len_utf8()),
+                        "unmatched closing binding delimiter",
+                    ));
+                };
+                if !matches!((open, character), ('(', ')') | ('[', ']') | ('{', '}')) {
+                    return Err(error(
+                        child_span(line, indent(line)? + index, character.len_utf8()),
+                        "mismatched binding delimiters",
+                    ));
+                }
             }
             ':' if delimiters.is_empty() && text[index..].starts_with(": ") => {
                 separators.push(index);
@@ -145,7 +177,16 @@ fn top_level_binding_separators(text: &str) -> Vec<usize> {
             _ => {}
         }
     }
-    separators
+    if quoted {
+        return Err(error(line_span(line), "unterminated quoted binding text"));
+    }
+    if let Some((_, index)) = delimiters.first() {
+        return Err(error(
+            child_span(line, indent(line)? + *index, 1),
+            "unterminated binding delimiter",
+        ));
+    }
+    Ok(separators)
 }
 
 pub(super) fn membership_line(line: SourceLine<'_>) -> Option<Result<MembershipDecl, ParseError>> {

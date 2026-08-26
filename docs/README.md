@@ -10,6 +10,7 @@ language specification.
 | --- | --- | --- |
 | [Semantic foundation](foundation.md) | **Current.** Normative for Clause's distinction-first semantic model. | Governs the surface and roadmap. Supersedes foundations built from primitive types, values, objects, fields, functions, or sets. |
 | [Target surface](surface.md) | **Current target.** Normative for authoring syntax and canonical formatting; parser migration is incomplete. | Governed by the foundation. Supersedes the ceremonial declaration surface and the historical M0 spellings. |
+| [Current executable syntax](current-syntax.md) | **Current implementation snapshot.** Describes what the checked frontend accepts now and names target-only gaps. | Descriptive, not semantic authority. Parser behavior and executable fixtures decide disagreements. |
 | [Roadmap](roadmap.md) | **Current.** Normative for implementation sequence, dependency order, and acceptance gates. | Governed by the foundation and target surface. Amends the earlier strategy sequence around the referent kernel and JavaScript/Three.js proof. |
 | [Architecture assurance](architecture.md) | **Current derived acceptance contract.** Non-semantic; makes the architecture ratchet executable. | Governed by the foundation, surface, and roadmap. It cannot add ontology, syntax, or milestone scope. |
 
@@ -24,6 +25,8 @@ language specification.
 - To understand what Clause means, read the [foundation](foundation.md).
 - To author or implement syntax, read the [surface](surface.md) under that
   foundation.
+- To see what the current compiler accepts rather than the complete target,
+  read the [current executable syntax](current-syntax.md).
 - To choose the next engineering checkpoint, read the [roadmap](roadmap.md).
 - To understand why some older examples differ, read the
   [historical M0 record](history/m0.md).

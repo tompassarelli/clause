@@ -35,6 +35,8 @@ syntax. Canonical indentation is two spaces, spaces only.
   and development.
 - [Semantic foundation](docs/foundation.md) — what Clause means.
 - [Target surface](docs/surface.md) — canonical authoring and formatting.
+- [Current executable syntax](docs/current-syntax.md) — what the checked
+  frontend accepts today and what remains target-only.
 - [Implementation roadmap](docs/roadmap.md) — dependency order and exit proofs.
 - [Historical M0 checkpoint](docs/history/m0.md) — superseded evidence and
   evolution context.

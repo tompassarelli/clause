@@ -383,12 +383,9 @@ pub fn parse(source: &str) -> Result<Program, ParseError> {
                 ));
             }
             insert_membership(&mut top_memberships.explicit, &membership);
-        } else if content(fragment.line).contains(": ") {
-            let text = content(fragment.line);
-            let (name, _) = text
-                .split_once(": ")
-                .expect("checked top-level binding separator");
-            semantic_name(fragment.line, indent(fragment.line)?, name)?;
+        } else if let Some(parts) = binding_parts(fragment.line) {
+            let parts = parts?;
+            semantic_name(fragment.line, indent(fragment.line)?, parts.name)?;
         }
     }
     for focus in &raw_focuses {
@@ -935,10 +932,11 @@ pub fn parse(source: &str) -> Result<Program, ParseError> {
             OrderedTopLevel::Line(line) => {
                 if let Some(membership) = membership_line(line) {
                     (line.number, Member::Membership(membership?))
-                } else if let Some((name_text, expression)) = content(line).split_once(": ") {
+                } else if let Some(parts) = binding_parts(line) {
+                    let parts = parts?;
                     let base = indent(line)?;
-                    let name = semantic_name(line, base, name_text)?;
-                    let expression_offset = base + name_text.len() + 2;
+                    let name = semantic_name(line, base, parts.name)?;
+                    let expression_offset = base + parts.separator + 2;
                     let legacy = definition_line(line)
                         .and_then(Result::ok)
                         .filter(|definition| {
@@ -952,7 +950,7 @@ pub fn parse(source: &str) -> Result<Program, ParseError> {
                         match closed_term_text_with_catalog(
                             line,
                             expression_offset,
-                            expression,
+                            parts.denotation,
                             &binding_catalog,
                             &relations,
                             &memberships,

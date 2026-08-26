@@ -144,6 +144,45 @@ fn relational_program(source: &str, named: bool) -> frontend::Program {
 }
 
 #[test]
+fn top_level_relational_products_ignore_nested_binding_colons() {
+    const SOURCE: &str = r#"F32
+Entity
+
+Vec2
+  x: F32
+  y: F32
+
+scene/placement: RelationShape
+  {item: Entity} scene-position {point: Vec2}
+  mode item -> point: one
+
+player ∈ Entity
+player scene-position Vec2 { x: 0.0, y: 0.0 }
+"#;
+
+    let program = frontend::parse(SOURCE).expect("top-level labelled-product clause parses");
+    assert!(program.top_level.iter().any(|member| {
+        matches!(
+            member,
+            frontend::Member::RelationalContent(content)
+                if content.roles.values().any(|term| matches!(
+                    term,
+                    frontend::SurfaceTerm::Product { .. }
+                ))
+        )
+    }));
+    elaborate::compile_in(program, ModelContext::new(model_id()))
+        .expect("top-level labelled-product clause lowers");
+
+    for malformed in [
+        SOURCE.replace("y: 0.0 }", "y: 0.0 ]"),
+        SOURCE.replace("y: 0.0 }", "y: 0.0"),
+    ] {
+        frontend::parse(&malformed).expect_err("malformed nested delimiters fail closed");
+    }
+}
+
+#[test]
 fn checked_structures_and_intrinsics_lower_without_an_evaluator() {
     let program = elaborate::compile_in(
         frontend::parse(SOURCE).expect("structural source parses"),
