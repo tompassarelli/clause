@@ -1,5 +1,5 @@
 use clause::{
-    elaborate::{self, ModelContext},
+    elaborate::{self, ElaborationContext},
     frontend,
     kernel::{ContentId, JudgmentTarget, Model, ReferentId, Term},
     wire,
@@ -34,7 +34,7 @@ fn model_id() -> ReferentId {
 fn compile_in(source: &str, id: ReferentId) -> elaborate::CompiledProgram {
     elaborate::compile_in(
         frontend::parse(source).expect("pure definition source parses"),
-        ModelContext::new(id),
+        ElaborationContext::new(id),
     )
     .expect("pure definition source compiles in context")
 }

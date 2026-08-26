@@ -732,7 +732,7 @@ frame score:
     let model_id = referent_id("pure/budget-model");
     let program = crate::elaborate::compile_in(
         crate::frontend::parse(SOURCE).expect("budget witness parses"),
-        crate::elaborate::ModelContext::new(model_id.clone()),
+        crate::elaborate::ElaborationContext::new(model_id.clone()),
     )
     .expect("budget witness compiles");
     let revision = program.context_revision().expect("budget Revision");

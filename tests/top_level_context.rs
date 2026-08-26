@@ -1,5 +1,5 @@
 use clause::{
-    elaborate::{self, ModelContext},
+    elaborate::{self, ElaborationContext},
     frontend,
     kernel::{ReferentId, Term},
     wire,
@@ -12,7 +12,7 @@ fn model_id(byte: &str) -> ReferentId {
 fn compile_in(source: &str, id: ReferentId) -> elaborate::CompiledProgram {
     elaborate::compile_in(
         frontend::parse(source).expect("source parses"),
-        ModelContext::new(id),
+        ElaborationContext::new(id),
     )
     .expect("source compiles in context")
 }
@@ -28,7 +28,7 @@ fn scoped(program: &elaborate::CompiledProgram, model: &ReferentId, name: &str) 
 fn direct_forms_require_an_explicit_model_context() {
     let program = frontend::parse("Game\n\nChess ∈ Game\ngravity: 9.81\n").expect("forms parse");
     let error = elaborate::compile(program).expect_err("ambient content needs its caller");
-    assert!(error.to_string().contains("explicit ModelContext"));
+    assert!(error.to_string().contains("explicit ElaborationContext"));
 }
 
 #[test]
@@ -186,8 +186,7 @@ fn contextual_designation_renames_preserve_binding_identity() {
         .expect("explicit scoped rename");
     let after = elaborate::compile_in_with_designations(
         frontend::parse("weight: 9.81\n").expect("renamed source parses"),
-        ModelContext::new(id),
-        designations,
+        ElaborationContext::with_designations(id, designations),
     )
     .expect("renamed source compiles in the same context");
     assert_eq!(

@@ -1,5 +1,5 @@
 use clause::{
-    elaborate::{self, CompileDiagnosticStatus, ModelContext},
+    elaborate::{self, CompileDiagnosticStatus, ElaborationContext},
     frontend,
     kernel::{
         ProposalPathSegment, ProposalSubject, ReferentId, StructuralFailureClass, StructuralForm,
@@ -171,7 +171,7 @@ player scene-position Vec2 { x: 0.0, y: 0.0 }
                 ))
         )
     }));
-    elaborate::compile_in(program, ModelContext::new(model_id()))
+    elaborate::compile_in(program, ElaborationContext::new(model_id()))
         .expect("top-level labelled-product clause lowers");
 
     for malformed in [
@@ -186,7 +186,7 @@ player scene-position Vec2 { x: 0.0, y: 0.0 }
 fn checked_structures_and_intrinsics_lower_without_an_evaluator() {
     let program = elaborate::compile_in(
         frontend::parse(SOURCE).expect("structural source parses"),
-        ModelContext::new(model_id()),
+        ElaborationContext::new(model_id()),
     )
     .expect("structural source lowers");
     let revision = program.context_revision().expect("context Revision");
@@ -319,7 +319,7 @@ fn labelled_products_reject_undeclared_missing_and_wrong_domain_fields() {
         let source = SOURCE.replacen("Vec2 { x: 3.0, y: 4.0 }", product, 1);
         let error = elaborate::compile_in(
             frontend::parse(&source).expect("malformed labelled product source parses"),
-            ModelContext::new(model_id()),
+            ElaborationContext::new(model_id()),
         )
         .expect_err("malformed labelled product must fail closed");
         assert_eq!(error.to_string(), expected);
@@ -341,7 +341,7 @@ pose: Pose { position: Vec2 { x: 3.0, y: 4.0 } }
 "#;
     let valid = elaborate::compile_in(
         frontend::parse(VALID).expect("valid nested product parses"),
-        ModelContext::new(model_id()),
+        ElaborationContext::new(model_id()),
     )
     .expect("valid nested product lowers");
     let pose_definition = valid
@@ -368,7 +368,7 @@ pose: Pose { position: Vec2 { x: 3.0, y: 4.0 } }
     let invalid = VALID.replace("y: 4.0", "y: true");
     let error = elaborate::compile_in(
         frontend::parse(&invalid).expect("wrong-domain nested product remains syntax"),
-        ModelContext::new(model_id()),
+        ElaborationContext::new(model_id()),
     )
     .expect_err("kernel must reject the wrong-domain proposal");
     let diagnostic = error
@@ -478,13 +478,13 @@ fn relational_failures_keep_authored_paths_in_named_and_context_models() {
 
     let valid_context = elaborate::compile_in(
         relational_program(RELATIONAL_CONTEXT_VALID, false),
-        ModelContext::new(model_id()),
+        ElaborationContext::new(model_id()),
     )
     .expect("valid context source lowers");
     let invalid_context = RELATIONAL_CONTEXT_VALID.replace("y: 4.0", "y: true");
     let context_error = elaborate::compile_in(
         relational_program(&invalid_context, false),
-        ModelContext::new(model_id()),
+        ElaborationContext::new(model_id()),
     )
     .expect_err("context structural proposal is rejected");
     assert_diagnostic(&valid_context, &context_error, &invalid_context);
@@ -541,7 +541,7 @@ magnitude:
         program
     }
 
-    let valid = elaborate::compile_in(program(VALID), ModelContext::new(model_id()))
+    let valid = elaborate::compile_in(program(VALID), ElaborationContext::new(model_id()))
         .expect("valid local source lowers");
     let magnitude = valid
         .designations()
@@ -576,7 +576,7 @@ magnitude:
         .expect("Vec2.y resolves");
 
     let invalid = VALID.replace("y: 4.0", "y: true");
-    let error = elaborate::compile_in(program(&invalid), ModelContext::new(model_id()))
+    let error = elaborate::compile_in(program(&invalid), ElaborationContext::new(model_id()))
         .expect_err("substituted local proposal is rejected");
     let diagnostic = error
         .diagnostic()
@@ -672,7 +672,7 @@ fn rehashed_wire_error(semantic: &str, before: &str, after: &str) -> clause::ker
 fn rehashed_structural_wire_tampering_fails_exact_admission() {
     let program = elaborate::compile_in(
         frontend::parse(SOURCE).expect("structural source parses"),
-        ModelContext::new(model_id()),
+        ElaborationContext::new(model_id()),
     )
     .expect("structural source lowers");
     let revision = program.context_revision().expect("context Revision");

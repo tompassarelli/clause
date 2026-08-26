@@ -1,5 +1,5 @@
 use clause::{
-    elaborate::{self, ModelContext},
+    elaborate::{self, ElaborationContext},
     execution, frontend, generated,
     kernel::{Delta, Model, ReferentId, Revision, SemanticAtom, Term},
     request, wire,
@@ -90,7 +90,7 @@ fn sealed_fixture() -> SealedFixture {
     fs::remove_file(&source_path).expect("authoring source deletes before compilation");
     let program = elaborate::compile_in(
         frontend::parse(&source).expect("pure computation source parses"),
-        ModelContext::new(model_id()),
+        ElaborationContext::new(model_id()),
     )
     .expect("pure computation source compiles in context");
     drop(source);

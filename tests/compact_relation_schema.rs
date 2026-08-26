@@ -1,5 +1,5 @@
 use clause::{
-    elaborate::{self, ModelContext},
+    elaborate::{self, ElaborationContext},
     frontend,
     kernel::{Cardinality, ReferentId, Term},
     wire,
@@ -69,7 +69,7 @@ fn compile_in(source: &str) -> elaborate::CompiledProgram {
             )
         })
         .collect::<Vec<_>>();
-    elaborate::compile_in(program, ModelContext::new(model_id())).unwrap_or_else(|error| {
+    elaborate::compile_in(program, ElaborationContext::new(model_id())).unwrap_or_else(|error| {
         panic!("relation schema source elaborates ({declarations:?}): {error}")
     })
 }
@@ -147,7 +147,7 @@ fn compact_nary_schema_elaborates_to_the_ceremonial_contract() {
 fn overlapping_schemas_name_candidates_and_conflicting_roles() {
     let diagnostic = match frontend::parse(OVERLAPPING) {
         Err(error) => error.to_string(),
-        Ok(program) => elaborate::compile_in(program, ModelContext::new(model_id()))
+        Ok(program) => elaborate::compile_in(program, ElaborationContext::new(model_id()))
             .expect_err("overlapping schemas must be rejected")
             .to_string(),
     };
@@ -182,7 +182,7 @@ fn checked_focus_rejects_an_undeclared_role() {
     };
     sentence.focus.value = frontend::RoleName("owner".to_owned());
 
-    let error = elaborate::compile_in(program, ModelContext::new(model_id()))
+    let error = elaborate::compile_in(program, ElaborationContext::new(model_id()))
         .expect_err("focus must resolve through the checked role designations")
         .to_string();
     assert!(error.contains("unknown role 'owner'"), "{error}");

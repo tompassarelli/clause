@@ -485,7 +485,7 @@ later declaration.
 
 The public implementation at semantic-v10 / Revision-v6 predates this syntax.
 It currently parses to `frontend::Program`, elaborates through
-`CompiledProgram` and `ModelContext`, and seals `kernel::Model` inside
+`CompiledProgram` and `ElaborationContext`, and seals `kernel::Model` inside
 `kernel::Revision`. Those are implementation names under migration; the
 [foundation](foundation.md) defines the accepted semantic layers.
 

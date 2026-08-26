@@ -144,8 +144,53 @@ pub struct CompiledProgram {
     requests: Vec<frontend::RequestDecl>,
     runtime_journeys: Vec<RuntimeJourney>,
     projection: Projection,
+    source_map: SourceMap,
+}
+
+/// Source-only evidence for a checked compilation.  Source locations and
+/// proposal diagnostics are deliberately kept out of semantic identity.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct SourceMap {
     source_spans: BTreeMap<ReferentId, frontend::Span>,
     proposal_spans: BTreeMap<ProposalPath, frontend::Span>,
+}
+
+impl SourceMap {
+    pub fn source_span(&self, occurrence: &ReferentId) -> Option<frontend::Span> {
+        self.source_spans.get(occurrence).copied()
+    }
+
+    pub fn proposal_span(&self, path: &ProposalPath) -> Option<frontend::Span> {
+        self.proposal_spans.get(path).copied()
+    }
+}
+
+/// Caller-owned namespace and semantic scope used during elaboration.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ElaborationContext {
+    model: ReferentId,
+    designations: DesignationTable,
+}
+
+impl ElaborationContext {
+    pub fn new(model: ReferentId) -> Self {
+        Self {
+            model,
+            designations: DesignationTable::new(),
+        }
+    }
+    pub fn with_designations(model: ReferentId, designations: DesignationTable) -> Self {
+        Self {
+            model,
+            designations,
+        }
+    }
+    pub fn id(&self) -> &ReferentId {
+        &self.model
+    }
+    pub fn designations(&self) -> &DesignationTable {
+        &self.designations
+    }
 }
 
 /// One checked Model Revision whose event transactions accept explicit runtime
@@ -170,6 +215,16 @@ impl RuntimeJourney {
 }
 
 impl CompiledProgram {
+    pub fn source_map(&self) -> &SourceMap {
+        &self.source_map
+    }
+    pub fn source_span(&self, occurrence: &ReferentId) -> Option<frontend::Span> {
+        self.source_map.source_span(occurrence)
+    }
+    pub fn proposal_span(&self, path: &ProposalPath) -> Option<frontend::Span> {
+        self.source_map.proposal_span(path)
+    }
+
     pub fn revisions(&self) -> &BTreeMap<frontend::Name, kernel::Revision> {
         &self.revisions
     }
@@ -276,16 +331,6 @@ impl CompiledProgram {
         )
     }
 
-    /// Locate one assertion occurrence in the parsed source projection.
-    pub fn source_span(&self, occurrence: &ReferentId) -> Option<frontend::Span> {
-        self.source_spans.get(occurrence).copied()
-    }
-
-    /// Locate one semantic proposal path in the source projection.
-    pub fn proposal_span(&self, path: &ProposalPath) -> Option<frontend::Span> {
-        self.proposal_spans.get(path).copied()
-    }
-
     /// Compile after an explicit designation rename transaction. The table is
     /// projection state: retaining a designation changes source terms without
     /// changing the referents, roles, or binders sealed into the Revision.
@@ -300,26 +345,9 @@ impl CompiledProgram {
     /// designation projection across an explicit rename transaction.
     pub fn compile_in_with_designations(
         program: frontend::Program,
-        context: ModelContext,
-        designations: DesignationTable,
+        context: ElaborationContext,
     ) -> CompileResult<Self> {
-        compile_context(program, context, designations)
-    }
-}
-
-/// Exact semantic scope for a source fragment that does not declare a Model.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ModelContext {
-    model: ReferentId,
-}
-
-impl ModelContext {
-    pub fn new(model: ReferentId) -> Self {
-        Self { model }
-    }
-
-    pub fn id(&self) -> &ReferentId {
-        &self.model
+        compile_context(program, context)
     }
 }
 
@@ -329,17 +357,16 @@ pub fn compile(program: frontend::Program) -> CompileResult<CompiledProgram> {
 
 pub fn compile_in(
     program: frontend::Program,
-    context: ModelContext,
+    context: ElaborationContext,
 ) -> CompileResult<CompiledProgram> {
-    compile_context(program, context, DesignationTable::new())
+    compile_context(program, context)
 }
 
 pub fn compile_in_with_designations(
     program: frontend::Program,
-    context: ModelContext,
-    designations: DesignationTable,
+    context: ElaborationContext,
 ) -> CompileResult<CompiledProgram> {
-    compile_context(program, context, designations)
+    compile_context(program, context)
 }
 
 fn compile_named(
@@ -348,7 +375,7 @@ fn compile_named(
 ) -> CompileResult<CompiledProgram> {
     if !program.top_level.is_empty() {
         return Err(kernel::KernelError::new(
-            "direct top-level Model content requires an explicit ModelContext",
+            "direct top-level Model content requires an explicit ElaborationContext",
         )
         .into());
     }
@@ -393,15 +420,16 @@ fn compile_named(
         requests: program.requests,
         runtime_journeys,
         projection,
-        source_spans,
-        proposal_spans,
+        source_map: SourceMap {
+            source_spans,
+            proposal_spans,
+        },
     })
 }
 
 fn compile_context(
     program: frontend::Program,
-    context: ModelContext,
-    designations: DesignationTable,
+    context: ElaborationContext,
 ) -> CompileResult<CompiledProgram> {
     declaration_map(&program.declarations)?;
     if !program.requests.is_empty()
@@ -417,11 +445,11 @@ fn compile_context(
         })
     {
         return Err(kernel::KernelError::new(
-            "ModelContext fragments may contain groundings, RelationShapes, and direct Model content",
+            "ElaborationContext fragments may contain groundings, RelationShapes, and direct Model content",
         )
         .into());
     }
-    let mut projection = declare_projection(&program, designations)?;
+    let mut projection = declare_projection(&program, context.designations)?;
     declare_model_members(&context.model, &program.top_level, &mut projection)?;
     let relation_shapes = lower_relation_shapes(&program.declarations, &mut projection)?;
     let mut proposal_spans = BTreeMap::new();
@@ -439,8 +467,10 @@ fn compile_context(
         requests: Vec::new(),
         runtime_journeys: Vec::new(),
         projection,
-        source_spans,
-        proposal_spans,
+        source_map: SourceMap {
+            source_spans,
+            proposal_spans,
+        },
     })
 }
 
@@ -2540,7 +2570,7 @@ typed
         .unwrap();
         let context_program = compile_in(
             frontend::parse("F32\n\nVec2\n  x: F32\n  y: F32\n\nPose\n  position: Vec2\n").unwrap(),
-            ModelContext::new(ReferentId::from_digest([99; 32])),
+            ElaborationContext::new(ReferentId::from_digest([99; 32])),
         )
         .unwrap();
         let game = program.designations().global("Game").unwrap();

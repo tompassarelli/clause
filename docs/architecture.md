@@ -38,7 +38,7 @@ The public code predates the accepted Program ontology. Its current pipeline is:
 ```text
 frontend::parse
   -> frontend::Program
-  -> elaborate::compile / compile_in(ModelContext)
+  -> elaborate::compile / compile_in(ElaborationContext)
   -> CompiledProgram
   -> kernel::Revision { RevisionLineage, kernel::Model }
   -> RuntimeSession / StateRevision / generated projections
@@ -49,7 +49,7 @@ These names describe live code, not final semantics:
 | Current implementation type | Current job | Accepted destination |
 | --- | --- | --- |
 | `frontend::Program` | parsed source AST | lossless syntax plus source projection inputs |
-| `ModelContext` | caller-supplied grouping identity and designation context | split `ElaborationContext`, `ValidationContext`, `AdmissionContext`, and `SourceMap` |
+| `ElaborationContext` | caller-owned semantic scope and designation inputs | retained as the honest elaboration boundary; validation/admission contexts remain deferred until candidate/revision APIs can accept explicit inputs |
 | `CompiledProgram` | aggregate of named revisions, requests, runtime journeys, and designations | compilation result around one or more ProgramSnapshot candidates and explicit admission results |
 | `kernel::Model` | current checked semantic payload container | `ProgramSnapshot` payload; it is not a model-theoretic Model |
 | `kernel::Revision` | current envelope whose ID hashes lineage and Model payload | split `ProgramSnapshot`, `ProgramChangeOccurrence`, and `ProgramRevision` identities |
