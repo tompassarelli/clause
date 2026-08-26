@@ -136,10 +136,12 @@ fn top_level_binding_separators(
     line: SourceLine<'_>,
     text: &str,
 ) -> Result<Vec<usize>, ParseError> {
+    let line_indent = indent(line)?;
     let mut delimiters = Vec::new();
     let mut quoted = false;
     let mut escaped = false;
     let mut separators = Vec::new();
+    let mut delimiter_error = None;
     for (index, character) in text.char_indices() {
         if quoted {
             if escaped {
@@ -159,16 +161,21 @@ fn top_level_binding_separators(
             '(' | '[' | '{' => delimiters.push((character, index)),
             ')' | ']' | '}' => {
                 let Some((open, _)) = delimiters.pop() else {
-                    return Err(error(
-                        child_span(line, indent(line)? + index, character.len_utf8()),
-                        "unmatched closing binding delimiter",
-                    ));
+                    delimiter_error.get_or_insert_with(|| {
+                        error(
+                            child_span(line, line_indent + index, character.len_utf8()),
+                            "unmatched closing binding delimiter",
+                        )
+                    });
+                    continue;
                 };
                 if !matches!((open, character), ('(', ')') | ('[', ']') | ('{', '}')) {
-                    return Err(error(
-                        child_span(line, indent(line)? + index, character.len_utf8()),
-                        "mismatched binding delimiters",
-                    ));
+                    delimiter_error.get_or_insert_with(|| {
+                        error(
+                            child_span(line, line_indent + index, character.len_utf8()),
+                            "mismatched binding delimiters",
+                        )
+                    });
                 }
             }
             ':' if delimiters.is_empty() && text[index..].starts_with(": ") => {
@@ -178,13 +185,21 @@ fn top_level_binding_separators(
         }
     }
     if quoted {
-        return Err(error(line_span(line), "unterminated quoted binding text"));
+        delimiter_error
+            .get_or_insert_with(|| error(line_span(line), "unterminated quoted binding text"));
     }
     if let Some((_, index)) = delimiters.first() {
-        return Err(error(
-            child_span(line, indent(line)? + *index, 1),
-            "unterminated binding delimiter",
-        ));
+        delimiter_error.get_or_insert_with(|| {
+            error(
+                child_span(line, line_indent + *index, 1),
+                "unterminated binding delimiter",
+            )
+        });
+    }
+    if let Some(error) = delimiter_error {
+        if !separators.is_empty() {
+            return Err(error);
+        }
     }
     Ok(separators)
 }
