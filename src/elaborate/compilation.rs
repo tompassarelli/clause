@@ -168,33 +168,33 @@ impl SourceMap {
 /// Caller-owned namespace and semantic scope used during elaboration.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ElaborationContext {
-    model: ReferentId,
+    scope: ReferentId,
     designations: DesignationTable,
 }
 
 impl ElaborationContext {
-    pub fn new(model: ReferentId) -> Self {
+    pub fn new(scope: ReferentId) -> Self {
         Self {
-            model,
+            scope,
             designations: DesignationTable::new(),
         }
     }
-    pub fn with_designations(model: ReferentId, designations: DesignationTable) -> Self {
+    pub fn with_designations(scope: ReferentId, designations: DesignationTable) -> Self {
         Self {
-            model,
+            scope,
             designations,
         }
     }
-    pub fn id(&self) -> &ReferentId {
-        &self.model
+    pub fn scope(&self) -> &ReferentId {
+        &self.scope
     }
     pub fn designations(&self) -> &DesignationTable {
         &self.designations
     }
 }
 
-/// One checked Model Revision whose event transactions accept explicit runtime
-/// occurrences and payloads.
+/// One checked legacy Revision whose event transactions accept explicit
+/// runtime occurrences and payloads.
 #[derive(Clone, Debug)]
 pub struct RuntimeJourney {
     revision: kernel::Revision,
@@ -236,7 +236,7 @@ impl CompiledProgram {
         &self.runtime_journeys
     }
 
-    /// The root Revision compiled in an exact caller-owned Model context.
+    /// The root legacy Revision compiled in an exact caller-owned semantic scope.
     pub fn context_revision(&self) -> Option<&kernel::Revision> {
         self.context_revision.as_ref()
     }
@@ -340,15 +340,6 @@ impl CompiledProgram {
     ) -> CompileResult<Self> {
         compile_named(program, designations)
     }
-
-    /// Compile direct Model content while preserving a caller-maintained
-    /// designation projection across an explicit rename transaction.
-    pub fn compile_in_with_designations(
-        program: frontend::Program,
-        context: ElaborationContext,
-    ) -> CompileResult<Self> {
-        compile_context(program, context)
-    }
 }
 
 pub fn compile(program: frontend::Program) -> CompileResult<CompiledProgram> {
@@ -362,20 +353,13 @@ pub fn compile_in(
     compile_context(program, context)
 }
 
-pub fn compile_in_with_designations(
-    program: frontend::Program,
-    context: ElaborationContext,
-) -> CompileResult<CompiledProgram> {
-    compile_context(program, context)
-}
-
 fn compile_named(
     program: frontend::Program,
     designations: DesignationTable,
 ) -> CompileResult<CompiledProgram> {
     if !program.top_level.is_empty() {
         return Err(kernel::KernelError::new(
-            "direct top-level Model content requires an explicit ElaborationContext",
+            "direct top-level content requires an explicit ElaborationContext",
         )
         .into());
     }
@@ -445,16 +429,16 @@ fn compile_context(
         })
     {
         return Err(kernel::KernelError::new(
-            "ElaborationContext fragments may contain groundings, RelationShapes, and direct Model content",
+            "ElaborationContext fragments may contain groundings, RelationShapes, and direct semantic content",
         )
         .into());
     }
     let mut projection = declare_projection(&program, context.designations)?;
-    declare_model_members(&context.model, &program.top_level, &mut projection)?;
+    declare_model_members(&context.scope, &program.top_level, &mut projection)?;
     let relation_shapes = lower_relation_shapes(&program.declarations, &mut projection)?;
     let mut proposal_spans = BTreeMap::new();
     let (model, source_spans) = lower_context_model(
-        context.model,
+        context.scope,
         &program.top_level,
         &relation_shapes,
         &projection,
@@ -1868,7 +1852,7 @@ fn lower_context_model(
             Member::Definition(_) | Member::PureDefinition(_) => {}
             _ => {
                 return Err(kernel::KernelError::new(
-                    "unsupported direct top-level Model member",
+                    "unsupported direct top-level member",
                 ));
             }
         }

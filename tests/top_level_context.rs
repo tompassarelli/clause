@@ -5,8 +5,8 @@ use clause::{
     wire,
 };
 
-fn model_id(byte: &str) -> ReferentId {
-    ReferentId::new(format!("ref-sha256-{}", byte.repeat(64))).expect("fixed Model identity")
+fn scope_id(byte: &str) -> ReferentId {
+    ReferentId::new(format!("ref-sha256-{}", byte.repeat(64))).expect("fixed scope identity")
 }
 
 fn compile_in(source: &str, id: ReferentId) -> elaborate::CompiledProgram {
@@ -17,23 +17,23 @@ fn compile_in(source: &str, id: ReferentId) -> elaborate::CompiledProgram {
     .expect("source compiles in context")
 }
 
-fn scoped(program: &elaborate::CompiledProgram, model: &ReferentId, name: &str) -> ReferentId {
+fn scoped(program: &elaborate::CompiledProgram, scope: &ReferentId, name: &str) -> ReferentId {
     program
         .designations()
-        .scoped(model, name)
+        .scoped(scope, name)
         .expect("scoped designation resolves")
 }
 
 #[test]
-fn direct_forms_require_an_explicit_model_context() {
+fn direct_forms_require_an_explicit_elaboration_context() {
     let program = frontend::parse("Game\n\nChess ∈ Game\ngravity: 9.81\n").expect("forms parse");
     let error = elaborate::compile(program).expect_err("ambient content needs its caller");
     assert!(error.to_string().contains("explicit ElaborationContext"));
 }
 
 #[test]
-fn top_level_membership_uses_the_exact_caller_owned_model() {
-    let id = model_id("1");
+fn top_level_membership_uses_the_exact_caller_owned_scope() {
+    let id = scope_id("1");
     let program = compile_in("Game\n\nChess ∈ Game\n", id.clone());
     let revision = program.context_revision().expect("context Revision");
     assert_eq!(revision.model().id(), &id);
@@ -83,7 +83,7 @@ fn top_level_membership_uses_the_exact_caller_owned_model() {
 
 #[test]
 fn top_level_binding_is_a_stable_definition_in_the_same_model() {
-    let id = model_id("2");
+    let id = scope_id("2");
     let program = compile_in("gravity: 9.81\n", id.clone());
     let model = program
         .context_revision()
@@ -102,7 +102,7 @@ const RELATIONAL_PREFIX: &str = "Door\nPlace\n\nworld/connects: RelationShape\n 
 
 #[test]
 fn flattened_top_level_relation_uses_only_resolved_context_referents() {
-    let id = model_id("3");
+    let id = scope_id("3");
     let program = compile_in(
         &format!("{RELATIONAL_PREFIX}iron-door connects Cellar to Armory\n"),
         id.clone(),
@@ -144,7 +144,7 @@ fn focused_and_flattened_top_level_forms_have_identical_canonical_identity() {
     let flattened = format!(
         "{PREFIX}iron-door ∈ Door\niron-door connects Cellar to Armory\nstate of iron-door: locked\n"
     );
-    let id = model_id("4");
+    let id = scope_id("4");
     let focused = compile_in(&focused, id.clone());
     let flattened = compile_in(&flattened, id.clone());
     let focused_revision = focused.context_revision().expect("focused Revision");
@@ -164,8 +164,8 @@ fn focused_and_flattened_top_level_forms_have_identical_canonical_identity() {
 }
 
 #[test]
-fn source_changes_do_not_replace_the_supplied_model_identity() {
-    let id = model_id("5");
+fn semantic_source_changes_do_not_replace_the_supplied_scope_identity() {
+    let id = scope_id("5");
     let first = compile_in("Game\n\nChess ∈ Game\n", id.clone());
     let second = compile_in("Game\n\nChess ∈ Game\nSoccer ∈ Game\n", id.clone());
     assert_eq!(first.context_revision().unwrap().model().id(), &id);
@@ -178,13 +178,13 @@ fn source_changes_do_not_replace_the_supplied_model_identity() {
 
 #[test]
 fn contextual_designation_renames_preserve_binding_identity() {
-    let id = model_id("6");
+    let id = scope_id("6");
     let before = compile_in("gravity: 9.81\n", id.clone());
     let mut designations = before.designations().clone();
     designations
         .retain_scoped(&id, "gravity", "weight")
         .expect("explicit scoped rename");
-    let after = elaborate::compile_in_with_designations(
+    let after = elaborate::compile_in(
         frontend::parse("weight: 9.81\n").expect("renamed source parses"),
         ElaborationContext::with_designations(id, designations),
     )
@@ -192,6 +192,37 @@ fn contextual_designation_renames_preserve_binding_identity() {
     assert_eq!(
         wire::serialize(before.context_revision().unwrap()),
         wire::serialize(after.context_revision().unwrap())
+    );
+}
+
+#[test]
+fn source_map_span_changes_do_not_change_frozen_revision_identity() {
+    let id = scope_id("7");
+    let compact = compile_in("Game\n\nChess ∈ Game\n", id.clone());
+    let shifted = compile_in("Game\n\n\nChess ∈ Game\n", id);
+    let compact_revision = compact.context_revision().expect("compact Revision");
+    let shifted_revision = shifted.context_revision().expect("shifted Revision");
+    let compact_occurrence = compact_revision
+        .model()
+        .occurrences()
+        .first()
+        .expect("compact membership occurrence");
+    let shifted_occurrence = shifted_revision
+        .model()
+        .occurrences()
+        .first()
+        .expect("shifted membership occurrence");
+
+    assert_eq!(compact_occurrence.id(), shifted_occurrence.id());
+    assert_ne!(
+        compact.source_span(compact_occurrence.id()),
+        shifted.source_span(shifted_occurrence.id())
+    );
+    assert_ne!(compact.source_map(), shifted.source_map());
+    assert_eq!(compact_revision.identity(), shifted_revision.identity());
+    assert_eq!(
+        wire::serialize(compact_revision),
+        wire::serialize(shifted_revision)
     );
 }
 
