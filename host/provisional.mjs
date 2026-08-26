@@ -2,7 +2,7 @@
 //
 // This module deliberately contains no Clause evaluator.  The artifact owns
 // transition semantics and render-plan production; this file only adapts
-// browser/Three.js lifecycle and records external capability receipts.
+// browser/Three.js lifecycle and retains copies of Clause-validated traces.
 
 const ARTIFACT_KIND = "clause-js-runtime-v1";
 
@@ -29,6 +29,7 @@ export function loadArtifact(value) {
   if (typeof value.renderPlan !== "function") throw new Error("artifact renderPlan is required");
   if (typeof value.createEvent !== "function") throw new Error("artifact createEvent is required");
   if (typeof value.validateEffectTrace !== "function") throw new Error("artifact validateEffectTrace is required");
+  if (typeof value.validateTransitionResult !== "function") throw new Error("artifact validateTransitionResult is required");
   const events = value.events ?? {};
   if (!events || typeof events !== "object") throw new Error("artifact events must be an object");
   return Object.freeze({
@@ -41,6 +42,7 @@ export function loadArtifact(value) {
     renderPlan: value.renderPlan,
     capabilities: copy(value.capabilities ?? []),
     validateEffectTrace: value.validateEffectTrace,
+    validateTransitionResult: value.validateTransitionResult,
   });
 }
 
@@ -63,12 +65,14 @@ export function createEventBridge({ artifact, runtime, revisionId = artifact.rev
     if (closed) return false;
     const eventId = artifact.events[name];
     if (!eventId) return false;
-    const hostOrder = order++;
+    const hostOrder = order;
     const event = artifact.createEvent(name, eventId, payload, hostOrder, revisionId);
-    if (!event || event.revisionId !== revisionId || typeof event.id !== "string" || event.id.length === 0) throw new Error("artifact supplied an invalid Revision-bound event");
+    if (!event || event.revisionId !== revisionId || event.event !== eventId || typeof event.id !== "string" || event.id.length === 0) throw new Error("artifact supplied an invalid Revision-bound event");
     const result = runtime.transition(event, revisionId);
     if (!result || result.revisionId !== revisionId) throw new Error("runtime transition crossed Revision boundary");
+    if (!artifact.validateTransitionResult(result, event, revisionId)) throw new Error("Clause transition authority rejected result");
     log.push(copy(event));
+    order += 1;
     if (onState) onState(result.state, revisionId);
     if (onEffects && result.effects) onEffects(result.effects, result.state, revisionId);
     return true;
@@ -102,10 +106,10 @@ export function startLifecycle({ canvas, runtime, artifact, binding, render, inp
   const bridge = createEventBridge({ artifact, runtime, onState: (state, revision) => binding.apply(renderPlanFor(artifact, state, revision)) });
   let frame;
   let stopped = false;
-  const tick = () => { if (stopped) return; render(); frame = input.requestAnimationFrame(tick); };
+  const tick = () => { if (stopped) return; render(); if (!stopped) frame = input.requestAnimationFrame(tick); };
   const key = (event) => { const name = event.key === "ArrowLeft" ? "left" : event.key === "ArrowRight" ? "right" : null; if (name) bridge.dispatch(name); };
   input.addEventListener("keydown", key); frame = input.requestAnimationFrame(tick);
-  return Object.freeze({ bridge, stop: () => { if (stopped) return; stopped = true; input.cancelAnimationFrame(frame); input.removeEventListener("keydown", key); bridge.close(); } });
+  return Object.freeze({ bridge, stop: () => { if (stopped) return; stopped = true; input.cancelAnimationFrame(frame); input.removeEventListener("keydown", key); bridge.close(); if (binding && typeof binding.dispose === "function") binding.dispose(); } });
 }
 
 export function createEffectBridge({ artifact, runtime, revisionId = artifact.revisionId }) {

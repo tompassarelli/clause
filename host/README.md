@@ -9,6 +9,7 @@ There is not yet a Rust-owned JavaScript emitter or a settled render-plan
 schema. This commit is only a bounded adapter contract/prototype and cannot
 claim M7 completion or generated-target/source-deleted parity.
 
-The host owns event ordering, DOM/device and RAF lifecycle, Three.js resource
-bookkeeping, and capability receipt bookkeeping. It does not decode the Clause
-wire, evaluate transitions, infer identity, or mutate a Clause state.
+The host forwards declared event/effect requests, owns DOM/device and RAF
+lifecycle, and retains copies of Clause-validated traces. It does not decode
+the Clause wire, evaluate transitions, construct receipts, infer identity, or
+manufacture semantic truth.
