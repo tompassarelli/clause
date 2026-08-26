@@ -18,7 +18,7 @@ use clause::{
     runtime::{
         AuthorizationDecision, EffectOutcome, EffectRequest, EffectTrace, Presence,
         ReceiptOutcome, RuntimeInput, RuntimePolicy, RuntimeSession, StateDelta, StateDiff,
-        TransitionEvent, reload_effect_trace, reload_session,
+        TransitionEvent, reload_effect_request, reload_effect_trace, reload_session,
     },
     wire,
 };
@@ -735,6 +735,8 @@ fn effect_evidence_is_post_commit_distinct_and_canonical() {
             0,
         )
     };
+    let request_wire = request().canonical_bytes();
+    assert_eq!(reload_effect_request(&request_wire).unwrap(), request());
     assert!(
         EffectTrace::denied(journey.revision(), root.latest(), request())
             .unwrap_err()

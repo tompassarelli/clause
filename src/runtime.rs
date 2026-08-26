@@ -25,6 +25,7 @@ use crate::{
 pub const STATE_REVISION_TAG: &str = "clause-state-revision-v2";
 pub const RUNTIME_SESSION_TAG: &str = "clause-runtime-session-v2";
 pub const EFFECT_TRACE_TAG: &str = "clause-effect-trace-v1";
+pub const EFFECT_REQUEST_TAG: &str = "clause-effect-request-v1";
 
 macro_rules! digest_identity {
     ($name:ident, $prefix:literal, $message:literal) => {
@@ -95,6 +96,11 @@ digest_identity!(
     EffectTraceId,
     "effect-trace-sha256-",
     "invalid effect trace identity"
+);
+digest_identity!(
+    EffectRequestId,
+    "effect-request-sha256-",
+    "invalid effect request identity"
 );
 
 /// The complete deterministic runtime policy bound into every state/session.
@@ -1118,6 +1124,7 @@ impl EffectLineage {
 /// The existing checked identities that locate one requested external effect.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EffectRequest {
+    identity: EffectRequestId,
     producer: ReferentId,
     request: ReferentId,
     authority: ReferentId,
@@ -1135,15 +1142,83 @@ impl EffectRequest {
         phase: ReferentId,
         order: u64,
     ) -> Self {
-        Self {
+        let mut request = Self {
+            identity: EffectRequestId::from_digest([0; 32]),
             producer,
             request,
             authority,
             event,
             phase,
             order,
-        }
+        };
+        request.identity = EffectRequestId::from_digest(sha256_digest(
+            request.preimage().as_bytes(),
+        ));
+        request
     }
+
+    pub fn identity(&self) -> &EffectRequestId {
+        &self.identity
+    }
+
+    /// Canonical, standalone representation of this intent/effect request.
+    pub fn canonical_bytes(&self) -> String {
+        format!(
+            "[\"{EFFECT_REQUEST_TAG}\",\"{}\",{}]",
+            self.identity,
+            self.preimage()
+        )
+    }
+
+    fn preimage(&self) -> String {
+        format!(
+            "[[\"producer\",\"{}\"],[\"request\",\"{}\"],[\"authority\",\"{}\"],[\"event\",\"{}\"],[\"phase\",\"{}\"],[\"order\",\"{}\"]]",
+            self.producer, self.request, self.authority, self.event, self.phase, self.order
+        )
+    }
+
+    fn validate(&self, revision: &Revision) -> Result<()> {
+        for (id, kind) in [
+            (&self.producer, "producer"),
+            (&self.request, "request"),
+            (&self.authority, "authority"),
+            (&self.event, "event"),
+            (&self.phase, "phase"),
+        ] {
+            if !revision.model().referents().contains_key(id) {
+                return Err(KernelError::new(format!(
+                    "effect request {kind} is absent from the checked Model"
+                )));
+            }
+        }
+        let expected = EffectRequestId::from_digest(sha256_digest(self.preimage().as_bytes()));
+        if self.identity != expected {
+            return Err(KernelError::new("effect request identity does not match"));
+        }
+        Ok(())
+    }
+}
+
+/// Reload a standalone canonical effect request and verify its content-derived identity.
+pub fn reload_effect_request(bytes: &str) -> Result<EffectRequest> {
+    let value = JsonParser::new(bytes).parse()?;
+    if json(&value) != bytes {
+        return Err(KernelError::new("effect request wire is not canonical JSON"));
+    }
+    let item = list(&value, 3, "effect request envelope")?;
+    require_string(&item[0], EFFECT_REQUEST_TAG, "effect request envelope tag")?;
+    let claimed = EffectRequestId::new(string(&item[1], "effect request identity")?.into())?;
+    let body = list(&item[2], 6, "effect request body")?;
+    let field = |index: usize, tag: &str| -> Result<ReferentId> {
+        ReferentId::new(string(tagged(&body[index], tag, "effect request field")?, "effect request referent")?.into())
+    };
+    let order = string(tagged(&body[5], "order", "effect request order")?, "effect request order value")?
+        .parse().map_err(|_| KernelError::new("invalid effect request order"))?;
+    let request = EffectRequest::new(field(0, "producer")?, field(1, "request")?, field(2, "authority")?, field(3, "event")?, field(4, "phase")?, order);
+    if request.identity != claimed || request.canonical_bytes() != bytes {
+        return Err(KernelError::new("effect request identity does not match canonical content"));
+    }
+    Ok(request)
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1538,6 +1613,7 @@ fn effect_lineage(
     post_commit: &StateRevision,
     request: EffectRequest,
 ) -> Result<EffectLineage> {
+    request.validate(revision)?;
     let lineage = EffectLineage {
         producer: request.producer,
         request: request.request,
