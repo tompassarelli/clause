@@ -1173,7 +1173,12 @@ impl EffectRequest {
     fn preimage(&self) -> String {
         format!(
             "[[\"producer\",\"{}\"],[\"request\",\"{}\"],[\"authority\",\"{}\"],[\"event\",\"{}\"],[\"phase\",\"{}\"],[\"order\",\"{}\"]]",
-            self.producer, self.request, self.authority, self.event, self.phase, self.order
+            self.producer.as_str(),
+            self.request.as_str(),
+            self.authority.as_str(),
+            self.event.as_str(),
+            self.phase.as_str(),
+            self.order
         )
     }
 
@@ -1182,7 +1187,6 @@ impl EffectRequest {
             (&self.producer, "producer"),
             (&self.request, "request"),
             (&self.authority, "authority"),
-            (&self.event, "event"),
             (&self.phase, "phase"),
         ] {
             if !revision.model().referents().contains_key(id) {
