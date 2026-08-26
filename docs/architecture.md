@@ -1,13 +1,13 @@
 # Clause Architecture Assurance
 
-> **Status:** Current architecture acceptance contract.
+> **Status:** Current implementation boundary and release contract.
 >
 > **Authority:** Derived and non-semantic. The
 > [foundation](foundation.md) alone governs meaning, the
-> [surface](surface.md) governs authoring projection, and the
-> [roadmap](roadmap.md) governs sequence and feature exit. This document turns
+> [syntax](syntax.md) governs canonical source, and the
+> [roadmap](roadmap.md) governs implementation status and order. This document turns
 > their architecture boundaries into a release decision; it may not add an
-> ontology, syntax, or milestone.
+> ontology, syntax form, or milestone.
 
 <!-- clause-architecture-gate:v2 -->
 <!-- milestone:M4:public-base:af9a0b9952f42f95851b47a071d9efb01a5fda0f -->
@@ -15,116 +15,179 @@
 
 ## Decision
 
-A milestone is architecture-acceptable only when
+A candidate is architecture-acceptable only when
 `bin/architecture-gate FULL_GIT_OBJECT_ID M<N>` passes from a clean worktree
-whose exact HEAD is that full candidate Git commit, and its roadmap exit proof
-also passes. The milestone argument is optional and defaults to the highest one
-marked implemented or bound to an exact public milestone base above. A public
-base marker admits architecture evidence only; it does not replace the
-roadmap's feature exit proof. The gate is a ratchet, not a substitute for
-feature tests. Unknown, incomplete, ambiguous, tampered, dirty, or unreviewed
-evidence fails closed.
+whose exact HEAD is that full commit, and the selected milestone's roadmap exit
+proof also passes. The gate is a ratchet over checked code and exact evidence;
+it is not a substitute for feature tests or independent review.
 
-The checked Model remains the only semantic authority. Source, Revisions,
-indexes, caches, schedules, runtime sessions, storage rows, target code, event
-history, explanations, and receipts are projections or evidence with exact
-links back to that Model. None may silently become a second program.
+Unknown, incomplete, ambiguous, tampered, dirty, or mismatched evidence fails
+closed. Public-base markers admit inherited architecture evidence only. They do
+not make a later milestone implemented.
+
+The accepted semantic authority is a checked ProgramSnapshot under an exact
+ClauseSemanticsId. Program lineage, ProgramRevision history, source, caches,
+runtime state, generated code, storage, host objects, refs, lifecycle records,
+deployments, explanations, and receipts retain exact links to the semantic
+content they concern; none silently becomes another ProgramSnapshot.
+
+## Current implementation mapping
+
+The public code predates the accepted Program ontology. Its current pipeline is:
+
+```text
+frontend::parse
+  -> frontend::Program
+  -> elaborate::compile / compile_in(ModelContext)
+  -> CompiledProgram
+  -> kernel::Revision { RevisionLineage, kernel::Model }
+  -> RuntimeSession / StateRevision / generated projections
+```
+
+These names describe live code, not final semantics:
+
+| Current implementation type | Current job | Accepted destination |
+| --- | --- | --- |
+| `frontend::Program` | parsed source AST | lossless syntax plus source projection inputs |
+| `ModelContext` | caller-supplied grouping identity and designation context | split `ElaborationContext`, `ValidationContext`, `AdmissionContext`, and `SourceMap` |
+| `CompiledProgram` | aggregate of named revisions, requests, runtime journeys, and designations | compilation result around one or more ProgramSnapshot candidates and explicit admission results |
+| `kernel::Model` | current checked semantic payload container | `ProgramSnapshot` payload; it is not a model-theoretic Model |
+| `kernel::Revision` | current envelope whose ID hashes lineage and Model payload | split `ProgramSnapshot`, `ProgramChangeOccurrence`, and `ProgramRevision` identities |
+| current designation table | source mapping plus explicit ID-retention helpers | durable, lineage-aware Designation allocation and SourceMap evidence |
+| `RuntimeSession` | execution pinned to current Revision and RuntimePolicy | add RuntimeSessionId, ClauseSemanticsId, and session-start occurrence |
+| `StateRevision` | immutable state payload/history under a current Model Revision | bind exact RuntimeSession, transition occurrence, policy, semantics epoch, predecessor, and payload |
+
+Canonical persistence is currently `clause-semantic-v10` inside
+`clause-revision-v6`. The current `RevisionId` hashes both lineage and Model
+payload, so it is neither the accepted `ProgramSnapshotId` nor the accepted
+`ProgramRevisionId`. No public ProgramSnapshot, ProgramChangeOccurrence,
+ProgramRevision, ProgramRef, lifecycle, deployment, or durable Designation
+representation exists yet.
+
+This mapping is the migration contract. Code using the old names remains real
+and test-backed, but it cannot override the semantic vocabulary in the
+foundation.
+
+## Target pipeline
+
+The corrected boundary is:
+
+```text
+read(SourceUnit)
+  -> LosslessSyntax + SourceMap
+
+elaborate(LosslessSyntax, ElaborationContext)
+  -> ProgramSnapshotCandidate
+
+validate(ProgramSnapshotCandidate, ValidationContext)
+  -> ValidationResult
+
+admit(validated candidate, base ProgramRevision, AdmissionContext)
+  -> ProgramChangeOccurrence + ProgramRevision
+
+execute(ProgramRevision, RuntimePolicy, SessionStartOccurrence)
+  -> RuntimeSession -> StateRevision successors
+```
+
+Each context has a distinct checked type. Source identity, namespace,
+ProgramId, authority, policy, semantics epoch, and runtime session identity may
+be related explicitly, but are never interchangeable defaults.
 
 ## Constitution
 
 | ID | Required invariant | Reject the candidate when |
 | --- | --- | --- |
-| A1 | **One authority.** Addressable semantic identity has one domain, `ReferentId`. `ContentId`, `RoleId`, `PatternId`, and `RevisionId` identify content or engineering structure; they are not referent species. | A source, host type, table, object, store path, event record, or target symbol becomes semantic authority or a second identity ontology. |
-| A2 | **Irreducible kernel.** The kernel owns referents, role-labelled content, occurrences, judgments and modes, exact Model validation, and Revision lineage. Derived contracts remain anchored to referents. | Parser convenience, target policy, storage layout, scheduling, adapters, or host resources enter semantic identity; a new kernel form lacks a failure that existing forms cannot express. |
-| A3 | **Hard category boundaries.** Term/designation, referent, content, occurrence, judgment, and modality remain distinct checked types. Truth, derivation, acceptance, observation, intention, requirement, transition, effect, attempt, receipt, and external fact never imply one another. | One layer is inferred from another by structural equality, liveness, absence, source position, or host success. |
-| A4 | **N-ary named roles.** Relational content maps stable `RoleId`s to recursive terms at any arity. Subject/predicate/object and tuple order are never the semantic representation. | A role is dropped, inferred from position after elaboration, or flattened into a generic triple. |
-| A5 | **Physical freedom without a generic hot path.** The bounded interpreter may remain a reference oracle. Performance-sensitive execution uses compiled relation/role indexes, exact incremental additions and retractions, and specialized target layouts; proofs retain every independent support. | A full relation scan or generic content interpreter is the state/target hot path, or an index/cache/layout changes meaning. |
-| A6 | **End-to-end trace.** The chain is exact: source span/designation → occurrence → content/Model → Revision → runtime plan/session/state → result, proof/support, diagnostic, or effect receipt. | A step cannot name its exact producer, input Revision, governing authority, or source/role origin; history or a receipt is treated as truth. |
-| A7 | **Replaceable strategies.** Storage and target plans consume canonical identities and can be replaced while preserving results, provenance, bounds, and source-deleted parity. | Store rows, JavaScript objects, Rust types, indexes, or target addresses leak back into the Model or wire identity. |
-| A8 | **No exception semantics.** Clause failures are explicit checked outcomes. Host panics may only expose an implementation invariant defect; catching, throwing, retrying, or crashing never determines Clause meaning. | A practical path uses an implicit exception, retry, fallback, or host control-flow accident as a language mode or result. |
-| A9 | **Fail closed.** Resolution accepts one exact elaboration or reports every survivor and repair. Wire admission recomputes canonical identity and exact lineage. Bounded work never overclaims completeness or optimality. | Ambiguity is guessed, tamper is normalized, an unknown mode is accepted, or partial work is certified as exact. |
-| A10 | **No hidden severe debt.** Every known architecture deferral names severity, blocking milestone, and executable exit. High or critical core debt blocks publication. | A high/critical deferral exists, a medium deferral crosses its blocking milestone, or the gate lacks an adversarial negative for a new boundary. |
+| A1 | **One address protocol.** `ReferentId` is the sole general addressable semantic identity protocol. Content, role, pattern, snapshot, revision, occurrence, session, and state IDs identify their own structures; they are not rival Referent species. | A host type, source, table, object, storage path, event record, or target symbol becomes semantic authority or a second object ontology. |
+| A2 | **Irreducible checked core.** The kernel owns Referents, named-role RelationalContent, AssertionOccurrences, Judgments and modalities, exact snapshot validation, and constitutional identities. | Parser convenience, target policy, storage layout, scheduling, adapters, or host resources enter semantic identity without an explicit semantic relation. |
+| A3 | **Hard category boundaries.** Term/Designation, Referent, content, occurrence, Judgment, Disposition, snapshot, change occurrence, history node, attestation, and runtime state remain distinct checked structures. | Equality, liveness, absence, source position, or evidence accumulation silently converts one layer into another. |
+| A4 | **N-ary named roles.** RelationalContent maps stable RoleIds to recursive terms at any arity. | A role is dropped, inferred from tuple position after elaboration, or flattened into a generic triple. |
+| A5 | **Intensional identity.** Snapshot hashes commit to ClauseSemanticsId and canonical checked content; history-node hashes commit separately to ProgramId, parent, snapshot, and constitutive change occurrence. | Logical equivalence collapses independent occurrences, later evidence mutates a revision, or one hash silently changes meaning across semantics epochs. |
+| A6 | **Explicit nominal continuity.** Referent and occurrence identity allocation is lineage-aware; local names and source spans remain projections. | A rename or move guesses continuity from similarity, position, or spelling. |
+| A7 | **Physical freedom without a generic hot path.** The bounded interpreter may remain an oracle. Performance-sensitive state and target execution use compiled indexes, exact incremental changes, and specialized layouts while retaining every support. | A full relation scan or generic content interpreter is the state/target hot path, or a cache/layout changes meaning. |
+| A8 | **End-to-end trace.** The chain from source/designation through occurrence, content, snapshot, revision, runtime session/state, and result/evidence is exact. | A result cannot name its exact semantic input, causal boundary, authority, or source/role origin, or a receipt is treated as truth. |
+| A9 | **Replaceable strategies and explicit failure.** Storage and generated targets preserve canonical identities, results, provenance, and bounds; failures are checked outcomes. | A target or store leaks into semantic identity, or exceptions, retries, fallback order, or host accidents determine Clause meaning. |
+| A10 | **Fail closed with visible obligations.** Resolution admits one exact elaboration; canonical reload recomputes identity and lineage; bounded work never overclaims completeness. | Ambiguity is guessed, tamper is normalized, partial work is certified as exact, or a milestone-crossing obligation lacks an executable exit. |
+
+## Identity and parity gate
+
+The constitutional migration must establish executable oracles before changing
+the current representation. At minimum it must distinguish:
+
+- equal snapshot payloads reached through different parents;
+- equal parent and endpoint reached by different genuine change occurrences;
+- additional attestations that leave revision identity unchanged;
+- local rename retention versus delete-and-create;
+- duplicate assertion occurrences over equal RelationalContent;
+- explicit assertion of an already derivable consequence;
+- equal checked payload under different ClauseSemanticsIds;
+- equal state payload under different sessions, transitions, or policies; and
+- ProgramRef, lifecycle, and deployment updates that do not mutate snapshots.
+
+Every current M1–M7 capability selected for preservation also needs
+before/after canonical identity, result, proof, runtime, and generated-output
+parity. Tests must not rewrite expected identities merely to bless a migration.
 
 ## Milestone ratchet
 
-The current reference evaluator is an oracle, not the final physical strategy.
-That distinction is load-bearing: M3 proved checked recursive computation and
-source-deleted parity, not specialized incremental target execution.
+The architecture gate currently protects the implemented semantic-v10 /
+Revision-v6 line through M6. Those checks remain useful migration oracles; they
+do not prove that the Program ontology is already implemented.
 
-| Milestone | Architecture evidence due in addition to inherited checks |
+| Milestone | Additional architecture evidence |
 | --- | --- |
-| M1–M3 | One referent domain; distinct content/occurrence/judgment/modes; exact named roles; deterministic source projection; strict canonical Revision reload; bounded reference evaluation and source-deleted parity. |
-| M4 | Holes remain scoped `PatternId` machinery, never referents; every query column retains its binder, complete recursive role-origin set, and presentation-only label through resolution, execution, canonical output, and source-deleted generation. Each query result retains its exact input Revision; asserted proof leaves retain exact occurrence, source, scope, and judgment identities, including duplicate source acts. Nested applications remain request-local, recursive correlation is exact, cardinality is explicit, laws remain inert until a distinct authorized rule projects them, and native/generated execution preserves identical caller bounds. No compiled-performance claim is admitted. |
-| M5 | Migration reports every source inference and proves source/designation → stable semantic identity → exact successor Revision continuity. |
-| M6 | `StateRevision` and `RuntimeSession` bind exact Model Revision, predecessor, Delta, inputs, policy, and replay. Add/retract dependency work is incremental; generic closure scanning is not the state hot path. Ordinary event/`~>` authoring elaborates to checked transitions and source-deleted generated Rust replays their canonical artifacts through the same runtime API. |
-| M7 | Effects retain intent, authorization, attempt, receipt, observation, and admission as separate trace nodes. Generated JavaScript uses specialized layouts/indexes and contains no shadow domain logic; a matched reference/target measurement decides the hot-path claim. |
-| M8 | One live surface and ontology remain. Ceremonial grammar, compatibility paths, stale fixtures, and shadow consumers are absent after exact migration parity. |
+| M1–M3 | One ReferentId domain; distinct content/occurrence/Judgment structures; exact named roles; deterministic source projection; strict canonical reload; bounded recursive evaluation and source-deleted generated-Rust parity. |
+| M4 | Query holes remain scoped PatternIds; recursive correlation, projection cardinality, ordering, proof/support provenance, law-versus-derive authority, exact input Revision, bounds, and generated parity remain explicit. |
+| M5 | Migration reports every source inference and proves source/designation to stable identity to exact successor continuity. |
+| M6 | Current RuntimeSession and StateRevision replay binds exact current Revision, policy, predecessor, deltas, and ordered inputs; additions and retractions use compiled dependency/support indexes rather than generic closure scanning. |
+| M7 | Effect intent, authorization, attempt, receipt, observation, and admission remain separate; generated JavaScript must contain no shadow semantics; real target claims require matched evidence. |
+| M8 | One live ontology and source grammar remain; compatibility parsers, inferred declaration kinds, stale fixtures, and shadow consumers are absent. |
 
 <!-- obligation:source-migration:fulfilled:M5:test=m5_migration -->
 <!-- obligation:incremental-runtime-trace:fulfilled:M6:test=m6_replay -->
 <!-- obligation:specialized-target-effect-trace:pending:M7 -->
 <!-- obligation:single-live-surface:pending:M8 -->
 
-The executable gate deliberately refuses a milestone when its pending marker is
-due. The implementation that closes an obligation must replace the marker and
-add the narrow executable check for the actual mechanism in the same change;
+The gate refuses a milestone when its obligation remains pending. Closing one
+requires the narrow executable proof and marker change in the same commit;
 prose or a renamed marker cannot make the gate green.
 
-## Current gap and debt boundary
+## M7 acceptance boundary
 
-`derive::saturate` remains the bounded reference oracle. M6 runtime state uses
+A frozen exact-state RenderPlan table proves data projection and target-byte
+parity; it does not prove live JavaScript transition execution. A mechanical
+host adapter proves its validation boundary; synthetic artifact or Three.js
+substitutes do not prove a real browser vertical. M7 architecture acceptance
+therefore requires generated transition authority, real-host evidence, source
+mapping, and a matched specialized-target measurement in addition to the
+effect and RenderPlan boundaries. The [roadmap](roadmap.md) alone records which
+of those capabilities currently exist.
+
+## Current architecture gap
+
+`derive::saturate` remains the bounded reference oracle. The M6 runtime uses
 compiled relation/rule and occurrence-root reverse indexes, semi-naive support
-addition, and occurrence-exact affected-support retraction. Ordinary event
-authoring, checked transition elaboration, strict runtime replay, canonical
-state history, and source-deleted generated-Rust parity share the frozen public
-API and bytes.
+addition, and occurrence-exact affected-support retraction. Authored legacy
+events, strict replay, canonical state history, and source-deleted generated
+Rust share the current frozen wire.
 
-No high or critical core architecture debt is currently known. Any such finding
-must add a gate-recognized `debt:high` or `debt:critical` marker; the gate
-rejects either severity.
+The next architecture edge is the identity/parity oracle plus the complete
+Model/Revision/context consumer census. Their joined result owns the
+ProgramSnapshot and ProgramRevision split. Surface migration resumes only on
+that corrected identity boundary.
 
-## Precedent boundary
+## Running the gate
 
-The bounded paradigm proof already chose the reusable mechanisms. Clause uses
-Soufflé/Datafrog-style compiled relation indexes and semi-naive deltas;
-Differential-style add/retract work accounting; Unison/Nix-style
-content-derived cache discipline without treating a hash or store path as a
-referent; Durable Task/Temporal-style deterministic replay context without
-making event history the Model; Koka-style explicit effect boundaries without
-a primitive effect/type ontology; and Electric-style live-propagation
-measurement without treating tables as semantic authority.
-
-Clause rejects their incompatible ontologies and retains one role-labelled
-Model, exact provenance, explanations, certified interventions, and
-replaceable targets. The six proof axes are semantic unity and identity;
-compounding authoring leverage; debugging/explanation/intervention;
-incrementality/replay; target performance; and interop/transfer. After M3, the
-first cross-axis falsifier is the same one-coin program under five changes:
-format/focus only, rename, second coin, score change, and malformed `Vec2`.
-
-## Running the decision
-
-From the repository root:
+From a clean candidate worktree at exact HEAD:
 
 ```sh
 candidate=$(git rev-parse --verify 'HEAD^{commit}')
-bin/architecture-gate "$candidate"       # highest milestone marked Implemented
-bin/architecture-gate "$candidate" M4    # exact candidate milestone
+bin/architecture-gate "$candidate"
+bin/architecture-gate "$candidate" M6
 bin/architecture-gate --self-test
 ```
 
-The self-test attacks the gate's own authority marker, milestone parser,
-shadow-identity denial, severe-debt denial, pending-obligation boundary, and
-full-object-identity comparison. It does not rerun a milestone's feature or
-regression suite. The M4 decision separately runs exact M4/S1 selection and
-M4/S2 rule-to-proof regressions. The gate names exact tests for canonical-first,
-an inert law before authorization, and a repeated nested hole whose decoy row
-would pass if recursive occurrences were treated as fresh. Together they cover
-Revision-scoped result transcripts, occurrence/source/scope/judgment proof
-leaves, descriptor and cardinality parity, recursive request-local nested holes,
-strict semantic-v10 tamper rejection, distinct law/rule authority,
-governing-law/authority/scope proof trace, retained hospital proof and
-intervention parity, alpha-label isolation, identical native/generated failure
-at caller bounds, and source-deleted generated output parity. M4/S2 admits at
-most 40,320 alpha-identity candidates per rule, then fails closed so
-canonicalization has an exact work bound.
+The self-test attacks the gate's authority marker, milestone parser,
+shadow-identity denial, severe-deferral denial, pending-obligation boundary,
+and full-object-identity comparison. It does not rerun every milestone feature
+suite. The selected gate runs the exact behavioral seams encoded by the
+script; the [roadmap](roadmap.md) names the broader completion evidence.

@@ -1,51 +1,56 @@
 # Clause
 
-Clause is a distinction-first relational programming language. Its program is
-an authoritative Model of stable referents and role-labelled relations;
-immutable Revisions preserve history and exact lineage.
+Clause is a distinction-first relational programming language. It keeps
+semantic identity, relational content, assertion occurrences, judgments,
+program history, and runtime state separate so each can carry exact provenance
+without impersonating another layer.
 
-```clause
-gravity: 9.81
-Chess ∈ Game
+Clause's accepted semantic vocabulary is:
 
-iron-door
-  Door
-  connects Cellar to Armory
-  state: locked
-```
+- a **Program** is a durable evolving lineage;
+- a **ProgramSnapshot** is one exact immutable checked semantic value;
+- a **ProgramRevision** is one immutable causal history node selecting a
+  snapshot; and
+- a **Model** is reserved for a satisfying meta-level interpretation, not an
+  authored source block or executable program artifact.
 
-The compact M1 grounding, binding, membership, enumeration, and focus surface,
-M2's exact role-labelled relation schemas, and M3's recursive terms, checked
-structural values, pure definitions, and source-deleted generated evaluation
-are executable. M4 adds recursive relational holes, explicit query cardinality,
-and separately authorized law-backed derivation. M6 adds deterministic authored
-events, state transitions, incremental successor state, and replay. The bounded
-M7 path now carries explicit effect traces, canonical RenderPlan ESM snapshots,
-and grounded StateRevision scene projection. Dedicated scene syntax, live
-generated-JavaScript transitions, real browser/Three.js execution, source maps,
-and the full M7 proof remain roadmap capabilities.
+The Rust implementation predates that vocabulary and still contains migration
+types named `kernel::Model` and `kernel::Revision`. The accepted design is
+authoritative; the [architecture](docs/architecture.md) and
+[roadmap](docs/roadmap.md) state exactly what remains to migrate.
 
-`:` binds, `∈` expresses membership, `=` expresses equality, and `->` orients
-a result. An editor may transform typed `::` into `∈`; raw `::` is not Clause
-syntax. Canonical indentation is two spaces, spaces only.
+## Documentation authority
 
-## Start here
+Each public fact has one owner:
 
-- [Documentation guide](docs/README.md) — authority, reading routes, running,
-  and development.
-- [Semantic foundation](docs/foundation.md) — what Clause means.
-- [Target surface](docs/surface.md) — canonical authoring and formatting.
-- [Current executable syntax](docs/current-syntax.md) — what the checked
-  frontend accepts today and what remains target-only.
-- [Implementation roadmap](docs/roadmap.md) — dependency order and exit proofs.
-- [Historical M0 checkpoint](docs/history/m0.md) — superseded evidence and
-  evolution context.
+| Question | Authority |
+| --- | --- |
+| What does Clause mean? | [Semantic foundation](docs/foundation.md) |
+| What is canonical Clause source? | [Syntax](docs/syntax.md) |
+| What does the current implementation enforce, and how does it map to the accepted design? | [Architecture](docs/architecture.md) |
+| What is implemented, partial, active, or pending? | [Roadmap](docs/roadmap.md) |
+| What does the provisional JavaScript host do today? | [Host README](host/README.md) |
 
-Run the current hospital program from the repository root:
+These documents have disjoint authority. A contradiction is a documentation
+defect; there is no “newer file wins” rule and no separate historical document
+competing with the live public set.
+
+## Current state
+
+Clause is migrating the current semantic-v10 / Revision-v6 implementation to
+the ratified Program identity boundary and canonical agent-first syntax. The
+[roadmap](docs/roadmap.md) is the current status record; the
+[syntax migration ledger](docs/syntax.md#implementation-migration) is the one
+place that contrasts canonical source with the legacy parser.
+
+The current CLI can run the checked hospital example:
 
 ```sh
 cargo run --bin clause -- run examples/hospital.clause
 ```
+
+That example intentionally remains on the currently executable legacy surface
+until migration can preserve its exact identities and results.
 
 Clause is available under the [MIT License](LICENSE-MIT) or the
 [Apache License, Version 2.0](LICENSE-APACHE), at your option.
