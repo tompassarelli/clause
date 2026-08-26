@@ -6,9 +6,114 @@ use std::fmt::Write;
 
 use crate::{
     kernel::{KernelError, PatternId, ReferentId, RelationalContent, Result, RoleId, Term},
+    render::{RenderItem, RenderPlan},
     request::{QueryColumn, QuerySelection, Request, ResolvedProgram, Selection},
     wire,
 };
+
+/// Emit import-free ESM containing only frozen canonical RenderPlan data and
+/// an exact-StateRevision lookup.
+#[cfg(not(clause_generated))]
+pub fn emit_render_plan_javascript(plans: &[RenderPlan]) -> Result<String> {
+    let Some(first) = plans.first() else {
+        return Err(KernelError::new(
+            "generated JavaScript requires at least one RenderPlan",
+        ));
+    };
+    let mut states = std::collections::BTreeSet::new();
+    for plan in plans {
+        if plan.model_revision() != first.model_revision() {
+            return Err(KernelError::new(
+                "generated JavaScript RenderPlans must name one Model Revision",
+            ));
+        }
+        if !states.insert(plan.state_revision()) {
+            return Err(KernelError::new(
+                "generated JavaScript RenderPlans repeat a StateRevision",
+            ));
+        }
+    }
+
+    let mut output = String::new();
+    writeln!(
+        output,
+        "export const kind = \"clause-render-plan-javascript-v1\";"
+    )
+    .expect("writing generated JavaScript to a String cannot fail");
+    writeln!(
+        output,
+        "export const revisionId = {:?};",
+        first.model_revision().to_string()
+    )
+    .expect("writing generated JavaScript to a String cannot fail");
+    for (index, plan) in plans.iter().enumerate() {
+        writeln!(output, "const plan{index} = {};", frozen_plan_source(plan))
+            .expect("writing generated JavaScript to a String cannot fail");
+    }
+    writeln!(output, "const plans = Object.freeze({{")
+        .expect("writing generated JavaScript to a String cannot fail");
+    for (index, plan) in plans.iter().enumerate() {
+        writeln!(
+            output,
+            "  {:?}: plan{index},",
+            plan.state_revision().as_str()
+        )
+        .expect("writing generated JavaScript to a String cannot fail");
+    }
+    writeln!(output, "}});").expect("writing generated JavaScript to a String cannot fail");
+    output.push_str(
+        "export function renderPlan(stateRevisionId, requestedRevisionId = revisionId) {\n\
+         \x20 if (requestedRevisionId !== revisionId) throw new Error(\"render plan names the wrong Model Revision\");\n\
+         \x20 const plan = plans[stateRevisionId];\n\
+         \x20 if (plan === undefined) throw new Error(\"unknown exact StateRevision\");\n\
+         \x20 return plan;\n\
+         }\n",
+    );
+    Ok(output)
+}
+
+#[cfg(not(clause_generated))]
+fn frozen_plan_source(plan: &RenderPlan) -> String {
+    frozen_array(&[
+        format!("{:?}", crate::render::RENDER_PLAN_TAG),
+        frozen_array(&[
+            "\"model-revision\"".to_owned(),
+            format!("{:?}", plan.model_revision().to_string()),
+        ]),
+        frozen_array(&[
+            "\"state-revision\"".to_owned(),
+            format!("{:?}", plan.state_revision().as_str()),
+        ]),
+        frozen_array(&[
+            "\"items\"".to_owned(),
+            frozen_array(
+                &plan
+                    .items()
+                    .iter()
+                    .map(frozen_item_source)
+                    .collect::<Vec<_>>(),
+            ),
+        ]),
+    ])
+}
+
+#[cfg(not(clause_generated))]
+fn frozen_item_source(item: &RenderItem) -> String {
+    frozen_array(&[
+        "\"item\"".to_owned(),
+        format!("{:?}", item.id().as_str()),
+        frozen_array(&[
+            "\"position-f32x2\"".to_owned(),
+            format!("\"{:08x}\"", item.position()[0].bits()),
+            format!("\"{:08x}\"", item.position()[1].bits()),
+        ]),
+    ])
+}
+
+#[cfg(not(clause_generated))]
+fn frozen_array(values: &[String]) -> String {
+    format!("Object.freeze([{}])", values.join(","))
+}
 
 #[cfg(not(clause_generated))]
 struct ChildModule {

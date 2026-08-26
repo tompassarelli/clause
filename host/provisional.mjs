@@ -19,12 +19,79 @@ function requireString(value, name) {
   return value;
 }
 
+function requireRevisionId(value, name) {
+  requireString(value, name);
+  if (!/^rev-sha256-[0-9a-f]{64}$/.test(value)) throw new Error(`invalid ${name}`);
+  return value;
+}
+
+function requireStateRevisionId(value, name) {
+  requireString(value, name);
+  if (!/^state-sha256-[0-9a-f]{64}$/.test(value)) throw new Error(`invalid ${name}`);
+  return value;
+}
+
+function requireReferentId(value, name) {
+  requireString(value, name);
+  if (!/^ref-sha256-[0-9a-f]{64}$/.test(value)) throw new Error(`invalid ${name}`);
+  return value;
+}
+
+function requireArray(value, length, name) {
+  if (!Array.isArray(value) || (length !== undefined && value.length !== length)) throw new Error(`invalid ${name}`);
+  return value;
+}
+
+function f32FromBits(value) {
+  if (!/^[0-9a-f]{8}$/.test(value)) throw new Error("invalid canonical f32 bits");
+  const bits = Number.parseInt(value, 16);
+  if ((bits & 0x7f800000) === 0x7f800000 || bits === 0x80000000) throw new Error("invalid canonical finite f32 bits");
+  const bytes = new ArrayBuffer(4);
+  const view = new DataView(bytes);
+  view.setUint32(0, bits, false);
+  return view.getFloat32(0, false);
+}
+
+function validateRenderPlan(plan, expectedRevisionId, expectedStateRevisionId) {
+  const envelope = requireArray(plan, 4, "RenderPlan envelope");
+  if (envelope[0] !== "clause-render-plan-v1") throw new Error("unsupported RenderPlan");
+  const model = requireArray(envelope[1], 2, "RenderPlan Model Revision");
+  if (model[0] !== "model-revision") throw new Error("invalid RenderPlan Model Revision tag");
+  const revisionId = requireRevisionId(model[1], "RenderPlan Model Revision identity");
+  if (expectedRevisionId !== undefined && revisionId !== expectedRevisionId) throw new Error("render plan names the wrong Model Revision");
+  const state = requireArray(envelope[2], 2, "RenderPlan StateRevision");
+  if (state[0] !== "state-revision") throw new Error("invalid RenderPlan StateRevision tag");
+  const stateRevisionId = requireStateRevisionId(state[1], "RenderPlan StateRevision identity");
+  if (expectedStateRevisionId !== undefined && stateRevisionId !== expectedStateRevisionId) throw new Error("render plan names the wrong StateRevision");
+  const itemsField = requireArray(envelope[3], 2, "RenderPlan items field");
+  if (itemsField[0] !== "items") throw new Error("invalid RenderPlan items tag");
+  const items = requireArray(itemsField[1], undefined, "RenderPlan items");
+  let previousId;
+  const decoded = items.map((value) => {
+    const item = requireArray(value, 3, "RenderPlan item");
+    if (item[0] !== "item") throw new Error("invalid RenderPlan item tag");
+    const id = requireReferentId(item[1], "RenderPlan item identity");
+    if (previousId !== undefined && previousId >= id) throw new Error("RenderPlan items must be strictly canonical");
+    previousId = id;
+    const position = requireArray(item[2], 3, "RenderPlan position");
+    if (position[0] !== "position-f32x2") throw new Error("invalid RenderPlan position tag");
+    return Object.freeze({ id, position: Object.freeze([f32FromBits(position[1]), f32FromBits(position[2])]) });
+  });
+  return Object.freeze({ revisionId, stateRevisionId, items: Object.freeze(decoded) });
+}
+
+function stateIdentity(state) {
+  return requireStateRevisionId(
+    typeof state === "string" ? state : state?.stateRevisionId,
+    "runtime StateRevision identity",
+  );
+}
+
 /** Load generated, specialized artifact data without decoding Clause wire data. */
 export function loadArtifact(value) {
   if (typeof value === "string") throw new Error("generated artifact must be an ESM/module object");
   if (!value || value.kind !== ARTIFACT_KIND) throw new Error("unsupported Clause runtime artifact");
-  requireString(value.revisionId, "artifact revisionId");
-  if (!/^rev-sha256-[0-9a-f]{64}$/.test(value.revisionId)) throw new Error("invalid artifact Revision identity");
+  requireRevisionId(value.revisionId, "artifact Revision identity");
   if (typeof value.createRuntime !== "function") throw new Error("artifact createRuntime is required");
   if (typeof value.renderPlan !== "function") throw new Error("artifact renderPlan is required");
   if (typeof value.createEvent !== "function") throw new Error("artifact createEvent is required");
@@ -49,8 +116,9 @@ export function loadArtifact(value) {
 /** Pure projection of one exact post-transition state into render data. */
 export function renderPlanFor(artifact, state, revisionId = artifact.revisionId) {
   if (revisionId !== artifact.revisionId) throw new Error("render plan names the wrong Model Revision");
-  const plan = artifact.renderPlan(state, revisionId);
-  if (!Array.isArray(plan)) throw new Error("artifact renderPlan must return an array");
+  const stateRevisionId = stateIdentity(state);
+  const plan = artifact.renderPlan(stateRevisionId, revisionId);
+  validateRenderPlan(plan, revisionId, stateRevisionId);
   return copy(plan);
 }
 
@@ -80,25 +148,34 @@ export function createEventBridge({ artifact, runtime, revisionId = artifact.rev
   return Object.freeze({ dispatch, events: () => copy(log), close: () => { closed = true; } });
 }
 
-/** Convert a pure plan to two stable meshes; no semantic decisions occur here. */
-export function createTwoMeshBinding(THREE, scene) {
+/** Reconcile a total desired-scene plan to two stable meshes. */
+export function createTwoMeshBinding(THREE, scene, { playerId, coinId }) {
   if (!THREE || !scene || typeof scene.add !== "function") throw new Error("Three.js scene is required");
+  requireReferentId(playerId, "player identity");
+  requireReferentId(coinId, "coin identity");
+  if (playerId === coinId) throw new Error("player and coin identities must be distinct");
   const player = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial({ color: 0x3366ff }));
   const coin = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.35, 0.1, 16), new THREE.MeshBasicMaterial({ color: 0xffcc00 }));
   scene.add(player); scene.add(coin);
-  const meshes = { player, coin };
+  const meshes = new Map([[playerId, player], [coinId, coin]]);
   const apply = (plan) => {
-    for (const item of plan) {
-      const mesh = meshes[item.id];
-      if (!mesh) continue;
-      if (Array.isArray(item.position) && item.position.length === 3) mesh.position.set(...item.position);
-      if (typeof item.visible === "boolean") mesh.visible = item.visible;
+    const desired = validateRenderPlan(plan);
+    if (desired.items.some((item) => !meshes.has(item.id))) throw new Error("RenderPlan names an unregistered mesh identity");
+    const byId = new Map(desired.items.map((item) => [item.id, item]));
+    for (const [id, mesh] of meshes) {
+      const item = byId.get(id);
+      if (item) {
+        mesh.position.set(item.position[0], item.position[1], 0);
+        mesh.visible = true;
+      } else {
+        mesh.visible = false;
+      }
     }
   };
-  const dispose = () => Object.values(meshes).forEach((mesh) => {
+  const dispose = () => meshes.forEach((mesh) => {
     scene.remove(mesh); mesh.geometry.dispose(); mesh.material.dispose();
   });
-  return Object.freeze({ meshes, apply, dispose });
+  return Object.freeze({ meshes: Object.freeze({ player, coin }), apply, dispose });
 }
 
 /** Browser RAF/input lifecycle; scheduling remains outside Clause semantics. */
