@@ -18,7 +18,6 @@ fn invalid_snapshot_candidates_fail_closed() {
     let candidate = elaborate::ProgramSnapshotCandidate::new(
         clause::kernel::ClauseSemanticsId::current(),
         scope.clone(),
-        scope.clone(),
         vec![duplicate.clone(), duplicate],
     );
     assert!(elaborate::validate(candidate).is_err());
@@ -32,7 +31,6 @@ fn invalid_snapshot_candidates_fail_closed() {
     .expect("content is structurally formed");
     let candidate = elaborate::ProgramSnapshotCandidate::new(
         clause::kernel::ClauseSemanticsId::current(),
-        scope.clone(),
         scope,
         vec![SemanticAtom::RelationalContent(content)],
     );
