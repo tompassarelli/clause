@@ -1151,9 +1151,8 @@ impl EffectRequest {
             phase,
             order,
         };
-        request.identity = EffectRequestId::from_digest(sha256_digest(
-            request.preimage().as_bytes(),
-        ));
+        request.identity =
+            EffectRequestId::from_digest(sha256_digest(request.preimage().as_bytes()));
         request
     }
 
@@ -1207,20 +1206,41 @@ impl EffectRequest {
 pub fn reload_effect_request(bytes: &str) -> Result<EffectRequest> {
     let value = JsonParser::new(bytes).parse()?;
     if json(&value) != bytes {
-        return Err(KernelError::new("effect request wire is not canonical JSON"));
+        return Err(KernelError::new(
+            "effect request wire is not canonical JSON",
+        ));
     }
     let item = list(&value, 3, "effect request envelope")?;
     require_string(&item[0], EFFECT_REQUEST_TAG, "effect request envelope tag")?;
     let claimed = EffectRequestId::new(string(&item[1], "effect request identity")?.into())?;
     let body = list(&item[2], 6, "effect request body")?;
     let field = |index: usize, tag: &str| -> Result<ReferentId> {
-        ReferentId::new(string(tagged(&body[index], tag, "effect request field")?, "effect request referent")?.into())
+        ReferentId::new(
+            string(
+                tagged(&body[index], tag, "effect request field")?,
+                "effect request referent",
+            )?
+            .into(),
+        )
     };
-    let order = string(tagged(&body[5], "order", "effect request order")?, "effect request order value")?
-        .parse().map_err(|_| KernelError::new("invalid effect request order"))?;
-    let request = EffectRequest::new(field(0, "producer")?, field(1, "request")?, field(2, "authority")?, field(3, "event")?, field(4, "phase")?, order);
+    let order = string(
+        tagged(&body[5], "order", "effect request order")?,
+        "effect request order value",
+    )?
+    .parse()
+    .map_err(|_| KernelError::new("invalid effect request order"))?;
+    let request = EffectRequest::new(
+        field(0, "producer")?,
+        field(1, "request")?,
+        field(2, "authority")?,
+        field(3, "event")?,
+        field(4, "phase")?,
+        order,
+    );
     if request.identity != claimed || request.canonical_bytes() != bytes {
-        return Err(KernelError::new("effect request identity does not match canonical content"));
+        return Err(KernelError::new(
+            "effect request identity does not match canonical content",
+        ));
     }
     Ok(request)
 }
@@ -1467,7 +1487,11 @@ impl EffectTrace {
         let authorization = Authorization::new(lineage, AuthorizationDecision::Authorized);
         let attempt = Attempt::new(&authorization);
         let outcome = realize(attempt.lineage());
-        if !revision.model().referents().contains_key(outcome.evidence()) {
+        if !revision
+            .model()
+            .referents()
+            .contains_key(outcome.evidence())
+        {
             return Err(KernelError::new(
                 "effect observation evidence is absent from the checked Model",
             ));
@@ -1912,11 +1936,7 @@ fn observation_json(value: &Observation) -> String {
     )
 }
 
-fn decode_observation(
-    value: &Json,
-    receipt: &Receipt,
-    revision: &Revision,
-) -> Result<Observation> {
+fn decode_observation(value: &Json, receipt: &Receipt, revision: &Revision) -> Result<Observation> {
     let item = list(value, 3, "Observation record")?;
     require_string(&item[0], "observation", "Observation record tag")?;
     let claimed = ObservationId::new(string(&item[1], "Observation identity")?.into())?;

@@ -16,9 +16,9 @@ use clause::{
         RelationalContent, Role, RoleId, Term, UniversalLaw,
     },
     runtime::{
-        AuthorizationDecision, EffectOutcome, EffectRequest, EffectTrace, Presence,
-        ReceiptOutcome, RuntimeInput, RuntimePolicy, RuntimeSession, StateDelta, StateDiff,
-        TransitionEvent, reload_effect_request, reload_effect_trace, reload_session,
+        AuthorizationDecision, EffectOutcome, EffectRequest, EffectTrace, Presence, ReceiptOutcome,
+        RuntimeInput, RuntimePolicy, RuntimeSession, StateDelta, StateDiff, TransitionEvent,
+        reload_effect_request, reload_effect_trace, reload_session,
     },
     wire,
 };
@@ -763,18 +763,17 @@ fn effect_evidence_is_post_commit_distinct_and_canonical() {
         0,
     );
     assert!(
-        EffectTrace::denied(
-            journey.revision(),
-            committed.latest(),
-            cross_event_request,
-        )
-        .unwrap_err()
-        .to_string()
-        .contains("does not match the requested event")
+        EffectTrace::denied(journey.revision(), committed.latest(), cross_event_request,)
+            .unwrap_err()
+            .to_string()
+            .contains("does not match the requested event")
     );
     let state_bytes = committed.latest().canonical_bytes();
     let denied = EffectTrace::denied(journey.revision(), committed.latest(), request()).unwrap();
-    assert_eq!(denied.authorization().decision(), AuthorizationDecision::Denied);
+    assert_eq!(
+        denied.authorization().decision(),
+        AuthorizationDecision::Denied
+    );
     assert!(denied.attempt_record().is_none());
     assert!(denied.receipt().is_none());
     assert!(denied.observation().is_none());
@@ -790,36 +789,29 @@ fn effect_evidence_is_post_commit_distinct_and_canonical() {
     );
 
     let calls = Cell::new(0);
-    let succeeded = EffectTrace::attempt(
-        journey.revision(),
-        committed.latest(),
-        request(),
-        |_| {
-            calls.set(calls.get() + 1);
-            EffectOutcome::Succeeded {
-                evidence: player.clone(),
-            }
-        },
-    )
+    let succeeded = EffectTrace::attempt(journey.revision(), committed.latest(), request(), |_| {
+        calls.set(calls.get() + 1);
+        EffectOutcome::Succeeded {
+            evidence: player.clone(),
+        }
+    })
     .unwrap();
-    let failed = EffectTrace::attempt(
-        journey.revision(),
-        committed.latest(),
-        request(),
-        |_| {
-            calls.set(calls.get() + 1);
-            EffectOutcome::Failed {
-                evidence: collector,
-            }
-        },
-    )
+    let failed = EffectTrace::attempt(journey.revision(), committed.latest(), request(), |_| {
+        calls.set(calls.get() + 1);
+        EffectOutcome::Failed {
+            evidence: collector,
+        }
+    })
     .unwrap();
     assert_eq!(calls.get(), 2);
     assert_eq!(
         succeeded.authorization().decision(),
         AuthorizationDecision::Authorized
     );
-    assert_eq!(succeeded.receipt().unwrap().outcome(), ReceiptOutcome::Succeeded);
+    assert_eq!(
+        succeeded.receipt().unwrap().outcome(),
+        ReceiptOutcome::Succeeded
+    );
     assert_eq!(failed.receipt().unwrap().outcome(), ReceiptOutcome::Failed);
     assert_ne!(
         succeeded.receipt().unwrap().identity(),
