@@ -17,10 +17,12 @@ host checkpoints but is not complete.
 The semantic review is also complete: Program, ProgramSnapshot,
 ProgramChangeOccurrence, ProgramRevision, RuntimeSession, and StateRevision now
 have distinct accepted meanings, while Model is reserved for interpretation
-and satisfaction. That ontology is not implemented yet.
+and satisfaction. The first snapshot-identity seam is implemented; the full
+ontology is not fully implemented yet.
 
-The active engineering edge is therefore constitutional identity, not another
-surface synonym:
+The identity/parity oracle and Model/Revision/context census prerequisites are
+complete. The first constitutional snapshot-identity slice is implemented and
+the remaining history/runtime split is in progress:
 
 ```text
 identity/parity oracles -----------+
@@ -48,7 +50,7 @@ migration proceeds.
 | Documentation authority reset | Complete | Six public documents, one authority per fact, no historical spec in the live tree |
 | M1–M6 capability line | Implemented | Current semantic-v10 / Revision-v6 representation and milestone tests |
 | M7 effect and JavaScript vertical | Partial | Effect traces, grounded RenderPlan projection, frozen RenderPlan ESM, provisional host contracts |
-| Program identity/history migration | Next | Oracle and census first; no public ProgramSnapshot/ProgramRevision types yet |
+| Program identity/history migration | In progress | ClauseSemanticsId, ProgramId/ProgramSnapshotId, typed ProgramSnapshot, and canonical snapshot-v1 preimage exist; live Revision-v6 still stores Model and ProgramRevision/history split remains pending |
 | Canonical agent-first syntax | Accepted design | Parser migration pending; legacy executable surface is isolated in `syntax.md` |
 | M8 single live surface | Pending | No compatibility grammar or stale consumer may remain at exit |
 
@@ -260,6 +262,8 @@ repository-wide absence checks find no retired ontology or source grammar.
 
 ### 1. Identity and parity oracle suite
 
+**Status:** Complete.
+
 Capture exact before-migration identities and canonical bytes for Referents,
 roles, RelationalContent, duplicate AssertionOccurrences, immutable Judgments,
 laws and derivation authorization, current semantic payloads and lineage,
@@ -272,6 +276,8 @@ derived from immutable Judgments.
 
 ### 2. Model/Revision/context consumer census
 
+**Status:** Complete.
+
 Classify every current use of Model, ModelId/context, and Revision as exactly
 one future axis: Program lineage, snapshot payload, source, namespace, scope,
 authority, policy, law/event/request owner, change occurrence, history node,
@@ -280,6 +286,9 @@ runtime session, state history, or generated-artifact input.
 No broad compatibility alias may conceal an unclassified consumer.
 
 ### 3. Constitutional identity layer
+
+**Status:** In progress. The snapshot identity seam is implemented; designation
+allocation and consumer migration remain.
 
 Introduce `ClauseSemanticsId`, Program/ProgramId,
 ProgramSnapshot/ProgramSnapshotId, globally opaque ReferentIds, and explicit

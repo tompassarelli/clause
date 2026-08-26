@@ -63,7 +63,9 @@ fn snapshot_preimage_excludes_legacy_lineage_and_revision_identity() {
     );
     assert_eq!(snapshot.semantics(), &semantics);
     let payload = wire::program_snapshot_payload(snapshot.checked_payload(), &semantics);
-    assert!(payload.starts_with("[\"clause-program-snapshot-v1\""));
+    assert!(payload.starts_with("[\"clause/program-snapshot/v1\""));
+    assert!(payload.contains("[\"root-scope\",\""));
+    assert!(!payload.contains("[\"model\",\""));
     assert!(!payload.contains("lineage"));
     assert!(!payload.contains("rev-sha256-"));
 }

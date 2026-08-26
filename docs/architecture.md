@@ -60,9 +60,11 @@ These names describe live code, not final semantics:
 Canonical persistence is currently `clause-semantic-v10` inside
 `clause-revision-v6`. The current `RevisionId` hashes both lineage and Model
 payload, so it is neither the accepted `ProgramSnapshotId` nor the accepted
-`ProgramRevisionId`. No public ProgramSnapshot, ProgramChangeOccurrence,
-ProgramRevision, ProgramRef, lifecycle, deployment, or durable Designation
-representation exists yet.
+`ProgramRevisionId`. The first identity seam now exists: `ClauseSemanticsId`,
+`ProgramId`, `ProgramSnapshotId`, typed `ProgramSnapshot`, and its canonical
+`clause/program-snapshot/v1` preimage. Live Revision-v6 still stores Model;
+ProgramChangeOccurrence, ProgramRevision, ProgramRef, lifecycle, deployment,
+and durable Designation representations remain absent.
 
 This mapping is the migration contract. Code using the old names remains real
 and test-backed, but it cannot override the semantic vocabulary in the

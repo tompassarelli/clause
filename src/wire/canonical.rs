@@ -10,7 +10,22 @@ use super::{json::escape, sha256::sha256_digest};
 
 pub const SEMANTIC_TAG: &str = "clause-semantic-v10";
 pub const REVISION_TAG: &str = "clause-revision-v6";
-pub const PROGRAM_SNAPSHOT_TAG: &str = "clause-program-snapshot-v1";
+pub const PROGRAM_SNAPSHOT_TAG: &str = "clause/program-snapshot/v1";
+
+#[derive(Clone, Copy)]
+enum ContentRoot {
+    LegacyModel,
+    ProgramSnapshotScope,
+}
+
+impl ContentRoot {
+    fn label(self) -> &'static str {
+        match self {
+            Self::LegacyModel => "model",
+            Self::ProgramSnapshotScope => "root-scope",
+        }
+    }
+}
 
 pub fn semantic_payload(revision: &Revision) -> String {
     payload(revision.lineage(), revision.model())
@@ -22,7 +37,7 @@ pub fn program_snapshot_payload(model: &Model, semantics: &ClauseSemanticsId) ->
     format!(
         "[\"{PROGRAM_SNAPSHOT_TAG}\",[\"semantics\",\"{}\"],{}]",
         escape(semantics.as_str()),
-        content_payload(model)
+        content_payload(model, ContentRoot::ProgramSnapshotScope)
     )
 }
 
@@ -41,11 +56,11 @@ fn payload(lineage: &RevisionLineage, model: &Model) -> String {
     format!(
         "[\"{SEMANTIC_TAG}\",[\"lineage\",{}],{}]",
         lineage_json(lineage),
-        content_payload(model),
+        content_payload(model, ContentRoot::LegacyModel),
     )
 }
 
-fn content_payload(model: &Model) -> String {
+fn content_payload(model: &Model, root: ContentRoot) -> String {
     let referents = join(model.referents().values().map(referent_json));
     let contents = join(model.relational_contents().values().map(content_json));
     let shapes = join(model.relation_shapes().values().map(shape_json));
@@ -64,7 +79,8 @@ fn content_payload(model: &Model) -> String {
     let transitions = join(model.transitions().iter().map(transition_json));
     let judgments = join(model.judgments().iter().map(judgment_json));
     format!(
-        "[\"model\",\"{}\"],[\"referents\",[{referents}]],[\"relational-contents\",[{contents}]],[\"relation-shapes\",[{shapes}]],[\"structural-contracts\",[{structural_contracts}]],[\"occurrences\",[{occurrences}]],[\"definitions\",[{definitions}]],[\"derivation-rules\",[{rules}]],[\"universal-laws\",[{laws}]],[\"invariants\",[{invariants}]],[\"goals\",[{goals}]],[\"transitions\",[{transitions}]],[\"judgments\",[{judgments}]]",
+        "[\"{}\",\"{}\"],[\"referents\",[{referents}]],[\"relational-contents\",[{contents}]],[\"relation-shapes\",[{shapes}]],[\"structural-contracts\",[{structural_contracts}]],[\"occurrences\",[{occurrences}]],[\"definitions\",[{definitions}]],[\"derivation-rules\",[{rules}]],[\"universal-laws\",[{laws}]],[\"invariants\",[{invariants}]],[\"goals\",[{goals}]],[\"transitions\",[{transitions}]],[\"judgments\",[{judgments}]]",
+        root.label(),
         escape(model.id().as_str())
     )
 }
