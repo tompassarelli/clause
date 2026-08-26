@@ -182,7 +182,7 @@ fn legacy_revision_payload(snapshot: ProgramSnapshot) -> Model {
     snapshot.into_checked_payload()
 }
 
-fn candidate_from_parts(
+struct ProgramSnapshotParts {
     root_scope: ReferentId,
     referents: BTreeMap<ReferentId, Referent>,
     contents: BTreeMap<kernel::ContentId, RelationalContent>,
@@ -196,31 +196,40 @@ fn candidate_from_parts(
     goals: Vec<kernel::Goal>,
     transitions: Vec<Transition>,
     judgments: Vec<Judgment>,
-) -> ProgramSnapshotCandidate {
-    let atoms = referents
-        .into_values()
-        .map(SemanticAtom::Referent)
-        .chain(contents.into_values().map(SemanticAtom::RelationalContent))
-        .chain(shapes.into_values().map(SemanticAtom::RelationShape))
-        .chain(
-            structural_contracts
-                .into_values()
-                .map(SemanticAtom::StructuralContract),
-        )
-        .chain(
-            occurrences
-                .into_iter()
-                .map(SemanticAtom::AssertionOccurrence),
-        )
-        .chain(definitions.into_iter().map(SemanticAtom::Definition))
-        .chain(rules.into_iter().map(SemanticAtom::DerivationRule))
-        .chain(laws.into_iter().map(SemanticAtom::UniversalLaw))
-        .chain(invariants.into_iter().map(SemanticAtom::Invariant))
-        .chain(goals.into_iter().map(SemanticAtom::Goal))
-        .chain(transitions.into_iter().map(SemanticAtom::Transition))
-        .chain(judgments.into_iter().map(SemanticAtom::Judgment))
-        .collect();
-    ProgramSnapshotCandidate::new(ClauseSemanticsId::current(), root_scope, atoms)
+}
+
+impl ProgramSnapshotParts {
+    fn into_candidate(self) -> ProgramSnapshotCandidate {
+        let atoms = self
+            .referents
+            .into_values()
+            .map(SemanticAtom::Referent)
+            .chain(
+                self.contents
+                    .into_values()
+                    .map(SemanticAtom::RelationalContent),
+            )
+            .chain(self.shapes.into_values().map(SemanticAtom::RelationShape))
+            .chain(
+                self.structural_contracts
+                    .into_values()
+                    .map(SemanticAtom::StructuralContract),
+            )
+            .chain(
+                self.occurrences
+                    .into_iter()
+                    .map(SemanticAtom::AssertionOccurrence),
+            )
+            .chain(self.definitions.into_iter().map(SemanticAtom::Definition))
+            .chain(self.rules.into_iter().map(SemanticAtom::DerivationRule))
+            .chain(self.laws.into_iter().map(SemanticAtom::UniversalLaw))
+            .chain(self.invariants.into_iter().map(SemanticAtom::Invariant))
+            .chain(self.goals.into_iter().map(SemanticAtom::Goal))
+            .chain(self.transitions.into_iter().map(SemanticAtom::Transition))
+            .chain(self.judgments.into_iter().map(SemanticAtom::Judgment))
+            .collect();
+        ProgramSnapshotCandidate::new(ClauseSemanticsId::current(), self.root_scope, atoms)
+    }
 }
 
 use super::{
@@ -1873,21 +1882,22 @@ fn lower_models(
         }
         let structural_contracts =
             extend_structural_closure(projection, &mut referents, &contents, &mut definitions)?;
-        let candidate = candidate_from_parts(
-            model_id,
+        let candidate = ProgramSnapshotParts {
+            root_scope: model_id,
             referents,
             contents,
-            shapes.clone(),
+            shapes: shapes.clone(),
             structural_contracts,
             occurrences,
             definitions,
             rules,
             laws,
-            Vec::new(),
-            Vec::new(),
+            invariants: Vec::new(),
+            goals: Vec::new(),
             transitions,
             judgments,
-        );
+        }
+        .into_candidate();
         let snapshot = validate(candidate)?.into_snapshot();
         models.insert(
             declaration.subject.value.clone(),
@@ -2021,21 +2031,22 @@ fn lower_context_model(
     }
     let structural_contracts =
         extend_structural_closure(projection, &mut referents, &contents, &mut definitions)?;
-    let candidate = candidate_from_parts(
-        model_id,
+    let candidate = ProgramSnapshotParts {
+        root_scope: model_id,
         referents,
         contents,
-        shapes.clone(),
+        shapes: shapes.clone(),
         structural_contracts,
         occurrences,
         definitions,
-        Vec::new(),
-        Vec::new(),
-        Vec::new(),
-        Vec::new(),
-        Vec::new(),
+        rules: Vec::new(),
+        laws: Vec::new(),
+        invariants: Vec::new(),
+        goals: Vec::new(),
+        transitions: Vec::new(),
         judgments,
-    );
+    }
+    .into_candidate();
     let snapshot = validate(candidate)?.into_snapshot();
     Ok((legacy_revision_payload(snapshot), source_spans))
 }
