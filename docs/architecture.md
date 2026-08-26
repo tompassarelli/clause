@@ -85,8 +85,14 @@ elaborate(LosslessSyntax, ElaborationContext)
 validate(ProgramSnapshotCandidate, ValidationContext)
   -> ValidationResult
 
-admit(validated candidate, base ProgramRevision, AdmissionContext)
-  -> ProgramChangeOccurrence + ProgramRevision
+record change(validated candidate, base ProgramRevision, AdmissionContext)
+  -> ProgramChangeOccurrence
+
+constitute(validated occurrence, base ProgramRevision or root)
+  -> ProgramRevision
+
+Revision existence is lifecycle-neutral; judgments and lifecycle decisions
+determine acceptance and currentness.
 
 execute(ProgramRevision, RuntimePolicy, SessionStartOccurrence)
   -> RuntimeSession -> StateRevision successors

@@ -123,26 +123,10 @@ pub struct ProgramRevision {
     semantics: ClauseSemanticsId,
     predecessor: Option<ProgramRevisionId>,
     snapshot: ProgramSnapshot,
-    change: ProgramChangeOccurrenceId,
+    change_occurrence: ProgramChangeOccurrenceId,
 }
 
 impl ProgramRevision {
-    pub fn root(
-        program: ProgramId,
-        snapshot: ProgramSnapshot,
-        change: &ProgramChangeOccurrence,
-    ) -> Result<Self> {
-        Self::constitute_root(program, snapshot, change)
-    }
-
-    pub fn successor(
-        predecessor: &ProgramRevision,
-        snapshot: ProgramSnapshot,
-        change: &ProgramChangeOccurrence,
-    ) -> Result<Self> {
-        Self::constitute(predecessor, snapshot, change)
-    }
-
     pub fn constitute_root(
         program: ProgramId,
         snapshot: ProgramSnapshot,
@@ -162,7 +146,7 @@ impl ProgramRevision {
         }
         Self::build(program, snapshot, None, change)
     }
-    pub fn constitute(
+    pub fn constitute_successor(
         predecessor: &ProgramRevision,
         snapshot: ProgramSnapshot,
         change: &ProgramChangeOccurrence,
@@ -219,7 +203,7 @@ impl ProgramRevision {
             semantics: snapshot.semantics.clone(),
             predecessor,
             snapshot,
-            change: change.identity.clone(),
+            change_occurrence: change.identity.clone(),
         })
     }
     pub fn identity(&self) -> &ProgramRevisionId {
@@ -237,8 +221,8 @@ impl ProgramRevision {
     pub fn snapshot(&self) -> &ProgramSnapshot {
         &self.snapshot
     }
-    pub fn change(&self) -> &ProgramChangeOccurrenceId {
-        &self.change
+    pub fn change_occurrence(&self) -> &ProgramChangeOccurrenceId {
+        &self.change_occurrence
     }
 }
 
