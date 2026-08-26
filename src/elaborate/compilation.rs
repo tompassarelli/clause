@@ -4,7 +4,7 @@ use std::{
 };
 
 use crate::{
-    frontend::{self, Declaration, Kind, LawDecl, Member, RuleDecl, ShapePartDecl, SurfaceTerm},
+    frontend::{self, Declaration, Kind, Member, ShapePartDecl, SurfaceTerm},
     intrinsic::{Intrinsic, IntrinsicRole},
     kernel::{
         self, AssertionOccurrence, Definition, DerivationRule, Judgment, JudgmentKind,
@@ -357,11 +357,7 @@ fn compile_named(
     let relation_shapes = lower_relation_shapes(&program.declarations, &mut projection)?;
     let mut proposal_spans = BTreeMap::new();
     let (models, source_spans, model_events) = lower_models(
-        &program.declarations,
-        &program.rules,
-        &program.laws,
-        &program.derivations,
-        &program.events,
+        &program,
         &relation_shapes,
         &mut projection,
         &mut proposal_spans,
@@ -1066,10 +1062,7 @@ fn canonical_event_state_alpha(
         .map(|binding| binding.value.clone())
         .collect::<Vec<_>>();
     let mut state = state_bindings.to_vec();
-    let mut canonical: Option<(
-        Vec<(kernel::ContentId, Vec<kernel::ContentId>, kernel::ContentId)>,
-        Vec<frontend::VariableName>,
-    )> = None;
+    let mut canonical: Option<(CanonicalEventStructure, Vec<frontend::VariableName>)> = None;
     visit_permutations(&mut state, 0, &mut |order| {
         let variables = payload
             .iter()
@@ -1167,38 +1160,41 @@ fn validate_functional_replacement(
     Ok(())
 }
 
-fn lower_models(
-    declarations: &[Declaration],
-    canonical_rules: &[RuleDecl],
-    canonical_laws: &[LawDecl],
-    derivations: &[frontend::DeriveDecl],
-    events: &[frontend::EventDecl],
-    shapes: &BTreeMap<ReferentId, RelationShape>,
-    projection: &mut Projection,
-    proposal_spans: &mut BTreeMap<ProposalPath, frontend::Span>,
-) -> kernel::Result<(
+type CanonicalEventStructure = Vec<(kernel::ContentId, Vec<kernel::ContentId>, kernel::ContentId)>;
+
+type LoweredModels = (
     BTreeMap<frontend::Name, Model>,
     BTreeMap<ReferentId, frontend::Span>,
     BTreeSet<frontend::Name>,
-)> {
+);
+
+fn lower_models(
+    program: &frontend::Program,
+    shapes: &BTreeMap<ReferentId, RelationShape>,
+    projection: &mut Projection,
+    proposal_spans: &mut BTreeMap<ProposalPath, frontend::Span>,
+) -> kernel::Result<LoweredModels> {
     let mut models = BTreeMap::new();
     let mut source_spans = BTreeMap::new();
     let mut model_events = BTreeSet::new();
-    for declaration in declarations.iter().filter(|item| {
+    for declaration in program.declarations.iter().filter(|item| {
         matches!(
             item.kind,
             Kind::Enumeration | Kind::BindingShape | Kind::Model
         )
     }) {
-        let scoped_canonical_rules = canonical_rules
+        let scoped_canonical_rules = program
+            .rules
             .iter()
             .filter(|rule| rule.model.value == declaration.subject.value)
             .collect::<Vec<_>>();
-        let scoped_canonical_laws = canonical_laws
+        let scoped_canonical_laws = program
+            .laws
             .iter()
             .filter(|law| law.model.value == declaration.subject.value)
             .collect::<Vec<_>>();
-        let scoped_events = events
+        let scoped_events = program
+            .events
             .iter()
             .filter(|event| event.model.value == declaration.subject.value)
             .collect::<Vec<_>>();
@@ -1393,7 +1389,7 @@ fn lower_models(
         }
         let mut rules = Vec::new();
         let mut laws = Vec::new();
-        for rule_decl in declarations.iter().filter(|item| {
+        for rule_decl in program.declarations.iter().filter(|item| {
             item.kind == Kind::DerivationRule
                 && item
                     .subject
@@ -1643,7 +1639,8 @@ fn lower_models(
                 .designations
                 .scoped(&model_id, law_decl.label.value.as_str())?;
             definitions.push(Definition::new(label_id, Term::referent(law_id.clone())));
-            if derivations
+            if program
+                .derivations
                 .iter()
                 .any(|derive| derive.label.value == law_decl.label.value)
             {
