@@ -1,4 +1,8 @@
-use clause::{elaborate, frontend, kernel::ClauseSemanticsId, wire};
+use clause::{
+    elaborate, frontend,
+    kernel::{ClauseSemanticsId, Delta},
+    wire,
+};
 
 fn revision(source: &str) -> clause::kernel::Revision {
     elaborate::compile(frontend::parse(source).expect("source parses"))
@@ -10,12 +14,30 @@ fn revision(source: &str) -> clause::kernel::Revision {
 
 #[test]
 fn snapshot_identity_ignores_revision_lineage() {
-    let first = revision("Door\n\nworld\n  iron-door ∈ Door\n");
-    let second = revision("Door\n\nworld\n  iron-door ∈ Door\n");
+    let parent_a = revision("Door\n\nworld\n  east ∈ Door\n");
+    let parent_b = revision("Door\n\nworld\n  west ∈ Door\n");
+    let endpoint = revision("Door\n\nworld\n  north ∈ Door\n");
     let semantics = ClauseSemanticsId::current();
+    let endpoint_atoms = endpoint.model().atoms();
+    let successor = |base: &clause::kernel::Revision| {
+        let base_atoms = base.model().atoms();
+        let admissions = endpoint_atoms.difference(&base_atoms).cloned().collect();
+        let withdrawals = base_atoms.difference(&endpoint_atoms).cloned().collect();
+        wire::admit_successor(
+            base,
+            endpoint.model().clone(),
+            Delta::new(base.identity().clone(), admissions, withdrawals).unwrap(),
+        )
+        .unwrap()
+    };
+    let successor_a = successor(&parent_a);
+    let successor_b = successor(&parent_b);
+    assert_ne!(successor_a.predecessor(), successor_b.predecessor());
+    assert_ne!(successor_a.identity(), successor_b.identity());
+    assert_eq!(successor_a.model(), successor_b.model());
     assert_eq!(
-        wire::program_snapshot_id(first.model(), &semantics),
-        wire::program_snapshot_id(second.model(), &semantics)
+        wire::program_snapshot_id(successor_a.model(), &semantics),
+        wire::program_snapshot_id(successor_b.model(), &semantics)
     );
 }
 
