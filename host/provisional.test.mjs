@@ -1,13 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createEventBridge, createReceiptLog, loadArtifact, renderPlanFor } from "./provisional.mjs";
+import { createEffectBridge, createEventBridge, createReceiptLog, loadArtifact, renderPlanFor } from "./provisional.mjs";
 
 const revisionId = `rev-sha256-${"a".repeat(64)}`;
 
 test("ordered events and pure render plans stay bound to one Revision", () => {
   const artifact = loadArtifact({
     kind: "clause-js-runtime-v1", revisionId, events: { left: "ref-sha256-left" },
-    createRuntime: () => {}, renderPlan: (state, revision) => [{ id: "player", position: [state.x, 0, 0], revision }],
+    createRuntime: () => {}, createEvent: (name, event, payload, order, revisionId) => ({ id: "canonical-event-id", name, event, payload, order, revisionId }), renderPlan: (state, revision) => [{ id: "player", position: [state.x, 0, 0], revision }],
   });
   const calls = [];
   const runtime = { transition: (event, revision) => { calls.push([event.order, revision]); return { revisionId: revision, state: { x: event.order }, effects: [] }; } };
@@ -18,8 +18,14 @@ test("ordered events and pure render plans stay bound to one Revision", () => {
   assert.deepEqual(calls, [[0, revisionId]]);
 });
 
-test("capability receipts reject undeclared requests", () => {
+test("receipt construction stays in Clause authority and capability declarations are snapshotted", () => {
   const log = createReceiptLog(["render"]);
   assert.throws(() => log.realize({ capability: "audio", requestId: "x" }));
-  assert.deepEqual(log.realize({ capability: "render", requestId: "r" }), { capability: "render", requestId: "r", outcome: "succeeded", order: 0, declaration: 0 });
+  assert.throws(() => log.realize({ capability: "render", requestId: "r" }));
+  const caps = ["render"];
+  const artifact = loadArtifact({ kind: "clause-js-runtime-v1", revisionId, capabilities: caps, createRuntime: () => {}, createEvent: () => ({ id: "e", revisionId }), renderPlan: () => [] });
+  caps[0] = "audio";
+  const bridge = createEffectBridge({ artifact, runtime: { realizeEffect: (request, outcome, revisionId) => ({ request, outcome, revisionId }) } });
+  assert.deepEqual(bridge.realize({ capability: "render", revisionId }, "failed").outcome, "failed");
+  assert.throws(() => bridge.realize({ capability: "audio", revisionId }, "succeeded"));
 });

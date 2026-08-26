@@ -27,6 +27,7 @@ export function loadArtifact(input) {
   if (!/^rev-sha256-[0-9a-f]{64}$/.test(value.revisionId)) throw new Error("invalid artifact Revision identity");
   if (typeof value.createRuntime !== "function") throw new Error("artifact createRuntime is required");
   if (typeof value.renderPlan !== "function") throw new Error("artifact renderPlan is required");
+  if (typeof value.createEvent !== "function") throw new Error("artifact createEvent is required");
   const events = value.events ?? {};
   if (!events || typeof events !== "object") throw new Error("artifact events must be an object");
   return Object.freeze({
@@ -35,6 +36,7 @@ export function loadArtifact(input) {
     initialState: copy(value.initialState ?? null),
     events: copy(events),
     createRuntime: value.createRuntime,
+    createEvent: value.createEvent,
     renderPlan: value.renderPlan,
     capabilities: copy(value.capabilities ?? []),
   });
@@ -59,9 +61,10 @@ export function createEventBridge({ artifact, runtime, revisionId = artifact.rev
     if (closed) return false;
     const eventId = artifact.events[name];
     if (!eventId) return false;
-    const event = Object.freeze({ id: `${eventId}:${order}`, event: eventId, payload: copy(payload), order });
-    order += 1;
-    log.push(event);
+    const hostOrder = order++;
+    const event = artifact.createEvent(name, eventId, payload, hostOrder, revisionId);
+    if (!event || event.revisionId !== revisionId || typeof event.id !== "string") throw new Error("artifact supplied an invalid Revision-bound event");
+    log.push(copy(event));
     const result = runtime.transition(event, revisionId);
     if (!result || result.revisionId !== revisionId) throw new Error("runtime transition crossed Revision boundary");
     if (onState) onState(result.state, revisionId);
@@ -104,15 +107,30 @@ export function startLifecycle({ canvas, runtime, artifact, binding, render, inp
 
 /** Record capability realization in deterministic declaration order. */
 export function createReceiptLog(capabilities = []) {
+  const declared = Object.freeze([...capabilities]);
   const receipts = [];
   return Object.freeze({
     realize(request, outcome = "succeeded") {
-      const index = capabilities.indexOf(request.capability);
+      const index = declared.indexOf(request.capability);
       if (index < 0) throw new Error(`undeclared capability: ${request.capability}`);
-      const receipt = Object.freeze({ capability: request.capability, requestId: request.requestId, outcome, order: receipts.length, declaration: index });
-      receipts.push(receipt); return receipt;
+      throw new Error("receipt construction belongs to the Clause runtime authority");
     },
     entries: () => copy(receipts),
+  });
+}
+
+export function createEffectBridge({ artifact, runtime, revisionId = artifact.revisionId }) {
+  if (revisionId !== artifact.revisionId || !runtime || typeof runtime.realizeEffect !== "function") throw new Error("effect authority is required");
+  const declared = Object.freeze([...artifact.capabilities]);
+  const traces = [];
+  return Object.freeze({
+    realize(request, outcome) {
+      if (!request || !declared.includes(request.capability) || request.revisionId !== revisionId) throw new Error("effect request is not declared or is bound to another Revision");
+      const trace = runtime.realizeEffect(request, outcome, revisionId);
+      if (!trace || trace.revisionId !== revisionId) throw new Error("effect trace crossed Revision boundary");
+      traces.push(copy(trace)); return copy(trace);
+    },
+    entries: () => copy(traces),
   });
 }
 
