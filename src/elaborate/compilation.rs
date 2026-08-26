@@ -126,23 +126,27 @@ pub type CompileResult<T> = std::result::Result<T, CompileError>;
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProgramSnapshotCandidate {
     semantics: ClauseSemanticsId,
-    scope: ReferentId,
+    root_scope: ReferentId,
     atoms: Vec<SemanticAtom>,
 }
 
 impl ProgramSnapshotCandidate {
-    pub fn new(semantics: ClauseSemanticsId, scope: ReferentId, atoms: Vec<SemanticAtom>) -> Self {
+    pub fn new(
+        semantics: ClauseSemanticsId,
+        root_scope: ReferentId,
+        atoms: Vec<SemanticAtom>,
+    ) -> Self {
         Self {
             semantics,
-            scope,
+            root_scope,
             atoms,
         }
     }
     pub fn semantics(&self) -> &ClauseSemanticsId {
         &self.semantics
     }
-    pub fn scope(&self) -> &ReferentId {
-        &self.scope
+    pub fn root_scope(&self) -> &ReferentId {
+        &self.root_scope
     }
 }
 
@@ -163,17 +167,22 @@ impl ValidationResult {
 pub fn validate(candidate: ProgramSnapshotCandidate) -> kernel::Result<ValidationResult> {
     let ProgramSnapshotCandidate {
         semantics,
-        scope,
+        root_scope,
         atoms,
         ..
     } = candidate;
-    let model = Model::from_atoms(scope, atoms)?;
+    let model = Model::from_atoms(root_scope.clone(), atoms)?;
+    if !model.referents().contains_key(&root_scope) {
+        return Err(kernel::KernelError::new(
+            "program snapshot root scope is absent from checked referents",
+        ));
+    }
     let snapshot = wire::program_snapshot(model, semantics);
     Ok(ValidationResult { snapshot })
 }
 
 fn candidate_from_parts(
-    scope: ReferentId,
+    root_scope: ReferentId,
     referents: BTreeMap<ReferentId, Referent>,
     contents: BTreeMap<kernel::ContentId, RelationalContent>,
     shapes: BTreeMap<ReferentId, RelationShape>,
@@ -210,7 +219,7 @@ fn candidate_from_parts(
         .chain(transitions.into_iter().map(SemanticAtom::Transition))
         .chain(judgments.into_iter().map(SemanticAtom::Judgment))
         .collect();
-    ProgramSnapshotCandidate::new(ClauseSemanticsId::current(), scope, atoms)
+    ProgramSnapshotCandidate::new(ClauseSemanticsId::current(), root_scope, atoms)
 }
 
 use super::{
