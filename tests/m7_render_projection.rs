@@ -2,10 +2,51 @@
 
 use clause::{
     elaborate, frontend,
-    kernel::ReferentId,
+    kernel::{
+        ClauseSemanticsId, ProgramChangeOccurrence, ProgramChangeOccurrenceId, ProgramDelta,
+        ProgramId, ProgramRevision, ReferentId,
+    },
     render::{SceneProjectionSpec, project_render_plan},
-    runtime::{RuntimePolicy, RuntimeSession, TransitionEvent},
+    runtime::{
+        RuntimePolicy, RuntimeProgramRevision, RuntimeSession, SessionStartOccurrenceId,
+        TransitionEvent, TransitionOccurrenceId,
+    },
+    wire,
 };
+
+fn admitted(revision: &clause::kernel::Revision) -> ProgramRevision {
+    let semantics = ClauseSemanticsId::current();
+    let program = ProgramId::from_referent(revision.model().id().clone());
+    let snapshot = wire::program_snapshot(revision.model().clone(), semantics.clone());
+    let change = ProgramChangeOccurrence::new(
+        ProgramChangeOccurrenceId::from_referent(ReferentId::from_digest([0xd1; 32])),
+        semantics,
+        program.clone(),
+        None,
+        snapshot.identity().clone(),
+        ProgramDelta::new(
+            snapshot.checked_payload().atoms().into_iter().collect(),
+            vec![],
+        )
+        .unwrap(),
+        ReferentId::from_digest([0xd2; 32]),
+        vec![ReferentId::from_digest([0xd3; 32])],
+    )
+    .unwrap();
+    ProgramRevision::constitute_root(program, snapshot, &change).unwrap()
+}
+
+fn typed(revision: &clause::kernel::Revision) -> RuntimeProgramRevision<'_> {
+    RuntimeProgramRevision::new(Box::leak(Box::new(admitted(revision))), revision).unwrap()
+}
+
+fn start_id() -> SessionStartOccurrenceId {
+    SessionStartOccurrenceId::from_digest([0xd4; 32])
+}
+
+fn transition_id() -> TransitionOccurrenceId {
+    TransitionOccurrenceId::from_digest([0xd5; 32])
+}
 
 const SOURCE: &str = r#"F32
 Entity
@@ -49,6 +90,7 @@ fn authored_guarded_scene_projects_from_root_and_omits_withdrawn_coin() {
         panic!("one authored scene event produces one runtime journey");
     };
     let revision = journey.revision();
+    let typed = typed(revision);
     let model = revision.model();
     let relation = compiled
         .designations()
@@ -100,13 +142,14 @@ fn authored_guarded_scene_projects_from_root_and_omits_withdrawn_coin() {
         .designations()
         .scoped(model.id(), "collect")
         .expect("collect event resolves");
-    let root = RuntimeSession::start(
-        revision,
+    let root = RuntimeSession::start_with_occurrence(
+        &typed,
         RuntimePolicy::new(policy, 128, 512).expect("runtime policy is bounded"),
+        start_id(),
     )
     .expect("scene runtime starts");
 
-    let initial = project_render_plan(revision, root.latest(), &spec)
+    let initial = project_render_plan(&typed, root.latest(), &spec)
         .expect("root scene projects from supported content");
     assert_eq!(initial.items().len(), 2);
     let initial_item = |id: &ReferentId| {
@@ -122,16 +165,17 @@ fn authored_guarded_scene_projects_from_root_and_omits_withdrawn_coin() {
     assert_eq!(initial_item(&coin).position()[1].bits(), 0x0000_0000);
 
     let committed = root
-        .transition(
+        .transition_with_occurrence(
             revision,
             vec![TransitionEvent::new(
                 ReferentId::from_digest([0xa7; 32]),
                 event,
                 Vec::new(),
             )],
+            transition_id(),
         )
         .expect("coin collection commits");
-    let collected = project_render_plan(revision, committed.latest(), &spec)
+    let collected = project_render_plan(&typed, committed.latest(), &spec)
         .expect("successor scene projects from supported content");
     assert_eq!(collected.items().len(), 1);
     assert_eq!(collected.items()[0].id(), &player);
@@ -157,7 +201,7 @@ fn authored_guarded_scene_projects_from_root_and_omits_withdrawn_coin() {
     )
     .expect("syntactically distinct wrong roles construct");
     assert_eq!(
-        project_render_plan(revision, committed.latest(), &wrong_roles)
+        project_render_plan(&typed, committed.latest(), &wrong_roles)
             .expect_err("foreign role identity must fail closed")
             .to_string(),
         "scene projection relation roles do not match"
@@ -177,7 +221,7 @@ fn authored_guarded_scene_projects_from_root_and_omits_withdrawn_coin() {
     )
     .expect("syntactically valid scalar position shape constructs");
     assert_eq!(
-        project_render_plan(revision, committed.latest(), &wrong_shape)
+        project_render_plan(&typed, committed.latest(), &wrong_shape)
             .expect_err("a scalar cannot masquerade as Vec2")
             .to_string(),
         "scene projection position shape is not a labelled product"
@@ -193,7 +237,7 @@ fn authored_guarded_scene_projects_from_root_and_omits_withdrawn_coin() {
     )
     .expect("syntactically distinct wrong position fields construct");
     assert_eq!(
-        project_render_plan(revision, committed.latest(), &wrong_fields)
+        project_render_plan(&typed, committed.latest(), &wrong_fields)
             .expect_err("foreign field identity must fail closed")
             .to_string(),
         "scene projection position shape does not match x/y fields"
@@ -208,5 +252,5 @@ fn authored_guarded_scene_projects_from_root_and_omits_withdrawn_coin() {
         y,
     )
     .expect("syntactically valid unknown relation spec constructs");
-    assert!(project_render_plan(revision, committed.latest(), &unknown).is_err());
+    assert!(project_render_plan(&typed, committed.latest(), &unknown).is_err());
 }

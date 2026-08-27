@@ -14,9 +14,11 @@ Clause's accepted semantic vocabulary is:
 - a **Model** is reserved for a satisfying meta-level interpretation, not an
   authored source block or executable program artifact.
 
-The Rust implementation predates that vocabulary and still contains migration
-types named `kernel::Model` and `kernel::Revision`. The accepted design is
-authoritative; the [architecture](docs/architecture.md) and
+The Rust implementation predates that vocabulary and still contains frozen
+migration types named `kernel::Model` and `kernel::Revision`. Checked snapshots,
+Program history, and runtime-v3 identity now cross that bridge through explicit
+typed adapters rather than relabelling the legacy identity. The accepted design
+is authoritative; the [architecture](docs/architecture.md) and
 [roadmap](docs/roadmap.md) state exactly what remains to migrate.
 
 ## Documentation authority
@@ -37,8 +39,12 @@ competing with the live public set.
 
 ## Current state
 
-Clause is migrating the current semantic-v10 / Revision-v6 implementation to
-the ratified Program identity boundary and canonical agent-first syntax. The
+Clause now implements the ratified Program snapshot/history boundary, typed
+checked-snapshot compilation, immutable RuntimeSession identity, causal
+StateRevision identity, strict runtime-v3 replay/reload, and ProgramRevision-
+bound render/effect evidence while preserving semantic-v10 / Revision-v6
+bytes. Canonical agent-first syntax, the complete generated live host, three
+applications, and the preregistered comparison remain unfinished. The
 [roadmap](docs/roadmap.md) is the current status record; the
 [syntax migration ledger](docs/syntax.md#implementation-migration) is the one
 place that contrasts canonical source with the legacy parser.

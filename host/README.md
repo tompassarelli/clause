@@ -7,17 +7,20 @@ evidence.
 
 ## Implemented now
 
-- Rust owns canonical `clause-render-plan-v1` bytes and can emit an import-free
-  frozen ESM table keyed by exact current StateRevision identity.
+- Rust owns canonical `clause-render-plan-v2` bytes and can emit an import-free
+  frozen ESM table keyed by exact StateRevision identity and bound to one
+  ProgramRevision.
 - `renderPlanFor` asks that generated module for one exact-state plan, validates
-  its current Revision and StateRevision identities, canonical item ordering,
+  its ProgramRevision and StateRevision identities, canonical item ordering,
   Referent IDs, and finite F32 coordinates, then returns a frozen copy.
 - `createTwoMeshBinding` applies a validated total plan to two registered
   meshes: listed meshes receive positions and become visible; omitted meshes
   become hidden; unknown identities fail before mutation.
-- `createEventBridge` mechanically orders declared input events, forwards them
-  to an artifact-owned runtime, and retains only results accepted by the
-  artifact's transition validator.
+- `createEventBridge` requires caller-owned event and transition occurrence
+  allocators, rejects reused or malformed pins, mechanically orders declared
+  input events, forwards them to an artifact-owned runtime, and retains only
+  results that return the exact ProgramRevision and TransitionOccurrence and
+  pass the artifact's transition validator.
 - `createEffectBridge` forwards only declared capabilities and retains only
   artifact-validated traces.
 - `startLifecycle` owns input listeners, animation-frame scheduling, and
@@ -35,10 +38,11 @@ imports the generated ESM and compares its plan JSON exactly with Rust.
 
 There is no generated live-JavaScript transition runtime, real browser or
 Three.js integration proof, source map, dedicated scene/effect source syntax,
-or complete M7 one-coin vertical. The current `revisionId` field names the
-migration-era combined kernel Revision; its split into ProgramSnapshot and
-ProgramRevision is tracked by the [architecture](../docs/architecture.md) and
-[roadmap](../docs/roadmap.md).
+or complete M7 one-coin vertical. The current `programRevisionId` field names
+the constitutional ProgramRevision; exact StateRevision IDs transitively bind
+their runtime session, policy, semantics epoch, predecessor, and causal
+occurrence. The host validates and forwards those opaque Clause-produced pins;
+it does not recompute identity preimages or invent provenance.
 
 Run the host unit boundary with Bun:
 

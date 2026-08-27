@@ -4,7 +4,7 @@
 // transition semantics and render-plan production; this file only adapts
 // browser/Three.js lifecycle and retains copies of Clause-validated traces.
 
-const ARTIFACT_KIND = "clause-js-runtime-v1";
+const ARTIFACT_KIND = "clause-js-runtime-v2";
 
 const copy = (value) => {
   if (Array.isArray(value)) return Object.freeze(value.map(copy));
@@ -19,15 +19,21 @@ function requireString(value, name) {
   return value;
 }
 
-function requireRevisionId(value, name) {
+function requireProgramRevisionId(value, name) {
   requireString(value, name);
-  if (!/^rev-sha256-[0-9a-f]{64}$/.test(value)) throw new Error(`invalid ${name}`);
+  if (!/^program-revision-sha256-[0-9a-f]{64}$/.test(value)) throw new Error(`invalid ${name}`);
   return value;
 }
 
 function requireStateRevisionId(value, name) {
   requireString(value, name);
   if (!/^state-sha256-[0-9a-f]{64}$/.test(value)) throw new Error(`invalid ${name}`);
+  return value;
+}
+
+function requireTransitionOccurrenceId(value, name) {
+  requireString(value, name);
+  if (!/^transition-sha256-[0-9a-f]{64}$/.test(value)) throw new Error(`invalid ${name}`);
   return value;
 }
 
@@ -52,13 +58,13 @@ function f32FromBits(value) {
   return view.getFloat32(0, false);
 }
 
-function validateRenderPlan(plan, expectedRevisionId, expectedStateRevisionId) {
+function validateRenderPlan(plan, expectedProgramRevisionId, expectedStateRevisionId) {
   const envelope = requireArray(plan, 4, "RenderPlan envelope");
-  if (envelope[0] !== "clause-render-plan-v1") throw new Error("unsupported RenderPlan");
-  const model = requireArray(envelope[1], 2, "RenderPlan Model Revision");
-  if (model[0] !== "model-revision") throw new Error("invalid RenderPlan Model Revision tag");
-  const revisionId = requireRevisionId(model[1], "RenderPlan Model Revision identity");
-  if (expectedRevisionId !== undefined && revisionId !== expectedRevisionId) throw new Error("render plan names the wrong Model Revision");
+  if (envelope[0] !== "clause-render-plan-v2") throw new Error("unsupported RenderPlan");
+  const program = requireArray(envelope[1], 2, "RenderPlan ProgramRevision");
+  if (program[0] !== "program-revision") throw new Error("invalid RenderPlan ProgramRevision tag");
+  const programRevisionId = requireProgramRevisionId(program[1], "RenderPlan ProgramRevision identity");
+  if (expectedProgramRevisionId !== undefined && programRevisionId !== expectedProgramRevisionId) throw new Error("render plan names the wrong ProgramRevision");
   const state = requireArray(envelope[2], 2, "RenderPlan StateRevision");
   if (state[0] !== "state-revision") throw new Error("invalid RenderPlan StateRevision tag");
   const stateRevisionId = requireStateRevisionId(state[1], "RenderPlan StateRevision identity");
@@ -77,7 +83,7 @@ function validateRenderPlan(plan, expectedRevisionId, expectedStateRevisionId) {
     if (position[0] !== "position-f32x2") throw new Error("invalid RenderPlan position tag");
     return Object.freeze({ id, position: Object.freeze([f32FromBits(position[1]), f32FromBits(position[2])]) });
   });
-  return Object.freeze({ revisionId, stateRevisionId, items: Object.freeze(decoded) });
+  return Object.freeze({ programRevisionId, stateRevisionId, items: Object.freeze(decoded) });
 }
 
 function stateIdentity(state) {
@@ -91,7 +97,7 @@ function stateIdentity(state) {
 export function loadArtifact(value) {
   if (typeof value === "string") throw new Error("generated artifact must be an ESM/module object");
   if (!value || value.kind !== ARTIFACT_KIND) throw new Error("unsupported Clause runtime artifact");
-  requireRevisionId(value.revisionId, "artifact Revision identity");
+  requireProgramRevisionId(value.programRevisionId, "artifact ProgramRevision identity");
   if (typeof value.createRuntime !== "function") throw new Error("artifact createRuntime is required");
   if (typeof value.renderPlan !== "function") throw new Error("artifact renderPlan is required");
   if (typeof value.createEvent !== "function") throw new Error("artifact createEvent is required");
@@ -101,7 +107,7 @@ export function loadArtifact(value) {
   if (!events || typeof events !== "object") throw new Error("artifact events must be an object");
   return Object.freeze({
     kind: ARTIFACT_KIND,
-    revisionId: value.revisionId,
+    programRevisionId: value.programRevisionId,
     initialState: copy(value.initialState ?? null),
     events: copy(events),
     createRuntime: value.createRuntime,
@@ -114,44 +120,53 @@ export function loadArtifact(value) {
 }
 
 /** Pure projection of one exact post-transition state into render data. */
-export function renderPlanFor(artifact, state, revisionId = artifact.revisionId) {
-  if (revisionId !== artifact.revisionId) throw new Error("render plan names the wrong Model Revision");
+export function renderPlanFor(artifact, state, programRevisionId = artifact.programRevisionId) {
+  if (programRevisionId !== artifact.programRevisionId) throw new Error("render plan names the wrong ProgramRevision");
   const stateRevisionId = stateIdentity(state);
-  const plan = artifact.renderPlan(stateRevisionId, revisionId);
-  validateRenderPlan(plan, revisionId, stateRevisionId);
+  const plan = artifact.renderPlan(stateRevisionId, programRevisionId);
+  validateRenderPlan(plan, programRevisionId, stateRevisionId);
   return copy(plan);
 }
 
 /** Deterministic ordered event bridge. Device callbacks only enqueue declared events. */
-export function createEventBridge({ artifact, runtime, revisionId = artifact.revisionId, onState, onEffects }) {
-  if (revisionId !== artifact.revisionId) throw new Error("event bridge names the wrong Model Revision");
+export function createEventBridge({ artifact, runtime, programRevisionId = artifact.programRevisionId, allocateEventOccurrence, allocateTransitionOccurrence, onState, onEffects }) {
+  if (programRevisionId !== artifact.programRevisionId) throw new Error("event bridge names the wrong ProgramRevision");
   if (!runtime || typeof runtime.transition !== "function") throw new Error("runtime transition is required");
+  if (typeof allocateEventOccurrence !== "function" || typeof allocateTransitionOccurrence !== "function") throw new Error("explicit event and transition occurrence allocation is required");
   let order = 0;
   let closed = false;
   const log = [];
+  const eventOccurrences = new Set();
+  const transitionOccurrences = new Set();
   const dispatch = (name, payload = []) => {
     if (closed) return false;
     const eventId = artifact.events[name];
     if (!eventId) return false;
     const hostOrder = order;
-    const event = artifact.createEvent(name, eventId, payload, hostOrder, revisionId);
-    if (!event || event.revisionId !== revisionId || event.event !== eventId || typeof event.id !== "string" || event.id.length === 0) throw new Error("artifact supplied an invalid Revision-bound event");
-    const result = runtime.transition(event, revisionId);
-    if (!result || result.revisionId !== revisionId) throw new Error("runtime transition crossed Revision boundary");
-    if (!artifact.validateTransitionResult(result, event, revisionId)) throw new Error("Clause transition authority rejected result");
-    log.push(copy(event));
+    const allocation = Object.freeze({ name, event: eventId, payload: copy(payload), order: hostOrder, programRevisionId });
+    const eventOccurrenceId = requireReferentId(allocateEventOccurrence(allocation), "event occurrence identity");
+    const transitionOccurrenceId = requireTransitionOccurrenceId(allocateTransitionOccurrence(allocation), "transition occurrence identity");
+    if (eventOccurrences.has(eventOccurrenceId) || transitionOccurrences.has(transitionOccurrenceId)) throw new Error("runtime history repeats an allocated occurrence identity");
+    eventOccurrences.add(eventOccurrenceId);
+    transitionOccurrences.add(transitionOccurrenceId);
+    const event = artifact.createEvent(name, eventId, payload, eventOccurrenceId, hostOrder, programRevisionId);
+    if (!event || event.programRevisionId !== programRevisionId || event.event !== eventId || event.id !== eventOccurrenceId) throw new Error("artifact supplied an invalid ProgramRevision-bound event");
+    const result = runtime.transition(event, transitionOccurrenceId, programRevisionId);
+    if (!result || result.programRevisionId !== programRevisionId || result.transitionOccurrenceId !== transitionOccurrenceId) throw new Error("runtime transition crossed its admitted identity boundary");
+    if (!artifact.validateTransitionResult(result, event, transitionOccurrenceId, programRevisionId)) throw new Error("Clause transition authority rejected result");
+    log.push(copy({ ...event, transitionOccurrenceId }));
     order += 1;
-    if (onState) onState(result.state, revisionId);
-    if (onEffects && result.effects) onEffects(result.effects, result.state, revisionId);
+    if (onState) onState(result.state, programRevisionId);
+    if (onEffects && result.effects) onEffects(result.effects, result.state, programRevisionId);
     return true;
   };
   return Object.freeze({ dispatch, events: () => copy(log), close: () => { closed = true; } });
 }
 
 /** Reconcile a total desired-scene plan to two stable meshes. */
-export function createTwoMeshBinding(THREE, scene, { revisionId, playerId, coinId }) {
+export function createTwoMeshBinding(THREE, scene, { programRevisionId, playerId, coinId }) {
   if (!THREE || !scene || typeof scene.add !== "function") throw new Error("Three.js scene is required");
-  requireRevisionId(revisionId, "binding Model Revision identity");
+  requireProgramRevisionId(programRevisionId, "binding ProgramRevision identity");
   requireReferentId(playerId, "player identity");
   requireReferentId(coinId, "coin identity");
   if (playerId === coinId) throw new Error("player and coin identities must be distinct");
@@ -160,7 +175,7 @@ export function createTwoMeshBinding(THREE, scene, { revisionId, playerId, coinI
   scene.add(player); scene.add(coin);
   const meshes = new Map([[playerId, player], [coinId, coin]]);
   const apply = (plan) => {
-    const desired = validateRenderPlan(plan, revisionId);
+    const desired = validateRenderPlan(plan, programRevisionId);
     if (desired.items.some((item) => !meshes.has(item.id))) throw new Error("RenderPlan names an unregistered mesh identity");
     const byId = new Map(desired.items.map((item) => [item.id, item]));
     for (const [id, mesh] of meshes) {
@@ -180,8 +195,8 @@ export function createTwoMeshBinding(THREE, scene, { revisionId, playerId, coinI
 }
 
 /** Browser RAF/input lifecycle; scheduling remains outside Clause semantics. */
-export function startLifecycle({ canvas, runtime, artifact, binding, render, input = window }) {
-  const bridge = createEventBridge({ artifact, runtime, onState: (state, revision) => binding.apply(renderPlanFor(artifact, state, revision)) });
+export function startLifecycle({ canvas, runtime, artifact, binding, render, allocateEventOccurrence, allocateTransitionOccurrence, input = window }) {
+  const bridge = createEventBridge({ artifact, runtime, allocateEventOccurrence, allocateTransitionOccurrence, onState: (state, revision) => binding.apply(renderPlanFor(artifact, state, revision)) });
   let frame;
   let stopped = false;
   const tick = () => { if (stopped) return; render(); if (!stopped) frame = input.requestAnimationFrame(tick); };
@@ -190,15 +205,15 @@ export function startLifecycle({ canvas, runtime, artifact, binding, render, inp
   return Object.freeze({ bridge, stop: () => { if (stopped) return; stopped = true; input.cancelAnimationFrame(frame); input.removeEventListener("keydown", key); bridge.close(); if (binding && typeof binding.dispose === "function") binding.dispose(); } });
 }
 
-export function createEffectBridge({ artifact, runtime, revisionId = artifact.revisionId }) {
-  if (revisionId !== artifact.revisionId || !runtime || typeof runtime.realizeEffect !== "function" || typeof artifact.validateEffectTrace !== "function") throw new Error("effect authority is required");
+export function createEffectBridge({ artifact, runtime, programRevisionId = artifact.programRevisionId }) {
+  if (programRevisionId !== artifact.programRevisionId || !runtime || typeof runtime.realizeEffect !== "function" || typeof artifact.validateEffectTrace !== "function") throw new Error("effect authority is required");
   const declared = Object.freeze([...artifact.capabilities]);
   const traces = [];
   return Object.freeze({
     realize(request, outcome) {
-      if (!request || !declared.includes(request.capability) || request.revisionId !== revisionId) throw new Error("effect request is not declared or is bound to another Revision");
-      const trace = runtime.realizeEffect(request, outcome, revisionId);
-      if (!artifact.validateEffectTrace(trace, request, revisionId)) throw new Error("Clause effect authority rejected trace");
+      if (!request || !declared.includes(request.capability) || request.programRevisionId !== programRevisionId) throw new Error("effect request is not declared or is bound to another ProgramRevision");
+      const trace = runtime.realizeEffect(request, outcome, programRevisionId);
+      if (!artifact.validateEffectTrace(trace, request, programRevisionId)) throw new Error("Clause effect authority rejected trace");
       traces.push(copy(trace)); return copy(trace);
     },
     entries: () => copy(traces),

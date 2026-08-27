@@ -12,9 +12,9 @@ use std::{
 use crate::{
     intrinsic::Intrinsic,
     kernel::{
-        AssertionOccurrence, ContentId, DerivationRule, JudgmentKind, JudgmentStatus,
-        JudgmentTarget, KernelError, Model, ReferentId, RelationalContent, Result, Revision,
-        RevisionId, RoleId, Term,
+        AssertionOccurrence, ClauseSemanticsId, ContentId, DerivationRule, JudgmentKind,
+        JudgmentStatus, JudgmentTarget, KernelError, Model, ProgramRevisionId, ReferentId,
+        RelationalContent, Result, Revision, RevisionId, RoleId, Term,
     },
     wire::{
         json::{Json, JsonParser, array, json, list, require_string, string},
@@ -22,13 +22,13 @@ use crate::{
     },
 };
 
-pub const STATE_REVISION_TAG: &str = "clause-state-revision-v2";
-pub const RUNTIME_SESSION_TAG: &str = "clause-runtime-session-v2";
-pub const EFFECT_TRACE_TAG: &str = "clause-effect-trace-v1";
+pub const STATE_REVISION_TAG: &str = "clause-state-revision-v3";
+pub const RUNTIME_SESSION_TAG: &str = "clause-runtime-session-v3";
+pub const EFFECT_TRACE_TAG: &str = "clause-effect-trace-v2";
 pub const EFFECT_REQUEST_TAG: &str = "clause-effect-request-v1";
 
 macro_rules! digest_identity {
-    ($name:ident, $prefix:literal, $message:literal) => {
+    ($name:ident, $prefix:literal, $message:literal $(, $digest_visibility:vis)?) => {
         #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
         pub struct $name(String);
 
@@ -48,7 +48,7 @@ macro_rules! digest_identity {
                 }
             }
 
-            fn from_digest(bytes: [u8; 32]) -> Self {
+            $($digest_visibility)? fn from_digest(bytes: [u8; 32]) -> Self {
                 let mut value = String::from($prefix);
                 for byte in bytes {
                     use fmt::Write;
@@ -81,6 +81,23 @@ digest_identity!(
     "invalid RuntimeSession identity"
 );
 digest_identity!(
+    RuntimePolicyId,
+    "runtime-policy-sha256-",
+    "invalid RuntimePolicy identity"
+);
+digest_identity!(
+    SessionStartOccurrenceId,
+    "session-start-sha256-",
+    "invalid session start occurrence identity",
+    pub
+);
+digest_identity!(
+    TransitionOccurrenceId,
+    "transition-sha256-",
+    "invalid transition occurrence identity",
+    pub
+);
+digest_identity!(
     AuthorizationId,
     "authorization-sha256-",
     "invalid Authorization identity"
@@ -106,9 +123,100 @@ digest_identity!(
 /// The complete deterministic runtime policy bound into every state/session.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RuntimePolicy {
-    id: ReferentId,
+    id: RuntimePolicyId,
+    referent: ReferentId,
     max_supports: usize,
     max_join_attempts: usize,
+}
+
+/// Honest runtime boundary for the constitutional program revision. Runtime
+/// may only execute when the typed revision's checked snapshot is exactly the
+/// frozen Revision-v6 model supplied to it.
+pub struct RuntimeProgramRevision<'a> {
+    program: Option<&'a crate::kernel::ProgramRevision>,
+    identity: ProgramRevisionId,
+    semantics: ClauseSemanticsId,
+    legacy: &'a Revision,
+}
+
+/// Standalone runtime pin for a checked constitutional ProgramRevision.
+/// This is a serialized identity preimage, never an admission substitute.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProgramRevisionPin {
+    pub identity: ProgramRevisionId,
+    pub program: crate::kernel::ProgramId,
+    pub semantics: ClauseSemanticsId,
+    pub predecessor: Option<ProgramRevisionId>,
+    pub snapshot: crate::kernel::ProgramSnapshotId,
+    pub change_occurrence: crate::kernel::ProgramChangeOccurrenceId,
+}
+
+impl ProgramRevisionPin {
+    pub fn from_revision(revision: &crate::kernel::ProgramRevision) -> Self {
+        Self {
+            identity: revision.identity().clone(),
+            program: revision.program().clone(),
+            semantics: revision.semantics().clone(),
+            predecessor: revision.predecessor().cloned(),
+            snapshot: revision.snapshot().identity().clone(),
+            change_occurrence: revision.change_occurrence().clone(),
+        }
+    }
+    pub fn validate(&self) -> Result<()> {
+        let expected = crate::wire::program_revision_id(
+            &self.program,
+            &self.semantics,
+            self.predecessor.as_ref(),
+            &self.snapshot,
+            &self.change_occurrence,
+        );
+        if expected != self.identity {
+            return Err(KernelError::new(
+                "ProgramRevision pin identity does not match its preimage",
+            ));
+        }
+        Ok(())
+    }
+}
+
+impl<'a> RuntimeProgramRevision<'a> {
+    pub fn new(program: &'a crate::kernel::ProgramRevision, legacy: &'a Revision) -> Result<Self> {
+        if program.snapshot().checked_payload() != legacy.model() {
+            return Err(KernelError::new(
+                "ProgramRevision snapshot does not match frozen Revision-v6 model",
+            ));
+        }
+        Ok(Self {
+            identity: program.identity().clone(),
+            semantics: program.semantics().clone(),
+            program: Some(program),
+            legacy,
+        })
+    }
+    pub fn from_pin(legacy: &'a Revision, pin: ProgramRevisionPin) -> Result<Self> {
+        pin.validate()?;
+        let semantics = pin.semantics.clone();
+        if pin.snapshot != crate::wire::program_snapshot_id(legacy.model(), &semantics) {
+            return Err(KernelError::new(
+                "ProgramRevision pin does not match frozen Revision-v6 model",
+            ));
+        }
+        Ok(Self {
+            identity: pin.identity,
+            semantics,
+            program: None,
+            legacy,
+        })
+    }
+    pub fn identity(&self) -> &ProgramRevisionId {
+        &self.identity
+    }
+    pub fn semantics(&self) -> &ClauseSemanticsId {
+        &self.semantics
+    }
+    pub fn legacy(&self) -> &Revision {
+        self.legacy
+    }
 }
 
 impl RuntimePolicy {
@@ -119,14 +227,27 @@ impl RuntimePolicy {
             ));
         }
         Ok(Self {
-            id,
+            id: RuntimePolicyId::from_digest(sha256_digest(
+                format!(
+                    "clause/runtime-policy/v3\0{}\0{}\0{}",
+                    id.as_str(),
+                    max_supports,
+                    max_join_attempts
+                )
+                .as_bytes(),
+            )),
+            referent: id,
             max_supports,
             max_join_attempts,
         })
     }
 
-    pub fn id(&self) -> &ReferentId {
+    pub fn id(&self) -> &RuntimePolicyId {
         &self.id
+    }
+
+    pub fn referent(&self) -> &ReferentId {
+        &self.referent
     }
 
     pub fn max_supports(&self) -> usize {
@@ -228,6 +349,12 @@ enum StateLineage {
         delta: StateDelta,
         input: RuntimeInput,
     },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum StateCause {
+    SessionStart(SessionStartOccurrenceId),
+    Transition(TransitionOccurrenceId),
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -715,6 +842,10 @@ impl IncrementalState {
 pub struct StateRevision {
     identity: StateRevisionId,
     model_revision: RevisionId,
+    program_revision: ProgramRevisionId,
+    semantics: ClauseSemanticsId,
+    session: RuntimeSessionId,
+    cause: StateCause,
     policy: RuntimePolicy,
     tick: u64,
     lineage: StateLineage,
@@ -722,22 +853,38 @@ pub struct StateRevision {
 }
 
 impl StateRevision {
-    fn root(revision: &Revision, policy: RuntimePolicy) -> Result<Self> {
+    fn root(
+        revision: &Revision,
+        policy: RuntimePolicy,
+        session: RuntimeSessionId,
+        start: SessionStartOccurrenceId,
+        program_revision: ProgramRevisionId,
+        semantics: ClauseSemanticsId,
+    ) -> Result<Self> {
         validate_policy(revision.model(), &policy)?;
         let incremental = IncrementalState::root(revision, &policy)?;
         let mut state = Self {
             identity: StateRevisionId::from_digest([0; 32]),
             model_revision: revision.identity().clone(),
+            program_revision,
+            semantics,
+            session: session.clone(),
+            cause: StateCause::SessionStart(start),
             policy,
             tick: 0,
             lineage: StateLineage::Root,
             state: incremental,
         };
-        state.identity = StateRevisionId::from_digest(sha256_digest(state.payload().as_bytes()));
+        state.identity = state.compute_identity();
         Ok(state)
     }
 
-    fn successor(&self, revision: &Revision, input: RuntimeInput) -> Result<Self> {
+    fn successor(
+        &self,
+        revision: &Revision,
+        input: RuntimeInput,
+        occurrence: TransitionOccurrenceId,
+    ) -> Result<Self> {
         if revision.identity() != &self.model_revision {
             return Err(KernelError::new(
                 "runtime transition names the wrong Model Revision",
@@ -756,6 +903,10 @@ impl StateRevision {
         let mut successor = Self {
             identity: StateRevisionId::from_digest([0; 32]),
             model_revision: self.model_revision.clone(),
+            program_revision: self.program_revision.clone(),
+            semantics: self.semantics.clone(),
+            session: self.session.clone(),
+            cause: StateCause::Transition(occurrence),
             policy: self.policy.clone(),
             tick: self
                 .tick
@@ -768,8 +919,7 @@ impl StateRevision {
             },
             state: next_state,
         };
-        successor.identity =
-            StateRevisionId::from_digest(sha256_digest(successor.payload().as_bytes()));
+        successor.identity = successor.compute_identity();
         Ok(successor)
     }
 
@@ -779,6 +929,50 @@ impl StateRevision {
 
     pub fn model_revision(&self) -> &RevisionId {
         &self.model_revision
+    }
+
+    pub fn program_revision(&self) -> &ProgramRevisionId {
+        &self.program_revision
+    }
+
+    pub fn semantics(&self) -> &ClauseSemanticsId {
+        &self.semantics
+    }
+
+    pub fn session(&self) -> &RuntimeSessionId {
+        &self.session
+    }
+    pub fn transition_occurrence(&self) -> Option<&TransitionOccurrenceId> {
+        match &self.cause {
+            StateCause::Transition(id) => Some(id),
+            _ => None,
+        }
+    }
+
+    fn compute_identity(&self) -> StateRevisionId {
+        let predecessor = self
+            .predecessor()
+            .map(ToString::to_string)
+            .unwrap_or_else(|| "root".to_owned());
+        let cause = match &self.cause {
+            StateCause::SessionStart(id) => format!("session-start\0{}", id),
+            StateCause::Transition(id) => format!("transition\0{}", id),
+        };
+        let preimage = format!(
+            "clause/state-revision/v3\0{}\0{}\0{}\0{}\0{}\0{}\0{}",
+            self.session,
+            self.program_revision,
+            self.policy.id,
+            self.semantics.as_str(),
+            predecessor,
+            cause,
+            self.state_payload()
+        );
+        StateRevisionId::from_digest(sha256_digest(preimage.as_bytes()))
+    }
+
+    fn state_payload(&self) -> String {
+        self.payload()
     }
 
     pub fn predecessor(&self) -> Option<&StateRevisionId> {
@@ -872,10 +1066,14 @@ impl StateRevision {
                 delta,
                 input,
             } => format!(
-                "[\"successor\",\"{}\",{},[\"input\",{}]]",
+                "[\"successor\",\"{}\",{},[\"input\",{}],[\"transition-occurrence\",\"{}\"]]",
                 predecessor,
                 delta_json(delta),
                 input_json(input),
+                match &self.cause {
+                    StateCause::Transition(id) => id.as_str(),
+                    StateCause::SessionStart(_) => "",
+                },
             ),
         };
         let occurrences = join(self.state.occurrences.values().map(occurrence_json));
@@ -888,8 +1086,11 @@ impl StateRevision {
                 .map(support_json),
         );
         format!(
-            "[[\"model-revision\",\"{}\"],[\"tick\",\"{}\"],[\"policy\",{}],[\"lineage\",{}],[\"occurrences\",[{}]],[\"contents\",[{}]],[\"supports\",[{}]]]",
+            "[[\"model-revision\",\"{}\"],[\"program-revision\",\"{}\"],[\"semantics\",\"{}\"],[\"session\",\"{}\"],[\"tick\",\"{}\"],[\"policy\",{}],[\"lineage\",{}],[\"occurrences\",[{}]],[\"contents\",[{}]],[\"supports\",[{}]]]",
             self.model_revision,
+            self.program_revision,
+            self.semantics.as_str(),
+            self.session,
             self.tick,
             policy_json(&self.policy),
             lineage,
@@ -905,42 +1106,96 @@ impl StateRevision {
 pub struct RuntimeSession {
     identity: RuntimeSessionId,
     model_revision: RevisionId,
+    program_revision: ProgramRevisionId,
+    semantics: ClauseSemanticsId,
+    start_occurrence: SessionStartOccurrenceId,
     policy: RuntimePolicy,
     states: Vec<StateRevision>,
     inputs: Vec<RuntimeInput>,
 }
 
+/// One replay step: the caller allocates the causal occurrence and supplies
+/// the exact input that occurred at that occurrence.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ReplayStep {
+    pub occurrence: TransitionOccurrenceId,
+    pub input: RuntimeInput,
+}
+
 impl RuntimeSession {
-    pub fn start(revision: &Revision, policy: RuntimePolicy) -> Result<Self> {
-        let root = StateRevision::root(revision, policy.clone())?;
-        let mut session = Self {
-            identity: RuntimeSessionId::from_digest([0; 32]),
+    pub fn start_with_occurrence(
+        typed: &RuntimeProgramRevision<'_>,
+        policy: RuntimePolicy,
+        start: SessionStartOccurrenceId,
+    ) -> Result<Self> {
+        let revision = typed.legacy();
+        let program_revision = typed.identity().clone();
+        let semantics = typed.semantics().clone();
+        let preimage = format!(
+            "clause/runtime-session/v3\0{}\0{}\0{}\0{}",
+            program_revision,
+            policy.id,
+            semantics.as_str(),
+            start
+        );
+        let identity = RuntimeSessionId::from_digest(sha256_digest(preimage.as_bytes()));
+        let root = StateRevision::root(
+            revision,
+            policy.clone(),
+            identity.clone(),
+            start.clone(),
+            program_revision.clone(),
+            semantics.clone(),
+        )?;
+        let session = Self {
+            identity,
             model_revision: revision.identity().clone(),
+            program_revision,
+            semantics,
+            start_occurrence: start,
             policy,
             states: vec![root],
             inputs: Vec::new(),
         };
-        session.recompute_identity();
         Ok(session)
     }
 
-    pub fn transition(&self, revision: &Revision, events: Vec<TransitionEvent>) -> Result<Self> {
+    pub fn transition_with_occurrence(
+        &self,
+        revision: &Revision,
+        events: Vec<TransitionEvent>,
+        occurrence: TransitionOccurrenceId,
+    ) -> Result<Self> {
+        self.apply_input_with_occurrence(revision, RuntimeInput::Events(events), occurrence)
+    }
+
+    pub fn apply_with_occurrence(
+        &self,
+        revision: &Revision,
+        input: RuntimeInput,
+        occurrence: TransitionOccurrenceId,
+    ) -> Result<Self> {
+        self.apply_input_with_occurrence(revision, input, occurrence)
+    }
+
+    fn apply_input_with_occurrence(
+        &self,
+        revision: &Revision,
+        input: RuntimeInput,
+        occurrence: TransitionOccurrenceId,
+    ) -> Result<Self> {
         if revision.identity() != &self.model_revision {
             return Err(KernelError::new(
                 "RuntimeSession names the wrong Model Revision",
             ));
         }
-        self.apply_input(revision, RuntimeInput::Events(events))
-    }
-
-    pub fn apply_delta(&self, revision: &Revision, delta: StateDelta) -> Result<Self> {
-        self.apply_input(revision, RuntimeInput::Delta(delta))
-    }
-
-    fn apply_input(&self, revision: &Revision, input: RuntimeInput) -> Result<Self> {
-        if revision.identity() != &self.model_revision {
+        if self
+            .states
+            .iter()
+            .any(|state| state.transition_occurrence() == Some(&occurrence))
+        {
             return Err(KernelError::new(
-                "RuntimeSession names the wrong Model Revision",
+                "runtime history repeats a transition occurrence identity",
             ));
         }
         if let RuntimeInput::Events(events) = &input {
@@ -960,34 +1215,25 @@ impl RuntimeSession {
                 ));
             }
         }
-        let successor = self.latest().successor(revision, input.clone())?;
+        let successor = self
+            .latest()
+            .successor(revision, input.clone(), occurrence)?;
         let mut next = self.clone();
         next.states.push(successor);
         next.inputs.push(input);
-        next.recompute_identity();
         Ok(next)
     }
 
-    pub fn replay(
-        revision: &Revision,
+    pub fn replay_with_occurrences(
+        typed: RuntimeProgramRevision<'_>,
         policy: RuntimePolicy,
-        ticks: impl IntoIterator<Item = Vec<TransitionEvent>>,
+        start: SessionStartOccurrenceId,
+        steps: impl IntoIterator<Item = ReplayStep>,
     ) -> Result<Self> {
-        Self::replay_inputs(
-            revision,
-            policy,
-            ticks.into_iter().map(RuntimeInput::Events),
-        )
-    }
-
-    pub fn replay_inputs(
-        revision: &Revision,
-        policy: RuntimePolicy,
-        inputs: impl IntoIterator<Item = RuntimeInput>,
-    ) -> Result<Self> {
-        let mut session = Self::start(revision, policy)?;
-        for input in inputs {
-            session = session.apply_input(revision, input)?;
+        let revision = typed.legacy();
+        let mut session = Self::start_with_occurrence(&typed, policy, start)?;
+        for step in steps {
+            session = session.apply_input_with_occurrence(revision, step.input, step.occurrence)?;
         }
         Ok(session)
     }
@@ -998,6 +1244,16 @@ impl RuntimeSession {
 
     pub fn model_revision(&self) -> &RevisionId {
         &self.model_revision
+    }
+
+    pub fn program_revision(&self) -> &ProgramRevisionId {
+        &self.program_revision
+    }
+    pub fn semantics(&self) -> &ClauseSemanticsId {
+        &self.semantics
+    }
+    pub fn start_occurrence(&self) -> &SessionStartOccurrenceId {
+        &self.start_occurrence
     }
 
     pub fn states(&self) -> &[StateRevision] {
@@ -1022,16 +1278,15 @@ impl RuntimeSession {
         )
     }
 
-    fn recompute_identity(&mut self) {
-        self.identity = RuntimeSessionId::from_digest(sha256_digest(self.payload().as_bytes()));
-    }
-
     fn payload(&self) -> String {
         let states = join(self.states.iter().map(StateRevision::canonical_bytes));
         let inputs = join(self.inputs.iter().map(input_json));
         format!(
-            "[[\"model-revision\",\"{}\"],[\"policy\",{}],[\"states\",[{}]],[\"inputs\",[{}]]]",
+            "[[\"model-revision\",\"{}\"],[\"program-revision\",\"{}\"],[\"semantics\",\"{}\"],[\"start-occurrence\",\"{}\"],[\"policy\",{}],[\"states\",[{}]],[\"inputs\",[{}]]]",
             self.model_revision,
+            self.program_revision,
+            self.semantics.as_str(),
+            self.start_occurrence,
             policy_json(&self.policy),
             states,
             inputs,
@@ -1039,9 +1294,12 @@ impl RuntimeSession {
     }
 }
 
-/// Strictly reload one canonical runtime session by replaying its ordered
-/// inputs through the same transition fold and comparing every derived byte.
-pub fn reload_session(bytes: &str, revision: &Revision) -> Result<RuntimeSession> {
+/// Strict v3 reload with the admitted typed ProgramRevision and explicit
+/// occurrence pins serialized in each state lineage.
+pub fn reload_session_with_program(
+    bytes: &str,
+    typed: &RuntimeProgramRevision<'_>,
+) -> Result<RuntimeSession> {
     let value = JsonParser::new(bytes).parse()?;
     if json(&value) != bytes {
         return Err(KernelError::new(
@@ -1055,27 +1313,101 @@ pub fn reload_session(bytes: &str, revision: &Revision) -> Result<RuntimeSession
         "RuntimeSession envelope tag",
     )?;
     let claimed = RuntimeSessionId::new(string(&envelope[1], "RuntimeSession identity")?.into())?;
-    let payload = list(&envelope[2], 4, "RuntimeSession payload")?;
-    let model_revision = tagged(&payload[0], "model-revision", "runtime Model Revision")?;
-    if string(model_revision, "runtime Model Revision identity")? != revision.identity().to_string()
-    {
+    let payload = list(&envelope[2], 7, "RuntimeSession payload")?;
+    let model = string(
+        tagged(&payload[0], "model-revision", "runtime Model Revision")?,
+        "runtime Model Revision identity",
+    )?;
+    if model != typed.legacy().identity().to_string() {
         return Err(KernelError::new(
             "RuntimeSession names the wrong Model Revision",
         ));
     }
-    let policy = decode_policy(tagged(&payload[1], "policy", "runtime policy")?)?;
-    let _states = array(
-        tagged(&payload[2], "states", "runtime states")?,
+    let program = ProgramRevisionId::new(
+        string(
+            tagged(&payload[1], "program-revision", "runtime ProgramRevision")?,
+            "runtime ProgramRevision identity",
+        )?
+        .into(),
+    )?;
+    if &program != typed.identity() {
+        return Err(KernelError::new(
+            "RuntimeSession names the wrong ProgramRevision",
+        ));
+    }
+    let semantics = ClauseSemanticsId::new(
+        string(
+            tagged(&payload[2], "semantics", "runtime semantics")?,
+            "runtime semantics",
+        )?
+        .to_string(),
+    )?;
+    if &semantics != typed.semantics() {
+        return Err(KernelError::new(
+            "RuntimeSession names the wrong semantics epoch",
+        ));
+    }
+    let start = SessionStartOccurrenceId::new(
+        string(
+            tagged(&payload[3], "start-occurrence", "session start occurrence")?,
+            "session start occurrence",
+        )?
+        .to_string(),
+    )?;
+    let policy = decode_policy(tagged(&payload[4], "policy", "runtime policy")?)?;
+    let states = array(
+        tagged(&payload[5], "states", "runtime states")?,
         "runtime states",
     )?;
     let inputs = array(
-        tagged(&payload[3], "inputs", "runtime inputs")?,
+        tagged(&payload[6], "inputs", "runtime inputs")?,
         "runtime inputs",
     )?
     .iter()
     .map(decode_input)
     .collect::<Result<Vec<_>>>()?;
-    let session = RuntimeSession::replay_inputs(revision, policy, inputs)?;
+    if states.len() != inputs.len() + 1 {
+        return Err(KernelError::new(
+            "runtime state/input history length mismatch",
+        ));
+    }
+    let mut steps = Vec::new();
+    for state in states.iter().skip(1) {
+        let item = list(state, 3, "state revision envelope")?;
+        let body = list(&item[2], 10, "state revision payload")?;
+        let lineage = list(
+            tagged(&body[6], "lineage", "state lineage")?,
+            5,
+            "state successor lineage",
+        )?;
+        let occurrence = TransitionOccurrenceId::new(
+            string(
+                tagged(
+                    &lineage[4],
+                    "transition-occurrence",
+                    "transition occurrence",
+                )?,
+                "transition occurrence",
+            )?
+            .to_string(),
+        )?;
+        steps.push(occurrence);
+    }
+    let replay_steps = inputs
+        .into_iter()
+        .zip(steps)
+        .map(|(input, occurrence)| ReplayStep { occurrence, input });
+    let session = RuntimeSession::replay_with_occurrences(
+        RuntimeProgramRevision {
+            program: typed.program,
+            identity: typed.identity.clone(),
+            semantics: typed.semantics.clone(),
+            legacy: typed.legacy,
+        },
+        policy,
+        start,
+        replay_steps,
+    )?;
     if session.identity != claimed || session.canonical_bytes() != bytes {
         return Err(KernelError::new(
             "RuntimeSession replay does not match its exact canonical history",
@@ -1091,7 +1423,7 @@ pub fn reload_session(bytes: &str, revision: &Revision) -> Result<RuntimeSession
 pub struct EffectLineage {
     producer: ReferentId,
     request: ReferentId,
-    input_model_revision: RevisionId,
+    input_program_revision: ProgramRevisionId,
     post_commit_state: StateRevisionId,
     authority: ReferentId,
     event: ReferentId,
@@ -1108,8 +1440,8 @@ impl EffectLineage {
         &self.request
     }
 
-    pub fn input_model_revision(&self) -> &RevisionId {
-        &self.input_model_revision
+    pub fn input_program_revision(&self) -> &ProgramRevisionId {
+        &self.input_program_revision
     }
 
     pub fn post_commit_state(&self) -> &StateRevisionId {
@@ -1471,11 +1803,11 @@ impl EffectTrace {
     /// Record a denied authorization. No adapter is accepted or invoked by
     /// this path, so denial cannot create an attempt or external effect.
     pub fn denied(
-        revision: &Revision,
+        program: &RuntimeProgramRevision<'_>,
         post_commit: &StateRevision,
         request: EffectRequest,
     ) -> Result<Self> {
-        let lineage = effect_lineage(revision, post_commit, request)?;
+        let lineage = effect_lineage(program, post_commit, request)?;
         Ok(Self::from_parts(
             Authorization::new(lineage, AuthorizationDecision::Denied),
             None,
@@ -1487,7 +1819,7 @@ impl EffectTrace {
     /// Execute one authorized adapter only after validating the exact
     /// post-commit StateRevision and its event lineage.
     pub fn attempt<F>(
-        revision: &Revision,
+        program: &RuntimeProgramRevision<'_>,
         post_commit: &StateRevision,
         request: EffectRequest,
         realize: F,
@@ -1495,7 +1827,8 @@ impl EffectTrace {
     where
         F: FnOnce(&EffectLineage) -> EffectOutcome,
     {
-        let lineage = effect_lineage(revision, post_commit, request)?;
+        let revision = program.legacy();
+        let lineage = effect_lineage(program, post_commit, request)?;
         let authorization = Authorization::new(lineage, AuthorizationDecision::Authorized);
         let attempt = Attempt::new(&authorization);
         let outcome = realize(attempt.lineage());
@@ -1578,9 +1911,10 @@ impl EffectTrace {
 /// State admission.
 pub fn reload_effect_trace(
     bytes: &str,
-    revision: &Revision,
+    program: &RuntimeProgramRevision<'_>,
     post_commit: &StateRevision,
 ) -> Result<EffectTrace> {
+    let revision = program.legacy();
     let value = JsonParser::new(bytes).parse()?;
     if json(&value) != bytes {
         return Err(KernelError::new("effect trace wire is not canonical JSON"));
@@ -1591,7 +1925,7 @@ pub fn reload_effect_trace(
     let payload = list(&envelope[2], 4, "effect trace payload")?;
     let authorization = decode_authorization(
         tagged(&payload[0], "authorization", "effect authorization")?,
-        revision,
+        program,
         post_commit,
     )?;
     let attempt = optional(
@@ -1649,35 +1983,39 @@ pub fn reload_effect_trace(
 }
 
 fn effect_lineage(
-    revision: &Revision,
+    program: &RuntimeProgramRevision<'_>,
     post_commit: &StateRevision,
     request: EffectRequest,
 ) -> Result<EffectLineage> {
+    let revision = program.legacy();
     request.validate(revision)?;
     let lineage = EffectLineage {
         producer: request.producer,
         request: request.request,
-        input_model_revision: revision.identity().clone(),
+        input_program_revision: program.identity().clone(),
         post_commit_state: post_commit.identity().clone(),
         authority: request.authority,
         event: request.event,
         phase: request.phase,
         order: request.order,
     };
-    validate_effect_lineage(&lineage, revision, post_commit)?;
+    validate_effect_lineage(&lineage, program, post_commit)?;
     Ok(lineage)
 }
 
 fn validate_effect_lineage(
     lineage: &EffectLineage,
-    revision: &Revision,
+    program: &RuntimeProgramRevision<'_>,
     post_commit: &StateRevision,
 ) -> Result<()> {
-    if lineage.input_model_revision != *revision.identity()
+    let revision = program.legacy();
+    if lineage.input_program_revision != *program.identity()
+        || post_commit.program_revision() != program.identity()
+        || post_commit.semantics() != program.semantics()
         || post_commit.model_revision() != revision.identity()
     {
         return Err(KernelError::new(
-            "effect trace names the wrong Model Revision",
+            "effect trace names the wrong ProgramRevision",
         ));
     }
     if lineage.post_commit_state != *post_commit.identity() || post_commit.predecessor().is_none() {
@@ -1716,10 +2054,10 @@ fn validate_effect_lineage(
 
 fn lineage_json(lineage: &EffectLineage) -> String {
     format!(
-        "[\"effect-lineage\",[\"producer\",\"{}\"],[\"request\",\"{}\"],[\"model-revision\",\"{}\"],[\"state-revision\",\"{}\"],[\"authority\",\"{}\"],[\"event\",\"{}\"],[\"phase\",\"{}\"],[\"order\",\"{}\"]]",
+        "[\"effect-lineage\",[\"producer\",\"{}\"],[\"request\",\"{}\"],[\"program-revision\",\"{}\"],[\"state-revision\",\"{}\"],[\"authority\",\"{}\"],[\"event\",\"{}\"],[\"phase\",\"{}\"],[\"order\",\"{}\"]]",
         lineage.producer.as_str(),
         lineage.request.as_str(),
-        lineage.input_model_revision,
+        lineage.input_program_revision,
         lineage.post_commit_state,
         lineage.authority.as_str(),
         lineage.event.as_str(),
@@ -1730,20 +2068,20 @@ fn lineage_json(lineage: &EffectLineage) -> String {
 
 fn decode_lineage(
     value: &Json,
-    revision: &Revision,
+    program: &RuntimeProgramRevision<'_>,
     post_commit: &StateRevision,
 ) -> Result<EffectLineage> {
     let item = list(value, 9, "effect lineage")?;
     require_string(&item[0], "effect-lineage", "effect lineage tag")?;
-    let model_revision = string(
-        tagged(&item[3], "model-revision", "effect Model Revision")?,
-        "effect Model Revision identity",
+    let program_revision = string(
+        tagged(&item[3], "program-revision", "effect ProgramRevision")?,
+        "effect ProgramRevision identity",
     )?;
     let state_revision = string(
         tagged(&item[4], "state-revision", "effect StateRevision")?,
         "effect StateRevision identity",
     )?;
-    if model_revision != revision.identity().to_string()
+    if program_revision != program.identity().as_str()
         || state_revision != post_commit.identity().as_str()
     {
         return Err(KernelError::new("effect trace has broken Revision lineage"));
@@ -1763,7 +2101,7 @@ fn decode_lineage(
             )?
             .into(),
         )?,
-        input_model_revision: revision.identity().clone(),
+        input_program_revision: program.identity().clone(),
         post_commit_state: post_commit.identity().clone(),
         authority: ReferentId::new(
             string(
@@ -1793,7 +2131,7 @@ fn decode_lineage(
         .parse()
         .map_err(|_| KernelError::new("invalid effect order"))?,
     };
-    validate_effect_lineage(&lineage, revision, post_commit)?;
+    validate_effect_lineage(&lineage, program, post_commit)?;
     Ok(lineage)
 }
 
@@ -1815,14 +2153,14 @@ fn authorization_json(value: &Authorization) -> String {
 
 fn decode_authorization(
     value: &Json,
-    revision: &Revision,
+    program: &RuntimeProgramRevision<'_>,
     post_commit: &StateRevision,
 ) -> Result<Authorization> {
     let item = list(value, 3, "Authorization record")?;
     require_string(&item[0], "authorization", "Authorization record tag")?;
     let claimed = AuthorizationId::new(string(&item[1], "Authorization identity")?.into())?;
     let body = list(&item[2], 2, "Authorization body")?;
-    let lineage = decode_lineage(&body[0], revision, post_commit)?;
+    let lineage = decode_lineage(&body[0], program, post_commit)?;
     let decision = match string(
         tagged(&body[1], "decision", "Authorization decision")?,
         "Authorization decision value",
@@ -2044,11 +2382,12 @@ impl StateDiff {
         successor: &StateRevision,
         revision: &Revision,
     ) -> Result<Self> {
-        if base.model_revision != successor.model_revision
+        if base.session != successor.session
+            || base.model_revision != successor.model_revision
             || base.model_revision != *revision.identity()
         {
             return Err(KernelError::new(
-                "StateDiff requires one exact Model Revision",
+                "StateDiff requires one exact RuntimeSession and Model Revision",
             ));
         }
         let occurrence_admissions = successor
@@ -2227,7 +2566,7 @@ fn admitted_occurrences(model: &Model) -> Vec<AssertionOccurrence> {
 }
 
 pub(crate) fn validate_policy(model: &Model, policy: &RuntimePolicy) -> Result<()> {
-    if !model.referents().contains_key(policy.id()) {
+    if !model.referents().contains_key(policy.referent()) {
         return Err(KernelError::new(
             "runtime policy identity is absent from the checked Model",
         ));
@@ -2599,7 +2938,7 @@ fn content_referents(content: &RelationalContent) -> Vec<ReferentId> {
 fn policy_json(policy: &RuntimePolicy) -> String {
     format!(
         "[\"reject-conflicts-v1\",\"{}\",[\"max-supports\",\"{}\"],[\"max-join-attempts\",\"{}\"]]",
-        policy.id.as_str(),
+        policy.referent.as_str(),
         policy.max_supports,
         policy.max_join_attempts
     )

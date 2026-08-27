@@ -46,6 +46,7 @@ frontend::parse
   -> explicit legacy checked-payload bridge
   -> CompiledProgram
   -> kernel::Revision { RevisionLineage, kernel::Model }
+  -> RuntimeProgramRevision { ProgramRevisionId, ClauseSemanticsId, Revision-v6 }
   -> RuntimeSession / StateRevision / generated projections
 ```
 
@@ -61,8 +62,8 @@ These names describe live code, not final semantics:
 | `kernel::Model` | current checked semantic payload container | `ProgramSnapshot` payload; it is not a model-theoretic Model |
 | `kernel::Revision` | current envelope whose ID hashes lineage and Model payload | split `ProgramSnapshot`, `ProgramChangeOccurrence`, and `ProgramRevision` identities |
 | current designation table | source mapping plus explicit ID-retention helpers | durable, lineage-aware Designation allocation and SourceMap evidence |
-| `RuntimeSession` | execution pinned to current Revision and RuntimePolicy | add RuntimeSessionId, ClauseSemanticsId, and session-start occurrence |
-| `StateRevision` | immutable state payload/history under a current Model Revision | bind exact RuntimeSession, transition occurrence, policy, semantics epoch, predecessor, and payload |
+| `RuntimeSession` | immutable runtime-v3 history pinned to ProgramRevisionId, RuntimePolicyId, ClauseSemanticsId, and an explicit session-start occurrence while retaining Revision-v6 as the semantic oracle | replace the private legacy payload bridge only when constitutional admission directly produces the executable artifact |
+| `StateRevision` | causal runtime-v3 node pinned to its session, ProgramRevision, policy, semantics epoch, predecessor, exact start/transition occurrence, and state payload | retain this identity law while future storage and migration evidence become explicit |
 
 Canonical persistence is currently `clause-semantic-v10` inside
 `clause-revision-v6`. The current `RevisionId` hashes both lineage and Model
@@ -73,8 +74,10 @@ payload, so it is neither the accepted `ProgramSnapshotId` nor the accepted
 identity-free `ProgramSnapshotCandidate`; validation performs the complete
 kernel check once and hashes one checked snapshot. An explicit private bridge
 then extracts that checked payload for unchanged Revision-v6 consumers. Typed
-admission/runtime migration, persistence, refs, lifecycle, deployment, and
-durable Designation representations remain pending.
+runtime construction validates a real ProgramRevision against that exact
+payload; generated standalone Rust carries a canonical ProgramRevision pin and
+strictly reloads the runtime-v3 history. Typed admission, persistence, refs,
+lifecycle, deployment, and durable Designation representations remain pending.
 
 This mapping is the migration contract. Code using the old names remains real
 and test-backed, but it cannot override the semantic vocabulary in the
@@ -160,8 +163,8 @@ do not prove that the Program ontology is already implemented.
 | M1–M3 | One ReferentId domain; distinct content/occurrence/Judgment structures; exact named roles; deterministic source projection; strict canonical reload; bounded recursive evaluation and source-deleted generated-Rust parity. |
 | M4 | Query holes remain scoped PatternIds; recursive correlation, projection cardinality, ordering, proof/support provenance, law-versus-derive authority, exact input Revision, bounds, and generated parity remain explicit. |
 | M5 | Migration reports every source inference and proves source/designation to stable identity to exact successor continuity. |
-| M6 | Current RuntimeSession and StateRevision replay binds exact current Revision, policy, predecessor, deltas, and ordered inputs; additions and retractions use compiled dependency/support indexes rather than generic closure scanning. |
-| M7 | Effect intent, authorization, attempt, receipt, observation, and admission remain separate; generated JavaScript must contain no shadow semantics; real target claims require matched evidence. |
+| M6 | RuntimeSession and StateRevision replay binds exact ProgramRevision, RuntimePolicy, semantics epoch, session-start and transition occurrences, session-scoped predecessor history, deltas, and ordered inputs; additions and retractions use compiled dependency/support indexes rather than generic closure scanning. |
+| M7 | Effect intent, authorization, attempt, receipt, observation, and admission remain separate; effect-trace-v2 binds ProgramRevision plus the post-commit StateRevision; generated JavaScript must contain no shadow semantics; real target claims require matched evidence. |
 | M8 | One live ontology and source grammar remain; compatibility parsers, inferred declaration kinds, stale fixtures, and shadow consumers are absent. |
 
 <!-- obligation:source-migration:fulfilled:M5:test=m5_migration -->
@@ -189,15 +192,16 @@ of those capabilities currently exist.
 `derive::saturate` remains the bounded reference oracle. The M6 runtime uses
 compiled relation/rule and occurrence-root reverse indexes, semi-naive support
 addition, and occurrence-exact affected-support retraction. Authored legacy
-events, strict replay, canonical state history, and source-deleted generated
-Rust share the current frozen wire.
+events, strict runtime-v3 replay, causal canonical state history,
+ProgramRevision-bound effect evidence, and source-deleted generated Rust share
+the frozen semantic-v10 / Revision-v6 oracle without reusing its ID as
+constitutional program identity.
 
 The Program identity/history foundation, identity/parity oracle, consumer
-census, SourceMap split, and typed elaboration boundary are complete. The
-current release edge is the identity-free ProgramSnapshot candidate and
-single-pass checked snapshot boundary. The next edge gives RuntimeSession and
-StateRevision immutable policy-, semantics-, and occurrence-pinned identities;
-surface migration resumes from that corrected runtime boundary.
+census, SourceMap split, typed elaboration boundary, checked-snapshot boundary,
+and runtime identity v3 are complete. The next edge is rebuilding the canonical
+agent-first surface on that corrected runtime boundary, followed by the live
+generated host, applications, and empirical comparison.
 
 ## Running the gate
 

@@ -182,19 +182,22 @@ ProgramChangeOccurrence, and explicit designation retention.
 
 **Status:** Implemented.
 
-The current runtime implements RuntimePolicy, immutable StateRevision,
-RuntimeSession, authored legacy events, transaction-wide matching and guards,
-deterministic conflict rejection, exact deltas, state diff, deterministic
-replay, and source-deleted generated Rust through the same runtime API.
+The runtime-v3 boundary implements content-derived RuntimePolicyId, immutable
+RuntimeSessionId, causal StateRevisionId, authored legacy events,
+transaction-wide matching and guards, deterministic conflict rejection, exact
+deltas, session-scoped state diff, occurrence-pinned replay, strict typed
+reload, and source-deleted generated Rust through the same runtime API.
 
 Additions use compiled relation/rule dependency indexes and retractions use
 occurrence-root reverse support indexes. The state hot path does not delegate
 to the generic reference closure.
 
-The accepted runtime migration still must add RuntimeSessionId,
-ClauseSemanticsId, session-start and TransitionOccurrence identity, and exact
-ProgramRevision binding. Equal state payloads in different sessions or causal
-histories must not collapse.
+Runtime construction requires a real ProgramRevision whose checked snapshot
+matches the frozen Revision-v6 semantic oracle. Session identity binds the
+ProgramRevision, complete RuntimePolicy, semantics epoch, and caller-allocated
+start occurrence; every state binds that session, predecessor, exact causal
+occurrence, and state payload. Equal logical state reached through distinct
+occurrences does not collapse, and old runtime envelopes fail closed.
 
 **Evidence:** `m6_replay`, runtime unit tests, canonical state reload, conflict,
 tamper, diff, and generated replay checks.
@@ -205,15 +208,17 @@ tamper, diff, and generated replay checks.
 
 Implemented checkpoints:
 
-- EffectRequest, authorization, attempt, receipt, observation, and trace
-  records remain distinct in current runtime evidence.
+- EffectRequest, authorization, attempt, receipt, observation, and
+  `clause-effect-trace-v2` records remain distinct; the lineage names the exact
+  ProgramRevision and post-commit StateRevision.
 - A typed projector reads only supported grounded StateRevision content and
   emits exact F32×2 RenderItems under an explicit relation/role/shape spec.
-- RenderPlan has canonical `clause-render-plan-v1` bytes bound to exact current
-  Revision and StateRevision identities.
+- RenderPlan has canonical `clause-render-plan-v2` bytes bound to exact
+  ProgramRevision and StateRevision identities.
 - Rust emits import-free frozen ESM containing exact-state RenderPlan lookups;
   a Bun source-deletion test compares its JSON bytes with Rust.
 - The provisional host validates plans before applying mesh positions,
+  requires caller-owned event and transition occurrence allocation,
   mechanically forwards declared event/effect requests, and owns browser
   lifecycle rather than Clause semantics.
 
@@ -307,10 +312,11 @@ derived current views.
 SourceMap and ElaborationContext are split, and elaboration now produces an
 identity-free ProgramSnapshotCandidate consumed by single-pass validation.
 Validation has no contextual inputs, so no ceremonial ValidationContext is
-present. Add AdmissionContext only when admission accepts Program lineage, base
-revision, authority, policy, and occurrence allocation and returns the typed
-history artifacts. Then bind RuntimeSession and StateRevision to exact program,
-policy, semantics, session-start, and transition-occurrence identities.
+present. RuntimeSession and StateRevision now bind exact program, policy,
+semantics, session-start, and transition-occurrence identities through
+RuntimeProgramRevision and runtime-v3 wire. Add AdmissionContext only when
+admission accepts Program lineage, base revision, authority, policy, and
+occurrence allocation and returns those typed history artifacts directly.
 Program migration creates explicit evidence and a new session.
 
 ### 6. Canonical surface rebuild

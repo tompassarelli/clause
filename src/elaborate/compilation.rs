@@ -13,7 +13,7 @@ use crate::{
         SemanticAtom, StructuralContract, StructuralFailureClass, StructuralForm, Term, Transition,
         UniversalLaw,
     },
-    runtime::{RuntimePolicy, RuntimeSession, TransitionEvent},
+    runtime::{ReplayStep, RuntimePolicy, RuntimeSession, SessionStartOccurrenceId},
     wire,
 };
 
@@ -310,6 +310,7 @@ impl ElaborationContext {
 #[derive(Clone, Debug)]
 pub struct RuntimeJourney {
     revision: kernel::Revision,
+    program_revision: Option<kernel::ProgramRevision>,
 }
 
 impl RuntimeJourney {
@@ -317,12 +318,35 @@ impl RuntimeJourney {
         &self.revision
     }
 
-    pub fn replay(
+    /// Bind an explicitly admitted constitutional ProgramRevision to this
+    /// legacy Revision for runtime execution. The compiler never synthesizes
+    /// this admission.
+    pub fn bind_program_revision(
+        mut self,
+        program: kernel::ProgramRevision,
+    ) -> kernel::Result<Self> {
+        crate::runtime::RuntimeProgramRevision::new(&program, &self.revision)?;
+        self.program_revision = Some(program);
+        Ok(self)
+    }
+
+    pub fn program_revision(&self) -> Option<&kernel::ProgramRevision> {
+        self.program_revision.as_ref()
+    }
+
+    pub fn replay_with_occurrences(
         &self,
         policy: RuntimePolicy,
-        ticks: impl IntoIterator<Item = Vec<TransitionEvent>>,
+        start: SessionStartOccurrenceId,
+        steps: impl IntoIterator<Item = ReplayStep>,
     ) -> kernel::Result<RuntimeSession> {
-        RuntimeSession::replay(&self.revision, policy, ticks)
+        let Some(program) = self.program_revision.as_ref() else {
+            return Err(kernel::KernelError::new(
+                "RuntimeJourney requires an explicitly bound ProgramRevision",
+            ));
+        };
+        let typed = crate::runtime::RuntimeProgramRevision::new(program, &self.revision)?;
+        RuntimeSession::replay_with_occurrences(typed, policy, start, steps)
     }
 }
 
@@ -507,7 +531,10 @@ fn compile_named(
             let revision = revisions.get(&model).cloned().ok_or_else(|| {
                 kernel::KernelError::new("event Model has no compiled root Revision")
             })?;
-            Ok(RuntimeJourney { revision })
+            Ok(RuntimeJourney {
+                revision,
+                program_revision: None,
+            })
         })
         .collect::<kernel::Result<Vec<_>>>()?;
     Ok(CompiledProgram {

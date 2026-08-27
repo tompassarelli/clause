@@ -22,9 +22,9 @@ pub fn emit_render_plan_javascript(plans: &[RenderPlan]) -> Result<String> {
     };
     let mut states = std::collections::BTreeSet::new();
     for plan in plans {
-        if plan.model_revision() != first.model_revision() {
+        if plan.program_revision() != first.program_revision() {
             return Err(KernelError::new(
-                "generated JavaScript RenderPlans must name one Model Revision",
+                "generated JavaScript RenderPlans must name one ProgramRevision",
             ));
         }
         if !states.insert(plan.state_revision()) {
@@ -37,13 +37,13 @@ pub fn emit_render_plan_javascript(plans: &[RenderPlan]) -> Result<String> {
     let mut output = String::new();
     writeln!(
         output,
-        "export const kind = \"clause-render-plan-javascript-v1\";"
+        "export const kind = \"clause-render-plan-javascript-v2\";"
     )
     .expect("writing generated JavaScript to a String cannot fail");
     writeln!(
         output,
-        "export const revisionId = {:?};",
-        first.model_revision().to_string()
+        "export const programRevisionId = {:?};",
+        first.program_revision().as_str()
     )
     .expect("writing generated JavaScript to a String cannot fail");
     for (index, plan) in plans.iter().enumerate() {
@@ -62,8 +62,8 @@ pub fn emit_render_plan_javascript(plans: &[RenderPlan]) -> Result<String> {
     }
     writeln!(output, "}});").expect("writing generated JavaScript to a String cannot fail");
     output.push_str(
-        "export function renderPlan(stateRevisionId, requestedRevisionId = revisionId) {\n\
-         \x20 if (requestedRevisionId !== revisionId) throw new Error(\"render plan names the wrong Model Revision\");\n\
+        "export function renderPlan(stateRevisionId, requestedProgramRevisionId = programRevisionId) {\n\
+         \x20 if (requestedProgramRevisionId !== programRevisionId) throw new Error(\"render plan names the wrong ProgramRevision\");\n\
          \x20 const plan = plans[stateRevisionId];\n\
          \x20 if (plan === undefined) throw new Error(\"unknown exact StateRevision\");\n\
          \x20 return plan;\n\
@@ -77,8 +77,8 @@ fn frozen_plan_source(plan: &RenderPlan) -> String {
     frozen_array(&[
         format!("{:?}", crate::render::RENDER_PLAN_TAG),
         frozen_array(&[
-            "\"model-revision\"".to_owned(),
-            format!("{:?}", plan.model_revision().to_string()),
+            "\"program-revision\"".to_owned(),
+            format!("{:?}", plan.program_revision().as_str()),
         ]),
         frozen_array(&[
             "\"state-revision\"".to_owned(),
@@ -427,7 +427,8 @@ pub fn emit_evaluation_rust(
 pub fn emit_runtime_rust(
     journey: &crate::elaborate::RuntimeJourney,
     policy: crate::runtime::RuntimePolicy,
-    ticks: Vec<Vec<crate::runtime::TransitionEvent>>,
+    start: crate::runtime::SessionStartOccurrenceId,
+    steps: Vec<crate::runtime::ReplayStep>,
 ) -> Result<String> {
     if journey.revision().predecessor().is_some() {
         return Err(KernelError::new(
@@ -437,30 +438,61 @@ pub fn emit_runtime_rust(
     crate::runtime::validate_policy(journey.revision().model(), &policy)?;
     let modules = target_neutral_modules(true)?;
     let revision = wire::serialize(journey.revision());
-    let ticks = ticks
+    let steps = steps
         .iter()
-        .map(|tick| {
-            format!(
-                "vec![{}]",
-                tick.iter().map(event_source).collect::<Vec<_>>().join(",")
-            )
+        .map(|step| {
+            let crate::runtime::RuntimeInput::Events(events) = &step.input else {
+                return Err(KernelError::new(
+                    "generated runtime currently requires event replay steps",
+                ));
+            };
+            Ok(format!(
+                "runtime::ReplayStep {{ occurrence: runtime::TransitionOccurrenceId::new({:?}.into()).expect(\"sealed transition occurrence reloads\"), input: runtime::RuntimeInput::Events(vec![{}]) }}",
+                step.occurrence.as_str(),
+                events.iter().map(event_source).collect::<Vec<_>>().join(",")
+            ))
         })
-        .collect::<Vec<_>>()
+        .collect::<Result<Vec<_>>>()?
         .join(",");
     let policy = format!(
-        "runtime::RuntimePolicy::new({}, {}, {}).expect(\"checked runtime policy reloads\")",
-        relation_source(policy.id()),
+        "runtime::RuntimePolicy::new(kernel::ReferentId::new({:?}.into()).expect(\"checked policy referent\"), {}, {}).expect(\"checked runtime policy reloads\")",
+        policy.referent().as_str(),
         policy.max_supports(),
         policy.max_join_attempts(),
     );
+    let Some(program) = journey.program_revision() else {
+        return Err(KernelError::new(
+            "generated runtime requires bound ProgramRevision",
+        ));
+    };
+    let pin = crate::runtime::ProgramRevisionPin::from_revision(program);
+    let predecessor = pin
+        .predecessor
+        .as_ref()
+        .map(|identity| {
+            format!(
+                "Some(kernel::ProgramRevisionId::new({:?}.into()).expect(\"sealed predecessor ProgramRevision identity reloads\"))",
+                identity.as_str()
+            )
+        })
+        .unwrap_or_else(|| "None".to_owned());
     let body = format!(
         "let revision = wire::reload({revision:?}).expect(\"sealed runtime Revision reloads\");\n\
+         let pin = runtime::ProgramRevisionPin {{ identity: kernel::ProgramRevisionId::new({:?}.into()).expect(\"sealed ProgramRevision identity reloads\"), program: kernel::ProgramId::from_referent(kernel::ReferentId::new({:?}.into()).expect(\"sealed Program identity reloads\")), semantics: kernel::ClauseSemanticsId::new({:?}.into()).expect(\"sealed semantics reloads\"), predecessor: {predecessor}, snapshot: kernel::ProgramSnapshotId::new({:?}.into()).expect(\"sealed snapshot identity reloads\"), change_occurrence: kernel::ProgramChangeOccurrenceId::from_referent(kernel::ReferentId::new({:?}.into()).expect(\"sealed change occurrence reloads\")) }};\n\
+         let typed = runtime::RuntimeProgramRevision::from_pin(&revision, pin.clone()).expect(\"validated ProgramRevision pin\");\n\
          let policy = {policy};\n\
-         let session = runtime::RuntimeSession::replay(&revision, policy, vec![{ticks}]).expect(\"authored runtime journey replays\");\n\
+         let session = runtime::RuntimeSession::replay_with_occurrences(typed, policy, runtime::SessionStartOccurrenceId::new({:?}.into()).expect(\"sealed session start reloads\"), vec![{steps}]).expect(\"authored runtime journey replays\");\n\
          let _diffs = session.states().windows(2).map(|states| runtime::StateDiff::between(&states[0], &states[1], &revision).expect(\"generated runtime state diff is checked\")).collect::<Vec<_>>();\n\
          let canonical = session.canonical_bytes();\n\
-         let replayed = runtime::reload_session(&canonical, &revision).expect(\"generated runtime history strictly reloads\");\n\
-         print!(\"{{}}\", replayed.canonical_bytes());"
+         let typed = runtime::RuntimeProgramRevision::from_pin(&revision, pin).expect(\"validated ProgramRevision pin reloads\");\n\
+         let replayed = runtime::reload_session_with_program(&canonical, &typed).expect(\"generated runtime history strictly reloads\");\n\
+         print!(\"{{}}\", replayed.canonical_bytes());",
+        pin.identity.as_str(),
+        pin.program.as_str(),
+        pin.semantics.as_str(),
+        pin.snapshot.as_str(),
+        pin.change_occurrence.as_str(),
+        start.as_str()
     );
     Ok(format!("{modules}\nfn main() {{ {body} }}"))
 }

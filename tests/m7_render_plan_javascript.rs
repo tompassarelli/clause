@@ -9,9 +9,17 @@ use std::{
 
 use clause::{
     elaborate, frontend, generated,
-    kernel::{FiniteF32, ReferentId, Term},
+    kernel::{
+        ClauseSemanticsId, FiniteF32, ProgramChangeOccurrence, ProgramChangeOccurrenceId,
+        ProgramDelta, ProgramId, ProgramRevision, ReferentId, Term,
+    },
     render::{RenderItem, RenderPlan, reload_render_plan},
-    runtime::{RuntimePolicy, RuntimeSession, TransitionEvent, reload_session},
+    runtime::{
+        ReplayStep, RuntimeInput, RuntimePolicy, RuntimeProgramRevision, RuntimeSession,
+        SessionStartOccurrenceId, TransitionEvent, TransitionOccurrenceId,
+        reload_session_with_program,
+    },
+    wire,
 };
 
 const ONE_COIN_SOURCE: &str = "Entity\nState\nOwner\nPolicy\n\ncoin/state: RelationShape\n  {coin: Entity} state {state: State}\n  mode coin -> state: one\n\ncoin/owner: RelationShape\n  {coin: Entity} owner {owner: Owner}\n  mode coin -> owner: one\n\ngame\n  coin ∈ Entity\n  active ∈ State\n  collected ∈ State\n  player ∈ Owner\n  collector ∈ Owner\n  replay-policy ∈ Policy\n  coin state active\n  coin owner player\n\non collect ?actor\n  ?coin state active ~>\n    ?coin state collected\n  if\n    ?coin owner ?actor\n  ?coin owner ?actor ~>\n    ?coin owner collector\n";
@@ -43,6 +51,43 @@ fn sorted_items(mut items: Vec<RenderItem>) -> Vec<RenderItem> {
     items
 }
 
+fn admitted(revision: &clause::kernel::Revision, seed: u8) -> ProgramRevision {
+    let semantics = ClauseSemanticsId::current();
+    let program = ProgramId::from_referent(revision.model().id().clone());
+    let snapshot = wire::program_snapshot(revision.model().clone(), semantics.clone());
+    let change = ProgramChangeOccurrence::new(
+        ProgramChangeOccurrenceId::from_referent(ReferentId::from_digest([seed; 32])),
+        semantics,
+        program.clone(),
+        None,
+        snapshot.identity().clone(),
+        ProgramDelta::new(
+            snapshot.checked_payload().atoms().into_iter().collect(),
+            vec![],
+        )
+        .unwrap(),
+        ReferentId::from_digest([seed.wrapping_add(1); 32]),
+        vec![ReferentId::from_digest([seed.wrapping_add(2); 32])],
+    )
+    .unwrap();
+    ProgramRevision::constitute_root(program, snapshot, &change).unwrap()
+}
+
+fn runtime_revision<'a>(
+    program: &'a ProgramRevision,
+    revision: &'a clause::kernel::Revision,
+) -> RuntimeProgramRevision<'a> {
+    RuntimeProgramRevision::new(program, revision).unwrap()
+}
+
+fn start_id(seed: u8) -> SessionStartOccurrenceId {
+    SessionStartOccurrenceId::from_digest([seed; 32])
+}
+
+fn transition_id(seed: u8) -> TransitionOccurrenceId {
+    TransitionOccurrenceId::from_digest([seed; 32])
+}
+
 #[test]
 fn exact_state_plans_emit_frozen_source_deleted_esm_and_reconcile_totally() {
     let source = temporary("clause");
@@ -52,10 +97,16 @@ fn exact_state_plans_emit_frozen_source_deleted_esm_and_reconcile_totally() {
     let authored = fs::read_to_string(&source).expect("one-coin Clause source reads");
     let compiled = elaborate::compile(frontend::parse(&authored).expect("Clause source parses"))
         .expect("Clause source elaborates");
-    let [journey] = compiled.runtime_journeys() else {
+    let [journey_ref] = compiled.runtime_journeys() else {
         panic!("one authored event Model produces one runtime journey");
     };
+    let journey = journey_ref
+        .clone()
+        .bind_program_revision(admitted(journey_ref.revision(), 0xe1))
+        .unwrap();
     let revision = journey.revision();
+    let program = journey.program_revision().unwrap();
+    let typed = runtime_revision(program, revision);
     let model = revision.model();
     let event = compiled
         .designations()
@@ -80,21 +131,35 @@ fn exact_state_plans_emit_frozen_source_deleted_esm_and_reconcile_totally() {
         vec![Term::referent(player.clone())],
     );
     let session = journey
-        .replay(policy.clone(), [vec![input.clone()]])
+        .replay_with_occurrences(
+            policy.clone(),
+            start_id(1),
+            [ReplayStep {
+                occurrence: transition_id(1),
+                input: RuntimeInput::Events(vec![input.clone()]),
+            }],
+        )
         .expect("one collection commits through Clause runtime semantics");
     let replay = journey
-        .replay(policy.clone(), [vec![input]])
+        .replay_with_occurrences(
+            policy.clone(),
+            start_id(1),
+            [ReplayStep {
+                occurrence: transition_id(1),
+                input: RuntimeInput::Events(vec![input]),
+            }],
+        )
         .expect("the same accepted event log deterministically replays");
     assert_eq!(session.canonical_bytes(), replay.canonical_bytes());
     assert_eq!(
-        reload_session(&session.canonical_bytes(), revision).unwrap(),
+        reload_session_with_program(&session.canonical_bytes(), &typed).unwrap(),
         session
     );
 
     let initial = &session.states()[0];
     let collected = session.latest();
     let initial_plan = RenderPlan::new(
-        revision,
+        &typed,
         initial,
         sorted_items(vec![
             RenderItem::new(player.clone(), position(0.0, 0.0)).unwrap(),
@@ -103,17 +168,17 @@ fn exact_state_plans_emit_frozen_source_deleted_esm_and_reconcile_totally() {
     )
     .expect("initial total desired scene is state-bound");
     let collected_plan = RenderPlan::new(
-        revision,
+        &typed,
         collected,
         vec![RenderItem::new(player.clone(), position(10.0, 0.0)).unwrap()],
     )
     .expect("collected total desired scene omits the coin");
     assert_eq!(
-        reload_render_plan(&initial_plan.canonical_bytes(), revision, initial).unwrap(),
+        reload_render_plan(&initial_plan.canonical_bytes(), &typed, initial).unwrap(),
         initial_plan
     );
     assert_eq!(
-        reload_render_plan(&collected_plan.canonical_bytes(), revision, collected).unwrap(),
+        reload_render_plan(&collected_plan.canonical_bytes(), &typed, collected).unwrap(),
         collected_plan
     );
 
@@ -162,7 +227,7 @@ fn exact_state_plans_emit_frozen_source_deleted_esm_and_reconcile_totally() {
         )
         .replace(
             "__REVISION__",
-            &format!("{:?}", revision.identity().to_string()),
+            &format!("{:?}", program.identity().as_str()),
         )
         .replace("__PLAYER__", &format!("{:?}", player.as_str()))
         .replace("__COIN__", &format!("{:?}", coin.as_str()));
@@ -197,10 +262,16 @@ fn render_plan_admission_and_emission_reject_wrong_noncanonical_or_tampered_data
         frontend::parse(ONE_COIN_SOURCE).expect("one-coin Clause source parses"),
     )
     .expect("one-coin Clause source elaborates");
-    let [journey] = compiled.runtime_journeys() else {
+    let [journey_ref] = compiled.runtime_journeys() else {
         panic!("one authored event Model produces one runtime journey");
     };
+    let journey = journey_ref
+        .clone()
+        .bind_program_revision(admitted(journey_ref.revision(), 0xe4))
+        .unwrap();
     let revision = journey.revision();
+    let program = journey.program_revision().unwrap();
+    let typed = runtime_revision(program, revision);
     let model = revision.model();
     let player = compiled
         .designations()
@@ -219,22 +290,26 @@ fn render_plan_admission_and_emission_reject_wrong_noncanonical_or_tampered_data
         .scoped(model.id(), "collect")
         .expect("collect event is designated");
     let policy = RuntimePolicy::new(policy_id, 128, 512).unwrap();
-    let root = RuntimeSession::start(revision, policy.clone()).unwrap();
+    let root = RuntimeSession::start_with_occurrence(&typed, policy.clone(), start_id(2)).unwrap();
     let state = root.latest();
     let different_state = journey
-        .replay(
+        .replay_with_occurrences(
             policy,
-            [vec![TransitionEvent::new(
-                ReferentId::from_digest([0xf1; 32]),
-                event,
-                vec![Term::referent(player.clone())],
-            )]],
+            start_id(3),
+            [ReplayStep {
+                occurrence: transition_id(3),
+                input: RuntimeInput::Events(vec![TransitionEvent::new(
+                    ReferentId::from_digest([0xf1; 32]),
+                    event,
+                    vec![Term::referent(player.clone())],
+                )]),
+            }],
         )
         .unwrap();
     let player_item = RenderItem::new(player, position(0.0, -0.0)).unwrap();
     let coin_item = RenderItem::new(coin, position(10.0, 0.0)).unwrap();
     let plan = RenderPlan::new(
-        revision,
+        &typed,
         state,
         sorted_items(vec![player_item.clone(), coin_item.clone()]),
     )
@@ -244,7 +319,7 @@ fn render_plan_admission_and_emission_reject_wrong_noncanonical_or_tampered_data
     assert!(FiniteF32::from_f32(f32::INFINITY).is_err());
     assert!(
         RenderPlan::new(
-            revision,
+            &typed,
             state,
             vec![player_item.clone(), player_item.clone()]
         )
@@ -252,33 +327,35 @@ fn render_plan_admission_and_emission_reject_wrong_noncanonical_or_tampered_data
     );
     let mut noncanonical_items = sorted_items(vec![player_item.clone(), coin_item.clone()]);
     noncanonical_items.reverse();
-    assert!(RenderPlan::new(revision, state, noncanonical_items).is_err());
+    assert!(RenderPlan::new(&typed, state, noncanonical_items).is_err());
     let unknown = RenderItem::new(ReferentId::from_digest([0xfe; 32]), position(0.0, 0.0)).unwrap();
-    assert!(RenderPlan::new(revision, state, vec![unknown]).is_err());
+    assert!(RenderPlan::new(&typed, state, vec![unknown]).is_err());
 
     let wrong_model = plan.canonical_bytes().replacen(
-        &revision.identity().to_string(),
-        &format!("rev-sha256-{}", "0".repeat(64)),
+        program.identity().as_str(),
+        &format!("program-revision-sha256-{}", "0".repeat(64)),
         1,
     );
-    assert!(reload_render_plan(&wrong_model, revision, state).is_err());
+    assert!(reload_render_plan(&wrong_model, &typed, state).is_err());
     let wrong_state = plan.canonical_bytes().replacen(
         state.identity().as_str(),
         &format!("state-sha256-{}", "0".repeat(64)),
         1,
     );
-    assert!(reload_render_plan(&wrong_state, revision, state).is_err());
+    assert!(reload_render_plan(&wrong_state, &typed, state).is_err());
+    let old_envelope =
+        plan.canonical_bytes()
+            .replacen("clause-render-plan-v2", "clause-render-plan-v1", 1);
+    assert!(reload_render_plan(&old_envelope, &typed, state).is_err());
     let tampered_bits = plan
         .canonical_bytes()
         .replacen("\"00000000\"", "\"7f800000\"", 1);
-    assert!(reload_render_plan(&tampered_bits, revision, state).is_err());
+    assert!(reload_render_plan(&tampered_bits, &typed, state).is_err());
     assert!(
-        reload_render_plan(&(" ".to_owned() + &plan.canonical_bytes()), revision, state).is_err()
+        reload_render_plan(&(" ".to_owned() + &plan.canonical_bytes()), &typed, state).is_err()
     );
 
-    assert!(
-        reload_render_plan(&plan.canonical_bytes(), revision, different_state.latest()).is_err()
-    );
+    assert!(reload_render_plan(&plan.canonical_bytes(), &typed, different_state.latest()).is_err());
 
     assert!(generated::emit_render_plan_javascript(&[]).is_err());
     assert!(generated::emit_render_plan_javascript(&[plan.clone(), plan.clone()]).is_err());
@@ -287,24 +364,30 @@ fn render_plan_admission_and_emission_reject_wrong_noncanonical_or_tampered_data
     let other_compiled =
         elaborate::compile(frontend::parse(&other_source).expect("distinct Model source parses"))
             .expect("distinct Model source elaborates");
-    let [other_journey] = other_compiled.runtime_journeys() else {
+    let [other_journey_ref] = other_compiled.runtime_journeys() else {
         panic!("distinct Model retains one runtime journey");
     };
+    let other_journey = other_journey_ref
+        .clone()
+        .bind_program_revision(admitted(other_journey_ref.revision(), 0xe7))
+        .unwrap();
+    let other_program = other_journey.program_revision().unwrap();
+    let other_typed = runtime_revision(other_program, other_journey.revision());
     let other_policy = other_compiled
         .designations()
         .scoped(other_journey.revision().model().id(), "replay-policy")
         .expect("distinct Model policy is designated");
-    let other_session = RuntimeSession::start(
-        other_journey.revision(),
+    let other_session = RuntimeSession::start_with_occurrence(
+        &other_typed,
         RuntimePolicy::new(other_policy, 128, 512).unwrap(),
+        start_id(4),
     )
     .unwrap();
     assert!(
-        RenderPlan::new(revision, other_session.latest(), Vec::new()).is_err(),
+        RenderPlan::new(&typed, other_session.latest(), Vec::new()).is_err(),
         "a StateRevision from another Model must fail closed"
     );
-    let other_plan =
-        RenderPlan::new(other_journey.revision(), other_session.latest(), Vec::new()).unwrap();
+    let other_plan = RenderPlan::new(&other_typed, other_session.latest(), Vec::new()).unwrap();
     assert!(generated::emit_render_plan_javascript(&[plan, other_plan]).is_err());
 }
 
@@ -316,12 +399,12 @@ const initialExpected = __INITIAL_PLAN__;
 const collectedExpected = __COLLECTED_PLAN__;
 const initialState = __INITIAL_STATE__;
 const collectedState = __COLLECTED_STATE__;
-const revisionId = __REVISION__;
+const programRevisionId = __REVISION__;
 const playerId = __PLAYER__;
 const coinId = __COIN__;
 
-const initial = renderPlanFor(artifact, initialState, revisionId);
-const collected = renderPlanFor(artifact, collectedState, revisionId);
+const initial = renderPlanFor(artifact, initialState, programRevisionId);
+const collected = renderPlanFor(artifact, collectedState, programRevisionId);
 if (JSON.stringify(initial) !== JSON.stringify(initialExpected)) throw new Error("initial Rust/JS RenderPlan bytes differ");
 if (JSON.stringify(collected) !== JSON.stringify(collectedExpected)) throw new Error("collected Rust/JS RenderPlan bytes differ");
 if (!Object.isFrozen(artifact.renderPlan(initialState))) throw new Error("generated plan is not frozen");
@@ -339,7 +422,7 @@ class Mesh {
 }
 const THREE = { Mesh, BoxGeometry: Geometry, CylinderGeometry: Geometry, MeshBasicMaterial: Material };
 const scene = { add() {}, remove() {} };
-const binding = createTwoMeshBinding(THREE, scene, { revisionId, playerId, coinId });
+const binding = createTwoMeshBinding(THREE, scene, { programRevisionId, playerId, coinId });
 binding.apply(initial);
 binding.apply(collected);
 binding.apply(collected);
@@ -350,11 +433,11 @@ const snapshot = JSON.stringify({ player: [binding.meshes.player.position.x, bin
 const unknownId = `ref-sha256-${"f".repeat(64)}`;
 const movedPlayer = ["item", playerId, ["position-f32x2", "41a00000", "00000000"]];
 const unknown = ["item", unknownId, ["position-f32x2", "00000000", "00000000"]];
-const invalid = ["clause-render-plan-v1", ["model-revision", revisionId], ["state-revision", collectedState], ["items", [movedPlayer, unknown].sort((left, right) => left[1].localeCompare(right[1]))]];
+const invalid = ["clause-render-plan-v2", ["program-revision", programRevisionId], ["state-revision", collectedState], ["items", [movedPlayer, unknown].sort((left, right) => left[1].localeCompare(right[1]))]];
 let rejected = false;
 try { binding.apply(invalid); } catch { rejected = true; }
 if (!rejected || JSON.stringify({ player: [binding.meshes.player.position.x, binding.meshes.player.position.y, binding.meshes.player.position.z, binding.meshes.player.visible], coin: [binding.meshes.coin.position.x, binding.meshes.coin.position.y, binding.meshes.coin.position.z, binding.meshes.coin.visible] }) !== snapshot) throw new Error("unknown item mutated a mesh before rejection");
-const duplicate = ["clause-render-plan-v1", ["model-revision", revisionId], ["state-revision", collectedState], ["items", [movedPlayer, movedPlayer]]];
+const duplicate = ["clause-render-plan-v2", ["program-revision", programRevisionId], ["state-revision", collectedState], ["items", [movedPlayer, movedPlayer]]];
 rejected = false;
 try { binding.apply(duplicate); } catch { rejected = true; }
 if (!rejected || JSON.stringify({ player: [binding.meshes.player.position.x, binding.meshes.player.position.y, binding.meshes.player.position.z, binding.meshes.player.visible], coin: [binding.meshes.coin.position.x, binding.meshes.coin.position.y, binding.meshes.coin.position.z, binding.meshes.coin.visible] }) !== snapshot) throw new Error("duplicate item mutated a mesh before rejection");

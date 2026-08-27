@@ -11,14 +11,17 @@ use std::{
 use clause::{
     elaborate, frontend, generated,
     kernel::{
-        AssertionOccurrence, DerivationRule, Judgment, JudgmentKind, JudgmentStatus,
-        JudgmentTarget, Model, Pattern, PatternId, Referent, ReferentId, RelationShape,
-        RelationalContent, Role, RoleId, Term, UniversalLaw,
+        AssertionOccurrence, ClauseSemanticsId, DerivationRule, Judgment, JudgmentKind,
+        JudgmentStatus, JudgmentTarget, Model, Pattern, PatternId, ProgramChangeOccurrence,
+        ProgramChangeOccurrenceId, ProgramDelta, ProgramId, ProgramRevision, Referent, ReferentId,
+        RelationShape, RelationalContent, Role, RoleId, Term, UniversalLaw,
     },
     runtime::{
-        AuthorizationDecision, EffectOutcome, EffectRequest, EffectTrace, Presence, ReceiptOutcome,
-        RuntimeInput, RuntimePolicy, RuntimeSession, StateDelta, StateDiff, TransitionEvent,
-        reload_effect_request, reload_effect_trace, reload_session,
+        AuthorizationDecision, EffectOutcome, EffectRequest, EffectTrace, Presence,
+        ProgramRevisionPin, ReceiptOutcome, ReplayStep, RuntimeInput, RuntimePolicy,
+        RuntimeProgramRevision, RuntimeSession, SessionStartOccurrenceId, StateDelta, StateDiff,
+        TransitionEvent, TransitionOccurrenceId, reload_effect_request, reload_effect_trace,
+        reload_session_with_program,
     },
     wire,
 };
@@ -247,6 +250,69 @@ fn fixture() -> clause::kernel::Revision {
     wire::admit(model)
 }
 
+fn admitted(revision: &clause::kernel::Revision) -> ProgramRevision {
+    admitted_with(
+        revision,
+        ClauseSemanticsId::current(),
+        ProgramId::from_referent(revision.model().id().clone()),
+        240,
+    )
+}
+
+fn admitted_with(
+    revision: &clause::kernel::Revision,
+    semantics: ClauseSemanticsId,
+    program: ProgramId,
+    change_seed: u8,
+) -> ProgramRevision {
+    let snapshot = wire::program_snapshot(revision.model().clone(), semantics.clone());
+    let atoms = snapshot.checked_payload().atoms().into_iter().collect();
+    let delta = ProgramDelta::new(atoms, vec![]).unwrap();
+    let change = ProgramChangeOccurrence::new(
+        ProgramChangeOccurrenceId::from_referent(referent(change_seed)),
+        semantics,
+        program.clone(),
+        None,
+        snapshot.identity().clone(),
+        delta,
+        referent(change_seed.wrapping_add(1)),
+        vec![referent(change_seed.wrapping_add(2))],
+    )
+    .unwrap();
+    ProgramRevision::constitute_root(program, snapshot, &change).unwrap()
+}
+
+fn successor_admitted(revision: &clause::kernel::Revision) -> ProgramRevision {
+    let root = admitted(revision);
+    let snapshot = root.snapshot().clone();
+    let change = ProgramChangeOccurrence::new(
+        ProgramChangeOccurrenceId::from_referent(referent(243)),
+        root.semantics().clone(),
+        root.program().clone(),
+        Some(root.identity().clone()),
+        snapshot.identity().clone(),
+        ProgramDelta::new(Vec::new(), Vec::new()).unwrap(),
+        referent(244),
+        vec![referent(245)],
+    )
+    .unwrap();
+    ProgramRevision::constitute_successor(&root, snapshot, &change).unwrap()
+}
+
+fn typed(revision: &clause::kernel::Revision) -> RuntimeProgramRevision<'_> {
+    // Leaked fixtures keep the typed adapter alive for the test call.
+    let program = Box::leak(Box::new(admitted(revision)));
+    RuntimeProgramRevision::new(program, revision).unwrap()
+}
+
+fn start_id(n: u8) -> SessionStartOccurrenceId {
+    SessionStartOccurrenceId::from_digest([n; 32])
+}
+
+fn transition_id(n: u8) -> TransitionOccurrenceId {
+    TransitionOccurrenceId::from_digest([n; 32])
+}
+
 fn policy() -> RuntimePolicy {
     RuntimePolicy::new(referent(POLICY), 128, 512).unwrap()
 }
@@ -274,12 +340,19 @@ fn occurrence_exact_incremental_replay_is_canonical_and_rejects_tampering() {
     let first_delta = replacement_delta(ACTIVE_ONE, COLLECTED_ONE);
     let second_delta = replacement_delta(ACTIVE_TWO, COLLECTED_TWO);
 
-    let root = RuntimeSession::start(&revision, policy()).unwrap();
+    let root_typed = typed(&revision);
+    let root = RuntimeSession::start_with_occurrence(&root_typed, policy(), start_id(1)).unwrap();
     assert_eq!(root.latest().support_roots(active.id()).len(), 2);
     assert_eq!(root.latest().support_roots(consequence.id()).len(), 2);
     let disconnected_support = root.latest().support_roots(disconnected.id());
 
-    let after_first = root.apply_delta(&revision, first_delta.clone()).unwrap();
+    let after_first = root
+        .apply_with_occurrence(
+            &revision,
+            RuntimeInput::Delta(first_delta.clone()),
+            transition_id(1),
+        )
+        .unwrap();
     assert!(after_first.latest().contains_content(active.id()));
     assert!(after_first.latest().contains_content(consequence.id()));
     assert!(after_first.latest().contains_content(collected.id()));
@@ -318,7 +391,11 @@ fn occurrence_exact_incremental_replay_is_canonical_and_rejects_tampering() {
     assert!(first_diff.authorized_equivalences().is_empty());
 
     let after_second = after_first
-        .apply_delta(&revision, second_delta.clone())
+        .apply_with_occurrence(
+            &revision,
+            RuntimeInput::Delta(second_delta.clone()),
+            transition_id(2),
+        )
         .unwrap();
     assert!(!after_second.latest().contains_content(active.id()));
     assert!(!after_second.latest().contains_content(consequence.id()));
@@ -328,19 +405,26 @@ fn occurrence_exact_incremental_replay_is_canonical_and_rejects_tampering() {
         disconnected_support
     );
 
-    let replayed = RuntimeSession::replay_inputs(
-        &revision,
+    let replayed = RuntimeSession::replay_with_occurrences(
+        typed(&revision),
         policy(),
+        start_id(1),
         [
-            RuntimeInput::Delta(first_delta.clone()),
-            RuntimeInput::Delta(second_delta.clone()),
+            ReplayStep {
+                occurrence: transition_id(1),
+                input: RuntimeInput::Delta(first_delta.clone()),
+            },
+            ReplayStep {
+                occurrence: transition_id(2),
+                input: RuntimeInput::Delta(second_delta.clone()),
+            },
         ],
     )
     .unwrap();
     assert_eq!(replayed, after_second);
     assert_eq!(replayed.canonical_bytes(), after_second.canonical_bytes());
     assert_eq!(
-        reload_session(&after_second.canonical_bytes(), &revision).unwrap(),
+        reload_session_with_program(&after_second.canonical_bytes(), &typed(&revision)).unwrap(),
         after_second
     );
 
@@ -351,7 +435,7 @@ fn occurrence_exact_incremental_replay_is_canonical_and_rejects_tampering() {
         &format!("[\"successor\",\"{fake_state}\""),
         1,
     );
-    assert!(reload_session(&tampered_predecessor, &revision).is_err());
+    assert!(reload_session_with_program(&tampered_predecessor, &typed(&revision)).is_err());
 
     let model_identity = revision.identity().to_string();
     let tampered_model = after_second.canonical_bytes().replacen(
@@ -359,14 +443,14 @@ fn occurrence_exact_incremental_replay_is_canonical_and_rejects_tampering() {
         &format!("rev-sha256-{}", "00".repeat(32)),
         1,
     );
-    assert!(reload_session(&tampered_model, &revision).is_err());
+    assert!(reload_session_with_program(&tampered_model, &typed(&revision)).is_err());
 
     let tampered_policy = after_second.canonical_bytes().replacen(
         referent(POLICY).as_str(),
         referent(99).as_str(),
         1,
     );
-    assert!(reload_session(&tampered_policy, &revision).is_err());
+    assert!(reload_session_with_program(&tampered_policy, &typed(&revision)).is_err());
 
     let withdrawal_fragment = format!("[\"withdraw\",[\"{}\"]]", referent(ACTIVE_ONE).as_str());
     let tampered_delta = after_second.canonical_bytes().replacen(
@@ -377,28 +461,148 @@ fn occurrence_exact_incremental_replay_is_canonical_and_rejects_tampering() {
         ),
         1,
     );
-    assert!(reload_session(&tampered_delta, &revision).is_err());
+    assert!(reload_session_with_program(&tampered_delta, &typed(&revision)).is_err());
 
     let explicit = root
-        .apply_delta(
+        .apply_with_occurrence(
             &revision,
-            StateDelta::new(
-                vec![referent(ACTIVE_ONE)],
-                vec![AssertionOccurrence::new(
-                    referent(COLLECTED_ONE),
-                    collected.id().clone(),
-                    referent(COLLECT_ONE_EVENT),
-                    referent(MODEL),
-                )],
-            )
-            .unwrap(),
+            RuntimeInput::Delta(
+                StateDelta::new(
+                    vec![referent(ACTIVE_ONE)],
+                    vec![AssertionOccurrence::new(
+                        referent(COLLECTED_ONE),
+                        collected.id().clone(),
+                        referent(COLLECT_ONE_EVENT),
+                        referent(MODEL),
+                    )],
+                )
+                .unwrap(),
+            ),
+            transition_id(3),
         )
         .unwrap();
     assert!(explicit.latest().contains_content(active.id()));
     assert!(explicit.latest().contains_content(consequence.id()));
     assert_eq!(
-        reload_session(&explicit.canonical_bytes(), &revision).unwrap(),
+        reload_session_with_program(&explicit.canonical_bytes(), &typed(&revision)).unwrap(),
         explicit
+    );
+}
+
+#[test]
+fn runtime_v3_identity_is_immutable_causal_isolated_and_session_scoped() {
+    let revision = fixture();
+    let program = admitted(&revision);
+    let typed = RuntimeProgramRevision::new(&program, &revision).unwrap();
+    let empty = RuntimeInput::Delta(StateDelta::new(Vec::new(), Vec::new()).unwrap());
+    let root = RuntimeSession::start_with_occurrence(&typed, policy(), start_id(1)).unwrap();
+    let first = root
+        .apply_with_occurrence(&revision, empty.clone(), transition_id(1))
+        .unwrap();
+    let second = root
+        .apply_with_occurrence(&revision, empty.clone(), transition_id(2))
+        .unwrap();
+
+    assert_eq!(root.identity(), first.identity());
+    assert_ne!(root.latest().identity(), first.latest().identity());
+    assert_ne!(first.latest().identity(), second.latest().identity());
+    let equal_state = StateDiff::between(first.latest(), second.latest(), &revision).unwrap();
+    assert!(equal_state.occurrence_admissions().is_empty());
+    assert!(equal_state.occurrence_withdrawals().is_empty());
+    assert!(equal_state.content_changes().is_empty());
+    assert!(equal_state.support_additions().is_empty());
+    assert!(equal_state.support_withdrawals().is_empty());
+    assert!(equal_state.proof_changes().is_empty());
+
+    let independent = RuntimeSession::start_with_occurrence(&typed, policy(), start_id(2)).unwrap();
+    assert_ne!(root.identity(), independent.identity());
+    assert_ne!(root.latest().identity(), independent.latest().identity());
+    assert!(StateDiff::between(root.latest(), independent.latest(), &revision).is_err());
+
+    let bounded_policy = RuntimePolicy::new(referent(POLICY), 127, 512).unwrap();
+    assert_ne!(policy().id(), bounded_policy.id());
+    let bounded =
+        RuntimeSession::start_with_occurrence(&typed, bounded_policy, start_id(1)).unwrap();
+    assert_ne!(root.identity(), bounded.identity());
+    assert_ne!(root.latest().identity(), bounded.latest().identity());
+
+    let later_semantics = ClauseSemanticsId::new("clause-semantics-v2".to_owned()).unwrap();
+    let later_program = admitted_with(
+        &revision,
+        later_semantics,
+        ProgramId::from_referent(revision.model().id().clone()),
+        230,
+    );
+    let later_typed = RuntimeProgramRevision::new(&later_program, &revision).unwrap();
+    let later = RuntimeSession::start_with_occurrence(&later_typed, policy(), start_id(1)).unwrap();
+    assert_ne!(root.identity(), later.identity());
+    assert_ne!(root.latest().identity(), later.latest().identity());
+
+    let nominal_program = admitted_with(
+        &revision,
+        ClauseSemanticsId::current(),
+        ProgramId::from_referent(referent(231)),
+        232,
+    );
+    let nominal_typed = RuntimeProgramRevision::from_pin(
+        &revision,
+        ProgramRevisionPin::from_revision(&nominal_program),
+    )
+    .expect("nominal Program identity is independent from the snapshot root");
+
+    let canonical = first.canonical_bytes();
+    assert!(reload_session_with_program(&canonical, &nominal_typed).is_err());
+    assert!(reload_session_with_program(&canonical, &later_typed).is_err());
+    assert!(
+        first
+            .apply_with_occurrence(&revision, empty, transition_id(1))
+            .unwrap_err()
+            .to_string()
+            .contains("repeats a transition occurrence")
+    );
+
+    let foreign_program = format!("program-revision-sha256-{}", "0".repeat(64));
+    let tampered_program = canonical.replacen(program.identity().as_str(), &foreign_program, 1);
+    assert!(reload_session_with_program(&tampered_program, &typed).is_err());
+    let tampered_semantics = canonical.replacen(
+        ClauseSemanticsId::current().as_str(),
+        "clause-semantics-v2",
+        1,
+    );
+    assert!(reload_session_with_program(&tampered_semantics, &typed).is_err());
+    let foreign_session = format!("session-sha256-{}", "0".repeat(64));
+    let tampered_session = canonical.replacen(
+        &format!("[\"session\",\"{}\"]", root.identity()),
+        &format!("[\"session\",\"{foreign_session}\"]"),
+        1,
+    );
+    assert!(reload_session_with_program(&tampered_session, &typed).is_err());
+    let tampered_start = canonical.replacen(start_id(1).as_str(), start_id(9).as_str(), 1);
+    assert!(reload_session_with_program(&tampered_start, &typed).is_err());
+    let tampered_transition =
+        canonical.replacen(transition_id(1).as_str(), transition_id(9).as_str(), 1);
+    assert!(reload_session_with_program(&tampered_transition, &typed).is_err());
+    let old_envelope =
+        canonical.replacen("clause-runtime-session-v3", "clause-runtime-session-v2", 1);
+    assert!(reload_session_with_program(&old_envelope, &typed).is_err());
+    let old_state = canonical.replacen("clause-state-revision-v3", "clause-state-revision-v2", 1);
+    assert!(reload_session_with_program(&old_state, &typed).is_err());
+
+    let other = elaborate::compile(
+        frontend::parse(ONE_COIN_SOURCE).expect("different fixture source parses"),
+    )
+    .expect("different fixture source elaborates");
+    let [other_journey] = other.runtime_journeys() else {
+        panic!("different fixture produces one runtime journey");
+    };
+    let other_program = admitted(other_journey.revision());
+    assert!(RuntimeProgramRevision::new(&other_program, &revision).is_err());
+    assert!(
+        RuntimeProgramRevision::from_pin(
+            &revision,
+            ProgramRevisionPin::from_revision(&other_program),
+        )
+        .is_err()
     );
 }
 
@@ -407,25 +611,32 @@ fn empty_event_ticks_are_rejected_by_live_replay_and_reload() {
     let revision = fixture();
     let message = "runtime tick needs at least one event";
     assert!(
-        RuntimeSession::start(&revision, policy())
-            .unwrap()
-            .transition(&revision, Vec::new())
-            .unwrap_err()
-            .to_string()
-            .contains(message)
-    );
-    assert!(
-        RuntimeSession::replay(&revision, policy(), [Vec::new()])
-            .unwrap_err()
-            .to_string()
-            .contains(message)
+        RuntimeSession::replay_with_occurrences(
+            typed(&revision),
+            policy(),
+            start_id(20),
+            [ReplayStep {
+                occurrence: transition_id(20),
+                input: RuntimeInput::Events(Vec::new())
+            }]
+        )
+        .unwrap_err()
+        .to_string()
+        .contains(message)
     );
 
     let one = replacement_delta(ACTIVE_ONE, COLLECTED_ONE);
-    let canonical =
-        RuntimeSession::replay_inputs(&revision, policy(), [RuntimeInput::Delta(one.clone())])
-            .unwrap()
-            .canonical_bytes();
+    let canonical = RuntimeSession::replay_with_occurrences(
+        typed(&revision),
+        policy(),
+        start_id(21),
+        [ReplayStep {
+            occurrence: transition_id(21),
+            input: RuntimeInput::Delta(one.clone()),
+        }],
+    )
+    .unwrap()
+    .canonical_bytes();
     let encoded = format!(
         "[\"delta\",[\"state-delta\",[\"withdraw\",[\"{}\"]],[\"admit\",[[\"occurrence\",\"{}\",\"{}\",\"{}\",\"{}\"]]]]]",
         one.withdrawals()[0].as_str(),
@@ -436,7 +647,7 @@ fn empty_event_ticks_are_rejected_by_live_replay_and_reload() {
     );
     let malformed = canonical.replace(&encoded, "[\"events\",[]]");
     assert!(
-        reload_session(&malformed, &revision)
+        reload_session_with_program(&malformed, &typed(&revision))
             .unwrap_err()
             .to_string()
             .contains(message)
@@ -449,9 +660,13 @@ fn authored_functional_matches_reject_conflicting_keyed_writes() {
         frontend::parse(FUNCTIONAL_CONFLICT_SOURCE).expect("functional conflict source parses"),
     )
     .expect("functional conflict source elaborates into checked artifacts");
-    let [journey] = compiled.runtime_journeys() else {
+    let [journey_ref] = compiled.runtime_journeys() else {
         panic!("one authored conflict event produces one runtime journey");
     };
+    let journey = journey_ref
+        .clone()
+        .bind_program_revision(admitted(journey_ref.revision()))
+        .unwrap();
     assert_eq!(journey.revision().model().transitions().len(), 2);
     let event_id = compiled
         .designations()
@@ -462,13 +677,17 @@ fn authored_functional_matches_reject_conflicting_keyed_writes() {
         .scoped(journey.revision().model().id(), "replay-policy")
         .expect("authored policy has a checked scoped referent");
     let error = journey
-        .replay(
+        .replay_with_occurrences(
             RuntimePolicy::new(policy_id, 128, 512).unwrap(),
-            [vec![TransitionEvent::new(
-                referent(201),
-                event_id,
-                Vec::new(),
-            )]],
+            start_id(10),
+            [ReplayStep {
+                occurrence: transition_id(10),
+                input: RuntimeInput::Events(vec![TransitionEvent::new(
+                    referent(201),
+                    event_id,
+                    Vec::new(),
+                )]),
+            }],
         )
         .unwrap_err();
     assert!(
@@ -595,9 +814,13 @@ fn authored_event_payload_state_guards_survive_source_deletion_with_replay_parit
     assert_eq!(parsed.events[0].transitions.len(), 2);
     assert_eq!(parsed.events[0].transitions[0].guards.len(), 1);
     let compiled = elaborate::compile(parsed).expect("one-coin Clause source elaborates");
-    let [journey] = compiled.runtime_journeys() else {
+    let [journey_ref] = compiled.runtime_journeys() else {
         panic!("one authored event Model produces one runtime journey");
     };
+    let journey = journey_ref
+        .clone()
+        .bind_program_revision(successor_admitted(journey_ref.revision()))
+        .unwrap();
     assert_eq!(journey.revision().model().transitions().len(), 2);
     let event_id = compiled
         .designations()
@@ -621,9 +844,19 @@ fn authored_event_payload_state_guards_survive_source_deletion_with_replay_parit
         .scoped(journey.revision().model().id(), "replay-policy")
         .expect("authored policy has a checked scoped referent");
     let policy = RuntimePolicy::new(policy_id, 128, 512).expect("runtime policy is bounded");
+    let journey_typed =
+        RuntimeProgramRevision::new(journey.program_revision().unwrap(), journey.revision())
+            .unwrap();
 
     let expected = journey
-        .replay(policy.clone(), [vec![input.clone()]])
+        .replay_with_occurrences(
+            policy.clone(),
+            start_id(11),
+            [ReplayStep {
+                occurrence: transition_id(11),
+                input: RuntimeInput::Events(vec![input.clone()]),
+            }],
+        )
         .expect("checked authored transition feeds the canonical runtime fold");
     assert_eq!(expected.inputs().len(), 1);
     let diff = StateDiff::between(&expected.states()[0], expected.latest(), journey.revision())
@@ -631,7 +864,7 @@ fn authored_event_payload_state_guards_survive_source_deletion_with_replay_parit
     assert_eq!(diff.occurrence_withdrawals().len(), 2);
     assert_eq!(diff.occurrence_admissions().len(), 2);
     assert_eq!(
-        reload_session(&expected.canonical_bytes(), journey.revision()).unwrap(),
+        reload_session_with_program(&expected.canonical_bytes(), &journey_typed).unwrap(),
         expected
     );
     let payload = format!("[\"payload\",[[\"referent\",\"{}\"]]]", player.as_str());
@@ -640,7 +873,7 @@ fn authored_event_payload_state_guards_survive_source_deletion_with_replay_parit
         &format!("[\"payload\",[[\"referent\",\"{}\"]]]", collector.as_str()),
     );
     assert!(
-        reload_session(&tampered_payload, journey.revision())
+        reload_session_with_program(&tampered_payload, &journey_typed)
             .unwrap_err()
             .to_string()
             .contains("no joint pre-state and guard match")
@@ -648,17 +881,34 @@ fn authored_event_payload_state_guards_survive_source_deletion_with_replay_parit
 
     let invalid_policy = RuntimePolicy::new(referent(255), 128, 512).unwrap();
     assert!(
-        generated::emit_runtime_rust(journey, invalid_policy, vec![vec![input.clone()]])
-            .unwrap_err()
-            .to_string()
-            .contains("runtime policy identity is absent from the checked Model")
+        generated::emit_runtime_rust(
+            &journey,
+            invalid_policy,
+            start_id(11),
+            vec![ReplayStep {
+                occurrence: transition_id(11),
+                input: RuntimeInput::Events(vec![input.clone()]),
+            }],
+        )
+        .unwrap_err()
+        .to_string()
+        .contains("runtime policy identity is absent from the checked Model")
     );
-    let emitted = generated::emit_runtime_rust(journey, policy, vec![vec![input]])
-        .expect("checked authored runtime emits standalone Rust");
-    assert!(emitted.contains("runtime::RuntimeSession::replay"));
+    let emitted = generated::emit_runtime_rust(
+        &journey,
+        policy,
+        start_id(11),
+        vec![ReplayStep {
+            occurrence: transition_id(11),
+            input: RuntimeInput::Events(vec![input]),
+        }],
+    )
+    .expect("checked authored runtime emits standalone Rust");
+    assert!(emitted.contains("runtime::RuntimeSession::replay_with_occurrences"));
     assert!(emitted.contains("runtime::StateDiff::between"));
-    assert!(emitted.contains("runtime::reload_session"));
+    assert!(emitted.contains("runtime::reload_session_with_program"));
     assert!(emitted.contains("runtime::TransitionEvent::new"));
+    assert!(emitted.contains("predecessor: Some(kernel::ProgramRevisionId::new"));
     assert!(!emitted.contains("coin state active"));
     assert!(!emitted.contains("mod frontend"));
     assert!(!emitted.contains("mod elaborate"));
@@ -720,9 +970,11 @@ fn effect_evidence_is_post_commit_distinct_and_canonical() {
         .scoped(model.id(), "replay-policy")
         .expect("effect authority has a checked referent");
     let event_occurrence = referent(200);
-    let root = RuntimeSession::start(
-        journey.revision(),
+    let typed_journey = typed(journey.revision());
+    let root = RuntimeSession::start_with_occurrence(
+        &typed_journey,
         RuntimePolicy::new(policy.clone(), 128, 512).unwrap(),
+        start_id(30),
     )
     .unwrap();
     let request = || {
@@ -738,20 +990,21 @@ fn effect_evidence_is_post_commit_distinct_and_canonical() {
     let request_wire = request().canonical_bytes();
     assert_eq!(reload_effect_request(&request_wire).unwrap(), request());
     assert!(
-        EffectTrace::denied(journey.revision(), root.latest(), request())
+        EffectTrace::denied(&typed_journey, root.latest(), request())
             .unwrap_err()
             .to_string()
             .contains("committed successor")
     );
 
     let committed = root
-        .transition(
+        .transition_with_occurrence(
             journey.revision(),
             vec![TransitionEvent::new(
                 event_occurrence.clone(),
                 event.clone(),
                 vec![Term::referent(player.clone())],
             )],
+            transition_id(30),
         )
         .unwrap();
     let cross_event_request = EffectRequest::new(
@@ -763,13 +1016,13 @@ fn effect_evidence_is_post_commit_distinct_and_canonical() {
         0,
     );
     assert!(
-        EffectTrace::denied(journey.revision(), committed.latest(), cross_event_request,)
+        EffectTrace::denied(&typed_journey, committed.latest(), cross_event_request,)
             .unwrap_err()
             .to_string()
             .contains("does not match the requested event")
     );
     let state_bytes = committed.latest().canonical_bytes();
-    let denied = EffectTrace::denied(journey.revision(), committed.latest(), request()).unwrap();
+    let denied = EffectTrace::denied(&typed_journey, committed.latest(), request()).unwrap();
     assert_eq!(
         denied.authorization().decision(),
         AuthorizationDecision::Denied
@@ -781,7 +1034,7 @@ fn effect_evidence_is_post_commit_distinct_and_canonical() {
     assert_eq!(
         reload_effect_trace(
             &denied.canonical_bytes(),
-            journey.revision(),
+            &typed_journey,
             committed.latest()
         )
         .unwrap(),
@@ -789,14 +1042,14 @@ fn effect_evidence_is_post_commit_distinct_and_canonical() {
     );
 
     let calls = Cell::new(0);
-    let succeeded = EffectTrace::attempt(journey.revision(), committed.latest(), request(), |_| {
+    let succeeded = EffectTrace::attempt(&typed_journey, committed.latest(), request(), |_| {
         calls.set(calls.get() + 1);
         EffectOutcome::Succeeded {
             evidence: player.clone(),
         }
     })
     .unwrap();
-    let failed = EffectTrace::attempt(journey.revision(), committed.latest(), request(), |_| {
+    let failed = EffectTrace::attempt(&typed_journey, committed.latest(), request(), |_| {
         calls.set(calls.get() + 1);
         EffectOutcome::Failed {
             evidence: collector,
@@ -821,11 +1074,15 @@ fn effect_evidence_is_post_commit_distinct_and_canonical() {
         succeeded.authorization().lineage().post_commit_state(),
         committed.latest().identity()
     );
+    assert_eq!(
+        succeeded.authorization().lineage().input_program_revision(),
+        typed_journey.identity()
+    );
     assert_eq!(committed.latest().canonical_bytes(), state_bytes);
     assert_eq!(
         reload_effect_trace(
             &succeeded.canonical_bytes(),
-            journey.revision(),
+            &typed_journey,
             committed.latest()
         )
         .unwrap(),
@@ -834,7 +1091,7 @@ fn effect_evidence_is_post_commit_distinct_and_canonical() {
     assert_eq!(
         reload_effect_trace(
             &failed.canonical_bytes(),
-            journey.revision(),
+            &typed_journey,
             committed.latest()
         )
         .unwrap(),
@@ -845,9 +1102,14 @@ fn effect_evidence_is_post_commit_distinct_and_canonical() {
         .canonical_bytes()
         .replace("[\"outcome\",\"succeeded\"]", "[\"outcome\",\"failed\"]");
     assert!(
-        reload_effect_trace(&tampered, journey.revision(), committed.latest())
+        reload_effect_trace(&tampered, &typed_journey, committed.latest())
             .unwrap_err()
             .to_string()
             .contains("Receipt identity")
     );
+    let old_envelope =
+        succeeded
+            .canonical_bytes()
+            .replacen("clause-effect-trace-v2", "clause-effect-trace-v1", 1);
+    assert!(reload_effect_trace(&old_envelope, &typed_journey, committed.latest()).is_err());
 }

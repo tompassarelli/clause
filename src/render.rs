@@ -1,15 +1,14 @@
-//! Canonical total render plans bound to exact Model and runtime state Revisions.
+//! Canonical total render plans bound to exact Program and runtime state Revisions.
 
 use crate::{
     kernel::{
-        FiniteF32, KernelError, ReferentId, Result, Revision, RevisionId, RoleId, StructuralForm,
-        Term,
+        FiniteF32, KernelError, ProgramRevisionId, ReferentId, Result, RoleId, StructuralForm, Term,
     },
-    runtime::{StateRevision, StateRevisionId},
+    runtime::{RuntimeProgramRevision, StateRevision, StateRevisionId},
     wire::json::{JsonParser, array, json, list, require_string, string},
 };
 
-pub const RENDER_PLAN_TAG: &str = "clause-render-plan-v1";
+pub const RENDER_PLAN_TAG: &str = "clause-render-plan-v2";
 
 /// The authored relation and roles used by the bounded direct scene
 /// projector.  The relation must carry exactly one item referent and one
@@ -55,13 +54,17 @@ impl SceneProjectionSpec {
 /// Project only currently supported, grounded scene facts into the canonical
 /// total plan. No support root is treated as semantic provenance.
 pub fn project_render_plan(
-    revision: &Revision,
+    program: &RuntimeProgramRevision<'_>,
     state: &StateRevision,
     spec: &SceneProjectionSpec,
 ) -> Result<RenderPlan> {
-    if state.model_revision() != revision.identity() {
+    let revision = program.legacy();
+    if state.model_revision() != revision.identity()
+        || state.program_revision() != program.identity()
+        || state.semantics() != program.semantics()
+    {
         return Err(KernelError::new(
-            "scene projection names the wrong Model Revision",
+            "scene projection names the wrong ProgramRevision",
         ));
     }
     let relation = revision
@@ -118,7 +121,7 @@ pub fn project_render_plan(
         items.push(RenderItem::new(item, position)?);
     }
     items.sort_by(|left, right| left.id().cmp(right.id()));
-    RenderPlan::new(revision, state, items)
+    RenderPlan::new(program, state, items)
 }
 
 fn position_f32x2(term: Option<&Term>, spec: &SceneProjectionSpec) -> Result<[FiniteF32; 2]> {
@@ -178,16 +181,24 @@ impl RenderItem {
 /// The complete desired scene for one exact immutable runtime state.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RenderPlan {
-    model_revision: RevisionId,
+    program_revision: ProgramRevisionId,
     state_revision: StateRevisionId,
     items: Vec<RenderItem>,
 }
 
 impl RenderPlan {
-    pub fn new(revision: &Revision, state: &StateRevision, items: Vec<RenderItem>) -> Result<Self> {
-        if state.model_revision() != revision.identity() {
+    pub fn new(
+        program: &RuntimeProgramRevision<'_>,
+        state: &StateRevision,
+        items: Vec<RenderItem>,
+    ) -> Result<Self> {
+        let revision = program.legacy();
+        if state.model_revision() != revision.identity()
+            || state.program_revision() != program.identity()
+            || state.semantics() != program.semantics()
+        {
             return Err(KernelError::new(
-                "RenderPlan state names the wrong Model Revision",
+                "RenderPlan state names the wrong ProgramRevision",
             ));
         }
         if items.windows(2).any(|pair| pair[0].id >= pair[1].id) {
@@ -203,14 +214,14 @@ impl RenderPlan {
             }
         }
         Ok(Self {
-            model_revision: revision.identity().clone(),
+            program_revision: program.identity().clone(),
             state_revision: state.identity().clone(),
             items,
         })
     }
 
-    pub fn model_revision(&self) -> &RevisionId {
-        &self.model_revision
+    pub fn program_revision(&self) -> &ProgramRevisionId {
+        &self.program_revision
     }
 
     pub fn state_revision(&self) -> &StateRevisionId {
@@ -229,16 +240,16 @@ impl RenderPlan {
             .collect::<Vec<_>>()
             .join(",");
         format!(
-            "[\"{RENDER_PLAN_TAG}\",[\"model-revision\",\"{}\"],[\"state-revision\",\"{}\"],[\"items\",[{items}]]]",
-            self.model_revision, self.state_revision,
+            "[\"{RENDER_PLAN_TAG}\",[\"program-revision\",\"{}\"],[\"state-revision\",\"{}\"],[\"items\",[{items}]]]",
+            self.program_revision, self.state_revision,
         )
     }
 }
 
-/// Strictly reload a canonical plan against its exact Model and state Revisions.
+/// Strictly reload a canonical plan against its exact Program and StateRevision.
 pub fn reload_render_plan(
     bytes: &str,
-    revision: &Revision,
+    program: &RuntimeProgramRevision<'_>,
     state: &StateRevision,
 ) -> Result<RenderPlan> {
     let value = JsonParser::new(bytes).parse()?;
@@ -248,11 +259,15 @@ pub fn reload_render_plan(
     let envelope = list(&value, 4, "RenderPlan envelope")?;
     require_string(&envelope[0], RENDER_PLAN_TAG, "RenderPlan tag")?;
 
-    let model = list(&envelope[1], 2, "RenderPlan Model Revision")?;
-    require_string(&model[0], "model-revision", "RenderPlan Model Revision tag")?;
-    if string(&model[1], "RenderPlan Model Revision identity")? != revision.identity().to_string() {
+    let revision = list(&envelope[1], 2, "RenderPlan ProgramRevision")?;
+    require_string(
+        &revision[0],
+        "program-revision",
+        "RenderPlan ProgramRevision tag",
+    )?;
+    if string(&revision[1], "RenderPlan ProgramRevision identity")? != program.identity().as_str() {
         return Err(KernelError::new(
-            "RenderPlan names the wrong Model Revision",
+            "RenderPlan names the wrong ProgramRevision",
         ));
     }
 
@@ -272,7 +287,7 @@ pub fn reload_render_plan(
         .iter()
         .map(decode_item)
         .collect::<Result<Vec<_>>>()?;
-    let plan = RenderPlan::new(revision, state, items)?;
+    let plan = RenderPlan::new(program, state, items)?;
     if plan.canonical_bytes() != bytes {
         return Err(KernelError::new(
             "RenderPlan does not match its exact canonical content",

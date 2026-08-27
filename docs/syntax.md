@@ -516,6 +516,12 @@ definitions, authored event replay, and source-deleted generated Rust. Those
 capabilities must survive the migration even though their spellings and owning
 identity types change.
 
+The executable replay boundary now requires an explicitly admitted
+ProgramRevision plus caller-allocated session-start and transition occurrence
+IDs. No current or planned source shorthand may infer those identities from
+layout, event payload, source spans, or replay order. Canonical admission syntax
+is still unratified and therefore is not invented in this document.
+
 The compatibility surface will be removed after exact identity and result
 parity. New canonical examples must not extend it. The
 [roadmap](roadmap.md) is the sole status record for that work.

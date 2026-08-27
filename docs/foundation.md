@@ -379,6 +379,13 @@ admission, scheduling, transition selection, effects, capabilities, or
 successor computation. Two separately created sessions have different
 RuntimeSessionIds even when program and policy match.
 
+Session-start and transition occurrences are admitted inputs, not values
+derived from event payload, source location, vector position, storage order, or
+state content. Reusing or fabricating an occurrence pin cannot silently create
+another edge in one runtime history: replay rejects duplicate transition pins,
+while the admission boundary remains responsible for allocating legitimate
+opaque occurrences.
+
 A StateSnapshot is the exact logical runtime payload at one boundary. It is
 conceptually separate from the transition that produced it. Clause does not
 add a public StateSnapshotId until a real consumer needs history-independent
@@ -389,6 +396,11 @@ TransitionOccurrence or session-start occurrence, exact StateSnapshot payload,
 runtime policy, and semantics epoch. Equal state payloads reached through
 different histories or sessions therefore have different StateRevisionIds.
 Additional transition attestations do not change that identity.
+
+Effect evidence names the exact ProgramRevision and post-commit StateRevision.
+Authorization, attempt, receipt, and observation remain distinct evidence
+occurrences; none of them changes ProgramRevision, RuntimeSession, or
+StateRevision identity.
 
 A runtime event creates a StateRevision and leaves ProgramRevision unchanged.
 A program upgrade creates explicit migration evidence and a new RuntimeSession;
