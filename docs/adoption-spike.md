@@ -29,18 +29,31 @@ authority to predetermine the new representation.
   decision accepts a bounded migration.
 - Clause owns every Term codec, equality rule, judgment, occurrence,
   persistence interface, and reload rule used by the spike.
+- One canonical, versioned Clause Core package implements the foundation's
+  typed transport contract. Its disjoint scopes carry every gate-required
+  Clause object and declared observable plus separately scoped certificates,
+  obligations, origins, strategies, and traces. Only the checked Program
+  payload contributes to snapshot identity. The package is independent of Lean
+  serialization and Rust layout; Lean proof terms never become its wire format.
 - No external store, database, or older project is a semantic or runtime
   dependency.
-- The host may implement a small generic kernel and checked optimizations. It
-  may not add one semantic case per source construct.
+- Lean 4 is the constitutional checker and executable reference-model host for
+  the spike. Rust remains the physical persistence/runtime/backend engine and
+  the current behavior oracle. Neither host may add one semantic case per
+  source construct or define meaning absent from the Clause Core package.
+- No fourth primary compiler host is introduced. Successful semantic proposal
+  machinery moves progressively into Clause after the checker and parity gates.
 - Every migration-sensitive identity uses a new explicit semantics epoch. The
   spike never reinterprets semantic-v10 / Revision-v6 bytes or IDs.
 - The experiment must preserve readable relation-first source. Graph
   bookkeeping cannot leak into ordinary programs.
 
-## Phase A: generic kernel
+## Phase A: canonical contract and constitutional kernel
 
-Implement only machinery shared by every gate:
+Before using Clause surface syntax, freeze a minimal Clause Core package and
+canonical vector corpus, then implement its generic rules in Lean and its
+physical exchange/execution boundary in Rust. Implement only machinery shared
+by every gate:
 
 ```text
 Atom(kind, canonical payload, declarative versioned equality contract)
@@ -72,6 +85,62 @@ Raw Triples receive no mandatory nominal `ClauseId`. Interning handles and
 storage coordinates are unobservable implementation details. Semantic cycles
 use opaque identity anchors and never content-hash recursively through their
 own neighborhoods. Equality contracts are Clause data, not host callbacks.
+
+The Lean model represents Terms, schemas, judgments, modes, Runs, contexts,
+certificates, and admission as generic Clause data and relations. It does not
+represent every Clause feature as a Lean syntax kind, `Expr` constructor, type
+class, or closed feature variant. The reference Run semantics is relational;
+fuelled total interpreters may execute bounded examples without pretending
+that Lean host termination settles Clause partial, streaming, or reactive
+modes.
+
+The constitutional checker must satisfy all of these requirements:
+
+- pin and hash the exact Lean source, toolchain, and imported `.olean`
+  artifacts. Use `trustLevel = 0` for newly added declarations while
+  recognizing that it does not recheck imported bodies; compute the transitive
+  constitutional dependency closure, reject every reachable `unsafe` or
+  `partial` declaration, and replay every reachable safe/total declaration
+  into a fresh kernel environment from the pinned artifacts;
+- use only safe, total definitions in the certificate path; no `unsafe`,
+  `partial`, executed foreign implementation, or unchecked compiler
+  replacement may define acceptance. An `extern` attribute on a definition
+  with a kernel-checked body is not alone a rejection;
+- never skip kernel type checking or accept `sorry`, `sorryAx`, elaboration
+  recovery axioms, failed-declaration fallback, or a preliminary asynchronous
+  environment; wait for the checked environment before admission;
+- reject `native_decide`, native reduction, execution of or reliance on
+  `implemented_by`/`extern` implementations, compiler-trust axioms, a
+  successful `#eval`, or a bare compiled Boolean as proof of a Clause judgment;
+- accompany every accepted decidable result with a kernel-checked proof tying
+  it to the exact claimed Clause judgment or admission relation from the
+  foundation;
+- audit transitive axiom closure against an explicit allowlist of chosen
+  logical foundations, including explicit decisions for `propext`,
+  `Quot.sound`, and `Classical.choice`, and reject every unlisted project or
+  recovery axiom;
+- bind the checked proposition to the exact canonical package bytes, semantics
+  epoch, and decoded value, rejecting alternate or noncanonical encodings; and
+- use `leanchecker` or an equivalent declaration replay for that safe/total
+  closure while recognizing that Lean's replay skips unsafe/partial constants
+  and is a same-kernel consistency gate, not an independent verifier.
+
+Lean checks an encoding of Clause rules; it does not understand Clause graphs
+natively. The decoder, object-language definitions, certificate proposition,
+and soundness theorem connecting certificate acceptance to Clause validity are
+therefore part of the small measured trust boundary. The spike records their
+size and dependency closure rather than hiding them behind “verified by Lean.”
+
+Rust must decode the identical package and preserve identical canonical output
+while using private interning, indexes, persistence rows, runtime objects, and
+target machinery. Across all eight gates, including the frozen extension, the
+Lean reference and Rust implementation must agree on every declared observable
+and nonfunctional contract: acceptance/rejection, judgments, identities,
+values/outcomes, result cardinality and order, fairness, continuations,
+cancellation and resource behavior, candidate/admitted deltas, effect
+sequencing, obligations, supports/explanations, traces, and canonical bytes.
+They need not share internal proof or index representation. Any unexplained
+parity difference blocks or fails the host-freeze gate.
 
 ## Gates 1–8
 
@@ -160,9 +229,11 @@ pattern, proposition, and executable contexts must not collapse.
 
 ### 8. Host-freeze extension
 
-After gates 1–7 pass, freeze the host semantic kernel and record the exact host
-files and commit. Then add a new construct combining binding and effects using
-only Clause-authored schemas, readings, modes, judgments, and transformations.
+After gates 1–7 and Lean/Rust parity pass, freeze the Lean generic
+checker/reference model and Rust semantic proposal boundary, recording their
+exact files, toolchain, dependency closure, and commits. Then add a new
+construct combining binding and effects using only Clause-authored schemas,
+readings, modes, judgments, and transformations.
 
 A suitable specimen is a scoped resource form:
 
@@ -185,17 +256,20 @@ Without changing the frozen host semantics, the construct must inherit:
 - diagnostics as exact failed obligations; and
 - explanations as ordinary semantic queries.
 
-No new host semantic enum, construct-specific validator, formatter case,
-refactoring rule, analysis plugin, or manually maintained dependency rule is
-allowed. If a generic-kernel defect requires a host repair, the freeze is
-invalidated; repair the kernel, refreeze, and rerun the gate from the beginning.
+No new Lean or Rust feature constructor, host semantic enum,
+construct-specific validator, formatter case, refactoring rule, analysis
+plugin, or manually maintained dependency rule is allowed. If a generic-kernel
+defect requires a host repair, the freeze is invalidated; repair the kernel,
+refreeze, and rerun the gate from the beginning.
 
 The extension's schemas, readings, modes, and judgments must round-trip as
-inspectable Clause Terms and execute through the same generic machinery used by
-the earlier gates. An opaque “generic” callback, per-construct dispatch table,
-foreign evaluator, or tag whose meaning exists only in host code fails the
-gate. Irreducible FFI primitives may sit behind explicit typed effect and trace
-contracts; they may not define the construct's language semantics.
+inspectable Clause Terms and execute through both frozen implementations and
+the same generic machinery used by the earlier gates. Its packages, artifacts,
+outcomes, and every declared observable enter the parity corpus. An opaque
+“generic” callback, per-construct dispatch table, foreign evaluator, or tag
+whose meaning exists only in host code fails the gate. Irreducible FFI
+primitives may sit behind explicit typed effect and trace contracts; they may
+not define the construct's language semantics.
 
 Generated host code is allowed only when Clause-authored meaning and a checked
 refinement are authoritative and reproducible. A later hand-optimized lowering
@@ -327,6 +401,11 @@ The spike must actively reject or bound:
 - hostile, recursive, nondeterministic, or phase-escaping macros;
 - construct-specific host semantics hidden behind Triple serialization, a
   generic callback, dispatch table, or foreign evaluator;
+- a Lean `sorry`/recovery axiom, skipped kernel check, unchecked imported
+  artifact, native/compiler-trust proof bridge, or unlisted axiom entering the
+  constitutional certificate closure;
+- a Rust-only semantic category or any unexplained Lean/Rust acceptance,
+  identity, outcome, delta, obligation, or trace disagreement;
 - source round trips that lose binding, occurrence, or concept lineage;
 - whole-graph invalidation for a local semantic edit;
 - pure evaluation that creates an authoritative revision;
@@ -335,8 +414,10 @@ The spike must actively reject or bound:
 
 ## Pass and falsification decisions
 
-The mechanism passes only if all eight gates pass on one exact generic kernel
-and every required negative fixture fails for the intended reason.
+The mechanism passes only if Phase A satisfies the constitutional trust
+profile, all eight gates pass on one exact generic Clause Core contract, the
+Lean and Rust implementations have the required observable parity, and every
+required negative fixture fails for the intended reason.
 
 A pass authorizes a bounded parity-preserving migration proposal. It does not
 prove readability, target performance, systems coverage, macro usability,
@@ -345,11 +426,16 @@ Before that migration can be called successful, separate gates must measure
 real source ergonomics, large-graph incremental cost, and matched
 systems/JavaScript performance on representative programs.
 
-The mechanism is falsified if a dangerous feature requires private host
+The mechanism is falsified if a dangerous feature requires private Lean or Rust
 semantics, mandatory identity on every Triple, arbitrary positional convention,
 ad hoc untyped tags, act/trace collapse, an untracked meaning-changing
 representation, ordinary graph-wide recomputation, unreadable source ceremony,
-or generic execution that cannot specialize credibly.
+or generic execution that cannot specialize credibly. Lean is rejected as the
+constitutional implementation host if ordinary generic semantic work requires
+pervasive proof ceremony, constitutional `partial`/`unsafe` escape, distortion
+of Clause modes to fit Lean, unworkable canonical exchange, or a checker much
+larger and less comprehensible than the boundary it protects. That result may
+retain selected Lean metatheory without adding another primary compiler host.
 
 Failure rejects the Term-kernel mechanism. It does not authorize shrinking
 Clause's general-purpose mission.

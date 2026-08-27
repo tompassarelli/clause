@@ -28,6 +28,25 @@ representation migration proceeds until the host-freeze spike decides whether
 the mechanism is real:
 
 ```text
+host-neutral Clause Core package
+              |
+       Lean checker/reference model
+              +-------- observable parity -------- Rust physical engine
+              |
+       frozen generic host boundary
+              |
+       Clause-authored compiler middle
+```
+
+This is the accepted bootstrap order, not an implementation claim. The
+foundation remains the semantic authority and its host-neutral Clause Core
+contract governs every implementation; Lean checks certificates and provides
+reference Run semantics, Rust retains persistence/runtime/FFI/backend
+responsibility, and stable proposal machinery moves into Clause. OCaml has no
+primary architecture role. Lean may be rejected by the spike without weakening
+the semantic mission or licensing Rust to become the ontology.
+
+```text
 current parity oracles ------------+
                                      +--> process-first adoption spike
 consumer and identity census -------+                |
@@ -51,7 +70,9 @@ silently change it.
 | Work | Status | Exact boundary |
 | --- | --- | --- |
 | Process-first semantic foundation | Accepted hypothesis | [Foundation](foundation.md); implementation unproved |
-| Adoption spike | Pending; next mechanism gate | [Eight gates and falsifiers](adoption-spike.md) |
+| Constitutional implementation split | Accepted bootstrap plan | One canonical Clause Core package; Lean checker/reference semantics; Rust physical engine; eventual Clause-authored compiler middle |
+| Lean constitutional checker and reference Run model | Pending; first spike tranche | Host-neutral encoding, checked certificates, explicit trust profile, and canonical vectors; no Clause surface parser required initially |
+| Adoption spike | Pending; next mechanism gate | [Constitutional profile, eight gates, parity, host freeze, and falsifiers](adoption-spike.md) |
 | Post-spike product gates | Pending; blocked on mechanism pass | Source ergonomics, large-graph incrementality, and matched systems/JavaScript performance before migration success |
 | Documentation authority reset | Complete | One owner per public fact; spike/evidence are subordinate, not competing canons |
 | M1–M6 capability line | Implemented | Current semantic-v10 / Revision-v6 representation and milestone tests |
@@ -110,6 +131,13 @@ it may not rewrite expectations to bless an accidental change.
 
 **Status:** Pending; this is the next mechanism decision.
 
+The spike begins with a canonical Clause Core package and a minimal Lean 4
+constitutional model of `Atom`, `Term`, context, judgment, mode, Run, delta,
+trace, admission, and revision. It then makes the retained Rust engine consume
+the same package. Lean owns neither source syntax nor semantic categories;
+Rust owns neither judgment nor admission. Both are implementations of the
+Clause-owned contract.
+
 The [adoption spike](adoption-spike.md) must prove one generic kernel across:
 
 1. pure evaluation with expression Term distinct from result;
@@ -129,10 +157,13 @@ specialization, and negative cases for NaN/signed zero, equal-looking distinct
 events, effect trace replay, leaked intern handles, opaque callbacks, and
 universal-halting overclaim.
 
-**Exit proof:** all eight gates and required negative fixtures pass on one exact
-host kernel; the host-freeze extension remains inspectable Clause data and adds
-no construct-specific semantic, callback/dispatch, validator, formatter,
-refactor, analysis, or dependency case.
+**Exit proof:** the Lean checker satisfies its pinned trust profile; Lean and
+Rust agree across all eight gates on every declared observable and
+nonfunctional contract over one canonical vector corpus; all required negative
+fixtures pass on one exact Clause Core contract; and the host-freeze extension
+remains inspectable Clause data while adding no construct-specific Lean/Rust
+semantic, callback/dispatch, validator, formatter, refactor, analysis, or
+dependency case.
 
 **Failure result:** reject the Term-kernel mechanism, preserve the
 general-purpose mission and current behavioral oracles, and record the exact
@@ -343,9 +374,12 @@ No broad compatibility alias may conceal an unclassified consumer.
 
 **Status:** Pending; next.
 
-Implement the bounded experiment in [adoption-spike.md](adoption-spike.md).
-Freeze the host for gate 8 and return one stop/go result. No current oracle is
-retired and no canonical identity is reinterpreted during the experiment.
+Implement the bounded experiment in [adoption-spike.md](adoption-spike.md):
+freeze the canonical Clause Core codec and vectors; build the Lean
+constitutional checker/reference semantics; make Rust consume the same
+package; establish observable parity; then freeze both generic host boundaries
+for gate 8 and return one stop/go result. No current oracle is retired and no
+canonical identity is reinterpreted during the experiment.
 
 ### 4. Mechanism stop/go
 
@@ -417,8 +451,9 @@ semantic extensibility at bounded scale, not product viability.
   authority, or domain-relation inference from layout.
 - Elaboration owns exact Designation resolution and proposes recursive Terms,
   occurrences, focus, named roles, and Clause judgments.
-- The generic judgment kernel owns structural, relational, binding, modal,
-  capability, and bounded-execution obligations.
+- The generic Clause Core checker owns structural, relational, binding, modal,
+  capability, and bounded-execution obligations. Lean is its first checked
+  implementation and reference semantics, not the owner of those rules.
 - Run owns selected execution mode, outcome or continuation, candidate
   successor, and trace production.
 - Admission owns Program lineage, base revision, constitutive change
@@ -427,6 +462,13 @@ semantic extensibility at bounded scale, not product viability.
   effect boundaries, and receipts under one ProgramRevision.
 - Persistence stores Clause-owned canonical Terms, judgments, occurrences, and
   history without supplying equality, identity, truth, or authority.
+- Rust owns compact persistence, indexes, FFI, production runtime, and
+  optimized backends after the canonical package boundary. Rust semantic
+  proposals remain untrusted until checked and parity-gated.
+- Clause progressively owns schemas, modes, elaboration, macros, obligation
+  construction, diagnostics, refactors, planning, projection, and compiler
+  orchestration without changing either frozen generic host for ordinary
+  language extensions.
 - Generators and hosts consume canonical artifacts; they do not reproduce
   Clause semantics independently.
 
@@ -437,7 +479,9 @@ identity, canonical wire where applicable, diagnostics, migration, runtime or
 target behavior, and narrow executable exit proof land together. Documentation
 specimens are not implementation evidence. A green parser test does not prove
 semantic preservation, and a green target demo does not prove source identity
-or provenance.
+or provenance. A successful Lean execution without a kernel-checked,
+axiom-policy-compliant certificate proves no Clause admission, and agreement
+inside one host does not substitute for the required cross-host parity.
 
 The first next action is the process-first adoption spike. Its host-freeze gate
 and negative fixtures—not another terminology discussion—determine whether a

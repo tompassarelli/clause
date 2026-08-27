@@ -30,6 +30,20 @@ external store, graph database, or shared serialization is a Clause dependency
 or co-authority. Similar historical experiments may have suggested questions,
 but no foreign product boundary is imported into the design.
 
+The selected implementation experiment keeps that authority host-neutral:
+
+```text
+Clause foundation     = semantic authority
+Clause Core contract  = its host-neutral canonical package and rules
+Lean 4                = constitutional checker and reference Run model
+Rust                  = physical persistence, runtime, FFI, and backends
+Clause                = eventual author of the expanding compiler middle
+```
+
+OCaml is not a primary implementation layer. This split is a bootstrap decision
+subject to the spike, not a claim that Lean's type theory or Rust's data model
+is Clause semantics.
+
 ## Observed implementation baseline
 
 The exact Clause baseline inspected for this decision is:
@@ -113,9 +127,7 @@ boundaries before landing:
   bounded spike pass.
 
 A separate regression review found no imported persistence product or lost
-general-purpose mission. One generic persistence-sounding module name in source
-examples was renamed `Ledger` to prevent readers from inventing an
-architectural dependency from an ordinary designation.
+general-purpose mission.
 
 ## Protected guarantees
 
@@ -137,6 +149,85 @@ won by the named-role and identity work:
 The target may retain packed role maps and current structs as checked indexed
 views or runtime materializations. The rejected claim is only that they are a
 second irreducible semantic substance.
+
+## Lean 4 constitutional-checker evidence
+
+The exact Lean source inspected for the bootstrap decision is upstream
+[`leanprover/lean4`](https://github.com/leanprover/lean4/tree/342db4dbdb3aab611e0b92ddba0c134c9b28b2f9)
+revision `342db4dbdb3aab611e0b92ddba0c134c9b28b2f9`, licensed Apache-2.0. No Lean
+code was copied, adapted, vendored, or built for this decision. No
+constitutional checker binary exists yet, so its exact Lean toolchain and
+artifact hashes remain a required spike output rather than recorded evidence.
+
+The source supports a narrow, useful conclusion: Lean can provide a strong
+proof-admission boundary for a Clause model encoded in Lean, but its kernel
+does not natively understand Clause Terms or graphs.
+
+- `src/kernel/type_checker.h:135-166` and
+  `src/kernel/environment.cpp:271-280` show a kernel that checks Lean
+  expressions and declarations. Clause therefore needs an explicit decoder,
+  object-language model, certificate proposition, and theorem connecting a
+  certificate to Clause validity; a host Boolean alone proves nothing.
+- `src/kernel/declaration.h:91-118` and
+  `src/kernel/type_checker.cpp:101-122` enforce Lean's safe/partial/unsafe
+  distinction. Clause's constitutional path can remain safe and total while
+  partial, reactive, streaming, and effectful Clause modes stay explicit in
+  the object language.
+- `src/Lean/AddDecl.lean:22-28` exposes skipped kernel checking, while
+  `src/Lean/AddDecl.lean:109-221` shows preliminary asynchronous declarations,
+  error recovery through axioms, and `sorryAx` fallback. Clause admission must
+  await the checked environment and reject every such recovery artifact.
+- `src/Lean/Environment.lean:138-144` documents import trust levels, and
+  `src/Lean/Shell.lean:207-238` exposes a high believer default for the shell.
+  `trustLevel = 0` checks newly added declarations but does not recheck imported
+  `.olean` bodies. Constitutional validation therefore needs exact source,
+  toolchain, and artifact hashes, rejection of unsafe/partial declarations in
+  the transitive certificate closure, and replay of every reachable safe/total
+  declaration into a fresh kernel environment before acceptance. Lean's stock
+  replay skips unsafe/partial constants, so their absence from the closure is a
+  separate required check.
+- `src/Lean/Compiler/ImplementedByAttr.lean:15-43` says an
+  `implemented_by` replacement is not checked equivalent, and
+  `src/Init/Tactics.lean:1452-1495` says `native_decide` trusts compiled
+  execution through an axiom. Neither is valid constitutional evidence.
+- `src/Lean/Util/CollectAxioms.lean:29-154` can enumerate axiom closure, but
+  policy must still explicitly allow or reject foundations such as `propext`,
+  `Quot.sound`, and `Classical.choice`.
+- `src/LeanChecker.lean:56-73` can replay declarations into a kernel
+  environment and explicitly says it is not an external verifier. It is a
+  useful same-kernel consistency gate, not an independent trust root.
+
+This evidence selects Lean for the next semantic implementation tranche, not
+as Clause's ontology or source-language host. The spike must still measure the
+encoding/TCB size, proof ceremony, canonical-codec boundary, feedback cost, and
+Lean/Rust parity. If Clause meaning migrates into Lean syntax constructors,
+closed per-feature inductives, compiler-trust execution, or unchecked imports,
+the implementation has failed the same no-second-authority test applied to
+Rust.
+
+## Aeneas boundary
+
+The exact Aeneas source inspected is upstream
+[`AeneasVerif/aeneas`](https://github.com/AeneasVerif/aeneas/tree/9467a32f98437dd2812fc693fd475827775f5186)
+revision `9467a32f98437dd2812fc693fd475827775f5186`, licensed Apache-2.0. No Aeneas
+or Charon code was copied, adapted, vendored, built, or added as a dependency.
+That Aeneas revision requires Charon revision
+`2881d1238bcb1f2f30a62f07018da1e397bcb181`.
+
+Aeneas translates a supported Rust subset through Charon's LLBC and an OCaml
+pure-functional intermediate representation into proof-assistant code,
+including Lean. That makes it potentially useful later as an optional,
+independently gated verifier for selected isolated safe-Rust helpers in the
+physical substrate.
+
+It is not part of the Clause Core spike or architecture. Its closed translation
+IR, handwritten/axiomatic treatment of opaque externals, unsupported unsafe and
+concurrent Rust, additional Charon/OCaml/version-pin boundary, and generated
+Lean model do not establish Clause's canonical meaning. Its Pure IR's explicit
+state, failure, and fuel rewriting is interesting implementation precedent for
+honest Run outcomes, but its pinned Lean backend rejects the fuel option. It
+remains Rust-specific compiler translation rather than Clause
+context/admission semantics.
 
 ## Prior art considered
 
@@ -171,17 +262,22 @@ Clause departs from both only if the host-freeze gate proves that one judged
 Term graph genuinely reduces semantic duplication without sacrificing source
 clarity or target specialization.
 
-These sources support ingredients, not the composition. Links were supplied in
-the design review; this documentation change did not independently reproduce
-their results. No external implementation source was copied, adapted, or
-vendored.
+These sources support ingredients, not the composition. The published papers
+were not independently reproduced; Lean and Aeneas were inspected at the exact
+source revisions recorded above. No external implementation source was copied,
+adapted, or vendored.
 
 ## Disproof evidence required
 
 The [adoption spike](adoption-spike.md) is deliberately shaped to disprove the
 kernel if any of these occur:
 
-- a meaningful construct escapes into a private host semantic enum;
+- a meaningful construct escapes into a private Lean or Rust semantic case;
+- the Lean certificate path admits skipped checking, recovery or unlisted
+  axioms, compiler-trust evaluation, unchecked imports, or a result not tied to
+  the exact Clause proposition;
+- Lean and Rust disagree on acceptance, identity, outcome, delta, obligation,
+  or trace under the canonical package;
 - named roles become positional or partial n-ary roots conflate values;
 - raw Term handles leak as occurrence or entity identity;
 - structurally equal transfers collapse into one event;
@@ -209,6 +305,10 @@ The following remain unproved:
 - that structural equality, explicit identities, canonical reload, and cyclic
   references remain comprehensible and efficient at scale;
 - that Clause-authored schemas and macros avoid ontology ceremony;
+- that the Lean encoding and certificate bridge stay smaller, clearer, and
+  cheaper than the semantic boundary they protect;
+- that an acceptably small logical-axiom policy and reproducible imported-module
+  provenance can be maintained;
 - that incremental dependency closure stays precise on large graphs;
 - that generic meaning specializes competitively to systems, Wasm,
   JavaScript, browsers, and databases;

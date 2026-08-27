@@ -19,6 +19,22 @@ Terms hold distinctions; they do not assert or execute themselves. The
 admitted judgment graph is the program at rest, Run is the program in motion,
 and a trace describes an occurrence without becoming that occurrence.
 
+The semantic foundation governs one host-neutral Clause Core contract, and that
+contract is sovereign over every implementation. The accepted bootstrap
+direction is deliberately split:
+
+```text
+Lean 4  checks proof-bearing Clause Core packages and hosts the reference Run model.
+Rust    persists and executes accepted meaning through optimized physical machinery.
+Clause  progressively authors its own elaboration, transformations, and compiler middle.
+```
+
+Lean is not Clause's source language, ontology, or wire format, and Rust is not
+allowed to mint semantic categories that the host-neutral core cannot express.
+Both implementations must consume one canonical Clause-owned package and agree
+on observable meaning. The adoption spike may still falsify Lean's suitability
+or the Term kernel itself before either becomes part of the supported line.
+
 Clause's accepted semantic vocabulary is:
 
 - a **Program** is a durable evolving lineage;
@@ -61,7 +77,8 @@ Clause now implements the ratified Program snapshot/history boundary, typed
 checked-snapshot compilation, immutable RuntimeSession identity, causal
 StateRevision identity, strict runtime-v3 replay/reload, and ProgramRevision-
 bound render/effect evidence while preserving semantic-v10 / Revision-v6
-bytes. It does not yet implement the process-first Term/Clause/Run kernel; the
+bytes. It does not yet implement the process-first Term/Clause/Run kernel,
+canonical Clause Core package, or Lean constitutional checker; the
 [adoption spike](docs/adoption-spike.md) is the next mechanism decision.
 Canonical agent-first syntax, the complete generated live host, three
 applications, and the preregistered comparison also remain unfinished. The

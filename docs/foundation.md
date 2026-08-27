@@ -86,6 +86,44 @@ implementation may infer a Term's validity from a story about which earlier Run
 created it, and no correctness claim depends on observing a metaphysical first
 act.
 
+## Clause Core transport contract
+
+`Clause Core` names the canonical host-neutral transport contract for the
+semantic objects defined by this foundation. It is not another constructor,
+graph, context, revision, semantic substance, or authority. A Clause Core
+package is a typed envelope carrying existing Clause objects between
+implementations; merely constructing, decoding, checking, or persisting one
+asserts and admits nothing.
+
+Each package schema keeps three scopes explicit and disjoint:
+
+- candidate or checked semantic material governed by the Term, judgment, Run,
+  and admission rules in this document;
+- Clause-native certificate proposals, derivations, supports, proofs,
+  obligations, and rejection evidence; and
+- separately typed source, strategy, trace, artifact, and physical evidence.
+
+The selected schema must represent every Clause object and every declared
+observable or nonfunctional contract required by its modes, including
+capabilities, identity, cardinality, order, fairness, continuation,
+cancellation, resources, effect sequencing, and canonical bytes. There are no
+host-only semantic fields or side channels. Clause-native certificate data is
+canonical package content; a host proof term, runtime object, pointer, cache,
+or compiler-internal witness is local implementation evidence and never the
+wire contract.
+
+A package envelope is not a `ProgramSnapshot`. Only the canonical checked
+payload enumerated under
+[Program identity and history](#program-identity-and-history) contributes to
+`ProgramSnapshotId`. Source maps, strategies, runtime traces, certificates,
+caches, and physical evidence remain outside that identity unless an explicit
+authored Clause judgment places their semantic content inside the snapshot.
+Each check result binds the exact canonical package bytes, semantics epoch,
+decoded sections, and claimed Clause judgments. Any admission operation
+crossing this contract consumes that exact checked package and certificate
+binding; it may not substitute a merely equivalent or separately decoded
+candidate.
+
 ## Why three
 
 Two slots can pair Terms, but cannot make both participants and their
@@ -827,6 +865,8 @@ The adoption spike and any migration must prove at least these cases:
 | Two equal claims are independently asserted | Same proposition content; distinct AssertionOccurrenceIds |
 | A derived fact is later explicitly asserted | Consequences may match; the new assertion occurrence changes the snapshot |
 | Non-constitutive attestation or later AdmissionJudgment is added | Snapshot and revision identities remain unchanged |
+| Same checked payload travels with different source, trace, strategy, or certificate evidence | Same ProgramSnapshotId; evidence remains in separately typed package sections |
+| A certificate checked for package A is presented with package B | Admission rejects the mismatched byte/epoch/decoded-value binding |
 | Same checked payload under different semantics epochs | Different ProgramSnapshotIds |
 | Two Programs select the same exact Referents and payload | Same ProgramSnapshotId; Program-specific revision identities |
 | Equal spellings use independently allocated Referents | Different ReferentIds and ProgramSnapshotIds |

@@ -375,7 +375,7 @@ A reusable change set is explicit:
 ```clause
 delta impact/import-change
   withdraw
-    North imports Ledger
+    North imports West
   admit
     South imports North
 ```
@@ -385,7 +385,7 @@ A program-history candidate names exact ancestry:
 ```clause
 revision impact/adopt from impact
   withdraw
-    North imports Ledger
+    North imports West
   admit
     South imports North
 ```

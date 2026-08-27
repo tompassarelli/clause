@@ -42,6 +42,109 @@ passes. Unknown, incomplete, dirty, tampered, or mismatched evidence fails
 closed. Public-base markers admit inherited evidence only; they do not make a
 later milestone implemented.
 
+## Constitutional implementation split
+
+The foundation governs the host-neutral Clause Core contract; that contract is
+sovereign over its implementations. The accepted bootstrap architecture assigns
+three implementation roles without turning any host into a second semantic
+authority:
+
+```text
+canonical Clause Core package
+          |                    |
+          v                    v
+Lean constitutional       Rust physical engine
+checker and reference     persistence, indexes, runtime,
+Run semantics             FFI, and optimized backends
+          \                    /
+           \------ parity ----/
+                    |
+                    v
+        accepted Clause revision or exact rejection
+```
+
+Later, Clause-authored elaborators, macros, refactors, planners, and compiler
+drivers propose the same package to the same acceptance boundary.
+
+The package is the typed transport envelope defined by the foundation, not a
+new semantic substance, serialized Lean value, or Rust struct layout. Its
+disjoint sections carry the exact Clause objects, declared observables, and
+separately scoped evidence required by each gate. Only the foundation-defined
+checked Program payload contributes to `ProgramSnapshotId`; package
+certificates, source maps, strategies, traces, caches, and physical evidence do
+not enter that identity unless an explicit authored judgment makes their
+semantic content part of the snapshot. Clause-native certificate data may
+cross the wire; Lean proof terms remain local evidence bound to the exact
+canonical package bytes and decoded sections. One versioned codec and one
+corpus of canonical vectors define exchange. Lean and Rust may use private
+indexes and intern handles after decoding, but neither may add an uncheckable
+semantic field or side channel.
+
+Lean receives a generic model of Clause's own Terms, judgments, Runs, and
+admission rules. Clause constructs are not Lean `Syntax` kinds, `Expr`
+constructors, type classes, or one inductive variant per language feature.
+Lean's kernel checks Lean declarations and proof terms, not arbitrary Clause
+graphs directly; therefore the Clause decoder, object-language definitions,
+certificate proposition, and theorem connecting an accepted certificate to
+Clause validity form one small audited bridge. A compiled Boolean or successful
+reference execution is an oracle, not admission evidence, unless accompanied
+by a kernel-checked certificate for the corresponding Clause proposition.
+
+The reference Run semantics is a relation capable of representing total,
+partial, nondeterministic, streaming, reactive, and effectful modes. Fuelled
+total interpreters may execute bounded specimens, but Lean host recursion may
+not decide Clause partiality or silently redefine a mode. Rust consumes the
+same package for fast algorithms and physical realization. It may select
+arrays, arenas, indexes, native code, Wasm, JavaScript, or foreign interfaces;
+it may not decide a binder, identity, transition, effect occurrence, or
+language category that the package and checker cannot express.
+
+The compiler middle moves into Clause in this order when stable: schemas and
+relation modes; elaboration and macro rules; obligation construction,
+diagnostics, queries, and refactors; planner and projection policy; then
+compiler orchestration and selected checking or lowering. The governing test
+is that an ordinary new abstraction changes Clause data, not a Lean or Rust
+feature taxonomy. No additional primary compiler host is planned; OCaml has no
+primary compiler-host role in the accepted bootstrap architecture.
+
+### Lean constitutional trust profile
+
+The first checker is admitted only under this profile:
+
+- pin and hash the exact Lean source, toolchain, and imported `.olean` artifacts
+  used to produce every constitutional result. Use `trustLevel = 0` for newly
+  added declarations, while recognizing that it does not recheck imported
+  bodies; compute the transitive constitutional dependency closure, reject any
+  reachable `unsafe` or `partial` declaration, and replay every reachable
+  safe/total declaration into a fresh kernel environment from the pinned
+  artifacts before acceptance;
+- keep constitutional definitions and proofs safe and total; represent Clause
+  partiality, divergence, reactivity, effects, and bounds in the object model,
+  not with Lean `partial`, `unsafe`, foreign, or compiler replacement paths;
+- never enable skipped kernel type checking, accept elaboration recovery,
+  `sorry`/`sorryAx`, failed-declaration fallback axioms, or an asynchronous
+  preliminary environment; acceptance waits for the checked environment;
+- reject compiler-trust proof bridges such as `native_decide`, native reduction,
+  execution of or reliance on `implemented_by`/`extern` implementations, or a
+  compiled Boolean in the constitutional proof closure; an `extern` attribute
+  does not by itself invalidate a kernel-checked definition body;
+- audit the transitive axiom closure against an explicit Clause policy. Any
+  permitted logical foundations, including choices about `propext`,
+  `Quot.sound`, or `Classical.choice`, are named rather than inherited
+  accidentally;
+- bind every accepted theorem to the exact canonical package bytes, semantics
+  epoch, and decoded value, rejecting alternate or noncanonical encodings; and
+- use `leanchecker` or an equivalent declaration replay for that safe/total
+  closure while recognizing that Lean's replay skips unsafe/partial constants,
+  shares the kernel, and is not an independent verifier.
+
+Logical-certificate trust and executable-runtime trust remain separate. Lean's
+own runtime may contain foreign or compiler-specific machinery outside the
+certificate closure; production Rust and generated targets remain pinned and
+differentially checked rather than being misdescribed as kernel-proved. A later
+small independent Clause-core checker or translation validator may reduce this
+trust further without changing the canonical contract.
+
 ## Current implementation mapping
 
 The live compiler at the baseline for this decision is
@@ -109,10 +212,13 @@ read(SourceUnit)
 elaborate(LosslessCST, ElaborationContext)
   -> candidate Terms, occurrences, and Clause judgments
 
-validate(candidate judgment graph)
-  -> admissible candidate or exact failed obligations
+encode(candidate judgment graph, derivation proposal)
+  -> canonical Clause Core package
 
-admit(candidate, ProgramAdmissionContext)
+check(package)
+  -> kernel-checked certificate bound to exact package or failed obligations
+
+admit(package, bound certificate, ProgramAdmissionContext)
   -> ProgramChangeOccurrence + ProgramRevision
 
 lower(ProgramRevision, target and physical contracts)
@@ -192,8 +298,9 @@ physical realization.
 - Elaboration deterministically selects declared readings from explicit syntax
   before child domain checking, then resolves Designations and proposes Terms,
   occurrences, focus, named roles, and Clause judgments.
-- The generic judgment kernel owns structural, relational, modal, binding,
-  effect, and bounded-execution obligations.
+- The generic Clause Core checker owns structural, relational, modal, binding,
+  effect, and bounded-execution obligations. Lean is its first constitutional
+  implementation, not the owner of those categories.
 - Run machinery owns selected execution mode, outcome, candidate
   successor, and trace production.
 - Admission owns Program or State lineage, base revision, constitutive
@@ -202,6 +309,9 @@ physical realization.
   candidates, effect boundaries, and receipts under one ProgramRevision.
 - Persistence stores canonical Clause-owned Terms, judgments, occurrences, and
   history without inventing identity or truth.
+- Rust owns compact storage, indexes, FFI, production runtime, and optimized
+  backends after the Clause Core boundary. Its semantic proposal machinery is
+  untrusted until checked and parity-gated.
 - Generators and hosts consume checked strategies and canonical artifacts. They
   may optimize but cannot reproduce or extend Clause semantics privately.
 
@@ -238,7 +348,7 @@ bounded by their declared dependency closure rather than the whole graph.
 | A4 | **Clause is judgment.** Type, modality, authority, relation modes, and executability are contextual judgments over Terms. | A raw structural shape is automatically treated as proposition, assertion, value, effect, or execution. |
 | A5 | **Named roles survive three-slot lowering.** Higher-arity meaning retains stable RoleIds, role types, cardinality, completeness, atomic admission, and source-order independence. | A role is dropped, inferred positionally after elaboration, or equal partial roots conflate distinct n-ary values. |
 | A6 | **Honest modes and outcomes.** Total, productive, bounded, partial, nondeterministic, streaming, and reactive modes state result cardinality, continuation, fairness/ordering, failure, cancellation, and resource obligations. | Clause claims a universal halting decision, silently diverges under a total mode, invents one verdict for an open stream, or calls expected reactivity an error. |
-| A7 | **One semantic authority.** Schemas, readings, typing, completion, language extension, and failed obligations are inspectable Clause-authored judgments checked by a generic kernel. | A source construct requires a private host enum, opaque callback/dispatch table, validator, formatter, refactor, analysis, or dependency rule. |
+| A7 | **One semantic authority.** Schemas, readings, typing, completion, language extension, and failed obligations are inspectable Clause-authored judgments checked by a generic kernel. | A source construct requires a private Lean/Rust feature case, host enum, opaque callback/dispatch table, validator, formatter, refactor, analysis, or dependency rule. |
 | A8 | **Act and trace never collapse.** State Runs stage intents; admitted intents authorize separately identified external effect Runs; attempts, receipts, observations, and later evidence admission remain distinct. | A transition fabricates a receipt, rejection claims to roll back an external act, replay repeats an effect, or a receipt becomes truth. |
 | A9 | **Intensional identity and history.** Snapshot identity commits to semantics epoch plus canonical checked payload; history commits separately to Program, predecessor, snapshot, and genuine change occurrence. | Equivalence collapses independent history, later evidence mutates a revision, or a hash silently changes meaning across epochs. |
 | A10 | **Physical freedom under traceable contracts.** Targets specialize aggressively while preserving exact semantics and every declared observable or nonfunctional contract. | A target, store, retry, fallback, exception, cache, layout, or host accident changes meaning privately. |
@@ -275,13 +385,15 @@ matching, structurally complete and nominal n-ary cases, recursive derivation,
 State/effect Runs, hygienic macros, canonical projection, and Clause-owned
 persistence/reload through one generic kernel.
 
-The final gate freezes the host semantic kernel, then adds a new construct
-combining binding and effects entirely through Clause-authored schemas,
-readings, modes, and transformations. Those definitions must be inspectable and
-executed by generic Clause machinery; an opaque “generic” callback or
-per-construct dispatch table fails the gate. Generic kernel and backend
-implementation remains allowed. If the host must learn construct-specific
-meaning, the graph is an AST in witness protection and the mechanism fails.
+The final gate freezes both the Lean generic checker/model and Rust's semantic
+proposal boundary, then adds a new construct combining binding and effects
+entirely through Clause-authored schemas, readings, modes, and transformations.
+Those definitions must be inspectable and executed by generic Clause machinery;
+an opaque “generic” callback or per-construct dispatch table fails the gate.
+Generic checker defects require an explicit refreeze and full rerun; optimized
+backend implementation remains allowed behind a checked strategy. If either
+host must learn construct-specific meaning, the graph is an AST in witness
+protection and the mechanism fails.
 
 A pass authorizes only a bounded parity-preserving migration proposal. It does
 not prove readability, performance, systems coverage, or maintenance economics
@@ -316,8 +428,9 @@ prose or a renamed marker cannot make the gate green.
 ## Current architecture gap
 
 The current implementation has a conventional AST, an irreducible n-ary
-`RelationalContent`, Rust-owned semantic variants, no graph-homoiconic macro
-system, and no universal Run interface. It already proves valuable oracles for
+`RelationalContent`, Rust-owned semantic variants, no canonical Clause Core
+package or Lean checker, no graph-homoiconic macro system, and no universal Run
+interface. It already proves valuable oracles for
 identity, duplicate occurrences, named roles, recursive derivation and support,
 queries, explanations, causal revisions, runtime sessions and State history,
 effects, generated Rust/JavaScript, and a bounded real-browser checkpoint.
