@@ -168,14 +168,19 @@ export function createMeshBinding(scene, { programRevisionId, meshes }) {
   if (!scene || typeof scene.add !== "function" || typeof scene.remove !== "function") throw new Error("scene lifecycle is required");
   requireProgramRevisionId(programRevisionId, "binding ProgramRevision identity");
   if (!(meshes instanceof Map) || meshes.size === 0) throw new Error("mesh registry is required");
-  const registry = new Map();
+  const admitted = [];
   for (const [id, mesh] of meshes) {
     requireReferentId(id, "mesh identity");
     if (!mesh || !mesh.position || typeof mesh.position.set !== "function") throw new Error("registered mesh is invalid");
-    registry.set(id, mesh);
+    admitted.push([id, mesh]);
+  }
+  const registry = new Map(admitted);
+  for (const [, mesh] of registry) {
     scene.add(mesh);
   }
+  let disposed = false;
   const apply = (plan) => {
+    if (disposed) throw new Error("mesh binding is disposed");
     const desired = validateRenderPlan(plan, programRevisionId);
     if (desired.items.some((item) => !registry.has(item.id))) throw new Error("RenderPlan names an unregistered mesh identity");
     const byId = new Map(desired.items.map((item) => [item.id, item]));
@@ -189,9 +194,11 @@ export function createMeshBinding(scene, { programRevisionId, meshes }) {
       }
     }
   };
-  const dispose = () => registry.forEach((mesh) => {
-    scene.remove(mesh); mesh.geometry.dispose(); mesh.material.dispose();
-  });
+  const dispose = () => {
+    if (disposed) return;
+    disposed = true;
+    registry.forEach((mesh) => scene.remove(mesh));
+  };
   return Object.freeze({ mesh: (id) => registry.get(id), apply, dispose });
 }
 

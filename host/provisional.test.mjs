@@ -249,3 +249,35 @@ test("mesh reconciliation hides omissions and rejects invalid plans before mutat
   expect(binding.mesh(playerId).position).toMatchObject({ x: 5, y: 6, z: 0 });
   expect(binding.mesh(coinId).visible).toBe(false);
 });
+
+test("mesh binding admits atomically and leaves caller-owned resources undisposed", () => {
+  const added = [];
+  const removed = [];
+  const scene = {
+    add(mesh) { added.push(mesh); },
+    remove(mesh) { removed.push(mesh); },
+  };
+  const position = { set() {} };
+  const valid = { position, visible: true };
+  expect(() => createMeshBinding(scene, {
+    programRevisionId,
+    meshes: new Map([[playerId, valid], [coinId, { visible: true }]]),
+  })).toThrow("registered mesh is invalid");
+  expect(added).toEqual([]);
+
+  const geometry = { disposed: 0, dispose() { this.disposed += 1; } };
+  const material = { disposed: 0, dispose() { this.disposed += 1; } };
+  const player = { position, visible: true, geometry, material };
+  const coin = { position, visible: true, geometry, material };
+  const binding = createMeshBinding(scene, {
+    programRevisionId,
+    meshes: new Map([[playerId, player], [coinId, coin]]),
+  });
+  expect(added).toEqual([player, coin]);
+  binding.dispose();
+  binding.dispose();
+  expect(removed).toEqual([player, coin]);
+  expect(geometry.disposed).toBe(0);
+  expect(material.disposed).toBe(0);
+  expect(() => binding.apply(plan(stateId("b"), []))).toThrow("mesh binding is disposed");
+});

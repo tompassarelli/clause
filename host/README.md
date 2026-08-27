@@ -13,9 +13,9 @@ evidence.
 - `renderPlanFor` asks that generated module for one exact-state plan, validates
   its ProgramRevision and StateRevision identities, canonical item ordering,
   Referent IDs, and finite F32 coordinates, then returns a frozen copy.
-- `createTwoMeshBinding` applies a validated total plan to two registered
-  meshes: listed meshes receive positions and become visible; omitted meshes
-  become hidden; unknown identities fail before mutation.
+- `createMeshBinding` validates a caller-owned mesh registry before adding any
+  mesh, applies total plans generically, and detaches meshes idempotently
+  without disposing caller-owned geometry or materials.
 - `createEventBridge` requires caller-owned event and transition occurrence
   allocators, rejects reused or malformed pins, mechanically orders declared
   input events, forwards them to an artifact-owned runtime, and retains only
@@ -27,22 +27,26 @@ evidence.
   idempotent teardown. Those host concerns do not enter Clause semantics.
 
 The event, effect, mesh, and lifecycle APIs are unit-tested with synthetic
-artifact and Three.js substitutes. The generated artifact implemented by Rust
-today contains frozen RenderPlan lookup data only; it does not yet implement
-the full live-runtime contract expected by `loadArtifact`.
+artifact and Three.js substitutes. A bounded compiler checkpoint also emits a
+specialized runtime-v3 ESM artifact for exactly one sealed, empty-payload
+authored transition.
 
 The source-deletion RenderPlan test removes the authored Clause file before Bun
 imports the generated ESM and compares its plan JSON exactly with Rust.
+The focused browser acceptance deletes authored source, serves only on
+127.0.0.1, compares exact Rust session and RenderPlan bytes, then observes that
+single transition through real Chrome and pinned Three.js `WebGLRenderer`.
 
 ## Current boundary
 
-There is no generated live-JavaScript transition runtime, real browser or
-Three.js integration proof, source map, dedicated scene/effect source syntax,
-or complete M7 one-coin vertical. The current `programRevisionId` field names
-the constitutional ProgramRevision; exact StateRevision IDs transitively bind
-their runtime session, policy, semantics epoch, predecessor, and causal
-occurrence. The host validates and forwards those opaque Clause-produced pins;
-it does not recompute identity preimages or invent provenance.
+The single-transition checkpoint is not a general JavaScript runtime: arbitrary
+or repeated transitions, general replay, generated effects and receipts,
+source maps, ratified scene/effect syntax, and the complete M7 one-coin vertical
+remain unfinished. The current `programRevisionId` field names the
+constitutional ProgramRevision; exact StateRevision IDs transitively bind their
+runtime session, policy, semantics epoch, predecessor, and causal occurrence.
+The host validates and forwards those opaque Clause-produced pins; it does not
+recompute identity preimages or invent provenance.
 
 Run the host unit boundary with Bun:
 

@@ -221,14 +221,20 @@ Implemented checkpoints:
   requires caller-owned event and transition occurrence allocation,
   mechanically forwards declared event/effect requests, and owns browser
   lifecycle rather than Clause semantics.
+- A source-deleted real-Chrome acceptance emits one sealed empty-payload
+  runtime-v3 transition, matches exact Rust session and RenderPlan bytes, and
+  observes actual pinned Three.js `WebGLRenderer` execution. This is a bounded
+  compiler checkpoint, not a general JavaScript runtime or M7 completion.
 
 Still required for M7:
 
 - ratified authored scene/effect/capability syntax;
-- a generated live-JavaScript transition artifact rather than only frozen
-  RenderPlan data;
-- exact generated runtime/result validation without host-authored semantics;
-- real browser and Three.js execution evidence;
+- a general generated live-JavaScript runtime for arbitrary and repeated
+  transitions rather than one sealed specialized edge;
+- generalized runtime/result replay and effect validation without host-authored
+  semantics;
+- real-browser and Three.js evidence beyond the bounded single-transition
+  checkpoint;
 - source maps and role/focus diagnostics through generated JavaScript;
 - the full one-coin movement, collision, collection, score, replay, render, and
   effect-receipt vertical; and

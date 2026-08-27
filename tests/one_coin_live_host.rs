@@ -188,7 +188,10 @@ fn authored_coin_collects_in_source_deleted_generated_esm_inside_chrome_and_thre
         .read_line(&mut url)
         .expect("Bun server reports its URL");
     let url = url.trim();
-    assert!(url.starts_with("http://"), "Bun server returned {url:?}");
+    assert!(
+        url.starts_with("http://127.0.0.1:"),
+        "Bun server returned {url:?}"
+    );
 
     let browser = Command::new("timeout")
         .arg("30s")
@@ -262,6 +265,13 @@ try {
   if (JSON.stringify(renderPlanFor(artifact, runtime.state())) !== expectedCollectedPlan) throw new Error("collected Rust/generated RenderPlan differs");
   if (binding.mesh(coinId).visible || binding.mesh(playerId).visible !== true) throw new Error("generated total plan did not hide only the omitted mesh");
   if (!renderer.isWebGLRenderer || renderer.info.render.calls < 1) throw new Error("actual Three.js WebGLRenderer did not render");
+  binding.dispose();
+  player.geometry.dispose();
+  player.material.dispose();
+  coin.geometry.dispose();
+  coin.material.dispose();
+  renderer.dispose();
+  renderer.domElement.remove();
   document.body.dataset.result = "pass";
   document.body.append("THREE.WebGLRenderer runtime-v3 source-deleted PASS");
 } catch (error) {

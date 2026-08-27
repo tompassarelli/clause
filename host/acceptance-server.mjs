@@ -10,6 +10,7 @@ const files = new Map([
 ]);
 
 const server = Bun.serve({
+  hostname: "127.0.0.1",
   port: 0,
   async fetch(request) {
     const pathname = new URL(request.url).pathname;
