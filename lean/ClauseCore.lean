@@ -155,6 +155,83 @@ theorem sameRepresentation_false_of_index_ne (left right : ScopedTerm)
 
 end ScopedTerm
 
+/-! ## Candidate context and judgment structure -/
+
+/-- The conclusion proposed by the right-hand side of
+`Γ ⊢ term clause : type @ mode`.
+
+All three fields remain ordinary Terms. Constructing this value records only a
+candidate claim; it does not establish a Clause judgment. -/
+structure JudgmentClaim (index : StructuralIndex) where
+  term : Term index
+  typeTerm : Term index
+  mode : Term index
+
+namespace JudgmentClaim
+
+/-- Exact candidate-representation comparison for a judgment claim. This is
+not contextual validity or semantic equality. -/
+def sameRepresentation (left right : JudgmentClaim index) : Bool :=
+  Term.sameRepresentation left.term right.term &&
+    Term.sameRepresentation left.typeTerm right.typeTerm &&
+    Term.sameRepresentation left.mode right.mode
+
+/-- Representation sameness for candidate judgment claims. -/
+def SameRepresentation (left right : JudgmentClaim index) : Prop :=
+  sameRepresentation left right = true
+
+theorem sameRepresentation_iff_eq (left right : JudgmentClaim index) :
+    sameRepresentation left right = true ↔ left = right := by
+  cases left
+  cases right
+  simp [sameRepresentation, Term.sameRepresentation_iff_eq, and_assoc]
+
+theorem sameRepresentation_self (claim : JudgmentClaim index) :
+    sameRepresentation claim claim = true :=
+  (sameRepresentation_iff_eq claim claim).2 rfl
+
+end JudgmentClaim
+
+/-- An immutable candidate enumeration of judgment premises at one exact
+structural index.
+
+The list is a transport representation only. Position, multiplicity, and raw
+membership grant no truth, validity, authority, or source order. -/
+structure ContextCandidate (index : StructuralIndex) where
+  premises : List (JudgmentClaim index)
+
+namespace ContextCandidate
+
+/-- Representation-only premise lookup. A later generic checker may use this
+for exact certificate addressing, but a successful lookup is not a derivation
+or admission. -/
+def containsRepresentation (context : ContextCandidate index)
+    (claim : JudgmentClaim index) : Bool :=
+  context.premises.any (fun premise =>
+    JudgmentClaim.sameRepresentation premise claim)
+
+/-- Candidate representation membership, not judgment validity. -/
+def ContainsRepresentation (context : ContextCandidate index)
+    (claim : JudgmentClaim index) : Prop :=
+  containsRepresentation context claim = true
+
+theorem empty_contains_no_representation (claim : JudgmentClaim index) :
+    containsRepresentation ⟨[]⟩ claim = false := by
+  rfl
+
+theorem head_has_matching_representation (claim : JudgmentClaim index)
+    (remaining : List (JudgmentClaim index)) :
+    containsRepresentation ⟨claim :: remaining⟩ claim = true := by
+  simp [containsRepresentation, JudgmentClaim.sameRepresentation_self]
+
+end ContextCandidate
+
+/-- Raw data for one proposed contextual Clause judgment. The future generic
+checker, not this constructor, decides whether the context entails the claim. -/
+structure ClauseJudgmentCandidate (index : StructuralIndex) where
+  context : ContextCandidate index
+  claim : JudgmentClaim index
+
 /-! ## Kernel-checked constitutional examples -/
 
 namespace Examples
@@ -227,6 +304,50 @@ theorem cross_epoch_terms_do_not_have_the_same_representation :
 theorem cross_universe_terms_do_not_have_the_same_representation :
     ScopedTerm.sameRepresentation epochATerm universeBTerm = false := by
   decide
+
+private def propositionType : Term indexA := atomAt indexA 4 10 20
+private def quotedType : Term indexA := atomAt indexA 5 10 21
+private def pureMode : Term indexA := atomAt indexA 6 10 22
+private def quotedMode : Term indexA := atomAt indexA 7 10 23
+
+private def propositionClaim : JudgmentClaim indexA := {
+  term := transferContent
+  typeTerm := propositionType
+  mode := pureMode
+}
+
+private def quotedClaim : JudgmentClaim indexA := {
+  term := transferContent
+  typeTerm := quotedType
+  mode := quotedMode
+}
+
+private def emptyContext : ContextCandidate indexA := ⟨[]⟩
+private def contextWithProposition : ContextCandidate indexA :=
+  ⟨[propositionClaim]⟩
+
+private def proposedJudgment : ClauseJudgmentCandidate indexA := {
+  context := contextWithProposition
+  claim := propositionClaim
+}
+
+theorem one_term_can_have_distinct_candidate_judgments :
+    Term.sameRepresentation propositionClaim.term quotedClaim.term = true ∧
+      JudgmentClaim.sameRepresentation propositionClaim quotedClaim = false := by
+  decide
+
+theorem term_construction_grants_no_context_membership :
+    ContextCandidate.containsRepresentation emptyContext propositionClaim = false := by
+  decide
+
+theorem candidate_premise_membership_is_explicit :
+    ContextCandidate.containsRepresentation contextWithProposition
+      propositionClaim = true := by
+  decide
+
+theorem proposed_judgment_keeps_context_outside_the_term :
+    proposedJudgment.claim.term = transferContent := by
+  rfl
 
 end Examples
 

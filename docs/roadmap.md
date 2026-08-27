@@ -13,17 +13,18 @@ Clause is at a clean constitutional bootstrap. The live repository contains:
 
 - the accepted process-first semantic foundation;
 - the canonical source design;
-- a provisional Lean 4 model containing only indexed Atom/Term candidate
-  representations, representation comparison, and a bounded trust audit; and
+- a provisional Lean 4 model containing indexed Atom/Term representations,
+  generic candidate Context/Judgment carriers, representation-only lookup, and
+  a bounded trust audit; and
 - an empty Rust crate for the physical substrate.
 
 There is no supported parser, compiler, runtime, persistence format, CLI,
 backend, or example application. No implemented language capability is
 claimed. Git history is not source authority or a design template.
 
-The next decision is whether contextual Clause judgments, Run, and admission
-can extend this structural boundary without Lean becoming a second semantic
-authority.
+The next decision is whether a generic Clause-native checker can validate
+judgment certificates and Atom equality contracts without raw Context
+membership or Lean host structure becoming semantic authority.
 
 ## Status summary
 
@@ -34,7 +35,7 @@ authority.
 | Repository reset | Complete | Live tree contains only current documents, licenses, and current package roots |
 | Lean package bootstrap | Complete | Lean 4.33.1 build at trust level zero, bounded declaration audit, and same-kernel replay |
 | Rust substrate bootstrap | Scaffolded | Empty workspace builds with pinned Rust toolchain and forbids unsafe code |
-| Clause Core calculus | In progress; provisional Term representation only | Admitted Atom/Term equality plus generic Context/Judgment/Run/Admission with no feature taxonomy |
+| Clause Core calculus | In progress; provisional Term plus candidate Context/Judgment representation | Admitted Atom/Term equality plus generic Context/Judgment/Run/Admission with no feature taxonomy |
 | Canonical package and certificates | Pending | One host-neutral codec, exact byte vectors, and package-bound evidence |
 | Constitutional adoption spike | Pending | All eight gates, negative evidence, Lean/Rust parity, and host freeze |
 | Clause-authored compiler middle | Blocked on spike | Stable proposal machinery moves into Clause |
@@ -84,13 +85,19 @@ The current provisional model contains:
   cross-index rejection;
 - no identity field on Triple, while all nominal meaning remains deferred to a
   future Clause judgment; and
-- named positive and negative candidate-representation examples.
+- generic, index-bound Judgment claims whose semantic fields remain ordinary
+  Terms, candidate Contexts enumerating claims, and proposed contextual
+  judgments pairing the two;
+- representation-only candidate premise lookup that grants no derivation or
+  authority; and
+- named positive and negative candidate-representation and membership examples.
 
-It deliberately does not yet define or claim Context, Judgment, Mode,
-RunOutcome, Run, Delta, Trace, Admission, Revision, Atom-contract validation,
-semantic structural equality, nominal identity, or canonical package bytes.
-This source is non-authoritative bootstrap evidence, not a landed semantic
-tranche under the architecture's admission and parity gates.
+It deliberately does not yet define or claim a valid Context, a valid Clause
+Judgment relation, a generic certificate checker, Mode, RunOutcome, Run, Delta,
+Trace, Admission, Revision, Atom-contract validation, semantic structural
+equality, nominal identity, or canonical package bytes. This source is
+non-authoritative bootstrap evidence, not a landed semantic tranche under the
+architecture's admission and parity gates.
 
 The model must keep structural equality, value equality, denotational
 equivalence, occurrence identity, entity identity, concept continuity, and
@@ -109,8 +116,9 @@ Initial proofs protect only constitutional boundaries:
 - intent, attempt, receipt, observation, and evidence remain distinct; and
 - host handles cannot become Clause identity.
 
-**Current evidence:** the pinned Lean 4.33.1 provisional model builds with
-`-t0` and warnings as errors. A build-time environment audit rejects every
+**Current evidence:** the pinned Lean 4.33.1 provisional Term and candidate
+Context/Judgment model builds with `-t0` and warnings as errors. A build-time
+environment audit rejects every
 unsafe declaration, every partial declaration except the exact generated
 runtime helper for `Term.sameRepresentation`, foreign/replacement
 implementations, and axioms outside the explicit `propext` policy.

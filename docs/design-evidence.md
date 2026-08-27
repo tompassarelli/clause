@@ -26,6 +26,42 @@ The implementation packages begin semantic-empty and take only the current
 Clause calculus as authority. This removes the strongest path by which
 bootstrap convenience could become Clause ontology.
 
+## Equality bootstrap order
+
+Semantic Term equality cannot honestly precede generic Clause judgment
+checking. Atom equality contracts are declarative Clause data, so raw presence
+of a contract Term or validity claim in a candidate Context cannot authorize
+itself. Conversely, a generic checker can use exact IDs and candidate
+representation comparison for lookup and certificate binding without claiming
+semantic equality. The dependency is therefore stratified rather than cyclic:
+
+```text
+candidate Term representation
+  -> generic Context/Judgment certificate checking
+  -> admitted Atom contract and canonical-payload evidence
+  -> Atom semantic equality
+  -> recursive Term semantic equality
+```
+
+The first Context/Judgment carrier remains candidate data only. It introduces
+no `Term.semanticEq`, semantic `DecidableEq`, contract callback, function-valued
+proof field, opcode taxonomy, quotient, or raw-membership admission rule.
+
+The required negative specimen for the next checker is a candidate Context
+containing an equality contract that claims all payloads equal, plus raw claims
+that it is total, deterministic, and canonical, but no independent valid
+derivation. The checker must reject that candidate, produce no admitted
+contract or semantic-equality result, and leave distinct payload
+representations unequal. A design that accepts the specimen makes Context
+membership self-authorizing and is rejected.
+
+At pinned Lean 4.33.1, `DecidableEq` and `LawfulBEq` establish Lean
+propositional equality, not a separately governed Clause relation. Quotienting
+would add `Quot.sound`, collapse candidate representations before Clause
+chooses to, and violate the current axiom policy. These mechanisms remain
+implementation prior art, not Clause semantics. No Lean source was copied or
+adapted for this decision.
+
 ## Lean 4 source evidence
 
 The bootstrap pins Lean `v4.33.1`, whose upstream source tag resolves to
