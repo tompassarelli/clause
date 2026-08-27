@@ -72,6 +72,138 @@ pub fn emit_render_plan_javascript(plans: &[RenderPlan]) -> Result<String> {
     Ok(output)
 }
 
+/// Emit one source-deletion-safe specialized ESM transition from an exact
+/// runtime-v3 session prefix and its exact Rust RenderPlans.
+#[cfg(not(clause_generated))]
+pub fn emit_live_runtime_javascript(
+    session: &crate::runtime::RuntimeSession,
+    plans: &[RenderPlan],
+) -> Result<String> {
+    let [initial, collected] = session.states() else {
+        return Err(KernelError::new(
+            "live JavaScript currently requires exactly one runtime transition",
+        ));
+    };
+    let [input] = session.inputs() else {
+        return Err(KernelError::new(
+            "live JavaScript currently requires exactly one runtime input",
+        ));
+    };
+    let crate::runtime::RuntimeInput::Events(events) = input else {
+        return Err(KernelError::new(
+            "live JavaScript currently requires an authored event transition",
+        ));
+    };
+    let [event] = events.as_slice() else {
+        return Err(KernelError::new(
+            "live JavaScript currently requires exactly one event occurrence",
+        ));
+    };
+    if !event.payload().is_empty() {
+        return Err(KernelError::new(
+            "live JavaScript currently requires an empty event payload",
+        ));
+    }
+    let [initial_plan, collected_plan] = plans else {
+        return Err(KernelError::new(
+            "live JavaScript requires exact plans for both runtime states",
+        ));
+    };
+    for (plan, state) in [(initial_plan, initial), (collected_plan, collected)] {
+        if plan.program_revision() != session.program_revision()
+            || plan.state_revision() != state.identity()
+        {
+            return Err(KernelError::new(
+                "live JavaScript RenderPlan does not match its runtime state",
+            ));
+        }
+    }
+    let Some(transition) = collected.transition_occurrence() else {
+        return Err(KernelError::new(
+            "live JavaScript successor lacks its transition occurrence",
+        ));
+    };
+
+    let mut output = String::new();
+    writeln!(output, "export const kind = \"clause-js-runtime-v3\";")
+        .expect("writing generated JavaScript to a String cannot fail");
+    for (name, value) in [
+        ("programRevisionId", session.program_revision().as_str()),
+        ("semanticsId", session.semantics().as_str()),
+        ("runtimeSessionId", session.identity().as_str()),
+        (
+            "sessionStartOccurrenceId",
+            session.start_occurrence().as_str(),
+        ),
+        ("initialStateRevisionId", initial.identity().as_str()),
+        ("finalStateRevisionId", collected.identity().as_str()),
+        ("eventOccurrenceId", event.id().as_str()),
+        ("transitionOccurrenceId", transition.as_str()),
+        ("eventName", event.event().as_str()),
+    ] {
+        writeln!(output, "export const {name} = {value:?};")
+            .expect("writing generated JavaScript to a String cannot fail");
+    }
+    writeln!(
+        output,
+        "export const runtimeSessionCanonical = {:?};",
+        session.canonical_bytes()
+    )
+    .expect("writing generated JavaScript to a String cannot fail");
+    writeln!(
+        output,
+        "export const expectedEventPayload = Object.freeze([]);"
+    )
+    .expect("writing generated JavaScript to a String cannot fail");
+    writeln!(
+        output,
+        "export const events = Object.freeze({{{:?}: eventName}});",
+        event.event().as_str()
+    )
+    .expect("writing generated JavaScript to a String cannot fail");
+    writeln!(
+        output,
+        "const plans = Object.freeze({{{:?}:{},{:?}:{}}});",
+        initial.identity().as_str(),
+        frozen_plan_source(initial_plan),
+        collected.identity().as_str(),
+        frozen_plan_source(collected_plan),
+    )
+    .expect("writing generated JavaScript to a String cannot fail");
+    output.push_str(
+        "export const initialState = initialStateRevisionId;\n\
+         export const capabilities = Object.freeze([]);\n\
+         export function renderPlan(stateRevisionId, requestedProgramRevisionId = programRevisionId) {\n\
+         \x20 if (requestedProgramRevisionId !== programRevisionId) throw new Error(\"render plan names the wrong ProgramRevision\");\n\
+         \x20 const plan = plans[stateRevisionId];\n\
+         \x20 if (plan === undefined) throw new Error(\"unknown exact StateRevision\");\n\
+         \x20 return plan;\n\
+         }\n\
+         const samePayload = (value) => Array.isArray(value) && value.length === 0;\n\
+         const matchesEvent = (event, occurrence, revision) => event && revision === programRevisionId && event.programRevisionId === programRevisionId && event.name === eventName && event.event === eventName && event.id === eventOccurrenceId && event.order === 0 && samePayload(event.payload) && occurrence === transitionOccurrenceId;\n\
+         export function createEvent(name, event, payload, occurrence, order, revision) {\n\
+         \x20 if (name !== eventName || event !== eventName || occurrence !== eventOccurrenceId || order !== 0 || revision !== programRevisionId || !samePayload(payload)) throw new Error(\"event does not match the sealed runtime input\");\n\
+         \x20 return Object.freeze({ id: occurrence, event, name, payload: expectedEventPayload, order, programRevisionId });\n\
+         }\n\
+         export function createRuntime() {\n\
+         \x20 let state = initialStateRevisionId;\n\
+         \x20 return Object.freeze({\n\
+         \x20   state: () => state,\n\
+         \x20   transition(event, occurrence, revision) {\n\
+         \x20     if (state !== initialStateRevisionId || !matchesEvent(event, occurrence, revision)) throw new Error(\"transition does not match the sealed runtime-v3 edge\");\n\
+         \x20     state = finalStateRevisionId;\n\
+         \x20     return Object.freeze({ programRevisionId, semanticsId, runtimeSessionId, sessionStartOccurrenceId, transitionOccurrenceId, state, runtimeSessionCanonical, effects: Object.freeze([]) });\n\
+         \x20   },\n\
+         \x20 });\n\
+         }\n\
+         export function validateTransitionResult(result, event, occurrence, revision) {\n\
+         \x20 return matchesEvent(event, occurrence, revision) && result?.programRevisionId === programRevisionId && result?.semanticsId === semanticsId && result?.runtimeSessionId === runtimeSessionId && result?.sessionStartOccurrenceId === sessionStartOccurrenceId && result?.transitionOccurrenceId === transitionOccurrenceId && result?.state === finalStateRevisionId && result?.runtimeSessionCanonical === runtimeSessionCanonical;\n\
+         }\n\
+         export function validateEffectTrace() { return false; }\n",
+    );
+    Ok(output)
+}
+
 #[cfg(not(clause_generated))]
 fn frozen_plan_source(plan: &RenderPlan) -> String {
     frozen_array(&[

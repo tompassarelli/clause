@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { createEffectBridge, createEventBridge, createTwoMeshBinding, loadArtifact, renderPlanFor, startLifecycle } from "./provisional.mjs";
+import { createEffectBridge, createEventBridge, createMeshBinding, loadArtifact, renderPlanFor, startLifecycle } from "./provisional.mjs";
 
 const programRevisionId = `program-revision-sha256-${"a".repeat(64)}`;
 const stateId = (digit) => `state-sha256-${digit.repeat(64)}`;
@@ -27,7 +27,7 @@ const plan = (stateRevisionId, items, planProgramRevisionId = programRevisionId)
 
 function artifactFor(renderPlan, validateTransitionResult = () => true) {
   return loadArtifact({
-    kind: "clause-js-runtime-v2",
+    kind: "clause-js-runtime-v3",
     programRevisionId,
     events: { left: refId("5") },
     createRuntime: () => {},
@@ -81,7 +81,7 @@ test("stop during render does not schedule another frame", () => {
 
 test("effect traces require Clause validation and lifecycle stop is idempotent", () => {
   const artifact = loadArtifact({
-    kind: "clause-js-runtime-v2",
+    kind: "clause-js-runtime-v3",
     programRevisionId,
     capabilities: ["render"],
     events: {},
@@ -121,7 +121,7 @@ test("one Clause-owned coin collection replays into an absent coin render plan",
     [steadyStateId, plan(steadyStateId, [item(playerId, "41200000", "00000000")])],
   ]);
   const artifact = loadArtifact({
-    kind: "clause-js-runtime-v2",
+    kind: "clause-js-runtime-v3",
     programRevisionId,
     initialState,
     events: { frame: refId("5") },
@@ -199,10 +199,10 @@ test("mesh reconciliation hides omissions and rejects invalid plans before mutat
       this.position = { x: 0, y: 0, z: 0, set: (x, y, z) => { this.position.x = x; this.position.y = y; this.position.z = z; } };
     }
   }
-  const THREE = { Mesh, BoxGeometry: Geometry, CylinderGeometry: Geometry, MeshBasicMaterial: Material };
   const scene = { add() {}, remove() {} };
-  expect(() => createTwoMeshBinding(THREE, scene, { programRevisionId: "wrong", playerId, coinId })).toThrow();
-  const binding = createTwoMeshBinding(THREE, scene, { programRevisionId, playerId, coinId });
+  const meshes = new Map([[playerId, new Mesh(new Geometry(), new Material())], [coinId, new Mesh(new Geometry(), new Material())]]);
+  expect(() => createMeshBinding(scene, { programRevisionId: "wrong", meshes })).toThrow();
+  const binding = createMeshBinding(scene, { programRevisionId, meshes });
   const first = plan(stateId("b"), [
     item(playerId, "3f800000", "40000000"),
     item(coinId, "40400000", "40800000"),
@@ -211,12 +211,12 @@ test("mesh reconciliation hides omissions and rejects invalid plans before mutat
   binding.apply(first);
   binding.apply(omitted);
   binding.apply(omitted);
-  expect(binding.meshes.player.position).toMatchObject({ x: 5, y: 6, z: 0 });
-  expect(binding.meshes.coin.visible).toBe(false);
+  expect(binding.mesh(playerId).position).toMatchObject({ x: 5, y: 6, z: 0 });
+  expect(binding.mesh(coinId).visible).toBe(false);
 
   const before = JSON.stringify({
-    player: [binding.meshes.player.position.x, binding.meshes.player.position.y, binding.meshes.player.position.z, binding.meshes.player.visible],
-    coin: [binding.meshes.coin.position.x, binding.meshes.coin.position.y, binding.meshes.coin.position.z, binding.meshes.coin.visible],
+    player: [binding.mesh(playerId).position.x, binding.mesh(playerId).position.y, binding.mesh(playerId).position.z, binding.mesh(playerId).visible],
+    coin: [binding.mesh(coinId).position.x, binding.mesh(coinId).position.y, binding.mesh(coinId).position.z, binding.mesh(coinId).visible],
   });
   const unknownId = refId("6");
   const invalid = plan(stateId("d"), [
@@ -225,8 +225,8 @@ test("mesh reconciliation hides omissions and rejects invalid plans before mutat
   ].sort((left, right) => left[1].localeCompare(right[1])));
   expect(() => binding.apply(invalid)).toThrow();
   expect(JSON.stringify({
-    player: [binding.meshes.player.position.x, binding.meshes.player.position.y, binding.meshes.player.position.z, binding.meshes.player.visible],
-    coin: [binding.meshes.coin.position.x, binding.meshes.coin.position.y, binding.meshes.coin.position.z, binding.meshes.coin.visible],
+    player: [binding.mesh(playerId).position.x, binding.mesh(playerId).position.y, binding.mesh(playerId).position.z, binding.mesh(playerId).visible],
+    coin: [binding.mesh(coinId).position.x, binding.mesh(coinId).position.y, binding.mesh(coinId).position.z, binding.mesh(coinId).visible],
   })).toBe(before);
 
   const wrongProgramRevision = `program-revision-sha256-${"b".repeat(64)}`;
@@ -237,8 +237,8 @@ test("mesh reconciliation hides omissions and rejects invalid plans before mutat
   );
   expect(() => binding.apply(crossProgramRevision)).toThrow();
   expect(JSON.stringify({
-    player: [binding.meshes.player.position.x, binding.meshes.player.position.y, binding.meshes.player.position.z, binding.meshes.player.visible],
-    coin: [binding.meshes.coin.position.x, binding.meshes.coin.position.y, binding.meshes.coin.position.z, binding.meshes.coin.visible],
+    player: [binding.mesh(playerId).position.x, binding.mesh(playerId).position.y, binding.mesh(playerId).position.z, binding.mesh(playerId).visible],
+    coin: [binding.mesh(coinId).position.x, binding.mesh(coinId).position.y, binding.mesh(coinId).position.z, binding.mesh(coinId).visible],
   })).toBe(before);
 
   const duplicate = plan(stateId("f"), [
@@ -246,6 +246,6 @@ test("mesh reconciliation hides omissions and rejects invalid plans before mutat
     item(playerId, "00000000", "00000000"),
   ]);
   expect(() => binding.apply(duplicate)).toThrow();
-  expect(binding.meshes.player.position).toMatchObject({ x: 5, y: 6, z: 0 });
-  expect(binding.meshes.coin.visible).toBe(false);
+  expect(binding.mesh(playerId).position).toMatchObject({ x: 5, y: 6, z: 0 });
+  expect(binding.mesh(coinId).visible).toBe(false);
 });

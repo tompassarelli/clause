@@ -393,7 +393,7 @@ fn render_plan_admission_and_emission_reject_wrong_noncanonical_or_tampered_data
 
 const BUN_HARNESS: &str = r#"
 import * as artifact from __MODULE__;
-import { createTwoMeshBinding, renderPlanFor } from __HOST__;
+import { createMeshBinding, renderPlanFor } from __HOST__;
 
 const initialExpected = __INITIAL_PLAN__;
 const collectedExpected = __COLLECTED_PLAN__;
@@ -420,27 +420,26 @@ class Mesh {
     this.position = { x: 0, y: 0, z: 0, set: (x, y, z) => { this.position.x = x; this.position.y = y; this.position.z = z; } };
   }
 }
-const THREE = { Mesh, BoxGeometry: Geometry, CylinderGeometry: Geometry, MeshBasicMaterial: Material };
 const scene = { add() {}, remove() {} };
-const binding = createTwoMeshBinding(THREE, scene, { programRevisionId, playerId, coinId });
+const binding = createMeshBinding(scene, { programRevisionId, meshes: new Map([[playerId, new Mesh(new Geometry(), new Material())], [coinId, new Mesh(new Geometry(), new Material())]]) });
 binding.apply(initial);
 binding.apply(collected);
 binding.apply(collected);
-if (binding.meshes.coin.visible !== false) throw new Error("omitted coin was revived");
-if (binding.meshes.player.position.x !== 10 || binding.meshes.player.position.y !== 0 || binding.meshes.player.position.z !== 0) throw new Error("f32x2 did not map to x/y/0");
+if (binding.mesh(coinId).visible !== false) throw new Error("omitted coin was revived");
+if (binding.mesh(playerId).position.x !== 10 || binding.mesh(playerId).position.y !== 0 || binding.mesh(playerId).position.z !== 0) throw new Error("f32x2 did not map to x/y/0");
 
-const snapshot = JSON.stringify({ player: [binding.meshes.player.position.x, binding.meshes.player.position.y, binding.meshes.player.position.z, binding.meshes.player.visible], coin: [binding.meshes.coin.position.x, binding.meshes.coin.position.y, binding.meshes.coin.position.z, binding.meshes.coin.visible] });
+const snapshot = JSON.stringify({ player: [binding.mesh(playerId).position.x, binding.mesh(playerId).position.y, binding.mesh(playerId).position.z, binding.mesh(playerId).visible], coin: [binding.mesh(coinId).position.x, binding.mesh(coinId).position.y, binding.mesh(coinId).position.z, binding.mesh(coinId).visible] });
 const unknownId = `ref-sha256-${"f".repeat(64)}`;
 const movedPlayer = ["item", playerId, ["position-f32x2", "41a00000", "00000000"]];
 const unknown = ["item", unknownId, ["position-f32x2", "00000000", "00000000"]];
 const invalid = ["clause-render-plan-v2", ["program-revision", programRevisionId], ["state-revision", collectedState], ["items", [movedPlayer, unknown].sort((left, right) => left[1].localeCompare(right[1]))]];
 let rejected = false;
 try { binding.apply(invalid); } catch { rejected = true; }
-if (!rejected || JSON.stringify({ player: [binding.meshes.player.position.x, binding.meshes.player.position.y, binding.meshes.player.position.z, binding.meshes.player.visible], coin: [binding.meshes.coin.position.x, binding.meshes.coin.position.y, binding.meshes.coin.position.z, binding.meshes.coin.visible] }) !== snapshot) throw new Error("unknown item mutated a mesh before rejection");
+if (!rejected || JSON.stringify({ player: [binding.mesh(playerId).position.x, binding.mesh(playerId).position.y, binding.mesh(playerId).position.z, binding.mesh(playerId).visible], coin: [binding.mesh(coinId).position.x, binding.mesh(coinId).position.y, binding.mesh(coinId).position.z, binding.mesh(coinId).visible] }) !== snapshot) throw new Error("unknown item mutated a mesh before rejection");
 const duplicate = ["clause-render-plan-v2", ["program-revision", programRevisionId], ["state-revision", collectedState], ["items", [movedPlayer, movedPlayer]]];
 rejected = false;
 try { binding.apply(duplicate); } catch { rejected = true; }
-if (!rejected || JSON.stringify({ player: [binding.meshes.player.position.x, binding.meshes.player.position.y, binding.meshes.player.position.z, binding.meshes.player.visible], coin: [binding.meshes.coin.position.x, binding.meshes.coin.position.y, binding.meshes.coin.position.z, binding.meshes.coin.visible] }) !== snapshot) throw new Error("duplicate item mutated a mesh before rejection");
+if (!rejected || JSON.stringify({ player: [binding.mesh(playerId).position.x, binding.mesh(playerId).position.y, binding.mesh(playerId).position.z, binding.mesh(playerId).visible], coin: [binding.mesh(coinId).position.x, binding.mesh(coinId).position.y, binding.mesh(coinId).position.z, binding.mesh(coinId).visible] }) !== snapshot) throw new Error("duplicate item mutated a mesh before rejection");
 
 console.log(JSON.stringify(initial));
 console.log(JSON.stringify(collected));

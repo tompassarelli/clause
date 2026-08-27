@@ -4,7 +4,7 @@
 // transition semantics and render-plan production; this file only adapts
 // browser/Three.js lifecycle and retains copies of Clause-validated traces.
 
-const ARTIFACT_KIND = "clause-js-runtime-v2";
+const ARTIFACT_KIND = "clause-js-runtime-v3";
 
 const copy = (value) => {
   if (Array.isArray(value)) return Object.freeze(value.map(copy));
@@ -163,22 +163,23 @@ export function createEventBridge({ artifact, runtime, programRevisionId = artif
   return Object.freeze({ dispatch, events: () => copy(log), close: () => { closed = true; } });
 }
 
-/** Reconcile a total desired-scene plan to two stable meshes. */
-export function createTwoMeshBinding(THREE, scene, { programRevisionId, playerId, coinId }) {
-  if (!THREE || !scene || typeof scene.add !== "function") throw new Error("Three.js scene is required");
+/** Reconcile a total desired-scene plan to caller-owned stable meshes. */
+export function createMeshBinding(scene, { programRevisionId, meshes }) {
+  if (!scene || typeof scene.add !== "function" || typeof scene.remove !== "function") throw new Error("scene lifecycle is required");
   requireProgramRevisionId(programRevisionId, "binding ProgramRevision identity");
-  requireReferentId(playerId, "player identity");
-  requireReferentId(coinId, "coin identity");
-  if (playerId === coinId) throw new Error("player and coin identities must be distinct");
-  const player = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial({ color: 0x3366ff }));
-  const coin = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.35, 0.1, 16), new THREE.MeshBasicMaterial({ color: 0xffcc00 }));
-  scene.add(player); scene.add(coin);
-  const meshes = new Map([[playerId, player], [coinId, coin]]);
+  if (!(meshes instanceof Map) || meshes.size === 0) throw new Error("mesh registry is required");
+  const registry = new Map();
+  for (const [id, mesh] of meshes) {
+    requireReferentId(id, "mesh identity");
+    if (!mesh || !mesh.position || typeof mesh.position.set !== "function") throw new Error("registered mesh is invalid");
+    registry.set(id, mesh);
+    scene.add(mesh);
+  }
   const apply = (plan) => {
     const desired = validateRenderPlan(plan, programRevisionId);
-    if (desired.items.some((item) => !meshes.has(item.id))) throw new Error("RenderPlan names an unregistered mesh identity");
+    if (desired.items.some((item) => !registry.has(item.id))) throw new Error("RenderPlan names an unregistered mesh identity");
     const byId = new Map(desired.items.map((item) => [item.id, item]));
-    for (const [id, mesh] of meshes) {
+    for (const [id, mesh] of registry) {
       const item = byId.get(id);
       if (item) {
         mesh.position.set(item.position[0], item.position[1], 0);
@@ -188,10 +189,10 @@ export function createTwoMeshBinding(THREE, scene, { programRevisionId, playerId
       }
     }
   };
-  const dispose = () => meshes.forEach((mesh) => {
+  const dispose = () => registry.forEach((mesh) => {
     scene.remove(mesh); mesh.geometry.dispose(); mesh.material.dispose();
   });
-  return Object.freeze({ meshes: Object.freeze({ player, coin }), apply, dispose });
+  return Object.freeze({ mesh: (id) => registry.get(id), apply, dispose });
 }
 
 /** Browser RAF/input lifecycle; scheduling remains outside Clause semantics. */
