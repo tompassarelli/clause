@@ -1,8 +1,0 @@
-{
-  "name": "clause-browser-acceptance",
-  "private": true,
-  "type": "module",
-  "dependencies": {
-    "three": "0.185.1"
-  }
-}

@@ -5,9 +5,8 @@
 >
 > **Authority:** Sole authority for Clause semantics. The
 > [syntax](syntax.md) governs canonical source projection, the
-> [architecture](architecture.md) maps the current implementation to this
-> design, and the [roadmap](roadmap.md) governs implementation status and
-> order.
+> [architecture](architecture.md) governs implementation boundaries, and the
+> [roadmap](roadmap.md) governs implementation status and order.
 
 Clause is a process-first relational programming language. Its authoring
 surface remains declarative and relation-first: people state relationships,
@@ -219,7 +218,7 @@ content-derived identity is allowed only for a value whose identity contract is
 explicitly structural. Neither allocation strategy may hash recursively through
 an identity reference back into its own graph.
 
-`ReferentId` remains Clause's general opaque identity kind for an addressable
+`ReferentId` is Clause's general opaque identity kind for an addressable
 semantic concept. A Referent is a Term judged to have continuing nominal
 identity, not a second universal data constructor. Names, paths, spans, host
 objects, intern handles, and movable refs do not create or recover that identity
@@ -467,9 +466,8 @@ cardinality, complete coverage, source-order independence, and atomic
 admission. An incomplete neighborhood is a provisional candidate, never half
 an admitted value.
 
-The existing named-role n-ary representation remains a useful checker view,
-index, API, and packed runtime materialization. It is not the target's
-irreducible semantic substance.
+A named-role n-ary representation may be a useful checker view, index, API, or
+packed runtime materialization. It is not an irreducible semantic substance.
 
 ### Membership and structural views
 
@@ -661,11 +659,12 @@ must produce the same bytes and IDs.
 that preserve the same ReferentIds, semantics epoch, and canonical checked
 payload may share a ProgramSnapshotId; their ProgramRevisionIds remain distinct.
 Independently allocated Referents with equal spellings produce different
-snapshots. A migration to the Term kernel requires a new semantics epoch and
-parity evidence; it must not reinterpret existing snapshot bytes or IDs. An
-independently asserted consequence changes the snapshot even if it was already
-derivable, while moving source without changing an explicit semantic-source
-relation changes only SourceMap evidence.
+snapshots. Any change to the Term encoding or identity rules requires a new
+semantics epoch and explicit conversion evidence; an implementation may not
+reinterpret bytes or IDs from another epoch. An independently asserted
+consequence changes the snapshot even if it was already derivable, while moving
+source without changing an explicit semantic-source relation changes only
+SourceMap evidence.
 
 A ProgramChangeOccurrence records the base revision or root, resulting
 ProgramSnapshot, canonical endpoint admissions and withdrawals, constitutive
@@ -731,24 +730,24 @@ read(SourceUnit)
   -> LosslessCST + SourceMap
 
 elaborate(LosslessCST, ElaborationContext)
-  -> ProgramSnapshotCandidate
+  -> candidate Terms, occurrences, and Clause judgments
 
-validate(ProgramSnapshotCandidate)
-  -> ValidationResult
+check(candidate Terms, occurrences, and Clause judgments)
+  -> checked candidate or exact obligations
 
-record_change(validated candidate, base ProgramRevision or root,
-              ProgramAdmissionContext)
+propose_change(checked candidate, base ProgramRevision or root,
+               ProgramAdmissionContext)
   -> ProgramChangeOccurrence
 
-constitute(validated occurrence, base ProgramRevision or root)
+admit(checked occurrence, base ProgramRevision or root)
   -> ProgramRevision
 ```
 
 `ElaborationContext` owns only caller-selected scope, declarations, imports,
 and Designation inputs. The candidate owns its exact semantics epoch and
 unchecked Terms and judgments; SourceMap separately owns source and proposal
-spans. Validation currently has no policy- or resource-relative input, so no
-ceremonial `ValidationContext` exists. `ProgramAdmissionContext` is the exact
+spans. Structural checking consumes no policy- or resource-relative authority;
+those inputs belong to admission. `ProgramAdmissionContext` is the exact
 boundary for ProgramId, base revision, authority, policy, and constitutive
 change-occurrence allocation. Revision existence is lifecycle-neutral.
 
@@ -917,7 +916,7 @@ a dangerous general-purpose language feature requires:
 
 Failure rejects this kernel hypothesis, not Clause's mission. Until the spike
 passes, this document describes the accepted direction and disproof boundary;
-it does not claim the current implementation already embodies the mechanism.
+it does not claim that an implementation already embodies the mechanism.
 
 ## Constitution
 

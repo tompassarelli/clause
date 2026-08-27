@@ -3,5 +3,5 @@
 version = 4
 
 [[package]]
-name = "clause"
-version = "0.1.0"
+name = "clause-substrate"
+version = "0.0.0"

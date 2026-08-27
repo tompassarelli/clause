@@ -1,19 +1,18 @@
 # Clause Syntax
 
-> **Status:** Canonical source design is accepted; implementation migration is
-> active. The process-first Term kernel remains subject to the
+> **Status:** Canonical source design is accepted but not yet fully implemented.
+> The process-first Term kernel remains subject to the
 > [adoption spike](adoption-spike.md).
 >
 > **Authority:** Sole authority for canonical Clause source. The
 > [foundation](foundation.md) governs meaning, the
-> [architecture](architecture.md) maps the current implementation to this
-> design, and the [roadmap](roadmap.md) alone governs implementation status.
+> [architecture](architecture.md) governs implementation boundaries, and the
+> [roadmap](roadmap.md) alone governs implementation status.
 
-Clause has one canonical source language. The current parser still accepts a
-legacy inferred surface while the constitutional identity migration is built.
-This document presents canonical source first, then records that executable gap
-in one migration ledger. Legacy spellings are current implementation facts,
-not a second supported style.
+Clause has one canonical source language. This document contains only that
+language. Parser implementation status belongs to the
+[roadmap](roadmap.md); executable acceptance never makes another spelling
+canonical.
 
 ## Governing rule
 
@@ -138,8 +137,8 @@ for n in 101..106
   Door-{n} ∈ Door
 ```
 
-This is the accepted language shape. It is not yet accepted as a whole by the
-public parser; see [Implementation migration](#implementation-migration).
+This is the accepted language shape. No parser implements it yet; the
+[roadmap](roadmap.md) records that implementation status.
 
 ## Declarations and source context
 
@@ -521,58 +520,10 @@ indentation is at or above the failed header's level and whose explicit head
 can begin a sibling construct. An error must not consume or reinterpret a
 later declaration.
 
-## Implementation migration
-
-The public implementation at semantic-v10 / Revision-v6 predates this syntax
-and the process-first Term kernel. It currently parses to the host-owned
-`frontend::Program` AST, elaborates under
-`ElaborationContext` into an identity-free `ProgramSnapshotCandidate`, validates
-once to a checked `ProgramSnapshot`, and then uses an explicit legacy bridge to
-place the checked payload in `CompiledProgram` / `kernel::Revision`. Those
-bridge names are implementation vocabulary under migration; the
-[foundation](foundation.md) defines the accepted semantic layers.
-
-| Area | Canonical source | Currently executable legacy surface |
-| --- | --- | --- |
-| Referents | `referent Door` | bare `Door` |
-| Enumeration | `enum Game` with bare members | inferred flat bare block `Game` / `Chess` / `Soccer` |
-| Shape | `shape Vec2` with `x: F32` | inferred flat binding block |
-| Program grouping | none in routine source | any remaining non-flat bare block is inferred as a `Model` |
-| Subject focus | every child explicitly names its edge | contextually inferred focus; bare children imply membership and `state: locked` uses a scoped binding path |
-| Definition | `gravity := 9.81` | `gravity: 9.81`, with a historical context-dependent lowering seam |
-| Membership | `Chess ∈ Game` | the same explicit form is executable; raw `::` is already rejected |
-| Relation declaration | `relation`, `reads`, `subject`, explicit word cardinality | ceremonial `RelationShape` and inferred compact schemas; suffix/default cardinality |
-| Law | named `law`, `if` premises, `then` conclusion, separate `derive` | conclusion-before-premise laws plus retained `DerivationRule` and unlabelled positive rules |
-| Event transaction | `when`, `withdraw`, `admit` vectors | pairwise `before ~>` / indented successor plus `if` guards |
-| Revision/delta | explicit `revision` or `delta` with `withdraw`/`admit` | ceremonial `Revision`/`Delta`, labelled bodies, and signed shorthand |
-| Requests | explicit request head plus `where`, `order by`, and `using` | `any`, several `select` forms, `find`, colon-labelled bodies, and context-dependent naked queries |
-| Anonymous hole | `?_` | bare `?` |
-| Range/template | prefix `for n in 101..106` | bracketed range/focus templates whose binder follows the use |
-| Layout/trivia | arbitrary two-space depth; normalized CRLF and blank trivia | only indentation widths 0, 2, and 4; CRLF and whitespace-only blank lines rejected |
-| Comments/names | `#`, attached `##`, atomic or backtick-quoted NFC names | no comments; unquoted multiword names; no Unicode normalization |
-
-The current parser also implements recursive terms, labelled products,
-role-labelled relations, correlated named holes, bounded requests, pure
-definitions, authored event replay, and source-deleted generated Rust. Those
-capabilities must survive the migration even though their spellings,
-representation, and owning identity types change. None of those current
-features proves that raw Triples, Clause judgments, or the universal Run law
-are implemented.
-
-The executable replay boundary now requires an explicitly admitted
-ProgramRevision plus caller-allocated session-start and transition occurrence
-IDs. No current or planned source shorthand may infer those identities from
-layout, event payload, source spans, or replay order. Canonical admission syntax
-is still unratified and therefore is not invented in this document.
-
-The compatibility surface will be removed after exact identity and result
-parity. New canonical examples must not extend it. The
-[roadmap](roadmap.md) is the sole status record for that work.
-
 ## Not yet canonicalized
 
 Effect syntax, capability/resource declarations, dedicated authored scene
-syntax, and package/module interchange forms remain unratified. Existing
-runtime effect evidence and scene projection do not make an old proposal's
-spelling canonical. These forms will enter this document only after their
+syntax, and package/module interchange forms remain unratified. A runtime or
+projection design does not make an unratified spelling canonical. These forms
+will enter this document only after their
 semantic roles and one normal representation are accepted.
