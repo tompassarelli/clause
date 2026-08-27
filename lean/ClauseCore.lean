@@ -3,8 +3,10 @@
 
 This file implements the first constitutional boundary from
 `docs/foundation.md`: a finite recursive Term is either an Atom or exactly
-three Terms. It does not define Clause judgments, Runs, admission, source
-syntax, persistence, or language-feature constructors.
+three Terms. It also checks finite ground certificates only relative to an
+explicitly supplied candidate basis. It does not define accepted Clause
+judgments, Runs, admission, source syntax, persistence, or language-feature
+constructors.
 
 Universe and semantics epoch index candidate representation comparison. Atom
 comparison never invokes a host callback. Semantic structural equality and
@@ -202,9 +204,9 @@ structure ContextCandidate (index : StructuralIndex) where
 
 namespace ContextCandidate
 
-/-- Representation-only premise lookup. A later generic checker may use this
-for exact certificate addressing, but a successful lookup is not a derivation
-or admission. -/
+/-- Representation-only premise lookup. It may support external addressing,
+but the relative certificate checker deliberately does not consume candidate
+Context membership, and a successful lookup is not a derivation or admission. -/
 def containsRepresentation (context : ContextCandidate index)
     (claim : JudgmentClaim index) : Bool :=
   context.premises.any (fun premise =>
@@ -231,6 +233,351 @@ checker, not this constructor, decides whether the context entails the claim. -/
 structure ClauseJudgmentCandidate (index : StructuralIndex) where
   context : ContextCandidate index
   claim : JudgmentClaim index
+
+/-! ## Finite relative derivation certificates -/
+
+/-- One already-ground rule candidate. Premises and conclusion remain generic
+judgment claims; this structure contains no executable Lean callback, schema
+matcher, or language-feature tag. -/
+structure GroundRuleCandidate (index : StructuralIndex) where
+  premises : List (JudgmentClaim index)
+  conclusion : JudgmentClaim index
+
+/-- The exact roots and ground rules against which a certificate is checked.
+
+This is candidate data supplied across an explicit authority boundary. The
+checker establishes derivability relative to this basis; constructing a basis
+does not establish that the basis is accepted, valid, or authoritative. A
+candidate Context is deliberately absent, so raw Context membership cannot be
+used as a proof step. -/
+structure DerivationBasisCandidate (index : StructuralIndex) where
+  roots : List (JudgmentClaim index)
+  rules : List (GroundRuleCandidate index)
+
+/-- The two generic operations in a finite ground derivation certificate.
+Natural-number references are package-local addresses, not semantic identity. -/
+inductive CertificateReason where
+  | root (rootRef : Nat)
+  | apply (ruleRef : Nat) (premiseRefs : List Nat)
+
+/-- One proposed conclusion and the generic reason offered for it. -/
+structure CertificateNode (index : StructuralIndex) where
+  claimed : JudgmentClaim index
+  reason : CertificateReason
+
+/-- A topologically ordered finite certificate trace. The checker rejects an
+empty trace and permits each application to reference only the already checked
+prefix. -/
+structure DerivationCertificate (index : StructuralIndex) where
+  nodes : List (CertificateNode index)
+
+/-- The independent propositional meaning of derivability relative to a
+supplied basis. It never consults a candidate Context and makes no claim that
+the basis itself is accepted. -/
+inductive DerivableFrom (basis : DerivationBasisCandidate index) :
+    JudgmentClaim index → Prop where
+  | root {claim : JudgmentClaim index}
+      (available : claim ∈ basis.roots) : DerivableFrom basis claim
+  | apply {rule : GroundRuleCandidate index}
+      (available : rule ∈ basis.rules)
+      (premises : ∀ claim, claim ∈ rule.premises → DerivableFrom basis claim) :
+      DerivableFrom basis rule.conclusion
+
+/-- A constructive, order-preserving collection of relative derivations. -/
+inductive AllDerivable (basis : DerivationBasisCandidate index) :
+    List (JudgmentClaim index) → Prop where
+  | nil : AllDerivable basis []
+  | cons {claim : JudgmentClaim index} {remaining : List (JudgmentClaim index)}
+      (head : DerivableFrom basis claim)
+      (tail : AllDerivable basis remaining) :
+      AllDerivable basis (claim :: remaining)
+
+namespace DerivationCertificate
+
+private theorem allDerivable_elim
+    (evidence : AllDerivable basis claims) :
+    ∀ claim, claim ∈ claims → DerivableFrom basis claim := by
+  induction evidence with
+  | nil =>
+      intro claim member
+      cases member
+  | cons headEvidence _ inductionHypothesis =>
+      intro claim member
+      cases member with
+      | head => exact headEvidence
+      | tail _ inTail => exact inductionHypothesis claim inTail
+
+private theorem allDerivable_append
+    (leftEvidence : AllDerivable basis left)
+    (rightEvidence : AllDerivable basis right) :
+    AllDerivable basis (left ++ right) := by
+  induction leftEvidence with
+  | nil => exact rightEvidence
+  | cons headEvidence _ inductionHypothesis =>
+      exact AllDerivable.cons headEvidence
+        inductionHypothesis
+
+private theorem claimed_mem_of_node_mem
+    {node : CertificateNode index} {nodes : List (CertificateNode index)}
+    (member : node ∈ nodes) :
+    node.claimed ∈ nodes.map CertificateNode.claimed := by
+  induction member with
+  | head => exact List.Mem.head _
+  | tail prior _ inductionHypothesis =>
+      exact List.Mem.tail prior.claimed inductionHypothesis
+
+/-- Exact representation matching for a premise-reference list. List order is
+the rule's declared ground-premise sequence, not source or Context order. Every
+reference resolves only inside the already checked prefix. -/
+def referencesMatch (priorClaims : List (JudgmentClaim index))
+    : List Nat → List (JudgmentClaim index) → Bool
+  | [], [] => true
+  | premiseRef :: laterRefs, premise :: laterPremises =>
+      match priorClaims[premiseRef]? with
+      | some checked =>
+          !(laterRefs.any fun laterRef => decide (premiseRef = laterRef)) &&
+            (JudgmentClaim.sameRepresentation checked premise &&
+              referencesMatch priorClaims laterRefs laterPremises)
+      | none => false
+  | _, _ => false
+
+/-- Check one certificate node against the supplied basis and the already
+checked prefix. A self-reference, forward reference, or back-edge is out of
+range in that prefix and therefore rejected. -/
+def checkNode (basis : DerivationBasisCandidate index)
+    (priorClaims : List (JudgmentClaim index))
+    (node : CertificateNode index) : Bool :=
+  match node.reason with
+  | .root rootRef =>
+      match basis.roots[rootRef]? with
+      | some root => JudgmentClaim.sameRepresentation node.claimed root
+      | none => false
+  | .apply ruleRef premiseRefs =>
+      match basis.rules[ruleRef]? with
+      | some rule =>
+          referencesMatch priorClaims premiseRefs rule.premises &&
+            JudgmentClaim.sameRepresentation node.claimed rule.conclusion
+      | none => false
+
+private def extendCheckedPrefix (basis : DerivationBasisCandidate index)
+    (state : Option (List (JudgmentClaim index)))
+    (node : CertificateNode index) : Option (List (JudgmentClaim index)) :=
+  match state with
+  | none => none
+  | some priorClaims =>
+      if checkNode basis priorClaims node = true then
+        some (priorClaims ++ [node.claimed])
+      else
+        none
+
+/-- Execute the one-pass finite checker. `some` contains the exact checked
+conclusion prefix; `none` means that at least one obligation failed. -/
+def checkTrace (basis : DerivationBasisCandidate index)
+    (certificate : DerivationCertificate index) :
+    Option (List (JudgmentClaim index)) :=
+  certificate.nodes.foldl (extendCheckedPrefix basis) (some [])
+
+/-- Check a nonempty certificate and bind its final conclusion to the requested
+claim. Acceptance remains relative to `basis`; it is not admission. -/
+def checkRelative (basis : DerivationBasisCandidate index)
+    (certificate : DerivationCertificate index)
+    (requested : JudgmentClaim index) : Bool :=
+  match checkTrace basis certificate, certificate.nodes.getLast? with
+  | some _, some last =>
+      JudgmentClaim.sameRepresentation last.claimed requested
+  | _, _ => false
+
+private theorem mem_of_get?_eq_some {values : List α} {position : Nat}
+    {value : α} (found : values[position]? = some value) : value ∈ values := by
+  induction values generalizing position with
+  | nil => simp at found
+  | cons head tail inductionHypothesis =>
+      cases position with
+      | zero =>
+          simp at found
+          subst value
+          simp
+      | succ previous =>
+          simp at found
+          exact List.mem_cons_of_mem head (inductionHypothesis found)
+
+private theorem referencesMatch_sound
+    {priorClaims : List (JudgmentClaim index)}
+    {premiseRefs : List Nat} {premises : List (JudgmentClaim index)}
+    (matched : referencesMatch priorClaims premiseRefs premises = true)
+    (priorSound : ∀ claim, claim ∈ priorClaims → DerivableFrom basis claim) :
+    ∀ claim, claim ∈ premises → DerivableFrom basis claim := by
+  induction premiseRefs generalizing premises with
+  | nil =>
+      cases premises with
+      | nil =>
+          intro claim member
+          cases member
+      | cons _ _ => simp [referencesMatch] at matched
+  | cons premiseRef remainingRefs inductionHypothesis =>
+      cases premises with
+      | nil => simp [referencesMatch] at matched
+      | cons premise remainingPremises =>
+          cases found : priorClaims[premiseRef]? with
+          | none => simp [referencesMatch, found] at matched
+          | some checked =>
+              have unfolded :
+                  (!(remainingRefs.any fun laterRef =>
+                      decide (premiseRef = laterRef)) &&
+                    (JudgmentClaim.sameRepresentation checked premise &&
+                      referencesMatch priorClaims remainingRefs
+                        remainingPremises)) = true := by
+                simpa only [referencesMatch, found] using matched
+              have matchParts :
+                  JudgmentClaim.sameRepresentation checked premise = true ∧
+                      referencesMatch priorClaims remainingRefs
+                      remainingPremises = true :=
+                Bool.and_eq_true_iff.mp (Bool.and_eq_true_iff.mp unfolded).2
+              have checkedInPrior : checked ∈ priorClaims :=
+                mem_of_get?_eq_some found
+              have checkedDerivable : DerivableFrom basis checked :=
+                priorSound checked checkedInPrior
+              have headMatches :
+                  JudgmentClaim.sameRepresentation checked premise = true := by
+                exact matchParts.1
+              have premiseDerivable : DerivableFrom basis premise := by
+                have sameClaim : checked = premise :=
+                  (JudgmentClaim.sameRepresentation_iff_eq checked premise).1
+                    headMatches
+                simpa [sameClaim] using checkedDerivable
+              have tailMatched :
+                  referencesMatch priorClaims remainingRefs remainingPremises = true := by
+                exact matchParts.2
+              have tailDerivable :=
+                inductionHypothesis tailMatched
+              intro claim member
+              cases member with
+              | head => exact premiseDerivable
+              | tail _ isTail => exact tailDerivable claim isTail
+
+private theorem checkNode_sound
+    {priorClaims : List (JudgmentClaim index)} {node : CertificateNode index}
+    (priorSound : ∀ claim, claim ∈ priorClaims → DerivableFrom basis claim)
+    (accepted : checkNode basis priorClaims node = true) :
+    DerivableFrom basis node.claimed := by
+  cases reason : node.reason with
+  | root rootRef =>
+      cases found : basis.roots[rootRef]? with
+      | none => simp [checkNode, reason, found] at accepted
+      | some root =>
+          have rootAvailable : root ∈ basis.roots :=
+            mem_of_get?_eq_some found
+          have sameClaim : node.claimed = root :=
+            (JudgmentClaim.sameRepresentation_iff_eq node.claimed root).1 (by
+              simpa [checkNode, reason, found] using accepted)
+          simpa [sameClaim] using DerivableFrom.root rootAvailable
+  | apply ruleRef premiseRefs =>
+      cases found : basis.rules[ruleRef]? with
+      | none => simp [checkNode, reason, found] at accepted
+      | some rule =>
+          have acceptedParts :
+              referencesMatch priorClaims premiseRefs rule.premises = true ∧
+                JudgmentClaim.sameRepresentation node.claimed
+                  rule.conclusion = true := by
+            simpa [checkNode, reason, found] using accepted
+          have ruleAvailable : rule ∈ basis.rules :=
+            mem_of_get?_eq_some found
+          have premisesMatch :
+              referencesMatch priorClaims premiseRefs rule.premises = true := by
+            exact acceptedParts.1
+          have conclusionMatches :
+              JudgmentClaim.sameRepresentation node.claimed
+                rule.conclusion = true := by
+            exact acceptedParts.2
+          have premisesDerivable :
+              ∀ claim, claim ∈ rule.premises → DerivableFrom basis claim :=
+            referencesMatch_sound premisesMatch priorSound
+          have ruleDerivation : DerivableFrom basis rule.conclusion :=
+            DerivableFrom.apply ruleAvailable premisesDerivable
+          have sameConclusion : node.claimed = rule.conclusion :=
+            (JudgmentClaim.sameRepresentation_iff_eq node.claimed
+              rule.conclusion).1 conclusionMatches
+          simpa [sameConclusion] using ruleDerivation
+
+private theorem failedStateRemainsFailed
+    (nodes : List (CertificateNode index)) :
+    nodes.foldl (extendCheckedPrefix basis) none = none := by
+  induction nodes with
+  | nil => rfl
+  | cons node remaining inductionHypothesis =>
+      simpa [List.foldl, extendCheckedPrefix] using inductionHypothesis
+
+private theorem checkFold_sound
+    {nodes : List (CertificateNode index)}
+    {priorClaims result : List (JudgmentClaim index)}
+    (priorSound : AllDerivable basis priorClaims)
+    (accepted :
+      nodes.foldl (extendCheckedPrefix basis) (some priorClaims) = some result) :
+    AllDerivable basis
+      (priorClaims ++ nodes.map CertificateNode.claimed) := by
+  induction nodes generalizing priorClaims result with
+  | nil =>
+      simpa only [List.map, List.append_nil] using priorSound
+  | cons node remaining inductionHypothesis =>
+      by_cases nodeAccepted : checkNode basis priorClaims node = true
+      · have nodeDerivable : DerivableFrom basis node.claimed :=
+          checkNode_sound (allDerivable_elim priorSound) nodeAccepted
+        have extendedSound : AllDerivable basis
+            (priorClaims ++ [node.claimed]) :=
+          allDerivable_append priorSound
+            (AllDerivable.cons nodeDerivable AllDerivable.nil)
+        have remainingAccepted :
+            remaining.foldl (extendCheckedPrefix basis)
+              (some (priorClaims ++ [node.claimed])) = some result := by
+          simpa [List.foldl, extendCheckedPrefix, nodeAccepted] using accepted
+        have remainingSound :=
+          inductionHypothesis extendedSound remainingAccepted
+        change AllDerivable basis
+          (priorClaims ++ ([node.claimed] ++
+            remaining.map CertificateNode.claimed))
+        simpa only [List.append_assoc] using remainingSound
+      · have remainsFailed :
+            remaining.foldl (extendCheckedPrefix basis) none = none :=
+          failedStateRemainsFailed remaining
+        simp [List.foldl, extendCheckedPrefix, nodeAccepted,
+          remainsFailed] at accepted
+
+/-- Successful execution establishes the independent propositional relation,
+but only relative to the exact supplied basis. -/
+theorem checkRelative_sound
+    (basis : DerivationBasisCandidate index)
+    (certificate : DerivationCertificate index)
+    (requested : JudgmentClaim index)
+    (accepted : checkRelative basis certificate requested = true) :
+    DerivableFrom basis requested := by
+  cases traceResult : checkTrace basis certificate with
+  | none => simp [checkRelative, traceResult] at accepted
+  | some checked =>
+      cases lastResult : certificate.nodes.getLast? with
+      | none => simp [checkRelative, traceResult, lastResult] at accepted
+      | some last =>
+          have checkedSound :
+              AllDerivable basis
+                (certificate.nodes.map CertificateNode.claimed) := by
+            have foldSound := checkFold_sound (basis := basis)
+              (priorClaims := []) (result := checked)
+              (nodes := certificate.nodes)
+              AllDerivable.nil (by simpa [checkTrace] using traceResult)
+            exact foldSound
+          have lastInNodes : last ∈ certificate.nodes :=
+            List.mem_of_getLast? lastResult
+          have lastDerivable : DerivableFrom basis last.claimed :=
+            allDerivable_elim checkedSound last.claimed
+              (claimed_mem_of_node_mem lastInNodes)
+          have requestedMatches :
+              JudgmentClaim.sameRepresentation last.claimed requested = true := by
+            simpa [checkRelative, traceResult, lastResult] using accepted
+          have sameClaim : last.claimed = requested :=
+            (JudgmentClaim.sameRepresentation_iff_eq last.claimed requested).1
+              requestedMatches
+          simpa [sameClaim] using lastDerivable
+
+end DerivationCertificate
 
 /-! ## Kernel-checked constitutional examples -/
 
@@ -348,6 +695,213 @@ theorem candidate_premise_membership_is_explicit :
 theorem proposed_judgment_keeps_context_outside_the_term :
     proposedJudgment.claim.term = transferContent := by
   rfl
+
+/-! ### Relative certificate checking -/
+
+private def claimA : JudgmentClaim indexA := propositionClaim
+
+private def claimB : JudgmentClaim indexA := {
+  term := atomAt indexA 20 10 1
+  typeTerm := propositionType
+  mode := pureMode
+}
+
+private def claimC : JudgmentClaim indexA := {
+  term := atomAt indexA 20 10 2
+  typeTerm := propositionType
+  mode := pureMode
+}
+
+private def claimD : JudgmentClaim indexA := {
+  term := atomAt indexA 20 10 3
+  typeTerm := propositionType
+  mode := pureMode
+}
+
+private def ruleAB : GroundRuleCandidate indexA := {
+  premises := [claimA]
+  conclusion := claimB
+}
+
+private def ruleAC : GroundRuleCandidate indexA := {
+  premises := [claimA]
+  conclusion := claimC
+}
+
+private def ruleBCD : GroundRuleCandidate indexA := {
+  premises := [claimB, claimC]
+  conclusion := claimD
+}
+
+private def finiteBasis : DerivationBasisCandidate indexA := {
+  roots := [claimA]
+  rules := [ruleAB, ruleAC, ruleBCD]
+}
+
+private def sharedDagCertificate : DerivationCertificate indexA := ⟨[
+  ⟨claimA, .root 0⟩,
+  ⟨claimB, .apply 0 [0]⟩,
+  ⟨claimC, .apply 1 [0]⟩,
+  ⟨claimD, .apply 2 [1, 2]⟩
+]⟩
+
+theorem finite_shared_dag_certificate_is_accepted :
+    DerivationCertificate.checkRelative finiteBasis sharedDagCertificate
+      claimD = true := by
+  decide
+
+theorem accepted_certificate_is_relatively_derivable :
+    DerivableFrom finiteBasis claimD :=
+  DerivationCertificate.checkRelative_sound finiteBasis sharedDagCertificate
+    claimD (by decide)
+
+theorem empty_certificate_is_rejected :
+    DerivationCertificate.checkRelative finiteBasis ⟨[]⟩ claimA = false := by
+  decide
+
+theorem missing_root_is_rejected :
+    DerivationCertificate.checkRelative finiteBasis
+      ⟨[⟨claimA, .root 1⟩]⟩ claimA = false := by
+  decide
+
+theorem missing_rule_is_rejected :
+    DerivationCertificate.checkRelative finiteBasis
+      ⟨[⟨claimB, .apply 9 []⟩]⟩ claimB = false := by
+  decide
+
+theorem missing_premise_is_rejected :
+    DerivationCertificate.checkRelative finiteBasis
+      ⟨[⟨claimA, .root 0⟩, ⟨claimB, .apply 0 []⟩]⟩ claimB = false := by
+  decide
+
+theorem mismatched_premise_is_rejected :
+    DerivationCertificate.checkRelative finiteBasis
+      ⟨[⟨claimA, .root 0⟩, ⟨claimB, .apply 0 [0]⟩,
+        ⟨claimB, .apply 0 [1]⟩]⟩ claimB = false := by
+  decide
+
+theorem mismatched_rule_conclusion_is_rejected :
+    DerivationCertificate.checkRelative finiteBasis
+      ⟨[⟨claimA, .root 0⟩, ⟨claimC, .apply 0 [0]⟩]⟩ claimB = false := by
+  decide
+
+theorem altered_target_is_rejected :
+    DerivationCertificate.checkRelative finiteBasis sharedDagCertificate
+      claimC = false := by
+  decide
+
+private def selfRule : GroundRuleCandidate indexA := {
+  premises := [claimA]
+  conclusion := claimA
+}
+
+private def selfRuleBasis : DerivationBasisCandidate indexA := {
+  roots := []
+  rules := [selfRule]
+}
+
+theorem self_reference_is_rejected :
+    DerivationCertificate.checkRelative selfRuleBasis
+      ⟨[⟨claimA, .apply 0 [0]⟩]⟩ claimA = false := by
+  decide
+
+theorem forward_reference_is_rejected :
+    DerivationCertificate.checkRelative finiteBasis
+      ⟨[⟨claimB, .apply 0 [1]⟩, ⟨claimA, .root 0⟩]⟩ claimB = false := by
+  decide
+
+private def mutualCycleBasis : DerivationBasisCandidate indexA := {
+  roots := []
+  rules := [
+    ⟨[claimA], claimB⟩,
+    ⟨[claimB], claimA⟩
+  ]
+}
+
+theorem mutual_cycle_is_rejected :
+    DerivationCertificate.checkRelative mutualCycleBasis
+      ⟨[⟨claimA, .apply 1 [1]⟩, ⟨claimB, .apply 0 [0]⟩]⟩
+      claimB = false := by
+  decide
+
+private def duplicatePremiseBasis : DerivationBasisCandidate indexA := {
+  roots := [claimA]
+  rules := [⟨[claimA, claimA], claimB⟩]
+}
+
+theorem one_node_address_cannot_fill_two_premise_positions :
+    DerivationCertificate.checkRelative duplicatePremiseBasis
+      ⟨[⟨claimA, .root 0⟩, ⟨claimB, .apply 0 [0, 0]⟩]⟩ claimB = false := by
+  decide
+
+-- Candidate declarations for a contract that claims all payloads equal.
+-- They remain raw Context data and are intentionally not roots or rules.
+private def allEqualContractClaim : JudgmentClaim indexA := {
+  term := atomAt indexA 30 99 1
+  typeTerm := propositionType
+  mode := pureMode
+}
+
+private def allEqualTotalityClaim : JudgmentClaim indexA := {
+  term := atomAt indexA 31 99 1
+  typeTerm := propositionType
+  mode := pureMode
+}
+
+private def allEqualDeterminismClaim : JudgmentClaim indexA := {
+  term := atomAt indexA 32 99 1
+  typeTerm := propositionType
+  mode := pureMode
+}
+
+private def allEqualCanonicalityClaim : JudgmentClaim indexA := {
+  term := atomAt indexA 33 99 1
+  typeTerm := propositionType
+  mode := pureMode
+}
+
+private def selfAuthorizingContext : ContextCandidate indexA := ⟨[
+  allEqualContractClaim,
+  allEqualTotalityClaim,
+  allEqualDeterminismClaim,
+  allEqualCanonicalityClaim
+]⟩
+
+private def noIndependentAuthority : DerivationBasisCandidate indexA := {
+  roots := []
+  rules := []
+}
+
+private def selfAuthorizingCertificate : DerivationCertificate indexA :=
+  ⟨[⟨allEqualContractClaim, .root 0⟩]⟩
+
+private def proposedAllEqualRule : GroundRuleCandidate indexA := {
+  premises := []
+  conclusion := allEqualContractClaim
+}
+
+private def candidateRuleCertificate : DerivationCertificate indexA :=
+  ⟨[⟨proposedAllEqualRule.conclusion, .apply 0 []⟩]⟩
+
+theorem raw_all_equal_context_is_present :
+    ContextCandidate.containsRepresentation selfAuthorizingContext
+      allEqualContractClaim = true := by
+  decide
+
+theorem raw_all_equal_context_cannot_authorize_itself :
+    DerivationCertificate.checkRelative noIndependentAuthority
+      selfAuthorizingCertificate allEqualContractClaim = false := by
+  decide
+
+theorem candidate_all_equal_rule_absent_from_basis_is_rejected :
+    DerivationCertificate.checkRelative noIndependentAuthority
+      candidateRuleCertificate allEqualContractClaim = false := by
+  decide
+
+theorem rejected_all_equal_data_does_not_collapse_payload_representations :
+    Term.sameRepresentation (atomAt indexA 30 99 1)
+      (atomAt indexA 30 99 2) = false := by
+  decide
 
 end Examples
 

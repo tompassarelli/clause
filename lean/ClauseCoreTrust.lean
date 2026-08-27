@@ -7,10 +7,11 @@ import ClauseCore
 This build-time audit inspects declarations originating in the `ClauseCore`
 module. It is verification machinery, not part of Clause's semantic model.
 
-Lean emits one partial internal runtime helper for the total recursive
-`Term.sameRepresentation` definition. The audit allows that exact generated
-name and requires it to be present; every other partial declaration and every
-unsafe, foreign, or replacement implementation is rejected.
+Lean emits partial internal runtime helpers for the total recursive
+`Term.sameRepresentation` and finite premise-reference matcher. The audit
+allows those exact generated names and requires both to be present; every other
+partial declaration and every unsafe, foreign, or replacement implementation
+is rejected.
 
 The initial axiom policy admits only `propext`, which Lean uses in generated
 injectivity support for the dependent Term constructors. `Quot.sound`,
@@ -24,7 +25,8 @@ run_cmd do
   let some clauseModuleIndex := environment.getModuleIdx? `ClauseCore
     | throwError "ClauseCore module is absent from the imported environment"
   let allowedPartialRuntimeHelpers : Array Name :=
-    #[`ClauseCore.Term.sameRepresentation._unsafe_rec]
+    #[`ClauseCore.Term.sameRepresentation._unsafe_rec,
+      `ClauseCore.DerivationCertificate.referencesMatch._unsafe_rec]
   let mut observedPartialRuntimeHelpers : Array Name := #[]
   let mut checkedDeclarations := 0
   for (name, info) in environment.constants do

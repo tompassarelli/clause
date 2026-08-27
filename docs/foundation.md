@@ -279,6 +279,55 @@ Reserve **capability** for authority over effects and resources. A relation has
 a kind, signatures, modes, laws, and strategies; callability is not itself a
 capability.
 
+## Finite derivation checking is relative
+
+A finite certificate establishes derivability only relative to an exact,
+separately supplied basis:
+
+```text
+B := roots + ground rules
+
+root:
+  q is an addressed root of B
+  ----------------------------
+  B ⊢ q derivable
+
+apply:
+  r is an addressed rule of B
+  B ⊢ every declared premise of r derivable
+  ----------------------------------------------
+  B ⊢ conclusion(r) derivable
+```
+
+The primitive checker has only `root` and generic `apply`. A certificate is a
+finite topologically ordered trace; each application references only earlier
+checked conclusions. Self-references, forward references, back-edges, missing
+supports, arity changes, and conclusion changes therefore reject without proof
+search or fuel. Shared earlier conclusions remain valid DAG support.
+
+Roots, rules, claims, and support references are bound by their exact structural
+index and candidate representation at this bootstrap layer. That comparison is
+address binding, not semantic Term equality. A ground rule's premise sequence
+is explicit rule data, not source order or candidate-Context order. Schematic
+matching, substitution, named-role normalization, and rule formation require a
+later Clause-owned schema calculus; the ground checker may not invent them in
+host code.
+
+Certificate-node addresses cannot be duplicated within one application. This
+does not yet establish occurrence-exact or linear support: two nodes may still
+derive equal-looking claims from the same reusable root. A rule whose meaning
+requires distinct occurrences must carry those occurrence identities and
+linearity obligations explicitly in the later judgment/schema calculus.
+
+Raw membership in a candidate Context is not a certificate reason. Nor may a
+candidate rule, trace, proof-looking Term, or basis claim authorize itself.
+For an arbitrary supplied `B`, successful checking means exactly `B ⊢ q
+derivable`; it does not mean that `B`, `q`, or their Context is accepted, true,
+valid, or authoritative. Basis acceptance enters only through a separate
+Clause judgment and admission boundary tied to the exact semantics epoch and
+canonical package. Future basis evolution must be derived from a previously
+accepted basis rather than selected by the candidate being checked.
+
 ## Run is the dynamic primitive
 
 ```text

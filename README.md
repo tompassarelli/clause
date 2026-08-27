@@ -33,12 +33,15 @@ Lean syntax is not Clause syntax, Rust types are not Clause ontology, and no
 host representation or wire format is independently authoritative.
 
 The repository is at a clean constitutional bootstrap. The Lean package now
-contains provisional indexed Atom/Term representations plus generic candidate
-Context/Judgment carriers and a bounded trust audit; none is admitted Clause
-semantics. The Rust package remains semantic-empty. There is no supported
-Clause parser, compiler, runtime, persistence format, or language feature yet.
-Only the current foundation and host-neutral contract may define their
-semantics. Git history is not source authority.
+contains provisional indexed Atom/Term representations, generic candidate
+Context/Judgment carriers, and a finite ground-certificate checker whose
+soundness theorem establishes derivability only relative to a separately
+supplied basis. Raw candidate Context membership is outside the checker API.
+No basis or judgment is admitted Clause semantics. The Rust package remains
+semantic-empty. There is no supported Clause parser, compiler, runtime,
+persistence format, or language feature yet. Only the current foundation and
+host-neutral contract may define their semantics. Git history is not source
+authority.
 
 ## Repository layout
 
@@ -66,12 +69,13 @@ cd ..
 cargo check --workspace --locked
 ```
 
-Passing these commands proves only that the provisional representation and
-candidate Context/Judgment model builds at trust level zero, passes its bounded
-declaration audit, and replays its safe/total declarations through the same
-Lean kernel, plus that the empty Rust substrate builds. It does not prove Atom
-canonicality, semantic structural equality, valid Clause judgments, Runs,
-admission, or any language feature; observed status lives in the
+Passing these commands proves only that the provisional representation,
+candidate Context/Judgment carriers, and relative finite-certificate checker
+build at trust level zero, pass the bounded declaration audit, and replay their
+safe/total declarations through the same Lean kernel, plus that the empty Rust
+substrate builds. It does not prove basis acceptance, Atom canonicality,
+semantic structural equality, valid Clause judgments, canonical package
+binding, Runs, admission, or any language feature; observed status lives in the
 [roadmap](docs/roadmap.md).
 
 Clause is available under the [MIT License](LICENSE-MIT) or the

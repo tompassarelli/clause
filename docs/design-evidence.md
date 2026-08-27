@@ -47,13 +47,26 @@ The first Context/Judgment carrier remains candidate data only. It introduces
 no `Term.semanticEq`, semantic `DecidableEq`, contract callback, function-valued
 proof field, opcode taxonomy, quotient, or raw-membership admission rule.
 
-The required negative specimen for the next checker is a candidate Context
-containing an equality contract that claims all payloads equal, plus raw claims
-that it is total, deterministic, and canonical, but no independent valid
-derivation. The checker must reject that candidate, produce no admitted
-contract or semantic-equality result, and leave distinct payload
-representations unequal. A design that accepts the specimen makes Context
-membership self-authorizing and is rejected.
+The first checker tranche now implements only finite ground derivations
+relative to a separately supplied root/rule basis. Its executable acceptance is
+connected to the independent `DerivableFrom` proposition by a kernel-checked
+soundness theorem. Strictly earlier support references admit shared DAGs and
+reject self, forward, and cyclic support without proof search or fuel. The
+checker API contains no candidate Context and cannot create basis acceptance.
+
+The required negative specimen is present: a candidate Context contains an
+equality contract that claims all payloads equal, plus raw totality,
+determinism, and canonicality claims, but no independently supplied root or
+rule. The checker rejects its attempted root certificate and distinct payload
+representations remain unequal. This proves raw Context non-authority only. It
+does not prove that any basis, contract, or semantic-equality result is
+admitted.
+
+The checker deliberately stops at ground rules. Schematic variables,
+substitution, named-role normalization, rule formation, and basis evolution
+need a separate Clause-owned calculus and cannot enter as Lean callbacks or
+host matching. The next bootstrap boundary is exact semantics-epoch and
+canonical-package admission of the initial basis.
 
 At pinned Lean 4.33.1, `DecidableEq` and `LawfulBEq` establish Lean
 propositional equality, not a separately governed Clause relation. Quotienting
