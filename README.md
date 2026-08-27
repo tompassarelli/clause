@@ -32,11 +32,13 @@ Neither Lean nor Rust may invent a semantic category absent from Clause Core.
 Lean syntax is not Clause syntax, Rust types are not Clause ontology, and no
 host representation or wire format is independently authoritative.
 
-The repository is at a clean bootstrap boundary. There is no supported Clause
-compiler or runtime yet. The Lean and Rust packages are intentionally
-semantic-empty; their first work is the constitutional adoption spike. Only
-the current foundation and host-neutral contract may define their semantics.
-Git history is not source authority.
+The repository is at a clean constitutional bootstrap. The Lean package now
+contains a provisional indexed Atom/Term representation model and bounded trust
+audit; it is not admitted Clause semantics. The Rust package remains
+semantic-empty. There is no supported Clause parser, compiler, runtime,
+persistence format, or language feature yet. Only the current foundation and
+host-neutral contract may define their semantics. Git history is not source
+authority.
 
 ## Repository layout
 
@@ -48,7 +50,7 @@ Git history is not source authority.
 | [`docs/adoption-spike.md`](docs/adoption-spike.md) | Falsifiable constitutional experiment |
 | [`docs/roadmap.md`](docs/roadmap.md) | Current implementation status and sequence |
 | [`docs/design-evidence.md`](docs/design-evidence.md) | Evidence, alternatives, and uncertainty |
-| [`lean/`](lean/) | Lean constitutional checker/reference model bootstrap |
+| [`lean/`](lean/) | Lean constitutional-model and trust-gate bootstrap |
 | [`crates/clause-substrate/`](crates/clause-substrate/) | Rust physical-substrate bootstrap |
 
 Each public fact has one owner. Evidence and the spike cannot add semantics;
@@ -57,13 +59,19 @@ architecture cannot redefine syntax; status lives only in the roadmap.
 ## Bootstrap checks
 
 ```sh
-cd lean && lake build
+cd lean
+lake build
+lake env leanchecker --fresh ClauseCore
+cd ..
 cargo check --workspace --locked
 ```
 
-Passing these commands proves only that the empty bootstrap packages build. It
-does not prove any Clause semantics; observed check status lives in the
-[roadmap](docs/roadmap.md).
+Passing these commands proves only that the provisional representation model
+builds at trust level zero, passes its bounded declaration audit, and replays
+its safe/total declarations through the same Lean kernel, plus that the empty
+Rust substrate builds. It does not prove Atom canonicality, semantic structural
+equality, Clause judgments, Runs, admission, or any language feature; observed
+status lives in the [roadmap](docs/roadmap.md).
 
 Clause is available under the [MIT License](LICENSE-MIT) or the
 [Apache License, Version 2.0](LICENSE-APACHE), at your option.

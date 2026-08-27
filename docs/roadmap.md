@@ -13,15 +13,16 @@ Clause is at a clean constitutional bootstrap. The live repository contains:
 
 - the accepted process-first semantic foundation;
 - the canonical source design;
-- an empty Lean 4 library for the constitutional checker/reference model; and
+- a provisional Lean 4 model containing only indexed Atom/Term candidate
+  representations, representation comparison, and a bounded trust audit; and
 - an empty Rust crate for the physical substrate.
 
 There is no supported parser, compiler, runtime, persistence format, CLI,
 backend, or example application. No implemented language capability is
 claimed. Git history is not source authority or a design template.
 
-The next decision is whether the minimal Clause calculus can be encoded,
-checked, run, and exchanged without Lean or Rust becoming a second semantic
+The next decision is whether contextual Clause judgments, Run, and admission
+can extend this structural boundary without Lean becoming a second semantic
 authority.
 
 ## Status summary
@@ -30,10 +31,10 @@ authority.
 | --- | --- | --- |
 | Semantic foundation | Accepted constitutional hypothesis | [Foundation](foundation.md) |
 | Canonical source design | Accepted; unimplemented | [Syntax](syntax.md) |
-| Repository reset | Complete | Live tree contains only current documents, licenses, and semantic-empty package roots |
-| Lean package bootstrap | Scaffolded; build unverified | Stable toolchain declared; first successful `lake build` still required |
+| Repository reset | Complete | Live tree contains only current documents, licenses, and current package roots |
+| Lean package bootstrap | Complete | Lean 4.33.1 build at trust level zero, bounded declaration audit, and same-kernel replay |
 | Rust substrate bootstrap | Scaffolded | Empty workspace builds with pinned Rust toolchain and forbids unsafe code |
-| Clause Core calculus | Pending; next | Generic Atom/Term/Judgment/Run/Admission model with no feature taxonomy |
+| Clause Core calculus | In progress; provisional Term representation only | Admitted Atom/Term equality plus generic Context/Judgment/Run/Admission with no feature taxonomy |
 | Canonical package and certificates | Pending | One host-neutral codec, exact byte vectors, and package-bound evidence |
 | Constitutional adoption spike | Pending | All eight gates, negative evidence, Lean/Rust parity, and host freeze |
 | Clause-authored compiler middle | Blocked on spike | Stable proposal machinery moves into Clause |
@@ -41,12 +42,13 @@ authority.
 
 ## Phase 0 — Clean reset
 
-**Status:** Complete when this change lands.
+**Status:** Complete.
 
-The supported line contains only current constitutional documents, licenses,
-and semantic-empty Lean/Rust package roots. Repository-wide absence checks
-cover every tracked source, test, example, document, generated consumer, host,
-and build or release file.
+The reset established a supported line containing only current constitutional
+documents, licenses, and semantic-empty Lean/Rust package roots. Repository-wide
+absence checks covered every tracked source, test, example, document, generated
+consumer, host, and build or release file. Phase 1 then began from that exact
+boundary.
 
 **Exit evidence:** tracked-tree census, documentation checks, and a successful
 empty Rust workspace build. The first Lean build is the entry check for
@@ -55,7 +57,7 @@ the reset.
 
 ## Phase 1 — Constitutional calculus
 
-**Status:** Pending; next.
+**Status:** In progress.
 
 Define in Lean the smallest host-neutral model required by the foundation:
 
@@ -72,6 +74,23 @@ Trace
 Admission
 Revision
 ```
+
+The current provisional model contains:
+
+- canonical-byte candidates and explicit universe/semantics indexes;
+- generic Atom kind and equality-contract references with no host callback;
+- exactly two Term constructors: Atom and a neutral three-Term Triple;
+- recursive candidate representation comparison, including explicit
+  cross-index rejection;
+- no identity field on Triple, while all nominal meaning remains deferred to a
+  future Clause judgment; and
+- named positive and negative candidate-representation examples.
+
+It deliberately does not yet define or claim Context, Judgment, Mode,
+RunOutcome, Run, Delta, Trace, Admission, Revision, Atom-contract validation,
+semantic structural equality, nominal identity, or canonical package bytes.
+This source is non-authoritative bootstrap evidence, not a landed semantic
+tranche under the architecture's admission and parity gates.
 
 The model must keep structural equality, value equality, denotational
 equivalence, occurrence identity, entity identity, concept continuity, and
@@ -90,9 +109,19 @@ Initial proofs protect only constitutional boundaries:
 - intent, attempt, receipt, observation, and evidence remain distinct; and
 - host handles cannot become Clause identity.
 
-**Exit evidence:** safe/total Lean build; no `sorry`, `unsafe`, `partial`,
-feature-specific syntax constructor, or unlisted axiom in the constitutional
-closure.
+**Current evidence:** the pinned Lean 4.33.1 provisional model builds with
+`-t0` and warnings as errors. A build-time environment audit rejects every
+unsafe declaration, every partial declaration except the exact generated
+runtime helper for `Term.sameRepresentation`, foreign/replacement
+implementations, and axioms outside the explicit `propext` policy.
+`leanchecker --fresh ClauseCore` successfully replays the safe/total
+declarations through the same Lean kernel and excludes that enumerated runtime
+helper. This is not semantic admission, the full package-bound trust closure,
+Rust parity, or Phase 1 completion.
+
+**Exit evidence:** safe/total completed calculus; no `sorry`, authored
+`unsafe` or `partial`, feature-specific syntax constructor, or unlisted axiom
+in the constitutional closure.
 
 ## Phase 2 — Canonical package and Rust parity
 

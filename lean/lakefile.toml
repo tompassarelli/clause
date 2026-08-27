@@ -1,6 +1,10 @@
 name = "clause_core"
 version = "0.0.0"
-defaultTargets = ["ClauseCore"]
+defaultTargets = ["ClauseCore", "ClauseCoreTrust"]
+moreLeanArgs = ["-t0", "-DwarningAsError=true"]
 
 [[lean_lib]]
 name = "ClauseCore"
+
+[[lean_lib]]
+name = "ClauseCoreTrust"
