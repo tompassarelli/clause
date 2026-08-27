@@ -1,237 +1,607 @@
 # Clause Semantic Foundation
 
-> **Status:** Accepted and current.
+> **Status:** Accepted constitutional hypothesis; authorized for falsification
+> by the [adoption spike](adoption-spike.md).
 >
 > **Authority:** Sole authority for Clause semantics. The
 > [syntax](syntax.md) governs canonical source projection, the
-> [architecture](architecture.md) governs implementation boundaries, and the
-> [roadmap](roadmap.md) governs implementation status and order.
+> [architecture](architecture.md) maps the current implementation to this
+> design, and the [roadmap](roadmap.md) governs implementation status and
+> order.
+
+Clause is a process-first relational programming language. Its authoring
+surface remains declarative and relation-first: people state relationships,
+laws, permissible transitions, effects, and physical constraints; Clause
+determines how those distinctions may run and specializes them into efficient
+execution.
 
 This document is Clause's semantic authority.
 
+The product mission does not depend on this mechanism surviving. Clause still
+aims for exceptional readability, Lisp-level semantic extensibility,
+correctness by construction, predictable systems performance, and one language
+from native software through Wasm, JavaScript, browsers, and data systems. The
+three-slot mechanism remains a falsifiable way to reach that mission, not a
+reason to narrow it.
+
 ## Decision
 
-Clause is a distinction-first relational programming language with one
-protocol for addressable semantic identity. Its executable artifact is a
-Program, not a Model:
+Clause has one recursive language for what can be held, one contextual judgment
+for what held structure means, one dynamic Run relation, and one authoritative
+change boundary:
+
+```text
+Atomᵤ := opaque(kind, canonical-payload, equality-contract)
+
+RawTripleᵤ := [Termᵤ, Termᵤ, Termᵤ]
+Termᵤ      := Atomᵤ | RawTripleᵤ
+
+ClauseJudgment := Γ ⊢ t clause : T @ M
+
+RunOutcome := returned(value)
+            | choices(finite-results)
+            | yielded(value, continuation)
+            | suspended(continuation)
+            | failed(error)
+            | exhausted(obligations)
+
+Γ ; M ⊢ runρ(t) ↦ ⟨Γ̂, outcome, τ⟩
+
+Γ ⊢ Γ̂ admissible
+───────────────────
+admit(Γ, Γ̂) = Γ′
+```
+
+Running is primitive. A Term is a distinction that running has carried strongly
+enough to become canonically holdable, referable, and reusable. A Clause is not
+another data constructor; it is the `ClauseJudgment` over a Term. A Run carries
+a judged Term toward an outcome and candidate continuation. Admission alone
+makes a continuation authoritative. If the judgment itself needs occurrence
+identity, Clause allocates an explicit `JudgmentId`; the judged Term does not
+inherit that identity.
+
+These are different resolutions of one architecture, not a temporal assembly
+line in which static objects somehow exist before activity:
+
+```text
+running      activity and carry-through
+distinction  a stable difference maintained by running
+Term         the holdable and reusable face of a distinction
+Clause       a typed contextual judgment over a Term
+Run          an occurrence carrying a judged Term toward a verdict
+trace        Terms describing a Run, never the Run itself
+admission    validation making a candidate successor authoritative
+revision     successful carry-through held as a stable context boundary
+```
+
+There is no first completed object called `Distinction` that must distinguish
+itself. Runs occur in a base universe; higher universes may hold Terms that
+describe those Runs; higher judgments relate occurrences, traces, and accepted
+evidence. Reflection is well-founded rather than self-authorizing.
+
+“Running comes first” is the architecture's ontological framing, not a circular
+compiler rule. Operationally, Term construction, equality, Clause judgment,
+Run outcomes, and admission are defined independently by the rules below. No
+implementation may infer a Term's validity from a story about which earlier Run
+created it, and no correctness claim depends on observing a metaphysical first
+act.
+
+## Why three
+
+Two slots can pair Terms, but cannot make both participants and their
+relationship explicit without hiding the relationship in a participant or in
+an external node kind. Three slots are therefore the smallest direct compound
+form that can hold two Terms and their relating Term. Greater kernel arity is
+unnecessary because higher-arity meaning can be represented by checked
+neighborhoods or recursively complete structural Terms.
+
+The positions of a `RawTriple` are structurally neutral. A Clause judgment may
+interpret one under a relational profile as:
+
+```text
+[left Term, relating Term, right Term]
+```
+
+That representational three is not role-arity's operational
+candidate/criterion/verdict three:
+
+```text
+candidate:  (Γ, t)
+criterion:  M
+verdict:    ⟨Γ̂, outcome, τ⟩
+```
+
+Role-arity analyzes functionally distinct operational positions. It can expose
+hidden authority, state, result, resource, or failure roles, but does not prove
+storage arity and does not replace type theory, operational semantics, or
+computability theory.
+
+## Terms, opacity, and equality
+
+An Atom is contextually opaque, not metaphysically indivisible. Its kind,
+canonical encoding, and equality contract define which distinction the current
+universe can hold. Another universe may explicitly refine Text into Unicode
+scalars, bytes, or machine words, but no context may silently inspect beneath
+an Atom's declared abstraction boundary.
+
+An Atom equality contract is declarative Clause data: total for its admitted
+payload domain, deterministic, canonically serializable, versioned, and
+committed by `ClauseSemanticsId`. It cannot be an opaque host callback.
+Canonicalization must settle cases such as Unicode normalization, numeric
+width, NaNs, signed zero, instants, case-normalized addresses, and foreign
+handles; host-language equality or hash-table behavior is not the semantic
+contract.
+
+Structural equality is indexed by universe and semantics epoch:
+
+```text
+t₁ ≡ᵤ,sem t₂
+```
+
+Within that index, Atom equality is equality of kind plus canonical payload
+under the declared contract, and `RawTriple` equality is recursive equality of
+its three Terms. Terms from different universes or semantics epochs are not
+structurally identical without an explicit migration or refinement Run.
+Context-relative notions of sameness are value-equality or equivalence
+judgments; they do not silently change structural equality.
+
+Constructing, nesting, interning, serializing, or persisting a Term does not
+assert it, execute it, authorize it, or place it in a world. An implementation
+may hash-cons Terms and use integer handles, pointers, or row keys, but those
+are private physical mechanics and never semantic identity.
+
+Clause keeps these relations separate:
+
+```text
+Term structural equality
+value equality
+denotational equivalence
+occurrence identity
+concept continuity
+runtime entity identity
+revision identity
+```
+
+There is no mandatory nominal identity for every `RawTriple`. Clause allocates an
+explicit nominal or coordinate Term only when continuity or occurrence matters,
+including for:
+
+- a source use, assertion, retraction, or Run occurrence;
+- a binder or definition referenced independently of spelling;
+- a concept lineage across structural revisions;
+- a runtime entity or unique domain event;
+- a Program, State, policy, semantics epoch, or revision;
+- an effect intent, attempt, receipt, or observation; or
+- a resource whose lifecycle is independent of its representation.
+
+Identity Atoms compare as exact opaque canonical payloads. Structural equality
+does not dereference the graph neighborhood named by an identity Atom.
+Lineage-aware admission allocates fresh occurrence/entity identities; a
+content-derived identity is allowed only for a value whose identity contract is
+explicitly structural. Neither allocation strategy may hash recursively through
+an identity reference back into its own graph.
+
+`ReferentId` remains Clause's general opaque identity kind for an addressable
+semantic concept. A Referent is a Term judged to have continuing nominal
+identity, not a second universal data constructor. Names, paths, spans, host
+objects, intern handles, and movable refs do not create or recover that identity
+by similarity.
+
+Recursive Terms are finite trees or DAGs under structural sharing. Semantic
+cycles use explicit identity anchors:
+
+```text
+function-f = fresh FunctionId
+
+[function-f binds x]
+[function-f body [x calls function-f]]
+```
+
+The judgment graph may be cyclic through identity references without assigning
+nominal identity to every `RawTriple` or hashing a structure through itself.
+Canonical serialization writes finite Terms and opaque identity references; it
+does not recursively inline the neighborhoods those identities name. Allocation
+is well-founded, reload traversal is cycle-aware and terminating, and reload
+rejects unknown kinds, foreign scopes, mismatched universes or semantics
+epochs, dangling required anchors, and causal-lineage mismatch. Cross-epoch
+conversion is an explicit migration Run, never permissive decoding.
+
+## Clause is a judgment
+
+```text
+Γ ⊢ t clause : T @ M
+```
+
+This `ClauseJudgment` says that, in context `Γ`, Term `t` has type `T`, relational
+meaning, modality, authority, and mode `M`. The same structural Term may be
+judged as quoted syntax, a macro or query pattern, a pure expression,
+proposition content, assertion content, a transition request, an effect intent,
+a compiler plan, or a trace.
+
+`RawTriple`, Term, `ClauseJudgment`, and judgment occurrence are therefore four
+different notions: structural compound, holdable value, contextual meaning,
+and an independently identified act of judging. Structure alone grants none of
+the semantic roles. A proposition is not automatically
+asserted. An assertion is not automatically true, authorized, current, or
+executable. An effect description is not an effect occurrence.
+
+Typing is a contextual restriction on how a Term may participate, run,
+transform, and materialize. Graph shape is one class of constraint alongside
+cardinality, effects, ownership, linearity, lifetime, totality, productivity,
+temporal behavior, capability, representation, target support, and proof
+obligations.
+
+A relation mode declares its direction, known inputs, yielded results,
+cardinality, failure and nondeterminism, effects, required capabilities,
+identity policy, resource and temporal contract, and admissible strategies. A
+pure function is a deterministic pure mode of a relation. Clause does not make
+every computation perform logic search or require every relation to be
+reversible.
+
+Reserve **capability** for authority over effects and resources. A relation has
+a kind, signatures, modes, laws, and strategies; callability is not itself a
+capability.
+
+## Run is the dynamic primitive
+
+```text
+Γ ; M ⊢ runρ(t) ↦ ⟨Γ̂, outcome, τ⟩
+```
+
+- `(Γ, t)` is the candidate;
+- `M` supplies the selected relation mode, criterion, laws, capabilities, and
+  strategy;
+- `ρ` identifies this occurrence when occurrence identity matters;
+- `outcome` is `returned`, finite `choices`, `yielded`, `suspended`, `failed`,
+  or `exhausted` as declared by the mode;
+- `τ` contains trace, evidence, staged effect intents, diagnostics, or failed
+  obligations appropriate to this Run phase; and
+- `Γ̂` is a candidate successor context.
+
+The arrow describes one observable Run step. A completed total evaluation may
+use `⇓` as shorthand for a finite sequence ending in `returned`. A streaming or
+reactive Run yields a value plus a typed continuation and can take another
+step. A suspended Run has made no result claim. A partial Run may fail or never
+produce another step; an enclosing bounded mode converts exhausted fuel or
+resources into an explicit `exhausted` outcome rather than certifying
+termination. A nondeterministic mode declares result cardinality and whether
+results are a finite set, an ordered stream, or selected under a recorded
+strategy.
+
+Fairness, ordering, scheduling, cancellation, continuation persistence, and
+resource budgets are mode or physical-strategy judgments whenever observable
+or promised. They are never ambient host behavior.
+
+`Run` is the semantic activity relation, not a requirement to allocate a
+heavyweight runtime object for every pure computation. `ρ`, a durable trace,
+and a revision are materialized only when occurrence identity, evidence,
+replay, or authority requires them. A compiler may implement a pure
+context-preserving Run as a direct call or specialized instruction while still
+preserving its declared relation.
+
+The same law specializes without multiplying dynamic substances:
+
+| Form | Context result |
+| --- | --- |
+| Pure evaluation | `Γ̂ = Γ`; returns a value without authoritative change |
+| Query | `Γ̂ = Γ`; returns choices or an answer stream |
+| Macro expansion | proposes a successor syntax context |
+| Elaboration | proposes a context containing typed judgments |
+| Refactor or agent edit | proposes a successor Program context |
+| Compilation | derives or admits a strategy/artifact context |
+| Runtime transition | proposes a successor State context |
+| Effect attempt | separately performs one authorized external act and observes attempt/receipt evidence |
+| Rejection | `Γ̂ = Γ`; outcome is failure and trace contains exact obligations |
+
+Clause does not claim a universal executability or termination decider.
+Executable modes state honest obligations:
+
+- **total** modes require a termination proof or reject;
+- **productive** modes require finite observable progress;
+- **bounded** modes enforce declared fuel or resource limits;
+- **partial** modes include failure or possible divergence in their contract;
+  and
+- **reactive** modes expect continued running and require stepwise progress
+  obligations.
+
+Cycles are not inherently invalid. Recursive fixed points, services, streams,
+and state machines may be productive under their declared modes. An ungrounded
+cycle is rejected only where the selected mode promises a finite verdict or
+another unmet property.
+
+## Admission is the authority boundary
+
+```text
+Γ ⊢ Γ̂ admissible
+───────────────────
+admit(Γ, Γ̂) = Γ′
+```
+
+Running alone does not mutate authoritative Clause state. The target context decides
+whether a result is constitutive, derived, observational, cached, speculative,
+or authoritative. Pure evaluation and rejection preserve the context. A
+compiler optimization may remain a replaceable derivation. A runtime transition
+becomes current world state only after its identity, invariant, capability, and
+effect-boundary obligations pass.
+
+Clause has one authoritative change law: propose a typed successor to an
+explicit context, then admit it or reject it with exact obligations. Source
+elaboration, macros, refactors, migrations, compiler transformations, runtime
+transitions, and AI edits are specialized Runs over differently typed contexts.
+They do not thereby share authority or lifecycle. Admission governs Clause's
+authoritative contexts; it is not rollback magic over an external system.
+
+An ordinary state/effect protocol is deliberately two-phase:
+
+1. a transition Run stages a candidate State successor and effect intents;
+2. admission accepts the State successor and authorized intents atomically;
+3. a separately identified effect Run performs each admitted intent at the
+   external boundary and produces attempt, receipt, and observation evidence;
+4. a later admission records that evidence and any resulting external claim.
+
+If policy requires a different order, the mode must name the external
+transactional adapter and its atomicity, retry, idempotency, and failure
+contract. Once an external effect Run occurs, rejection or failure to admit its
+evidence cannot undo the act or claim that nothing happened; the occurrence and
+unadmitted evidence remain visible for reconciliation. A transition proposal
+may never fabricate a post-act receipt for an effect that has not run.
+
+Read by querying. Compute by running. Change by admission.
+
+## Act and trace never collapse
+
+A Run may produce Terms that describe its occurrence. Those Terms are a trace,
+not the occurrence itself:
+
+```text
+[world-before collect world-after]
+[attempt produced receipt]
+[macro-call expanded-to output]
+[compiler-run materialized artifact]
+```
+
+These may become accepted knowledge about what happened. They are not the
+physical transition, external effect, expansion activity, or compiler process
+happening. Reasserting or replaying a trace must not repeat the historical act.
+
+This boundary is required for replay, retries, duplicate delivery, timestamps,
+concurrency, cancellation, nondeterministic observations, partial failure, and
+external uncertainty. An intent, authorization, attempt, receipt, observation,
+and admitted external claim remain distinct.
+
+## The admitted judgment graph
+
+The first persistent compiler-owned semantic representation is an Abstract
+Semantic Graph consisting of:
+
+- recursive structural Terms;
+- explicit occurrences and nominal identities where required;
+- Clause judgments, schemas, types, modes, and capabilities;
+- scopes, binders, uses, macro origins, and phase relations;
+- derivations, supports, obligations, proofs, and explanations;
+- Program and State revisions;
+- physical strategies and artifact mappings; and
+- trace Terms describing observed Runs.
+
+A random graph, a parse graph, a rejected candidate, or a speculative optimizer
+graph is not the program. An accepted ProgramRevision selects the admitted
+judgment graph that is the program at rest. Runs are the program in motion.
+
+The graph is semantic authority because it holds every relationship that may
+affect meaning. It is not literally the living activity it records. A lossless
+CST remains necessary for tokens, indentation, comments, whitespace, errors,
+and incomplete edits, but it is a projection-recovery structure rather than a
+sovereign AST.
+
+No giant host enum or collection of construct-specific validators may privately
+decide what `if`, lambda, match, transition, or a user extension means. Schemas,
+readings, typing rules, completion rules, and transformations are Clause
+judgments interpreted by a small generic kernel. Host code may bootstrap that
+kernel and optimize checked meaning; it may not retain a second secret
+language.
+
+## Relations and higher arity
+
+The relational profile reads a Triple as:
+
+```text
+[left, relation, right]
+```
+
+Higher-arity structural values must include all role assignments in their
+canonical recursive Term. A partially described structural root may not gather
+unrelated edges merely because two applications share some content.
+
+When a relation instance has independent continuity—such as a particular
+transfer, binder, task, payment, event, or effect attempt—it uses an explicit
+identity Term as its anchor:
+
+```text
+[transfer-42 actor Alice]
+[transfer-42 amount $10]
+[transfer-42 from Checking]
+[transfer-42 to Savings]
+```
+
+Two equal transfer descriptions may therefore denote different occurrences or
+entities. A schema requires stable named roles, exact role types and
+cardinality, complete coverage, source-order independence, and atomic
+admission. An incomplete neighborhood is a provisional candidate, never half
+an admitted value.
+
+The existing named-role n-ary representation remains a useful checker view,
+index, API, and packed runtime materialization. It is not the target's
+irreducible semantic substance.
+
+### Membership and structural views
+
+Membership is ordinary relational content, canonically identified by a
+relation such as `core/member-of` with `member` and `group` roles. Clause does
+not introduce a primitive `Classifier`, `Set`, or `Type` species merely to
+license the group role. Any Referent may occupy that role unless the relation's
+explicit contract restricts it. Membership may support a derived category or
+collection view; it does not convert the group Referent into another kind.
+
+A structural field or role is not proposition-level membership. A shape field
+such as `x: F32` describes one structural role; it neither asserts `x ∈ F32`
+nor installs an object field on a domain Referent. Type, value, object, field,
+record, set, function, variable, state, mutation, checking, and evaluation are
+typed relational or structural views, not additional primitive semantic
+substances or identity universes. Physical representations may specialize
+those views only while preserving their judged meaning and exact identities.
+
+## Bindings, macros, and language extension
+
+Uses relate to explicit binder identity Terms. Names are readable designations,
+not binding identity. Closure capture, recursion, shadowing, hygiene, and rename
+operate on those identities rather than on spelling or tree position.
+
+Quotation, syntax transformation, typed elaboration, semantic transformation,
+and refactoring are Runs over stratified contexts. Their results preserve
+origin, binding, type, effect, dependency, identity, and failed-obligation
+relationships. Macro phases are deterministic and fuel- or termination-bounded
+under their declared modes.
+
+The constitutional extension test is:
+
+> Can Clause add a new language concept by adding Clause judgments, or must the
+> host learn a new semantic secret?
+
+After the generic host kernel is frozen, a new construct involving both binding
+and effects must be implementable through Clause-authored schemas, readings,
+modes, and transformations while inheriting parsing, printing, hygiene, typing,
+capability checking, navigation, refactoring, invalidation, lowering,
+diagnostics, explanation, and trace semantics. Requiring a new host semantic
+enum, validator branch, formatter case, refactor rule, or analysis plugin
+falsifies the universal-substrate claim.
+
+The extension's definitions must remain ordinary inspectable Clause Terms and
+judgments executable by the frozen generic machinery. A “generic” opaque host
+callback, per-construct dispatch table, foreign evaluator, or serialized tag
+whose meaning exists only in host code is still a second semantic authority.
+Irreducible FFI primitives are allowed only behind explicit typed effect,
+capability, identity, and trace contracts; they cannot define the meaning of a
+Clause language construct.
+
+## Source projection
+
+Human-readable source is a canonical bidirectional projection, not the
+program's identity. Parsing may use a transient lossless CST. Every source line
+elaborates to a Term and a designated focus; every indented child receives the
+parent's focus as its omitted left operand. The parent reading chooses focus.
+The child never guesses a relation from indentation.
+
+Reading lookup is deterministic from the explicit head/operator, declared
+grammar, and already selected ElaborationContext before child domain semantics
+are inspected. Missing or competing readings are explicit errors. Schema and
+type checking may reject the resulting candidate, but may not regroup the CST
+or reinterpret siblings. Incremental parsing and recovery therefore depend on
+syntactic boundaries and declared readings, never on successful whole-program
+inference.
+
+Conceptually:
+
+```text
+elaborate(line) -> (term, focus)
+```
+
+For a bare subject, term and focus are that subject. For a completed relation,
+the relation Term may become focus. A header with a declared open slot may
+allocate a structural or nominal focus. Indentation itself never means
+membership, body, containment, application, ownership, sequencing, or
+authority.
+
+For every closed printable source context:
+
+```text
+elaborate(print(P)) ≅ P
+print(elaborate(source)) = canonical(source)
+```
+
+The equivalence explicitly accounts for layout, comments, source occurrence
+identity, and fresh nominal allocation. Stable concept continuity belongs to
+the admitted graph, not coincidental source position. Ordinary source must not
+expose graph bookkeeping ceremony.
+
+## Relational knowledge
+
+Clause keeps semantic modalities distinct even when they share generic pattern
+or Run machinery:
+
+- a universal **law** generalizes a relational pattern in an explicit scope;
+  it neither executes nor authorizes derivation by itself;
+- a **derivation authorization** selects an oriented executable mode while
+  retaining the governing law, authority, and scope;
+- an **invariant** is a candidate-admission obligation whose violation rejects
+  the candidate under the governing policy;
+- a **goal** describes desired content without asserting current truth or
+  authorizing derivation;
+- a **transition contract** describes permissible state change, while one
+  accepted TransitionOccurrence causes one transactional successor; and
+- an effect request, authorization, intent, attempt, receipt, observation, and
+  admitted external claim remain distinct occurrences or judgments.
+
+Truth, derivability, acceptance, observation, authorization, intention,
+requirement, execution, and external success are therefore not aliases.
+
+Clause is open-world by default. Failure to find, derive, observe, or admit a
+proposition does not establish its negation. Explicit negative content, a
+rejecting judgment, an incompatibility constraint, and absence of evidence
+remain distinct. Closed-world reasoning requires a finite scope and an explicit
+governing mode or law.
+
+An assertion occurrence is an independently identified act committing to
+proposition content with provenance and scope. Equal proposition Terms may have
+many assertion occurrences. A Judgment is an immutable authority- and
+policy-bearing assessment. A current Disposition is a derived policy-relative
+view, never a mutable status field inside the proposition or assertion.
+
+Universal laws remain inert until a separate derivation authorization selects
+an operational mode. Positive derivation preserves every independent support;
+retraction removes a consequence only when its final support disappears.
+Caches, schedules, proof selections, and derived closure are replaceable unless
+explicitly admitted as program content.
+
+## Program identity and history
 
 - A **Program** is one durable evolving lineage, identified by `ProgramId`.
-- A **ProgramSnapshot** is one exact immutable checked intensional payload,
-  identified by `ProgramSnapshotId` under an exact `ClauseSemanticsId`.
-- A **ProgramChangeOccurrence** is the immutable causal occurrence that
-  proposes or produces one program-history edge.
-- A **ProgramRevision** is one immutable causal history node selecting a
-  ProgramSnapshot within a Program.
+- A **ProgramSnapshot** is one exact immutable checked intensional judgment
+  graph under an exact `ClauseSemanticsId`.
+- A **ProgramChangeOccurrence** is the causal occurrence proposing one program
+  history edge.
+- A **ProgramRevision** is an immutable causal node selecting one snapshot in a
+  Program.
 - A **RuntimeSession** is one execution lineage pinned to a ProgramRevision,
   runtime policy, and semantics epoch.
 - A **StateRevision** is one immutable runtime history node inside exactly one
   RuntimeSession.
-- A **Model** is reserved for a meta-level interpretation satisfying a Theory
-  under a declared semantic regime.
+- A **Model** is reserved for a meta-level interpretation satisfying a Theory,
+  not an authored source block or executable artifact.
 
-Routine source has no `model ...` grouping construct. Files, namespaces,
-enums, shapes, scenes, and focused subject blocks contribute constituents to a
-ProgramSnapshot candidate; indentation or source ownership never grants
-program identity or authority.
+Routine source contributes Terms and judgments to a candidate ProgramSnapshot.
+Files, namespaces, source blocks, host objects, storage rows, and heap layouts
+do not grant program identity or authority.
 
-## How the vocabulary developed
+A ProgramSnapshot's canonical checked payload includes, where present:
 
-This lineage records why the current words were chosen. The earlier rows are
-not alternative live semantics.
-
-| Period | Term | What it was trying to name | Why it changed |
-| --- | --- | --- | --- |
-| Early prototypes | `World` | Whole semantic graph, source scope, and sometimes runtime state | One word had acquired incompatible jobs. `World` is retired as an architectural primitive; an authored world is now an ordinary Referent. |
-| Distinction-first kernel | `Model` | The complete checked semantic value, separated from immutable Revision history | This correctly protected semantic content from source and storage, but conflicted with model theory and encouraged domain blocks such as `model world` to look like program roots. |
-| Current foundation | `Program`, `ProgramSnapshot`, `ProgramRevision` | Durable lineage, exact content, and causal history respectively | The split follows established programming, version-control, and provenance distinctions while preserving Clause's occurrence and judgment semantics. `Model` returns to interpretation/satisfaction. |
-
-The durable lesson across all three stages is unchanged: source layout, host
-objects, storage rows, and runtime state are projections or evidence, never a
-second semantic authority.
-
-## Constitutional laws
-
-1. Indentation determines syntactic containment.
-2. A block head determines construct-local elaboration.
-3. Indentation alone never invents a domain relation.
-4. Source organization never creates semantic authority implicitly.
-5. A spelling, path, span, host object, or movable ref is not semantic
-   identity.
-6. A Referent is an addressable semantic object; `ReferentId` identifies it.
-7. One universal identity protocol does not imply one universal semantic sort.
-8. Relational content is not an assertion occurrence.
-9. An assertion occurrence is not a Judgment or current Disposition.
-10. Program content, causal history, evidence, and lifecycle selection have
-    different identities and lifecycles.
-11. A runtime transition changes StateRevision, not ProgramRevision.
-12. A program upgrade never silently rebinds runtime state.
-13. Current status is derived from immutable judgments or records.
-14. Snapshot identity is intensional identity over one canonical checked
-    representation, not equivalence of consequences or behavior.
-15. Every semantics-bearing hash commits to an explicit `ClauseSemanticsId`.
-
-The corresponding source-design law is:
-
-> A source tree expresses syntactic containment. Its block head may establish
-> one explicit construct-local grammar, or a subject-focus block may require
-> every child to name its own edge. The tree itself is never an unnamed domain
-> relation.
-
-## Referents, terms, and designations
-
-A Referent is a stabilized distinction that can be addressed and reidentified.
-Doors, spaces, relations, roles, laws, policies, programs, sources, and
-occurrences may all be Referents while retaining checked kinds and distinct
-admissible relations.
-
-`ReferentId` is globally opaque and stable. It is independent of the Program
-that currently contains or mentions the Referent. `Entity` is not a second
-kernel identity category; it may be an authored category, a derived view, or
-informal prose.
-
-A term is a source or intermediate designator, not the Referent itself.
-Resolution relates a term to one exact Referent in an explicit context. It may
-use declarations, imports, role shape, and checked constraints; it may not
-guess by capitalization, source order, similarity, or probabilistic English.
-
-A `Designation` is separate metadata:
-
-```text
-Designation
-  NamespaceId
-  spelling
-  ReferentId
-  visibility/export status
-```
-
-Local designation edits and source moves do not change semantic identity.
-Exported designations are explicit program-interface content and therefore do
-participate in ProgramSnapshot identity.
-
-New nominal identities are allocated only by an explicit lineage-aware
-allocation or admission operation. Parsing a renamed spelling never guesses
-continuity. A rename that retains identity explicitly changes the Designation
-mapping while preserving the ReferentId; without that operation, deletion plus
-creation is the honest result.
-
-Assertion occurrence identity follows the same rule. Two identical claims may
-be asserted independently and must not collapse because their text or
-RelationalContent is equal.
-
-## Relational content, occurrences, and judgments
-
-Clause keeps these layers distinct:
-
-```text
-RelationalContent
-  != AssertionOccurrence
-  != Judgment
-  != Disposition
-```
-
-- `RelationalContent` places one relation Referent in relational position and
-  maps every participant to an exact named role. Arity, source word order,
-  grammatical voice, and focus are projections of that role map.
-- `AssertionOccurrence` is one independently identified act committing to
-  content with constitutional provenance and scope. Equal content may have
-  many occurrences.
-- `Judgment` is one immutable authority- and policy-bearing assessment of
-  content, an occurrence, a change, a revision, or another judgment.
-- `Disposition` is a current policy-relative view derived from applicable
-  Judgments. It is never a mutable status field inside a constitutional value.
-
-Truth, derivability, acceptance, observation, authorization, intention,
-requirement, execution, and external success are distinct modalities. An
-effect receipt records an attempt and outcome; it does not make the intended
-external proposition true. Authorities may disagree through separate
-Judgments without mutating the subject they assess.
-
-## Membership and structural views
-
-Membership is ordinary relational content with `member` and `group` roles:
-
-```clause
-iron-door ∈ Door
-```
-
-Its semantic identity is an ordinary relation such as `core/member-of`.
-Clause does not introduce a primitive `Classifier`, `Set`, or `Type` species
-merely to license the group role. Any Referent may occupy that role unless an
-explicit relation contract restricts it. Membership supports a derived
-category or collection view of the group Referent; it does not transform that
-Referent into a different kind.
-
-Structural fields and roles are different from proposition-level membership.
-A shape field such as `x: F32` describes a structural role. It neither asserts
-`x ∈ F32` nor installs an object field on a domain Referent.
-
-Type, value, object, field, record, set, function, variable, state, mutation,
-checking, and evaluation are derived relational or structural views, not
-additional semantic universes. A backend may specialize a functional relation
-to a field, column, array, or index only while preserving the relational
-meaning and exact identities.
-
-## Laws, derivation, invariants, goals, and effects
-
-These are addressable but not interchangeable:
-
-- A universal **law** generalizes a relational pattern in an explicit scope.
-  It does not execute or authorize derivation by itself.
-- A **derivation authorization** permits an oriented operational projection of
-  a law and retains the governing law, authority, and scope.
-- An **invariant** is a candidate-admission obligation. Violation rejects the
-  candidate under the governing policy.
-- A **goal** describes desired content without asserting current truth or
-  authorizing derivation.
-- A **transition contract** defines possible state change. An accepted
-  TransitionOccurrence causes one transactional successor.
-- An **effect request**, authorization, attempt, receipt, observation, and
-  admitted external claim are distinct evidence nodes.
-
-An implementation may share machinery among these concepts only when the
-checked representation preserves their modal differences.
-
-## Open-world reasoning and derivation
-
-Clause is open-world by default. Failure to find, derive, observe, or accept
-content does not establish its negation. Explicit negative content, a rejecting
-Judgment, an incompatibility constraint, and absence of evidence remain four
-different things.
-
-Closed-world reasoning requires an explicit finite scope and named governing
-law or operational policy. Its result retains that scope and authority.
-
-Positive derivation preserves every independent support. Retraction removes a
-consequence only when its final support disappears. Caches, indexes, schedules,
-proof selections, and derived closure are replaceable projections unless a
-new assertion occurrence explicitly reifies a consequence into program
-content.
-
-## Program content and identity
-
-A Program is the lineage humans mean when they say that a program has many
-revisions or is deployed in several places. `ProgramId` identifies that
-lineage; it does not identify a source file, namespace, snapshot, revision,
-authority, or policy.
-
-A ProgramSnapshot is the complete immutable checked intensional payload for
-one exact version. Its canonical content includes, where present:
-
-- Referents, roles, relation identities, and checked contracts;
-- admitted RelationalContent and AssertionOccurrences with constitutional
-  provenance;
-- immutable Judgments authored as program content;
+- Referent and identity Terms, roles, relation identities, equality contracts,
+  types, and checked schemas;
+- admitted relational or proposition content and independently identified
+  assertion occurrences with constitutional provenance;
+- immutable judgments authored as program content;
 - definitions, laws, derivation authorizations, invariants, and goals;
-- transition, event, capability, and semantic-policy contracts; and
-- exported designations or explicit semantic source/authority relations.
+- transition, event, capability, effect, and semantic-policy contracts; and
+- exported Designations and explicit semantic source or authority relations.
 
-It excludes incidental source layout and SourceMap data, formatting and
-comments, local designation spellings, caches and schedules, replaceable
-derived closure, ProgramRefs and lifecycle state, deployment attempts,
-RuntimeSessions and StateRevisions, and host/storage/rendering layouts.
+It excludes incidental source layout, SourceMap data, formatting, comments,
+trivia, local Designation spellings, caches, schedules, replaceable derived
+closure, ProgramRefs, lifecycle state, deployment attempts, RuntimeSessions,
+StateRevisions, runtime traces, and host, storage, rendering, or target layouts.
+An excluded item enters snapshot identity only through an explicit judgment
+that makes it authored program content.
 
-ProgramSnapshot identity is over a canonical checked kernel, not every
-logically equivalent program:
+ProgramSnapshot identity is intensional over that canonical checked payload,
+not over all logically or behaviorally equivalent programs:
 
 ```text
 ProgramSnapshotId = H(
@@ -241,43 +611,29 @@ ProgramSnapshotId = H(
 )
 ```
 
-ProgramId is not included merely as snapshot ownership. Two Program lineages
-that preserve the exact same ReferentIds, semantics epoch, and canonical
-checked payload may share a ProgramSnapshotId; their ProgramRevisionIds remain
-distinct because each revision commits to ProgramId. Independently recreated
-Referents with equal spellings have different ReferentIds and therefore
-different snapshots.
+`canonical_checked_payload` is the canonical encoding of the exact checked
+judgment graph just enumerated. `ClauseSemanticsId` commits to canonical Term
+encoding and equality, normalization, identity resolution, structural checking,
+relation and role interpretation, law and derivation semantics, transition
+semantics, and every identity-relevant provenance rule. It is not a compiler
+build number. Independent conforming implementations of one semantics epoch
+must produce the same bytes and IDs.
 
-An independently asserted consequence changes the snapshot even when it was
-already derivable, because a new AssertionOccurrence now exists. Conversely,
-moving a source fragment without changing explicit semantic source relations
-changes only SourceMap evidence.
+`ProgramId` is not included merely as snapshot ownership. Two Program lineages
+that preserve the same ReferentIds, semantics epoch, and canonical checked
+payload may share a ProgramSnapshotId; their ProgramRevisionIds remain distinct.
+Independently allocated Referents with equal spellings produce different
+snapshots. A migration to the Term kernel requires a new semantics epoch and
+parity evidence; it must not reinterpret existing snapshot bytes or IDs. An
+independently asserted consequence changes the snapshot even if it was already
+derivable, while moving source without changing an explicit semantic-source
+relation changes only SourceMap evidence.
 
-`ClauseSemanticsId` identifies the meaning of canonical serialization,
-normalization, identity resolution, structural checking, relation and role
-interpretation, law and derivation semantics, transition semantics, and every
-identity-relevant provenance rule. It is not a compiler build number.
-Independent conforming implementations of one semantics epoch must be able to
-produce the same checked bytes and IDs.
-
-## Program change, revision, evidence, and lifecycle
-
-Clause applies the same separation at the program-history layer:
-
-```text
-ProgramSnapshot
-  != ProgramChangeOccurrence
-  != ProgramRevision
-  != RevisionAttestation
-  != AdmissionJudgment
-  != LifecycleDecision
-```
-
-A ProgramChangeOccurrence identifies the base revision or root, resulting
-snapshot, canonical endpoint admissions and withdrawals, constitutive
-responsibility/provenance, and semantics epoch. It may exist for a rejected or
-unratified proposal and need not produce a revision. The authored change and
-the canonical endpoint difference need not be identical.
+A ProgramChangeOccurrence records the base revision or root, resulting
+ProgramSnapshot, canonical endpoint admissions and withdrawals, constitutive
+responsibility and provenance, and semantics epoch. It may describe a rejected
+or unratified proposal and need not produce a ProgramRevision. The authored
+change and canonical endpoint difference need not be identical.
 
 A ProgramRevision binds only the constitutive causal-node fields:
 
@@ -292,206 +648,242 @@ ProgramRevisionId = H(
 )
 ```
 
-The initial design admits zero or one predecessor. Merge history remains
-deferred until Clause has a concrete semantic merge requirement.
+The initial design admits zero or one predecessor; merge history remains
+deferred until a concrete semantic merge requirement exists. Attestations,
+AdmissionJudgments, lifecycle decisions, deployments, and movable ProgramRefs
+remain separate records. Repeatable, accumulable, contestable, or policy-relative
+evidence never enters either identity preimage. A second verifier therefore
+does not change revision identity.
 
-Repeatable, accumulable, contestable, or policy-relative evidence never
-participates directly in ProgramSnapshotId or ProgramRevisionId. Therefore a
-second verifier adds a RevisionAttestation without changing the revision, and
-a later authority may add a conflicting AdmissionJudgment without mutating an
-earlier Judgment.
+- A `ProgramRef` is a movable name pointing to a ProgramRevision; every movement
+  has an immutable `RefUpdate`.
+- A `LifecycleDecision` is an immutable accepted, released, promoted, or
+  withdrawn judgment naming authority, policy, target, time, revision, and
+  evidence.
+- A `DeploymentRecord` describes an actual revision, artifact, and environment
+  attempt or observation together with its receipt.
 
-Navigation, lifecycle, and deployment are also separate:
-
-- `ProgramRef` is a movable name pointing to a ProgramRevision. Each movement
-  has an immutable RefUpdate.
-- `LifecycleDecision` is an immutable accepted/released/promoted/withdrawn
-  decision naming authority, policy, target, time, revision, and evidence.
-- `DeploymentRecord` describes an actual revision/artifact/environment
-  attempt or observation and its receipt.
-
-Production and canary may run different revisions simultaneously. “Currently
-accepted” and “actively deployed” are derived views over records, not one
+Production and canary may select different revisions simultaneously. Current
+acceptance and active deployment are derived views over records, not one
 constitutional pointer.
 
-These distinctions should reuse Clause's general referent, relation,
-occurrence, and judgment machinery wherever it enforces their invariants. They
-do not require a parallel provenance universe.
+Names are explicit metadata:
 
-## Source and compilation boundary
+```text
+Designation
+  NamespaceId
+  spelling
+  ReferentId
+  visibility/export status
+```
 
-A SourceUnit is authored input. A SourceMap connects semantic identities and
-diagnostics to SourceArtifactIds, spans, and trivia evidence. Neither becomes
-a Program or authority merely by existing.
+A proven rename changes the Designation while preserving identity. Without
+lineage evidence, delete plus create is the honest result. Exported
+Designations are interface content and participate in ProgramSnapshot identity;
+local spelling and incidental source layout remain projection evidence.
 
-Compilation separates contexts by type:
+## Source and admission boundaries
+
+A `SourceUnit` is authored input. A `SourceMap` relates semantic identities,
+occurrences, and diagnostics to SourceArtifactIds, spans, and trivia evidence.
+Neither is a Program or authority merely by existing. The typed boundary is:
 
 ```text
 read(SourceUnit)
-  -> LosslessSyntax + SourceMap
+  -> LosslessCST + SourceMap
 
-elaborate(LosslessSyntax, ElaborationContext)
+elaborate(LosslessCST, ElaborationContext)
   -> ProgramSnapshotCandidate
 
 validate(ProgramSnapshotCandidate)
   -> ValidationResult
 
-record change(validated candidate, base ProgramRevision, AdmissionContext)
+record_change(validated candidate, base ProgramRevision or root,
+              ProgramAdmissionContext)
   -> ProgramChangeOccurrence
 
 constitute(validated occurrence, base ProgramRevision or root)
   -> ProgramRevision
-
-Judgments and lifecycle decisions determine acceptance/currentness; revision
-existence itself is lifecycle-neutral.
 ```
 
-The current `ElaborationContext` owns only caller-selected root scope and
-designation inputs. The candidate owns its exact semantics epoch and unchecked
-semantic atoms; SourceMap separately owns source and proposal spans used for
-diagnostics. Validation has no policy- or resource-relative input today, so it
-takes only the candidate and no ceremonial `ValidationContext` exists.
+`ElaborationContext` owns only caller-selected scope, declarations, imports,
+and Designation inputs. The candidate owns its exact semantics epoch and
+unchecked Terms and judgments; SourceMap separately owns source and proposal
+spans. Validation currently has no policy- or resource-relative input, so no
+ceremonial `ValidationContext` exists. `ProgramAdmissionContext` is the exact
+boundary for ProgramId, base revision, authority, policy, and constitutive
+change-occurrence allocation. Revision existence is lifecycle-neutral.
 
-`AdmissionContext` is the target boundary for ProgramId, base revision,
-authority, policy, and constitutive change-occurrence allocation. It becomes a
-real type only when the admission API accepts those inputs and returns Program
-history artifacts. Future namespace, import, SourceArtifactId, trivia, or
-resource-bound inputs belong in their exact typed boundary rather than being
-predeclared as optional fields.
+There is no broad optional `ProgramContext` whose NamespaceId, AuthorityId,
+PolicyId, SourceArtifactId, ProgramId, revision, or runtime identities may
+silently substitute for one another.
 
-There is no broad `ProgramContext` bag whose optional identities can silently
-stand in for one another. NamespaceId, AuthorityId, PolicyId,
-SourceArtifactId, ProgramId, and their contexts are distinct checked types.
+## Runtime identity and effects
 
-## Runtime identity and migration
+A RuntimeSession binds its explicit `RuntimeSessionId`, exact
+`ProgramRevisionId`, `RuntimePolicyId`, `ClauseSemanticsId`,
+`SessionStartOccurrenceId`, and initial StateRevision. `RuntimePolicyId`
+commits to every immutable policy choice that can affect event admission,
+scheduling, transition selection, effects, capabilities, successor computation,
+cancellation, or other promised runtime behavior. Independently created
+sessions have different RuntimeSessionIds even when program and policy match.
 
-A RuntimeSession binds:
+A StateSnapshot is the exact logical runtime payload at one boundary and is
+conceptually separate from the transition that produced it. Clause does not add
+a public StateSnapshotId until a real consumer needs history-independent state
+content identity. A StateRevision binds its session, predecessor or root,
+causal transition or session-start occurrence, exact StateSnapshot payload,
+runtime policy, and semantics epoch.
 
-- `RuntimeSessionId`;
-- `ProgramRevisionId`;
-- `RuntimePolicyId`;
-- `ClauseSemanticsId`;
-- `SessionStartOccurrenceId`; and
-- an initial StateRevision.
+Equal State payload reached through different sessions or occurrences does not
+collapse. Session-start and transition identities are admitted inputs, never
+derived from payload, source span, vector position, storage order, or replay
+order. A runtime event changes StateRevision and leaves ProgramRevision
+unchanged. A program upgrade requires explicit migration evidence and a new
+RuntimeSession.
 
-RuntimePolicyId identifies every immutable policy choice that can affect event
-admission, scheduling, transition selection, effects, capabilities, or
-successor computation. Two separately created sessions have different
-RuntimeSessionIds even when program and policy match.
-
-Session-start and transition occurrences are admitted inputs, not values
-derived from event payload, source location, vector position, storage order, or
-state content. Reusing or fabricating an occurrence pin cannot silently create
-another edge in one runtime history: replay rejects duplicate transition pins,
-while the admission boundary remains responsible for allocating legitimate
-opaque occurrences.
-
-A StateSnapshot is the exact logical runtime payload at one boundary. It is
-conceptually separate from the transition that produced it. Clause does not
-add a public StateSnapshotId until a real consumer needs history-independent
-state-content equality.
-
-A StateRevision binds its RuntimeSession, predecessor or root,
-TransitionOccurrence or session-start occurrence, exact StateSnapshot payload,
-runtime policy, and semantics epoch. Equal state payloads reached through
-different histories or sessions therefore have different StateRevisionIds.
-Additional transition attestations do not change that identity.
-
-Effect evidence names the exact ProgramRevision and post-commit StateRevision.
-Authorization, attempt, receipt, and observation remain distinct evidence
-occurrences; none of them changes ProgramRevision, RuntimeSession, or
-StateRevision identity.
-
-A runtime event creates a StateRevision and leaves ProgramRevision unchanged.
-A program upgrade creates explicit migration evidence and a new RuntimeSession;
-it never silently reuses state under new program semantics.
+Effect intent, authorization, attempt, receipt, observation, and admitted
+external claim are distinct occurrences. Effect evidence names the exact
+ProgramRevision and post-commit StateRevision. A receipt records an outcome; it
+does not make the intended external proposition true. By default the
+StateRevision and authorized intent are admitted before the separately
+identified external effect Run. Evidence admission happens after the act and
+cannot roll it back. Any adapter claiming atomic state-plus-effect commit must
+state and prove that stronger boundary explicitly.
 
 ## Theory and Model
 
 ProgramSnapshot and StateRevision are object-language values. A Model is a
 meta-level interpretation satisfying a declared Theory under a declared
-semantic regime. Open-world or partial knowledge does not itself prevent
-modelhood; an object-language artifact may constrain many possible Models.
+semantic regime. Open-world or partial knowledge does not by itself prevent
+modelhood; one object-language artifact may constrain many possible Models.
 
-Because Clause carries judgments, provenance, and derivation authorization, a
-future Theory is likely a parameterized view of a ProgramSnapshot, applicable
-judgment basis, entailment regime, and derivation policy. Until Clause has a
+A future Theory is likely a parameterized view of a ProgramSnapshot, applicable
+judgment basis, entailment regime, and derivation policy. Until Clause defines a
 concrete Theory projection and satisfaction relation, `Theory` and `Model`
 remain reserved and absent from the public kernel and routine source grammar.
 
+## Compilation and physical realization
+
+Clause owns its own semantic graph, canonical encoding, occurrence history,
+persistence rules, and compilation semantics. No external store, database, or
+older project is part of Clause's constitutional architecture. A persistence
+backend may implement an explicitly checked Clause interface; it never supplies
+Clause meaning, equality, identity, truth, or authority.
+
+The logical pipeline is:
+
+```text
+readable Clause projection
+  -> transient lossless CST
+  -> candidate Term and occurrence graph
+  -> admitted typed judgment graph
+  -> lowering governed by typed Run relations
+  -> physical strategy graph
+  -> specialized materialization
+```
+
+These arrows state semantic relations, not mandatory runtime allocation. Pure
+elaboration, query, normalization, and lowering may remain lightweight and
+allocate no nominal Run, durable trace, or revision unless a consumer needs
+their occurrence or evidence.
+
+Derived representations may include indexes, packed role maps, e-graphs,
+control/dataflow IRs, heaps, structs, registers, database plans, native code,
+Wasm, JavaScript, and browser objects. They are checked refinements, not rival
+semantic substances.
+
+A backend may keep truly unobservable decisions private. Any physical decision
+that can affect observable behavior or a declared ABI, layout, overflow,
+floating-point, ordering, determinism, synchronization, cancellation,
+durability, failure, resource, or latency contract must remain an explicit
+strategy or evidence judgment traceable to the admitted graph.
+
+Files are not modules. Names are not identities. Source order is not causality.
+Heap addresses are not entity identity. Text diffs are not program diffs. Build
+units are exact semantic and physical dependency closures, not files. API types,
+database schemas, validators, generated clients, and documentation are
+projections unless they intentionally carry distinct semantics.
+
 ## Acceptance laws
 
-The implementation migration must prove at least these cases:
+The adoption spike and any migration must prove at least these cases:
 
 | Case | Required result |
 | --- | --- |
-| Same checked payload reached from different parents | Same ProgramSnapshotId; different ProgramRevisionIds |
-| Same parent and payload, different genuine change occurrences | Same snapshot; different revisions |
+| Same structural Triple constructed twice | Same Term; no assertion or execution implied |
+| Equal Terms used by independent source or assertion occurrences | Equal content; distinct occurrences |
+| Two identical-looking transfers happen | Distinct event/entity identities and Run occurrences |
+| Same expression and value | Expression Term and evaluated value remain distinguishable |
+| Structurally different Terms have equal behavior | Distinct structure; explicit denotational-equivalence judgment |
+| A trace is replayed | Historical effect does not recur merely because its trace is read |
+| Same admitted snapshot reached from different parents | Same snapshot identity; different revision identities |
+| Same parent and snapshot, different genuine change occurrences | Same snapshot; different revisions |
 | Same revision checked by two verifiers | One revision; two attestations |
-| Attestation or judgment added later | Snapshot and revision identities unchanged |
-| Source moves without an explicit semantic-source edit | Same snapshot and semantic identities; SourceMap changes only |
-| Local designation rename with explicit retention | Same ReferentId and ProgramSnapshotId |
-| Export designation rename | Same ReferentId; changed snapshot interface |
-| Rename without retention evidence | Delete plus create; no guessed continuity |
-| Two identical claims independently asserted | Same RelationalContentId; different AssertionOccurrenceIds |
-| A derived fact is later explicitly asserted | Consequences may match; snapshot changes |
-| Same payload under different semantics epochs | Different ProgramSnapshotIds |
-| Same exact Referents and payload selected by two Programs | Same ProgramSnapshotId; Program-specific revision identities |
-| Equal spellings with independently allocated Referents | Different ReferentIds and ProgramSnapshotIds |
-| ProgramRef moves | No snapshot or revision change; new RefUpdate |
+| Source moves without semantic-source change | Same ProgramSnapshotId and semantic identities; SourceMap changes only |
+| Local rename with explicit retention | Same ReferentId and ProgramSnapshotId; changed Designation |
+| Exported Designation rename | Same ReferentId; changed ProgramSnapshot interface |
+| Rename without retention | Delete plus create; no guessed continuity |
+| Two equal claims are independently asserted | Same proposition content; distinct AssertionOccurrenceIds |
+| A derived fact is later explicitly asserted | Consequences may match; the new assertion occurrence changes the snapshot |
+| Non-constitutive attestation or later AdmissionJudgment is added | Snapshot and revision identities remain unchanged |
+| Same checked payload under different semantics epochs | Different ProgramSnapshotIds |
+| Two Programs select the same exact Referents and payload | Same ProgramSnapshotId; Program-specific revision identities |
+| Equal spellings use independently allocated Referents | Different ReferentIds and ProgramSnapshotIds |
+| ProgramRef moves | No snapshot or revision change; one new RefUpdate |
 | Authorities disagree | Separate Judgments; policy-relative Disposition |
-| Same state payload reached through different transitions | Different StateRevisionIds |
-| Same program revision under different runtime policies | Different RuntimeSessionIds |
+| Same State payload reached through different transitions | Different StateRevisionIds |
+| Same ProgramRevision under different runtime policies | Different RuntimeSessionIds |
 | Program upgrade | Explicit migration and new session |
-| Production and canary differ | Multiple DeploymentRecords, not one deployed pointer |
+| Production and canary select different revisions | Multiple DeploymentRecords; no single deployed pointer |
+| Pure evaluation or rejection | No ProgramRevision or StateRevision is created |
+| Nondeterministic or reactive Run | Cardinality, ordering/fairness, continuation, cancellation, and bounds follow the declared mode |
+| Transition stages an external effect | Candidate contains intent only; receipt appears only after a separately identified effect Run |
+| Effect evidence admission fails after an attempt | External act remains acknowledged and reconcilable; no rollback is claimed |
 
-## Prior-art boundary
+## Semantic-foundation falsifiers
 
-Clause composes, rather than copies, several established distinctions:
+The Program, identity, and source-boundary foundation must be reopened if
+evidence establishes any of the following:
 
-- Datalog and Soufflé: authored executable logical artifacts are Programs;
-- model theory and RDF semantics: theories/graphs differ from satisfying
-  interpretations;
-- Unison: semantic identity is separate from movable names;
-- Git: content snapshots, causal history nodes, and movable refs differ;
-- Datomic: immutable values and atomic successor transactions are useful time
-  and persistence priors, without adopting closed-world epistemics; and
-- W3C PROV-DM: fixed-aspect entities, producing activities, agents,
-  derivations, and attestations differ.
-
-Alloy is the strongest counter-prior: its authored artifact is coherently
-called a model because its meaning is a family of satisfying instances or
-traces. Clause's admitted occurrences, judgments, operational authorization,
-program history, and runtime-state boundary make Program the closer term.
-
-## Falsifiers
-
-This foundation must be reopened if evidence establishes any of the following:
-
-- the authored Clause artifact itself is necessarily a family of satisfying
+- an authored Clause artifact is necessarily a family of satisfying
   interpretations while program facts, provenance, history, and runtime state
-  live outside it;
-- no consumer needs to distinguish equal semantic snapshots reached through
-  different histories or change occurrences;
-- source placement is intentionally constitutional even without an explicit
+  must live outside it;
+- no real consumer needs to distinguish equal semantic snapshots reached
+  through different histories or change occurrences;
+- source placement must be constitutional even without an explicit
   semantic-source relation; or
 - membership requires a closed primitive classifier universe rather than an
   ordinary relation whose group role accepts Referents.
 
-Absent such evidence, implementation terminology must migrate toward this
-foundation rather than redefine it.
+These are semantic falsifiers independent of whether the process-first Term
+kernel survives its implementation spike.
 
-## Sources
+## Constitutional falsifier
 
-- [Stanford Encyclopedia of Philosophy: Model Theory](https://plato.stanford.edu/entries/model-theory/)
-- [Soufflé: Datalog programs](https://souffle-lang.github.io/program)
-- [RDF Semantics](https://www.w3.org/TR/rdf12-semantics/)
-- [W3C PROV-DM](https://www.w3.org/TR/prov-dm/)
-- [Unison: content-addressed definitions and names](https://www.unison-lang.org/docs/the-big-idea/)
-- [Pro Git: Git objects](https://git-scm.com/book/en/v2/Git-Internals-Git-Objects)
-- [Pro Git: Git references](https://git-scm.com/book/en/v2/Git-Internals-Git-References)
-- [Datomic transaction model](https://docs.datomic.com/transactions/model.html)
-- [Alloy language reference](https://alloytools.org/spec.html)
+The mechanism is rejected if the [adoption spike](adoption-spike.md) shows that
+a dangerous general-purpose language feature requires:
 
-These sources supply concepts only. No external implementation source is
-copied or adapted.
+- mandatory nominal identity on every Triple;
+- a private host-language semantic case or per-construct validator;
+- an opaque host callback or dispatch table carrying construct meaning behind a generic interface;
+- arbitrary positional conventions or ad hoc untyped tags;
+- an untracked representation that changes binding, typing, effects, identity,
+  source meaning, or observable behavior;
+- act/trace collapse or structural-content/occurrence collapse;
+- graph-wide recomputation as the ordinary local-change path;
+- generic graph execution that cannot specialize credibly; or
+- source ceremony incompatible with Clause's readability mission.
+
+Failure rejects this kernel hypothesis, not Clause's mission. Until the spike
+passes, this document describes the accepted direction and disproof boundary;
+it does not claim the current implementation already embodies the mechanism.
+
+## Constitution
+
+> **Running comes first. Terms are distinctions held still. A Clause is a
+> contextual judgment over a Term. A Run carries that judgment to an outcome and
+> candidate continuation. Admission makes a continuation authoritative. The
+> admitted judgment graph is the program at rest; Run is the program in motion.
+> One recursive Term algebra. One Clause judgment. One Run law.
+> No second sovereign semantic authority.**

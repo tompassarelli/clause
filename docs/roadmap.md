@@ -14,59 +14,68 @@ Clause has a substantial implemented kernel and runtime under the migration-era
 are implemented and protected by tests. M7 has bounded effect, RenderPlan, and
 host checkpoints but is not complete.
 
-The semantic review is also complete: Program, ProgramSnapshot,
-ProgramChangeOccurrence, ProgramRevision, RuntimeSession, and StateRevision now
-have distinct accepted meanings, while Model is reserved for interpretation
-and satisfaction. The first snapshot-identity seam is implemented; the full
-ontology is not fully implemented yet.
+The semantic foundation is now process-first: recursive Terms hold
+distinctions, Clause is contextual judgment, Run is the dynamic relation, and
+admission alone makes a successor authoritative. Program, ProgramSnapshot,
+ProgramChangeOccurrence, ProgramRevision, RuntimeSession, and StateRevision
+retain distinct meanings; Model remains reserved for interpretation and
+satisfaction.
 
-The identity/parity oracle and Model/Revision/context census prerequisites are
-complete. The first constitutional snapshot-identity slice is implemented and
-the remaining history/runtime split is in progress:
+The current implementation does not embody that Term/Clause/Run kernel. The
+identity/parity oracle, consumer census, snapshot boundary, runtime-v3 identity,
+and existing capabilities are inputs to the adoption experiment. No broad
+representation migration proceeds until the host-freeze spike decides whether
+the mechanism is real:
 
 ```text
-identity/parity oracles -----------+
-                                    +--> Program identity and history split
-Model/Revision/context census -----+             |
-                                                  v
-                                      typed compilation and runtime
-                                                  |
-                                                  v
-                                      canonical syntax migration
-                                                  |
-                                                  v
-                                      one live surface and M7 closure
+current parity oracles ------------+
+                                     +--> process-first adoption spike
+consumer and identity census -------+                |
+                                                     v
+                                                stop / go
+                                                     |
+                         +---------------------------+------------------+
+                         v                                              v
+               bounded kernel migration                  reject mechanism,
+                         |                                preserve mission
+                         v
+               canonical source + targets
 ```
 
-The public documentation authority reset is complete in this line so the
-accepted design and the executable gap can no longer be confused while that
-migration proceeds.
+The public documentation authority reset is complete. The foundation is the
+only semantic canon; the spike and evidence ledger are subordinate and cannot
+silently change it.
 
 ## Status summary
 
 | Work | Status | Exact boundary |
 | --- | --- | --- |
-| Semantic ontology | Accepted | [Foundation](foundation.md); implementation pending |
-| Documentation authority reset | Complete | Six public documents, one authority per fact, no historical spec in the live tree |
+| Process-first semantic foundation | Accepted hypothesis | [Foundation](foundation.md); implementation unproved |
+| Adoption spike | Pending; next mechanism gate | [Eight gates and falsifiers](adoption-spike.md) |
+| Post-spike product gates | Pending; blocked on mechanism pass | Source ergonomics, large-graph incrementality, and matched systems/JavaScript performance before migration success |
+| Documentation authority reset | Complete | One owner per public fact; spike/evidence are subordinate, not competing canons |
 | M1–M6 capability line | Implemented | Current semantic-v10 / Revision-v6 representation and milestone tests |
 | M7 effect and JavaScript vertical | Partial | Effect traces, grounded RenderPlan projection, frozen RenderPlan ESM, provisional host contracts |
-| Program identity/history migration | In progress | ClauseSemanticsId, typed Program identities/history, canonical preimages, separate SourceMap/ElaborationContext, and single-pass ProgramSnapshotCandidate validation exist; an explicit bridge still feeds checked payloads to Revision-v6 while admission/runtime migration remains pending |
+| Program identity/history migration | Implemented slices preserved; further representation work gated | ClauseSemanticsId, typed Program identities/history, canonical preimages, separate SourceMap/ElaborationContext, and single-pass ProgramSnapshotCandidate validation exist; the Revision-v6 bridge remains an oracle until the adoption decision |
 | Canonical agent-first syntax | Accepted design | Parser migration pending; legacy executable surface is isolated in `syntax.md` |
 | M8 single live surface | Pending | No compatibility grammar or stale consumer may remain at exit |
 
 ## Product direction
 
-Clause is one general-purpose relational programming system. It is not a
-semantic-modeling DSL that hands ordinary programming to another language, an
-object language with prettier property syntax, or a separate game ontology.
+Clause is one general-purpose relational programming system. It is process-first
+underneath and relation-first at the authoring surface. It is not a semantic
+modeling DSL that hands ordinary programming to another language, an object
+language with prettier property syntax, a generic Triple database, or a
+separate game ontology.
 
-The durable Program contains exact checked relational meaning. A
-ProgramSnapshot carries Referents, named-role content, AssertionOccurrences,
-Judgments authored as program content, laws, derivation authorization,
-invariants, goals, transition contracts, and semantic policy. A
+The target ProgramSnapshot is an exact checked judgment graph over recursive
+Terms. An admitted ProgramRevision makes one snapshot authoritative in a
+Program lineage. The snapshot includes Clause judgments, explicit identities
+and occurrences, named-role schemas, laws, derivation authorization,
+invariants, goals, transition contracts, capabilities, and semantic policy.
 ProgramRevision records causal program history; StateRevision records runtime
-history. Source, storage, generated code, and host layouts remain replaceable
-projections.
+history. Source, persistence layout, generated code, and host objects remain
+replaceable projections. A trace records a Run without becoming the Run.
 
 The compiler may lower functional relations to fields, columns, component
 arrays, indexes, or specialized code. Physical strategy is free when exact
@@ -78,7 +87,8 @@ The constitutional migration must preserve these already demonstrated
 capabilities unless an explicit semantic decision retires one:
 
 - one addressable ReferentId protocol and exact named RoleIds;
-- n-ary recursive RelationalContent;
+- n-ary named-role meaning, whether represented by current
+  `RelationalContent` or a future checked Term view;
 - separate AssertionOccurrences and Judgments, including duplicate source acts;
 - stable relation identity independent of surface voice and focus;
 - bounded positive recursive derivation with every independent support;
@@ -95,6 +105,39 @@ Current spellings and overloaded type names are not protected merely because
 those tests use them. Every syntax or identity migration must compare semantic
 IDs, canonical bytes, results, proofs, state histories, and generated outputs;
 it may not rewrite expectations to bless an accidental change.
+
+## Process-first adoption spike
+
+**Status:** Pending; this is the next mechanism decision.
+
+The [adoption spike](adoption-spike.md) must prove one generic kernel across:
+
+1. pure evaluation with expression Term distinct from result;
+2. binder identity, closure capture, hygiene, and canonical projection;
+3. algebraic data and exhaustive matching;
+4. structurally complete and explicitly nominal n-ary cases;
+5. recursive derivation with completed, nondeterministic/streaming, and
+   productive/bounded outcomes under honest modes;
+6. State/effect Runs with admitted intent, external act, trace, and evidence
+   admission separated;
+7. a typed binder-introducing macro; and
+8. a host-freeze language extension combining binding and effects.
+
+The spike also owns Clause's Term codec, declarative versioned equality policy,
+well-founded identity allocation, cycle-aware persistence/reload, measurable
+specialization, and negative cases for NaN/signed zero, equal-looking distinct
+events, effect trace replay, leaked intern handles, opaque callbacks, and
+universal-halting overclaim.
+
+**Exit proof:** all eight gates and required negative fixtures pass on one exact
+host kernel; the host-freeze extension remains inspectable Clause data and adds
+no construct-specific semantic, callback/dispatch, validator, formatter,
+refactor, analysis, or dependency case.
+
+**Failure result:** reject the Term-kernel mechanism, preserve the
+general-purpose mission and current behavioral oracles, and record the exact
+forcing counterexample. Do not weaken a gate or quietly retain the graph as an
+interchange costume over private host semantics.
 
 ## Implemented capability milestones
 
@@ -269,7 +312,7 @@ M8 removes migration-era ontology and grammar after exact parity:
 semantic identities and exact results through native and generated targets;
 repository-wide absence checks find no retired ontology or source grammar.
 
-## Active constitutional migration
+## Migration inputs and gated sequence
 
 ### 1. Identity and parity oracle suite
 
@@ -296,9 +339,27 @@ runtime session, state history, or generated-artifact input.
 
 No broad compatibility alias may conceal an unclassified consumer.
 
-### 3. Constitutional identity layer
+### 3. Process-first adoption spike
 
-**Status:** In progress. The snapshot identity seam is implemented; designation
+**Status:** Pending; next.
+
+Implement the bounded experiment in [adoption-spike.md](adoption-spike.md).
+Freeze the host for gate 8 and return one stop/go result. No current oracle is
+retired and no canonical identity is reinterpreted during the experiment.
+
+### 4. Mechanism stop/go
+
+**Status:** Blocked on the spike.
+
+On pass, authorize one bounded parity-preserving migration proposal under a new
+`ClauseSemanticsId`. On failure, reject the mechanism and retain the mission,
+protected behavior, and exact forcing counterexample. This decision cannot be
+made by prose alone.
+
+### 5. Constitutional identity layer
+
+**Status:** Implemented slices preserved; further representation migration is
+gated by the stop/go decision. The snapshot identity seam exists; designation
 allocation and consumer migration remain.
 
 Introduce `ClauseSemanticsId`, Program/ProgramId,
@@ -306,26 +367,26 @@ ProgramSnapshot/ProgramSnapshotId, globally opaque ReferentIds, and explicit
 Designation allocation/retention. Define canonical preimages and migrate every
 in-tree consumer in coherent slices.
 
-### 4. Program history separation
+### 6. Program history separation
 
 Separate ProgramChangeOccurrence from ProgramRevision. Attach attestations and
 AdmissionJudgments independently. Keep ProgramRef navigational; represent
 lifecycle decisions and deployments as immutable authority/target records with
 derived current views.
 
-### 5. Typed compilation and runtime boundaries
+### 7. Typed compilation and runtime boundaries
 
 SourceMap and ElaborationContext are split, and elaboration now produces an
 identity-free ProgramSnapshotCandidate consumed by single-pass validation.
 Validation has no contextual inputs, so no ceremonial ValidationContext is
 present. RuntimeSession and StateRevision now bind exact program, policy,
 semantics, session-start, and transition-occurrence identities through
-RuntimeProgramRevision and runtime-v3 wire. Add AdmissionContext only when
-admission accepts Program lineage, base revision, authority, policy, and
+RuntimeProgramRevision and runtime-v3 wire. Add ProgramAdmissionContext only
+when admission accepts Program lineage, base revision, authority, policy, and
 occurrence allocation and returns those typed history artifacts directly.
 Program migration creates explicit evidence and a new session.
 
-### 6. Canonical surface rebuild
+### 8. Canonical surface rebuild
 
 Reassess private syntax experiments against the corrected identity boundary.
 Preserve only changes that pass the parity oracles. Implement explicit
@@ -333,20 +394,39 @@ declaration heads, explicit focus edges, one relation/law/delta/request grammar,
 prefix binders, normalized layout/trivia, comments, and canonical names without
 retaining compatibility syntax.
 
+### 9. Product-scale adoption gates
+
+**Status:** Blocked on a passing spike and bounded migration candidate.
+
+Before the Term-kernel migration is called successful, measure three independent
+claims on representative programs:
+
+- canonical source ergonomics and comprehension against the readability target;
+- large-graph incremental dependency precision, update cost, and memory; and
+- matched native/systems and JavaScript target performance with specialized
+  plans and no generic Triple hot path.
+
+These gates may reject or revise a passing mechanism. A spike pass proves
+semantic extensibility at bounded scale, not product viability.
+
 ## Compiler ownership
 
 - The reader owns bytes, lines, indentation, delimiters, comments, literals,
   and source spans without deciding semantic kind.
-- The parser owns explicit source constructs and recovery, not identity,
+- The parser owns a transient lossless CST and recovery, not identity, binding,
   authority, or domain-relation inference from layout.
-- Elaboration owns exact Designation resolution and role-labelled checked
-  structure under ElaborationContext.
-- Validation owns structural, relational, modal, and bounded-admission checks.
+- Elaboration owns exact Designation resolution and proposes recursive Terms,
+  occurrences, focus, named roles, and Clause judgments.
+- The generic judgment kernel owns structural, relational, binding, modal,
+  capability, and bounded-execution obligations.
+- Run owns selected execution mode, outcome or continuation, candidate
+  successor, and trace production.
 - Admission owns Program lineage, base revision, constitutive change
   occurrence, authority, and policy.
-- The kernel owns canonical semantic identities and content.
-- The runtime owns exact sessions, transitions, state successors, and effect
-  evidence under one ProgramRevision.
+- The runtime owns exact sessions, transition occurrences, State candidates,
+  effect boundaries, and receipts under one ProgramRevision.
+- Persistence stores Clause-owned canonical Terms, judgments, occurrences, and
+  history without supplying equality, identity, truth, or authority.
 - Generators and hosts consume canonical artifacts; they do not reproduce
   Clause semantics independently.
 
@@ -359,6 +439,6 @@ specimens are not implementation evidence. A green parser test does not prove
 semantic preservation, and a green target demo does not prove source identity
 or provenance.
 
-The first next action is the parallel identity/parity oracle and
-Model/Revision/context census. Their joined result, not another terminology
-discussion, determines the first implementation slice.
+The first next action is the process-first adoption spike. Its host-freeze gate
+and negative fixtures—not another terminology discussion—determine whether a
+Term-kernel migration is allowed.

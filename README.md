@@ -1,9 +1,23 @@
 # Clause
 
-Clause is a distinction-first relational programming language. It keeps
-semantic identity, relational content, assertion occurrences, judgments,
-program history, and runtime state separate so each can carry exact provenance
-without impersonating another layer.
+Clause is a process-first relational programming language. Humans declare
+relationships, laws, transitions, effects, and physical constraints; Clause
+judges how recursively structured Terms may run and specializes accepted
+meaning into efficient execution.
+
+Its constitutional mechanism is deliberately small:
+
+```text
+RawTriple = [Term, Term, Term]
+Term      = Atom | RawTriple
+Clause    = contextual typed judgment over a Term
+Run       = judged carry-through to an outcome, trace, and candidate successor
+Admission = the only boundary that makes a successor authoritative
+```
+
+Terms hold distinctions; they do not assert or execute themselves. The
+admitted judgment graph is the program at rest, Run is the program in motion,
+and a trace describes an occurrence without becoming that occurrence.
 
 Clause's accepted semantic vocabulary is:
 
@@ -31,11 +45,15 @@ Each public fact has one owner:
 | What is canonical Clause source? | [Syntax](docs/syntax.md) |
 | What does the current implementation enforce, and how does it map to the accepted design? | [Architecture](docs/architecture.md) |
 | What is implemented, partial, active, or pending? | [Roadmap](docs/roadmap.md) |
+| What experiment can falsify the new kernel? | [Adoption spike](docs/adoption-spike.md) |
+| What evidence and uncertainty motivated it? | [Design evidence](docs/design-evidence.md) |
 | What does the provisional JavaScript host do today? | [Host README](host/README.md) |
 
-These documents have disjoint authority. A contradiction is a documentation
-defect; there is no “newer file wins” rule and no separate historical document
-competing with the live public set.
+The foundation, syntax, architecture, roadmap, and host README have disjoint
+authority. The adoption spike and evidence ledger are subordinate records:
+neither can add semantics, syntax, or status. A contradiction is a
+documentation defect; there is no “newer file wins” rule and no separate
+historical document competing with the live public set.
 
 ## Current state
 
@@ -43,9 +61,11 @@ Clause now implements the ratified Program snapshot/history boundary, typed
 checked-snapshot compilation, immutable RuntimeSession identity, causal
 StateRevision identity, strict runtime-v3 replay/reload, and ProgramRevision-
 bound render/effect evidence while preserving semantic-v10 / Revision-v6
-bytes. Canonical agent-first syntax, the complete generated live host, three
-applications, and the preregistered comparison remain unfinished. The
-[roadmap](docs/roadmap.md) is the current status record; the
+bytes. It does not yet implement the process-first Term/Clause/Run kernel; the
+[adoption spike](docs/adoption-spike.md) is the next mechanism decision.
+Canonical agent-first syntax, the complete generated live host, three
+applications, and the preregistered comparison also remain unfinished. The
+[roadmap](docs/roadmap.md) is the current status record, and the
 [syntax migration ledger](docs/syntax.md#implementation-migration) is the one
 place that contrasts canonical source with the legacy parser.
 

@@ -1,7 +1,8 @@
 # Clause Syntax
 
 > **Status:** Canonical source design is accepted; implementation migration is
-> active.
+> active. The process-first Term kernel remains subject to the
+> [adoption spike](adoption-spike.md).
 >
 > **Authority:** Sole authority for canonical Clause source. The
 > [foundation](foundation.md) governs meaning, the
@@ -16,9 +17,31 @@ not a second supported style.
 
 ## Governing rule
 
-> Indentation determines syntactic containment. A block head determines
-> construct-local elaboration. Indentation alone never invents a domain
-> relation.
+> Every line elaborates to a Term and a designated focus. Every indented child
+> receives the parent focus as its omitted left operand under the parent's
+> declared reading. Indentation determines containment and supplies no domain
+> relation of its own.
+
+Conceptually:
+
+```text
+elaborate(line) -> (term, focus)
+```
+
+A subject-focus reading designates the subject Term directly. A construct head
+may instead designate a structural declaration Term as focus and one explicit
+child relation. For example, `enum Game` can elaborate a bare `Chess` child as
+`[enum-declaration, has-member-entry, Chess]`; checked elaboration then produces
+the ordinary membership judgment. The parent reading selects focus and child
+relation before inspecting the child's domain meaning. The child never guesses
+them from indentation.
+
+The parser selects a candidate reading deterministically from the explicit
+head/operator and declared grammar in the already selected ElaborationContext.
+Missing or competing readings are errors. Later schema or type checking may
+reject the candidate, but cannot regroup the CST, reinterpret a sibling, or
+select a different parent reading. This keeps incremental parsing and recovery
+independent of successful whole-program inference.
 
 A parent can license children in exactly two ways.
 
@@ -41,14 +64,15 @@ iron-door
 ```
 
 An unkeyworded block header containing one designation has exactly one
-canonical AST kind: `SubjectFocus`. The parser selects that production from the
-header form; it does not inspect the mix of children to classify the block.
+canonical CST production: `SubjectFocus`. The parser selects that production
+from the header form; it does not inspect the mix of children to classify the block.
 The header must own at least one explicit edge child. Removing every child
 makes it an invalid empty focus, never a bare Referent declaration; use
 `referent iron-door` for that declaration.
 
-The second block omits only the repeated subject `iron-door`. It does not infer
-membership, containment, ownership, fields, or a relation from indentation.
+The second block omits only the repeated subject `iron-door`; every child still
+names its relation. It does not infer membership, containment, ownership,
+fields, or a relation from indentation.
 
 This is always invalid:
 
@@ -139,10 +163,10 @@ shape Vec2
 
 - `referent` introduces or explicitly resolves one designation through the
   lineage-aware identity process.
-- `enum` defines a homogeneous finite-member block. Each child contributes one
-  independent membership assertion occurrence.
-- `shape` defines a homogeneous structural-field block. Each child is a
-  `role: Domain` annotation.
+- `enum` declares one homogeneous member-entry reading. Each child contributes
+  one independent membership assertion occurrence after checked elaboration.
+- `shape` declares one homogeneous field-entry reading. Each child contributes
+  one `role: Domain` judgment after checked elaboration.
 
 There is no routine `model ...` source head. A domain world, scene, game, or
 hospital is an ordinary Referent described by relations. Program identity and
@@ -250,10 +274,24 @@ iron-door connects Cellar to Armory
 ```
 
 Surface word order is not semantic storage. Elaboration resolves one relation
-identity and an exact map from named RoleIds to recursively parsed checked
-terms.
+identity and exact named RoleIds over recursively parsed Terms. The target
+kernel represents the complete application as recursive three-slot Terms and
+may materialize an indexed named-role map for checking or execution. No
+semantic consumer may recover a role from tuple position or source order.
 
 ## Terms and conventional operators
+
+A source term projects to the recursive semantic algebra defined by the
+[foundation](foundation.md):
+
+```text
+Term = Atom | [Term, Term, Term]
+```
+
+The surface does not require three printed tokens per compound form. Declared
+readings, focus, delimiters, and conventional operators recover one exact Term
+and Clause judgment. Merely parsing or constructing a Term does not assert it,
+execute it, authorize it, or identify a unique occurrence.
 
 Canonical structural terms include:
 
@@ -327,15 +365,17 @@ on collect ?actor
 ```
 
 `when` constrains one pre-state. All `withdraw` and `admit` facts are grounded,
-conflict-checked, staged together, and committed as one successor transaction.
-Source order never resolves competing declarative writes.
+conflict-checked, and staged as one candidate successor of the transition Run.
+Only admission commits the successor StateRevision. Source order never resolves
+competing declarative writes, and a trace of the transition is not the
+transition occurrence itself.
 
 A reusable change set is explicit:
 
 ```clause
 delta impact/import-change
   withdraw
-    North imports Store
+    North imports Ledger
   admit
     South imports North
 ```
@@ -345,7 +385,7 @@ A program-history candidate names exact ancestry:
 ```clause
 revision impact/adopt from impact
   withdraw
-    North imports Store
+    North imports Ledger
   admit
     South imports North
 ```
@@ -483,8 +523,9 @@ later declaration.
 
 ## Implementation migration
 
-The public implementation at semantic-v10 / Revision-v6 predates this syntax.
-It currently parses to `frontend::Program`, elaborates under
+The public implementation at semantic-v10 / Revision-v6 predates this syntax
+and the process-first Term kernel. It currently parses to the host-owned
+`frontend::Program` AST, elaborates under
 `ElaborationContext` into an identity-free `ProgramSnapshotCandidate`, validates
 once to a checked `ProgramSnapshot`, and then uses an explicit legacy bridge to
 place the checked payload in `CompiledProgram` / `kernel::Revision`. Those
@@ -513,8 +554,10 @@ bridge names are implementation vocabulary under migration; the
 The current parser also implements recursive terms, labelled products,
 role-labelled relations, correlated named holes, bounded requests, pure
 definitions, authored event replay, and source-deleted generated Rust. Those
-capabilities must survive the migration even though their spellings and owning
-identity types change.
+capabilities must survive the migration even though their spellings,
+representation, and owning identity types change. None of those current
+features proves that raw Triples, Clause judgments, or the universal Run law
+are implemented.
 
 The executable replay boundary now requires an explicitly admitted
 ProgramRevision plus caller-allocated session-start and transition occurrence
