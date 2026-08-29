@@ -36,15 +36,17 @@ The repository is at a clean constitutional bootstrap. The Lean package now
 contains provisional indexed Atom/Term representations, generic candidate
 Context/Judgment carriers, and a finite ground-certificate checker whose
 soundness theorem establishes derivability only relative to a separately
-supplied basis. An exact package carrier now keeps canonical-byte candidates,
-semantics index, decoded basis/certificate/target sections, and auxiliary
-content in one record. Its external constitutional-anchor predicate is closed
-and currently uninhabited, so candidate package fields, raw Context membership,
-and bare relative derivability cannot create authority. No package, basis, or
-judgment is admitted Clause semantics. The Rust package remains semantic-empty.
-There is no supported Clause parser, compiler, runtime, persistence format, or
-language feature yet. Only the current foundation and host-neutral contract may
-define their semantics. Git history is not source authority.
+supplied basis. The normative canonical-package grammar and corpus now freeze
+one literal bootstrap and one predecessor-authorized successor. Lean provides
+the strict reference decoder, literal authority relation, and executable trust
+vectors; Rust independently implements the same strict physical codec and
+predecessor-only authorization witness against the shared corpus. Decoding,
+candidate package fields, raw Context membership, and bare relative
+derivability cannot create authority, and the narrow package relation is not
+general Clause Admission or semantic truth. There is still no supported Clause
+source parser, compiler, runtime, durable persistence layer, or language
+feature. Only the current foundation and host-neutral contract may define
+their semantics. Git history is not source authority.
 
 ## Repository layout
 
@@ -70,17 +72,19 @@ lake build
 lake env leanchecker --fresh ClauseCore
 cd ..
 cargo check --workspace --locked
+cargo test --workspace --locked --all-targets
+cargo clippy --workspace --locked --all-targets -- -D warnings
 ```
 
 Passing these commands proves only that the provisional representation,
 candidate Context/Judgment carriers, and relative finite-certificate checker
-and exact, deliberately uninhabited package-anchor boundary build at trust level
-zero, pass the bounded declaration audit, and replay their safe/total
-declarations through the same Lean kernel, plus that the empty Rust substrate
-builds. It does not prove canonical decoding, any inhabited package or basis
-acceptance, Atom canonicality, semantic structural equality, valid Clause
-judgments, Runs, admission, or any language feature; observed status lives in
-the [roadmap](docs/roadmap.md).
+and literal predecessor-authorized package boundary build at trust level zero,
+pass the bounded declaration audit, and replay their safe/total declarations
+through the same Lean kernel, while the independent Rust physical codec passes
+the shared corpus and adversarial authority cases. They do not prove Atom
+canonicality, semantic structural equality, valid Clause judgments, Runs,
+general Admission, durable persistence, or any language feature; observed
+status lives in the [roadmap](docs/roadmap.md).
 
 Clause is available under the [MIT License](LICENSE-MIT) or the
 [Apache License, Version 2.0](LICENSE-APACHE), at your option.

@@ -134,6 +134,9 @@ def truncated : CanonicalBytes :=
 def trailingBytes : CanonicalBytes :=
   bytes (Constitution.successorBytes.data ++ [0])
 
+def malformedPredecessor : CanonicalBytes :=
+  bytes (replaceByte 30 0x44 Constitution.successorBytes.data)
+
 theorem malformed_vectors_reject :
     decodeAccepts badMagic = false ∧
       decodeAccepts badVersion = false ∧
@@ -141,7 +144,8 @@ theorem malformed_vectors_reject :
       decodeAccepts unknownTermTag = false ∧
       decodeAccepts badLength = false ∧
       decodeAccepts truncated = false ∧
-      decodeAccepts trailingBytes = false := by
+      decodeAccepts trailingBytes = false ∧
+      decodeAccepts malformedPredecessor = false := by
   decide
 
 theorem u32_encoder_rejects_overflow :
@@ -694,6 +698,42 @@ def nullaryPackage : CanonicalPackageCandidate := {
   decoded := nullarySections
 }
 
+/- The tracked 662-byte successor-lineage nullary-self-rule corpus specimen.
+Unlike `nullaryPackage`, this keeps the ordinary successor target certificate
+valid while trying to derive lineage authority from a successor-local rule. -/
+def nullarySuccessorBasis :
+    DerivationBasisCandidate Constitution.v0Index := {
+  roots := [Constitution.successorTarget]
+  rules := [{
+    premises := []
+    conclusion := targetAt Constitution.v0Index 0xee
+  }]
+}
+
+def nullarySuccessorAuthorization :
+    DerivationCertificate Constitution.v0Index :=
+  ⟨[⟨targetAt Constitution.v0Index 0xee, .apply 0 []⟩]⟩
+
+def nullarySuccessorSections :
+    DecodedPackageSections Constitution.v0Index := {
+  lineage := .successor Constitution.bootstrapBytes
+    nullarySuccessorAuthorization
+  basis := nullarySuccessorBasis
+  certificate := Constitution.successorCertificate
+  target := Constitution.successorTarget
+  auxiliary := []
+}
+
+def nullarySuccessorBytes : CanonicalBytes :=
+  (Codec.encodePackageValue Constitution.v0Index
+    nullarySuccessorSections).getD (bytes [])
+
+def nullarySuccessorPackage : CanonicalPackageCandidate := {
+  canonicalBytes := nullarySuccessorBytes
+  index := Constitution.v0Index
+  decoded := nullarySuccessorSections
+}
+
 def candidateContext : ContextCandidate Constitution.v0Index :=
   ⟨[selfDeclaredClaim]⟩
 
@@ -713,6 +753,34 @@ theorem context_root_rule_and_bare_derivation_remain_non_authoritative :
       selfDeclaredClaim (by decide)
   · apply rootPackageDifferentFromLiteralIsNotAuthoritative rfl
     decide
+
+theorem frozen_nullary_successor_vector_is_predecessor_scoped :
+    nullarySuccessorBytes.data.length = 662 ∧
+      Codec.decodePackage nullarySuccessorBytes =
+        some nullarySuccessorPackage ∧
+      DerivationCertificate.checkRelative nullarySuccessorBasis
+        nullarySuccessorAuthorization
+          (targetAt Constitution.v0Index 0xee) = true ∧
+      checkLineageAuthorization Constitution.bootstrapPackage
+        nullarySuccessorPackage = false ∧
+      checkPackage nullarySuccessorPackage = true ∧
+      ¬ AuthoritativePackage nullarySuccessorPackage := by
+  constructor
+  · decide
+  constructor
+  · rfl
+  constructor
+  · decide
+  constructor
+  · decide
+  constructor
+  · decide
+  · intro authority
+    have accepted := successorWithLiteralBytesRequiresLineageCheck rfl authority
+    have rejected : checkLineageAuthorization Constitution.bootstrapPackage
+        nullarySuccessorPackage = false := by decide
+    rw [rejected] at accepted
+    cases accepted
 
 def bytesValueMismatch : CanonicalPackageCandidate := {
   canonicalBytes := Constitution.bootstrapBytes

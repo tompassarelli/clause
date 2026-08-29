@@ -583,8 +583,9 @@ end DerivationCertificate
 
 /-- A package is either the literal constitutional root or a successor carrying
 the exact predecessor package bytes and a certificate proposed as predecessor
-authorization. The predecessor bytes remain opaque during physical decoding;
-constitutional checking decodes and binds them separately. -/
+authorization. Strict physical decoding recursively validates the predecessor
+blob as one complete canonical package; constitutional checking separately
+decides whether those exact bytes carry authority. -/
 inductive PackageLineage (index : StructuralIndex) where
   | root
   | successor
@@ -946,24 +947,44 @@ private def decodePackageValue (raw : CanonicalBytes) : Option PackageValue := d
   else
     none
 
+/-- Recursively validate every embedded predecessor as a complete canonical
+package without granting it authority. The outer byte length is sufficient
+fuel because every predecessor blob is strictly contained by its successor. -/
+private def validateLineagePredecessors :
+    Nat → PackageLineage index → Option Unit
+  | _, .root => some ()
+  | 0, .successor _ _ => none
+  | fuel + 1, .successor predecessorBytes _ => do
+      let predecessorValue ← decodePackageValue predecessorBytes
+      let reencoded ← encodePackageValue predecessorValue.index
+        predecessorValue.decoded
+      if reencoded = predecessorBytes then
+        validateLineagePredecessors fuel predecessorValue.decoded.lineage
+      else
+        none
+
 /-- Strict canonical decoding. It consumes every frame payload and EOF, then
-re-encodes the dependent value and requires exact equality with the supplied
-bytes. The returned record retains those exact raw bytes. -/
+recursively validates every embedded predecessor package, re-encodes the
+dependent value, and requires exact equality with the supplied bytes. The
+returned record retains those exact raw bytes. -/
 def decodePackage (raw : CanonicalBytes) : Option CanonicalPackageCandidate :=
   match decodePackageValue raw with
   | none => none
   | some value =>
-      match encodePackageValue value.index value.decoded with
+      match validateLineagePredecessors raw.data.length value.decoded.lineage with
       | none => none
-      | some encoded =>
-          if encoded = raw then
-            some {
-              canonicalBytes := raw
-              index := value.index
-              decoded := value.decoded
-            }
-          else
-            none
+      | some () =>
+          match encodePackageValue value.index value.decoded with
+          | none => none
+          | some encoded =>
+              if encoded = raw then
+                some {
+                  canonicalBytes := raw
+                  index := value.index
+                  decoded := value.decoded
+                }
+              else
+                none
 
 /-- Canonical binding is strict decoding of the attached bytes to the exact
 dependent package value, not digest agreement or field projection. -/
@@ -980,22 +1001,28 @@ theorem decodePackage_canonical_binding
   cases valueResult : decodePackageValue raw with
   | none => simp [valueResult] at accepted
   | some value =>
-      cases encodingResult : encodePackageValue value.index value.decoded with
-      | none => simp [valueResult, encodingResult] at accepted
-      | some encoded =>
-          by_cases exactBytes : encoded = raw
-          · have packageShape : package = {
-                canonicalBytes := raw
-                index := value.index
-                decoded := value.decoded
-              } := by
-                simpa [valueResult, encodingResult, exactBytes] using
-                  accepted.symm
-            subst package
-            constructor
-            · rfl
-            · simpa [encodePackage, exactBytes] using encodingResult
-          · simp [valueResult, encodingResult, exactBytes] at accepted
+      cases predecessorResult : validateLineagePredecessors raw.data.length
+          value.decoded.lineage with
+      | none => simp [valueResult, predecessorResult] at accepted
+      | some validationUnit =>
+          cases validationUnit
+          cases encodingResult : encodePackageValue value.index value.decoded with
+          | none => simp [valueResult, predecessorResult, encodingResult] at accepted
+          | some encoded =>
+              by_cases exactBytes : encoded = raw
+              · have packageShape : package = {
+                    canonicalBytes := raw
+                    index := value.index
+                    decoded := value.decoded
+                  } := by
+                    simpa [valueResult, predecessorResult, encodingResult,
+                      exactBytes] using accepted.symm
+                subst package
+                constructor
+                · rfl
+                · simpa [encodePackage, exactBytes] using encodingResult
+              · simp [valueResult, predecessorResult, encodingResult,
+                  exactBytes] at accepted
 
 /-- Strict decoding is single-valued, including the exact retained raw bytes. -/
 theorem decodePackage_unique

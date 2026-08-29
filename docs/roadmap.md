@@ -18,18 +18,20 @@ Clause is at a clean constitutional bootstrap. The live repository contains:
   certificate checker and soundness theorem, the strict CLCP v1 codec, the
   literal bootstrap and predecessor-authorized successor, exact executable
   vectors, and a bounded trust audit; and
-- an empty Rust crate for the physical substrate.
+- a semantic-empty Rust physical substrate with an independent strict CLCP v1
+  codec, exact-byte carrier, relative certificate checker, predecessor-only
+  package authorization witness, and shared-corpus tests.
 
 There is no supported parser, compiler, runtime, persistence format, CLI,
 backend, or example application. No implemented language capability is
 claimed. Git history is not source authority or a design template.
 
 The literal initial constitutional package and its one preauthorized successor
-are now fixed by exact bytes. The next boundary is independent Rust decoding
-and verdict parity against the same corpus. Candidate data still cannot select
-its own authority: every later v0 successor must be authorized by its exact
-authoritative predecessor. Atom equality contracts remain a later semantic
-tranche.
+are now fixed by exact bytes. Lean and Rust independently decode and re-encode
+the same positive corpus and reject the recorded negative classes. Candidate
+data still cannot select its own authority: every later v0 successor must be
+authorized by its exact authoritative predecessor. Atom equality contracts
+and broader resource/fuzz evidence remain later tranches.
 
 ## Status summary
 
@@ -39,9 +41,9 @@ tranche.
 | Canonical source design | Accepted; unimplemented | [Syntax](syntax.md) |
 | Repository reset | Complete | Live tree contains only current documents, licenses, and current package roots |
 | Lean package bootstrap | Complete | Lean 4.33.1 build at trust level zero, bounded declaration audit, and same-kernel replay |
-| Rust substrate bootstrap | Scaffolded | Empty workspace builds with pinned Rust toolchain and forbids unsafe code |
+| Rust substrate bootstrap | Canonical-package codec complete; broader substrate scaffolded | Pinned Rust toolchain passes formatting, all-target checks/tests, Clippy, and forbids unsafe code |
 | Clause Core calculus | In progress; provisional Term, candidate Context/Judgment, relative ground-certificate checking, and narrow package authority | Admitted Atom/Term equality plus generic Context/Judgment/Run/Admission with no feature taxonomy |
-| Canonical package and certificates | Lean v0 complete; Rust parity pending | Independent Rust decode and verdict parity against the frozen corpus |
+| Canonical package and certificates | Lean/Rust v0 codec and frozen-corpus parity complete | Published exact corpus, strict nested decoding, byte-identical positive re-encoding, and matched negative verdict classes |
 | Constitutional adoption spike | Pending | All eight gates, negative evidence, Lean/Rust parity, and host freeze |
 | Clause-authored compiler middle | Blocked on spike | Stable proposal machinery moves into Clause |
 | Product gates | Blocked on spike | Readability, incrementality, native/JS performance, systems coverage, and maintenance evidence |
@@ -143,13 +145,13 @@ reject. Bound-field, predecessor, authorization, self/cycle, cross-index,
 Context, nullary-rule, and bare-derivability adversaries retain the intended
 separate decode, binding, relative-check, and authority verdicts. A build-time
 environment audit covers the core and vectors and rejects every unsafe
-declaration, every partial declaration except six exact compiler-generated
+declaration, every partial declaration except seven exact compiler-generated
 runtime helpers for total recursion, foreign/replacement implementations, and
 axioms outside the explicit `propext` policy.
 `leanchecker --fresh ClauseCore` successfully replays the safe/total
 declarations through the same Lean kernel and excludes those enumerated runtime
 helpers. This is narrow v0 package authority, not semantic Admission, the full
-transitive trust closure, Rust parity, or Phase 1 completion.
+transitive trust closure or Phase 1 completion.
 
 **Exit evidence:** safe/total completed calculus; no `sorry`, authored
 `unsafe` or `partial`, feature-specific syntax constructor, or unlisted axiom
@@ -157,12 +159,13 @@ in the constitutional closure.
 
 ## Phase 2 — Canonical package and Rust parity
 
-**Status:** In progress; Lean v0 complete, Rust parity pending.
+**Status:** Complete for the frozen v0 package and corpus boundary.
 
 The Clause-owned CLCP v1 grammar, literal bootstrap, one authorized successor,
-Lean decoder, and canonical positive/negative corpus are fixed. Build the
-independent Rust decoder from that specification and reproduce every recorded
-decode, exact-binding, certificate, and authority verdict.
+Lean decoder, independent Rust decoder, and canonical positive/negative corpus
+are fixed. Both implementations strictly validate nested predecessors,
+byte-identically re-encode the positives, and reproduce the recorded decode,
+exact-binding, certificate, and authority boundaries.
 
 The Rust crate may add only physical decoding, indexing, persistence, and
 execution mechanics. It may not reproduce the semantic checker through Rust

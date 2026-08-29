@@ -11,10 +11,11 @@ Clause's semantic model.
 
 Lean emits partial internal runtime helpers for the total recursive
 Term comparer, finite premise-reference matcher, structural list encoder,
-count-bounded list decoder, structural Term encoder, and fuel-bounded Term
-decoder. The audit allows those exact six generated names and requires all six
-to be present; every other partial declaration and every unsafe, foreign, or
-replacement implementation is rejected.
+count-bounded list decoder, structural Term encoder, fuel-bounded Term decoder,
+and fuel-bounded nested-predecessor validator. The audit allows those exact
+seven generated names and requires all seven to be present; every other partial
+declaration and every unsafe, foreign, or replacement implementation is
+rejected.
 
 The initial axiom policy admits only `propext`, which Lean uses in generated
 injectivity support for the dependent Term constructors. `Quot.sound`,
@@ -36,7 +37,10 @@ run_cmd do
       `ClauseCore.Codec.decodeSequence._unsafe_rec,
       `ClauseCore.Codec.encodeTerm._unsafe_rec,
       `ClauseCore.Codec.decodeTermWithFuel._unsafe_rec]
+  let predecessorValidationHelper :=
+    "_private.ClauseCore.0.ClauseCore.Codec.validateLineagePredecessors._unsafe_rec"
   let mut observedPartialRuntimeHelpers : Array Name := #[]
+  let mut observedPredecessorValidationHelper := false
   let mut checkedCoreDeclarations := 0
   let mut checkedVectorDeclarations := 0
   for (name, info) in environment.constants do
@@ -50,9 +54,13 @@ run_cmd do
       if info.isUnsafe then
         throwError "unsafe ClauseCore declaration: {name}"
       if info.isPartial then
-        unless allowedPartialRuntimeHelpers.contains name do
+        unless allowedPartialRuntimeHelpers.contains name ||
+            name.toString == predecessorValidationHelper do
           throwError "unexpected partial ClauseCore declaration: {name}"
-        observedPartialRuntimeHelpers := observedPartialRuntimeHelpers.push name
+        if name.toString == predecessorValidationHelper then
+          observedPredecessorValidationHelper := true
+        else
+          observedPartialRuntimeHelpers := observedPartialRuntimeHelpers.push name
       if (Compiler.getImplementedBy? environment name).isSome then
         throwError "implemented_by ClauseCore declaration: {name}"
       if (getExternAttrData? environment name).isSome then
@@ -68,3 +76,5 @@ run_cmd do
   for allowedName in allowedPartialRuntimeHelpers do
     unless observedPartialRuntimeHelpers.contains allowedName do
       throwError "expected generated runtime helper is absent: {allowedName}"
+  unless observedPredecessorValidationHelper do
+    throwError "expected generated runtime helper is absent: {predecessorValidationHelper}"

@@ -173,6 +173,16 @@
       "failure": "TRAILING_BYTES"
     },
     {
+      "id": "malformed-predecessor",
+      "file": "negative/malformed-predecessor.hex",
+      "base": "positive/successor.hex",
+      "decoded_bytes": 681,
+      "hex_file_sha256": "89959aa9db699f293c4f12e7ab7fd3e7bcf938c08a22e21a69a2289a95d6c0a7",
+      "mutation": "embedded predecessor magic at outer byte 30: 43 -> 44",
+      "verdicts": { "decode": "reject", "authority": "not-run" },
+      "failure": "PREDECESSOR_PACKAGE"
+    },
+    {
       "id": "decoded-field-tamper",
       "file": "negative/decoded-field-tamper.hex",
       "base": "positive/successor.hex",

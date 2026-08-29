@@ -43,6 +43,10 @@ fn vector(path: &str) -> Vec<u8> {
             env!("CARGO_MANIFEST_DIR"),
             "/../../test-vectors/canonical-package/negative/trailing-bytes.hex"
         )),
+        "malformed-predecessor" => include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../test-vectors/canonical-package/negative/malformed-predecessor.hex"
+        )),
         "decoded-field-tamper" => include_str!(concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/../../test-vectors/canonical-package/negative/decoded-field-tamper.hex"
@@ -70,6 +74,10 @@ fn vector(path: &str) -> Vec<u8> {
         "nonliteral-root" => include_str!(concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/../../test-vectors/canonical-package/negative/nonliteral-root.hex"
+        )),
+        "nullary-self-rule" => include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../test-vectors/canonical-package/negative/nullary-self-rule.hex"
         )),
         "self-authorization" => include_str!(concat!(
             env!("CARGO_MANIFEST_DIR"),
@@ -213,6 +221,13 @@ fn malformed_envelopes_and_tags_are_rejected_precisely() {
             offset: 681,
             remaining: 1,
         })
+    ));
+    assert!(matches!(
+        decode(&vector("malformed-predecessor")),
+        Err(DecodeError::InvalidPredecessorPackage {
+            offset: 30,
+            error,
+        }) if matches!(*error, DecodeError::WrongMagic { .. })
     ));
 
     let mut successor = hex(SUCCESSOR);
@@ -374,6 +389,29 @@ fn nullary_relative_self_rule_cannot_create_root_authority() {
         authorize(&candidate).expect_err("candidate root rejects"),
         AuthorizationError::RootIsNotLiteralBootstrap
     );
+}
+
+#[test]
+fn frozen_nullary_successor_vector_uses_no_successor_authority() {
+    let bytes = vector("nullary-self-rule");
+    assert_eq!(bytes.len(), 662);
+    let candidate = decode(&bytes).expect("nullary successor vector decodes");
+    assert_eq!(encode(candidate.value()).expect("vector re-encodes"), bytes);
+
+    let Lineage::Successor { authorization, .. } = &candidate.value().lineage else {
+        panic!("successor lineage expected")
+    };
+    let self_claim = &authorization
+        .nodes
+        .last()
+        .expect("nullary authorization is nonempty")
+        .claimed;
+    check_certificate(&candidate.value().basis, authorization, self_claim)
+        .expect("nullary rule derives only under the successor basis");
+    assert!(matches!(
+        authorize(&candidate),
+        Err(AuthorizationError::LineageCertificate(_))
+    ));
 }
 
 #[test]

@@ -38,8 +38,9 @@ an authorization certificate. Auxiliary blobs are ordered and opaque.
 
 The decoder bounds every read, uses unbounded natural arithmetic for decoded
 U32 values, rejects encoder overflow, and rejects wrong tags, order, lengths,
-counts, truncation, frame residue, trailing bytes, and noncanonical
-re-encoding. A successful result preserves the exact raw input.
+counts, truncation, frame residue, trailing bytes, malformed recursively
+embedded predecessors, and noncanonical re-encoding. A successful result
+preserves the exact raw input.
 `decodePackage_canonical_binding` proves that every successful result both
 retains those bytes and re-encodes every dependent field to the same bytes.
 
@@ -67,9 +68,10 @@ concludes only `DerivableFrom` the authoritative package's exact basis.
 `clause:lean/ClauseCoreVectors.lean` exercises the exact positive corpus, malformed decoder
 inputs, every bound package field, bytes/value mismatch, nonliteral roots,
 wrong and transplanted predecessors, self-declared successor-basis checks,
-cross-index attempts, nullary rules, raw Context membership, bare relative
-derivability, and self/cycle attempts. It also round-trips an ordinary package
-with a Triple, a rule application, and ordered auxiliary blobs. Opaque
+cross-index attempts, the exact successor-lineage nullary-rule specimen, raw
+Context membership, bare relative derivability, and self/cycle attempts. It
+also round-trips an ordinary package with a Triple, a rule application, and
+ordered auxiliary blobs. Opaque
 auxiliary-only mutation breaks exact positive binding but correctly does not
 change v0 authority.
 
@@ -84,9 +86,10 @@ authority and relative derivability are not semantic truth.
 vectors, then runs `clause:lean/ClauseCoreTrust.lean`. The audit covers both modules and
 rejects every authored unsafe or partial declaration, foreign or replacement
 implementation, and axiom except `propext`. Its exact generated-runtime
-allowlist contains six compiler helpers: recursive Term comparison, premise
+allowlist contains seven compiler helpers: recursive Term comparison, premise
 reference matching, structural list encoding, count-bounded list decoding,
-structural Term encoding, and fuel-bounded Term decoding.
+structural Term encoding, fuel-bounded Term decoding, and fuel-bounded nested-
+predecessor validation.
 
 ```sh
 lake build
@@ -94,4 +97,5 @@ lake env leanchecker --fresh ClauseCore
 ```
 
 `leanchecker` is a same-kernel replay, not an independent verifier. Neither
-check establishes the still-missing semantic calculus or Rust parity.
+check establishes the still-missing semantic calculus; Rust parity is a
+separate pinned-toolchain corpus gate.
