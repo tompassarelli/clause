@@ -1,0 +1,35 @@
+referent WorkflowSubject
+referent WorkflowState
+
+relation workflow/state
+  reads {subject: WorkflowSubject} state {value: WorkflowState}
+  subject subject
+  mode given subject yields value: one
+
+relation fulfillment/item
+  reads {order: WorkflowSubject} item {item: WorkflowSubject}
+  subject order
+  mode given order yields item: one
+
+order-17 ∈ WorkflowSubject
+item-9 ∈ WorkflowSubject
+pending ∈ WorkflowState
+available ∈ WorkflowState
+reserved ∈ WorkflowState
+ready ∈ WorkflowState
+
+order-17 item item-9
+order-17 state pending
+item-9 state available
+
+on reserve ?order
+  when
+    ?order item ?item
+    ?order state pending
+    ?item state available
+  withdraw
+    ?order state pending
+    ?item state available
+  admit
+    ?order state ready
+    ?item state reserved

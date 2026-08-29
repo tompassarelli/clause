@@ -1,0 +1,47 @@
+referent Component
+
+relation build/imports
+  reads {consumer: Component} imports {dependency: Component}
+  subject consumer
+  mode given consumer yields dependency: many
+
+relation impact/depends
+  reads {consumer: Component} depends on {dependency: Component}
+  subject consumer
+  mode given consumer yields dependency: many
+
+api ∈ Component
+parser ∈ Component
+schema ∈ Component
+lexer ∈ Component
+tokens ∈ Component
+unicode ∈ Component
+types ∈ Component
+
+api imports parser
+api imports schema
+parser imports lexer
+parser imports tokens
+lexer imports unicode
+schema imports types
+types imports tokens
+
+law impact/direct-dependency
+  if
+    ?consumer imports ?dependency
+  then
+    ?consumer depends on ?dependency
+
+law impact/transitive-dependency
+  if
+    ?consumer depends on ?middle
+    ?middle depends on ?dependency
+  then
+    ?consumer depends on ?dependency
+
+derive impact/direct-dependency
+derive impact/transitive-dependency
+
+select all ?dependency in fixture/pure-base
+  where
+    api depends on ?dependency

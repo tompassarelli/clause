@@ -58,8 +58,10 @@ their semantics. Git history is not source authority.
 | [`docs/adoption-spike.md`](docs/adoption-spike.md) | Falsifiable constitutional experiment |
 | [`docs/roadmap.md`](docs/roadmap.md) | Current implementation status and sequence |
 | [`docs/design-evidence.md`](docs/design-evidence.md) | Evidence, alternatives, and uncertainty |
+| [`docs/execution-corpus.md`](docs/execution-corpus.md) | Frozen cross-host Run, Admission, and replay observations |
 | [`lean/`](lean/) | Lean constitutional-model and trust-gate bootstrap |
 | [`crates/clause-substrate/`](crates/clause-substrate/) | Rust physical-substrate bootstrap |
+| [`test-vectors/`](test-vectors/) | Shared canonical-package and execution corpora |
 
 Each public fact has one owner. Evidence and the spike cannot add semantics;
 architecture cannot redefine syntax; status lives only in the roadmap.

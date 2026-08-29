@@ -1,0 +1,27 @@
+referent Component
+
+relation build/imports
+  reads {consumer: Component} imports {dependency: Component}
+  subject consumer
+  mode given consumer yields dependency: many
+
+North ∈ Component
+West ∈ Component
+South ∈ Component
+Core ∈ Component
+
+North imports West
+West imports Core
+
+delta evolution/redirect-import
+  withdraw
+    North imports West
+  admit
+    South imports North
+
+revision fixture/evolution-r1 from fixture/evolution-root
+  apply evolution/redirect-import
+
+revision fixture/evolution-r2 from fixture/evolution-r1
+  admit
+    South imports Core

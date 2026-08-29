@@ -26,6 +26,13 @@ There is no supported parser, compiler, runtime, persistence format, CLI,
 backend, or example application. No implemented language capability is
 claimed. Git history is not source authority or a design template.
 
+The shared v0 execution corpus now fixes three substantial implementation
+targets: recursive pure dependency closure, a two-phase admitted State/effect
+protocol, and predecessor-bound Program evolution with two isolated replay
+runs. These are source and observation fixtures only. They do not make a
+parser, Run relation, Admission relation, effect adapter, or replay command
+implemented.
+
 The literal initial constitutional package and its one preauthorized successor
 are now fixed by exact bytes. Lean and Rust independently decode and re-encode
 the same positive corpus and reject the recorded negative classes. Candidate
@@ -178,6 +185,11 @@ no hidden semantic authority.
 ## Phase 3 — Dangerous semantic gates
 
 **Status:** Pending; the Phase 2 canonical-package parity prerequisite is complete.
+
+The cross-host source/observation corpus for pure computation, State/effects,
+and verified Program evolution is frozen in
+[`test-vectors/execution`](../test-vectors/execution). Lean reference semantics,
+Rust execution, public tooling, and isolated replay remain pending.
 
 Run the eight cases in [adoption-spike.md](adoption-spike.md):
 

@@ -1,0 +1,550 @@
+{
+  "schema": "clause-execution-corpus-v0",
+  "semantic_authority": "docs/foundation.md",
+  "syntax_authority": "docs/syntax.md",
+  "contract": "docs/execution-corpus.md",
+  "bootstrap_dependency": "2ea651db7c525249c465dceb0f8c5474d635fae6",
+  "identity": {
+    "names": "fixture-local opaque references supplied by the admission context",
+    "public_program_snapshot_id": "unratified",
+    "public_program_revision_id": "unratified",
+    "host_string_dispatch": "forbidden"
+  },
+  "fixture_term_encoding": {
+    "structural_index": {"universe_id": "10", "semantics_id": "11"},
+    "symbol_atom": {
+      "kind": "e0",
+      "canonical_payload": "exact UTF-8 bytes of the manifest string",
+      "equality_contract": "e1"
+    },
+    "term_json": {
+      "symbol": {"symbol": "exact fixture-local string"},
+      "triple": {"triple": ["Term", "Term", "Term"]}
+    },
+    "binary_fact": "neutral Triple [symbol(subject), symbol(relation), symbol(object)]",
+    "ground_fact_shorthand": "[subject, relation, object] lowers each string with symbol_atom and then forms binary_fact",
+    "claim": {
+      "term": "encoded fixture Term",
+      "type": "symbol(fixture/type/proposition)",
+      "mode": "symbol(fixture/mode/asserted)"
+    },
+    "authority": "candidate corpus representation only; grants no Atom-contract admission or semantic truth"
+  },
+  "run_outcomes": [
+    "returned",
+    "choices",
+    "yielded",
+    "suspended",
+    "failed",
+    "exhausted"
+  ],
+  "programs": [
+    {
+      "id": "pure-dependency-closure",
+      "class": "pure-computation",
+      "source": "programs/pure-dependency-closure.clause",
+      "substantiality": {
+        "domain_entities": 7,
+        "base_relation_facts": 7,
+        "authorized_laws": 2,
+        "ground_rules": 14,
+        "results_with_independent_supports": 1,
+        "maximum_derivation_depth": 3,
+        "expected_results": 6
+      },
+      "contexts": {
+        "base": "fixture/pure-base"
+      },
+      "base_assertions": [
+        {
+          "occurrence": "fixture/assertion/api-imports-parser",
+          "term": {"triple": [{"symbol": "api"}, {"symbol": "build/imports"}, {"symbol": "parser"}]}
+        },
+        {
+          "occurrence": "fixture/assertion/api-imports-schema",
+          "term": {"triple": [{"symbol": "api"}, {"symbol": "build/imports"}, {"symbol": "schema"}]}
+        },
+        {
+          "occurrence": "fixture/assertion/parser-imports-lexer",
+          "term": {"triple": [{"symbol": "parser"}, {"symbol": "build/imports"}, {"symbol": "lexer"}]}
+        },
+        {
+          "occurrence": "fixture/assertion/parser-imports-tokens",
+          "term": {"triple": [{"symbol": "parser"}, {"symbol": "build/imports"}, {"symbol": "tokens"}]}
+        },
+        {
+          "occurrence": "fixture/assertion/lexer-imports-unicode",
+          "term": {"triple": [{"symbol": "lexer"}, {"symbol": "build/imports"}, {"symbol": "unicode"}]}
+        },
+        {
+          "occurrence": "fixture/assertion/schema-imports-types",
+          "term": {"triple": [{"symbol": "schema"}, {"symbol": "build/imports"}, {"symbol": "types"}]}
+        },
+        {
+          "occurrence": "fixture/assertion/types-imports-tokens",
+          "term": {"triple": [{"symbol": "types"}, {"symbol": "build/imports"}, {"symbol": "tokens"}]}
+        }
+      ],
+      "ground_rules": [
+        {
+          "id": "fixture/rule/direct-api-parser",
+          "law": "impact/direct-dependency",
+          "premises": [["api", "build/imports", "parser"]],
+          "conclusion": ["api", "impact/depends", "parser"]
+        },
+        {
+          "id": "fixture/rule/direct-api-schema",
+          "law": "impact/direct-dependency",
+          "premises": [["api", "build/imports", "schema"]],
+          "conclusion": ["api", "impact/depends", "schema"]
+        },
+        {
+          "id": "fixture/rule/direct-parser-lexer",
+          "law": "impact/direct-dependency",
+          "premises": [["parser", "build/imports", "lexer"]],
+          "conclusion": ["parser", "impact/depends", "lexer"]
+        },
+        {
+          "id": "fixture/rule/direct-parser-tokens",
+          "law": "impact/direct-dependency",
+          "premises": [["parser", "build/imports", "tokens"]],
+          "conclusion": ["parser", "impact/depends", "tokens"]
+        },
+        {
+          "id": "fixture/rule/direct-lexer-unicode",
+          "law": "impact/direct-dependency",
+          "premises": [["lexer", "build/imports", "unicode"]],
+          "conclusion": ["lexer", "impact/depends", "unicode"]
+        },
+        {
+          "id": "fixture/rule/direct-schema-types",
+          "law": "impact/direct-dependency",
+          "premises": [["schema", "build/imports", "types"]],
+          "conclusion": ["schema", "impact/depends", "types"]
+        },
+        {
+          "id": "fixture/rule/direct-types-tokens",
+          "law": "impact/direct-dependency",
+          "premises": [["types", "build/imports", "tokens"]],
+          "conclusion": ["types", "impact/depends", "tokens"]
+        },
+        {
+          "id": "fixture/rule/transitive-api-lexer",
+          "law": "impact/transitive-dependency",
+          "premises": [
+            ["api", "impact/depends", "parser"],
+            ["parser", "impact/depends", "lexer"]
+          ],
+          "conclusion": ["api", "impact/depends", "lexer"]
+        },
+        {
+          "id": "fixture/rule/transitive-api-tokens-via-parser",
+          "law": "impact/transitive-dependency",
+          "premises": [
+            ["api", "impact/depends", "parser"],
+            ["parser", "impact/depends", "tokens"]
+          ],
+          "conclusion": ["api", "impact/depends", "tokens"]
+        },
+        {
+          "id": "fixture/rule/transitive-api-types",
+          "law": "impact/transitive-dependency",
+          "premises": [
+            ["api", "impact/depends", "schema"],
+            ["schema", "impact/depends", "types"]
+          ],
+          "conclusion": ["api", "impact/depends", "types"]
+        },
+        {
+          "id": "fixture/rule/transitive-parser-unicode",
+          "law": "impact/transitive-dependency",
+          "premises": [
+            ["parser", "impact/depends", "lexer"],
+            ["lexer", "impact/depends", "unicode"]
+          ],
+          "conclusion": ["parser", "impact/depends", "unicode"]
+        },
+        {
+          "id": "fixture/rule/transitive-schema-tokens",
+          "law": "impact/transitive-dependency",
+          "premises": [
+            ["schema", "impact/depends", "types"],
+            ["types", "impact/depends", "tokens"]
+          ],
+          "conclusion": ["schema", "impact/depends", "tokens"]
+        },
+        {
+          "id": "fixture/rule/transitive-api-unicode",
+          "law": "impact/transitive-dependency",
+          "premises": [
+            ["api", "impact/depends", "lexer"],
+            ["lexer", "impact/depends", "unicode"]
+          ],
+          "conclusion": ["api", "impact/depends", "unicode"]
+        },
+        {
+          "id": "fixture/rule/transitive-api-tokens-via-types",
+          "law": "impact/transitive-dependency",
+          "premises": [
+            ["api", "impact/depends", "types"],
+            ["types", "impact/depends", "tokens"]
+          ],
+          "conclusion": ["api", "impact/depends", "tokens"]
+        }
+      ],
+      "run": {
+        "occurrence": "fixture/run/pure-query-1",
+        "base_context": "fixture/pure-base",
+        "term": {
+          "triple": [
+            {"symbol": "api"},
+            {"symbol": "impact/depends"},
+            {"symbol": "fixture/query-hole/dependency"}
+          ]
+        },
+        "mode": {"symbol": "fixture/mode/finite-many-total-pure"},
+        "outcome": {
+          "tag": "choices",
+          "comparison": "finite-set",
+          "values": [
+            {"symbol": "lexer"},
+            {"symbol": "parser"},
+            {"symbol": "schema"},
+            {"symbol": "tokens"},
+            {"symbol": "types"},
+            {"symbol": "unicode"}
+          ]
+        },
+        "candidate_context": "fixture/pure-base",
+        "delta": {"base": "fixture/pure-base", "withdraw": [], "admit": []},
+        "trace": [
+          {"symbol": "fixture/trace/direct-supports"},
+          {"symbol": "fixture/trace/transitive-supports"}
+        ],
+        "admission": {
+          "verdict": "not-required",
+          "result_context": "fixture/pure-base"
+        }
+      },
+      "negative": [
+        {
+          "id": "unauthorized-recursive-law",
+          "mutation": "remove derive impact/transitive-dependency",
+          "outcome": {"tag": "failed", "error": "LAW_NOT_AUTHORIZED"},
+          "candidate_context": "fixture/pure-base"
+        },
+        {
+          "id": "finite-cycle-without-ground-support",
+          "mutation": "add a depends b and b depends a with no imports support",
+          "outcome": {"tag": "exhausted", "obligations": ["FINITE_GROUND_SUPPORT"]},
+          "candidate_context": "fixture/pure-base"
+        }
+      ]
+    },
+    {
+      "id": "state-effect-fulfillment",
+      "class": "state-and-effects",
+      "source": "programs/state-effect-fulfillment.clause",
+      "substantiality": {
+        "authoritative_contexts": 3,
+        "distinct_run_occurrences": 2,
+        "admission_boundaries": 2,
+        "effect_attempts": 1,
+        "negative_boundaries": 3
+      },
+      "contexts": {
+        "base": "fixture/fulfillment-c0",
+        "transition_admitted": "fixture/fulfillment-c1",
+        "receipt_admitted": "fixture/fulfillment-c2"
+      },
+      "base_assertions": [
+        {
+          "occurrence": "fixture/assertion/order-17-item-item-9",
+          "term": {"triple": [{"symbol": "order-17"}, {"symbol": "fulfillment/item"}, {"symbol": "item-9"}]}
+        },
+        {
+          "occurrence": "fixture/assertion/order-17-state-pending",
+          "term": {"triple": [{"symbol": "order-17"}, {"symbol": "workflow/state"}, {"symbol": "pending"}]}
+        },
+        {
+          "occurrence": "fixture/assertion/item-9-state-available",
+          "term": {"triple": [{"symbol": "item-9"}, {"symbol": "workflow/state"}, {"symbol": "available"}]}
+        },
+        {
+          "occurrence": "fixture/assertion/replay-adapter-holds-notify-capability",
+          "term": {
+            "triple": [
+              {"symbol": "fixture/principal/replay-adapter"},
+              {"symbol": "fixture/relation/holds-capability"},
+              {"symbol": "fixture/capability/notify"}
+            ]
+          }
+        }
+      ],
+      "transition_run": {
+        "occurrence": "fixture/run/reserve-17",
+        "base_context": "fixture/fulfillment-c0",
+        "term": {
+          "triple": [
+            {"symbol": "order-17"},
+            {"symbol": "fixture/event"},
+            {"symbol": "reserve"}
+          ]
+        },
+        "mode": {"symbol": "fixture/mode/total-deterministic-state-transition"},
+        "outcome": {"tag": "returned", "value": {"symbol": "fixture/candidate/reservation-17"}},
+        "candidate_context": "fixture/fulfillment-candidate-1",
+        "delta": {
+          "base": "fixture/fulfillment-c0",
+          "withdraw": [
+            {
+              "occurrence": "fixture/assertion/order-17-state-pending",
+              "term": {"triple": [{"symbol": "order-17"}, {"symbol": "workflow/state"}, {"symbol": "pending"}]}
+            },
+            {
+              "occurrence": "fixture/assertion/item-9-state-available",
+              "term": {"triple": [{"symbol": "item-9"}, {"symbol": "workflow/state"}, {"symbol": "available"}]}
+            }
+          ],
+          "admit": [
+            {
+              "occurrence": "fixture/assertion/order-17-state-ready",
+              "term": {"triple": [{"symbol": "order-17"}, {"symbol": "workflow/state"}, {"symbol": "ready"}]}
+            },
+            {
+              "occurrence": "fixture/assertion/item-9-state-reserved",
+              "term": {"triple": [{"symbol": "item-9"}, {"symbol": "workflow/state"}, {"symbol": "reserved"}]}
+            },
+            {
+              "occurrence": "fixture/assertion/notify-17-authorized",
+              "term": {
+                "triple": [
+                  {"symbol": "fixture/effect-intent/notify-17"},
+                  {"symbol": "fixture/relation/authorized-by"},
+                  {"symbol": "fixture/capability/notify"}
+                ]
+              }
+            }
+          ]
+        },
+        "trace": [{"symbol": "fixture/trace/reservation-proposed"}]
+      },
+      "transition_admission": {
+        "base_context": "fixture/fulfillment-c0",
+        "candidate_context": "fixture/fulfillment-candidate-1",
+        "verdict": "accept",
+        "result_context": "fixture/fulfillment-c1"
+      },
+      "effect_run": {
+        "occurrence": "fixture/run/notify-attempt-17",
+        "base_context": "fixture/fulfillment-c1",
+        "term": {
+          "triple": [
+            {"symbol": "fixture/effect-intent/notify-17"},
+            {"symbol": "fixture/operation"},
+            {"symbol": "perform"}
+          ]
+        },
+        "mode": {"symbol": "fixture/mode/one-authorized-effect-attempt"},
+        "principal": {"symbol": "fixture/principal/replay-adapter"},
+        "capability": {"symbol": "fixture/capability/notify"},
+        "outcome": {"tag": "returned", "value": {"symbol": "fixture/receipt/notify-17-ok"}},
+        "candidate_context": "fixture/fulfillment-c1",
+        "delta": {"base": "fixture/fulfillment-c1", "withdraw": [], "admit": []},
+        "trace": [
+          {"symbol": "fixture/trace/notify-attempt-17"},
+          {"symbol": "fixture/trace/notify-receipt-17"}
+        ]
+      },
+      "receipt_admission": {
+        "base_context": "fixture/fulfillment-c1",
+        "candidate_context": "fixture/fulfillment-candidate-2",
+        "delta": {
+          "base": "fixture/fulfillment-c1",
+          "withdraw": [],
+          "admit": [
+            {
+              "occurrence": "fixture/assertion/notify-17-receipt-observed",
+              "term": {
+                "triple": [
+                  {"symbol": "fixture/receipt/notify-17-ok"},
+                  {"symbol": "fixture/relation/observed-for"},
+                  {"symbol": "order-17"}
+                ]
+              }
+            }
+          ]
+        },
+        "verdict": "accept",
+        "result_context": "fixture/fulfillment-c2"
+      },
+      "negative": [
+        {
+          "id": "attempt-without-admitted-capability",
+          "boundary": "effect_run",
+          "mutation": "remove fixture/assertion/replay-adapter-holds-notify-capability",
+          "verdict": "reject",
+          "obligations": ["CAPABILITY_NOT_ADMITTED"],
+          "effect_attempt_count": 0
+        },
+        {
+          "id": "fabricated-receipt-in-transition",
+          "boundary": "transition_admission",
+          "verdict": "reject",
+          "obligations": ["RECEIPT_WITHOUT_ATTEMPT"],
+          "effect_attempt_count": 0
+        },
+        {
+          "id": "trace-replay-is-inert",
+          "boundary": "trace_replay",
+          "verdict": "accept-as-data-only",
+          "effect_attempt_count": 0
+        }
+      ]
+    },
+    {
+      "id": "verified-program-evolution",
+      "class": "verified-package-evolution",
+      "source": "programs/verified-program-evolution.clause",
+      "substantiality": {
+        "base_relation_facts": 2,
+        "ordered_change_occurrences": 2,
+        "admitted_revisions": 2,
+        "negative_lineage_cases": 3
+      },
+      "constitutional_package_lineage": {
+        "bootstrap": "../canonical-package/positive/bootstrap.hex",
+        "successor": "../canonical-package/positive/successor.hex",
+        "predecessor_binding": "exact-embedded-bytes-not-digest",
+        "accepted_transitions": 1,
+        "execution_semantics_package": "successor",
+        "further_successor": {
+          "verdict": "reject",
+          "obligations": ["PREDECESSOR_BASIS_DOES_NOT_DERIVE_ADMISSION"]
+        }
+      },
+      "contexts": {
+        "root": "fixture/evolution-root",
+        "revision_1": "fixture/evolution-r1",
+        "revision_2": "fixture/evolution-r2"
+      },
+      "base_assertions": [
+        {
+          "occurrence": "fixture/assertion/north-imports-west",
+          "term": {"triple": [{"symbol": "North"}, {"symbol": "build/imports"}, {"symbol": "West"}]}
+        },
+        {
+          "occurrence": "fixture/assertion/west-imports-core",
+          "term": {"triple": [{"symbol": "West"}, {"symbol": "build/imports"}, {"symbol": "Core"}]}
+        }
+      ],
+      "changes": [
+        {
+          "occurrence": "fixture/change/redirect-import",
+          "base_context": "fixture/evolution-root",
+          "delta": {
+            "base": "fixture/evolution-root",
+            "withdraw": [
+              {
+                "occurrence": "fixture/assertion/north-imports-west",
+                "term": {"triple": [{"symbol": "North"}, {"symbol": "build/imports"}, {"symbol": "West"}]}
+              }
+            ],
+            "admit": [
+              {
+                "occurrence": "fixture/assertion/south-imports-north",
+                "term": {"triple": [{"symbol": "South"}, {"symbol": "build/imports"}, {"symbol": "North"}]}
+              }
+            ]
+          },
+          "admission": {
+            "verdict": "accept",
+            "result_context": "fixture/evolution-r1"
+          }
+        },
+        {
+          "occurrence": "fixture/change/add-core-import",
+          "base_context": "fixture/evolution-r1",
+          "delta": {
+            "base": "fixture/evolution-r1",
+            "withdraw": [],
+            "admit": [
+              {
+                "occurrence": "fixture/assertion/south-imports-core",
+                "term": {"triple": [{"symbol": "South"}, {"symbol": "build/imports"}, {"symbol": "Core"}]}
+              }
+            ]
+          },
+          "admission": {
+            "verdict": "accept",
+            "result_context": "fixture/evolution-r2"
+          }
+        }
+      ],
+      "history": [
+        "fixture/evolution-root",
+        "fixture/evolution-r1",
+        "fixture/evolution-r2"
+      ],
+      "negative": [
+        {
+          "id": "second-change-from-stale-root",
+          "base_context": "fixture/evolution-root",
+          "change": "fixture/change/add-core-import",
+          "verdict": "reject",
+          "obligations": ["EXACT_BASE_MISMATCH"]
+        },
+        {
+          "id": "equal-looking-different-base",
+          "base_context": "fixture/evolution-r1-copy",
+          "change": "fixture/change/add-core-import",
+          "verdict": "reject",
+          "obligations": ["REVISION_OCCURRENCE_MISMATCH"]
+        },
+        {
+          "id": "trace-cannot-authorize-change",
+          "base_context": "fixture/evolution-r1",
+          "change": "fixture/trace/add-core-import",
+          "verdict": "reject",
+          "obligations": ["TRACE_IS_NOT_CHANGE_OCCURRENCE"]
+        }
+      ]
+    }
+  ],
+  "replay": {
+    "isolated_runs": 2,
+    "shared_state": [],
+    "release_git_object": "supplied by the final release manifest and required to contain this checksum-matched corpus",
+    "pinned_inputs": [
+      "release Git object",
+      "lean/lean-toolchain",
+      "rust-toolchain.toml",
+      "source bytes",
+      "corpus bytes"
+    ],
+    "forbidden_inputs": [
+      "private path",
+      "ambient toolchain substitution",
+      "shared build cache",
+      "shared package cache",
+      "shared runtime state",
+      "credential",
+      "unpublished artifact"
+    ],
+    "equal_observations": [
+      "source bytes",
+      "canonical package bytes",
+      "verification decisions",
+      "Run outcomes",
+      "candidate deltas",
+      "trace data",
+      "admission decisions",
+      "ordered evolution history"
+    ],
+    "effect_fixture": {
+      "attempts_per_isolated_run": 1,
+      "additional_attempts_from_trace_replay": 0
+    },
+    "public_cli_commands": "deferred-to-cli-tranche"
+  }
+}
