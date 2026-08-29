@@ -121,53 +121,6 @@ def nominalTableValid (subject : CompilerSubject) : Bool :=
     definition.body) subject.program &&
   termNominalReferencesValid subject.nominalDeclarations subject.buildRequest
 
-def requestSignatureConforms (program : List Definition) (environment : List KSort)
-    (operation : Id32) (arguments : KExprSeq) : Bool :=
-  operation = Fixed.sha256OperationId &&
-  match arguments with
-  | .cons argument .nil =>
-      Static.infer program Fixed.coreManifest.physicalProfile environment argument = some .bytes
-  | _ => false
-
-mutual
-  def requestsConform (program : List Definition) (environment : List KSort) : KExpr → Bool
-    | .bytesLiteral _ | .termLiteral _ | .var _ => true
-    | .makeAtom a b c | .makeTriple a b c =>
-        requestsConform program environment a && requestsConform program environment b &&
-        requestsConform program environment c
-    | .letValue value body =>
-        requestsConform program environment value &&
-        match Static.infer program Fixed.coreManifest.physicalProfile environment value with
-        | none => false
-        | some sort => requestsConform program (sort :: environment) body
-    | .caseTerm scrutinee atomBody tripleBody =>
-        requestsConform program environment scrutinee &&
-        requestsConform program ([.bytes, .bytes, .bytes] ++ environment) atomBody &&
-        requestsConform program ([.term, .term, .term] ++ environment) tripleBody
-    | .caseBytes scrutinee emptyBody consBody =>
-        requestsConform program environment scrutinee &&
-        requestsConform program environment emptyBody &&
-        requestsConform program ([.bytes, .bytes] ++ environment) consBody
-    | .concatBytes parts => requestSeqConform program environment parts
-    | .caseBytesEqual a b c d =>
-        requestsConform program environment a && requestsConform program environment b &&
-        requestsConform program environment c && requestsConform program environment d
-    | .call _ arguments => requestSeqConform program environment arguments
-    | .request operation arguments =>
-        requestSignatureConforms program environment operation arguments &&
-        requestSeqConform program environment arguments
-
-  def requestSeqConform (program : List Definition) (environment : List KSort) :
-      KExprSeq → Bool
-    | .nil => true
-    | .cons head tail => requestsConform program environment head &&
-        requestSeqConform program environment tail
-end
-
-def allRequestsConform (subject : CompilerSubject) : Bool :=
-  all (fun definition => requestsConform subject.program definition.arguments definition.body)
-    subject.program
-
 def coreFailure (candidate : DecodedPackage) : Option AuthorizationFailure :=
   let subject := candidate.package.subject
   if Encoding.subject subject ≠ some candidate.exactSubjectPayload then
@@ -187,10 +140,11 @@ def coreFailure (candidate : DecodedPackage) : Option AuthorizationFailure :=
         else if compile.arguments ≠ [.term] || compile.result ≠ .term ||
             admit.arguments ≠ [.term] || admit.result ≠ .term then
           some { stage := .coreWellFormedness, code := .entrypointSignature }
-        else if !Static.definitionsWellFormed subject.program
+        else if !Static.definitionsWellTyped subject.program
             candidate.package.manifest.physicalProfile then
           some { stage := .coreWellFormedness, code := .staticRule }
-        else if !allRequestsConform subject then
+        else if !Static.definitionsConformToProfile subject.program
+            candidate.package.manifest.physicalProfile then
           some { stage := .coreWellFormedness, code := .physicalRequestSignature }
         else none
 
@@ -400,7 +354,7 @@ def certificateGraphValid (predecessor : AcceptedPredecessor)
   statement.coreContractId = Fixed.coreContractId &&
   statement.physicalProfileId = Fixed.physicalProfileId &&
   Static.definitionsWellFormed subject.program profile &&
-  allRequestsConform subject && Static.entrypointsWellFormed subject &&
+  Static.entrypointsWellFormed subject &&
   match Static.findDefinition statement.entrypoint subject.program with
   | none => false
   | some entrypoint =>
@@ -590,19 +544,23 @@ theorem compileGraphPrecedesEvaluation (candidate : DecodedPackage)
 theorem unknownRequestSignatureFailsProfile (program : List Definition)
     (environment : List KSort)
     (operation : Id32) (arguments : KExprSeq)
-    (unknown : operation ≠ Fixed.sha256OperationId) :
-    requestSignatureConforms program environment operation arguments = false := by
-  simp [requestSignatureConforms, unknown]
+    (unknown : Fixed.sha256OperationId ≠ operation) :
+    Static.requestSignatureConforms program Fixed.physicalProfile
+      environment operation arguments = false := by
+  simp [Static.requestSignatureConforms, Static.findOperation, Fixed.physicalProfile, unknown]
 
 theorem zeroArityRequestSignatureFailsProfile (program : List Definition)
     (environment : List KSort) :
-    requestSignatureConforms program environment Fixed.sha256OperationId .nil = false := by
-  simp [requestSignatureConforms]
+  Static.requestSignatureConforms program Fixed.physicalProfile
+      environment Fixed.sha256OperationId .nil = false := by
+  simp [Static.requestSignatureConforms, Static.findOperation, Fixed.physicalProfile,
+    Static.inferSeqAgainst]
 
 theorem wrongSortRequestSignatureFailsProfile (program : List Definition)
     (environment : List KSort) (value : Term) :
-    requestSignatureConforms program environment Fixed.sha256OperationId
-      (.cons (.termLiteral value) .nil) = false := by
-  simp [requestSignatureConforms, Static.infer]
+    Static.requestSignatureConforms program Fixed.physicalProfile
+      environment Fixed.sha256OperationId (.cons (.termLiteral value) .nil) = false := by
+  simp [Static.requestSignatureConforms, Static.findOperation, Fixed.physicalProfile,
+    Static.infer, Static.inferSeqAgainst]
 
 end ClauseCompiler.Authorization

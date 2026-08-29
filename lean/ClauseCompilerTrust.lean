@@ -57,7 +57,7 @@ run_cmd do
     "ClauseCompiler.Codec.decodeTermFuel._unsafe_rec",
     "ClauseCompiler.Static.findDefinition._unsafe_rec",
     "ClauseCompiler.instReprTerm.repr._unsafe_rec",
-    "ClauseCompiler.Authorization.requestSeqConform._unsafe_rec",
+    "ClauseCompiler.Static.requestSeqConform._unsafe_rec",
     "ClauseCompiler.Certificate.nodesValid.loop._unsafe_rec",
     "ClauseCompiler.Certificate.traceExpressions._unsafe_rec",
     "ClauseCompiler.Static.inferSeq._unsafe_rec",
@@ -80,7 +80,7 @@ run_cmd do
     "ClauseCompiler.Codec.counted.loop._unsafe_rec",
     "ClauseCompiler.Certificate.markReachable._unsafe_rec",
     "ClauseCompiler.Codec.readBytes._unsafe_rec",
-    "ClauseCompiler.Authorization.requestsConform._unsafe_rec",
+    "ClauseCompiler.Static.requestsConform._unsafe_rec",
     "ClauseCompiler.KExprSeq.ofList._unsafe_rec",
     "ClauseCompiler.bytesLt._unsafe_rec",
     "ClauseCompiler.Encoding.term._unsafe_rec"]

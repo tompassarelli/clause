@@ -334,9 +334,66 @@ end
 def definitionsSortedUnique (program : List Definition) : Bool :=
   sortedUniqueBy Definition.id program
 
-def definitionsWellFormed (program : List Definition) (profile : PhysicalProfile) : Bool :=
+def definitionsWellTyped (program : List Definition) (profile : PhysicalProfile) : Bool :=
   definitionsSortedUnique program && all (fun definition =>
     infer program profile definition.arguments definition.body = some definition.result) program
+
+def requestSignatureConforms (program : List Definition) (profile : PhysicalProfile)
+    (environment : List KSort) (operationId : Id32) (arguments : KExprSeq) : Bool :=
+  match findOperation operationId profile.operations with
+  | none => false
+  | some operation =>
+      operation.result = .bytes &&
+      inferSeqAgainst program profile environment arguments operation.arguments = some true
+
+mutual
+  def requestsConform (program : List Definition) (profile : PhysicalProfile)
+      (environment : List KSort) : KExpr → Bool
+    | .bytesLiteral _ | .termLiteral _ | .var _ => true
+    | .makeAtom a b c | .makeTriple a b c =>
+        requestsConform program profile environment a &&
+        requestsConform program profile environment b &&
+        requestsConform program profile environment c
+    | .letValue value body =>
+        requestsConform program profile environment value &&
+        match infer program profile environment value with
+        | none => false
+        | some sort => requestsConform program profile (sort :: environment) body
+    | .caseTerm scrutinee atomBody tripleBody =>
+        requestsConform program profile environment scrutinee &&
+        requestsConform program profile
+          ([.bytes, .bytes, .bytes] ++ environment) atomBody &&
+        requestsConform program profile
+          ([.term, .term, .term] ++ environment) tripleBody
+    | .caseBytes scrutinee emptyBody consBody =>
+        requestsConform program profile environment scrutinee &&
+        requestsConform program profile environment emptyBody &&
+        requestsConform program profile ([.bytes, .bytes] ++ environment) consBody
+    | .concatBytes parts => requestSeqConform program profile environment parts
+    | .caseBytesEqual a b c d =>
+        requestsConform program profile environment a &&
+        requestsConform program profile environment b &&
+        requestsConform program profile environment c &&
+        requestsConform program profile environment d
+    | .call _ arguments => requestSeqConform program profile environment arguments
+    | .request operation arguments =>
+        requestSignatureConforms program profile environment operation arguments &&
+        requestSeqConform program profile environment arguments
+
+  def requestSeqConform (program : List Definition) (profile : PhysicalProfile)
+      (environment : List KSort) : KExprSeq → Bool
+    | .nil => true
+    | .cons head tail => requestsConform program profile environment head &&
+        requestSeqConform program profile environment tail
+end
+
+def definitionsConformToProfile (program : List Definition)
+    (profile : PhysicalProfile) : Bool :=
+  all (fun definition =>
+    requestsConform program profile definition.arguments definition.body) program
+
+def definitionsWellFormed (program : List Definition) (profile : PhysicalProfile) : Bool :=
+  definitionsWellTyped program profile && definitionsConformToProfile program profile
 
 def entrypointsWellFormed (subject : CompilerSubject) : Bool :=
   if subject.interface.compile = subject.interface.admitPropose then false else
@@ -746,6 +803,181 @@ def verifyEvalCertificate (required : EvalStatement)
               ABI.observations result.observations = required.expected.observations &&
               checkGraph predecessor.package.subject.program
                 predecessor.package.manifest.physicalProfile required certificate.nodes
+
+theorem nonconformingDefinitionsRejectCertificate
+    (required : EvalStatement)
+    (accepted : AcceptedExact required.exactAcceptedPredecessor)
+    (certificate : EvalCertificate)
+    (predecessor : DecodedPackage)
+    (binding : Codec.strictDecode required.exactAcceptedPredecessor = .decoded predecessor)
+    (profileFailure :
+      Static.definitionsConformToProfile predecessor.package.subject.program
+        predecessor.package.manifest.physicalProfile = false) :
+    verifyEvalCertificate required accepted certificate = false := by
+  simp [verifyEvalCertificate, binding, Static.definitionsWellFormed, profileFailure]
+
+namespace Regression
+
+/- The fixture's two entrypoints are well typed.  Its third, unused definition
+is the exact profile escape; the public verifier rejects any strict-decoded
+predecessor whose definitions fail that gate, independently of reachability. -/
+def profileEscapeId (suffix : UInt8) : Id32 := List.replicate 31 0x00 ++ [suffix]
+
+def profileEscapeCompileId : Id32 := profileEscapeId 0x01
+def profileEscapeAdmitId : Id32 := profileEscapeId 0x02
+def profileEscapeUnusedId : Id32 := profileEscapeId 0x03
+def profileEscapeOperationId : Id32 :=
+  if Fixed.sha256OperationId = List.replicate 32 0x00 then
+    List.replicate 32 0xff
+  else
+    List.replicate 32 0x00
+
+theorem profileEscapeOperationId_unknown :
+    Fixed.sha256OperationId ≠ profileEscapeOperationId := by
+  unfold profileEscapeOperationId
+  split
+  · rename_i isZero
+    rw [isZero]
+    decide
+  · rename_i isNotZero
+    exact isNotZero
+
+theorem profileEscapeOperationId_length : profileEscapeOperationId.length = 32 := by
+  unfold profileEscapeOperationId
+  split <;> decide
+
+def profileEscapeTerm : Term := .atom [] [] []
+
+def profileEscapeProgram : List Definition := [
+  {
+    id := profileEscapeCompileId
+    arguments := [.term]
+    result := .term
+    body := .var 0
+  },
+  {
+    id := profileEscapeAdmitId
+    arguments := [.term]
+    result := .term
+    body := .var 0
+  },
+  {
+    id := profileEscapeUnusedId
+    arguments := []
+    result := .bytes
+    body := .request profileEscapeOperationId .nil
+  }
+]
+
+def profileEscapeSubject : CompilerSubject := {
+  lineage := .genesis
+  nominalDeclarations := []
+  interface := {
+    compile := profileEscapeCompileId
+    admitPropose := profileEscapeAdmitId
+  }
+  program := profileEscapeProgram
+  buildRequest := profileEscapeTerm
+}
+
+def profileEscapePackage : CompilerPackage := {
+  manifest := Fixed.coreManifest
+  subject := profileEscapeSubject
+  evidence := .genesis
+}
+
+def profileEscapeBytes : Bytes := (Encoding.package profileEscapePackage).getD []
+
+def profileEscapeStatement : EvalStatement := {
+  exactAcceptedPredecessor := profileEscapeBytes
+  coreContractId := Fixed.coreContractId
+  physicalProfileId := Fixed.physicalProfileId
+  entrypoint := profileEscapeCompileId
+  arguments := [.term profileEscapeTerm]
+  fuelLimit := 3
+  expected := {
+    value := .term profileEscapeTerm
+    remainingFuel := 0
+    observations := ABI.emptyObservations
+  }
+}
+
+def profileEscapeArgumentNode : EvalNode := {
+  ruleTag := 0x31
+  premises := []
+  conclusion := {
+    expression := .termLiteral profileEscapeTerm
+    environment := []
+    fuelBefore := 2
+    observationsBefore := ABI.emptyObservations
+    value := .term profileEscapeTerm
+    fuelAfter := 1
+    observationsAfter := ABI.emptyObservations
+  }
+}
+
+def profileEscapeBodyNode : EvalNode := {
+  ruleTag := 0x32
+  premises := []
+  conclusion := {
+    expression := .var 0
+    environment := [.term profileEscapeTerm]
+    fuelBefore := 1
+    observationsBefore := ABI.emptyObservations
+    value := .term profileEscapeTerm
+    fuelAfter := 0
+    observationsAfter := ABI.emptyObservations
+  }
+}
+
+def profileEscapeRootNode : EvalNode := {
+  ruleTag := 0x3d
+  premises := [0, 1]
+  conclusion := requiredRoot profileEscapeStatement
+}
+
+def profileEscapeCertificate : EvalCertificate := {
+  formatVersion := 0x00
+  statement := profileEscapeStatement
+  nodes := [profileEscapeArgumentNode, profileEscapeBodyNode, profileEscapeRootNode]
+}
+
+theorem profileEscapeProgramWellTyped :
+    Static.definitionsWellTyped profileEscapeProgram Fixed.physicalProfile = true := by
+  simp [Static.definitionsWellTyped, Static.definitionsSortedUnique, sortedUniqueBy,
+    profileEscapeProgram, profileEscapeCompileId, profileEscapeAdmitId,
+    profileEscapeUnusedId, profileEscapeId, bytesLt, all, Static.infer,
+    Static.inferSeqAny, nth?]
+
+theorem profileEscapeProgramRejectedByProfile :
+    Static.definitionsConformToProfile profileEscapeProgram Fixed.physicalProfile = false := by
+  simp [Static.definitionsConformToProfile, profileEscapeProgram, all,
+    Static.requestsConform, Static.requestSignatureConforms, Static.findOperation,
+    Static.requestSeqConform, Fixed.physicalProfile, profileEscapeOperationId_unknown]
+
+theorem profileEscapeProgramNotWellFormed :
+    Static.definitionsWellFormed profileEscapeProgram Fixed.physicalProfile = false := by
+  simp [Static.definitionsWellFormed, profileEscapeProgramWellTyped,
+    profileEscapeProgramRejectedByProfile]
+
+theorem unusedOutOfProfileRequestRejected
+    (accepted : AcceptedExact profileEscapeBytes)
+    (predecessor : DecodedPackage)
+    (binding : Codec.strictDecode profileEscapeBytes = .decoded predecessor)
+    (profileFailure :
+      Static.definitionsConformToProfile predecessor.package.subject.program
+        predecessor.package.manifest.physicalProfile = false) :
+    profileEscapeOperationId.length = 32 ∧
+    Static.definitionsWellTyped profileEscapeProgram Fixed.physicalProfile = true ∧
+    Static.definitionsConformToProfile profileEscapeProgram Fixed.physicalProfile = false ∧
+    Static.definitionsWellFormed profileEscapeProgram Fixed.physicalProfile = false ∧
+    verifyEvalCertificate profileEscapeStatement accepted profileEscapeCertificate = false := by
+  refine ⟨profileEscapeOperationId_length, profileEscapeProgramWellTyped,
+    profileEscapeProgramRejectedByProfile, profileEscapeProgramNotWellFormed, ?_⟩
+  exact nonconformingDefinitionsRejectCertificate
+    profileEscapeStatement accepted profileEscapeCertificate predecessor binding profileFailure
+
+end Regression
 
 end Certificate
 
