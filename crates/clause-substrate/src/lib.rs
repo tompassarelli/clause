@@ -1,7 +1,10 @@
 //! Physical substrate bootstrap for Clause.
 //!
-//! This crate intentionally contains no Clause semantic types. It will own
-//! optimized persistence, runtime, FFI, and backend mechanics only after they
-//! are defined by and checked against the host-neutral Clause Core contract.
+//! The canonical-package module implements the host-neutral Clause Core v0
+//! transport and its narrow package-authorization boundary. Its Rust types are
+//! representations of that external contract; they do not define Clause
+//! meaning or make decoded candidates authoritative.
 
 #![forbid(unsafe_code)]
+
+pub mod canonical_package;
