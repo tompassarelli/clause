@@ -579,6 +579,75 @@ theorem checkRelative_sound
 
 end DerivationCertificate
 
+/-! ## Exact package and constitutional-anchor binding -/
+
+/-- The decoded content of one candidate Clause Core package.
+
+The basis, certificate, requested target, and every other decoded section are
+held together so that authority cannot bind only a convenient projection. The
+auxiliary section carrier remains opaque canonical data until Clause defines
+the corresponding typed package sections. It carries no authority or admission
+evidence. -/
+structure DecodedPackageSections (index : StructuralIndex) where
+  basis : DerivationBasisCandidate index
+  certificate : DerivationCertificate index
+  target : JudgmentClaim index
+  auxiliary : List CanonicalBytes
+
+/-- One exact candidate package record. `index.semanticsId` is its semantics
+epoch. Grouping bytes, index, and all decoded sections does not make any of
+them canonical or authoritative. -/
+structure CanonicalPackageCandidate where
+  canonicalBytes : CanonicalBytes
+  index : StructuralIndex
+  decoded : DecodedPackageSections index
+
+/-- Exact whole-record binding between a candidate package and an externally
+selected package. A digest or separately reconstructed projection is not an
+acceptable substitute. -/
+def ExactPackageBinding (candidate selected : CanonicalPackageCandidate) : Prop :=
+  candidate = selected
+
+/-- The closed constitutional authority boundary for exact package records.
+
+There is deliberately no constructor: no constitutional bootstrap package has
+yet been selected. A future tranche may add only a literal, independently
+reviewed anchor. Candidate bytes, decoded fields, Context membership, and
+relative derivations cannot inhabit this predicate. -/
+inductive ConstitutionalPackageAnchor : CanonicalPackageCandidate → Prop
+
+/-- The narrow conclusion justified by exact package authority plus relative
+certificate checking. This is neither semantic truth nor general Admission. -/
+def PackageBoundDerivable (package : CanonicalPackageCandidate) : Prop :=
+  ConstitutionalPackageAnchor package ∧
+    DerivableFrom package.decoded.basis package.decoded.target
+
+/-- Checking the certificate from the exact anchored package promotes only its
+requested target to package-bound relative derivability. The unchanged package
+record keeps bytes, epoch, decoded sections, basis, certificate, and target in
+one authority index. -/
+theorem checkExactPackage_sound
+    (candidate selected : CanonicalPackageCandidate)
+    (bound : ExactPackageBinding candidate selected)
+    (anchored : ConstitutionalPackageAnchor selected)
+    (accepted :
+      DerivationCertificate.checkRelative candidate.decoded.basis
+        candidate.decoded.certificate candidate.decoded.target = true) :
+    PackageBoundDerivable candidate := by
+  have candidateAnchored : ConstitutionalPackageAnchor candidate := by
+    rw [bound]
+    exact anchored
+  exact ⟨candidateAnchored,
+    DerivationCertificate.checkRelative_sound candidate.decoded.basis
+      candidate.decoded.certificate candidate.decoded.target accepted⟩
+
+/-- Until a literal constitutional anchor is selected, no candidate package
+can manufacture authority. -/
+theorem noConstitutionalPackageAnchor (package : CanonicalPackageCandidate) :
+    ¬ ConstitutionalPackageAnchor package := by
+  intro anchored
+  cases anchored
+
 /-! ## Kernel-checked constitutional examples -/
 
 namespace Examples
@@ -902,6 +971,320 @@ theorem rejected_all_equal_data_does_not_collapse_payload_representations :
     Term.sameRepresentation (atomAt indexA 30 99 1)
       (atomAt indexA 30 99 2) = false := by
   decide
+
+/-! ### Exact package binding -/
+
+private def packageAt (index : StructuralIndex)
+    (packageBytes : CanonicalBytes)
+    (sections : DecodedPackageSections index) : CanonicalPackageCandidate := {
+  canonicalBytes := packageBytes
+  index := index
+  decoded := sections
+}
+
+private def checkedPackage : CanonicalPackageCandidate :=
+  packageAt indexA (bytes [100, 1]) {
+    basis := finiteBasis
+    certificate := sharedDagCertificate
+    target := claimD
+    auxiliary := [bytes [110, 1], bytes [110, 2]]
+  }
+
+private def packageCheck (package : CanonicalPackageCandidate) : Bool :=
+  DerivationCertificate.checkRelative package.decoded.basis
+    package.decoded.certificate package.decoded.target
+
+private def packageAuxiliary
+    (package : CanonicalPackageCandidate) : List CanonicalBytes :=
+  package.decoded.auxiliary
+
+private def packageSemanticsBytes
+    (package : CanonicalPackageCandidate) : CanonicalBytes :=
+  package.index.semanticsId.canonical
+
+private theorem differentCheckBreaksExactBinding
+    (candidate selected : CanonicalPackageCandidate)
+    (different : packageCheck candidate ≠ packageCheck selected) :
+    ¬ ExactPackageBinding candidate selected := by
+  intro bound
+  change candidate = selected at bound
+  exact different (congrArg packageCheck bound)
+
+theorem checked_package_is_exactly_self_bound :
+    ExactPackageBinding checkedPackage checkedPackage := by
+  rfl
+
+theorem checked_package_certificate_is_relatively_accepted :
+    packageCheck checkedPackage = true := by
+  decide
+
+private def bytesTamperedPackage : CanonicalPackageCandidate :=
+  packageAt indexA (bytes [100, 2]) checkedPackage.decoded
+
+theorem changed_package_bytes_break_exact_binding :
+    ¬ ExactPackageBinding bytesTamperedPackage checkedPackage := by
+  intro bound
+  change bytesTamperedPackage = checkedPackage at bound
+  have bytesEqual :=
+    congrArg CanonicalPackageCandidate.canonicalBytes bound
+  have bytesDifferent :
+      bytesTamperedPackage.canonicalBytes ≠ checkedPackage.canonicalBytes := by
+    decide
+  exact bytesDifferent bytesEqual
+
+private def epochClaim (index : StructuralIndex) : JudgmentClaim index := {
+  term := atomAt index 90 90 90
+  typeTerm := atomAt index 91 90 91
+  mode := atomAt index 92 90 92
+}
+
+private def epochPackage (index : StructuralIndex) : CanonicalPackageCandidate :=
+  packageAt index (bytes [101, 1]) {
+    basis := { roots := [], rules := [] }
+    certificate := ⟨[]⟩
+    target := epochClaim index
+    auxiliary := [bytes [111, 1]]
+  }
+
+theorem changed_semantics_epoch_breaks_exact_binding :
+    ¬ ExactPackageBinding (epochPackage indexB) (epochPackage indexA) := by
+  intro bound
+  change epochPackage indexB = epochPackage indexA at bound
+  have epochEqual := congrArg packageSemanticsBytes bound
+  have epochsDifferent :
+      packageSemanticsBytes (epochPackage indexB) ≠
+        packageSemanticsBytes (epochPackage indexA) := by
+    decide
+  exact epochsDifferent epochEqual
+
+private def auxiliaryTamperedPackage : CanonicalPackageCandidate :=
+  packageAt indexA checkedPackage.canonicalBytes {
+    basis := finiteBasis
+    certificate := sharedDagCertificate
+    target := claimD
+    auxiliary := [bytes [110, 1], bytes [110, 3]]
+  }
+
+theorem changed_decoded_auxiliary_content_breaks_exact_binding :
+    ¬ ExactPackageBinding auxiliaryTamperedPackage checkedPackage := by
+  intro bound
+  change auxiliaryTamperedPackage = checkedPackage at bound
+  have auxiliaryEqual := congrArg packageAuxiliary bound
+  have auxiliaryDifferent :
+      packageAuxiliary auxiliaryTamperedPackage ≠
+        packageAuxiliary checkedPackage := by
+    decide
+  exact auxiliaryDifferent auxiliaryEqual
+
+private def rootTamperedBasis : DerivationBasisCandidate indexA := {
+  roots := [claimB]
+  rules := finiteBasis.rules
+}
+
+private def rootTamperedPackage : CanonicalPackageCandidate :=
+  packageAt indexA checkedPackage.canonicalBytes {
+    basis := rootTamperedBasis
+    certificate := sharedDagCertificate
+    target := claimD
+    auxiliary := checkedPackage.decoded.auxiliary
+  }
+
+theorem changed_root_content_breaks_exact_binding :
+    ¬ ExactPackageBinding rootTamperedPackage checkedPackage := by
+  apply differentCheckBreaksExactBinding
+  decide
+
+private def reorderedRuleBasis : DerivationBasisCandidate indexA := {
+  roots := finiteBasis.roots
+  rules := [ruleBCD, ruleAB, ruleAC]
+}
+
+private def reorderedRulePackage : CanonicalPackageCandidate :=
+  packageAt indexA checkedPackage.canonicalBytes {
+    basis := reorderedRuleBasis
+    certificate := sharedDagCertificate
+    target := claimD
+    auxiliary := checkedPackage.decoded.auxiliary
+  }
+
+theorem changed_rule_order_breaks_exact_binding :
+    ¬ ExactPackageBinding reorderedRulePackage checkedPackage := by
+  apply differentCheckBreaksExactBinding
+  decide
+
+private def removedRuleBasis : DerivationBasisCandidate indexA := {
+  roots := finiteBasis.roots
+  rules := [ruleAB, ruleBCD]
+}
+
+private def removedRulePackage : CanonicalPackageCandidate :=
+  packageAt indexA checkedPackage.canonicalBytes {
+    basis := removedRuleBasis
+    certificate := sharedDagCertificate
+    target := claimD
+    auxiliary := checkedPackage.decoded.auxiliary
+  }
+
+theorem changed_rule_content_breaks_exact_binding :
+    ¬ ExactPackageBinding removedRulePackage checkedPackage := by
+  apply differentCheckBreaksExactBinding
+  decide
+
+private def changedPremiseRule : GroundRuleCandidate indexA := {
+  premises := []
+  conclusion := claimB
+}
+
+private def changedPremiseBasis : DerivationBasisCandidate indexA := {
+  roots := finiteBasis.roots
+  rules := [changedPremiseRule, ruleAC, ruleBCD]
+}
+
+private def changedPremisePackage : CanonicalPackageCandidate :=
+  packageAt indexA checkedPackage.canonicalBytes {
+    basis := changedPremiseBasis
+    certificate := sharedDagCertificate
+    target := claimD
+    auxiliary := checkedPackage.decoded.auxiliary
+  }
+
+theorem changed_rule_premises_break_exact_binding :
+    ¬ ExactPackageBinding changedPremisePackage checkedPackage := by
+  apply differentCheckBreaksExactBinding
+  decide
+
+private def changedConclusionRule : GroundRuleCandidate indexA := {
+  premises := [claimA]
+  conclusion := claimC
+}
+
+private def changedConclusionBasis : DerivationBasisCandidate indexA := {
+  roots := finiteBasis.roots
+  rules := [changedConclusionRule, ruleAC, ruleBCD]
+}
+
+private def changedConclusionPackage : CanonicalPackageCandidate :=
+  packageAt indexA checkedPackage.canonicalBytes {
+    basis := changedConclusionBasis
+    certificate := sharedDagCertificate
+    target := claimD
+    auxiliary := checkedPackage.decoded.auxiliary
+  }
+
+theorem changed_rule_conclusion_breaks_exact_binding :
+    ¬ ExactPackageBinding changedConclusionPackage checkedPackage := by
+  apply differentCheckBreaksExactBinding
+  decide
+
+private def certificateTamperedPackage : CanonicalPackageCandidate :=
+  packageAt indexA checkedPackage.canonicalBytes {
+    basis := finiteBasis
+    certificate := ⟨[
+      ⟨claimA, .root 1⟩,
+      ⟨claimB, .apply 0 [0]⟩,
+      ⟨claimC, .apply 1 [0]⟩,
+      ⟨claimD, .apply 2 [1, 2]⟩
+    ]⟩
+    target := claimD
+    auxiliary := checkedPackage.decoded.auxiliary
+  }
+
+theorem changed_certificate_breaks_exact_binding :
+    ¬ ExactPackageBinding certificateTamperedPackage checkedPackage := by
+  apply differentCheckBreaksExactBinding
+  decide
+
+private def targetTamperedPackage : CanonicalPackageCandidate :=
+  packageAt indexA checkedPackage.canonicalBytes {
+    basis := finiteBasis
+    certificate := sharedDagCertificate
+    target := claimC
+    auxiliary := checkedPackage.decoded.auxiliary
+  }
+
+theorem changed_target_breaks_exact_binding :
+    ¬ ExactPackageBinding targetTamperedPackage checkedPackage := by
+  apply differentCheckBreaksExactBinding
+  decide
+
+private def transplantedCertificatePackage : CanonicalPackageCandidate :=
+  packageAt indexA (bytes [102, 1]) checkedPackage.decoded
+
+theorem cross_package_certificate_transplant_breaks_exact_binding :
+    packageCheck transplantedCertificatePackage = true ∧
+      ¬ ExactPackageBinding transplantedCertificatePackage checkedPackage := by
+  constructor
+  · decide
+  · intro bound
+    change transplantedCertificatePackage = checkedPackage at bound
+    have bytesEqual :=
+      congrArg CanonicalPackageCandidate.canonicalBytes bound
+    have bytesDifferent :
+        transplantedCertificatePackage.canonicalBytes ≠
+          checkedPackage.canonicalBytes := by
+      decide
+    exact bytesDifferent bytesEqual
+
+private def selfDeclaredRootBasis : DerivationBasisCandidate indexA := {
+  roots := [allEqualContractClaim]
+  rules := []
+}
+
+private def selfDeclaredRootCertificate : DerivationCertificate indexA :=
+  ⟨[⟨allEqualContractClaim, .root 0⟩]⟩
+
+private def selfDeclaredRootPackage : CanonicalPackageCandidate :=
+  packageAt indexA (bytes [120, 1]) {
+    basis := selfDeclaredRootBasis
+    certificate := selfDeclaredRootCertificate
+    target := allEqualContractClaim
+    auxiliary := []
+  }
+
+theorem self_declared_root_is_relative_but_cannot_create_authority :
+    packageCheck selfDeclaredRootPackage = true ∧
+      ¬ ConstitutionalPackageAnchor selfDeclaredRootPackage := by
+  exact ⟨by decide, noConstitutionalPackageAnchor selfDeclaredRootPackage⟩
+
+private def nullarySelfRule : GroundRuleCandidate indexA := {
+  premises := []
+  conclusion := allEqualContractClaim
+}
+
+private def nullarySelfRuleBasis : DerivationBasisCandidate indexA := {
+  roots := []
+  rules := [nullarySelfRule]
+}
+
+private def nullarySelfRuleCertificate : DerivationCertificate indexA :=
+  ⟨[⟨allEqualContractClaim, .apply 0 []⟩]⟩
+
+private def nullarySelfRulePackage : CanonicalPackageCandidate :=
+  packageAt indexA (bytes [120, 2]) {
+    basis := nullarySelfRuleBasis
+    certificate := nullarySelfRuleCertificate
+    target := allEqualContractClaim
+    auxiliary := []
+  }
+
+theorem nullary_self_rule_is_relative_but_cannot_create_authority :
+    packageCheck nullarySelfRulePackage = true ∧
+      ¬ ConstitutionalPackageAnchor nullarySelfRulePackage := by
+  exact ⟨by decide, noConstitutionalPackageAnchor nullarySelfRulePackage⟩
+
+theorem all_equal_context_membership_cannot_create_package_authority :
+    ContextCandidate.ContainsRepresentation selfAuthorizingContext
+        allEqualContractClaim ∧
+      ¬ ConstitutionalPackageAnchor nullarySelfRulePackage := by
+  exact ⟨raw_all_equal_context_is_present,
+    noConstitutionalPackageAnchor nullarySelfRulePackage⟩
+
+theorem bare_relative_derivability_cannot_create_package_authority :
+    DerivableFrom selfDeclaredRootBasis allEqualContractClaim ∧
+      ¬ ConstitutionalPackageAnchor selfDeclaredRootPackage := by
+  exact ⟨DerivationCertificate.checkRelative_sound selfDeclaredRootBasis
+      selfDeclaredRootCertificate allEqualContractClaim (by decide),
+    noConstitutionalPackageAnchor selfDeclaredRootPackage⟩
 
 end Examples
 

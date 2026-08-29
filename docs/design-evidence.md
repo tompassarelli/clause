@@ -68,6 +68,30 @@ need a separate Clause-owned calculus and cannot enter as Lean callbacks or
 host matching. The next bootstrap boundary is exact semantics-epoch and
 canonical-package admission of the initial basis.
 
+The package-binding seam now groups raw canonical-byte candidates, the exact
+structural index, decoded basis/certificate/target sections, and opaque
+auxiliary content in one dependent record. `ExactPackageBinding` is equality of
+that whole record. It cannot silently replace the bytes, epoch, decoded
+sections, roots, rules, certificate, or external target with an equal-looking
+or separately reconstructed candidate.
+
+Authority remains a separate closed predicate over the whole record. It has no
+constructor because Clause has not yet selected a literal initial
+constitutional package. The only closing theorem requires both that external
+anchor and the existing relative checker result, and concludes only anchored,
+package-bound relative derivability. It does not create accepted basis,
+semantic truth, or general Admission. A self-declared root or nullary rule may
+still pass relative checking—as it must for a generic supplied basis—but cannot
+inhabit the anchor. Candidate Context membership and bare `DerivableFrom`
+likewise provide no authority.
+
+Executable negative examples independently vary the raw bytes, semantics
+epoch, decoded auxiliary content, root content, rule order and content, rule
+premises and conclusion, certificate, and target. Exact binding breaks in each
+case, including a cross-package certificate transplant. Successor authority is
+deferred until Clause has a canonical basis-admission claim encoder, preventing
+a proposed basis from checking its own acceptance.
+
 At pinned Lean 4.33.1, `DecidableEq` and `LawfulBEq` establish Lean
 propositional equality, not a separately governed Clause relation. Quotienting
 would add `Quot.sound`, collapse candidate representations before Clause

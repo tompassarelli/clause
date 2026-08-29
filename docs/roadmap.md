@@ -15,16 +15,20 @@ Clause is at a clean constitutional bootstrap. The live repository contains:
 - the canonical source design;
 - a provisional Lean 4 model containing indexed Atom/Term representations,
   generic candidate Context/Judgment carriers, a relative finite ground-
-  certificate checker and soundness theorem, and a bounded trust audit; and
+  certificate checker and soundness theorem, an exact but deliberately
+  uninhabited package-anchor boundary, and a bounded trust audit; and
 - an empty Rust crate for the physical substrate.
 
 There is no supported parser, compiler, runtime, persistence format, CLI,
 backend, or example application. No implemented language capability is
 claimed. Git history is not source authority or a design template.
 
-The next decision is how the exact semantics epoch and canonical package admit
-the first constitutional basis without letting candidate data select its own
-authority. Only after that boundary may Atom equality contracts be derived.
+The next decision is the literal initial constitutional package and basis. The
+current exact package-binding boundary intentionally supplies no such anchor;
+candidate data therefore cannot select its own authority. Successor-basis
+admission remains blocked until a canonical basis-admission claim exists. Only
+after an independently reviewed initial anchor may Atom equality contracts be
+derived.
 
 ## Status summary
 
@@ -35,8 +39,8 @@ authority. Only after that boundary may Atom equality contracts be derived.
 | Repository reset | Complete | Live tree contains only current documents, licenses, and current package roots |
 | Lean package bootstrap | Complete | Lean 4.33.1 build at trust level zero, bounded declaration audit, and same-kernel replay |
 | Rust substrate bootstrap | Scaffolded | Empty workspace builds with pinned Rust toolchain and forbids unsafe code |
-| Clause Core calculus | In progress; provisional Term, candidate Context/Judgment, and relative finite ground-certificate checking | Admitted Atom/Term equality plus generic Context/Judgment/Run/Admission with no feature taxonomy |
-| Canonical package and certificates | Pending | One host-neutral codec, exact byte vectors, and package-bound evidence |
+| Clause Core calculus | In progress; provisional Term, candidate Context/Judgment, relative finite ground-certificate checking, and an uninhabited exact package-anchor seam | Admitted Atom/Term equality plus generic Context/Judgment/Run/Admission with no feature taxonomy |
+| Canonical package and certificates | In progress; exact whole-record binding only | One host-neutral codec, literal independently reviewed bootstrap anchor, exact byte vectors, and package-bound evidence |
 | Constitutional adoption spike | Pending | All eight gates, negative evidence, Lean/Rust parity, and host freeze |
 | Clause-authored compiler middle | Blocked on spike | Stable proposal machinery moves into Clause |
 | Product gates | Blocked on spike | Readability, incrementality, native/JS performance, systems coverage, and maintenance evidence |
@@ -96,15 +100,23 @@ The current provisional model contains:
   proof of `DerivableFrom` the exact supplied basis; and
 - positive shared-DAG evidence plus rejection of empty, missing, mismatched,
   duplicate node-address, self-referential, forward, mutual-cycle,
-  altered-target, and self-authorizing all-equal specimens.
+  altered-target, and self-authorizing all-equal specimens;
+- one candidate package record binding raw canonical-byte candidates, exact
+  structural index, decoded basis/certificate/target sections, and all
+  auxiliary content by whole-record equality; and
+- a closed, currently uninhabited constitutional-anchor predicate plus a
+  theorem yielding only package-bound relative derivability when exact binding,
+  external authority, and relative checking all hold.
 
 It deliberately does not yet define or claim a valid Context, a valid Clause
-Judgment relation, an accepted basis, schematic rule formation or substitution,
-Mode, RunOutcome, Run, Delta, Trace, Admission, Revision, Atom-contract
-validation, semantic structural equality, nominal identity, or canonical
-package bytes. Relative derivability is not acceptance. This source remains
-non-authoritative bootstrap evidence rather than a package-bound semantic
-tranche under the architecture's admission and parity gates.
+Judgment relation, an inhabited constitutional anchor or accepted basis,
+successor-basis admission, schematic rule formation or substitution, Mode,
+RunOutcome, Run, Delta, Trace, Admission, Revision, Atom-contract validation,
+semantic structural equality, nominal identity, canonical decoding, or a
+canonical codec. Relative or package-bound derivability is not semantic truth
+or general Admission. This source remains non-authoritative bootstrap evidence
+rather than an admitted semantic tranche under the architecture's admission
+and parity gates.
 
 The model must keep structural equality, value equality, denotational
 equivalence, occurrence identity, entity identity, concept continuity, and
@@ -124,16 +136,22 @@ Initial proofs protect only constitutional boundaries:
 - host handles cannot become Clause identity.
 
 **Current evidence:** the pinned Lean 4.33.1 provisional Term,
-Context/Judgment, and relative certificate model builds with `-t0` and warnings
-as errors. A build-time environment audit rejects every unsafe declaration,
-every partial declaration except the two exact generated runtime helpers for
-`Term.sameRepresentation` and finite premise-reference matching,
-foreign/replacement implementations, and axioms outside the explicit
-`propext` policy.
+Context/Judgment, relative certificate, and exact package-binding model builds
+with `-t0` and warnings as errors. Its examples independently alter package
+bytes, semantics epoch, decoded auxiliary content, roots, rule content and
+order, rule premises and conclusion, certificate, and target; every mutation
+breaks exact binding. Cross-package certificate transplant, self-declared
+roots, nullary self-rules, all-equal candidate content, raw Context membership,
+and bare `DerivableFrom` remain unauthorized. A build-time environment audit
+rejects every unsafe declaration, every partial declaration except the two
+exact generated runtime helpers for `Term.sameRepresentation` and finite
+premise-reference matching, foreign/replacement implementations, and axioms
+outside the explicit `propext` policy.
 `leanchecker --fresh ClauseCore` successfully replays the safe/total
 declarations through the same Lean kernel and excludes those enumerated runtime
-helpers. This is not basis acceptance, semantic admission, the full
-package-bound trust closure, Rust parity, or Phase 1 completion.
+helpers. This is not an inhabited package or basis acceptance, canonical codec,
+semantic admission, the full transitive trust closure, Rust parity, or Phase 1
+completion.
 
 **Exit evidence:** safe/total completed calculus; no `sorry`, authored
 `unsafe` or `partial`, feature-specific syntax constructor, or unlisted axiom

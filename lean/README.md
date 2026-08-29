@@ -31,18 +31,33 @@ works. `checkRelative_sound` connects executable acceptance to the independent
 basis; the package does not select or accept that basis, and candidate Context
 membership never enters the checker.
 
+`CanonicalPackageCandidate` groups exact canonical-byte candidates, the
+complete structural index, and decoded sections containing the basis,
+certificate, requested target, and opaque auxiliary content. Exact binding is
+whole-record equality, not a digest or a reconstructed projection.
+`ConstitutionalPackageAnchor` is a closed external predicate with no current
+constructor: candidate decoded data contains no proof or admission field and
+cannot select an authority. `checkExactPackage_sound` composes an exact binding,
+that external anchor, and `checkRelative_sound` into only
+`PackageBoundDerivable`. It does not establish semantic truth or general
+Admission. The examples show that independent byte, epoch, section, basis,
+rule, certificate, and target changes break binding, and that self-declared
+roots, nullary self-rules, Context membership, and bare relative derivability
+remain unauthorized.
+
 The package may model only the host-neutral calculus owned by
 `docs/foundation.md`. Lean syntax, expressions, type classes, serialization,
 and one-constructor-per-language-feature inductives are implementation tools,
 not Clause authority.
 
-The package does not yet implement basis acceptance, schematic rule formation
-or substitution, Atom-contract admission, semantic structural equality, valid
+The package does not yet implement a literal constitutional anchor, successor-
+basis admission, canonical decoding or a codec, schematic rule formation or
+substitution, Atom-contract admission, semantic structural equality, valid
 Clause judgments, identity judgments, Mode, Run, Trace, Delta, Admission,
-Revision, a canonical codec, exact package binding, or Clause source. Its
-examples prove candidate-representation boundaries, relative ground
-derivability, finite-trace rejection, and raw-Context non-authority; they do not
-pass the adoption spike's later integer-evaluation gate.
+Revision, or Clause source. Its examples prove candidate-representation and
+exact-binding boundaries, relative ground derivability, finite-trace rejection,
+and raw-Context non-authority; they do not pass the adoption spike's later
+integer-evaluation gate.
 
 `lake build` compiles with `-t0` and warnings as errors, then runs
 `ClauseCoreTrust.lean`. That audit rejects every unsafe declaration, every
