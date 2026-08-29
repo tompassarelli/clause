@@ -15,7 +15,8 @@ Clause uses one host-neutral semantic contract, one externally anchored
 compiler root, and three implementation roles:
 
 ```text
- external owner anchor selects exact literal Compiler0 bytes once
+ human owner selects exact literal Compiler0 bytes once
+            and supplies an external anchor witness
                             |
                             v
                   accepted CLCP v2 Compiler0
@@ -38,10 +39,14 @@ generic constitution. Rust executes only the fixed generic evaluator and
 replaceable physical machinery.
 
 Materialization, hashing, successful decoding, successful execution, and
-derivability do not authorize `Compiler0`. One external owner anchor selects
-its exact literal bytes. Every later compiler is admitted only through the
-already accepted exact predecessor's `compile` and `admitPropose`
-behavior, checked under that predecessor.
+derivability do not authorize `Compiler0`. One irreducible external human-owner
+act selects its exact literal bytes and is presented to admission as
+`Missing | Supplied(OwnerAnchorWitness)`. The witness is opaque to package data
+and exposes the complete selected byte sequence for octet-for-octet comparison;
+recorded length and package hash are secondary consistency observations, never
+substitutes for those bytes or sources of authority. Every later compiler is
+admitted only through the already accepted exact predecessor's `compile` and
+`admitPropose` behavior, checked under that predecessor.
 
 OCaml has no primary role. Aeneas is not part of the bootstrap or trust chain.
 It may be reconsidered later for isolated safe-Rust verification only.

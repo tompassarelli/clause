@@ -319,10 +319,10 @@ contractClauses = [
   "V07: VerifyEvalCertificate finally requires every node reachable and the final conclusion canonical-byte-equal to the independently constructed root; success requires every prior step and uses no callback, theorem name, host rule registry, Boolean evaluator, or package rule",
   "D00: StrictDecode returns only Decoded(exactInput,candidate) or DecodeRejected(code,offset); codes in precedence order are 00 WrongMagic,01 UnknownVersion,02 FrameTagOrderOrCount,03 Truncated,04 LengthOrCountOverflow,05 InvalidFixedWidth,06 UnknownSumTag,07 BoundedValueUnderConsumed,08 BoundedValueOverConsumed,09 TrailingBytes; fields are read depth-first in encoded order and equal-offset ties use lower code",
   "D01: StrictDecode handles only closed byte grammar; order, uniqueness, exact manifest equality, reference bounds, ABI meaning, entrypoint signature, identity derivation, lineage/evidence consistency, known certificate-rule semantics, and profile conformance are authorization checks; malformed bytes never produce Unauthorized",
-  "A00: Authorization starts only after Decoded(exactInput,Q) and requires exactly one explicit request: GenesisAuthorizationRequest(anchor,R,E,Gc,Ga,I) or SuccessorAuthorizationRequest(P,R,E,I), where Gc and Ga are U64 and I=FinalPackageIdentityInput(packageHash:Hash32,exactPackageBytes:Blob); the request variant, never candidate data, selects the route; stages run 40..48; successor skips 42; genesis skips 43,45,46,47; both run 44 and 48; each row condition belongs to exactly one stage and route; rows run left-to-right and collection failures use encoded item order; failure at position i means every earlier condition passed and condition i is false, so first-failure predicates are pairwise disjoint and the first false condition is the only verdict",
+  "A00: Authorization starts only after Decoded(exactInput,Q) and requires exactly one explicit request: GenesisAuthorizationRequest(ownerAnchor,R,E,Gc,Ga,I) or SuccessorAuthorizationRequest(P,R,E,I), where ownerAnchor=Missing|Supplied(OwnerAnchorWitness), OwnerAnchorWitness is an opaque non-package-wire capability created only by the external human-owner selection act, observe(witness)=OwnerAnchorObservation(exactSelectedBytes:Blob,selectedByteLength:U64,selectedPackageHash:Hash32), Gc and Ga are U64, and I=FinalPackageIdentityInput(packageHash:Hash32,exactPackageBytes:Blob); no owner-anchor variant, witness, or observation is encoded in Q; the request variant, never candidate data, selects the route; stages run 40..48; successor skips 42; genesis skips 43,45,46,47; both run 44 and 48; each row condition belongs to exactly one stage and route; rows run left-to-right and collection failures use encoded item order; failure at position i means every earlier condition passed and condition i is false, so first-failure predicates are pairwise disjoint and the first false condition is the only verdict",
   "A40: CoreManifest rows=[manifest bytes differ exactCoreManifestBytes->(40,60)]",
   "A41: CoreWellFormedness rows=[subject or ABI semantic structure->(41,61),nominal provenance allocation retention or reference->(41,62),definition order or duplicate->(41,63),compile then admitPropose resolution->(41,64),entrypoints equal->(41,65),compile then admitPropose signature not [Term]->Term->(41,66),other static rule 20..2b->(41,67),Request outside exact profile->(41,68)]",
-  "A42: GenesisAnchor rows=[lineage not Genesis->(42,69),supplied E not byte-identical Q.evidence or E not empty GenesisEvidence->(42,6a),missing external anchor->(42,6b),anchor bytes not complete exact candidate->(42,6c)]",
+  "A42: GenesisAnchor rows=[lineage not Genesis->(42,69),supplied E not byte-identical Q.evidence or E not empty GenesisEvidence->(42,6a),ownerAnchor=Missing->(42,6b),ownerAnchor=Supplied(w) and observe(w) is not a self-consistent observation of the complete exact candidate because selectedByteLength!=byteLength(exactSelectedBytes) or selectedPackageHash!=CompilerPackageHash(exactSelectedBytes) or exactSelectedBytes is not octet-for-octet equal exactInput->(42,6c)]; length and hash checks never substitute for the final exact-byte equality or create authority",
   "A43: ExactPredecessor rows=[lineage not Successor->(43,6d),candidate self candidate-basis or candidate-rule authority->(43,6f),supplied predecessor not already accepted including stale revision->(43,6e),locator differs CompilerPackageHash(P)->(43,70),resolved bytes not byte-identical accepted P->(43,71)]",
   "A44: BuildRequest rows=[wrong ABI shape->(44,72),R not byte-identical Q.subject.buildRequest->(44,73),base route or exact base mismatch->(44,74),core ID mismatch->(44,75),profile ID mismatch->(44,76),source order or duplicate->(44,77),source artifact derivation->(44,78),IdentityPlan order uniqueness provenance retention or seed binding->(44,79),request lineage or nominal change occurrence mismatch->(44,7a),declared physical inputs nonempty->(44,7b),on genesis Gc or Ga zero or R.compileFuel!=Gc or R.admissionFuel!=Ga; on successor either R fuel zero->(44,7c)]",
   "A45: CompileEvaluation rows=[evidence or compile certificate shape->(45,7d),statement predecessor manifest profile entrypoint arguments or fuel->(45,7e),known node premise root rule state fuel or observation semantics->(45,7f),no successful judgment->(45,80),result not Built->(45,81),Built bytes differ Q.subject->(45,82),compile observations differ root->(45,83)]",
@@ -559,7 +559,7 @@ Authorization has one explicit request algebra outside the package wire:
 ```text
 AuthorizationRequest =
     GenesisAuthorizationRequest(
-      anchor:OwnerAnchor,
+      ownerAnchor:OwnerAnchorInput,
       buildRequest:Term,
       evidence:CompilerEvidence,
       compileFuelLimit:U64,
@@ -575,6 +575,16 @@ FinalPackageIdentityInput = {
   packageHash:Hash32,
   exactPackageBytes:Blob
 }
+
+OwnerAnchorInput =
+    Missing
+  | Supplied(witness:OwnerAnchorWitness)
+
+observe(OwnerAnchorWitness) = OwnerAnchorObservation {
+  exactSelectedBytes:Blob,
+  selectedByteLength:U64,
+  selectedPackageHash:Hash32
+}
 ```
 
 These are checker inputs, not fields added to Frames 01, 02, or 03. The
@@ -586,6 +596,20 @@ genesis `BuildRequest`. Genesis has no evaluation certificate, remaining-fuel
 value, or observation input. The final identity input always carries both the
 claimed hash and the complete exact bytes; a hash alone never identifies the
 candidate for authorization.
+
+`OwnerAnchorWitness` is an opaque external admission capability issued only by
+the irreducible human-owner selection act at the exact release object. Neither
+candidate bytes nor a decoder, materializer, hash match, derivation, or
+successful evaluation can construct it. Its `OwnerAnchorObservation` is not a
+Core `Observations` value and has no CLCP encoding. The checker first preserves
+the table's earlier lineage/evidence precedence, then maps `Missing` to
+`(42,6b)`. Only for `Supplied(w)` does it obtain `observe(w)`, require the
+recorded length and domain-separated package hash to match
+`exactSelectedBytes`, and independently compare every selected octet and the
+selected length with the strict decoder's retained `exactInput`. Any failure
+of that supplied-witness conjunction is `(42,6c)`. Length and digest may expose
+corruption or aid retrieval, but exact-byte equality is mandatory and the
+external selection act remains the sole source of genesis authority.
 
 An observation index starts at zero and increases by one. Its arguments and
 result use `Value`; under the sealed profile the only valid item is an exact
@@ -662,8 +686,8 @@ classified at `45` and `46`, respectively.
 | | a `Request` operation or signature is outside the exact profile | `(41,68)` |
 | `42 GenesisAnchor` | lineage is not `Genesis` | `(42,69)` |
 | | supplied evidence differs from `Q.evidence` or is not empty `GenesisEvidence` | `(42,6a)` |
-| | no external owner anchor is supplied | `(42,6b)` |
-| | anchor-selected bytes are not the complete exact candidate bytes | `(42,6c)` |
+| | `ownerAnchor` is `Missing` | `(42,6b)` |
+| | `ownerAnchor` is `Supplied(w)`, but its observation length/hash is inconsistent with its selected bytes or those complete selected bytes are not octet-for-octet equal the strict decoder's retained exact candidate input | `(42,6c)` |
 | `43 ExactPredecessor` | lineage is not `Successor` | `(43,6d)` |
 | | candidate, self, candidate basis, or candidate rule is offered as predecessor authority | `(43,6f)` |
 | | supplied predecessor bytes are not already accepted, including a stale revision | `(43,6e)` |

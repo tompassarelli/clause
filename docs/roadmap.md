@@ -199,7 +199,10 @@ pending.
 The [compiler-genesis contract](compiler-genesis.md) and
 [canonical-package contract](canonical-package.md) define:
 
-- one literal externally owner-anchored `Compiler0`;
+- one literal `Compiler0` selected by an irreducible human-owner act and
+  supplied through the non-package-wire
+  `Missing | Supplied(OwnerAnchorWitness)` admission input, with complete
+  selected bytes observed for exact comparison;
 - CLCP v2 with separate subject and evidence frames;
 - one exact carried Core manifest whose canonical bytes close every generic
   static/evaluation/certificate rule and the one-operation physical profile;
@@ -215,8 +218,9 @@ The [compiler-genesis contract](compiler-genesis.md) and
   and derived identity recomputation; and
 - separate deterministic strict-decode errors plus an exhaustive ordered,
   pairwise-disjoint first-failure authorization stage/code table; and
-- mandatory genesis request, empty evidence, explicit fuel-limit, and final
-  exact-package-bytes/hash bindings through the same authorization stages.
+- mandatory genesis request, reachable missing-anchor and supplied-witness
+  mismatch verdicts, empty evidence, explicit fuel-limit, and final exact-
+  package-bytes/hash bindings through the same authorization stages.
 
 This phase changes contracts only. It does not claim a v2 package, compiler,
 codec, checker, evaluator, fixture, host audit, or measurement.
@@ -232,7 +236,8 @@ residual tractability uncertainty.
 
 Implement independent strict CLCP v2 decoding, the fixed generic Lean checker
 and certificate rules, the fixed generic Rust evaluator and physical profile,
-one literal `Compiler0`, its external exact-byte owner anchor, and
+one literal `Compiler0`, its external exact-byte owner-anchor witness with
+`Missing` and mismatched-selection negatives, and
 stage-separated positive and adversarial vectors. Materialization provenance
 is recorded as untrusted evidence and cannot create the anchor.
 

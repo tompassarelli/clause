@@ -40,10 +40,13 @@ the shared corpus. That work is evidence, not a Clause compiler.
 
 The P1 contract now specifies CLCP v2 and one future literal `Compiler0`.
 Its subject/evidence split prevents evidence from self-hashing or
-self-authorizing. One external owner anchor selects the exact genesis bytes;
+self-authorizing. One external human-owner act supplies an opaque genesis
+anchor witness whose observation carries the complete selected byte sequence;
 materialization, hashes, derivability, decoding, and successful execution do
-not. Every successor must be compiled and proposed by the already accepted
-exact predecessor through two fixed `[Term] -> Term` entrypoints and canonical
+not. The non-package-wire request represents the anchor as `Missing` or
+`Supplied(witness)`, so absence and exact selected-byte mismatch are distinct
+ordered failures. Every successor must be compiled and proposed by the already
+accepted exact predecessor through two fixed `[Term] -> Term` entrypoints and canonical
 request, result, observation, and certificate forms. Frame 01 carries the
 complete exact generic machine manifest; no host maps a symbolic core ID to
 private rules. Its closed static/evaluation rule table, fuel and observation
@@ -51,9 +54,9 @@ semantics, certificate grammar, and verifier are part of the canonical bytes.
 Malformed wire input has a separate deterministic decode verdict, while every
 decoded authorization failure has one fixed stage/code pair selected by
 pairwise-disjoint first-failure precedence. Genesis authorization explicitly
-binds its exact `BuildRequest`, empty `GenesisEvidence`, both nonzero fuel
-limits, and the final package's complete exact bytes plus domain-separated
-hash before returning `Authorized`.
+binds its supplied anchor observation byte-for-byte, exact `BuildRequest`,
+empty `GenesisEvidence`, both nonzero fuel limits, and the final package's
+complete exact bytes plus domain-separated hash before returning `Authorized`.
 
 The fixed host evaluator has sufficient generic byte inspection, construction,
 equality, recursion, and hashing mechanics but remains construct-blind:

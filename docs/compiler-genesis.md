@@ -339,13 +339,33 @@ equivariant under a correspondingly transformed premise.
 
 Let `P0` be exact package bytes, `R0` the supplied canonical build request,
 `E0` the supplied evidence, `Gc` and `Ga` the supplied exact genesis compile
-and admission fuel limits, and `I0` the supplied final package identity. Let
-`anchor` be an owner admission judgment naming the package bytes at an exact
-release object:
+and admission fuel limits, and `I0` the supplied final package identity. The
+external admission input is exact and total at its boundary:
 
 ```text
-AcceptGenesis(anchor, P0, R0, E0, Gc, Ga, I0) :=
-  anchor selects exactBytes(P0)
+OwnerAnchorInput =
+    Missing
+  | Supplied(witness:OwnerAnchorWitness)
+
+observe(OwnerAnchorWitness) = OwnerAnchorObservation(
+  exactSelectedBytes:Blob,
+  selectedByteLength:U64,
+  selectedPackageHash:Hash32)
+```
+
+`OwnerAnchorWitness` is an opaque capability issued only by the irreducible
+human-owner selection act at an exact release object. The observation is not
+package wire or evaluator `Observations`, and no candidate, materializer,
+decoder, digest, derivation, or successful execution can create the witness.
+Let `A0` be the supplied `OwnerAnchorInput`:
+
+```text
+AcceptGenesis(A0, P0, R0, E0, Gc, Ga, I0) :=
+  exists w0,
+      A0 = Supplied(w0)
+  ∧ observe(w0).exactSelectedBytes = exactBytes(P0)
+  ∧ observe(w0).selectedByteLength = byteLength(exactBytes(P0))
+  ∧ observe(w0).selectedPackageHash = CompilerPackageHash(P0)
   ∧ CanonicalCLCPv2(P0)
   ∧ exactBytes(P0.frame01) = exactCoreManifestBytes
   ∧ P0.subject.lineage = Genesis
@@ -360,9 +380,16 @@ AcceptGenesis(anchor, P0, R0, E0, Gc, Ga, I0) :=
   ∧ I0.exactPackageBytes = exactBytes(P0)
   ∧ I0.packageHash = CompilerPackageHash(P0)
   ∧ AuthorizeDecoded(
-      GenesisAuthorizationRequest(anchor, R0, E0, Gc, Ga, I0),
+      GenesisAuthorizationRequest(A0, R0, E0, Gc, Ga, I0),
       P0) = Authorized(exactBytes(P0))
 ```
+
+`A0 = Missing` reaches `(GenesisAnchor, MissingAnchor) = (42,6b)` after the
+earlier lineage and evidence rows pass. For `A0 = Supplied(w0)`, an inconsistent
+length or package hash, or failure of the independent octet-for-octet comparison
+between `observe(w0).exactSelectedBytes` and the strict decoder's retained
+complete input, reaches `(42,6c)`. The two cases are disjoint, and the existing
+stage/row precedence selects only the first false condition.
 
 `ValidGenesisBuildRequest` is exactly every applicable ordered row of the
 canonical package contract's `BuildRequest` stage: `GenesisBase`, carried core
@@ -380,11 +407,12 @@ to the strict decoder's retained exact input, and the hash must be the
 domain-separated `CompilerPackageHash` of those same complete bytes, including
 `GenesisEvidence`. Neither field can be omitted or replaced by the other.
 
-The anchor records length and hashes for checking and retrieval, but those
-values never substitute for the selected bytes. `R0`, `E0`, `Gc`, `Ga`, and
-`I0` are mandatory checker inputs and exact-binding claims, not additional
-sources of authority. The seed materializer, `GenesisEvidence`, canonicality,
-successful execution, or derivability cannot create
+The anchor observation records exact selected bytes, length, and package hash
+for checking and retrieval, but the latter two never substitute for the
+selected bytes. `R0`, `E0`, `Gc`, `Ga`, and `I0` are mandatory checker inputs
+and exact-binding claims, not additional sources of authority. The seed
+materializer, `GenesisEvidence`, canonicality, successful execution, or
+derivability cannot create
 `AcceptedCompiler(exactBytes(P0))`.
 
 There is exactly one externally owner-anchored `Compiler0`. Re-encoding,
