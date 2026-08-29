@@ -64,6 +64,42 @@ fn nested_concat(depth: usize) -> KExpr {
     })
 }
 
+fn nested_term(depth: usize) -> Term {
+    assert!(depth > 0);
+    (1..depth).fold(atom(b"leaf"), |term, index| {
+        Term::Triple(
+            Box::new(atom(&[u8::try_from(index % 251).unwrap()])),
+            Box::new(atom(b"sibling")),
+            Box::new(term),
+        )
+    })
+}
+
+#[test]
+fn aggregate_wire_item_budget_is_shared_across_frames() {
+    const HALF_WIRE_ITEM_LIMIT: usize = 262_144 / 2;
+
+    let mut manifest_only = sample_package();
+    manifest_only.core_manifest.contract_clauses = vec![Vec::new(); HALF_WIRE_ITEM_LIMIT];
+    assert!(
+        encode(&manifest_only).is_ok(),
+        "manifest frame remains below every package budget"
+    );
+
+    let mut subject_only = sample_package();
+    subject_only.subject.program[0].arguments = vec![KSort::Term; HALF_WIRE_ITEM_LIMIT];
+    assert!(
+        encode(&subject_only).is_ok(),
+        "subject frame remains below every package budget"
+    );
+
+    let mut package = sample_package();
+    package.core_manifest.contract_clauses = vec![Vec::new(); HALF_WIRE_ITEM_LIMIT];
+    package.subject.program[0].arguments = vec![KSort::Term; HALF_WIRE_ITEM_LIMIT];
+
+    assert_eq!(encode(&package), Err(EncodeError::ResourceExhausted));
+}
+
 #[test]
 fn canonical_v2_candidate_round_trips_and_retains_exact_frame_payloads() {
     let package = sample_package();
@@ -174,13 +210,13 @@ fn counted_sequence_exhaustion_uses_the_next_depth_first_read_verdict() {
 }
 
 #[test]
-fn recursive_wire_values_fail_with_typed_resource_exhaustion() {
+fn independent_term_and_expression_depth_limits_match_the_wire_contract() {
     let mut too_deep = sample_package();
-    too_deep.subject.program[0].body = nested_concat(32);
+    too_deep.subject.program[0].body = nested_concat(512);
     assert_eq!(encode(&too_deep), Err(EncodeError::ResourceExhausted));
 
     let mut at_limit = sample_package();
-    at_limit.subject.program[0].body = nested_concat(31);
+    at_limit.subject.program[0].body = nested_concat(511);
     let mut bytes = encode(&at_limit).expect("depth-limited expression encodes");
     assert!(decode(&bytes).is_ok(), "depth-limited expression decodes");
 
@@ -201,6 +237,15 @@ fn recursive_wire_values_fail_with_typed_resource_exhaustion() {
     bytes[subject_tag + 1..subject_tag + 5].copy_from_slice(&(subject_length + 5).to_be_bytes());
 
     assert_eq!(decode(&bytes), Err(DecodeFailure::ResourceExhausted));
+
+    let mut term_at_limit = sample_package();
+    term_at_limit.subject.build_request = nested_term(64);
+    let bytes = encode(&term_at_limit).expect("64-level Term encodes");
+    assert!(decode(&bytes).is_ok(), "64-level Term decodes");
+
+    let mut term_too_deep = sample_package();
+    term_too_deep.subject.build_request = nested_term(65);
+    assert_eq!(encode(&term_too_deep), Err(EncodeError::ResourceExhausted));
 }
 
 #[test]

@@ -1,9 +1,22 @@
 use std::fmt;
+use std::ops::Range;
 
-/// Conservative bound on host call-stack use while handling recursive wire
-/// values and evaluator expressions. Crossing it is a physical resource
-/// failure, never a canonical decode verdict.
-pub(crate) const MAX_NESTING_DEPTH: usize = 32;
+/// CLCP-v2 admits the exact 279,620-byte Compiler0 package while bounding all
+/// retained wire data and collections well below the U32 format ceiling.
+pub(crate) const MAX_WIRE_BYTES: usize = 4 * 1024 * 1024;
+pub(crate) const MAX_WIRE_ITEMS: usize = 262_144;
+
+/// The exact Compiler0 package measures 51 Term levels, 266 KExpr levels, 906
+/// Term nodes, and 11,637 KExpr nodes. Separate limits preserve that real
+/// shape without exposing evaluator stack depth as a wire-format constraint.
+pub(crate) const MAX_TERM_DEPTH: usize = 64;
+pub(crate) const MAX_EXPRESSION_DEPTH: usize = 512;
+pub(crate) const MAX_TERM_NODES: usize = 262_144;
+pub(crate) const MAX_EXPRESSION_NODES: usize = 262_144;
+
+/// Runtime recursion is represented on a fallibly allocated machine stack.
+pub(crate) const MAX_EVALUATION_FRAMES: usize = 262_144;
+pub(crate) const MAX_CERTIFICATE_NODES: usize = 1_000_000;
 
 /// One exact 32-octet identifier.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -241,6 +254,510 @@ impl KValue {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct ResourceLimit;
+
+pub(crate) fn try_copy_bytes(value: &[u8]) -> Result<Vec<u8>, ResourceLimit> {
+    if value.len() > MAX_WIRE_BYTES {
+        return Err(ResourceLimit);
+    }
+    let mut copied = Vec::new();
+    copied
+        .try_reserve_exact(value.len())
+        .map_err(|_| ResourceLimit)?;
+    copied.extend_from_slice(value);
+    Ok(copied)
+}
+
+impl Term {
+    pub(crate) fn validate_resource_bounds(&self) -> Result<(), ResourceLimit> {
+        let mut stack = Vec::new();
+        stack.try_reserve(1).map_err(|_| ResourceLimit)?;
+        stack.push((self, 1_usize));
+        let mut nodes = 0_usize;
+        let mut bytes = 0_usize;
+        while let Some((term, depth)) = stack.pop() {
+            if depth > MAX_TERM_DEPTH {
+                return Err(ResourceLimit);
+            }
+            nodes = nodes.checked_add(1).ok_or(ResourceLimit)?;
+            if nodes > MAX_TERM_NODES {
+                return Err(ResourceLimit);
+            }
+            match term {
+                Self::Atom {
+                    kind,
+                    canonical_payload,
+                    equality_contract,
+                } => {
+                    bytes = bytes
+                        .checked_add(kind.len())
+                        .and_then(|value| value.checked_add(canonical_payload.len()))
+                        .and_then(|value| value.checked_add(equality_contract.len()))
+                        .ok_or(ResourceLimit)?;
+                    if bytes > MAX_WIRE_BYTES {
+                        return Err(ResourceLimit);
+                    }
+                }
+                Self::Triple(first, second, third) => {
+                    stack.try_reserve(3).map_err(|_| ResourceLimit)?;
+                    stack.push((third, depth + 1));
+                    stack.push((second, depth + 1));
+                    stack.push((first, depth + 1));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    pub(crate) fn try_clone_resource(&self) -> Result<Self, ResourceLimit> {
+        self.validate_resource_bounds()?;
+        clone_term(self, 1)
+    }
+
+    pub(crate) fn try_triple(
+        first: Self,
+        second: Self,
+        third: Self,
+    ) -> Result<Self, ResourceLimit> {
+        let value = Self::Triple(Box::new(first), Box::new(second), Box::new(third));
+        value.validate_resource_bounds()?;
+        Ok(value)
+    }
+}
+
+fn clone_term(term: &Term, depth: usize) -> Result<Term, ResourceLimit> {
+    enum Task<'a> {
+        Read(&'a Term, usize),
+        Triple,
+    }
+
+    let mut tasks = Vec::new();
+    tasks.try_reserve(1).map_err(|_| ResourceLimit)?;
+    tasks.push(Task::Read(term, depth));
+    let mut results = Vec::new();
+    while let Some(task) = tasks.pop() {
+        match task {
+            Task::Read(term, depth) => {
+                if depth > MAX_TERM_DEPTH {
+                    return Err(ResourceLimit);
+                }
+                match term {
+                    Term::Atom {
+                        kind,
+                        canonical_payload,
+                        equality_contract,
+                    } => push_term(
+                        &mut results,
+                        Term::Atom {
+                            kind: try_copy_bytes(kind)?,
+                            canonical_payload: try_copy_bytes(canonical_payload)?,
+                            equality_contract: try_copy_bytes(equality_contract)?,
+                        },
+                    )?,
+                    Term::Triple(first, second, third) => {
+                        tasks.try_reserve(4).map_err(|_| ResourceLimit)?;
+                        tasks.push(Task::Triple);
+                        tasks.push(Task::Read(third, depth + 1));
+                        tasks.push(Task::Read(second, depth + 1));
+                        tasks.push(Task::Read(first, depth + 1));
+                    }
+                }
+            }
+            Task::Triple => {
+                let third = results.pop().ok_or(ResourceLimit)?;
+                let second = results.pop().ok_or(ResourceLimit)?;
+                let first = results.pop().ok_or(ResourceLimit)?;
+                push_term(
+                    &mut results,
+                    Term::Triple(Box::new(first), Box::new(second), Box::new(third)),
+                )?;
+            }
+        }
+    }
+    if results.len() != 1 {
+        return Err(ResourceLimit);
+    }
+    let cloned = results.pop().ok_or(ResourceLimit)?;
+    Ok(cloned)
+}
+
+fn push_term(results: &mut Vec<Term>, term: Term) -> Result<(), ResourceLimit> {
+    results.try_reserve(1).map_err(|_| ResourceLimit)?;
+    results.push(term);
+    Ok(())
+}
+
+impl KExpr {
+    pub(crate) fn validate_resource_bounds(&self) -> Result<(), ResourceLimit> {
+        let mut stack = Vec::new();
+        stack.try_reserve(1).map_err(|_| ResourceLimit)?;
+        stack.push((self, 1_usize));
+        let mut nodes = 0_usize;
+        while let Some((expression, depth)) = stack.pop() {
+            if depth > MAX_EXPRESSION_DEPTH {
+                return Err(ResourceLimit);
+            }
+            nodes = nodes.checked_add(1).ok_or(ResourceLimit)?;
+            if nodes > MAX_EXPRESSION_NODES {
+                return Err(ResourceLimit);
+            }
+            let next = depth + 1;
+            match expression {
+                Self::BytesLiteral(bytes) => {
+                    if bytes.len() > MAX_WIRE_BYTES {
+                        return Err(ResourceLimit);
+                    }
+                }
+                Self::TermLiteral(term) => term.validate_resource_bounds()?,
+                Self::Var(_) => {}
+                Self::MakeAtom {
+                    kind,
+                    payload,
+                    equality,
+                }
+                | Self::MakeTriple {
+                    first: kind,
+                    second: payload,
+                    third: equality,
+                }
+                | Self::CaseTerm {
+                    scrutinee: kind,
+                    atom_body: payload,
+                    triple_body: equality,
+                }
+                | Self::CaseBytes {
+                    scrutinee: kind,
+                    empty_body: payload,
+                    cons_body: equality,
+                } => {
+                    stack.try_reserve(3).map_err(|_| ResourceLimit)?;
+                    stack.push((equality, next));
+                    stack.push((payload, next));
+                    stack.push((kind, next));
+                }
+                Self::Let { value, body } => {
+                    stack.try_reserve(2).map_err(|_| ResourceLimit)?;
+                    stack.push((body, next));
+                    stack.push((value, next));
+                }
+                Self::ConcatBytes(parts) => {
+                    stack.try_reserve(parts.len()).map_err(|_| ResourceLimit)?;
+                    stack.extend(parts.iter().rev().map(|part| (part, next)));
+                }
+                Self::CaseBytesEqual {
+                    left,
+                    right,
+                    equal_body,
+                    unequal_body,
+                } => {
+                    stack.try_reserve(4).map_err(|_| ResourceLimit)?;
+                    stack.push((unequal_body, next));
+                    stack.push((equal_body, next));
+                    stack.push((right, next));
+                    stack.push((left, next));
+                }
+                Self::Call { arguments, .. } | Self::Request { arguments, .. } => {
+                    stack
+                        .try_reserve(arguments.len())
+                        .map_err(|_| ResourceLimit)?;
+                    stack.extend(arguments.iter().rev().map(|argument| (argument, next)));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    pub(crate) fn try_clone_resource(&self) -> Result<Self, ResourceLimit> {
+        self.validate_resource_bounds()?;
+        clone_expression(self, 1)
+    }
+}
+
+fn clone_expression(expression: &KExpr, depth: usize) -> Result<KExpr, ResourceLimit> {
+    #[derive(Clone, Copy)]
+    enum Fixed {
+        MakeAtom,
+        MakeTriple,
+        Let,
+        CaseTerm,
+        CaseBytes,
+        CaseBytesEqual,
+    }
+
+    #[derive(Clone, Copy)]
+    enum Sequence {
+        ConcatBytes,
+        Call(Id32),
+        Request(Id32),
+    }
+
+    enum Task<'a> {
+        Read(&'a KExpr, usize),
+        Fixed(Fixed),
+        Sequence(Sequence, usize),
+    }
+
+    let mut tasks = Vec::new();
+    tasks.try_reserve(1).map_err(|_| ResourceLimit)?;
+    tasks.push(Task::Read(expression, depth));
+    let mut results = Vec::new();
+    while let Some(task) = tasks.pop() {
+        match task {
+            Task::Read(expression, depth) => {
+                if depth > MAX_EXPRESSION_DEPTH {
+                    return Err(ResourceLimit);
+                }
+                let next = depth + 1;
+                match expression {
+                    KExpr::BytesLiteral(bytes) => {
+                        push_expression(&mut results, KExpr::BytesLiteral(try_copy_bytes(bytes)?))?
+                    }
+                    KExpr::TermLiteral(term) => push_expression(
+                        &mut results,
+                        KExpr::TermLiteral(term.try_clone_resource()?),
+                    )?,
+                    KExpr::Var(index) => push_expression(&mut results, KExpr::Var(*index))?,
+                    KExpr::MakeAtom {
+                        kind,
+                        payload,
+                        equality,
+                    } => schedule_clone_fixed(
+                        &mut tasks,
+                        Fixed::MakeAtom,
+                        &[kind, payload, equality],
+                        next,
+                    )?,
+                    KExpr::MakeTriple {
+                        first,
+                        second,
+                        third,
+                    } => schedule_clone_fixed(
+                        &mut tasks,
+                        Fixed::MakeTriple,
+                        &[first, second, third],
+                        next,
+                    )?,
+                    KExpr::Let { value, body } => {
+                        schedule_clone_fixed(&mut tasks, Fixed::Let, &[value, body], next)?;
+                    }
+                    KExpr::CaseTerm {
+                        scrutinee,
+                        atom_body,
+                        triple_body,
+                    } => schedule_clone_fixed(
+                        &mut tasks,
+                        Fixed::CaseTerm,
+                        &[scrutinee, atom_body, triple_body],
+                        next,
+                    )?,
+                    KExpr::CaseBytes {
+                        scrutinee,
+                        empty_body,
+                        cons_body,
+                    } => schedule_clone_fixed(
+                        &mut tasks,
+                        Fixed::CaseBytes,
+                        &[scrutinee, empty_body, cons_body],
+                        next,
+                    )?,
+                    KExpr::ConcatBytes(parts) => {
+                        schedule_clone_sequence(&mut tasks, Sequence::ConcatBytes, parts, next)?
+                    }
+                    KExpr::CaseBytesEqual {
+                        left,
+                        right,
+                        equal_body,
+                        unequal_body,
+                    } => schedule_clone_fixed(
+                        &mut tasks,
+                        Fixed::CaseBytesEqual,
+                        &[left, right, equal_body, unequal_body],
+                        next,
+                    )?,
+                    KExpr::Call {
+                        definition_id,
+                        arguments,
+                    } => schedule_clone_sequence(
+                        &mut tasks,
+                        Sequence::Call(*definition_id),
+                        arguments,
+                        next,
+                    )?,
+                    KExpr::Request {
+                        physical_operation_id,
+                        arguments,
+                    } => schedule_clone_sequence(
+                        &mut tasks,
+                        Sequence::Request(*physical_operation_id),
+                        arguments,
+                        next,
+                    )?,
+                }
+            }
+            Task::Fixed(kind) => {
+                let expression = match kind {
+                    Fixed::MakeAtom => {
+                        let equality = pop_expression(&mut results)?;
+                        let payload = pop_expression(&mut results)?;
+                        let kind = pop_expression(&mut results)?;
+                        KExpr::MakeAtom {
+                            kind: Box::new(kind),
+                            payload: Box::new(payload),
+                            equality: Box::new(equality),
+                        }
+                    }
+                    Fixed::MakeTriple => {
+                        let third = pop_expression(&mut results)?;
+                        let second = pop_expression(&mut results)?;
+                        let first = pop_expression(&mut results)?;
+                        KExpr::MakeTriple {
+                            first: Box::new(first),
+                            second: Box::new(second),
+                            third: Box::new(third),
+                        }
+                    }
+                    Fixed::Let => {
+                        let body = pop_expression(&mut results)?;
+                        let value = pop_expression(&mut results)?;
+                        KExpr::Let {
+                            value: Box::new(value),
+                            body: Box::new(body),
+                        }
+                    }
+                    Fixed::CaseTerm => {
+                        let triple_body = pop_expression(&mut results)?;
+                        let atom_body = pop_expression(&mut results)?;
+                        let scrutinee = pop_expression(&mut results)?;
+                        KExpr::CaseTerm {
+                            scrutinee: Box::new(scrutinee),
+                            atom_body: Box::new(atom_body),
+                            triple_body: Box::new(triple_body),
+                        }
+                    }
+                    Fixed::CaseBytes => {
+                        let cons_body = pop_expression(&mut results)?;
+                        let empty_body = pop_expression(&mut results)?;
+                        let scrutinee = pop_expression(&mut results)?;
+                        KExpr::CaseBytes {
+                            scrutinee: Box::new(scrutinee),
+                            empty_body: Box::new(empty_body),
+                            cons_body: Box::new(cons_body),
+                        }
+                    }
+                    Fixed::CaseBytesEqual => {
+                        let unequal_body = pop_expression(&mut results)?;
+                        let equal_body = pop_expression(&mut results)?;
+                        let right = pop_expression(&mut results)?;
+                        let left = pop_expression(&mut results)?;
+                        KExpr::CaseBytesEqual {
+                            left: Box::new(left),
+                            right: Box::new(right),
+                            equal_body: Box::new(equal_body),
+                            unequal_body: Box::new(unequal_body),
+                        }
+                    }
+                };
+                push_expression(&mut results, expression)?;
+            }
+            Task::Sequence(kind, count) => {
+                let values = take_expressions(&mut results, count)?;
+                let expression = match kind {
+                    Sequence::ConcatBytes => KExpr::ConcatBytes(values),
+                    Sequence::Call(definition_id) => KExpr::Call {
+                        definition_id,
+                        arguments: values,
+                    },
+                    Sequence::Request(physical_operation_id) => KExpr::Request {
+                        physical_operation_id,
+                        arguments: values,
+                    },
+                };
+                push_expression(&mut results, expression)?;
+            }
+        }
+    }
+    if results.len() != 1 {
+        return Err(ResourceLimit);
+    }
+    let cloned = results.pop().ok_or(ResourceLimit)?;
+
+    fn schedule_clone_fixed<'a>(
+        tasks: &mut Vec<Task<'a>>,
+        kind: Fixed,
+        children: &[&'a KExpr],
+        depth: usize,
+    ) -> Result<(), ResourceLimit> {
+        tasks
+            .try_reserve(children.len() + 1)
+            .map_err(|_| ResourceLimit)?;
+        tasks.push(Task::Fixed(kind));
+        for child in children.iter().rev() {
+            tasks.push(Task::Read(child, depth));
+        }
+        Ok(())
+    }
+
+    fn schedule_clone_sequence<'a>(
+        tasks: &mut Vec<Task<'a>>,
+        kind: Sequence,
+        children: &'a [KExpr],
+        depth: usize,
+    ) -> Result<(), ResourceLimit> {
+        tasks
+            .try_reserve(children.len() + 1)
+            .map_err(|_| ResourceLimit)?;
+        tasks.push(Task::Sequence(kind, children.len()));
+        for child in children.iter().rev() {
+            tasks.push(Task::Read(child, depth));
+        }
+        Ok(())
+    }
+
+    Ok(cloned)
+}
+
+fn push_expression(results: &mut Vec<KExpr>, expression: KExpr) -> Result<(), ResourceLimit> {
+    results.try_reserve(1).map_err(|_| ResourceLimit)?;
+    results.push(expression);
+    Ok(())
+}
+
+fn pop_expression(results: &mut Vec<KExpr>) -> Result<KExpr, ResourceLimit> {
+    results.pop().ok_or(ResourceLimit)
+}
+
+fn take_expressions(results: &mut Vec<KExpr>, count: usize) -> Result<Vec<KExpr>, ResourceLimit> {
+    if results.len() < count {
+        return Err(ResourceLimit);
+    }
+    let mut values = Vec::new();
+    values.try_reserve_exact(count).map_err(|_| ResourceLimit)?;
+    for _ in 0..count {
+        values.push(pop_expression(results)?);
+    }
+    values.reverse();
+    Ok(values)
+}
+
+impl KValue {
+    pub(crate) fn validate_resource_bounds(&self) -> Result<(), ResourceLimit> {
+        match self {
+            Self::Bytes(bytes) if bytes.len() <= MAX_WIRE_BYTES => Ok(()),
+            Self::Bytes(_) => Err(ResourceLimit),
+            Self::Term(term) => term.validate_resource_bounds(),
+        }
+    }
+
+    pub(crate) fn try_clone_resource(&self) -> Result<Self, ResourceLimit> {
+        self.validate_resource_bounds()?;
+        match self {
+            Self::Bytes(bytes) => Ok(Self::Bytes(try_copy_bytes(bytes)?)),
+            Self::Term(term) => Ok(Self::Term(term.try_clone_resource()?)),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum EvalOutcome {
     Returned {
@@ -304,21 +821,21 @@ pub struct CompilerPackage {
 
 /// A strictly decoded candidate. Exact input retention is deliberately
 /// inseparable from the decoded fields, but confers no compiler authority.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct DecodedCompilerPackage {
-    exact_input: Box<[u8]>,
-    exact_core_manifest: Box<[u8]>,
-    exact_subject: Box<[u8]>,
-    exact_evidence: Box<[u8]>,
+    exact_input: Vec<u8>,
+    exact_core_manifest: Range<usize>,
+    exact_subject: Range<usize>,
+    exact_evidence: Range<usize>,
     package: CompilerPackage,
 }
 
 impl DecodedCompilerPackage {
     pub(crate) fn new(
-        exact_input: Box<[u8]>,
-        exact_core_manifest: Box<[u8]>,
-        exact_subject: Box<[u8]>,
-        exact_evidence: Box<[u8]>,
+        exact_input: Vec<u8>,
+        exact_core_manifest: Range<usize>,
+        exact_subject: Range<usize>,
+        exact_evidence: Range<usize>,
         package: CompilerPackage,
     ) -> Self {
         Self {
@@ -337,17 +854,17 @@ impl DecodedCompilerPackage {
 
     #[must_use]
     pub fn exact_core_manifest(&self) -> &[u8] {
-        &self.exact_core_manifest
+        &self.exact_input[self.exact_core_manifest.clone()]
     }
 
     #[must_use]
     pub fn exact_subject(&self) -> &[u8] {
-        &self.exact_subject
+        &self.exact_input[self.exact_subject.clone()]
     }
 
     #[must_use]
     pub fn exact_evidence(&self) -> &[u8] {
-        &self.exact_evidence
+        &self.exact_input[self.exact_evidence.clone()]
     }
 
     #[must_use]

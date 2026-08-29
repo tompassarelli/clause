@@ -7,7 +7,9 @@ use std::fmt;
 
 use sha2::{Digest, Sha256};
 
-use crate::compiler_package_v2::{Id32, KValue, Term, sha256_operation_id};
+use crate::compiler_package_v2::{
+    Id32, KValue, MAX_TERM_NODES, MAX_WIRE_ITEMS, Term, sha256_operation_id, try_copy_bytes,
+};
 
 const K_TAG: &[u8] = b"clause/core-abi/tag/v1";
 const K_BYTES: &[u8] = b"clause/core-abi/bytes/v1";
@@ -34,8 +36,7 @@ impl ObservationLog {
         &self.items
     }
 
-    #[must_use]
-    pub fn to_term(&self) -> Term {
+    pub fn try_to_term(&self) -> Result<Term, PhysicalError> {
         observations_term(&self.items)
     }
 }
@@ -57,24 +58,35 @@ impl SealedPhysical {
     pub(crate) fn request(
         self,
         operation_id: Id32,
-        arguments: &[KValue],
+        arguments: Vec<KValue>,
         observations: &mut ObservationLog,
     ) -> Result<KValue, PhysicalError> {
         if operation_id != sha256_operation_id() {
             return Err(PhysicalError::UnknownOperation(operation_id));
         }
-        let [KValue::Bytes(input)] = arguments else {
+        let [KValue::Bytes(input)] = arguments.as_slice() else {
             return Err(PhysicalError::SignatureMismatch);
         };
         let index = u64::try_from(observations.items.len())
             .map_err(|_| PhysicalError::ObservationIndexOverflow)?;
-        let digest = Sha256::digest(input).to_vec();
-        let result = KValue::Bytes(digest);
+        if observations.items.len() >= MAX_WIRE_ITEMS {
+            return Err(PhysicalError::ResourceExhausted);
+        }
+        let digest = Sha256::digest(input);
+        let result =
+            KValue::Bytes(try_copy_bytes(&digest).map_err(|_| PhysicalError::ResourceExhausted)?);
+        let recorded_result = result
+            .try_clone_resource()
+            .map_err(|_| PhysicalError::ResourceExhausted)?;
+        observations
+            .items
+            .try_reserve(1)
+            .map_err(|_| PhysicalError::ResourceExhausted)?;
         observations.items.push(PhysicalObservation {
             index,
             operation_id,
-            arguments: arguments.to_vec(),
-            result: result.clone(),
+            arguments,
+            result: recorded_result,
         });
         Ok(result)
     }
@@ -91,6 +103,7 @@ pub enum PhysicalError {
     UnknownOperation(Id32),
     SignatureMismatch,
     ObservationIndexOverflow,
+    ResourceExhausted,
 }
 
 impl fmt::Display for PhysicalError {
@@ -103,188 +116,120 @@ impl fmt::Display for PhysicalError {
                 formatter.write_str("operation arguments do not match [Bytes] -> Bytes")
             }
             Self::ObservationIndexOverflow => formatter.write_str("observation index exceeds U64"),
+            Self::ResourceExhausted => {
+                formatter.write_str("physical observation exhausted resources")
+            }
         }
     }
 }
 
 impl std::error::Error for PhysicalError {}
 
-fn atom(kind: &[u8], payload: Vec<u8>) -> Term {
-    Term::Atom {
-        kind: kind.to_vec(),
+fn atom(kind: &[u8], payload: Vec<u8>) -> Result<Term, PhysicalError> {
+    Ok(Term::Atom {
+        kind: try_copy_bytes(kind).map_err(|_| PhysicalError::ResourceExhausted)?,
         canonical_payload: payload,
-        equality_contract: K_EQ.to_vec(),
-    }
-}
-
-fn tag(value: u8) -> Term {
-    atom(K_TAG, vec![value])
-}
-
-fn bytes(value: Vec<u8>) -> Term {
-    atom(K_BYTES, value)
-}
-
-fn id(value: Id32) -> Term {
-    atom(K_ID32, value.0.to_vec())
-}
-
-fn nat64(value: u64) -> Term {
-    atom(K_U64, value.to_be_bytes().to_vec())
-}
-
-fn list(values: impl IntoIterator<Item = Term>) -> Term {
-    let values: Vec<Term> = values.into_iter().collect();
-    values.into_iter().rev().fold(tag(0x00), |tail, head| {
-        Term::Triple(Box::new(tag(0x01)), Box::new(head), Box::new(tail))
+        equality_contract: try_copy_bytes(K_EQ).map_err(|_| PhysicalError::ResourceExhausted)?,
     })
 }
 
-fn record(record_tag: u8, fields: Vec<Term>) -> Term {
-    Term::Triple(
-        Box::new(tag(record_tag)),
-        Box::new(list(fields)),
-        Box::new(tag(0x00)),
+fn tag(value: u8) -> Result<Term, PhysicalError> {
+    let mut payload = Vec::new();
+    payload
+        .try_reserve_exact(1)
+        .map_err(|_| PhysicalError::ResourceExhausted)?;
+    payload.push(value);
+    atom(K_TAG, payload)
+}
+
+fn bytes(value: &[u8]) -> Result<Term, PhysicalError> {
+    atom(
+        K_BYTES,
+        try_copy_bytes(value).map_err(|_| PhysicalError::ResourceExhausted)?,
     )
 }
 
-fn value_term(value: &KValue) -> Term {
+fn id(value: Id32) -> Result<Term, PhysicalError> {
+    atom(
+        K_ID32,
+        try_copy_bytes(value.as_bytes()).map_err(|_| PhysicalError::ResourceExhausted)?,
+    )
+}
+
+fn nat64(value: u64) -> Result<Term, PhysicalError> {
+    atom(
+        K_U64,
+        try_copy_bytes(&value.to_be_bytes()).map_err(|_| PhysicalError::ResourceExhausted)?,
+    )
+}
+
+fn list(values: Vec<Term>) -> Result<Term, PhysicalError> {
+    if values.len() > MAX_TERM_NODES {
+        return Err(PhysicalError::ResourceExhausted);
+    }
+    let mut tail = tag(0x00)?;
+    for head in values.into_iter().rev() {
+        tail = Term::try_triple(tag(0x01)?, head, tail)
+            .map_err(|_| PhysicalError::ResourceExhausted)?;
+    }
+    Ok(tail)
+}
+
+fn record(record_tag: u8, fields: Vec<Term>) -> Result<Term, PhysicalError> {
+    Term::try_triple(tag(record_tag)?, list(fields)?, tag(0x00)?)
+        .map_err(|_| PhysicalError::ResourceExhausted)
+}
+
+fn one_field(value: Term) -> Result<Vec<Term>, PhysicalError> {
+    let mut fields = Vec::new();
+    fields
+        .try_reserve_exact(1)
+        .map_err(|_| PhysicalError::ResourceExhausted)?;
+    fields.push(value);
+    Ok(fields)
+}
+
+fn value_term(value: &KValue) -> Result<Term, PhysicalError> {
     match value {
-        KValue::Bytes(value) => record(0x02, vec![bytes(value.clone())]),
-        KValue::Term(value) => record(0x03, vec![value.clone()]),
+        KValue::Bytes(value) => record(0x02, one_field(bytes(value)?)?),
+        KValue::Term(value) => record(
+            0x03,
+            one_field(
+                value
+                    .try_clone_resource()
+                    .map_err(|_| PhysicalError::ResourceExhausted)?,
+            )?,
+        ),
     }
 }
 
 /// Canonical fixed-Core-ABI observations for certificate statements and
 /// judgments.
-#[must_use]
-pub fn observations_term(observations: &[PhysicalObservation]) -> Term {
-    let items = observations.iter().map(|observation| {
-        record(
-            0x19,
-            vec![
-                nat64(observation.index),
-                id(observation.operation_id),
-                list(observation.arguments.iter().map(value_term)),
-                value_term(&observation.result),
-            ],
-        )
-    });
-    record(0x1a, vec![list(items)])
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum HostMechanicClass {
-    WireCodec,
-    CoreAbi,
-    ByteMachine,
-    DefinitionTable,
-    KernelStep,
-    CertificateStep,
-    PhysicalDispatch,
-}
-
-impl HostMechanicClass {
-    const fn name(self) -> &'static str {
-        match self {
-            Self::WireCodec => "WireCodec",
-            Self::CoreAbi => "CoreABI",
-            Self::ByteMachine => "ByteMachine",
-            Self::DefinitionTable => "DefinitionTable",
-            Self::KernelStep => "KernelStep",
-            Self::CertificateStep => "CertificateStep",
-            Self::PhysicalDispatch => "PhysicalDispatch",
+pub fn observations_term(observations: &[PhysicalObservation]) -> Result<Term, PhysicalError> {
+    if observations.len() > MAX_WIRE_ITEMS {
+        return Err(PhysicalError::ResourceExhausted);
+    }
+    let mut items = Vec::new();
+    items
+        .try_reserve_exact(observations.len())
+        .map_err(|_| PhysicalError::ResourceExhausted)?;
+    for observation in observations {
+        let mut arguments = Vec::new();
+        arguments
+            .try_reserve_exact(observation.arguments.len())
+            .map_err(|_| PhysicalError::ResourceExhausted)?;
+        for argument in &observation.arguments {
+            arguments.push(value_term(argument)?);
         }
+        let mut fields = Vec::new();
+        fields
+            .try_reserve_exact(4)
+            .map_err(|_| PhysicalError::ResourceExhausted)?;
+        fields.push(nat64(observation.index)?);
+        fields.push(id(observation.operation_id)?);
+        fields.push(list(arguments)?);
+        fields.push(value_term(&observation.result)?);
+        items.push(record(0x19, fields)?);
     }
-}
-
-/// One typed, stable host branch family in the trusted v2 mechanics closure.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct HostMechanicSite {
-    pub site: &'static str,
-    pub class: HostMechanicClass,
-    pub controls: &'static str,
-    pub fixed_tags: &'static str,
-    pub code_target: &'static str,
-}
-
-/// This registry is consumed as structured data by the audit test. Its rows
-/// name fixed mechanics and callable targets; no Clause semantic identifier or
-/// Atom field can add a row or change a target.
-pub const HOST_MECHANIC_SITES: &[HostMechanicSite] = &[
-    HostMechanicSite {
-        site: "compiler_package_v2::codec::decode",
-        class: HostMechanicClass::WireCodec,
-        controls: "octet,bound,length",
-        fixed_tags: "CLCP-v2/frame/closed-sum",
-        code_target: "Cursor::frame",
-    },
-    HostMechanicSite {
-        site: "compiler_package_v2::codec::encode",
-        class: HostMechanicClass::WireCodec,
-        controls: "closed Rust wire value",
-        fixed_tags: "CLCP-v2/frame/closed-sum",
-        code_target: "encode_core_manifest_value",
-    },
-    HostMechanicSite {
-        site: "physical::observations_term",
-        class: HostMechanicClass::CoreAbi,
-        controls: "fixed ABI tag,arity,field",
-        fixed_tags: "00,01,02,03,19,1a",
-        code_target: "record",
-    },
-    HostMechanicSite {
-        site: "evaluator::Evaluator::step/bytes",
-        class: HostMechanicClass::ByteMachine,
-        controls: "empty,head-tail,equality",
-        fixed_tags: "07,08,09",
-        code_target: "slice::split_first",
-    },
-    HostMechanicSite {
-        site: "evaluator::DefinitionTable::resolve",
-        class: HostMechanicClass::DefinitionTable,
-        controls: "opaque-Id32-order,hit-miss",
-        fixed_tags: "0a",
-        code_target: "BTreeMap::get",
-    },
-    HostMechanicSite {
-        site: "evaluator::Evaluator::step",
-        class: HostMechanicClass::KernelStep,
-        controls: "KExpr-tag,value-shape,fuel",
-        fixed_tags: "00..0b",
-        code_target: "Evaluator::child",
-    },
-    HostMechanicSite {
-        site: "evaluator::Evaluator::child",
-        class: HostMechanicClass::CertificateStep,
-        controls: "fixed-rule-tag,premise-index",
-        fixed_tags: "30..3e",
-        code_target: "Evaluator::step",
-    },
-    HostMechanicSite {
-        site: "physical::SealedPhysical::request",
-        class: HostMechanicClass::PhysicalDispatch,
-        controls: "fixed-PhysicalOpId",
-        fixed_tags: "Sha256OpId",
-        code_target: "Sha256::digest",
-    },
-];
-
-/// Deterministic machine-readable TSV audit evidence.
-#[must_use]
-pub fn host_mechanics_evidence() -> String {
-    let mut output = String::from("site\tclass\tcontrols\tfixed_tags\tcode_target\n");
-    for site in HOST_MECHANIC_SITES {
-        output.push_str(site.site);
-        output.push('\t');
-        output.push_str(site.class.name());
-        output.push('\t');
-        output.push_str(site.controls);
-        output.push('\t');
-        output.push_str(site.fixed_tags);
-        output.push('\t');
-        output.push_str(site.code_target);
-        output.push('\n');
-    }
-    output
+    record(0x1a, one_field(list(items)?)?)
 }

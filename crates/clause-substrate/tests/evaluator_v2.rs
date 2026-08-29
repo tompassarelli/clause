@@ -1,7 +1,7 @@
 use clause_substrate::compiler_package_v2::{
     Definition, Hash32, Id32, KExpr, KSort, KValue, Term, sha256_operation_id,
 };
-use clause_substrate::evaluator::{CertificateContext, EvalError, Evaluator, StaticError};
+use clause_substrate::evaluator::{CertificateContext, Evaluator, StaticError};
 
 fn id(value: u8) -> Id32 {
     Id32([value; 32])
@@ -255,30 +255,32 @@ fn package_ids_only_select_definition_data_and_never_a_host_callable() {
 }
 
 #[test]
-fn recursive_expressions_fail_with_static_and_evaluation_limits() {
+fn compiler0_scale_expression_depth_uses_the_machine_stack() {
+    let expression = nested_concat(300);
+    let expression = std::thread::Builder::new()
+        .name("bounded-stack-evaluator".to_owned())
+        .stack_size(128 * 1024)
+        .spawn(move || {
+            let evaluator = Evaluator::new(&[]).expect("empty definition table checks");
+            assert_eq!(evaluator.infer_sort(&expression, &[]), Ok(KSort::Bytes));
+            assert_eq!(
+                evaluator
+                    .evaluate(&expression, &[], 512)
+                    .expect("deep expression evaluates")
+                    .value,
+                KValue::Bytes(Vec::new())
+            );
+            expression
+        })
+        .expect("small-stack evaluator thread starts")
+        .join()
+        .expect("explicit evaluator does not overflow the host stack");
+    drop(expression);
+
     let evaluator = Evaluator::new(&[]).expect("empty definition table checks");
     assert_eq!(
-        evaluator.infer_sort(&nested_concat(32), &[]),
-        Err(StaticError::RecursionLimit)
-    );
-
-    let definitions = [Definition {
-        id: id(1),
-        arguments: Vec::new(),
-        result: KSort::Bytes,
-        body: nested_concat(31),
-    }];
-    let evaluator = Evaluator::new(&definitions).expect("depth-limited definition checks");
-    assert_eq!(
-        evaluator.build_certificate(CertificateContext {
-            exact_accepted_predecessor: Vec::new(),
-            core_contract_id: Hash32([0; 32]),
-            physical_profile_id: Hash32([0; 32]),
-            entrypoint: id(1),
-            arguments: Vec::new(),
-            fuel_limit: 256,
-        }),
-        Err(EvalError::RecursionLimit)
+        evaluator.infer_sort(&nested_concat(512), &[]),
+        Err(StaticError::ResourceExhausted)
     );
 }
 

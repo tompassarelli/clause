@@ -1,12 +1,12 @@
 //! Construct-blind evaluator and deterministic certificate producer for the
 //! twelve fixed CLCP-v2 `KExpr` forms.
 
-use std::collections::BTreeMap;
 use std::fmt;
 
 use crate::compiler_package_v2::{
     Definition, EvalCertificate, EvalJudgment, EvalNode, EvalOutcome, EvalStatement, Hash32, Id32,
-    KExpr, KSort, KValue, MAX_NESTING_DEPTH, Term, sha256_operation_id,
+    KExpr, KSort, KValue, MAX_CERTIFICATE_NODES, MAX_EVALUATION_FRAMES, MAX_EXPRESSION_DEPTH,
+    MAX_WIRE_BYTES, MAX_WIRE_ITEMS, Term, sha256_operation_id, try_copy_bytes,
 };
 use crate::physical::{ObservationLog, PhysicalError, SealedPhysical};
 
@@ -21,6 +21,7 @@ pub enum StaticError {
     ArgumentCount { expected: usize, actual: usize },
     OperationOutsideSealedProfile(Id32),
     RecursionLimit,
+    ResourceExhausted,
 }
 
 impl fmt::Display for StaticError {
@@ -50,7 +51,10 @@ impl fmt::Display for StaticError {
                 formatter.write_str("physical operation is outside the sealed profile")
             }
             Self::RecursionLimit => {
-                formatter.write_str("static checking exhausted its depth budget")
+                formatter.write_str("static checking exhausted its expression-depth budget")
+            }
+            Self::ResourceExhausted => {
+                formatter.write_str("static checking exhausted physical resources")
             }
         }
     }
@@ -70,6 +74,7 @@ pub enum EvalError {
     ByteLengthOverflow,
     CertificateNodeOverflow,
     RecursionLimit,
+    ResourceExhausted,
 }
 
 impl fmt::Display for EvalError {
@@ -92,9 +97,12 @@ impl fmt::Display for EvalError {
             Self::Physical(error) => write!(formatter, "physical request failed: {error}"),
             Self::ByteLengthOverflow => formatter.write_str("byte concatenation length overflow"),
             Self::CertificateNodeOverflow => {
-                formatter.write_str("certificate node index exceeds U32")
+                formatter.write_str("certificate node budget or U32 index was exceeded")
             }
-            Self::RecursionLimit => formatter.write_str("evaluation exhausted its depth budget"),
+            Self::RecursionLimit => formatter.write_str("evaluation machine stack was exhausted"),
+            Self::ResourceExhausted => {
+                formatter.write_str("evaluation exhausted physical resources")
+            }
         }
     }
 }
@@ -140,11 +148,13 @@ pub struct CertificateContext {
 
 struct DefinitionTable<'a> {
     ordered: &'a [Definition],
-    by_id: BTreeMap<Id32, &'a Definition>,
 }
 
 impl<'a> DefinitionTable<'a> {
     fn new(definitions: &'a [Definition]) -> Result<Self, StaticError> {
+        if definitions.len() > MAX_WIRE_ITEMS {
+            return Err(StaticError::ResourceExhausted);
+        }
         for (index, pair) in definitions.windows(2).enumerate() {
             if pair[0].id == pair[1].id {
                 return Err(StaticError::DuplicateDefinition(pair[0].id));
@@ -153,18 +163,16 @@ impl<'a> DefinitionTable<'a> {
                 return Err(StaticError::DefinitionsNotStrictlySorted { index: index + 1 });
             }
         }
-        let by_id = definitions
-            .iter()
-            .map(|definition| (definition.id, definition))
-            .collect();
         Ok(Self {
             ordered: definitions,
-            by_id,
         })
     }
 
     fn resolve(&self, id: Id32) -> Option<&'a Definition> {
-        self.by_id.get(&id).copied()
+        self.ordered
+            .binary_search_by_key(&id, |definition| definition.id)
+            .ok()
+            .map(|index| &self.ordered[index])
     }
 }
 
@@ -186,7 +194,14 @@ impl<'a> Evaluator<'a> {
 
     pub fn check_definitions(&self) -> Result<(), StaticError> {
         for definition in self.definitions.ordered {
-            let actual = self.infer(&definition.body, &definition.arguments, 0)?;
+            if definition.arguments.len() > MAX_WIRE_ITEMS {
+                return Err(StaticError::ResourceExhausted);
+            }
+            definition
+                .body
+                .validate_resource_bounds()
+                .map_err(|_| StaticError::ResourceExhausted)?;
+            let actual = self.infer(&definition.body, &definition.arguments)?;
             require_sort(definition.result, actual)?;
         }
         Ok(())
@@ -197,7 +212,10 @@ impl<'a> Evaluator<'a> {
         expression: &KExpr,
         environment: &[KSort],
     ) -> Result<KSort, StaticError> {
-        self.infer(expression, environment, 0)
+        expression
+            .validate_resource_bounds()
+            .map_err(|_| StaticError::ResourceExhausted)?;
+        self.infer(expression, environment)
     }
 
     pub fn evaluate(
@@ -206,18 +224,18 @@ impl<'a> Evaluator<'a> {
         environment: &[KValue],
         fuel: u64,
     ) -> Result<Evaluation, EvalError> {
-        let sorts: Vec<KSort> = environment.iter().map(KValue::sort).collect();
+        let sorts = value_sorts(environment)?;
         self.infer_sort(expression, &sorts)?;
-        let mut nodes = Vec::new();
-        let state = State {
-            fuel,
-            observations: ObservationLog::default(),
-        };
-        let result = self.step(expression, environment, state, &mut nodes, 0)?;
+        for value in environment {
+            value
+                .validate_resource_bounds()
+                .map_err(|_| EvalError::ResourceExhausted)?;
+        }
+        let result = EvaluationMachine::new(self, environment, fuel, false)?.run(expression)?;
         Ok(Evaluation {
             value: result.value,
-            remaining_fuel: result.state.fuel,
-            observations: result.state.observations,
+            remaining_fuel: result.fuel,
+            observations: result.observations,
         })
     }
 
@@ -228,17 +246,29 @@ impl<'a> Evaluator<'a> {
         &self,
         context: CertificateContext,
     ) -> Result<EvalCertificate, EvalError> {
+        if context.exact_accepted_predecessor.len() > MAX_WIRE_BYTES
+            || context.arguments.len() > MAX_WIRE_ITEMS
+        {
+            return Err(EvalError::ResourceExhausted);
+        }
+        let mut arguments = Vec::new();
+        arguments
+            .try_reserve_exact(context.arguments.len())
+            .map_err(|_| EvalError::ResourceExhausted)?;
+        for value in &context.arguments {
+            value
+                .validate_resource_bounds()
+                .map_err(|_| EvalError::ResourceExhausted)?;
+            arguments.push(value_literal(value)?);
+        }
         let expression = KExpr::Call {
             definition_id: context.entrypoint,
-            arguments: context.arguments.iter().map(value_literal).collect(),
+            arguments,
         };
-        let mut nodes = Vec::new();
-        let state = State {
-            fuel: context.fuel_limit,
-            observations: ObservationLog::default(),
-        };
-        let result = self.step(&expression, &[], state, &mut nodes, 0)?;
-        let observations = result.state.observations.to_term();
+        self.infer_sort(&expression, &[])?;
+        let result =
+            EvaluationMachine::new(self, &[], context.fuel_limit, true)?.run(&expression)?;
+        let observations = result.observations.try_to_term()?;
         let statement = EvalStatement {
             exact_accepted_predecessor: context.exact_accepted_predecessor,
             core_contract_id: context.core_contract_id,
@@ -248,366 +278,946 @@ impl<'a> Evaluator<'a> {
             fuel_limit: context.fuel_limit,
             expected: EvalOutcome::Returned {
                 value: result.value,
-                remaining_fuel: result.state.fuel,
+                remaining_fuel: result.fuel,
                 observations,
             },
         };
         Ok(EvalCertificate {
             format_version: 0x00,
             statement,
-            nodes,
+            nodes: result.nodes,
         })
     }
 
-    fn infer(
-        &self,
-        expression: &KExpr,
-        environment: &[KSort],
-        current_depth: usize,
-    ) -> Result<KSort, StaticError> {
-        if current_depth >= MAX_NESTING_DEPTH {
-            return Err(StaticError::RecursionLimit);
+    fn infer(&self, expression: &KExpr, environment: &[KSort]) -> Result<KSort, StaticError> {
+        let mut environments = SortEnvironments::new(environment)?;
+        let mut tasks = Vec::new();
+        push_infer_task(
+            &mut tasks,
+            InferTask::Expression {
+                expression,
+                environment: 0,
+                depth: 1,
+            },
+        )?;
+        let mut results = Vec::new();
+
+        while let Some(task) = tasks.pop() {
+            match task {
+                InferTask::Expression {
+                    expression,
+                    environment,
+                    depth,
+                } => {
+                    if depth > MAX_EXPRESSION_DEPTH {
+                        return Err(StaticError::RecursionLimit);
+                    }
+                    let next = depth.checked_add(1).ok_or(StaticError::RecursionLimit)?;
+                    match expression {
+                        KExpr::BytesLiteral(_) => push_sort(&mut results, KSort::Bytes)?,
+                        KExpr::TermLiteral(_) => push_sort(&mut results, KSort::Term)?,
+                        KExpr::Var(index) => {
+                            let wire_index = *index;
+                            let index = usize::try_from(wire_index)
+                                .map_err(|_| StaticError::VariableOutOfBounds(wire_index))?;
+                            let sort = environments
+                                .get(environment, index)
+                                .ok_or(StaticError::VariableOutOfBounds(wire_index))?;
+                            push_sort(&mut results, sort)?;
+                        }
+                        KExpr::MakeAtom {
+                            kind,
+                            payload,
+                            equality,
+                        } => {
+                            reserve_infer_tasks(&mut tasks, 7)?;
+                            tasks.push(InferTask::Return(KSort::Term));
+                            tasks.push(InferTask::Require(KSort::Bytes));
+                            tasks.push(InferTask::Expression {
+                                expression: equality,
+                                environment,
+                                depth: next,
+                            });
+                            tasks.push(InferTask::Require(KSort::Bytes));
+                            tasks.push(InferTask::Expression {
+                                expression: payload,
+                                environment,
+                                depth: next,
+                            });
+                            tasks.push(InferTask::Require(KSort::Bytes));
+                            tasks.push(InferTask::Expression {
+                                expression: kind,
+                                environment,
+                                depth: next,
+                            });
+                        }
+                        KExpr::MakeTriple {
+                            first,
+                            second,
+                            third,
+                        } => {
+                            reserve_infer_tasks(&mut tasks, 7)?;
+                            tasks.push(InferTask::Return(KSort::Term));
+                            tasks.push(InferTask::Require(KSort::Term));
+                            tasks.push(InferTask::Expression {
+                                expression: third,
+                                environment,
+                                depth: next,
+                            });
+                            tasks.push(InferTask::Require(KSort::Term));
+                            tasks.push(InferTask::Expression {
+                                expression: second,
+                                environment,
+                                depth: next,
+                            });
+                            tasks.push(InferTask::Require(KSort::Term));
+                            tasks.push(InferTask::Expression {
+                                expression: first,
+                                environment,
+                                depth: next,
+                            });
+                        }
+                        KExpr::Let { value, body } => {
+                            reserve_infer_tasks(&mut tasks, 2)?;
+                            tasks.push(InferTask::LetBody {
+                                body,
+                                environment,
+                                depth: next,
+                            });
+                            tasks.push(InferTask::Expression {
+                                expression: value,
+                                environment,
+                                depth: next,
+                            });
+                        }
+                        KExpr::CaseTerm {
+                            scrutinee,
+                            atom_body,
+                            triple_body,
+                        } => {
+                            reserve_infer_tasks(&mut tasks, 3)?;
+                            tasks.push(InferTask::CaseTermBodies {
+                                atom_body,
+                                triple_body,
+                                environment,
+                                depth: next,
+                            });
+                            tasks.push(InferTask::Require(KSort::Term));
+                            tasks.push(InferTask::Expression {
+                                expression: scrutinee,
+                                environment,
+                                depth: next,
+                            });
+                        }
+                        KExpr::CaseBytes {
+                            scrutinee,
+                            empty_body,
+                            cons_body,
+                        } => {
+                            reserve_infer_tasks(&mut tasks, 3)?;
+                            tasks.push(InferTask::CaseBytesBodies {
+                                empty_body,
+                                cons_body,
+                                environment,
+                                depth: next,
+                            });
+                            tasks.push(InferTask::Require(KSort::Bytes));
+                            tasks.push(InferTask::Expression {
+                                expression: scrutinee,
+                                environment,
+                                depth: next,
+                            });
+                        }
+                        KExpr::ConcatBytes(parts) => {
+                            let additional = parts
+                                .len()
+                                .checked_mul(2)
+                                .and_then(|count| count.checked_add(1))
+                                .ok_or(StaticError::ResourceExhausted)?;
+                            reserve_infer_tasks(&mut tasks, additional)?;
+                            tasks.push(InferTask::Return(KSort::Bytes));
+                            for part in parts.iter().rev() {
+                                tasks.push(InferTask::Require(KSort::Bytes));
+                                tasks.push(InferTask::Expression {
+                                    expression: part,
+                                    environment,
+                                    depth: next,
+                                });
+                            }
+                        }
+                        KExpr::CaseBytesEqual {
+                            left,
+                            right,
+                            equal_body,
+                            unequal_body,
+                        } => {
+                            reserve_infer_tasks(&mut tasks, 7)?;
+                            tasks.push(InferTask::Common);
+                            tasks.push(InferTask::Expression {
+                                expression: unequal_body,
+                                environment,
+                                depth: next,
+                            });
+                            tasks.push(InferTask::Expression {
+                                expression: equal_body,
+                                environment,
+                                depth: next,
+                            });
+                            tasks.push(InferTask::Require(KSort::Bytes));
+                            tasks.push(InferTask::Expression {
+                                expression: right,
+                                environment,
+                                depth: next,
+                            });
+                            tasks.push(InferTask::Require(KSort::Bytes));
+                            tasks.push(InferTask::Expression {
+                                expression: left,
+                                environment,
+                                depth: next,
+                            });
+                        }
+                        KExpr::Call {
+                            definition_id,
+                            arguments,
+                        } => {
+                            let definition = self
+                                .definitions
+                                .resolve(*definition_id)
+                                .ok_or(StaticError::UnknownDefinition(*definition_id))?;
+                            if definition.arguments.len() != arguments.len() {
+                                return Err(StaticError::ArgumentCount {
+                                    expected: definition.arguments.len(),
+                                    actual: arguments.len(),
+                                });
+                            }
+                            let additional = arguments
+                                .len()
+                                .checked_mul(2)
+                                .and_then(|count| count.checked_add(1))
+                                .ok_or(StaticError::ResourceExhausted)?;
+                            reserve_infer_tasks(&mut tasks, additional)?;
+                            tasks.push(InferTask::Return(definition.result));
+                            for (argument, expected) in
+                                arguments.iter().zip(&definition.arguments).rev()
+                            {
+                                tasks.push(InferTask::Require(*expected));
+                                tasks.push(InferTask::Expression {
+                                    expression: argument,
+                                    environment,
+                                    depth: next,
+                                });
+                            }
+                        }
+                        KExpr::Request {
+                            physical_operation_id,
+                            arguments,
+                        } => {
+                            if *physical_operation_id != sha256_operation_id() {
+                                return Err(StaticError::OperationOutsideSealedProfile(
+                                    *physical_operation_id,
+                                ));
+                            }
+                            if arguments.len() != 1 {
+                                return Err(StaticError::ArgumentCount {
+                                    expected: 1,
+                                    actual: arguments.len(),
+                                });
+                            }
+                            reserve_infer_tasks(&mut tasks, 3)?;
+                            tasks.push(InferTask::Return(KSort::Bytes));
+                            tasks.push(InferTask::Require(KSort::Bytes));
+                            tasks.push(InferTask::Expression {
+                                expression: &arguments[0],
+                                environment,
+                                depth: next,
+                            });
+                        }
+                    }
+                }
+                InferTask::Require(expected) => {
+                    let actual = results.pop().ok_or(StaticError::ResourceExhausted)?;
+                    require_sort(expected, actual)?;
+                }
+                InferTask::Return(sort) => push_sort(&mut results, sort)?,
+                InferTask::Common => {
+                    let right = results.pop().ok_or(StaticError::ResourceExhausted)?;
+                    let left = results.pop().ok_or(StaticError::ResourceExhausted)?;
+                    push_sort(&mut results, common_sort(left, right)?)?;
+                }
+                InferTask::LetBody {
+                    body,
+                    environment,
+                    depth,
+                } => {
+                    let value_sort = results.pop().ok_or(StaticError::ResourceExhausted)?;
+                    let environment = environments.extend_one(value_sort, environment)?;
+                    push_infer_task(
+                        &mut tasks,
+                        InferTask::Expression {
+                            expression: body,
+                            environment,
+                            depth,
+                        },
+                    )?;
+                }
+                InferTask::CaseTermBodies {
+                    atom_body,
+                    triple_body,
+                    environment,
+                    depth,
+                } => {
+                    let atom_environment = environments.extend_three(
+                        KSort::Bytes,
+                        KSort::Bytes,
+                        KSort::Bytes,
+                        environment,
+                    )?;
+                    let triple_environment = environments.extend_three(
+                        KSort::Term,
+                        KSort::Term,
+                        KSort::Term,
+                        environment,
+                    )?;
+                    reserve_infer_tasks(&mut tasks, 3)?;
+                    tasks.push(InferTask::Common);
+                    tasks.push(InferTask::Expression {
+                        expression: triple_body,
+                        environment: triple_environment,
+                        depth,
+                    });
+                    tasks.push(InferTask::Expression {
+                        expression: atom_body,
+                        environment: atom_environment,
+                        depth,
+                    });
+                }
+                InferTask::CaseBytesBodies {
+                    empty_body,
+                    cons_body,
+                    environment,
+                    depth,
+                } => {
+                    let cons_environment =
+                        environments.extend_two(KSort::Bytes, KSort::Bytes, environment)?;
+                    reserve_infer_tasks(&mut tasks, 3)?;
+                    tasks.push(InferTask::Common);
+                    tasks.push(InferTask::Expression {
+                        expression: cons_body,
+                        environment: cons_environment,
+                        depth,
+                    });
+                    tasks.push(InferTask::Expression {
+                        expression: empty_body,
+                        environment,
+                        depth,
+                    });
+                }
+            }
         }
-        let next = current_depth + 1;
-        match expression {
-            KExpr::BytesLiteral(_) => Ok(KSort::Bytes),
-            KExpr::TermLiteral(_) => Ok(KSort::Term),
-            KExpr::Var(index) => environment
-                .get(
-                    usize::try_from(*index)
-                        .map_err(|_| StaticError::VariableOutOfBounds(*index))?,
-                )
-                .copied()
-                .ok_or(StaticError::VariableOutOfBounds(*index)),
-            KExpr::MakeAtom {
-                kind,
-                payload,
-                equality,
-            } => {
-                require_sort(KSort::Bytes, self.infer(kind, environment, next)?)?;
-                require_sort(KSort::Bytes, self.infer(payload, environment, next)?)?;
-                require_sort(KSort::Bytes, self.infer(equality, environment, next)?)?;
-                Ok(KSort::Term)
-            }
-            KExpr::MakeTriple {
-                first,
-                second,
-                third,
-            } => {
-                require_sort(KSort::Term, self.infer(first, environment, next)?)?;
-                require_sort(KSort::Term, self.infer(second, environment, next)?)?;
-                require_sort(KSort::Term, self.infer(third, environment, next)?)?;
-                Ok(KSort::Term)
-            }
-            KExpr::Let { value, body } => {
-                let value_sort = self.infer(value, environment, next)?;
-                let body_environment = prepend(&[value_sort], environment);
-                self.infer(body, &body_environment, next)
-            }
-            KExpr::CaseTerm {
-                scrutinee,
-                atom_body,
-                triple_body,
-            } => {
-                require_sort(KSort::Term, self.infer(scrutinee, environment, next)?)?;
-                let atom_environment =
-                    prepend(&[KSort::Bytes, KSort::Bytes, KSort::Bytes], environment);
-                let triple_environment =
-                    prepend(&[KSort::Term, KSort::Term, KSort::Term], environment);
-                common_sort(
-                    self.infer(atom_body, &atom_environment, next)?,
-                    self.infer(triple_body, &triple_environment, next)?,
-                )
-            }
-            KExpr::CaseBytes {
-                scrutinee,
-                empty_body,
-                cons_body,
-            } => {
-                require_sort(KSort::Bytes, self.infer(scrutinee, environment, next)?)?;
-                let cons_environment = prepend(&[KSort::Bytes, KSort::Bytes], environment);
-                common_sort(
-                    self.infer(empty_body, environment, next)?,
-                    self.infer(cons_body, &cons_environment, next)?,
-                )
-            }
-            KExpr::ConcatBytes(parts) => {
-                for part in parts {
-                    require_sort(KSort::Bytes, self.infer(part, environment, next)?)?;
-                }
-                Ok(KSort::Bytes)
-            }
-            KExpr::CaseBytesEqual {
-                left,
-                right,
-                equal_body,
-                unequal_body,
-            } => {
-                require_sort(KSort::Bytes, self.infer(left, environment, next)?)?;
-                require_sort(KSort::Bytes, self.infer(right, environment, next)?)?;
-                common_sort(
-                    self.infer(equal_body, environment, next)?,
-                    self.infer(unequal_body, environment, next)?,
-                )
-            }
-            KExpr::Call {
-                definition_id,
-                arguments,
-            } => {
-                let definition = self
-                    .definitions
-                    .resolve(*definition_id)
-                    .ok_or(StaticError::UnknownDefinition(*definition_id))?;
-                if definition.arguments.len() != arguments.len() {
-                    return Err(StaticError::ArgumentCount {
-                        expected: definition.arguments.len(),
-                        actual: arguments.len(),
-                    });
-                }
-                for (argument, expected) in arguments.iter().zip(&definition.arguments) {
-                    require_sort(*expected, self.infer(argument, environment, next)?)?;
-                }
-                Ok(definition.result)
-            }
-            KExpr::Request {
-                physical_operation_id,
-                arguments,
-            } => {
-                if *physical_operation_id != sha256_operation_id() {
-                    return Err(StaticError::OperationOutsideSealedProfile(
-                        *physical_operation_id,
-                    ));
-                }
-                if arguments.len() != 1 {
-                    return Err(StaticError::ArgumentCount {
-                        expected: 1,
-                        actual: arguments.len(),
-                    });
-                }
-                require_sort(KSort::Bytes, self.infer(&arguments[0], environment, next)?)?;
-                Ok(KSort::Bytes)
-            }
+
+        if results.len() != 1 {
+            return Err(StaticError::ResourceExhausted);
+        }
+        results.pop().ok_or(StaticError::ResourceExhausted)
+    }
+}
+
+enum SortValues<'a> {
+    Borrowed(&'a [KSort]),
+    One(KSort),
+    Two(KSort, KSort),
+    Three(KSort, KSort, KSort),
+}
+
+impl SortValues<'_> {
+    const fn len(&self) -> usize {
+        match self {
+            Self::Borrowed(values) => values.len(),
+            Self::One(_) => 1,
+            Self::Two(_, _) => 2,
+            Self::Three(_, _, _) => 3,
         }
     }
 
-    fn step(
-        &self,
-        expression: &KExpr,
-        environment: &[KValue],
-        mut state: State,
-        nodes: &mut Vec<EvalNode>,
-        current_depth: usize,
-    ) -> Result<StepResult, EvalError> {
-        if current_depth >= MAX_NESTING_DEPTH {
-            return Err(EvalError::RecursionLimit);
+    fn get(&self, index: usize) -> Option<KSort> {
+        match self {
+            Self::Borrowed(values) => values.get(index).copied(),
+            Self::One(first) => (index == 0).then_some(*first),
+            Self::Two(first, second) => [*first, *second].get(index).copied(),
+            Self::Three(first, second, third) => [*first, *second, *third].get(index).copied(),
         }
-        let next = current_depth + 1;
-        let fuel_before = state.fuel;
-        let observations_before = state.observations.to_term();
-        state.fuel = state.fuel.checked_sub(1).ok_or(EvalError::OutOfFuel)?;
-        let mut premises = Vec::new();
+    }
+}
 
-        let (rule_tag, value, final_state) = match expression {
-            KExpr::BytesLiteral(bytes) => (0x30, KValue::Bytes(bytes.clone()), state),
-            KExpr::TermLiteral(term) => (0x31, KValue::Term(term.clone()), state),
+struct SortEnvironment<'a> {
+    values: SortValues<'a>,
+    parent: Option<usize>,
+    total_len: usize,
+}
+
+struct SortEnvironments<'a> {
+    entries: Vec<SortEnvironment<'a>>,
+}
+
+impl<'a> SortEnvironments<'a> {
+    fn new(values: &'a [KSort]) -> Result<Self, StaticError> {
+        if values.len() > MAX_WIRE_ITEMS {
+            return Err(StaticError::ResourceExhausted);
+        }
+        let mut entries = Vec::new();
+        entries
+            .try_reserve(1)
+            .map_err(|_| StaticError::ResourceExhausted)?;
+        entries.push(SortEnvironment {
+            values: SortValues::Borrowed(values),
+            parent: None,
+            total_len: values.len(),
+        });
+        Ok(Self { entries })
+    }
+
+    fn extend_one(&mut self, value: KSort, parent: usize) -> Result<usize, StaticError> {
+        self.extend(SortValues::One(value), parent)
+    }
+
+    fn extend_two(
+        &mut self,
+        first: KSort,
+        second: KSort,
+        parent: usize,
+    ) -> Result<usize, StaticError> {
+        self.extend(SortValues::Two(first, second), parent)
+    }
+
+    fn extend_three(
+        &mut self,
+        first: KSort,
+        second: KSort,
+        third: KSort,
+        parent: usize,
+    ) -> Result<usize, StaticError> {
+        self.extend(SortValues::Three(first, second, third), parent)
+    }
+
+    fn extend(&mut self, values: SortValues<'a>, parent: usize) -> Result<usize, StaticError> {
+        let parent_len = self
+            .entries
+            .get(parent)
+            .ok_or(StaticError::ResourceExhausted)?
+            .total_len;
+        let total_len = parent_len
+            .checked_add(values.len())
+            .ok_or(StaticError::ResourceExhausted)?;
+        if total_len > MAX_WIRE_ITEMS {
+            return Err(StaticError::ResourceExhausted);
+        }
+        self.entries
+            .try_reserve(1)
+            .map_err(|_| StaticError::ResourceExhausted)?;
+        let index = self.entries.len();
+        self.entries.push(SortEnvironment {
+            values,
+            parent: Some(parent),
+            total_len,
+        });
+        Ok(index)
+    }
+
+    fn get(&self, mut environment: usize, mut index: usize) -> Option<KSort> {
+        loop {
+            let entry = self.entries.get(environment)?;
+            if index < entry.values.len() {
+                return entry.values.get(index);
+            }
+            index -= entry.values.len();
+            environment = entry.parent?;
+        }
+    }
+}
+
+enum InferTask<'a> {
+    Expression {
+        expression: &'a KExpr,
+        environment: usize,
+        depth: usize,
+    },
+    Require(KSort),
+    Return(KSort),
+    Common,
+    LetBody {
+        body: &'a KExpr,
+        environment: usize,
+        depth: usize,
+    },
+    CaseTermBodies {
+        atom_body: &'a KExpr,
+        triple_body: &'a KExpr,
+        environment: usize,
+        depth: usize,
+    },
+    CaseBytesBodies {
+        empty_body: &'a KExpr,
+        cons_body: &'a KExpr,
+        environment: usize,
+        depth: usize,
+    },
+}
+
+fn reserve_infer_tasks(
+    tasks: &mut Vec<InferTask<'_>>,
+    additional: usize,
+) -> Result<(), StaticError> {
+    let final_len = tasks
+        .len()
+        .checked_add(additional)
+        .ok_or(StaticError::ResourceExhausted)?;
+    if final_len > MAX_EVALUATION_FRAMES {
+        return Err(StaticError::ResourceExhausted);
+    }
+    tasks
+        .try_reserve(additional)
+        .map_err(|_| StaticError::ResourceExhausted)
+}
+
+fn push_infer_task<'a>(
+    tasks: &mut Vec<InferTask<'a>>,
+    task: InferTask<'a>,
+) -> Result<(), StaticError> {
+    reserve_infer_tasks(tasks, 1)?;
+    tasks.push(task);
+    Ok(())
+}
+
+fn push_sort(results: &mut Vec<KSort>, sort: KSort) -> Result<(), StaticError> {
+    results
+        .try_reserve(1)
+        .map_err(|_| StaticError::ResourceExhausted)?;
+    results.push(sort);
+    Ok(())
+}
+
+enum RuntimeValues<'a> {
+    Borrowed(&'a [KValue]),
+    Owned(Vec<KValue>),
+}
+
+impl RuntimeValues<'_> {
+    fn as_slice(&self) -> &[KValue] {
+        match self {
+            Self::Borrowed(values) => values,
+            Self::Owned(values) => values,
+        }
+    }
+}
+
+struct RuntimeEnvironment<'a> {
+    values: RuntimeValues<'a>,
+    parent: Option<usize>,
+    total_len: usize,
+}
+
+struct RuntimeEnvironments<'a> {
+    entries: Vec<RuntimeEnvironment<'a>>,
+}
+
+impl<'a> RuntimeEnvironments<'a> {
+    fn new(values: &'a [KValue]) -> Result<Self, EvalError> {
+        if values.len() > MAX_WIRE_ITEMS {
+            return Err(EvalError::ResourceExhausted);
+        }
+        let mut entries = Vec::new();
+        entries
+            .try_reserve(1)
+            .map_err(|_| EvalError::ResourceExhausted)?;
+        entries.push(RuntimeEnvironment {
+            values: RuntimeValues::Borrowed(values),
+            parent: None,
+            total_len: values.len(),
+        });
+        Ok(Self { entries })
+    }
+
+    fn extend(&mut self, values: Vec<KValue>, parent: Option<usize>) -> Result<usize, EvalError> {
+        let parent_len = match parent {
+            Some(index) => {
+                self.entries
+                    .get(index)
+                    .ok_or(EvalError::ResourceExhausted)?
+                    .total_len
+            }
+            None => 0,
+        };
+        let total_len = parent_len
+            .checked_add(values.len())
+            .ok_or(EvalError::ResourceExhausted)?;
+        if total_len > MAX_WIRE_ITEMS || self.entries.len() >= MAX_CERTIFICATE_NODES {
+            return Err(EvalError::ResourceExhausted);
+        }
+        self.entries
+            .try_reserve(1)
+            .map_err(|_| EvalError::ResourceExhausted)?;
+        let index = self.entries.len();
+        self.entries.push(RuntimeEnvironment {
+            values: RuntimeValues::Owned(values),
+            parent,
+            total_len,
+        });
+        Ok(index)
+    }
+
+    fn get(&self, mut environment: usize, mut index: usize) -> Option<&KValue> {
+        loop {
+            let entry = self.entries.get(environment)?;
+            let values = entry.values.as_slice();
+            if index < values.len() {
+                return values.get(index);
+            }
+            index -= values.len();
+            environment = entry.parent?;
+        }
+    }
+
+    fn try_flatten(&self, mut environment: usize) -> Result<Vec<KValue>, EvalError> {
+        let total_len = self
+            .entries
+            .get(environment)
+            .ok_or(EvalError::ResourceExhausted)?
+            .total_len;
+        let mut values = Vec::new();
+        values
+            .try_reserve_exact(total_len)
+            .map_err(|_| EvalError::ResourceExhausted)?;
+        loop {
+            let entry = self
+                .entries
+                .get(environment)
+                .ok_or(EvalError::ResourceExhausted)?;
+            for value in entry.values.as_slice() {
+                values.push(
+                    value
+                        .try_clone_resource()
+                        .map_err(|_| EvalError::ResourceExhausted)?,
+                );
+            }
+            let Some(parent) = entry.parent else {
+                break;
+            };
+            environment = parent;
+        }
+        Ok(values)
+    }
+}
+
+struct NodeContext<'a> {
+    expression: &'a KExpr,
+    environment: usize,
+    fuel_before: u64,
+    observations_before: Option<Term>,
+}
+
+enum EvalTask<'a> {
+    Expression {
+        expression: &'a KExpr,
+        environment: usize,
+    },
+    MakeAtom(NodeContext<'a>),
+    MakeTriple(NodeContext<'a>),
+    Let {
+        context: NodeContext<'a>,
+        body: &'a KExpr,
+    },
+    CaseTerm {
+        context: NodeContext<'a>,
+        atom_body: &'a KExpr,
+        triple_body: &'a KExpr,
+    },
+    CaseBytes {
+        context: NodeContext<'a>,
+        empty_body: &'a KExpr,
+        cons_body: &'a KExpr,
+    },
+    ConcatBytes {
+        context: NodeContext<'a>,
+        count: usize,
+    },
+    CaseBytesEqual {
+        context: NodeContext<'a>,
+        equal_body: &'a KExpr,
+        unequal_body: &'a KExpr,
+    },
+    Call {
+        context: NodeContext<'a>,
+        definition: &'a Definition,
+        argument_count: usize,
+    },
+    Request {
+        context: NodeContext<'a>,
+        operation_id: Id32,
+    },
+    Passthrough {
+        context: NodeContext<'a>,
+        rule_tag: u8,
+        leading_premises: Vec<u32>,
+    },
+}
+
+struct RuntimeResult {
+    value: KValue,
+    premise: Option<u32>,
+}
+
+struct MachineResult {
+    value: KValue,
+    fuel: u64,
+    observations: ObservationLog,
+    nodes: Vec<EvalNode>,
+}
+
+struct EvaluationMachine<'a> {
+    evaluator: &'a Evaluator<'a>,
+    environments: RuntimeEnvironments<'a>,
+    tasks: Vec<EvalTask<'a>>,
+    results: Vec<RuntimeResult>,
+    nodes: Vec<EvalNode>,
+    fuel: u64,
+    observations: ObservationLog,
+    steps: usize,
+    certificate: bool,
+}
+
+impl<'a> EvaluationMachine<'a> {
+    fn new(
+        evaluator: &'a Evaluator<'a>,
+        environment: &'a [KValue],
+        fuel: u64,
+        certificate: bool,
+    ) -> Result<Self, EvalError> {
+        Ok(Self {
+            evaluator,
+            environments: RuntimeEnvironments::new(environment)?,
+            tasks: Vec::new(),
+            results: Vec::new(),
+            nodes: Vec::new(),
+            fuel,
+            observations: ObservationLog::default(),
+            steps: 0,
+            certificate,
+        })
+    }
+
+    fn run(mut self, expression: &'a KExpr) -> Result<MachineResult, EvalError> {
+        self.push_task(EvalTask::Expression {
+            expression,
+            environment: 0,
+        })?;
+        while let Some(task) = self.tasks.pop() {
+            match task {
+                EvalTask::Expression {
+                    expression,
+                    environment,
+                } => self.enter(expression, environment)?,
+                EvalTask::MakeAtom(context) => self.finish_make_atom(context)?,
+                EvalTask::MakeTriple(context) => self.finish_make_triple(context)?,
+                EvalTask::Let { context, body } => self.continue_let(context, body)?,
+                EvalTask::CaseTerm {
+                    context,
+                    atom_body,
+                    triple_body,
+                } => self.continue_case_term(context, atom_body, triple_body)?,
+                EvalTask::CaseBytes {
+                    context,
+                    empty_body,
+                    cons_body,
+                } => self.continue_case_bytes(context, empty_body, cons_body)?,
+                EvalTask::ConcatBytes { context, count } => {
+                    self.finish_concat(context, count)?;
+                }
+                EvalTask::CaseBytesEqual {
+                    context,
+                    equal_body,
+                    unequal_body,
+                } => self.continue_case_bytes_equal(context, equal_body, unequal_body)?,
+                EvalTask::Call {
+                    context,
+                    definition,
+                    argument_count,
+                } => self.continue_call(context, definition, argument_count)?,
+                EvalTask::Request {
+                    context,
+                    operation_id,
+                } => self.finish_request(context, operation_id)?,
+                EvalTask::Passthrough {
+                    context,
+                    rule_tag,
+                    leading_premises,
+                } => self.finish_passthrough(context, rule_tag, leading_premises)?,
+            }
+        }
+        if self.results.len() != 1 {
+            return Err(EvalError::ResourceExhausted);
+        }
+        let value = self
+            .results
+            .pop()
+            .ok_or(EvalError::ResourceExhausted)?
+            .value;
+        Ok(MachineResult {
+            value,
+            fuel: self.fuel,
+            observations: self.observations,
+            nodes: self.nodes,
+        })
+    }
+
+    fn enter(&mut self, expression: &'a KExpr, environment: usize) -> Result<(), EvalError> {
+        if self.steps >= MAX_CERTIFICATE_NODES {
+            return Err(EvalError::CertificateNodeOverflow);
+        }
+        self.steps += 1;
+        let fuel_before = self.fuel;
+        let observations_before = if self.certificate {
+            Some(self.observations.try_to_term()?)
+        } else {
+            None
+        };
+        self.fuel = self.fuel.checked_sub(1).ok_or(EvalError::OutOfFuel)?;
+        let context = NodeContext {
+            expression,
+            environment,
+            fuel_before,
+            observations_before,
+        };
+
+        match expression {
+            KExpr::BytesLiteral(bytes) => self.complete(
+                context,
+                0x30,
+                empty_premises(),
+                KValue::Bytes(try_copy_bytes(bytes).map_err(|_| EvalError::ResourceExhausted)?),
+            ),
+            KExpr::TermLiteral(term) => self.complete(
+                context,
+                0x31,
+                empty_premises(),
+                KValue::Term(
+                    term.try_clone_resource()
+                        .map_err(|_| EvalError::ResourceExhausted)?,
+                ),
+            ),
             KExpr::Var(index) => {
-                let value = environment
-                    .get(
-                        usize::try_from(*index)
-                            .map_err(|_| EvalError::VariableOutOfBounds(*index))?,
-                    )
-                    .cloned()
-                    .ok_or(EvalError::VariableOutOfBounds(*index))?;
-                (0x32, value, state)
+                let wire_index = *index;
+                let index = usize::try_from(wire_index)
+                    .map_err(|_| EvalError::VariableOutOfBounds(wire_index))?;
+                let value = self
+                    .environments
+                    .get(environment, index)
+                    .ok_or(EvalError::VariableOutOfBounds(wire_index))?
+                    .try_clone_resource()
+                    .map_err(|_| EvalError::ResourceExhausted)?;
+                self.complete(context, 0x32, empty_premises(), value)
             }
             KExpr::MakeAtom {
                 kind,
                 payload,
                 equality,
             } => {
-                let kind_result =
-                    self.child(kind, environment, state, nodes, next, &mut premises)?;
-                let kind = expect_bytes(kind_result.value)?;
-                let payload_result = self.child(
-                    payload,
+                self.reserve_tasks(4)?;
+                self.tasks.push(EvalTask::MakeAtom(context));
+                self.tasks.push(EvalTask::Expression {
+                    expression: equality,
                     environment,
-                    kind_result.state,
-                    nodes,
-                    next,
-                    &mut premises,
-                )?;
-                let payload = expect_bytes(payload_result.value)?;
-                let equality_result = self.child(
-                    equality,
+                });
+                self.tasks.push(EvalTask::Expression {
+                    expression: payload,
                     environment,
-                    payload_result.state,
-                    nodes,
-                    next,
-                    &mut premises,
-                )?;
-                let equality = expect_bytes(equality_result.value)?;
-                (
-                    0x33,
-                    KValue::Term(Term::Atom {
-                        kind,
-                        canonical_payload: payload,
-                        equality_contract: equality,
-                    }),
-                    equality_result.state,
-                )
+                });
+                self.tasks.push(EvalTask::Expression {
+                    expression: kind,
+                    environment,
+                });
+                Ok(())
             }
             KExpr::MakeTriple {
                 first,
                 second,
                 third,
             } => {
-                let first_result =
-                    self.child(first, environment, state, nodes, next, &mut premises)?;
-                let first = expect_term(first_result.value)?;
-                let second_result = self.child(
-                    second,
+                self.reserve_tasks(4)?;
+                self.tasks.push(EvalTask::MakeTriple(context));
+                self.tasks.push(EvalTask::Expression {
+                    expression: third,
                     environment,
-                    first_result.state,
-                    nodes,
-                    next,
-                    &mut premises,
-                )?;
-                let second = expect_term(second_result.value)?;
-                let third_result = self.child(
-                    third,
+                });
+                self.tasks.push(EvalTask::Expression {
+                    expression: second,
                     environment,
-                    second_result.state,
-                    nodes,
-                    next,
-                    &mut premises,
-                )?;
-                let third = expect_term(third_result.value)?;
-                (
-                    0x34,
-                    KValue::Term(Term::Triple(
-                        Box::new(first),
-                        Box::new(second),
-                        Box::new(third),
-                    )),
-                    third_result.state,
-                )
+                });
+                self.tasks.push(EvalTask::Expression {
+                    expression: first,
+                    environment,
+                });
+                Ok(())
             }
             KExpr::Let { value, body } => {
-                let value_result =
-                    self.child(value, environment, state, nodes, next, &mut premises)?;
-                let body_environment = prepend(&[value_result.value], environment);
-                let body_result = self.child(
-                    body,
-                    &body_environment,
-                    value_result.state,
-                    nodes,
-                    next,
-                    &mut premises,
-                )?;
-                (0x35, body_result.value, body_result.state)
+                self.reserve_tasks(2)?;
+                self.tasks.push(EvalTask::Let { context, body });
+                self.tasks.push(EvalTask::Expression {
+                    expression: value,
+                    environment,
+                });
+                Ok(())
             }
             KExpr::CaseTerm {
                 scrutinee,
                 atom_body,
                 triple_body,
             } => {
-                let scrutinee_result =
-                    self.child(scrutinee, environment, state, nodes, next, &mut premises)?;
-                let term = expect_term(scrutinee_result.value)?;
-                match term {
-                    Term::Atom {
-                        kind,
-                        canonical_payload,
-                        equality_contract,
-                    } => {
-                        let branch_environment = prepend(
-                            &[
-                                KValue::Bytes(kind),
-                                KValue::Bytes(canonical_payload),
-                                KValue::Bytes(equality_contract),
-                            ],
-                            environment,
-                        );
-                        let branch = self.child(
-                            atom_body,
-                            &branch_environment,
-                            scrutinee_result.state,
-                            nodes,
-                            next,
-                            &mut premises,
-                        )?;
-                        (0x36, branch.value, branch.state)
-                    }
-                    Term::Triple(first, second, third) => {
-                        let branch_environment = prepend(
-                            &[
-                                KValue::Term(*first),
-                                KValue::Term(*second),
-                                KValue::Term(*third),
-                            ],
-                            environment,
-                        );
-                        let branch = self.child(
-                            triple_body,
-                            &branch_environment,
-                            scrutinee_result.state,
-                            nodes,
-                            next,
-                            &mut premises,
-                        )?;
-                        (0x37, branch.value, branch.state)
-                    }
-                }
+                self.reserve_tasks(2)?;
+                self.tasks.push(EvalTask::CaseTerm {
+                    context,
+                    atom_body,
+                    triple_body,
+                });
+                self.tasks.push(EvalTask::Expression {
+                    expression: scrutinee,
+                    environment,
+                });
+                Ok(())
             }
             KExpr::CaseBytes {
                 scrutinee,
                 empty_body,
                 cons_body,
             } => {
-                let scrutinee_result =
-                    self.child(scrutinee, environment, state, nodes, next, &mut premises)?;
-                let bytes = expect_bytes(scrutinee_result.value)?;
-                if let Some((&head, tail)) = bytes.split_first() {
-                    let branch_environment = prepend(
-                        &[KValue::Bytes(vec![head]), KValue::Bytes(tail.to_vec())],
-                        environment,
-                    );
-                    let branch = self.child(
-                        cons_body,
-                        &branch_environment,
-                        scrutinee_result.state,
-                        nodes,
-                        next,
-                        &mut premises,
-                    )?;
-                    (0x39, branch.value, branch.state)
-                } else {
-                    let branch = self.child(
-                        empty_body,
-                        environment,
-                        scrutinee_result.state,
-                        nodes,
-                        next,
-                        &mut premises,
-                    )?;
-                    (0x38, branch.value, branch.state)
-                }
+                self.reserve_tasks(2)?;
+                self.tasks.push(EvalTask::CaseBytes {
+                    context,
+                    empty_body,
+                    cons_body,
+                });
+                self.tasks.push(EvalTask::Expression {
+                    expression: scrutinee,
+                    environment,
+                });
+                Ok(())
             }
             KExpr::ConcatBytes(parts) => {
-                let mut bytes = Vec::new();
-                let mut next_state = state;
-                for part in parts {
-                    let part_result =
-                        self.child(part, environment, next_state, nodes, next, &mut premises)?;
-                    let part = expect_bytes(part_result.value)?;
-                    bytes
-                        .len()
-                        .checked_add(part.len())
-                        .ok_or(EvalError::ByteLengthOverflow)?;
-                    bytes.extend_from_slice(&part);
-                    next_state = part_result.state;
+                let additional = parts
+                    .len()
+                    .checked_add(1)
+                    .ok_or(EvalError::ResourceExhausted)?;
+                self.reserve_tasks(additional)?;
+                self.tasks.push(EvalTask::ConcatBytes {
+                    context,
+                    count: parts.len(),
+                });
+                for part in parts.iter().rev() {
+                    self.tasks.push(EvalTask::Expression {
+                        expression: part,
+                        environment,
+                    });
                 }
-                (0x3a, KValue::Bytes(bytes), next_state)
+                Ok(())
             }
             KExpr::CaseBytesEqual {
                 left,
@@ -615,38 +1225,28 @@ impl<'a> Evaluator<'a> {
                 equal_body,
                 unequal_body,
             } => {
-                let left_result =
-                    self.child(left, environment, state, nodes, next, &mut premises)?;
-                let left = expect_bytes(left_result.value)?;
-                let right_result = self.child(
-                    right,
+                self.reserve_tasks(3)?;
+                self.tasks.push(EvalTask::CaseBytesEqual {
+                    context,
+                    equal_body,
+                    unequal_body,
+                });
+                self.tasks.push(EvalTask::Expression {
+                    expression: right,
                     environment,
-                    left_result.state,
-                    nodes,
-                    next,
-                    &mut premises,
-                )?;
-                let right = expect_bytes(right_result.value)?;
-                let (tag, selected) = if left == right {
-                    (0x3b, equal_body.as_ref())
-                } else {
-                    (0x3c, unequal_body.as_ref())
-                };
-                let branch = self.child(
-                    selected,
+                });
+                self.tasks.push(EvalTask::Expression {
+                    expression: left,
                     environment,
-                    right_result.state,
-                    nodes,
-                    next,
-                    &mut premises,
-                )?;
-                (tag, branch.value, branch.state)
+                });
+                Ok(())
             }
             KExpr::Call {
                 definition_id,
                 arguments,
             } => {
                 let definition = self
+                    .evaluator
                     .definitions
                     .resolve(*definition_id)
                     .ok_or(EvalError::UnknownDefinition(*definition_id))?;
@@ -656,31 +1256,23 @@ impl<'a> Evaluator<'a> {
                         actual: arguments.len(),
                     });
                 }
-                let mut values = Vec::with_capacity(arguments.len());
-                let mut next_state = state;
-                for (argument, expected) in arguments.iter().zip(&definition.arguments) {
-                    let argument_result = self.child(
-                        argument,
+                let additional = arguments
+                    .len()
+                    .checked_add(1)
+                    .ok_or(EvalError::ResourceExhausted)?;
+                self.reserve_tasks(additional)?;
+                self.tasks.push(EvalTask::Call {
+                    context,
+                    definition,
+                    argument_count: arguments.len(),
+                });
+                for argument in arguments.iter().rev() {
+                    self.tasks.push(EvalTask::Expression {
+                        expression: argument,
                         environment,
-                        next_state,
-                        nodes,
-                        next,
-                        &mut premises,
-                    )?;
-                    require_value_sort(*expected, &argument_result.value)?;
-                    values.push(argument_result.value);
-                    next_state = argument_result.state;
+                    });
                 }
-                let body = self.child(
-                    &definition.body,
-                    &values,
-                    next_state,
-                    nodes,
-                    next,
-                    &mut premises,
-                )?;
-                require_value_sort(definition.result, &body.value)?;
-                (0x3d, body.value, body.state)
+                Ok(())
             }
             KExpr::Request {
                 physical_operation_id,
@@ -692,74 +1284,430 @@ impl<'a> Evaluator<'a> {
                         actual: arguments.len(),
                     });
                 }
-                let argument = self.child(
-                    &arguments[0],
+                self.reserve_tasks(2)?;
+                self.tasks.push(EvalTask::Request {
+                    context,
+                    operation_id: *physical_operation_id,
+                });
+                self.tasks.push(EvalTask::Expression {
+                    expression: &arguments[0],
                     environment,
-                    state,
-                    nodes,
-                    next,
-                    &mut premises,
-                )?;
-                require_value_sort(KSort::Bytes, &argument.value)?;
-                let mut final_state = argument.state;
-                let value = self.physical.request(
-                    *physical_operation_id,
-                    &[argument.value],
-                    &mut final_state.observations,
-                )?;
-                (0x3e, value, final_state)
+                });
+                Ok(())
+            }
+        }
+    }
+
+    fn finish_make_atom(&mut self, context: NodeContext<'a>) -> Result<(), EvalError> {
+        let equality = self.pop_result()?;
+        let payload = self.pop_result()?;
+        let kind = self.pop_result()?;
+        let premises = self.premises(&[&kind, &payload, &equality])?;
+        let value = KValue::Term(Term::Atom {
+            kind: expect_bytes(kind.value)?,
+            canonical_payload: expect_bytes(payload.value)?,
+            equality_contract: expect_bytes(equality.value)?,
+        });
+        self.complete(context, 0x33, premises, value)
+    }
+
+    fn finish_make_triple(&mut self, context: NodeContext<'a>) -> Result<(), EvalError> {
+        let third = self.pop_result()?;
+        let second = self.pop_result()?;
+        let first = self.pop_result()?;
+        let premises = self.premises(&[&first, &second, &third])?;
+        let term = Term::try_triple(
+            expect_term(first.value)?,
+            expect_term(second.value)?,
+            expect_term(third.value)?,
+        )
+        .map_err(|_| EvalError::ResourceExhausted)?;
+        self.complete(context, 0x34, premises, KValue::Term(term))
+    }
+
+    fn continue_let(&mut self, context: NodeContext<'a>, body: &'a KExpr) -> Result<(), EvalError> {
+        let value = self.pop_result()?;
+        let leading_premises = self.premises(&[&value])?;
+        let mut values = Vec::new();
+        values
+            .try_reserve_exact(1)
+            .map_err(|_| EvalError::ResourceExhausted)?;
+        values.push(value.value);
+        let environment = self
+            .environments
+            .extend(values, Some(context.environment))?;
+        self.reserve_tasks(2)?;
+        self.tasks.push(EvalTask::Passthrough {
+            context,
+            rule_tag: 0x35,
+            leading_premises,
+        });
+        self.tasks.push(EvalTask::Expression {
+            expression: body,
+            environment,
+        });
+        Ok(())
+    }
+
+    fn continue_case_term(
+        &mut self,
+        context: NodeContext<'a>,
+        atom_body: &'a KExpr,
+        triple_body: &'a KExpr,
+    ) -> Result<(), EvalError> {
+        let scrutinee = self.pop_result()?;
+        let leading_premises = self.premises(&[&scrutinee])?;
+        let (rule_tag, body, values) = match expect_term(scrutinee.value)? {
+            Term::Atom {
+                kind,
+                canonical_payload,
+                equality_contract,
+            } => {
+                let mut values = Vec::new();
+                values
+                    .try_reserve_exact(3)
+                    .map_err(|_| EvalError::ResourceExhausted)?;
+                values.push(KValue::Bytes(kind));
+                values.push(KValue::Bytes(canonical_payload));
+                values.push(KValue::Bytes(equality_contract));
+                (0x36, atom_body, values)
+            }
+            Term::Triple(first, second, third) => {
+                let mut values = Vec::new();
+                values
+                    .try_reserve_exact(3)
+                    .map_err(|_| EvalError::ResourceExhausted)?;
+                values.push(KValue::Term(*first));
+                values.push(KValue::Term(*second));
+                values.push(KValue::Term(*third));
+                (0x37, triple_body, values)
             }
         };
-
-        let conclusion = EvalJudgment {
-            expression: expression.clone(),
-            environment: environment.to_vec(),
-            fuel_before,
-            observations_before,
-            value: value.clone(),
-            fuel_after: final_state.fuel,
-            observations_after: final_state.observations.to_term(),
-        };
-        nodes
-            .try_reserve(1)
-            .map_err(|_| EvalError::CertificateNodeOverflow)?;
-        nodes.push(EvalNode {
+        let environment = self
+            .environments
+            .extend(values, Some(context.environment))?;
+        self.reserve_tasks(2)?;
+        self.tasks.push(EvalTask::Passthrough {
+            context,
             rule_tag,
-            premises,
-            conclusion,
+            leading_premises,
         });
-        Ok(StepResult {
-            value,
-            state: final_state,
-        })
+        self.tasks.push(EvalTask::Expression {
+            expression: body,
+            environment,
+        });
+        Ok(())
     }
 
-    fn child(
-        &self,
-        expression: &KExpr,
-        environment: &[KValue],
-        state: State,
-        nodes: &mut Vec<EvalNode>,
-        depth: usize,
-        premises: &mut Vec<u32>,
-    ) -> Result<StepResult, EvalError> {
-        let result = self.step(expression, environment, state, nodes, depth)?;
-        let index =
-            u32::try_from(nodes.len() - 1).map_err(|_| EvalError::CertificateNodeOverflow)?;
-        premises.push(index);
-        Ok(result)
+    fn continue_case_bytes(
+        &mut self,
+        context: NodeContext<'a>,
+        empty_body: &'a KExpr,
+        cons_body: &'a KExpr,
+    ) -> Result<(), EvalError> {
+        let scrutinee = self.pop_result()?;
+        let leading_premises = self.premises(&[&scrutinee])?;
+        let mut bytes = expect_bytes(scrutinee.value)?;
+        let (rule_tag, body, environment) = if bytes.is_empty() {
+            (0x38, empty_body, context.environment)
+        } else {
+            let head = bytes.remove(0);
+            let mut head_bytes = Vec::new();
+            head_bytes
+                .try_reserve_exact(1)
+                .map_err(|_| EvalError::ResourceExhausted)?;
+            head_bytes.push(head);
+            let mut values = Vec::new();
+            values
+                .try_reserve_exact(2)
+                .map_err(|_| EvalError::ResourceExhausted)?;
+            values.push(KValue::Bytes(head_bytes));
+            values.push(KValue::Bytes(bytes));
+            let environment = self
+                .environments
+                .extend(values, Some(context.environment))?;
+            (0x39, cons_body, environment)
+        };
+        self.reserve_tasks(2)?;
+        self.tasks.push(EvalTask::Passthrough {
+            context,
+            rule_tag,
+            leading_premises,
+        });
+        self.tasks.push(EvalTask::Expression {
+            expression: body,
+            environment,
+        });
+        Ok(())
+    }
+
+    fn finish_concat(&mut self, context: NodeContext<'a>, count: usize) -> Result<(), EvalError> {
+        let results = self.take_results(count)?;
+        let premises = self.premises_from_slice(&results)?;
+        let mut total = 0_usize;
+        for result in &results {
+            let KValue::Bytes(bytes) = &result.value else {
+                return Err(EvalError::ValueSort {
+                    expected: KSort::Bytes,
+                    actual: KSort::Term,
+                });
+            };
+            total = total
+                .checked_add(bytes.len())
+                .ok_or(EvalError::ByteLengthOverflow)?;
+            if total > MAX_WIRE_BYTES {
+                return Err(EvalError::ByteLengthOverflow);
+            }
+        }
+        let mut bytes = Vec::new();
+        bytes
+            .try_reserve_exact(total)
+            .map_err(|_| EvalError::ResourceExhausted)?;
+        for result in results {
+            let KValue::Bytes(part) = result.value else {
+                return Err(EvalError::ValueSort {
+                    expected: KSort::Bytes,
+                    actual: KSort::Term,
+                });
+            };
+            bytes.extend_from_slice(&part);
+        }
+        self.complete(context, 0x3a, premises, KValue::Bytes(bytes))
+    }
+
+    fn continue_case_bytes_equal(
+        &mut self,
+        context: NodeContext<'a>,
+        equal_body: &'a KExpr,
+        unequal_body: &'a KExpr,
+    ) -> Result<(), EvalError> {
+        let right = self.pop_result()?;
+        let left = self.pop_result()?;
+        let leading_premises = self.premises(&[&left, &right])?;
+        let left = expect_bytes(left.value)?;
+        let right = expect_bytes(right.value)?;
+        let (rule_tag, body) = if left == right {
+            (0x3b, equal_body)
+        } else {
+            (0x3c, unequal_body)
+        };
+        let environment = context.environment;
+        self.reserve_tasks(2)?;
+        self.tasks.push(EvalTask::Passthrough {
+            context,
+            rule_tag,
+            leading_premises,
+        });
+        self.tasks.push(EvalTask::Expression {
+            expression: body,
+            environment,
+        });
+        Ok(())
+    }
+
+    fn continue_call(
+        &mut self,
+        context: NodeContext<'a>,
+        definition: &'a Definition,
+        argument_count: usize,
+    ) -> Result<(), EvalError> {
+        let results = self.take_results(argument_count)?;
+        let leading_premises = self.premises_from_slice(&results)?;
+        let mut values = Vec::new();
+        values
+            .try_reserve_exact(argument_count)
+            .map_err(|_| EvalError::ResourceExhausted)?;
+        for (result, expected) in results.into_iter().zip(&definition.arguments) {
+            require_value_sort(*expected, &result.value)?;
+            values.push(result.value);
+        }
+        let environment = self.environments.extend(values, None)?;
+        self.reserve_tasks(2)?;
+        self.tasks.push(EvalTask::Passthrough {
+            context,
+            rule_tag: 0x3d,
+            leading_premises,
+        });
+        self.tasks.push(EvalTask::Expression {
+            expression: &definition.body,
+            environment,
+        });
+        Ok(())
+    }
+
+    fn finish_request(
+        &mut self,
+        context: NodeContext<'a>,
+        operation_id: Id32,
+    ) -> Result<(), EvalError> {
+        let argument = self.pop_result()?;
+        require_value_sort(KSort::Bytes, &argument.value)?;
+        let premises = self.premises(&[&argument])?;
+        let mut arguments = Vec::new();
+        arguments
+            .try_reserve_exact(1)
+            .map_err(|_| EvalError::ResourceExhausted)?;
+        arguments.push(argument.value);
+        let value =
+            self.evaluator
+                .physical
+                .request(operation_id, arguments, &mut self.observations)?;
+        self.complete(context, 0x3e, premises, value)
+    }
+
+    fn finish_passthrough(
+        &mut self,
+        context: NodeContext<'a>,
+        rule_tag: u8,
+        mut leading_premises: Vec<u32>,
+    ) -> Result<(), EvalError> {
+        let body = self.pop_result()?;
+        if let Some(premise) = body.premise {
+            leading_premises
+                .try_reserve(1)
+                .map_err(|_| EvalError::ResourceExhausted)?;
+            leading_premises.push(premise);
+        }
+        self.complete(context, rule_tag, leading_premises, body.value)
+    }
+
+    fn complete(
+        &mut self,
+        context: NodeContext<'a>,
+        rule_tag: u8,
+        premises: Vec<u32>,
+        value: KValue,
+    ) -> Result<(), EvalError> {
+        value
+            .validate_resource_bounds()
+            .map_err(|_| EvalError::ResourceExhausted)?;
+        let premise = if self.certificate {
+            if self.nodes.len() >= MAX_CERTIFICATE_NODES {
+                return Err(EvalError::CertificateNodeOverflow);
+            }
+            let index =
+                u32::try_from(self.nodes.len()).map_err(|_| EvalError::CertificateNodeOverflow)?;
+            self.nodes
+                .try_reserve(1)
+                .map_err(|_| EvalError::ResourceExhausted)?;
+            let expression = context
+                .expression
+                .try_clone_resource()
+                .map_err(|_| EvalError::ResourceExhausted)?;
+            let environment = self.environments.try_flatten(context.environment)?;
+            let observations_before = context
+                .observations_before
+                .ok_or(EvalError::ResourceExhausted)?;
+            let conclusion_value = value
+                .try_clone_resource()
+                .map_err(|_| EvalError::ResourceExhausted)?;
+            let observations_after = self.observations.try_to_term()?;
+            self.nodes.push(EvalNode {
+                rule_tag,
+                premises,
+                conclusion: EvalJudgment {
+                    expression,
+                    environment,
+                    fuel_before: context.fuel_before,
+                    observations_before,
+                    value: conclusion_value,
+                    fuel_after: self.fuel,
+                    observations_after,
+                },
+            });
+            Some(index)
+        } else {
+            None
+        };
+        self.results
+            .try_reserve(1)
+            .map_err(|_| EvalError::ResourceExhausted)?;
+        self.results.push(RuntimeResult { value, premise });
+        Ok(())
+    }
+
+    fn pop_result(&mut self) -> Result<RuntimeResult, EvalError> {
+        self.results.pop().ok_or(EvalError::ResourceExhausted)
+    }
+
+    fn take_results(&mut self, count: usize) -> Result<Vec<RuntimeResult>, EvalError> {
+        if count > self.results.len() {
+            return Err(EvalError::ResourceExhausted);
+        }
+        let mut values = Vec::new();
+        values
+            .try_reserve_exact(count)
+            .map_err(|_| EvalError::ResourceExhausted)?;
+        for _ in 0..count {
+            values.push(self.pop_result()?);
+        }
+        values.reverse();
+        Ok(values)
+    }
+
+    fn premises(&self, results: &[&RuntimeResult]) -> Result<Vec<u32>, EvalError> {
+        let mut premises = Vec::new();
+        if self.certificate {
+            premises
+                .try_reserve_exact(results.len())
+                .map_err(|_| EvalError::ResourceExhausted)?;
+            for result in results {
+                premises.push(result.premise.ok_or(EvalError::ResourceExhausted)?);
+            }
+        }
+        Ok(premises)
+    }
+
+    fn premises_from_slice(&self, results: &[RuntimeResult]) -> Result<Vec<u32>, EvalError> {
+        let mut premises = Vec::new();
+        if self.certificate {
+            premises
+                .try_reserve_exact(results.len())
+                .map_err(|_| EvalError::ResourceExhausted)?;
+            for result in results {
+                premises.push(result.premise.ok_or(EvalError::ResourceExhausted)?);
+            }
+        }
+        Ok(premises)
+    }
+
+    fn reserve_tasks(&mut self, additional: usize) -> Result<(), EvalError> {
+        let final_len = self
+            .tasks
+            .len()
+            .checked_add(additional)
+            .ok_or(EvalError::RecursionLimit)?;
+        if final_len > MAX_EVALUATION_FRAMES {
+            return Err(EvalError::RecursionLimit);
+        }
+        self.tasks
+            .try_reserve(additional)
+            .map_err(|_| EvalError::ResourceExhausted)
+    }
+
+    fn push_task(&mut self, task: EvalTask<'a>) -> Result<(), EvalError> {
+        self.reserve_tasks(1)?;
+        self.tasks.push(task);
+        Ok(())
     }
 }
 
-#[derive(Clone)]
-struct State {
-    fuel: u64,
-    observations: ObservationLog,
+fn empty_premises() -> Vec<u32> {
+    Vec::new()
 }
 
-struct StepResult {
-    value: KValue,
-    state: State,
+fn value_sorts(values: &[KValue]) -> Result<Vec<KSort>, EvalError> {
+    if values.len() > MAX_WIRE_ITEMS {
+        return Err(EvalError::ResourceExhausted);
+    }
+    let mut sorts = Vec::new();
+    sorts
+        .try_reserve_exact(values.len())
+        .map_err(|_| EvalError::ResourceExhausted)?;
+    for value in values {
+        sorts.push(value.sort());
+    }
+    Ok(sorts)
 }
 
 fn require_sort(expected: KSort, actual: KSort) -> Result<(), StaticError> {
@@ -807,16 +1755,14 @@ fn expect_term(value: KValue) -> Result<Term, EvalError> {
     }
 }
 
-fn prepend<T: Clone>(prefix: &[T], tail: &[T]) -> Vec<T> {
-    let mut values = Vec::with_capacity(prefix.len() + tail.len());
-    values.extend_from_slice(prefix);
-    values.extend_from_slice(tail);
-    values
-}
-
-fn value_literal(value: &KValue) -> KExpr {
+fn value_literal(value: &KValue) -> Result<KExpr, EvalError> {
     match value {
-        KValue::Bytes(bytes) => KExpr::BytesLiteral(bytes.clone()),
-        KValue::Term(term) => KExpr::TermLiteral(term.clone()),
+        KValue::Bytes(bytes) => Ok(KExpr::BytesLiteral(
+            try_copy_bytes(bytes).map_err(|_| EvalError::ResourceExhausted)?,
+        )),
+        KValue::Term(term) => Ok(KExpr::TermLiteral(
+            term.try_clone_resource()
+                .map_err(|_| EvalError::ResourceExhausted)?,
+        )),
     }
 }

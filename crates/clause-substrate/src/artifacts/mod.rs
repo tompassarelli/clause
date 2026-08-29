@@ -4,7 +4,6 @@
 //! read-only and are always compared on an existing-key hit; hashes remain
 //! lookup aids rather than exact-byte authority.
 
-use std::collections::BTreeMap;
 use std::fmt;
 use std::sync::Arc;
 
@@ -37,7 +36,7 @@ impl ImmutableArtifact {
 
 #[derive(Debug, Default)]
 pub struct ArtifactStore {
-    artifacts: BTreeMap<Hash32, Arc<ImmutableArtifact>>,
+    artifacts: Vec<(Hash32, Arc<ImmutableArtifact>)>,
 }
 
 impl ArtifactStore {
@@ -68,20 +67,33 @@ impl ArtifactStore {
         bytes: Arc<[u8]>,
     ) -> Result<Arc<ImmutableArtifact>, ArtifactError> {
         let candidate = ImmutableArtifact::new(id, bytes);
-        if let Some(existing) = self.artifacts.get(&candidate.id) {
+        let position = self
+            .artifacts
+            .binary_search_by_key(&candidate.id, |(id, _)| *id);
+        if let Ok(index) = position {
+            let existing = &self.artifacts[index].1;
             if existing.exact_bytes() != candidate.exact_bytes() {
                 return Err(ArtifactError::HashCollision(candidate.id));
             }
             return Ok(Arc::clone(existing));
         }
+        self.artifacts
+            .try_reserve(1)
+            .map_err(|_| ArtifactError::ResourceExhausted)?;
         let candidate = Arc::new(candidate);
-        self.artifacts.insert(candidate.id, Arc::clone(&candidate));
+        self.artifacts.insert(
+            position.expect_err("successful search returned before insertion"),
+            (candidate.id, Arc::clone(&candidate)),
+        );
         Ok(candidate)
     }
 
     #[must_use]
     pub fn get(&self, id: Hash32) -> Option<Arc<ImmutableArtifact>> {
-        self.artifacts.get(&id).cloned()
+        self.artifacts
+            .binary_search_by_key(&id, |(candidate, _)| *candidate)
+            .ok()
+            .map(|index| Arc::clone(&self.artifacts[index].1))
     }
 }
 
@@ -122,6 +134,7 @@ impl CompilerPackageArtifact {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ArtifactError {
     HashCollision(Hash32),
+    ResourceExhausted,
 }
 
 impl fmt::Display for ArtifactError {
@@ -129,6 +142,9 @@ impl fmt::Display for ArtifactError {
         match self {
             Self::HashCollision(_) => formatter
                 .write_str("domain-separated artifact hash resolved to non-identical exact bytes"),
+            Self::ResourceExhausted => {
+                formatter.write_str("artifact index exhausted physical resources")
+            }
         }
     }
 }

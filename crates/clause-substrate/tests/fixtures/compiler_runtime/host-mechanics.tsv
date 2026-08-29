@@ -1,9 +1,8 @@
-site	class	controls	fixed_tags	code_target
-compiler_package_v2::codec::decode	WireCodec	octet,bound,length	CLCP-v2/frame/closed-sum	Cursor::frame
-compiler_package_v2::codec::encode	WireCodec	closed Rust wire value	CLCP-v2/frame/closed-sum	encode_core_manifest_value
-physical::observations_term	CoreABI	fixed ABI tag,arity,field	00,01,02,03,19,1a	record
-evaluator::Evaluator::step/bytes	ByteMachine	empty,head-tail,equality	07,08,09	slice::split_first
-evaluator::DefinitionTable::resolve	DefinitionTable	opaque-Id32-order,hit-miss	0a	BTreeMap::get
-evaluator::Evaluator::step	KernelStep	KExpr-tag,value-shape,fuel	00..0b	Evaluator::child
-evaluator::Evaluator::child	CertificateStep	fixed-rule-tag,premise-index	30..3e	Evaluator::step
-physical::SealedPhysical::request	PhysicalDispatch	fixed-PhysicalOpId	Sha256OpId	Sha256::digest
+class	reachable_sites	package_tainted_sites	code_target_count
+WireCodec	1477	1222	199
+CoreABI	110	98	29
+ByteMachine	10	10	1
+DefinitionTable	18	12	16
+KernelStep	577	459	102
+CertificateStep	259	220	49
+PhysicalDispatch	26	18	17
