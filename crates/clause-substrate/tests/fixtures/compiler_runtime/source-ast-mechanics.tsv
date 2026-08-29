@@ -1,0 +1,58 @@
+location	function	kind	class	controls	fixed_tags	code_targets
+src/compiler_package_v2/codec.rs:218:16	encode_sort	match	WireCodec	sort	closed-wire-tags	KSort :: Bytes | KSort :: Term
+src/compiler_package_v2/codec.rs:225:5	encode_term	match	WireCodec	value	closed-wire-tags	Term :: Atom { kind , canonical_payload , equality_contract , } | Term :: Triple (first , second , third)
+src/compiler_package_v2/codec.rs:246:5	encode_expr	match	WireCodec	value	closed-wire-tags	KExpr :: BytesLiteral (value) | KExpr :: TermLiteral (value) | KExpr :: Var (index) | KExpr :: MakeAtom { kind , payload , equality , } | KExpr :: MakeTriple { first , second , third , } | KExpr :: Let { value , body } | KExpr :: CaseTerm { scrutinee , atom_body , triple_body , } | KExpr :: CaseBytes { scrutinee , empty_body , cons_body , } | KExpr :: ConcatBytes (parts) | KExpr :: CaseBytesEqual { left , right , equal_body , unequal_body , } | KExpr :: Call { definition_id , arguments , } | KExpr :: Request { physical_operation_id , arguments , }
+src/compiler_package_v2/codec.rs:342:5	encode_subject_value	match	WireCodec	& subject . lineage	closed-wire-tags	CompilerLineage :: Genesis | CompilerLineage :: Successor { predecessor_locator , change_occurrence_id , }
+src/compiler_package_v2/codec.rs:369:5	encode_nominal_declaration	match	WireCodec	declaration	closed-wire-tags	NominalDeclaration :: Seed { domain , id } | NominalDeclaration :: RetainedSeed { domain , id , predecessor_revision_id , } | NominalDeclaration :: Allocated { domain , id , change_input , producer_input , local_slot , }
+src/compiler_package_v2/codec.rs:424:5	encode_evidence_value	match	WireCodec	evidence	closed-wire-tags	CompilerEvidence :: Genesis | CompilerEvidence :: Successor { compile_certificate , admission_certificate , }
+src/compiler_package_v2/codec.rs:442:5	encode_certificate	if	WireCodec	certificate . format_version != 0x00	closed-wire-tags	then | continue
+src/compiler_package_v2/codec.rs:451:9	encode_certificate	if	WireCodec	! (0x30 ..= 0x3e) . contains (& node . rule_tag)	closed-wire-tags	then | continue
+src/compiler_package_v2/codec.rs:480:5	encode_value	match	WireCodec	value	closed-wire-tags	KValue :: Bytes (bytes) | KValue :: Term (term)
+src/compiler_package_v2/codec.rs:493:5	encode_outcome	match	WireCodec	outcome	closed-wire-tags	EvalOutcome :: Returned { value , remaining_fuel , observations , }
+src/compiler_package_v2/codec.rs:53:13	sequence	indirect-call	WireCodec	encode	closed-wire-tags	monomorphized-source-supplied-wire-function
+src/compiler_package_v2/codec.rs:544:9	read	if	WireCodec	end > self . limit	closed-wire-tags	then | continue
+src/compiler_package_v2/codec.rs:545:24	read	if	WireCodec	end <= self . input . len ()	closed-wire-tags	then | else
+src/compiler_package_v2/codec.rs:550:26	read	if	WireCodec	code == DecodeCode :: Truncated	closed-wire-tags	then | else
+src/compiler_package_v2/codec.rs:612:9	sequence	if	WireCodec	count > self . limit . saturating_sub (self . offset)	closed-wire-tags	then | continue
+src/compiler_package_v2/codec.rs:620:25	sequence	indirect-call	WireCodec	decode	closed-wire-tags	monomorphized-source-supplied-wire-function
+src/compiler_package_v2/codec.rs:632:9	frame	if	WireCodec	tag != expected_tag	closed-wire-tags	then | continue
+src/compiler_package_v2/codec.rs:642:9	frame	if	WireCodec	end > self . limit	closed-wire-tags	then | continue
+src/compiler_package_v2/codec.rs:650:21	frame	indirect-call	WireCodec	decode	closed-wire-tags	monomorphized-source-supplied-wire-function
+src/compiler_package_v2/codec.rs:651:9	frame	if	WireCodec	bounded . offset != end	closed-wire-tags	then | continue
+src/compiler_package_v2/codec.rs:664:9	decode	if	WireCodec	found != * expected	closed-wire-tags	then | continue
+src/compiler_package_v2/codec.rs:670:5	decode	if	WireCodec	version != VERSION	closed-wire-tags	then | continue
+src/compiler_package_v2/codec.rs:676:5	decode	if	WireCodec	cursor . offset != cursor . limit	closed-wire-tags	then | continue
+src/compiler_package_v2/codec.rs:754:5	decode_sort	match	WireCodec	cursor . u8 () ?	closed-wire-tags	0x00 | 0x01 | _
+src/compiler_package_v2/codec.rs:762:5	depth	if	WireCodec	next >= MAX_RECURSION_DEPTH	closed-wire-tags	then | else
+src/compiler_package_v2/codec.rs:772:5	decode_term	match	WireCodec	cursor . u8 () ?	closed-wire-tags	0x00 | 0x01 | _
+src/compiler_package_v2/codec.rs:790:5	decode_expr	match	WireCodec	cursor . u8 () ?	closed-wire-tags	0x00 | 0x01 | 0x02 | 0x03 | 0x04 | 0x05 | 0x06 | 0x07 | 0x08 | 0x09 | 0x0a | 0x0b | _
+src/compiler_package_v2/codec.rs:841:19	decode_subject_value	match	WireCodec	cursor . u8 () ?	closed-wire-tags	0x00 | 0x01 | _
+src/compiler_package_v2/codec.rs:869:5	decode_nominal_declaration	match	WireCodec	cursor . u8 () ?	closed-wire-tags	0x00 | 0x01 | 0x02 | _
+src/compiler_package_v2/codec.rs:908:5	decode_evidence_value	match	WireCodec	cursor . u8 () ?	closed-wire-tags	0x00 | 0x01 | _
+src/compiler_package_v2/codec.rs:921:5	decode_certificate	if	WireCodec	format_version != 0x00	closed-wire-tags	then | continue
+src/compiler_package_v2/codec.rs:945:5	decode_value	match	WireCodec	cursor . u8 () ?	closed-wire-tags	0x00 | 0x01 | _
+src/compiler_package_v2/codec.rs:954:5	decode_outcome	match	WireCodec	cursor . u8 () ?	closed-wire-tags	0x00 | _
+src/compiler_package_v2/codec.rs:967:5	decode_node	if	WireCodec	! (0x30 ..= 0x3e) . contains (& rule_tag)	closed-wire-tags	then | continue
+src/evaluator/mod.rs:151:13	new	if	DefinitionTable	pair [0] . id == pair [1] . id	opaque-Id32-order-hit-miss	then | continue
+src/evaluator/mod.rs:154:13	new	if	DefinitionTable	pair [0] . id > pair [1] . id	opaque-Id32-order-hit-miss	then | continue
+src/evaluator/mod.rs:270:9	infer	if	KernelStep	current_depth >= MAX_EVALUATION_DEPTH	KSort-KExpr-value-fuel	then | continue
+src/evaluator/mod.rs:274:9	infer	match	KernelStep	expression	KSort-KExpr-value-fuel	KExpr :: BytesLiteral (_) | KExpr :: TermLiteral (_) | KExpr :: Var (index) | KExpr :: MakeAtom { kind , payload , equality , } | KExpr :: MakeTriple { first , second , third , } | KExpr :: Let { value , body } | KExpr :: CaseTerm { scrutinee , atom_body , triple_body , } | KExpr :: CaseBytes { scrutinee , empty_body , cons_body , } | KExpr :: ConcatBytes (parts) | KExpr :: CaseBytesEqual { left , right , equal_body , unequal_body , } | KExpr :: Call { definition_id , arguments , } | KExpr :: Request { physical_operation_id , arguments , }
+src/evaluator/mod.rs:363:17	infer	if	KernelStep	definition . arguments . len () != arguments . len ()	KSort-KExpr-value-fuel	then | continue
+src/evaluator/mod.rs:378:17	infer	if	KernelStep	* physical_operation_id != sha256_operation_id ()	KSort-KExpr-value-fuel	then | continue
+src/evaluator/mod.rs:383:17	infer	if	KernelStep	arguments . len () != 1	KSort-KExpr-value-fuel	then | continue
+src/evaluator/mod.rs:403:9	step	if	KernelStep	current_depth >= MAX_EVALUATION_DEPTH	KSort-KExpr-value-fuel	then | continue
+src/evaluator/mod.rs:412:46	step	match	KernelStep	expression	KSort-KExpr-value-fuel	KExpr :: BytesLiteral (bytes) | KExpr :: TermLiteral (term) | KExpr :: Var (index) | KExpr :: MakeAtom { kind , payload , equality , } | KExpr :: MakeTriple { first , second , third , } | KExpr :: Let { value , body } | KExpr :: CaseTerm { scrutinee , atom_body , triple_body , } | KExpr :: CaseBytes { scrutinee , empty_body , cons_body , } | KExpr :: ConcatBytes (parts) | KExpr :: CaseBytesEqual { left , right , equal_body , unequal_body , } | KExpr :: Call { definition_id , arguments , } | KExpr :: Request { physical_operation_id , arguments , }
+src/evaluator/mod.rs:519:17	step	match	KernelStep	term	KSort-KExpr-value-fuel	Term :: Atom { kind , canonical_payload , equality_contract , } | Term :: Triple (first , second , third)
+src/evaluator/mod.rs:572:17	step	if	ByteMachine	let Some ((& head , tail)) = bytes . split_first ()	empty-head-tail-concat-equality	then | else
+src/evaluator/mod.rs:632:39	step	if	ByteMachine	left == right	empty-head-tail-concat-equality	then | else
+src/evaluator/mod.rs:655:17	step	if	KernelStep	definition . arguments . len () != arguments . len ()	KSort-KExpr-value-fuel	then | continue
+src/evaluator/mod.rs:691:17	step	if	KernelStep	arguments . len () != 1	KSort-KExpr-value-fuel	then | continue
+src/evaluator/mod.rs:768:5	require_sort	if	KernelStep	expected == actual	KSort-KExpr-value-fuel	then | else
+src/evaluator/mod.rs:776:5	common_sort	if	KernelStep	left == right	KSort-KExpr-value-fuel	then | else
+src/evaluator/mod.rs:785:5	require_value_sort	if	KernelStep	actual == expected	KSort-KExpr-value-fuel	then | else
+src/evaluator/mod.rs:793:5	expect_bytes	match	KernelStep	value	KSort-KExpr-value-fuel	KValue :: Bytes (value) | KValue :: Term (_)
+src/evaluator/mod.rs:803:5	expect_term	match	KernelStep	value	KSort-KExpr-value-fuel	KValue :: Term (value) | KValue :: Bytes (_)
+src/evaluator/mod.rs:820:5	value_literal	match	KernelStep	value	KSort-KExpr-value-fuel	KValue :: Bytes (bytes) | KValue :: Term (term)
+src/physical/mod.rs:152:5	value_term	match	CoreABI	value	fixed-ABI-shapes	KValue :: Bytes (value) | KValue :: Term (value)
+src/physical/mod.rs:63:9	request	if	PhysicalDispatch	operation_id != sha256_operation_id ()	Sha256OpId	then | continue
+src/physical/mod.rs:66:9	request	let-else	PhysicalDispatch	arguments	Sha256OpId	[KValue :: Bytes (input)] | diverge

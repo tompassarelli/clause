@@ -7,5 +7,9 @@
 
 #![forbid(unsafe_code)]
 
+pub mod artifacts;
 pub mod canonical_package;
+pub mod compiler_package_v2;
+pub mod evaluator;
 pub mod game_leverage;
+pub mod physical;
