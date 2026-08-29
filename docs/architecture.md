@@ -102,6 +102,15 @@ octet and a tail, `ConcatBytes` constructs dynamic byte strings, and
 therefore read exact source and construct exact output without a host lexer or
 string/equality callback.
 
+CLCP v2 Frame 01 carries the complete exact `CoreManifestV1`, not a symbolic
+ID resolved by a host. Its canonical bytes enumerate every Term, sort,
+expression, Core ABI, authorization, static-rule, evaluation-rule, certificate,
+and physical-profile tag and signature. The fixed prose semantics and closed
+certificate grammar define fuel, environments, left-to-right evaluation,
+observations, and every local rule. `CoreContractId` and `PhysicalProfileId`
+are derived from those carried exact objects; there is no registry or
+package-defined metalanguage.
+
 The two distinct interface definitions have exact signatures
 `compile : [Term] -> Term` and `admitPropose : [Term] -> Term`. Their fixed
 Core ABI canonically encodes `BuildRequest`, `Built`, `Rejected`,
@@ -109,6 +118,15 @@ Core ABI canonically encodes `BuildRequest`, `Built`, `Rejected`,
 `Authorized` or `Unauthorized` result using only fixed tag, byte, identifier,
 integer, list, and record forms. No host adapter may repair a signature or
 shape mismatch.
+
+Malformed wire input returns one separate `DecodeRejected(code, offset)` by
+fixed cursor/code precedence and never reaches `Unauthorized`. After successful
+decode, authorization visits the fixed stage table and encoded field order;
+every failure returns exactly one canonical `Unauthorized(stage, code)`.
+Entrypoint signature mismatch is only `(CoreWellFormedness,
+EntrypointSignature)`. Successful evaluation certificates are closed DAGs over
+the manifest's `30..3e` rules, and `VerifyEvalCertificate` independently
+constructs the exact invocation/root judgment before checking every node.
 
 The package must carry every semantics-affecting object needed by a judgment:
 
@@ -135,7 +153,8 @@ No host serializer is a wire format.
 ## Lean constitutional kernel
 
 Lean models the fixed byte decoder, `Term`, `KSort`, `KExpr`,
-definition-table well-formedness, generic evaluation and certificate rules,
+the exact carried core manifest, definition-table well-formedness, generic
+evaluation and certificate rules,
 exact-byte genesis selection, exact-predecessor succession, and the sealed
 compiler physical profile. Clause features do not become Lean `Syntax`
 kinds, `Expr` constructors, type classes, or one inductive constructor per
@@ -254,20 +273,26 @@ select different host code for the same mechanic. Any unclassified site or
 package-selected semantic callable rejects the host. The checked manifest
 records the sites, classes, sources, tags, and targets.
 
-The companion equivariance law uses a sort-preserving bijection only over
-explicit nominal declarations and references. Fixed core/physical IDs remain
-fixed; source/content IDs follow their exact preimages; and `NewId`, origin,
-request, semantics, revision, package, and certificate hashes are recomputed
-from transformed preimages. The transformation restores canonical ordering
-and updates all dependent references before canonical re-encoding. If
-`D = Decode(P)`, `Dπ = Renameπ(D)`, `Pπ = EncodeCanonical(Dπ)`, and `π*`
-includes those induced recomputations, hosts satisfy:
+The companion equivariance law uses an independent, domain-preserving
+bijection only over explicit primitive/literal `Seed` and `RetainedSeed`
+declaration identities. Their references, including `SeedInput`, follow the
+resolved declaration image and are never mapped independently.
+`NewId`-allocated declarations are never direct inputs to that bijection;
+their sole image is recomputed from transformed allocation inputs. Fixed
+core/physical IDs remain fixed; source/content IDs follow their exact
+preimages; and origins, requests, semantics, revisions, packages, and
+certificate hashes are recomputed from transformed preimages. The
+transformation restores canonical ordering and updates all dependent
+references before canonical re-encoding. If
+`StrictDecode(P) = Decoded(P,D)`, `Dπ = Renameπ(D)`,
+`Pπ = EncodeCanonical(Dπ)`, and `π*` includes those induced recomputations,
+hosts satisfy:
 
 ```text
-Decode(Pπ) = Dπ
-EncodeCanonical(Decode(Pπ)) = Pπ
-CheckEval(π*(statement), π*(certificate))
-  = CheckEval(statement, certificate)
+StrictDecode(Pπ) = Decoded(Pπ, Dπ)
+EncodeCanonical(Dπ) = Pπ
+VerifyEvalCertificate(π*(statement), π*(certificate))
+  = VerifyEvalCertificate(statement, certificate)
 EvalHost(Pπ, π*(input)) = π*(EvalHost(P, input))
 ```
 

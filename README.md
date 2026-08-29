@@ -44,14 +44,21 @@ self-authorizing. One external owner anchor selects the exact genesis bytes;
 materialization, hashes, derivability, decoding, and successful execution do
 not. Every successor must be compiled and proposed by the already accepted
 exact predecessor through two fixed `[Term] -> Term` entrypoints and canonical
-request, result, observation, and certificate forms. The fixed host evaluator
-has sufficient generic byte inspection, construction, equality, recursion,
-and hashing mechanics but remains construct-blind: package data may steer
-package-program control, never select a host semantic handler. `Compiler0`
-owns reading, binding, elaboration, effects, typed macros, origins,
-diagnostics, and evolution as package data. Host-independence is tested by
-structure-preserving nominal renaming with all content-derived identities
-recomputed, not by pretending hash bytes can be directly permuted.
+request, result, observation, and certificate forms. Frame 01 carries the
+complete exact generic machine manifest; no host maps a symbolic core ID to
+private rules. Its closed static/evaluation rule table, fuel and observation
+semantics, certificate grammar, and verifier are part of the canonical bytes.
+Malformed wire input has a separate deterministic decode verdict, while every
+decoded authorization failure has one fixed stage/code pair.
+
+The fixed host evaluator has sufficient generic byte inspection, construction,
+equality, recursion, and hashing mechanics but remains construct-blind:
+package data may steer package-program control, never select a host semantic
+handler. `Compiler0` owns reading, binding, elaboration, effects, typed macros,
+origins, diagnostics, and evolution as package data. Host-independence renames
+only explicit seed nominal identities; `NewId` allocations and every other
+derived identity are recomputed once from transformed preimages. Hash bytes
+are never directly permuted.
 
 No CLCP v2 implementation, `Compiler0` package, genesis anchor, supported
 Clause source parser, compiler, runtime, durable persistence layer, or

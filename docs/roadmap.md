@@ -201,6 +201,8 @@ The [compiler-genesis contract](compiler-genesis.md) and
 
 - one literal externally owner-anchored `Compiler0`;
 - CLCP v2 with separate subject and evidence frames;
+- one exact carried Core manifest whose canonical bytes close every generic
+  static/evaluation/certificate rule and the one-operation physical profile;
 - a fixed universal `Bytes`/`Term` evaluator with operational byte inspection,
   concatenation, equality, recursion, and hashing plus generic Lean rules;
 - exact predecessor-only succession through the fixed Core ABI, canonical
@@ -209,15 +211,18 @@ The [compiler-genesis contract](compiler-genesis.md) and
 - Clause ownership of reading, binding, elaboration, effects, typed macros,
   origins, diagnostics, and compiler evolution from genesis; and
 - the generic-mechanics versus semantic-dispatch audit and
-  structure-preserving nominal-renaming law with derived identity
-  recomputation.
+  structure-preserving seed-nominal renaming law with single-valued allocated
+  and derived identity recomputation; and
+- separate deterministic strict-decode errors plus an exhaustive ordered
+  authorization stage/code table.
 
 This phase changes contracts only. It does not claim a v2 package, compiler,
 codec, checker, evaluator, fixture, host audit, or measurement.
 
 **Exit evidence:** one internally linked, directly implementable contract with
 no host-language semantic authority, no recursive certificate binding, an
-exact succession ABI, and explicit residual tractability uncertainty.
+exact succession ABI, a self-contained generic checker contract, and explicit
+residual tractability uncertainty.
 
 ## Phase 2b — CLCP v2 genesis implementation
 
@@ -235,10 +240,11 @@ Clause frontend, construct dispatch, third-language semantic bootstrap, or
 candidate/self authorization.
 
 **Exit evidence:** exact-byte genesis acceptance; independent decode/re-encode
-parity; generic evaluation/check parity; exact ABI and certificate-binding
-negatives; a checked generic-mechanics/host-target manifest; nominal-renaming
-vectors with canonical reordering and derived-ID recomputation; and observed
-timings for the narrow compiler request.
+parity; byte-identical carried-manifest identities; generic evaluation/check
+parity over every fixed rule; exact decode/authorization verdict, ABI, and
+certificate-binding negatives; a checked generic-mechanics/host-target
+manifest; seed-renaming vectors with canonical reordering and allocation/
+derived-ID recomputation; and observed timings for the narrow compiler request.
 
 ## Phase 3 — Dangerous semantic gates
 

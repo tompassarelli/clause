@@ -52,6 +52,8 @@ P1 freezes:
 
 - the strict CLCP v2 subject/evidence split and domain-separated identities;
 - `Term = Atom | Triple`;
+- the exact carried Core manifest, closed static/evaluation/certificate rule
+  tables, one-operation physical profile, and deterministic verdict precedence;
 - a fixed construct-blind universal evaluator over `Bytes` and `Term`;
 - the exact Core ABI, `[Term] -> Term` `compile` and `admitPropose`
   entrypoints, canonical requests/results/observations, and certificate
@@ -144,6 +146,7 @@ CompilerSubject = {
         predecessorLocator: CompilerPackageHash,
         changeOccurrenceId: ChangeOccurrenceId
       },
+  nominalDeclarations: Seq<NominalDeclaration>,
   interface: {
     compile: DefId,
     admitPropose: DefId
@@ -157,8 +160,9 @@ CompilerSubject = {
 `buildRequest` is the exact canonical Core ABI Term defined by the
 [package contract](canonical-package.md#clcp-v2-fixed-compiler-abi). It carries
 the base locator, core and physical profiles, target profile, exact source
-units, base inputs, identity retentions, change occurrence, options, and every
-declared physical input needed to reproduce the subject. Embedded source is
+units, base inputs, canonical identity plan, change occurrence, options,
+compile/admission fuel, and every declared physical input needed to reproduce
+the subject. Embedded source is
 not a second authority: if source and executable subject disagree, the
 accepted executable subject governs, and exact rebuild failure exposes the
 disagreement.
@@ -249,57 +253,83 @@ occurrence identifier.
 
 ## Identity allocation and retention
 
-Genesis nominal IDs are literal package data. A successor allocates a fresh ID
-only from explicit predecessor-visible inputs:
+Nominal identity provenance is explicit in the subject's canonical
+`nominalDeclarations` table. A successor allocates a fresh ID only from
+explicit predecessor-visible inputs:
 
 ```text
-NewId(domain, changeOccurrenceId, producerOccurrenceId, localSlot) =
-  DH(domain, changeOccurrenceId, producerOccurrenceId, U64(localSlot))
+NewId(domainId, changeInput, producerInput, localSlot) =
+  DH("clause/new-nominal/v1",
+     domainId,
+     canonicalNominalWireRef(changeInput),
+     canonicalNominalWireRef(producerInput),
+     U64(localSlot))
 ```
 
-Retained concepts carry their exact prior IDs through explicit retention
-judgments. `ReferentId`, `ScopeId`, `BinderId`, `UseOccurrenceId`,
-`TransformOccurrenceId`, `DiagnosticOccurrenceId`, and
-`ChangeOccurrenceId` are not content hashes of their containing graphs.
+Retained concepts carry their exact prior IDs through the canonical
+`IdentityPlan`. An allocated identity retains its original allocation row and
+preimage; it never changes provenance merely because a successor retains it.
 This preserves distinct equal-looking occurrences and avoids recursive
 identity definitions or host-allocation-order dependence.
 
-The host-independence law partitions identity rather than pretending every
-32-octet value is directly permutable:
+Identity has five disjoint provenance cases:
 
-- **renamable nominal IDs** are explicitly assigned declaration and occurrence
-  identities and their references, including `DefId`, source-unit IDs,
-  referents, scopes, binders, uses, transformations, diagnostics, obligations,
-  and change occurrences;
-- **fixed core and physical IDs** are wire and Core ABI tags, Atom kinds used
-  by that ABI, `CoreContractId`, `PhysicalProfileId`, fixed equality contracts,
-  certificate-rule tags, and fixed `PhysicalOpId` values;
-- **source/content IDs** are identities defined directly from independently
-  supplied exact content, notably `SourceArtifactId`; and
-- **derived IDs** include `NewId` outputs, `OriginId`, `BuildRequestId`,
-  `CompilerSemanticsId`, `CompilerRevisionId`, `CompilerPackageHash`, and any
-  certificate conclusion or observation hash.
+- **seed nominal** — a literal `Seed` declaration or a `RetainedSeed`
+  declaration backed by an exact predecessor seed; a successor-introduced seed
+  is also an explicit predecessor-visible `SeedInput`;
+- **allocated nominal** — an `Allocated` declaration whose ID is exactly the
+  displayed `NewId` of its declared inputs and slot;
+- **fixed core or physical** — wire/Core ABI tags, fixed domain IDs,
+  `CoreContractId`, `PhysicalProfileId`, equality contracts, rule tags, and
+  fixed physical-operation IDs;
+- **source/content** — an ID defined from one independently supplied exact
+  content preimage, notably `SourceArtifactId`; and
+- **other derived** — origins, build requests, compiler semantics, revisions,
+  packages, certificate conclusions, observations, and other hashes defined
+  from canonical preimages.
 
-Every semantic identifier occurrence must appear in a typed wire field or the
-corresponding fixed `NominalId`, `FixedId`, `ContentId`, or `DerivedId` Core
-ABI form. Encoding an identifier reference as an undifferentiated byte
-substring is nonconforming. Coincidental matching bytes inside source or
-opaque payloads are not identifier references and are not renamed.
+This partition is by each declaration's recorded provenance, never by an ID
+type such as binder, use, definition, or occurrence. Two values of the same
+semantic ID type may therefore transform differently. Every raw typed nominal
+field has one fixed domain and resolves one declaration; every nominal Term
+occurrence is `NominalRef(domain,id)` and resolves that same declaration.
+Fixed, content, and derived values use their distinct forms. An
+undifferentiated semantic ID payload is nonconforming. Coincidental matching
+bytes inside source or opaque payloads are not references.
 
-For a finite, domain-preserving bijection `π` on renamable nominal IDs,
-`Renameπ` is a structure transformation, not byte substitution:
+Let `S` be exactly the finite `(domain, id)` identities of `Seed` and
+`RetainedSeed` declarations in the transformed closure; repeated retained
+appearances of one identity denote one member of `S`. An independent `π` is a
+domain-preserving bijection on `S` only. A successor `SeedInput` is a reference
+to its `Seed` declaration and follows that declaration's image; it is never a
+second independently mapped declaration. Allocated, fixed, content, and other
+derived IDs are not in `π`'s domain. `Renameπ` and its induced total map `π*`
+apply this single case split to every declaration and reference:
 
-1. rename every nominal declaration and matching reference, including
-   interface and `Call` definition IDs and all typed nominal Term fields;
-2. restore every canonical order whose key changed and reject any collision;
-3. preserve fixed IDs and exact source/content preimages, recomputing a
-   source/content ID if and only if its preimage was transformed;
-4. recompute `NewId` outputs and every dependent derived ID bottom-up from the
-   transformed canonical preimages, and replace all references through the
-   induced derived-ID map; and
-5. canonically re-encode the result, transform and recheck certificate
-   statements and derivation conclusions, attach the transformed evidence,
-   then recompute final whole-package identity.
+1. a `Seed` or `RetainedSeed` ID and all of its references take the one `π`
+   image; retained predecessor links are transformed with their enclosing
+   predecessor;
+2. an `Allocated` ID is never directly mapped by `π`; first transform its
+   change and producer references with `π*`, then set its sole image to
+   `NewId(domain, transformedChange, transformedProducer, localSlot)`;
+3. a fixed ID and its references remain byte-identical;
+4. a source/content preimage is structurally transformed where it contains
+   typed references, then its ID is recomputed exactly once from that preimage;
+   an opaque source byte string remains byte-identical; and
+5. every other derived ID is recomputed exactly once, bottom-up, after all of
+   its canonical preimages have their unique images.
+
+Every nominal reference takes the image of its resolved declaration; it never
+runs an independent rule. In particular, `π(NewId(...))` is undefined:
+`π*` of an allocated ID is only `NewId(π*(...), π*(...), ...)`, so no direct
+permutation can compete with allocation recomputation. A provenance mismatch,
+missing or duplicate declaration, retention mismatch, allocation mismatch,
+reference ambiguity, or collision rejects the transform.
+
+After the case split, `Renameπ` restores every affected canonical order,
+canonically re-encodes the result, transforms and rechecks certificate
+statements and derivation conclusions, attaches transformed evidence, and
+recomputes final whole-package identity.
 
 An external genesis anchor or actual acceptance judgment is not transferred
 by `Renameπ`; only the generic decode, check, and evaluation mechanism is
@@ -334,10 +364,14 @@ canonical build request `R`, and evidence `E`:
 
 ```text
 S  = exactCompilerSubjectBytes(Q)
-C  = P.coreContractId
-F  = PhysicalProfileId(C)
+M  = exactBytes(P.frame01) = exactCoreManifestBytes
+X  = exactBytes(P.frame01.physicalProfile) = exactPhysicalProfileBytes
+C  = DH("clause/core-contract/v1", exactCoreManifestBytes)
+F  = DH("clause/physical-profile/v1", exactPhysicalProfileBytes)
 Oc = exact canonical compile Observations
 Oa = exact canonical admission Observations
+Fc = exact compile remaining fuel
+Fa = exact admission remaining fuel
 
 CompileStatement = EvalStatement(
   exactAcceptedPredecessor = exactBytes(P),
@@ -345,7 +379,8 @@ CompileStatement = EvalStatement(
   physicalProfileId = F,
   entrypoint = P.interface.compile,
   arguments = [TermValue(R)],
-  expected = Returned(TermValue(Built(S)), Oc))
+  fuelLimit = R.compileFuel,
+  expected = Returned(TermValue(Built(S)), Fc, Oc))
 
 AdmissionStatement = EvalStatement(
   exactAcceptedPredecessor = exactBytes(P),
@@ -353,12 +388,14 @@ AdmissionStatement = EvalStatement(
   physicalProfileId = F,
   entrypoint = P.interface.admitPropose,
   arguments = [TermValue(AdmissionRequest(R, S, Oc))],
-  expected = Returned(TermValue(Propose(S)), Oa))
+  fuelLimit = R.admissionFuel,
+  expected = Returned(TermValue(Propose(S)), Fa, Oa))
 
 AcceptSuccessor(P, Q, R, E) :=
   AcceptedCompiler(exactBytes(P))
   ∧ CanonicalCLCPv2(Q)
-  ∧ Q.coreContractId = C
+  ∧ exactBytes(Q.frame01) = exactCoreManifestBytes
+  ∧ exactBytes(Q.frame01) = exactBytes(P.frame01)
   ∧ Q.subject.lineage.predecessorLocator = CompilerPackageHash(P)
   ∧ Q.subject.lineage is Successor
   ∧ CoreWF(Q.subject)
@@ -368,11 +405,15 @@ AcceptSuccessor(P, Q, R, E) :=
   ∧ E = Q.evidence
   ∧ E = SuccessorEvidence(compileCertificate,
                           admissionCertificate)
-  ∧ RootStatement(compileCertificate) = CompileStatement
-  ∧ CheckEval(CompileStatement, compileCertificate)
-  ∧ RootStatement(admissionCertificate) = AdmissionStatement
-  ∧ CheckEval(AdmissionStatement, admissionCertificate)
+  ∧ VerifyEvalCertificate(CompileStatement, compileCertificate)
+  ∧ VerifyEvalCertificate(AdmissionStatement, admissionCertificate)
 ```
+
+`Fc` and `Oc` are the exact remaining-fuel and observations fields decoded
+from the compile certificate statement; `Fa` and `Oa` are the corresponding
+admission fields. They are not host-selected expectations:
+`VerifyEvalCertificate` proves each against the independently constructed root
+judgment, and the admission argument reuses byte-identical `Oc`.
 
 Both predecessor entrypoints are distinct definitions with the exact
 `[Term] -> Term` signatures frozen by the Core ABI. `R`, `Built`, `Rejected`,
@@ -405,14 +446,22 @@ altered subject after compilation, transplanted certificate, altered request,
 malformed trace, physical-profile escape, and correct hash paired with
 non-identical bytes.
 
+Malformed bytes instead return the separate canonical `DecodeRejected` value
+and never enter this predicate. Every successfully decoded failure follows the
+package contract's ascending stage, row, and encoded-item precedence table;
+there is no host-selected error priority. In particular, either entrypoint's
+signature mismatch is only `(CoreWellFormedness, EntrypointSignature)`.
+
 ## Lean checker boundary
 
 Lean owns:
 
-- strict CLCP v2 decoding and canonicality;
+- strict CLCP v2 decoding, its separate deterministic decode verdict, and
+  canonicality;
+- exact-byte validation of the carried `CoreManifestV1` and physical profile;
 - `Bytes`, `Term`, `KSort`, `KExpr`, definition-table
   well-formedness, and fixed generic evaluation relations;
-- fixed generic certificate-rule checking;
+- the closed `VerifyEvalCertificate` algorithm over fixed generic rule tags;
 - exact-byte genesis selection as an explicit external premise;
 - exact-predecessor succession checking; and
 - enforcement of the sealed compiler physical profile.
@@ -441,6 +490,7 @@ authority.
 ```text
 RustEval(exactAcceptedCompilerBytes, compileDef, [Term(buildRequest)])
   -> Returned(Term(Built(candidateSubject) | Rejected(diagnostics)),
+              remainingFuel,
               Observations(...))
 ```
 
@@ -495,16 +545,16 @@ locations, classes, taint sources, tags, and code targets; it is a
 machine-produced manifest, not a prose or token search.
 
 The behavioral companion uses the structure-preserving `Renameπ` operation
-defined above. Let `D = Decode(P)`, `Dπ = Renameπ(D)`,
-`Pπ = EncodeCanonical(Dπ)`, and let `π*` include the induced replacement of all
-recomputed derived IDs and hashes. Then:
+defined above. Let `StrictDecode(P) = Decoded(P,D)`,
+`Dπ = Renameπ(D)`, `Pπ = EncodeCanonical(Dπ)`, and let `π*` include the
+induced replacement of all recomputed derived IDs and hashes. Then:
 
 ```text
-Decode(Pπ) = Dπ
-EncodeCanonical(Decode(Pπ)) = Pπ
+StrictDecode(Pπ) = Decoded(Pπ, Dπ)
+EncodeCanonical(Dπ) = Pπ
 
-CheckEval(π*(statement), π*(certificate))
-  = CheckEval(statement, certificate)
+VerifyEvalCertificate(π*(statement), π*(certificate))
+  = VerifyEvalCertificate(statement, certificate)
 
 EvalHost(Pπ, π*(input))
   = π*(EvalHost(P, input))

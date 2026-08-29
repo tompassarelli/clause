@@ -61,17 +61,18 @@ Every compiler package is exactly:
 ```text
 43 4c 43 50                 magic ASCII "CLCP"
 02                          version
-Frame(01, coreContractId:Hash32)
+Frame(01, CoreManifest)
 Frame(02, CompilerSubject)
 Frame(03, CompilerEvidence)
 EOF
 ```
 
 All three frames occur exactly once and in that order. Unknown, missing,
-repeated, or reordered frames reject. A core contract identifier selects one
-fixed, canonical set of `KSort`, `KExpr`, core well-formedness,
-certificate-rule, and physical-profile rules. Package data cannot add a rule
-or reinterpret a tag.
+repeated, or reordered frames reject. Frame 01 carries the complete exact
+generic machine manifest; it is not an identifier resolved through a host
+registry. Its canonical bytes fix every sort, expression, Core ABI, static
+rule, evaluation rule, certificate rule, authorization verdict, and physical
+operation below. Package data cannot add a rule or reinterpret a tag.
 
 ## CLCP v2 Terms and evaluator expressions
 
@@ -138,15 +139,286 @@ string library, map callback, or construct equality hook. Tractability remains
 an implementation gate, but operational expressiveness is not delegated to a
 host escape.
 
-The sealed compiler profile contains one request:
+## Canonical core manifest
+
+Frame 01 has this closed encoding:
 
 ```text
-Sha256OpId = DH("clause/physical-op/v1", "sha256")
-Request(Sha256OpId, [Bytes]) -> Bytes(32 octets)
+CoreManifest =
+  manifestVersion:U8
+  frameTags:Seq<U8>
+  termTags:Seq<U8>
+  sortTags:Seq<U8>
+  expressionForms:Seq<NamedSignature>
+  abiForms:Seq<NamedSignature>
+  premisePolicyTags:Seq<U8>
+  lineageTags:Seq<U8>
+  nominalDeclarationTags:Seq<U8>
+  compilerEvidenceTags:Seq<U8>
+  valueTags:Seq<U8>
+  evalOutcomeTags:Seq<U8>
+  decodeVerdictTags:Seq<U8>
+  decodeCodeTags:Seq<U8>
+  authorizationStageTags:Seq<U8>
+  authorizationCodeTags:Seq<U8>
+  staticRules:Seq<RuleSignature>
+  evaluationRules:Seq<RuleSignature>
+  certificateFormatVersion:U8
+  certificateSignature:Blob
+  contractClauses:Seq<Blob>
+  physicalProfile:PhysicalProfile
+
+NamedSignature = tag:U8 || signature:Blob
+RuleSignature  = tag:U8 || premisePolicy:U8 || clause:Blob
+
+PremisePolicy =
+    00 None
+  | 01 One
+  | 02 Two
+  | 03 Three
+  | 04 Four
+  | 05 ExpressionSequence
+  | 06 ArgumentSequence
+  | 07 ArgumentSequenceAndBody
+
+PhysicalProfile =
+  profileVersion:U8
+  observationPolicy:U8
+  operations:Seq<PhysicalOperation>
+
+PhysicalOperation =
+  operationId:Id32
+  arguments:Seq<KSort>
+  result:KSort
 ```
 
-Any other operation or argument/result signature rejects during subject
-checking or evaluation.
+Every `Blob` in the following value is the exact displayed ASCII between
+quotes, without quotes or a terminator. `CoreManifestV1` is exactly:
+
+```text
+manifestVersion = 00
+frameTags = [01, 02, 03]
+termTags = [00, 01]
+sortTags = [00, 01]
+
+expressionForms = [
+  (00, "BytesLiteral(value:Blob)->Bytes"),
+  (01, "TermLiteral(value:Term)->Term"),
+  (02, "Var(index:U32)->EnvironmentSort"),
+  (03, "MakeAtom(kind:Bytes,payload:Bytes,equality:Bytes)->Term"),
+  (04, "MakeTriple(first:Term,second:Term,third:Term)->Term"),
+  (05, "Let(value:Any,body:(bind Any) Same)->Same"),
+  (06, "CaseTerm(scrutinee:Term,atomBody:(bind Bytes Bytes Bytes) Same,tripleBody:(bind Term Term Term) Same)->Same"),
+  (07, "CaseBytes(scrutinee:Bytes,emptyBody:Same,consBody:(bind Bytes Bytes) Same)->Same"),
+  (08, "ConcatBytes(parts:Seq<Bytes>)->Bytes"),
+  (09, "CaseBytesEqual(left:Bytes,right:Bytes,equalBody:Same,unequalBody:Same)->Same"),
+  (0a, "Call(definition:Id32,arguments:DefinitionArguments)->DefinitionResult"),
+  (0b, "Request(operation:Id32,arguments:PhysicalArguments)->PhysicalResult")
+]
+
+abiForms = [
+  (00, "ListNil()"),
+  (01, "ListCons(head:Term,tail:List)"),
+  (02, "ValueBytes(value:Bytes)"),
+  (03, "ValueTerm(value:Term)"),
+  (04, "NominalRef(domain:Id32,id:Id32)"),
+  (05, "FixedId(domain:Id32,id:Id32)"),
+  (06, "ContentId(domain:Id32,id:Id32)"),
+  (07, "DerivedId(domain:Id32,id:Id32)"),
+  (08, "IdentityPlan(retained:List<Retain>,seedInputs:List<SeedInput>)"),
+  (09, "Retain(ref:NominalRef)"),
+  (0a, "SeedInput(ref:NominalRef)"),
+  (10, "GenesisBase()"),
+  (11, "AcceptedBase(packageHash:Hash32,revisionId:Id32)"),
+  (12, "SourceUnit(unitId:Id32,artifactId:Hash32,bytes:Bytes)"),
+  (13, "BuildRequest(base:GenesisBase|AcceptedBase,coreContractId:Hash32,physicalProfileId:Hash32,targetProfile:Term,sourceUnits:List<SourceUnit>,baseInputs:Term,identityRetentions:IdentityPlan,changeOccurrenceId:Id32,options:Term,compileFuel:U64,admissionFuel:U64,declaredPhysicalInputs:List<Term>)"),
+  (14, "Built(subjectBytes:Bytes)"),
+  (15, "Rejected(diagnostics:List<Term>)"),
+  (16, "AdmissionRequest(buildRequest:BuildRequest,subjectBytes:Bytes,compileObservations:Observations)"),
+  (17, "Propose(subjectBytes:Bytes)"),
+  (18, "Reject(diagnostics:List<Term>)"),
+  (19, "Observation(index:U64,operationId:Id32,arguments:List<KValue>,result:KValue)"),
+  (1a, "Observations(items:List<Observation>)"),
+  (1b, "Authorized(packageBytes:Bytes)"),
+  (1c, "Unauthorized(stage:U8,code:U8)")
+]
+
+premisePolicyTags = [00, 01, 02, 03, 04, 05, 06, 07]
+lineageTags = [00, 01]
+nominalDeclarationTags = [00, 01, 02]
+compilerEvidenceTags = [00, 01]
+valueTags = [00, 01]
+evalOutcomeTags = [00]
+decodeVerdictTags = [00, 01]
+decodeCodeTags = [00, 01, 02, 03, 04, 05, 06, 07, 08, 09]
+authorizationStageTags = [40, 41, 42, 43, 44, 45, 46, 47, 48]
+authorizationCodeTags  = [60, 61, 62, 63, 64, 65, 66, 67,
+                          68, 69, 6a, 6b, 6c, 6d, 6e, 6f,
+                          70, 71, 72, 73, 74, 75, 76, 77,
+                          78, 79, 7a, 7b, 7c, 7d, 7e, 7f,
+                          80, 81, 82, 83, 84, 85, 86, 87]
+
+staticRules = [
+  (20, 00, "Delta;Gamma |- BytesLiteral(b):Bytes"),
+  (21, 00, "Delta;Gamma |- TermLiteral(t):Term"),
+  (22, 00, "Delta;Gamma |- Var(i):Gamma[i] iff i<len(Gamma)"),
+  (23, 03, "Delta;Gamma |- MakeAtom(k,p,q):Term iff k:Bytes and p:Bytes and q:Bytes"),
+  (24, 03, "Delta;Gamma |- MakeTriple(a,b,c):Term iff a:Term and b:Term and c:Term"),
+  (25, 02, "Delta;Gamma |- Let(v,b):r iff Delta;Gamma |- v:s and Delta;[s]++Gamma |- b:r"),
+  (26, 03, "Delta;Gamma |- CaseTerm(s,a,t):r iff s:Term and Delta;[Bytes,Bytes,Bytes]++Gamma |- a:r and Delta;[Term,Term,Term]++Gamma |- t:r"),
+  (27, 03, "Delta;Gamma |- CaseBytes(s,e,c):r iff s:Bytes and Delta;Gamma |- e:r and Delta;[Bytes,Bytes]++Gamma |- c:r"),
+  (28, 05, "Delta;Gamma |- ConcatBytes(es):Bytes iff every es[i]:Bytes in encoded order"),
+  (29, 04, "Delta;Gamma |- CaseBytesEqual(a,b,e,n):r iff a:Bytes and b:Bytes and e:r and n:r"),
+  (2a, 06, "Delta;Gamma |- Call(d,args):r iff Delta contains exactly d:(ss)->r and len(args)=len(ss) and every args[i]:ss[i] in encoded order"),
+  (2b, 06, "Delta;Gamma |- Request(op,args):r iff physicalProfile contains exactly op:(ss)->r and len(args)=len(ss) and every args[i]:ss[i] in encoded order")
+]
+
+evaluationRules = [
+  (30, 00, "J(BytesLiteral(b),g,f,o)=>(BytesValue(b),f-1,o) iff f>0"),
+  (31, 00, "J(TermLiteral(t),g,f,o)=>(TermValue(t),f-1,o) iff f>0"),
+  (32, 00, "J(Var(i),g,f,o)=>(g[i],f-1,o) iff f>0 and i<len(g)"),
+  (33, 03, "after charge evaluate k,p,q left-to-right as BytesValue(kb),BytesValue(pb),BytesValue(qb); return TermValue(Atom(kb,pb,qb)) with final fuel and observations"),
+  (34, 03, "after charge evaluate a,b,c left-to-right as TermValue(av),TermValue(bv),TermValue(cv); return TermValue(Triple(av,bv,cv)) with final fuel and observations"),
+  (35, 02, "after charge evaluate v to x, then evaluate b under [x]++g; return the body value, fuel, and observations"),
+  (36, 02, "after charge evaluate s to TermValue(Atom(k,p,q)), then evaluate atomBody under [BytesValue(k),BytesValue(p),BytesValue(q)]++g; return the selected body outcome"),
+  (37, 02, "after charge evaluate s to TermValue(Triple(a,b,c)), then evaluate tripleBody under [TermValue(a),TermValue(b),TermValue(c)]++g; return the selected body outcome"),
+  (38, 02, "after charge evaluate s to BytesValue(empty), then evaluate emptyBody under g; return the selected body outcome"),
+  (39, 02, "after charge evaluate s to BytesValue(head++tail) with len(head)=1, then evaluate consBody under [BytesValue(head),BytesValue(tail)]++g; return the selected body outcome"),
+  (3a, 05, "after charge evaluate es left-to-right as BytesValue parts and return BytesValue(concat(parts)); empty es returns empty Bytes with post-charge fuel and unchanged observations"),
+  (3b, 03, "after charge evaluate a then b as BytesValue and iff lengths and octets are equal evaluate equalBody under g; return the selected body outcome"),
+  (3c, 03, "after charge evaluate a then b as BytesValue and iff lengths or octets differ evaluate unequalBody under g; return the selected body outcome"),
+  (3d, 07, "after charge resolve exactly d, evaluate args left-to-right, then evaluate its body under exactly the argument values with no caller environment; return the body outcome"),
+  (3e, 01, "after charge evaluate the sole argument as BytesValue(input), compute FIPS-180-4 SHA-256(input), return BytesValue(H0||H1||H2||H3||H4||H5||H6||H7), and append exactly Observation(len(o),Sha256OpId,[Value(Bytes,input)],Value(Bytes,digest))")
+]
+
+certificateFormatVersion = 00
+
+certificateSignature = "EvalCertificate(formatVersion:CertificateFormatVersion,statement:EvalStatement,nodes:Seq<EvalNode>); CertificateFormatVersion=00; EvalStatement(exactAcceptedPredecessor:Blob,coreContractId:Hash32,physicalProfileId:Hash32,entrypoint:Id32,arguments:Seq<KValue>,fuelLimit:U64,expected:Returned(value:KValue,remainingFuel:U64,observations:Term)); KValue=00 BytesValue(Blob)|01 TermValue(Term); EvalNode(ruleTag:EvaluationRuleTag,premises:Seq<U32>,conclusion:EvalJudgment); EvaluationRuleTag=30|31|32|33|34|35|36|37|38|39|3a|3b|3c|3d|3e; EvalJudgment(expression:KExpr,environment:Seq<KValue>,fuelBefore:U64,observationsBefore:Term,value:KValue,fuelAfter:U64,observationsAfter:Term)"
+
+contractClauses = [
+  "C00: U8=one octet;U32=four-octet unsigned big-endian;U64=eight-octet unsigned big-endian;Blob=U32 length||octets[length];Seq<X>=U32 count||X[count];Frame<X>=U8 tag||U32 payloadLength||X;Id32 and Hash32 are exactly 32 octets;Span=Id32 sourceArtifactId||U64 start||U64 end with start<=end<=source length;record fields concatenate in displayed order;sum variants begin with displayed U8;all arithmetic is checked before cursor change conversion iteration or allocation;every bounded value consumes exactly;no padding trailing bytes or alternate spelling",
+  "C01: Term=00 Atom(kind:Blob,payload:Blob,equality:Blob)|01 Triple(first:Term,second:Term,third:Term); KSort=00 Bytes|01 Term; frameTags,termTags,sortTags,expressionForms,abiForms,premisePolicyTags,lineageTags,nominalDeclarationTags,compilerEvidenceTags,valueTags,evalOutcomeTags,decodeVerdictTags,decodeCodeTags,authorizationStageTags,authorizationCodeTags,staticRules,evaluationRules,certificateFormatVersion and physical profile values above are the complete closed tag sets and signatures",
+  "C02: KTag=clause/core-abi/tag/v1; KBytes=clause/core-abi/bytes/v1; KId32=clause/core-abi/id32/v1; KU64=clause/core-abi/u64/v1; KEq=clause/core/bytes-equal/v1; Tag(t)=Atom(KTag,U8(t),KEq); Bytes(b)=Atom(KBytes,b,KEq); Id(id)=Atom(KId32,id,KEq) iff len(id)=32; Nat64(n)=Atom(KU64,U64(n),KEq); List([])=Tag(00); List(x::xs)=Triple(Tag(01),x,List(xs)); Record(t,xs)=Triple(Tag(t),List(xs),Tag(00)); Core ABI constructors and field counts are exactly abiForms in tag order; wrong Atom kind field count wrapper fixed width list shape or trailing field is invalid",
+  "C03: CompilerSubject=lineage,nominalDeclarations,interface,program,buildRequest; lineage=00 Genesis|01 Successor(predecessorLocator:Hash32,changeOccurrenceId:Id32); interface=compile:Id32,admitPropose:Id32; Definition=id:Id32,arguments:Seq<KSort>,result:KSort,body:KExpr; definitions are sorted unique by id",
+  "C04: NominalDeclaration=00 Seed(domain,id)|01 RetainedSeed(domain,id,predecessorRevisionId)|02 Allocated(domain,id,changeInput:NominalWireRef,producerInput:NominalWireRef,localSlot:U64); NominalWireRef=domain:Id32||id:Id32; declarations are sorted unique by domain||id and every nominal reference resolves exactly one declaration in its required domain",
+  "C05: Seed is literal primitive provenance; RetainedSeed must match predecessor Seed or RetainedSeed and exact predecessor revision and cannot relabel Allocated; Allocated.id=DH(clause/new-nominal/v1,domain,wire(changeInput),wire(producerInput),U64(localSlot)); allocation inputs resolve and form an acyclic graph; dependency order then domain||id is the unique recomputation order; collision is invalid",
+  "C06: IdentityPlan has separately sorted unique Retain(NominalRef) and SeedInput(NominalRef) lists; every successor RetainedSeed appears only in retained; every newly introduced successor Seed appears only in seedInputs; each row matches declaration provenance; genesis retained is empty; no reference appears in both lists",
+  "C07: Delta is the canonical sorted unique definition table; Gamma and runtime environments use index-zero-first Var order; a definition is well formed iff its body has its declared result under its declared argument sorts and all transitive Call and Request references resolve; there is no subsorting, coercion, implicit argument, host value, fallback rule, or package-defined rule",
+  "C08: J(expression,environment,fuelBefore,observationsBefore)=>(value,fuelAfter,observationsAfter) is the sole successful evaluation judgment; values are only BytesValue or TermValue; fuel is U64; every rule consumes one unit before premises; zero fuel has no judgment; premises run strictly left-to-right and thread exact fuel and observations; integer overflow, bad value sort, unresolved definition, malformed observation, physical failure, or out-of-fuel has no successful judgment",
+  "C09: observationPolicy 00 appends exactly one canonical observation for each successful physical Request and none otherwise; observation indices are 0..n-1; the sole operation is Sha256OpId:[Bytes]->Bytes; SHA-256 is FIPS 180-4 over successive eight-bit message units and returns big-endian H0||H1||H2||H3||H4||H5||H6||H7; every other operation or signature is invalid",
+  "C10: Certificate format is certificateSignature above with formatVersion 00; nodes are indexed in encoded order; the last node is root; nodes is nonempty; every premise index is earlier than its consumer, appears in execution order, and is unique; every node is reachable from root; unknown ruleTag is DecodeRejected(06,ruleTagOffset), while a known tag with wrong expression, premise, state, value, fuel, environment, digest, or observation semantics is Unauthorized(stage,7f)",
+  "C11: A certificate node uses exactly one evaluation rule 30..3e and that rule's premisePolicy; the first premise begins after the parent's one-unit charge at observationsBefore; later premises begin at the prior premise's fuel and observations; Call has argument premises then one body premise under exactly argument values; RequestSha256 has one argument premise then fixed digest and one append; certificate nodes prove neither static well-formedness nor authority",
+  "C12: EvalStatement contains complete exact already-accepted predecessor bytes, derived manifest/profile IDs, exact entrypoint, canonical arguments, exact nonzero fuel limit, and Returned value,remainingFuel,Observations; its independently constructed root is Call(entrypoint,map(ValueLiteral,arguments)) under empty environment, statement fuel, and Observations([]); faults have no certificate form",
+  "C13: CompilerEvidence=00 GenesisEvidence with no payload|01 SuccessorEvidence(compileCertificate:EvalCertificate,admissionCertificate:EvalCertificate); evidence is never executable compiler meaning and cannot add a Core or certificate rule",
+  "V01: VerifyEvalCertificate first requires certificate formatVersion 00 and canonical byte equality of certificate.statement and the required EvalStatement",
+  "V02: VerifyEvalCertificate next strictly decodes required.exactAcceptedPredecessor, requires caller-supplied acceptance of those exact bytes, requires predecessor Frame01 byte-equal exactCoreManifestBytes, and independently derives CoreContractId and PhysicalProfileId",
+  "V03: VerifyEvalCertificate next requires both derived IDs equal the statement fields, statically checks the predecessor under rules 20..2b, resolves the entrypoint exactly once, and requires argument sorts equal its signature",
+  "V04: VerifyEvalCertificate next constructs Call(entrypoint,map(ValueLiteral,arguments)) without certificate input, where only BytesValue maps to BytesLiteral and TermValue maps to TermLiteral",
+  "V05: VerifyEvalCertificate next constructs the required root judgment with empty environment, fuelLimit, Observations([]), and exactly the value,remainingFuel,observations in required.expected",
+  "V06: VerifyEvalCertificate next scans nodes in encoded order and validates every exact known local rule, premise index, state transition, environment, value, fuel, and observation chain",
+  "V07: VerifyEvalCertificate finally requires every node reachable and the final conclusion canonical-byte-equal to the independently constructed root; success requires every prior step and uses no callback, theorem name, host rule registry, Boolean evaluator, or package rule",
+  "D00: StrictDecode returns only Decoded(exactInput,candidate) or DecodeRejected(code,offset); codes in precedence order are 00 WrongMagic,01 UnknownVersion,02 FrameTagOrderOrCount,03 Truncated,04 LengthOrCountOverflow,05 InvalidFixedWidth,06 UnknownSumTag,07 BoundedValueUnderConsumed,08 BoundedValueOverConsumed,09 TrailingBytes; fields are read depth-first in encoded order and equal-offset ties use lower code",
+  "D01: StrictDecode handles only closed byte grammar; order, uniqueness, exact manifest equality, reference bounds, ABI meaning, entrypoint signature, identity derivation, lineage/evidence consistency, known certificate-rule semantics, and profile conformance are authorization checks; malformed bytes never produce Unauthorized",
+  "A00: Authorization starts only after Decoded; stages run 40..48; successor skips 42; genesis skips 43,45,46,47; both run 44 and 48; within each stage rows below run left-to-right and collection failures use encoded item order; the first false condition is the only verdict",
+  "A40: CoreManifest rows=[manifest bytes differ exactCoreManifestBytes->(40,60)]",
+  "A41: CoreWellFormedness rows=[subject or ABI semantic structure->(41,61),nominal provenance allocation retention or reference->(41,62),definition order or duplicate->(41,63),compile then admitPropose resolution->(41,64),entrypoints equal->(41,65),compile then admitPropose signature not [Term]->Term->(41,66),other static rule 20..2b->(41,67),Request outside exact profile->(41,68)]",
+  "A42: GenesisAnchor rows=[lineage not Genesis->(42,69),evidence not empty GenesisEvidence->(42,6a),missing external anchor->(42,6b),anchor bytes not complete exact candidate->(42,6c)]",
+  "A43: ExactPredecessor rows=[lineage not Successor->(43,6d),candidate self candidate-basis or candidate-rule authority->(43,6f),supplied predecessor not already accepted including stale revision->(43,6e),locator differs CompilerPackageHash(P)->(43,70),resolved bytes not byte-identical accepted P->(43,71)]",
+  "A44: BuildRequest rows=[wrong ABI shape->(44,72),R not byte-identical Q.subject.buildRequest->(44,73),base route or exact base mismatch->(44,74),core ID mismatch->(44,75),profile ID mismatch->(44,76),source order or duplicate->(44,77),source artifact derivation->(44,78),IdentityPlan order uniqueness provenance retention or seed binding->(44,79),request lineage or nominal change occurrence mismatch->(44,7a),declared physical inputs nonempty->(44,7b),fuel zero or not exact statement limit->(44,7c)]",
+  "A45: CompileEvaluation rows=[evidence or compile certificate shape->(45,7d),statement predecessor manifest profile entrypoint arguments or fuel->(45,7e),known node premise root rule state fuel or observation semantics->(45,7f),no successful judgment->(45,80),result not Built->(45,81),Built bytes differ Q.subject->(45,82),compile observations differ root->(45,83)]",
+  "A46: AdmissionEvaluation rows=[certificate shape->(46,7d),statement predecessor manifest profile entrypoint arguments fuel or compile observations->(46,7e),known node premise root rule state fuel or observation semantics->(46,7f),no successful judgment->(46,80),result not Propose->(46,81),proposed bytes differ Q.subject->(46,82),admission observations differ root->(46,83)]",
+  "A47: EvidenceAttachment rows=[E not byte-identical Q.evidence->(47,84),Frame02 differs certified subject->(47,85),attaching E does not reproduce exact Q->(47,86)]",
+  "A48: FinalAuthorization rows=[computed final identity does not bind complete exact Q->(48,87)]",
+  "H00: DH(d,xs)=SHA256(U32(len(d))||ASCII(d)||each(U64(len(x))||x)); CoreContractId=DH(clause/core-contract/v1,exactCoreManifestBytes); PhysicalProfileId=DH(clause/physical-profile/v1,exactPhysicalProfileBytes); CompilerSemanticsId=DH(clause/compiler-semantics/v1,canonical(interface||program)); CompilerRevisionId=DH(clause/compiler-revision/v1,exactCompilerSubjectBytes); CompilerPackageHash=DH(clause/compiler-package/v1,exactWholePackageBytes); SourceArtifactId=DH(clause/source-artifact/v1,exactSourceBytes); BuildRequestId=DH(clause/compiler-build-request/v1,canonicalTermBytes(BuildRequest)); OriginId=DH(clause/origin/v1,canonicalAcyclicOriginNode); hashes never grant compiler authority",
+  "P00: Package bytes are magic CLCP,version 02,Frame(01,CoreManifestV1),Frame(02,CompilerSubject),Frame(03,CompilerEvidence),EOF exactly once in order; Frame03 is excluded from subject and revision identities; successor evidence contains predecessor bytes but never candidate evidence or candidate whole-package identity; only exact genesis anchor or already-accepted exact predecessor can authorize"
+]
+
+physicalProfile = {
+  profileVersion = 00,
+  observationPolicy = 00,
+  operations = [(Sha256OpId, [Bytes], Bytes)]
+}
+
+Sha256OpId = DH("clause/physical-op/v1", "sha256")
+```
+
+The sequences are encoded in displayed order. No other manifest value is CLCP
+v2. `exactCoreManifestBytes` is the canonical encoding of this exact
+`CoreManifestV1`; `exactPhysicalProfileBytes` is the canonical encoding of the
+displayed `PhysicalProfile` field value alone. Strict decode parses that closed structure;
+authorization then compares the carried Frame 01 payload byte for byte with
+`exactCoreManifestBytes` before applying any Core rule to Frames 02 or 03.
+There is no manifest registry, negotiation, executable rule text, or
+package-defined metalanguage.
+
+Observation policy `00` means that every successfully executed physical
+request appends exactly one canonical observation and no other event does.
+`Request(Sha256OpId, [Bytes]) -> Bytes(32 octets)` is the sole physical
+signature. Any other operation, argument/result signature, profile field, or
+manifest byte rejects.
+
+### Fixed static judgments
+
+Let `Δ` be the sorted definition table and let `Γ` be a sequence of sorts in
+`Var` order. The only static judgment is `Δ ; Γ ⊢ expression : sort`.
+Rules `20` and `21` give the literal's displayed sort. Rule `22` requires the
+index to be in bounds and returns `Γ[index]`. Rules `23` and `24` require the
+three displayed child sorts. Rule `25` checks the value at `s`, then the body
+at `r` under `[s] ++ Γ`, and returns `r`. Rule `26` checks a Term scrutinee and
+both bodies at one identical result sort under
+`[Bytes,Bytes,Bytes] ++ Γ` and `[Term,Term,Term] ++ Γ`. Rule `27` checks a
+Bytes scrutinee, the empty arm under `Γ`, and the cons arm at the same result
+sort under `[Bytes,Bytes] ++ Γ`. Rule `28` requires every sequence member to be
+Bytes. Rule `29` requires two Bytes operands and two arms of one result sort.
+Rule `2a` requires one exactly resolved definition and argument sorts equal to
+its declared sequence. Rule `2b` requires the one exact operation and
+signature in the carried physical profile. No subsorting, coercion, implicit
+argument, inferred host value, or fallback rule exists.
+
+A definition is well formed exactly when its ID is unique in canonical order,
+its body checks at its declared result under its displayed argument sorts, and
+every transitive call and request resolves under these rules. Core
+well-formedness additionally checks the exact manifest, the fixed Core ABI
+shapes below, the two distinct interface definitions and their exact
+`[Term] -> Term` signatures, and all canonical sort/order/identity constraints.
+
+### Fixed evaluation state and rules
+
+A value is `BytesValue` or `TermValue`. An environment is `Seq<KValue>` in
+`Var` order. A successful judgment is:
+
+```text
+Δ ⊢ <expression, environment, fuelBefore, observationsBefore>
+    ⇓ <value, fuelAfter, observationsAfter>
+```
+
+Fuel is `U64`. Every rule consumes one unit before any premise; zero fuel has
+no successful judgment. Premises execute strictly left to right, threading
+the preceding premise's remaining fuel and observations into the next.
+Rules `30` and `31` return their literal. Rule `32` returns the in-bounds
+environment value. Rules `33` and `34` evaluate three children and construct
+the corresponding Term. Rule `35` evaluates the value, then the body under
+`[value] ++ environment`. Rules `36` and `37` evaluate the scrutinee, select
+exactly its Atom or Triple arm, and evaluate that arm under its three fields in
+displayed `Var` order followed by the old environment. Rules `38` and `39`
+evaluate Bytes, then select the empty arm or evaluate the cons arm under
+`[oneByteHead, tail] ++ environment`.
+
+Rule `3a` evaluates every part left to right and concatenates their Bytes; the
+empty sequence returns empty Bytes. Rules `3b` and `3c` evaluate left then
+right, compare exact byte length and octets, and evaluate only the equal or
+unequal arm under the unchanged environment. Rule `3d` evaluates call
+arguments left to right, resolves the one definition by exact ID comparison,
+then evaluates its body under exactly the argument values in displayed order;
+the caller environment is not inherited. Rule `3e` evaluates the one Bytes
+argument, computes SHA-256 as specified by FIPS 180-4 over exactly that octet
+string interpreted as successive eight-bit message units, returns the digest
+as big-endian `H0 || H1 || ... || H7`, and appends
+`Observation(nextIndex, Sha256OpId, [Value(Bytes,input)],
+Value(Bytes,digest))`. `nextIndex` is the prior observation count and prior
+indices must be `0..nextIndex-1`. Integer overflow, malformed observations,
+out-of-fuel, an unresolved definition, a sort/value mismatch, or any physical
+failure has no successful judgment.
 
 ## CLCP v2 fixed compiler ABI
 
@@ -171,10 +443,14 @@ List(x :: xs)  = Triple(Tag(01), x, List(xs))
 Record(t, xs)  = Triple(Tag(t), List(xs), Tag(00))
 Value(Bytes,b) = Record(02, [Bytes(b)])
 Value(Term,t)  = Record(03, [t])
-NominalId(domain,id) = Record(04, [Id(domain), Id(id)])
+NominalRef(domain,id) = Record(04, [Id(domain), Id(id)])
 FixedId(domain,id)   = Record(05, [Id(domain), Id(id)])
 ContentId(domain,id) = Record(06, [Id(domain), Id(id)])
 DerivedId(domain,id) = Record(07, [Id(domain), Id(id)])
+IdentityPlan(retained, seedInputs) =
+  Record(08, [List(retained), List(seedInputs)])
+Retain(ref)    = Record(09, [ref])
+SeedInput(ref) = Record(0a, [ref])
 ```
 
 Only the fixed tags below are valid at their declared positions. A lookalike
@@ -192,7 +468,8 @@ SourceUnit(unitId, artifactId, bytes) =
 
 BuildRequest(base, coreContractId, physicalProfileId, targetProfile,
              sourceUnits, baseInputs, identityRetentions,
-             changeOccurrenceId, options, declaredPhysicalInputs) =
+             changeOccurrenceId, options, compileFuel, admissionFuel,
+             declaredPhysicalInputs) =
   Record(13, [base,
               Id(coreContractId),
               Id(physicalProfileId),
@@ -202,6 +479,8 @@ BuildRequest(base, coreContractId, physicalProfileId, targetProfile,
               identityRetentions,
               Id(changeOccurrenceId),
               options,
+              Nat64(compileFuel),
+              Nat64(admissionFuel),
               List(declaredPhysicalInputs)])
 
 Built(subjectBytes)       = Record(14, [Bytes(subjectBytes)])
@@ -222,7 +501,7 @@ Authorized(packageBytes)  = Record(1b, [Bytes(packageBytes)])
 Unauthorized(stage, code) = Record(1c, [Tag(stage), Tag(code)])
 
 AuthorizationStage =
-    40 Decode
+    40 CoreManifest
   | 41 CoreWellFormedness
   | 42 GenesisAnchor
   | 43 ExactPredecessor
@@ -233,22 +512,46 @@ AuthorizationStage =
   | 48 FinalAuthorization
 
 AuthorizationCode =
-    60 Malformed
-  | 61 WrongLineage
-  | 62 MissingAnchor
-  | 63 PredecessorNotAccepted
-  | 64 PredecessorBytesMismatch
-  | 65 LocatorMismatch
-  | 66 AbiMismatch
-  | 67 RequestMismatch
-  | 68 CertificateStatementMismatch
-  | 69 CertificateInvalid
-  | 6a SubjectMismatch
-  | 6b ObservationMismatch
-  | 6c PhysicalProfileEscape
-  | 6d EvidenceMismatch
-  | 6e CandidateAuthority
-  | 6f PackageChanged
+    60 ManifestMismatch
+  | 61 SubjectStructure
+  | 62 NominalTable
+  | 63 DefinitionOrderOrDuplicate
+  | 64 EntrypointResolution
+  | 65 EntrypointAliased
+  | 66 EntrypointSignature
+  | 67 StaticRule
+  | 68 PhysicalRequestSignature
+  | 69 GenesisWrongLineage
+  | 6a GenesisEvidenceNotEmpty
+  | 6b MissingAnchor
+  | 6c AnchorBytesMismatch
+  | 6d SuccessorWrongLineage
+  | 6e PredecessorNotAccepted
+  | 6f CandidateOrSelfPredecessor
+  | 70 LocatorMismatch
+  | 71 PredecessorBytesMismatch
+  | 72 BuildRequestShape
+  | 73 DetachedBuildRequest
+  | 74 BaseMismatch
+  | 75 CoreContractMismatch
+  | 76 PhysicalProfileMismatch
+  | 77 SourceOrderOrDuplicate
+  | 78 SourceArtifactMismatch
+  | 79 IdentityPlanMismatch
+  | 7a ChangeOccurrenceMismatch
+  | 7b PhysicalInputsNonempty
+  | 7c FuelInvalid
+  | 7d EvidenceShapeMismatch
+  | 7e CertificateStatementMismatch
+  | 7f CertificateRuleInvalid
+  | 80 EvaluationFault
+  | 81 UnexpectedResult
+  | 82 SubjectMismatch
+  | 83 ObservationMismatch
+  | 84 EvidenceDetached
+  | 85 SubjectChangedAfterCompile
+  | 86 PackageChangedAfterEvidence
+  | 87 FinalIdentityMismatch
 ```
 
 An observation index starts at zero and increases by one. Its arguments and
@@ -263,9 +566,13 @@ Clause Terms in their compiler-produced canonical order.
 succession checker requires its two values to be derived from the exact
 accepted predecessor supplied outside the request. `GenesisBase` is valid
 only for the externally anchored genesis subject. The request's
-`coreContractId` must equal Frame 01. Its `physicalProfileId` must equal the
-one fixed by that core contract. The successor request's change occurrence
-must equal its lineage change occurrence.
+`coreContractId` must equal `CoreContractId` derived from the exact carried
+Frame 01 bytes. Its `physicalProfileId` must equal `PhysicalProfileId` derived
+from that manifest's exact physical-profile suffix. `compileFuel` and
+`admissionFuel` are the respective statement limits and must be nonzero. The
+successor request's change occurrence must equal its lineage change occurrence,
+and `identityRetentions` must be the exact `IdentityPlan` validated with the
+subject's nominal declaration table.
 
 The required entrypoint definitions are exactly:
 
@@ -289,17 +596,84 @@ definitions have these one-argument signatures. A signature mismatch, wrong
 request/result shape, subject mismatch, or unexpected ABI tag rejects rather
 than invoking package behavior through a host adapter.
 
-Authorization checks run in ascending `AuthorizationStage` order and return
-the first failing stage with the narrowest displayed code. A successful check
-returns only `Authorized` with the complete exact final package bytes. Thus the
-authorization result is deterministic and cannot silently degrade into a
-Boolean, hash-only success, or candidate subject.
+Authorization begins only after a successful strict decode. The checker visits
+stages in ascending tag order, skipping `GenesisAnchor` on a successor and
+skipping `ExactPredecessor`, both evaluation stages, and `EvidenceAttachment`
+on genesis; both routes run `BuildRequest` and `FinalAuthorization`. Within a
+stage it performs the following rows top to bottom and returns the displayed
+pair for the first false row:
+
+| Stage | Ordered false condition | Exact `Unauthorized(stage, code)` |
+| --- | --- | --- |
+| `40 CoreManifest` | carried Frame 01 is not byte-identical `CoreManifestV1` | `(40,60)` |
+| `41 CoreWellFormedness` | subject/ABI semantic structure is invalid | `(41,61)` |
+| | nominal declaration, provenance, allocation, retention, or reference check fails | `(41,62)` |
+| | definition order or uniqueness fails | `(41,63)` |
+| | `compile`, then `admitPropose`, does not resolve exactly once | `(41,64)` |
+| | the two entrypoint IDs are equal | `(41,65)` |
+| | `compile`, then `admitPropose`, is not exactly `[Term] -> Term` | `(41,66)` |
+| | any other rule `20..2b` check fails | `(41,67)` |
+| | a `Request` operation or signature is outside the exact profile | `(41,68)` |
+| `42 GenesisAnchor` | lineage is not `Genesis` | `(42,69)` |
+| | evidence is not empty `GenesisEvidence` | `(42,6a)` |
+| | no external owner anchor is supplied | `(42,6b)` |
+| | anchor-selected bytes are not the complete exact candidate bytes | `(42,6c)` |
+| `43 ExactPredecessor` | lineage is not `Successor` | `(43,6d)` |
+| | candidate, self, candidate basis, or candidate rule is offered as predecessor authority | `(43,6f)` |
+| | supplied predecessor bytes are not already accepted, including a stale revision | `(43,6e)` |
+| | lineage locator differs from `CompilerPackageHash(P)` | `(43,70)` |
+| | resolved locator/hash is paired with bytes not identical to accepted `P` | `(43,71)` |
+| `44 BuildRequest` | request is not the exact fixed ABI shape | `(44,72)` |
+| | supplied `R` is not byte-identical `Q.subject.buildRequest` | `(44,73)` |
+| | `GenesisBase`/`AcceptedBase` does not match the route and exact base | `(44,74)` |
+| | core contract ID does not equal the carried-manifest derivation | `(44,75)` |
+| | physical profile ID does not equal the carried-profile derivation | `(44,76)` |
+| | source-unit order or uniqueness fails | `(44,77)` |
+| | a source artifact ID differs from its exact byte derivation | `(44,78)` |
+| | `IdentityPlan` order, uniqueness, provenance, retention, or seed-input binding fails | `(44,79)` |
+| | request, lineage, or nominal-table change occurrence differs | `(44,7a)` |
+| | declared physical inputs is nonempty | `(44,7b)` |
+| | either fuel is zero or not its statement's exact limit | `(44,7c)` |
+| `45 CompileEvaluation` | successor evidence or compile-certificate shape is wrong | `(45,7d)` |
+| | statement predecessor/manifest/profile/entrypoint/arguments/fuel differs | `(45,7e)` |
+| | a certificate node, premise, root, rule, state, fuel, or observation transition is invalid | `(45,7f)` |
+| | the requested evaluation has no successful judgment | `(45,80)` |
+| | result is not canonical `Built` | `(45,81)` |
+| | `Built` bytes differ from `exactCompilerSubjectBytes(Q)` | `(45,82)` |
+| | compile observations are not the certificate root's exact canonical observations | `(45,83)` |
+| `46 AdmissionEvaluation` | admission-certificate shape is wrong | `(46,7d)` |
+| | statement predecessor/manifest/profile/entrypoint/arguments/fuel differs, including compile observations in `AdmissionRequest` | `(46,7e)` |
+| | a certificate node, premise, root, rule, state, fuel, or observation transition is invalid | `(46,7f)` |
+| | the requested evaluation has no successful judgment | `(46,80)` |
+| | result is not canonical `Propose` | `(46,81)` |
+| | proposed bytes differ from `exactCompilerSubjectBytes(Q)` | `(46,82)` |
+| | admission observations are not the certificate root's exact canonical observations | `(46,83)` |
+| `47 EvidenceAttachment` | supplied `E` is not byte-identical `Q.evidence` | `(47,84)` |
+| | Frame 02 differs from the exact subject certified at compile/admission | `(47,85)` |
+| | attaching exact `E` does not reproduce complete exact `Q` | `(47,86)` |
+| `48 FinalAuthorization` | computed final identity does not bind complete exact `Q` | `(48,87)` |
+
+Collection checks visit encoded fields, definitions, source units, identity
+rows, certificate nodes, and premises in their canonical order. Thus row order
+and then encoded item order break every tie. The two entrypoint fields are
+checked `compile` then `admitPropose`; either signature failure has the one
+pair `(41,66)`, never a BuildRequest or evaluation pair. Every rejection named
+by this contract is assigned above: self/candidate basis is `(43,6f)`, stale
+predecessor `(43,6e)`, hash-equal nonidentical bytes `(43,71)`, transplanted
+evidence or a changed request `(45|46,7e)`, malformed semantic traces
+`(45|46,7f)`, profile escape `(41,68)`, detached evidence `(47,84)`, and
+post-certification mutation `(47,85|86)` in the displayed order.
+
+A successful check returns only `Authorized` with the complete exact final
+package bytes. No condition can produce two observable pairs, and the result
+cannot degrade into a Boolean, hash-only success, or candidate subject.
 
 ## CLCP v2 compiler subject
 
 ```text
 CompilerSubject =
   lineage:CompilerLineage
+  nominalDeclarations:Seq<NominalDeclaration>
   interface:CompilerInterface
   program:Seq<Definition>
   buildRequest:Term
@@ -314,6 +688,21 @@ CompilerInterface =
   compile:Id32
   admitPropose:Id32
 
+NominalDeclaration =
+    00 Seed(domain:Id32, id:Id32)
+  | 01 RetainedSeed(
+         domain:Id32,
+         id:Id32,
+         predecessorRevisionId:Id32)
+  | 02 Allocated(
+         domain:Id32,
+         id:Id32,
+         changeInput:NominalWireRef,
+         producerInput:NominalWireRef,
+         localSlot:U64)
+
+NominalWireRef = domain:Id32 || id:Id32
+
 Definition =
   id:Id32
   arguments:Seq<KSort>
@@ -321,8 +710,37 @@ Definition =
   body:KExpr
 ```
 
-`program` is sorted by `Definition.id`; duplicate IDs reject. The interface
-and request satisfy the fixed ABI above. A Genesis subject uses
+`nominalDeclarations` is sorted by `domain || id`; `program` is sorted by
+`Definition.id`; duplicate keys reject. `DefDomain`, `SourceUnitDomain`, and
+`ChangeOccurrenceDomain` are respectively the `DH` values for fixed ASCII
+components `"definition"`, `"source-unit"`, and `"change-occurrence"` under
+domain `"clause/nominal-domain/v1"`. Interface, definition, and `Call` IDs
+resolve under `DefDomain`; source-unit IDs resolve under `SourceUnitDomain`;
+lineage and request change IDs resolve under `ChangeOccurrenceDomain`. Every
+other semantic ID in a Term uses `NominalRef(domain,id)` and resolves exactly
+one declaration. Fixed, content, and derived IDs use their distinct Core ABI
+forms. An untyped semantic ID payload or unresolved reference rejects.
+
+`Seed` is a literal primitive identity. `RetainedSeed` must match an exact
+`Seed` or `RetainedSeed` in the accepted predecessor and its displayed
+predecessor revision; it may not relabel an `Allocated` declaration.
+`Allocated.id` must equal
+`NewId(domain, changeInput, producerInput, localSlot)`, and both inputs
+must resolve. Carrying an allocated identity into a successor preserves the
+same `Allocated` row and allocation preimage; it never becomes a retained
+seed. Allocation dependencies form a finite acyclic graph. Their unique
+topological recomputation order is dependency order with canonical
+`domain || id` order as the tie-break; a cycle or recomputed collision rejects.
+
+The build request's `IdentityPlan` is canonical: `retained` and `seedInputs`
+are separately sorted unique `Retain(NominalRef(...))` and
+`SeedInput(NominalRef(...))` lists. Every successor `RetainedSeed` is in the
+first list; every newly introduced successor `Seed` is in the second and is
+therefore explicit input to predecessor compilation and admission. Every
+listed reference has the matching declaration provenance. Genesis has no
+retentions. No identity may appear in both lists.
+
+The interface and request satisfy the fixed ABI above. A Genesis subject uses
 `GenesisBase`; a Successor subject uses `AcceptedBase` and the exact matching
 lineage change occurrence.
 
@@ -340,7 +758,12 @@ CompilerEvidence =
          compileCertificate:EvalCertificate,
          admissionCertificate:EvalCertificate)
 
-EvalCertificate = certificateBytes:Blob
+EvalCertificate =
+  formatVersion:CertificateFormatVersion
+  statement:EvalStatement
+  nodes:Seq<EvalNode>
+
+CertificateFormatVersion = 00
 
 EvalStatement =
   exactAcceptedPredecessor:Blob
@@ -348,6 +771,7 @@ EvalStatement =
   physicalProfileId:Hash32
   entrypoint:Id32
   arguments:Seq<KValue>
+  fuelLimit:U64
   expected:EvalOutcome
 
 KValue =
@@ -355,26 +779,87 @@ KValue =
   | 01 TermValue(value:Term)
 
 EvalOutcome =
-  00 Returned(value:KValue, observations:Term)
+  00 Returned(
+       value:KValue,
+       remainingFuel:U64,
+       observations:Term)
+
+EvalNode =
+  ruleTag:EvaluationRuleTag
+  premises:Seq<U32>
+  conclusion:EvalJudgment
+
+EvaluationRuleTag =
+    30 | 31 | 32 | 33 | 34 | 35 | 36 | 37
+  | 38 | 39 | 3a | 3b | 3c | 3d | 3e
+
+EvalJudgment =
+  expression:KExpr
+  environment:Seq<KValue>
+  fuelBefore:U64
+  observationsBefore:Term
+  value:KValue
+  fuelAfter:U64
+  observationsAfter:Term
 ```
 
-`GenesisEvidence` has no payload. Each certificate blob has exactly one
-canonical decoding under the package's fixed `coreContractId`: a
-topologically ordered derivation DAG containing only fixed core
-well-formedness and generic evaluator-step rule tags. Nodes refer only to
-earlier premises and carry their exact generic conclusion. Unknown rules,
-forward references, unused trailing bytes, alternate DAG encodings, and
-package-supplied checker rules reject.
+`GenesisEvidence` has no payload. Certificate format version is exactly `00`.
+Nodes are indexed from zero in encoded order. The root is the final node;
+empty node lists reject. Every premise index is smaller than its consumer,
+premises occur in execution order, no premise list contains a duplicate, and
+every node is reachable from the root. Unknown rule tags, a premise count that
+does not match the manifest policy and expression arity, unused nodes, forward
+references, trailing bytes, or package-supplied rules reject.
+
+Each node is checked locally against the exact rule semantics in
+`CoreManifestV1`. Its conclusion expression must have the rule's expression
+tag; its premises must be exactly the recursive evaluations named by that
+expression and selected value case. The first premise starts after the parent
+rule's one-unit fuel charge and at `observationsBefore`; each later premise
+starts at the preceding conclusion's fuel and observations. The node's value,
+final fuel, and observations must be the exact construction defined by its
+rule. For `Call`, the argument premises are followed by exactly one body
+premise under the resolved definition's argument environment. For SHA-256,
+the one argument premise is followed by the fixed digest calculation and one
+observation append. This is the complete certificate rule set; certificate
+nodes do not prove static well-formedness, authority, or a package-specific
+semantic rule.
 
 Every evaluation certificate has exactly one root conclusion: the displayed
 `EvalStatement`. Its predecessor field contains the complete exact bytes of an
 already accepted predecessor, so the statement does not rely on a hash to name
-authority. `physicalProfileId` is derived from the canonical profile selected
-by `coreContractId`. `entrypoint`, all canonical arguments, the returned value,
-and the canonical `Observations` Term are part of the statement. The checker
-constructs the expected statement independently and requires byte-for-byte
-equality before checking the derivation. An evaluation fault has no successful
-certificate form.
+authority. `coreContractId` and `physicalProfileId` are derived from the exact
+carried manifest and its exact encoded profile value. `entrypoint`, all
+canonical arguments, the exact fuel limit, returned value, remaining fuel,
+and canonical `Observations` Term are part of the statement. An evaluation
+fault has no successful certificate form.
+
+`VerifyEvalCertificate(required, certificate)` is this algorithm, in order:
+
+1. require `certificate.formatVersion = 00` and canonical byte equality of
+   `certificate.statement` and `required`;
+2. strictly decode `required.exactAcceptedPredecessor`, require the caller's
+   exact accepted-predecessor premise for those bytes, require its carried
+   Frame 01 bytes equal `exactCoreManifestBytes`, and derive
+   `CoreContractId` and `PhysicalProfileId` from the carried manifest and its
+   canonically encoded physical-profile field;
+3. require those two derived values equal the statement fields, statically
+   check the predecessor subject under rules `20..2b`, resolve the entrypoint
+   exactly once, and require the arguments' sorts equal its signature;
+4. construct, without certificate input,
+   `Call(entrypoint, map(ValueLiteral, arguments))`, where `ValueLiteral`
+   maps only `BytesValue` to `BytesLiteral` and `TermValue` to `TermLiteral`;
+5. construct the required root judgment with that expression, empty
+   environment, `fuelLimit`, `Observations([])`, and the value, remaining fuel,
+   and observations from `required.expected`;
+6. scan nodes in encoded order and validate each exact local rule, premise
+   index, state transition, environment, value, fuel, and observation chain;
+   and
+7. require every node reachable and the final node's canonical conclusion
+   byte-equal to the independently constructed root judgment.
+
+The result is valid only if every step succeeds. No callback, theorem name,
+host rule registry, Boolean evaluator, or package-defined rule participates.
 
 This binding is finite and non-recursive. A successor certificate may contain
 the earlier predecessor package, including that predecessor's already fixed
@@ -395,22 +880,54 @@ inside that package.
 
 ## CLCP v2 canonical decoding
 
-A conforming decoder rejects:
+Strict decoding has a separate result algebra; it never returns a Core ABI
+`Unauthorized` Term:
 
-- wrong magic, unknown version, wrong frame order or count, and trailing bytes;
-- an unknown Term, KSort, KExpr, lineage, evidence, or certificate-rule tag;
-- an unsafe or out-of-bounds length, count, reference, or nesting operation;
-- under-consumed or over-consumed frames and nested values;
-- duplicate or out-of-order definitions or source units;
-- an unresolved or multiply defined compiler entrypoint;
-- a compiler entrypoint signature or Core ABI shape mismatch;
-- mismatched source-artifact or change-occurrence identities;
-- malformed certificate DAGs or evidence inconsistent with lineage; and
-- a physical request outside the core contract's declared operation set.
+```text
+DecodeVerdict =
+    00 Decoded(exactInput:Blob, candidate:CompilerPackage)
+  | 01 DecodeRejected(code:DecodeCode, offset:U64)
 
-The decoder returns the exact input bytes with the decoded value. Re-encoding
-that value must reproduce the exact input bytes. Successful decoding returns a
-candidate package, never an accepted compiler:
+DecodeCode =
+    00 WrongMagic
+  | 01 UnknownVersion
+  | 02 FrameTagOrderOrCount
+  | 03 Truncated
+  | 04 LengthOrCountOverflow
+  | 05 InvalidFixedWidth
+  | 06 UnknownSumTag
+  | 07 BoundedValueUnderConsumed
+  | 08 BoundedValueOverConsumed
+  | 09 TrailingBytes
+```
+
+The parser walks required fields depth first in encoded order. It performs the
+next grammar read only after the preceding read succeeds. A missing required
+octet is `Truncated` at EOF; an available wrong magic/version/tag is reported
+at its first differing/tag octet. A length/count arithmetic failure is
+reported at the first octet of that field. Under-consumption is reported at
+the bounded end; over-consumption and trailing input at the first extra octet.
+If two grammar checks are provably false at the same cursor, the lower
+`DecodeCode` tag wins. These cursor and tag rules determine one and only one
+`DecodeRejected` value.
+
+Decode rejects only failures to parse the closed byte grammar: wrong magic or
+version; wrong frame tag/order/count; truncation; unsafe length/count
+arithmetic; wrong fixed width; unknown Term, KSort, KExpr, lineage, evidence,
+certificate-format, or certificate-rule tag; bounded under/over-consumption;
+and trailing bytes. Resource exhaustion is an implementation failure and
+cannot be reported as a different canonical verdict.
+
+Order/uniqueness, exact manifest equality, reference bounds, Core ABI and
+entrypoint signatures, identity derivations, evidence/lineage consistency,
+certificate graph/rule semantics, and physical-profile conformance are
+authorization checks with the exact table pairs above. Consequently malformed
+strict-decode input never enters authorization, while every failure after
+`Decoded` reaches exactly one table pair.
+
+`Decoded` retains the exact input bytes with the decoded value. Re-encoding a
+value that passes canonical authorization must reproduce those exact bytes.
+Successful decoding returns a candidate package, never an accepted compiler:
 
 ```text
 bytes --strict decode--> candidate package
@@ -437,10 +954,10 @@ Required identities are:
 
 ```text
 CoreContractId =
-  DH("clause/core-contract/v1", canonicalCoreContractBytes)
+  DH("clause/core-contract/v1", exactCoreManifestBytes)
 
 PhysicalProfileId =
-  DH("clause/physical-profile/v1", canonicalPhysicalProfileBytes)
+  DH("clause/physical-profile/v1", exactPhysicalProfileBytes)
 
 CompilerSemanticsId =
   DH("clause/compiler-semantics/v1", canonical(interface || program))
