@@ -71,9 +71,10 @@ canonical-package admission of the initial basis.
 The package-binding seam now groups raw canonical-byte candidates, the exact
 structural index, decoded basis/certificate/target sections, and opaque
 auxiliary content in one dependent record. `ExactPackageBinding` is equality of
-that whole record. It cannot silently replace the bytes, epoch, decoded
-sections, roots, rules, certificate, or external target with an equal-looking
-or separately reconstructed candidate.
+that whole record. It rejects a candidate reconstructed from a projection when
+any bound field differs—including bytes, epoch, decoded sections, roots, rules,
+certificate, or external target—but does not distinguish separately constructed
+records whose fields are propositionally equal.
 
 Authority remains a separate closed predicate over the whole record. It has no
 constructor because Clause has not yet selected a literal initial
