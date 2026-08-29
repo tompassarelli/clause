@@ -250,6 +250,27 @@
       "failure": "ROOT_NOT_LITERAL"
     },
     {
+      "id": "nullary-self-rule",
+      "file": "negative/nullary-self-rule.hex",
+      "base": "positive/successor.hex",
+      "decoded_bytes": 662,
+      "hex_file_sha256": "433deea732653c0a736bfce40130190010b7ee8a2c2b175eacb8d60ac0dc2180",
+      "mutation": "successor basis adds the zero-premise rule [] -> opaque claim payload ee and LINEAGE certificate applies that successor-local rule",
+      "expected_decoded_delta": {
+        "basis.rules[0]": { "premises": [], "conclusion": "self-declared-ee" },
+        "lineage.authorization[0].claimed": "self-declared-ee",
+        "lineage.authorization[0].reason": { "rule_ref": 0, "premise_refs": [] }
+      },
+      "verdicts": {
+        "decode": "accept",
+        "lineage_certificate_under_predecessor_basis": "reject",
+        "relative_check_of_self_claim_under_successor_basis": "accept",
+        "lineage_target": "reject",
+        "authority": "reject"
+      },
+      "failure": "NULLARY_SELF_RULE"
+    },
+    {
       "id": "self-authorization",
       "file": "negative/self-authorization.hex",
       "base": "positive/successor.hex",
