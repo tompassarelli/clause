@@ -1,9 +1,9 @@
 site	class	controls	fixed_tags	code_target
-compiler_package_v2::codec::decode	WireCodec	octet,bound,length	CLCP-v2/frame/closed-sum	closed-wire-decoders
-compiler_package_v2::codec::encode	WireCodec	closed Rust wire value	CLCP-v2/frame/closed-sum	closed-wire-encoders
-physical::observations_term	CoreABI	fixed ABI tag,arity,field	00,01,02,03,19,1a	fixed-core-abi-constructor
-evaluator::Evaluator::step/bytes	ByteMachine	empty,head-tail,equality	07,08,09	selected-child-kexpr
-evaluator::DefinitionTable::resolve	DefinitionTable	opaque-Id32-order,hit-miss	0a	selected-package-kexpr-data
-evaluator::Evaluator::step	KernelStep	KExpr-tag,value-shape,fuel	00..0b	fixed-kexpr-mechanic
-evaluator::Evaluator::step/certificate-node	CertificateStep	fixed-rule-tag,premise-index	30..3e	fixed-eval-node-constructor
-physical::SealedPhysical::request	PhysicalDispatch	fixed-PhysicalOpId	Sha256OpId	sha2::Sha256::digest
+compiler_package_v2::codec::decode	WireCodec	octet,bound,length	CLCP-v2/frame/closed-sum	Cursor::frame
+compiler_package_v2::codec::encode	WireCodec	closed Rust wire value	CLCP-v2/frame/closed-sum	encode_core_manifest_value
+physical::observations_term	CoreABI	fixed ABI tag,arity,field	00,01,02,03,19,1a	record
+evaluator::Evaluator::step/bytes	ByteMachine	empty,head-tail,equality	07,08,09	slice::split_first
+evaluator::DefinitionTable::resolve	DefinitionTable	opaque-Id32-order,hit-miss	0a	BTreeMap::get
+evaluator::Evaluator::step	KernelStep	KExpr-tag,value-shape,fuel	00..0b	Evaluator::child
+evaluator::Evaluator::child	CertificateStep	fixed-rule-tag,premise-index	30..3e	Evaluator::step
+physical::SealedPhysical::request	PhysicalDispatch	fixed-PhysicalOpId	Sha256OpId	Sha256::digest

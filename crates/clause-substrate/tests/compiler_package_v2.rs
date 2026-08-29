@@ -58,6 +58,12 @@ fn frame_one_payload_length(bytes: &[u8]) -> usize {
     u32::from_be_bytes(bytes[6..10].try_into().expect("frame length")) as usize
 }
 
+fn nested_concat(depth: usize) -> KExpr {
+    (0..depth).fold(KExpr::BytesLiteral(Vec::new()), |expression, _| {
+        KExpr::ConcatBytes(vec![expression])
+    })
+}
+
 #[test]
 fn canonical_v2_candidate_round_trips_and_retains_exact_frame_payloads() {
     let package = sample_package();
@@ -147,6 +153,54 @@ fn bounded_frames_report_under_and_over_consumption_without_fallback() {
             u64::try_from(10 + length - 1).unwrap()
         )
     );
+}
+
+#[test]
+fn counted_sequence_exhaustion_uses_the_next_depth_first_read_verdict() {
+    let bytes = encode(&sample_package()).expect("sample encodes");
+
+    let mut bounded = bytes.clone();
+    bounded[6..10].copy_from_slice(&5_u32.to_be_bytes());
+    bounded[11..15].copy_from_slice(&1_u32.to_be_bytes());
+    assert_eq!(
+        rejection(&bounded),
+        (DecodeCode::BoundedValueOverConsumed, 15)
+    );
+
+    let mut truncated = bytes[..15].to_vec();
+    truncated[6..10].copy_from_slice(&5_u32.to_be_bytes());
+    truncated[11..15].copy_from_slice(&1_u32.to_be_bytes());
+    assert_eq!(rejection(&truncated), (DecodeCode::Truncated, 15));
+}
+
+#[test]
+fn recursive_wire_values_fail_with_typed_resource_exhaustion() {
+    let mut too_deep = sample_package();
+    too_deep.subject.program[0].body = nested_concat(32);
+    assert_eq!(encode(&too_deep), Err(EncodeError::ResourceExhausted));
+
+    let mut at_limit = sample_package();
+    at_limit.subject.program[0].body = nested_concat(31);
+    let mut bytes = encode(&at_limit).expect("depth-limited expression encodes");
+    assert!(decode(&bytes).is_ok(), "depth-limited expression decodes");
+
+    let manifest_length = frame_one_payload_length(&bytes);
+    let subject_tag = 10 + manifest_length;
+    let subject_length = u32::from_be_bytes(
+        bytes[subject_tag + 1..subject_tag + 5]
+            .try_into()
+            .expect("subject frame length"),
+    );
+    let first_definition_body = subject_tag + 5 + 111;
+    let wire_wrapper = [0x08, 0x00, 0x00, 0x00, 0x01];
+    assert_eq!(
+        &bytes[first_definition_body..first_definition_body + wire_wrapper.len()],
+        &wire_wrapper
+    );
+    bytes.splice(first_definition_body..first_definition_body, wire_wrapper);
+    bytes[subject_tag + 1..subject_tag + 5].copy_from_slice(&(subject_length + 5).to_be_bytes());
+
+    assert_eq!(decode(&bytes), Err(DecodeFailure::ResourceExhausted));
 }
 
 #[test]

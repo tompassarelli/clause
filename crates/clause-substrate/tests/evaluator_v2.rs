@@ -1,7 +1,7 @@
 use clause_substrate::compiler_package_v2::{
     Definition, Hash32, Id32, KExpr, KSort, KValue, Term, sha256_operation_id,
 };
-use clause_substrate::evaluator::{CertificateContext, Evaluator, StaticError};
+use clause_substrate::evaluator::{CertificateContext, EvalError, Evaluator, StaticError};
 
 fn id(value: u8) -> Id32 {
     Id32([value; 32])
@@ -41,6 +41,12 @@ fn evaluate(expression: KExpr) -> KValue {
         .evaluate(&expression, &[], 128)
         .expect("expression evaluates")
         .value
+}
+
+fn nested_concat(depth: usize) -> KExpr {
+    (0..depth).fold(KExpr::BytesLiteral(Vec::new()), |expression, _| {
+        KExpr::ConcatBytes(vec![expression])
+    })
 }
 
 #[test]
@@ -245,6 +251,34 @@ fn package_ids_only_select_definition_data_and_never_a_host_callable() {
             &[],
         ),
         Err(StaticError::OperationOutsideSealedProfile(unknown))
+    );
+}
+
+#[test]
+fn recursive_expressions_fail_with_static_and_evaluation_limits() {
+    let evaluator = Evaluator::new(&[]).expect("empty definition table checks");
+    assert_eq!(
+        evaluator.infer_sort(&nested_concat(32), &[]),
+        Err(StaticError::RecursionLimit)
+    );
+
+    let definitions = [Definition {
+        id: id(1),
+        arguments: Vec::new(),
+        result: KSort::Bytes,
+        body: nested_concat(31),
+    }];
+    let evaluator = Evaluator::new(&definitions).expect("depth-limited definition checks");
+    assert_eq!(
+        evaluator.build_certificate(CertificateContext {
+            exact_accepted_predecessor: Vec::new(),
+            core_contract_id: Hash32([0; 32]),
+            physical_profile_id: Hash32([0; 32]),
+            entrypoint: id(1),
+            arguments: Vec::new(),
+            fuel_limit: 256,
+        }),
+        Err(EvalError::RecursionLimit)
     );
 }
 

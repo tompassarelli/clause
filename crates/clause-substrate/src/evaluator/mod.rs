@@ -6,11 +6,9 @@ use std::fmt;
 
 use crate::compiler_package_v2::{
     Definition, EvalCertificate, EvalJudgment, EvalNode, EvalOutcome, EvalStatement, Hash32, Id32,
-    KExpr, KSort, KValue, Term, sha256_operation_id,
+    KExpr, KSort, KValue, MAX_NESTING_DEPTH, Term, sha256_operation_id,
 };
 use crate::physical::{ObservationLog, PhysicalError, SealedPhysical};
-
-const MAX_EVALUATION_DEPTH: usize = 16_384;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum StaticError {
@@ -267,7 +265,7 @@ impl<'a> Evaluator<'a> {
         environment: &[KSort],
         current_depth: usize,
     ) -> Result<KSort, StaticError> {
-        if current_depth >= MAX_EVALUATION_DEPTH {
+        if current_depth >= MAX_NESTING_DEPTH {
             return Err(StaticError::RecursionLimit);
         }
         let next = current_depth + 1;
@@ -400,7 +398,7 @@ impl<'a> Evaluator<'a> {
         nodes: &mut Vec<EvalNode>,
         current_depth: usize,
     ) -> Result<StepResult, EvalError> {
-        if current_depth >= MAX_EVALUATION_DEPTH {
+        if current_depth >= MAX_NESTING_DEPTH {
             return Err(EvalError::RecursionLimit);
         }
         let next = current_depth + 1;

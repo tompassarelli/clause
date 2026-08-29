@@ -1,5 +1,10 @@
 use std::fmt;
 
+/// Conservative bound on host call-stack use while handling recursive wire
+/// values and evaluator expressions. Crossing it is a physical resource
+/// failure, never a canonical decode verdict.
+pub(crate) const MAX_NESTING_DEPTH: usize = 32;
+
 /// One exact 32-octet identifier.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Id32(pub [u8; 32]);
@@ -401,6 +406,7 @@ impl std::error::Error for DecodeFailure {}
 pub enum EncodeError {
     LengthExceedsU32 { field: &'static str, length: usize },
     InvalidClosedTag { field: &'static str, tag: u8 },
+    ResourceExhausted,
 }
 
 impl fmt::Display for EncodeError {
@@ -411,6 +417,9 @@ impl fmt::Display for EncodeError {
             }
             Self::InvalidClosedTag { field, tag } => {
                 write!(formatter, "{field} has invalid closed tag {tag:#04x}")
+            }
+            Self::ResourceExhausted => {
+                formatter.write_str("CLCP-v2 encode exhausted physical resources")
             }
         }
     }

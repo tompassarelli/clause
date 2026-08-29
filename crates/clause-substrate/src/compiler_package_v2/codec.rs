@@ -2,7 +2,6 @@ use super::*;
 
 const MAGIC: &[u8; 4] = b"CLCP";
 const VERSION: u8 = 0x02;
-const MAX_RECURSION_DEPTH: usize = 16_384;
 
 struct Encoder {
     bytes: Vec<u8>,
@@ -221,7 +220,12 @@ fn encode_sort(encoder: &mut Encoder, sort: KSort) {
     });
 }
 
-fn encode_term(encoder: &mut Encoder, value: &Term) -> Result<(), EncodeError> {
+fn encode_term(
+    encoder: &mut Encoder,
+    value: &Term,
+    current_depth: usize,
+) -> Result<(), EncodeError> {
+    let next_depth = encode_depth(current_depth)?;
     match value {
         Term::Atom {
             kind,
@@ -235,14 +239,19 @@ fn encode_term(encoder: &mut Encoder, value: &Term) -> Result<(), EncodeError> {
         }
         Term::Triple(first, second, third) => {
             encoder.u8(0x01);
-            encode_term(encoder, first)?;
-            encode_term(encoder, second)?;
-            encode_term(encoder, third)
+            encode_term(encoder, first, next_depth)?;
+            encode_term(encoder, second, next_depth)?;
+            encode_term(encoder, third, next_depth)
         }
     }
 }
 
-fn encode_expr(encoder: &mut Encoder, value: &KExpr) -> Result<(), EncodeError> {
+fn encode_expr(
+    encoder: &mut Encoder,
+    value: &KExpr,
+    current_depth: usize,
+) -> Result<(), EncodeError> {
+    let next_depth = encode_depth(current_depth)?;
     match value {
         KExpr::BytesLiteral(value) => {
             encoder.u8(0x00);
@@ -250,7 +259,7 @@ fn encode_expr(encoder: &mut Encoder, value: &KExpr) -> Result<(), EncodeError> 
         }
         KExpr::TermLiteral(value) => {
             encoder.u8(0x01);
-            encode_term(encoder, value)
+            encode_term(encoder, value, next_depth)
         }
         KExpr::Var(index) => {
             encoder.u8(0x02);
@@ -263,9 +272,9 @@ fn encode_expr(encoder: &mut Encoder, value: &KExpr) -> Result<(), EncodeError> 
             equality,
         } => {
             encoder.u8(0x03);
-            encode_expr(encoder, kind)?;
-            encode_expr(encoder, payload)?;
-            encode_expr(encoder, equality)
+            encode_expr(encoder, kind, next_depth)?;
+            encode_expr(encoder, payload, next_depth)?;
+            encode_expr(encoder, equality, next_depth)
         }
         KExpr::MakeTriple {
             first,
@@ -273,14 +282,14 @@ fn encode_expr(encoder: &mut Encoder, value: &KExpr) -> Result<(), EncodeError> 
             third,
         } => {
             encoder.u8(0x04);
-            encode_expr(encoder, first)?;
-            encode_expr(encoder, second)?;
-            encode_expr(encoder, third)
+            encode_expr(encoder, first, next_depth)?;
+            encode_expr(encoder, second, next_depth)?;
+            encode_expr(encoder, third, next_depth)
         }
         KExpr::Let { value, body } => {
             encoder.u8(0x05);
-            encode_expr(encoder, value)?;
-            encode_expr(encoder, body)
+            encode_expr(encoder, value, next_depth)?;
+            encode_expr(encoder, body, next_depth)
         }
         KExpr::CaseTerm {
             scrutinee,
@@ -288,9 +297,9 @@ fn encode_expr(encoder: &mut Encoder, value: &KExpr) -> Result<(), EncodeError> 
             triple_body,
         } => {
             encoder.u8(0x06);
-            encode_expr(encoder, scrutinee)?;
-            encode_expr(encoder, atom_body)?;
-            encode_expr(encoder, triple_body)
+            encode_expr(encoder, scrutinee, next_depth)?;
+            encode_expr(encoder, atom_body, next_depth)?;
+            encode_expr(encoder, triple_body, next_depth)
         }
         KExpr::CaseBytes {
             scrutinee,
@@ -298,13 +307,15 @@ fn encode_expr(encoder: &mut Encoder, value: &KExpr) -> Result<(), EncodeError> 
             cons_body,
         } => {
             encoder.u8(0x07);
-            encode_expr(encoder, scrutinee)?;
-            encode_expr(encoder, empty_body)?;
-            encode_expr(encoder, cons_body)
+            encode_expr(encoder, scrutinee, next_depth)?;
+            encode_expr(encoder, empty_body, next_depth)?;
+            encode_expr(encoder, cons_body, next_depth)
         }
         KExpr::ConcatBytes(parts) => {
             encoder.u8(0x08);
-            encoder.sequence("ConcatBytes parts", parts, encode_expr)
+            encoder.sequence("ConcatBytes parts", parts, |encoder, part| {
+                encode_expr(encoder, part, next_depth)
+            })
         }
         KExpr::CaseBytesEqual {
             left,
@@ -313,10 +324,10 @@ fn encode_expr(encoder: &mut Encoder, value: &KExpr) -> Result<(), EncodeError> 
             unequal_body,
         } => {
             encoder.u8(0x09);
-            encode_expr(encoder, left)?;
-            encode_expr(encoder, right)?;
-            encode_expr(encoder, equal_body)?;
-            encode_expr(encoder, unequal_body)
+            encode_expr(encoder, left, next_depth)?;
+            encode_expr(encoder, right, next_depth)?;
+            encode_expr(encoder, equal_body, next_depth)?;
+            encode_expr(encoder, unequal_body, next_depth)
         }
         KExpr::Call {
             definition_id,
@@ -324,7 +335,9 @@ fn encode_expr(encoder: &mut Encoder, value: &KExpr) -> Result<(), EncodeError> 
         } => {
             encoder.u8(0x0a);
             encoder.fixed(definition_id.as_bytes());
-            encoder.sequence("Call arguments", arguments, encode_expr)
+            encoder.sequence("Call arguments", arguments, |encoder, argument| {
+                encode_expr(encoder, argument, next_depth)
+            })
         }
         KExpr::Request {
             physical_operation_id,
@@ -332,8 +345,18 @@ fn encode_expr(encoder: &mut Encoder, value: &KExpr) -> Result<(), EncodeError> 
         } => {
             encoder.u8(0x0b);
             encoder.fixed(physical_operation_id.as_bytes());
-            encoder.sequence("Request arguments", arguments, encode_expr)
+            encoder.sequence("Request arguments", arguments, |encoder, argument| {
+                encode_expr(encoder, argument, next_depth)
+            })
         }
+    }
+}
+
+fn encode_depth(current_depth: usize) -> Result<usize, EncodeError> {
+    if current_depth >= MAX_NESTING_DEPTH {
+        Err(EncodeError::ResourceExhausted)
+    } else {
+        Ok(current_depth + 1)
     }
 }
 
@@ -358,7 +381,7 @@ fn encode_subject_value(subject: &CompilerSubject) -> Result<Vec<u8>, EncodeErro
     encoder.fixed(subject.interface.compile.as_bytes());
     encoder.fixed(subject.interface.admit_propose.as_bytes());
     encoder.sequence("definitions", &subject.program, encode_definition)?;
-    encode_term(&mut encoder, &subject.build_request)?;
+    encode_term(&mut encoder, &subject.build_request, 0)?;
     Ok(encoder.bytes)
 }
 
@@ -416,7 +439,7 @@ fn encode_definition(encoder: &mut Encoder, definition: &Definition) -> Result<(
         },
     )?;
     encode_sort(encoder, definition.result);
-    encode_expr(encoder, &definition.body)
+    encode_expr(encoder, &definition.body, 0)
 }
 
 fn encode_evidence_value(evidence: &CompilerEvidence) -> Result<Vec<u8>, EncodeError> {
@@ -484,7 +507,7 @@ fn encode_value(encoder: &mut Encoder, value: &KValue) -> Result<(), EncodeError
         }
         KValue::Term(term) => {
             encoder.u8(0x01);
-            encode_term(encoder, term)
+            encode_term(encoder, term, 0)
         }
     }
 }
@@ -499,19 +522,19 @@ fn encode_outcome(encoder: &mut Encoder, outcome: &EvalOutcome) -> Result<(), En
             encoder.u8(0x00);
             encode_value(encoder, value)?;
             encoder.u64(*remaining_fuel);
-            encode_term(encoder, observations)
+            encode_term(encoder, observations, 0)
         }
     }
 }
 
 fn encode_judgment(encoder: &mut Encoder, judgment: &EvalJudgment) -> Result<(), EncodeError> {
-    encode_expr(encoder, &judgment.expression)?;
+    encode_expr(encoder, &judgment.expression, 0)?;
     encoder.sequence("judgment environment", &judgment.environment, encode_value)?;
     encoder.u64(judgment.fuel_before);
-    encode_term(encoder, &judgment.observations_before)?;
+    encode_term(encoder, &judgment.observations_before, 0)?;
     encode_value(encoder, &judgment.value)?;
     encoder.u64(judgment.fuel_after);
-    encode_term(encoder, &judgment.observations_after)
+    encode_term(encoder, &judgment.observations_after, 0)
 }
 
 struct Cursor<'a> {
@@ -609,9 +632,6 @@ impl<'a> Cursor<'a> {
         let count_offset = self.offset;
         let count = usize::try_from(self.u32()?)
             .map_err(|_| self.rejection(DecodeCode::LengthOrCountOverflow, count_offset))?;
-        if count > self.limit.saturating_sub(self.offset) {
-            return Err(self.rejection(DecodeCode::LengthOrCountOverflow, count_offset));
-        }
         let mut values = Vec::new();
         for _ in 0..count {
             values
@@ -759,7 +779,7 @@ fn decode_sort(cursor: &mut Cursor<'_>) -> Result<KSort, DecodeFailure> {
 }
 
 fn depth(next: usize) -> Result<usize, DecodeFailure> {
-    if next >= MAX_RECURSION_DEPTH {
+    if next >= MAX_NESTING_DEPTH {
         Err(DecodeFailure::ResourceExhausted)
     } else {
         Ok(next + 1)

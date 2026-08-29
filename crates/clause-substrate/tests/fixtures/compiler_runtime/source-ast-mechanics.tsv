@@ -1,58 +1,1251 @@
 location	function	kind	class	controls	fixed_tags	code_targets
-src/compiler_package_v2/codec.rs:218:16	encode_sort	match	WireCodec	sort	closed-wire-tags	KSort :: Bytes | KSort :: Term
-src/compiler_package_v2/codec.rs:225:5	encode_term	match	WireCodec	value	closed-wire-tags	Term :: Atom { kind , canonical_payload , equality_contract , } | Term :: Triple (first , second , third)
-src/compiler_package_v2/codec.rs:246:5	encode_expr	match	WireCodec	value	closed-wire-tags	KExpr :: BytesLiteral (value) | KExpr :: TermLiteral (value) | KExpr :: Var (index) | KExpr :: MakeAtom { kind , payload , equality , } | KExpr :: MakeTriple { first , second , third , } | KExpr :: Let { value , body } | KExpr :: CaseTerm { scrutinee , atom_body , triple_body , } | KExpr :: CaseBytes { scrutinee , empty_body , cons_body , } | KExpr :: ConcatBytes (parts) | KExpr :: CaseBytesEqual { left , right , equal_body , unequal_body , } | KExpr :: Call { definition_id , arguments , } | KExpr :: Request { physical_operation_id , arguments , }
-src/compiler_package_v2/codec.rs:342:5	encode_subject_value	match	WireCodec	& subject . lineage	closed-wire-tags	CompilerLineage :: Genesis | CompilerLineage :: Successor { predecessor_locator , change_occurrence_id , }
-src/compiler_package_v2/codec.rs:369:5	encode_nominal_declaration	match	WireCodec	declaration	closed-wire-tags	NominalDeclaration :: Seed { domain , id } | NominalDeclaration :: RetainedSeed { domain , id , predecessor_revision_id , } | NominalDeclaration :: Allocated { domain , id , change_input , producer_input , local_slot , }
-src/compiler_package_v2/codec.rs:424:5	encode_evidence_value	match	WireCodec	evidence	closed-wire-tags	CompilerEvidence :: Genesis | CompilerEvidence :: Successor { compile_certificate , admission_certificate , }
-src/compiler_package_v2/codec.rs:442:5	encode_certificate	if	WireCodec	certificate . format_version != 0x00	closed-wire-tags	then | continue
-src/compiler_package_v2/codec.rs:451:9	encode_certificate	if	WireCodec	! (0x30 ..= 0x3e) . contains (& node . rule_tag)	closed-wire-tags	then | continue
-src/compiler_package_v2/codec.rs:480:5	encode_value	match	WireCodec	value	closed-wire-tags	KValue :: Bytes (bytes) | KValue :: Term (term)
-src/compiler_package_v2/codec.rs:493:5	encode_outcome	match	WireCodec	outcome	closed-wire-tags	EvalOutcome :: Returned { value , remaining_fuel , observations , }
-src/compiler_package_v2/codec.rs:53:13	sequence	indirect-call	WireCodec	encode	closed-wire-tags	monomorphized-source-supplied-wire-function
-src/compiler_package_v2/codec.rs:544:9	read	if	WireCodec	end > self . limit	closed-wire-tags	then | continue
-src/compiler_package_v2/codec.rs:545:24	read	if	WireCodec	end <= self . input . len ()	closed-wire-tags	then | else
-src/compiler_package_v2/codec.rs:550:26	read	if	WireCodec	code == DecodeCode :: Truncated	closed-wire-tags	then | else
-src/compiler_package_v2/codec.rs:612:9	sequence	if	WireCodec	count > self . limit . saturating_sub (self . offset)	closed-wire-tags	then | continue
-src/compiler_package_v2/codec.rs:620:25	sequence	indirect-call	WireCodec	decode	closed-wire-tags	monomorphized-source-supplied-wire-function
-src/compiler_package_v2/codec.rs:632:9	frame	if	WireCodec	tag != expected_tag	closed-wire-tags	then | continue
-src/compiler_package_v2/codec.rs:642:9	frame	if	WireCodec	end > self . limit	closed-wire-tags	then | continue
-src/compiler_package_v2/codec.rs:650:21	frame	indirect-call	WireCodec	decode	closed-wire-tags	monomorphized-source-supplied-wire-function
-src/compiler_package_v2/codec.rs:651:9	frame	if	WireCodec	bounded . offset != end	closed-wire-tags	then | continue
-src/compiler_package_v2/codec.rs:664:9	decode	if	WireCodec	found != * expected	closed-wire-tags	then | continue
-src/compiler_package_v2/codec.rs:670:5	decode	if	WireCodec	version != VERSION	closed-wire-tags	then | continue
-src/compiler_package_v2/codec.rs:676:5	decode	if	WireCodec	cursor . offset != cursor . limit	closed-wire-tags	then | continue
-src/compiler_package_v2/codec.rs:754:5	decode_sort	match	WireCodec	cursor . u8 () ?	closed-wire-tags	0x00 | 0x01 | _
-src/compiler_package_v2/codec.rs:762:5	depth	if	WireCodec	next >= MAX_RECURSION_DEPTH	closed-wire-tags	then | else
-src/compiler_package_v2/codec.rs:772:5	decode_term	match	WireCodec	cursor . u8 () ?	closed-wire-tags	0x00 | 0x01 | _
-src/compiler_package_v2/codec.rs:790:5	decode_expr	match	WireCodec	cursor . u8 () ?	closed-wire-tags	0x00 | 0x01 | 0x02 | 0x03 | 0x04 | 0x05 | 0x06 | 0x07 | 0x08 | 0x09 | 0x0a | 0x0b | _
-src/compiler_package_v2/codec.rs:841:19	decode_subject_value	match	WireCodec	cursor . u8 () ?	closed-wire-tags	0x00 | 0x01 | _
-src/compiler_package_v2/codec.rs:869:5	decode_nominal_declaration	match	WireCodec	cursor . u8 () ?	closed-wire-tags	0x00 | 0x01 | 0x02 | _
-src/compiler_package_v2/codec.rs:908:5	decode_evidence_value	match	WireCodec	cursor . u8 () ?	closed-wire-tags	0x00 | 0x01 | _
-src/compiler_package_v2/codec.rs:921:5	decode_certificate	if	WireCodec	format_version != 0x00	closed-wire-tags	then | continue
-src/compiler_package_v2/codec.rs:945:5	decode_value	match	WireCodec	cursor . u8 () ?	closed-wire-tags	0x00 | 0x01 | _
-src/compiler_package_v2/codec.rs:954:5	decode_outcome	match	WireCodec	cursor . u8 () ?	closed-wire-tags	0x00 | _
-src/compiler_package_v2/codec.rs:967:5	decode_node	if	WireCodec	! (0x30 ..= 0x3e) . contains (& rule_tag)	closed-wire-tags	then | continue
-src/evaluator/mod.rs:151:13	new	if	DefinitionTable	pair [0] . id == pair [1] . id	opaque-Id32-order-hit-miss	then | continue
-src/evaluator/mod.rs:154:13	new	if	DefinitionTable	pair [0] . id > pair [1] . id	opaque-Id32-order-hit-miss	then | continue
-src/evaluator/mod.rs:270:9	infer	if	KernelStep	current_depth >= MAX_EVALUATION_DEPTH	KSort-KExpr-value-fuel	then | continue
-src/evaluator/mod.rs:274:9	infer	match	KernelStep	expression	KSort-KExpr-value-fuel	KExpr :: BytesLiteral (_) | KExpr :: TermLiteral (_) | KExpr :: Var (index) | KExpr :: MakeAtom { kind , payload , equality , } | KExpr :: MakeTriple { first , second , third , } | KExpr :: Let { value , body } | KExpr :: CaseTerm { scrutinee , atom_body , triple_body , } | KExpr :: CaseBytes { scrutinee , empty_body , cons_body , } | KExpr :: ConcatBytes (parts) | KExpr :: CaseBytesEqual { left , right , equal_body , unequal_body , } | KExpr :: Call { definition_id , arguments , } | KExpr :: Request { physical_operation_id , arguments , }
-src/evaluator/mod.rs:363:17	infer	if	KernelStep	definition . arguments . len () != arguments . len ()	KSort-KExpr-value-fuel	then | continue
-src/evaluator/mod.rs:378:17	infer	if	KernelStep	* physical_operation_id != sha256_operation_id ()	KSort-KExpr-value-fuel	then | continue
-src/evaluator/mod.rs:383:17	infer	if	KernelStep	arguments . len () != 1	KSort-KExpr-value-fuel	then | continue
-src/evaluator/mod.rs:403:9	step	if	KernelStep	current_depth >= MAX_EVALUATION_DEPTH	KSort-KExpr-value-fuel	then | continue
-src/evaluator/mod.rs:412:46	step	match	KernelStep	expression	KSort-KExpr-value-fuel	KExpr :: BytesLiteral (bytes) | KExpr :: TermLiteral (term) | KExpr :: Var (index) | KExpr :: MakeAtom { kind , payload , equality , } | KExpr :: MakeTriple { first , second , third , } | KExpr :: Let { value , body } | KExpr :: CaseTerm { scrutinee , atom_body , triple_body , } | KExpr :: CaseBytes { scrutinee , empty_body , cons_body , } | KExpr :: ConcatBytes (parts) | KExpr :: CaseBytesEqual { left , right , equal_body , unequal_body , } | KExpr :: Call { definition_id , arguments , } | KExpr :: Request { physical_operation_id , arguments , }
-src/evaluator/mod.rs:519:17	step	match	KernelStep	term	KSort-KExpr-value-fuel	Term :: Atom { kind , canonical_payload , equality_contract , } | Term :: Triple (first , second , third)
-src/evaluator/mod.rs:572:17	step	if	ByteMachine	let Some ((& head , tail)) = bytes . split_first ()	empty-head-tail-concat-equality	then | else
-src/evaluator/mod.rs:632:39	step	if	ByteMachine	left == right	empty-head-tail-concat-equality	then | else
-src/evaluator/mod.rs:655:17	step	if	KernelStep	definition . arguments . len () != arguments . len ()	KSort-KExpr-value-fuel	then | continue
-src/evaluator/mod.rs:691:17	step	if	KernelStep	arguments . len () != 1	KSort-KExpr-value-fuel	then | continue
-src/evaluator/mod.rs:768:5	require_sort	if	KernelStep	expected == actual	KSort-KExpr-value-fuel	then | else
-src/evaluator/mod.rs:776:5	common_sort	if	KernelStep	left == right	KSort-KExpr-value-fuel	then | else
-src/evaluator/mod.rs:785:5	require_value_sort	if	KernelStep	actual == expected	KSort-KExpr-value-fuel	then | else
-src/evaluator/mod.rs:793:5	expect_bytes	match	KernelStep	value	KSort-KExpr-value-fuel	KValue :: Bytes (value) | KValue :: Term (_)
-src/evaluator/mod.rs:803:5	expect_term	match	KernelStep	value	KSort-KExpr-value-fuel	KValue :: Term (value) | KValue :: Bytes (_)
-src/evaluator/mod.rs:820:5	value_literal	match	KernelStep	value	KSort-KExpr-value-fuel	KValue :: Bytes (bytes) | KValue :: Term (term)
-src/physical/mod.rs:152:5	value_term	match	CoreABI	value	fixed-ABI-shapes	KValue :: Bytes (value) | KValue :: Term (value)
+src/compiler_package_v2/codec.rs:12:23	new	direct-call	WireCodec		closed-wire-tags	Vec::new
+src/compiler_package_v2/codec.rs:16:9	u8	method-call	WireCodec	self . bytes | value	closed-wire-tags	self . bytes.push
+src/compiler_package_v2/codec.rs:20:9	u32	method-call	WireCodec	self . bytes | & value . to_be_bytes ()	closed-wire-tags	self . bytes.extend_from_slice
+src/compiler_package_v2/codec.rs:20:39	u32	method-call	WireCodec	value	closed-wire-tags	value.to_be_bytes
+src/compiler_package_v2/codec.rs:24:9	u64	method-call	WireCodec	self . bytes | & value . to_be_bytes ()	closed-wire-tags	self . bytes.extend_from_slice
+src/compiler_package_v2/codec.rs:24:39	u64	method-call	WireCodec	value	closed-wire-tags	value.to_be_bytes
+src/compiler_package_v2/codec.rs:28:9	fixed	method-call	WireCodec	self . bytes | value	closed-wire-tags	self . bytes.extend_from_slice
+src/compiler_package_v2/codec.rs:33:13	length	direct-call	WireCodec	length	closed-wire-tags	u32::try_from
+src/compiler_package_v2/codec.rs:33:13	length	method-call	WireCodec	u32 :: try_from (length) | | _ | EncodeError :: LengthExceedsU32 { field , length }	closed-wire-tags	u32 :: try_from (length).map_err
+src/compiler_package_v2/codec.rs:33:13	length	try	WireCodec	u32 :: try_from (length) . map_err (| _ | EncodeError :: LengthExceedsU32 { field , length })	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:34:9	length	method-call	WireCodec	self | length	closed-wire-tags	self.u32
+src/compiler_package_v2/codec.rs:35:9	length	direct-call	WireCodec	()	closed-wire-tags	Ok
+src/compiler_package_v2/codec.rs:39:9	blob	method-call	WireCodec	self | field | value . len ()	closed-wire-tags	self.length
+src/compiler_package_v2/codec.rs:39:9	blob	try	WireCodec	self . length (field , value . len ())	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:39:28	blob	method-call	WireCodec	value	closed-wire-tags	value.len
+src/compiler_package_v2/codec.rs:40:9	blob	method-call	WireCodec	self | value	closed-wire-tags	self.fixed
+src/compiler_package_v2/codec.rs:41:9	blob	direct-call	WireCodec	()	closed-wire-tags	Ok
+src/compiler_package_v2/codec.rs:50:9	sequence	method-call	WireCodec	self | field | values . len ()	closed-wire-tags	self.length
+src/compiler_package_v2/codec.rs:50:9	sequence	try	WireCodec	self . length (field , values . len ())	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:50:28	sequence	method-call	WireCodec	values	closed-wire-tags	values.len
+src/compiler_package_v2/codec.rs:51:9	sequence	for	WireCodec	values	closed-wire-tags	value
+src/compiler_package_v2/codec.rs:52:13	sequence	indirect-call	WireCodec	self | value	closed-wire-tags	encode
+src/compiler_package_v2/codec.rs:52:13	sequence	try	WireCodec	encode (self , value)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:54:9	sequence	direct-call	WireCodec	()	closed-wire-tags	Ok
+src/compiler_package_v2/codec.rs:58:9	frame	method-call	WireCodec	self | tag	closed-wire-tags	self.u8
+src/compiler_package_v2/codec.rs:59:9	frame	method-call	WireCodec	self | field | payload . len ()	closed-wire-tags	self.length
+src/compiler_package_v2/codec.rs:59:9	frame	try	WireCodec	self . length (field , payload . len ())	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:59:28	frame	method-call	WireCodec	payload	closed-wire-tags	payload.len
+src/compiler_package_v2/codec.rs:60:9	frame	method-call	WireCodec	self | & payload	closed-wire-tags	self.fixed
+src/compiler_package_v2/codec.rs:61:9	frame	direct-call	WireCodec	()	closed-wire-tags	Ok
+src/compiler_package_v2/codec.rs:66:23	encode	direct-call	WireCodec		closed-wire-tags	Encoder::new
+src/compiler_package_v2/codec.rs:67:5	encode	method-call	WireCodec	encoder | MAGIC	closed-wire-tags	encoder.fixed
+src/compiler_package_v2/codec.rs:68:5	encode	method-call	WireCodec	encoder | VERSION	closed-wire-tags	encoder.u8
+src/compiler_package_v2/codec.rs:69:5	encode	method-call	WireCodec	encoder | 0x01 | "core manifest frame" | encode_core_manifest_value (& package . core_manifest) ?	closed-wire-tags	encoder.frame
+src/compiler_package_v2/codec.rs:69:5	encode	try	WireCodec	encoder . frame (0x01 , "core manifest frame" , encode_core_manifest_value (& package . core_manifest) ? ,)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:72:9	encode	direct-call	WireCodec	& package . core_manifest	closed-wire-tags	encode_core_manifest_value
+src/compiler_package_v2/codec.rs:72:9	encode	try	WireCodec	encode_core_manifest_value (& package . core_manifest)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:74:5	encode	method-call	WireCodec	encoder | 0x02 | "compiler subject frame" | encode_subject_value (& package . subject) ?	closed-wire-tags	encoder.frame
+src/compiler_package_v2/codec.rs:74:5	encode	try	WireCodec	encoder . frame (0x02 , "compiler subject frame" , encode_subject_value (& package . subject) ? ,)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:77:9	encode	direct-call	WireCodec	& package . subject	closed-wire-tags	encode_subject_value
+src/compiler_package_v2/codec.rs:77:9	encode	try	WireCodec	encode_subject_value (& package . subject)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:79:5	encode	method-call	WireCodec	encoder | 0x03 | "compiler evidence frame" | encode_evidence_value (& package . evidence) ?	closed-wire-tags	encoder.frame
+src/compiler_package_v2/codec.rs:79:5	encode	try	WireCodec	encoder . frame (0x03 , "compiler evidence frame" , encode_evidence_value (& package . evidence) ? ,)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:82:9	encode	direct-call	WireCodec	& package . evidence	closed-wire-tags	encode_evidence_value
+src/compiler_package_v2/codec.rs:82:9	encode	try	WireCodec	encode_evidence_value (& package . evidence)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:84:5	encode	direct-call	WireCodec	encoder . bytes	closed-wire-tags	Ok
+src/compiler_package_v2/codec.rs:88:23	encode_core_manifest_value	direct-call	WireCodec		closed-wire-tags	Encoder::new
+src/compiler_package_v2/codec.rs:89:5	encode_core_manifest_value	method-call	WireCodec	encoder | manifest . manifest_version	closed-wire-tags	encoder.u8
+src/compiler_package_v2/codec.rs:90:5	encode_core_manifest_value	direct-call	WireCodec	& mut encoder | "frame tags" | & manifest . frame_tags	closed-wire-tags	encode_u8_sequence
+src/compiler_package_v2/codec.rs:90:5	encode_core_manifest_value	try	WireCodec	encode_u8_sequence (& mut encoder , "frame tags" , & manifest . frame_tags)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:91:5	encode_core_manifest_value	direct-call	WireCodec	& mut encoder | "term tags" | & manifest . term_tags	closed-wire-tags	encode_u8_sequence
+src/compiler_package_v2/codec.rs:91:5	encode_core_manifest_value	try	WireCodec	encode_u8_sequence (& mut encoder , "term tags" , & manifest . term_tags)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:92:5	encode_core_manifest_value	direct-call	WireCodec	& mut encoder | "sort tags" | & manifest . sort_tags	closed-wire-tags	encode_u8_sequence
+src/compiler_package_v2/codec.rs:92:5	encode_core_manifest_value	try	WireCodec	encode_u8_sequence (& mut encoder , "sort tags" , & manifest . sort_tags)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:93:5	encode_core_manifest_value	indirect-target	WireCodec	encoder.sequence	closed-wire-tags	encode_named_signature
+src/compiler_package_v2/codec.rs:93:5	encode_core_manifest_value	method-call	WireCodec	encoder | "expression forms" | & manifest . expression_forms | encode_named_signature	closed-wire-tags	encoder.sequence
+src/compiler_package_v2/codec.rs:93:5	encode_core_manifest_value	try	WireCodec	encoder . sequence ("expression forms" , & manifest . expression_forms , encode_named_signature ,)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:98:5	encode_core_manifest_value	indirect-target	WireCodec	encoder.sequence	closed-wire-tags	encode_named_signature
+src/compiler_package_v2/codec.rs:98:5	encode_core_manifest_value	method-call	WireCodec	encoder | "ABI forms" | & manifest . abi_forms | encode_named_signature	closed-wire-tags	encoder.sequence
+src/compiler_package_v2/codec.rs:98:5	encode_core_manifest_value	try	WireCodec	encoder . sequence ("ABI forms" , & manifest . abi_forms , encode_named_signature)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:99:5	encode_core_manifest_value	direct-call	WireCodec	& mut encoder | "premise policy tags" | & manifest . premise_policy_tags	closed-wire-tags	encode_u8_sequence
+src/compiler_package_v2/codec.rs:99:5	encode_core_manifest_value	try	WireCodec	encode_u8_sequence (& mut encoder , "premise policy tags" , & manifest . premise_policy_tags ,)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:104:5	encode_core_manifest_value	direct-call	WireCodec	& mut encoder | "lineage tags" | & manifest . lineage_tags	closed-wire-tags	encode_u8_sequence
+src/compiler_package_v2/codec.rs:104:5	encode_core_manifest_value	try	WireCodec	encode_u8_sequence (& mut encoder , "lineage tags" , & manifest . lineage_tags)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:105:5	encode_core_manifest_value	direct-call	WireCodec	& mut encoder | "nominal declaration tags" | & manifest . nominal_declaration_tags	closed-wire-tags	encode_u8_sequence
+src/compiler_package_v2/codec.rs:105:5	encode_core_manifest_value	try	WireCodec	encode_u8_sequence (& mut encoder , "nominal declaration tags" , & manifest . nominal_declaration_tags ,)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:110:5	encode_core_manifest_value	direct-call	WireCodec	& mut encoder | "compiler evidence tags" | & manifest . compiler_evidence_tags	closed-wire-tags	encode_u8_sequence
+src/compiler_package_v2/codec.rs:110:5	encode_core_manifest_value	try	WireCodec	encode_u8_sequence (& mut encoder , "compiler evidence tags" , & manifest . compiler_evidence_tags ,)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:115:5	encode_core_manifest_value	direct-call	WireCodec	& mut encoder | "value tags" | & manifest . value_tags	closed-wire-tags	encode_u8_sequence
+src/compiler_package_v2/codec.rs:115:5	encode_core_manifest_value	try	WireCodec	encode_u8_sequence (& mut encoder , "value tags" , & manifest . value_tags)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:116:5	encode_core_manifest_value	direct-call	WireCodec	& mut encoder | "evaluation outcome tags" | & manifest . eval_outcome_tags	closed-wire-tags	encode_u8_sequence
+src/compiler_package_v2/codec.rs:116:5	encode_core_manifest_value	try	WireCodec	encode_u8_sequence (& mut encoder , "evaluation outcome tags" , & manifest . eval_outcome_tags ,)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:121:5	encode_core_manifest_value	direct-call	WireCodec	& mut encoder | "decode verdict tags" | & manifest . decode_verdict_tags	closed-wire-tags	encode_u8_sequence
+src/compiler_package_v2/codec.rs:121:5	encode_core_manifest_value	try	WireCodec	encode_u8_sequence (& mut encoder , "decode verdict tags" , & manifest . decode_verdict_tags ,)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:126:5	encode_core_manifest_value	direct-call	WireCodec	& mut encoder | "decode code tags" | & manifest . decode_code_tags	closed-wire-tags	encode_u8_sequence
+src/compiler_package_v2/codec.rs:126:5	encode_core_manifest_value	try	WireCodec	encode_u8_sequence (& mut encoder , "decode code tags" , & manifest . decode_code_tags)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:127:5	encode_core_manifest_value	direct-call	WireCodec	& mut encoder | "authorization stage tags" | & manifest . authorization_stage_tags	closed-wire-tags	encode_u8_sequence
+src/compiler_package_v2/codec.rs:127:5	encode_core_manifest_value	try	WireCodec	encode_u8_sequence (& mut encoder , "authorization stage tags" , & manifest . authorization_stage_tags ,)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:132:5	encode_core_manifest_value	direct-call	WireCodec	& mut encoder | "authorization code tags" | & manifest . authorization_code_tags	closed-wire-tags	encode_u8_sequence
+src/compiler_package_v2/codec.rs:132:5	encode_core_manifest_value	try	WireCodec	encode_u8_sequence (& mut encoder , "authorization code tags" , & manifest . authorization_code_tags ,)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:137:5	encode_core_manifest_value	indirect-target	WireCodec	encoder.sequence	closed-wire-tags	encode_rule_signature
+src/compiler_package_v2/codec.rs:137:5	encode_core_manifest_value	method-call	WireCodec	encoder | "static rules" | & manifest . static_rules | encode_rule_signature	closed-wire-tags	encoder.sequence
+src/compiler_package_v2/codec.rs:137:5	encode_core_manifest_value	try	WireCodec	encoder . sequence ("static rules" , & manifest . static_rules , encode_rule_signature ,)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:142:5	encode_core_manifest_value	indirect-target	WireCodec	encoder.sequence	closed-wire-tags	encode_rule_signature
+src/compiler_package_v2/codec.rs:142:5	encode_core_manifest_value	method-call	WireCodec	encoder | "evaluation rules" | & manifest . evaluation_rules | encode_rule_signature	closed-wire-tags	encoder.sequence
+src/compiler_package_v2/codec.rs:142:5	encode_core_manifest_value	try	WireCodec	encoder . sequence ("evaluation rules" , & manifest . evaluation_rules , encode_rule_signature ,)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:147:5	encode_core_manifest_value	method-call	WireCodec	encoder | manifest . certificate_format_version	closed-wire-tags	encoder.u8
+src/compiler_package_v2/codec.rs:148:5	encode_core_manifest_value	method-call	WireCodec	encoder | "certificate signature" | & manifest . certificate_signature	closed-wire-tags	encoder.blob
+src/compiler_package_v2/codec.rs:148:5	encode_core_manifest_value	try	WireCodec	encoder . blob ("certificate signature" , & manifest . certificate_signature)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:149:5	encode_core_manifest_value	indirect-target	WireCodec	encoder.sequence	closed-wire-tags	| encoder , clause | encoder . blob ("contract clause" , clause)
+src/compiler_package_v2/codec.rs:149:5	encode_core_manifest_value	method-call	WireCodec	encoder | "contract clauses" | & manifest . contract_clauses | | encoder , clause | encoder . blob ("contract clause" , clause)	closed-wire-tags	encoder.sequence
+src/compiler_package_v2/codec.rs:149:5	encode_core_manifest_value	try	WireCodec	encoder . sequence ("contract clauses" , & manifest . contract_clauses , | encoder , clause | encoder . blob ("contract clause" , clause) ,)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:152:27	encode_core_manifest_value	method-call	WireCodec	encoder | "contract clause" | clause	closed-wire-tags	encoder.blob
+src/compiler_package_v2/codec.rs:154:5	encode_core_manifest_value	direct-call	WireCodec	& mut encoder | & manifest . physical_profile	closed-wire-tags	encode_physical_profile
+src/compiler_package_v2/codec.rs:154:5	encode_core_manifest_value	try	WireCodec	encode_physical_profile (& mut encoder , & manifest . physical_profile)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:155:5	encode_core_manifest_value	direct-call	WireCodec	encoder . bytes	closed-wire-tags	Ok
+src/compiler_package_v2/codec.rs:161:23	encode_physical_profile_value	direct-call	WireCodec		closed-wire-tags	Encoder::new
+src/compiler_package_v2/codec.rs:162:5	encode_physical_profile_value	direct-call	WireCodec	& mut encoder | profile	closed-wire-tags	encode_physical_profile
+src/compiler_package_v2/codec.rs:162:5	encode_physical_profile_value	try	WireCodec	encode_physical_profile (& mut encoder , profile)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:163:5	encode_physical_profile_value	direct-call	WireCodec	encoder . bytes	closed-wire-tags	Ok
+src/compiler_package_v2/codec.rs:171:5	encode_u8_sequence	indirect-target	WireCodec	encoder.sequence	closed-wire-tags	| encoder , value | { encoder . u8 (* value) ; Ok (()) }
+src/compiler_package_v2/codec.rs:171:5	encode_u8_sequence	method-call	WireCodec	encoder | field | values | | encoder , value | { encoder . u8 (* value) ; Ok (()) }	closed-wire-tags	encoder.sequence
+src/compiler_package_v2/codec.rs:172:9	encode_u8_sequence	method-call	WireCodec	encoder | * value	closed-wire-tags	encoder.u8
+src/compiler_package_v2/codec.rs:173:9	encode_u8_sequence	direct-call	WireCodec	()	closed-wire-tags	Ok
+src/compiler_package_v2/codec.rs:181:5	encode_named_signature	method-call	WireCodec	encoder | value . tag	closed-wire-tags	encoder.u8
+src/compiler_package_v2/codec.rs:182:5	encode_named_signature	method-call	WireCodec	encoder | "named signature" | & value . signature	closed-wire-tags	encoder.blob
+src/compiler_package_v2/codec.rs:186:5	encode_rule_signature	method-call	WireCodec	encoder | value . tag	closed-wire-tags	encoder.u8
+src/compiler_package_v2/codec.rs:187:5	encode_rule_signature	method-call	WireCodec	encoder | value . premise_policy	closed-wire-tags	encoder.u8
+src/compiler_package_v2/codec.rs:188:5	encode_rule_signature	method-call	WireCodec	encoder | "rule clause" | & value . clause	closed-wire-tags	encoder.blob
+src/compiler_package_v2/codec.rs:195:5	encode_physical_profile	method-call	WireCodec	encoder | value . profile_version	closed-wire-tags	encoder.u8
+src/compiler_package_v2/codec.rs:196:5	encode_physical_profile	method-call	WireCodec	encoder | value . observation_policy	closed-wire-tags	encoder.u8
+src/compiler_package_v2/codec.rs:197:5	encode_physical_profile	indirect-target	WireCodec	encoder.sequence	closed-wire-tags	| encoder , operation | { encoder . fixed (operation . operation_id . as_bytes ()) ; encoder . sequence ("physical operation arguments" , & operation . arguments , | encoder , sort | { encode_sort (encoder , * sort) ; Ok (()) } ,) ? ; encode_sort (encoder , operation . result) ; Ok (()) }
+src/compiler_package_v2/codec.rs:197:5	encode_physical_profile	method-call	WireCodec	encoder | "physical operations" | & value . operations | | encoder , operation | { encoder . fixed (operation . operation_id . as_bytes ()) ; encoder . sequence ("physical operation arguments" , & operation . arguments , | encoder , sort | { encode_sort (encoder , * sort) ; Ok (()) } ,) ? ; encode_sort (encoder , operation . result) ; Ok (()) }	closed-wire-tags	encoder.sequence
+src/compiler_package_v2/codec.rs:201:13	encode_physical_profile	method-call	WireCodec	encoder | operation . operation_id . as_bytes ()	closed-wire-tags	encoder.fixed
+src/compiler_package_v2/codec.rs:201:27	encode_physical_profile	method-call	WireCodec	operation . operation_id	closed-wire-tags	operation . operation_id.as_bytes
+src/compiler_package_v2/codec.rs:202:13	encode_physical_profile	indirect-target	WireCodec	encoder.sequence	closed-wire-tags	| encoder , sort | { encode_sort (encoder , * sort) ; Ok (()) }
+src/compiler_package_v2/codec.rs:202:13	encode_physical_profile	method-call	WireCodec	encoder | "physical operation arguments" | & operation . arguments | | encoder , sort | { encode_sort (encoder , * sort) ; Ok (()) }	closed-wire-tags	encoder.sequence
+src/compiler_package_v2/codec.rs:202:13	encode_physical_profile	try	WireCodec	encoder . sequence ("physical operation arguments" , & operation . arguments , | encoder , sort | { encode_sort (encoder , * sort) ; Ok (()) } ,)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:206:21	encode_physical_profile	direct-call	WireCodec	encoder | * sort	closed-wire-tags	encode_sort
+src/compiler_package_v2/codec.rs:207:21	encode_physical_profile	direct-call	WireCodec	()	closed-wire-tags	Ok
+src/compiler_package_v2/codec.rs:210:13	encode_physical_profile	direct-call	WireCodec	encoder | operation . result	closed-wire-tags	encode_sort
+src/compiler_package_v2/codec.rs:211:13	encode_physical_profile	direct-call	WireCodec	()	closed-wire-tags	Ok
+src/compiler_package_v2/codec.rs:217:5	encode_sort	method-call	WireCodec	encoder | match sort { KSort :: Bytes => 0x00 , KSort :: Term => 0x01 , }	closed-wire-tags	encoder.u8
+src/compiler_package_v2/codec.rs:217:16	encode_sort	match	WireCodec	sort	closed-wire-tags	KSort :: Bytes | KSort :: Term
+src/compiler_package_v2/codec.rs:228:22	encode_term	direct-call	WireCodec	current_depth	closed-wire-tags	encode_depth
+src/compiler_package_v2/codec.rs:228:22	encode_term	try	WireCodec	encode_depth (current_depth)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:229:5	encode_term	match	WireCodec	value	closed-wire-tags	Term :: Atom { kind , canonical_payload , equality_contract , } | Term :: Triple (first , second , third)
+src/compiler_package_v2/codec.rs:235:13	encode_term	method-call	WireCodec	encoder | 0x00	closed-wire-tags	encoder.u8
+src/compiler_package_v2/codec.rs:236:13	encode_term	method-call	WireCodec	encoder | "Atom kind" | kind	closed-wire-tags	encoder.blob
+src/compiler_package_v2/codec.rs:236:13	encode_term	try	WireCodec	encoder . blob ("Atom kind" , kind)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:237:13	encode_term	method-call	WireCodec	encoder | "Atom payload" | canonical_payload	closed-wire-tags	encoder.blob
+src/compiler_package_v2/codec.rs:237:13	encode_term	try	WireCodec	encoder . blob ("Atom payload" , canonical_payload)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:238:13	encode_term	method-call	WireCodec	encoder | "Atom equality contract" | equality_contract	closed-wire-tags	encoder.blob
+src/compiler_package_v2/codec.rs:241:13	encode_term	method-call	WireCodec	encoder | 0x01	closed-wire-tags	encoder.u8
+src/compiler_package_v2/codec.rs:242:13	encode_term	direct-call	WireCodec	encoder | first | next_depth	closed-wire-tags	encode_term
+src/compiler_package_v2/codec.rs:242:13	encode_term	try	WireCodec	encode_term (encoder , first , next_depth)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:243:13	encode_term	direct-call	WireCodec	encoder | second | next_depth	closed-wire-tags	encode_term
+src/compiler_package_v2/codec.rs:243:13	encode_term	try	WireCodec	encode_term (encoder , second , next_depth)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:244:13	encode_term	direct-call	WireCodec	encoder | third | next_depth	closed-wire-tags	encode_term
+src/compiler_package_v2/codec.rs:254:22	encode_expr	direct-call	WireCodec	current_depth	closed-wire-tags	encode_depth
+src/compiler_package_v2/codec.rs:254:22	encode_expr	try	WireCodec	encode_depth (current_depth)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:255:5	encode_expr	match	WireCodec	value	closed-wire-tags	KExpr :: BytesLiteral (value) | KExpr :: TermLiteral (value) | KExpr :: Var (index) | KExpr :: MakeAtom { kind , payload , equality , } | KExpr :: MakeTriple { first , second , third , } | KExpr :: Let { value , body } | KExpr :: CaseTerm { scrutinee , atom_body , triple_body , } | KExpr :: CaseBytes { scrutinee , empty_body , cons_body , } | KExpr :: ConcatBytes (parts) | KExpr :: CaseBytesEqual { left , right , equal_body , unequal_body , } | KExpr :: Call { definition_id , arguments , } | KExpr :: Request { physical_operation_id , arguments , }
+src/compiler_package_v2/codec.rs:257:13	encode_expr	method-call	WireCodec	encoder | 0x00	closed-wire-tags	encoder.u8
+src/compiler_package_v2/codec.rs:258:13	encode_expr	method-call	WireCodec	encoder | "BytesLiteral" | value	closed-wire-tags	encoder.blob
+src/compiler_package_v2/codec.rs:261:13	encode_expr	method-call	WireCodec	encoder | 0x01	closed-wire-tags	encoder.u8
+src/compiler_package_v2/codec.rs:262:13	encode_expr	direct-call	WireCodec	encoder | value | next_depth	closed-wire-tags	encode_term
+src/compiler_package_v2/codec.rs:265:13	encode_expr	method-call	WireCodec	encoder | 0x02	closed-wire-tags	encoder.u8
+src/compiler_package_v2/codec.rs:266:13	encode_expr	method-call	WireCodec	encoder | * index	closed-wire-tags	encoder.u32
+src/compiler_package_v2/codec.rs:267:13	encode_expr	direct-call	WireCodec	()	closed-wire-tags	Ok
+src/compiler_package_v2/codec.rs:274:13	encode_expr	method-call	WireCodec	encoder | 0x03	closed-wire-tags	encoder.u8
+src/compiler_package_v2/codec.rs:275:13	encode_expr	direct-call	WireCodec	encoder | kind | next_depth	closed-wire-tags	encode_expr
+src/compiler_package_v2/codec.rs:275:13	encode_expr	try	WireCodec	encode_expr (encoder , kind , next_depth)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:276:13	encode_expr	direct-call	WireCodec	encoder | payload | next_depth	closed-wire-tags	encode_expr
+src/compiler_package_v2/codec.rs:276:13	encode_expr	try	WireCodec	encode_expr (encoder , payload , next_depth)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:277:13	encode_expr	direct-call	WireCodec	encoder | equality | next_depth	closed-wire-tags	encode_expr
+src/compiler_package_v2/codec.rs:284:13	encode_expr	method-call	WireCodec	encoder | 0x04	closed-wire-tags	encoder.u8
+src/compiler_package_v2/codec.rs:285:13	encode_expr	direct-call	WireCodec	encoder | first | next_depth	closed-wire-tags	encode_expr
+src/compiler_package_v2/codec.rs:285:13	encode_expr	try	WireCodec	encode_expr (encoder , first , next_depth)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:286:13	encode_expr	direct-call	WireCodec	encoder | second | next_depth	closed-wire-tags	encode_expr
+src/compiler_package_v2/codec.rs:286:13	encode_expr	try	WireCodec	encode_expr (encoder , second , next_depth)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:287:13	encode_expr	direct-call	WireCodec	encoder | third | next_depth	closed-wire-tags	encode_expr
+src/compiler_package_v2/codec.rs:290:13	encode_expr	method-call	WireCodec	encoder | 0x05	closed-wire-tags	encoder.u8
+src/compiler_package_v2/codec.rs:291:13	encode_expr	direct-call	WireCodec	encoder | value | next_depth	closed-wire-tags	encode_expr
+src/compiler_package_v2/codec.rs:291:13	encode_expr	try	WireCodec	encode_expr (encoder , value , next_depth)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:292:13	encode_expr	direct-call	WireCodec	encoder | body | next_depth	closed-wire-tags	encode_expr
+src/compiler_package_v2/codec.rs:299:13	encode_expr	method-call	WireCodec	encoder | 0x06	closed-wire-tags	encoder.u8
+src/compiler_package_v2/codec.rs:300:13	encode_expr	direct-call	WireCodec	encoder | scrutinee | next_depth	closed-wire-tags	encode_expr
+src/compiler_package_v2/codec.rs:300:13	encode_expr	try	WireCodec	encode_expr (encoder , scrutinee , next_depth)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:301:13	encode_expr	direct-call	WireCodec	encoder | atom_body | next_depth	closed-wire-tags	encode_expr
+src/compiler_package_v2/codec.rs:301:13	encode_expr	try	WireCodec	encode_expr (encoder , atom_body , next_depth)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:302:13	encode_expr	direct-call	WireCodec	encoder | triple_body | next_depth	closed-wire-tags	encode_expr
+src/compiler_package_v2/codec.rs:309:13	encode_expr	method-call	WireCodec	encoder | 0x07	closed-wire-tags	encoder.u8
+src/compiler_package_v2/codec.rs:310:13	encode_expr	direct-call	WireCodec	encoder | scrutinee | next_depth	closed-wire-tags	encode_expr
+src/compiler_package_v2/codec.rs:310:13	encode_expr	try	WireCodec	encode_expr (encoder , scrutinee , next_depth)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:311:13	encode_expr	direct-call	WireCodec	encoder | empty_body | next_depth	closed-wire-tags	encode_expr
+src/compiler_package_v2/codec.rs:311:13	encode_expr	try	WireCodec	encode_expr (encoder , empty_body , next_depth)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:312:13	encode_expr	direct-call	WireCodec	encoder | cons_body | next_depth	closed-wire-tags	encode_expr
+src/compiler_package_v2/codec.rs:315:13	encode_expr	method-call	WireCodec	encoder | 0x08	closed-wire-tags	encoder.u8
+src/compiler_package_v2/codec.rs:316:13	encode_expr	indirect-target	WireCodec	encoder.sequence	closed-wire-tags	| encoder , part | { encode_expr (encoder , part , next_depth) }
+src/compiler_package_v2/codec.rs:316:13	encode_expr	method-call	WireCodec	encoder | "ConcatBytes parts" | parts | | encoder , part | { encode_expr (encoder , part , next_depth) }	closed-wire-tags	encoder.sequence
+src/compiler_package_v2/codec.rs:317:17	encode_expr	direct-call	WireCodec	encoder | part | next_depth	closed-wire-tags	encode_expr
+src/compiler_package_v2/codec.rs:326:13	encode_expr	method-call	WireCodec	encoder | 0x09	closed-wire-tags	encoder.u8
+src/compiler_package_v2/codec.rs:327:13	encode_expr	direct-call	WireCodec	encoder | left | next_depth	closed-wire-tags	encode_expr
+src/compiler_package_v2/codec.rs:327:13	encode_expr	try	WireCodec	encode_expr (encoder , left , next_depth)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:328:13	encode_expr	direct-call	WireCodec	encoder | right | next_depth	closed-wire-tags	encode_expr
+src/compiler_package_v2/codec.rs:328:13	encode_expr	try	WireCodec	encode_expr (encoder , right , next_depth)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:329:13	encode_expr	direct-call	WireCodec	encoder | equal_body | next_depth	closed-wire-tags	encode_expr
+src/compiler_package_v2/codec.rs:329:13	encode_expr	try	WireCodec	encode_expr (encoder , equal_body , next_depth)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:330:13	encode_expr	direct-call	WireCodec	encoder | unequal_body | next_depth	closed-wire-tags	encode_expr
+src/compiler_package_v2/codec.rs:336:13	encode_expr	method-call	WireCodec	encoder | 0x0a	closed-wire-tags	encoder.u8
+src/compiler_package_v2/codec.rs:337:13	encode_expr	method-call	WireCodec	encoder | definition_id . as_bytes ()	closed-wire-tags	encoder.fixed
+src/compiler_package_v2/codec.rs:337:27	encode_expr	method-call	WireCodec	definition_id	closed-wire-tags	definition_id.as_bytes
+src/compiler_package_v2/codec.rs:338:13	encode_expr	indirect-target	WireCodec	encoder.sequence	closed-wire-tags	| encoder , argument | { encode_expr (encoder , argument , next_depth) }
+src/compiler_package_v2/codec.rs:338:13	encode_expr	method-call	WireCodec	encoder | "Call arguments" | arguments | | encoder , argument | { encode_expr (encoder , argument , next_depth) }	closed-wire-tags	encoder.sequence
+src/compiler_package_v2/codec.rs:339:17	encode_expr	direct-call	WireCodec	encoder | argument | next_depth	closed-wire-tags	encode_expr
+src/compiler_package_v2/codec.rs:346:13	encode_expr	method-call	WireCodec	encoder | 0x0b	closed-wire-tags	encoder.u8
+src/compiler_package_v2/codec.rs:347:13	encode_expr	method-call	WireCodec	encoder | physical_operation_id . as_bytes ()	closed-wire-tags	encoder.fixed
+src/compiler_package_v2/codec.rs:347:27	encode_expr	method-call	WireCodec	physical_operation_id	closed-wire-tags	physical_operation_id.as_bytes
+src/compiler_package_v2/codec.rs:348:13	encode_expr	indirect-target	WireCodec	encoder.sequence	closed-wire-tags	| encoder , argument | { encode_expr (encoder , argument , next_depth) }
+src/compiler_package_v2/codec.rs:348:13	encode_expr	method-call	WireCodec	encoder | "Request arguments" | arguments | | encoder , argument | { encode_expr (encoder , argument , next_depth) }	closed-wire-tags	encoder.sequence
+src/compiler_package_v2/codec.rs:349:17	encode_expr	direct-call	WireCodec	encoder | argument | next_depth	closed-wire-tags	encode_expr
+src/compiler_package_v2/codec.rs:356:5	encode_depth	if	WireCodec	current_depth >= MAX_NESTING_DEPTH	closed-wire-tags	then | else
+src/compiler_package_v2/codec.rs:357:9	encode_depth	direct-call	WireCodec	EncodeError :: ResourceExhausted	closed-wire-tags	Err
+src/compiler_package_v2/codec.rs:359:9	encode_depth	direct-call	WireCodec	current_depth + 1	closed-wire-tags	Ok
+src/compiler_package_v2/codec.rs:364:23	encode_subject_value	direct-call	WireCodec		closed-wire-tags	Encoder::new
+src/compiler_package_v2/codec.rs:365:5	encode_subject_value	match	WireCodec	& subject . lineage	closed-wire-tags	CompilerLineage :: Genesis | CompilerLineage :: Successor { predecessor_locator , change_occurrence_id , }
+src/compiler_package_v2/codec.rs:366:37	encode_subject_value	method-call	WireCodec	encoder | 0x00	closed-wire-tags	encoder.u8
+src/compiler_package_v2/codec.rs:371:13	encode_subject_value	method-call	WireCodec	encoder | 0x01	closed-wire-tags	encoder.u8
+src/compiler_package_v2/codec.rs:372:13	encode_subject_value	method-call	WireCodec	encoder | predecessor_locator . as_bytes ()	closed-wire-tags	encoder.fixed
+src/compiler_package_v2/codec.rs:372:27	encode_subject_value	method-call	WireCodec	predecessor_locator	closed-wire-tags	predecessor_locator.as_bytes
+src/compiler_package_v2/codec.rs:373:13	encode_subject_value	method-call	WireCodec	encoder | change_occurrence_id . as_bytes ()	closed-wire-tags	encoder.fixed
+src/compiler_package_v2/codec.rs:373:27	encode_subject_value	method-call	WireCodec	change_occurrence_id	closed-wire-tags	change_occurrence_id.as_bytes
+src/compiler_package_v2/codec.rs:376:5	encode_subject_value	indirect-target	WireCodec	encoder.sequence	closed-wire-tags	encode_nominal_declaration
+src/compiler_package_v2/codec.rs:376:5	encode_subject_value	method-call	WireCodec	encoder | "nominal declarations" | & subject . nominal_declarations | encode_nominal_declaration	closed-wire-tags	encoder.sequence
+src/compiler_package_v2/codec.rs:376:5	encode_subject_value	try	WireCodec	encoder . sequence ("nominal declarations" , & subject . nominal_declarations , encode_nominal_declaration ,)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:381:5	encode_subject_value	method-call	WireCodec	encoder | subject . interface . compile . as_bytes ()	closed-wire-tags	encoder.fixed
+src/compiler_package_v2/codec.rs:381:19	encode_subject_value	method-call	WireCodec	subject . interface . compile	closed-wire-tags	subject . interface . compile.as_bytes
+src/compiler_package_v2/codec.rs:382:5	encode_subject_value	method-call	WireCodec	encoder | subject . interface . admit_propose . as_bytes ()	closed-wire-tags	encoder.fixed
+src/compiler_package_v2/codec.rs:382:19	encode_subject_value	method-call	WireCodec	subject . interface . admit_propose	closed-wire-tags	subject . interface . admit_propose.as_bytes
+src/compiler_package_v2/codec.rs:383:5	encode_subject_value	indirect-target	WireCodec	encoder.sequence	closed-wire-tags	encode_definition
+src/compiler_package_v2/codec.rs:383:5	encode_subject_value	method-call	WireCodec	encoder | "definitions" | & subject . program | encode_definition	closed-wire-tags	encoder.sequence
+src/compiler_package_v2/codec.rs:383:5	encode_subject_value	try	WireCodec	encoder . sequence ("definitions" , & subject . program , encode_definition)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:384:5	encode_subject_value	direct-call	WireCodec	& mut encoder | & subject . build_request | 0	closed-wire-tags	encode_term
+src/compiler_package_v2/codec.rs:384:5	encode_subject_value	try	WireCodec	encode_term (& mut encoder , & subject . build_request , 0)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:385:5	encode_subject_value	direct-call	WireCodec	encoder . bytes	closed-wire-tags	Ok
+src/compiler_package_v2/codec.rs:392:5	encode_nominal_declaration	match	WireCodec	declaration	closed-wire-tags	NominalDeclaration :: Seed { domain , id } | NominalDeclaration :: RetainedSeed { domain , id , predecessor_revision_id , } | NominalDeclaration :: Allocated { domain , id , change_input , producer_input , local_slot , }
+src/compiler_package_v2/codec.rs:394:13	encode_nominal_declaration	method-call	WireCodec	encoder | 0x00	closed-wire-tags	encoder.u8
+src/compiler_package_v2/codec.rs:395:13	encode_nominal_declaration	method-call	WireCodec	encoder | domain . as_bytes ()	closed-wire-tags	encoder.fixed
+src/compiler_package_v2/codec.rs:395:27	encode_nominal_declaration	method-call	WireCodec	domain	closed-wire-tags	domain.as_bytes
+src/compiler_package_v2/codec.rs:396:13	encode_nominal_declaration	method-call	WireCodec	encoder | id . as_bytes ()	closed-wire-tags	encoder.fixed
+src/compiler_package_v2/codec.rs:396:27	encode_nominal_declaration	method-call	WireCodec	id	closed-wire-tags	id.as_bytes
+src/compiler_package_v2/codec.rs:403:13	encode_nominal_declaration	method-call	WireCodec	encoder | 0x01	closed-wire-tags	encoder.u8
+src/compiler_package_v2/codec.rs:404:13	encode_nominal_declaration	method-call	WireCodec	encoder | domain . as_bytes ()	closed-wire-tags	encoder.fixed
+src/compiler_package_v2/codec.rs:404:27	encode_nominal_declaration	method-call	WireCodec	domain	closed-wire-tags	domain.as_bytes
+src/compiler_package_v2/codec.rs:405:13	encode_nominal_declaration	method-call	WireCodec	encoder | id . as_bytes ()	closed-wire-tags	encoder.fixed
+src/compiler_package_v2/codec.rs:405:27	encode_nominal_declaration	method-call	WireCodec	id	closed-wire-tags	id.as_bytes
+src/compiler_package_v2/codec.rs:406:13	encode_nominal_declaration	method-call	WireCodec	encoder | predecessor_revision_id . as_bytes ()	closed-wire-tags	encoder.fixed
+src/compiler_package_v2/codec.rs:406:27	encode_nominal_declaration	method-call	WireCodec	predecessor_revision_id	closed-wire-tags	predecessor_revision_id.as_bytes
+src/compiler_package_v2/codec.rs:415:13	encode_nominal_declaration	method-call	WireCodec	encoder | 0x02	closed-wire-tags	encoder.u8
+src/compiler_package_v2/codec.rs:416:13	encode_nominal_declaration	method-call	WireCodec	encoder | domain . as_bytes ()	closed-wire-tags	encoder.fixed
+src/compiler_package_v2/codec.rs:416:27	encode_nominal_declaration	method-call	WireCodec	domain	closed-wire-tags	domain.as_bytes
+src/compiler_package_v2/codec.rs:417:13	encode_nominal_declaration	method-call	WireCodec	encoder | id . as_bytes ()	closed-wire-tags	encoder.fixed
+src/compiler_package_v2/codec.rs:417:27	encode_nominal_declaration	method-call	WireCodec	id	closed-wire-tags	id.as_bytes
+src/compiler_package_v2/codec.rs:418:13	encode_nominal_declaration	direct-call	WireCodec	encoder | change_input	closed-wire-tags	encode_nominal_ref
+src/compiler_package_v2/codec.rs:419:13	encode_nominal_declaration	direct-call	WireCodec	encoder | producer_input	closed-wire-tags	encode_nominal_ref
+src/compiler_package_v2/codec.rs:420:13	encode_nominal_declaration	method-call	WireCodec	encoder | * local_slot	closed-wire-tags	encoder.u64
+src/compiler_package_v2/codec.rs:423:5	encode_nominal_declaration	direct-call	WireCodec	()	closed-wire-tags	Ok
+src/compiler_package_v2/codec.rs:427:5	encode_nominal_ref	method-call	WireCodec	encoder | reference . domain . as_bytes ()	closed-wire-tags	encoder.fixed
+src/compiler_package_v2/codec.rs:427:19	encode_nominal_ref	method-call	WireCodec	reference . domain	closed-wire-tags	reference . domain.as_bytes
+src/compiler_package_v2/codec.rs:428:5	encode_nominal_ref	method-call	WireCodec	encoder | reference . id . as_bytes ()	closed-wire-tags	encoder.fixed
+src/compiler_package_v2/codec.rs:428:19	encode_nominal_ref	method-call	WireCodec	reference . id	closed-wire-tags	reference . id.as_bytes
+src/compiler_package_v2/codec.rs:432:5	encode_definition	method-call	WireCodec	encoder | definition . id . as_bytes ()	closed-wire-tags	encoder.fixed
+src/compiler_package_v2/codec.rs:432:19	encode_definition	method-call	WireCodec	definition . id	closed-wire-tags	definition . id.as_bytes
+src/compiler_package_v2/codec.rs:433:5	encode_definition	indirect-target	WireCodec	encoder.sequence	closed-wire-tags	| encoder , sort | { encode_sort (encoder , * sort) ; Ok (()) }
+src/compiler_package_v2/codec.rs:433:5	encode_definition	method-call	WireCodec	encoder | "definition arguments" | & definition . arguments | | encoder , sort | { encode_sort (encoder , * sort) ; Ok (()) }	closed-wire-tags	encoder.sequence
+src/compiler_package_v2/codec.rs:433:5	encode_definition	try	WireCodec	encoder . sequence ("definition arguments" , & definition . arguments , | encoder , sort | { encode_sort (encoder , * sort) ; Ok (()) } ,)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:437:13	encode_definition	direct-call	WireCodec	encoder | * sort	closed-wire-tags	encode_sort
+src/compiler_package_v2/codec.rs:438:13	encode_definition	direct-call	WireCodec	()	closed-wire-tags	Ok
+src/compiler_package_v2/codec.rs:441:5	encode_definition	direct-call	WireCodec	encoder | definition . result	closed-wire-tags	encode_sort
+src/compiler_package_v2/codec.rs:442:5	encode_definition	direct-call	WireCodec	encoder | & definition . body | 0	closed-wire-tags	encode_expr
+src/compiler_package_v2/codec.rs:446:23	encode_evidence_value	direct-call	WireCodec		closed-wire-tags	Encoder::new
+src/compiler_package_v2/codec.rs:447:5	encode_evidence_value	match	WireCodec	evidence	closed-wire-tags	CompilerEvidence :: Genesis | CompilerEvidence :: Successor { compile_certificate , admission_certificate , }
+src/compiler_package_v2/codec.rs:448:38	encode_evidence_value	method-call	WireCodec	encoder | 0x00	closed-wire-tags	encoder.u8
+src/compiler_package_v2/codec.rs:453:13	encode_evidence_value	method-call	WireCodec	encoder | 0x01	closed-wire-tags	encoder.u8
+src/compiler_package_v2/codec.rs:454:13	encode_evidence_value	direct-call	WireCodec	& mut encoder | compile_certificate	closed-wire-tags	encode_certificate
+src/compiler_package_v2/codec.rs:454:13	encode_evidence_value	try	WireCodec	encode_certificate (& mut encoder , compile_certificate)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:455:13	encode_evidence_value	direct-call	WireCodec	& mut encoder | admission_certificate	closed-wire-tags	encode_certificate
+src/compiler_package_v2/codec.rs:455:13	encode_evidence_value	try	WireCodec	encode_certificate (& mut encoder , admission_certificate)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:458:5	encode_evidence_value	direct-call	WireCodec	encoder . bytes	closed-wire-tags	Ok
+src/compiler_package_v2/codec.rs:465:5	encode_certificate	if	WireCodec	certificate . format_version != 0x00	closed-wire-tags	then | continue
+src/compiler_package_v2/codec.rs:466:16	encode_certificate	direct-call	WireCodec	EncodeError :: InvalidClosedTag { field : "certificate format version" , tag : certificate . format_version , }	closed-wire-tags	Err
+src/compiler_package_v2/codec.rs:471:5	encode_certificate	method-call	WireCodec	encoder | certificate . format_version	closed-wire-tags	encoder.u8
+src/compiler_package_v2/codec.rs:472:5	encode_certificate	direct-call	WireCodec	encoder | & certificate . statement	closed-wire-tags	encode_statement
+src/compiler_package_v2/codec.rs:472:5	encode_certificate	try	WireCodec	encode_statement (encoder , & certificate . statement)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:473:5	encode_certificate	indirect-target	WireCodec	encoder.sequence	closed-wire-tags	| encoder , node | { if ! (0x30 ..= 0x3e) . contains (& node . rule_tag) { return Err (EncodeError::InvalidClosedTag { field : "evaluation rule" , tag : node . rule_tag , }) ; } encoder . u8 (node . rule_tag) ; encoder . sequence ("node premises" , & node . premises , | encoder , premise | { encoder . u32 (* premise) ; Ok (()) }) ? ; encode_judgment (encoder , & node . conclusion) }
+src/compiler_package_v2/codec.rs:473:5	encode_certificate	method-call	WireCodec	encoder | "evaluation nodes" | & certificate . nodes | | encoder , node | { if ! (0x30 ..= 0x3e) . contains (& node . rule_tag) { return Err (EncodeError :: InvalidClosedTag { field : "evaluation rule" , tag : node . rule_tag , }) ; } encoder . u8 (node . rule_tag) ; encoder . sequence ("node premises" , & node . premises , | encoder , premise | { encoder . u32 (* premise) ; Ok (()) }) ? ; encode_judgment (encoder , & node . conclusion) }	closed-wire-tags	encoder.sequence
+src/compiler_package_v2/codec.rs:474:9	encode_certificate	if	WireCodec	! (0x30 ..= 0x3e) . contains (& node . rule_tag)	closed-wire-tags	then | continue
+src/compiler_package_v2/codec.rs:474:13	encode_certificate	method-call	WireCodec	(0x30 ..= 0x3e) | & node . rule_tag	closed-wire-tags	(0x30 ..= 0x3e).contains
+src/compiler_package_v2/codec.rs:475:20	encode_certificate	direct-call	WireCodec	EncodeError :: InvalidClosedTag { field : "evaluation rule" , tag : node . rule_tag , }	closed-wire-tags	Err
+src/compiler_package_v2/codec.rs:480:9	encode_certificate	method-call	WireCodec	encoder | node . rule_tag	closed-wire-tags	encoder.u8
+src/compiler_package_v2/codec.rs:481:9	encode_certificate	indirect-target	WireCodec	encoder.sequence	closed-wire-tags	| encoder , premise | { encoder . u32 (* premise) ; Ok (()) }
+src/compiler_package_v2/codec.rs:481:9	encode_certificate	method-call	WireCodec	encoder | "node premises" | & node . premises | | encoder , premise | { encoder . u32 (* premise) ; Ok (()) }	closed-wire-tags	encoder.sequence
+src/compiler_package_v2/codec.rs:481:9	encode_certificate	try	WireCodec	encoder . sequence ("node premises" , & node . premises , | encoder , premise | { encoder . u32 (* premise) ; Ok (()) })	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:482:13	encode_certificate	method-call	WireCodec	encoder | * premise	closed-wire-tags	encoder.u32
+src/compiler_package_v2/codec.rs:483:13	encode_certificate	direct-call	WireCodec	()	closed-wire-tags	Ok
+src/compiler_package_v2/codec.rs:485:9	encode_certificate	direct-call	WireCodec	encoder | & node . conclusion	closed-wire-tags	encode_judgment
+src/compiler_package_v2/codec.rs:490:5	encode_statement	method-call	WireCodec	encoder | "accepted predecessor" | & statement . exact_accepted_predecessor	closed-wire-tags	encoder.blob
+src/compiler_package_v2/codec.rs:490:5	encode_statement	try	WireCodec	encoder . blob ("accepted predecessor" , & statement . exact_accepted_predecessor ,)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:494:5	encode_statement	method-call	WireCodec	encoder | statement . core_contract_id . as_bytes ()	closed-wire-tags	encoder.fixed
+src/compiler_package_v2/codec.rs:494:19	encode_statement	method-call	WireCodec	statement . core_contract_id	closed-wire-tags	statement . core_contract_id.as_bytes
+src/compiler_package_v2/codec.rs:495:5	encode_statement	method-call	WireCodec	encoder | statement . physical_profile_id . as_bytes ()	closed-wire-tags	encoder.fixed
+src/compiler_package_v2/codec.rs:495:19	encode_statement	method-call	WireCodec	statement . physical_profile_id	closed-wire-tags	statement . physical_profile_id.as_bytes
+src/compiler_package_v2/codec.rs:496:5	encode_statement	method-call	WireCodec	encoder | statement . entrypoint . as_bytes ()	closed-wire-tags	encoder.fixed
+src/compiler_package_v2/codec.rs:496:19	encode_statement	method-call	WireCodec	statement . entrypoint	closed-wire-tags	statement . entrypoint.as_bytes
+src/compiler_package_v2/codec.rs:497:5	encode_statement	indirect-target	WireCodec	encoder.sequence	closed-wire-tags	encode_value
+src/compiler_package_v2/codec.rs:497:5	encode_statement	method-call	WireCodec	encoder | "statement arguments" | & statement . arguments | encode_value	closed-wire-tags	encoder.sequence
+src/compiler_package_v2/codec.rs:497:5	encode_statement	try	WireCodec	encoder . sequence ("statement arguments" , & statement . arguments , encode_value)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:498:5	encode_statement	method-call	WireCodec	encoder | statement . fuel_limit	closed-wire-tags	encoder.u64
+src/compiler_package_v2/codec.rs:499:5	encode_statement	direct-call	WireCodec	encoder | & statement . expected	closed-wire-tags	encode_outcome
+src/compiler_package_v2/codec.rs:503:5	encode_value	match	WireCodec	value	closed-wire-tags	KValue :: Bytes (bytes) | KValue :: Term (term)
+src/compiler_package_v2/codec.rs:505:13	encode_value	method-call	WireCodec	encoder | 0x00	closed-wire-tags	encoder.u8
+src/compiler_package_v2/codec.rs:506:13	encode_value	method-call	WireCodec	encoder | "BytesValue" | bytes	closed-wire-tags	encoder.blob
+src/compiler_package_v2/codec.rs:509:13	encode_value	method-call	WireCodec	encoder | 0x01	closed-wire-tags	encoder.u8
+src/compiler_package_v2/codec.rs:510:13	encode_value	direct-call	WireCodec	encoder | term | 0	closed-wire-tags	encode_term
+src/compiler_package_v2/codec.rs:516:5	encode_outcome	match	WireCodec	outcome	closed-wire-tags	EvalOutcome :: Returned { value , remaining_fuel , observations , }
+src/compiler_package_v2/codec.rs:522:13	encode_outcome	method-call	WireCodec	encoder | 0x00	closed-wire-tags	encoder.u8
+src/compiler_package_v2/codec.rs:523:13	encode_outcome	direct-call	WireCodec	encoder | value	closed-wire-tags	encode_value
+src/compiler_package_v2/codec.rs:523:13	encode_outcome	try	WireCodec	encode_value (encoder , value)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:524:13	encode_outcome	method-call	WireCodec	encoder | * remaining_fuel	closed-wire-tags	encoder.u64
+src/compiler_package_v2/codec.rs:525:13	encode_outcome	direct-call	WireCodec	encoder | observations | 0	closed-wire-tags	encode_term
+src/compiler_package_v2/codec.rs:531:5	encode_judgment	direct-call	WireCodec	encoder | & judgment . expression | 0	closed-wire-tags	encode_expr
+src/compiler_package_v2/codec.rs:531:5	encode_judgment	try	WireCodec	encode_expr (encoder , & judgment . expression , 0)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:532:5	encode_judgment	indirect-target	WireCodec	encoder.sequence	closed-wire-tags	encode_value
+src/compiler_package_v2/codec.rs:532:5	encode_judgment	method-call	WireCodec	encoder | "judgment environment" | & judgment . environment | encode_value	closed-wire-tags	encoder.sequence
+src/compiler_package_v2/codec.rs:532:5	encode_judgment	try	WireCodec	encoder . sequence ("judgment environment" , & judgment . environment , encode_value)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:533:5	encode_judgment	method-call	WireCodec	encoder | judgment . fuel_before	closed-wire-tags	encoder.u64
+src/compiler_package_v2/codec.rs:534:5	encode_judgment	direct-call	WireCodec	encoder | & judgment . observations_before | 0	closed-wire-tags	encode_term
+src/compiler_package_v2/codec.rs:534:5	encode_judgment	try	WireCodec	encode_term (encoder , & judgment . observations_before , 0)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:535:5	encode_judgment	direct-call	WireCodec	encoder | & judgment . value	closed-wire-tags	encode_value
+src/compiler_package_v2/codec.rs:535:5	encode_judgment	try	WireCodec	encode_value (encoder , & judgment . value)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:536:5	encode_judgment	method-call	WireCodec	encoder | judgment . fuel_after	closed-wire-tags	encoder.u64
+src/compiler_package_v2/codec.rs:537:5	encode_judgment	direct-call	WireCodec	encoder | & judgment . observations_after | 0	closed-wire-tags	encode_term
+src/compiler_package_v2/codec.rs:551:20	top	method-call	WireCodec	input	closed-wire-tags	input.len
+src/compiler_package_v2/codec.rs:556:9	rejection	direct-call	WireCodec	DecodeRejection { code , offset : u64 :: try_from (offset) . expect ("slice offset fits U64") , }	closed-wire-tags	DecodeFailure::Rejected
+src/compiler_package_v2/codec.rs:558:21	rejection	direct-call	WireCodec	offset	closed-wire-tags	u64::try_from
+src/compiler_package_v2/codec.rs:558:21	rejection	method-call	WireCodec	u64 :: try_from (offset) | "slice offset fits U64"	closed-wire-tags	u64 :: try_from (offset).expect
+src/compiler_package_v2/codec.rs:563:19	read	method-call	WireCodec	self . offset . checked_add (length) | | | self . rejection (DecodeCode :: LengthOrCountOverflow , self . offset)	closed-wire-tags	self . offset . checked_add (length).ok_or_else
+src/compiler_package_v2/codec.rs:563:19	read	method-call	WireCodec	self . offset | length	closed-wire-tags	self . offset.checked_add
+src/compiler_package_v2/codec.rs:563:19	read	try	WireCodec	self . offset . checked_add (length) . ok_or_else (| | self . rejection (DecodeCode :: LengthOrCountOverflow , self . offset))	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:566:28	read	method-call	WireCodec	self | DecodeCode :: LengthOrCountOverflow | self . offset	closed-wire-tags	self.rejection
+src/compiler_package_v2/codec.rs:567:9	read	if	WireCodec	end > self . limit	closed-wire-tags	then | continue
+src/compiler_package_v2/codec.rs:568:24	read	if	WireCodec	end <= self . input . len ()	closed-wire-tags	then | else
+src/compiler_package_v2/codec.rs:568:34	read	method-call	WireCodec	self . input	closed-wire-tags	self . input.len
+src/compiler_package_v2/codec.rs:573:26	read	if	WireCodec	code == DecodeCode :: Truncated	closed-wire-tags	then | else
+src/compiler_package_v2/codec.rs:574:17	read	method-call	WireCodec	self . input	closed-wire-tags	self . input.len
+src/compiler_package_v2/codec.rs:578:20	read	direct-call	WireCodec	self . rejection (code , offset)	closed-wire-tags	Err
+src/compiler_package_v2/codec.rs:578:24	read	method-call	WireCodec	self | code | offset	closed-wire-tags	self.rejection
+src/compiler_package_v2/codec.rs:582:9	read	direct-call	WireCodec	value	closed-wire-tags	Ok
+src/compiler_package_v2/codec.rs:586:9	u8	direct-call	WireCodec	self . read (1) ? [0]	closed-wire-tags	Ok
+src/compiler_package_v2/codec.rs:586:12	u8	method-call	WireCodec	self | 1	closed-wire-tags	self.read
+src/compiler_package_v2/codec.rs:586:12	u8	try	WireCodec	self . read (1)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:590:30	u32	method-call	WireCodec	self . read (4) ?	closed-wire-tags	self . read (4) ?.try_into
+src/compiler_package_v2/codec.rs:590:30	u32	method-call	WireCodec	self . read (4) ? . try_into () | "read returned exact U32 width"	closed-wire-tags	self . read (4) ? . try_into ().expect
+src/compiler_package_v2/codec.rs:590:30	u32	method-call	WireCodec	self | 4	closed-wire-tags	self.read
+src/compiler_package_v2/codec.rs:590:30	u32	try	WireCodec	self . read (4)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:594:9	u32	direct-call	WireCodec	u32 :: from_be_bytes (bytes)	closed-wire-tags	Ok
+src/compiler_package_v2/codec.rs:594:12	u32	direct-call	WireCodec	bytes	closed-wire-tags	u32::from_be_bytes
+src/compiler_package_v2/codec.rs:598:30	u64	method-call	WireCodec	self . read (8) ?	closed-wire-tags	self . read (8) ?.try_into
+src/compiler_package_v2/codec.rs:598:30	u64	method-call	WireCodec	self . read (8) ? . try_into () | "read returned exact U64 width"	closed-wire-tags	self . read (8) ? . try_into ().expect
+src/compiler_package_v2/codec.rs:598:30	u64	method-call	WireCodec	self | 8	closed-wire-tags	self.read
+src/compiler_package_v2/codec.rs:598:30	u64	try	WireCodec	self . read (8)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:602:9	u64	direct-call	WireCodec	u64 :: from_be_bytes (bytes)	closed-wire-tags	Ok
+src/compiler_package_v2/codec.rs:602:12	u64	direct-call	WireCodec	bytes	closed-wire-tags	u64::from_be_bytes
+src/compiler_package_v2/codec.rs:606:31	id32	method-call	WireCodec	self . read (32) ?	closed-wire-tags	self . read (32) ?.try_into
+src/compiler_package_v2/codec.rs:606:31	id32	method-call	WireCodec	self . read (32) ? . try_into () | "read returned exact Id32 width"	closed-wire-tags	self . read (32) ? . try_into ().expect
+src/compiler_package_v2/codec.rs:606:31	id32	method-call	WireCodec	self | 32	closed-wire-tags	self.read
+src/compiler_package_v2/codec.rs:606:31	id32	try	WireCodec	self . read (32)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:610:9	id32	direct-call	WireCodec	Id32 (bytes)	closed-wire-tags	Ok
+src/compiler_package_v2/codec.rs:610:12	id32	direct-call	WireCodec	bytes	closed-wire-tags	Id32
+src/compiler_package_v2/codec.rs:614:31	hash32	method-call	WireCodec	self . read (32) ?	closed-wire-tags	self . read (32) ?.try_into
+src/compiler_package_v2/codec.rs:614:31	hash32	method-call	WireCodec	self . read (32) ? . try_into () | "read returned exact Hash32 width"	closed-wire-tags	self . read (32) ? . try_into ().expect
+src/compiler_package_v2/codec.rs:614:31	hash32	method-call	WireCodec	self | 32	closed-wire-tags	self.read
+src/compiler_package_v2/codec.rs:614:31	hash32	try	WireCodec	self . read (32)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:618:9	hash32	direct-call	WireCodec	Hash32 (bytes)	closed-wire-tags	Ok
+src/compiler_package_v2/codec.rs:618:12	hash32	direct-call	WireCodec	bytes	closed-wire-tags	Hash32
+src/compiler_package_v2/codec.rs:623:22	blob	direct-call	WireCodec	self . u32 () ?	closed-wire-tags	usize::try_from
+src/compiler_package_v2/codec.rs:623:22	blob	method-call	WireCodec	usize :: try_from (self . u32 () ?) | | _ | self . rejection (DecodeCode :: LengthOrCountOverflow , length_offset)	closed-wire-tags	usize :: try_from (self . u32 () ?).map_err
+src/compiler_package_v2/codec.rs:623:22	blob	try	WireCodec	usize :: try_from (self . u32 () ?) . map_err (| _ | self . rejection (DecodeCode :: LengthOrCountOverflow , length_offset))	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:623:38	blob	method-call	WireCodec	self	closed-wire-tags	self.u32
+src/compiler_package_v2/codec.rs:623:38	blob	try	WireCodec	self . u32 ()	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:624:26	blob	method-call	WireCodec	self | DecodeCode :: LengthOrCountOverflow | length_offset	closed-wire-tags	self.rejection
+src/compiler_package_v2/codec.rs:625:9	blob	direct-call	WireCodec	self . read (length) ? . to_vec ()	closed-wire-tags	Ok
+src/compiler_package_v2/codec.rs:625:12	blob	method-call	WireCodec	self . read (length) ?	closed-wire-tags	self . read (length) ?.to_vec
+src/compiler_package_v2/codec.rs:625:12	blob	method-call	WireCodec	self | length	closed-wire-tags	self.read
+src/compiler_package_v2/codec.rs:625:12	blob	try	WireCodec	self . read (length)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:633:21	sequence	direct-call	WireCodec	self . u32 () ?	closed-wire-tags	usize::try_from
+src/compiler_package_v2/codec.rs:633:21	sequence	method-call	WireCodec	usize :: try_from (self . u32 () ?) | | _ | self . rejection (DecodeCode :: LengthOrCountOverflow , count_offset)	closed-wire-tags	usize :: try_from (self . u32 () ?).map_err
+src/compiler_package_v2/codec.rs:633:21	sequence	try	WireCodec	usize :: try_from (self . u32 () ?) . map_err (| _ | self . rejection (DecodeCode :: LengthOrCountOverflow , count_offset))	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:633:37	sequence	method-call	WireCodec	self	closed-wire-tags	self.u32
+src/compiler_package_v2/codec.rs:633:37	sequence	try	WireCodec	self . u32 ()	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:634:26	sequence	method-call	WireCodec	self | DecodeCode :: LengthOrCountOverflow | count_offset	closed-wire-tags	self.rejection
+src/compiler_package_v2/codec.rs:635:26	sequence	direct-call	WireCodec		closed-wire-tags	Vec::new
+src/compiler_package_v2/codec.rs:636:9	sequence	for	WireCodec	0 .. count	closed-wire-tags	_
+src/compiler_package_v2/codec.rs:637:13	sequence	method-call	WireCodec	values . try_reserve (1) | | _ | DecodeFailure :: ResourceExhausted	closed-wire-tags	values . try_reserve (1).map_err
+src/compiler_package_v2/codec.rs:637:13	sequence	method-call	WireCodec	values | 1	closed-wire-tags	values.try_reserve
+src/compiler_package_v2/codec.rs:637:13	sequence	try	WireCodec	values . try_reserve (1) . map_err (| _ | DecodeFailure :: ResourceExhausted)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:640:13	sequence	method-call	WireCodec	values | decode (self) ?	closed-wire-tags	values.push
+src/compiler_package_v2/codec.rs:640:25	sequence	indirect-call	WireCodec	self	closed-wire-tags	decode
+src/compiler_package_v2/codec.rs:640:25	sequence	try	WireCodec	decode (self)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:642:9	sequence	direct-call	WireCodec	values	closed-wire-tags	Ok
+src/compiler_package_v2/codec.rs:651:19	frame	method-call	WireCodec	self	closed-wire-tags	self.u8
+src/compiler_package_v2/codec.rs:651:19	frame	try	WireCodec	self . u8 ()	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:652:9	frame	if	WireCodec	tag != expected_tag	closed-wire-tags	then | continue
+src/compiler_package_v2/codec.rs:653:20	frame	direct-call	WireCodec	self . rejection (DecodeCode :: FrameTagOrderOrCount , tag_offset)	closed-wire-tags	Err
+src/compiler_package_v2/codec.rs:653:24	frame	method-call	WireCodec	self | DecodeCode :: FrameTagOrderOrCount | tag_offset	closed-wire-tags	self.rejection
+src/compiler_package_v2/codec.rs:656:22	frame	direct-call	WireCodec	self . u32 () ?	closed-wire-tags	usize::try_from
+src/compiler_package_v2/codec.rs:656:22	frame	method-call	WireCodec	usize :: try_from (self . u32 () ?) | | _ | self . rejection (DecodeCode :: LengthOrCountOverflow , length_offset)	closed-wire-tags	usize :: try_from (self . u32 () ?).map_err
+src/compiler_package_v2/codec.rs:656:22	frame	try	WireCodec	usize :: try_from (self . u32 () ?) . map_err (| _ | self . rejection (DecodeCode :: LengthOrCountOverflow , length_offset))	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:656:38	frame	method-call	WireCodec	self	closed-wire-tags	self.u32
+src/compiler_package_v2/codec.rs:656:38	frame	try	WireCodec	self . u32 ()	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:657:26	frame	method-call	WireCodec	self | DecodeCode :: LengthOrCountOverflow | length_offset	closed-wire-tags	self.rejection
+src/compiler_package_v2/codec.rs:659:19	frame	method-call	WireCodec	start . checked_add (length) | | | self . rejection (DecodeCode :: LengthOrCountOverflow , length_offset)	closed-wire-tags	start . checked_add (length).ok_or_else
+src/compiler_package_v2/codec.rs:659:19	frame	method-call	WireCodec	start | length	closed-wire-tags	start.checked_add
+src/compiler_package_v2/codec.rs:659:19	frame	try	WireCodec	start . checked_add (length) . ok_or_else (| | self . rejection (DecodeCode :: LengthOrCountOverflow , length_offset))	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:661:28	frame	method-call	WireCodec	self | DecodeCode :: LengthOrCountOverflow | length_offset	closed-wire-tags	self.rejection
+src/compiler_package_v2/codec.rs:662:9	frame	if	WireCodec	end > self . limit	closed-wire-tags	then | continue
+src/compiler_package_v2/codec.rs:663:20	frame	direct-call	WireCodec	self . rejection (DecodeCode :: Truncated , self . limit)	closed-wire-tags	Err
+src/compiler_package_v2/codec.rs:663:24	frame	method-call	WireCodec	self | DecodeCode :: Truncated | self . limit	closed-wire-tags	self.rejection
+src/compiler_package_v2/codec.rs:670:21	frame	indirect-call	WireCodec	& mut bounded	closed-wire-tags	decode
+src/compiler_package_v2/codec.rs:670:21	frame	try	WireCodec	decode (& mut bounded)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:671:9	frame	if	WireCodec	bounded . offset != end	closed-wire-tags	then | continue
+src/compiler_package_v2/codec.rs:672:20	frame	direct-call	WireCodec	self . rejection (DecodeCode :: BoundedValueUnderConsumed , end)	closed-wire-tags	Err
+src/compiler_package_v2/codec.rs:672:24	frame	method-call	WireCodec	self | DecodeCode :: BoundedValueUnderConsumed | end	closed-wire-tags	self.rejection
+src/compiler_package_v2/codec.rs:675:9	frame	direct-call	WireCodec	(value , & self . input [start .. end])	closed-wire-tags	Ok
+src/compiler_package_v2/codec.rs:680:22	decode	direct-call	WireCodec	input	closed-wire-tags	Cursor::top
+src/compiler_package_v2/codec.rs:681:5	decode	for	WireCodec	MAGIC	closed-wire-tags	expected
+src/compiler_package_v2/codec.rs:683:21	decode	method-call	WireCodec	cursor	closed-wire-tags	cursor.u8
+src/compiler_package_v2/codec.rs:683:21	decode	try	WireCodec	cursor . u8 ()	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:684:9	decode	if	WireCodec	found != * expected	closed-wire-tags	then | continue
+src/compiler_package_v2/codec.rs:685:20	decode	direct-call	WireCodec	cursor . rejection (DecodeCode :: WrongMagic , offset)	closed-wire-tags	Err
+src/compiler_package_v2/codec.rs:685:24	decode	method-call	WireCodec	cursor | DecodeCode :: WrongMagic | offset	closed-wire-tags	cursor.rejection
+src/compiler_package_v2/codec.rs:689:19	decode	method-call	WireCodec	cursor	closed-wire-tags	cursor.u8
+src/compiler_package_v2/codec.rs:689:19	decode	try	WireCodec	cursor . u8 ()	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:690:5	decode	if	WireCodec	version != VERSION	closed-wire-tags	then | continue
+src/compiler_package_v2/codec.rs:691:16	decode	direct-call	WireCodec	cursor . rejection (DecodeCode :: UnknownVersion , version_offset)	closed-wire-tags	Err
+src/compiler_package_v2/codec.rs:691:20	decode	method-call	WireCodec	cursor | DecodeCode :: UnknownVersion | version_offset	closed-wire-tags	cursor.rejection
+src/compiler_package_v2/codec.rs:693:48	decode	indirect-target	WireCodec	Cursor::frame	closed-wire-tags	decode_core_manifest_value
+src/compiler_package_v2/codec.rs:693:48	decode	method-call	WireCodec	cursor | 0x01 | decode_core_manifest_value	closed-wire-tags	Cursor::frame
+src/compiler_package_v2/codec.rs:693:48	decode	try	WireCodec	cursor . frame (0x01 , decode_core_manifest_value)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:694:36	decode	indirect-target	WireCodec	Cursor::frame	closed-wire-tags	decode_subject_value
+src/compiler_package_v2/codec.rs:694:36	decode	method-call	WireCodec	cursor | 0x02 | decode_subject_value	closed-wire-tags	Cursor::frame
+src/compiler_package_v2/codec.rs:694:36	decode	try	WireCodec	cursor . frame (0x02 , decode_subject_value)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:695:38	decode	indirect-target	WireCodec	Cursor::frame	closed-wire-tags	decode_evidence_value
+src/compiler_package_v2/codec.rs:695:38	decode	method-call	WireCodec	cursor | 0x03 | decode_evidence_value	closed-wire-tags	Cursor::frame
+src/compiler_package_v2/codec.rs:695:38	decode	try	WireCodec	cursor . frame (0x03 , decode_evidence_value)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:696:5	decode	if	WireCodec	cursor . offset != cursor . limit	closed-wire-tags	then | continue
+src/compiler_package_v2/codec.rs:697:16	decode	direct-call	WireCodec	cursor . rejection (DecodeCode :: TrailingBytes , cursor . offset)	closed-wire-tags	Err
+src/compiler_package_v2/codec.rs:697:20	decode	method-call	WireCodec	cursor | DecodeCode :: TrailingBytes | cursor . offset	closed-wire-tags	cursor.rejection
+src/compiler_package_v2/codec.rs:699:5	decode	direct-call	WireCodec	DecodedCompilerPackage :: new (input . to_vec () . into_boxed_slice () , exact_core_manifest . to_vec () . into_boxed_slice () , exact_subject . to_vec () . into_boxed_slice () , exact_evidence . to_vec () . into_boxed_slice () , CompilerPackage { core_manifest , subject , evidence , } ,)	closed-wire-tags	Ok
+src/compiler_package_v2/codec.rs:699:8	decode	direct-call	WireCodec	input . to_vec () . into_boxed_slice () | exact_core_manifest . to_vec () . into_boxed_slice () | exact_subject . to_vec () . into_boxed_slice () | exact_evidence . to_vec () . into_boxed_slice () | CompilerPackage { core_manifest , subject , evidence , }	closed-wire-tags	DecodedCompilerPackage::new
+src/compiler_package_v2/codec.rs:700:9	decode	method-call	WireCodec	input	closed-wire-tags	input.to_vec
+src/compiler_package_v2/codec.rs:700:9	decode	method-call	WireCodec	input . to_vec ()	closed-wire-tags	input . to_vec ().into_boxed_slice
+src/compiler_package_v2/codec.rs:701:9	decode	method-call	WireCodec	exact_core_manifest	closed-wire-tags	exact_core_manifest.to_vec
+src/compiler_package_v2/codec.rs:701:9	decode	method-call	WireCodec	exact_core_manifest . to_vec ()	closed-wire-tags	exact_core_manifest . to_vec ().into_boxed_slice
+src/compiler_package_v2/codec.rs:702:9	decode	method-call	WireCodec	exact_subject	closed-wire-tags	exact_subject.to_vec
+src/compiler_package_v2/codec.rs:702:9	decode	method-call	WireCodec	exact_subject . to_vec ()	closed-wire-tags	exact_subject . to_vec ().into_boxed_slice
+src/compiler_package_v2/codec.rs:703:9	decode	method-call	WireCodec	exact_evidence	closed-wire-tags	exact_evidence.to_vec
+src/compiler_package_v2/codec.rs:703:9	decode	method-call	WireCodec	exact_evidence . to_vec ()	closed-wire-tags	exact_evidence . to_vec ().into_boxed_slice
+src/compiler_package_v2/codec.rs:713:5	decode_core_manifest_value	direct-call	WireCodec	CoreManifest { manifest_version : cursor . u8 () ? , frame_tags : cursor . sequence (| cursor | cursor . u8 ()) ? , term_tags : cursor . sequence (| cursor | cursor . u8 ()) ? , sort_tags : cursor . sequence (| cursor | cursor . u8 ()) ? , expression_forms : cursor . sequence (decode_named_signature) ? , abi_forms : cursor . sequence (decode_named_signature) ? , premise_policy_tags : cursor . sequence (| cursor | cursor . u8 ()) ? , lineage_tags : cursor . sequence (| cursor | cursor . u8 ()) ? , nominal_declaration_tags : cursor . sequence (| cursor | cursor . u8 ()) ? , compiler_evidence_tags : cursor . sequence (| cursor | cursor . u8 ()) ? , value_tags : cursor . sequence (| cursor | cursor . u8 ()) ? , eval_outcome_tags : cursor . sequence (| cursor | cursor . u8 ()) ? , decode_verdict_tags : cursor . sequence (| cursor | cursor . u8 ()) ? , decode_code_tags : cursor . sequence (| cursor | cursor . u8 ()) ? , authorization_stage_tags : cursor . sequence (| cursor | cursor . u8 ()) ? , authorization_code_tags : cursor . sequence (| cursor | cursor . u8 ()) ? , static_rules : cursor . sequence (decode_rule_signature) ? , evaluation_rules : cursor . sequence (decode_rule_signature) ? , certificate_format_version : cursor . u8 () ? , certificate_signature : cursor . blob () ? , contract_clauses : cursor . sequence (| cursor | cursor . blob ()) ? , physical_profile : decode_physical_profile (cursor) ? , }	closed-wire-tags	Ok
+src/compiler_package_v2/codec.rs:714:27	decode_core_manifest_value	method-call	WireCodec	cursor	closed-wire-tags	cursor.u8
+src/compiler_package_v2/codec.rs:714:27	decode_core_manifest_value	try	WireCodec	cursor . u8 ()	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:715:21	decode_core_manifest_value	indirect-target	WireCodec	cursor.sequence	closed-wire-tags	| cursor | cursor . u8 ()
+src/compiler_package_v2/codec.rs:715:21	decode_core_manifest_value	method-call	WireCodec	cursor | | cursor | cursor . u8 ()	closed-wire-tags	cursor.sequence
+src/compiler_package_v2/codec.rs:715:21	decode_core_manifest_value	try	WireCodec	cursor . sequence (| cursor | cursor . u8 ())	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:715:46	decode_core_manifest_value	method-call	WireCodec	cursor	closed-wire-tags	cursor.u8
+src/compiler_package_v2/codec.rs:716:20	decode_core_manifest_value	indirect-target	WireCodec	cursor.sequence	closed-wire-tags	| cursor | cursor . u8 ()
+src/compiler_package_v2/codec.rs:716:20	decode_core_manifest_value	method-call	WireCodec	cursor | | cursor | cursor . u8 ()	closed-wire-tags	cursor.sequence
+src/compiler_package_v2/codec.rs:716:20	decode_core_manifest_value	try	WireCodec	cursor . sequence (| cursor | cursor . u8 ())	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:716:45	decode_core_manifest_value	method-call	WireCodec	cursor	closed-wire-tags	cursor.u8
+src/compiler_package_v2/codec.rs:717:20	decode_core_manifest_value	indirect-target	WireCodec	cursor.sequence	closed-wire-tags	| cursor | cursor . u8 ()
+src/compiler_package_v2/codec.rs:717:20	decode_core_manifest_value	method-call	WireCodec	cursor | | cursor | cursor . u8 ()	closed-wire-tags	cursor.sequence
+src/compiler_package_v2/codec.rs:717:20	decode_core_manifest_value	try	WireCodec	cursor . sequence (| cursor | cursor . u8 ())	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:717:45	decode_core_manifest_value	method-call	WireCodec	cursor	closed-wire-tags	cursor.u8
+src/compiler_package_v2/codec.rs:718:27	decode_core_manifest_value	indirect-target	WireCodec	cursor.sequence	closed-wire-tags	decode_named_signature
+src/compiler_package_v2/codec.rs:718:27	decode_core_manifest_value	method-call	WireCodec	cursor | decode_named_signature	closed-wire-tags	cursor.sequence
+src/compiler_package_v2/codec.rs:718:27	decode_core_manifest_value	try	WireCodec	cursor . sequence (decode_named_signature)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:719:20	decode_core_manifest_value	indirect-target	WireCodec	cursor.sequence	closed-wire-tags	decode_named_signature
+src/compiler_package_v2/codec.rs:719:20	decode_core_manifest_value	method-call	WireCodec	cursor | decode_named_signature	closed-wire-tags	cursor.sequence
+src/compiler_package_v2/codec.rs:719:20	decode_core_manifest_value	try	WireCodec	cursor . sequence (decode_named_signature)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:720:30	decode_core_manifest_value	indirect-target	WireCodec	cursor.sequence	closed-wire-tags	| cursor | cursor . u8 ()
+src/compiler_package_v2/codec.rs:720:30	decode_core_manifest_value	method-call	WireCodec	cursor | | cursor | cursor . u8 ()	closed-wire-tags	cursor.sequence
+src/compiler_package_v2/codec.rs:720:30	decode_core_manifest_value	try	WireCodec	cursor . sequence (| cursor | cursor . u8 ())	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:720:55	decode_core_manifest_value	method-call	WireCodec	cursor	closed-wire-tags	cursor.u8
+src/compiler_package_v2/codec.rs:721:23	decode_core_manifest_value	indirect-target	WireCodec	cursor.sequence	closed-wire-tags	| cursor | cursor . u8 ()
+src/compiler_package_v2/codec.rs:721:23	decode_core_manifest_value	method-call	WireCodec	cursor | | cursor | cursor . u8 ()	closed-wire-tags	cursor.sequence
+src/compiler_package_v2/codec.rs:721:23	decode_core_manifest_value	try	WireCodec	cursor . sequence (| cursor | cursor . u8 ())	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:721:48	decode_core_manifest_value	method-call	WireCodec	cursor	closed-wire-tags	cursor.u8
+src/compiler_package_v2/codec.rs:722:35	decode_core_manifest_value	indirect-target	WireCodec	cursor.sequence	closed-wire-tags	| cursor | cursor . u8 ()
+src/compiler_package_v2/codec.rs:722:35	decode_core_manifest_value	method-call	WireCodec	cursor | | cursor | cursor . u8 ()	closed-wire-tags	cursor.sequence
+src/compiler_package_v2/codec.rs:722:35	decode_core_manifest_value	try	WireCodec	cursor . sequence (| cursor | cursor . u8 ())	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:722:60	decode_core_manifest_value	method-call	WireCodec	cursor	closed-wire-tags	cursor.u8
+src/compiler_package_v2/codec.rs:723:33	decode_core_manifest_value	indirect-target	WireCodec	cursor.sequence	closed-wire-tags	| cursor | cursor . u8 ()
+src/compiler_package_v2/codec.rs:723:33	decode_core_manifest_value	method-call	WireCodec	cursor | | cursor | cursor . u8 ()	closed-wire-tags	cursor.sequence
+src/compiler_package_v2/codec.rs:723:33	decode_core_manifest_value	try	WireCodec	cursor . sequence (| cursor | cursor . u8 ())	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:723:58	decode_core_manifest_value	method-call	WireCodec	cursor	closed-wire-tags	cursor.u8
+src/compiler_package_v2/codec.rs:724:21	decode_core_manifest_value	indirect-target	WireCodec	cursor.sequence	closed-wire-tags	| cursor | cursor . u8 ()
+src/compiler_package_v2/codec.rs:724:21	decode_core_manifest_value	method-call	WireCodec	cursor | | cursor | cursor . u8 ()	closed-wire-tags	cursor.sequence
+src/compiler_package_v2/codec.rs:724:21	decode_core_manifest_value	try	WireCodec	cursor . sequence (| cursor | cursor . u8 ())	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:724:46	decode_core_manifest_value	method-call	WireCodec	cursor	closed-wire-tags	cursor.u8
+src/compiler_package_v2/codec.rs:725:28	decode_core_manifest_value	indirect-target	WireCodec	cursor.sequence	closed-wire-tags	| cursor | cursor . u8 ()
+src/compiler_package_v2/codec.rs:725:28	decode_core_manifest_value	method-call	WireCodec	cursor | | cursor | cursor . u8 ()	closed-wire-tags	cursor.sequence
+src/compiler_package_v2/codec.rs:725:28	decode_core_manifest_value	try	WireCodec	cursor . sequence (| cursor | cursor . u8 ())	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:725:53	decode_core_manifest_value	method-call	WireCodec	cursor	closed-wire-tags	cursor.u8
+src/compiler_package_v2/codec.rs:726:30	decode_core_manifest_value	indirect-target	WireCodec	cursor.sequence	closed-wire-tags	| cursor | cursor . u8 ()
+src/compiler_package_v2/codec.rs:726:30	decode_core_manifest_value	method-call	WireCodec	cursor | | cursor | cursor . u8 ()	closed-wire-tags	cursor.sequence
+src/compiler_package_v2/codec.rs:726:30	decode_core_manifest_value	try	WireCodec	cursor . sequence (| cursor | cursor . u8 ())	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:726:55	decode_core_manifest_value	method-call	WireCodec	cursor	closed-wire-tags	cursor.u8
+src/compiler_package_v2/codec.rs:727:27	decode_core_manifest_value	indirect-target	WireCodec	cursor.sequence	closed-wire-tags	| cursor | cursor . u8 ()
+src/compiler_package_v2/codec.rs:727:27	decode_core_manifest_value	method-call	WireCodec	cursor | | cursor | cursor . u8 ()	closed-wire-tags	cursor.sequence
+src/compiler_package_v2/codec.rs:727:27	decode_core_manifest_value	try	WireCodec	cursor . sequence (| cursor | cursor . u8 ())	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:727:52	decode_core_manifest_value	method-call	WireCodec	cursor	closed-wire-tags	cursor.u8
+src/compiler_package_v2/codec.rs:728:35	decode_core_manifest_value	indirect-target	WireCodec	cursor.sequence	closed-wire-tags	| cursor | cursor . u8 ()
+src/compiler_package_v2/codec.rs:728:35	decode_core_manifest_value	method-call	WireCodec	cursor | | cursor | cursor . u8 ()	closed-wire-tags	cursor.sequence
+src/compiler_package_v2/codec.rs:728:35	decode_core_manifest_value	try	WireCodec	cursor . sequence (| cursor | cursor . u8 ())	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:728:60	decode_core_manifest_value	method-call	WireCodec	cursor	closed-wire-tags	cursor.u8
+src/compiler_package_v2/codec.rs:729:34	decode_core_manifest_value	indirect-target	WireCodec	cursor.sequence	closed-wire-tags	| cursor | cursor . u8 ()
+src/compiler_package_v2/codec.rs:729:34	decode_core_manifest_value	method-call	WireCodec	cursor | | cursor | cursor . u8 ()	closed-wire-tags	cursor.sequence
+src/compiler_package_v2/codec.rs:729:34	decode_core_manifest_value	try	WireCodec	cursor . sequence (| cursor | cursor . u8 ())	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:729:59	decode_core_manifest_value	method-call	WireCodec	cursor	closed-wire-tags	cursor.u8
+src/compiler_package_v2/codec.rs:730:23	decode_core_manifest_value	indirect-target	WireCodec	cursor.sequence	closed-wire-tags	decode_rule_signature
+src/compiler_package_v2/codec.rs:730:23	decode_core_manifest_value	method-call	WireCodec	cursor | decode_rule_signature	closed-wire-tags	cursor.sequence
+src/compiler_package_v2/codec.rs:730:23	decode_core_manifest_value	try	WireCodec	cursor . sequence (decode_rule_signature)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:731:27	decode_core_manifest_value	indirect-target	WireCodec	cursor.sequence	closed-wire-tags	decode_rule_signature
+src/compiler_package_v2/codec.rs:731:27	decode_core_manifest_value	method-call	WireCodec	cursor | decode_rule_signature	closed-wire-tags	cursor.sequence
+src/compiler_package_v2/codec.rs:731:27	decode_core_manifest_value	try	WireCodec	cursor . sequence (decode_rule_signature)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:732:37	decode_core_manifest_value	method-call	WireCodec	cursor	closed-wire-tags	cursor.u8
+src/compiler_package_v2/codec.rs:732:37	decode_core_manifest_value	try	WireCodec	cursor . u8 ()	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:733:32	decode_core_manifest_value	method-call	WireCodec	cursor	closed-wire-tags	cursor.blob
+src/compiler_package_v2/codec.rs:733:32	decode_core_manifest_value	try	WireCodec	cursor . blob ()	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:734:27	decode_core_manifest_value	indirect-target	WireCodec	cursor.sequence	closed-wire-tags	| cursor | cursor . blob ()
+src/compiler_package_v2/codec.rs:734:27	decode_core_manifest_value	method-call	WireCodec	cursor | | cursor | cursor . blob ()	closed-wire-tags	cursor.sequence
+src/compiler_package_v2/codec.rs:734:27	decode_core_manifest_value	try	WireCodec	cursor . sequence (| cursor | cursor . blob ())	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:734:52	decode_core_manifest_value	method-call	WireCodec	cursor	closed-wire-tags	cursor.blob
+src/compiler_package_v2/codec.rs:735:27	decode_core_manifest_value	direct-call	WireCodec	cursor	closed-wire-tags	decode_physical_profile
+src/compiler_package_v2/codec.rs:735:27	decode_core_manifest_value	try	WireCodec	decode_physical_profile (cursor)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:740:5	decode_named_signature	direct-call	WireCodec	NamedSignature { tag : cursor . u8 () ? , signature : cursor . blob () ? , }	closed-wire-tags	Ok
+src/compiler_package_v2/codec.rs:741:14	decode_named_signature	method-call	WireCodec	cursor	closed-wire-tags	cursor.u8
+src/compiler_package_v2/codec.rs:741:14	decode_named_signature	try	WireCodec	cursor . u8 ()	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:742:20	decode_named_signature	method-call	WireCodec	cursor	closed-wire-tags	cursor.blob
+src/compiler_package_v2/codec.rs:742:20	decode_named_signature	try	WireCodec	cursor . blob ()	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:747:5	decode_rule_signature	direct-call	WireCodec	RuleSignature { tag : cursor . u8 () ? , premise_policy : cursor . u8 () ? , clause : cursor . blob () ? , }	closed-wire-tags	Ok
+src/compiler_package_v2/codec.rs:748:14	decode_rule_signature	method-call	WireCodec	cursor	closed-wire-tags	cursor.u8
+src/compiler_package_v2/codec.rs:748:14	decode_rule_signature	try	WireCodec	cursor . u8 ()	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:749:25	decode_rule_signature	method-call	WireCodec	cursor	closed-wire-tags	cursor.u8
+src/compiler_package_v2/codec.rs:749:25	decode_rule_signature	try	WireCodec	cursor . u8 ()	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:750:17	decode_rule_signature	method-call	WireCodec	cursor	closed-wire-tags	cursor.blob
+src/compiler_package_v2/codec.rs:750:17	decode_rule_signature	try	WireCodec	cursor . blob ()	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:755:5	decode_physical_profile	direct-call	WireCodec	PhysicalProfile { profile_version : cursor . u8 () ? , observation_policy : cursor . u8 () ? , operations : cursor . sequence (| cursor | { Ok (PhysicalOperation { operation_id : cursor . id32 () ? , arguments : cursor . sequence (decode_sort) ? , result : decode_sort (cursor) ? , }) }) ? , }	closed-wire-tags	Ok
+src/compiler_package_v2/codec.rs:756:26	decode_physical_profile	method-call	WireCodec	cursor	closed-wire-tags	cursor.u8
+src/compiler_package_v2/codec.rs:756:26	decode_physical_profile	try	WireCodec	cursor . u8 ()	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:757:29	decode_physical_profile	method-call	WireCodec	cursor	closed-wire-tags	cursor.u8
+src/compiler_package_v2/codec.rs:757:29	decode_physical_profile	try	WireCodec	cursor . u8 ()	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:758:21	decode_physical_profile	indirect-target	WireCodec	cursor.sequence	closed-wire-tags	| cursor | { Ok (PhysicalOperation { operation_id : cursor . id32 () ? , arguments : cursor . sequence (decode_sort) ? , result : decode_sort (cursor) ? , }) }
+src/compiler_package_v2/codec.rs:758:21	decode_physical_profile	method-call	WireCodec	cursor | | cursor | { Ok (PhysicalOperation { operation_id : cursor . id32 () ? , arguments : cursor . sequence (decode_sort) ? , result : decode_sort (cursor) ? , }) }	closed-wire-tags	cursor.sequence
+src/compiler_package_v2/codec.rs:758:21	decode_physical_profile	try	WireCodec	cursor . sequence (| cursor | { Ok (PhysicalOperation { operation_id : cursor . id32 () ? , arguments : cursor . sequence (decode_sort) ? , result : decode_sort (cursor) ? , }) })	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:759:13	decode_physical_profile	direct-call	WireCodec	PhysicalOperation { operation_id : cursor . id32 () ? , arguments : cursor . sequence (decode_sort) ? , result : decode_sort (cursor) ? , }	closed-wire-tags	Ok
+src/compiler_package_v2/codec.rs:760:31	decode_physical_profile	method-call	WireCodec	cursor	closed-wire-tags	cursor.id32
+src/compiler_package_v2/codec.rs:760:31	decode_physical_profile	try	WireCodec	cursor . id32 ()	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:761:28	decode_physical_profile	indirect-target	WireCodec	cursor.sequence	closed-wire-tags	decode_sort
+src/compiler_package_v2/codec.rs:761:28	decode_physical_profile	method-call	WireCodec	cursor | decode_sort	closed-wire-tags	cursor.sequence
+src/compiler_package_v2/codec.rs:761:28	decode_physical_profile	try	WireCodec	cursor . sequence (decode_sort)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:762:25	decode_physical_profile	direct-call	WireCodec	cursor	closed-wire-tags	decode_sort
+src/compiler_package_v2/codec.rs:762:25	decode_physical_profile	try	WireCodec	decode_sort (cursor)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:769:5	unknown	method-call	WireCodec	cursor | DecodeCode :: UnknownSumTag | offset	closed-wire-tags	cursor.rejection
+src/compiler_package_v2/codec.rs:774:5	decode_sort	match	WireCodec	cursor . u8 () ?	closed-wire-tags	0x00 | 0x01 | _
+src/compiler_package_v2/codec.rs:774:11	decode_sort	method-call	WireCodec	cursor	closed-wire-tags	cursor.u8
+src/compiler_package_v2/codec.rs:774:11	decode_sort	try	WireCodec	cursor . u8 ()	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:775:17	decode_sort	direct-call	WireCodec	KSort :: Bytes	closed-wire-tags	Ok
+src/compiler_package_v2/codec.rs:776:17	decode_sort	direct-call	WireCodec	KSort :: Term	closed-wire-tags	Ok
+src/compiler_package_v2/codec.rs:777:14	decode_sort	direct-call	WireCodec	unknown (cursor , offset)	closed-wire-tags	Err
+src/compiler_package_v2/codec.rs:777:18	decode_sort	direct-call	WireCodec	cursor | offset	closed-wire-tags	unknown
+src/compiler_package_v2/codec.rs:782:5	depth	if	WireCodec	next >= MAX_NESTING_DEPTH	closed-wire-tags	then | else
+src/compiler_package_v2/codec.rs:783:9	depth	direct-call	WireCodec	DecodeFailure :: ResourceExhausted	closed-wire-tags	Err
+src/compiler_package_v2/codec.rs:785:9	depth	direct-call	WireCodec	next + 1	closed-wire-tags	Ok
+src/compiler_package_v2/codec.rs:790:22	decode_term	direct-call	WireCodec	current_depth	closed-wire-tags	depth
+src/compiler_package_v2/codec.rs:790:22	decode_term	try	WireCodec	depth (current_depth)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:792:5	decode_term	match	WireCodec	cursor . u8 () ?	closed-wire-tags	0x00 | 0x01 | _
+src/compiler_package_v2/codec.rs:792:11	decode_term	method-call	WireCodec	cursor	closed-wire-tags	cursor.u8
+src/compiler_package_v2/codec.rs:792:11	decode_term	try	WireCodec	cursor . u8 ()	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:793:17	decode_term	direct-call	WireCodec	Term :: Atom { kind : cursor . blob () ? , canonical_payload : cursor . blob () ? , equality_contract : cursor . blob () ? , }	closed-wire-tags	Ok
+src/compiler_package_v2/codec.rs:794:19	decode_term	method-call	WireCodec	cursor	closed-wire-tags	cursor.blob
+src/compiler_package_v2/codec.rs:794:19	decode_term	try	WireCodec	cursor . blob ()	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:795:32	decode_term	method-call	WireCodec	cursor	closed-wire-tags	cursor.blob
+src/compiler_package_v2/codec.rs:795:32	decode_term	try	WireCodec	cursor . blob ()	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:796:32	decode_term	method-call	WireCodec	cursor	closed-wire-tags	cursor.blob
+src/compiler_package_v2/codec.rs:796:32	decode_term	try	WireCodec	cursor . blob ()	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:798:17	decode_term	direct-call	WireCodec	Term :: Triple (Box :: new (decode_term (cursor , next_depth) ?) , Box :: new (decode_term (cursor , next_depth) ?) , Box :: new (decode_term (cursor , next_depth) ?) ,)	closed-wire-tags	Ok
+src/compiler_package_v2/codec.rs:798:20	decode_term	direct-call	WireCodec	Box :: new (decode_term (cursor , next_depth) ?) | Box :: new (decode_term (cursor , next_depth) ?) | Box :: new (decode_term (cursor , next_depth) ?)	closed-wire-tags	Term::Triple
+src/compiler_package_v2/codec.rs:799:13	decode_term	direct-call	WireCodec	decode_term (cursor , next_depth) ?	closed-wire-tags	Box::new
+src/compiler_package_v2/codec.rs:799:22	decode_term	direct-call	WireCodec	cursor | next_depth	closed-wire-tags	decode_term
+src/compiler_package_v2/codec.rs:799:22	decode_term	try	WireCodec	decode_term (cursor , next_depth)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:800:13	decode_term	direct-call	WireCodec	decode_term (cursor , next_depth) ?	closed-wire-tags	Box::new
+src/compiler_package_v2/codec.rs:800:22	decode_term	direct-call	WireCodec	cursor | next_depth	closed-wire-tags	decode_term
+src/compiler_package_v2/codec.rs:800:22	decode_term	try	WireCodec	decode_term (cursor , next_depth)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:801:13	decode_term	direct-call	WireCodec	decode_term (cursor , next_depth) ?	closed-wire-tags	Box::new
+src/compiler_package_v2/codec.rs:801:22	decode_term	direct-call	WireCodec	cursor | next_depth	closed-wire-tags	decode_term
+src/compiler_package_v2/codec.rs:801:22	decode_term	try	WireCodec	decode_term (cursor , next_depth)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:803:14	decode_term	direct-call	WireCodec	unknown (cursor , offset)	closed-wire-tags	Err
+src/compiler_package_v2/codec.rs:803:18	decode_term	direct-call	WireCodec	cursor | offset	closed-wire-tags	unknown
+src/compiler_package_v2/codec.rs:808:22	decode_expr	direct-call	WireCodec	current_depth	closed-wire-tags	depth
+src/compiler_package_v2/codec.rs:808:22	decode_expr	try	WireCodec	depth (current_depth)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:810:5	decode_expr	match	WireCodec	cursor . u8 () ?	closed-wire-tags	0x00 | 0x01 | 0x02 | 0x03 | 0x04 | 0x05 | 0x06 | 0x07 | 0x08 | 0x09 | 0x0a | 0x0b | _
+src/compiler_package_v2/codec.rs:810:11	decode_expr	method-call	WireCodec	cursor	closed-wire-tags	cursor.u8
+src/compiler_package_v2/codec.rs:810:11	decode_expr	try	WireCodec	cursor . u8 ()	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:811:17	decode_expr	direct-call	WireCodec	KExpr :: BytesLiteral (cursor . blob () ?)	closed-wire-tags	Ok
+src/compiler_package_v2/codec.rs:811:20	decode_expr	direct-call	WireCodec	cursor . blob () ?	closed-wire-tags	KExpr::BytesLiteral
+src/compiler_package_v2/codec.rs:811:40	decode_expr	method-call	WireCodec	cursor	closed-wire-tags	cursor.blob
+src/compiler_package_v2/codec.rs:811:40	decode_expr	try	WireCodec	cursor . blob ()	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:812:17	decode_expr	direct-call	WireCodec	KExpr :: TermLiteral (decode_term (cursor , next_depth) ?)	closed-wire-tags	Ok
+src/compiler_package_v2/codec.rs:812:20	decode_expr	direct-call	WireCodec	decode_term (cursor , next_depth) ?	closed-wire-tags	KExpr::TermLiteral
+src/compiler_package_v2/codec.rs:812:39	decode_expr	direct-call	WireCodec	cursor | next_depth	closed-wire-tags	decode_term
+src/compiler_package_v2/codec.rs:812:39	decode_expr	try	WireCodec	decode_term (cursor , next_depth)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:813:17	decode_expr	direct-call	WireCodec	KExpr :: Var (cursor . u32 () ?)	closed-wire-tags	Ok
+src/compiler_package_v2/codec.rs:813:20	decode_expr	direct-call	WireCodec	cursor . u32 () ?	closed-wire-tags	KExpr::Var
+src/compiler_package_v2/codec.rs:813:31	decode_expr	method-call	WireCodec	cursor	closed-wire-tags	cursor.u32
+src/compiler_package_v2/codec.rs:813:31	decode_expr	try	WireCodec	cursor . u32 ()	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:814:17	decode_expr	direct-call	WireCodec	KExpr :: MakeAtom { kind : Box :: new (decode_expr (cursor , next_depth) ?) , payload : Box :: new (decode_expr (cursor , next_depth) ?) , equality : Box :: new (decode_expr (cursor , next_depth) ?) , }	closed-wire-tags	Ok
+src/compiler_package_v2/codec.rs:815:19	decode_expr	direct-call	WireCodec	decode_expr (cursor , next_depth) ?	closed-wire-tags	Box::new
+src/compiler_package_v2/codec.rs:815:28	decode_expr	direct-call	WireCodec	cursor | next_depth	closed-wire-tags	decode_expr
+src/compiler_package_v2/codec.rs:815:28	decode_expr	try	WireCodec	decode_expr (cursor , next_depth)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:816:22	decode_expr	direct-call	WireCodec	decode_expr (cursor , next_depth) ?	closed-wire-tags	Box::new
+src/compiler_package_v2/codec.rs:816:31	decode_expr	direct-call	WireCodec	cursor | next_depth	closed-wire-tags	decode_expr
+src/compiler_package_v2/codec.rs:816:31	decode_expr	try	WireCodec	decode_expr (cursor , next_depth)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:817:23	decode_expr	direct-call	WireCodec	decode_expr (cursor , next_depth) ?	closed-wire-tags	Box::new
+src/compiler_package_v2/codec.rs:817:32	decode_expr	direct-call	WireCodec	cursor | next_depth	closed-wire-tags	decode_expr
+src/compiler_package_v2/codec.rs:817:32	decode_expr	try	WireCodec	decode_expr (cursor , next_depth)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:819:17	decode_expr	direct-call	WireCodec	KExpr :: MakeTriple { first : Box :: new (decode_expr (cursor , next_depth) ?) , second : Box :: new (decode_expr (cursor , next_depth) ?) , third : Box :: new (decode_expr (cursor , next_depth) ?) , }	closed-wire-tags	Ok
+src/compiler_package_v2/codec.rs:820:20	decode_expr	direct-call	WireCodec	decode_expr (cursor , next_depth) ?	closed-wire-tags	Box::new
+src/compiler_package_v2/codec.rs:820:29	decode_expr	direct-call	WireCodec	cursor | next_depth	closed-wire-tags	decode_expr
+src/compiler_package_v2/codec.rs:820:29	decode_expr	try	WireCodec	decode_expr (cursor , next_depth)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:821:21	decode_expr	direct-call	WireCodec	decode_expr (cursor , next_depth) ?	closed-wire-tags	Box::new
+src/compiler_package_v2/codec.rs:821:30	decode_expr	direct-call	WireCodec	cursor | next_depth	closed-wire-tags	decode_expr
+src/compiler_package_v2/codec.rs:821:30	decode_expr	try	WireCodec	decode_expr (cursor , next_depth)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:822:20	decode_expr	direct-call	WireCodec	decode_expr (cursor , next_depth) ?	closed-wire-tags	Box::new
+src/compiler_package_v2/codec.rs:822:29	decode_expr	direct-call	WireCodec	cursor | next_depth	closed-wire-tags	decode_expr
+src/compiler_package_v2/codec.rs:822:29	decode_expr	try	WireCodec	decode_expr (cursor , next_depth)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:824:17	decode_expr	direct-call	WireCodec	KExpr :: Let { value : Box :: new (decode_expr (cursor , next_depth) ?) , body : Box :: new (decode_expr (cursor , next_depth) ?) , }	closed-wire-tags	Ok
+src/compiler_package_v2/codec.rs:825:20	decode_expr	direct-call	WireCodec	decode_expr (cursor , next_depth) ?	closed-wire-tags	Box::new
+src/compiler_package_v2/codec.rs:825:29	decode_expr	direct-call	WireCodec	cursor | next_depth	closed-wire-tags	decode_expr
+src/compiler_package_v2/codec.rs:825:29	decode_expr	try	WireCodec	decode_expr (cursor , next_depth)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:826:19	decode_expr	direct-call	WireCodec	decode_expr (cursor , next_depth) ?	closed-wire-tags	Box::new
+src/compiler_package_v2/codec.rs:826:28	decode_expr	direct-call	WireCodec	cursor | next_depth	closed-wire-tags	decode_expr
+src/compiler_package_v2/codec.rs:826:28	decode_expr	try	WireCodec	decode_expr (cursor , next_depth)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:828:17	decode_expr	direct-call	WireCodec	KExpr :: CaseTerm { scrutinee : Box :: new (decode_expr (cursor , next_depth) ?) , atom_body : Box :: new (decode_expr (cursor , next_depth) ?) , triple_body : Box :: new (decode_expr (cursor , next_depth) ?) , }	closed-wire-tags	Ok
+src/compiler_package_v2/codec.rs:829:24	decode_expr	direct-call	WireCodec	decode_expr (cursor , next_depth) ?	closed-wire-tags	Box::new
+src/compiler_package_v2/codec.rs:829:33	decode_expr	direct-call	WireCodec	cursor | next_depth	closed-wire-tags	decode_expr
+src/compiler_package_v2/codec.rs:829:33	decode_expr	try	WireCodec	decode_expr (cursor , next_depth)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:830:24	decode_expr	direct-call	WireCodec	decode_expr (cursor , next_depth) ?	closed-wire-tags	Box::new
+src/compiler_package_v2/codec.rs:830:33	decode_expr	direct-call	WireCodec	cursor | next_depth	closed-wire-tags	decode_expr
+src/compiler_package_v2/codec.rs:830:33	decode_expr	try	WireCodec	decode_expr (cursor , next_depth)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:831:26	decode_expr	direct-call	WireCodec	decode_expr (cursor , next_depth) ?	closed-wire-tags	Box::new
+src/compiler_package_v2/codec.rs:831:35	decode_expr	direct-call	WireCodec	cursor | next_depth	closed-wire-tags	decode_expr
+src/compiler_package_v2/codec.rs:831:35	decode_expr	try	WireCodec	decode_expr (cursor , next_depth)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:833:17	decode_expr	direct-call	WireCodec	KExpr :: CaseBytes { scrutinee : Box :: new (decode_expr (cursor , next_depth) ?) , empty_body : Box :: new (decode_expr (cursor , next_depth) ?) , cons_body : Box :: new (decode_expr (cursor , next_depth) ?) , }	closed-wire-tags	Ok
+src/compiler_package_v2/codec.rs:834:24	decode_expr	direct-call	WireCodec	decode_expr (cursor , next_depth) ?	closed-wire-tags	Box::new
+src/compiler_package_v2/codec.rs:834:33	decode_expr	direct-call	WireCodec	cursor | next_depth	closed-wire-tags	decode_expr
+src/compiler_package_v2/codec.rs:834:33	decode_expr	try	WireCodec	decode_expr (cursor , next_depth)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:835:25	decode_expr	direct-call	WireCodec	decode_expr (cursor , next_depth) ?	closed-wire-tags	Box::new
+src/compiler_package_v2/codec.rs:835:34	decode_expr	direct-call	WireCodec	cursor | next_depth	closed-wire-tags	decode_expr
+src/compiler_package_v2/codec.rs:835:34	decode_expr	try	WireCodec	decode_expr (cursor , next_depth)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:836:24	decode_expr	direct-call	WireCodec	decode_expr (cursor , next_depth) ?	closed-wire-tags	Box::new
+src/compiler_package_v2/codec.rs:836:33	decode_expr	direct-call	WireCodec	cursor | next_depth	closed-wire-tags	decode_expr
+src/compiler_package_v2/codec.rs:836:33	decode_expr	try	WireCodec	decode_expr (cursor , next_depth)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:838:17	decode_expr	direct-call	WireCodec	KExpr :: ConcatBytes (cursor . sequence (| cursor | decode_expr (cursor , next_depth)) ? ,)	closed-wire-tags	Ok
+src/compiler_package_v2/codec.rs:838:20	decode_expr	direct-call	WireCodec	cursor . sequence (| cursor | decode_expr (cursor , next_depth)) ?	closed-wire-tags	KExpr::ConcatBytes
+src/compiler_package_v2/codec.rs:839:13	decode_expr	indirect-target	WireCodec	cursor.sequence	closed-wire-tags	| cursor | decode_expr (cursor , next_depth)
+src/compiler_package_v2/codec.rs:839:13	decode_expr	method-call	WireCodec	cursor | | cursor | decode_expr (cursor , next_depth)	closed-wire-tags	cursor.sequence
+src/compiler_package_v2/codec.rs:839:13	decode_expr	try	WireCodec	cursor . sequence (| cursor | decode_expr (cursor , next_depth))	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:839:38	decode_expr	direct-call	WireCodec	cursor | next_depth	closed-wire-tags	decode_expr
+src/compiler_package_v2/codec.rs:841:17	decode_expr	direct-call	WireCodec	KExpr :: CaseBytesEqual { left : Box :: new (decode_expr (cursor , next_depth) ?) , right : Box :: new (decode_expr (cursor , next_depth) ?) , equal_body : Box :: new (decode_expr (cursor , next_depth) ?) , unequal_body : Box :: new (decode_expr (cursor , next_depth) ?) , }	closed-wire-tags	Ok
+src/compiler_package_v2/codec.rs:842:19	decode_expr	direct-call	WireCodec	decode_expr (cursor , next_depth) ?	closed-wire-tags	Box::new
+src/compiler_package_v2/codec.rs:842:28	decode_expr	direct-call	WireCodec	cursor | next_depth	closed-wire-tags	decode_expr
+src/compiler_package_v2/codec.rs:842:28	decode_expr	try	WireCodec	decode_expr (cursor , next_depth)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:843:20	decode_expr	direct-call	WireCodec	decode_expr (cursor , next_depth) ?	closed-wire-tags	Box::new
+src/compiler_package_v2/codec.rs:843:29	decode_expr	direct-call	WireCodec	cursor | next_depth	closed-wire-tags	decode_expr
+src/compiler_package_v2/codec.rs:843:29	decode_expr	try	WireCodec	decode_expr (cursor , next_depth)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:844:25	decode_expr	direct-call	WireCodec	decode_expr (cursor , next_depth) ?	closed-wire-tags	Box::new
+src/compiler_package_v2/codec.rs:844:34	decode_expr	direct-call	WireCodec	cursor | next_depth	closed-wire-tags	decode_expr
+src/compiler_package_v2/codec.rs:844:34	decode_expr	try	WireCodec	decode_expr (cursor , next_depth)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:845:27	decode_expr	direct-call	WireCodec	decode_expr (cursor , next_depth) ?	closed-wire-tags	Box::new
+src/compiler_package_v2/codec.rs:845:36	decode_expr	direct-call	WireCodec	cursor | next_depth	closed-wire-tags	decode_expr
+src/compiler_package_v2/codec.rs:845:36	decode_expr	try	WireCodec	decode_expr (cursor , next_depth)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:847:17	decode_expr	direct-call	WireCodec	KExpr :: Call { definition_id : cursor . id32 () ? , arguments : cursor . sequence (| cursor | decode_expr (cursor , next_depth)) ? , }	closed-wire-tags	Ok
+src/compiler_package_v2/codec.rs:848:28	decode_expr	method-call	WireCodec	cursor	closed-wire-tags	cursor.id32
+src/compiler_package_v2/codec.rs:848:28	decode_expr	try	WireCodec	cursor . id32 ()	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:849:24	decode_expr	indirect-target	WireCodec	cursor.sequence	closed-wire-tags	| cursor | decode_expr (cursor , next_depth)
+src/compiler_package_v2/codec.rs:849:24	decode_expr	method-call	WireCodec	cursor | | cursor | decode_expr (cursor , next_depth)	closed-wire-tags	cursor.sequence
+src/compiler_package_v2/codec.rs:849:24	decode_expr	try	WireCodec	cursor . sequence (| cursor | decode_expr (cursor , next_depth))	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:849:49	decode_expr	direct-call	WireCodec	cursor | next_depth	closed-wire-tags	decode_expr
+src/compiler_package_v2/codec.rs:851:17	decode_expr	direct-call	WireCodec	KExpr :: Request { physical_operation_id : cursor . id32 () ? , arguments : cursor . sequence (| cursor | decode_expr (cursor , next_depth)) ? , }	closed-wire-tags	Ok
+src/compiler_package_v2/codec.rs:852:36	decode_expr	method-call	WireCodec	cursor	closed-wire-tags	cursor.id32
+src/compiler_package_v2/codec.rs:852:36	decode_expr	try	WireCodec	cursor . id32 ()	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:853:24	decode_expr	indirect-target	WireCodec	cursor.sequence	closed-wire-tags	| cursor | decode_expr (cursor , next_depth)
+src/compiler_package_v2/codec.rs:853:24	decode_expr	method-call	WireCodec	cursor | | cursor | decode_expr (cursor , next_depth)	closed-wire-tags	cursor.sequence
+src/compiler_package_v2/codec.rs:853:24	decode_expr	try	WireCodec	cursor . sequence (| cursor | decode_expr (cursor , next_depth))	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:853:49	decode_expr	direct-call	WireCodec	cursor | next_depth	closed-wire-tags	decode_expr
+src/compiler_package_v2/codec.rs:855:14	decode_expr	direct-call	WireCodec	unknown (cursor , offset)	closed-wire-tags	Err
+src/compiler_package_v2/codec.rs:855:18	decode_expr	direct-call	WireCodec	cursor | offset	closed-wire-tags	unknown
+src/compiler_package_v2/codec.rs:861:19	decode_subject_value	match	WireCodec	cursor . u8 () ?	closed-wire-tags	0x00 | 0x01 | _
+src/compiler_package_v2/codec.rs:861:25	decode_subject_value	method-call	WireCodec	cursor	closed-wire-tags	cursor.u8
+src/compiler_package_v2/codec.rs:861:25	decode_subject_value	try	WireCodec	cursor . u8 ()	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:864:34	decode_subject_value	method-call	WireCodec	cursor	closed-wire-tags	cursor.hash32
+src/compiler_package_v2/codec.rs:864:34	decode_subject_value	try	WireCodec	cursor . hash32 ()	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:865:35	decode_subject_value	method-call	WireCodec	cursor	closed-wire-tags	cursor.id32
+src/compiler_package_v2/codec.rs:865:35	decode_subject_value	try	WireCodec	cursor . id32 ()	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:867:21	decode_subject_value	direct-call	WireCodec	unknown (cursor , lineage_offset)	closed-wire-tags	Err
+src/compiler_package_v2/codec.rs:867:25	decode_subject_value	direct-call	WireCodec	cursor | lineage_offset	closed-wire-tags	unknown
+src/compiler_package_v2/codec.rs:869:32	decode_subject_value	indirect-target	WireCodec	cursor.sequence	closed-wire-tags	decode_nominal_declaration
+src/compiler_package_v2/codec.rs:869:32	decode_subject_value	method-call	WireCodec	cursor | decode_nominal_declaration	closed-wire-tags	cursor.sequence
+src/compiler_package_v2/codec.rs:869:32	decode_subject_value	try	WireCodec	cursor . sequence (decode_nominal_declaration)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:871:18	decode_subject_value	method-call	WireCodec	cursor	closed-wire-tags	cursor.id32
+src/compiler_package_v2/codec.rs:871:18	decode_subject_value	try	WireCodec	cursor . id32 ()	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:872:24	decode_subject_value	method-call	WireCodec	cursor	closed-wire-tags	cursor.id32
+src/compiler_package_v2/codec.rs:872:24	decode_subject_value	try	WireCodec	cursor . id32 ()	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:874:19	decode_subject_value	indirect-target	WireCodec	cursor.sequence	closed-wire-tags	decode_definition
+src/compiler_package_v2/codec.rs:874:19	decode_subject_value	method-call	WireCodec	cursor | decode_definition	closed-wire-tags	cursor.sequence
+src/compiler_package_v2/codec.rs:874:19	decode_subject_value	try	WireCodec	cursor . sequence (decode_definition)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:875:25	decode_subject_value	direct-call	WireCodec	cursor | 0	closed-wire-tags	decode_term
+src/compiler_package_v2/codec.rs:875:25	decode_subject_value	try	WireCodec	decode_term (cursor , 0)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:876:5	decode_subject_value	direct-call	WireCodec	CompilerSubject { lineage , nominal_declarations , interface , program , build_request , }	closed-wire-tags	Ok
+src/compiler_package_v2/codec.rs:889:5	decode_nominal_declaration	match	WireCodec	cursor . u8 () ?	closed-wire-tags	0x00 | 0x01 | 0x02 | _
+src/compiler_package_v2/codec.rs:889:11	decode_nominal_declaration	method-call	WireCodec	cursor	closed-wire-tags	cursor.u8
+src/compiler_package_v2/codec.rs:889:11	decode_nominal_declaration	try	WireCodec	cursor . u8 ()	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:890:17	decode_nominal_declaration	direct-call	WireCodec	NominalDeclaration :: Seed { domain : cursor . id32 () ? , id : cursor . id32 () ? , }	closed-wire-tags	Ok
+src/compiler_package_v2/codec.rs:891:21	decode_nominal_declaration	method-call	WireCodec	cursor	closed-wire-tags	cursor.id32
+src/compiler_package_v2/codec.rs:891:21	decode_nominal_declaration	try	WireCodec	cursor . id32 ()	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:892:17	decode_nominal_declaration	method-call	WireCodec	cursor	closed-wire-tags	cursor.id32
+src/compiler_package_v2/codec.rs:892:17	decode_nominal_declaration	try	WireCodec	cursor . id32 ()	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:894:17	decode_nominal_declaration	direct-call	WireCodec	NominalDeclaration :: RetainedSeed { domain : cursor . id32 () ? , id : cursor . id32 () ? , predecessor_revision_id : cursor . id32 () ? , }	closed-wire-tags	Ok
+src/compiler_package_v2/codec.rs:895:21	decode_nominal_declaration	method-call	WireCodec	cursor	closed-wire-tags	cursor.id32
+src/compiler_package_v2/codec.rs:895:21	decode_nominal_declaration	try	WireCodec	cursor . id32 ()	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:896:17	decode_nominal_declaration	method-call	WireCodec	cursor	closed-wire-tags	cursor.id32
+src/compiler_package_v2/codec.rs:896:17	decode_nominal_declaration	try	WireCodec	cursor . id32 ()	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:897:38	decode_nominal_declaration	method-call	WireCodec	cursor	closed-wire-tags	cursor.id32
+src/compiler_package_v2/codec.rs:897:38	decode_nominal_declaration	try	WireCodec	cursor . id32 ()	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:899:17	decode_nominal_declaration	direct-call	WireCodec	NominalDeclaration :: Allocated { domain : cursor . id32 () ? , id : cursor . id32 () ? , change_input : decode_nominal_ref (cursor) ? , producer_input : decode_nominal_ref (cursor) ? , local_slot : cursor . u64 () ? , }	closed-wire-tags	Ok
+src/compiler_package_v2/codec.rs:900:21	decode_nominal_declaration	method-call	WireCodec	cursor	closed-wire-tags	cursor.id32
+src/compiler_package_v2/codec.rs:900:21	decode_nominal_declaration	try	WireCodec	cursor . id32 ()	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:901:17	decode_nominal_declaration	method-call	WireCodec	cursor	closed-wire-tags	cursor.id32
+src/compiler_package_v2/codec.rs:901:17	decode_nominal_declaration	try	WireCodec	cursor . id32 ()	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:902:27	decode_nominal_declaration	direct-call	WireCodec	cursor	closed-wire-tags	decode_nominal_ref
+src/compiler_package_v2/codec.rs:902:27	decode_nominal_declaration	try	WireCodec	decode_nominal_ref (cursor)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:903:29	decode_nominal_declaration	direct-call	WireCodec	cursor	closed-wire-tags	decode_nominal_ref
+src/compiler_package_v2/codec.rs:903:29	decode_nominal_declaration	try	WireCodec	decode_nominal_ref (cursor)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:904:25	decode_nominal_declaration	method-call	WireCodec	cursor	closed-wire-tags	cursor.u64
+src/compiler_package_v2/codec.rs:904:25	decode_nominal_declaration	try	WireCodec	cursor . u64 ()	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:906:14	decode_nominal_declaration	direct-call	WireCodec	unknown (cursor , offset)	closed-wire-tags	Err
+src/compiler_package_v2/codec.rs:906:18	decode_nominal_declaration	direct-call	WireCodec	cursor | offset	closed-wire-tags	unknown
+src/compiler_package_v2/codec.rs:911:5	decode_nominal_ref	direct-call	WireCodec	NominalWireRef { domain : cursor . id32 () ? , id : cursor . id32 () ? , }	closed-wire-tags	Ok
+src/compiler_package_v2/codec.rs:912:17	decode_nominal_ref	method-call	WireCodec	cursor	closed-wire-tags	cursor.id32
+src/compiler_package_v2/codec.rs:912:17	decode_nominal_ref	try	WireCodec	cursor . id32 ()	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:913:13	decode_nominal_ref	method-call	WireCodec	cursor	closed-wire-tags	cursor.id32
+src/compiler_package_v2/codec.rs:913:13	decode_nominal_ref	try	WireCodec	cursor . id32 ()	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:918:5	decode_definition	direct-call	WireCodec	Definition { id : cursor . id32 () ? , arguments : cursor . sequence (decode_sort) ? , result : decode_sort (cursor) ? , body : decode_expr (cursor , 0) ? , }	closed-wire-tags	Ok
+src/compiler_package_v2/codec.rs:919:13	decode_definition	method-call	WireCodec	cursor	closed-wire-tags	cursor.id32
+src/compiler_package_v2/codec.rs:919:13	decode_definition	try	WireCodec	cursor . id32 ()	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:920:20	decode_definition	indirect-target	WireCodec	cursor.sequence	closed-wire-tags	decode_sort
+src/compiler_package_v2/codec.rs:920:20	decode_definition	method-call	WireCodec	cursor | decode_sort	closed-wire-tags	cursor.sequence
+src/compiler_package_v2/codec.rs:920:20	decode_definition	try	WireCodec	cursor . sequence (decode_sort)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:921:17	decode_definition	direct-call	WireCodec	cursor	closed-wire-tags	decode_sort
+src/compiler_package_v2/codec.rs:921:17	decode_definition	try	WireCodec	decode_sort (cursor)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:922:15	decode_definition	direct-call	WireCodec	cursor | 0	closed-wire-tags	decode_expr
+src/compiler_package_v2/codec.rs:922:15	decode_definition	try	WireCodec	decode_expr (cursor , 0)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:928:5	decode_evidence_value	match	WireCodec	cursor . u8 () ?	closed-wire-tags	0x00 | 0x01 | _
+src/compiler_package_v2/codec.rs:928:11	decode_evidence_value	method-call	WireCodec	cursor	closed-wire-tags	cursor.u8
+src/compiler_package_v2/codec.rs:928:11	decode_evidence_value	try	WireCodec	cursor . u8 ()	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:929:17	decode_evidence_value	direct-call	WireCodec	CompilerEvidence :: Genesis	closed-wire-tags	Ok
+src/compiler_package_v2/codec.rs:930:17	decode_evidence_value	direct-call	WireCodec	CompilerEvidence :: Successor { compile_certificate : Box :: new (decode_certificate (cursor) ?) , admission_certificate : Box :: new (decode_certificate (cursor) ?) , }	closed-wire-tags	Ok
+src/compiler_package_v2/codec.rs:931:34	decode_evidence_value	direct-call	WireCodec	decode_certificate (cursor) ?	closed-wire-tags	Box::new
+src/compiler_package_v2/codec.rs:931:43	decode_evidence_value	direct-call	WireCodec	cursor	closed-wire-tags	decode_certificate
+src/compiler_package_v2/codec.rs:931:43	decode_evidence_value	try	WireCodec	decode_certificate (cursor)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:932:36	decode_evidence_value	direct-call	WireCodec	decode_certificate (cursor) ?	closed-wire-tags	Box::new
+src/compiler_package_v2/codec.rs:932:45	decode_evidence_value	direct-call	WireCodec	cursor	closed-wire-tags	decode_certificate
+src/compiler_package_v2/codec.rs:932:45	decode_evidence_value	try	WireCodec	decode_certificate (cursor)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:934:14	decode_evidence_value	direct-call	WireCodec	unknown (cursor , offset)	closed-wire-tags	Err
+src/compiler_package_v2/codec.rs:934:18	decode_evidence_value	direct-call	WireCodec	cursor | offset	closed-wire-tags	unknown
+src/compiler_package_v2/codec.rs:940:26	decode_certificate	method-call	WireCodec	cursor	closed-wire-tags	cursor.u8
+src/compiler_package_v2/codec.rs:940:26	decode_certificate	try	WireCodec	cursor . u8 ()	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:941:5	decode_certificate	if	WireCodec	format_version != 0x00	closed-wire-tags	then | continue
+src/compiler_package_v2/codec.rs:942:16	decode_certificate	direct-call	WireCodec	unknown (cursor , format_offset)	closed-wire-tags	Err
+src/compiler_package_v2/codec.rs:942:20	decode_certificate	direct-call	WireCodec	cursor | format_offset	closed-wire-tags	unknown
+src/compiler_package_v2/codec.rs:944:5	decode_certificate	direct-call	WireCodec	EvalCertificate { format_version , statement : decode_statement (cursor) ? , nodes : cursor . sequence (decode_node) ? , }	closed-wire-tags	Ok
+src/compiler_package_v2/codec.rs:946:20	decode_certificate	direct-call	WireCodec	cursor	closed-wire-tags	decode_statement
+src/compiler_package_v2/codec.rs:946:20	decode_certificate	try	WireCodec	decode_statement (cursor)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:947:16	decode_certificate	indirect-target	WireCodec	cursor.sequence	closed-wire-tags	decode_node
+src/compiler_package_v2/codec.rs:947:16	decode_certificate	method-call	WireCodec	cursor | decode_node	closed-wire-tags	cursor.sequence
+src/compiler_package_v2/codec.rs:947:16	decode_certificate	try	WireCodec	cursor . sequence (decode_node)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:952:5	decode_statement	direct-call	WireCodec	EvalStatement { exact_accepted_predecessor : cursor . blob () ? , core_contract_id : cursor . hash32 () ? , physical_profile_id : cursor . hash32 () ? , entrypoint : cursor . id32 () ? , arguments : cursor . sequence (decode_value) ? , fuel_limit : cursor . u64 () ? , expected : decode_outcome (cursor) ? , }	closed-wire-tags	Ok
+src/compiler_package_v2/codec.rs:953:37	decode_statement	method-call	WireCodec	cursor	closed-wire-tags	cursor.blob
+src/compiler_package_v2/codec.rs:953:37	decode_statement	try	WireCodec	cursor . blob ()	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:954:27	decode_statement	method-call	WireCodec	cursor	closed-wire-tags	cursor.hash32
+src/compiler_package_v2/codec.rs:954:27	decode_statement	try	WireCodec	cursor . hash32 ()	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:955:30	decode_statement	method-call	WireCodec	cursor	closed-wire-tags	cursor.hash32
+src/compiler_package_v2/codec.rs:955:30	decode_statement	try	WireCodec	cursor . hash32 ()	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:956:21	decode_statement	method-call	WireCodec	cursor	closed-wire-tags	cursor.id32
+src/compiler_package_v2/codec.rs:956:21	decode_statement	try	WireCodec	cursor . id32 ()	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:957:20	decode_statement	indirect-target	WireCodec	cursor.sequence	closed-wire-tags	decode_value
+src/compiler_package_v2/codec.rs:957:20	decode_statement	method-call	WireCodec	cursor | decode_value	closed-wire-tags	cursor.sequence
+src/compiler_package_v2/codec.rs:957:20	decode_statement	try	WireCodec	cursor . sequence (decode_value)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:958:21	decode_statement	method-call	WireCodec	cursor	closed-wire-tags	cursor.u64
+src/compiler_package_v2/codec.rs:958:21	decode_statement	try	WireCodec	cursor . u64 ()	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:959:19	decode_statement	direct-call	WireCodec	cursor	closed-wire-tags	decode_outcome
+src/compiler_package_v2/codec.rs:959:19	decode_statement	try	WireCodec	decode_outcome (cursor)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:965:5	decode_value	match	WireCodec	cursor . u8 () ?	closed-wire-tags	0x00 | 0x01 | _
+src/compiler_package_v2/codec.rs:965:11	decode_value	method-call	WireCodec	cursor	closed-wire-tags	cursor.u8
+src/compiler_package_v2/codec.rs:965:11	decode_value	try	WireCodec	cursor . u8 ()	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:966:17	decode_value	direct-call	WireCodec	KValue :: Bytes (cursor . blob () ?)	closed-wire-tags	Ok
+src/compiler_package_v2/codec.rs:966:20	decode_value	direct-call	WireCodec	cursor . blob () ?	closed-wire-tags	KValue::Bytes
+src/compiler_package_v2/codec.rs:966:34	decode_value	method-call	WireCodec	cursor	closed-wire-tags	cursor.blob
+src/compiler_package_v2/codec.rs:966:34	decode_value	try	WireCodec	cursor . blob ()	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:967:17	decode_value	direct-call	WireCodec	KValue :: Term (decode_term (cursor , 0) ?)	closed-wire-tags	Ok
+src/compiler_package_v2/codec.rs:967:20	decode_value	direct-call	WireCodec	decode_term (cursor , 0) ?	closed-wire-tags	KValue::Term
+src/compiler_package_v2/codec.rs:967:33	decode_value	direct-call	WireCodec	cursor | 0	closed-wire-tags	decode_term
+src/compiler_package_v2/codec.rs:967:33	decode_value	try	WireCodec	decode_term (cursor , 0)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:968:14	decode_value	direct-call	WireCodec	unknown (cursor , offset)	closed-wire-tags	Err
+src/compiler_package_v2/codec.rs:968:18	decode_value	direct-call	WireCodec	cursor | offset	closed-wire-tags	unknown
+src/compiler_package_v2/codec.rs:974:5	decode_outcome	match	WireCodec	cursor . u8 () ?	closed-wire-tags	0x00 | _
+src/compiler_package_v2/codec.rs:974:11	decode_outcome	method-call	WireCodec	cursor	closed-wire-tags	cursor.u8
+src/compiler_package_v2/codec.rs:974:11	decode_outcome	try	WireCodec	cursor . u8 ()	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:975:17	decode_outcome	direct-call	WireCodec	EvalOutcome :: Returned { value : decode_value (cursor) ? , remaining_fuel : cursor . u64 () ? , observations : decode_term (cursor , 0) ? , }	closed-wire-tags	Ok
+src/compiler_package_v2/codec.rs:976:20	decode_outcome	direct-call	WireCodec	cursor	closed-wire-tags	decode_value
+src/compiler_package_v2/codec.rs:976:20	decode_outcome	try	WireCodec	decode_value (cursor)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:977:29	decode_outcome	method-call	WireCodec	cursor	closed-wire-tags	cursor.u64
+src/compiler_package_v2/codec.rs:977:29	decode_outcome	try	WireCodec	cursor . u64 ()	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:978:27	decode_outcome	direct-call	WireCodec	cursor | 0	closed-wire-tags	decode_term
+src/compiler_package_v2/codec.rs:978:27	decode_outcome	try	WireCodec	decode_term (cursor , 0)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:980:14	decode_outcome	direct-call	WireCodec	unknown (cursor , offset)	closed-wire-tags	Err
+src/compiler_package_v2/codec.rs:980:18	decode_outcome	direct-call	WireCodec	cursor | offset	closed-wire-tags	unknown
+src/compiler_package_v2/codec.rs:986:20	decode_node	method-call	WireCodec	cursor	closed-wire-tags	cursor.u8
+src/compiler_package_v2/codec.rs:986:20	decode_node	try	WireCodec	cursor . u8 ()	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:987:5	decode_node	if	WireCodec	! (0x30 ..= 0x3e) . contains (& rule_tag)	closed-wire-tags	then | continue
+src/compiler_package_v2/codec.rs:987:9	decode_node	method-call	WireCodec	(0x30 ..= 0x3e) | & rule_tag	closed-wire-tags	(0x30 ..= 0x3e).contains
+src/compiler_package_v2/codec.rs:988:16	decode_node	direct-call	WireCodec	unknown (cursor , rule_offset)	closed-wire-tags	Err
+src/compiler_package_v2/codec.rs:988:20	decode_node	direct-call	WireCodec	cursor | rule_offset	closed-wire-tags	unknown
+src/compiler_package_v2/codec.rs:990:5	decode_node	direct-call	WireCodec	EvalNode { rule_tag , premises : cursor . sequence (| cursor | cursor . u32 ()) ? , conclusion : decode_judgment (cursor) ? , }	closed-wire-tags	Ok
+src/compiler_package_v2/codec.rs:992:19	decode_node	indirect-target	WireCodec	cursor.sequence	closed-wire-tags	| cursor | cursor . u32 ()
+src/compiler_package_v2/codec.rs:992:19	decode_node	method-call	WireCodec	cursor | | cursor | cursor . u32 ()	closed-wire-tags	cursor.sequence
+src/compiler_package_v2/codec.rs:992:19	decode_node	try	WireCodec	cursor . sequence (| cursor | cursor . u32 ())	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:992:44	decode_node	method-call	WireCodec	cursor	closed-wire-tags	cursor.u32
+src/compiler_package_v2/codec.rs:993:21	decode_node	direct-call	WireCodec	cursor	closed-wire-tags	decode_judgment
+src/compiler_package_v2/codec.rs:993:21	decode_node	try	WireCodec	decode_judgment (cursor)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:998:5	decode_judgment	direct-call	WireCodec	EvalJudgment { expression : decode_expr (cursor , 0) ? , environment : cursor . sequence (decode_value) ? , fuel_before : cursor . u64 () ? , observations_before : decode_term (cursor , 0) ? , value : decode_value (cursor) ? , fuel_after : cursor . u64 () ? , observations_after : decode_term (cursor , 0) ? , }	closed-wire-tags	Ok
+src/compiler_package_v2/codec.rs:999:21	decode_judgment	direct-call	WireCodec	cursor | 0	closed-wire-tags	decode_expr
+src/compiler_package_v2/codec.rs:999:21	decode_judgment	try	WireCodec	decode_expr (cursor , 0)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:1000:22	decode_judgment	indirect-target	WireCodec	cursor.sequence	closed-wire-tags	decode_value
+src/compiler_package_v2/codec.rs:1000:22	decode_judgment	method-call	WireCodec	cursor | decode_value	closed-wire-tags	cursor.sequence
+src/compiler_package_v2/codec.rs:1000:22	decode_judgment	try	WireCodec	cursor . sequence (decode_value)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:1001:22	decode_judgment	method-call	WireCodec	cursor	closed-wire-tags	cursor.u64
+src/compiler_package_v2/codec.rs:1001:22	decode_judgment	try	WireCodec	cursor . u64 ()	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:1002:30	decode_judgment	direct-call	WireCodec	cursor | 0	closed-wire-tags	decode_term
+src/compiler_package_v2/codec.rs:1002:30	decode_judgment	try	WireCodec	decode_term (cursor , 0)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:1003:16	decode_judgment	direct-call	WireCodec	cursor	closed-wire-tags	decode_value
+src/compiler_package_v2/codec.rs:1003:16	decode_judgment	try	WireCodec	decode_value (cursor)	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:1004:21	decode_judgment	method-call	WireCodec	cursor	closed-wire-tags	cursor.u64
+src/compiler_package_v2/codec.rs:1004:21	decode_judgment	try	WireCodec	cursor . u64 ()	closed-wire-tags	continue | return-error
+src/compiler_package_v2/codec.rs:1005:29	decode_judgment	direct-call	WireCodec	cursor | 0	closed-wire-tags	decode_term
+src/compiler_package_v2/codec.rs:1005:29	decode_judgment	try	WireCodec	decode_term (cursor , 0)	closed-wire-tags	continue | return-error
+src/evaluator/mod.rs:114:9	from	direct-call	KernelStep	value	KSort-KExpr-value-fuel	Self::Static
+src/evaluator/mod.rs:120:9	from	direct-call	KernelStep	value	KSort-KExpr-value-fuel	Self::Physical
+src/evaluator/mod.rs:148:9	new	for	DefinitionTable	definitions . windows (2) . enumerate ()	opaque-Id32-order-hit-miss	(index , pair)
+src/evaluator/mod.rs:148:30	new	method-call	DefinitionTable	definitions . windows (2)	opaque-Id32-order-hit-miss	definitions . windows (2).enumerate
+src/evaluator/mod.rs:148:30	new	method-call	DefinitionTable	definitions | 2	opaque-Id32-order-hit-miss	definitions.windows
+src/evaluator/mod.rs:149:13	new	if	DefinitionTable	pair [0] . id == pair [1] . id	opaque-Id32-order-hit-miss	then | continue
+src/evaluator/mod.rs:150:24	new	direct-call	DefinitionTable	StaticError :: DuplicateDefinition (pair [0] . id)	opaque-Id32-order-hit-miss	Err
+src/evaluator/mod.rs:150:28	new	direct-call	DefinitionTable	pair [0] . id	opaque-Id32-order-hit-miss	StaticError::DuplicateDefinition
+src/evaluator/mod.rs:152:13	new	if	DefinitionTable	pair [0] . id > pair [1] . id	opaque-Id32-order-hit-miss	then | continue
+src/evaluator/mod.rs:153:24	new	direct-call	DefinitionTable	StaticError :: DefinitionsNotStrictlySorted { index : index + 1 }	opaque-Id32-order-hit-miss	Err
+src/evaluator/mod.rs:156:21	new	method-call	DefinitionTable	definitions	opaque-Id32-order-hit-miss	definitions.iter
+src/evaluator/mod.rs:156:21	new	method-call	DefinitionTable	definitions . iter () . map (| definition | (definition . id , definition))	opaque-Id32-order-hit-miss	definitions . iter () . map (| definition | (definition . id , definition)).collect
+src/evaluator/mod.rs:156:21	new	method-call	DefinitionTable	definitions . iter () | | definition | (definition . id , definition)	opaque-Id32-order-hit-miss	definitions . iter ().map
+src/evaluator/mod.rs:160:9	new	direct-call	DefinitionTable	Self { ordered : definitions , by_id , }	opaque-Id32-order-hit-miss	Ok
+src/evaluator/mod.rs:167:9	resolve	method-call	DefinitionTable	self . by_id . get (& id)	opaque-Id32-order-hit-miss	self . by_id . get (& id).copied
+src/evaluator/mod.rs:167:9	resolve	method-call	DefinitionTable	self . by_id | & id	opaque-Id32-order-hit-miss	BTreeMap::get
+src/evaluator/mod.rs:178:27	new	direct-call	DefinitionTable	definitions	opaque-Id32-order-hit-miss	DefinitionTable::new
+src/evaluator/mod.rs:178:27	new	try	DefinitionTable	DefinitionTable :: new (definitions)	opaque-Id32-order-hit-miss	continue | return-error
+src/evaluator/mod.rs:181:23	new	direct-call	DefinitionTable		opaque-Id32-order-hit-miss	SealedPhysical::new
+src/evaluator/mod.rs:183:9	new	method-call	DefinitionTable	evaluator	opaque-Id32-order-hit-miss	evaluator.check_definitions
+src/evaluator/mod.rs:183:9	new	try	DefinitionTable	evaluator . check_definitions ()	opaque-Id32-order-hit-miss	continue | return-error
+src/evaluator/mod.rs:184:9	new	direct-call	DefinitionTable	evaluator	opaque-Id32-order-hit-miss	Ok
+src/evaluator/mod.rs:188:9	check_definitions	for	KernelStep	self . definitions . ordered	KSort-KExpr-value-fuel	definition
+src/evaluator/mod.rs:189:26	check_definitions	method-call	KernelStep	self | & definition . body | & definition . arguments | 0	KSort-KExpr-value-fuel	self.infer
+src/evaluator/mod.rs:189:26	check_definitions	try	KernelStep	self . infer (& definition . body , & definition . arguments , 0)	KSort-KExpr-value-fuel	continue | return-error
+src/evaluator/mod.rs:190:13	check_definitions	direct-call	KernelStep	definition . result | actual	KSort-KExpr-value-fuel	require_sort
+src/evaluator/mod.rs:190:13	check_definitions	try	KernelStep	require_sort (definition . result , actual)	KSort-KExpr-value-fuel	continue | return-error
+src/evaluator/mod.rs:192:9	check_definitions	direct-call	KernelStep	()	KSort-KExpr-value-fuel	Ok
+src/evaluator/mod.rs:200:9	infer_sort	method-call	KernelStep	self | expression | environment | 0	KSort-KExpr-value-fuel	self.infer
+src/evaluator/mod.rs:209:33	evaluate	method-call	KernelStep	environment	KSort-KExpr-value-fuel	environment.iter
+src/evaluator/mod.rs:209:33	evaluate	method-call	KernelStep	environment . iter () . map (KValue :: sort)	KSort-KExpr-value-fuel	environment . iter () . map (KValue :: sort).collect
+src/evaluator/mod.rs:209:33	evaluate	method-call	KernelStep	environment . iter () | KValue :: sort	KSort-KExpr-value-fuel	environment . iter ().map
+src/evaluator/mod.rs:210:9	evaluate	method-call	KernelStep	self | expression | & sorts	KSort-KExpr-value-fuel	self.infer_sort
+src/evaluator/mod.rs:210:9	evaluate	try	KernelStep	self . infer_sort (expression , & sorts)	KSort-KExpr-value-fuel	continue | return-error
+src/evaluator/mod.rs:211:25	evaluate	direct-call	KernelStep		KSort-KExpr-value-fuel	Vec::new
+src/evaluator/mod.rs:214:27	evaluate	direct-call	KernelStep		KSort-KExpr-value-fuel	ObservationLog::default
+src/evaluator/mod.rs:216:22	evaluate	method-call	KernelStep	self | expression | environment | state | & mut nodes | 0	KSort-KExpr-value-fuel	self.step
+src/evaluator/mod.rs:216:22	evaluate	try	KernelStep	self . step (expression , environment , state , & mut nodes , 0)	KSort-KExpr-value-fuel	continue | return-error
+src/evaluator/mod.rs:217:9	evaluate	direct-call	KernelStep	Evaluation { value : result . value , remaining_fuel : result . state . fuel , observations : result . state . observations , }	KSort-KExpr-value-fuel	Ok
+src/evaluator/mod.rs:233:24	build_certificate	method-call	KernelStep	context . arguments	KSort-KExpr-value-fuel	context . arguments.iter
+src/evaluator/mod.rs:233:24	build_certificate	method-call	KernelStep	context . arguments . iter () . map (value_literal)	KSort-KExpr-value-fuel	context . arguments . iter () . map (value_literal).collect
+src/evaluator/mod.rs:233:24	build_certificate	method-call	KernelStep	context . arguments . iter () | value_literal	KSort-KExpr-value-fuel	context . arguments . iter ().map
+src/evaluator/mod.rs:235:25	build_certificate	direct-call	KernelStep		KSort-KExpr-value-fuel	Vec::new
+src/evaluator/mod.rs:238:27	build_certificate	direct-call	KernelStep		KSort-KExpr-value-fuel	ObservationLog::default
+src/evaluator/mod.rs:240:22	build_certificate	method-call	KernelStep	self | & expression | & [] | state | & mut nodes | 0	KSort-KExpr-value-fuel	self.step
+src/evaluator/mod.rs:240:22	build_certificate	try	KernelStep	self . step (& expression , & [] , state , & mut nodes , 0)	KSort-KExpr-value-fuel	continue | return-error
+src/evaluator/mod.rs:241:28	build_certificate	method-call	KernelStep	result . state . observations	KSort-KExpr-value-fuel	result . state . observations.to_term
+src/evaluator/mod.rs:255:9	build_certificate	direct-call	KernelStep	EvalCertificate { format_version : 0x00 , statement , nodes , }	KSort-KExpr-value-fuel	Ok
+src/evaluator/mod.rs:268:9	infer	if	KernelStep	current_depth >= MAX_NESTING_DEPTH	KSort-KExpr-value-fuel	then | continue
+src/evaluator/mod.rs:269:20	infer	direct-call	KernelStep	StaticError :: RecursionLimit	KSort-KExpr-value-fuel	Err
+src/evaluator/mod.rs:272:9	infer	match	KernelStep	expression	KSort-KExpr-value-fuel	KExpr :: BytesLiteral (_) | KExpr :: TermLiteral (_) | KExpr :: Var (index) | KExpr :: MakeAtom { kind , payload , equality , } | KExpr :: MakeTriple { first , second , third , } | KExpr :: Let { value , body } | KExpr :: CaseTerm { scrutinee , atom_body , triple_body , } | KExpr :: CaseBytes { scrutinee , empty_body , cons_body , } | KExpr :: ConcatBytes (parts) | KExpr :: CaseBytesEqual { left , right , equal_body , unequal_body , } | KExpr :: Call { definition_id , arguments , } | KExpr :: Request { physical_operation_id , arguments , }
+src/evaluator/mod.rs:273:39	infer	direct-call	KernelStep	KSort :: Bytes	KSort-KExpr-value-fuel	Ok
+src/evaluator/mod.rs:274:38	infer	direct-call	KernelStep	KSort :: Term	KSort-KExpr-value-fuel	Ok
+src/evaluator/mod.rs:275:34	infer	method-call	KernelStep	environment . get (usize :: try_from (* index) . map_err (| _ | StaticError :: VariableOutOfBounds (* index)) ? ,)	KSort-KExpr-value-fuel	environment . get (usize :: try_from (* index) . map_err (| _ | StaticError :: VariableOutOfBounds (* index)) ? ,).copied
+src/evaluator/mod.rs:275:34	infer	method-call	KernelStep	environment . get (usize :: try_from (* index) . map_err (| _ | StaticError :: VariableOutOfBounds (* index)) ? ,) . copied () | StaticError :: VariableOutOfBounds (* index)	KSort-KExpr-value-fuel	environment . get (usize :: try_from (* index) . map_err (| _ | StaticError :: VariableOutOfBounds (* index)) ? ,) . copied ().ok_or
+src/evaluator/mod.rs:275:34	infer	method-call	KernelStep	environment | usize :: try_from (* index) . map_err (| _ | StaticError :: VariableOutOfBounds (* index)) ?	KSort-KExpr-value-fuel	environment.get
+src/evaluator/mod.rs:277:21	infer	direct-call	KernelStep	* index	KSort-KExpr-value-fuel	usize::try_from
+src/evaluator/mod.rs:277:21	infer	method-call	KernelStep	usize :: try_from (* index) | | _ | StaticError :: VariableOutOfBounds (* index)	KSort-KExpr-value-fuel	usize :: try_from (* index).map_err
+src/evaluator/mod.rs:277:21	infer	try	KernelStep	usize :: try_from (* index) . map_err (| _ | StaticError :: VariableOutOfBounds (* index))	KSort-KExpr-value-fuel	continue | return-error
+src/evaluator/mod.rs:278:38	infer	direct-call	KernelStep	* index	KSort-KExpr-value-fuel	StaticError::VariableOutOfBounds
+src/evaluator/mod.rs:281:24	infer	direct-call	KernelStep	* index	KSort-KExpr-value-fuel	StaticError::VariableOutOfBounds
+src/evaluator/mod.rs:287:17	infer	direct-call	KernelStep	KSort :: Bytes | self . infer (kind , environment , next) ?	KSort-KExpr-value-fuel	require_sort
+src/evaluator/mod.rs:287:17	infer	try	KernelStep	require_sort (KSort :: Bytes , self . infer (kind , environment , next) ?)	KSort-KExpr-value-fuel	continue | return-error
+src/evaluator/mod.rs:287:44	infer	method-call	KernelStep	self | kind | environment | next	KSort-KExpr-value-fuel	self.infer
+src/evaluator/mod.rs:287:44	infer	try	KernelStep	self . infer (kind , environment , next)	KSort-KExpr-value-fuel	continue | return-error
+src/evaluator/mod.rs:288:17	infer	direct-call	KernelStep	KSort :: Bytes | self . infer (payload , environment , next) ?	KSort-KExpr-value-fuel	require_sort
+src/evaluator/mod.rs:288:17	infer	try	KernelStep	require_sort (KSort :: Bytes , self . infer (payload , environment , next) ?)	KSort-KExpr-value-fuel	continue | return-error
+src/evaluator/mod.rs:288:44	infer	method-call	KernelStep	self | payload | environment | next	KSort-KExpr-value-fuel	self.infer
+src/evaluator/mod.rs:288:44	infer	try	KernelStep	self . infer (payload , environment , next)	KSort-KExpr-value-fuel	continue | return-error
+src/evaluator/mod.rs:289:17	infer	direct-call	KernelStep	KSort :: Bytes | self . infer (equality , environment , next) ?	KSort-KExpr-value-fuel	require_sort
+src/evaluator/mod.rs:289:17	infer	try	KernelStep	require_sort (KSort :: Bytes , self . infer (equality , environment , next) ?)	KSort-KExpr-value-fuel	continue | return-error
+src/evaluator/mod.rs:289:44	infer	method-call	KernelStep	self | equality | environment | next	KSort-KExpr-value-fuel	self.infer
+src/evaluator/mod.rs:289:44	infer	try	KernelStep	self . infer (equality , environment , next)	KSort-KExpr-value-fuel	continue | return-error
+src/evaluator/mod.rs:290:17	infer	direct-call	KernelStep	KSort :: Term	KSort-KExpr-value-fuel	Ok
+src/evaluator/mod.rs:297:17	infer	direct-call	KernelStep	KSort :: Term | self . infer (first , environment , next) ?	KSort-KExpr-value-fuel	require_sort
+src/evaluator/mod.rs:297:17	infer	try	KernelStep	require_sort (KSort :: Term , self . infer (first , environment , next) ?)	KSort-KExpr-value-fuel	continue | return-error
+src/evaluator/mod.rs:297:43	infer	method-call	KernelStep	self | first | environment | next	KSort-KExpr-value-fuel	self.infer
+src/evaluator/mod.rs:297:43	infer	try	KernelStep	self . infer (first , environment , next)	KSort-KExpr-value-fuel	continue | return-error
+src/evaluator/mod.rs:298:17	infer	direct-call	KernelStep	KSort :: Term | self . infer (second , environment , next) ?	KSort-KExpr-value-fuel	require_sort
+src/evaluator/mod.rs:298:17	infer	try	KernelStep	require_sort (KSort :: Term , self . infer (second , environment , next) ?)	KSort-KExpr-value-fuel	continue | return-error
+src/evaluator/mod.rs:298:43	infer	method-call	KernelStep	self | second | environment | next	KSort-KExpr-value-fuel	self.infer
+src/evaluator/mod.rs:298:43	infer	try	KernelStep	self . infer (second , environment , next)	KSort-KExpr-value-fuel	continue | return-error
+src/evaluator/mod.rs:299:17	infer	direct-call	KernelStep	KSort :: Term | self . infer (third , environment , next) ?	KSort-KExpr-value-fuel	require_sort
+src/evaluator/mod.rs:299:17	infer	try	KernelStep	require_sort (KSort :: Term , self . infer (third , environment , next) ?)	KSort-KExpr-value-fuel	continue | return-error
+src/evaluator/mod.rs:299:43	infer	method-call	KernelStep	self | third | environment | next	KSort-KExpr-value-fuel	self.infer
+src/evaluator/mod.rs:299:43	infer	try	KernelStep	self . infer (third , environment , next)	KSort-KExpr-value-fuel	continue | return-error
+src/evaluator/mod.rs:300:17	infer	direct-call	KernelStep	KSort :: Term	KSort-KExpr-value-fuel	Ok
+src/evaluator/mod.rs:303:34	infer	method-call	KernelStep	self | value | environment | next	KSort-KExpr-value-fuel	self.infer
+src/evaluator/mod.rs:303:34	infer	try	KernelStep	self . infer (value , environment , next)	KSort-KExpr-value-fuel	continue | return-error
+src/evaluator/mod.rs:304:40	infer	direct-call	KernelStep	& [value_sort] | environment	KSort-KExpr-value-fuel	prepend
+src/evaluator/mod.rs:305:17	infer	method-call	KernelStep	self | body | & body_environment | next	KSort-KExpr-value-fuel	self.infer
+src/evaluator/mod.rs:312:17	infer	direct-call	KernelStep	KSort :: Term | self . infer (scrutinee , environment , next) ?	KSort-KExpr-value-fuel	require_sort
+src/evaluator/mod.rs:312:17	infer	try	KernelStep	require_sort (KSort :: Term , self . infer (scrutinee , environment , next) ?)	KSort-KExpr-value-fuel	continue | return-error
+src/evaluator/mod.rs:312:43	infer	method-call	KernelStep	self | scrutinee | environment | next	KSort-KExpr-value-fuel	self.infer
+src/evaluator/mod.rs:312:43	infer	try	KernelStep	self . infer (scrutinee , environment , next)	KSort-KExpr-value-fuel	continue | return-error
+src/evaluator/mod.rs:314:21	infer	direct-call	KernelStep	& [KSort :: Bytes , KSort :: Bytes , KSort :: Bytes] | environment	KSort-KExpr-value-fuel	prepend
+src/evaluator/mod.rs:316:21	infer	direct-call	KernelStep	& [KSort :: Term , KSort :: Term , KSort :: Term] | environment	KSort-KExpr-value-fuel	prepend
+src/evaluator/mod.rs:317:17	infer	direct-call	KernelStep	self . infer (atom_body , & atom_environment , next) ? | self . infer (triple_body , & triple_environment , next) ?	KSort-KExpr-value-fuel	common_sort
+src/evaluator/mod.rs:318:21	infer	method-call	KernelStep	self | atom_body | & atom_environment | next	KSort-KExpr-value-fuel	self.infer
+src/evaluator/mod.rs:318:21	infer	try	KernelStep	self . infer (atom_body , & atom_environment , next)	KSort-KExpr-value-fuel	continue | return-error
+src/evaluator/mod.rs:319:21	infer	method-call	KernelStep	self | triple_body | & triple_environment | next	KSort-KExpr-value-fuel	self.infer
+src/evaluator/mod.rs:319:21	infer	try	KernelStep	self . infer (triple_body , & triple_environment , next)	KSort-KExpr-value-fuel	continue | return-error
+src/evaluator/mod.rs:327:17	infer	direct-call	KernelStep	KSort :: Bytes | self . infer (scrutinee , environment , next) ?	KSort-KExpr-value-fuel	require_sort
+src/evaluator/mod.rs:327:17	infer	try	KernelStep	require_sort (KSort :: Bytes , self . infer (scrutinee , environment , next) ?)	KSort-KExpr-value-fuel	continue | return-error
+src/evaluator/mod.rs:327:44	infer	method-call	KernelStep	self | scrutinee | environment | next	KSort-KExpr-value-fuel	self.infer
+src/evaluator/mod.rs:327:44	infer	try	KernelStep	self . infer (scrutinee , environment , next)	KSort-KExpr-value-fuel	continue | return-error
+src/evaluator/mod.rs:328:40	infer	direct-call	KernelStep	& [KSort :: Bytes , KSort :: Bytes] | environment	KSort-KExpr-value-fuel	prepend
+src/evaluator/mod.rs:329:17	infer	direct-call	KernelStep	self . infer (empty_body , environment , next) ? | self . infer (cons_body , & cons_environment , next) ?	KSort-KExpr-value-fuel	common_sort
+src/evaluator/mod.rs:330:21	infer	method-call	KernelStep	self | empty_body | environment | next	KSort-KExpr-value-fuel	self.infer
+src/evaluator/mod.rs:330:21	infer	try	KernelStep	self . infer (empty_body , environment , next)	KSort-KExpr-value-fuel	continue | return-error
+src/evaluator/mod.rs:331:21	infer	method-call	KernelStep	self | cons_body | & cons_environment | next	KSort-KExpr-value-fuel	self.infer
+src/evaluator/mod.rs:331:21	infer	try	KernelStep	self . infer (cons_body , & cons_environment , next)	KSort-KExpr-value-fuel	continue | return-error
+src/evaluator/mod.rs:335:17	infer	for	KernelStep	parts	KSort-KExpr-value-fuel	part
+src/evaluator/mod.rs:336:21	infer	direct-call	KernelStep	KSort :: Bytes | self . infer (part , environment , next) ?	KSort-KExpr-value-fuel	require_sort
+src/evaluator/mod.rs:336:21	infer	try	KernelStep	require_sort (KSort :: Bytes , self . infer (part , environment , next) ?)	KSort-KExpr-value-fuel	continue | return-error
+src/evaluator/mod.rs:336:48	infer	method-call	KernelStep	self | part | environment | next	KSort-KExpr-value-fuel	self.infer
+src/evaluator/mod.rs:336:48	infer	try	KernelStep	self . infer (part , environment , next)	KSort-KExpr-value-fuel	continue | return-error
+src/evaluator/mod.rs:338:17	infer	direct-call	KernelStep	KSort :: Bytes	KSort-KExpr-value-fuel	Ok
+src/evaluator/mod.rs:346:17	infer	direct-call	KernelStep	KSort :: Bytes | self . infer (left , environment , next) ?	KSort-KExpr-value-fuel	require_sort
+src/evaluator/mod.rs:346:17	infer	try	KernelStep	require_sort (KSort :: Bytes , self . infer (left , environment , next) ?)	KSort-KExpr-value-fuel	continue | return-error
+src/evaluator/mod.rs:346:44	infer	method-call	KernelStep	self | left | environment | next	KSort-KExpr-value-fuel	self.infer
+src/evaluator/mod.rs:346:44	infer	try	KernelStep	self . infer (left , environment , next)	KSort-KExpr-value-fuel	continue | return-error
+src/evaluator/mod.rs:347:17	infer	direct-call	KernelStep	KSort :: Bytes | self . infer (right , environment , next) ?	KSort-KExpr-value-fuel	require_sort
+src/evaluator/mod.rs:347:17	infer	try	KernelStep	require_sort (KSort :: Bytes , self . infer (right , environment , next) ?)	KSort-KExpr-value-fuel	continue | return-error
+src/evaluator/mod.rs:347:44	infer	method-call	KernelStep	self | right | environment | next	KSort-KExpr-value-fuel	self.infer
+src/evaluator/mod.rs:347:44	infer	try	KernelStep	self . infer (right , environment , next)	KSort-KExpr-value-fuel	continue | return-error
+src/evaluator/mod.rs:348:17	infer	direct-call	KernelStep	self . infer (equal_body , environment , next) ? | self . infer (unequal_body , environment , next) ?	KSort-KExpr-value-fuel	common_sort
+src/evaluator/mod.rs:349:21	infer	method-call	KernelStep	self | equal_body | environment | next	KSort-KExpr-value-fuel	self.infer
+src/evaluator/mod.rs:349:21	infer	try	KernelStep	self . infer (equal_body , environment , next)	KSort-KExpr-value-fuel	continue | return-error
+src/evaluator/mod.rs:350:21	infer	method-call	KernelStep	self | unequal_body | environment | next	KSort-KExpr-value-fuel	self.infer
+src/evaluator/mod.rs:350:21	infer	try	KernelStep	self . infer (unequal_body , environment , next)	KSort-KExpr-value-fuel	continue | return-error
+src/evaluator/mod.rs:357:34	infer	method-call	KernelStep	self . definitions . resolve (* definition_id) | StaticError :: UnknownDefinition (* definition_id)	KSort-KExpr-value-fuel	self . definitions . resolve (* definition_id).ok_or
+src/evaluator/mod.rs:357:34	infer	method-call	KernelStep	self . definitions | * definition_id	KSort-KExpr-value-fuel	self . definitions.resolve
+src/evaluator/mod.rs:357:34	infer	try	KernelStep	self . definitions . resolve (* definition_id) . ok_or (StaticError :: UnknownDefinition (* definition_id))	KSort-KExpr-value-fuel	continue | return-error
+src/evaluator/mod.rs:360:28	infer	direct-call	KernelStep	* definition_id	KSort-KExpr-value-fuel	StaticError::UnknownDefinition
+src/evaluator/mod.rs:361:17	infer	if	KernelStep	definition . arguments . len () != arguments . len ()	KSort-KExpr-value-fuel	then | continue
+src/evaluator/mod.rs:361:20	infer	method-call	KernelStep	definition . arguments	KSort-KExpr-value-fuel	definition . arguments.len
+src/evaluator/mod.rs:361:50	infer	method-call	KernelStep	arguments	KSort-KExpr-value-fuel	arguments.len
+src/evaluator/mod.rs:362:28	infer	direct-call	KernelStep	StaticError :: ArgumentCount { expected : definition . arguments . len () , actual : arguments . len () , }	KSort-KExpr-value-fuel	Err
+src/evaluator/mod.rs:363:35	infer	method-call	KernelStep	definition . arguments	KSort-KExpr-value-fuel	definition . arguments.len
+src/evaluator/mod.rs:364:33	infer	method-call	KernelStep	arguments	KSort-KExpr-value-fuel	arguments.len
+src/evaluator/mod.rs:367:17	infer	for	KernelStep	arguments . iter () . zip (& definition . arguments)	KSort-KExpr-value-fuel	(argument , expected)
+src/evaluator/mod.rs:367:45	infer	method-call	KernelStep	arguments	KSort-KExpr-value-fuel	arguments.iter
+src/evaluator/mod.rs:367:45	infer	method-call	KernelStep	arguments . iter () | & definition . arguments	KSort-KExpr-value-fuel	arguments . iter ().zip
+src/evaluator/mod.rs:368:21	infer	direct-call	KernelStep	* expected | self . infer (argument , environment , next) ?	KSort-KExpr-value-fuel	require_sort
+src/evaluator/mod.rs:368:21	infer	try	KernelStep	require_sort (* expected , self . infer (argument , environment , next) ?)	KSort-KExpr-value-fuel	continue | return-error
+src/evaluator/mod.rs:368:45	infer	method-call	KernelStep	self | argument | environment | next	KSort-KExpr-value-fuel	self.infer
+src/evaluator/mod.rs:368:45	infer	try	KernelStep	self . infer (argument , environment , next)	KSort-KExpr-value-fuel	continue | return-error
+src/evaluator/mod.rs:370:17	infer	direct-call	KernelStep	definition . result	KSort-KExpr-value-fuel	Ok
+src/evaluator/mod.rs:376:17	infer	if	KernelStep	* physical_operation_id != sha256_operation_id ()	KSort-KExpr-value-fuel	then | continue
+src/evaluator/mod.rs:376:46	infer	direct-call	KernelStep		KSort-KExpr-value-fuel	sha256_operation_id
+src/evaluator/mod.rs:377:28	infer	direct-call	KernelStep	StaticError :: OperationOutsideSealedProfile (* physical_operation_id ,)	KSort-KExpr-value-fuel	Err
+src/evaluator/mod.rs:377:32	infer	direct-call	KernelStep	* physical_operation_id	KSort-KExpr-value-fuel	StaticError::OperationOutsideSealedProfile
+src/evaluator/mod.rs:381:17	infer	if	KernelStep	arguments . len () != 1	KSort-KExpr-value-fuel	then | continue
+src/evaluator/mod.rs:381:20	infer	method-call	KernelStep	arguments	KSort-KExpr-value-fuel	arguments.len
+src/evaluator/mod.rs:382:28	infer	direct-call	KernelStep	StaticError :: ArgumentCount { expected : 1 , actual : arguments . len () , }	KSort-KExpr-value-fuel	Err
+src/evaluator/mod.rs:384:33	infer	method-call	KernelStep	arguments	KSort-KExpr-value-fuel	arguments.len
+src/evaluator/mod.rs:387:17	infer	direct-call	KernelStep	KSort :: Bytes | self . infer (& arguments [0] , environment , next) ?	KSort-KExpr-value-fuel	require_sort
+src/evaluator/mod.rs:387:17	infer	try	KernelStep	require_sort (KSort :: Bytes , self . infer (& arguments [0] , environment , next) ?)	KSort-KExpr-value-fuel	continue | return-error
+src/evaluator/mod.rs:387:44	infer	method-call	KernelStep	self | & arguments [0] | environment | next	KSort-KExpr-value-fuel	self.infer
+src/evaluator/mod.rs:387:44	infer	try	KernelStep	self . infer (& arguments [0] , environment , next)	KSort-KExpr-value-fuel	continue | return-error
+src/evaluator/mod.rs:388:17	infer	direct-call	KernelStep	KSort :: Bytes	KSort-KExpr-value-fuel	Ok
+src/evaluator/mod.rs:401:9	step	if	KernelStep	current_depth >= MAX_NESTING_DEPTH	KSort-KExpr-value-fuel	then | continue
+src/evaluator/mod.rs:402:20	step	direct-call	KernelStep	EvalError :: RecursionLimit	KSort-KExpr-value-fuel	Err
+src/evaluator/mod.rs:406:35	step	method-call	KernelStep	state . observations	KSort-KExpr-value-fuel	state . observations.to_term
+src/evaluator/mod.rs:407:22	step	method-call	KernelStep	state . fuel . checked_sub (1) | EvalError :: OutOfFuel	KSort-KExpr-value-fuel	state . fuel . checked_sub (1).ok_or
+src/evaluator/mod.rs:407:22	step	method-call	KernelStep	state . fuel | 1	KSort-KExpr-value-fuel	state . fuel.checked_sub
+src/evaluator/mod.rs:407:22	step	try	KernelStep	state . fuel . checked_sub (1) . ok_or (EvalError :: OutOfFuel)	KSort-KExpr-value-fuel	continue | return-error
+src/evaluator/mod.rs:408:28	step	direct-call	KernelStep		KSort-KExpr-value-fuel	Vec::new
+src/evaluator/mod.rs:410:46	step	match	KernelStep	expression	KSort-KExpr-value-fuel	KExpr :: BytesLiteral (bytes) | KExpr :: TermLiteral (term) | KExpr :: Var (index) | KExpr :: MakeAtom { kind , payload , equality , } | KExpr :: MakeTriple { first , second , third , } | KExpr :: Let { value , body } | KExpr :: CaseTerm { scrutinee , atom_body , triple_body , } | KExpr :: CaseBytes { scrutinee , empty_body , cons_body , } | KExpr :: ConcatBytes (parts) | KExpr :: CaseBytesEqual { left , right , equal_body , unequal_body , } | KExpr :: Call { definition_id , arguments , } | KExpr :: Request { physical_operation_id , arguments , }
+src/evaluator/mod.rs:411:50	step	direct-call	ByteMachine	bytes . clone ()	empty-head-tail-concat-equality	KValue::Bytes
+src/evaluator/mod.rs:411:64	step	method-call	ByteMachine	bytes	empty-head-tail-concat-equality	bytes.clone
+src/evaluator/mod.rs:412:48	step	direct-call	KernelStep	term . clone ()	KSort-KExpr-value-fuel	KValue::Term
+src/evaluator/mod.rs:412:61	step	method-call	KernelStep	term	KSort-KExpr-value-fuel	term.clone
+src/evaluator/mod.rs:414:29	step	method-call	KernelStep	environment . get (usize :: try_from (* index) . map_err (| _ | EvalError :: VariableOutOfBounds (* index)) ? ,)	KSort-KExpr-value-fuel	environment . get (usize :: try_from (* index) . map_err (| _ | EvalError :: VariableOutOfBounds (* index)) ? ,).cloned
+src/evaluator/mod.rs:414:29	step	method-call	KernelStep	environment . get (usize :: try_from (* index) . map_err (| _ | EvalError :: VariableOutOfBounds (* index)) ? ,) . cloned () | EvalError :: VariableOutOfBounds (* index)	KSort-KExpr-value-fuel	environment . get (usize :: try_from (* index) . map_err (| _ | EvalError :: VariableOutOfBounds (* index)) ? ,) . cloned ().ok_or
+src/evaluator/mod.rs:414:29	step	method-call	KernelStep	environment | usize :: try_from (* index) . map_err (| _ | EvalError :: VariableOutOfBounds (* index)) ?	KSort-KExpr-value-fuel	environment.get
+src/evaluator/mod.rs:414:29	step	try	KernelStep	environment . get (usize :: try_from (* index) . map_err (| _ | EvalError :: VariableOutOfBounds (* index)) ? ,) . cloned () . ok_or (EvalError :: VariableOutOfBounds (* index))	KSort-KExpr-value-fuel	continue | return-error
+src/evaluator/mod.rs:416:25	step	direct-call	KernelStep	* index	KSort-KExpr-value-fuel	usize::try_from
+src/evaluator/mod.rs:416:25	step	method-call	KernelStep	usize :: try_from (* index) | | _ | EvalError :: VariableOutOfBounds (* index)	KSort-KExpr-value-fuel	usize :: try_from (* index).map_err
+src/evaluator/mod.rs:416:25	step	try	KernelStep	usize :: try_from (* index) . map_err (| _ | EvalError :: VariableOutOfBounds (* index))	KSort-KExpr-value-fuel	continue | return-error
+src/evaluator/mod.rs:417:42	step	direct-call	KernelStep	* index	KSort-KExpr-value-fuel	EvalError::VariableOutOfBounds
+src/evaluator/mod.rs:420:28	step	direct-call	KernelStep	* index	KSort-KExpr-value-fuel	EvalError::VariableOutOfBounds
+src/evaluator/mod.rs:429:21	step	method-call	KernelStep	self | kind | environment | state | nodes | next | & mut premises	KSort-KExpr-value-fuel	Evaluator::child
+src/evaluator/mod.rs:429:21	step	try	KernelStep	self . child (kind , environment , state , nodes , next , & mut premises)	KSort-KExpr-value-fuel	continue | return-error
+src/evaluator/mod.rs:430:28	step	direct-call	KernelStep	kind_result . value	KSort-KExpr-value-fuel	expect_bytes
+src/evaluator/mod.rs:430:28	step	try	ByteMachine	expect_bytes (kind_result . value)	empty-head-tail-concat-equality	continue | return-error
+src/evaluator/mod.rs:431:38	step	method-call	KernelStep	self | payload | environment | kind_result . state | nodes | next | & mut premises	KSort-KExpr-value-fuel	Evaluator::child
+src/evaluator/mod.rs:431:38	step	try	KernelStep	self . child (payload , environment , kind_result . state , nodes , next , & mut premises ,)	KSort-KExpr-value-fuel	continue | return-error
+src/evaluator/mod.rs:439:31	step	direct-call	KernelStep	payload_result . value	KSort-KExpr-value-fuel	expect_bytes
+src/evaluator/mod.rs:439:31	step	try	ByteMachine	expect_bytes (payload_result . value)	empty-head-tail-concat-equality	continue | return-error
+src/evaluator/mod.rs:440:39	step	method-call	KernelStep	self | equality | environment | payload_result . state | nodes | next | & mut premises	KSort-KExpr-value-fuel	Evaluator::child
+src/evaluator/mod.rs:440:39	step	try	KernelStep	self . child (equality , environment , payload_result . state , nodes , next , & mut premises ,)	KSort-KExpr-value-fuel	continue | return-error
+src/evaluator/mod.rs:448:32	step	direct-call	KernelStep	equality_result . value	KSort-KExpr-value-fuel	expect_bytes
+src/evaluator/mod.rs:448:32	step	try	ByteMachine	expect_bytes (equality_result . value)	empty-head-tail-concat-equality	continue | return-error
+src/evaluator/mod.rs:451:21	step	direct-call	KernelStep	Term :: Atom { kind , canonical_payload : payload , equality_contract : equality , }	KSort-KExpr-value-fuel	KValue::Term
+src/evaluator/mod.rs:465:21	step	method-call	KernelStep	self | first | environment | state | nodes | next | & mut premises	KSort-KExpr-value-fuel	Evaluator::child
+src/evaluator/mod.rs:465:21	step	try	KernelStep	self . child (first , environment , state , nodes , next , & mut premises)	KSort-KExpr-value-fuel	continue | return-error
+src/evaluator/mod.rs:466:29	step	direct-call	KernelStep	first_result . value	KSort-KExpr-value-fuel	expect_term
+src/evaluator/mod.rs:466:29	step	try	KernelStep	expect_term (first_result . value)	KSort-KExpr-value-fuel	continue | return-error
+src/evaluator/mod.rs:467:37	step	method-call	KernelStep	self | second | environment | first_result . state | nodes | next | & mut premises	KSort-KExpr-value-fuel	Evaluator::child
+src/evaluator/mod.rs:467:37	step	try	KernelStep	self . child (second , environment , first_result . state , nodes , next , & mut premises ,)	KSort-KExpr-value-fuel	continue | return-error
+src/evaluator/mod.rs:475:30	step	direct-call	KernelStep	second_result . value	KSort-KExpr-value-fuel	expect_term
+src/evaluator/mod.rs:475:30	step	try	KernelStep	expect_term (second_result . value)	KSort-KExpr-value-fuel	continue | return-error
+src/evaluator/mod.rs:476:36	step	method-call	KernelStep	self | third | environment | second_result . state | nodes | next | & mut premises	KSort-KExpr-value-fuel	Evaluator::child
+src/evaluator/mod.rs:476:36	step	try	KernelStep	self . child (third , environment , second_result . state , nodes , next , & mut premises ,)	KSort-KExpr-value-fuel	continue | return-error
+src/evaluator/mod.rs:484:29	step	direct-call	KernelStep	third_result . value	KSort-KExpr-value-fuel	expect_term
+src/evaluator/mod.rs:484:29	step	try	KernelStep	expect_term (third_result . value)	KSort-KExpr-value-fuel	continue | return-error
+src/evaluator/mod.rs:487:21	step	direct-call	KernelStep	Term :: Triple (Box :: new (first) , Box :: new (second) , Box :: new (third) ,)	KSort-KExpr-value-fuel	KValue::Term
+src/evaluator/mod.rs:487:34	step	direct-call	KernelStep	Box :: new (first) | Box :: new (second) | Box :: new (third)	KSort-KExpr-value-fuel	Term::Triple
+src/evaluator/mod.rs:488:25	step	direct-call	KernelStep	first	KSort-KExpr-value-fuel	Box::new
+src/evaluator/mod.rs:489:25	step	direct-call	KernelStep	second	KSort-KExpr-value-fuel	Box::new
+src/evaluator/mod.rs:490:25	step	direct-call	KernelStep	third	KSort-KExpr-value-fuel	Box::new
+src/evaluator/mod.rs:497:21	step	method-call	KernelStep	self | value | environment | state | nodes | next | & mut premises	KSort-KExpr-value-fuel	Evaluator::child
+src/evaluator/mod.rs:497:21	step	try	KernelStep	self . child (value , environment , state , nodes , next , & mut premises)	KSort-KExpr-value-fuel	continue | return-error
+src/evaluator/mod.rs:498:40	step	direct-call	KernelStep	& [value_result . value] | environment	KSort-KExpr-value-fuel	prepend
+src/evaluator/mod.rs:499:35	step	method-call	KernelStep	self | body | & body_environment | value_result . state | nodes | next | & mut premises	KSort-KExpr-value-fuel	Evaluator::child
+src/evaluator/mod.rs:499:35	step	try	KernelStep	self . child (body , & body_environment , value_result . state , nodes , next , & mut premises ,)	KSort-KExpr-value-fuel	continue | return-error
+src/evaluator/mod.rs:515:21	step	method-call	KernelStep	self | scrutinee | environment | state | nodes | next | & mut premises	KSort-KExpr-value-fuel	Evaluator::child
+src/evaluator/mod.rs:515:21	step	try	KernelStep	self . child (scrutinee , environment , state , nodes , next , & mut premises)	KSort-KExpr-value-fuel	continue | return-error
+src/evaluator/mod.rs:516:28	step	direct-call	KernelStep	scrutinee_result . value	KSort-KExpr-value-fuel	expect_term
+src/evaluator/mod.rs:516:28	step	try	KernelStep	expect_term (scrutinee_result . value)	KSort-KExpr-value-fuel	continue | return-error
+src/evaluator/mod.rs:517:17	step	match	KernelStep	term	KSort-KExpr-value-fuel	Term :: Atom { kind , canonical_payload , equality_contract , } | Term :: Triple (first , second , third)
+src/evaluator/mod.rs:523:50	step	direct-call	KernelStep	& [KValue :: Bytes (kind) , KValue :: Bytes (canonical_payload) , KValue :: Bytes (equality_contract) ,] | environment	KSort-KExpr-value-fuel	prepend
+src/evaluator/mod.rs:525:33	step	direct-call	KernelStep	kind	KSort-KExpr-value-fuel	KValue::Bytes
+src/evaluator/mod.rs:526:33	step	direct-call	KernelStep	canonical_payload	KSort-KExpr-value-fuel	KValue::Bytes
+src/evaluator/mod.rs:527:33	step	direct-call	KernelStep	equality_contract	KSort-KExpr-value-fuel	KValue::Bytes
+src/evaluator/mod.rs:531:38	step	method-call	KernelStep	self | atom_body | & branch_environment | scrutinee_result . state | nodes | next | & mut premises	KSort-KExpr-value-fuel	Evaluator::child
+src/evaluator/mod.rs:531:38	step	try	KernelStep	self . child (atom_body , & branch_environment , scrutinee_result . state , nodes , next , & mut premises ,)	KSort-KExpr-value-fuel	continue | return-error
+src/evaluator/mod.rs:542:50	step	direct-call	KernelStep	& [KValue :: Term (* first) , KValue :: Term (* second) , KValue :: Term (* third) ,] | environment	KSort-KExpr-value-fuel	prepend
+src/evaluator/mod.rs:544:33	step	direct-call	KernelStep	* first	KSort-KExpr-value-fuel	KValue::Term
+src/evaluator/mod.rs:545:33	step	direct-call	KernelStep	* second	KSort-KExpr-value-fuel	KValue::Term
+src/evaluator/mod.rs:546:33	step	direct-call	KernelStep	* third	KSort-KExpr-value-fuel	KValue::Term
+src/evaluator/mod.rs:550:38	step	method-call	KernelStep	self | triple_body | & branch_environment | scrutinee_result . state | nodes | next | & mut premises	KSort-KExpr-value-fuel	Evaluator::child
+src/evaluator/mod.rs:550:38	step	try	KernelStep	self . child (triple_body , & branch_environment , scrutinee_result . state , nodes , next , & mut premises ,)	KSort-KExpr-value-fuel	continue | return-error
+src/evaluator/mod.rs:568:21	step	method-call	KernelStep	self | scrutinee | environment | state | nodes | next | & mut premises	KSort-KExpr-value-fuel	Evaluator::child
+src/evaluator/mod.rs:568:21	step	try	KernelStep	self . child (scrutinee , environment , state , nodes , next , & mut premises)	KSort-KExpr-value-fuel	continue | return-error
+src/evaluator/mod.rs:569:29	step	direct-call	KernelStep	scrutinee_result . value	KSort-KExpr-value-fuel	expect_bytes
+src/evaluator/mod.rs:569:29	step	try	ByteMachine	expect_bytes (scrutinee_result . value)	empty-head-tail-concat-equality	continue | return-error
+src/evaluator/mod.rs:570:17	step	if	ByteMachine	let Some ((& head , tail)) = bytes . split_first ()	empty-head-tail-concat-equality	then | else
+src/evaluator/mod.rs:570:46	step	method-call	ByteMachine	bytes	empty-head-tail-concat-equality	slice::split_first
+src/evaluator/mod.rs:571:46	step	direct-call	KernelStep	& [KValue :: Bytes (vec ! [head]) , KValue :: Bytes (tail . to_vec ())] | environment	KSort-KExpr-value-fuel	prepend
+src/evaluator/mod.rs:572:27	step	direct-call	KernelStep	vec ! [head]	KSort-KExpr-value-fuel	KValue::Bytes
+src/evaluator/mod.rs:572:54	step	direct-call	KernelStep	tail . to_vec ()	KSort-KExpr-value-fuel	KValue::Bytes
+src/evaluator/mod.rs:572:68	step	method-call	KernelStep	tail	KSort-KExpr-value-fuel	tail.to_vec
+src/evaluator/mod.rs:575:34	step	method-call	KernelStep	self | cons_body | & branch_environment | scrutinee_result . state | nodes | next | & mut premises	KSort-KExpr-value-fuel	Evaluator::child
+src/evaluator/mod.rs:575:34	step	try	KernelStep	self . child (cons_body , & branch_environment , scrutinee_result . state , nodes , next , & mut premises ,)	KSort-KExpr-value-fuel	continue | return-error
+src/evaluator/mod.rs:585:34	step	method-call	KernelStep	self | empty_body | environment | scrutinee_result . state | nodes | next | & mut premises	KSort-KExpr-value-fuel	Evaluator::child
+src/evaluator/mod.rs:585:34	step	try	KernelStep	self . child (empty_body , environment , scrutinee_result . state , nodes , next , & mut premises ,)	KSort-KExpr-value-fuel	continue | return-error
+src/evaluator/mod.rs:597:33	step	direct-call	KernelStep		KSort-KExpr-value-fuel	Vec::new
+src/evaluator/mod.rs:599:17	step	for	KernelStep	parts	KSort-KExpr-value-fuel	part
+src/evaluator/mod.rs:601:25	step	method-call	KernelStep	self | part | environment | next_state | nodes | next | & mut premises	KSort-KExpr-value-fuel	Evaluator::child
+src/evaluator/mod.rs:601:25	step	try	KernelStep	self . child (part , environment , next_state , nodes , next , & mut premises)	KSort-KExpr-value-fuel	continue | return-error
+src/evaluator/mod.rs:602:32	step	direct-call	KernelStep	part_result . value	KSort-KExpr-value-fuel	expect_bytes
+src/evaluator/mod.rs:602:32	step	try	ByteMachine	expect_bytes (part_result . value)	empty-head-tail-concat-equality	continue | return-error
+src/evaluator/mod.rs:603:21	step	method-call	ByteMachine	bytes	empty-head-tail-concat-equality	bytes.len
+src/evaluator/mod.rs:603:21	step	method-call	ByteMachine	bytes . len () . checked_add (part . len ()) | EvalError :: ByteLengthOverflow	empty-head-tail-concat-equality	bytes . len () . checked_add (part . len ()).ok_or
+src/evaluator/mod.rs:603:21	step	method-call	ByteMachine	bytes . len () | part . len ()	empty-head-tail-concat-equality	bytes . len ().checked_add
+src/evaluator/mod.rs:603:21	step	try	ByteMachine	bytes . len () . checked_add (part . len ()) . ok_or (EvalError :: ByteLengthOverflow)	empty-head-tail-concat-equality	continue | return-error
+src/evaluator/mod.rs:605:38	step	method-call	KernelStep	part	KSort-KExpr-value-fuel	part.len
+src/evaluator/mod.rs:607:21	step	method-call	ByteMachine	bytes | & part	empty-head-tail-concat-equality	bytes.extend_from_slice
+src/evaluator/mod.rs:610:24	step	direct-call	ByteMachine	bytes	empty-head-tail-concat-equality	KValue::Bytes
+src/evaluator/mod.rs:619:21	step	method-call	KernelStep	self | left | environment | state | nodes | next | & mut premises	KSort-KExpr-value-fuel	Evaluator::child
+src/evaluator/mod.rs:619:21	step	try	KernelStep	self . child (left , environment , state , nodes , next , & mut premises)	KSort-KExpr-value-fuel	continue | return-error
+src/evaluator/mod.rs:620:28	step	direct-call	KernelStep	left_result . value	KSort-KExpr-value-fuel	expect_bytes
+src/evaluator/mod.rs:620:28	step	try	ByteMachine	expect_bytes (left_result . value)	empty-head-tail-concat-equality	continue | return-error
+src/evaluator/mod.rs:621:36	step	method-call	KernelStep	self | right | environment | left_result . state | nodes | next | & mut premises	KSort-KExpr-value-fuel	Evaluator::child
+src/evaluator/mod.rs:621:36	step	try	KernelStep	self . child (right , environment , left_result . state , nodes , next , & mut premises ,)	KSort-KExpr-value-fuel	continue | return-error
+src/evaluator/mod.rs:629:29	step	direct-call	KernelStep	right_result . value	KSort-KExpr-value-fuel	expect_bytes
+src/evaluator/mod.rs:629:29	step	try	ByteMachine	expect_bytes (right_result . value)	empty-head-tail-concat-equality	continue | return-error
+src/evaluator/mod.rs:630:39	step	if	ByteMachine	left == right	empty-head-tail-concat-equality	then | else
+src/evaluator/mod.rs:631:28	step	method-call	KernelStep	equal_body	KSort-KExpr-value-fuel	equal_body.as_ref
+src/evaluator/mod.rs:633:28	step	method-call	KernelStep	unequal_body	KSort-KExpr-value-fuel	unequal_body.as_ref
+src/evaluator/mod.rs:635:30	step	method-call	KernelStep	self | selected | environment | right_result . state | nodes | next | & mut premises	KSort-KExpr-value-fuel	Evaluator::child
+src/evaluator/mod.rs:635:30	step	try	KernelStep	self . child (selected , environment , right_result . state , nodes , next , & mut premises ,)	KSort-KExpr-value-fuel	continue | return-error
+src/evaluator/mod.rs:649:34	step	method-call	KernelStep	self . definitions . resolve (* definition_id) | EvalError :: UnknownDefinition (* definition_id)	KSort-KExpr-value-fuel	self . definitions . resolve (* definition_id).ok_or
+src/evaluator/mod.rs:649:34	step	method-call	KernelStep	self . definitions | * definition_id	KSort-KExpr-value-fuel	self . definitions.resolve
+src/evaluator/mod.rs:649:34	step	try	KernelStep	self . definitions . resolve (* definition_id) . ok_or (EvalError :: UnknownDefinition (* definition_id))	KSort-KExpr-value-fuel	continue | return-error
+src/evaluator/mod.rs:652:28	step	direct-call	KernelStep	* definition_id	KSort-KExpr-value-fuel	EvalError::UnknownDefinition
+src/evaluator/mod.rs:653:17	step	if	KernelStep	definition . arguments . len () != arguments . len ()	KSort-KExpr-value-fuel	then | continue
+src/evaluator/mod.rs:653:20	step	method-call	KernelStep	definition . arguments	KSort-KExpr-value-fuel	definition . arguments.len
+src/evaluator/mod.rs:653:50	step	method-call	KernelStep	arguments	KSort-KExpr-value-fuel	arguments.len
+src/evaluator/mod.rs:654:28	step	direct-call	KernelStep	EvalError :: ArgumentCount { expected : definition . arguments . len () , actual : arguments . len () , }	KSort-KExpr-value-fuel	Err
+src/evaluator/mod.rs:655:35	step	method-call	KernelStep	definition . arguments	KSort-KExpr-value-fuel	definition . arguments.len
+src/evaluator/mod.rs:656:33	step	method-call	KernelStep	arguments	KSort-KExpr-value-fuel	arguments.len
+src/evaluator/mod.rs:659:34	step	direct-call	KernelStep	arguments . len ()	KSort-KExpr-value-fuel	Vec::with_capacity
+src/evaluator/mod.rs:659:53	step	method-call	KernelStep	arguments	KSort-KExpr-value-fuel	arguments.len
+src/evaluator/mod.rs:661:17	step	for	KernelStep	arguments . iter () . zip (& definition . arguments)	KSort-KExpr-value-fuel	(argument , expected)
+src/evaluator/mod.rs:661:45	step	method-call	KernelStep	arguments	KSort-KExpr-value-fuel	arguments.iter
+src/evaluator/mod.rs:661:45	step	method-call	KernelStep	arguments . iter () | & definition . arguments	KSort-KExpr-value-fuel	arguments . iter ().zip
+src/evaluator/mod.rs:662:43	step	method-call	KernelStep	self | argument | environment | next_state | nodes | next | & mut premises	KSort-KExpr-value-fuel	Evaluator::child
+src/evaluator/mod.rs:662:43	step	try	KernelStep	self . child (argument , environment , next_state , nodes , next , & mut premises ,)	KSort-KExpr-value-fuel	continue | return-error
+src/evaluator/mod.rs:670:21	step	direct-call	KernelStep	* expected | & argument_result . value	KSort-KExpr-value-fuel	require_value_sort
+src/evaluator/mod.rs:670:21	step	try	KernelStep	require_value_sort (* expected , & argument_result . value)	KSort-KExpr-value-fuel	continue | return-error
+src/evaluator/mod.rs:671:21	step	method-call	KernelStep	values | argument_result . value	KSort-KExpr-value-fuel	values.push
+src/evaluator/mod.rs:674:28	step	method-call	KernelStep	self | & definition . body | & values | next_state | nodes | next | & mut premises	KSort-KExpr-value-fuel	Evaluator::child
+src/evaluator/mod.rs:674:28	step	try	KernelStep	self . child (& definition . body , & values , next_state , nodes , next , & mut premises ,)	KSort-KExpr-value-fuel	continue | return-error
+src/evaluator/mod.rs:682:17	step	direct-call	KernelStep	definition . result | & body . value	KSort-KExpr-value-fuel	require_value_sort
+src/evaluator/mod.rs:682:17	step	try	KernelStep	require_value_sort (definition . result , & body . value)	KSort-KExpr-value-fuel	continue | return-error
+src/evaluator/mod.rs:689:17	step	if	KernelStep	arguments . len () != 1	KSort-KExpr-value-fuel	then | continue
+src/evaluator/mod.rs:689:20	step	method-call	KernelStep	arguments	KSort-KExpr-value-fuel	arguments.len
+src/evaluator/mod.rs:690:28	step	direct-call	KernelStep	EvalError :: ArgumentCount { expected : 1 , actual : arguments . len () , }	KSort-KExpr-value-fuel	Err
+src/evaluator/mod.rs:692:33	step	method-call	KernelStep	arguments	KSort-KExpr-value-fuel	arguments.len
+src/evaluator/mod.rs:695:32	step	method-call	KernelStep	self | & arguments [0] | environment | state | nodes | next | & mut premises	KSort-KExpr-value-fuel	Evaluator::child
+src/evaluator/mod.rs:695:32	step	try	KernelStep	self . child (& arguments [0] , environment , state , nodes , next , & mut premises ,)	KSort-KExpr-value-fuel	continue | return-error
+src/evaluator/mod.rs:703:17	step	direct-call	KernelStep	KSort :: Bytes | & argument . value	KSort-KExpr-value-fuel	require_value_sort
+src/evaluator/mod.rs:703:17	step	try	KernelStep	require_value_sort (KSort :: Bytes , & argument . value)	KSort-KExpr-value-fuel	continue | return-error
+src/evaluator/mod.rs:705:29	step	method-call	KernelStep	self . physical | * physical_operation_id | & [argument . value] | & mut final_state . observations	KSort-KExpr-value-fuel	self . physical.request
+src/evaluator/mod.rs:705:29	step	try	KernelStep	self . physical . request (* physical_operation_id , & [argument . value] , & mut final_state . observations ,)	KSort-KExpr-value-fuel	continue | return-error
+src/evaluator/mod.rs:715:25	step	method-call	KernelStep	expression	KSort-KExpr-value-fuel	expression.clone
+src/evaluator/mod.rs:716:26	step	method-call	KernelStep	environment	KSort-KExpr-value-fuel	environment.to_vec
+src/evaluator/mod.rs:719:20	step	method-call	KernelStep	value	KSort-KExpr-value-fuel	value.clone
+src/evaluator/mod.rs:721:33	step	method-call	KernelStep	final_state . observations	KSort-KExpr-value-fuel	final_state . observations.to_term
+src/evaluator/mod.rs:723:9	step	method-call	KernelStep	nodes . try_reserve (1) | | _ | EvalError :: CertificateNodeOverflow	KSort-KExpr-value-fuel	nodes . try_reserve (1).map_err
+src/evaluator/mod.rs:723:9	step	method-call	KernelStep	nodes | 1	KSort-KExpr-value-fuel	nodes.try_reserve
+src/evaluator/mod.rs:723:9	step	try	KernelStep	nodes . try_reserve (1) . map_err (| _ | EvalError :: CertificateNodeOverflow)	KSort-KExpr-value-fuel	continue | return-error
+src/evaluator/mod.rs:726:9	step	method-call	KernelStep	nodes | EvalNode { rule_tag , premises , conclusion , }	KSort-KExpr-value-fuel	nodes.push
+src/evaluator/mod.rs:731:9	step	direct-call	KernelStep	StepResult { value , state : final_state , }	KSort-KExpr-value-fuel	Ok
+src/evaluator/mod.rs:746:22	child	method-call	CertificateStep	self | expression | environment | state | nodes | depth	30..3e	Evaluator::step
+src/evaluator/mod.rs:746:22	child	try	CertificateStep	self . step (expression , environment , state , nodes , depth)	30..3e	continue | return-error
+src/evaluator/mod.rs:748:13	child	direct-call	CertificateStep	nodes . len () - 1	30..3e	u32::try_from
+src/evaluator/mod.rs:748:13	child	method-call	CertificateStep	u32 :: try_from (nodes . len () - 1) | | _ | EvalError :: CertificateNodeOverflow	30..3e	u32 :: try_from (nodes . len () - 1).map_err
+src/evaluator/mod.rs:748:13	child	try	CertificateStep	u32 :: try_from (nodes . len () - 1) . map_err (| _ | EvalError :: CertificateNodeOverflow)	30..3e	continue | return-error
+src/evaluator/mod.rs:748:27	child	method-call	CertificateStep	nodes	30..3e	nodes.len
+src/evaluator/mod.rs:749:9	child	method-call	CertificateStep	premises | index	30..3e	premises.push
+src/evaluator/mod.rs:750:9	child	direct-call	CertificateStep	result	30..3e	Ok
+src/evaluator/mod.rs:766:5	require_sort	if	KernelStep	expected == actual	KSort-KExpr-value-fuel	then | else
+src/evaluator/mod.rs:767:9	require_sort	direct-call	KernelStep	()	KSort-KExpr-value-fuel	Ok
+src/evaluator/mod.rs:769:9	require_sort	direct-call	KernelStep	StaticError :: SortMismatch { expected , actual }	KSort-KExpr-value-fuel	Err
+src/evaluator/mod.rs:774:5	common_sort	if	KernelStep	left == right	KSort-KExpr-value-fuel	then | else
+src/evaluator/mod.rs:775:9	common_sort	direct-call	KernelStep	left	KSort-KExpr-value-fuel	Ok
+src/evaluator/mod.rs:777:9	common_sort	direct-call	KernelStep	StaticError :: BranchSortMismatch { left , right }	KSort-KExpr-value-fuel	Err
+src/evaluator/mod.rs:782:18	require_value_sort	method-call	KernelStep	value	KSort-KExpr-value-fuel	value.sort
+src/evaluator/mod.rs:783:5	require_value_sort	if	KernelStep	actual == expected	KSort-KExpr-value-fuel	then | else
+src/evaluator/mod.rs:784:9	require_value_sort	direct-call	KernelStep	()	KSort-KExpr-value-fuel	Ok
+src/evaluator/mod.rs:786:9	require_value_sort	direct-call	KernelStep	EvalError :: ValueSort { expected , actual }	KSort-KExpr-value-fuel	Err
+src/evaluator/mod.rs:791:5	expect_bytes	match	KernelStep	value	KSort-KExpr-value-fuel	KValue :: Bytes (value) | KValue :: Term (_)
+src/evaluator/mod.rs:792:33	expect_bytes	direct-call	KernelStep	value	KSort-KExpr-value-fuel	Ok
+src/evaluator/mod.rs:793:28	expect_bytes	direct-call	KernelStep	EvalError :: ValueSort { expected : KSort :: Bytes , actual : KSort :: Term , }	KSort-KExpr-value-fuel	Err
+src/evaluator/mod.rs:801:5	expect_term	match	KernelStep	value	KSort-KExpr-value-fuel	KValue :: Term (value) | KValue :: Bytes (_)
+src/evaluator/mod.rs:802:32	expect_term	direct-call	KernelStep	value	KSort-KExpr-value-fuel	Ok
+src/evaluator/mod.rs:803:29	expect_term	direct-call	KernelStep	EvalError :: ValueSort { expected : KSort :: Term , actual : KSort :: Bytes , }	KSort-KExpr-value-fuel	Err
+src/evaluator/mod.rs:811:22	prepend	direct-call	KernelStep	prefix . len () + tail . len ()	KSort-KExpr-value-fuel	Vec::with_capacity
+src/evaluator/mod.rs:811:41	prepend	method-call	KernelStep	prefix	KSort-KExpr-value-fuel	prefix.len
+src/evaluator/mod.rs:811:56	prepend	method-call	KernelStep	tail	KSort-KExpr-value-fuel	tail.len
+src/evaluator/mod.rs:812:5	prepend	method-call	KernelStep	values | prefix	KSort-KExpr-value-fuel	values.extend_from_slice
+src/evaluator/mod.rs:813:5	prepend	method-call	KernelStep	values | tail	KSort-KExpr-value-fuel	values.extend_from_slice
+src/evaluator/mod.rs:818:5	value_literal	match	KernelStep	value	KSort-KExpr-value-fuel	KValue :: Bytes (bytes) | KValue :: Term (term)
+src/evaluator/mod.rs:819:33	value_literal	direct-call	KernelStep	bytes . clone ()	KSort-KExpr-value-fuel	KExpr::BytesLiteral
+src/evaluator/mod.rs:819:53	value_literal	method-call	KernelStep	bytes	KSort-KExpr-value-fuel	bytes.clone
+src/evaluator/mod.rs:820:31	value_literal	direct-call	KernelStep	term . clone ()	KSort-KExpr-value-fuel	KExpr::TermLiteral
+src/evaluator/mod.rs:820:50	value_literal	method-call	KernelStep	term	KSort-KExpr-value-fuel	term.clone
 src/physical/mod.rs:63:9	request	if	PhysicalDispatch	operation_id != sha256_operation_id ()	Sha256OpId	then | continue
+src/physical/mod.rs:63:28	request	direct-call	PhysicalDispatch		Sha256OpId	sha256_operation_id
+src/physical/mod.rs:64:20	request	direct-call	PhysicalDispatch	PhysicalError :: UnknownOperation (operation_id)	Sha256OpId	Err
+src/physical/mod.rs:64:24	request	direct-call	PhysicalDispatch	operation_id	Sha256OpId	PhysicalError::UnknownOperation
 src/physical/mod.rs:66:9	request	let-else	PhysicalDispatch	arguments	Sha256OpId	[KValue :: Bytes (input)] | diverge
+src/physical/mod.rs:67:20	request	direct-call	PhysicalDispatch	PhysicalError :: SignatureMismatch	Sha256OpId	Err
+src/physical/mod.rs:69:21	request	direct-call	PhysicalDispatch	observations . items . len ()	Sha256OpId	u64::try_from
+src/physical/mod.rs:69:21	request	method-call	PhysicalDispatch	u64 :: try_from (observations . items . len ()) | | _ | PhysicalError :: ObservationIndexOverflow	Sha256OpId	u64 :: try_from (observations . items . len ()).map_err
+src/physical/mod.rs:69:21	request	try	PhysicalDispatch	u64 :: try_from (observations . items . len ()) . map_err (| _ | PhysicalError :: ObservationIndexOverflow)	Sha256OpId	continue | return-error
+src/physical/mod.rs:69:35	request	method-call	PhysicalDispatch	observations . items	Sha256OpId	observations . items.len
+src/physical/mod.rs:71:22	request	direct-call	PhysicalDispatch	input	Sha256OpId	Sha256::digest
+src/physical/mod.rs:71:22	request	method-call	PhysicalDispatch	Sha256 :: digest (input)	Sha256OpId	Sha256 :: digest (input).to_vec
+src/physical/mod.rs:72:22	request	direct-call	PhysicalDispatch	digest	Sha256OpId	KValue::Bytes
+src/physical/mod.rs:73:9	request	method-call	PhysicalDispatch	observations . items | PhysicalObservation { index , operation_id , arguments : arguments . to_vec () , result : result . clone () , }	Sha256OpId	observations . items.push
+src/physical/mod.rs:76:24	request	method-call	PhysicalDispatch	arguments	Sha256OpId	arguments.to_vec
+src/physical/mod.rs:77:21	request	method-call	PhysicalDispatch	result	Sha256OpId	result.clone
+src/physical/mod.rs:79:9	request	direct-call	PhysicalDispatch	result	Sha256OpId	Ok
+src/physical/mod.rs:114:15	atom	method-call	CoreABI	kind	fixed-ABI-shapes	kind.to_vec
+src/physical/mod.rs:116:28	atom	method-call	CoreABI	K_EQ	fixed-ABI-shapes	K_EQ.to_vec
+src/physical/mod.rs:121:5	tag	direct-call	CoreABI	K_TAG | vec ! [value]	fixed-ABI-shapes	atom
+src/physical/mod.rs:125:5	bytes	direct-call	CoreABI	K_BYTES | value	fixed-ABI-shapes	atom
+src/physical/mod.rs:129:5	id	direct-call	CoreABI	K_ID32 | value . 0 . to_vec ()	fixed-ABI-shapes	atom
+src/physical/mod.rs:129:18	id	method-call	CoreABI	value . 0	fixed-ABI-shapes	value . 0.to_vec
+src/physical/mod.rs:133:5	nat64	direct-call	CoreABI	K_U64 | value . to_be_bytes () . to_vec ()	fixed-ABI-shapes	atom
+src/physical/mod.rs:133:17	nat64	method-call	CoreABI	value	fixed-ABI-shapes	value.to_be_bytes
+src/physical/mod.rs:133:17	nat64	method-call	CoreABI	value . to_be_bytes ()	fixed-ABI-shapes	value . to_be_bytes ().to_vec
+src/physical/mod.rs:137:29	list	method-call	CoreABI	values	fixed-ABI-shapes	values.into_iter
+src/physical/mod.rs:137:29	list	method-call	CoreABI	values . into_iter ()	fixed-ABI-shapes	values . into_iter ().collect
+src/physical/mod.rs:138:5	list	method-call	CoreABI	values	fixed-ABI-shapes	values.into_iter
+src/physical/mod.rs:138:5	list	method-call	CoreABI	values . into_iter ()	fixed-ABI-shapes	values . into_iter ().rev
+src/physical/mod.rs:138:5	list	method-call	CoreABI	values . into_iter () . rev () | tag (0x00) | | tail , head | { Term :: Triple (Box :: new (tag (0x01)) , Box :: new (head) , Box :: new (tail)) }	fixed-ABI-shapes	values . into_iter () . rev ().fold
+src/physical/mod.rs:138:35	list	direct-call	CoreABI	0x00	fixed-ABI-shapes	tag
+src/physical/mod.rs:139:9	list	direct-call	CoreABI	Box :: new (tag (0x01)) | Box :: new (head) | Box :: new (tail)	fixed-ABI-shapes	Term::Triple
+src/physical/mod.rs:139:22	list	direct-call	CoreABI	tag (0x01)	fixed-ABI-shapes	Box::new
+src/physical/mod.rs:139:31	list	direct-call	CoreABI	0x01	fixed-ABI-shapes	tag
+src/physical/mod.rs:139:43	list	direct-call	CoreABI	head	fixed-ABI-shapes	Box::new
+src/physical/mod.rs:139:59	list	direct-call	CoreABI	tail	fixed-ABI-shapes	Box::new
+src/physical/mod.rs:144:5	record	direct-call	CoreABI	Box :: new (tag (record_tag)) | Box :: new (list (fields)) | Box :: new (tag (0x00))	fixed-ABI-shapes	Term::Triple
+src/physical/mod.rs:145:9	record	direct-call	CoreABI	tag (record_tag)	fixed-ABI-shapes	Box::new
+src/physical/mod.rs:145:18	record	direct-call	CoreABI	record_tag	fixed-ABI-shapes	tag
+src/physical/mod.rs:146:9	record	direct-call	CoreABI	list (fields)	fixed-ABI-shapes	Box::new
+src/physical/mod.rs:146:18	record	direct-call	CoreABI	fields	fixed-ABI-shapes	list
+src/physical/mod.rs:147:9	record	direct-call	CoreABI	tag (0x00)	fixed-ABI-shapes	Box::new
+src/physical/mod.rs:147:18	record	direct-call	CoreABI	0x00	fixed-ABI-shapes	tag
+src/physical/mod.rs:152:5	value_term	match	CoreABI	value	fixed-ABI-shapes	KValue :: Bytes (value) | KValue :: Term (value)
+src/physical/mod.rs:153:33	value_term	direct-call	CoreABI	0x02 | vec ! [bytes (value . clone ())]	fixed-ABI-shapes	record
+src/physical/mod.rs:154:32	value_term	direct-call	CoreABI	0x03 | vec ! [value . clone ()]	fixed-ABI-shapes	record
+src/physical/mod.rs:162:17	observations_term	method-call	CoreABI	observations	fixed-ABI-shapes	observations.iter
+src/physical/mod.rs:162:17	observations_term	method-call	CoreABI	observations . iter () | | observation | { record (0x19 , vec ! [nat64 (observation . index) , id (observation . operation_id) , list (observation . arguments . iter () . map (value_term)) , value_term (& observation . result) ,] ,) }	fixed-ABI-shapes	observations . iter ().map
+src/physical/mod.rs:163:9	observations_term	direct-call	CoreABI	0x19 | vec ! [nat64 (observation . index) , id (observation . operation_id) , list (observation . arguments . iter () . map (value_term)) , value_term (& observation . result) ,]	fixed-ABI-shapes	record
+src/physical/mod.rs:173:5	observations_term	direct-call	CoreABI	0x1a | vec ! [list (items)]	fixed-ABI-shapes	record
