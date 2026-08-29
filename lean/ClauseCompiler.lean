@@ -5,8 +5,9 @@ import ClauseCompiler.Authorization
 
 This is the additive CLCP-v2 constitutional surface.  `Codec.strictDecode`
 returns only a retained candidate or a deterministic decode rejection.
-`Authorization.authorizeGenesis` requires an external witness observation;
-`Authorization.authorizeSuccessor` requires exact accepted predecessor bytes.
+`Authorization.authorizeBytesGenesis` consumes the fixed external owner
+capability only after strict decoding; `Authorization.authorizeBytesSuccessor`
+requires exact accepted predecessor bytes after the same strict boundary.
 Neither decoding, hashing, evaluation, nor certificate validity creates
 compiler authority.
 -/

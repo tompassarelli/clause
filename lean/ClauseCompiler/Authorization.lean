@@ -33,6 +33,53 @@ def definitionDomain : Id32 := nominalDomain "definition"
 def sourceUnitDomain : Id32 := nominalDomain "source-unit"
 def changeOccurrenceDomain : Id32 := nominalDomain "change-occurrence"
 
+mutual
+  /- A fixed-ABI tag is authoritative wherever it occurs in opaque Term data.
+  A 04 record must therefore be well shaped and resolve, even inside a
+  TermLiteral or an otherwise Clause-owned request field. -/
+  def termNominalReferencesValid (declarations : List NominalDeclaration) : Term → Bool
+    | .atom _ _ _ => true
+    | value@(.triple first second third) =>
+        let childrenValid := termNominalReferencesValid declarations first &&
+          termNominalReferencesValid declarations second &&
+          termNominalReferencesValid declarations third
+        if ABI.asTag first = some 0x04 then
+          match ABI.decodeNominalRef value with
+          | some reference => childrenValid &&
+              nominalExists declarations reference.domain reference.id
+          | none => false
+        else childrenValid
+
+  def expressionNominalReferencesValid (declarations : List NominalDeclaration) :
+      KExpr → Bool
+    | .bytesLiteral _ | .var _ => true
+    | .termLiteral value => termNominalReferencesValid declarations value
+    | .makeAtom a b c | .makeTriple a b c =>
+        expressionNominalReferencesValid declarations a &&
+        expressionNominalReferencesValid declarations b &&
+        expressionNominalReferencesValid declarations c
+    | .letValue a b => expressionNominalReferencesValid declarations a &&
+        expressionNominalReferencesValid declarations b
+    | .caseTerm a b c | .caseBytes a b c =>
+        expressionNominalReferencesValid declarations a &&
+        expressionNominalReferencesValid declarations b &&
+        expressionNominalReferencesValid declarations c
+    | .concatBytes parts => expressionSeqNominalReferencesValid declarations parts
+    | .caseBytesEqual a b c d =>
+        expressionNominalReferencesValid declarations a &&
+        expressionNominalReferencesValid declarations b &&
+        expressionNominalReferencesValid declarations c &&
+        expressionNominalReferencesValid declarations d
+    | .call _ arguments | .request _ arguments =>
+        expressionSeqNominalReferencesValid declarations arguments
+
+  def expressionSeqNominalReferencesValid (declarations : List NominalDeclaration) :
+      KExprSeq → Bool
+    | .nil => true
+    | .cons head tail => expressionNominalReferencesValid declarations head &&
+        expressionSeqNominalReferencesValid declarations tail
+end
+
 def allocationShapeValid (declarations : List NominalDeclaration) :
     NominalDeclaration → Bool
   | .seed domain id | .retainedSeed domain id _ =>
@@ -69,31 +116,57 @@ def nominalTableValid (subject : CompilerSubject) : Bool :=
   all (fun definition =>
     nominalExists subject.nominalDeclarations definitionDomain definition.id) subject.program &&
   nominalExists subject.nominalDeclarations definitionDomain subject.interface.compile &&
-  nominalExists subject.nominalDeclarations definitionDomain subject.interface.admitPropose
+  nominalExists subject.nominalDeclarations definitionDomain subject.interface.admitPropose &&
+  all (fun definition => expressionNominalReferencesValid subject.nominalDeclarations
+    definition.body) subject.program &&
+  termNominalReferencesValid subject.nominalDeclarations subject.buildRequest
+
+def requestSignatureConforms (program : List Definition) (environment : List KSort)
+    (operation : Id32) (arguments : KExprSeq) : Bool :=
+  operation = Fixed.sha256OperationId &&
+  match arguments with
+  | .cons argument .nil =>
+      Static.infer program Fixed.coreManifest.physicalProfile environment argument = some .bytes
+  | _ => false
 
 mutual
-  def requestsConform : KExpr → Bool
+  def requestsConform (program : List Definition) (environment : List KSort) : KExpr → Bool
     | .bytesLiteral _ | .termLiteral _ | .var _ => true
     | .makeAtom a b c | .makeTriple a b c =>
-        requestsConform a && requestsConform b && requestsConform c
-    | .letValue a b => requestsConform a && requestsConform b
-    | .caseTerm a b c | .caseBytes a b c =>
-        requestsConform a && requestsConform b && requestsConform c
-    | .concatBytes parts => requestSeqConform parts
+        requestsConform program environment a && requestsConform program environment b &&
+        requestsConform program environment c
+    | .letValue value body =>
+        requestsConform program environment value &&
+        match Static.infer program Fixed.coreManifest.physicalProfile environment value with
+        | none => false
+        | some sort => requestsConform program (sort :: environment) body
+    | .caseTerm scrutinee atomBody tripleBody =>
+        requestsConform program environment scrutinee &&
+        requestsConform program ([.bytes, .bytes, .bytes] ++ environment) atomBody &&
+        requestsConform program ([.term, .term, .term] ++ environment) tripleBody
+    | .caseBytes scrutinee emptyBody consBody =>
+        requestsConform program environment scrutinee &&
+        requestsConform program environment emptyBody &&
+        requestsConform program ([.bytes, .bytes] ++ environment) consBody
+    | .concatBytes parts => requestSeqConform program environment parts
     | .caseBytesEqual a b c d =>
-        requestsConform a && requestsConform b && requestsConform c && requestsConform d
-    | .call _ arguments => requestSeqConform arguments
+        requestsConform program environment a && requestsConform program environment b &&
+        requestsConform program environment c && requestsConform program environment d
+    | .call _ arguments => requestSeqConform program environment arguments
     | .request operation arguments =>
-        operation = Fixed.sha256OperationId && arguments.length = 1 &&
-          requestSeqConform arguments
+        requestSignatureConforms program environment operation arguments &&
+        requestSeqConform program environment arguments
 
-  def requestSeqConform : KExprSeq → Bool
+  def requestSeqConform (program : List Definition) (environment : List KSort) :
+      KExprSeq → Bool
     | .nil => true
-    | .cons head tail => requestsConform head && requestSeqConform tail
+    | .cons head tail => requestsConform program environment head &&
+        requestSeqConform program environment tail
 end
 
 def allRequestsConform (subject : CompilerSubject) : Bool :=
-  all (fun definition => requestsConform definition.body) subject.program
+  all (fun definition => requestsConform subject.program definition.arguments definition.body)
+    subject.program
 
 def coreFailure (candidate : DecodedPackage) : Option AuthorizationFailure :=
   let subject := candidate.package.subject
@@ -250,36 +323,40 @@ def commonPrefix (candidate : DecodedPackage) : Option AuthorizationFailure :=
     some { stage := .coreManifest, code := .manifestMismatch }
   else coreFailure candidate
 
-def authorizeGenesis (observe : W → OwnerAnchorObservation)
-    (request : GenesisAuthorizationRequest W)
-    (candidate : DecodedPackage) : AuthorizationVerdict :=
-  match commonPrefix candidate with
-  | some failure => .unauthorized failure
-  | none =>
-      match candidate.package.subject.lineage with
-      | .successor _ _ => deny .genesisAnchor .genesisWrongLineage
-      | .genesis =>
-        if !evidenceEqual request.evidence candidate.package.evidence ||
-            !evidenceEqual request.evidence .genesis then
-          deny .genesisAnchor .genesisEvidenceNotEmpty
-        else
-          match request.ownerAnchor with
-          | .missing => deny .genesisAnchor .missingAnchor
-          | .supplied witness =>
-              let observation := observe witness
-              if observation.selectedByteLength ≠ observation.exactSelectedBytes.length ||
-                  observation.selectedPackageHash ≠
-                    compilerPackageHash observation.exactSelectedBytes ||
-                  observation.exactSelectedBytes ≠ candidate.exactInput then
-                deny .genesisAnchor .anchorBytesMismatch
-              else
-                match buildFailure candidate request.buildRequest
-                    (some (request.compileFuelLimit, request.admissionFuelLimit)) none with
-                | some failure => .unauthorized failure
-                | none =>
-                    match finalFailure candidate request.finalIdentity with
-                    | some failure => .unauthorized failure
-                    | none => .authorized candidate.exactInput
+private def authorizeDecodedGenesis (request : GenesisAuthorizationRequest)
+    (exactInput : Bytes) (candidate : DecodedPackage)
+    (_binding : Codec.strictDecode exactInput = .decoded candidate) : AuthorizationVerdict :=
+  if candidate.exactInput ≠ exactInput ||
+      Encoding.package candidate.package ≠ some exactInput then
+    deny .coreWellFormedness .subjectStructure
+  else
+    match commonPrefix candidate with
+    | some failure => .unauthorized failure
+    | none =>
+        match candidate.package.subject.lineage with
+        | .successor _ _ => deny .genesisAnchor .genesisWrongLineage
+        | .genesis =>
+          if !evidenceEqual request.evidence candidate.package.evidence ||
+              !evidenceEqual request.evidence .genesis then
+            deny .genesisAnchor .genesisEvidenceNotEmpty
+          else
+            match request.ownerAnchor with
+            | .missing => deny .genesisAnchor .missingAnchor
+            | .supplied witness =>
+                let observation := witness.observation
+                if observation.selectedByteLength ≠ observation.exactSelectedBytes.length ||
+                    observation.selectedPackageHash ≠
+                      compilerPackageHash observation.exactSelectedBytes ||
+                    observation.exactSelectedBytes ≠ exactInput then
+                  deny .genesisAnchor .anchorBytesMismatch
+                else
+                  match buildFailure candidate request.buildRequest
+                      (some (request.compileFuelLimit, request.admissionFuelLimit)) none with
+                  | some failure => .unauthorized failure
+                  | none =>
+                      match finalFailure candidate request.finalIdentity with
+                      | some failure => .unauthorized failure
+                      | none => .authorized exactInput
 
 structure AcceptedPredecessor where
   exactBytes : Bytes
@@ -307,13 +384,29 @@ def statementShapeMatches (statement : EvalStatement) (predecessor : AcceptedPre
   statement.entrypoint = entrypoint && statement.arguments = [.term argument] &&
   statement.fuelLimit = fuel
 
-def certificateEvaluates (predecessor : AcceptedPredecessor)
+def certificateShapeValid (certificate : EvalCertificate) : Bool :=
+  certificate.formatVersion = Fixed.coreManifest.certificateFormatVersion
+
+/- This is intentionally separate from evaluator preflight.  The authorization
+dispatcher must classify malformed format, statement, and graph rows before a
+later evaluation fault, result mismatch, or observation mismatch. -/
+def certificateGraphValid (predecessor : AcceptedPredecessor)
     (certificate : EvalCertificate) : Bool :=
-  if equality : certificate.statement.exactAcceptedPredecessor = predecessor.exactBytes then
-    let accepted : AcceptedExact certificate.statement.exactAcceptedPredecessor :=
-      equality.symm ▸ predecessor.acceptance
-    Certificate.verifyEvalCertificate certificate.statement accepted certificate
-  else false
+  let statement := certificate.statement
+  let subject := predecessor.decoded.package.subject
+  let profile := predecessor.decoded.package.manifest.physicalProfile
+  predecessor.decoded.exactManifestPayload = Fixed.exactCoreManifestBytes &&
+  predecessor.decoded.package.manifest = Fixed.coreManifest &&
+  statement.coreContractId = Fixed.coreContractId &&
+  statement.physicalProfileId = Fixed.physicalProfileId &&
+  Static.definitionsWellFormed subject.program profile &&
+  allRequestsConform subject && Static.entrypointsWellFormed subject &&
+  match Static.findDefinition statement.entrypoint subject.program with
+  | none => false
+  | some entrypoint =>
+      all₂ (fun value expected => value.sort = expected)
+        statement.arguments entrypoint.arguments &&
+      Certificate.checkGraph subject.program profile statement certificate.nodes
 
 def evaluateStatement (predecessor : AcceptedPredecessor)
     (statement : EvalStatement) : Option Evaluator.Result :=
@@ -321,38 +414,33 @@ def evaluateStatement (predecessor : AcceptedPredecessor)
     predecessor.decoded.package.manifest.physicalProfile
     (Certificate.requiredRoot statement).expression [] statement.fuelLimit []
 
-def evaluationPreflightFailure (stage : AuthorizationStage)
-    (predecessor : AcceptedPredecessor) (statement : EvalStatement) :
-    Option AuthorizationFailure :=
-  let fail code := some { stage := stage, code := code }
-  match evaluateStatement predecessor statement with
-  | none => fail .evaluationFault
-  | some result =>
-      if result.value ≠ statement.expected.value ||
-          result.fuel ≠ statement.expected.remainingFuel then
-        fail .certificateRuleInvalid
-      else if ABI.observations result.observations ≠ statement.expected.observations then
-        fail .observationMismatch
-      else none
-
 def compileFailure (candidate : DecodedPackage) (request : ABI.BuildRequest)
     (predecessor : AcceptedPredecessor) (certificate : EvalCertificate) :
     Option AuthorizationFailure :=
   let fail code := some { stage := AuthorizationStage.compileEvaluation, code := code }
-  if !statementShapeMatches certificate.statement predecessor
+  if !certificateShapeValid certificate then fail .evidenceShapeMismatch
+  else if !statementShapeMatches certificate.statement predecessor
       predecessor.decoded.package.subject.interface.compile candidate.package.subject.buildRequest
       request.compileFuel then fail .certificateStatementMismatch
-  else match evaluationPreflightFailure .compileEvaluation predecessor certificate.statement with
-    | some failure => some failure
-    | none =>
-      if !certificateEvaluates predecessor certificate then fail .certificateRuleInvalid
+  else if !certificateGraphValid predecessor certificate then fail .certificateRuleInvalid
+  else
+    match evaluateStatement predecessor certificate.statement with
+    | none => fail .evaluationFault
+    | some result =>
+      if result.value ≠ certificate.statement.expected.value ||
+          result.fuel ≠ certificate.statement.expected.remainingFuel then
+        fail .certificateRuleInvalid
       else
-        match certificate.statement.expected.value with
-        | .term result =>
-            match ABI.builtBytes result with
+        match result.value with
+        | .term value =>
+            match ABI.builtBytes value with
             | none => fail .unexpectedResult
             | some bytes =>
-                if bytes ≠ candidate.exactSubjectPayload then fail .subjectMismatch else none
+                if bytes ≠ candidate.exactSubjectPayload then fail .subjectMismatch
+                else if ABI.observations result.observations ≠
+                    certificate.statement.expected.observations then
+                  fail .observationMismatch
+                else none
         | _ => fail .unexpectedResult
 
 def admissionRequestTerm (request : Term) (subjectBytes : Bytes)
@@ -365,29 +453,42 @@ def admissionFailure (candidate : DecodedPackage) (request : ABI.BuildRequest)
   let fail code := some { stage := AuthorizationStage.admissionEvaluation, code := code }
   let argument := admissionRequestTerm candidate.package.subject.buildRequest
     candidate.exactSubjectPayload compileCertificate.statement.expected.observations
-  if !statementShapeMatches admissionCertificate.statement predecessor
+  if !certificateShapeValid admissionCertificate then fail .evidenceShapeMismatch
+  else if !statementShapeMatches admissionCertificate.statement predecessor
       predecessor.decoded.package.subject.interface.admitPropose argument
       request.admissionFuel then fail .certificateStatementMismatch
-  else match evaluationPreflightFailure .admissionEvaluation predecessor
-      admissionCertificate.statement with
-    | some failure => some failure
-    | none =>
-      if !certificateEvaluates predecessor admissionCertificate then
+  else if !certificateGraphValid predecessor admissionCertificate then
+    fail .certificateRuleInvalid
+  else
+    match evaluateStatement predecessor admissionCertificate.statement with
+    | none => fail .evaluationFault
+    | some result =>
+      if result.value ≠ admissionCertificate.statement.expected.value ||
+          result.fuel ≠ admissionCertificate.statement.expected.remainingFuel then
         fail .certificateRuleInvalid
       else
-        match admissionCertificate.statement.expected.value with
-        | .term result =>
-            match ABI.proposedBytes result with
+        match result.value with
+        | .term value =>
+            match ABI.proposedBytes value with
             | none => fail .unexpectedResult
             | some bytes =>
-                if bytes ≠ candidate.exactSubjectPayload then fail .subjectMismatch else none
+                if bytes ≠ candidate.exactSubjectPayload then fail .subjectMismatch
+                else if ABI.observations result.observations ≠
+                    admissionCertificate.statement.expected.observations then
+                  fail .observationMismatch
+                else none
         | _ => fail .unexpectedResult
 
-def authorizeSuccessor (request : SuccessorAuthorizationRequest)
-    (candidate : DecodedPackage) : AuthorizationVerdict :=
-  match commonPrefix candidate with
-  | some failure => .unauthorized failure
-  | none =>
+private def authorizeDecodedSuccessor (request : SuccessorAuthorizationRequest)
+    (exactInput : Bytes) (candidate : DecodedPackage)
+    (_binding : Codec.strictDecode exactInput = .decoded candidate) : AuthorizationVerdict :=
+  if candidate.exactInput ≠ exactInput ||
+      Encoding.package candidate.package ≠ some exactInput then
+    deny .coreWellFormedness .subjectStructure
+  else
+    match commonPrefix candidate with
+    | some failure => .unauthorized failure
+    | none =>
     match candidate.package.subject.lineage with
     | .genesis => deny .exactPredecessor .successorWrongLineage
     | .successor locator _ =>
@@ -435,17 +536,73 @@ def authorizeSuccessor (request : SuccessorAuthorizationRequest)
                         | some failure => .unauthorized failure
                         | none => .authorized candidate.exactInput
 
-def authorizeBytesGenesis (observe : W → OwnerAnchorObservation)
-    (request : GenesisAuthorizationRequest W) (input : Bytes) :
+def authorizeBytesGenesis (request : GenesisAuthorizationRequest) (input : Bytes) :
     DecodeVerdict × Option AuthorizationVerdict :=
-  match Codec.strictDecode input with
+  match h : Codec.strictDecode input with
   | verdict@(.rejected _) => (verdict, none)
-  | verdict@(.decoded candidate) => (verdict, some (authorizeGenesis observe request candidate))
+  | verdict@(.decoded candidate) =>
+      (verdict, some (authorizeDecodedGenesis request input candidate h))
 
 def authorizeBytesSuccessor (request : SuccessorAuthorizationRequest) (input : Bytes) :
     DecodeVerdict × Option AuthorizationVerdict :=
-  match Codec.strictDecode input with
+  match h : Codec.strictDecode input with
   | verdict@(.rejected _) => (verdict, none)
-  | verdict@(.decoded candidate) => (verdict, some (authorizeSuccessor request candidate))
+  | verdict@(.decoded candidate) =>
+      (verdict, some (authorizeDecodedSuccessor request input candidate h))
+
+/- Kernel-checked adversarial precedence vectors.  Each theorem leaves every
+later input unconstrained, so the earlier false row must dominate any paired
+later defect. -/
+theorem compileFormatPrecedesLaterFailures (candidate : DecodedPackage)
+    (request : ABI.BuildRequest) (predecessor : AcceptedPredecessor)
+    (certificate : EvalCertificate) (shapeInvalid : certificateShapeValid certificate = false) :
+    compileFailure candidate request predecessor certificate = some {
+      stage := .compileEvaluation
+      code := .evidenceShapeMismatch
+    } := by
+  simp [compileFailure, shapeInvalid]
+
+theorem compileStatementPrecedesGraphAndEvaluation (candidate : DecodedPackage)
+    (request : ABI.BuildRequest) (predecessor : AcceptedPredecessor)
+    (certificate : EvalCertificate) (shapeValid : certificateShapeValid certificate = true)
+    (statementInvalid : !statementShapeMatches certificate.statement predecessor
+      predecessor.decoded.package.subject.interface.compile
+      candidate.package.subject.buildRequest request.compileFuel) :
+    compileFailure candidate request predecessor certificate = some {
+      stage := .compileEvaluation
+      code := .certificateStatementMismatch
+    } := by
+  simp [compileFailure, shapeValid, statementInvalid]
+
+theorem compileGraphPrecedesEvaluation (candidate : DecodedPackage)
+    (request : ABI.BuildRequest) (predecessor : AcceptedPredecessor)
+    (certificate : EvalCertificate) (shapeValid : certificateShapeValid certificate = true)
+    (statementValid : statementShapeMatches certificate.statement predecessor
+      predecessor.decoded.package.subject.interface.compile
+      candidate.package.subject.buildRequest request.compileFuel)
+    (graphInvalid : certificateGraphValid predecessor certificate = false) :
+    compileFailure candidate request predecessor certificate = some {
+      stage := .compileEvaluation
+      code := .certificateRuleInvalid
+    } := by
+  simp [compileFailure, shapeValid, statementValid, graphInvalid]
+
+theorem unknownRequestSignatureFailsProfile (program : List Definition)
+    (environment : List KSort)
+    (operation : Id32) (arguments : KExprSeq)
+    (unknown : operation ≠ Fixed.sha256OperationId) :
+    requestSignatureConforms program environment operation arguments = false := by
+  simp [requestSignatureConforms, unknown]
+
+theorem zeroArityRequestSignatureFailsProfile (program : List Definition)
+    (environment : List KSort) :
+    requestSignatureConforms program environment Fixed.sha256OperationId .nil = false := by
+  simp [requestSignatureConforms]
+
+theorem wrongSortRequestSignatureFailsProfile (program : List Definition)
+    (environment : List KSort) (value : Term) :
+    requestSignatureConforms program environment Fixed.sha256OperationId
+      (.cons (.termLiteral value) .nil) = false := by
+  simp [requestSignatureConforms, Static.infer]
 
 end ClauseCompiler.Authorization

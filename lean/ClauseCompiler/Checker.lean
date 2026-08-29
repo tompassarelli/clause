@@ -299,11 +299,8 @@ mutual
         if ← inferSeqAgainst program profile environment arguments definition.arguments then
           pure definition.result
         else none
-    | .request id arguments => do
-        let operation ← findOperation id profile.operations
-        if ← inferSeqAgainst program profile environment arguments operation.arguments then
-          pure operation.result
-        else none
+    | .request _ arguments => do
+        if ← inferSeqAny program profile environment arguments then pure .bytes else none
 
   def inferSeq (program : List Definition) (profile : PhysicalProfile)
       (environment : List KSort) : KExprSeq → KSort → Option Bool
@@ -321,6 +318,17 @@ mutual
           inferSeqAgainst program profile environment tail remaining
         else pure false
     | _, _ => some false
+
+  /- Static checking proves that request arguments are themselves well typed,
+  but deliberately does not own the operation, arity, argument-signature, or
+  result-signature verdict.  Those closed-profile checks are the later 41/68
+  row in authorization. -/
+  def inferSeqAny (program : List Definition) (profile : PhysicalProfile)
+      (environment : List KSort) : KExprSeq → Option Bool
+    | .nil => some true
+    | .cons head tail => do
+        let _ ← infer program profile environment head
+        inferSeqAny program profile environment tail
 end
 
 def definitionsSortedUnique (program : List Definition) : Bool :=

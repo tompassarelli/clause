@@ -13,19 +13,36 @@ open Lean Elab Command
 
 run_cmd do
   let environment ← getEnv
-  let modules : Array Name := #[
-    `ClauseCompiler.Model,
-    `ClauseCompiler.Encoding,
-    `ClauseCompiler.Codec,
-    `ClauseCompiler.Checker,
-    `ClauseCompiler.Authorization,
-    `ClauseCompiler]
-  let moduleIndices := modules.filterMap environment.getModuleIdx?
-  if moduleIndices.size != modules.size then
-    throwError "ClauseCompiler trust audit is missing an imported module"
+  let roots : Array Name := #[
+    `ClauseCompiler.Authorization.authorizeBytesGenesis,
+    `ClauseCompiler.Authorization.authorizeBytesSuccessor,
+    `ClauseCompiler.Certificate.verifyEvalCertificate,
+    `ClauseCompiler.Codec.strictDecode,
+    `ClauseCompiler.Encoding.package]
+  for root in roots do
+    unless environment.contains root do
+      throwError "ClauseCompiler trust audit is missing root {root}"
+
+  /- Init is the pinned kernel/core-library boundary.  Every reachable
+  declaration outside that one module family is traversed through both its
+  type and body and audited, regardless of its source module. -/
+  let trustedBoundaryModules : Array Name := #[`Init]
+  let isTrustedBoundary (name : Name) : Bool :=
+    match environment.getModuleIdxFor? name with
+    | none => false
+    | some moduleIndex =>
+        match environment.header.moduleNames[moduleIndex]? with
+        | none => false
+        | some moduleName =>
+            trustedBoundaryModules.any (fun boundaryPrefix =>
+              boundaryPrefix.isPrefixOf moduleName)
   let allowedPartialRuntimeHelpers : Array String := #[
     "ClauseCompiler.Authorization.findNominal._unsafe_rec",
+    "ClauseCompiler.Authorization.termNominalReferencesValid._unsafe_rec",
+    "ClauseCompiler.Authorization.expressionNominalReferencesValid._unsafe_rec",
+    "ClauseCompiler.Authorization.expressionSeqNominalReferencesValid._unsafe_rec",
     "ClauseCompiler.Static.infer._unsafe_rec",
+    "ClauseCompiler.Static.inferSeqAny._unsafe_rec",
     "ClauseCompiler.Codec.consumeMagic.loop._unsafe_rec",
     "ClauseCompiler.nth?._unsafe_rec",
     "ClauseCompiler.SHA256.expandWords._unsafe_rec",
@@ -67,31 +84,37 @@ run_cmd do
     "ClauseCompiler.KExprSeq.ofList._unsafe_rec",
     "ClauseCompiler.bytesLt._unsafe_rec",
     "ClauseCompiler.Encoding.term._unsafe_rec"]
-  let mut observedPartialRuntimeHelpers : Array String := #[]
+  let mut pending := roots.toList
+  let mut visited : NameSet := {}
   let mut checked := 0
-  for (name, info) in environment.constants do
-    let inScope := match environment.getModuleIdxFor? name with
-      | some sourceModule => moduleIndices.contains sourceModule
-      | none => false
-    if inScope then
-      checked := checked + 1
-      if info.isUnsafe then
-        throwError "unsafe ClauseCompiler declaration: {name}"
-      if info.isPartial then
-        unless allowedPartialRuntimeHelpers.contains name.toString do
-          throwError "unexpected partial ClauseCompiler declaration: {name}"
-        observedPartialRuntimeHelpers := observedPartialRuntimeHelpers.push name.toString
-      if (Compiler.getImplementedBy? environment name).isSome then
-        throwError "implemented_by ClauseCompiler declaration: {name}"
-      if (getExternAttrData? environment name).isSome then
-        throwError "extern ClauseCompiler declaration: {name}"
-      let axioms ← collectAxioms name
-      for axiomName in axioms do
-        unless axiomName == `ClauseCompiler.AcceptedExact || axiomName == ``propext ||
-            axiomName == ``Quot.sound do
-          throwError "ClauseCompiler declaration {name} depends on disallowed axiom: {axiomName}"
-  if checked == 0 then
-    throwError "ClauseCompiler trust audit found no declarations"
-  for allowedName in allowedPartialRuntimeHelpers do
-    unless observedPartialRuntimeHelpers.contains allowedName do
-      throwError "expected generated runtime helper is absent: {allowedName}"
+  let mut boundaryDeclarations := 0
+  while let name :: tail := pending do
+    pending := tail
+    if visited.contains name then continue
+    visited := visited.insert name
+    if isTrustedBoundary name then
+      boundaryDeclarations := boundaryDeclarations + 1
+      continue
+    let some info := environment.find? name
+      | throwError "reachable ClauseCompiler declaration is absent: {name}"
+    checked := checked + 1
+    if info.isUnsafe then
+      throwError "unsafe declaration in ClauseCompiler trust closure: {name}"
+    if info.isPartial then
+      unless allowedPartialRuntimeHelpers.contains name.toString do
+        throwError "unexpected partial declaration in ClauseCompiler trust closure: {name}"
+    if (Compiler.getImplementedBy? environment name).isSome then
+      throwError "implemented_by declaration in ClauseCompiler trust closure: {name}"
+    if (getExternAttrData? environment name).isSome then
+      throwError "extern declaration in ClauseCompiler trust closure: {name}"
+    for dependency in info.getUsedConstantsAsSet do
+      unless visited.contains dependency do
+        pending := dependency :: pending
+  if checked == 0 || boundaryDeclarations == 0 then
+    throwError "ClauseCompiler trust audit found an empty root closure or boundary"
+  for root in roots do
+    let axioms ← collectAxioms root
+    for axiomName in axioms do
+      unless axiomName == `ClauseCompiler.AcceptedExact || axiomName == ``propext ||
+          axiomName == ``Quot.sound do
+        throwError "ClauseCompiler root {root} depends on disallowed axiom: {axiomName}"

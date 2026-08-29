@@ -324,15 +324,19 @@ structure OwnerAnchorObservation where
   selectedPackageHash : Hash32
 deriving DecidableEq, Repr
 
-/- `W` is deliberately external and has no wire representation or constructor
-in this model.  The owner chooses the concrete witness type at the irreducible
-release boundary; the checker can only observe a supplied value. -/
-inductive OwnerAnchorInput (W : Type) where
-  | missing
-  | supplied (witness : W)
+/- The private constructor makes this a fixed, non-wire capability rather than
+a caller-selected witness type.  Only the irreducible owner boundary that owns
+this module can issue one; authorization can inspect but cannot mint it. -/
+structure OwnerAnchorWitness where
+  private mk ::
+  observation : OwnerAnchorObservation
 
-structure GenesisAuthorizationRequest (W : Type) where
-  ownerAnchor : OwnerAnchorInput W
+inductive OwnerAnchorInput where
+  | missing
+  | supplied (witness : OwnerAnchorWitness)
+
+structure GenesisAuthorizationRequest where
+  ownerAnchor : OwnerAnchorInput
   buildRequest : Term
   evidence : CompilerEvidence
   compileFuelLimit : Fuel
