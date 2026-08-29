@@ -1,0 +1,285 @@
+{
+  "schema": "clause-canonical-package-corpus-v0",
+  "hex_transport": "lowercase hexadecimal with ASCII whitespace ignored",
+  "checksum_scope": "exact .hex transport file bytes; content addressing only",
+  "claims": {
+    "bootstrap-target": {
+      "term": { "atom": { "kind": "20", "payload": "40", "equality_contract": "30" } },
+      "type": { "atom": { "kind": "21", "payload": "41", "equality_contract": "31" } },
+      "mode": { "atom": { "kind": "22", "payload": "42", "equality_contract": "32" } }
+    },
+    "successor-target": {
+      "term": { "atom": { "kind": "20", "payload": "50", "equality_contract": "30" } },
+      "type": { "atom": { "kind": "21", "payload": "41", "equality_contract": "31" } },
+      "mode": { "atom": { "kind": "22", "payload": "42", "equality_contract": "32" } }
+    },
+    "positive-successor-basis-admission": {
+      "term": {
+        "atom": {
+          "kind": "f0",
+          "payload": "010000000a0000000110000000011103000000380000000100000000012000000001500000000130000000000121000000014100000001310000000001220000000142000000013200000000",
+          "equality_contract": "f1"
+        }
+      },
+      "type": { "atom": { "kind": "f0", "payload": "f2", "equality_contract": "f1" } },
+      "mode": { "atom": { "kind": "f0", "payload": "f3", "equality_contract": "f1" } },
+      "payload_components": ["exact successor INDEX frame", "exact successor BASIS frame"]
+    }
+  },
+  "positive": [
+    {
+      "id": "bootstrap",
+      "file": "positive/bootstrap.hex",
+      "decoded_bytes": 334,
+      "hex_file_sha256": "f6b17efa35b97fc330f39f62b49e26719d5506a05a4493846ed2f9ced8a07680",
+      "frames": [
+        { "name": "INDEX", "offset": 5, "tag": 1, "payload_length": 10 },
+        { "name": "LINEAGE", "offset": 20, "tag": 2, "payload_length": 1 },
+        { "name": "BASIS", "offset": 26, "tag": 3, "payload_length": 179 },
+        { "name": "CERTIFICATE", "offset": 210, "tag": 4, "payload_length": 57 },
+        { "name": "TARGET", "offset": 272, "tag": 5, "payload_length": 48 },
+        { "name": "AUXILIARY", "offset": 325, "tag": 6, "payload_length": 4 }
+      ],
+      "decoded": {
+        "index": { "universe_id": "10", "semantics_id": "11" },
+        "lineage": { "kind": "root" },
+        "basis": {
+          "roots": ["bootstrap-target", "positive-successor-basis-admission"],
+          "rules": []
+        },
+        "certificate": [
+          { "claimed": "bootstrap-target", "reason": { "root_ref": 0 } }
+        ],
+        "target": "bootstrap-target",
+        "auxiliary": []
+      },
+      "verdicts": {
+        "decode": "accept",
+        "exact_literal_root": "accept",
+        "package_certificate": "accept",
+        "authority": "accept"
+      }
+    },
+    {
+      "id": "successor",
+      "file": "positive/successor.hex",
+      "decoded_bytes": 681,
+      "hex_file_sha256": "8d569bfdb18a1a81178276a9bf0a6a0df31908b35010c11100cad60d71153630",
+      "frames": [
+        { "name": "INDEX", "offset": 5, "tag": 1, "payload_length": 10 },
+        { "name": "LINEAGE", "offset": 20, "tag": 2, "payload_length": 471 },
+        { "name": "BASIS", "offset": 496, "tag": 3, "payload_length": 56 },
+        { "name": "CERTIFICATE", "offset": 557, "tag": 4, "payload_length": 57 },
+        { "name": "TARGET", "offset": 619, "tag": 5, "payload_length": 48 },
+        { "name": "AUXILIARY", "offset": 672, "tag": 6, "payload_length": 4 }
+      ],
+      "decoded": {
+        "index": { "universe_id": "10", "semantics_id": "11" },
+        "lineage": {
+          "kind": "successor",
+          "predecessor_file": "positive/bootstrap.hex",
+          "predecessor_bytes": 334,
+          "authorization_certificate": [
+            { "claimed": "positive-successor-basis-admission", "reason": { "root_ref": 1 } }
+          ]
+        },
+        "basis": { "roots": ["successor-target"], "rules": [] },
+        "certificate": [
+          { "claimed": "successor-target", "reason": { "root_ref": 0 } }
+        ],
+        "target": "successor-target",
+        "auxiliary": []
+      },
+      "verdicts": {
+        "decode": "accept",
+        "predecessor_authority": "accept",
+        "same_index": "accept",
+        "lineage_certificate_under_predecessor_basis": "accept",
+        "lineage_certificate_under_successor_basis": "reject",
+        "package_certificate": "accept",
+        "authority": "accept"
+      }
+    }
+  ],
+  "negative": [
+    {
+      "id": "bad-magic",
+      "file": "negative/bad-magic.hex",
+      "base": "positive/successor.hex",
+      "decoded_bytes": 681,
+      "hex_file_sha256": "4073bbc47835208c98e447263ede842f1c1271c8a721752a121c976fb094ffb5",
+      "mutation": "byte 0: 43 -> 44",
+      "verdicts": { "decode": "reject", "authority": "not-run" },
+      "failure": "MAGIC"
+    },
+    {
+      "id": "bad-version",
+      "file": "negative/bad-version.hex",
+      "base": "positive/successor.hex",
+      "decoded_bytes": 681,
+      "hex_file_sha256": "6b4ddaf68ea36e45b2f3ad3bc55e5e3bdaa5c9be28dbcee08f923e32853b3732",
+      "mutation": "byte 4: 01 -> 02",
+      "verdicts": { "decode": "reject", "authority": "not-run" },
+      "failure": "VERSION"
+    },
+    {
+      "id": "bad-frame-order",
+      "file": "negative/bad-frame-order.hex",
+      "base": "positive/successor.hex",
+      "decoded_bytes": 681,
+      "hex_file_sha256": "57d3ce6d890fa6c470ecc6289a6dc1b01025ee6c22adc7114377bd176cf58184",
+      "mutation": "swap the complete INDEX and LINEAGE frames",
+      "verdicts": { "decode": "reject", "authority": "not-run" },
+      "failure": "FRAME_ORDER"
+    },
+    {
+      "id": "unknown-term-tag",
+      "file": "negative/unknown-term-tag.hex",
+      "base": "positive/successor.hex",
+      "decoded_bytes": 681,
+      "hex_file_sha256": "4724852eac3a3e941e5ad8ceeab385ca506b039e6ab9fd27d6000345642b772a",
+      "mutation": "TARGET first Term tag at byte 624: 00 -> 02",
+      "verdicts": { "decode": "reject", "authority": "not-run" },
+      "failure": "TERM_TAG"
+    },
+    {
+      "id": "bad-length",
+      "file": "negative/bad-length.hex",
+      "base": "positive/successor.hex",
+      "decoded_bytes": 681,
+      "hex_file_sha256": "eda811e67be48270e1c46f414863d0b12e3944f1a17d1d617913d536dbf36a00",
+      "mutation": "INDEX frame length at bytes 6..9: 0000000a -> ffffffff",
+      "verdicts": { "decode": "reject", "authority": "not-run" },
+      "failure": "LENGTH_OUT_OF_BOUNDS"
+    },
+    {
+      "id": "truncated",
+      "file": "negative/truncated.hex",
+      "base": "positive/successor.hex",
+      "decoded_bytes": 680,
+      "hex_file_sha256": "35d9a48ddf649bcdacc4aa059470e68a3b4182d38b2909ff1917dc7035419a7a",
+      "mutation": "remove final AUXILIARY payload byte",
+      "verdicts": { "decode": "reject", "authority": "not-run" },
+      "failure": "TRUNCATED"
+    },
+    {
+      "id": "trailing-bytes",
+      "file": "negative/trailing-bytes.hex",
+      "base": "positive/successor.hex",
+      "decoded_bytes": 682,
+      "hex_file_sha256": "0134ed3b2bf325261b80b2d4363707c50e666fb23d8e4f7fb1085a6997e56e17",
+      "mutation": "append 00 after the AUXILIARY frame",
+      "verdicts": { "decode": "reject", "authority": "not-run" },
+      "failure": "TRAILING_BYTES"
+    },
+    {
+      "id": "decoded-field-tamper",
+      "file": "negative/decoded-field-tamper.hex",
+      "base": "positive/successor.hex",
+      "decoded_bytes": 681,
+      "hex_file_sha256": "67adc33c74f01c660b1d62331fbadecc9faaff11afb7e984e138e9205a6d10e8",
+      "mutation": "successor universeId byte at offset 14: 10 -> 12",
+      "expected_decoded_delta": { "index.universe_id": "12" },
+      "verdicts": { "decode": "accept", "exact_positive_binding": "reject", "authority": "reject" },
+      "failure": "INDEX_UNIVERSE_MISMATCH"
+    },
+    {
+      "id": "epoch-tamper",
+      "file": "negative/epoch-tamper.hex",
+      "base": "positive/successor.hex",
+      "decoded_bytes": 681,
+      "hex_file_sha256": "32c9dafc63fc55ae4d964eb45e125b1e67359c6d89be09f95c424993b587ecff",
+      "mutation": "successor semanticsId byte at offset 19: 11 -> 12",
+      "expected_decoded_delta": { "index.semantics_id": "12" },
+      "verdicts": { "decode": "accept", "exact_positive_binding": "reject", "authority": "reject" },
+      "failure": "INDEX_SEMANTICS_MISMATCH"
+    },
+    {
+      "id": "basis-tamper",
+      "file": "negative/basis-tamper.hex",
+      "base": "positive/successor.hex",
+      "decoded_bytes": 681,
+      "hex_file_sha256": "3ac612f2575b3aed804693066ab1bdbe65ba9249752613a47f730d249f4b1bd1",
+      "mutation": "successor BASIS root term payload at offset 515: 50 -> 53",
+      "expected_decoded_delta": { "basis.roots[0].term.atom.payload": "53" },
+      "verdicts": { "decode": "accept", "exact_positive_binding": "reject", "lineage_trace_under_predecessor_basis": "accept", "lineage_target": "reject", "authority": "reject" },
+      "failure": "LINEAGE_TARGET_MISMATCH"
+    },
+    {
+      "id": "certificate-tamper",
+      "file": "negative/certificate-tamper.hex",
+      "base": "positive/successor.hex",
+      "decoded_bytes": 681,
+      "hex_file_sha256": "1180bca00bedd6d1279a42b93cb7968a4214de1ce2b3e5950c1938130ace336e",
+      "mutation": "package-certificate rootRef at bytes 615..618: 00000000 -> 00000001",
+      "expected_decoded_delta": { "certificate[0].reason.root_ref": 1 },
+      "verdicts": { "decode": "accept", "exact_positive_binding": "reject", "lineage_certificate": "accept", "package_certificate": "reject", "authority": "reject" },
+      "failure": "PACKAGE_CERTIFICATE"
+    },
+    {
+      "id": "target-tamper",
+      "file": "negative/target-tamper.hex",
+      "base": "positive/successor.hex",
+      "decoded_bytes": 681,
+      "hex_file_sha256": "05d808da3a5c54c339e3ca5478d3d72a9beb118f7191258cf9f92f353a4a8a3f",
+      "mutation": "TARGET term payload at offset 634: 50 -> 53",
+      "expected_decoded_delta": { "target.term.atom.payload": "53" },
+      "verdicts": { "decode": "accept", "exact_positive_binding": "reject", "package_certificate_trace": "accept", "package_target": "reject", "authority": "reject" },
+      "failure": "PACKAGE_TARGET_MISMATCH"
+    },
+    {
+      "id": "auxiliary-tamper",
+      "file": "negative/auxiliary-tamper.hex",
+      "base": "positive/successor.hex",
+      "decoded_bytes": 686,
+      "hex_file_sha256": "e89e269dfcb38e121b9a94b362b189ea383fc60f76116c98684436b9cf621a57",
+      "mutation": "replace empty AUXILIARY list with ordered blobs [60] and canonical enclosing length",
+      "expected_decoded_delta": { "auxiliary": ["60"] },
+      "verdicts": { "decode": "accept", "exact_positive_binding": "reject", "lineage_certificate": "accept", "package_certificate": "accept", "authority": "accept" },
+      "failure": "EXACT_PACKAGE_BINDING_ONLY"
+    },
+    {
+      "id": "nonliteral-root",
+      "file": "negative/nonliteral-root.hex",
+      "base": "positive/successor.hex",
+      "decoded_bytes": 211,
+      "hex_file_sha256": "d6af6e9fa94719e8dff2c35bcbb2e27d6420708ec2bb09fc06ef396c90a2a437",
+      "mutation": "replace successor LINEAGE with root tag 00 and its canonical one-byte frame payload",
+      "expected_decoded_delta": { "lineage.kind": "root" },
+      "verdicts": { "decode": "accept", "exact_literal_root": "reject", "package_certificate": "accept", "authority": "reject" },
+      "failure": "ROOT_NOT_LITERAL"
+    },
+    {
+      "id": "self-authorization",
+      "file": "negative/self-authorization.hex",
+      "base": "positive/successor.hex",
+      "decoded_bytes": 654,
+      "hex_file_sha256": "63e4a2c9af1ed00bac6969f8e17baa2fe52d3a81419db4a050fafd449c56d4ae",
+      "mutation": "successor basis adds opaque claim payload ee at root 1 and LINEAGE certificate cites that self-declared root",
+      "expected_decoded_delta": { "basis.roots": ["successor-target", "self-declared-ee"], "lineage.authorization[0].reason.root_ref": 1 },
+      "verdicts": { "decode": "accept", "lineage_certificate_under_predecessor_basis": "reject", "relative_check_of_self_claim_under_successor_basis": "accept", "authority": "reject" },
+      "failure": "SELF_AUTHORIZATION"
+    },
+    {
+      "id": "wrong-transplanted-predecessor",
+      "file": "negative/wrong-transplanted-predecessor.hex",
+      "base": "positive/successor.hex",
+      "decoded_bytes": 686,
+      "hex_file_sha256": "b599e5a92d9959964593dfc5b388619f4fe1f6072568cde08eca2239b70560bf",
+      "mutation": "embed a nonliteral bootstrap candidate with AUXILIARY [60] while transplanting the positive authorization certificate unchanged",
+      "expected_decoded_delta": { "lineage.predecessor.auxiliary": ["60"] },
+      "verdicts": { "decode": "accept", "predecessor_decode": "accept", "predecessor_authority": "reject", "authority": "reject" },
+      "failure": "PREDECESSOR_UNAUTHORIZED"
+    },
+    {
+      "id": "check-auth-under-successor-basis",
+      "file": "negative/check-auth-under-successor-basis.hex",
+      "base": "positive/successor.hex",
+      "decoded_bytes": 681,
+      "hex_file_sha256": "8d569bfdb18a1a81178276a9bf0a6a0df31908b35010c11100cad60d71153630",
+      "mutation": "checker operation only; bytes intentionally equal positive/successor.hex",
+      "verdicts": { "decode": "accept", "exact_positive_binding": "accept", "authority_by_normative_predecessor_basis_check": "accept", "lineage_certificate_under_successor_basis": "reject" },
+      "failure": "WRONG_BASIS_CHECK"
+    }
+  ]
+}
