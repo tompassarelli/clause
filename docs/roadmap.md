@@ -177,7 +177,7 @@ no hidden semantic authority.
 
 ## Phase 3 — Dangerous semantic gates
 
-**Status:** Blocked on Phase 2.
+**Status:** Pending; the Phase 2 canonical-package parity prerequisite is complete.
 
 Run the eight cases in [adoption-spike.md](adoption-spike.md):
 
