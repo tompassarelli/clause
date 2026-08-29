@@ -325,8 +325,10 @@ For an arbitrary supplied `B`, successful checking means exactly `B ⊢ q
 derivable`; it does not mean that `B`, `q`, or their Context is accepted, true,
 valid, or authoritative. Basis acceptance enters only through a separate
 Clause judgment and admission boundary tied to the exact semantics epoch and
-canonical package. Future basis evolution must be derived from a previously
-accepted basis rather than selected by the candidate being checked.
+canonical package. The v0 bootstrap selects one exact literal basis; every v0
+successor basis is authorized only by a certificate checked against its exact
+authoritative predecessor and the canonical claim committing to the successor's
+exact INDEX and BASIS frames. A candidate basis never checks its own selection.
 
 ## Run is the dynamic primitive
 

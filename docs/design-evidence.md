@@ -65,33 +65,38 @@ admitted.
 The checker deliberately stops at ground rules. Schematic variables,
 substitution, named-role normalization, rule formation, and basis evolution
 need a separate Clause-owned calculus and cannot enter as Lean callbacks or
-host matching. The next bootstrap boundary is exact semantics-epoch and
-canonical-package admission of the initial basis.
+host matching. The v0 transport boundary now supplies only exact package and
+predecessor-authorized basis selection; it does not add schematic semantics.
 
-The package-binding seam now groups raw canonical-byte candidates, the exact
-structural index, decoded basis/certificate/target sections, and opaque
-auxiliary content in one dependent record. `ExactPackageBinding` is equality of
-that whole record. It rejects a candidate reconstructed from a projection when
-any bound field differs—including bytes, epoch, decoded sections, roots, rules,
-certificate, or external target—but does not distinguish separately constructed
-records whose fields are propositionally equal.
+The strict decoder groups exact raw bytes, structural index, lineage,
+basis/certificate/target sections, and opaque auxiliary content in one
+dependent record. `CanonicalBinding` requires those raw bytes to decode to that
+exact record; successful decoding also proves byte-for-byte re-encoding. A
+digest or reconstructed projection cannot satisfy the boundary.
 
-Authority remains a separate closed predicate over the whole record. It has no
-constructor because Clause has not yet selected a literal initial
-constitutional package. The only closing theorem requires both that external
-anchor and the existing relative checker result, and concludes only anchored,
-package-bound relative derivability. It does not create accepted basis,
-semantic truth, or general Admission. A self-declared root or nullary rule may
-still pass relative checking—as it must for a generic supplied basis—but cannot
-inhabit the anchor. Candidate Context membership and bare `DerivableFrom`
-likewise provide no authority.
+Authority remains a separate inductive predicate over the whole record with
+exactly two constructors. One names only the exact 334-byte literal bootstrap.
+The other requires an already authoritative exact predecessor, strict decode
+binding of both packages, the same v0 index, the exact predecessor bytes in
+lineage, predecessor-basis checking against the canonical next basis-admission
+claim, and separate checking of the next packaged certificate. Its soundness
+conclusion is only relative derivability from the exact packaged basis, not
+semantic truth or general Admission.
 
-Executable negative examples independently vary the raw bytes, semantics
-epoch, decoded auxiliary content, root content, rule order and content, rule
-premises and conclusion, certificate, and target. Exact binding breaks in each
-case, including a cross-package certificate transplant. Successor authority is
-deferred until Clause has a canonical basis-admission claim encoder, preventing
-a proposed basis from checking its own acceptance.
+The basis-admission claim is ordinary Clause data: one Atom payload contains
+the exact next INDEX frame followed by the exact next BASIS frame. The first
+self-delimiting frame makes the commitment injective without a digest, callback,
+or semantic-equality assertion. The bootstrap's second root authorizes exactly
+the frozen 681-byte successor basis.
+
+Executable vectors consume the frozen positive corpus and independently vary
+magic, version, frame order, Term tag, length, truncation, trailing bytes,
+universe, epoch, basis, certificate, target, auxiliary content, root lineage,
+predecessor bytes, and authorization. They also exercise bytes/value mismatch,
+successor-basis self-authorization, nullary rules, raw Context membership, bare
+`DerivableFrom`, and self/cycle attempts. Auxiliary-only mutation deliberately
+breaks exact positive binding while retaining authority because v0 auxiliary
+blobs carry no authority meaning.
 
 At pinned Lean 4.33.1, `DecidableEq` and `LawfulBEq` establish Lean
 propositional equality, not a separately governed Clause relation. Quotienting

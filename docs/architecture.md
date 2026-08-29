@@ -85,9 +85,10 @@ identity unless an authored Clause judgment explicitly makes their content
 semantic. Lean proof terms remain local. Only Clause-native certificate data
 crosses the host-neutral boundary.
 
-The canonical codec is implemented independently in Lean and Rust from one
-normative Clause-owned specification and vector corpus. No host serializer is
-the wire format.
+The Lean canonical codec is implemented from one normative Clause-owned
+specification and vector corpus. Rust must reproduce it independently against
+that same corpus before parity is claimed. No host serializer is the wire
+format.
 
 ## Lean constitutional kernel
 

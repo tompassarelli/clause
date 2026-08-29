@@ -1,6 +1,6 @@
 # Clause Core Lean bootstrap model
 
-This package contains a provisional model of Clause's smallest representation:
+This package contains Clause's smallest provisional representation:
 
 ```text
 Atom(index, kind, canonical payload, equality-contract reference)
@@ -9,70 +9,89 @@ Term(index) = Atom | [Term, Term, Term]
 
 The index contains an explicit universe and Clause semantics epoch. Candidate
 representation comparison is recursive and index-bound. It becomes semantic
-structural equality only after a future Clause judgment validates the Atom kind,
+structural equality only after a later Clause judgment validates the Atom kind,
 payload canonicalization, and equality contract. Triples contain no identity
-field; nominal identity is deferred until a judgment can grant that role to an
-ordinary Atom Term.
+field; nominal identity remains an ordinary Atom role granted by judgment.
 
-The model also contains index-bound `JudgmentClaim`, `ContextCandidate`, and
-`ClauseJudgmentCandidate` carriers. A claim's semantic leaves remain Terms; a
-candidate Context enumerates claims, and a proposed judgment pairs one such
-Context with one claim. Their only lookup operation compares exact candidate
-representations. Constructing a claim or finding it in a candidate Context does
-not establish validity, truth, authority, or admission.
+`JudgmentClaim`, `ContextCandidate`, and `ClauseJudgmentCandidate` remain raw
+candidate carriers. `GroundRuleCandidate`, `DerivationBasisCandidate`, and
+`DerivationCertificate` implement finite one-pass ground certificates using
+only addressed roots and generic rule application. `checkRelative_sound`
+connects executable success to `DerivableFrom` the exact supplied basis.
+Context membership, basis construction, and bare relative derivability grant no
+authority.
 
-`GroundRuleCandidate`, `DerivationBasisCandidate`, and
-`DerivationCertificate` add a finite, one-pass ground-certificate layer. The
-checker knows only addressed basis roots and generic rule application. Every
-support reference must resolve in the already checked prefix, so malformed,
-self-referential, forward, and cyclic traces reject while acyclic DAG sharing
-works. `checkRelative_sound` connects executable acceptance to the independent
-`DerivableFrom` proposition. Both are explicitly relative to the supplied
-basis; the package does not select or accept that basis, and candidate Context
-membership never enters the checker.
+## Canonical CLCP v1 package
 
-`CanonicalPackageCandidate` groups exact canonical-byte candidates, the
-complete structural index, and decoded sections containing the basis,
-certificate, requested target, and opaque auxiliary content. Exact binding is
-whole-record equality, not a digest or a reconstructed projection.
-`ConstitutionalPackageAnchor` is a closed external predicate with no current
-constructor: candidate decoded data contains no proof or admission field and
-cannot select an authority. `checkExactPackage_sound` composes an exact binding,
-that external anchor, and `checkRelative_sound` into only
-`PackageBoundDerivable`. It does not establish semantic truth or general
-Admission. The examples show that independent byte, epoch, section, basis,
-rule, certificate, and target changes break binding, and that self-declared
-roots, nullary self-rules, Context membership, and bare relative derivability
-remain unauthorized.
+`Codec` independently implements the grammar owned by
+`clause:docs/canonical-package.md`:
 
-The package may model only the host-neutral calculus owned by
-`docs/foundation.md`. Lean syntax, expressions, type classes, serialization,
-and one-constructor-per-language-feature inductives are implementation tools,
-not Clause authority.
+```text
+ASCII "CLCP" | version 01
+INDEX | LINEAGE | BASIS | CERTIFICATE | TARGET | AUXILIARY | EOF
+```
 
-The package does not yet implement a literal constitutional anchor, successor-
-basis admission, canonical decoding or a codec, schematic rule formation or
-substitution, Atom-contract admission, semantic structural equality, valid
-Clause judgments, identity judgments, Mode, Run, Trace, Delta, Admission,
-Revision, or Clause source. Its examples prove candidate-representation and
-exact-binding boundaries, relative ground derivability, finite-trace rejection,
-and raw-Context non-authority; they do not pass the adoption spike's later
-integer-evaluation gate.
+Tags are U8; every length and count is U32 big-endian. Frame payloads and EOF
+must be consumed exactly. Terms retain only Atom and neutral recursive Triple.
+Lineage is either root or exact length-delimited predecessor package bytes plus
+an authorization certificate. Auxiliary blobs are ordered and opaque.
 
-`lake build` compiles with `-t0` and warnings as errors, then runs
-`ClauseCoreTrust.lean`. That audit rejects every unsafe declaration, every
-partial declaration except the exact compiler-generated runtime helpers for
-`Term.sameRepresentation` and the finite premise-reference matcher, every
-foreign or replacement implementation, and every axiom except `propext`, which
-Lean uses in generated dependent-constructor injectivity support. The
-same-kernel replay checks the safe/total declarations and is an additional
-check:
+The decoder bounds every read, uses unbounded natural arithmetic for decoded
+U32 values, rejects encoder overflow, and rejects wrong tags, order, lengths,
+counts, truncation, frame residue, trailing bytes, and noncanonical
+re-encoding. A successful result preserves the exact raw input.
+`decodePackage_canonical_binding` proves that every successful result both
+retains those bytes and re-encodes every dependent field to the same bytes.
+
+## Literal authority
+
+`Constitution.bootstrapBytes` is the exact 334-byte bootstrap literal and
+`Constitution.successorBytes` is the exact 681-byte successor from
+`clause:test-vectors/canonical-package/`. The bootstrap certificate proves its
+target from root zero. Its second root preauthorizes one exact successor BASIS.
+
+The canonical basis-admission claim is an ordinary Clause claim. Its term Atom
+payload is the exact successor INDEX frame followed by the exact successor
+BASIS frame; the self-delimiting INDEX frame makes the commitment injective.
+There is no digest, host callback, semantic-equality assertion, or admission
+field.
+
+`AuthoritativePackage` has exactly two constructors: the literal bootstrap and
+a predecessor-authorized successor. A successor requires strict canonical
+binding, the exact recursively decoded predecessor bytes, the same literal v0
+index, lineage-certificate checking only under the predecessor basis against
+the canonical next basis-admission claim, and separate checking of its packaged
+certificate under its own basis and target. The narrow soundness theorem
+concludes only `DerivableFrom` the authoritative package's exact basis.
+
+`clause:lean/ClauseCoreVectors.lean` exercises the exact positive corpus, malformed decoder
+inputs, every bound package field, bytes/value mismatch, nonliteral roots,
+wrong and transplanted predecessors, self-declared successor-basis checks,
+cross-index attempts, nullary rules, raw Context membership, bare relative
+derivability, and self/cycle attempts. It also round-trips an ordinary package
+with a Triple, a rule application, and ordered auxiliary blobs. Opaque
+auxiliary-only mutation breaks exact positive binding but correctly does not
+change v0 authority.
+
+This tranche still does not define Atom-contract admission, semantic structural
+equality, valid Clause judgments, identity judgments, Mode, Run, Trace, Delta,
+general Admission, Revision, Clause source, or any language feature. Package
+authority and relative derivability are not semantic truth.
+
+## Checks
+
+`lake build` uses `-t0` and warnings as errors, builds the core and executable
+vectors, then runs `clause:lean/ClauseCoreTrust.lean`. The audit covers both modules and
+rejects every authored unsafe or partial declaration, foreign or replacement
+implementation, and axiom except `propext`. Its exact generated-runtime
+allowlist contains six compiler helpers: recursive Term comparison, premise
+reference matching, structural list encoding, count-bounded list decoding,
+structural Term encoding, and fuel-bounded Term decoding.
 
 ```sh
 lake build
 lake env leanchecker --fresh ClauseCore
 ```
 
-`leanchecker` excludes the two enumerated partial runtime helpers. Neither check is
-an independent verifier or the full package-bound trust closure required by
-the adoption spike.
+`leanchecker` is a same-kernel replay, not an independent verifier. Neither
+check establishes the still-missing semantic calculus or Rust parity.
