@@ -51,7 +51,8 @@ spellings.
 
 Record fields below are concatenated in the displayed order. Sum variants
 begin with the displayed `U8` tag. A symbolic identifier ending in `Id` is
-an `Id32` unless a different type is written explicitly.
+an `Id32` unless a different type is written explicitly. All displayed tag
+octets are hexadecimal.
 
 ## CLCP v2 envelope
 
@@ -96,13 +97,203 @@ KExpr =
   | 07 CaseBytes(scrutinee:KExpr,
                 emptyBody:KExpr,
                 consBody:KExpr)
-  | 08 Call(definitionId:Id32, arguments:Seq<KExpr>)
-  | 09 Request(physicalOperationId:Id32, arguments:Seq<KExpr>)
+  | 08 ConcatBytes(parts:Seq<KExpr>)
+  | 09 CaseBytesEqual(left:KExpr,
+                      right:KExpr,
+                      equalBody:KExpr,
+                      unequalBody:KExpr)
+  | 0a Call(definitionId:Id32, arguments:Seq<KExpr>)
+  | 0b Request(physicalOperationId:Id32, arguments:Seq<KExpr>)
 ```
 
 Term and expression recursion is inline and finite because every nested value
 must be consumed from the exact bounded input. Resource exhaustion is a
 physical failure, not a different canonical decoding verdict.
+
+Expression sorts are checked statically. `BytesLiteral`, `ConcatBytes`, and both
+inputs to `CaseBytesEqual` have sort `Bytes`; every `ConcatBytes` part has sort
+`Bytes`. `TermLiteral`, `MakeAtom`, and `MakeTriple` have sort `Term` with the
+displayed child sorts. `Let` binds its value as `Var(0)`. In a selected
+`CaseTerm` arm, `Var(0..2)` name the Atom kind/payload/equality or Triple
+first/second/third in displayed order; in a `CaseBytes` cons arm, `Var(0)` is
+the one-octet head and `Var(1)` the remaining tail. Existing variables shift
+by the number of new bindings. Definition arguments use `Var(0..n-1)` in
+displayed order. Every case arm has the enclosing expression's one common
+result sort. `ConcatBytes` evaluates parts left to right and concatenates in
+order; an empty sequence yields empty bytes. `CaseBytesEqual` adds no binding.
+`Call` must match the referenced definition's exact argument and result sorts.
+A `Request` must match an exact fixed physical-profile signature.
+
+These are sufficient byte mechanics rather than semantic conveniences.
+`CaseBytes` exposes each octet as a one-byte value;
+`CaseBytesEqual(head, BytesLiteral(x), ...)` can distinguish any of the 256
+octets. `ConcatBytes` constructs exact dynamic byte strings, and
+`CaseBytesEqual` compares arbitrary byte strings, including a computed
+SHA-256 result. Together with literals, structural recursion, definitions,
+Terms, and the fixed SHA-256 request, the package program can scan tokens and
+delimiters, copy and assemble source slices, encode checked lengths, compare
+identifiers and hashes, build arbitrary canonical Terms and subject bytes, and
+implement finite maps as package data. There is deliberately no host lexer,
+string library, map callback, or construct equality hook. Tractability remains
+an implementation gate, but operational expressiveness is not delegated to a
+host escape.
+
+The sealed compiler profile contains one request:
+
+```text
+Sha256OpId = DH("clause/physical-op/v1", "sha256")
+Request(Sha256OpId, [Bytes]) -> Bytes(32 octets)
+```
+
+Any other operation or argument/result signature rejects during subject
+checking or evaluation.
+
+## CLCP v2 fixed compiler ABI
+
+The two compiler entrypoints exchange only `Term`, but their Term shapes are
+not package-defined. They use this fixed Core ABI. Let these literal ASCII
+byte strings be fixed Atom kinds:
+
+```text
+KTag   = "clause/core-abi/tag/v1"
+KBytes = "clause/core-abi/bytes/v1"
+KId32  = "clause/core-abi/id32/v1"
+KU64   = "clause/core-abi/u64/v1"
+KEq    = "clause/core/bytes-equal/v1"
+
+Tag(t)   = Atom(KTag,   U8(t),  KEq)
+Bytes(b) = Atom(KBytes, b,      KEq)
+Id(id)   = Atom(KId32,  id,     KEq)   where byteLength(id) = 32
+Nat64(n) = Atom(KU64,   U64(n), KEq)
+
+List([])       = Tag(00)
+List(x :: xs)  = Triple(Tag(01), x, List(xs))
+Record(t, xs)  = Triple(Tag(t), List(xs), Tag(00))
+Value(Bytes,b) = Record(02, [Bytes(b)])
+Value(Term,t)  = Record(03, [t])
+NominalId(domain,id) = Record(04, [Id(domain), Id(id)])
+FixedId(domain,id)   = Record(05, [Id(domain), Id(id)])
+ContentId(domain,id) = Record(06, [Id(domain), Id(id)])
+DerivedId(domain,id) = Record(07, [Id(domain), Id(id)])
+```
+
+Only the fixed tags below are valid at their declared positions. A lookalike
+Atom kind, wrong field count, wrong field wrapper, non-`Id32` identifier,
+noncanonical list, or trailing field rejects. Hosts may validate these fixed
+ABI tags; package data cannot add one.
+
+```text
+GenesisBase = Record(10, [])
+AcceptedBase(packageHash, revisionId) =
+  Record(11, [Id(packageHash), Id(revisionId)])
+
+SourceUnit(unitId, artifactId, bytes) =
+  Record(12, [Id(unitId), Id(artifactId), Bytes(bytes)])
+
+BuildRequest(base, coreContractId, physicalProfileId, targetProfile,
+             sourceUnits, baseInputs, identityRetentions,
+             changeOccurrenceId, options, declaredPhysicalInputs) =
+  Record(13, [base,
+              Id(coreContractId),
+              Id(physicalProfileId),
+              targetProfile,
+              List(sourceUnits),
+              baseInputs,
+              identityRetentions,
+              Id(changeOccurrenceId),
+              options,
+              List(declaredPhysicalInputs)])
+
+Built(subjectBytes)       = Record(14, [Bytes(subjectBytes)])
+Rejected(diagnostics)     = Record(15, [List(diagnostics)])
+
+AdmissionRequest(buildRequest, subjectBytes, compileObservations) =
+  Record(16, [buildRequest, Bytes(subjectBytes), compileObservations])
+
+Propose(subjectBytes)     = Record(17, [Bytes(subjectBytes)])
+Reject(diagnostics)       = Record(18, [List(diagnostics)])
+
+Observation(index, operationId, arguments, result) =
+  Record(19, [Nat64(index), Id(operationId),
+              List(arguments), result])
+Observations(items)       = Record(1a, [List(items)])
+
+Authorized(packageBytes)  = Record(1b, [Bytes(packageBytes)])
+Unauthorized(stage, code) = Record(1c, [Tag(stage), Tag(code)])
+
+AuthorizationStage =
+    40 Decode
+  | 41 CoreWellFormedness
+  | 42 GenesisAnchor
+  | 43 ExactPredecessor
+  | 44 BuildRequest
+  | 45 CompileEvaluation
+  | 46 AdmissionEvaluation
+  | 47 EvidenceAttachment
+  | 48 FinalAuthorization
+
+AuthorizationCode =
+    60 Malformed
+  | 61 WrongLineage
+  | 62 MissingAnchor
+  | 63 PredecessorNotAccepted
+  | 64 PredecessorBytesMismatch
+  | 65 LocatorMismatch
+  | 66 AbiMismatch
+  | 67 RequestMismatch
+  | 68 CertificateStatementMismatch
+  | 69 CertificateInvalid
+  | 6a SubjectMismatch
+  | 6b ObservationMismatch
+  | 6c PhysicalProfileEscape
+  | 6d EvidenceMismatch
+  | 6e CandidateAuthority
+  | 6f PackageChanged
+```
+
+An observation index starts at zero and increases by one. Its arguments and
+result use `Value`; under the sealed profile the only valid item is an exact
+`Sha256OpId`, one `Value(Bytes, input)` argument, and one
+`Value(Bytes, 32-octet digest)` result. `declaredPhysicalInputs` is empty in
+the sealed profile because SHA-256 has no external input. Diagnostics are
+Clause Terms in their compiler-produced canonical order.
+
+`sourceUnits` is sorted by `unitId`, rejects duplicates, and requires every
+`artifactId = SourceArtifactId(bytes)`. `AcceptedBase` is a locator only: the
+succession checker requires its two values to be derived from the exact
+accepted predecessor supplied outside the request. `GenesisBase` is valid
+only for the externally anchored genesis subject. The request's
+`coreContractId` must equal Frame 01. Its `physicalProfileId` must equal the
+one fixed by that core contract. The successor request's change occurrence
+must equal its lineage change occurrence.
+
+The required entrypoint definitions are exactly:
+
+```text
+compile      : [Term] -> Term
+admitPropose : [Term] -> Term
+
+compile(BuildRequest(...))
+  -> Built(exactCompilerSubjectBytes)
+   | Rejected(diagnostics)
+
+admitPropose(AdmissionRequest(BuildRequest(...),
+                              exactCompilerSubjectBytes,
+                              Observations(...)))
+  -> Propose(exactCompilerSubjectBytes)
+   | Reject(diagnostics)
+```
+
+The interface IDs are distinct, each resolves exactly once, and both resolved
+definitions have these one-argument signatures. A signature mismatch, wrong
+request/result shape, subject mismatch, or unexpected ABI tag rejects rather
+than invoking package behavior through a host adapter.
+
+Authorization checks run in ascending `AuthorizationStage` order and return
+the first failing stage with the narrowest displayed code. A successful check
+returns only `Authorized` with the complete exact final package bytes. Thus the
+authorization result is deterministic and cannot silently degrade into a
+Boolean, hash-only success, or candidate subject.
 
 ## CLCP v2 compiler subject
 
@@ -111,7 +302,7 @@ CompilerSubject =
   lineage:CompilerLineage
   interface:CompilerInterface
   program:Seq<Definition>
-  buildBundle:BuildBundle
+  buildRequest:Term
 
 CompilerLineage =
     00 Genesis
@@ -128,30 +319,15 @@ Definition =
   arguments:Seq<KSort>
   result:KSort
   body:KExpr
-
-BuildBundle =
-  sourceUnits:Seq<SourceUnit>
-  baseInputs:Term
-  identityRetentions:Term
-  changeOccurrenceId:Id32
-  options:Term
-
-SourceUnit =
-  unitId:Id32
-  artifactId:Id32
-  bytes:Blob
 ```
 
-`program` is sorted by `Definition.id`, and
-`buildBundle.sourceUnits` is sorted by `SourceUnit.unitId`; duplicate IDs
-reject. Both interface IDs must resolve exactly once in `program`.
-`SourceUnit.artifactId` must equal the required domain hash of its exact
-`bytes`. A Genesis subject's build-bundle change occurrence is its literal
-genesis ID. A Successor subject's lineage and build-bundle change occurrence
-must be equal.
+`program` is sorted by `Definition.id`; duplicate IDs reject. The interface
+and request satisfy the fixed ABI above. A Genesis subject uses
+`GenesisBase`; a Successor subject uses `AcceptedBase` and the exact matching
+lineage change occurrence.
 
 The exact Frame 02 payload is `exactCompilerSubjectBytes`. The interface and
-program are executable compiler meaning. The build bundle is exact
+program are executable compiler meaning. The canonical build request is exact
 reproducibility input carried inside the subject, not a second executable
 authority.
 
@@ -165,6 +341,21 @@ CompilerEvidence =
          admissionCertificate:EvalCertificate)
 
 EvalCertificate = certificateBytes:Blob
+
+EvalStatement =
+  exactAcceptedPredecessor:Blob
+  coreContractId:Hash32
+  physicalProfileId:Hash32
+  entrypoint:Id32
+  arguments:Seq<KValue>
+  expected:EvalOutcome
+
+KValue =
+    00 BytesValue(value:Blob)
+  | 01 TermValue(value:Term)
+
+EvalOutcome =
+  00 Returned(value:KValue, observations:Term)
 ```
 
 `GenesisEvidence` has no payload. Each certificate blob has exactly one
@@ -175,6 +366,20 @@ earlier premises and carry their exact generic conclusion. Unknown rules,
 forward references, unused trailing bytes, alternate DAG encodings, and
 package-supplied checker rules reject.
 
+Every evaluation certificate has exactly one root conclusion: the displayed
+`EvalStatement`. Its predecessor field contains the complete exact bytes of an
+already accepted predecessor, so the statement does not rely on a hash to name
+authority. `physicalProfileId` is derived from the canonical profile selected
+by `coreContractId`. `entrypoint`, all canonical arguments, the returned value,
+and the canonical `Observations` Term are part of the statement. The checker
+constructs the expected statement independently and requires byte-for-byte
+equality before checking the derivation. An evaluation fault has no successful
+certificate form.
+
+This binding is finite and non-recursive. A successor certificate may contain
+the earlier predecessor package, including that predecessor's already fixed
+evidence, but never the candidate's Frame 03 or whole-package identity.
+
 Frame 03 is excluded from `exactCompilerSubjectBytes`,
 `CompilerSemanticsId`, and `CompilerRevisionId`. Predecessor compilation
 and admission target the exact subject bytes, then a generic packager attaches
@@ -183,7 +388,10 @@ from containing or hashing itself.
 
 No v2 package contains its own package hash, subject ID, or revision ID.
 `CompilerPackageHash` covers the final whole package, including evidence, and
-therefore is computed externally after canonical packaging.
+therefore is computed externally after canonical packaging. It may bind
+publication, retrieval, and the final `Authorized(exactWholePackageBytes)`
+result after evidence attachment; it is never an input to a certificate stored
+inside that package.
 
 ## CLCP v2 canonical decoding
 
@@ -195,6 +403,7 @@ A conforming decoder rejects:
 - under-consumed or over-consumed frames and nested values;
 - duplicate or out-of-order definitions or source units;
 - an unresolved or multiply defined compiler entrypoint;
+- a compiler entrypoint signature or Core ABI shape mismatch;
 - mismatched source-artifact or change-occurrence identities;
 - malformed certificate DAGs or evidence inconsistent with lineage; and
 - a physical request outside the core contract's declared operation set.
@@ -230,6 +439,9 @@ Required identities are:
 CoreContractId =
   DH("clause/core-contract/v1", canonicalCoreContractBytes)
 
+PhysicalProfileId =
+  DH("clause/physical-profile/v1", canonicalPhysicalProfileBytes)
+
 CompilerSemanticsId =
   DH("clause/compiler-semantics/v1", canonical(interface || program))
 
@@ -243,7 +455,8 @@ SourceArtifactId =
   DH("clause/source-artifact/v1", exactSourceBytes)
 
 BuildRequestId =
-  DH("clause/compiler-build-request/v1", canonicalBuildRequest)
+  DH("clause/compiler-build-request/v1",
+     canonicalTermBytes(BuildRequest))
 
 OriginId =
   DH("clause/origin/v1", canonicalAcyclicOriginNode)
@@ -266,9 +479,15 @@ reject.
 
 It must cover malformed, truncated, trailing, duplicate, and out-of-order
 encodings; root without anchor; candidate/self-basis authorization; wrong and
-stale predecessors; transplanted evidence; build-request and subject
-alteration; profile escape; and a valid hash paired with non-identical bytes.
-No such corpus or implementation is present in P1.
+stale predecessors; transplanted or detached evidence where `E != Q.evidence`;
+entrypoint signature and every Core ABI shape mismatch; build-request, subject,
+result, and observation alteration; a certificate statement that attempts to
+bind the candidate whole package; profile escape; and a valid hash paired with
+non-identical bytes. Metamorphic positives must rename nominal IDs across a
+canonical sort-order boundary, recompute dependent source/content and derived
+IDs as applicable, regenerate the certificate statement, and preserve the
+generic check/evaluation verdict. No such corpus or implementation is present
+in P1.
 
 ## Implemented CLCP v1 evidence boundary
 

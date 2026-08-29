@@ -30,7 +30,7 @@ object. Nothing inside those bytes can perform that act:
 
 After that one anchor, compiler authority moves only by exact predecessor
 succession. The already accepted predecessor compiles a candidate subject and
-executes its own `admit-propose` behavior over that exact subject. Lean checks
+executes its own `admitPropose` behavior over that exact subject. Lean checks
 those generic evaluations. The candidate, its evidence, its hash, and any
 basis it contains are never an admission basis.
 
@@ -53,13 +53,15 @@ P1 freezes:
 - the strict CLCP v2 subject/evidence split and domain-separated identities;
 - `Term = Atom | Triple`;
 - a fixed construct-blind universal evaluator over `Bytes` and `Term`;
-- the `compile` and `admit-propose` compiler entrypoints;
+- the exact Core ABI, `[Term] -> Term` `compile` and `admitPropose`
+  entrypoints, canonical requests/results/observations, and certificate
+  statements;
 - literal external genesis selection and exact predecessor-only succession;
 - lossless source, origin, occurrence, binding, elaboration, transformation,
   and diagnostic invariants;
 - deterministic build inputs and later self-rebuild equations; and
-- a machine-checkable host information-flow rule and identifier-permutation
-  equivariance law.
+- a machine-checkable generic-mechanics versus semantic-dispatch rule and
+  structure-preserving nominal-renaming equivariance law.
 
 P1 does not freeze ordinary Clause construct identifiers, grammar
 productions, effect syntax, macro libraries, diagnostic wording, optimized IR,
@@ -96,26 +98,39 @@ KExpr =
   | Let(value, body)
   | CaseTerm(scrutinee, atomBody, tripleBody)
   | CaseBytes(scrutinee, emptyBody, consBody)
+  | ConcatBytes(parts)
+  | CaseBytesEqual(left, right, equalBody, unequalBody)
   | Call(definitionId, arguments)
   | Request(physicalOperationId, arguments)
 ```
 
 `CaseTerm` binds the three Atom byte fields or the three Triple children.
-`CaseBytes` binds the leading octet and remaining bytes. Evaluation is
-call-by-value, left-to-right, with explicit fuel and named recursive
-definitions. Definitions are data addressed through opaque `DefId` lookup.
-No token, lexer, binder, type, effect, macro, diagnostic, or compiler-version
-tag is a kernel tag.
+`CaseBytes` binds the leading octet as one-byte `Bytes` and the remaining
+bytes. `ConcatBytes` concatenates byte-valued parts. `CaseBytesEqual` compares
+two complete byte strings and selects one of two package expressions. Thus a
+package can identify each possible head octet by comparison with literals,
+scan tokens and delimiters, assemble dynamic bytes and canonical length
+prefixes, compare identifiers or computed hashes, and recursively compare
+Terms without a host string, lexer, equality, or collection callback.
+Evaluation is call-by-value, left-to-right, with explicit fuel and named
+recursive definitions. Definitions are data addressed through opaque `DefId`
+lookup. No token, lexer, binder, type, effect, macro, diagnostic, or
+compiler-version tag is a kernel tag.
 
 Compiler admission uses a sealed pure physical profile. During `compile` and
-`admit-propose`, the only permitted physical request is deterministic
-SHA-256. Clock, randomness, locale, environment, ambient filesystem paths,
+`admitPropose`, the only permitted physical request is deterministic
+`Request(Sha256OpId, [Bytes]) -> Bytes(32 octets)`. Clock, randomness, locale,
+environment, ambient filesystem paths,
 filesystem enumeration, cache state, scheduling observations, network, FFI,
 target execution, and undeclared operations reject.
 
-The evaluator is intentionally tiny. Its adequacy and tractability for a real
-compiler are unproved P2 questions; that uncertainty cannot be resolved by
-adding a construct-specific host branch.
+The evaluator is intentionally tiny. Literal bytes, byte destructuring,
+concatenation and equality, recursive definitions, universal Terms, generic
+definition lookup, and SHA-256 make it operationally adequate to express a
+reader, graph algorithms, canonical encoding, diagnostics, and successor
+construction. Its time, space, certificate size, and optimization tractability
+for a real compiler remain unproved P2 questions; that uncertainty cannot be
+resolved by adding a construct-specific host branch.
 
 ## Compiler subject
 
@@ -134,15 +149,19 @@ CompilerSubject = {
     admitPropose: DefId
   },
   program: Seq<Definition>,
-  buildBundle: BuildBundle
+  buildRequest: Term
 }
 ```
 
-`interface || program` is the authoritative executable compiler. The build
-bundle carries exact source units, base inputs, identity retentions, change
-occurrence, and options needed to reproduce it. Embedded source is not a
-second authority: if source and executable subject disagree, the accepted
-executable subject governs, and exact rebuild failure exposes the disagreement.
+`interface || program` is the authoritative executable compiler. The
+`buildRequest` is the exact canonical Core ABI Term defined by the
+[package contract](canonical-package.md#clcp-v2-fixed-compiler-abi). It carries
+the base locator, core and physical profiles, target profile, exact source
+units, base inputs, identity retentions, change occurrence, options, and every
+declared physical input needed to reproduce the subject. Embedded source is
+not a second authority: if source and executable subject disagree, the
+accepted executable subject governs, and exact rebuild failure exposes the
+disagreement.
 
 Rust optimizations, caches, indexes, generated targets, and machine layouts are
 not package meaning. They require generic translation validation against the
@@ -245,6 +264,47 @@ judgments. `ReferentId`, `ScopeId`, `BinderId`, `UseOccurrenceId`,
 This preserves distinct equal-looking occurrences and avoids recursive
 identity definitions or host-allocation-order dependence.
 
+The host-independence law partitions identity rather than pretending every
+32-octet value is directly permutable:
+
+- **renamable nominal IDs** are explicitly assigned declaration and occurrence
+  identities and their references, including `DefId`, source-unit IDs,
+  referents, scopes, binders, uses, transformations, diagnostics, obligations,
+  and change occurrences;
+- **fixed core and physical IDs** are wire and Core ABI tags, Atom kinds used
+  by that ABI, `CoreContractId`, `PhysicalProfileId`, fixed equality contracts,
+  certificate-rule tags, and fixed `PhysicalOpId` values;
+- **source/content IDs** are identities defined directly from independently
+  supplied exact content, notably `SourceArtifactId`; and
+- **derived IDs** include `NewId` outputs, `OriginId`, `BuildRequestId`,
+  `CompilerSemanticsId`, `CompilerRevisionId`, `CompilerPackageHash`, and any
+  certificate conclusion or observation hash.
+
+Every semantic identifier occurrence must appear in a typed wire field or the
+corresponding fixed `NominalId`, `FixedId`, `ContentId`, or `DerivedId` Core
+ABI form. Encoding an identifier reference as an undifferentiated byte
+substring is nonconforming. Coincidental matching bytes inside source or
+opaque payloads are not identifier references and are not renamed.
+
+For a finite, domain-preserving bijection `π` on renamable nominal IDs,
+`Renameπ` is a structure transformation, not byte substitution:
+
+1. rename every nominal declaration and matching reference, including
+   interface and `Call` definition IDs and all typed nominal Term fields;
+2. restore every canonical order whose key changed and reject any collision;
+3. preserve fixed IDs and exact source/content preimages, recomputing a
+   source/content ID if and only if its preimage was transformed;
+4. recompute `NewId` outputs and every dependent derived ID bottom-up from the
+   transformed canonical preimages, and replace all references through the
+   induced derived-ID map; and
+5. canonically re-encode the result, transform and recheck certificate
+   statements and derivation conclusions, attach the transformed evidence,
+   then recompute final whole-package identity.
+
+An external genesis anchor or actual acceptance judgment is not transferred
+by `Renameπ`; only the generic decode, check, and evaluation mechanism is
+equivariant under a correspondingly transformed premise.
+
 ## Genesis acceptance
 
 Let `P0` be exact package bytes and let `anchor` be an owner admission
@@ -273,34 +333,72 @@ For already accepted exact predecessor bytes `P`, candidate package `Q`,
 canonical build request `R`, and evidence `E`:
 
 ```text
+S  = exactCompilerSubjectBytes(Q)
+C  = P.coreContractId
+F  = PhysicalProfileId(C)
+Oc = exact canonical compile Observations
+Oa = exact canonical admission Observations
+
+CompileStatement = EvalStatement(
+  exactAcceptedPredecessor = exactBytes(P),
+  coreContractId = C,
+  physicalProfileId = F,
+  entrypoint = P.interface.compile,
+  arguments = [TermValue(R)],
+  expected = Returned(TermValue(Built(S)), Oc))
+
+AdmissionStatement = EvalStatement(
+  exactAcceptedPredecessor = exactBytes(P),
+  coreContractId = C,
+  physicalProfileId = F,
+  entrypoint = P.interface.admitPropose,
+  arguments = [TermValue(AdmissionRequest(R, S, Oc))],
+  expected = Returned(TermValue(Propose(S)), Oa))
+
 AcceptSuccessor(P, Q, R, E) :=
   AcceptedCompiler(exactBytes(P))
   ∧ CanonicalCLCPv2(Q)
+  ∧ Q.coreContractId = C
   ∧ Q.subject.lineage.predecessorLocator = CompilerPackageHash(P)
+  ∧ Q.subject.lineage is Successor
   ∧ CoreWF(Q.subject)
-  ∧ CheckEval(
-       exact program from P,
-       P.interface.compile,
-       R,
-       Built(exactSubjectBytes(Q), observations),
-       E.compileCertificate)
-  ∧ CheckEval(
-       exact program from P,
-       P.interface.admitPropose,
-       (R, exactSubjectBytes(Q), observations),
-       Propose(exactSubjectBytes(Q)),
-       E.admissionCertificate)
+  ∧ R = Q.subject.buildRequest
+  ∧ ValidSuccessorBuildRequest(R, exactBytes(P), C, F,
+                               Q.subject.lineage.changeOccurrenceId)
+  ∧ E = Q.evidence
+  ∧ E = SuccessorEvidence(compileCertificate,
+                          admissionCertificate)
+  ∧ RootStatement(compileCertificate) = CompileStatement
+  ∧ CheckEval(CompileStatement, compileCertificate)
+  ∧ RootStatement(admissionCertificate) = AdmissionStatement
+  ∧ CheckEval(AdmissionStatement, admissionCertificate)
 ```
 
-Both checks use the already accepted predecessor's exact program and
-entrypoints. The package hash in `Q` is only a predecessor locator; the
-checker resolves it to `P` and compares exact bytes. Neither `Q`, a
-candidate-supplied predecessor, a basis or rule in `Q`, nor hash equality can
-replace the accepted exact predecessor.
+Both predecessor entrypoints are distinct definitions with the exact
+`[Term] -> Term` signatures frozen by the Core ABI. `R`, `Built`, `Rejected`,
+`AdmissionRequest`, `Propose`, `Reject`, `Observations`, and every observation
+value have the one canonical Term representation defined by the
+[package contract](canonical-package.md#clcp-v2-fixed-compiler-abi). A wrong
+signature or shape, a `Rejected`/`Reject` return, a subject mismatch, a changed
+observation, or an undeclared physical input rejects.
 
-The generic packager adds `E` without changing the admitted subject. Lean
-checks both certificates and only then yields
-`AcceptedCompiler(exactBytes(Q))`. Required rejection classes include a
+Each certificate states one non-recursive generic evaluation. It binds the
+complete exact already accepted predecessor, core contract, physical profile,
+entrypoint, canonical arguments, returned value, exact candidate subject, and
+ordered observations. It does not bind `exactBytes(Q)` or
+`CompilerPackageHash(Q)`, because either would include the certificate itself.
+The package hash in `Q`'s lineage is only a predecessor locator; the checker
+resolves it to `P` and compares exact bytes. Neither `Q`, a candidate-supplied
+predecessor, a basis or rule in `Q`, nor hash equality can replace the accepted
+exact predecessor.
+
+The generic packager adds exactly `E = Q.evidence` without changing `S`. Lean
+checks both certificates and only then returns the canonical authorization
+result `Authorized(exactBytes(Q))`, whose authority interpretation is exactly
+`AcceptedCompiler(exactBytes(Q))`. Only after that attachment may
+`CompilerPackageHash(Q)` bind publication or retrieval. Failure returns a
+fixed `Unauthorized(stage, code)` and never a candidate package. Required
+rejection classes include a
 root tag without the external anchor, self-authorization, candidate-basis
 authorization, checking under the candidate, wrong or stale predecessor,
 altered subject after compilation, transplanted certificate, altered request,
@@ -341,54 +439,85 @@ special semantic identifier. Successful Rust execution is evidence, not
 authority.
 
 ```text
-RustEval(exactAcceptedCompilerBytes, compileDef, exactBuildRequest)
-  -> Built(candidateSubject, observations) | Rejected(diagnostics)
+RustEval(exactAcceptedCompilerBytes, compileDef, [Term(buildRequest)])
+  -> Returned(Term(Built(candidateSubject) | Rejected(diagnostics)),
+              Observations(...))
 ```
 
 Rust executes; Lean checks. Neither silently owns Clause evolution.
 
 ## Machine-checkable host boundary
 
-Every host branch and indirect-call target reachable from CLCP decoding,
-checking, or evaluation must be controlled only by:
+The audit distinguishes fixed generic mechanics from construct-specific
+semantic dispatch. Generic mechanics necessarily inspect bytes, lengths,
+keys, equality results, and expression data. The allowed host mechanism sites
+are exactly:
 
 ```text
-AllowedHostDiscriminants =
-  WireTag
-  ∪ KSortTag
-  ∪ KExprTag
-  ∪ CoreCertificateRuleTag
-  ∪ PhysicalOpId
+HostMechanic =
+    WireCodec(tag, length, bound, byte)
+  | CoreABI(tag, arity, fixed-field-shape)
+  | ByteMachine(empty, head-tail, concat, equality)
+  | DefinitionTable(key-order, hit-miss, selected-KExpr-data)
+  | KernelStep(KSortTag, KExprTag, value-shape, fuel)
+  | CertificateStep(CoreCertificateRuleTag, premise-index)
+  | PhysicalDispatch(fixed PhysicalOpId)
 ```
 
-`PhysicalOpId` here means only an operation fixed by the accepted core
-physical profile. A package-local operation identifier cannot extend this set.
+Fixed wire decoding may inspect raw bytes to recognize fixed tags and enforce
+lengths and bounds. The byte machine may inspect arbitrary values to implement
+`CaseBytes`, `ConcatBytes`, and `CaseBytesEqual`. A package-local `DefId` may
+control only generic table comparison and selection of a package `Definition`
+record; the selected body remains `KExpr` data and re-enters the same evaluator.
+Likewise, a token byte or semantic ID may affect package-program control by
+selecting an already encoded case body. These data-plane choices are required
+for a universal evaluator.
 
-A source-AST and type/information-flow extractor must reject a reachable branch
-or indirect-call target influenced by:
+They may not select or synthesize a host semantic implementation: no lexer,
+grammar case, binder, type/effect rule, macro expander, diagnostic formatter,
+validator, trait method, plugin, generated target case, native function, or
+specialized callback may be selected by `SemanticId`, Atom fields, token
+bytes, production or diagnostic IDs, compiler revisions, or package-local
+`DefId`. `PhysicalOpId` dispatch is permitted only for the fixed operation and
+signature in the accepted physical profile; package data cannot extend it.
+
+A source-AST plus type/information-flow extractor enumerates every branch and
+indirect-call target in the trusted decode/check/evaluate closure, labels its
+one `HostMechanic` class and controlling values, and rejects an unlabelled
+site. For a package-influenced site it must prove that the outcome is only
+canonical data, a fixed error, a child `KExpr`, a selected package definition,
+or the one fixed mechanic handler selected by an enumerated wire, Core ABI,
+`KExpr`, certificate-rule, or physical-operation tag. For a given fixed tag and
+signature, the host code target must be invariant under every semantic ID and
+raw payload value. No package value may create a new target or select different
+host code for the same fixed mechanic. The checked artifact records source
+locations, classes, taint sources, tags, and code targets; it is a
+machine-produced manifest, not a prose or token search.
+
+The behavioral companion uses the structure-preserving `Renameπ` operation
+defined above. Let `D = Decode(P)`, `Dπ = Renameπ(D)`,
+`Pπ = EncodeCanonical(Dπ)`, and let `π*` include the induced replacement of all
+recomputed derived IDs and hashes. Then:
 
 ```text
-SemanticId | Atom.kind | Atom.payload | token bytes | productionId |
-diagnostic code | compiler revision | package-local DefId
+Decode(Pπ) = Dπ
+EncodeCanonical(Decode(Pπ)) = Pπ
+
+CheckEval(π*(statement), π*(certificate))
+  = CheckEval(statement, certificate)
+
+EvalHost(Pπ, π*(input))
+  = π*(EvalHost(P, input))
 ```
 
-A package-local `DefId` may be used only as an opaque key in generic table
-lookup. The audit result is a checked host-branch manifest, not a prose search.
-
-The behavioral companion is identifier-permutation equivariance. For every
-bijection `π` over package-owned identifiers that fixes core and physical
-identifiers:
-
-```text
-Decode(π(P))                   = π(Decode(P))
-Check(π(P), π(claim), π(cert)) = Check(P, claim, cert)
-EvalHost(π(P), π(input))       = π(EvalHost(P, input))
-```
-
-Lean must prove the law for the generic model, and metamorphic vectors must
-exercise the Rust implementation. A semantic identifier that changes host
-control flow violates the law even if the branch is hidden behind a generic
-callback.
+The check law transforms the complete exact-predecessor premise and certificate
+statement together; it does not grant acceptance to renamed bytes. Canonical
+orders are restored and content-derived values are recomputed, so neither
+hashes nor serialized bytes are asserted to stay fixed or to equal a direct
+bytewise permutation. Lean must prove these laws for the generic model, and
+metamorphic vectors must exercise canonical re-encoding and the Rust
+implementation. A nominal ID that selects a host semantic handler violates the
+mechanics audit and the law even if hidden behind a callback.
 
 ## Compiler0 to Compiler1 falsifier
 
@@ -405,7 +534,7 @@ package-only changes:
 The same previously built Lean and Rust binaries must accept and execute both
 compilers. Across the transition there must be zero Lean or Rust source edits,
 zero Lean or Rust toolchain changes, zero Lean or Rust binary changes, and zero
-host-branch-manifest changes. Exact package, source, origin, binding, judgment,
+host-mechanics-manifest changes. Exact package, source, origin, binding, judgment,
 decision, and diagnostic differences must be the changes proposed by
 `Compiler0` and no others.
 
@@ -442,8 +571,8 @@ creates a new admission or change occurrence.
 The principal open risk is tractability: the fixed evaluator may make
 `Compiler0` execution or generic Lean certificate checking too large.
 Deterministic identity retention under realistic edits, sound static extraction
-of host-branch influence, the exact Lean trust closure for decoding and
-SHA-256, and the size of self-source and immutable evidence also remain
-unmeasured. P2 must measure them before introducing proof compression or
+of host-mechanic and semantic-dispatch influence, the exact Lean trust closure
+for decoding and SHA-256, and the size of self-source and immutable evidence
+also remain unmeasured. P2 must measure them before introducing proof compression or
 checked optimization. None permits a construct-specific host escape; failure
 reopens this contract.

@@ -201,18 +201,23 @@ The [compiler-genesis contract](compiler-genesis.md) and
 
 - one literal externally owner-anchored `Compiler0`;
 - CLCP v2 with separate subject and evidence frames;
-- a fixed universal `Bytes`/`Term` evaluator and generic Lean rules;
-- exact predecessor-only `compile` plus `admit-propose` succession;
+- a fixed universal `Bytes`/`Term` evaluator with operational byte inspection,
+  concatenation, equality, recursion, and hashing plus generic Lean rules;
+- exact predecessor-only succession through the fixed Core ABI, canonical
+  build/admission requests, results and observations, and non-recursive exact
+  certificate statements;
 - Clause ownership of reading, binding, elaboration, effects, typed macros,
   origins, diagnostics, and compiler evolution from genesis; and
-- the allowed-host-discriminant information-flow rule and
-  identifier-permutation equivariance law.
+- the generic-mechanics versus semantic-dispatch audit and
+  structure-preserving nominal-renaming law with derived identity
+  recomputation.
 
 This phase changes contracts only. It does not claim a v2 package, compiler,
 codec, checker, evaluator, fixture, host audit, or measurement.
 
-**Exit evidence:** one internally linked contract with no host-language
-semantic authority and explicit residual tractability uncertainty.
+**Exit evidence:** one internally linked, directly implementable contract with
+no host-language semantic authority, no recursive certificate binding, an
+exact succession ABI, and explicit residual tractability uncertainty.
 
 ## Phase 2b — CLCP v2 genesis implementation
 
@@ -230,8 +235,10 @@ Clause frontend, construct dispatch, third-language semantic bootstrap, or
 candidate/self authorization.
 
 **Exit evidence:** exact-byte genesis acceptance; independent decode/re-encode
-parity; generic evaluation/check parity; required negative verdicts; checked
-host-branch manifest; and observed timings for the narrow compiler request.
+parity; generic evaluation/check parity; exact ABI and certificate-binding
+negatives; a checked generic-mechanics/host-target manifest; nominal-renaming
+vectors with canonical reordering and derived-ID recomputation; and observed
+timings for the narrow compiler request.
 
 ## Phase 3 — Dangerous semantic gates
 
@@ -260,8 +267,8 @@ new per-feature Lean or Rust semantic branch falsifies the architecture.
 The decisive evolution case is one ordinary `Compiler0 -> Compiler1`
 succession changing a binding form, an effect form, a typed macro, and
 diagnostic behavior. The same previously built Lean and Rust binaries,
-toolchains, and host-branch manifest must remain byte-identical. Any candidate
-or self basis, hash-only predecessor match, or host construct branch
+toolchains, and host-mechanics manifest must remain byte-identical. Any candidate
+or self basis, hash-only predecessor match, or host semantic dispatch
 falsifies the architecture.
 
 ## Phase 4 — First Clause-owned compilation

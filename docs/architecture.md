@@ -40,7 +40,7 @@ replaceable physical machinery.
 Materialization, hashing, successful decoding, successful execution, and
 derivability do not authorize `Compiler0`. One external owner anchor selects
 its exact literal bytes. Every later compiler is admitted only through the
-already accepted exact predecessor's `compile` and `admit-propose`
+already accepted exact predecessor's `compile` and `admitPropose`
 behavior, checked under that predecessor.
 
 OCaml has no primary role. Aeneas is not part of the bootstrap or trust chain.
@@ -90,12 +90,25 @@ KSort = Bytes | Term
 
 KExpr =
   BytesLiteral | TermLiteral | Var | MakeAtom | MakeTriple |
-  Let | CaseTerm | CaseBytes | Call | Request
+  Let | CaseTerm | CaseBytes | ConcatBytes | CaseBytesEqual |
+  Call | Request
 ```
 
 Those `KExpr` cases are the complete host evaluator taxonomy. A token,
 production, binder, type, mode, effect, macro, diagnostic, or compiler version
-is package data and never a host expression case.
+is package data and never a host expression case. `CaseBytes` exposes one
+octet and a tail, `ConcatBytes` constructs dynamic byte strings, and
+`CaseBytesEqual` supplies byte and hash comparison control. The package can
+therefore read exact source and construct exact output without a host lexer or
+string/equality callback.
+
+The two distinct interface definitions have exact signatures
+`compile : [Term] -> Term` and `admitPropose : [Term] -> Term`. Their fixed
+Core ABI canonically encodes `BuildRequest`, `Built`, `Rejected`,
+`AdmissionRequest`, `Propose`, `Reject`, observations, and the final
+`Authorized` or `Unauthorized` result using only fixed tag, byte, identifier,
+integer, list, and record forms. No host adapter may repair a signature or
+shape mismatch.
 
 The package must carry every semantics-affecting object needed by a judgment:
 
@@ -151,8 +164,11 @@ The constitutional checker is accepted only when all of these hold:
   implementation;
 - the transitive axiom closure is checked against an explicit policy, including
   deliberate decisions for `propext`, `Quot.sound`, and `Classical.choice`;
-- every certificate is bound to the exact canonical package bytes, semantics
-  epoch, decoded value, and claimed Clause proposition; and
+- every successor evaluation certificate is bound to the complete exact
+  already accepted predecessor, fixed core and physical profiles, entrypoint,
+  canonical inputs, exact returned value, candidate subject, and observations,
+  while excluding its own candidate evidence frame and whole-package identity;
+  and
 - `leanchecker` or equivalent replay is treated as a same-kernel consistency
   check, not an independent verifier.
 
@@ -164,7 +180,8 @@ Clause partiality and effects are object-language data and relations.
 Rust may implement:
 
 - strict canonical decoding/re-encoding and interning;
-- the fixed construct-blind `Bytes`/`Term` evaluator;
+- the fixed construct-blind `Bytes`/`Term` evaluator, including generic byte
+  destructuring, concatenation, equality, and fixed Core ABI validation;
 - generic `DefId` table lookup, fuel, continuations, and checked hashing;
 - indexes and incremental dependency maintenance;
 - durable persistence and transaction machinery;
@@ -198,39 +215,66 @@ data.
 The constitutional host-freeze test is an ordinary predecessor-authorized
 `Compiler0 -> Compiler1` transition that changes one binding form, one effect
 form, one typed macro, and one diagnostic behavior with zero Lean or Rust
-source, toolchain, binary, or host-branch-manifest edits.
+source, toolchain, binary, or host-mechanics-manifest edits.
 
 Host changes are allowed only for a genuinely new primitive physical
 capability or a generically translation-validated optimization strategy.
 
 ## Machine-checkable host boundary
 
-Every host branch and indirect-call target reachable from decode, check, or
-evaluation must be controlled only by:
+The trusted host may perform fixed generic mechanics:
 
 ```text
-WireTag | KSortTag | KExprTag | CoreCertificateRuleTag | PhysicalOpId
+WireCodec | CoreABI | ByteMachine | DefinitionTable | KernelStep |
+CertificateStep | PhysicalDispatch
 ```
 
-A source-AST and type/information-flow extractor rejects control flow
-influenced by semantic identifiers, Atom kind or payload, token bytes,
-production IDs, diagnostic codes, compiler revisions, or package-local
-`DefId` values. A `DefId` is permitted only as an opaque generic table key.
-`PhysicalOpId` means an operation fixed by the accepted physical profile,
-not an operation introduced by package data.
+Codec mechanics inspect bytes, tags, lengths, and bounds. The byte machine
+implements empty/head-tail, concatenation, and equality. Generic `DefId`
+lookup compares an opaque key and selects package `KExpr` data. Kernel steps
+select child expressions by fixed `KExpr` tags and package-computed conditions.
+Consequently token bytes and semantic IDs may change evaluated data and
+package-program control. `PhysicalDispatch` recognizes only a fixed operation
+and signature from the accepted profile.
 
-For every bijection `π` over package-owned identifiers that fixes core and
-physical identifiers, hosts must also satisfy:
+No package value may select a host semantic implementation. Semantic IDs,
+Atom fields, token bytes, production or diagnostic IDs, compiler revisions,
+and package-local `DefId` values cannot choose a host lexer, grammar case,
+binder, type/effect rule, macro expander, formatter, validator, trait method,
+plugin, generated target case, native function, or specialized callback.
+
+A source-AST and information-flow extractor enumerates every reachable branch
+and indirect target, labels its fixed mechanic class and taint sources, and
+proves that a package-influenced outcome is only canonical data, a fixed
+error, a child `KExpr`, a selected package definition, or the one fixed
+mechanic handler named by an enumerated wire, ABI, expression, certificate, or
+physical tag. For a given fixed tag and signature, the target is invariant
+under all semantic IDs and raw payloads; package data cannot create a target or
+select different host code for the same mechanic. Any unclassified site or
+package-selected semantic callable rejects the host. The checked manifest
+records the sites, classes, sources, tags, and targets.
+
+The companion equivariance law uses a sort-preserving bijection only over
+explicit nominal declarations and references. Fixed core/physical IDs remain
+fixed; source/content IDs follow their exact preimages; and `NewId`, origin,
+request, semantics, revision, package, and certificate hashes are recomputed
+from transformed preimages. The transformation restores canonical ordering
+and updates all dependent references before canonical re-encoding. If
+`D = Decode(P)`, `Dπ = Renameπ(D)`, `Pπ = EncodeCanonical(Dπ)`, and `π*`
+includes those induced recomputations, hosts satisfy:
 
 ```text
-Decode(π(P))                   = π(Decode(P))
-Check(π(P), π(claim), π(cert)) = Check(P, claim, cert)
-EvalHost(π(P), π(input))       = π(EvalHost(P, input))
+Decode(Pπ) = Dπ
+EncodeCanonical(Decode(Pπ)) = Pπ
+CheckEval(π*(statement), π*(certificate))
+  = CheckEval(statement, certificate)
+EvalHost(Pπ, π*(input)) = π*(EvalHost(P, input))
 ```
 
-Lean proves the generic law and Rust exercises it through metamorphic vectors.
-The checked branch manifest makes the syntactic information-flow restriction
-part of the release evidence.
+This law neither directly permutes hash octets nor transfers a genesis anchor
+or acceptance judgment. Lean proves the generic laws and Rust exercises
+canonical re-encoding, reordered tables, recomputed derived IDs, certificates,
+and outcomes through metamorphic vectors.
 
 ## Execution and physical freedom
 
@@ -264,8 +308,9 @@ A semantic tranche may land only when:
 2. Lean checks its certificate under the constitutional trust profile;
 3. Rust agrees on every declared observable and nonfunctional contract;
 4. negative fixtures fail for the intended reason;
-5. the checked host branch manifest contains only allowed discriminants and
-   identifier permutation is equivariant;
+5. the checked host-mechanics manifest has no package-selected semantic target,
+   and structure-preserving nominal renaming is equivariant after canonical
+   reordering and derived-ID recomputation;
 6. no construct-specific host taxonomy or callback carries hidden meaning;
 7. every optimized output is tied to a reference result, certificate, or
    translation-validation witness; and

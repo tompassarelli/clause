@@ -43,9 +43,15 @@ Its subject/evidence split prevents evidence from self-hashing or
 self-authorizing. One external owner anchor selects the exact genesis bytes;
 materialization, hashes, derivability, decoding, and successful execution do
 not. Every successor must be compiled and proposed by the already accepted
-exact predecessor. The fixed host evaluator is construct-blind, while
-`Compiler0` owns reading, binding, elaboration, effects, typed macros,
-origins, diagnostics, and evolution as package data.
+exact predecessor through two fixed `[Term] -> Term` entrypoints and canonical
+request, result, observation, and certificate forms. The fixed host evaluator
+has sufficient generic byte inspection, construction, equality, recursion,
+and hashing mechanics but remains construct-blind: package data may steer
+package-program control, never select a host semantic handler. `Compiler0`
+owns reading, binding, elaboration, effects, typed macros, origins,
+diagnostics, and evolution as package data. Host-independence is tested by
+structure-preserving nominal renaming with all content-derived identities
+recomputed, not by pretending hash bytes can be directly permuted.
 
 No CLCP v2 implementation, `Compiler0` package, genesis anchor, supported
 Clause source parser, compiler, runtime, durable persistence layer, or
