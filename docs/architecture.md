@@ -1,50 +1,67 @@
 # Clause Architecture
 
-> **Status:** Accepted bootstrap boundary; semantic implementation pending.
+> **Status:** Accepted host boundary plus a normative P1 compiler-genesis
+> contract; CLCP v2 and compiler implementation are pending.
 >
 > **Authority:** Derived and non-semantic. The
 > [foundation](foundation.md) governs meaning, [syntax](syntax.md) governs
-> canonical source, and [roadmap](roadmap.md) governs implementation status.
+> canonical source, [canonical package](canonical-package.md) governs bytes,
+> [compiler genesis](compiler-genesis.md) governs compiler authority and
+> succession, and [roadmap](roadmap.md) governs implementation status.
 
 ## Decision
 
-Clause uses one host-neutral semantic contract and three implementation roles:
+Clause uses one host-neutral semantic contract, one externally anchored
+compiler root, and three implementation roles:
 
 ```text
-                       Clause source
+ external owner anchor selects exact literal Compiler0 bytes once
                             |
                             v
-                  canonical Clause Core package
-                     /                 \
-                    v                   v
-       Lean constitutional        Rust physical substrate
-       checker/reference Run      persistence/runtime/FFI/backends
-                     \                 /
-                      \---- parity ---/
+                  accepted CLCP v2 Compiler0
+                   /          |           \
+                  v           v            v
+        Clause-owned       Lean checks    Rust evaluates
+        source/compiler    fixed rules    fixed machine
+                  \           |            /
+                   \--- exact predecessor -/
                             |
                             v
-                  admitted Clause revision
+                  accepted compiler successor
 ```
 
-Clause Core owns meaning. Lean is the first rigorous checker and executable
-reference model. Rust owns replaceable physical machinery. Clause progressively
-takes over elaboration, macros, diagnostics, refactoring, planning, projection,
-and compiler orchestration.
+Clause Core owns meaning. The accepted compiler package owns reading, syntax
+selection, binding and occurrence identity, elaboration, type/mode/effect
+checking, typed macros and transformations, origins, diagnostics, and compiler
+evolution from the earliest literal bootstrap. Lean checks only the fixed
+generic constitution. Rust executes only the fixed generic evaluator and
+replaceable physical machinery.
+
+Materialization, hashing, successful decoding, successful execution, and
+derivability do not authorize `Compiler0`. One external owner anchor selects
+its exact literal bytes. Every later compiler is admitted only through the
+already accepted exact predecessor's `compile` and `admit-propose`
+behavior, checked under that predecessor.
 
 OCaml has no primary role. Aeneas is not part of the bootstrap or trust chain.
 It may be reconsidered later for isolated safe-Rust verification only.
 
 ## Live-tree boundary
 
-The repository contains two new implementation roots:
+The repository contains two implementation roots and one compiler contract:
 
 ```text
 lean/                       constitutional checker/reference model
 crates/clause-substrate/    physical persistence/runtime/backend substrate
+docs/compiler-genesis.md    compiler identity and succession contract
 ```
 
-Both begin semantic-empty. New work derives only from the current Clause
-contract. Git history is recovery, not an implementation input.
+The implementation roots began semantic-empty. They currently implement only
+the narrower CLCP v1 proof bootstrap described in the
+[roadmap](roadmap.md). There is no CLCP v2 codec, universal evaluator,
+`Compiler0`, genesis anchor, or v2 certificate checker in the live tree.
+New work derives only from the current Clause contract. Git history is
+recovery, not an implementation input.
 
 Every tracked source, test, example, document, generator, host, and release
 script must describe only the current architecture. Superseded material leaves
@@ -54,7 +71,8 @@ gate that teaches it.
 ## Host-neutral Clause Core
 
 The Clause Core contract is the transport and checking form of the calculus in
-the foundation:
+the foundation. CLCP v2 carries compiler execution through a fixed universal
+kernel:
 
 ```text
 RawTriple = [Term, Term, Term]
@@ -67,7 +85,17 @@ Term      = Atom | RawTriple
 Γ ⊢ Γ̂ admissible
 ───────────────────
 admit(Γ, Γ̂) = Γ′
+
+KSort = Bytes | Term
+
+KExpr =
+  BytesLiteral | TermLiteral | Var | MakeAtom | MakeTriple |
+  Let | CaseTerm | CaseBytes | Call | Request
 ```
+
+Those `KExpr` cases are the complete host evaluator taxonomy. A token,
+production, binder, type, mode, effect, macro, diagnostic, or compiler version
+is package data and never a host expression case.
 
 The package must carry every semantics-affecting object needed by a judgment:
 
@@ -85,18 +113,21 @@ identity unless an authored Clause judgment explicitly makes their content
 semantic. Lean proof terms remain local. Only Clause-native certificate data
 crosses the host-neutral boundary.
 
-The Lean canonical codec and independent Rust physical codec are implemented
-from one normative Clause-owned specification and vector corpus. Their shared
-release gate requires byte-identical positive re-encoding and matched negative
-verdict classes. No host serializer is the wire format.
+The implemented Lean and Rust CLCP v1 codecs derive from one Clause-owned
+specification and vector corpus. CLCP v2 keeps the same independent,
+strict-codec requirement while replacing the v1 carrier with the compiler
+subject/evidence split in the [canonical-package contract](canonical-package.md).
+No host serializer is a wire format.
 
 ## Lean constitutional kernel
 
-Lean models Clause's own generic Terms, judgments, modes, Runs, contexts, and
-admission rules. Clause features do not become Lean `Syntax` kinds, `Expr`
-constructors, type classes, or one inductive constructor per language form.
-Lean proves claims about Clause data; it does not become Clause's source
-language or ontology.
+Lean models the fixed byte decoder, `Term`, `KSort`, `KExpr`,
+definition-table well-formedness, generic evaluation and certificate rules,
+exact-byte genesis selection, exact-predecessor succession, and the sealed
+compiler physical profile. Clause features do not become Lean `Syntax`
+kinds, `Expr` constructors, type classes, or one inductive constructor per
+language form. Lean proves claims about Clause data; it does not parse Clause
+source, define Clause's ontology, select a compiler, or invent feature meaning.
 
 The reference Run semantics is relational and can represent total, bounded,
 partial, nondeterministic, streaming, reactive, and effectful modes. Fuelled
@@ -132,7 +163,9 @@ Clause partiality and effects are object-language data and relations.
 
 Rust may implement:
 
-- compact canonical decoding and interning;
+- strict canonical decoding/re-encoding and interning;
+- the fixed construct-blind `Bytes`/`Term` evaluator;
+- generic `DefId` table lookup, fuel, continuations, and checked hashing;
 - indexes and incremental dependency maintenance;
 - durable persistence and transaction machinery;
 - operating-system, filesystem, network, browser, and foreign interfaces;
@@ -140,35 +173,64 @@ Rust may implement:
 - native, Wasm, and JavaScript materialization; and
 - profiling and target-specific physical strategies.
 
-Rust may not define what a Clause relation, binder, type, transition,
-capability, effect occurrence, identity, or admission means. It consumes an
-accepted Clause Core package and may create checked proposals or optimized
-views. A Rust enum, trait, pointer, arena index, row number, or object layout is
-never semantic authority or identity.
+Rust may not parse Clause source or define what a Clause relation, production,
+binder, type, mode, transition, capability, effect occurrence, macro,
+diagnostic, identity, compiler revision, or admission means. It consumes an
+accepted package and may create checked proposals or optimized views. A Rust
+enum, trait, callback, plugin, formatter, validator, package-local `DefId`,
+pointer, arena index, row number, or object layout is never semantic authority
+or identity.
 
 The substrate remains `unsafe`-free until an unavoidable foreign boundary is
 identified and separately authorized. Any future unsafe module is isolated,
 documented, tested, and outside the constitutional checker.
 
-## Clause-authored compiler middle
+## Clause-authored compiler
 
-Stable semantic machinery moves into Clause in this order:
+Clause does not begin with a host frontend and migrate meaning later.
+`Compiler0` owns lossless reading and syntax selection, binding and occurrence
+identity, elaboration and schema/type/mode/effect checks, typed macros and
+transformations, origin construction, diagnostics, and successor production
+from genesis. Stable later capabilities—queries, impact analysis, refactoring,
+planning, projection, and selected lowering—also evolve as Clause package
+data.
 
-1. relation schemas and modes;
-2. elaboration and typed macro rules;
-3. obligation construction and diagnostics;
-4. semantic queries, impact analysis, and refactoring;
-5. planning, source projection, and compiler orchestration; and
-6. selected checking and lowering machinery.
-
-The host-freeze test is constitutional:
-
-> An ordinary language abstraction combining binding, effects, and readable
-> source must be addable as Clause data without a feature-specific Lean or Rust
-> semantic branch.
+The constitutional host-freeze test is an ordinary predecessor-authorized
+`Compiler0 -> Compiler1` transition that changes one binding form, one effect
+form, one typed macro, and one diagnostic behavior with zero Lean or Rust
+source, toolchain, binary, or host-branch-manifest edits.
 
 Host changes are allowed only for a genuinely new primitive physical
-capability or checked optimization strategy.
+capability or a generically translation-validated optimization strategy.
+
+## Machine-checkable host boundary
+
+Every host branch and indirect-call target reachable from decode, check, or
+evaluation must be controlled only by:
+
+```text
+WireTag | KSortTag | KExprTag | CoreCertificateRuleTag | PhysicalOpId
+```
+
+A source-AST and type/information-flow extractor rejects control flow
+influenced by semantic identifiers, Atom kind or payload, token bytes,
+production IDs, diagnostic codes, compiler revisions, or package-local
+`DefId` values. A `DefId` is permitted only as an opaque generic table key.
+`PhysicalOpId` means an operation fixed by the accepted physical profile,
+not an operation introduced by package data.
+
+For every bijection `π` over package-owned identifiers that fixes core and
+physical identifiers, hosts must also satisfy:
+
+```text
+Decode(π(P))                   = π(Decode(P))
+Check(π(P), π(claim), π(cert)) = Check(P, claim, cert)
+EvalHost(π(P), π(input))       = π(EvalHost(P, input))
+```
+
+Lean proves the generic law and Rust exercises it through metamorphic vectors.
+The checked branch manifest makes the syntactic information-flow restriction
+part of the release evidence.
 
 ## Execution and physical freedom
 
@@ -190,9 +252,11 @@ ordinary production hot path.
 
 ## Admission and parity gates
 
-Parsers, macros, agents, elaborators, planners, optimizers, and target backends
-are untrusted producers. A small checker admits or rejects their packages with
-exact obligations.
+Materializers, agents, optimizers, and target backends are untrusted
+producers. After the one external genesis anchor, a small generic checker
+admits a compiler successor only when the already accepted exact predecessor
+both compiles its exact subject and proposes its admission. Candidate or
+self-basis checking and hash-only predecessor equality reject.
 
 A semantic tranche may land only when:
 
@@ -200,12 +264,15 @@ A semantic tranche may land only when:
 2. Lean checks its certificate under the constitutional trust profile;
 3. Rust agrees on every declared observable and nonfunctional contract;
 4. negative fixtures fail for the intended reason;
-5. no construct-specific host taxonomy or callback carries hidden meaning;
-6. every optimized output is tied to a reference result, certificate, or
+5. the checked host branch manifest contains only allowed discriminants and
+   identifier permutation is equivariant;
+6. no construct-specific host taxonomy or callback carries hidden meaning;
+7. every optimized output is tied to a reference result, certificate, or
    translation-validation witness; and
-7. tracked-tree absence checks find no superseded representation or authority.
+8. tracked-tree absence checks find no superseded representation or authority.
 
-The bounded [adoption spike](adoption-spike.md) decides whether this mechanism
-is viable. A pass authorizes further implementation; it does not prove source
-ergonomics, large-graph incrementality, target performance, or maintenance
-economics.
+The four-change compiler evolution and bounded
+[adoption spike](adoption-spike.md) decide whether this mechanism is viable.
+A pass authorizes further implementation; it does not prove source ergonomics,
+large-graph incrementality, target performance, certificate tractability, or
+maintenance economics.

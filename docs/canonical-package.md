@@ -1,27 +1,291 @@
-# Clause v0 Canonical Package
+# Clause Canonical Packages
 
-> **Status:** Normative Clause Core v0 binary grammar, literal bootstrap, and
-> successor-authorization contract.
+> **Status:** CLCP v2 is the normative P1 compiler-package contract and is not
+> implemented. The CLCP v1 codec and corpus remain implemented narrow
+> bootstrap evidence pending their P2 migration.
 >
-> **Authority:** This document owns only canonical package representation and
-> its v0 package-validation boundary. The [foundation](foundation.md) owns
-> Clause meaning, and decoding a package never grants meaning or authority.
+> **Authority:** This document owns canonical package representation and
+> canonical decoding. [Compiler genesis](compiler-genesis.md) owns compiler
+> authority and succession, the [foundation](foundation.md) owns Clause
+> meaning, and the [roadmap](roadmap.md) owns implementation status. Decoding,
+> hashing, materialization, or derivability never grants meaning or authority.
 
-## Scope
+## Version boundary
 
-Clause v0 has one closed binary representation. It carries the current generic
-structural index, finite ground derivation basis, certificates, target, exact
-lineage evidence, and ordered opaque auxiliary blobs. It has no host-language
-serializer, map, varint, option, extension point, or alternate spelling.
+CLCP v1 and CLCP v2 are distinct closed formats. A decoder selects a format
+only from the exact version octet after the `CLCP` magic and rejects all
+other versions. There is no permissive common envelope, fallback decoder,
+version inference, extension field, or alternate encoding.
 
-The normative byte corpus is in
-[`test-vectors/canonical-package/`](../test-vectors/canonical-package/). A
-conforming implementation must obtain the decoded fields and verdicts recorded
-there from the exact bytes in that directory. SHA-256 entries are only
-content-addressing evidence for the corpus files. A digest is never semantic
-evidence and never substitutes for bytes required below.
+CLCP v2 is the compiler carrier required by the
+[genesis contract](compiler-genesis.md). It separates the compiler subject
+from checking evidence so a certificate never contains, hashes, or authorizes
+itself. The existing CLCP v1 implementation and byte corpus prove only their
+narrow finite-ground-certificate boundary. They are not `Compiler0`, a v2
+decoder, a universal evaluator, or evidence that the v2 contract is
+implemented.
 
-## Primitive encodings
+## CLCP v2 primitive encodings
+
+```text
+U8       = one octet
+U32      = four-octet unsigned big-endian integer
+U64      = eight-octet unsigned big-endian integer
+Blob     = length:U32 || octets[length]
+Seq<X>   = count:U32 || X[count]
+Frame<X> = tag:U8 || payloadLength:U32 || X
+
+Id32     = exactly 32 octets
+Hash32   = exactly 32 octets
+Span     = sourceArtifactId:Id32 || start:U64 || end:U64
+```
+
+All arithmetic is checked before cursor advance, conversion, iteration, or
+allocation. Every frame and nested value consumes its bounded cursor exactly.
+A Span is half-open and requires `start <= end <= byteLength(source)` for the
+exact source artifact it names.
+A sequence retains order. A sequence declared sorted is sorted by the exact
+canonical bytes of its key and rejects duplicate keys. There are no varints,
+host serializers, ignored fields, padding, trailing bytes, or alternate
+spellings.
+
+Record fields below are concatenated in the displayed order. Sum variants
+begin with the displayed `U8` tag. A symbolic identifier ending in `Id` is
+an `Id32` unless a different type is written explicitly.
+
+## CLCP v2 envelope
+
+Every compiler package is exactly:
+
+```text
+43 4c 43 50                 magic ASCII "CLCP"
+02                          version
+Frame(01, coreContractId:Hash32)
+Frame(02, CompilerSubject)
+Frame(03, CompilerEvidence)
+EOF
+```
+
+All three frames occur exactly once and in that order. Unknown, missing,
+repeated, or reordered frames reject. A core contract identifier selects one
+fixed, canonical set of `KSort`, `KExpr`, core well-formedness,
+certificate-rule, and physical-profile rules. Package data cannot add a rule
+or reinterpret a tag.
+
+## CLCP v2 Terms and evaluator expressions
+
+```text
+Term =
+    00 Atom(kind:Blob, canonicalPayload:Blob, equalityContract:Blob)
+  | 01 Triple(first:Term, second:Term, third:Term)
+
+KSort =
+    00 Bytes
+  | 01 Term
+
+KExpr =
+    00 BytesLiteral(value:Blob)
+  | 01 TermLiteral(value:Term)
+  | 02 Var(deBruijnIndex:U32)
+  | 03 MakeAtom(kind:KExpr, payload:KExpr, equality:KExpr)
+  | 04 MakeTriple(first:KExpr, second:KExpr, third:KExpr)
+  | 05 Let(value:KExpr, body:KExpr)
+  | 06 CaseTerm(scrutinee:KExpr,
+               atomBody:KExpr,
+               tripleBody:KExpr)
+  | 07 CaseBytes(scrutinee:KExpr,
+                emptyBody:KExpr,
+                consBody:KExpr)
+  | 08 Call(definitionId:Id32, arguments:Seq<KExpr>)
+  | 09 Request(physicalOperationId:Id32, arguments:Seq<KExpr>)
+```
+
+Term and expression recursion is inline and finite because every nested value
+must be consumed from the exact bounded input. Resource exhaustion is a
+physical failure, not a different canonical decoding verdict.
+
+## CLCP v2 compiler subject
+
+```text
+CompilerSubject =
+  lineage:CompilerLineage
+  interface:CompilerInterface
+  program:Seq<Definition>
+  buildBundle:BuildBundle
+
+CompilerLineage =
+    00 Genesis
+  | 01 Successor(
+         predecessorLocator:Hash32,
+         changeOccurrenceId:Id32)
+
+CompilerInterface =
+  compile:Id32
+  admitPropose:Id32
+
+Definition =
+  id:Id32
+  arguments:Seq<KSort>
+  result:KSort
+  body:KExpr
+
+BuildBundle =
+  sourceUnits:Seq<SourceUnit>
+  baseInputs:Term
+  identityRetentions:Term
+  changeOccurrenceId:Id32
+  options:Term
+
+SourceUnit =
+  unitId:Id32
+  artifactId:Id32
+  bytes:Blob
+```
+
+`program` is sorted by `Definition.id`, and
+`buildBundle.sourceUnits` is sorted by `SourceUnit.unitId`; duplicate IDs
+reject. Both interface IDs must resolve exactly once in `program`.
+`SourceUnit.artifactId` must equal the required domain hash of its exact
+`bytes`. A Genesis subject's build-bundle change occurrence is its literal
+genesis ID. A Successor subject's lineage and build-bundle change occurrence
+must be equal.
+
+The exact Frame 02 payload is `exactCompilerSubjectBytes`. The interface and
+program are executable compiler meaning. The build bundle is exact
+reproducibility input carried inside the subject, not a second executable
+authority.
+
+## CLCP v2 evidence
+
+```text
+CompilerEvidence =
+    00 GenesisEvidence
+  | 01 SuccessorEvidence(
+         compileCertificate:EvalCertificate,
+         admissionCertificate:EvalCertificate)
+
+EvalCertificate = certificateBytes:Blob
+```
+
+`GenesisEvidence` has no payload. Each certificate blob has exactly one
+canonical decoding under the package's fixed `coreContractId`: a
+topologically ordered derivation DAG containing only fixed core
+well-formedness and generic evaluator-step rule tags. Nodes refer only to
+earlier premises and carry their exact generic conclusion. Unknown rules,
+forward references, unused trailing bytes, alternate DAG encodings, and
+package-supplied checker rules reject.
+
+Frame 03 is excluded from `exactCompilerSubjectBytes`,
+`CompilerSemanticsId`, and `CompilerRevisionId`. Predecessor compilation
+and admission target the exact subject bytes, then a generic packager attaches
+the two certificates without modifying the subject. This prevents evidence
+from containing or hashing itself.
+
+No v2 package contains its own package hash, subject ID, or revision ID.
+`CompilerPackageHash` covers the final whole package, including evidence, and
+therefore is computed externally after canonical packaging.
+
+## CLCP v2 canonical decoding
+
+A conforming decoder rejects:
+
+- wrong magic, unknown version, wrong frame order or count, and trailing bytes;
+- an unknown Term, KSort, KExpr, lineage, evidence, or certificate-rule tag;
+- an unsafe or out-of-bounds length, count, reference, or nesting operation;
+- under-consumed or over-consumed frames and nested values;
+- duplicate or out-of-order definitions or source units;
+- an unresolved or multiply defined compiler entrypoint;
+- mismatched source-artifact or change-occurrence identities;
+- malformed certificate DAGs or evidence inconsistent with lineage; and
+- a physical request outside the core contract's declared operation set.
+
+The decoder returns the exact input bytes with the decoded value. Re-encoding
+that value must reproduce the exact input bytes. Successful decoding returns a
+candidate package, never an accepted compiler:
+
+```text
+bytes --strict decode--> candidate package
+candidate + external genesis anchor or accepted exact predecessor
+      --constitutional check--> accepted compiler
+```
+
+An API that promotes a package on decode, hash match, certificate validity, or
+successful Rust execution is nonconforming.
+
+## CLCP v2 hashes and identities
+
+For ASCII domain `d` and byte components `x1 ... xn`:
+
+```text
+DH(d, x1, ..., xn) =
+  SHA256(
+    U32(byteLength(d)) || d ||
+    U64(byteLength(x1)) || x1 || ... ||
+    U64(byteLength(xn)) || xn)
+```
+
+Required identities are:
+
+```text
+CoreContractId =
+  DH("clause/core-contract/v1", canonicalCoreContractBytes)
+
+CompilerSemanticsId =
+  DH("clause/compiler-semantics/v1", canonical(interface || program))
+
+CompilerRevisionId =
+  DH("clause/compiler-revision/v1", exactCompilerSubjectBytes)
+
+CompilerPackageHash =
+  DH("clause/compiler-package/v1", exactWholePackageBytes)
+
+SourceArtifactId =
+  DH("clause/source-artifact/v1", exactSourceBytes)
+
+BuildRequestId =
+  DH("clause/compiler-build-request/v1", canonicalBuildRequest)
+
+OriginId =
+  DH("clause/origin/v1", canonicalAcyclicOriginNode)
+```
+
+The domains are part of the v2 contract despite their independent `v1`
+domain versions; changing one requires a new domain and an explicit migration.
+Hashes establish content identity for lookup, comparison, publication, and
+reproducibility. They never establish compiler authority. An accepted
+predecessor locator must resolve to the already accepted exact bytes, and the
+checker must compare those bytes before succession checking.
+
+## CLCP v2 required corpus boundaries
+
+The future v2 corpus must separate decode, canonicality, core
+well-formedness, genesis-anchor, compile-certificate,
+admission-certificate, exact-binding, and final-authority verdicts. A negative
+specimen falsifies its named claim and does not imply every earlier stage must
+reject.
+
+It must cover malformed, truncated, trailing, duplicate, and out-of-order
+encodings; root without anchor; candidate/self-basis authorization; wrong and
+stale predecessors; transplanted evidence; build-request and subject
+alteration; profile escape; and a valid hash paired with non-identical bytes.
+No such corpus or implementation is present in P1.
+
+## Implemented CLCP v1 evidence boundary
+
+CLCP v1 has one closed binary representation carrying a generic structural
+index, finite ground derivation basis, certificates, target, exact lineage
+evidence, and ordered opaque auxiliary blobs. Its normative byte corpus is in
+[`test-vectors/canonical-package/`](../test-vectors/canonical-package/).
+The live Lean and Rust implementations reproduce that corpus. SHA-256 entries
+are content-addressing evidence only, and v1 decoding or authorization is not
+Clause compiler authority. Existing prose and code also call this the Clause
+Core v0 package; `v0` names that semantic bootstrap, while the wire version
+octet is `01`.
+
+The remainder of this document freezes the implemented v1 representation until
+its consumers are migrated and removed in a later implementation phase.
+
+### Primitive encodings
 
 `U8` is one unsigned octet. `U32` is an unsigned 32-bit integer in big-endian
 byte order. All tags are `U8`. All byte lengths and list counts are `U32`.
@@ -47,7 +311,7 @@ the remaining byte count. A count is not permission to allocate or iterate
 past the bytes that remain. Any overflow, unrepresentable host size, or request
 beyond the enclosing cursor is rejection.
 
-## Package envelope
+### Package envelope
 
 Every package is exactly:
 
@@ -67,7 +331,7 @@ The six frames occur once in that order. A missing, repeated, reordered, or
 unknown frame is invalid. Bytes after the `AUXILIARY` frame are invalid. Version
 1 has no flags and no reserved fields.
 
-## Structural index
+### Structural index
 
 ```text
 INDEX = universeId:Blob semanticsId:Blob
@@ -78,7 +342,7 @@ syntactically representable; whether an admitted basis permits them is not a
 decoding decision. `semanticsId` is the semantics epoch. Equality of structural
 indexes is exact equality of both blobs.
 
-## Terms and claims
+### Terms and claims
 
 Terms are recursively inline. There is no term table, reference form, implicit
 sharing, or identity attached to a triple.
@@ -95,7 +359,7 @@ valid. Atom fields are opaque bytes. The three children of a triple and the
 three fields of a claim are ordered and exact. Constructing or decoding either
 form asserts nothing.
 
-## Basis
+### Basis
 
 ```text
 BASIS = roots:List<Claim> rules:List<GroundRule>
@@ -107,7 +371,7 @@ Roots and rules are package-local ordered lists. Rule premises are ordered.
 List position is a certificate address only; it is not Clause nominal identity
 or source order.
 
-## Certificates
+### Certificates
 
 ```text
 CERTIFICATE = nodes:List<CertificateNode>
@@ -140,7 +404,7 @@ already-equal structural index. Certificate checking proves derivability only
 relative to the basis explicitly selected by its caller. It does not authorize
 that basis.
 
-## Target and auxiliary content
+### Target and auxiliary content
 
 ```text
 TARGET    = Claim
@@ -153,7 +417,7 @@ separately typed sections. In v0 they have no interpretation and provide no
 authority or admission evidence. Their order and bytes remain part of the
 exact package record.
 
-## Lineage
+### Lineage
 
 ```text
 LINEAGE = 00
@@ -208,7 +472,7 @@ not fall back to it when predecessor-basis checking fails. Successful decoding,
 relative certificate checking, or possession of predecessor-like bytes alone
 never grants authority.
 
-## Canonical decoding and exact binding
+### Canonical decoding and exact binding
 
 There is one representation for every decodable package value. A conforming
 decoder rejects:
@@ -238,7 +502,7 @@ candidate + selected literal/predecessor authority --authorize--> verdict
 An API that returns an authorized package directly from successful decoding is
 nonconforming.
 
-## Frozen constitutional specimens
+### Frozen constitutional specimens
 
 For compact notation, let:
 
@@ -268,7 +532,7 @@ auxiliary blobs. Its lineage certificate succeeds under the predecessor basis.
 The same certificate fails under the successor basis because that basis has no
 root at index 1. This is the frozen predecessor-only authorization witness.
 
-## Corpus verdict conventions
+### Corpus verdict conventions
 
 [`manifest.json`](../test-vectors/canonical-package/manifest.json) records
 decode, exact-binding, certificate, and authority outcomes separately. A file

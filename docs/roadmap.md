@@ -9,7 +9,8 @@
 
 ## Current position
 
-Clause is at a clean constitutional bootstrap. The live repository contains:
+Clause is at a clean constitutional bootstrap with a compiler-genesis contract.
+The live repository contains:
 
 - the accepted process-first semantic foundation;
 - the canonical source design;
@@ -20,10 +21,15 @@ Clause is at a clean constitutional bootstrap. The live repository contains:
   vectors, and a bounded trust audit; and
 - a semantic-empty Rust physical substrate with an independent strict CLCP v1
   codec, exact-byte carrier, relative certificate checker, predecessor-only
-  package authorization witness, and shared-corpus tests.
+  package authorization witness, and shared-corpus tests; and
+- the P1 contract for strict CLCP v2, one externally owner-anchored literal
+  `Compiler0`, a fixed construct-blind universal evaluator, exact
+  predecessor-only succession, and Clause-owned source/compiler behavior.
 
 There is no supported parser, compiler, runtime, persistence format, CLI,
-backend, or example application. No implemented language capability is
+backend, or example application. In particular, there is no CLCP v2 codec,
+universal evaluator, literal `Compiler0`, genesis anchor, v2 certificate
+checker, or compiler-evolution artifact. No implemented language capability is
 claimed. Git history is not source authority or a design template.
 
 The shared v0 execution corpus now fixes three substantial implementation
@@ -33,12 +39,12 @@ runs. These are source and observation fixtures only. They do not make a
 parser, Run relation, Admission relation, effect adapter, or replay command
 implemented.
 
-The literal initial constitutional package and its one preauthorized successor
-are now fixed by exact bytes. Lean and Rust independently decode and re-encode
-the same positive corpus and reject the recorded negative classes. Candidate
-data still cannot select its own authority: every later v0 successor must be
-authorized by its exact authoritative predecessor. Atom equality contracts
-and broader resource/fuzz evidence remain later tranches.
+The CLCP v1 literal proof bootstrap and its one preauthorized successor are
+fixed by exact bytes. Lean and Rust independently decode and re-encode the same
+positive corpus and reject the recorded negative classes. Those artifacts are
+narrow constitutional evidence, not `Compiler0` and not an implementation of
+the v2 contract. Atom equality contracts and broader resource/fuzz evidence
+remain later tranches.
 
 ## Status summary
 
@@ -50,9 +56,11 @@ and broader resource/fuzz evidence remain later tranches.
 | Lean package bootstrap | Complete | Lean 4.33.1 build at trust level zero, bounded declaration audit, and same-kernel replay |
 | Rust substrate bootstrap | Canonical-package codec complete; broader substrate scaffolded | Pinned Rust toolchain passes formatting, all-target checks/tests, Clippy, and forbids unsafe code |
 | Clause Core calculus | In progress; provisional Term, candidate Context/Judgment, relative ground-certificate checking, and narrow package authority | Admitted Atom/Term equality plus generic Context/Judgment/Run/Admission with no feature taxonomy |
-| Canonical package and certificates | Lean/Rust v0 codec and frozen-corpus parity complete | Published exact corpus, strict nested decoding, byte-identical positive re-encoding, and matched negative verdict classes |
-| Constitutional adoption spike | Pending | All eight gates, negative evidence, Lean/Rust parity, and host freeze |
-| Clause-authored compiler middle | Blocked on spike | Stable proposal machinery moves into Clause |
+| CLCP v1 proof package | Lean/Rust codec and frozen-corpus parity complete; evidence only | Published exact corpus, strict nested decoding, byte-identical positive re-encoding, and matched negative verdict classes |
+| P1 compiler-genesis contract | Specified; implementation evidence absent | [Compiler genesis](compiler-genesis.md) and [CLCP v2](canonical-package.md) agree on exact authority and host boundaries |
+| CLCP v2 generic hosts and literal Compiler0 | Pending | Independent strict codecs, fixed generic evaluator/checker, exact owner anchor, and shared positive/negative corpus |
+| Constitutional adoption and evolution | Blocked on CLCP v2 and Compiler0 | All eight spike gates plus one four-change predecessor-authorized Compiler1 and frozen hosts |
+| Clause-authored compiler behavior | Contracted from genesis; implementation pending | Reading, binding, elaboration, effects, macros, origins, diagnostics, and evolution execute from the accepted package |
 | Product gates | Blocked on spike | Readability, incrementality, native/JS performance, systems coverage, and maintenance evidence |
 
 ## Phase 0 — Clean reset
@@ -164,9 +172,10 @@ transitive trust closure or Phase 1 completion.
 `unsafe` or `partial`, feature-specific syntax constructor, or unlisted axiom
 in the constitutional closure.
 
-## Phase 2 — Canonical package and Rust parity
+## Phase 2 — CLCP v1 proof package and Rust parity
 
-**Status:** Complete for the frozen v0 package and corpus boundary.
+**Status:** Complete for the frozen CLCP v1 proof package and corpus boundary;
+not compiler-genesis completion.
 
 The Clause-owned CLCP v1 grammar, literal bootstrap, one authorized successor,
 Lean decoder, independent Rust decoder, and canonical positive/negative corpus
@@ -182,9 +191,51 @@ enums or construct-specific pattern matching.
 certificate checking, Rust/Lean observable parity, and dependency scans showing
 no hidden semantic authority.
 
+## Phase 2a — P1 compiler-genesis contract
+
+**Status:** Specified; implementation and independent acceptance evidence are
+pending.
+
+The [compiler-genesis contract](compiler-genesis.md) and
+[canonical-package contract](canonical-package.md) define:
+
+- one literal externally owner-anchored `Compiler0`;
+- CLCP v2 with separate subject and evidence frames;
+- a fixed universal `Bytes`/`Term` evaluator and generic Lean rules;
+- exact predecessor-only `compile` plus `admit-propose` succession;
+- Clause ownership of reading, binding, elaboration, effects, typed macros,
+  origins, diagnostics, and compiler evolution from genesis; and
+- the allowed-host-discriminant information-flow rule and
+  identifier-permutation equivariance law.
+
+This phase changes contracts only. It does not claim a v2 package, compiler,
+codec, checker, evaluator, fixture, host audit, or measurement.
+
+**Exit evidence:** one internally linked contract with no host-language
+semantic authority and explicit residual tractability uncertainty.
+
+## Phase 2b — CLCP v2 genesis implementation
+
+**Status:** Pending on accepted Phase 2a.
+
+Implement independent strict CLCP v2 decoding, the fixed generic Lean checker
+and certificate rules, the fixed generic Rust evaluator and physical profile,
+one literal `Compiler0`, its external exact-byte owner anchor, and
+stage-separated positive and adversarial vectors. Materialization provenance
+is recorded as untrusted evidence and cannot create the anchor.
+
+This phase must measure evaluator and certificate tractability before adding
+proof compression or checked optimization. It must not add a Rust or Lean
+Clause frontend, construct dispatch, third-language semantic bootstrap, or
+candidate/self authorization.
+
+**Exit evidence:** exact-byte genesis acceptance; independent decode/re-encode
+parity; generic evaluation/check parity; required negative verdicts; checked
+host-branch manifest; and observed timings for the narrow compiler request.
+
 ## Phase 3 — Dangerous semantic gates
 
-**Status:** Pending; the Phase 2 canonical-package parity prerequisite is complete.
+**Status:** Blocked on Phase 2b.
 
 The cross-host source/observation corpus for pure computation, State/effects,
 and verified Program evolution is frozen in
@@ -206,11 +257,19 @@ Run the eight cases in [adoption-spike.md](adoption-spike.md):
 Every case uses generic Terms, schemas, judgments, modes, and certificates. A
 new per-feature Lean or Rust semantic branch falsifies the architecture.
 
-## Phase 4 — Clause authors the middle
+The decisive evolution case is one ordinary `Compiler0 -> Compiler1`
+succession changing a binding form, an effect form, a typed macro, and
+diagnostic behavior. The same previously built Lean and Rust binaries,
+toolchains, and host-branch manifest must remain byte-identical. Any candidate
+or self basis, hash-only predecessor match, or host construct branch
+falsifies the architecture.
 
-**Status:** Blocked on a passing spike.
+## Phase 4 — First Clause-owned compilation
 
-Move stable capabilities into Clause in this order:
+**Status:** Blocked on a passing Phase 3.
+
+Exercise the compiler behavior already owned by the accepted package in this
+order:
 
 1. schemas and relation modes;
 2. elaboration and macros;
@@ -219,8 +278,9 @@ Move stable capabilities into Clause in this order:
 5. planning and source projection; and
 6. compiler orchestration and selected lowering.
 
-Lean remains the independent constitutional checker. Rust remains replaceable
-physical machinery. Neither host grows an ordinary-language feature taxonomy.
+Lean remains the independent generic constitutional checker. Rust remains the
+generic evaluator and replaceable physical machinery. Neither host grows an
+ordinary-language feature taxonomy.
 
 ## Phase 5 — Canonical source and tooling
 
