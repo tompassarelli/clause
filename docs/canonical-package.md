@@ -319,16 +319,16 @@ contractClauses = [
   "V07: VerifyEvalCertificate finally requires every node reachable and the final conclusion canonical-byte-equal to the independently constructed root; success requires every prior step and uses no callback, theorem name, host rule registry, Boolean evaluator, or package rule",
   "D00: StrictDecode returns only Decoded(exactInput,candidate) or DecodeRejected(code,offset); codes in precedence order are 00 WrongMagic,01 UnknownVersion,02 FrameTagOrderOrCount,03 Truncated,04 LengthOrCountOverflow,05 InvalidFixedWidth,06 UnknownSumTag,07 BoundedValueUnderConsumed,08 BoundedValueOverConsumed,09 TrailingBytes; fields are read depth-first in encoded order and equal-offset ties use lower code",
   "D01: StrictDecode handles only closed byte grammar; order, uniqueness, exact manifest equality, reference bounds, ABI meaning, entrypoint signature, identity derivation, lineage/evidence consistency, known certificate-rule semantics, and profile conformance are authorization checks; malformed bytes never produce Unauthorized",
-  "A00: Authorization starts only after Decoded; stages run 40..48; successor skips 42; genesis skips 43,45,46,47; both run 44 and 48; within each stage rows below run left-to-right and collection failures use encoded item order; the first false condition is the only verdict",
+  "A00: Authorization starts only after Decoded(exactInput,Q) and requires exactly one explicit request: GenesisAuthorizationRequest(anchor,R,E,Gc,Ga,I) or SuccessorAuthorizationRequest(P,R,E,I), where Gc and Ga are U64 and I=FinalPackageIdentityInput(packageHash:Hash32,exactPackageBytes:Blob); the request variant, never candidate data, selects the route; stages run 40..48; successor skips 42; genesis skips 43,45,46,47; both run 44 and 48; each row condition belongs to exactly one stage and route; rows run left-to-right and collection failures use encoded item order; failure at position i means every earlier condition passed and condition i is false, so first-failure predicates are pairwise disjoint and the first false condition is the only verdict",
   "A40: CoreManifest rows=[manifest bytes differ exactCoreManifestBytes->(40,60)]",
   "A41: CoreWellFormedness rows=[subject or ABI semantic structure->(41,61),nominal provenance allocation retention or reference->(41,62),definition order or duplicate->(41,63),compile then admitPropose resolution->(41,64),entrypoints equal->(41,65),compile then admitPropose signature not [Term]->Term->(41,66),other static rule 20..2b->(41,67),Request outside exact profile->(41,68)]",
-  "A42: GenesisAnchor rows=[lineage not Genesis->(42,69),evidence not empty GenesisEvidence->(42,6a),missing external anchor->(42,6b),anchor bytes not complete exact candidate->(42,6c)]",
+  "A42: GenesisAnchor rows=[lineage not Genesis->(42,69),supplied E not byte-identical Q.evidence or E not empty GenesisEvidence->(42,6a),missing external anchor->(42,6b),anchor bytes not complete exact candidate->(42,6c)]",
   "A43: ExactPredecessor rows=[lineage not Successor->(43,6d),candidate self candidate-basis or candidate-rule authority->(43,6f),supplied predecessor not already accepted including stale revision->(43,6e),locator differs CompilerPackageHash(P)->(43,70),resolved bytes not byte-identical accepted P->(43,71)]",
-  "A44: BuildRequest rows=[wrong ABI shape->(44,72),R not byte-identical Q.subject.buildRequest->(44,73),base route or exact base mismatch->(44,74),core ID mismatch->(44,75),profile ID mismatch->(44,76),source order or duplicate->(44,77),source artifact derivation->(44,78),IdentityPlan order uniqueness provenance retention or seed binding->(44,79),request lineage or nominal change occurrence mismatch->(44,7a),declared physical inputs nonempty->(44,7b),fuel zero or not exact statement limit->(44,7c)]",
+  "A44: BuildRequest rows=[wrong ABI shape->(44,72),R not byte-identical Q.subject.buildRequest->(44,73),base route or exact base mismatch->(44,74),core ID mismatch->(44,75),profile ID mismatch->(44,76),source order or duplicate->(44,77),source artifact derivation->(44,78),IdentityPlan order uniqueness provenance retention or seed binding->(44,79),request lineage or nominal change occurrence mismatch->(44,7a),declared physical inputs nonempty->(44,7b),on genesis Gc or Ga zero or R.compileFuel!=Gc or R.admissionFuel!=Ga; on successor either R fuel zero->(44,7c)]",
   "A45: CompileEvaluation rows=[evidence or compile certificate shape->(45,7d),statement predecessor manifest profile entrypoint arguments or fuel->(45,7e),known node premise root rule state fuel or observation semantics->(45,7f),no successful judgment->(45,80),result not Built->(45,81),Built bytes differ Q.subject->(45,82),compile observations differ root->(45,83)]",
   "A46: AdmissionEvaluation rows=[certificate shape->(46,7d),statement predecessor manifest profile entrypoint arguments fuel or compile observations->(46,7e),known node premise root rule state fuel or observation semantics->(46,7f),no successful judgment->(46,80),result not Propose->(46,81),proposed bytes differ Q.subject->(46,82),admission observations differ root->(46,83)]",
   "A47: EvidenceAttachment rows=[E not byte-identical Q.evidence->(47,84),Frame02 differs certified subject->(47,85),attaching E does not reproduce exact Q->(47,86)]",
-  "A48: FinalAuthorization rows=[computed final identity does not bind complete exact Q->(48,87)]",
+  "A48: FinalAuthorization rows=[I.exactPackageBytes not byte-identical exactInput or I.packageHash!=DH(clause/compiler-package/v1,I.exactPackageBytes)->(48,87)]",
   "H00: DH(d,xs)=SHA256(U32(len(d))||ASCII(d)||each(U64(len(x))||x)); CoreContractId=DH(clause/core-contract/v1,exactCoreManifestBytes); PhysicalProfileId=DH(clause/physical-profile/v1,exactPhysicalProfileBytes); CompilerSemanticsId=DH(clause/compiler-semantics/v1,canonical(interface||program)); CompilerRevisionId=DH(clause/compiler-revision/v1,exactCompilerSubjectBytes); CompilerPackageHash=DH(clause/compiler-package/v1,exactWholePackageBytes); SourceArtifactId=DH(clause/source-artifact/v1,exactSourceBytes); BuildRequestId=DH(clause/compiler-build-request/v1,canonicalTermBytes(BuildRequest)); OriginId=DH(clause/origin/v1,canonicalAcyclicOriginNode); hashes never grant compiler authority",
   "P00: Package bytes are magic CLCP,version 02,Frame(01,CoreManifestV1),Frame(02,CompilerSubject),Frame(03,CompilerEvidence),EOF exactly once in order; Frame03 is excluded from subject and revision identities; successor evidence contains predecessor bytes but never candidate evidence or candidate whole-package identity; only exact genesis anchor or already-accepted exact predecessor can authorize"
 ]
@@ -554,6 +554,39 @@ AuthorizationCode =
   | 87 FinalIdentityMismatch
 ```
 
+Authorization has one explicit request algebra outside the package wire:
+
+```text
+AuthorizationRequest =
+    GenesisAuthorizationRequest(
+      anchor:OwnerAnchor,
+      buildRequest:Term,
+      evidence:CompilerEvidence,
+      compileFuelLimit:U64,
+      admissionFuelLimit:U64,
+      finalIdentity:FinalPackageIdentityInput)
+  | SuccessorAuthorizationRequest(
+      exactAcceptedPredecessor:Blob,
+      buildRequest:Term,
+      evidence:CompilerEvidence,
+      finalIdentity:FinalPackageIdentityInput)
+
+FinalPackageIdentityInput = {
+  packageHash:Hash32,
+  exactPackageBytes:Blob
+}
+```
+
+These are checker inputs, not fields added to Frames 01, 02, or 03. The
+request variant selects the authorization route before candidate lineage or
+evidence is inspected, so a wrong lineage has its route-specific table
+verdict. The genesis fuel limits are explicit `U64` inputs and have no ambient
+default. They must be nonzero and equal the two fuel fields in the exact
+genesis `BuildRequest`. Genesis has no evaluation certificate, remaining-fuel
+value, or observation input. The final identity input always carries both the
+claimed hash and the complete exact bytes; a hash alone never identifies the
+candidate for authorization.
+
 An observation index starts at zero and increases by one. Its arguments and
 result use `Value`; under the sealed profile the only valid item is an exact
 `Sha256OpId`, one `Value(Bytes, input)` argument, and one
@@ -596,12 +629,25 @@ definitions have these one-argument signatures. A signature mismatch, wrong
 request/result shape, subject mismatch, or unexpected ABI tag rejects rather
 than invoking package behavior through a host adapter.
 
-Authorization begins only after a successful strict decode. The checker visits
-stages in ascending tag order, skipping `GenesisAnchor` on a successor and
-skipping `ExactPredecessor`, both evaluation stages, and `EvidenceAttachment`
-on genesis; both routes run `BuildRequest` and `FinalAuthorization`. Within a
-stage it performs the following rows top to bottom and returns the displayed
-pair for the first false row:
+Authorization begins only after a successful strict decode. Exactly one
+`AuthorizationRequest` variant selects the route; candidate data never selects
+or changes it. The checker visits stages in ascending tag order, skipping
+`GenesisAnchor` on a successor and skipping `ExactPredecessor`, both evaluation
+stages, and `EvidenceAttachment` on genesis; both routes run `BuildRequest` and
+`FinalAuthorization`. Within a stage it performs the following rows top to
+bottom and returns the displayed pair for the first false row:
+
+Row ownership is closed rather than overlapping. `SubjectStructure` checks
+the residual outer subject and fixed-ABI structure not assigned to another
+`41` row or to stages `42..48`; in particular it does not classify route
+lineage, the supplied build request, evidence/certificates, or final identity.
+Stages `42` and `43` alone classify route authority, `44` alone classifies the
+supplied request, `45` and `46` alone classify their respective evaluation
+evidence, `47` alone classifies attachment, and `48` alone classifies the final
+identity input. An earlier stage never reads a later-stage value whose shape
+has not yet passed. Consequently successor stage `44` checks only that both
+request fuels are nonzero; compile and admission statement-limit equality is
+classified at `45` and `46`, respectively.
 
 | Stage | Ordered false condition | Exact `Unauthorized(stage, code)` |
 | --- | --- | --- |
@@ -615,7 +661,7 @@ pair for the first false row:
 | | any other rule `20..2b` check fails | `(41,67)` |
 | | a `Request` operation or signature is outside the exact profile | `(41,68)` |
 | `42 GenesisAnchor` | lineage is not `Genesis` | `(42,69)` |
-| | evidence is not empty `GenesisEvidence` | `(42,6a)` |
+| | supplied evidence differs from `Q.evidence` or is not empty `GenesisEvidence` | `(42,6a)` |
 | | no external owner anchor is supplied | `(42,6b)` |
 | | anchor-selected bytes are not the complete exact candidate bytes | `(42,6c)` |
 | `43 ExactPredecessor` | lineage is not `Successor` | `(43,6d)` |
@@ -633,7 +679,7 @@ pair for the first false row:
 | | `IdentityPlan` order, uniqueness, provenance, retention, or seed-input binding fails | `(44,79)` |
 | | request, lineage, or nominal-table change occurrence differs | `(44,7a)` |
 | | declared physical inputs is nonempty | `(44,7b)` |
-| | either fuel is zero or not its statement's exact limit | `(44,7c)` |
+| | on genesis, either explicit fuel input is zero or differs from its exact request field; on a successor, either request fuel is zero | `(44,7c)` |
 | `45 CompileEvaluation` | successor evidence or compile-certificate shape is wrong | `(45,7d)` |
 | | statement predecessor/manifest/profile/entrypoint/arguments/fuel differs | `(45,7e)` |
 | | a certificate node, premise, root, rule, state, fuel, or observation transition is invalid | `(45,7f)` |
@@ -651,22 +697,31 @@ pair for the first false row:
 | `47 EvidenceAttachment` | supplied `E` is not byte-identical `Q.evidence` | `(47,84)` |
 | | Frame 02 differs from the exact subject certified at compile/admission | `(47,85)` |
 | | attaching exact `E` does not reproduce complete exact `Q` | `(47,86)` |
-| `48 FinalAuthorization` | computed final identity does not bind complete exact `Q` | `(48,87)` |
+| `48 FinalAuthorization` | final-identity bytes differ from the decoded exact input, or its hash differs from `CompilerPackageHash` over those supplied exact bytes | `(48,87)` |
 
 Collection checks visit encoded fields, definitions, source units, identity
-rows, certificate nodes, and premises in their canonical order. Thus row order
-and then encoded item order break every tie. The two entrypoint fields are
-checked `compile` then `admitPropose`; either signature failure has the one
-pair `(41,66)`, never a BuildRequest or evaluation pair. Every rejection named
-by this contract is assigned above: self/candidate basis is `(43,6f)`, stale
-predecessor `(43,6e)`, hash-equal nonidentical bytes `(43,71)`, transplanted
-evidence or a changed request `(45|46,7e)`, malformed semantic traces
-`(45|46,7f)`, profile escape `(41,68)`, detached evidence `(47,84)`, and
-post-certification mutation `(47,85|86)` in the displayed order.
+rows, certificate nodes, and premises in their canonical order. Expand the
+selected route into that one ordered sequence of conditions. For condition
+`c[i]`, its rejection predicate is `not c[i]` together with every earlier
+`c[j]`; those predicates are pairwise disjoint, and a later predicate is not
+eligible after an earlier failure. Thus stage order, row order, and then
+encoded item order break every tie, even when several unqualified conditions
+are false. A condition belongs to exactly one route/stage row, while multiple
+items or conditions may intentionally share the same displayed pair. The two
+entrypoint fields are checked `compile` then `admitPropose`; either signature
+failure has the one pair `(41,66)`, never a BuildRequest or evaluation pair.
+Every rejection named by this contract is assigned above: self/candidate basis
+is `(43,6f)`, stale predecessor `(43,6e)`, hash-equal nonidentical predecessor
+bytes `(43,71)`, transplanted evidence or a changed request `(45|46,7e)`,
+malformed semantic traces `(45|46,7f)`, profile escape `(41,68)`, detached
+evidence `(47,84)`, post-certification mutation `(47,85|86)`, and a final
+exact-byte or package-hash mismatch `(48,87)` in the displayed order.
 
 A successful check returns only `Authorized` with the complete exact final
-package bytes. No condition can produce two observable pairs, and the result
-cannot degrade into a Boolean, hash-only success, or candidate subject.
+package bytes after `FinalAuthorization` has matched both fields of the
+explicit final-identity input. No decoded failure can satisfy two rejection
+predicates or produce two observable pairs, and the result cannot degrade into
+a Boolean, hash-only success, or candidate subject.
 
 ## CLCP v2 compiler subject
 

@@ -49,7 +49,11 @@ complete exact generic machine manifest; no host maps a symbolic core ID to
 private rules. Its closed static/evaluation rule table, fuel and observation
 semantics, certificate grammar, and verifier are part of the canonical bytes.
 Malformed wire input has a separate deterministic decode verdict, while every
-decoded authorization failure has one fixed stage/code pair.
+decoded authorization failure has one fixed stage/code pair selected by
+pairwise-disjoint first-failure precedence. Genesis authorization explicitly
+binds its exact `BuildRequest`, empty `GenesisEvidence`, both nonzero fuel
+limits, and the final package's complete exact bytes plus domain-separated
+hash before returning `Authorized`.
 
 The fixed host evaluator has sufficient generic byte inspection, construction,
 equality, recursion, and hashing mechanics but remains construct-blind:

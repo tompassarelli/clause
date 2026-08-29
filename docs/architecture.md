@@ -121,8 +121,14 @@ shape mismatch.
 
 Malformed wire input returns one separate `DecodeRejected(code, offset)` by
 fixed cursor/code precedence and never reaches `Unauthorized`. After successful
-decode, authorization visits the fixed stage table and encoded field order;
-every failure returns exactly one canonical `Unauthorized(stage, code)`.
+decode, an explicit genesis or successor request selects the route, then
+authorization visits the fixed stage table and encoded field order. Each
+rejection predicate includes passage of every earlier condition, so the
+predicates are pairwise disjoint and every failure returns exactly one
+canonical `Unauthorized(stage, code)`. Genesis must bind its exact
+`BuildRequest`, empty `GenesisEvidence`, explicit nonzero compile/admission
+fuel inputs, and a final identity containing both complete exact package bytes
+and their domain-separated package hash.
 Entrypoint signature mismatch is only `(CoreWellFormedness,
 EntrypointSignature)`. Successful evaluation certificates are closed DAGs over
 the manifest's `30..3e` rules, and `VerifyEvalCertificate` independently

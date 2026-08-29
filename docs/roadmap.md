@@ -213,8 +213,10 @@ The [compiler-genesis contract](compiler-genesis.md) and
 - the generic-mechanics versus semantic-dispatch audit and
   structure-preserving seed-nominal renaming law with single-valued allocated
   and derived identity recomputation; and
-- separate deterministic strict-decode errors plus an exhaustive ordered
-  authorization stage/code table.
+- separate deterministic strict-decode errors plus an exhaustive ordered,
+  pairwise-disjoint first-failure authorization stage/code table; and
+- mandatory genesis request, empty evidence, explicit fuel-limit, and final
+  exact-package-bytes/hash bindings through the same authorization stages.
 
 This phase changes contracts only. It does not claim a v2 package, compiler,
 codec, checker, evaluator, fixture, host audit, or measurement.

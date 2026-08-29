@@ -337,21 +337,55 @@ equivariant under a correspondingly transformed premise.
 
 ## Genesis acceptance
 
-Let `P0` be exact package bytes and let `anchor` be an owner admission
-judgment naming those bytes at an exact release object:
+Let `P0` be exact package bytes, `R0` the supplied canonical build request,
+`E0` the supplied evidence, `Gc` and `Ga` the supplied exact genesis compile
+and admission fuel limits, and `I0` the supplied final package identity. Let
+`anchor` be an owner admission judgment naming the package bytes at an exact
+release object:
 
 ```text
-AcceptGenesis(anchor, P0) :=
+AcceptGenesis(anchor, P0, R0, E0, Gc, Ga, I0) :=
   anchor selects exactBytes(P0)
   ∧ CanonicalCLCPv2(P0)
+  ∧ exactBytes(P0.frame01) = exactCoreManifestBytes
   ∧ P0.subject.lineage = Genesis
   ∧ CoreWF(P0.subject)
+  ∧ R0 = P0.subject.buildRequest
+  ∧ ValidGenesisBuildRequest(R0, CoreContractId,
+                                PhysicalProfileId)
+  ∧ Gc = R0.compileFuel ∧ Gc > 0
+  ∧ Ga = R0.admissionFuel ∧ Ga > 0
+  ∧ E0 = P0.evidence
+  ∧ E0 = GenesisEvidence
+  ∧ I0.exactPackageBytes = exactBytes(P0)
+  ∧ I0.packageHash = CompilerPackageHash(P0)
+  ∧ AuthorizeDecoded(
+      GenesisAuthorizationRequest(anchor, R0, E0, Gc, Ga, I0),
+      P0) = Authorized(exactBytes(P0))
 ```
 
+`ValidGenesisBuildRequest` is exactly every applicable ordered row of the
+canonical package contract's `BuildRequest` stage: `GenesisBase`, carried core
+and physical-profile derivations, source ordering and artifact identities,
+the genesis identity plan and change occurrence, and the empty sealed-profile
+physical-input list. It has no hidden fuel parameter; `Gc` and `Ga` are the
+only genesis fuel inputs and are checked explicitly above. Genesis skips both
+evaluation stages, so there is no genesis compile/admission remaining fuel or
+observation input.
+
+`I0` is the canonical package contract's
+`FinalPackageIdentityInput(packageHash, exactPackageBytes)`. Its two checks are
+the complete genesis `FinalAuthorization` stage: the bytes must be identical
+to the strict decoder's retained exact input, and the hash must be the
+domain-separated `CompilerPackageHash` of those same complete bytes, including
+`GenesisEvidence`. Neither field can be omitted or replaced by the other.
+
 The anchor records length and hashes for checking and retrieval, but those
-values never substitute for the selected bytes. The seed materializer,
-`GenesisEvidence`, canonicality, successful execution, or derivability
-cannot create `AcceptedCompiler(exactBytes(P0))`.
+values never substitute for the selected bytes. `R0`, `E0`, `Gc`, `Ga`, and
+`I0` are mandatory checker inputs and exact-binding claims, not additional
+sources of authority. The seed materializer, `GenesisEvidence`, canonicality,
+successful execution, or derivability cannot create
+`AcceptedCompiler(exactBytes(P0))`.
 
 There is exactly one externally owner-anchored `Compiler0`. Re-encoding,
 rebuilding, copying, or independently deriving identical bytes confirms that
@@ -360,7 +394,8 @@ selection; it does not create another root.
 ## Exact predecessor-only succession
 
 For already accepted exact predecessor bytes `P`, candidate package `Q`,
-canonical build request `R`, and evidence `E`:
+canonical build request `R`, evidence `E`, and final package identity input
+`I`:
 
 ```text
 S  = exactCompilerSubjectBytes(Q)
@@ -391,7 +426,7 @@ AdmissionStatement = EvalStatement(
   fuelLimit = R.admissionFuel,
   expected = Returned(TermValue(Propose(S)), Fa, Oa))
 
-AcceptSuccessor(P, Q, R, E) :=
+AcceptSuccessor(P, Q, R, E, I) :=
   AcceptedCompiler(exactBytes(P))
   ∧ CanonicalCLCPv2(Q)
   ∧ exactBytes(Q.frame01) = exactCoreManifestBytes
@@ -407,6 +442,11 @@ AcceptSuccessor(P, Q, R, E) :=
                           admissionCertificate)
   ∧ VerifyEvalCertificate(CompileStatement, compileCertificate)
   ∧ VerifyEvalCertificate(AdmissionStatement, admissionCertificate)
+  ∧ I.exactPackageBytes = exactBytes(Q)
+  ∧ I.packageHash = CompilerPackageHash(Q)
+  ∧ AuthorizeDecoded(
+      SuccessorAuthorizationRequest(P, R, E, I),
+      Q) = Authorized(exactBytes(Q))
 ```
 
 `Fc` and `Oc` are the exact remaining-fuel and observations fields decoded
@@ -434,11 +474,13 @@ predecessor, a basis or rule in `Q`, nor hash equality can replace the accepted
 exact predecessor.
 
 The generic packager adds exactly `E = Q.evidence` without changing `S`. Lean
-checks both certificates and only then returns the canonical authorization
-result `Authorized(exactBytes(Q))`, whose authority interpretation is exactly
-`AcceptedCompiler(exactBytes(Q))`. Only after that attachment may
-`CompilerPackageHash(Q)` bind publication or retrieval. Failure returns a
-fixed `Unauthorized(stage, code)` and never a candidate package. Required
+checks both certificates and the final identity's exact bytes and
+domain-separated package hash, and only then returns the canonical
+authorization result `Authorized(exactBytes(Q))`, whose authority
+interpretation is exactly `AcceptedCompiler(exactBytes(Q))`. Only after that
+attachment may `CompilerPackageHash(Q)` bind publication or retrieval. Failure
+returns the unique first fixed `Unauthorized(stage, code)` and never a
+candidate package. Required
 rejection classes include a
 root tag without the external anchor, self-authorization, candidate-basis
 authorization, checking under the candidate, wrong or stale predecessor,
@@ -447,10 +489,14 @@ malformed trace, physical-profile escape, and correct hash paired with
 non-identical bytes.
 
 Malformed bytes instead return the separate canonical `DecodeRejected` value
-and never enter this predicate. Every successfully decoded failure follows the
-package contract's ascending stage, row, and encoded-item precedence table;
-there is no host-selected error priority. In particular, either entrypoint's
-signature mismatch is only `(CoreWellFormedness, EntrypointSignature)`.
+and never enter this predicate. An explicit genesis or successor request
+selects the route before candidate data is inspected. Every successfully
+decoded failure follows the package contract's ascending stage, row, and
+encoded-item precedence table: a rejection predicate includes passage of all
+earlier conditions, making the predicates pairwise disjoint and the result
+single-valued. There is no host-selected error priority. In particular, either
+entrypoint's signature mismatch is only
+`(CoreWellFormedness, EntrypointSignature)`.
 
 ## Lean checker boundary
 
