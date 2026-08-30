@@ -1,6 +1,6 @@
 import ClauseCompiler.Codec
 
-/-! Fixed Core ABI, static checking, generic evaluation, and certificate checking. -/
+/-! Fixed Core ABI, static checking, generic evaluation, and deterministic replay checking. -/
 
 namespace ClauseCompiler
 
@@ -887,6 +887,12 @@ def requestExpression (request : EvalRequest) : KExpr :=
   .call request.entrypoint
     (KExprSeq.ofList (request.arguments.map valueLiteral))
 
+def requestFuelValid (request : EvalRequest) : Bool :=
+  request.fuelLimit > 0 && request.fuelLimit ≤ Encoding.u64Maximum
+
+def receiptFuelValid (receipt : EvalReceipt) : Bool :=
+  receipt.expectedRemainingFuel ≤ Encoding.u64Maximum
+
 def requestWellFormed (exactAcceptedPredecessor : Bytes)
     (predecessor : DecodedPackage) (request : EvalRequest) : Bool :=
   predecessor.exactInput = exactAcceptedPredecessor &&
@@ -896,7 +902,7 @@ def requestWellFormed (exactAcceptedPredecessor : Bytes)
   predecessor.package.manifest = Fixed.coreManifest &&
   request.coreContractId = Fixed.coreContractId &&
   request.physicalProfileId = Fixed.physicalProfileId &&
-  request.fuelLimit > 0 &&
+  requestFuelValid request &&
   Static.definitionsWellFormed predecessor.package.subject.program
     predecessor.package.manifest.physicalProfile &&
   Static.entrypointsWellFormed predecessor.package.subject &&
@@ -926,6 +932,7 @@ def verifyEvalReceipt (exactAcceptedPredecessor : Bytes)
     (_accepted : AcceptedExact exactAcceptedPredecessor)
     (request : EvalRequest) (receipt : EvalReceipt) : Bool :=
   receipt.formatVersion = Fixed.coreManifest.receiptFormatVersion &&
+  receiptFuelValid receipt &&
   match Codec.strictDecode exactAcceptedPredecessor with
   | .rejected _ => false
   | .decoded predecessor =>
@@ -949,6 +956,43 @@ theorem nonconformingDefinitionsRejectReceipt
     Static.definitionsWellFormed, profileFailure]
 
 namespace Regression
+
+def withFuelLimit (request : EvalRequest) (fuel : Fuel) : EvalRequest :=
+  { request with fuelLimit := fuel }
+
+def withExpectedRemainingFuel (receipt : EvalReceipt) (fuel : Fuel) : EvalReceipt :=
+  { receipt with expectedRemainingFuel := fuel }
+
+/- The exact maximum is admitted by both public-root width guards. -/
+theorem maximumU64ReplayFuelIsValid (request : EvalRequest) (receipt : EvalReceipt) :
+    requestFuelValid (withFuelLimit request Encoding.u64Maximum) = true ∧
+    receiptFuelValid
+      (withExpectedRemainingFuel receipt Encoding.u64Maximum) = true := by
+  simp [requestFuelValid, receiptFuelValid, withFuelLimit,
+    withExpectedRemainingFuel, Encoding.u64Maximum]
+
+/- A request over the wire width is rejected at the public root even after a
+strict decode succeeds and independently of every later request condition. -/
+theorem overU64RequestRejected (exactAcceptedPredecessor : Bytes)
+    (accepted : AcceptedExact exactAcceptedPredecessor)
+    (predecessor : DecodedPackage)
+    (binding : Codec.strictDecode exactAcceptedPredecessor = .decoded predecessor)
+    (request : EvalRequest) (receipt : EvalReceipt) :
+    verifyEvalReceipt exactAcceptedPredecessor accepted
+      (withFuelLimit request (Encoding.u64Maximum + 1)) receipt = false := by
+  simp [verifyEvalReceipt, binding, requestWellFormed, requestFuelValid,
+    withFuelLimit, Encoding.u64Maximum]
+
+/- This is the prior successful non-wire arithmetic shape for a three-charge
+call: max+4 request fuel and max+1 expected remaining fuel. -/
+theorem exactOverU64ReplayRejected (exactAcceptedPredecessor : Bytes)
+    (accepted : AcceptedExact exactAcceptedPredecessor)
+    (request : EvalRequest) (receipt : EvalReceipt) :
+    verifyEvalReceipt exactAcceptedPredecessor accepted
+      (withFuelLimit request (Encoding.u64Maximum + 4))
+      (withExpectedRemainingFuel receipt (Encoding.u64Maximum + 1)) = false := by
+  simp [verifyEvalReceipt, receiptFuelValid, withExpectedRemainingFuel,
+    Encoding.u64Maximum]
 
 /- The fixture's two entrypoints are well typed.  Its third, unused definition
 is the exact profile escape; the public verifier rejects any strict-decoded

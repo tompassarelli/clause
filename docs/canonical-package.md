@@ -733,8 +733,8 @@ entrypoint fields are checked `compile` then `admitPropose`; either signature
 failure has the one pair `(41,66)`, never a BuildRequest or evaluation pair.
 Every rejection named by this contract is assigned above: self/candidate basis
 is `(43,6f)`, stale predecessor `(43,6e)`, hash-equal nonidentical predecessor
-bytes `(43,71)`, transplanted evidence or a changed request `(45|46,7e)`,
-malformed semantic traces `(45|46,7f)`, profile escape `(41,68)`, detached
+bytes `(43,71)`, an actual canonical value-hash mismatch `(45|46,7e)`, an
+actual remaining-fuel mismatch `(45|46,7f)`, profile escape `(41,68)`, detached
 evidence `(47,84)`, post-certification mutation `(47,85|86)`, and a final
 exact-byte or package-hash mismatch `(48,87)` in the displayed order.
 
@@ -854,9 +854,9 @@ contains only format version `00`, canonical value and observation commitments,
 and exact remaining fuel. It contains no returned value, observations,
 evaluation request, predecessor bytes, expression, environment, rule tag,
 premise, node, graph, or trace. Unknown receipt versions reject at the version
-octet. Optional traces and full outcomes may accompany a reproducible corpus,
-but they are outside authorization and cannot supply a result, skip replay, or
-add authority.
+octet. External diagnostic artifacts may accompany a reproducible corpus, but
+they are outside authorization and cannot supply a result, skip replay, or add
+authority.
 
 The checker constructs this non-wire request for each replay:
 
@@ -875,20 +875,25 @@ bytes and their acceptance premise. The request binds those bytes with
 `acceptedPredecessorPackageHash = CompilerPackageHash(exactBytes)`; it does
 not recursively encode them. The core/profile IDs, entrypoint, arguments, and
 fuel are constructed from the accepted predecessor and exact candidate build
-request, never copied from Frame 03.
+request, never copied from Frame 03. Although Lean represents fuel with an
+unbounded natural internally, both request fuel and expected remaining fuel
+must fit `U64`; zero request fuel and values above `2^64-1` reject, while the
+maximum `U64` value remains valid.
 
 `VerifyEvalReceipt(exactPredecessor, accepted, request, receipt)` is this
 algorithm, in order:
 
-1. require `receipt.formatVersion = 00`;
+1. require `receipt.formatVersion = 00` and require
+   `receipt.expectedRemainingFuel` to fit `U64`;
 2. strictly decode the separately supplied predecessor bytes, require the
    caller's acceptance premise for those exact bytes, require the request's
    predecessor hash to equal `CompilerPackageHash(exactBytes)`, require its
    Frame 01 bytes equal `exactCoreManifestBytes`, and independently derive
    `CoreContractId` and `PhysicalProfileId`;
 3. require those derived IDs equal the checker-constructed request fields,
-   statically check the predecessor subject under rules `20..2b`, resolve the
-   entrypoint exactly once, and require argument sorts equal its signature;
+   require positive `U64` request fuel, statically check the predecessor
+   subject under rules `20..2b`, resolve the entrypoint exactly once, and
+   require argument sorts equal its signature;
 4. construct `Call(entrypoint, map(ValueLiteral, arguments))` without receipt
    input, where `ValueLiteral` maps only `BytesValue` to `BytesLiteral` and
    `TermValue` to `TermLiteral`;
