@@ -1,10 +1,11 @@
 {
-  "schema": "clause-jump-arena-process-ir-v1",
+  "schema": "clause-jump-arena-process-ir-v2",
   "status": "exact-semantic-fixture",
   "authority": {
     "semantics": "clause:docs/foundation.md",
     "canonical_source": "clause:docs/syntax.md",
-    "source_fixture": "clause:test-vectors/jump-arena/world.clause"
+    "source_fixture": "clause:test-vectors/jump-arena/world.clause",
+    "exact_vectors": "clause:test-vectors/jump-arena/vectors.json"
   },
   "fixture_encoding": {
     "purpose": "typed process-v1 oracle before a canonical carrier encoding exists",
@@ -12,414 +13,3802 @@
     "canonical_carrier": false,
     "public_identity_encoding": false,
     "identifiers": "fixture-local opaque typed references supplied by the harness",
-    "host_string_dispatch": "forbidden",
-    "equivariance_requirement": "renaming every fixture-local designation while preserving typed references must preserve every verdict and observation"
+    "semantic_lookup": "exact typed reference only",
+    "source_spelling_lookup": "forbidden",
+    "equivariance_requirement": "renaming every source designation and fixture-local token while preserving typed-reference edges preserves every verdict and observation"
+  },
+  "activation_execution_contract": {
+    "executable_validity_required_for_every_activation": true,
+    "causal_origin_required_for_every_activation": true,
+    "executable_validity_is_authorization": false,
+    "authorization_requirement_source": "selected-Mode.authorization_requirement_refs",
+    "authorization_requirements_are_finite": true,
+    "empty_authorization_requirement_refs_mean": "no authorization evidence is required to activate this Mode",
+    "extra_authorization_evidence_rejected": true,
+    "required_executable_validity_requirement_refs": [
+      "executable-requirement/closed-application-form",
+      "executable-requirement/eligible-selected-mode",
+      "executable-requirement/exact-context-pins",
+      "executable-requirement/known-roles-grounded",
+      "executable-requirement/sufficient-budget"
+    ]
+  },
+  "executable_validity_requirement_records": [
+    {
+      "executable_validity_requirement_ref": "executable-requirement/closed-application-form"
+    },
+    {
+      "executable_validity_requirement_ref": "executable-requirement/eligible-selected-mode"
+    },
+    {
+      "executable_validity_requirement_ref": "executable-requirement/exact-context-pins"
+    },
+    {
+      "executable_validity_requirement_ref": "executable-requirement/known-roles-grounded"
+    },
+    {
+      "executable_validity_requirement_ref": "executable-requirement/sufficient-budget"
+    }
+  ],
+  "frame_projection_contract": {
+    "semantic_status": "derived-observation-projection",
+    "identity_key_fields": [
+      "run_id",
+      "activation_id",
+      "step_id",
+      "observation_id"
+    ],
+    "optional_pin_fields": [
+      "observed_state_revision_id",
+      "observed_state_revision_payload_ref"
+    ],
+    "optional_pin_pair_cardinality": "both-or-neither",
+    "optional_pins_are_identity": false,
+    "creates_state_revision": false,
+    "requires_admission": false,
+    "frame_change_requires_new_state_revision": false,
+    "host_may_mutate_observed_payload": false
   },
   "source_projection": {
     "ratified": [
+      "referent, shape, relation, Reading, subject, and mode declarations",
       "Term literals and conventional arithmetic/comparison operators",
-      "shape, relation, Reading, subject, and mode declarations",
       "law and derive declarations",
       "on/when/withdraw/admit candidate-delta declarations"
     ],
     "unresolved": [
       {
-        "semantic_object": "runtime StateRevision observation request",
+        "semantic_object_ref": "projection-gap/runtime-state-request",
         "reason": "canonical request syntax does not yet select a runtime StateRevision operand"
       },
       {
-        "semantic_object": "Activation, Step, Run, and typed cause-frontier records",
-        "reason": "ordinary source intentionally omits runtime identity and causal bookkeeping"
+        "semantic_object_ref": "projection-gap/process-records",
+        "reason": "ordinary source intentionally omits Activation, Step, Run, and cause-frontier bookkeeping"
       },
       {
-        "semantic_object": "reactive input-listener continuation and cancellation policy",
-        "reason": "continuation and cancellation source spelling is not ratified"
+        "semantic_object_ref": "projection-gap/listener-control",
+        "reason": "continuation, resumption, linear-use, and cancellation spelling is not ratified"
       },
       {
-        "semantic_object": "governed outer Admission",
+        "semantic_object_ref": "projection-gap/event-mode-declarations",
+        "reason": "multiple authored event Mode declarations are not ratified"
+      },
+      {
+        "semantic_object_ref": "projection-gap/outer-admission",
         "reason": "source admit stages additions and does not perform constitutional Admission"
       }
     ]
   },
-  "constitution": {
-    "clause_semantics_id": "semantics/process-v1",
-    "program_snapshot_id": "program-snapshot/jump-arena-v1",
-    "program_id": "program/jump-arena",
-    "program_revision_id": "program-revision/jump-arena-r0",
-    "runtime_policy_id": "runtime-policy/deterministic-fixed-step-v1",
-    "runtime_session_ids": [
-      "runtime-session/jump-arena-s0",
-      "runtime-session/jump-arena-collision",
-      "runtime-session/jump-arena-landing"
-    ],
-    "execution_authorization": {
-      "kind": "ConstitutiveAuthorization<ExecutionAuthorization>",
-      "program_revision_id": "program-revision/jump-arena-r0",
-      "judgment_ref": "judgment/execution/jump-arena-processes"
+  "type_records": [
+    {
+      "type_ref": "type/f64",
+      "source_referent_id": "referent/type-f64",
+      "atom_contract_ref": "atom-contract/f64-binary64"
     },
-    "admission_authorization": {
-      "kind": "ConstitutiveAuthorization<AdmissionAuthorization>",
-      "program_revision_id": "program-revision/jump-arena-r0",
-      "judgment_ref": "judgment/admission/jump-arena-state"
+    {
+      "type_ref": "type/bool",
+      "source_referent_id": "referent/type-bool",
+      "atom_contract_ref": "atom-contract/bool"
     },
-    "authority_order": [
-      "program-revision/jump-arena-r0 is authoritative before every fixture Activation",
-      "candidate deltas and candidate-produced evidence supply no execution or Admission authority",
-      "AdmissionAuthorization is cited from the authoritative ProgramRevision, never from a candidate StateRevision"
-    ]
-  },
-  "relation_schema_refs": {
-    "position": "relation-schema/arena-position",
-    "velocity": "relation-schema/arena-velocity",
-    "grounded": "relation-schema/arena-grounded",
-    "horizontal_intent": "relation-schema/arena-horizontal-intent",
-    "clamped_between": "relation-schema/scalar-clamped-between",
-    "input_event": "relation-schema/event-input",
-    "jump_event": "relation-schema/event-jump",
-    "tick_event": "relation-schema/event-tick",
-    "input_stream": "relation-schema/input-stream"
-  },
+    {
+      "type_ref": "type/player",
+      "source_referent_id": "referent/type-player"
+    },
+    {
+      "type_ref": "type/arena",
+      "source_referent_id": "referent/type-arena"
+    },
+    {
+      "type_ref": "type/vec3",
+      "shape_schema_id": "shape-schema/vec3"
+    },
+    {
+      "type_ref": "type/candidate-state-delta"
+    },
+    {
+      "type_ref": "type/observation/position"
+    },
+    {
+      "type_ref": "type/observation/input-listener-event",
+      "sum_variant_type_refs": [
+        "type/observation/listener-ready",
+        "type/observation/horizontal-input",
+        "type/observation/listener-cancelled"
+      ]
+    },
+    {
+      "type_ref": "type/observation/listener-ready"
+    },
+    {
+      "type_ref": "type/observation/horizontal-input"
+    },
+    {
+      "type_ref": "type/observation/listener-cancelled"
+    },
+    {
+      "type_ref": "type/failure/cancelled"
+    },
+    {
+      "type_ref": "type/failure/budget-exhausted"
+    },
+    {
+      "type_ref": "type/failure/continuation-pin-mismatch"
+    },
+    {
+      "type_ref": "type/failure/continuation-already-consumed"
+    },
+    {
+      "type_ref": "type/failure/no-applicable-process-rule"
+    },
+    {
+      "type_ref": "type/failure/program-revision-pin-mismatch"
+    },
+    {
+      "type_ref": "type/failure/state-revision-pin-mismatch"
+    },
+    {
+      "type_ref": "type/failure/ambiguous-mode-selection"
+    },
+    {
+      "type_ref": "type/failure/mode-not-eligible"
+    },
+    {
+      "type_ref": "type/failure/numeric-domain"
+    },
+    {
+      "type_ref": "type/continuation-remainder/input-stream"
+    },
+    {
+      "type_ref": "type/continuation-status"
+    },
+    {
+      "type_ref": "type/judgment/admission-authorization"
+    },
+    {
+      "type_ref": "type/judgment/judgment-issuance-authorization"
+    },
+    {
+      "type_ref": "type/judgment/admission-obligations-satisfied"
+    },
+    {
+      "type_ref": "type/external-trigger"
+    },
+    {
+      "type_ref": "type/resumption-request"
+    },
+    {
+      "type_ref": "type/cancellation-request"
+    },
+    {
+      "type_ref": "type/outcome/failed"
+    }
+  ],
+  "referent_records": [
+    {
+      "referent_id": "referent/type-f64",
+      "source_designation": "F64"
+    },
+    {
+      "referent_id": "referent/type-bool",
+      "source_designation": "Bool"
+    },
+    {
+      "referent_id": "referent/type-player",
+      "source_designation": "Player"
+    },
+    {
+      "referent_id": "referent/type-arena",
+      "source_designation": "Arena"
+    },
+    {
+      "referent_id": "referent/jump-arena",
+      "source_designation": "jump-arena"
+    },
+    {
+      "referent_id": "referent/player-1",
+      "source_designation": "player-1"
+    }
+  ],
+  "atom_contracts": [
+    {
+      "atom_contract_ref": "atom-contract/f64-binary64",
+      "type_ref": "type/f64",
+      "representation": "IEEE-754 binary64",
+      "source_decimal_conversion": "correctly rounded decimal-to-binary64 conversion using roundTiesToEven",
+      "operation_rounding": "roundTiesToEven after every declared operator application",
+      "fused_contraction": "forbidden",
+      "subnormal_policy": "gradual underflow",
+      "zero_policy": "canonicalize both signed zeros to positive zero at Term formation and operator result formation",
+      "admissible_values": "finite non-NaN only",
+      "equality": "numeric binary64 equality after zero canonicalization",
+      "ordered_comparison": "total over the admitted finite domain",
+      "exception_policy": {
+        "division_by_zero": "type/failure/numeric-domain",
+        "invalid_operation": "type/failure/numeric-domain",
+        "overflow_to_nonfinite": "type/failure/numeric-domain",
+        "nonfinite_input": "type/failure/numeric-domain",
+        "partial_candidate_visibility": false
+      }
+    },
+    {
+      "atom_contract_ref": "atom-contract/bool",
+      "type_ref": "type/bool",
+      "canonical_values": [
+        "value/bool/false",
+        "value/bool/true"
+      ],
+      "equality": "exact canonical value"
+    }
+  ],
+  "atom_values": [
+    {
+      "value_ref": "value/bool/false",
+      "type_ref": "type/bool",
+      "canonical_payload": false
+    },
+    {
+      "value_ref": "value/bool/true",
+      "type_ref": "type/bool",
+      "canonical_payload": true
+    },
+    {
+      "value_ref": "value/f64/negative-10.75",
+      "type_ref": "type/f64",
+      "source_spelling": "-10.75",
+      "canonical_hex_f64": "-0x1.58p+3"
+    },
+    {
+      "value_ref": "value/f64/negative-10",
+      "type_ref": "type/f64",
+      "source_spelling": "-10.0",
+      "canonical_hex_f64": "-0x1.4p+3"
+    },
+    {
+      "value_ref": "value/f64/negative-9.5",
+      "type_ref": "type/f64",
+      "source_spelling": "-9.5",
+      "canonical_hex_f64": "-0x1.3p+3"
+    },
+    {
+      "value_ref": "value/f64/negative-8",
+      "type_ref": "type/f64",
+      "source_spelling": "-8.0",
+      "canonical_hex_f64": "-0x1p+3"
+    },
+    {
+      "value_ref": "value/f64/negative-5",
+      "type_ref": "type/f64",
+      "source_spelling": "-5.0",
+      "canonical_hex_f64": "-0x1.4p+2"
+    },
+    {
+      "value_ref": "value/f64/negative-3.75",
+      "type_ref": "type/f64",
+      "source_spelling": "-3.75",
+      "canonical_hex_f64": "-0x1.ep+1"
+    },
+    {
+      "value_ref": "value/f64/negative-3",
+      "type_ref": "type/f64",
+      "source_spelling": "-3.0",
+      "canonical_hex_f64": "-0x1.8p+1"
+    },
+    {
+      "value_ref": "value/f64/negative-2.5",
+      "type_ref": "type/f64",
+      "source_spelling": "-2.5",
+      "canonical_hex_f64": "-0x1.4p+1"
+    },
+    {
+      "value_ref": "value/f64/negative-2",
+      "type_ref": "type/f64",
+      "source_spelling": "-2.0",
+      "canonical_hex_f64": "-0x1p+1"
+    },
+    {
+      "value_ref": "value/f64/negative-1.25",
+      "type_ref": "type/f64",
+      "source_spelling": "-1.25",
+      "canonical_hex_f64": "-0x1.4p+0"
+    },
+    {
+      "value_ref": "value/f64/negative-1",
+      "type_ref": "type/f64",
+      "source_spelling": "-1.0",
+      "canonical_hex_f64": "-0x1p+0"
+    },
+    {
+      "value_ref": "value/f64/negative-0.75",
+      "type_ref": "type/f64",
+      "source_spelling": "-0.75",
+      "canonical_hex_f64": "-0x1.8p-1"
+    },
+    {
+      "value_ref": "value/f64/negative-0.5",
+      "type_ref": "type/f64",
+      "source_spelling": "-0.5",
+      "canonical_hex_f64": "-0x1p-1"
+    },
+    {
+      "value_ref": "value/f64/0",
+      "type_ref": "type/f64",
+      "source_spelling": "0.0",
+      "canonical_hex_f64": "0x0p+0"
+    },
+    {
+      "value_ref": "value/f64/0.25",
+      "type_ref": "type/f64",
+      "source_spelling": "0.25",
+      "canonical_hex_f64": "0x1p-2"
+    },
+    {
+      "value_ref": "value/f64/0.5",
+      "type_ref": "type/f64",
+      "source_spelling": "0.5",
+      "canonical_hex_f64": "0x1p-1"
+    },
+    {
+      "value_ref": "value/f64/1",
+      "type_ref": "type/f64",
+      "source_spelling": "1.0",
+      "canonical_hex_f64": "0x1p+0"
+    },
+    {
+      "value_ref": "value/f64/1.25",
+      "type_ref": "type/f64",
+      "source_spelling": "1.25",
+      "canonical_hex_f64": "0x1.4p+0"
+    },
+    {
+      "value_ref": "value/f64/1.5",
+      "type_ref": "type/f64",
+      "source_spelling": "1.5",
+      "canonical_hex_f64": "0x1.8p+0"
+    },
+    {
+      "value_ref": "value/f64/2",
+      "type_ref": "type/f64",
+      "source_spelling": "2.0",
+      "canonical_hex_f64": "0x1p+1"
+    },
+    {
+      "value_ref": "value/f64/2.5",
+      "type_ref": "type/f64",
+      "source_spelling": "2.5",
+      "canonical_hex_f64": "0x1.4p+1"
+    },
+    {
+      "value_ref": "value/f64/3.75",
+      "type_ref": "type/f64",
+      "source_spelling": "3.75",
+      "canonical_hex_f64": "0x1.ep+1"
+    },
+    {
+      "value_ref": "value/f64/5",
+      "type_ref": "type/f64",
+      "source_spelling": "5.0",
+      "canonical_hex_f64": "0x1.4p+2"
+    },
+    {
+      "value_ref": "value/f64/6",
+      "type_ref": "type/f64",
+      "source_spelling": "6.0",
+      "canonical_hex_f64": "0x1.8p+2"
+    },
+    {
+      "value_ref": "value/f64/8",
+      "type_ref": "type/f64",
+      "source_spelling": "8.0",
+      "canonical_hex_f64": "0x1p+3"
+    },
+    {
+      "value_ref": "value/f64/9.5",
+      "type_ref": "type/f64",
+      "source_spelling": "9.5",
+      "canonical_hex_f64": "0x1.3p+3"
+    },
+    {
+      "value_ref": "value/f64/10",
+      "type_ref": "type/f64",
+      "source_spelling": "10.0",
+      "canonical_hex_f64": "0x1.4p+3"
+    },
+    {
+      "value_ref": "value/f64/10.75",
+      "type_ref": "type/f64",
+      "source_spelling": "10.75",
+      "canonical_hex_f64": "0x1.58p+3"
+    },
+    {
+      "value_ref": "value/f64/11.25",
+      "type_ref": "type/f64",
+      "source_spelling": "11.25",
+      "canonical_hex_f64": "0x1.68p+3"
+    }
+  ],
+  "typed_values": [
+    {
+      "value_ref": "value/listener-ready",
+      "type_ref": "type/observation/listener-ready",
+      "constructor_ref": "constructor/listener-ready"
+    },
+    {
+      "value_ref": "value/listener-cancelled",
+      "type_ref": "type/observation/listener-cancelled",
+      "constructor_ref": "constructor/listener-cancelled"
+    },
+    {
+      "value_ref": "value/failure-cancelled",
+      "type_ref": "type/failure/cancelled",
+      "constructor_ref": "constructor/failure-cancelled"
+    }
+  ],
+  "continuation_value_records": [
+    {
+      "typed_remainder_ref": "remainder/input-stream-await-next-observation",
+      "type_ref": "type/continuation-remainder/input-stream"
+    },
+    {
+      "status_ref": "continuation-status/suspended",
+      "type_ref": "type/continuation-status"
+    },
+    {
+      "status_ref": "continuation-status/live",
+      "type_ref": "type/continuation-status"
+    }
+  ],
+  "outcome_contracts": [
+    {
+      "outcome_contract_ref": "outcome-contract/failure-after-activation",
+      "outcome_type_ref": "type/outcome/failed",
+      "allocation_phase_ref": "allocation-phase/after-activation"
+    },
+    {
+      "outcome_contract_ref": "outcome-contract/failure-before-activation",
+      "outcome_type_ref": "type/outcome/failed",
+      "allocation_phase_ref": "allocation-phase/before-activation"
+    },
+    {
+      "outcome_contract_ref": "outcome-contract/failure-before-step",
+      "outcome_type_ref": "type/outcome/failed",
+      "allocation_phase_ref": "allocation-phase/before-step"
+    }
+  ],
+  "shape_schemas": [
+    {
+      "shape_schema_id": "shape-schema/vec3",
+      "source_designation": "Vec3",
+      "type_ref": "type/vec3",
+      "roles": [
+        {
+          "role_id": "shape-role/vec3/x",
+          "source_name": "x",
+          "domain": "type/f64",
+          "cardinality": "one"
+        },
+        {
+          "role_id": "shape-role/vec3/y",
+          "source_name": "y",
+          "domain": "type/f64",
+          "cardinality": "one"
+        },
+        {
+          "role_id": "shape-role/vec3/z",
+          "source_name": "z",
+          "domain": "type/f64",
+          "cardinality": "one"
+        }
+      ]
+    }
+  ],
+  "term_values": [
+    {
+      "term_ref": "term/vec3/zero",
+      "shape_schema_id": "shape-schema/vec3",
+      "role_bindings": [
+        {
+          "role_id": "shape-role/vec3/x",
+          "value_ref": "value/f64/0"
+        },
+        {
+          "role_id": "shape-role/vec3/y",
+          "value_ref": "value/f64/0"
+        },
+        {
+          "role_id": "shape-role/vec3/z",
+          "value_ref": "value/f64/0"
+        }
+      ]
+    },
+    {
+      "term_ref": "term/vec3/east-north",
+      "shape_schema_id": "shape-schema/vec3",
+      "role_bindings": [
+        {
+          "role_id": "shape-role/vec3/x",
+          "value_ref": "value/f64/1"
+        },
+        {
+          "role_id": "shape-role/vec3/y",
+          "value_ref": "value/f64/0"
+        },
+        {
+          "role_id": "shape-role/vec3/z",
+          "value_ref": "value/f64/negative-1"
+        }
+      ]
+    },
+    {
+      "term_ref": "term/vec3/east",
+      "shape_schema_id": "shape-schema/vec3",
+      "role_bindings": [
+        {
+          "role_id": "shape-role/vec3/x",
+          "value_ref": "value/f64/1"
+        },
+        {
+          "role_id": "shape-role/vec3/y",
+          "value_ref": "value/f64/0"
+        },
+        {
+          "role_id": "shape-role/vec3/z",
+          "value_ref": "value/f64/0"
+        }
+      ]
+    },
+    {
+      "term_ref": "term/vec3/west",
+      "shape_schema_id": "shape-schema/vec3",
+      "role_bindings": [
+        {
+          "role_id": "shape-role/vec3/x",
+          "value_ref": "value/f64/negative-1"
+        },
+        {
+          "role_id": "shape-role/vec3/y",
+          "value_ref": "value/f64/0"
+        },
+        {
+          "role_id": "shape-role/vec3/z",
+          "value_ref": "value/f64/0"
+        }
+      ]
+    },
+    {
+      "term_ref": "term/vec3/positive-z",
+      "shape_schema_id": "shape-schema/vec3",
+      "role_bindings": [
+        {
+          "role_id": "shape-role/vec3/x",
+          "value_ref": "value/f64/0"
+        },
+        {
+          "role_id": "shape-role/vec3/y",
+          "value_ref": "value/f64/0"
+        },
+        {
+          "role_id": "shape-role/vec3/z",
+          "value_ref": "value/f64/1"
+        }
+      ]
+    },
+    {
+      "term_ref": "term/vec3/negative-z",
+      "shape_schema_id": "shape-schema/vec3",
+      "role_bindings": [
+        {
+          "role_id": "shape-role/vec3/x",
+          "value_ref": "value/f64/0"
+        },
+        {
+          "role_id": "shape-role/vec3/y",
+          "value_ref": "value/f64/0"
+        },
+        {
+          "role_id": "shape-role/vec3/z",
+          "value_ref": "value/f64/negative-1"
+        }
+      ]
+    },
+    {
+      "term_ref": "term/vec3/main-position-2",
+      "shape_schema_id": "shape-schema/vec3",
+      "role_bindings": [
+        {
+          "role_id": "shape-role/vec3/x",
+          "value_ref": "value/f64/2.5"
+        },
+        {
+          "role_id": "shape-role/vec3/y",
+          "value_ref": "value/f64/0"
+        },
+        {
+          "role_id": "shape-role/vec3/z",
+          "value_ref": "value/f64/negative-2.5"
+        }
+      ]
+    },
+    {
+      "term_ref": "term/vec3/main-velocity-2",
+      "shape_schema_id": "shape-schema/vec3",
+      "role_bindings": [
+        {
+          "role_id": "shape-role/vec3/x",
+          "value_ref": "value/f64/5"
+        },
+        {
+          "role_id": "shape-role/vec3/y",
+          "value_ref": "value/f64/0"
+        },
+        {
+          "role_id": "shape-role/vec3/z",
+          "value_ref": "value/f64/negative-5"
+        }
+      ]
+    },
+    {
+      "term_ref": "term/vec3/main-velocity-3",
+      "shape_schema_id": "shape-schema/vec3",
+      "role_bindings": [
+        {
+          "role_id": "shape-role/vec3/x",
+          "value_ref": "value/f64/5"
+        },
+        {
+          "role_id": "shape-role/vec3/y",
+          "value_ref": "value/f64/8"
+        },
+        {
+          "role_id": "shape-role/vec3/z",
+          "value_ref": "value/f64/negative-5"
+        }
+      ]
+    },
+    {
+      "term_ref": "term/vec3/main-position-4",
+      "shape_schema_id": "shape-schema/vec3",
+      "role_bindings": [
+        {
+          "role_id": "shape-role/vec3/x",
+          "value_ref": "value/f64/3.75"
+        },
+        {
+          "role_id": "shape-role/vec3/y",
+          "value_ref": "value/f64/1.5"
+        },
+        {
+          "role_id": "shape-role/vec3/z",
+          "value_ref": "value/f64/negative-3.75"
+        }
+      ]
+    },
+    {
+      "term_ref": "term/vec3/main-velocity-4",
+      "shape_schema_id": "shape-schema/vec3",
+      "role_bindings": [
+        {
+          "role_id": "shape-role/vec3/x",
+          "value_ref": "value/f64/5"
+        },
+        {
+          "role_id": "shape-role/vec3/y",
+          "value_ref": "value/f64/6"
+        },
+        {
+          "role_id": "shape-role/vec3/z",
+          "value_ref": "value/f64/negative-5"
+        }
+      ]
+    },
+    {
+      "term_ref": "term/vec3/east-wall-start",
+      "shape_schema_id": "shape-schema/vec3",
+      "role_bindings": [
+        {
+          "role_id": "shape-role/vec3/x",
+          "value_ref": "value/f64/9.5"
+        },
+        {
+          "role_id": "shape-role/vec3/y",
+          "value_ref": "value/f64/0"
+        },
+        {
+          "role_id": "shape-role/vec3/z",
+          "value_ref": "value/f64/0"
+        }
+      ]
+    },
+    {
+      "term_ref": "term/vec3/east-wall-position",
+      "shape_schema_id": "shape-schema/vec3",
+      "role_bindings": [
+        {
+          "role_id": "shape-role/vec3/x",
+          "value_ref": "value/f64/10"
+        },
+        {
+          "role_id": "shape-role/vec3/y",
+          "value_ref": "value/f64/0"
+        },
+        {
+          "role_id": "shape-role/vec3/z",
+          "value_ref": "value/f64/0"
+        }
+      ]
+    },
+    {
+      "term_ref": "term/vec3/east-wall-velocity",
+      "shape_schema_id": "shape-schema/vec3",
+      "role_bindings": [
+        {
+          "role_id": "shape-role/vec3/x",
+          "value_ref": "value/f64/2"
+        },
+        {
+          "role_id": "shape-role/vec3/y",
+          "value_ref": "value/f64/0"
+        },
+        {
+          "role_id": "shape-role/vec3/z",
+          "value_ref": "value/f64/0"
+        }
+      ]
+    },
+    {
+      "term_ref": "term/vec3/west-wall-start",
+      "shape_schema_id": "shape-schema/vec3",
+      "role_bindings": [
+        {
+          "role_id": "shape-role/vec3/x",
+          "value_ref": "value/f64/negative-9.5"
+        },
+        {
+          "role_id": "shape-role/vec3/y",
+          "value_ref": "value/f64/0"
+        },
+        {
+          "role_id": "shape-role/vec3/z",
+          "value_ref": "value/f64/0"
+        }
+      ]
+    },
+    {
+      "term_ref": "term/vec3/west-wall-position",
+      "shape_schema_id": "shape-schema/vec3",
+      "role_bindings": [
+        {
+          "role_id": "shape-role/vec3/x",
+          "value_ref": "value/f64/negative-10"
+        },
+        {
+          "role_id": "shape-role/vec3/y",
+          "value_ref": "value/f64/0"
+        },
+        {
+          "role_id": "shape-role/vec3/z",
+          "value_ref": "value/f64/0"
+        }
+      ]
+    },
+    {
+      "term_ref": "term/vec3/west-wall-velocity",
+      "shape_schema_id": "shape-schema/vec3",
+      "role_bindings": [
+        {
+          "role_id": "shape-role/vec3/x",
+          "value_ref": "value/f64/negative-2"
+        },
+        {
+          "role_id": "shape-role/vec3/y",
+          "value_ref": "value/f64/0"
+        },
+        {
+          "role_id": "shape-role/vec3/z",
+          "value_ref": "value/f64/0"
+        }
+      ]
+    },
+    {
+      "term_ref": "term/vec3/positive-z-wall-start",
+      "shape_schema_id": "shape-schema/vec3",
+      "role_bindings": [
+        {
+          "role_id": "shape-role/vec3/x",
+          "value_ref": "value/f64/0"
+        },
+        {
+          "role_id": "shape-role/vec3/y",
+          "value_ref": "value/f64/0"
+        },
+        {
+          "role_id": "shape-role/vec3/z",
+          "value_ref": "value/f64/9.5"
+        }
+      ]
+    },
+    {
+      "term_ref": "term/vec3/positive-z-wall-position",
+      "shape_schema_id": "shape-schema/vec3",
+      "role_bindings": [
+        {
+          "role_id": "shape-role/vec3/x",
+          "value_ref": "value/f64/0"
+        },
+        {
+          "role_id": "shape-role/vec3/y",
+          "value_ref": "value/f64/0"
+        },
+        {
+          "role_id": "shape-role/vec3/z",
+          "value_ref": "value/f64/10"
+        }
+      ]
+    },
+    {
+      "term_ref": "term/vec3/positive-z-wall-velocity",
+      "shape_schema_id": "shape-schema/vec3",
+      "role_bindings": [
+        {
+          "role_id": "shape-role/vec3/x",
+          "value_ref": "value/f64/0"
+        },
+        {
+          "role_id": "shape-role/vec3/y",
+          "value_ref": "value/f64/0"
+        },
+        {
+          "role_id": "shape-role/vec3/z",
+          "value_ref": "value/f64/2"
+        }
+      ]
+    },
+    {
+      "term_ref": "term/vec3/negative-z-wall-start",
+      "shape_schema_id": "shape-schema/vec3",
+      "role_bindings": [
+        {
+          "role_id": "shape-role/vec3/x",
+          "value_ref": "value/f64/0"
+        },
+        {
+          "role_id": "shape-role/vec3/y",
+          "value_ref": "value/f64/0"
+        },
+        {
+          "role_id": "shape-role/vec3/z",
+          "value_ref": "value/f64/negative-9.5"
+        }
+      ]
+    },
+    {
+      "term_ref": "term/vec3/negative-z-wall-position",
+      "shape_schema_id": "shape-schema/vec3",
+      "role_bindings": [
+        {
+          "role_id": "shape-role/vec3/x",
+          "value_ref": "value/f64/0"
+        },
+        {
+          "role_id": "shape-role/vec3/y",
+          "value_ref": "value/f64/0"
+        },
+        {
+          "role_id": "shape-role/vec3/z",
+          "value_ref": "value/f64/negative-10"
+        }
+      ]
+    },
+    {
+      "term_ref": "term/vec3/negative-z-wall-velocity",
+      "shape_schema_id": "shape-schema/vec3",
+      "role_bindings": [
+        {
+          "role_id": "shape-role/vec3/x",
+          "value_ref": "value/f64/0"
+        },
+        {
+          "role_id": "shape-role/vec3/y",
+          "value_ref": "value/f64/0"
+        },
+        {
+          "role_id": "shape-role/vec3/z",
+          "value_ref": "value/f64/negative-2"
+        }
+      ]
+    },
+    {
+      "term_ref": "term/vec3/landing-position-start",
+      "shape_schema_id": "shape-schema/vec3",
+      "role_bindings": [
+        {
+          "role_id": "shape-role/vec3/x",
+          "value_ref": "value/f64/10"
+        },
+        {
+          "role_id": "shape-role/vec3/y",
+          "value_ref": "value/f64/0.25"
+        },
+        {
+          "role_id": "shape-role/vec3/z",
+          "value_ref": "value/f64/0"
+        }
+      ]
+    },
+    {
+      "term_ref": "term/vec3/landing-velocity-start",
+      "shape_schema_id": "shape-schema/vec3",
+      "role_bindings": [
+        {
+          "role_id": "shape-role/vec3/x",
+          "value_ref": "value/f64/2"
+        },
+        {
+          "role_id": "shape-role/vec3/y",
+          "value_ref": "value/f64/negative-1"
+        },
+        {
+          "role_id": "shape-role/vec3/z",
+          "value_ref": "value/f64/0"
+        }
+      ]
+    },
+    {
+      "term_ref": "term/vec3/landing-position-end",
+      "shape_schema_id": "shape-schema/vec3",
+      "role_bindings": [
+        {
+          "role_id": "shape-role/vec3/x",
+          "value_ref": "value/f64/10"
+        },
+        {
+          "role_id": "shape-role/vec3/y",
+          "value_ref": "value/f64/0"
+        },
+        {
+          "role_id": "shape-role/vec3/z",
+          "value_ref": "value/f64/0"
+        }
+      ]
+    },
+    {
+      "term_ref": "term/vec3/landing-velocity-end",
+      "shape_schema_id": "shape-schema/vec3",
+      "role_bindings": [
+        {
+          "role_id": "shape-role/vec3/x",
+          "value_ref": "value/f64/0"
+        },
+        {
+          "role_id": "shape-role/vec3/y",
+          "value_ref": "value/f64/0"
+        },
+        {
+          "role_id": "shape-role/vec3/z",
+          "value_ref": "value/f64/0"
+        }
+      ]
+    }
+  ],
   "relation_schemas": [
     {
-      "relation_schema_id": "relation-schema/arena-position",
-      "source_designation": "arena/position",
+      "relation_schema_id": "relation-schema/core-member-of",
+      "source_designation": "∈",
       "roles": [
-        {"role_id": "role/arena-position/player", "name": "player", "domain": "Player", "cardinality": "one"},
-        {"role_id": "role/arena-position/value", "name": "value", "domain": "Vec3", "cardinality": "one"}
-      ]
-    },
-    {
-      "relation_schema_id": "relation-schema/arena-velocity",
-      "source_designation": "arena/velocity",
-      "roles": [
-        {"role_id": "role/arena-velocity/player", "name": "player", "domain": "Player", "cardinality": "one"},
-        {"role_id": "role/arena-velocity/value", "name": "value", "domain": "Vec3", "cardinality": "one"}
-      ]
-    },
-    {
-      "relation_schema_id": "relation-schema/arena-grounded",
-      "source_designation": "arena/grounded",
-      "roles": [
-        {"role_id": "role/arena-grounded/player", "name": "player", "domain": "Player", "cardinality": "one"},
-        {"role_id": "role/arena-grounded/value", "name": "value", "domain": "Bool", "cardinality": "one"}
-      ]
-    },
-    {
-      "relation_schema_id": "relation-schema/arena-horizontal-intent",
-      "source_designation": "arena/horizontal-intent",
-      "roles": [
-        {"role_id": "role/arena-horizontal-intent/player", "name": "player", "domain": "Player", "cardinality": "one"},
-        {"role_id": "role/arena-horizontal-intent/value", "name": "value", "domain": "Vec3", "cardinality": "one"}
+        {
+          "role_id": "role/core-member-of/member",
+          "source_name": "member",
+          "domain": "Referent",
+          "cardinality": "one"
+        },
+        {
+          "role_id": "role/core-member-of/group",
+          "source_name": "group",
+          "domain": "Referent",
+          "cardinality": "one"
+        }
       ]
     },
     {
       "relation_schema_id": "relation-schema/scalar-clamped-between",
       "source_designation": "scalar/clamped-between",
       "roles": [
-        {"role_id": "role/scalar-clamped-between/value", "name": "value", "domain": "F64", "cardinality": "one"},
-        {"role_id": "role/scalar-clamped-between/lower", "name": "lower", "domain": "F64", "cardinality": "one"},
-        {"role_id": "role/scalar-clamped-between/upper", "name": "upper", "domain": "F64", "cardinality": "one"},
-        {"role_id": "role/scalar-clamped-between/result", "name": "result", "domain": "F64", "cardinality": "one"}
+        {
+          "role_id": "role/scalar-clamped-between/value",
+          "source_name": "value",
+          "domain": "type/f64",
+          "cardinality": "one"
+        },
+        {
+          "role_id": "role/scalar-clamped-between/lower",
+          "source_name": "lower",
+          "domain": "type/f64",
+          "cardinality": "one"
+        },
+        {
+          "role_id": "role/scalar-clamped-between/upper",
+          "source_name": "upper",
+          "domain": "type/f64",
+          "cardinality": "one"
+        },
+        {
+          "role_id": "role/scalar-clamped-between/result",
+          "source_name": "result",
+          "domain": "type/f64",
+          "cardinality": "one"
+        }
+      ]
+    },
+    {
+      "relation_schema_id": "relation-schema/arena-position",
+      "source_designation": "arena/position",
+      "roles": [
+        {
+          "role_id": "role/arena-position/player",
+          "source_name": "player",
+          "domain": "type/player",
+          "cardinality": "one"
+        },
+        {
+          "role_id": "role/arena-position/value",
+          "source_name": "value",
+          "domain": "type/vec3",
+          "cardinality": "one"
+        }
+      ]
+    },
+    {
+      "relation_schema_id": "relation-schema/arena-velocity",
+      "source_designation": "arena/velocity",
+      "roles": [
+        {
+          "role_id": "role/arena-velocity/player",
+          "source_name": "player",
+          "domain": "type/player",
+          "cardinality": "one"
+        },
+        {
+          "role_id": "role/arena-velocity/value",
+          "source_name": "value",
+          "domain": "type/vec3",
+          "cardinality": "one"
+        }
+      ]
+    },
+    {
+      "relation_schema_id": "relation-schema/arena-grounded",
+      "source_designation": "arena/grounded",
+      "roles": [
+        {
+          "role_id": "role/arena-grounded/player",
+          "source_name": "player",
+          "domain": "type/player",
+          "cardinality": "one"
+        },
+        {
+          "role_id": "role/arena-grounded/value",
+          "source_name": "value",
+          "domain": "type/bool",
+          "cardinality": "one"
+        }
+      ]
+    },
+    {
+      "relation_schema_id": "relation-schema/arena-horizontal-intent",
+      "source_designation": "arena/horizontal-intent",
+      "roles": [
+        {
+          "role_id": "role/arena-horizontal-intent/player",
+          "source_name": "player",
+          "domain": "type/player",
+          "cardinality": "one"
+        },
+        {
+          "role_id": "role/arena-horizontal-intent/value",
+          "source_name": "value",
+          "domain": "type/vec3",
+          "cardinality": "one"
+        }
+      ]
+    },
+    {
+      "relation_schema_id": "relation-schema/arena-gravity",
+      "source_designation": "arena/gravity",
+      "roles": [
+        {
+          "role_id": "role/arena-gravity/arena",
+          "source_name": "arena",
+          "domain": "type/arena",
+          "cardinality": "one"
+        },
+        {
+          "role_id": "role/arena-gravity/value",
+          "source_name": "value",
+          "domain": "type/f64",
+          "cardinality": "one"
+        }
+      ]
+    },
+    {
+      "relation_schema_id": "relation-schema/arena-jump-speed",
+      "source_designation": "arena/jump-speed",
+      "roles": [
+        {
+          "role_id": "role/arena-jump-speed/arena",
+          "source_name": "arena",
+          "domain": "type/arena",
+          "cardinality": "one"
+        },
+        {
+          "role_id": "role/arena-jump-speed/value",
+          "source_name": "value",
+          "domain": "type/f64",
+          "cardinality": "one"
+        }
+      ]
+    },
+    {
+      "relation_schema_id": "relation-schema/arena-move-speed",
+      "source_designation": "arena/move-speed",
+      "roles": [
+        {
+          "role_id": "role/arena-move-speed/arena",
+          "source_name": "arena",
+          "domain": "type/arena",
+          "cardinality": "one"
+        },
+        {
+          "role_id": "role/arena-move-speed/value",
+          "source_name": "value",
+          "domain": "type/f64",
+          "cardinality": "one"
+        }
+      ]
+    },
+    {
+      "relation_schema_id": "relation-schema/arena-floor-height",
+      "source_designation": "arena/floor-height",
+      "roles": [
+        {
+          "role_id": "role/arena-floor-height/arena",
+          "source_name": "arena",
+          "domain": "type/arena",
+          "cardinality": "one"
+        },
+        {
+          "role_id": "role/arena-floor-height/value",
+          "source_name": "value",
+          "domain": "type/f64",
+          "cardinality": "one"
+        }
+      ]
+    },
+    {
+      "relation_schema_id": "relation-schema/arena-min-x",
+      "source_designation": "arena/min-x",
+      "roles": [
+        {
+          "role_id": "role/arena-min-x/arena",
+          "source_name": "arena",
+          "domain": "type/arena",
+          "cardinality": "one"
+        },
+        {
+          "role_id": "role/arena-min-x/value",
+          "source_name": "value",
+          "domain": "type/f64",
+          "cardinality": "one"
+        }
+      ]
+    },
+    {
+      "relation_schema_id": "relation-schema/arena-max-x",
+      "source_designation": "arena/max-x",
+      "roles": [
+        {
+          "role_id": "role/arena-max-x/arena",
+          "source_name": "arena",
+          "domain": "type/arena",
+          "cardinality": "one"
+        },
+        {
+          "role_id": "role/arena-max-x/value",
+          "source_name": "value",
+          "domain": "type/f64",
+          "cardinality": "one"
+        }
+      ]
+    },
+    {
+      "relation_schema_id": "relation-schema/arena-min-z",
+      "source_designation": "arena/min-z",
+      "roles": [
+        {
+          "role_id": "role/arena-min-z/arena",
+          "source_name": "arena",
+          "domain": "type/arena",
+          "cardinality": "one"
+        },
+        {
+          "role_id": "role/arena-min-z/value",
+          "source_name": "value",
+          "domain": "type/f64",
+          "cardinality": "one"
+        }
+      ]
+    },
+    {
+      "relation_schema_id": "relation-schema/arena-max-z",
+      "source_designation": "arena/max-z",
+      "roles": [
+        {
+          "role_id": "role/arena-max-z/arena",
+          "source_name": "arena",
+          "domain": "type/arena",
+          "cardinality": "one"
+        },
+        {
+          "role_id": "role/arena-max-z/value",
+          "source_name": "value",
+          "domain": "type/f64",
+          "cardinality": "one"
+        }
       ]
     },
     {
       "relation_schema_id": "relation-schema/event-input",
       "source_designation": "on input",
       "roles": [
-        {"role_id": "role/event-input/player", "name": "player", "domain": "Player", "cardinality": "one"},
-        {"role_id": "role/event-input/intent", "name": "intent", "domain": "Vec3", "cardinality": "one"},
-        {"role_id": "role/event-input/candidate-delta", "name": "candidate_delta", "domain": "CandidateStateDelta", "cardinality": "maybe"}
+        {
+          "role_id": "role/event-input/player",
+          "source_name": "player",
+          "domain": "type/player",
+          "cardinality": "one"
+        },
+        {
+          "role_id": "role/event-input/intent",
+          "source_name": "intent",
+          "domain": "type/vec3",
+          "cardinality": "one"
+        },
+        {
+          "role_id": "role/event-input/candidate-delta",
+          "source_name": null,
+          "domain": "type/candidate-state-delta",
+          "cardinality": "maybe"
+        }
       ]
     },
     {
       "relation_schema_id": "relation-schema/event-jump",
       "source_designation": "on jump",
       "roles": [
-        {"role_id": "role/event-jump/player", "name": "player", "domain": "Player", "cardinality": "one"},
-        {"role_id": "role/event-jump/candidate-delta", "name": "candidate_delta", "domain": "CandidateStateDelta", "cardinality": "maybe"}
+        {
+          "role_id": "role/event-jump/player",
+          "source_name": "player",
+          "domain": "type/player",
+          "cardinality": "one"
+        },
+        {
+          "role_id": "role/event-jump/candidate-delta",
+          "source_name": null,
+          "domain": "type/candidate-state-delta",
+          "cardinality": "maybe"
+        }
       ]
     },
     {
       "relation_schema_id": "relation-schema/event-tick",
       "source_designation": "on tick",
       "roles": [
-        {"role_id": "role/event-tick/player", "name": "player", "domain": "Player", "cardinality": "one"},
-        {"role_id": "role/event-tick/dt", "name": "dt", "domain": "F64", "cardinality": "one"},
-        {"role_id": "role/event-tick/candidate-delta", "name": "candidate_delta", "domain": "CandidateStateDelta", "cardinality": "maybe"}
+        {
+          "role_id": "role/event-tick/player",
+          "source_name": "player",
+          "domain": "type/player",
+          "cardinality": "one"
+        },
+        {
+          "role_id": "role/event-tick/dt",
+          "source_name": "dt",
+          "domain": "type/f64",
+          "cardinality": "one"
+        },
+        {
+          "role_id": "role/event-tick/candidate-delta",
+          "source_name": null,
+          "domain": "type/candidate-state-delta",
+          "cardinality": "maybe"
+        }
       ]
     },
     {
       "relation_schema_id": "relation-schema/input-stream",
       "source_designation": null,
       "roles": [
-        {"role_id": "role/input-stream/player", "name": "player", "domain": "Player", "cardinality": "one"},
-        {"role_id": "role/input-stream/input-observation", "name": "input_observation", "domain": "Observation<Vec3>", "cardinality": "many-stream"}
-      ],
-      "source_projection": "unresolved: reactive continuation declaration"
+        {
+          "role_id": "role/input-stream/player",
+          "source_name": null,
+          "domain": "type/player",
+          "cardinality": "one"
+        },
+        {
+          "role_id": "role/input-stream/input-observation",
+          "source_name": null,
+          "domain": "type/observation/input-listener-event",
+          "cardinality": "many-stream"
+        }
+      ]
+    },
+    {
+      "relation_schema_id": "relation-schema/f64-binary",
+      "source_designation": null,
+      "roles": [
+        {
+          "role_id": "role/f64-binary/left",
+          "source_name": null,
+          "domain": "type/f64",
+          "cardinality": "one"
+        },
+        {
+          "role_id": "role/f64-binary/right",
+          "source_name": null,
+          "domain": "type/f64",
+          "cardinality": "one"
+        },
+        {
+          "role_id": "role/f64-binary/result",
+          "source_name": null,
+          "domain": "type/f64",
+          "cardinality": "one"
+        }
+      ]
+    },
+    {
+      "relation_schema_id": "relation-schema/f64-compare",
+      "source_designation": null,
+      "roles": [
+        {
+          "role_id": "role/f64-compare/left",
+          "source_name": null,
+          "domain": "type/f64",
+          "cardinality": "one"
+        },
+        {
+          "role_id": "role/f64-compare/right",
+          "source_name": null,
+          "domain": "type/f64",
+          "cardinality": "one"
+        },
+        {
+          "role_id": "role/f64-compare/result",
+          "source_name": null,
+          "domain": "type/bool",
+          "cardinality": "one"
+        }
+      ]
+    }
+  ],
+  "operator_contracts": [
+    {
+      "operator_ref": "operator/f64-add",
+      "source_token": "+",
+      "relation_schema_id": "relation-schema/f64-binary",
+      "mode_id": "mode/f64-add",
+      "numeric_contract_ref": "atom-contract/f64-binary64",
+      "exception_type_ref": "type/failure/numeric-domain"
+    },
+    {
+      "operator_ref": "operator/f64-subtract",
+      "source_token": "-",
+      "relation_schema_id": "relation-schema/f64-binary",
+      "mode_id": "mode/f64-subtract",
+      "numeric_contract_ref": "atom-contract/f64-binary64",
+      "exception_type_ref": "type/failure/numeric-domain"
+    },
+    {
+      "operator_ref": "operator/f64-multiply",
+      "source_token": "*",
+      "relation_schema_id": "relation-schema/f64-binary",
+      "mode_id": "mode/f64-multiply",
+      "numeric_contract_ref": "atom-contract/f64-binary64",
+      "exception_type_ref": "type/failure/numeric-domain"
+    },
+    {
+      "operator_ref": "operator/f64-divide",
+      "source_token": "/",
+      "relation_schema_id": "relation-schema/f64-binary",
+      "mode_id": "mode/f64-divide",
+      "numeric_contract_ref": "atom-contract/f64-binary64",
+      "exception_type_ref": "type/failure/numeric-domain"
+    },
+    {
+      "operator_ref": "operator/f64-less-than",
+      "source_token": "<",
+      "relation_schema_id": "relation-schema/f64-compare",
+      "mode_id": "mode/f64-less-than",
+      "numeric_contract_ref": "atom-contract/f64-binary64"
+    },
+    {
+      "operator_ref": "operator/f64-less-or-equal",
+      "source_token": "<=",
+      "relation_schema_id": "relation-schema/f64-compare",
+      "mode_id": "mode/f64-less-or-equal",
+      "numeric_contract_ref": "atom-contract/f64-binary64"
+    },
+    {
+      "operator_ref": "operator/f64-greater-than",
+      "source_token": ">",
+      "relation_schema_id": "relation-schema/f64-compare",
+      "mode_id": "mode/f64-greater-than",
+      "numeric_contract_ref": "atom-contract/f64-binary64"
+    },
+    {
+      "operator_ref": "operator/f64-equal",
+      "source_token": "=",
+      "relation_schema_id": "relation-schema/f64-compare",
+      "mode_id": "mode/f64-equal",
+      "numeric_contract_ref": "atom-contract/f64-binary64"
     }
   ],
   "modes": [
     {
-      "mode_id": "mode/scalar-clamp-maybe",
-      "operator_ref": "operator/scalar-clamped-between",
-      "relation_schema_id": "relation-schema/scalar-clamped-between",
-      "known_roles": ["value", "lower", "upper"],
-      "produced_roles": ["result"],
+      "mode_id": "mode/f64-add",
+      "authorization_requirement_refs": [],
+      "operator_ref": "operator/f64-add",
+      "relation_schema_id": "relation-schema/f64-binary",
+      "known_role_ids": [
+        "role/f64-binary/left",
+        "role/f64-binary/right"
+      ],
+      "produced_role_ids": [
+        "role/f64-binary/result"
+      ],
       "cardinality": "maybe",
       "purity": "pure",
       "determinism": "deterministic",
-      "continuation": "terminal",
-      "minimum_budget_units": 3,
-      "exactness": "one result when lower <= upper; no result when the bound-order premise is unsupported"
+      "failure_type_ids": [
+        "type/failure/numeric-domain"
+      ]
+    },
+    {
+      "mode_id": "mode/f64-subtract",
+      "authorization_requirement_refs": [],
+      "operator_ref": "operator/f64-subtract",
+      "relation_schema_id": "relation-schema/f64-binary",
+      "known_role_ids": [
+        "role/f64-binary/left",
+        "role/f64-binary/right"
+      ],
+      "produced_role_ids": [
+        "role/f64-binary/result"
+      ],
+      "cardinality": "maybe",
+      "purity": "pure",
+      "determinism": "deterministic",
+      "failure_type_ids": [
+        "type/failure/numeric-domain"
+      ]
+    },
+    {
+      "mode_id": "mode/f64-multiply",
+      "authorization_requirement_refs": [],
+      "operator_ref": "operator/f64-multiply",
+      "relation_schema_id": "relation-schema/f64-binary",
+      "known_role_ids": [
+        "role/f64-binary/left",
+        "role/f64-binary/right"
+      ],
+      "produced_role_ids": [
+        "role/f64-binary/result"
+      ],
+      "cardinality": "maybe",
+      "purity": "pure",
+      "determinism": "deterministic",
+      "failure_type_ids": [
+        "type/failure/numeric-domain"
+      ]
+    },
+    {
+      "mode_id": "mode/f64-divide",
+      "authorization_requirement_refs": [],
+      "operator_ref": "operator/f64-divide",
+      "relation_schema_id": "relation-schema/f64-binary",
+      "known_role_ids": [
+        "role/f64-binary/left",
+        "role/f64-binary/right"
+      ],
+      "produced_role_ids": [
+        "role/f64-binary/result"
+      ],
+      "cardinality": "maybe",
+      "purity": "pure",
+      "determinism": "deterministic",
+      "failure_type_ids": [
+        "type/failure/numeric-domain"
+      ]
+    },
+    {
+      "mode_id": "mode/f64-less-than",
+      "authorization_requirement_refs": [],
+      "operator_ref": "operator/f64-less-than",
+      "relation_schema_id": "relation-schema/f64-compare",
+      "known_role_ids": [
+        "role/f64-compare/left",
+        "role/f64-compare/right"
+      ],
+      "produced_role_ids": [
+        "role/f64-compare/result"
+      ],
+      "cardinality": "one",
+      "purity": "pure",
+      "determinism": "deterministic"
+    },
+    {
+      "mode_id": "mode/f64-less-or-equal",
+      "authorization_requirement_refs": [],
+      "operator_ref": "operator/f64-less-or-equal",
+      "relation_schema_id": "relation-schema/f64-compare",
+      "known_role_ids": [
+        "role/f64-compare/left",
+        "role/f64-compare/right"
+      ],
+      "produced_role_ids": [
+        "role/f64-compare/result"
+      ],
+      "cardinality": "one",
+      "purity": "pure",
+      "determinism": "deterministic"
+    },
+    {
+      "mode_id": "mode/f64-greater-than",
+      "authorization_requirement_refs": [],
+      "operator_ref": "operator/f64-greater-than",
+      "relation_schema_id": "relation-schema/f64-compare",
+      "known_role_ids": [
+        "role/f64-compare/left",
+        "role/f64-compare/right"
+      ],
+      "produced_role_ids": [
+        "role/f64-compare/result"
+      ],
+      "cardinality": "one",
+      "purity": "pure",
+      "determinism": "deterministic"
+    },
+    {
+      "mode_id": "mode/f64-equal",
+      "authorization_requirement_refs": [],
+      "operator_ref": "operator/f64-equal",
+      "relation_schema_id": "relation-schema/f64-compare",
+      "known_role_ids": [
+        "role/f64-compare/left",
+        "role/f64-compare/right"
+      ],
+      "produced_role_ids": [
+        "role/f64-compare/result"
+      ],
+      "cardinality": "one",
+      "purity": "pure",
+      "determinism": "deterministic"
+    },
+    {
+      "mode_id": "mode/scalar-clamp-maybe",
+      "authorization_requirement_refs": [],
+      "operator_ref": "operator/scalar-clamped-between",
+      "relation_schema_id": "relation-schema/scalar-clamped-between",
+      "known_role_ids": [
+        "role/scalar-clamped-between/value",
+        "role/scalar-clamped-between/lower",
+        "role/scalar-clamped-between/upper"
+      ],
+      "produced_role_ids": [
+        "role/scalar-clamped-between/result"
+      ],
+      "cardinality": "maybe",
+      "purity": "pure",
+      "determinism": "deterministic",
+      "minimum_budget_units": 3
     },
     {
       "mode_id": "mode/position-observe-one",
+      "authorization_requirement_refs": [],
       "operator_ref": "operator/arena-position",
       "relation_schema_id": "relation-schema/arena-position",
-      "known_roles": ["player"],
-      "produced_roles": ["value"],
+      "known_role_ids": [
+        "role/arena-position/player"
+      ],
+      "produced_role_ids": [
+        "role/arena-position/value"
+      ],
       "cardinality": "one",
       "purity": "pure",
       "determinism": "deterministic",
-      "continuation": "terminal",
+      "observation_type_ids": [
+        "type/observation/position"
+      ],
+      "failure_type_ids": [
+        "type/failure/budget-exhausted"
+      ],
       "minimum_budget_units": 1
     },
     {
+      "mode_id": "mode/velocity-observe-one",
+      "authorization_requirement_refs": [],
+      "operator_ref": "operator/arena-velocity",
+      "relation_schema_id": "relation-schema/arena-velocity",
+      "known_role_ids": [
+        "role/arena-velocity/player"
+      ],
+      "produced_role_ids": [
+        "role/arena-velocity/value"
+      ],
+      "cardinality": "one",
+      "purity": "pure",
+      "determinism": "deterministic"
+    },
+    {
+      "mode_id": "mode/grounded-observe-one",
+      "authorization_requirement_refs": [],
+      "operator_ref": "operator/arena-grounded",
+      "relation_schema_id": "relation-schema/arena-grounded",
+      "known_role_ids": [
+        "role/arena-grounded/player"
+      ],
+      "produced_role_ids": [
+        "role/arena-grounded/value"
+      ],
+      "cardinality": "one",
+      "purity": "pure",
+      "determinism": "deterministic"
+    },
+    {
+      "mode_id": "mode/horizontal-intent-observe-one",
+      "authorization_requirement_refs": [],
+      "operator_ref": "operator/arena-horizontal-intent",
+      "relation_schema_id": "relation-schema/arena-horizontal-intent",
+      "known_role_ids": [
+        "role/arena-horizontal-intent/player"
+      ],
+      "produced_role_ids": [
+        "role/arena-horizontal-intent/value"
+      ],
+      "cardinality": "one",
+      "purity": "pure",
+      "determinism": "deterministic"
+    },
+    {
+      "mode_id": "mode/gravity-observe-one",
+      "authorization_requirement_refs": [],
+      "operator_ref": "operator/arena-gravity",
+      "relation_schema_id": "relation-schema/arena-gravity",
+      "known_role_ids": [
+        "role/arena-gravity/arena"
+      ],
+      "produced_role_ids": [
+        "role/arena-gravity/value"
+      ],
+      "cardinality": "one",
+      "purity": "pure",
+      "determinism": "deterministic"
+    },
+    {
+      "mode_id": "mode/jump-speed-observe-one",
+      "authorization_requirement_refs": [],
+      "operator_ref": "operator/arena-jump-speed",
+      "relation_schema_id": "relation-schema/arena-jump-speed",
+      "known_role_ids": [
+        "role/arena-jump-speed/arena"
+      ],
+      "produced_role_ids": [
+        "role/arena-jump-speed/value"
+      ],
+      "cardinality": "one",
+      "purity": "pure",
+      "determinism": "deterministic"
+    },
+    {
+      "mode_id": "mode/move-speed-observe-one",
+      "authorization_requirement_refs": [],
+      "operator_ref": "operator/arena-move-speed",
+      "relation_schema_id": "relation-schema/arena-move-speed",
+      "known_role_ids": [
+        "role/arena-move-speed/arena"
+      ],
+      "produced_role_ids": [
+        "role/arena-move-speed/value"
+      ],
+      "cardinality": "one",
+      "purity": "pure",
+      "determinism": "deterministic"
+    },
+    {
+      "mode_id": "mode/floor-height-observe-one",
+      "authorization_requirement_refs": [],
+      "operator_ref": "operator/arena-floor-height",
+      "relation_schema_id": "relation-schema/arena-floor-height",
+      "known_role_ids": [
+        "role/arena-floor-height/arena"
+      ],
+      "produced_role_ids": [
+        "role/arena-floor-height/value"
+      ],
+      "cardinality": "one",
+      "purity": "pure",
+      "determinism": "deterministic"
+    },
+    {
+      "mode_id": "mode/min-x-observe-one",
+      "authorization_requirement_refs": [],
+      "operator_ref": "operator/arena-min-x",
+      "relation_schema_id": "relation-schema/arena-min-x",
+      "known_role_ids": [
+        "role/arena-min-x/arena"
+      ],
+      "produced_role_ids": [
+        "role/arena-min-x/value"
+      ],
+      "cardinality": "one",
+      "purity": "pure",
+      "determinism": "deterministic"
+    },
+    {
+      "mode_id": "mode/max-x-observe-one",
+      "authorization_requirement_refs": [],
+      "operator_ref": "operator/arena-max-x",
+      "relation_schema_id": "relation-schema/arena-max-x",
+      "known_role_ids": [
+        "role/arena-max-x/arena"
+      ],
+      "produced_role_ids": [
+        "role/arena-max-x/value"
+      ],
+      "cardinality": "one",
+      "purity": "pure",
+      "determinism": "deterministic"
+    },
+    {
+      "mode_id": "mode/min-z-observe-one",
+      "authorization_requirement_refs": [],
+      "operator_ref": "operator/arena-min-z",
+      "relation_schema_id": "relation-schema/arena-min-z",
+      "known_role_ids": [
+        "role/arena-min-z/arena"
+      ],
+      "produced_role_ids": [
+        "role/arena-min-z/value"
+      ],
+      "cardinality": "one",
+      "purity": "pure",
+      "determinism": "deterministic"
+    },
+    {
+      "mode_id": "mode/max-z-observe-one",
+      "authorization_requirement_refs": [],
+      "operator_ref": "operator/arena-max-z",
+      "relation_schema_id": "relation-schema/arena-max-z",
+      "known_role_ids": [
+        "role/arena-max-z/arena"
+      ],
+      "produced_role_ids": [
+        "role/arena-max-z/value"
+      ],
+      "cardinality": "one",
+      "purity": "pure",
+      "determinism": "deterministic"
+    },
+    {
       "mode_id": "mode/input-propose-state",
+      "authorization_requirement_refs": [],
       "operator_ref": "operator/event-input",
       "relation_schema_id": "relation-schema/event-input",
-      "known_roles": ["player", "intent"],
-      "produced_roles": ["candidate_delta"],
+      "known_role_ids": [
+        "role/event-input/player",
+        "role/event-input/intent"
+      ],
+      "produced_role_ids": [
+        "role/event-input/candidate-delta"
+      ],
       "cardinality": "maybe",
       "purity": "state-transition-proposal",
       "determinism": "deterministic",
-      "continuation": "terminal",
+      "failure_type_ids": [
+        "type/failure/budget-exhausted",
+        "type/failure/no-applicable-process-rule"
+      ],
       "minimum_budget_units": 3
     },
     {
       "mode_id": "mode/jump-propose-state",
+      "authorization_requirement_refs": [],
       "operator_ref": "operator/event-jump",
       "relation_schema_id": "relation-schema/event-jump",
-      "known_roles": ["player"],
-      "produced_roles": ["candidate_delta"],
+      "known_role_ids": [
+        "role/event-jump/player"
+      ],
+      "produced_role_ids": [
+        "role/event-jump/candidate-delta"
+      ],
       "cardinality": "maybe",
       "purity": "state-transition-proposal",
       "determinism": "deterministic",
-      "continuation": "terminal",
+      "failure_type_ids": [
+        "type/failure/budget-exhausted",
+        "type/failure/no-applicable-process-rule"
+      ],
       "minimum_budget_units": 4
     },
     {
       "mode_id": "mode/tick-propose-state",
+      "authorization_requirement_refs": [],
       "operator_ref": "operator/event-tick",
       "relation_schema_id": "relation-schema/event-tick",
-      "known_roles": ["player", "dt"],
-      "produced_roles": ["candidate_delta"],
+      "known_role_ids": [
+        "role/event-tick/player",
+        "role/event-tick/dt"
+      ],
+      "produced_role_ids": [
+        "role/event-tick/candidate-delta"
+      ],
       "cardinality": "maybe",
       "purity": "state-transition-proposal",
       "determinism": "deterministic",
-      "continuation": "terminal",
+      "failure_type_ids": [
+        "type/failure/budget-exhausted",
+        "type/failure/numeric-domain",
+        "type/failure/no-applicable-process-rule"
+      ],
       "minimum_budget_units": 10
     },
     {
       "mode_id": "mode/tick-propose-state-audited",
+      "authorization_requirement_refs": [],
       "operator_ref": "operator/event-tick",
       "relation_schema_id": "relation-schema/event-tick",
-      "known_roles": ["player", "dt"],
-      "produced_roles": ["candidate_delta"],
+      "known_role_ids": [
+        "role/event-tick/player",
+        "role/event-tick/dt"
+      ],
+      "produced_role_ids": [
+        "role/event-tick/candidate-delta"
+      ],
       "cardinality": "maybe",
       "purity": "state-transition-proposal",
       "determinism": "deterministic",
-      "continuation": "terminal",
+      "failure_type_ids": [
+        "type/failure/budget-exhausted",
+        "type/failure/numeric-domain"
+      ],
       "minimum_budget_units": 12,
-      "additional_observation_contract": "emit an exact obligation-discharge observation without changing the candidate",
-      "source_projection": "unresolved: multiple event-mode declarations"
+      "source_projection": "projection-gap/event-mode-declarations"
     },
     {
       "mode_id": "mode/input-listener-reactive",
+      "authorization_requirement_refs": [],
       "operator_ref": "operator/input-listener",
       "relation_schema_id": "relation-schema/input-stream",
-      "known_roles": ["player"],
-      "produced_roles": ["input_observation"],
+      "known_role_ids": [
+        "role/input-stream/player"
+      ],
+      "produced_role_ids": [
+        "role/input-stream/input-observation"
+      ],
       "cardinality": "many-stream",
       "purity": "pure-observation",
       "determinism": "causal-input-order",
-      "continuation": "reactive-linear",
+      "continuation_contract_ref": "continuation-contract/input-listener-linear",
+      "observation_type_ids": [
+        "type/observation/listener-ready",
+        "type/observation/horizontal-input",
+        "type/observation/listener-cancelled"
+      ],
+      "failure_type_ids": [
+        "type/failure/cancelled",
+        "type/failure/budget-exhausted",
+        "type/failure/continuation-pin-mismatch",
+        "type/failure/continuation-already-consumed"
+      ],
       "minimum_budget_units_per_step": 1,
-      "source_projection": "unresolved: reactive continuation declaration"
+      "source_projection": "projection-gap/listener-control"
+    }
+  ],
+  "source_relation_declarations": [
+    {
+      "source_declaration_ref": "source-declaration/scalar-clamped-between",
+      "relation_schema_id": "relation-schema/scalar-clamped-between",
+      "operator_ref": "operator/scalar-clamped-between",
+      "mode_ids": [
+        "mode/scalar-clamp-maybe"
+      ]
+    },
+    {
+      "source_declaration_ref": "source-declaration/arena-position",
+      "relation_schema_id": "relation-schema/arena-position",
+      "operator_ref": "operator/arena-position",
+      "mode_ids": [
+        "mode/position-observe-one"
+      ]
+    },
+    {
+      "source_declaration_ref": "source-declaration/arena-velocity",
+      "relation_schema_id": "relation-schema/arena-velocity",
+      "operator_ref": "operator/arena-velocity",
+      "mode_ids": [
+        "mode/velocity-observe-one"
+      ]
+    },
+    {
+      "source_declaration_ref": "source-declaration/arena-grounded",
+      "relation_schema_id": "relation-schema/arena-grounded",
+      "operator_ref": "operator/arena-grounded",
+      "mode_ids": [
+        "mode/grounded-observe-one"
+      ]
+    },
+    {
+      "source_declaration_ref": "source-declaration/arena-horizontal-intent",
+      "relation_schema_id": "relation-schema/arena-horizontal-intent",
+      "operator_ref": "operator/arena-horizontal-intent",
+      "mode_ids": [
+        "mode/horizontal-intent-observe-one"
+      ]
+    },
+    {
+      "source_declaration_ref": "source-declaration/arena-gravity",
+      "relation_schema_id": "relation-schema/arena-gravity",
+      "operator_ref": "operator/arena-gravity",
+      "mode_ids": [
+        "mode/gravity-observe-one"
+      ]
+    },
+    {
+      "source_declaration_ref": "source-declaration/arena-jump-speed",
+      "relation_schema_id": "relation-schema/arena-jump-speed",
+      "operator_ref": "operator/arena-jump-speed",
+      "mode_ids": [
+        "mode/jump-speed-observe-one"
+      ]
+    },
+    {
+      "source_declaration_ref": "source-declaration/arena-move-speed",
+      "relation_schema_id": "relation-schema/arena-move-speed",
+      "operator_ref": "operator/arena-move-speed",
+      "mode_ids": [
+        "mode/move-speed-observe-one"
+      ]
+    },
+    {
+      "source_declaration_ref": "source-declaration/arena-floor-height",
+      "relation_schema_id": "relation-schema/arena-floor-height",
+      "operator_ref": "operator/arena-floor-height",
+      "mode_ids": [
+        "mode/floor-height-observe-one"
+      ]
+    },
+    {
+      "source_declaration_ref": "source-declaration/arena-min-x",
+      "relation_schema_id": "relation-schema/arena-min-x",
+      "operator_ref": "operator/arena-min-x",
+      "mode_ids": [
+        "mode/min-x-observe-one"
+      ]
+    },
+    {
+      "source_declaration_ref": "source-declaration/arena-max-x",
+      "relation_schema_id": "relation-schema/arena-max-x",
+      "operator_ref": "operator/arena-max-x",
+      "mode_ids": [
+        "mode/max-x-observe-one"
+      ]
+    },
+    {
+      "source_declaration_ref": "source-declaration/arena-min-z",
+      "relation_schema_id": "relation-schema/arena-min-z",
+      "operator_ref": "operator/arena-min-z",
+      "mode_ids": [
+        "mode/min-z-observe-one"
+      ]
+    },
+    {
+      "source_declaration_ref": "source-declaration/arena-max-z",
+      "relation_schema_id": "relation-schema/arena-max-z",
+      "operator_ref": "operator/arena-max-z",
+      "mode_ids": [
+        "mode/max-z-observe-one"
+      ]
+    }
+  ],
+  "source_law_declarations": [
+    {
+      "law_ref": "law/scalar-clamp-lower",
+      "source_designation": "scalar/clamp-lower",
+      "derivation_authorization_ref": "derivation-authorization/scalar-clamp-lower",
+      "operator_refs": [
+        "operator/f64-less-or-equal",
+        "operator/f64-less-than",
+        "operator/scalar-clamped-between"
+      ]
+    },
+    {
+      "law_ref": "law/scalar-clamp-interior",
+      "source_designation": "scalar/clamp-interior",
+      "derivation_authorization_ref": "derivation-authorization/scalar-clamp-interior",
+      "operator_refs": [
+        "operator/f64-less-or-equal",
+        "operator/scalar-clamped-between"
+      ]
+    },
+    {
+      "law_ref": "law/scalar-clamp-upper",
+      "source_designation": "scalar/clamp-upper",
+      "derivation_authorization_ref": "derivation-authorization/scalar-clamp-upper",
+      "operator_refs": [
+        "operator/f64-less-or-equal",
+        "operator/f64-greater-than",
+        "operator/scalar-clamped-between"
+      ]
+    }
+  ],
+  "source_guard_records": [
+    {
+      "source_guard_ref": "source-guard/jump-grounded",
+      "relation_schema_id": "relation-schema/arena-grounded",
+      "role_patterns": [
+        {
+          "role_id": "role/arena-grounded/player",
+          "variable_ref": "source-variable/event-player"
+        },
+        {
+          "role_id": "role/arena-grounded/value",
+          "value_ref": "value/bool/true"
+        }
+      ]
+    }
+  ],
+  "program_relation_bindings": [
+    {
+      "binding_occurrence_ref": "program-binding/jump-arena-member",
+      "relation_schema_id": "relation-schema/core-member-of",
+      "role_bindings": [
+        {
+          "role_id": "role/core-member-of/member",
+          "referent_id": "referent/jump-arena"
+        },
+        {
+          "role_id": "role/core-member-of/group",
+          "referent_id": "referent/type-arena"
+        }
+      ]
+    },
+    {
+      "binding_occurrence_ref": "program-binding/player-1-member",
+      "relation_schema_id": "relation-schema/core-member-of",
+      "role_bindings": [
+        {
+          "role_id": "role/core-member-of/member",
+          "referent_id": "referent/player-1"
+        },
+        {
+          "role_id": "role/core-member-of/group",
+          "referent_id": "referent/type-player"
+        }
+      ]
+    },
+    {
+      "binding_occurrence_ref": "program-binding/gravity",
+      "relation_schema_id": "relation-schema/arena-gravity",
+      "role_bindings": [
+        {
+          "role_id": "role/arena-gravity/arena",
+          "referent_id": "referent/jump-arena"
+        },
+        {
+          "role_id": "role/arena-gravity/value",
+          "value_ref": "value/f64/negative-8"
+        }
+      ]
+    },
+    {
+      "binding_occurrence_ref": "program-binding/jump-speed",
+      "relation_schema_id": "relation-schema/arena-jump-speed",
+      "role_bindings": [
+        {
+          "role_id": "role/arena-jump-speed/arena",
+          "referent_id": "referent/jump-arena"
+        },
+        {
+          "role_id": "role/arena-jump-speed/value",
+          "value_ref": "value/f64/8"
+        }
+      ]
+    },
+    {
+      "binding_occurrence_ref": "program-binding/move-speed",
+      "relation_schema_id": "relation-schema/arena-move-speed",
+      "role_bindings": [
+        {
+          "role_id": "role/arena-move-speed/arena",
+          "referent_id": "referent/jump-arena"
+        },
+        {
+          "role_id": "role/arena-move-speed/value",
+          "value_ref": "value/f64/5"
+        }
+      ]
+    },
+    {
+      "binding_occurrence_ref": "program-binding/floor-height",
+      "relation_schema_id": "relation-schema/arena-floor-height",
+      "role_bindings": [
+        {
+          "role_id": "role/arena-floor-height/arena",
+          "referent_id": "referent/jump-arena"
+        },
+        {
+          "role_id": "role/arena-floor-height/value",
+          "value_ref": "value/f64/0"
+        }
+      ]
+    },
+    {
+      "binding_occurrence_ref": "program-binding/min-x",
+      "relation_schema_id": "relation-schema/arena-min-x",
+      "role_bindings": [
+        {
+          "role_id": "role/arena-min-x/arena",
+          "referent_id": "referent/jump-arena"
+        },
+        {
+          "role_id": "role/arena-min-x/value",
+          "value_ref": "value/f64/negative-10"
+        }
+      ]
+    },
+    {
+      "binding_occurrence_ref": "program-binding/max-x",
+      "relation_schema_id": "relation-schema/arena-max-x",
+      "role_bindings": [
+        {
+          "role_id": "role/arena-max-x/arena",
+          "referent_id": "referent/jump-arena"
+        },
+        {
+          "role_id": "role/arena-max-x/value",
+          "value_ref": "value/f64/10"
+        }
+      ]
+    },
+    {
+      "binding_occurrence_ref": "program-binding/min-z",
+      "relation_schema_id": "relation-schema/arena-min-z",
+      "role_bindings": [
+        {
+          "role_id": "role/arena-min-z/arena",
+          "referent_id": "referent/jump-arena"
+        },
+        {
+          "role_id": "role/arena-min-z/value",
+          "value_ref": "value/f64/negative-10"
+        }
+      ]
+    },
+    {
+      "binding_occurrence_ref": "program-binding/max-z",
+      "relation_schema_id": "relation-schema/arena-max-z",
+      "role_bindings": [
+        {
+          "role_id": "role/arena-max-z/arena",
+          "referent_id": "referent/jump-arena"
+        },
+        {
+          "role_id": "role/arena-max-z/value",
+          "value_ref": "value/f64/10"
+        }
+      ]
+    }
+  ],
+  "initial_state_binding_templates": [
+    {
+      "binding_template_ref": "initial-binding/player-position",
+      "relation_schema_id": "relation-schema/arena-position",
+      "role_bindings": [
+        {
+          "role_id": "role/arena-position/player",
+          "referent_id": "referent/player-1"
+        },
+        {
+          "role_id": "role/arena-position/value",
+          "term_ref": "term/vec3/zero"
+        }
+      ]
+    },
+    {
+      "binding_template_ref": "initial-binding/player-velocity",
+      "relation_schema_id": "relation-schema/arena-velocity",
+      "role_bindings": [
+        {
+          "role_id": "role/arena-velocity/player",
+          "referent_id": "referent/player-1"
+        },
+        {
+          "role_id": "role/arena-velocity/value",
+          "term_ref": "term/vec3/zero"
+        }
+      ]
+    },
+    {
+      "binding_template_ref": "initial-binding/player-grounded",
+      "relation_schema_id": "relation-schema/arena-grounded",
+      "role_bindings": [
+        {
+          "role_id": "role/arena-grounded/player",
+          "referent_id": "referent/player-1"
+        },
+        {
+          "role_id": "role/arena-grounded/value",
+          "value_ref": "value/bool/true"
+        }
+      ]
+    },
+    {
+      "binding_template_ref": "initial-binding/player-horizontal-intent",
+      "relation_schema_id": "relation-schema/arena-horizontal-intent",
+      "role_bindings": [
+        {
+          "role_id": "role/arena-horizontal-intent/player",
+          "referent_id": "referent/player-1"
+        },
+        {
+          "role_id": "role/arena-horizontal-intent/value",
+          "term_ref": "term/vec3/zero"
+        }
+      ]
+    }
+  ],
+  "context_requirement_records": [
+    {
+      "context_requirement_ref": "context-requirement/exact-program",
+      "required_pin_types": [
+        "ProgramSnapshotId",
+        "ProgramRevisionId"
+      ]
+    },
+    {
+      "context_requirement_ref": "context-requirement/exact-session",
+      "required_pin_types": [
+        "RuntimeSessionId",
+        "RuntimePolicyId",
+        "ClauseSemanticsId"
+      ]
+    },
+    {
+      "context_requirement_ref": "context-requirement/exact-state",
+      "required_pin_types": [
+        "StateRevisionId"
+      ]
+    },
+    {
+      "context_requirement_ref": "context-requirement/exact-base-state",
+      "required_pin_types": [
+        "StateRevisionId"
+      ]
+    },
+    {
+      "context_requirement_ref": "context-requirement/linear-continuation-use",
+      "required_pin_types": [
+        "ContinuationId",
+        "ContinuationUseAuthorityRef"
+      ]
+    }
+  ],
+  "application_forms": [
+    {
+      "application_form_ref": "application-form/position-player-1",
+      "application_shape_id": "application-shape/position-player-1",
+      "relation_schema_id": "relation-schema/arena-position",
+      "operator_ref": "operator/arena-position",
+      "eligible_mode_ids": [
+        "mode/position-observe-one"
+      ],
+      "role_bindings": [
+        {
+          "role_id": "role/arena-position/player",
+          "referent_id": "referent/player-1"
+        },
+        {
+          "role_id": "role/arena-position/value",
+          "produced_role": true
+        }
+      ],
+      "context_requirement_refs": [
+        "context-requirement/exact-program",
+        "context-requirement/exact-session",
+        "context-requirement/exact-state"
+      ]
+    },
+    {
+      "application_form_ref": "application-form/input-player-1-east-north",
+      "application_shape_id": "application-shape/input-player-1-east-north",
+      "relation_schema_id": "relation-schema/event-input",
+      "operator_ref": "operator/event-input",
+      "eligible_mode_ids": [
+        "mode/input-propose-state"
+      ],
+      "role_bindings": [
+        {
+          "role_id": "role/event-input/player",
+          "referent_id": "referent/player-1"
+        },
+        {
+          "role_id": "role/event-input/intent",
+          "term_ref": "term/vec3/east-north"
+        },
+        {
+          "role_id": "role/event-input/candidate-delta",
+          "produced_role": true
+        }
+      ],
+      "context_requirement_refs": [
+        "context-requirement/exact-program",
+        "context-requirement/exact-session",
+        "context-requirement/exact-base-state"
+      ]
+    },
+    {
+      "application_form_ref": "application-form/jump-player-1",
+      "application_shape_id": "application-shape/jump-player-1",
+      "relation_schema_id": "relation-schema/event-jump",
+      "operator_ref": "operator/event-jump",
+      "eligible_mode_ids": [
+        "mode/jump-propose-state"
+      ],
+      "role_bindings": [
+        {
+          "role_id": "role/event-jump/player",
+          "referent_id": "referent/player-1"
+        },
+        {
+          "role_id": "role/event-jump/candidate-delta",
+          "produced_role": true
+        }
+      ],
+      "context_requirement_refs": [
+        "context-requirement/exact-program",
+        "context-requirement/exact-session",
+        "context-requirement/exact-base-state"
+      ]
+    },
+    {
+      "application_form_ref": "application-form/tick-player-1-quarter",
+      "application_shape_id": "application-shape/tick-player-1-quarter",
+      "relation_schema_id": "relation-schema/event-tick",
+      "operator_ref": "operator/event-tick",
+      "eligible_mode_ids": [
+        "mode/tick-propose-state",
+        "mode/tick-propose-state-audited"
+      ],
+      "role_bindings": [
+        {
+          "role_id": "role/event-tick/player",
+          "referent_id": "referent/player-1"
+        },
+        {
+          "role_id": "role/event-tick/dt",
+          "value_ref": "value/f64/0.25"
+        },
+        {
+          "role_id": "role/event-tick/candidate-delta",
+          "produced_role": true
+        }
+      ],
+      "context_requirement_refs": [
+        "context-requirement/exact-program",
+        "context-requirement/exact-session",
+        "context-requirement/exact-base-state"
+      ]
+    },
+    {
+      "application_form_ref": "application-form/tick-player-1-half",
+      "application_shape_id": "application-shape/tick-player-1-half",
+      "relation_schema_id": "relation-schema/event-tick",
+      "operator_ref": "operator/event-tick",
+      "eligible_mode_ids": [
+        "mode/tick-propose-state",
+        "mode/tick-propose-state-audited"
+      ],
+      "role_bindings": [
+        {
+          "role_id": "role/event-tick/player",
+          "referent_id": "referent/player-1"
+        },
+        {
+          "role_id": "role/event-tick/dt",
+          "value_ref": "value/f64/0.5"
+        },
+        {
+          "role_id": "role/event-tick/candidate-delta",
+          "produced_role": true
+        }
+      ],
+      "context_requirement_refs": [
+        "context-requirement/exact-program",
+        "context-requirement/exact-session",
+        "context-requirement/exact-base-state"
+      ]
+    },
+    {
+      "application_form_ref": "application-form/input-listener-player-1",
+      "application_shape_id": "application-shape/input-listener-player-1",
+      "relation_schema_id": "relation-schema/input-stream",
+      "operator_ref": "operator/input-listener",
+      "eligible_mode_ids": [
+        "mode/input-listener-reactive"
+      ],
+      "role_bindings": [
+        {
+          "role_id": "role/input-stream/player",
+          "referent_id": "referent/player-1"
+        },
+        {
+          "role_id": "role/input-stream/input-observation",
+          "produced_role": true
+        }
+      ],
+      "context_requirement_refs": [
+        "context-requirement/exact-program",
+        "context-requirement/exact-session",
+        "context-requirement/exact-state",
+        "context-requirement/linear-continuation-use"
+      ],
+      "source_projection": "projection-gap/listener-control"
     }
   ],
   "applications": [
     {
       "application_id": "application/position-player-1",
-      "application_shape_id": "application-shape/position-player-1",
-      "relation_schema_id": "relation-schema/arena-position",
-      "operator_ref": "operator/arena-position",
-      "eligible_mode_ids": ["mode/position-observe-one"],
-      "bindings": {
-        "player": {"referent": "player-1"},
-        "value": {"produced_role": "value"}
-      },
-      "context_requirements": ["exact ProgramRevision", "exact RuntimeSession", "exact StateRevision"]
+      "application_form_ref": "application-form/position-player-1",
+      "nominal_allocation_basis_ref": "allocation/application/position-player-1"
+    },
+    {
+      "application_id": "application/position-player-1-copy",
+      "application_form_ref": "application-form/position-player-1",
+      "nominal_allocation_basis_ref": "allocation/application/position-player-1-copy"
     },
     {
       "application_id": "application/input-player-1-east-north",
-      "application_shape_id": "application-shape/input-player-1-east-north",
-      "relation_schema_id": "relation-schema/event-input",
-      "operator_ref": "operator/event-input",
-      "eligible_mode_ids": ["mode/input-propose-state"],
-      "bindings": {
-        "player": {"referent": "player-1"},
-        "intent": {"vec3": ["1", "0", "-1"]},
-        "candidate_delta": {"produced_role": "candidate_delta"}
-      },
-      "context_requirements": ["exact ProgramRevision", "exact RuntimeSession", "exact base StateRevision"]
+      "application_form_ref": "application-form/input-player-1-east-north",
+      "nominal_allocation_basis_ref": "allocation/application/input-player-1-east-north"
     },
     {
       "application_id": "application/jump-player-1",
-      "application_shape_id": "application-shape/jump-player-1",
-      "relation_schema_id": "relation-schema/event-jump",
-      "operator_ref": "operator/event-jump",
-      "eligible_mode_ids": ["mode/jump-propose-state"],
-      "bindings": {
-        "player": {"referent": "player-1"},
-        "candidate_delta": {"produced_role": "candidate_delta"}
-      },
-      "context_requirements": ["exact ProgramRevision", "exact RuntimeSession", "exact base StateRevision"]
+      "application_form_ref": "application-form/jump-player-1",
+      "nominal_allocation_basis_ref": "allocation/application/jump-player-1"
     },
     {
       "application_id": "application/tick-player-1-quarter",
-      "application_shape_id": "application-shape/tick-player-1-quarter",
-      "relation_schema_id": "relation-schema/event-tick",
-      "operator_ref": "operator/event-tick",
-      "eligible_mode_ids": ["mode/tick-propose-state", "mode/tick-propose-state-audited"],
-      "bindings": {
-        "player": {"referent": "player-1"},
-        "dt": {"decimal_rational": "0.25"},
-        "candidate_delta": {"produced_role": "candidate_delta"}
-      },
-      "context_requirements": ["exact ProgramRevision", "exact RuntimeSession", "exact base StateRevision"]
+      "application_form_ref": "application-form/tick-player-1-quarter",
+      "nominal_allocation_basis_ref": "allocation/application/tick-player-1-quarter"
     },
     {
       "application_id": "application/tick-player-1-half",
-      "application_shape_id": "application-shape/tick-player-1-half",
-      "relation_schema_id": "relation-schema/event-tick",
-      "operator_ref": "operator/event-tick",
-      "eligible_mode_ids": ["mode/tick-propose-state", "mode/tick-propose-state-audited"],
-      "bindings": {
-        "player": {"referent": "player-1"},
-        "dt": {"decimal_rational": "0.5"},
-        "candidate_delta": {"produced_role": "candidate_delta"}
-      },
-      "context_requirements": ["exact ProgramRevision", "exact RuntimeSession", "exact base StateRevision"]
+      "application_form_ref": "application-form/tick-player-1-half",
+      "nominal_allocation_basis_ref": "allocation/application/tick-player-1-half"
     },
     {
       "application_id": "application/input-listener-player-1",
-      "application_shape_id": "application-shape/input-listener-player-1",
-      "relation_schema_id": "relation-schema/input-stream",
-      "operator_ref": "operator/input-listener",
-      "eligible_mode_ids": ["mode/input-listener-reactive"],
-      "bindings": {
-        "player": {"referent": "player-1"},
-        "input_observation": {"produced_role": "input_observation"}
-      },
-      "context_requirements": ["exact ProgramRevision", "exact RuntimeSession", "exact StateRevision", "linear continuation-use authority"],
-      "source_projection": "unresolved: reactive continuation declaration"
+      "application_form_ref": "application-form/input-listener-player-1",
+      "nominal_allocation_basis_ref": "allocation/application/input-listener-player-1"
     }
   ],
-  "process_rules": {
-    "input": {
-      "source_head": "on input",
-      "guard": "intent.y = 0",
-      "candidate": "replace exactly one horizontal-intent occurrence",
-      "outer_admission_required": true
+  "application_allocation_occurrences": [
+    {
+      "application_allocation_occurrence_id": "allocation/application/position-player-1",
+      "application_id": "application/position-player-1",
+      "application_form_ref": "application-form/position-player-1"
     },
-    "jump": {
-      "source_head": "on jump",
-      "guard": "grounded = true",
-      "candidate": "replace velocity.y with jump-speed and grounded with false",
-      "no_matching_guard": "NO_APPLICABLE_PROCESS_RULE",
-      "outer_admission_required": true
+    {
+      "application_allocation_occurrence_id": "allocation/application/position-player-1-copy",
+      "application_id": "application/position-player-1-copy",
+      "application_form_ref": "application-form/position-player-1"
     },
-    "tick": {
-      "source_head": "on tick",
-      "guard_partition": ["grounded", "airborne-above-floor", "airborne-landing"],
-      "horizontal_candidate": "clamp(position + intent * move-speed * dt, arena bounds)",
-      "horizontal_velocity": "(clamped-position - prior-position) / dt",
-      "vertical_candidate": "position.y + (velocity.y + gravity * dt) * dt",
-      "vertical_velocity": "velocity.y + gravity * dt",
-      "landing": "when vertical candidate <= floor, position.y = floor, velocity.y = 0, grounded = true",
-      "outer_admission_required": true
+    {
+      "application_allocation_occurrence_id": "allocation/application/input-player-1-east-north",
+      "application_id": "application/input-player-1-east-north",
+      "application_form_ref": "application-form/input-player-1-east-north"
     },
-    "position_observation": {
-      "relation_schema_id": "relation-schema/arena-position",
-      "mode_id": "mode/position-observe-one",
-      "output": "one identified Observation carrying the exact revision-indexed position",
-      "candidate_delta": null,
-      "state_revision_created": false
+    {
+      "application_allocation_occurrence_id": "allocation/application/jump-player-1",
+      "application_id": "application/jump-player-1",
+      "application_form_ref": "application-form/jump-player-1"
     },
-    "input_listener": {
-      "mode_id": "mode/input-listener-reactive",
-      "policy": "one Activation remains live across suspension and same-pin resumption",
-      "continuation_use": "linear",
-      "input_output": "one identified immutable input Observation",
-      "candidate_delta": null,
-      "state_revision_created": false,
-      "source_projection": "unresolved"
+    {
+      "application_allocation_occurrence_id": "allocation/application/tick-player-1-quarter",
+      "application_id": "application/tick-player-1-quarter",
+      "application_form_ref": "application-form/tick-player-1-quarter"
+    },
+    {
+      "application_allocation_occurrence_id": "allocation/application/tick-player-1-half",
+      "application_id": "application/tick-player-1-half",
+      "application_form_ref": "application-form/tick-player-1-half"
+    },
+    {
+      "application_allocation_occurrence_id": "allocation/application/input-listener-player-1",
+      "application_id": "application/input-listener-player-1",
+      "application_form_ref": "application-form/input-listener-player-1"
+    }
+  ],
+  "policy_records": [
+    {
+      "policy_id": "policy/root-program-admission-v1",
+      "root_policy_ref": "root-policy/clause-fixture-root-v1",
+      "irreducible": true
+    },
+    {
+      "policy_id": "policy/jump-arena-process-v1",
+      "program_id": "program/jump-arena",
+      "runtime_policy_id": "runtime-policy/deterministic-fixed-step-v1"
+    },
+    {
+      "policy_id": "policy/jump-arena-obligation-checker-v1",
+      "authority_ref": "authority/jump-arena-obligation-checker"
+    }
+  ],
+  "authority_records": [
+    {
+      "authority_ref": "authority/jump-arena-obligation-checker",
+      "authority_type_ref": "authority-type/constitutive-obligation-checker",
+      "policy_id": "policy/jump-arena-obligation-checker-v1"
+    }
+  ],
+  "judgments": [
+    {
+      "judgment_ref": "judgment/admission/jump-arena-state",
+      "judgment_type_ref": "type/judgment/admission-authorization",
+      "subject": {
+        "action_type_ref": "action/admit-state-delta",
+        "producer_mode_ids": [
+          "mode/input-propose-state",
+          "mode/jump-propose-state",
+          "mode/tick-propose-state",
+          "mode/tick-propose-state-audited"
+        ],
+        "required_obligation_ids": [
+          "obligation/singleton-player-state",
+          "obligation/arena-bounds-ordered",
+          "obligation/position-inside-arena",
+          "obligation/grounded-state",
+          "obligation/exact-base"
+        ]
+      },
+      "scope": {
+        "program_revision_id": "program-revision/jump-arena-r0",
+        "runtime_policy_id": "runtime-policy/deterministic-fixed-step-v1",
+        "runtime_session_set_ref": "runtime-session-set/jump-arena-fixtures"
+      },
+      "policy_id": "policy/jump-arena-process-v1"
+    },
+    {
+      "judgment_ref": "judgment/issuance/jump-arena-obligations",
+      "judgment_type_ref": "type/judgment/judgment-issuance-authorization",
+      "subject": {
+        "action_type_ref": "action/issue-admission-obligation-judgment",
+        "judgment_type_ref": "type/judgment/admission-obligations-satisfied",
+        "authority_ref": "authority/jump-arena-obligation-checker"
+      },
+      "scope": {
+        "program_revision_id": "program-revision/jump-arena-r0",
+        "runtime_policy_id": "runtime-policy/deterministic-fixed-step-v1",
+        "runtime_session_set_ref": "runtime-session-set/jump-arena-fixtures"
+      },
+      "policy_id": "policy/jump-arena-obligation-checker-v1"
+    }
+  ],
+  "root_policy_record": {
+    "root_policy_ref": "root-policy/clause-fixture-root-v1",
+    "root_authorization_ref": "root-authorization/admit-jump-arena-program-r0",
+    "authorization_type_ref": "type/judgment/admission-authorization",
+    "subject": {
+      "action_type_ref": "action/admit-root-program-revision",
+      "program_id": "program/jump-arena",
+      "program_snapshot_id": "program-snapshot/jump-arena-v1"
+    },
+    "policy_id": "policy/root-program-admission-v1"
+  },
+  "program_snapshot_record": {
+    "program_snapshot_id": "program-snapshot/jump-arena-v1",
+    "clause_semantics_id": "semantics/process-v1",
+    "source_artifact_ref": "source-artifact/jump-arena-world-clause",
+    "relation_schema_ids": [
+      "relation-schema/core-member-of",
+      "relation-schema/scalar-clamped-between",
+      "relation-schema/arena-position",
+      "relation-schema/arena-velocity",
+      "relation-schema/arena-grounded",
+      "relation-schema/arena-horizontal-intent",
+      "relation-schema/arena-gravity",
+      "relation-schema/arena-jump-speed",
+      "relation-schema/arena-move-speed",
+      "relation-schema/arena-floor-height",
+      "relation-schema/arena-min-x",
+      "relation-schema/arena-max-x",
+      "relation-schema/arena-min-z",
+      "relation-schema/arena-max-z",
+      "relation-schema/event-input",
+      "relation-schema/event-jump",
+      "relation-schema/event-tick",
+      "relation-schema/input-stream",
+      "relation-schema/f64-binary",
+      "relation-schema/f64-compare"
+    ],
+    "application_form_refs": [
+      "application-form/position-player-1",
+      "application-form/input-player-1-east-north",
+      "application-form/jump-player-1",
+      "application-form/tick-player-1-quarter",
+      "application-form/tick-player-1-half",
+      "application-form/input-listener-player-1"
+    ],
+    "application_ids": [
+      "application/position-player-1",
+      "application/position-player-1-copy",
+      "application/input-player-1-east-north",
+      "application/jump-player-1",
+      "application/tick-player-1-quarter",
+      "application/tick-player-1-half",
+      "application/input-listener-player-1"
+    ],
+    "judgment_refs": [
+      "judgment/admission/jump-arena-state",
+      "judgment/issuance/jump-arena-obligations"
+    ],
+    "source_transition_declaration_refs": [
+      "source-transition/input",
+      "source-transition/jump",
+      "source-transition/tick-grounded",
+      "source-transition/tick-airborne",
+      "source-transition/tick-landing"
+    ],
+    "numeric_expression_template_refs": [
+      "numeric-template/horizontal-axis-binary64",
+      "numeric-template/airborne-vertical-binary64"
+    ],
+    "semantic_ir_operator_refs": [
+      "operator/input-listener"
+    ],
+    "source_artifact_refs": [
+      "source-artifact/jump-arena-world-clause"
+    ],
+    "context_requirement_refs": [
+      "context-requirement/exact-program",
+      "context-requirement/exact-session",
+      "context-requirement/exact-state",
+      "context-requirement/exact-base-state",
+      "context-requirement/linear-continuation-use"
+    ],
+    "derivation_authorization_refs": [
+      "derivation-authorization/scalar-clamp-lower",
+      "derivation-authorization/scalar-clamp-interior",
+      "derivation-authorization/scalar-clamp-upper"
+    ],
+    "arena_boundary_refs": [
+      "arena-boundary/east-wall",
+      "arena-boundary/west-wall",
+      "arena-boundary/positive-z-wall",
+      "arena-boundary/negative-z-wall"
+    ]
+  },
+  "program_change_occurrence_record": {
+    "program_change_occurrence_id": "occurrence/program-change/jump-arena-root",
+    "predecessor": null,
+    "resulting_program_snapshot_id": "program-snapshot/jump-arena-v1",
+    "provenance": {
+      "EnteredThrough": [
+        "boundary/fixture-program-proposal",
+        "external-evidence/jump-arena-world-source",
+        []
+      ]
     }
   },
-  "admission_obligations": [
+  "program_admission_occurrence_record": {
+    "admission_occurrence_id": "occurrence/program-admission/jump-arena-r0",
+    "target_type_ref": "ProgramRevision",
+    "base_program_revision_id": null,
+    "candidate_program_snapshot_id": "program-snapshot/jump-arena-v1",
+    "authorization_evidence": {
+      "IrreducibleRootConstitution": [
+        "root-policy/clause-fixture-root-v1",
+        "root-authorization/admit-jump-arena-program-r0"
+      ]
+    },
+    "result_program_revision_id": "program-revision/jump-arena-r0"
+  },
+  "program_revision_record": {
+    "program_revision_id": "program-revision/jump-arena-r0",
+    "program_id": "program/jump-arena",
+    "predecessor": null,
+    "program_snapshot_id": "program-snapshot/jump-arena-v1",
+    "program_change_occurrence_id": "occurrence/program-change/jump-arena-root",
+    "admission_occurrence_id": "occurrence/program-admission/jump-arena-r0"
+  },
+  "program_revision_selection_record": {
+    "program_revision_selection_id": "program-selection/jump-arena-r0",
+    "program_revision_id": "program-revision/jump-arena-r0",
+    "selected_program_snapshot_id": "program-snapshot/jump-arena-v1",
+    "selection_predicate_ref": "fixture-predicate/program-revision-selects-snapshot"
+  },
+  "authorization_evidence": [
     {
-      "id": "obligation/singleton-player-state",
-      "rule": "each admitted player has exactly one position, velocity, grounded, and horizontal-intent binding"
+      "authorization_evidence_id": "authorization-evidence/admission",
+      "authorization_type_ref": "type/judgment/admission-authorization",
+      "Constitutive": {
+        "ProgramConstitution": [
+          "program-revision/jump-arena-r0",
+          "judgment/admission/jump-arena-state"
+        ]
+      }
     },
     {
-      "id": "obligation/arena-bounds-ordered",
-      "rule": "min-x <= max-x and min-z <= max-z"
-    },
-    {
-      "id": "obligation/position-inside-arena",
-      "rule": "min-x <= position.x <= max-x and min-z <= position.z <= max-z"
-    },
-    {
-      "id": "obligation/grounded-state",
-      "rule": "grounded implies position.y = floor-height and velocity.y = 0"
-    },
-    {
-      "id": "obligation/exact-base",
-      "rule": "every withdrawal names an extant occurrence in the exact base StateRevision and every later world-sensitive Step remains pinned to that base"
+      "authorization_evidence_id": "authorization-evidence/judgment-issuance",
+      "authorization_type_ref": "type/judgment/judgment-issuance-authorization",
+      "Constitutive": {
+        "ProgramConstitution": [
+          "program-revision/jump-arena-r0",
+          "judgment/issuance/jump-arena-obligations"
+        ]
+      }
     }
   ],
-  "outer_admission": {
-    "input": [
-      "exact base StateRevision",
-      "immutable candidate delta",
-      "producing RunId, ActivationId, and StepId evidence",
-      "ConstitutiveAuthorization<AdmissionAuthorization>",
-      "governed JudgmentOccurrences",
-      "all admission obligations"
+  "authority_precedence_edges": [
+    {
+      "predecessor_ref": "root-policy/clause-fixture-root-v1",
+      "successor_ref": "occurrence/program-admission/jump-arena-r0"
+    },
+    {
+      "predecessor_ref": "occurrence/program-admission/jump-arena-r0",
+      "successor_ref": "program-revision/jump-arena-r0"
+    },
+    {
+      "predecessor_ref": "program-revision/jump-arena-r0",
+      "successor_ref": "authorization-evidence/admission"
+    },
+    {
+      "predecessor_ref": "program-revision/jump-arena-r0",
+      "successor_ref": "authorization-evidence/judgment-issuance"
+    }
+  ],
+  "runtime_policy_record": {
+    "runtime_policy_id": "runtime-policy/deterministic-fixed-step-v1",
+    "numeric_contract_ref": "atom-contract/f64-binary64",
+    "event_selection": "exact selected Mode plus mutually exclusive Clause guards",
+    "candidate_visibility": "immutable and non-authoritative",
+    "admission_authorization_evidence_id": "authorization-evidence/admission",
+    "numeric_expression_template_refs": [
+      "numeric-template/horizontal-axis-binary64",
+      "numeric-template/airborne-vertical-binary64"
     ],
-    "success": "allocate one AdmissionOccurrenceId and one successor StateRevisionId",
-    "rejection": "allocate no successor and leave the exact base authoritative payload unchanged",
-    "candidate_authority": "none"
+    "time_step_type_ref": "type/f64",
+    "time_step_unit_ref": "unit/second",
+    "operation_rounding": "atom-contract/f64-binary64",
+    "numeric_node_order": "dependency-partial-order-only"
+  },
+  "runtime_session_records": [
+    {
+      "runtime_session_id": "runtime-session/jump-arena-s0",
+      "program_revision_selection_id": "program-selection/jump-arena-r0",
+      "program_revision_id": "program-revision/jump-arena-r0",
+      "runtime_policy_id": "runtime-policy/deterministic-fixed-step-v1",
+      "clause_semantics_id": "semantics/process-v1",
+      "session_start_occurrence_id": "occurrence/session-start/main",
+      "initial_state_revision_id": "state/main-w0"
+    },
+    {
+      "runtime_session_id": "runtime-session/jump-arena-east-wall",
+      "program_revision_selection_id": "program-selection/jump-arena-r0",
+      "program_revision_id": "program-revision/jump-arena-r0",
+      "runtime_policy_id": "runtime-policy/deterministic-fixed-step-v1",
+      "clause_semantics_id": "semantics/process-v1",
+      "session_start_occurrence_id": "occurrence/session-start/east-wall",
+      "initial_state_revision_id": "state/east-wall-w0"
+    },
+    {
+      "runtime_session_id": "runtime-session/jump-arena-west-wall",
+      "program_revision_selection_id": "program-selection/jump-arena-r0",
+      "program_revision_id": "program-revision/jump-arena-r0",
+      "runtime_policy_id": "runtime-policy/deterministic-fixed-step-v1",
+      "clause_semantics_id": "semantics/process-v1",
+      "session_start_occurrence_id": "occurrence/session-start/west-wall",
+      "initial_state_revision_id": "state/west-wall-w0"
+    },
+    {
+      "runtime_session_id": "runtime-session/jump-arena-positive-z-wall",
+      "program_revision_selection_id": "program-selection/jump-arena-r0",
+      "program_revision_id": "program-revision/jump-arena-r0",
+      "runtime_policy_id": "runtime-policy/deterministic-fixed-step-v1",
+      "clause_semantics_id": "semantics/process-v1",
+      "session_start_occurrence_id": "occurrence/session-start/positive-z-wall",
+      "initial_state_revision_id": "state/positive-z-wall-w0"
+    },
+    {
+      "runtime_session_id": "runtime-session/jump-arena-negative-z-wall",
+      "program_revision_selection_id": "program-selection/jump-arena-r0",
+      "program_revision_id": "program-revision/jump-arena-r0",
+      "runtime_policy_id": "runtime-policy/deterministic-fixed-step-v1",
+      "clause_semantics_id": "semantics/process-v1",
+      "session_start_occurrence_id": "occurrence/session-start/negative-z-wall",
+      "initial_state_revision_id": "state/negative-z-wall-w0"
+    },
+    {
+      "runtime_session_id": "runtime-session/jump-arena-landing",
+      "program_revision_selection_id": "program-selection/jump-arena-r0",
+      "program_revision_id": "program-revision/jump-arena-r0",
+      "runtime_policy_id": "runtime-policy/deterministic-fixed-step-v1",
+      "clause_semantics_id": "semantics/process-v1",
+      "session_start_occurrence_id": "occurrence/session-start/landing",
+      "initial_state_revision_id": "state/landing-w0"
+    }
+  ],
+  "runtime_session_sets": [
+    {
+      "runtime_session_set_ref": "runtime-session-set/jump-arena-fixtures",
+      "runtime_session_ids": [
+        "runtime-session/jump-arena-s0",
+        "runtime-session/jump-arena-east-wall",
+        "runtime-session/jump-arena-west-wall",
+        "runtime-session/jump-arena-positive-z-wall",
+        "runtime-session/jump-arena-negative-z-wall",
+        "runtime-session/jump-arena-landing"
+      ]
+    }
+  ],
+  "session_start_occurrences": [
+    {
+      "session_start_occurrence_id": "occurrence/session-start/main",
+      "runtime_session_id": "runtime-session/jump-arena-s0",
+      "provenance": {
+        "EnteredThrough": [
+          "boundary/runtime-session-start",
+          "external-evidence/session-main",
+          []
+        ]
+      }
+    },
+    {
+      "session_start_occurrence_id": "occurrence/session-start/east-wall",
+      "runtime_session_id": "runtime-session/jump-arena-east-wall",
+      "provenance": {
+        "EnteredThrough": [
+          "boundary/runtime-session-start",
+          "external-evidence/session-east-wall",
+          []
+        ]
+      }
+    },
+    {
+      "session_start_occurrence_id": "occurrence/session-start/west-wall",
+      "runtime_session_id": "runtime-session/jump-arena-west-wall",
+      "provenance": {
+        "EnteredThrough": [
+          "boundary/runtime-session-start",
+          "external-evidence/session-west-wall",
+          []
+        ]
+      }
+    },
+    {
+      "session_start_occurrence_id": "occurrence/session-start/positive-z-wall",
+      "runtime_session_id": "runtime-session/jump-arena-positive-z-wall",
+      "provenance": {
+        "EnteredThrough": [
+          "boundary/runtime-session-start",
+          "external-evidence/session-positive-z-wall",
+          []
+        ]
+      }
+    },
+    {
+      "session_start_occurrence_id": "occurrence/session-start/negative-z-wall",
+      "runtime_session_id": "runtime-session/jump-arena-negative-z-wall",
+      "provenance": {
+        "EnteredThrough": [
+          "boundary/runtime-session-start",
+          "external-evidence/session-negative-z-wall",
+          []
+        ]
+      }
+    },
+    {
+      "session_start_occurrence_id": "occurrence/session-start/landing",
+      "runtime_session_id": "runtime-session/jump-arena-landing",
+      "provenance": {
+        "EnteredThrough": [
+          "boundary/runtime-session-start",
+          "external-evidence/session-landing",
+          []
+        ]
+      }
+    }
+  ],
+  "initial_state_records": [
+    {
+      "initial_state_record_ref": "initial-state/main",
+      "runtime_session_id": "runtime-session/jump-arena-s0",
+      "session_start_occurrence_id": "occurrence/session-start/main",
+      "state_revision_id": "state/main-w0",
+      "exact_vector_state_revision_id": "state/main-w0"
+    },
+    {
+      "initial_state_record_ref": "initial-state/east-wall",
+      "runtime_session_id": "runtime-session/jump-arena-east-wall",
+      "session_start_occurrence_id": "occurrence/session-start/east-wall",
+      "state_revision_id": "state/east-wall-w0",
+      "exact_vector_state_revision_id": "state/east-wall-w0"
+    },
+    {
+      "initial_state_record_ref": "initial-state/west-wall",
+      "runtime_session_id": "runtime-session/jump-arena-west-wall",
+      "session_start_occurrence_id": "occurrence/session-start/west-wall",
+      "state_revision_id": "state/west-wall-w0",
+      "exact_vector_state_revision_id": "state/west-wall-w0"
+    },
+    {
+      "initial_state_record_ref": "initial-state/positive-z-wall",
+      "runtime_session_id": "runtime-session/jump-arena-positive-z-wall",
+      "session_start_occurrence_id": "occurrence/session-start/positive-z-wall",
+      "state_revision_id": "state/positive-z-wall-w0",
+      "exact_vector_state_revision_id": "state/positive-z-wall-w0"
+    },
+    {
+      "initial_state_record_ref": "initial-state/negative-z-wall",
+      "runtime_session_id": "runtime-session/jump-arena-negative-z-wall",
+      "session_start_occurrence_id": "occurrence/session-start/negative-z-wall",
+      "state_revision_id": "state/negative-z-wall-w0",
+      "exact_vector_state_revision_id": "state/negative-z-wall-w0"
+    },
+    {
+      "initial_state_record_ref": "initial-state/landing",
+      "runtime_session_id": "runtime-session/jump-arena-landing",
+      "session_start_occurrence_id": "occurrence/session-start/landing",
+      "state_revision_id": "state/landing-w0",
+      "exact_vector_state_revision_id": "state/landing-w0"
+    }
+  ],
+  "continuation_contracts": [
+    {
+      "continuation_contract_ref": "continuation-contract/input-listener-linear",
+      "mode_id": "mode/input-listener-reactive",
+      "use_cardinality": "one",
+      "required_pin_fields": [
+        "RunId",
+        "ActivationId",
+        "StepId",
+        "ApplicationId",
+        "ModeId",
+        "ProgramSnapshotId",
+        "ProgramRevisionId",
+        "RuntimeSessionId",
+        "StateRevisionId",
+      "RuntimePolicyId",
+      "ClauseSemanticsId",
+      "AuthorizationEvidenceSet",
+      "CapabilitySet",
+      "scheduler-constraints",
+      "remaining-budget",
+        "cancellation-scope",
+        "use-authority"
+      ],
+      "cancellation_failure_type_ref": "type/failure/cancelled",
+      "budget_failure_type_ref": "type/failure/budget-exhausted",
+      "stale_pin_failure_type_ref": "type/failure/continuation-pin-mismatch",
+      "reuse_failure_type_ref": "type/failure/continuation-already-consumed"
+    }
+  ],
+  "admission_obligations": [
+    {
+      "obligation_id": "obligation/singleton-player-state",
+      "predicate_ref": "obligation-predicate/relation-cardinality-one",
+      "argument_refs": [
+        "relation-schema/arena-position",
+        "relation-schema/arena-velocity",
+        "relation-schema/arena-grounded",
+        "relation-schema/arena-horizontal-intent",
+        "referent/player-1"
+      ]
+    },
+    {
+      "obligation_id": "obligation/arena-bounds-ordered",
+      "predicate_ref": "obligation-predicate/f64-less-or-equal-pairs",
+      "argument_refs": [
+        "program-binding/min-x",
+        "program-binding/max-x",
+        "program-binding/min-z",
+        "program-binding/max-z"
+      ]
+    },
+    {
+      "obligation_id": "obligation/position-inside-arena",
+      "predicate_ref": "obligation-predicate/vec3-horizontal-within-bounds",
+      "argument_refs": [
+        "relation-schema/arena-position",
+        "program-binding/min-x",
+        "program-binding/max-x",
+        "program-binding/min-z",
+        "program-binding/max-z"
+      ]
+    },
+    {
+      "obligation_id": "obligation/grounded-state",
+      "predicate_ref": "obligation-predicate/grounded-implies-floor-zero-vertical",
+      "argument_refs": [
+        "relation-schema/arena-position",
+        "relation-schema/arena-velocity",
+        "relation-schema/arena-grounded",
+        "program-binding/floor-height",
+        "shape-role/vec3/y",
+        "value/f64/0"
+      ]
+    },
+    {
+      "obligation_id": "obligation/exact-base",
+      "predicate_ref": "obligation-predicate/withdrawals-exist-in-exact-base",
+      "argument_refs": [
+        "type/candidate-state-delta",
+        "StateRevisionId"
+      ]
+    }
+  ],
+  "fixture_predicates": [
+    {
+      "predicate_ref": "fixture-predicate/program-revision-selects-snapshot",
+      "argument_domains": [
+        "ProgramRevisionId",
+        "ProgramSnapshotId"
+      ]
+    },
+    {
+      "predicate_ref": "fixture-predicate/ref-equal",
+      "argument_domains": [
+        "TypedRef",
+        "TypedRef"
+      ]
+    },
+    {
+      "predicate_ref": "fixture-predicate/ref-distinct",
+      "argument_domains": [
+        "TypedRefSet"
+      ]
+    },
+    {
+      "predicate_ref": "fixture-predicate/term-equal",
+      "argument_domains": [
+        "TermRef",
+        "TermRef"
+      ]
+    },
+    {
+      "predicate_ref": "fixture-predicate/term-distinct",
+      "argument_domains": [
+        "TermRef",
+        "TermRef"
+      ]
+    },
+    {
+      "predicate_ref": "fixture-predicate/set-empty",
+      "argument_domains": [
+        "TypedRefSet"
+      ]
+    },
+    {
+      "predicate_ref": "fixture-predicate/set-equal",
+      "argument_domains": [
+        "TypedRefSet",
+        "TypedRefSet"
+      ]
+    },
+    {
+      "predicate_ref": "fixture-predicate/application-form-equal",
+      "argument_domains": [
+        "ApplicationId",
+        "ApplicationId"
+      ]
+    },
+    {
+      "predicate_ref": "fixture-predicate/state-revision-contains-occurrence",
+      "argument_domains": [
+        "StateRevisionId",
+        "OccurrenceId"
+      ]
+    },
+    {
+      "predicate_ref": "fixture-predicate/state-revision-payload-equal",
+      "argument_domains": [
+        "StateRevisionPayloadRef",
+        "StateRevisionPayloadRef"
+      ]
+    },
+    {
+      "predicate_ref": "fixture-predicate/reference-member",
+      "argument_domains": [
+        "TypedRef",
+        "TypedRefSet"
+      ]
+    },
+    {
+      "predicate_ref": "fixture-predicate/reference-not-member",
+      "argument_domains": [
+        "TypedRef",
+        "TypedRefSet"
+      ]
+    },
+    {
+      "predicate_ref": "fixture-predicate/all-reference-sets-empty",
+      "argument_domains": [
+        "ReferenceSetCaptureRef"
+      ]
+    },
+    {
+      "predicate_ref": "fixture-predicate/state-payload-captures-equal",
+      "argument_domains": [
+        "StatePayloadCaptureRef",
+        "StatePayloadCaptureRef"
+      ]
+    },
+    {
+      "predicate_ref": "fixture-predicate/continuation-record-captures-equal",
+      "argument_domains": [
+        "ContinuationRecordCaptureRef",
+        "ContinuationRecordCaptureRef"
+      ]
+    },
+    {
+      "predicate_ref": "fixture-predicate/judgment-covers-obligation-set",
+      "argument_domains": [
+        "JudgmentOccurrenceId",
+        "ObligationIdSet"
+      ]
+    },
+    {
+      "predicate_ref": "fixture-predicate/admission-cites-judgment",
+      "argument_domains": [
+        "AdmissionOccurrenceId",
+        "JudgmentOccurrenceId"
+      ]
+    }
+  ],
+  "outer_admission_contract": {
+    "target_type_ref": "StateRevision",
+    "input_role_refs": [
+      "Admission/base-StateRevision",
+      "Admission/candidate-StateDelta",
+      "Admission/producing-RunId",
+      "Admission/producing-ActivationId",
+      "Admission/producing-StepId",
+      "Admission/AuthorizationEvidence<AdmissionAuthorization>",
+      "Admission/JudgmentOccurrenceSet",
+      "Admission/obligation-set"
+    ],
+    "authorization_evidence_id": "authorization-evidence/admission",
+    "judgment_issuance_authorization_evidence_id": "authorization-evidence/judgment-issuance",
+    "required_obligation_ids": [
+      "obligation/singleton-player-state",
+      "obligation/arena-bounds-ordered",
+      "obligation/position-inside-arena",
+      "obligation/grounded-state",
+      "obligation/exact-base"
+    ],
+    "success_output_refs": [
+      "AdmissionOccurrenceId",
+      "StateRevisionId"
+    ],
+    "rejection_output_refs": [
+      "typed-Rejection"
+    ],
+    "candidate_authority": false,
+    "partial_successor_visibility": false,
+    "source_projection": "projection-gap/outer-admission"
   },
   "host_boundary": {
     "generic_mechanics_allowed": [
-      "typed reference lookup without inspecting fixture spelling",
-      "named-role closure and mode eligibility checking",
-      "exact decimal-rational arithmetic and conventional comparison evaluation",
-      "generic law derivation",
-      "relational guard matching",
+      "typed-reference lookup without inspecting source spelling",
+      "named-role closure and exact Mode eligibility checking",
+      "declared binary64 operator evaluation under atom-contract/f64-binary64",
+      "generic law derivation and relational guard matching",
       "immutable candidate-delta construction",
       "typed Activation and Step cause-frontier checking",
-      "generic budget and continuation protocol",
-      "generic obligation checking and governed Admission"
+      "generic budget, continuation, Judgment, and governed Admission protocols"
     ],
     "game_meaning_forbidden": [
-      "recognizing player, arena, input, jump, tick, position, velocity, grounded, gravity, clamp, floor, bounds, or intent by spelling",
+      "recognizing any source designation, fixture token, RelationSchemaId, RoleId, OperatorRef, or ModeId by spelling",
       "choosing a transition branch by source order",
       "injecting jump impulse, gravity, collision, movement, groundedness, landing, or no-double-jump behavior",
       "mutating a StateRevision or candidate in place",
       "treating source admit as constitutional Admission"
     ]
-  }
+  },
+  "source_transition_declarations": [
+    {
+      "transition_declaration_ref": "source-transition/input",
+      "source_artifact_ref": "source-artifact/jump-arena-world-clause",
+      "relation_schema_id": "relation-schema/event-input",
+      "operator_ref": "operator/event-input",
+      "mode_ids": [
+        "mode/input-propose-state"
+      ],
+      "event_role_ids": [
+        "role/event-input/player",
+        "role/event-input/intent"
+      ],
+      "read_relation_schema_ids": [
+        "relation-schema/arena-horizontal-intent"
+      ],
+      "withdraw_relation_schema_ids": [
+        "relation-schema/arena-horizontal-intent"
+      ],
+      "admit_relation_schema_ids": [
+        "relation-schema/arena-horizontal-intent"
+      ],
+      "numeric_template_refs": []
+    },
+    {
+      "transition_declaration_ref": "source-transition/jump",
+      "source_artifact_ref": "source-artifact/jump-arena-world-clause",
+      "relation_schema_id": "relation-schema/event-jump",
+      "operator_ref": "operator/event-jump",
+      "mode_ids": [
+        "mode/jump-propose-state"
+      ],
+      "event_role_ids": [
+        "role/event-jump/player"
+      ],
+      "read_relation_schema_ids": [
+        "relation-schema/arena-velocity",
+        "relation-schema/arena-grounded",
+        "relation-schema/arena-jump-speed"
+      ],
+      "withdraw_relation_schema_ids": [
+        "relation-schema/arena-velocity",
+        "relation-schema/arena-grounded"
+      ],
+      "admit_relation_schema_ids": [
+        "relation-schema/arena-velocity",
+        "relation-schema/arena-grounded"
+      ],
+      "numeric_template_refs": []
+    },
+    {
+      "transition_declaration_ref": "source-transition/tick-grounded",
+      "source_artifact_ref": "source-artifact/jump-arena-world-clause",
+      "relation_schema_id": "relation-schema/event-tick",
+      "operator_ref": "operator/event-tick",
+      "mode_ids": [
+        "mode/tick-propose-state"
+      ],
+      "event_role_ids": [
+        "role/event-tick/player",
+        "role/event-tick/dt"
+      ],
+      "read_relation_schema_ids": [
+        "relation-schema/arena-position",
+        "relation-schema/arena-velocity",
+        "relation-schema/arena-horizontal-intent",
+        "relation-schema/arena-grounded",
+        "relation-schema/arena-move-speed",
+        "relation-schema/arena-floor-height",
+        "relation-schema/arena-min-x",
+        "relation-schema/arena-max-x",
+        "relation-schema/arena-min-z",
+        "relation-schema/arena-max-z"
+      ],
+      "withdraw_relation_schema_ids": [
+        "relation-schema/arena-position",
+        "relation-schema/arena-velocity"
+      ],
+      "admit_relation_schema_ids": [
+        "relation-schema/arena-position",
+        "relation-schema/arena-velocity"
+      ],
+      "numeric_template_refs": [
+        "numeric-template/horizontal-axis-binary64"
+      ]
+    },
+    {
+      "transition_declaration_ref": "source-transition/tick-airborne",
+      "source_artifact_ref": "source-artifact/jump-arena-world-clause",
+      "relation_schema_id": "relation-schema/event-tick",
+      "operator_ref": "operator/event-tick",
+      "mode_ids": [
+        "mode/tick-propose-state"
+      ],
+      "event_role_ids": [
+        "role/event-tick/player",
+        "role/event-tick/dt"
+      ],
+      "read_relation_schema_ids": [
+        "relation-schema/arena-position",
+        "relation-schema/arena-velocity",
+        "relation-schema/arena-horizontal-intent",
+        "relation-schema/arena-grounded",
+        "relation-schema/arena-gravity",
+        "relation-schema/arena-move-speed",
+        "relation-schema/arena-floor-height",
+        "relation-schema/arena-min-x",
+        "relation-schema/arena-max-x",
+        "relation-schema/arena-min-z",
+        "relation-schema/arena-max-z"
+      ],
+      "withdraw_relation_schema_ids": [
+        "relation-schema/arena-position",
+        "relation-schema/arena-velocity"
+      ],
+      "admit_relation_schema_ids": [
+        "relation-schema/arena-position",
+        "relation-schema/arena-velocity"
+      ],
+      "numeric_template_refs": [
+        "numeric-template/horizontal-axis-binary64",
+        "numeric-template/airborne-vertical-binary64"
+      ]
+    },
+    {
+      "transition_declaration_ref": "source-transition/tick-landing",
+      "source_artifact_ref": "source-artifact/jump-arena-world-clause",
+      "relation_schema_id": "relation-schema/event-tick",
+      "operator_ref": "operator/event-tick",
+      "mode_ids": [
+        "mode/tick-propose-state"
+      ],
+      "event_role_ids": [
+        "role/event-tick/player",
+        "role/event-tick/dt"
+      ],
+      "read_relation_schema_ids": [
+        "relation-schema/arena-position",
+        "relation-schema/arena-velocity",
+        "relation-schema/arena-horizontal-intent",
+        "relation-schema/arena-grounded",
+        "relation-schema/arena-gravity",
+        "relation-schema/arena-move-speed",
+        "relation-schema/arena-floor-height",
+        "relation-schema/arena-min-x",
+        "relation-schema/arena-max-x",
+        "relation-schema/arena-min-z",
+        "relation-schema/arena-max-z"
+      ],
+      "withdraw_relation_schema_ids": [
+        "relation-schema/arena-position",
+        "relation-schema/arena-velocity",
+        "relation-schema/arena-grounded"
+      ],
+      "admit_relation_schema_ids": [
+        "relation-schema/arena-position",
+        "relation-schema/arena-velocity",
+        "relation-schema/arena-grounded"
+      ],
+      "numeric_template_refs": [
+        "numeric-template/horizontal-axis-binary64",
+        "numeric-template/airborne-vertical-binary64"
+      ]
+    }
+  ],
+  "semantic_ir_operator_declarations": [
+    {
+      "operator_ref": "operator/input-listener",
+      "relation_schema_id": "relation-schema/input-stream",
+      "mode_ids": [
+        "mode/input-listener-reactive"
+      ],
+      "source_projection": "projection-gap/listener-control"
+    }
+  ],
+  "numeric_expression_templates": [
+    {
+      "numeric_template_ref": "numeric-template/horizontal-axis-binary64",
+      "numeric_contract_ref": "atom-contract/f64-binary64",
+      "input_slot_refs": [
+        "numeric-slot/axis-position",
+        "numeric-slot/axis-intent",
+        "numeric-slot/move-speed",
+        "numeric-slot/dt",
+        "numeric-slot/axis-minimum",
+        "numeric-slot/axis-maximum"
+      ],
+      "nodes": [
+        {
+          "result_slot_ref": "numeric-slot/scaled-intent",
+          "operator_ref": "operator/f64-multiply",
+          "argument_slot_refs": [
+            "numeric-slot/axis-intent",
+            "numeric-slot/move-speed"
+          ]
+        },
+        {
+          "result_slot_ref": "numeric-slot/desired-displacement",
+          "operator_ref": "operator/f64-multiply",
+          "argument_slot_refs": [
+            "numeric-slot/scaled-intent",
+            "numeric-slot/dt"
+          ]
+        },
+        {
+          "result_slot_ref": "numeric-slot/unclamped-axis-position",
+          "operator_ref": "operator/f64-add",
+          "argument_slot_refs": [
+            "numeric-slot/axis-position",
+            "numeric-slot/desired-displacement"
+          ]
+        },
+        {
+          "result_slot_ref": "numeric-slot/clamped-axis-position",
+          "operator_ref": "operator/scalar-clamped-between",
+          "mode_id": "mode/scalar-clamp-maybe",
+          "argument_slot_refs": [
+            "numeric-slot/unclamped-axis-position",
+            "numeric-slot/axis-minimum",
+            "numeric-slot/axis-maximum"
+          ]
+        },
+        {
+          "result_slot_ref": "numeric-slot/realized-displacement",
+          "operator_ref": "operator/f64-subtract",
+          "argument_slot_refs": [
+            "numeric-slot/clamped-axis-position",
+            "numeric-slot/axis-position"
+          ]
+        },
+        {
+          "result_slot_ref": "numeric-slot/realized-axis-velocity",
+          "operator_ref": "operator/f64-divide",
+          "argument_slot_refs": [
+            "numeric-slot/realized-displacement",
+            "numeric-slot/dt"
+          ]
+        }
+      ],
+      "output_slot_refs": [
+        "numeric-slot/unclamped-axis-position",
+        "numeric-slot/clamped-axis-position",
+        "numeric-slot/realized-axis-velocity"
+      ],
+      "scheduling": "dependency-partial-order",
+      "fused_contraction": false
+    },
+    {
+      "numeric_template_ref": "numeric-template/airborne-vertical-binary64",
+      "numeric_contract_ref": "atom-contract/f64-binary64",
+      "input_slot_refs": [
+        "numeric-slot/position-y",
+        "numeric-slot/velocity-y",
+        "numeric-slot/gravity",
+        "numeric-slot/dt",
+        "numeric-slot/floor-height"
+      ],
+      "nodes": [
+        {
+          "result_slot_ref": "numeric-slot/gravity-step",
+          "operator_ref": "operator/f64-multiply",
+          "argument_slot_refs": [
+            "numeric-slot/gravity",
+            "numeric-slot/dt"
+          ]
+        },
+        {
+          "result_slot_ref": "numeric-slot/next-velocity-y",
+          "operator_ref": "operator/f64-add",
+          "argument_slot_refs": [
+            "numeric-slot/velocity-y",
+            "numeric-slot/gravity-step"
+          ]
+        },
+        {
+          "result_slot_ref": "numeric-slot/vertical-displacement",
+          "operator_ref": "operator/f64-multiply",
+          "argument_slot_refs": [
+            "numeric-slot/next-velocity-y",
+            "numeric-slot/dt"
+          ]
+        },
+        {
+          "result_slot_ref": "numeric-slot/unclamped-position-y",
+          "operator_ref": "operator/f64-add",
+          "argument_slot_refs": [
+            "numeric-slot/position-y",
+            "numeric-slot/vertical-displacement"
+          ]
+        },
+        {
+          "result_slot_ref": "numeric-slot/remains-airborne",
+          "operator_ref": "operator/f64-greater-than",
+          "argument_slot_refs": [
+            "numeric-slot/unclamped-position-y",
+            "numeric-slot/floor-height"
+          ]
+        },
+        {
+          "result_slot_ref": "numeric-slot/lands",
+          "operator_ref": "operator/f64-less-or-equal",
+          "argument_slot_refs": [
+            "numeric-slot/unclamped-position-y",
+            "numeric-slot/floor-height"
+          ]
+        }
+      ],
+      "output_slot_refs": [
+        "numeric-slot/next-velocity-y",
+        "numeric-slot/unclamped-position-y",
+        "numeric-slot/remains-airborne",
+        "numeric-slot/lands"
+      ],
+      "integration": "semi-implicit",
+      "scheduling": "dependency-partial-order",
+      "fused_contraction": false
+    }
+  ],
+  "vector_record_contracts": {
+    "state_binding_occurrence": {
+      "required_fields": [
+        "occurrence_id",
+        "relation_schema_id",
+        "role_bindings"
+      ],
+      "role_binding_required_field": "role_id",
+      "role_closure": "exact-declared-role-set",
+      "positional_or_source_spelling_binding": false
+    },
+    "observation_occurrence": {
+      "required_fields": [
+        "observation_id",
+        "observation_type_ref",
+        "provenance"
+      ],
+      "value_fields_exactly_one_of": [
+        "value_ref",
+        "term_ref"
+      ],
+      "untyped_string_payload": false
+    },
+    "typed_outcome": {
+      "required_fields": [
+        "outcome_type_ref",
+        "failure_type_ref",
+        "outcome_contract_ref"
+      ],
+      "untyped_reason_code": false
+    },
+    "activation_executable_validity": {
+      "required_fields": [
+        "executable_validity_evidence_id",
+        "activation_id",
+        "application_id",
+        "mode_id",
+        "initial_context_id",
+        "activation_cause_frontier_id",
+        "checked_requirement_refs",
+        "authorization_evidence_ids"
+      ],
+      "required_requirement_source": "activation_execution_contract.required_executable_validity_requirement_refs",
+      "authorization_evidence_source": "selected-Mode.authorization_requirement_refs",
+      "evidence_is_authority": false
+    },
+    "typed_reference_set": {
+      "required_fields": [
+        "typed_reference_set_ref",
+        "member_domain",
+        "member_refs"
+      ],
+      "inline_reference_arrays": false
+    },
+    "frame_projection": {
+      "required_fields": [
+        "frame_projection_ref",
+        "run_id",
+        "activation_id",
+        "step_id",
+        "observation_id",
+        "projected_term_ref",
+        "created_state_revision_ids"
+      ],
+      "optional_fields": [
+        "observed_state_revision_id",
+        "observed_state_revision_payload_ref"
+      ],
+      "optional_pin_pair_cardinality": "both-or-neither",
+      "identity_key_source": "frame_projection_contract.identity_key_fields",
+      "admission_required": false
+    },
+    "external_input_occurrence": {
+      "required_fields": [
+        "occurrence_id",
+        "input_type_ref",
+        "term_ref",
+        "provenance"
+      ],
+      "payload_edge": "input_type_ref-and-term_ref",
+      "untyped_payload": false
+    },
+    "fixture_assertion": {
+      "required_fields": [
+        "predicate_ref",
+        "argument_refs"
+      ],
+      "prose_assertion": false
+    },
+    "transition_occurrence": {
+      "required_fields": [
+        "transition_occurrence_id",
+        "source_transition_declaration_ref",
+        "application_id",
+        "mode_id",
+        "run_id",
+        "activation_id",
+        "step_id",
+        "candidate_delta_id"
+      ],
+      "source_selection": "exact-typed-reference",
+      "source_spelling_dispatch": false
+    }
+  },
+  "judgment_occurrence_contract": {
+    "judgment_type_ref": "type/judgment/admission-obligations-satisfied",
+    "required_fields": [
+      "judgment_occurrence_id",
+      "judgment_type_ref",
+      "subject",
+      "scope",
+      "policy_id",
+      "authority_ref",
+      "governing_judgment_ref",
+      "authorization_evidence_id",
+      "evidence_step_id",
+      "obligation_results",
+      "provenance"
+    ],
+    "required_authority_ref": "authority/jump-arena-obligation-checker",
+    "required_authorization_evidence_id": "authorization-evidence/judgment-issuance",
+    "subject_required_fields": [
+      "candidate_delta_id",
+      "base_state_revision_id",
+      "obligation_ids",
+      "proposed_successor_payload_ref",
+      "transition_occurrence_id"
+    ],
+    "scope_required_fields": [
+      "program_revision_id",
+      "runtime_session_id",
+      "runtime_policy_id"
+    ],
+    "required_obligation_ids": [
+      "obligation/singleton-player-state",
+      "obligation/arena-bounds-ordered",
+      "obligation/position-inside-arena",
+      "obligation/grounded-state",
+      "obligation/exact-base"
+    ],
+    "candidate_may_supply_authority": false,
+    "obligation_result_required_fields": [
+      "obligation_id",
+      "predicate_ref",
+      "evidence_occurrence_id",
+      "result_value_ref"
+    ],
+    "required_result_value_ref": "value/bool/true"
+  },
+  "unit_records": [
+    {
+      "unit_ref": "unit/second",
+      "quantity_ref": "quantity/time"
+    }
+  ],
+  "source_artifact_records": [
+    {
+      "source_artifact_ref": "source-artifact/jump-arena-world-clause",
+      "path": "clause:test-vectors/jump-arena/world.clause",
+      "encoding": "UTF-8",
+      "line_ending": "LF",
+      "byte_length": 6719,
+      "sha256": "2a40a6930ef0f6db39a6dad18cee542b440f7265959bad23097e81103393b77b"
+    }
+  ],
+  "nominal_allocation_basis_records": [
+    {
+      "nominal_allocation_basis_ref": "allocation/application/position-player-1",
+      "application_id": "application/position-player-1",
+      "allocation_kind": "nominal-application"
+    },
+    {
+      "nominal_allocation_basis_ref": "allocation/application/position-player-1-copy",
+      "application_id": "application/position-player-1-copy",
+      "allocation_kind": "nominal-application"
+    },
+    {
+      "nominal_allocation_basis_ref": "allocation/application/input-player-1-east-north",
+      "application_id": "application/input-player-1-east-north",
+      "allocation_kind": "nominal-application"
+    },
+    {
+      "nominal_allocation_basis_ref": "allocation/application/jump-player-1",
+      "application_id": "application/jump-player-1",
+      "allocation_kind": "nominal-application"
+    },
+    {
+      "nominal_allocation_basis_ref": "allocation/application/tick-player-1-quarter",
+      "application_id": "application/tick-player-1-quarter",
+      "allocation_kind": "nominal-application"
+    },
+    {
+      "nominal_allocation_basis_ref": "allocation/application/tick-player-1-half",
+      "application_id": "application/tick-player-1-half",
+      "allocation_kind": "nominal-application"
+    },
+    {
+      "nominal_allocation_basis_ref": "allocation/application/input-listener-player-1",
+      "application_id": "application/input-listener-player-1",
+      "allocation_kind": "nominal-application"
+    }
+  ],
+  "derivation_authorization_records": [
+    {
+      "derivation_authorization_ref": "derivation-authorization/scalar-clamp-lower",
+      "law_ref": "law/scalar-clamp-lower",
+      "mode_id": "mode/scalar-clamp-maybe",
+      "program_revision_id": "program-revision/jump-arena-r0"
+    },
+    {
+      "derivation_authorization_ref": "derivation-authorization/scalar-clamp-interior",
+      "law_ref": "law/scalar-clamp-interior",
+      "mode_id": "mode/scalar-clamp-maybe",
+      "program_revision_id": "program-revision/jump-arena-r0"
+    },
+    {
+      "derivation_authorization_ref": "derivation-authorization/scalar-clamp-upper",
+      "law_ref": "law/scalar-clamp-upper",
+      "mode_id": "mode/scalar-clamp-maybe",
+      "program_revision_id": "program-revision/jump-arena-r0"
+    }
+  ],
+  "continuation_remainder_records": [
+    {
+      "continuation_remainder_ref": "continuation-remainder/input-stream-await-next-observation",
+      "mode_id": "mode/input-listener-reactive",
+      "produced_role_id": "role/input-stream/input-observation"
+    }
+  ],
+  "arena_boundary_records": [
+    {
+      "arena_boundary_ref": "arena-boundary/east-wall",
+      "axis_role_id": "shape-role/vec3/x",
+      "bound_program_binding_ref": "program-binding/max-x"
+    },
+    {
+      "arena_boundary_ref": "arena-boundary/west-wall",
+      "axis_role_id": "shape-role/vec3/x",
+      "bound_program_binding_ref": "program-binding/min-x"
+    },
+    {
+      "arena_boundary_ref": "arena-boundary/positive-z-wall",
+      "axis_role_id": "shape-role/vec3/z",
+      "bound_program_binding_ref": "program-binding/max-z"
+    },
+    {
+      "arena_boundary_ref": "arena-boundary/negative-z-wall",
+      "axis_role_id": "shape-role/vec3/z",
+      "bound_program_binding_ref": "program-binding/min-z"
+    }
+  ]
 }
