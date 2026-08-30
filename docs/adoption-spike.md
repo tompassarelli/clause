@@ -1,6 +1,7 @@
 # Clause Process-First Constitutional Adoption Spike
 
-> **Status:** Authorized cross-phase falsification program; not implemented.
+> **Status:** Constitutional cross-phase falsification contract. The
+> [roadmap](roadmap.md) alone records implementation and acceptance status.
 >
 > **Authority:** Normative only for the experiment deciding whether the
 > mechanism in the [foundation](foundation.md) survives. It cannot add Clause
@@ -52,12 +53,12 @@ occurrences, n-ary role closure, closure capture, pure arithmetic, an ongoing
 service, cancellation, budget exhaustion, and effect timeout require new
 process-v1 fixtures.
 
-The historical `game_leverage` position/radius law and two later candidates are
-experimental evidence only. Terms `2811f52` was rejected. Materialization
-`274136a` is a clean candidate whose independent review was interrupted; it is
-unreviewed and unaccepted. Preserve the unchanged source law as a cold-
-semantics oracle; do not promote host-selected relation meanings or
-materializer-owned admission from either candidate.
+The historical `game_leverage` position/radius law and later implementation
+attempts are experimental evidence only. Preserve the unchanged source law as
+a cold-semantics oracle; do not promote host-selected relation meanings or
+materializer-owned admission from any attempt. Candidate identities, review
+dispositions, and current sequencing belong only in the
+[roadmap](roadmap.md), never in this constitutional contract.
 
 ## Phase A — Minimal process constitution
 
@@ -138,6 +139,25 @@ without executable authorization. Private interning handles, Wasm handles,
 pointers, table indexes, paths, spans, or log positions cannot escape as
 semantic identity.
 
+Identity creation itself is governed. The process-v1 carrier must record the
+exact authority and predecessor evidence that may allocate or retain each
+nominal identity: Program admission or an admitted generation rule for an
+Application, successful authorized activation for an Activation and Run root,
+actual carry-through for a Step, boundary-crossing remainder for a
+Continuation, actual distinction for an Observation or Occurrence, and
+constitutional Admission for a revision. Content hashing, caller-supplied
+bytes, possession of a serialized object, or a physical allocator cannot mint
+one of those identities.
+
+For every identity domain, the companion includes exact wrong-kind,
+wrong-authority, self-authorizing, equal-content transplant, and already-used
+occurrence negatives. Replaying a record with its existing identity may be an
+idempotent observation of history, but presenting that identity as a fresh
+Application allocation, Activation, Step, occurrence, continuation use, or
+Admission rejects before partial authority. An explicitly declared continuity
+relation may retain a permitted identity; equality alone never supplies that
+relation.
+
 ### Lean trust profile
 
 The constitutional result is admissible only when:
@@ -199,6 +219,17 @@ Application twice. Required observations:
 - no ProgramRevision or StateRevision is created; and
 - a direct-call specialization is observationally equivalent.
 
+The same pure tranche must exercise truth-directed evaluation without
+assertion. Under one exact finite interpretation, use three independently
+identified proposition contents: one supported true, one explicitly supported
+false, and one absent. The three activations emit exact `true`, `false`, and
+`absent` observations with occurrence-exact positive or negative supports;
+absence carries no negative support and is not rewritten as false. Formation,
+activation, observation, and return create no AssertionOccurrence, governed
+Judgment, ProgramRevision, or StateRevision. A later assertion or Judgment is
+a separate identified act and changes only the boundary its policy says it
+changes.
+
 ### 2. Binding, closure, and hygienic compilation
 
 Represent a binder-introducing function, lexical capture, application, and a
@@ -239,6 +270,52 @@ terminal result. Cancellation, terminal timeout, and budget exhaustion have
 typed outcomes. An ungrounded cycle remains distinguishable from a productive
 ongoing process.
 
+The continuation gate is a restart, not an in-memory pause disguised as one.
+The fixture must suspend after an exact `suspend-step`, serialize the complete
+identified Continuation, destroy its executor, rematerialize it in an
+independent runtime, and accept one fresh ingress observation that did not
+exist before suspension. The resumed Step:
+
+- retains the original ApplicationId, ActivationId, and RunId;
+- has a fresh StepId whose predecessor frontier is exactly the singleton
+  `suspend-step`;
+- consumes the newly identified ingress occurrence under its declared mode;
+- emits a fresh ObservationId rather than replaying a cached observation;
+- retains the exact Program, session, world, policy, semantics, budget, and
+  cancellation-scope pins; and
+- creates no ProgramRevision or StateRevision unless a separately staged
+  candidate is admitted.
+
+The same fixture selects a Clause-declared linear resume policy. The first
+authorized resume consumes one exact continuation-use authority. A repeated or
+concurrent second use rejects as `continuation-already-consumed` before a Step,
+observation, effect attempt, or delta exists. This is a mode property, not a
+universal assertion that every continuation is linear.
+
+Every pinned field has an exact one-field stale negative. Transplanting the
+unchanged continuation bytes into an equal-shaped but independently nominal
+Application, another Activation or Run, another RuntimeSession, or another
+continuation-use authority also rejects before carry-through. The rejection
+must name the mismatched identity class without treating equal content, a host
+handle, or possession of bytes as authority.
+
+The concurrency gate varies physical execution while keeping semantic
+causality fixed. A parent Activation creates two independent child
+Activations. One physical plan completes the left child first, a second
+completes the right child first, and a parallel plan releases both behind a
+barrier. In all three runs the join Step has predecessor frontier exactly
+`{left-terminal-step, right-terminal-step}`. Neither child Step lists the
+other, trace serialization may differ, and the joined observation and support
+multiset are identical.
+
+Cancellation, yield, and deadline arbitration is also Clause data. The fixture
+declares an exact causal decision table and a logical deadline/budget boundary,
+then exercises yield-before-cancel, cancel-before-yield, and causally concurrent
+cancel/deadline cases under reversed physical schedules. Each outcome, emitted
+observation set, terminal/nonterminal condition, continuation disposition, and
+Step frontier must match that table. Ambient wall-clock timing, executor queue
+order, and whichever worker reports first may not break the tie.
+
 ### 6. Relational recoverability and materialization
 
 Pure-mode observations may populate an activation-scoped result relation
@@ -261,6 +338,36 @@ identity. A separate physical update envelope pins that delta plus the exact
 semantic graph/contract, physical plan, and budget. The materializer may
 validate, project, and apply the envelope to its view, but may not allocate or
 admit State history; plan identity never enters `StateRevisionId`.
+
+Locality is accepted only with total boundary accounting. From entry into the
+physical update API through its receipt, each plan reports exact integer counts
+for input/contract validation, graph and support reads, index-bucket probes,
+premise occurrences visited, candidate bindings formed, support entries read
+and written, whole-state clones, whole-view rebuilds, support-set clones,
+disconnected rows visited, allocation count, allocated bytes, and peak live
+bytes. It also reports the selected fallback, typed exhaustion or failure, and
+whether a new physical view became visible. Work performed in a helper,
+preflight, copy-on-write layer, receipt builder, or deferred rebuild belongs to
+the operation that caused it and cannot be excluded as setup.
+
+The indexed-locality fixture runs the same admitted local delta over a base
+population and over a second population with a declared multiple of completely
+disconnected rows. For the larger population, whole-state clones, whole-view
+rebuilds, support-set clones, and disconnected-row visits must remain exactly
+zero; every other declared update-work count and update allocation bound must
+remain identical. Initial construction of the larger index is reported in a
+separate build receipt and may scale. The cold-scan receipt must expose its
+corresponding whole-input work rather than being held to the indexed bound.
+
+The allocation gate supplies an exact byte budget, an oversized spatial extent,
+and a forced allocator refusal. An extent outside the indexed plan's declared
+domain selects a visible typed cold-scan fallback before an unbounded grid or
+bucket allocation; if the fallback also exceeds its budget, it returns typed
+exhaustion. A forced allocation failure at every allocation boundary must leave
+the previously visible physical view and support relation byte-for-byte
+unchanged. No fallback or failure may publish a prefix, lose support
+multiplicity, change semantic identity, or silently retry through an
+unaccounted plan.
 
 ### 7. State transition and long-lived world pinning
 
@@ -302,6 +409,92 @@ The change must occur through Clause data alone with no construct-specific
 Lean/Rust semantic constructor, validator, callback, dispatch entry, formatter,
 refactor, analysis, dependency rule, or target semantic branch.
 
+### 10. Bounded Wasm and passive-render boundary
+
+The Wasm adapter receives bounded canonical bytes and returns bounded canonical
+bytes plus replaceable physical handles. The process-v1 companion fixes the
+exact request bytes, input and output limits, expected typed status, and handle
+table before/after state for each of these cases:
+
+- one valid pure activation round trip;
+- truncated and noncanonical package bytes;
+- a declared input length and an actual input of exactly `limit + 1`;
+- an otherwise valid request carrying a stale handle generation, Program pin,
+  StateRevision pin, or RuntimeSession pin; and
+- a valid pure result whose canonical output is exactly `limit + 1`.
+
+Malformed and oversized input rejects before an Application is activated or a
+handle is allocated. A stale request rejects before carry-through. Oversized
+output publishes no prefix and creates no authoritative revision. Every case
+has bounded decoder/allocation accounting and leaves the previous handle table
+unchanged on rejection. A Wasm handle is never accepted in any semantic-ID
+field, and a static or native sample may not be labelled Wasm without the exact
+Wasm artifact and adapter path that produced it.
+
+The passive renderer consumes an immutable render frame and returns only a
+render observation. Its exact vectors include:
+
+- a valid frame pinned to one admitted StateRevision;
+- the same frozen frame presented through two independently allocated host
+  objects, producing the same projection without acquiring shared mutable
+  aliases;
+- a stale predecessor frame after its declared successor is already displayed;
+- missing fields, non-finite numeric data, and an object count of exactly
+  `limit + 1`;
+- canvas focus loss followed by keyboard input; and
+- disposal followed by another input event and render request.
+
+Every rejected frame leaves the scene projection and caller-owned frame bytes
+unchanged. The valid case may mutate only renderer-owned physical scene state;
+it cannot change Clause state, integrate movement, infer collision or
+groundedness, or perform Admission. The input case emits an immutable intent
+observation only while the canvas owns focus. Disposal removes listeners and
+resources exactly once and makes every later call a typed terminal rejection.
+
+### 11. Frozen ordinary-source ergonomics
+
+The process machinery must remain absent from ordinary authored source unless
+the source is actually specifying a process boundary. The process-v1 companion
+copies these UTF-8/LF specimens byte-for-byte and preserves them through
+canonical parse/print/parse.
+
+Pure definition:
+
+```clause
+answer := 20 + 22
+```
+
+Relational request:
+
+```clause
+select all ?destination in egress
+  where
+    ICU-A has a usable egress path to ?destination
+```
+
+State-change constitution, where process structure is relevant:
+
+```clause
+on collect ?actor
+  when
+    ?coin state active
+    ?coin owner ?actor
+  withdraw
+    ?coin state active
+  admit
+    ?coin state collected
+```
+
+The first two blocks contain no authored ApplicationId, ActivationId, StepId,
+RunId, ContinuationId, revision pin, authority token, scheduler, budget, trace,
+or materialization plan. Their checked crosswalk still exposes every required
+semantic identity and pin. The third exposes only the already canonical
+process-relevant `on`/`when`/`withdraw`/`admit` vocabulary; actual activation,
+event occurrence, Step identity, and constitutional Admission remain governed
+boundaries rather than user bookkeeping. Until continuation and race surface
+syntax is separately ratified, those fixtures are Clause semantic data and
+exact observations, not invented source spelling.
+
 ## Exact acceptance
 
 The cross-phase program passes only when all of these are executable and exact:
@@ -314,7 +507,12 @@ The cross-phase program passes only when all of these are executable and exact:
 - pure isolation with no revision;
 - an intentionally ongoing Run with no fake terminal result;
 - suspension, persistence, handoff, cancellation, and resumption with exact
-  causal identity and pins;
+  causal identity and pins, including executor destruction, continuation
+  rematerialization, and a fresh post-suspension observation;
+- wrong-pin and equal-content continuation transplant rejection, plus exact
+  enforcement of the fixture's Clause-declared linear reuse policy;
+- reversed and parallel child schedules with the same exact two-predecessor
+  join frontier, and Clause-declared cancellation/yield/deadline arbitration;
 - effect-stage honesty, including receipt absence;
 - exact Program and world pinning with no silent migration;
 - identity retention across source-only movement, serialization, process
@@ -324,17 +522,24 @@ The cross-phase program passes only when all of these are executable and exact:
   with any intended continuity represented separately by ReferentId evidence;
 - independent concurrent Steps not ordered by storage serialization;
 - no implicit assertion from formation, evaluation, or observation;
+- supported-true, supported-false, and absent proposition observations without
+  an implicit AssertionOccurrence, governed Judgment, or revision;
 - relational recovery of admissible bindings, accepted observations,
   dependencies, causal edges, and occurrence-exact supports;
+- scan/indexed parity plus total update-boundary clone, rebuild, support,
+  allocation, fallback, and disconnected-population accounting;
 - malformed, ungrounded, unauthorized, cyclic-without-anchor, wrong-revision,
   ambiguous-mode, and over-budget rejection before partial authority;
+- bounded Wasm and passive-render acceptance and exact malformed, oversized,
+  stale, focus-loss, and post-disposal negatives;
 - source-to-Term-to-Application-to-Activation-to-artifact explanation;
 - deterministic Reading selection before child-domain checking, lossless
   source occurrences, canonical parse/print/parse meaning, exact focus,
   binding and origin preservation, local recovery, and semantic round trips;
   and
 - ordinary source at least as readable as the accepted surface, with process
-  machinery exposed only where semantically relevant.
+  machinery exposed only where semantically relevant, proven by the frozen
+  source specimens rather than a prose readability claim.
 
 ## Required negative evidence
 
@@ -350,6 +555,8 @@ The spike actively rejects or bounds:
 - Application/Activation/Step/Run/trace collapse;
 - propositions treated as assertions or relation rows treated as process
   occurrences;
+- absent proposition support collapsed into false, or truth observation
+  collapsed into a governed Judgment;
 - fabricated receipts, replayed effects, or false rollback claims;
 - quoted, pattern, hypothetical, or speculative forms executed as authority;
 - NaN, signed-zero, Unicode-normalization, or numeric-width disagreement;
@@ -362,7 +569,18 @@ The spike actively rejects or bounds:
 - source round trips that lose binding, occurrence, Application, or Referent
   continuity;
 - silent Program/world rebinding on continuation resume;
-- whole-graph invalidation for a local edit;
+- continuation transplant or Clause-declared single-use continuation reuse;
+- inferred causality from child completion or trace serialization order;
+- cancellation/yield/deadline arbitration hidden in wall time, queue order, or
+  host race behavior;
+- whole-graph invalidation, whole-state clone, whole-view rebuild, support-set
+  clone, or disconnected-row traversal hidden behind a claimed local edit;
+- oversized materialization allocation, invisible fallback, partial physical
+  publication, or work omitted from the operation's receipt;
+- malformed, oversized, or stale Wasm/render input causing partial output,
+  handle allocation, scene mutation, leaked listeners, or semantic authority;
+- process IDs, scheduler policy, or materializer plans forced into routine
+  authored source where no such distinction is relevant;
 - every machine/KExpr reduction being recorded as a semantic Step; and
 - generic Triple execution presented as a credible production hot path.
 

@@ -24,13 +24,14 @@ Triple slots are structurally neutral. Terms hold distinctions; they do not
 assert, activate, or authorize themselves. A checked ApplicationForm is
 configured application possibility, and a lower-case clause/Application is a
 nominal node with `ApplicationId`. Every Application has that identity; quoted,
-open, and merely structural forms are not Applications. Every actual activation is distinct; one Activation persists
-through multiple StepIds, configurations, suspension, and resumption. A trace
-describes a Run without becoming it. Configured binders, transfers, requests,
-or tasks may have Application identity; an actual event or effect attempt has a
-separate OccurrenceId plus exact provenance. Internally produced occurrences
-name their producing Activation and Step, while external triggers name their
-external-boundary provenance and causally precede the Activation they trigger.
+open, and merely structural forms are not Applications. Every actual activation
+is distinct; one Activation persists through multiple StepIds, configurations,
+suspension, and resumption. A trace describes a Run without becoming it.
+Configured binders, transfers, requests, or tasks may have Application identity;
+an actual event or effect attempt has a separate OccurrenceId plus exact
+provenance. Internally produced occurrences name their producing Activation and
+Step, while external triggers name their external-boundary provenance and
+causally precede the Activation they trigger.
 
 Clause process semantics owns meaning. The Clause Graph is its canonical
 inspectable carrier and explanation surface, not an independent source of
@@ -57,12 +58,12 @@ Clause process semantics.
 Lean syntax is not Clause syntax, Rust types are not Clause ontology, and no
 host representation or wire format is independently authoritative.
 
-The repository is at a clean constitutional bootstrap. Lean and Rust
-independently implement the narrow CLCP v1 codec, finite ground-certificate
-checker, literal proof bootstrap, and predecessor-only package witness against
-the shared corpus. That work is evidence, not a Clause compiler.
+The process-first constitution is not yet a supported implementation. Existing
+Lean and Rust bootstrap artifacts are evidence for narrower package and checker
+contracts, not a Clause compiler. Exact implementation status lives only in the
+[roadmap](docs/roadmap.md).
 
-The compiler contract specifies CLCP v3 and one future literal `Compiler0`.
+The compiler contract specifies CLCP v3 and one literal `Compiler0`.
 Its subject/evidence split prevents evidence from self-hashing or
 self-authorizing. One external human-owner act supplies an opaque genesis
 anchor witness whose observation carries the complete selected byte sequence;
@@ -91,21 +92,12 @@ only explicit seed nominal identities; `NewId` allocations and every other
 derived identity are recomputed once from transformed preimages. Hash bytes
 are never directly permuted.
 
-The CLCP v3 Lean codec and replay checker are implemented. Those exact bytes,
-the carried manifest, the 73-byte replay receipt, KExpr evaluation order,
-machine continuation/fuel behavior, `admitPropose`, and `CompilerRevisionId`
-are frozen compiler-machine mechanics, not the universal process kernel.
-Process identities, revision pins, evidence, authorization, and admission must
-be represented by Clause-owned outer Terms and envelopes. Rust CLCP v3 parity,
-an accepted process-aware `Compiler0` package, genesis anchor, supported Clause
-source parser, compiler, runtime, durable persistence layer, and language
-features remain pending. Observed implementation status lives only in the
-[roadmap](docs/roadmap.md). Git history is not source authority.
-
-`Compiler0` must migrate its provisional `JUDGMENT_ID` and check-decision
-payloads to RelationSchemas, operators, modes, ApplicationForms, and the new
-process envelopes before regeneration or acceptance. No host semantic enum may
-perform that migration.
+The CLCP v3 contract fixes its exact bytes, carried manifest, 73-byte replay
+receipt, KExpr evaluation order, machine continuation/fuel behavior,
+`admitPropose`, and `CompilerRevisionId` as compiler-machine mechanics rather
+than the universal process kernel. Process identities, revision pins, evidence,
+authorization, and admission belong in Clause-owned outer Terms and envelopes.
+Git history is not source authority.
 
 ## Repository layout
 
@@ -114,14 +106,14 @@ perform that migration.
 | [`docs/foundation.md`](docs/foundation.md) | Clause meaning and minimal calculus |
 | [`docs/syntax.md`](docs/syntax.md) | Canonical human-readable source |
 | [`docs/architecture.md`](docs/architecture.md) | Implementation and trust boundaries |
-| [`docs/canonical-package.md`](docs/canonical-package.md) | CLCP v3 wire contract and implemented CLCP v1 evidence boundary |
+| [`docs/canonical-package.md`](docs/canonical-package.md) | CLCP v3 wire contract and CLCP v1 bootstrap evidence boundary |
 | [`docs/compiler-genesis.md`](docs/compiler-genesis.md) | Compiler genesis, succession, and host-freeze contract |
 | [`docs/adoption-spike.md`](docs/adoption-spike.md) | Falsifiable constitutional experiment |
 | [`docs/roadmap.md`](docs/roadmap.md) | Current implementation status and sequence |
 | [`docs/design-evidence.md`](docs/design-evidence.md) | Evidence, alternatives, and uncertainty |
-| [`docs/execution-corpus.md`](docs/execution-corpus.md) | Frozen cross-host Run, Admission, and replay observations |
+| [`docs/execution-corpus.md`](docs/execution-corpus.md) | Frozen v0 cross-host execution/admission/replay observations |
 | [`lean/`](lean/) | Lean constitutional-model and trust-gate bootstrap |
-| [`crates/clause-substrate/`](crates/clause-substrate/) | Historical Rust bootstrap pending the responsibility split in the roadmap |
+| [`crates/clause-substrate/`](crates/clause-substrate/) | Historical Rust bootstrap crate path only; its target responsibility split is in the roadmap |
 | [`test-vectors/`](test-vectors/) | Shared canonical-package and execution corpora |
 
 Each public contract has one owner. Canonical bytes cannot select authority;
@@ -140,14 +132,13 @@ cargo test --workspace --locked --all-targets
 cargo clippy --workspace --locked --all-targets -- -D warnings
 ```
 
-Passing these commands proves the implemented CLCP v1 representation,
-candidate Context/Judgment carriers, relative finite-certificate checker,
-literal proof-bootstrap boundary, independent Rust v1 corpus parity, and the
-Lean CLCP v3 strict codec/replay checker. They do not prove cross-host CLCP v3
-parity, `Compiler0`, the external genesis anchor, compiler succession,
-Atom canonicality, valid FormationJudgments, Application/Activation/Step/Run
-process semantics, general Admission, durable persistence, or any language
-feature.
+`ClauseCore` is the historical Lean bootstrap module name, not Clause's
+semantic kernel. The package name `clause-substrate` in the Rust commands below
+is likewise historical, not the target crate architecture.
+
+These commands exercise bootstrap evidence only. They do not establish the
+process-first language semantics or any supported language feature. The
+[roadmap](docs/roadmap.md) owns the exact current claims and gaps.
 
 ## Game-leverage falsifier
 

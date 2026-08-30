@@ -24,6 +24,35 @@ itself. The existing CLCP v1 implementation and byte corpus prove only their
 narrow finite-ground-certificate boundary. They are not `Compiler0`, a v3
 receipt, or authority for compiler evolution.
 
+## Semantic namespace boundary
+
+CLCP is a closed compiler-machine carrier, not the Clause process kernel.
+Names in its wire grammar, evaluator, and checker remain scoped to that machine
+even when they use an English word that also appears in Clause semantics:
+
+- `KExpr`, its evaluation judgment, and any implementation-level evaluator
+  continuation, reduction step, index, or fuel counter are compiler-machine
+  mechanics. They are not a Clause `Application`, `Activation`, `Step`,
+  `Run`, or `Continuation`.
+- Core ABI `Observation` and `Observations` values are the evaluator's ordered
+  physical-operation record. Their `index` is a machine sequence index, not
+  an `ObservationId`, `StepId`, or claim that independent Clause steps are
+  causally ordered.
+- `EvalReceipt` commits to one exact deterministic replay result, remaining
+  fuel, and machine-observation sequence. It is neither a Clause run trace nor
+  a substitute for activation identity, causal evidence, or admission.
+- `CompilerSemanticsId` and `CompilerRevisionId` identify the exact compiler
+  interface/program content and compiler subject defined below. They are not
+  Clause process-semantics identity or a `ProgramRevisionId`.
+- Core ABI `Propose` is a compiler-program result and checker `Authorized` is
+  a compiler-package authorization verdict. They implement this compiler
+  succession boundary only; neither is the general Clause `Admission`
+  relation nor creates a `ProgramRevision` or `StateRevision`.
+
+A Clause-owned envelope may relate these exact machine artifacts to semantic
+applications, activations, runs, observations, evidence, and revisions. The
+relation must be explicit; shared spelling never creates semantic identity.
+
 ## CLCP v3 primitive encodings
 
 ```text
@@ -1061,9 +1090,11 @@ evidence, and ordered opaque auxiliary blobs. Its normative byte corpus is in
 [`test-vectors/canonical-package/`](../test-vectors/canonical-package/).
 The live Lean and Rust implementations reproduce that corpus. SHA-256 entries
 are content-addressing evidence only, and v1 decoding or authorization is not
-Clause compiler authority. Existing prose and code also call this the Clause
-Core v0 package; `v0` names that semantic bootstrap, while the wire version
-octet is `01`.
+Clause compiler authority. `Clause Core v0` is a retired historical
+implementation alias for this CLCP-v1 package boundary, not a current Clause
+semantic or constitutional namespace. Existing symbols may retain the alias
+until their consumers migrate; `v0` names that bootstrap implementation, while
+the wire version octet is `01`.
 
 The remainder of this document freezes the implemented v1 representation until
 its consumers are migrated and removed in a later implementation phase.
@@ -1173,11 +1204,12 @@ prior claims:
 
 1. A root node succeeds only when `rootRef` exists in the selected basis and
    `claimed` is byte-structurally equal to that root's decoded claim.
-2. An application node succeeds only when `ruleRef` exists, the number of
-   `premiseRefs` equals the selected rule's premise count, every premise
-   reference is distinct, every reference addresses a strictly earlier node,
-   each referenced claim equals the corresponding ordered rule premise, and
-   `claimed` equals the rule conclusion.
+2. A rule-application certificate node (historically, an "application node";
+   not a Clause semantic `Application`) succeeds only when `ruleRef` exists,
+   the number of `premiseRefs` equals the selected rule's premise count, every
+   premise reference is distinct, every reference addresses a strictly
+   earlier node, each referenced claim equals the corresponding ordered rule
+   premise, and `claimed` equals the rule conclusion.
 3. Checking a certificate against a requested claim succeeds only when every
    node succeeds, the node list is nonempty, and the last claimed value equals
    the requested claim.
@@ -1285,7 +1317,7 @@ candidate + selected literal/predecessor authority --authorize--> verdict
 An API that returns an authorized package directly from successful decoding is
 nonconforming.
 
-### Frozen constitutional specimens
+### Frozen CLCP-v1 evidence specimens
 
 For compact notation, let:
 

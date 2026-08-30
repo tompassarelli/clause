@@ -1,8 +1,6 @@
 # Clause Architecture
 
-> **Status:** Accepted process-first host boundary plus a normative P1 compiler-
-> genesis contract. CLCP v3 Lean replay is implemented; the process kernel,
-> cross-host compiler acceptance, and runtime remain pending.
+> **Status:** Derived process-first architecture and host-boundary map.
 >
 > **Authority:** Derived and non-semantic. The
 > [foundation](foundation.md) governs meaning, [syntax](syntax.md) governs
@@ -13,23 +11,25 @@
 ## Decision
 
 Clause uses one host-neutral semantic contract, one externally anchored
-compiler root, and three implementation roles:
+compiler root, and a governed boundary between compiler-machine checking and
+Clause Admission:
 
 ```text
- human owner selects exact literal Compiler0 bytes once
-            and supplies an external anchor witness
-                            |
-                            v
-                  accepted CLCP v3 Compiler0
-                   /          |           \
-                  v           v            v
-        Clause-owned       Lean checks    Rust evaluates
-        source/compiler    fixed rules    fixed machine
-                  \           |            /
-                   \--- exact predecessor -/
-                            |
-                            v
-                  accepted compiler successor
+                         exact candidate CLCP bytes
+                          /                    \
+ owner anchor witness for genesis       exact accepted predecessor
+                                               |
+                                   compile + admitPropose
+                          \                    /
+                           v                  v
+                        frozen CLCP checker verdict
+                         Authorized | Unauthorized
+                                    |
+                 Clause-owned Run evidence + candidate delta
+                                    |
+                        governed outer Admission
+                                    |
+               authoritative compiler and Program successor
 ```
 
 Clause process semantics owns meaning. The Clause Graph is its canonical
@@ -42,17 +42,22 @@ evolution from the earliest literal bootstrap. Lean checks only the fixed
 generic constitution. Rust executes only the fixed generic evaluator and
 replaceable physical machinery.
 
-The activated or admitted semantic chain is:
+The semantic chain is:
 
 ```text
-checked ApplicationForm
+neutral Term + FormationJudgment
+  -> checked closed ApplicationForm
+     (exact RelationSchema, OperatorRef, complete named-role bindings,
+      eligible Mode set, and context requirements)
   -- instantiate when nominal application continuity is required -->
      ApplicationId
-  -> distinct ActivationId under exact ModeId and initial pins
-  -> before/after ActivationConfigurations related by causal StepIds
-  -> Run(RunId, root = ActivationId, causal closure)
+  -> fresh ActivationId under one selected eligible ModeId, exact initial
+     pins, typed ActivationCauseFrontier, and exactly one Run membership
+  -> stable ActivationId across configurations related by causal StepIds,
+     each with a nonempty typed StepCauseFrontier
+  -> Run(RunId, one unique root and uniquely owned child Activations)
   -> observations, continuations, and candidate deltas
-  -> separately governed admission
+  -> separately governed Admission
 ```
 
 Neither graph storage, mode existence, successful evaluation, nor a physical
@@ -64,9 +69,11 @@ act selects its exact literal bytes and is presented to admission as
 `Missing | Supplied(OwnerAnchorWitness)`. The witness is opaque to package data
 and exposes the complete selected byte sequence for octet-for-octet comparison;
 recorded length and package hash are secondary consistency observations, never
-substitutes for those bytes or sources of authority. Every later compiler is
-admitted only through the already accepted exact predecessor's `compile` and
-`admitPropose` behavior, checked under that predecessor.
+substitutes for those bytes or sources of authority. Every later compiler can
+become eligible for outer Admission only after the already accepted exact
+predecessor's `compile` and `admitPropose` behavior and the frozen checker
+produce the required exact evidence. Neither entrypoint nor the checker verdict
+itself admits the successor.
 
 OCaml has no primary role. Aeneas is not part of the bootstrap or trust chain.
 It may be reconsidered later for isolated safe-Rust verification only.
@@ -94,21 +101,28 @@ product, or evidence experiments and implementation. Semantic, execution, and
 evidence workstreams proceed concurrently; only true dependency edges
 serialize them.
 
-## Live-tree boundary
+## Repository responsibility boundary
 
-The repository contains two implementation roots and one compiler contract:
+The repository currently carries its Lean implementation, historical Rust
+bootstrap crate, and compiler contract at these literal paths:
 
 ```text
 lean/                       constitutional checker/reference model
-crates/clause-substrate/    physical persistence/runtime/backend substrate
+crates/clause-substrate/    historical combined Rust bootstrap crate
 docs/compiler-genesis.md    compiler identity and succession contract
 ```
 
-The implementation roots began semantic-empty. They implement the narrower
-CLCP v1 proof bootstrap plus the Lean CLCP v3 strict codec and complete replay
-checker described in the [roadmap](roadmap.md). Rust v3 parity, `Compiler0`,
-the genesis anchor, and accepted successor evidence remain pending.
-New work derives only from the current Clause contract. Git history is
+`clause-substrate` is only that historical crate and path name. It is not a
+semantic concept or the target package boundary. The target Rust
+responsibilities are `clause-package` for canonical CLCP bytes and validation,
+`clause-runtime` for construct-blind evaluation and the generic process
+protocol, `clause-materialization` for replaceable physical projections, and
+`clause-wasm` for the bounded Wasm transport adapter. The eventual `clause`
+crate is a public facade or CLI, not a shared semantic implementation. The
+[roadmap](roadmap.md) alone records when this split occurs and the status of
+each implementation.
+
+New work derives only from the accepted Clause contract. Git history is
 recovery, not an implementation input.
 
 Every tracked source, test, example, document, generator, host, and release
@@ -124,28 +138,14 @@ source, tests, fixtures, generated artifacts, documentation, and consumers.
 
 ## Host-neutral canonical carrier
 
-The canonical carrier contract is the transport and checking form of the calculus in
-the foundation. CLCP v3 carries compiler execution through a fixed universal
-kernel:
+The canonical carrier contract is the transport and checking form of the
+calculus in the foundation. Clause-owned package data and process envelopes
+carry semantic meaning. CLCP v3 separately carries compiler-machine execution
+through a frozen construct-blind evaluator:
 
 ```text
 RawTriple = [Term, Term, Term]
 Term      = Atom | RawTriple
-
-Γ ⊢ t : T @ interpretation
-
-Γ ⊢ form(t, OperatorRef, exact-role-bindings, requirements)
-  : ApplicationForm
-
-activate(ApplicationId, ModeId, InitialContext)
-  = ActivationId + InitialConfiguration
-
-Configuration_before
-  -- StepId(predecessors = Frontier) ; observations ; delta ; continuation -->
-Configuration_after
-
-admit(BaseRevision, delta, evidence, authority, obligations)
-  = SuccessorRevision | Rejection
 
 KSort = Bytes | Term
 
@@ -173,15 +173,14 @@ observations, and every local rule. `CoreContractId` and `PhysicalProfileId`
 are derived from those carried exact objects; there is no registry or
 package-defined metalanguage.
 
-The already specified CLCP v3 exact bytes, hashed carried manifest, 73-byte
-`EvalReceipt`, left-to-right KExpr evaluator, machine `Continuation`, evaluator
-step, out-of-fuel behavior, `admitPropose`, and `CompilerRevisionId` remain
-unchanged. Their names describe compiler-machine mechanics inside this exact
-contract. They are not `ApplicationId`, `ActivationId`, semantic `StepId`,
-`RunId`, typed Continuation, general Admission, or Program/State revision
-semantics. Clause-owned outer Terms and envelopes carry those process
-identities, pins, authorizations, evidence, and governed deltas through the
-fixed machine.
+The CLCP v3 exact bytes, hashed carried manifest, 73-byte `EvalReceipt`, left-
+to-right KExpr evaluator, machine `Continuation`, evaluator step, out-of-fuel
+behavior, `admitPropose`, and `CompilerRevisionId` are frozen compiler-machine
+mechanics inside this exact contract. They are not `ApplicationId`,
+`ActivationId`, semantic `StepId`, `RunId`, typed Continuation, general
+Admission, or Program/State revision semantics. Clause-owned outer Terms and
+envelopes carry those process identities, pins, authorizations, evidence, and
+governed deltas through the fixed machine.
 
 The two distinct interface definitions have exact signatures
 `compile : [Term] -> Term` and `admitPropose : [Term] -> Term`. Their fixed
@@ -215,12 +214,24 @@ process execution:
 - canonical Terms and explicit equality contracts;
 - distinct identities where occurrence or continuity requires them;
 - contexts, strata, FormationJudgments, RelationSchemas, revision-indexed
-  extensions, OperatorRefs, modes, source Readings, ExecutionAuthorizations,
-  Applications, process contracts, and capabilities;
+  extensions, OperatorRefs, modes, source Readings, ApplicationForms,
+  Applications, Judgments, JudgmentOccurrences, typed
+  AuthorizationOccurrences, process contracts, and capabilities;
 - candidate successors, deltas, obligations, derivations, and certificates;
 - source origins and separately scoped traces, strategies, and physical
   evidence; and
 - a semantics epoch and one canonical byte representation.
+
+ProgramSnapshot construction is two-stage. A finite canonical checked preimage
+uses local declaration identities and contains none of the
+`ProgramSnapshotId`-scoped external references derived from itself. Hashing
+that preimage creates `ProgramSnapshotId` once; exact `RelationSchemaId`,
+`RoleId`, `OperatorRef`, `ModeId`, `ApplicationId`, and `JudgmentRef` values are
+then resolved, and `ApplicationShapeId` is derived from the resolved form.
+Neither those external references nor the shape ID are inserted back into the
+same preimage. Runtime Activations, Steps, Runs, observations, traces, and
+physical layouts remain outside snapshot identity unless governed semantic
+content explicitly makes them constitutive.
 
 The package is not a new ontology. Lean values, Rust structs, proof terms,
 indexes, source maps, traces, caches, and strategies do not enter semantic
@@ -228,11 +239,11 @@ identity unless an authored formation or governed Judgment explicitly makes
 their content semantic. Lean proof terms remain local. Only Clause-native
 semantic evidence crosses the host-neutral boundary.
 
-The implemented Lean and Rust CLCP v1 codecs derive from one Clause-owned
-specification and vector corpus. CLCP v3 keeps the same independent,
-strict-codec requirement while replacing the v1 carrier with the compiler
-subject/evidence split in the [canonical-package contract](canonical-package.md).
-No host serializer is a wire format.
+CLCP v1 and v3 require independent strict codecs derived from one Clause-owned
+specification and vector corpus. CLCP v3 replaces the v1 carrier with the
+compiler subject/evidence split in the
+[canonical-package contract](canonical-package.md). No host serializer is a
+wire format.
 
 ## Lean constitutional kernel
 
@@ -289,8 +300,9 @@ Rust may implement:
 - generic `DefId` table lookup, fuel, machine continuations, and checked
   hashing;
 - generic validation and transport of Clause-owned Application, Activation,
-  Step, Run, continuation, observation, and admission envelopes without
-  interpreting their domain names;
+  Step, Run, continuation, observation, JudgmentOccurrence,
+  AuthorizationOccurrence, and admission envelopes without interpreting their
+  domain names;
 - indexes and incremental dependency maintenance;
 - durable persistence and transaction machinery;
 - operating-system, filesystem, network, browser, and foreign interfaces;
@@ -307,9 +319,9 @@ enum, trait, callback, plugin, formatter, validator, package-local `DefId`,
 pointer, arena index, row number, or object layout is never semantic authority
 or identity.
 
-The Rust implementation remains `unsafe`-free until an unavoidable foreign boundary is
-identified and separately authorized. Any future unsafe module is isolated,
-documented, tested, and outside the constitutional checker.
+Rust stays `unsafe`-free until an unavoidable foreign boundary is identified
+and separately authorized. Any future unsafe module is isolated, documented,
+tested, and outside the constitutional checker.
 
 ## Clause-authored compiler
 
@@ -317,12 +329,12 @@ Clause does not begin with a host frontend and migrate meaning later.
 `Compiler0` owns lossless reading and syntax selection, binding and occurrence
 identity, elaboration and formation/schema/operator/mode/effect checks, typed
 macros and transformations, origin construction, diagnostics, process-envelope
-construction, and successor production from genesis. Its current provisional
-`JUDGMENT_ID` and check-decision payload design must migrate to
-RelationSchemas, operators, modes, ApplicationForms, and Clause-owned process
-envelopes before `Compiler0` is regenerated or accepted. Stable later
-capabilities—queries, impact analysis, refactoring, planning, projection, and
-selected lowering—also evolve as Clause package data.
+construction, and successor production from genesis. Its semantic output uses
+RelationSchemas, operators, modes, ApplicationForms, nominal Applications,
+typed process envelopes, Judgments, and JudgmentOccurrences rather than host-
+owned construct cases. Stable later capabilities—queries, impact analysis,
+refactoring, planning, projection, and selected lowering—also evolve as Clause
+package data.
 
 The constitutional host-freeze test is an ordinary predecessor-authorized
 `Compiler0 -> Compiler1` transition that changes one binding form, one effect
@@ -402,12 +414,15 @@ vectors.
 ## Execution and physical freedom
 
 Pure running returns values and evidence without creating an authoritative
-revision. Transition Steps may stage candidate deltas; admission alone creates
+revision. Transition Steps may stage candidate deltas; Admission alone creates
 the successor revision. State transition and external effects cross distinct
-boundaries: transition admission may admit effect intents, separate
-authorization permits an effect Activation to attempt an act, receipts are
-optional, observations form a causal graph, and later Judgment/admission may
-record claims. Candidate delta and continuation never collapse.
+boundaries: State Admission may admit effect intents; a separate
+AuthorizationOccurrence issues an exact EffectAuthorization Judgment; and a
+separately identified effect Activation names both in its typed cause frontier
+before producing an attempt occurrence. Receipts are optional, observations
+form a causal graph, governed JudgmentOccurrences issue assessments, and a
+later separate AdmissionOccurrence may record a claim or State successor.
+Candidate delta and continuation never collapse.
 
 Semantic State admission supplies an `AdmittedStateDelta` naming the exact
 ProgramRevision, RuntimeSession, predecessor and result StateRevisions, and
@@ -431,9 +446,13 @@ ordinary production hot path.
 ## Admission and parity gates
 
 Materializers, agents, optimizers, and target backends are untrusted
-producers. After the one external genesis anchor, a small generic checker
-admits a compiler successor only when the already accepted exact predecessor
-both compiles its exact subject and proposes its admission. Candidate or
+producers. After the one external genesis anchor, the already accepted exact
+predecessor must both compile the candidate's exact subject and run its frozen
+`admitPropose` proposal check. The small generic checker returns exact
+`Authorized` or `Unauthorized` evidence over those compiler-machine results;
+it does not admit the candidate. Governed outer Admission alone may consume the
+verdict, Clause-owned Run evidence, authority, candidate delta, and obligations
+to establish the authoritative compiler and Program successor. Candidate or
 self-basis checking and hash-only predecessor equality reject.
 
 A semantic tranche may be promoted or admitted as supported capability only

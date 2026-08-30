@@ -143,6 +143,144 @@ The crosswalk must not reinterpret the v0 fixture's `run` name as ActivationId,
 StepId, or RunId; infer causality from JSON order; fabricate a receipt; or
 silently migrate a live Activation to a new Program or world revision.
 
+### Exact companion record
+
+Every process-v1 case must commit exact input bytes and checksums, the selected
+semantics and Program/world/session pins, identity-allocation authority,
+Application/Activation/Run identities, ordered Step records with explicit
+predecessor sets, observations and occurrence-exact supports, outcome,
+continuation, candidate delta, Admission decision, and authoritative-boundary
+hashes before and after. A physical case additionally commits its strategy,
+budget, total work receipt, physical-view hash, and handle/scene table before
+and after. A rejection fixes the rejecting stage, typed reason, obligations,
+and all boundaries proven unchanged.
+
+Names used while authoring the manifest are never semantic identity by
+spelling. Once the process-v1 identity encoding is accepted, the companion
+must carry its canonical ID bytes and preimages; equality/inequality-only
+placeholders cannot satisfy an exact gate. Each identity record names the
+Clause authority and predecessor evidence that allocated or retained it.
+Wrong-kind, wrong-authority, self-authorizing, equal-content transplant, and
+already-used-occurrence variants reject before partial authority. Historical
+replay with an existing identity is not a fresh occurrence.
+
+### Restarted continuation and causal schedule vectors
+
+`resume-rematerialized-fresh-observation` must perform this exact sequence:
+
+1. activate one Application and run through at least one nonterminal Step;
+2. suspend at `suspend-step`, emit a boundary-crossing Continuation, and record
+   its complete canonical bytes and pins;
+3. terminate that executor and rematerialize the bytes in an independent
+   runtime with no shared heap or handle table;
+4. supply one newly identified ingress occurrence absent from the serialized
+   remainder; and
+5. resume the same Activation and Run, creating one fresh Step whose
+   predecessor set is exactly `{suspend-step}` and one fresh ObservationId
+   supported by that ingress occurrence.
+
+The post-resume observation bytes and support must differ from every
+pre-suspension observation; trace replay does not pass. Separate one-field
+negative vectors change each of Application, Mode, ProgramSnapshot,
+ProgramRevision, RuntimeSession, observed/base StateRevision, runtime policy,
+semantics epoch, Activation, Run, emitting Step, remaining budget, cancellation
+scope, and continuation-use authority. Additional vectors transplant unchanged
+bytes to an equal-shaped independent Application, Activation, Run, or session.
+All reject before a new Step. Under the fixture's Clause-declared linear policy,
+the first use succeeds and both sequential and concurrent reuse reject as
+`continuation-already-consumed` without duplicate observations or effects.
+
+`join-left-first`, `join-right-first`, and `join-parallel` use fresh identities
+in separate Runs but the same Clause process data. The first two force opposite
+child completion orders; the third uses physically separate workers and a
+barrier. In every Run the join Step's predecessor set is exactly that Run's two
+child terminal StepIds. Neither child names the other as a predecessor. Joined
+Value, observation content, occurrence-support multiset, candidate delta, and
+Admission decision are equal; trace order is explicitly permitted to differ.
+
+The race fixture carries its cancellation/yield/deadline decision table and
+logical deadline boundary as Clause data. It fixes cases for yield causally
+before cancel, cancel causally before yield, and cancel concurrent with the
+deadline, then runs each under opposite queue order and worker count. Expected
+Step frontiers, yielded observations, continuation disposition, typed terminal
+outcome, and resource balance come from that table. Wall-clock arrival, log
+order, and first host callback are not inputs.
+
+### Truth without implicit assertion
+
+One exact finite interpretation contains independently identified proposition
+contents for supported true, explicitly supported false, and absent. Three pure
+truth-directed Activations must emit respectively `true`, `false`, and
+`absent`. The first two name their exact positive or negative assertion
+occurrence supports. `absent` has no such support and never aliases false.
+Hashes of the assertion set, governed Judgments, ProgramRevision, and
+StateRevision remain unchanged in all three cases. A separate later assertion
+and a separate later Judgment receive fresh occurrence identities; neither may
+be retroactively attributed to evaluation.
+
+### Total materialization receipts
+
+Every materialization operation is accounted from API entry through the
+returned receipt. The receipt contains exact counts for contract/input
+validation, graph and support reads, index-bucket probes, premise occurrences
+visited, candidate bindings, support entries read and written, whole-state
+clones, whole-view rebuilds, support-set clones, disconnected rows visited,
+allocation calls, allocated bytes, and peak live bytes. It also contains the
+selected plan and fallback, typed failure or exhaustion, and whether a new
+physical view was published. Deferred work and work performed by helpers,
+copy-on-write layers, preflights, and receipt construction are included.
+
+The companion declares concrete `base-population` and larger
+`disconnected-population` integers and the exact receipt expected from each
+plan. For the same local admitted delta, the larger indexed/incremental case
+must report exactly zero whole-state clones, whole-view rebuilds, support-set
+clones, and disconnected-row visits. Its remaining update counts and allocation
+bound must equal the base case. Index construction has a separate receipt and
+may scale. The cold scan reports its complete scaling work.
+
+Separate vectors cover repeated premise slots, self-joins, equal content from
+distinct Activations, and retraction with two independent supports. An
+oversized extent must select the declared typed cold-scan fallback before any
+unbounded indexed allocation. Exact `limit + 1` allocation and forced failure
+vectors either complete through that bounded fallback or return typed
+exhaustion. Every failure point preserves the previous physical-view and
+support hashes, publishes no prefix, and retains exact support multiplicity.
+
+### Wasm and passive-host vectors
+
+The Wasm cases fix request/response bytes, exact length and allocation limits,
+typed status, and handle table before/after. They include one valid pure round
+trip; truncated and noncanonical canonical-package input; declared and actual
+input length `limit + 1`; stale handle generation; stale Program,
+StateRevision, and RuntimeSession pins; and a pure canonical result of exactly
+`output-limit + 1`. Malformed or oversized input allocates no handle and starts
+no Activation. Stale input performs no Step. Oversized output publishes no
+prefix. Rejection never traps, wraps a length, mutates a semantic boundary, or
+accepts a physical handle as semantic identity.
+
+The passive-host cases fix immutable input-frame bytes, prior scene-projection
+hash, expected render observation, resulting scene-projection hash, and listener
+and resource counts. They include a valid admitted-StateRevision frame; two
+independently allocated host objects containing that same frame; a stale
+predecessor after its successor is displayed; missing and non-finite fields;
+object count `limit + 1`; keyboard input after canvas focus loss; and input plus
+render after disposal. Rejection leaves both caller frame and scene projection
+unchanged. A valid render may change only renderer-owned physical objects.
+Disposal is terminal and idempotent, removes every owned listener/resource
+exactly once, and permits no later callback-owned work.
+
+### Frozen ordinary-source specimens
+
+The companion copies the three exact code blocks in the adoption spike's
+“Frozen ordinary-source ergonomics” section into separately checksummed source
+files. Pure definition and relational request source contain no process IDs,
+revision pins, authority token, scheduler, budget, trace, or physical plan. The
+state-change specimen exposes only its semantically relevant canonical process
+words. Canonical parse/print/parse preserves the exact accepted projection,
+while the semantic crosswalk still exposes every generated identity, pin, and
+authority. A printer that injects process bookkeeping or a host sidecar needed
+to recover hidden meaning fails the fixture.
+
 The evolution program admits two changes in order. Reapplying the second change
 to the root or to an equal-looking but different base rejects. Verification
 evidence and lifecycle observations do not enter the fixture revision identity.

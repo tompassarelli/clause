@@ -1,8 +1,7 @@
 # Clause Syntax
 
-> **Status:** Canonical source design is accepted but not yet fully implemented.
-> The process-first Application/Activation kernel remains subject to the
-> [adoption spike](adoption-spike.md).
+> **Status:** Canonical source design. The process-first adoption boundary is
+> defined by the [adoption spike](adoption-spike.md).
 >
 > **Authority:** Sole authority for canonical Clause source. The
 > [foundation](foundation.md) governs meaning, the
@@ -10,9 +9,7 @@
 > [roadmap](roadmap.md) alone governs implementation status.
 
 Clause has one canonical source language. This document contains only that
-language. Parser implementation status belongs to the
-[roadmap](roadmap.md); executable acceptance never makes another spelling
-canonical.
+language. Executable acceptance never makes another spelling canonical.
 
 ## Governing rule
 
@@ -139,9 +136,7 @@ for n in 101..106
 ```
 
 This is the accepted source shape. It does not expose ActivationIds, StepIds,
-or graph bookkeeping when those are not semantically relevant. No parser
-implements it yet; the [roadmap](roadmap.md) records that implementation
-status.
+or graph bookkeeping when those are not semantically relevant.
 
 ## Declarations and source context
 
@@ -271,7 +266,12 @@ zero modes, but no canonical source spelling for that distinct case is ratified
 yet. An operator may otherwise have several modes. Schema, extension, operator,
 mode, Reading, derivation authorization, ExecutionAuthorization, admission
 authority, and effect capability never imply one another. Activation selects
-one exact eligible `ModeId` and requires separate ExecutionAuthorization.
+one exact eligible `ModeId` and cites exact
+`AuthorizationEvidence<ExecutionAuthorization>`: either a constitutive
+`JudgmentRef<ExecutionAuthorization>` whose declared scope covers the exact
+activation context, or an `AuthorizationOccurrenceId<ExecutionAuthorization>`
+that issued it. Constitutive and issued authorization are not interchangeable
+identity domains.
 
 All result cardinalities are written as words:
 
@@ -298,9 +298,14 @@ wrong-cardinality bindings. A schema without an operator can form a checked
 relational row, assertion, or pattern, but not an ApplicationForm. When the
 Reading also selects an exact OperatorRef, checked formation may produce an
 ApplicationForm represented with recursive structurally neutral three-slot
-Terms. An implementation may materialize an indexed named-role map for checking
-or execution. No semantic consumer may recover an operator or role from Triple
-position, tuple position, graph adjacency, or source order.
+Terms. That closed form explicitly selects and stores one exact
+`RelationSchemaId`, one exact `OperatorRef`, and the exact eligible `ModeId` set
+for those bindings, their known/produced orientation, and the static context.
+Activation may select only a member of that stored set; an empty set leaves the
+form inspectable but non-activatable. An implementation may materialize an
+indexed named-role map for checking or execution. No semantic consumer may
+recover an operator or role from Triple position, tuple position, graph
+adjacency, or source order.
 
 ## Terms and conventional operators
 
@@ -404,12 +409,19 @@ or transition occurrence itself.
 
 The `on` block declares process constitution. Merely representing it or an
 event does not run it. An actual trigger remains an independently identified
-event occurrence; activation requires an exact nominal Application, selected
-ModeId, initial program/session/world pins, and ExecutionAuthorization. The
-configured event ApplicationId is not the actual event OccurrenceId; the latter
-carries exact provenance. An internally produced trigger names its producing
-Activation and Step. An external trigger instead names exact external-boundary
-provenance and causally precedes the Activation it triggers.
+event occurrence; activation requires an exact nominal Application, one
+selected eligible `ModeId`, exact initial program/session/world pins, exact
+`AuthorizationEvidence<ExecutionAuthorization>`, and an exact
+`ActivationCauseFrontier`. Successful activation allocates a fresh
+`ActivationId` with exact `RunMembership`; membership is assigned at activation
+and never inferred from later graph reachability. The configured event
+`ApplicationId` is not the actual event `OccurrenceId`; the latter carries
+typed occurrence provenance. Every internally produced occurrence names the
+exact `RunId`, `ActivationId`, and `StepId` that produced it. Every externally
+entered occurrence instead names its exact boundary, external evidence, and
+typed external cause frontier; boundary entry never fabricates an ingestion
+Step. In particular, an externally entered trigger causally precedes rather
+than claims production by the Activation it triggers.
 
 A reusable change set is explicit:
 

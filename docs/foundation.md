@@ -30,8 +30,9 @@ Running comes first. An application is the least articulated typed engagement
 in which running can become explicit. An activation is one actual engagement
 of an addressable application under an exact mode and initial context. A step
 is one semantically meaningful carry-through between configurations of that
-activation. A Run is the causal envelope rooted at the activation. Admission
-alone creates an authoritative successor boundary.
+activation. A Run is the causal envelope with one unique root Activation and
+any uniquely owned child Activations. Admission alone creates an authoritative
+successor boundary.
 
 Clause retains one structurally neutral recursive carrier:
 
@@ -49,19 +50,24 @@ universal data constructor:
 ```text
 FormationJudgment := Γ ⊢ t : T @ interpretation
 
-Γ ⊢ op : OperatorRef(schema, eligible-modes)
-Γ ⊢ bindings exactly close schema.roles
+Γ ⊢ schema : exact RelationSchemaRef
+Γ ⊢ op : exact OperatorRef
+Γ ⊢ eligible = modes(op) restricted to schema and bindings
+Γ ⊢ bindings exactly close schema.roles under every mode in eligible
 Γ ⊢ requirements satisfied
 ──────────────────────────────────────────
-Γ ⊢ form(t, op, bindings) : ApplicationForm<ResultDomain>
+Γ ⊢ form(t, schema, op, bindings, eligible)
+    : ApplicationForm<ResultDomain>
 ```
 
-An `ApplicationForm` is checked and closed: it records an exact operator
-reference, complete named role bindings, eligible-mode constraints, and context
-requirements. It is configured application possibility. It may have no eligible
-executable mode and may be quoted, inspected, transformed, or rejected. It
-asserts, executes, authorizes, and admits nothing. It may have an
-`ApplicationShapeId` where structural comparison is safe and useful.
+An `ApplicationForm` is checked and closed: it records one exact
+RelationSchema reference, one exact operator reference, complete named role
+bindings, the exact set of eligible Mode references, and context requirements.
+Every eligible Mode is declared against that same RelationSchema. It is
+configured application possibility. It may have no eligible executable mode
+and may be quoted, inspected, transformed, or rejected. It asserts, executes,
+authorizes, and admits nothing. It may have an `ApplicationShapeId` where
+structural comparison is safe and useful.
 An **Application** is a nominal node instantiating one exact ApplicationForm;
 every Application has `ApplicationId`. Raw Terms and quoted, open, or merely
 structural forms are not Applications and need no nominal identity. `ClauseId`
@@ -70,18 +76,20 @@ is retired as a public identity domain rather than aliased to `ApplicationId`.
 Process and governance use distinct relations:
 
 ```text
-activate(ApplicationId, ModeId, InitialContext) =
-  (ActivationId, InitialConfiguration)
+activate(ApplicationId, ModeId, InitialContext, ActivationCauseFrontier) =
+  (ActivationId, RunMembership, InitialConfiguration)
 
 ⟨ActivationId, Configuration_before, observed StateRevision⟩
-  -- StepId(predecessors = Frontier) ; observations ;
+  -- StepId(causes = StepCauseFrontier) ; observations ;
      candidate delta ; continuation -->
 ⟨ActivationId, Configuration_after, same authoritative StateRevision⟩
 
-Run(RunId, root = ActivationId, causal closure)
+Run(RunId, unique root ActivationId, child Activations, causal closure)
 
-admit(BaseRevision, candidate delta, evidence, authority, obligations)
-  = SuccessorRevision | Rejection
+admit(BaseRevision, candidate delta, evidence,
+      AuthorizationEvidence<AdmissionAuthorization>,
+      JudgmentOccurrences, obligations)
+  = (AdmissionOccurrenceId, SuccessorRevision | Rejection)
 ```
 
 The process semantics is this typed activation, step, observation,
@@ -100,15 +108,15 @@ These names are constitutional:
 | Distinction | A stable difference maintained by running. |
 | Term | The holdable, recursively composable carrier of a distinction. |
 | FormationJudgment | A contextual typing/formation claim; it grants no policy or execution authority. |
-| ApplicationForm | A checked closed operator/schema/named-role/mode-eligibility/context configuration over a Term. |
+| ApplicationForm | A checked closed exact-schema/operator/named-role/eligible-Mode/context configuration over a Term. |
 | Application | A nominal node instantiating one exact ApplicationForm, with `ApplicationId`. |
-| Activation | One actual engagement of an Application under one selected mode and immutable initial pins. |
+| Activation | One actual engagement of an Application under one selected mode, immutable initial pins, one typed cause frontier, and one exact Run membership. |
 | ActivationConfiguration | Semantic process state before or after a Step of one stable `ActivationId`; it is not the stable identity. |
-| Step | One externally meaningful causal carry-through between before/after ActivationConfigurations under an exact finite predecessor frontier. |
-| Run | A causal process envelope rooted at an Activation, possibly containing child activations and handoffs. |
+| Step | One externally meaningful causal carry-through between before/after ActivationConfigurations under an exact finite typed cause frontier. |
+| Run | A causal process envelope with one unique root Activation and zero or more uniquely owned child Activations. |
 | Continuation | The typed semantic remainder of an Activation, never merely a host stack frame. |
 | Observation | An identified occurrence reporting a distinction from a Step or external boundary. |
-| OccurrenceProvenance | A checked sum naming either the exact producing Activation/Step or the exact external boundary and evidence through which an occurrence entered. |
+| OccurrenceProvenance | A checked sum naming either the exact producing Activation/Step or the exact external boundary, evidence, and typed causal frontier through which an occurrence entered. |
 | Result | A declared completion product; an ongoing Run need not manufacture one. |
 | Value | A stabilized typed distinction or denotation reusable under declared equality, whether supplied, observed, or produced. |
 | Evaluation | A species of running whose selected Mode seeks an observation, result, verdict, or normal form. It is not the process kernel itself. |
@@ -120,7 +128,9 @@ These names are constitutional:
 | Procedure | An operator Mode whose contract permits effects or authoritative transition proposals. |
 | Proposition | Closed truth-apt relational or application content eligible for truth-directed interpretation or evaluation under a world; never an assertion by representation alone and not necessarily executable. |
 | AssertionOccurrence | One identified act placing proposition content under an assertive stance, source, scope, and authority. |
-| Judgment | A governed authority- or policy-bearing assessment of content, an occurrence, evidence, an Activation, or a boundary. |
+| Judgment | Immutable checked assessment content naming its subject, stance, authority kind, policy, and scope; it is not an actual issuance until carried by a JudgmentOccurrence. |
+| JudgmentOccurrence | One identified issuance of an exact Judgment by an exact authority under an exact policy and context. |
+| Authorization | A Judgment whose stance permits one exact typed action and scope; contextual use is carried by an AuthorizationOccurrence. |
 | Entity | A domain-level continuity projection, not the universal kernel noun. |
 | Referent | Whatever a Designation picks out under an explicit identity protocol. |
 | Identifier | A typed token designating one declared identity domain; its bytes do not define the continuity relation. |
@@ -132,7 +142,7 @@ These names are constitutional:
 | ProgramRevision | One admitted historical selection of an exact ProgramSnapshot in a Program lineage. |
 | RuntimeSession | One execution lineage pinned to an exact ProgramRevision, policy, and semantics epoch. |
 | StateRevision | One admitted runtime process boundary with exact session, predecessor, causal occurrence, payload, policy, and semantics. |
-| Effect | A boundary-crossing process whose intent, authorization, attempt, optional receipt, observations, Judgments, and admission remain distinct. |
+| Effect | A boundary-crossing process whose intent occurrence, Authorization Judgment and occurrence, attempt occurrence, optional receipt occurrence, Observations, JudgmentOccurrences, and Admission remain distinct. |
 | Admission | The only operation that creates an authoritative Program, State, or other governed successor. |
 | Trace | A retained projection of a Run; it is never the Run itself. |
 
@@ -178,7 +188,7 @@ or compiler-internal witness is local implementation evidence and never the
 wire contract.
 
 A package envelope is not a `ProgramSnapshot`. Only the canonical checked
-payload enumerated under
+snapshot preimage enumerated under
 [Program identity and history](#program-identity-and-history) contributes to
 `ProgramSnapshotId`. Source maps, strategies, runtime traces, certificates,
 caches, and physical evidence remain outside that identity unless an explicit
@@ -212,7 +222,7 @@ taxonomy:
 ```text
 formation:   Term + schema/operator/role/context requirements
 activation:  ApplicationId + ModeId + exact initial pins + authorization
-step:        configuration-before + predecessor frontier -> observations,
+step:        configuration-before + typed cause frontier -> observations,
              delta, continuation, and configuration-after
 ```
 
@@ -301,41 +311,50 @@ Semantic identity domains are disjoint even when a transport uses one fixed
 byte width for all of them. No unchecked cast, shared string, host handle, or
 wire `Id32` may substitute one domain for another.
 
-Declarations use typed snapshot-local identifiers inside the canonical
-ProgramSnapshot payload. Once the snapshot identity is known, exact external
-references are formed without a self-hash in the payload:
+Declarations, nominal Applications, and constitutive Judgments use typed
+snapshot-local identifiers inside the canonical ProgramSnapshot preimage.
+Once the snapshot identity is known, exact external references are formed
+without placing any snapshot-scoped reference back into that preimage:
 
 ```text
 RelationSchemaId = (ProgramSnapshotId, RelationSchemaLocalId)
 RoleId           = (RelationSchemaId, RoleLocalId)
 OperatorRef      = (ProgramSnapshotId, OperatorLocalId)
 ModeId           = (OperatorRef, ModeLocalId)
+ApplicationId    = (ProgramSnapshotId, ApplicationLocalId)
+JudgmentRef      = (ProgramSnapshotId, JudgmentLocalId)
 ```
 
 Each local identifier is unique in its declared domain and its declaration is
-part of the canonical checked snapshot payload. Selecting the same exact
-ProgramSnapshot through another ProgramRevision preserves these references;
-changing the snapshot never silently preserves them. A deliberately named
-cross-revision declaration continuity is a separate `ReferentId` relation with
-explicit evidence, not equality of snapshot-local identifiers. ProgramRevision
-lineage alone never supplies declaration identity or continuity.
+part of the canonical checked snapshot preimage. Local records refer only to
+other local identifiers or external identities that were already resolved
+before this snapshot; none contains `ProgramSnapshotId`, `RelationSchemaId`,
+`OperatorRef`, `ModeId`, `ApplicationId`, `JudgmentRef`, or
+`ApplicationShapeId` for the snapshot being constructed. Selecting the same
+exact ProgramSnapshot through another ProgramRevision preserves the resulting
+external references; changing the snapshot never silently preserves them. A
+deliberately named cross-revision declaration continuity is a separate
+`ReferentId` relation with explicit evidence, not equality of snapshot-local
+identifiers. ProgramRevision lineage alone never supplies declaration identity
+or continuity.
 
 | Identity | Exact continuity criterion and consumer |
 | --- | --- |
 | `RelationSchemaId` | One exact checked RelationSchema declaration in one exact ProgramSnapshot, represented as above. A changed snapshot produces a new exact reference unless explicit Referent continuity is separately established. |
 | `RoleId` | One exact role declaration inside one exact RelationSchemaId. Role spelling or position is never identity. |
 | `OperatorRef` | One exact operator/process declaration in one exact ProgramSnapshot. It is a reference, not execution authority or cross-revision continuity. |
-| `ModeId` | One exact Mode declaration under one exact OperatorRef. A Mode revision changes its exact reference; revision lineage never silently rebinds it. |
-| `ApplicationShapeId` | Canonical closed ApplicationForm content under one `ClauseSemanticsId`, including exact OperatorRef, named-role bindings, context requirements, and the exact resolved semantic-dependency/declaration closure, which may be proven empty. Open formation candidates are not ApplicationForms and have no semantic shape ID. Used for comparison and reuse, never occurrence. |
+| `ModeId` | One exact Mode declaration under one exact OperatorRef. Each Mode declaration names exactly one RelationSchemaId; an Operator may expose Modes over several schemas. A Mode revision changes its exact reference; revision lineage never silently rebinds it. |
+| `JudgmentRef` | One exact constitutive Judgment declaration in one exact ProgramSnapshot. Runtime issuance cites it or carries exact non-constitutive Judgment content in a JudgmentOccurrence; the reference is not the issuance. |
+| `ApplicationShapeId` | Post-snapshot identity of canonical closed ApplicationForm content under one `ClauseSemanticsId`, including exact RelationSchemaId, OperatorRef, eligible ModeIds, named-role bindings, context requirements, and the exact resolved semantic-dependency/declaration closure, which may be proven empty. It never occurs in its own ProgramSnapshot preimage. Open formation candidates are not ApplicationForms and have no semantic shape ID. Used for comparison and reuse, never occurrence. |
 | `ApplicationId` | One nominal Application instantiating one exact ApplicationForm under its exact semantics and snapshot-local declaration references. Every Application has one. Source-only movement may preserve it when the exact ProgramSnapshot and form are unchanged; a semantic or declaration revision creates a new ApplicationId, with any intended cross-revision continuity represented separately by ReferentId evidence. |
-| `OccurrenceId` and typed refinements | One source, assertion, production, actual event, effect attempt, or observation occurrence. Every actual occurrence has the explicit provenance sum defined below; equal content never merges independent occurrences. |
+| `OccurrenceId` and typed refinements | One actual source, assertion, external-trigger, Judgment issuance, authorization, resumption, handoff, cancellation, production, admission, effect-intent, effect-attempt, receipt, or observation occurrence. Every actual occurrence has the explicit provenance sum defined below; equal content never merges independent occurrences, and one refinement never substitutes for another. |
 | `ActivationId` | One actual engagement of one exact Application, mode, and initial context. Every activation is distinct, including repeated activation of equal content. |
-| `StepId` | One externally meaningful semantic carry-through in an Activation. It names an exact finite causal-predecessor frontier, or the Activation root when that set is empty; serialization order supplies no causal edge. |
-| `RunId` | One causal envelope rooted at an Activation and governing child-activation, handoff, and cancellation scope. It is not an alias for ActivationId or a log identifier. |
+| `StepId` | One externally meaningful semantic carry-through in an Activation. It names an exact finite typed StepCauseFrontier; serialization order supplies no causal edge. |
+| `RunId` | One causal envelope with exactly one root Activation and unique membership for every child Activation it owns. It is not an alias for ActivationId or a log identifier. |
 | `ContinuationId` | One persisted, suspended, or handed-off semantic remainder. Ephemeral in-process remainder may be physically erased when refinement proves it unobservable. |
 | `ObservationId` | One occurrence reporting a distinction from an exact Step or external boundary. Equal observed values do not merge observations. |
 | `ReferentId` | Deliberately retained nominal continuity of an addressable semantic referent across admitted changes. Similar content or spelling is insufficient. No separate `ConceptId` is introduced until a distinct continuity consumer exists. |
-| `ProgramSnapshotId` | Exact canonical checked process-constitution content under one `ClauseSemanticsId`. |
+| `ProgramSnapshotId` | Hash of one exact canonical checked local-reference process-constitution preimage under one `ClauseSemanticsId`; snapshot-scoped external references resolve only after this hash. |
 | `ProgramRevisionId` | Exact Program lineage edge: snapshot plus Program, predecessor/root, and change occurrence. |
 | `StateRevisionId` | Exact admitted runtime boundary: session, predecessor/root, causal occurrence, payload, policy, and semantics. Materialization graph, contract, and plan identities are excluded. |
 | `ArtifactId` | Exact physical materialization or byte content. It cannot stand in for any semantic or revision identity. |
@@ -352,27 +371,60 @@ and are never content hashes. A checked compiler may erase a pure Activation or
 Step allocation from generated code only when a refinement proves every
 declared consumer and observation unchanged; semantic distinctness remains.
 
-Actual occurrence provenance is a checked sum, never a guessed host relation:
+An `Occurrence` is an actual identified event, never merely the content it
+carries. Its kind is a typed refinement such as `AssertionOccurrenceId`,
+`ExternalTriggerOccurrenceId`, `JudgmentOccurrenceId`,
+`AuthorizationOccurrenceId`, `ResumptionOccurrenceId`,
+`HandoffOccurrenceId`, `CancellationOccurrenceId`,
+`AdmissionOccurrenceId`, `EffectIntentOccurrenceId`,
+`EffectAttemptOccurrenceId`, `ReceiptOccurrenceId`, or `ObservationId`.
+This list is extensible through checked declarations, not through unchecked
+tags. Each declaration fixes the occurrence payload and the types allowed in
+its causal frontier.
+
+A `Judgment` is immutable assessed content. A `JudgmentOccurrence` is the
+actual issuance of that content by an authority under a policy and context.
+An `Authorization` is a Judgment subtype whose subject is one exact action and
+scope; `ExecutionAuthorization`, `DerivationAuthorization`,
+`EffectAuthorization`, and `AdmissionAuthorization` are distinct typed
+subtypes. An `AuthorizationOccurrenceId<A>` is a typed JudgmentOccurrence
+issuing an Authorization of subtype `A`; it cannot be used as another subtype.
+Proposition content, an AssertionOccurrence, an Observation, a receipt, and an
+Admission are not Judgments merely because a later Judgment may assess or
+consume them. Equal Judgment content issued twice produces two occurrences.
+
+Actual occurrence provenance is indexed by occurrence kind and is never a
+guessed host relation:
 
 ```text
-OccurrenceProvenance :=
-    ProducedBy(ActivationId, StepId)
-  | EnteredThrough(exact boundary/capability reference,
-                   external evidence)
+OccurrenceProvenance<K> :=
+    ProducedBy<K>(RunId, ActivationId, StepId)
+  | EnteredThrough<K>(exact BoundaryRef,
+                      exact ExternalEvidenceRef,
+                      ExternalCauseFrontier<K>)
 ```
 
-`ProducedBy` requires the Step to causally produce that occurrence.
-`EnteredThrough` records an externally sourced occurrence at the exact declared
-boundary and causally precedes any Activation it triggers. It does not fabricate
-an ingestion Step or claim that the triggered process produced its own trigger.
+`ProducedBy` requires the named Step to belong to the named Run and to emit
+that exact occurrence kind and identity. `EnteredThrough` records an externally
+sourced occurrence at one declared boundary. Its finite canonical cause
+frontier contains only the typed causal references permitted for `K`; the
+checker rejects a self-reference, future reference, cycle, wrong occurrence
+kind, wrong Run membership, or missing required cause. An external root trigger
+normally has an empty external cause frontier. An entered receipt names the
+attempt it reports; an entered authorization names the exact request or effect
+intent and carries the exact Authorization Judgment it issues; a cancellation
+names its exact target; and a resumption or handoff names its exact
+Continuation. Boundary entry does not
+fabricate an ingestion Step or claim that a triggered process produced its own
+trigger.
 
 A configured binder, transfer, request, or task may require nominal
-`ApplicationId` continuity. An actual trigger, domain event, or effect attempt
-does not reuse that identity as its occurrence: it carries a typed
-`OccurrenceId` plus exact provenance. Internally produced occurrences name the
-Activation and Step that carried them through. External triggers instead name
-their exact external-boundary provenance and causally precede, rather than
-claim production by, the Activation they trigger.
+`ApplicationId` continuity. An actual trigger, domain event, Judgment issuance,
+or effect attempt does not reuse that identity as its occurrence: it carries
+the matching typed OccurrenceId plus exact provenance. Internally produced
+occurrences name the Run, Activation, and Step that carried them through.
+External triggers instead name their exact external-boundary provenance and
+causally precede, rather than claim production by, the Activation they trigger.
 
 Because this reset changes formation, process, and typed-identity rules, an
 implementation of it selects a new `ClauseSemanticsId`. Existing v0 structural
@@ -415,15 +467,19 @@ The general contextual mechanism is a `FormationJudgment`:
 Γ ⊢ t : T @ interpretation
 ```
 
-It states that Term `t` has a checked type and contextual interpretation. This
-formation annotation is not the source `Reading` defined below: generated,
+It states that Term `t` has a checked type and contextual interpretation.
+`FormationJudgment` is the conventional type-theoretic name for a formation
+relation, not a governed `Judgment` in the authority taxonomy and not a
+JudgmentOccurrence. This formation annotation is not the source `Reading`
+defined below: generated,
 quoted, runtime, and foreign Terms need no source projection. The
 same structural Term may be formed as quoted syntax, a macro or query pattern,
 a pure expression, proposition content, assertion content, a transition
 request, an effect intent, a compiler plan, a trace, or the Term component of
 an ApplicationForm. Formation proves neither truth, authority, executability,
-nor current world membership. The prior equation of Clause with this contextual
-judgment is retired; capitalized Clause is the language, not this relation.
+nor current world membership. The prior equation of Clause with a
+FormationJudgment is retired; capitalized Clause is the language, not this
+relation.
 
 `RawTriple`, Term, FormationJudgment, ApplicationForm, Application, and governed
 Judgment are therefore distinct: structural compound, holdable value,
@@ -461,15 +517,20 @@ checked concepts:
 - `OperatorRef` selects an operator/process definition in one exact
   ProgramSnapshot. An operator may expose zero or more modes and may relate to
   one or more RelationSchemas.
-- `Mode` declares known and produced roles, result cardinality, purity,
-  effects, typed failure, nondeterminism, ordering, continuation, scheduling,
-  identity, resource, temporal, cost, and admissible-strategy contracts.
+- `Mode` names exactly one RelationSchema and declares known and produced roles
+  from that schema, result cardinality, purity, effects, typed failure,
+  nondeterminism, ordering, continuation, scheduling, identity, resource,
+  temporal, cost, and admissible-strategy contracts. An operator may expose
+  separate Modes for separate schemas; no Mode inherits a schema from call
+  position or runtime selection.
 - a source `Reading` maps syntax to exact Terms, role bindings, and declarations.
   It does not select runtime authority.
-- `ExecutionAuthorization` permits an exact Application and mode to activate
-  under a stated scope and policy. It is separate from relation existence,
-  mode existence, derivation authorization, admission authority, and effect
-  capability.
+- `ExecutionAuthorization` is Authorization Judgment content permitting an
+  exact Application and Mode to activate under a stated scope and policy. An
+  Activation cites either a constitutive JudgmentRef whose scope covers the
+  exact context or an AuthorizationOccurrence issuing it. This is separate
+  from relation existence, mode existence, derivation authorization, admission
+  authority, and effect capability.
 
 A RelationSchema without an operator can still form checked role bindings,
 revision-indexed relational rows, assertion content, and open patterns. None of
@@ -477,15 +538,25 @@ those is an ApplicationForm. ApplicationForm formation requires an exact
 `OperatorRef`; RelationSchema existence or a checked relational binding cannot
 supply one implicitly.
 
-Application formation requires exact role closure. Every required role appears
-with its declared cardinality; no undeclared role appears; and repeated roles,
-premise slots, and occurrences remain explicitly ordered or multiplicity-aware
-where the schema requires them. Closed means that every role is explicitly
-bound to a value, binder, or produced-role placeholder permitted by an eligible
-Mode; it does not mean every role is initially ground. No consumer may infer a
-role from Triple position, source word order, graph adjacency, or a host field
-name. A partially described pattern may be a query or rule pattern, but it is
-not a closed ApplicationForm eligible for activation.
+Application formation selects one exact RelationSchema and one exact
+OperatorRef. Its exact eligible-Mode set is the set of that operator's Modes
+which name the selected schema, permit the supplied known/produced-role
+orientation, satisfy the form's static context requirements, and close the
+bindings. The checked form stores that exact set; activation may select only a
+member. A form with an empty set remains inspectable but cannot activate.
+Ambiguous schema selection rejects formation rather than being deferred to the
+runtime.
+
+Formation requires exact role closure against the selected schema. Every
+required role appears with its declared cardinality; no undeclared role
+appears; and repeated roles, premise slots, and occurrences remain explicitly
+ordered or multiplicity-aware where the schema requires them. Closed means
+that every role is explicitly bound to a value, binder, or produced-role
+placeholder permitted by every recorded eligible Mode; it does not mean every
+role is initially ground. No consumer may infer a role or schema from Triple
+position, source word order, graph adjacency, operator spelling, or a host
+field name. A partially described pattern may be a query or rule pattern, but
+it is not a closed ApplicationForm eligible for activation.
 
 A pure function is an operator mode established as pure, deterministic, and
 single-result for the declared direction. A procedure is an executable mode
@@ -554,11 +625,48 @@ Activation is actual engagement, not an edge saying that an application
 timelessly evaluates to a value:
 
 ```text
-Γ; G; W; κ ⊢ activate(ApplicationId, ModeId) ↦
-  ⟨ActivationId, InitialConfiguration⟩
+RootTrigger :=
+    ExternalTrigger(ExternalTriggerOccurrenceId)
+  | SessionStart(SessionStartOccurrenceId)
+  | AdmittedTrigger(AdmissionOccurrenceId)
+
+ActivationOrigin :=
+    RootedBy(RootTrigger)
+  | ChildOf(RunId, parent ActivationId, parent StepId)
+  | HandoffFrom(RunId, parent ActivationId, parent StepId,
+                ContinuationId, HandoffOccurrenceId)
+
+AuthorizationEvidence<A : Authorization> :=
+    ConstitutiveAuthorization(JudgmentRef<A>)
+  | IssuedAuthorization(AuthorizationOccurrenceId<A>)
+
+ActivationPrerequisite :=
+    Authorization(AuthorizationEvidence<A>)
+  | AdmittedEffectIntent(EffectIntentOccurrenceId)
+  | RequiredObservation(ObservationId)
+  | RequiredAdmission(AdmissionOccurrenceId)
+
+ActivationCauseFrontier :=
+  exactly one ActivationOrigin
+  + a finite canonical set of ActivationPrerequisite
+
+RunMembership := RootOf(RunId) | ChildIn(RunId)
+
+Γ; G; W; κ ⊢ activate(ApplicationId, ModeId,
+                   ActivationCauseFrontier) ↦
+  ⟨ActivationId, RunMembership, InitialConfiguration⟩
+
+StepCause :=
+    ActivationStart(ActivationId)
+  | PriorStep(RunId, predecessor ActivationId, predecessor StepId)
+  | ContinuationTakeup(ContinuationId,
+                       ResumptionOccurrenceId | HandoffOccurrenceId)
+  | CancellationRequest(CancellationOccurrenceId)
+
+StepCauseFrontier := nonempty finite canonical set of StepCause
 
 ⟨ActivationId, Configuration_before, Wbase⟩
-  -- StepId(predecessors = Frontier) ; e ; δ ; k -->
+  -- StepId(causes = StepCauseFrontier) ; e ; δ ; k -->
 ⟨ActivationId, Configuration_after, Wbase⟩
 ```
 
@@ -566,22 +674,49 @@ timelessly evaluates to a value:
 observed StateRevision when the Application is world-sensitive; and `κ` is the
 typed initial context. `κ` pins the exact `ClauseSemanticsId`,
 `ProgramSnapshotId`, `ProgramRevisionId`, RuntimeSession when present, runtime
-policy, exact ExecutionAuthorization, capabilities, budget, continuation/
-cancellation scope, and observable scheduler constraints. Activation selects
-one exact eligible `ModeId`. Ambiguous, missing, unauthorized, malformed,
-ungrounded-known-role, or over-budget activation rejects before acquiring
-partial authority.
+policy, exact required `AuthorizationEvidence<A>` values, capabilities, budget,
+continuation/cancellation scope, and observable scheduler constraints.
+Activation selects
+one exact `ModeId` from the ApplicationForm's stored eligible-Mode set. The
+selected Mode's activation contract fixes the allowed and required
+`ActivationPrerequisite` kinds and Authorization subtypes; the checker rejects
+a missing, extra, wrongly typed, or causally invalid prerequisite. A
+constitutive authorization may
+authorize an ordinary execution where its declared scope covers the exact
+Application, Mode, session, and context. An effect Mode always requires an
+`IssuedAuthorization<EffectAuthorization>` naming the exact admitted effect
+intent and capability;
+mere mode existence or a broad constitutive grant cannot authorize the external
+attempt. Ambiguous, missing, unauthorized, malformed, ungrounded-known-role, or
+over-budget activation rejects before acquiring partial authority.
+
+Run membership is assigned at activation and never inferred from later graph
+reachability. `RootedBy` allocates one fresh `RunId` and makes the Activation
+that Run's unique root. `ChildOf` and `HandoffFrom` require the named parent
+Step to belong to the named Run and assign the new Activation as a child of
+that same Run. Every Activation has exactly one owning `RunId`; every Run has
+exactly one root Activation; a child Activation does not silently root a second
+Run. A deliberately detached process uses a new typed root trigger and a new
+Run, while its trigger provenance may still name the earlier causal boundary.
+These rules prevent a child from being attached to an arbitrary or multiple
+Runs.
 
 One stable `ActivationId` advances through any number of
 `ActivationConfiguration`s. Configuration is semantic execution state, not a
 new Application or Activation. Every externally meaningful carry-through has
-a distinct `StepId` and names an exact finite set of causal predecessor Steps;
-an empty predecessor frontier names the Activation root. Multiple predecessors
-permit join causality without inventing a total order. Independent Steps are
-unordered unless an explicit causal relation orders them; a total trace or log
-order is storage evidence only. Internal KExpr reduction, CPU instructions,
-scheduler ticks, and materializer visits are not semantic Steps unless the
-declared observation contract exposes that boundary.
+a distinct `StepId` and a nonempty typed `StepCauseFrontier`. The first Step of
+an Activation contains exactly one `ActivationStart`, whose causal predecessors
+are the ActivationCauseFrontier; later Steps cannot use `ActivationStart`.
+`PriorStep` may name one or several predecessor Steps in the same Run, allowing
+join causality without inventing a total order. `ContinuationTakeup` must match
+the exact continuation pins and causally includes the Step that emitted the
+Continuation. `CancellationRequest` must target the exact Activation or its
+owning Run; each Step that observes or carries through cancellation names that
+occurrence explicitly. Independent Steps are unordered unless one of these
+typed causes orders them; a total trace or log order is storage evidence only.
+Internal KExpr reduction, CPU instructions, scheduler ticks, and materializer
+visits are not semantic Steps unless the declared observation contract exposes
+that boundary.
 
 A Step may emit zero or more identified observations, values, evidence,
 diagnostics, effect intents, resource use, a candidate delta, or a continuation.
@@ -594,12 +729,19 @@ Every world-sensitive Step names the exact StateRevision it observed or used as
 its base. A long-lived Activation never silently sees a newer world or Program.
 It may advance its world view only through an explicit observation, admitted
 successor relation, or typed handoff that records the old and new pins. A
-Program change never migrates a live Activation; migration or handoff is a new
-governed process with evidence and obligations.
+Program change never migrates a live Activation. Resumption or executor handoff
+with identical Application, Mode, constitution, world, policy, authority, and
+continuation pins preserves the same ActivationId and Run membership; the next
+Step cites the exact Continuation and ResumptionOccurrence or
+HandoffOccurrence. A handoff that changes any semantic pin, Application, or
+Mode creates a fresh child Activation through `HandoffFrom`, with explicit
+migration evidence and obligations. It may remain in the same Run because the
+causal lineage is preserved, but it never makes the old Activation silently
+change identity or constitution.
 
 A `Continuation` is the typed semantic remainder of an Activation. When it
 crosses suspension, handoff, persistence, or executor boundaries it receives a
-`ContinuationId` and pins at least its Run, Activation, emitting Step, exact
+`ContinuationId` and pins at least its owning Run, Activation, emitting Step, exact
 Application and Mode, ProgramSnapshot and ProgramRevision, RuntimeSession,
 observed/base StateRevision, runtime policy, semantics epoch, typed remainder,
 remaining budget, and cancellation scope. Resumption rejects a mismatched pin.
@@ -607,11 +749,16 @@ An implementation may keep a purely local, unobservable continuation in
 registers or a host stack under a checked refinement; those mechanics are not
 its semantic identity.
 
-A `RunId` identifies the causal closure rooted at one Activation. A Run may
-include child activations, suspension and resumption, handoff, cancellation,
-external waits, and explicitly nondeterministic branches. It may terminate,
-fail, suspend, stream indefinitely, or remain receptive. Intentionally ongoing
-running is a live configuration, not a fake result or a third truth value.
+A `RunId` identifies the causal closure of its unique root Activation and all
+of its uniquely owned child Activations and Steps. Suspension and same-pin
+resumption do not add an Activation. A semantic handoff may add one child
+Activation; executor relocation alone does not. Cancellation is an occurrence
+with exact target and provenance, not a mutable Run flag: every affected
+carry-through cites it, so unrelated concurrent Steps remain unordered. A Run
+may include external waits and explicitly nondeterministic branches. It may
+terminate, fail, suspend, stream indefinitely, or remain receptive.
+Intentionally ongoing running is a live configuration, not a fake result or a
+third truth value.
 
 The frozen v0 corpus retains exactly these compatibility envelopes:
 
@@ -672,10 +819,13 @@ Run.
 
 ```text
 Γ ⊢ candidate delta well formed against exact BaseRevision
-Γ ⊢ evidence, authority, policy, and obligations sufficient
+Γ ⊢ evidence, AuthorizationEvidence<AdmissionAuthorization>,
+    JudgmentOccurrences, policy, and obligations sufficient
 ───────────────────────────────────────────────────────────
-admit(BaseRevision, delta, evidence, authority, obligations)
-  = SuccessorRevision | Rejection
+admit(BaseRevision, delta, evidence,
+      AuthorizationEvidence<AdmissionAuthorization>,
+      JudgmentOccurrences, obligations)
+  = (AdmissionOccurrenceId, SuccessorRevision | Rejection)
 ```
 
 Running alone does not mutate authoritative Clause state. A candidate delta and
@@ -696,22 +846,39 @@ transitions, and agent edits may all be process applications. They do not
 thereby share authority or lifecycle. Admission governs Clause's authoritative
 boundaries; it is not rollback magic over an external system.
 
+An actual invocation of this boundary is an `AdmissionOccurrence` with exact
+typed provenance. It consumes the applicable
+`AuthorizationEvidence<AdmissionAuthorization>` and JudgmentOccurrences but is
+neither an Authorization nor a Judgment itself. An
+AdmissionOccurrence may produce one exact successor or a typed Rejection;
+repeating an already decided admission does not invent a different successor
+identity merely because the attempt occurrence differs. The target revision's
+constitutional identity fields remain those declared for that revision kind;
+the AdmissionOccurrence remains queryable causal evidence unless that target's
+identity contract explicitly includes it.
+
 An ordinary state/effect protocol is a causal graph, not one mandatory total
 chain:
 
 1. a transition Activation and its Steps stage a candidate State delta and
    effect intents;
 2. admission may accept the State successor and admitted intents atomically;
-3. a separate authorization occurrence may authorize an exact intent;
-4. a separately identified effect Activation produces an attempt occurrence;
-5. the attempt may produce a receipt, time out without one, fail before a
-   receipt, or later be described by zero or more observations;
-6. governed Judgments consume exact evidence; and
-7. a later, separate admission may record a claim or State successor.
+3. a separate `AuthorizationOccurrence<EffectAuthorization>` may issue an exact
+   EffectAuthorization Judgment naming one admitted intent, capability, action,
+   scope, and policy;
+4. a separately identified effect Activation has that intent and authorization
+   in its ActivationCauseFrontier and produces an EffectAttemptOccurrence;
+5. the attempt may cause a ReceiptOccurrence, time out without one, fail before
+   a receipt, or later be described by zero or more Observation occurrences;
+6. governed JudgmentOccurrences issue exact Judgments over exact evidence; and
+7. a later, separate AdmissionOccurrence may record a claim or State
+   successor.
 
-The required causal edges are intent to authorization to attempt, with receipt
-optional. Observations may describe an attempt, timeout, receipt, or later
-external state. Receipt, observation, Judgment, and admission remain distinct.
+The required causal edges are intent to authorization to effect Activation to
+attempt, with receipt optional. Their typed occurrence provenance and activation
+cause frontier make that order checkable. Observations may describe an attempt,
+timeout, receipt, or later external state. Receipt, Observation, Judgment,
+JudgmentOccurrence, and Admission remain distinct.
 
 If policy requires a stronger order, the mode must name the external
 transactional adapter and its atomicity, retry, idempotency, timeout, and failure
@@ -935,8 +1102,9 @@ or Run machinery:
 - a **transition contract** describes permissible state change, while one
   authorized Activation may propose a candidate and only one exact Admission
   causes a transactional successor; and
-- an effect request, authorization, intent, attempt, receipt, observation, and
-  admitted external claim remain distinct occurrences or judgments.
+- an effect request, Authorization Judgment, AuthorizationOccurrence, intent,
+  attempt, receipt, Observation, JudgmentOccurrence, and admitted external
+  claim remain distinct typed content, occurrences, Judgments, or boundaries.
 
 Truth, derivability, acceptance, observation, authorization, intention,
 requirement, execution, and external success are therefore not aliases.
@@ -947,11 +1115,14 @@ rejecting judgment, an incompatibility constraint, and absence of evidence
 remain distinct. Closed-world reasoning requires a finite scope and an explicit
 governing mode or law.
 
-An assertion occurrence is an independently identified act committing to
+An AssertionOccurrence is an independently identified act committing to
 proposition content with provenance and scope. Equal proposition Terms may have
-many assertion occurrences. A Judgment is an immutable authority- and
-policy-bearing assessment. A current Disposition is a derived policy-relative
-view, never a mutable status field inside the proposition or assertion.
+many AssertionOccurrences. It is not a truth Judgment. A Judgment is immutable
+checked assessment content; its actual issuance is a separately identified
+JudgmentOccurrence with typed provenance. An Authorization is one Judgment
+subtype, never a synonym for every Judgment or for authority itself. A current
+Disposition is a derived policy-relative view over Judgments and their issuance
+occurrences, never a mutable status field inside the proposition or assertion.
 
 Universal laws remain inert until a separate derivation authorization selects
 an operational mode. Positive derivation preserves every independent support;
@@ -981,20 +1152,41 @@ governed semantic content to a candidate ProgramSnapshot. Files, namespaces,
 source blocks, host objects, storage rows, and heap layouts do not grant program
 identity or authority.
 
-A ProgramSnapshot's canonical checked payload includes, where present:
+A ProgramSnapshot is constructed from a canonical checked **snapshot
+preimage**, never from records which already contain the ProgramSnapshotId being
+computed. The preimage includes, where present:
 
-- Referent and typed identity Terms, roles, RelationSchema identities,
-  revision-independent equality contracts, types, and checked formations;
-- OperatorRefs, ModeIds and their exact contracts, source Readings, and
-  ExecutionAuthorizations;
-- ApplicationForms, admitted nominal Applications, and independently identified
-  assertion occurrences or relational content with constitutional provenance;
-- immutable governed Judgments authored as program content;
+- Referent and typed identity Terms, revision-independent equality contracts,
+  types, and checked formations;
+- RelationSchema and role declaration records keyed by
+  `RelationSchemaLocalId` and `RoleLocalId`;
+- operator and Mode declaration records keyed by `OperatorLocalId` and
+  `ModeLocalId`, with every Mode naming exactly one local RelationSchema and
+  carrying its exact contract;
+- source Readings and constitutive Authorization Judgments, using only local
+  references for declarations in this snapshot;
+- ApplicationForm records which select one local RelationSchema, one local
+  operator, an exact set of eligible local Modes, exact role bindings, context
+  requirements, and dependency closure; nominal Application records keyed by
+  `ApplicationLocalId`; and independently identified AssertionOccurrences or
+  relational content with constitutional provenance;
+- immutable governed Judgment content and constitutive JudgmentOccurrences
+  authored as program content, keyed locally where snapshot-scoped;
 - definitions, laws, derivation authorizations, invariants, goals, continuation
   and process contracts;
 - transition, event, capability, effect, admission, and semantic-policy
   contracts; and
 - exported Designations and explicit semantic source or authority relations.
+
+Every local reference is typechecked and resolved within that finite preimage.
+Canonical local keys are semantic allocation/continuity keys, never source
+positions, traversal order, memory addresses, or spellings; canonicalization
+orders records by their declared encoding. A reference to an already existing
+external snapshot remains an ordinary exact external identity. A reference to
+the snapshot under construction must be local. Consequently the preimage
+contains none of its own `ProgramSnapshotId`, `RelationSchemaId`, `RoleId`,
+`OperatorRef`, `ModeId`, `ApplicationId`, `JudgmentRef`, or
+`ApplicationShapeId` values.
 
 It excludes incidental source layout, SourceMap data, formatting, comments,
 trivia, local Designation spellings, caches, schedules, replaceable derived
@@ -1004,19 +1196,39 @@ storage, rendering, or target layouts. An excluded item enters snapshot identity
 only through an explicit formation or governed Judgment that makes its semantic
 content constitutive.
 
-ProgramSnapshot identity is intensional over that canonical checked payload,
+ProgramSnapshot identity is intensional over that canonical checked preimage,
 not over all logically or behaviorally equivalent programs:
 
 ```text
 ProgramSnapshotId = H(
   "clause/program-snapshot/v1",
   ClauseSemanticsId,
-  canonical_checked_payload
+  canonical_snapshot_preimage
 )
 ```
 
-`canonical_checked_payload` is the canonical encoding of the exact checked
-process-constitution graph just enumerated. `ClauseSemanticsId` commits to
+`canonical_snapshot_preimage` is the canonical encoding of the exact checked
+process-constitution graph just enumerated in local-reference form. Hashing it
+creates the ProgramSnapshotId exactly once. External snapshot-scoped references
+are then resolved as the tuples in the typed identity protocol; resolution does
+not alter or rehash the preimage:
+
+```text
+ApplicationShapeId = H(
+  "clause/application-shape/v1",
+  ClauseSemanticsId,
+  ProgramSnapshotId,
+  canonical_resolved_application_form_without_shape_id
+)
+```
+
+The resolved form contains the exact RelationSchemaId, OperatorRef, eligible
+ModeIds, role bindings, context requirements, and dependency closure. Neither
+that ApplicationShapeId nor any external reference derived from the snapshot
+is inserted back into the same snapshot preimage. This two-stage construction
+removes the self-hash while keeping every external reference exact.
+
+`ClauseSemanticsId` commits to
 canonical Term encoding and equality, normalization, typed identity resolution,
 formation, RelationSchema and role interpretation, Application formation,
 activation and Step semantics, modes, continuation, observation, law and
@@ -1026,8 +1238,8 @@ conforming implementations of one semantics epoch must produce the same bytes
 and IDs.
 
 `ProgramId` is not included merely as snapshot ownership. Two Program lineages
-that preserve the same ReferentIds, semantics epoch, and canonical checked
-payload may share a ProgramSnapshotId; their ProgramRevisionIds remain distinct.
+that preserve the same ReferentIds, semantics epoch, and canonical snapshot
+preimage may share a ProgramSnapshotId; their ProgramRevisionIds remain distinct.
 Independently allocated Referents with equal spellings produce different
 snapshots. Any change to the Term encoding or identity rules requires a new
 semantics epoch and explicit conversion evidence; an implementation may not
@@ -1057,16 +1269,17 @@ ProgramRevisionId = H(
 
 The initial design admits zero or one predecessor; merge history remains
 deferred until a concrete semantic merge requirement exists. Attestations,
-AdmissionJudgments, lifecycle decisions, deployments, and movable ProgramRefs
-remain separate records. Repeatable, accumulable, contestable, or policy-relative
-evidence never enters either identity preimage. A second verifier therefore
-does not change revision identity.
+Admission Judgments and their JudgmentOccurrences, lifecycle decisions,
+deployments, and movable ProgramRefs remain separate records. Repeatable,
+accumulable, contestable, or policy-relative evidence never enters either
+identity preimage. A second verifier therefore does not change revision
+identity.
 
 - A `ProgramRef` is a movable name pointing to a ProgramRevision; every movement
   has an immutable `RefUpdate`.
-- A `LifecycleDecision` is an immutable accepted, released, promoted, or
-  withdrawn judgment naming authority, policy, target, time, revision, and
-  evidence.
+- A `LifecycleDecision` is an immutable JudgmentOccurrence issuing an accepted,
+  released, promoted, or withdrawn Judgment naming authority, policy, target,
+  time, revision, and evidence.
 - A `DeploymentRecord` describes an actual revision, artifact, and environment
   attempt or observation together with its receipt.
 
@@ -1111,8 +1324,10 @@ propose_change(checked candidate, base ProgramRevision or root,
                ProgramAdmissionContext)
   -> ProgramChangeOccurrence
 
-admit(checked occurrence, base ProgramRevision or root)
-  -> ProgramRevision
+admit(checked ProgramChangeOccurrence, base ProgramRevision or root,
+      exact AuthorizationEvidence<AdmissionAuthorization>,
+      exact JudgmentOccurrences)
+  -> (AdmissionOccurrence, ProgramRevision | Rejection)
 ```
 
 `ElaborationContext` owns only caller-selected scope, declarations, imports,
@@ -1121,7 +1336,8 @@ unchecked Terms, formations, forms, and declarations; SourceMap separately owns
 source and proposal spans. Formation checking consumes no policy- or resource-
 relative authority; those inputs belong to activation authorization or
 admission. `ProgramAdmissionContext` is the exact boundary for ProgramId, base
-revision, authority, policy, and constitutive change-occurrence allocation.
+revision, authority, policy, constitutive change-occurrence allocation, and
+admission-occurrence allocation.
 Revision existence is lifecycle-neutral.
 
 There is no broad optional `ProgramContext` whose NamespaceId, AuthorityId,
@@ -1153,16 +1369,20 @@ storage order, or replay order. A runtime transition admission changes
 StateRevision and leaves ProgramRevision unchanged. A Program upgrade requires
 explicit migration evidence and a new RuntimeSession.
 
-Effect intent, authorization, attempt, receipt, observation, Judgment, and
-admitted external claim are distinct occurrences. Effect evidence names the
-exact ProgramRevision, RuntimeSession, observed/base StateRevision, producing
-Activation and Step, and causal predecessor evidence. A receipt records an
-outcome; it does not make the intended external proposition true. By default an
-intent is admitted before a separately authorized effect Activation attempts
-the act. The attempt may have no receipt, and zero or more later observations
-may describe it. Evidence admission happens after the act and cannot roll it
-back. Any adapter claiming atomic State-plus-effect commit must state and prove
-that stronger boundary explicitly.
+EffectIntentOccurrence, EffectAuthorization Judgment,
+AuthorizationOccurrence, effect Activation, EffectAttemptOccurrence,
+ReceiptOccurrence, Observation, Judgment, JudgmentOccurrence,
+AdmissionOccurrence, and admitted external claim are distinct typed objects or
+boundaries. Effect evidence names the exact ProgramRevision, RuntimeSession,
+observed/base StateRevision, producing Run/Activation/Step, typed occurrence
+provenance, and causal frontier. A receipt records an outcome; it does not make
+the intended external proposition true. By default an intent is admitted before
+a separately authorized effect Activation attempts the act. That Activation's
+cause frontier names both the exact admitted intent and the exact
+AuthorizationOccurrence. The attempt may have no receipt, and zero or more
+later observations may describe it. Evidence admission happens after the act
+and cannot roll it back. Any adapter claiming atomic State-plus-effect commit
+must state and prove that stronger boundary explicitly.
 
 ## Theory and Model
 
@@ -1256,7 +1476,7 @@ accidental structure never defines Clause meaning:
 | host closure or function pointer | never Operator, Application, Mode, or Activation identity |
 | arbitrary host mutation | never an Effect without the typed causal boundary |
 | bytes or placement | never Value, Referent, Application, or revision identity by themselves |
-| observed thread interleaving | never semantic order beyond declared predecessor frontiers |
+| observed thread interleaving | never semantic order beyond declared typed cause frontiers |
 | thrown string | never an untyped substitute for rejection, cancellation, timeout, exhaustion, or absent evidence |
 | missing relation row | never false without an explicit closed-world contract |
 
@@ -1268,11 +1488,16 @@ The adoption spike and any migration must prove at least these cases:
 | --- | --- |
 | Same structural Triple constructed twice | Same Term; no Application, assertion, or execution implied |
 | Equal Terms used by independent source or assertion occurrences | Equal content; distinct occurrences |
-| Closed form compared structurally | `ApplicationShapeId` binds `ClauseSemanticsId`, exact OperatorRef and roles, context requirements, and the exact resolved semantic-dependency/declaration closure, including proof that it is empty when applicable; an open form has no shape ID |
+| Closed form compared structurally | `ApplicationShapeId` binds `ClauseSemanticsId`, exact RelationSchemaId, OperatorRef, eligible ModeIds, roles, context requirements, and the exact resolved semantic-dependency/declaration closure, including proof that it is empty when applicable; an open form has no shape ID |
 | Equal-shaped ApplicationForms independently instantiated without continuity evidence | Distinct ApplicationIds |
-| One exact Application activated twice | One ApplicationId; two distinct ActivationIds and Run roots |
-| One Activation progresses, suspends, and resumes | One ActivationId; several StepIds and configurations; exact identified continuation across the boundary |
-| Independent Steps are serialized in a log | No causal ordering unless an explicit predecessor frontier relates them |
+| Snapshot-scoped declarations and forms are hashed | The canonical local-reference preimage contains no identity derived from its own ProgramSnapshotId; external references and ApplicationShapeIds resolve only after the one snapshot hash |
+| One exact Application independently root-activated twice | One ApplicationId; two distinct ExternalTriggerOccurrenceIds, ActivationIds, and Run roots |
+| A parent Step starts a child Activation | The child has a fresh ActivationId, inherits exactly the parent's RunId, and cannot also root or join another Run |
+| One Activation progresses, suspends, and resumes | One ActivationId and Run membership; several StepIds and configurations; the takeup Step names the exact Continuation and ResumptionOccurrence |
+| An executor handoff preserves all semantic pins | Same ActivationId and Run membership; the takeup Step names the Continuation and HandoffOccurrence |
+| A semantic handoff changes Application, Mode, or a semantic pin | Fresh child ActivationId in the same Run through an exact HandoffFrom cause; the original Activation never changes identity or pins |
+| A cancellation races an independent Step | Only Steps whose typed cause frontier names the CancellationOccurrence are ordered after it; unrelated Steps remain unordered |
+| Independent Steps are serialized in a log | No causal ordering unless an explicit typed cause frontier relates them |
 | Two equal-shaped nominal transfer configurations are independently established | Distinct ApplicationIds; every actual transfer event also has a distinct OccurrenceId plus internal producing Activation/Step/Run identity or exact external-boundary provenance |
 | Same expression and value | Expression Term and evaluated value remain distinguishable |
 | Structurally different Terms have equal behavior | Distinct structure; explicit denotational-equivalence judgment |
@@ -1286,14 +1511,15 @@ The adoption spike and any migration must prove at least these cases:
 | Rename without retention | Delete plus create; no guessed continuity |
 | Two equal claims are independently asserted | Same proposition content; distinct AssertionOccurrenceIds |
 | A derived proposition is later explicitly asserted | Consequences may match; the new assertion occurrence changes the snapshot |
-| Non-constitutive attestation or later AdmissionJudgment is added | Snapshot and revision identities remain unchanged |
+| Non-constitutive attestation or later Admission JudgmentOccurrence is added | Snapshot and revision identities remain unchanged |
 | Same checked payload travels with different source, trace, strategy, or certificate evidence | Same ProgramSnapshotId; evidence remains in separately typed package sections |
 | A certificate checked for package A is presented with package B | Admission rejects the mismatched byte/epoch/decoded-value binding |
-| Same checked payload under different semantics epochs | Different ProgramSnapshotIds |
-| Two Programs select the same exact Referents and payload | Same ProgramSnapshotId; Program-specific revision identities |
+| Same canonical snapshot preimage under different semantics epochs | Different ProgramSnapshotIds |
+| Two Programs select the same exact Referents and snapshot preimage | Same ProgramSnapshotId; Program-specific revision identities |
 | Equal spellings use independently allocated Referents | Different ReferentIds and ProgramSnapshotIds |
 | ProgramRef moves | No snapshot or revision change; one new RefUpdate |
-| Authorities disagree | Separate Judgments; policy-relative Disposition |
+| Equal Judgment content is issued twice | One content-equivalence result; two distinct JudgmentOccurrences with exact provenance |
+| Authorities disagree | Separate Judgments and JudgmentOccurrences; policy-relative Disposition |
 | Same State payload reached through different transitions | Different StateRevisionIds |
 | Same ProgramRevision under different runtime policies | Different RuntimeSessionIds |
 | Program upgrade | Explicit migration and new session |
@@ -1308,7 +1534,7 @@ The adoption spike and any migration must prove at least these cases:
 | RelationSchema exists without a Mode | It remains queryable/inspectable but cannot activate |
 | User-defined algebraic data and exhaustive match | Clause-authored declarations and process definitions accept the exhaustive case and reject missing/unreachable cases exactly; no kernel feature case is added |
 | Forming or evaluating proposition content | Creates no assertion occurrence or truth Judgment |
-| Transition stages an external effect | Candidate contains intent only; a separately authorized effect Activation may attempt it |
+| Transition stages an external effect | Candidate contains intent only; an effect Activation may attempt it only when its cause frontier names the exact admitted intent and EffectAuthorization occurrence |
 | Attempt times out without receipt | Attempt and timeout observations remain honest; no receipt or success is fabricated |
 | Effect evidence admission fails after an attempt | External act remains acknowledged and reconcilable; no rollback is claimed |
 | Materializer applies an admitted State delta | Separate physical envelope pins graph, contract, and plan; materializer allocates no State history and plan identity does not enter StateRevisionId |

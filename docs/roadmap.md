@@ -20,7 +20,7 @@ valuable but narrower than the new semantic claim:
 - strict CLCP v1 Lean/Rust codec parity and literal predecessor authority;
 - the CLCP v3 Lean strict codec, carried manifest, evaluator/replay model, and
   complete 73-byte-receipt replay checker;
-- the frozen v0 execution source/observation corpus; and
+- the frozen v0 execution/admission/replay observation corpus; and
 - the bounded historical `game_leverage` cold-scan/indexed experiment.
 
 Those artifacts do not implement `FormationJudgment`, `RelationSchema`,
@@ -96,7 +96,7 @@ host-owned game semantics.
 | Relations and modes | Source design and historical relation experiments exist | Separate RelationSchema, revision-indexed extension, OperatorRef, Mode, Reading, and authorization contracts |
 | Compiler machine | CLCP v3 Lean replay is implemented | Rust v3 parity, literal process-aware Compiler0, external anchor, and accepted successor |
 | Compiler ownership | Genesis/host-freeze contract exists | Compiler0 migration away from provisional `JUDGMENT_ID`/check-decision payloads and one frozen-host evolution |
-| Execution oracle | v0 corpus is frozen | process-v1 crosswalk and one complete vertical slice |
+| Execution oracle | v0 execution/admission/replay observation corpus is frozen | process-v1 crosswalk and one complete vertical slice |
 | Terms | `2811f52` is rejected; selected mechanics remain evidence | Rewrite under Application/Activation identity and exact role closure |
 | Materialization | `274136a` is clean but its review was interrupted; it is unreviewed and unaccepted | Independent review, admitted-delta input, occurrence-exact process supports, and genuine end-to-end locality |
 | Transition/effects | Source and rejected host-owned transition vectors exist | Clause-owned lowering and honest effect causal graph |
@@ -105,7 +105,8 @@ host-owned game semantics.
 
 ## Phase 0 — Freeze and crosswalk oracles
 
-**Status:** v0 is frozen; process-v1 companion is missing.
+**Status:** The v0 execution/admission/replay observation corpus is frozen;
+the process-v1 companion is missing.
 
 Freeze the exact existing v0 bytes and their actual observations for:
 
@@ -333,7 +334,9 @@ return a receipt or typed physical failure. It never allocates, admits, or owns
 State history. Graph, contract, and plan identity belong to the physical update
 and receipt; plan identity never enters `StateRevisionId`.
 
-Parallel candidate lanes remain path-disjoint:
+Parallel candidate lanes remain path-disjoint. Every `clause-substrate` path
+below names a historical bootstrap or recovery location, not the target crate
+boundary:
 
 - Rust CLCP v3: `clause:crates/clause-substrate/src/compiler_package_v3/**`,
   `clause:crates/clause-substrate/tests/compiler_package_v3.rs`, and
@@ -345,7 +348,7 @@ Parallel candidate lanes remain path-disjoint:
   and `clause:test-vectors/compiler-genesis/**`; this lane owns the lossless
   parser/Reading selection, canonical printer, local recovery, and semantic
   round-trip artifacts inside that scope;
-- Terms: `clause:docs/compiler-terms.md` and
+- Terms (planned paths, to be created): `clause:docs/compiler-terms.md` and
   `clause:test-vectors/compiler-terms/**`; and
 - materialization: `clause:crates/clause-substrate/src/materialization/**`,
   `clause:crates/clause-substrate/tests/position_radius_materialization.rs`,
