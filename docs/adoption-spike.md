@@ -42,21 +42,31 @@ must justify every claimed behavior directly.
 
 ## Frozen and versioned oracles
 
-`clause:test-vectors/execution/**` remains the byte-for-byte historical Clause
-execution corpus v0. Its three historical source projections and manifest
-observations are frozen:
+The three historical v0 source-projection payloads are quarantined under
+`clause:test-vectors/execution/historical-v0/source-projections/` with the
+noncanonical `.clause-v0.txt` suffix. Their exact contents and original SHA-256
+digests are frozen:
 
-- recursive pure dependency closure;
-- admitted State change plus separate effect evidence; and
-- predecessor-bound Program evolution.
+- `clause:test-vectors/execution/historical-v0/source-projections/pure-dependency-closure.clause-v0.txt`:
+  recursive pure dependency closure;
+- `clause:test-vectors/execution/historical-v0/source-projections/state-effect-fulfillment.clause-v0.txt`:
+  admitted State change plus separate effect evidence; and
+- `clause:test-vectors/execution/historical-v0/source-projections/verified-program-evolution.clause-v0.txt`:
+  predecessor-bound Program evolution.
 
-Those source bytes contain slash-joined designations from the superseded v0
+Those payload bytes contain slash-joined designations from the superseded v0
 draft. They are not current canonical Clause source and no current reader may
-accept them as such. Their exact bundle requires path-level historical
-quarantine without rewriting the frozen oracle bytes. The six v0 outcome tags
-remain exactly `returned`, `choices`, `yielded`,
-`suspended`, `failed`, and `exhausted`. They are compatibility evidence, not
-the complete process ontology.
+accept them as such. Paths, suffixes, README/checksum content, and
+classification metadata are not part of the frozen payload-byte oracle and may
+change to keep that quarantine honest. The current `manifest.json` therefore
+has no syntax authority, classifies the projections as
+`historical-v0-noncanonical-fixture`, declares that no canonical source is
+included and no spelling authority exists, and treats every fixture-local name
+as one opaque transport string. A `/` in such a string is an uninterpreted Atom
+payload byte, never designation structure. The manifest's execution
+observations and six v0 outcome tags remain exactly `returned`, `choices`,
+`yielded`, `suspended`, `failed`, and `exhausted`. They are compatibility
+evidence, not the complete process ontology.
 
 A separate versioned process-v1 companion must crosswalk those exact bytes into
 ApplicationForms, ApplicationIds, ActivationIds, StepIds, RunIds,
@@ -85,14 +95,13 @@ Term = Atom | RawTriple
 
 Γ ⊢ t : T @ interpretation
 
-Γ ⊢ form(t, OperatorRef, exact named-role bindings, requirements)
+Γ ⊢ form(t, exact RelationSchemaRef, exact OperatorRef,
+         exact named-role bindings, exact eligible ModeId set)
   : ApplicationForm<ResultDomain>
 
 Application(ApplicationId, exact ApplicationForm)
 
-activate(ApplicationId, ModeId, StaticActivationBasis,
-         InitialContext, DynamicPrerequisiteBindings,
-         ActivationCauseFrontier)
+activate(ActivationStartRecord)
   = ActivationId + RunMembership + InitialConfiguration
 
 consume exact affine ConfigurationToken_before(Configuration_before)
@@ -103,8 +112,10 @@ produce exact affine ConfigurationToken_after(Configuration_after)
 
 Run(RunId, root = ActivationId, causal closure)
 
-admit(BaseRevision, delta, evidence, authority, obligations)
-  = SuccessorRevision | Rejection
+admit(BaseRevision, candidate delta, evidence,
+      AuthorizationEvidence<AdmissionAuthorization>,
+      JudgmentOccurrences, obligations)
+  = (AdmissionOccurrenceId, SuccessorRevision | Rejection)
 ```
 
 The core must represent:
@@ -883,9 +894,11 @@ The cross-phase program passes only when all of these are executable and exact:
   source occurrences, canonical parse/print/parse meaning, exact focus,
   binding and origin preservation, local recovery, and semantic round trips;
 - exact local-name resolution to structured Designations through
-  checked namespace/import/export relations, plus canonical rejection of `/`
-  in authored identifiers until a reversible qualified-display grammar is
-  separately ratified; and
+  checked namespace/import/export relations, with `/` rejected in every
+  `Designation.spelling` whether its authored form is unquoted or backtick-
+  quoted and with forged structured Designations rejected before semantic
+  identity, schema, role, or operator closure; Text and opaque Atom/transport
+  payloads retain `/` without becoming Designations; and
 - ordinary source at least as readable as the accepted surface, with process
   and ownership machinery exposed only where semantically relevant, proven by
   all four process-v1 canonical source specimens rather than a prose
@@ -943,9 +956,15 @@ The spike actively rejects or bounds:
   fallback in the native/Wasm game profile;
 - source round trips that lose binding, occurrence, Application, or Referent
   continuity;
-- slash-joined source text crossing elaboration, defining identity or equality,
-  recovering a RoleId or OperatorRef, selecting behavior, or encoding
-  multi-segment kind/role/path conventions;
+- an authored unquoted designation `x/y` surviving the reader or reaching
+  Designation resolution;
+- an authored backtick-quoted designation `` `x/y` `` using quotation to
+  survive the reader or reach Designation resolution;
+- a forged structured `Designation` whose `spelling` contains `/` reaching
+  Referent identity use, RelationSchema or Role closure, OperatorRef selection,
+  equality, behavior, or a multi-segment kind/role/path convention; Text values
+  and opaque Atom/transport payloads containing `/` are the required non-
+  Designation controls;
 - silent Program/world rebinding on continuation resume;
 - continuation transplant or Clause-declared single-use continuation reuse;
 - inferred causality from child completion or trace serialization order;

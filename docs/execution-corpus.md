@@ -6,8 +6,8 @@
 > its corpus select concrete cross-host observations without adding semantics
 > or syntax.
 
-The v0 execution corpus fixes three nontrivial programs that the Lean reference
-model, Rust runtime, CLI, and clean replay must consume byte-for-byte unchanged:
+The v0 execution corpus fixes three nontrivial program payloads and their
+observations for the Lean reference model, Rust runtime, CLI, and clean replay:
 
 1. a recursive pure dependency-closure query;
 2. an admitted state transition followed by a separately identified effect
@@ -15,23 +15,27 @@ model, Rust runtime, CLI, and clean replay must consume byte-for-byte unchanged:
 3. two predecessor-bound Program changes, including rejection from a stale
    base.
 
-The frozen machine contract is
+The executable observation contract is
 [`test-vectors/execution/manifest.json`](../test-vectors/execution/manifest.json).
-Its three `.clause` files are frozen historical v0 source projections. Their
-slash-joined designations predate the current [`syntax.md`](syntax.md), which
-must reject those bytes as authored identifiers. The suffix, the corpus
-README's old canonical-source claim, and the manifest's `syntax_authority`
-field are legacy metadata inside the frozen bundle, not current conformance
-claims. The complete bundle must be moved behind an explicit historical
-fixture boundary without rewriting its exact oracle bytes before current tools
-or examples treat the path as Clause source. Effect capability and attempt
-data remain generic Terms in the manifest because their authored surface
-syntax is not yet ratified.
+Its three historical source-projection payloads are byte-frozen at
+`test-vectors/execution/historical-v0/source-projections/*.clause-v0.txt`; the
+verifier preserves their original SHA-256 digests. Their paths, suffixes,
+README/checksum content, and manifest classification metadata are not part of
+that payload-byte identity and may change to keep the quarantine honest. The
+current manifest has `syntax_authority: null`, classifies the files as
+`historical-v0-noncanonical-fixture`, records that no canonical source or
+spelling authority is included, and names them only through
+`historical_source_projection`. Their slash-joined spellings predate the
+current [`syntax.md`](syntax.md), which must reject those payload bytes as
+authored Designations. Effect capability and attempt data remain generic Terms
+in the manifest because their authored surface syntax is not yet ratified.
 
 ## Representation boundary
 
-Names in the manifest are fixture-local references. They are not Atom kinds,
-host enum cases, package digests, or constitutional identities. A consumer
+Names in the manifest are fixture-local opaque transport strings; `/` is one
+uninterpreted payload byte and never namespace or designation structure. They
+are not Atom kinds, host enum cases, package digests, or constitutional
+identities. A consumer
 must lower every referenced value, claim, mode, capability, delta, trace, and
 obligation through the same generic Clause Term and provisional v0 candidate-
 judgment representation. That frozen carrier is not the current governed
@@ -465,8 +469,8 @@ listener/resource exactly once, and permits no later callback-owned work.
 
 ### Process-v1 canonical source specimens
 
-The companion does not copy or reinterpret the three historical v0 `.clause`
-files. It copies the three printed code blocks and the separately ratified
+The companion does not copy or reinterpret the three historical v0
+`.clause-v0.txt` payloads. It copies the three printed code blocks and the separately ratified
 fourth combined general-purpose source specimen in the adoption spike's
 “Frozen ordinary-source ergonomics” section into separately checksummed source
 files. Pure definition and relational request source contain no process IDs,

@@ -681,12 +681,30 @@ sequence terms; they are not also range or focus-template delimiters.
   request, event, or `for` head.
 - Unquoted semantic identifiers are ASCII atoms beginning with a letter or `_`
   and continuing with letters, digits, `_`, or `-`.
-- `/` is not identifier punctuation. Canonical source currently has no
-  qualified-designation grammar, so `x/y` and longer slash forms reject during
-  reading rather than becoming one name.
-- Backticks quote multiword or Unicode designations. Their contents must
-  already be NFC-normalized and cannot contain control characters or newlines.
-- Double quotes remain exclusively Text literals.
+- U+002F `/` is forbidden in every Designation spelling. In designation
+  position, `x/y` rejects during reading rather than becoming one name; `/`
+  remains a separate infix operator where the expression grammar permits it.
+- Backticks quote multiword or Unicode designations, but do not bypass the
+  spelling rule: `` `x/y` `` also rejects during reading. Quoted contents must
+  already be NFC-normalized and cannot contain `/`, control characters, or
+  newlines.
+- Double quotes remain exclusively Text literals, which may contain `/`.
+  Opaque Atom and transport payloads may also contain `/` under their own
+  declared contracts; neither payload kind is a Designation.
+
+These are required reader negatives, not aliases or recoverable spellings:
+
+```clause
+referent x/y
+referent `x/y`
+```
+
+A candidate package or generated form that directly constructs a structured
+`Designation` whose `spelling` contains `/` must likewise fail Designation
+formation before its ReferentId can participate in identity resolution and
+before RelationSchema, Role, or Operator closure. Current implementation status
+remains governed by the roadmap; this rule does not claim that a supported
+reader or checker already exists.
 
 Namespace membership, imports, exports, visibility, and designation resolution
 are explicit checked relations and constraints in the semantic carrier; they

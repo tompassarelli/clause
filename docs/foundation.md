@@ -2054,12 +2054,20 @@ are explicit checked relations or constraints. They are never inferred from a
 spelling prefix or encoded kind, role, or path segment. A local source
 designation resolves under one exact ElaborationContext to the structured
 `Designation`; semantic consumers then use its exact NamespaceId and
-ReferentId, not the source bytes. Canonical source currently has no slash-
-qualified grammar. A future reversible `namespace/local` display may be
-ratified only as a SourceMap or diagnostic projection of that record; a raw
-slash-joined string never crosses elaboration, defines identity or equality,
-recovers a RoleId or OperatorRef, selects behavior, or extends to an `x/y/z`
-kind/role/path convention.
+ReferentId, not the source bytes. Every well-formed `Designation.spelling`
+excludes U+002F `/`, regardless of whether it originated in unquoted source,
+backtick-quoted source, generated candidate data, or a decoded package. The
+reader rejects authored `x/y` and `` `x/y` `` before Designation resolution;
+candidate formation rejects a forged structured Designation containing `/`
+before its ReferentId may participate in identity resolution and before any
+RelationSchema, Role, or Operator closure. Text values and opaque Atom or
+transport payloads may contain `/`; no such payload is implicitly split or
+promoted to a Designation. A future reversible `namespace/local` display may be
+ratified only as a SourceMap or diagnostic projection of a valid structured
+record; that rendered slash is not its `spelling`. A raw slash-joined string
+never crosses elaboration, defines identity or equality, recovers a RoleId or
+OperatorRef, selects behavior, or extends to an `x/y/z` kind/role/path
+convention.
 
 A proven rename changes the Designation while preserving identity.
 Without lineage evidence, delete plus create is the honest result. Exported
@@ -2456,7 +2464,10 @@ The adoption spike and any migration must prove at least these cases:
 | Same parent and snapshot, different genuine change occurrences | Same snapshot; different revisions |
 | Same revision checked by two verifiers | One revision; two attestations |
 | Source moves without semantic-source change | Same ProgramSnapshotId and semantic identities; SourceMap changes only |
-| Authored `x/y` or any slash-joined identifier | Reading rejects before Designation resolution; no identity, role, operator, or behavior is recovered from the bytes |
+| Authored unquoted designation `x/y` | Reader rejects before Designation resolution; no identity, schema, role, operator, or behavior is recovered from the bytes |
+| Authored backtick-quoted designation `` `x/y` `` | Reader rejects before Designation resolution; quotation cannot bypass the `Designation.spelling` constraint |
+| Forged structured Designation whose `spelling` contains `/` | Candidate formation rejects before its ReferentId is used and before RelationSchema, Role, or Operator closure |
+| Text value or opaque Atom/transport payload containing `/` | Valid under its own declared contract; never implicitly split, resolved, or promoted to a Designation |
 | Local rename with explicit retention | Same ReferentId and ProgramSnapshotId; changed local designation projection |
 | Exported Designation rename | Same ReferentId; changed ProgramSnapshot interface |
 | Rename without retention | Delete plus create; no guessed continuity |

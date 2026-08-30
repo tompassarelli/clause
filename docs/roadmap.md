@@ -57,8 +57,10 @@ merely by existing.
 
 The following evidence remains unchanged while the reset is implemented:
 
-- the complete `clause:test-vectors/execution/**` bundle stays byte-for-byte
-  historical v0 and must move behind a path-level historical-fixture boundary;
+- the three historical v0 payloads keep their exact bytes and original hashes
+  under `clause:test-vectors/execution/historical-v0/source-projections/`;
+  paths and classification metadata may change to preserve an honest
+  noncanonical-fixture boundary;
 - its six tags stay `returned`, `choices`, `yielded`, `suspended`, `failed`, and
   `exhausted`;
 - pure dependency closure, State/effect fulfillment, and Program evolution
@@ -93,7 +95,7 @@ Constitutional dependencies block integration and promotion, not bounded
 independent experiments. Implementation can proceed in parallel where paths
 and semantic inputs are genuinely independent. No candidate may be integrated
 against superseded graph-first, proposition-first, clause-as-Application, or
-host-owned game semantics. A lower-case clause remains contextual Judgment
+host-owned game semantics. A lower-case clause remains `ClauseJudgment`
 content over a neutral Term; it is neither every Term nor every Application.
 
 ## Gap matrix
