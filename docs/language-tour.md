@@ -35,8 +35,10 @@ origin := Vec2 { x: 0.0, y: 0.0 }
 
 `referent` introduces or resolves a designation. `∈` expresses ordinary
 membership, `:=` defines one denotation, and `:` remains structural. Source
-forms elaborate into neutral recursive Terms plus candidate formations;
-checked formation still does not assert, authorize, or execute a Term.
+forms elaborate into neutral recursive Terms plus contextual
+`ClauseJudgment`s and candidate formations. Lower-case clause means one such
+contextual judgment over a Term, not an Application or governed Judgment.
+Checked formation still does not assert, authorize, or execute a Term.
 
 Indentation supplies containment and an explicitly declared omitted role. It
 does not guess a domain relationship:
@@ -59,7 +61,7 @@ A compact `relation` block groups several checked concepts without collapsing
 them:
 
 ```clause
-relation egress/connects
+relation connects
   reads {door: Door} connects {origin: Space} to {destination: Space}
   subject door
   mode given door origin yields destination: many
@@ -101,19 +103,24 @@ Activation keeps its identity across many Steps, suspension, and resumption.
 A Run is the causal envelope rooted at one Activation, not whichever trace or
 total log order happened to be retained.
 
-Every Activation pins exact `ClauseSemanticsId`, `ProgramSnapshotId`,
-`ProgramRevisionId`, selected `ModeId`, typed initial context, required
-authorization, and cause frontier. It also pins a RuntimeSession when present
-and an observed StateRevision when the Application is world-sensitive. Equal
-syntax run under different contexts therefore cannot silently collapse into
-one timeless `evaluates-to` edge.
+Every Activation has one exact `ActivationStartRecord`: a
+`StaticActivationBasis` selecting the `ClauseSemanticsId`, Application, Mode,
+and exact `CheckedConstitutionBinding`; an explicit `InitialContext`; exact
+bindings for the Mode's possibly empty dynamic-prerequisite schema; and a
+separate occurrence-only cause frontier. The constitution binding may name
+checked non-authoritative package/snapshot bytes or an admitted ProgramRevision.
+RuntimeSession, runtime policy, and observed StateRevision pins are present only
+where the selected context requires them, and a Mode with no dynamic
+prerequisites manufactures no authorization or capability token. Equal syntax
+run under different contexts therefore cannot silently collapse into one
+timeless `evaluates-to` edge.
 
 ## Laws need separate authorization
 
 A durable law puts binders and premises before its conclusions:
 
 ```clause
-law impact/direct-dependency
+law direct-dependency
   if
     ?consumer imports ?dependency
   then
@@ -124,7 +131,7 @@ The law is available semantic ground but remains operationally inert until
 derivation is explicitly authorized:
 
 ```clause
-derive impact/direct-dependency
+derive direct-dependency
 ```
 
 This preserves the difference between describing a universally available
@@ -146,20 +153,27 @@ on collect ?actor
 ```
 
 `when` observes one exact base StateRevision. `withdraw` and source `admit`
-stage one grounded, conflict-checked candidate delta during an authorized
-Activation. The lower-case source word does not perform constitutional
+stage one grounded, conflict-checked candidate delta during a valid Activation
+after only the prerequisites declared by its selected Mode have closed. The
+lower-case source word does not perform constitutional
 Admission. Only a separate governance operation can admit the candidate and
 allocate a successor StateRevision.
 
 Pure running needs no revision at all. It may return values and evidence while
-the observed world remains unchanged. Effects are stricter still: intent,
-authorization, attempt, optional receipt, observation, Judgment, and possible
-later Admission remain separate occurrences. Canonical effect source syntax is
+the observed world remains unchanged. Every real-effect Activation keeps three
+semantic slots distinct: exact intent occurrence, issued EffectAuthorization
+occurrence, and independent CapabilityEvidence. A governed-per-intent profile
+additionally requires the intent's exact AdmissionOccurrence. A preauthorized
+local/session/Lease/batch scope may cover several bounded attempts without
+manufacturing per-attempt Admission or issuance. Constitutive execution
+authority never replaces issued effect authorization. Intent, authority,
+capability, attempt, optional receipt, observation, Judgment, and possible later
+Admission remain distinct in every profile. Canonical effect source syntax is
 not yet ratified, so this tour does not invent one.
 
 ## Queries seek observations; they do not assert
 
-A request has an explicit head and exact ProgramRevision context:
+A request has an explicit head and exact `CheckedConstitutionBinding`:
 
 ```clause
 select all ?destination in egress
@@ -178,7 +192,13 @@ any in World
 A variable or missing row never turns a relational form into a false
 assertion. Query absence is not falsehood. `select one` requires exactly one
 deduplicated result; `select first` requires explicit ordering and may return
-none.
+none. A request that joins an authoritative RuntimeSession, proposes
+authoritative world change, relies on constitutive Program authority, or
+performs a real effect resolves its operand to an exact ProgramRevision. A
+sandbox/candidate request instead pins exact checked package and ProgramSnapshot
+bytes and may read a separately pinned admitted world; it gains no constitutive
+authority unless an admitted constitution or separately supplied
+`IrreducibleRootConstitution` actually provides it.
 
 ## Repetition is explicit and regular
 
@@ -192,6 +212,69 @@ for n in 101..106
 Ranges are inclusive ascending integer ranges. Brackets remain sequence Terms,
 not a second range notation. Ordinary source exposes process machinery only
 where it changes meaning.
+
+## General-purpose local work stays local
+
+Parameters, collections, loops, builders, ownership, and regions are ordinary
+Clause work rather than foreign Rust semantics:
+
+```clause
+function map
+  parameters
+    Item: Type
+    Result: Type
+  constraints
+    mapping: Maps Item to Result
+  given
+    items: Sequence of Item
+  yields
+    mapped: Sequence of Result
+  run
+    region output
+      mutable builder := empty Sequence of Result
+      borrow read items as source
+        lease write builder as sink
+          for item in source
+            append mapping(item) to sink
+      return freeze move builder
+
+upper-names := map(player-names) with
+  Item = Text
+  Result = Text
+  mapping = uppercase
+```
+
+This is the same ratified UTF-8/LF specimen frozen by the syntax and adoption
+contracts. The builder is Activation-local: thousands of internal reductions
+need no Admission, StateRevision, or mandatory trace entry. `region`, `borrow`,
+`lease`, `move`, and `freeze` appear because aliasing, escape, or reclamation
+meaning changes there. Static proofs may erase from a checked production ABI.
+The native/Wasm game hot profile uses affine ownership, borrows, leases, and
+deterministic regions with no managed island, no mandatory tracing GC, no
+implicit ARC, and no finalizer fallback. Other profiles may explicitly select
+a finite, budgeted managed island; it is never an ambient Clause heap.
+
+## Agents get one semantic workbench
+
+The primary development consumer is an agent, so the target interface is one
+long-lived transactional service rather than a pile of unrelated text tools:
+
+```text
+parse      -> exact Reading, source occurrences, and recoverable local errors
+check      -> typed diagnostics and unsatisfied obligations
+explain    -> source -> Term -> Application -> Activation/artifact path
+query      -> exact bindings, supports, and causal dependencies
+diff       -> affected and preserved semantic/cache sets
+propose    -> candidate delta against one exact base
+admit      -> separate governed decision
+run        -> values, observations, continuations, or typed outcomes
+hotReload  -> preserve exact live pins or reject with migration obligations
+```
+
+Stable diagnostic codes, exact identities, machine-readable dependency slices,
+and atomic edits are the interface; prose is a rendering. Interactive requests
+may use accepted incremental summaries. Full Lean and compiler-succession replay
+is a promotion gate, not a tax on every edit.
 
 ## The graph explains; checked execution runs
 

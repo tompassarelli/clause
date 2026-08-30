@@ -27,6 +27,15 @@ The decisive questions are:
    Clause data alone, or must a host learn a new semantic secret?
 4. Can checked implementations specialize aggressively while preserving cold
    process semantics and exact relational observations?
+5. Can ordinary loops, builders, caches, and frame state use affine local
+   mutation with no Admission, revision, mandatory retained trace, or generic-graph hot
+   path?
+6. Can statically fixed constitutive evidence erase from the hot ABI while its
+   semantic basis remains explainable and dynamic Authorization, capability,
+   effect, and Admission evidence remain exact where they vary?
+7. Can rank-1 generics, coherent constraints, causal-affine lifetimes, rich
+   values, collections, layout, and native/Wasm specialization work without a
+   second host language or mandatory GC?
 
 The spike starts from the accepted calculus, consumes exact frozen oracles, and
 must justify every claimed behavior directly.
@@ -76,12 +85,16 @@ Term = Atom | RawTriple
 
 Application(ApplicationId, exact ApplicationForm)
 
-activate(ApplicationId, ModeId, InitialContext, ActivationCauseFrontier)
+activate(ApplicationId, ModeId, StaticActivationBasis,
+         InitialContext, DynamicPrerequisiteBindings,
+         ActivationCauseFrontier)
   = ActivationId + RunMembership + InitialConfiguration
 
-Configuration_before
+consume exact affine ConfigurationToken_before(Configuration_before)
+  + optional Wbase
   -- StepId(causes = StepCauseFrontier) ; observations ; delta ; continuation -->
-Configuration_after
+produce exact affine ConfigurationToken_after(Configuration_after)
+  + same optional Wbase
 
 Run(RunId, root = ActivationId, causal closure)
 
@@ -94,7 +107,8 @@ The core must represent:
 - contextually opaque Atoms and explicit refinements across universes;
 - structurally neutral Triple slots and structural Term equality indexed by
   universe and semantics epoch;
-- FormationJudgment distinct from governed Judgment;
+- contextual ClauseJudgment and its FormationJudgment specialization, both
+  distinct from governed Judgment and JudgmentOccurrence;
 - closed ApplicationForms with exact OperatorRef, RelationSchema, named-role
   closure, mode eligibility, and context requirements;
 - snapshot-local RelationSchema, Role, Operator, and Mode declarations whose
@@ -102,9 +116,15 @@ The core must represent:
   across a changed snapshot;
 - `ApplicationShapeId` only for closed forms, committing to ClauseSemanticsId,
   exact RelationSchemaId, exact OperatorRef, the exact eligible ModeId set,
-  named-role bindings, context requirements, and the full resolved semantic-
-  dependency/declaration closure, including proof that it is empty where
-  applicable;
+  named-role bindings, context requirements, exact InstantiationUseRefs with
+  their InstantiationKeys and SpecializationKeys, and
+  the full resolved semantic-dependency/declaration closure, including proof
+  that it is empty where applicable; PhysicalReuseKey is excluded;
+- canonical same-snapshot instantiation records use local declaration,
+  argument, named-obligation, resolution-scope, and evidence references in the
+  ProgramSnapshot preimage; InstantiationUseRefs resolve only after the one
+  snapshot hash, while InstantiationKeys and SpecializationKeys derive from
+  independent canonical content and never return to that preimage;
 - mandatory nominal `ApplicationId` for every Application, with raw, quoted,
   open, and merely structural forms remaining non-nominal ApplicationForms or
   Terms rather than anonymous Applications;
@@ -114,13 +134,29 @@ The core must represent:
   boundary provenance for an ingress trigger;
 - fresh `ActivationId` for every engagement and one stable Activation across
   any number of configurations and StepIds;
+- exact `StaticActivationBasis` for every engagement, separated from a Mode's
+  finite named/RoleId-indexed, multiplicity-aware DynamicPrerequisiteSchema,
+  exact bindings, and occurrence-only cause frontier; the entire schema may be
+  empty and equal bindings in distinct slots never collapse;
+- exact CheckedConstitutionBinding selecting either checked non-authoritative
+  candidate package/snapshot bytes or an admitted ProgramRevision; the first
+  may read an exact admitted world, persist nonauthoritative output or a
+  Continuation, and use an inert effect simulator, but fabricates no revision,
+  real EffectAttemptOccurrence, or constitutive Authorization;
+- affine Activation-local slots, bounded Step-local scratch, anonymous internal
+  reductions, exact Step-cut and escape rules, and checked in-place lowering
+  without Admission or revision creation;
+- universal per-Step consumption of the exact current affine configuration token
+  and atomic production of its successor, with branching or merging only through
+  a declared disjoint split/join protocol independent of StepCauseFrontier;
 - nonempty finite typed StepCauseFrontiers built from exact ActivationStart,
   PriorStep, ContinuationTakeup, and CancellationRequest causes so concurrency
   remains a partial order rather than log order;
 - RunId as a causal envelope distinct from ActivationId, including child
   activation, handoff, and cancellation scope;
-- typed continuation as semantic remainder, with exact identified pins when it
-  crosses suspension, handoff, persistence, or executor boundaries;
+- typed continuation as semantic remainder, with the sole affine configuration
+  token and exact ActivationStartRecord when it crosses suspension, handoff,
+  persistence, or executor boundaries;
 - ObservationId distinct from observed Value and Result;
 - immutable typed candidate deltas separate from continuations;
 - activation-scoped result relations, separately admitted revision-indexed
@@ -129,6 +165,16 @@ The core must represent:
   and effectful Mode contracts;
 - distinct Reading, derivation authorization, ExecutionAuthorization,
   admission authority, and effect/resource capability;
+- one rank-1 declaration-level StaticParameterTelescope plus named
+  StaticConstraintTelescope, total Clause-owned static normalization,
+  terminating resolution contracts, per-obligation ResolutionScopeCommitments,
+  normalized explicit evidence, closed uses, distinct checking/
+  specialization/physical reuse keys, and separate compilation;
+- exactly one `Owned`, `RegionMember`, or `ForeignManaged` allocation root plus
+  zero or more typed Borrow/Lease access edges, deterministic semantic
+  retirement, explicit close/dispose before mechanical reclaim, explicit cycle
+  disposition, and honest foreign boundaries;
+- explicit bounded trace-retention contracts for long-lived profiles;
 - non-operator RelationSchemas able to form checked bindings, proposition and
   assertion content, rows, and patterns without forming ApplicationForms;
 - source occurrences, scope, binding, quotation, hygiene, phase, and origin;
@@ -136,24 +182,31 @@ The core must represent:
   boundaries with exact pinning and no silent migration; and
 - canonical package bytes with cycle-aware, terminating, fail-closed reload.
 
-Raw Triples receive no mandatory nominal identity. A relation or mode may exist
-without executable authorization. Private interning handles, Wasm handles,
+Raw Triples receive no mandatory nominal identity. A relation may exist without
+an executable Mode, and a Mode may declare no dynamic
+`ExecutionAuthorization` requirement. Private interning handles, Wasm handles,
 pointers, table indexes, paths, spans, or log positions cannot escape as
 semantic identity.
 
-Identity creation itself is governed. The process-v1 carrier must record the
-exact authority and predecessor evidence that may allocate or retain each
-nominal identity: Program admission or an admitted generation rule for an
-Application, successful authorized activation for an Activation and Run root,
-actual carry-through for a Step, boundary-crossing remainder for a
+Identity allocation itself is typed and checked; authoritative retention is
+governed only where the identity crosses such a boundary. The process-v1
+carrier must record the exact allocation basis and, where declared, authority
+and predecessor evidence: one unique ApplicationLocalId plus its checked form
+inside an exact ProgramSnapshot allocates an ApplicationId, while Program
+admission is additionally required to make that Application part of an
+authoritative constitution; successful statically valid activation whose
+selected Mode's declared dynamic prerequisites hold allocates an Activation and
+Run root; actual carry-through allocates a Step; boundary-crossing remainder
+allocates a
 Continuation, actual distinction for an Observation or Occurrence, and
 constitutional Admission for a revision. Content hashing, caller-supplied
 bytes, possession of a serialized object, or a physical allocator cannot mint
 one of those identities.
 
 For every identity domain, the companion includes exact wrong-kind,
-wrong-authority, self-authorizing, equal-content transplant, and already-used
-occurrence negatives. Replaying a record with its existing identity may be an
+wrong-allocation-basis, wrong-authority where applicable, self-authorizing,
+equal-content transplant, and already-used occurrence negatives. Replaying a
+record with its existing identity may be an
 idempotent observation of history, but presenting that identity as a fresh
 Application allocation, Activation, Step, occurrence, continuation use, or
 Admission rejects before partial authority. An explicitly declared continuity
@@ -199,13 +252,22 @@ mechanics. They do not define semantic Activation, Step, Run, Continuation, or
 general Admission. Clause-owned outer Terms and envelopes carry those process
 objects through the fixed machine.
 
-## Phase B — Cross-phase process proving program
+## Phase B — Early pure/local general-purpose slice
 
-All cases below must inhabit one semantic carrier and process protocol. Separate
-toy runtimes that merely share names do not pass. This is a cross-phase
-acceptance program: the semantic process cases can run before Compiler0, Terms,
-or materialization integration, while the host-freeze and physical parity cases
-complete only in the later integration phase.
+The first executable slice deliberately tests ordinary programming before the
+full process/effect breadth. It must inhabit the same accepted carrier,
+Compiler0, package, runtime, and physical refinement path later phases extend;
+a disposable host interpreter does not pass. Rich values, collections,
+parametric reuse, local mutation, ownership, erasure, physical IR, and
+native/Wasm lowering are load-bearing early evidence rather than Phase 7
+optimization polish.
+
+Before the binding, algebraic-data, n-ary, or local-state cases below count as
+passed general-purpose evidence, the exact fourth source specimen ratified in
+Phase B.13 must pass `parse`, `check`, canonical print/parse round trip, and one
+transactional workbench edit with exact typed diagnostics and dependency
+invalidation. Semantic-IR experiments may precede that proof, but cannot
+substitute for the source and feedback-loop gate.
 
 ### 1. Pure arithmetic and repeated activation
 
@@ -263,7 +325,127 @@ extra, duplicate, wrong-type, wrong-cardinality, or position-recovered roles
 reject. One RelationSchema with no eligible executable Mode remains
 inspectable but cannot activate.
 
-### 5. Recursive, streaming, and ongoing running
+### 5. General-purpose values, local state, and static reuse
+
+One semantic-IR tranche must combine rich numeric values, Unicode Text, Bytes,
+an algebraic option/result, immutable and locally built sequences and maps, and
+one rank-1 parametric collection operation. It checks a declaration-level
+StaticParameterTelescope and named StaticConstraintTelescope, total canonical
+static normalization, two valid normalized instantiations, an unsatisfied-
+constraint negative after complete resolution, an incoherent-ambiguity
+negative, a budget-exhausted/indeterminate negative, and a separately compiled
+consumer. Source movement preserves semantic keys and DiagnosticObligations;
+`Renameπ`, well-formed substitution, solver results, and diagnostics transform
+equivariantly rather than remaining byte-identical.
+
+Each obligation records a complete ResolutionScopeCommitment. Adding a
+potentially overlapping candidate invalidates exactly the affected checking
+key; adding an unrelated declaration in another dependency frontier preserves
+the exact checking, specialization, and physical cache sets. A body-only edit
+preserves interface checking reuse but invalidates its SpecializationKey. A
+target, compiler/refinement, feature, ABI/layout, strategy, or physical-
+dependency edit invalidates PhysicalReuseKey even when InstantiationKey is
+unchanged. Cyclic static/evidence instantiation rejects before key allocation;
+ordinary runtime recursion after static closure remains legal.
+
+Positive fixtures include one self-recursive and one mutually recursive closed
+generic specialization. Each finite call-graph SCC receives canonical local
+member anchors and one alpha-normalized `SpecializationSccKey`; member
+`SpecializationKey`s select from that object without recursively hashing one
+another. Source order, spelling, traversal, and source-only movement preserve
+the keys, while any member body or edge edit invalidates the complete SCC and
+its dependents.
+
+The tranche also performs an ordinary loop, request-local cache update, and
+buffer builder inside one affinely owned ActivationConfiguration. It fixes the
+Activation-local slot set, Step-local scratch bound, mandatory Step cuts,
+before/after configurations, escape checks, exact allocation roots, Borrow/
+Lease edges, trace-retention contract, and resource balance. Thousands of
+internal reductions create no extra StepId, StateRevision, Admission, or
+mandatory trace record. Functional and in-place implementations of the pure
+builder agree observationally. Forced failure or cancellation at every move,
+write, drop, and Lease boundary leaves the semantic before-configuration and
+resource ledger exact through an infallible suffix, bounded undo/shadow, or
+unpublished realization. Borrow/Lease compatibility is checked across each
+root's complete alias set including owner access, and reset/reclaim waits for
+causal quiescence acknowledgments from every Borrow, Lease, Continuation, child,
+escape, asynchronous/foreign use, and close obligation. Shared mutable alias,
+overlapping write Lease, Step-scratch escape, double continuation takeup,
+cancelled split branch, missing/double join, any strong cycle across
+independently reclaimed roots including Owned↔Owned, unknown close obligation,
+observable destructor-at-reclaim, and use-after-move each reject at the exact
+formation or lifetime stage. A bounded compiler-proven nonobservable mechanical
+drop remains legal. A separate non-game fixture contains one ownership cycle
+inside an explicitly selected `ManagedIsland` with exact finite external roots,
+capacity, collection strategy, work/pause budget, trigger, and typed overflow;
+an escaping strong edge or open semantic obligation rejects. The island is not
+a default heap and is unavailable on the controlled game hot path.
+
+The same accepted meaning lowers through a Clause-owned physical IR to a direct
+native artifact and a Wasm artifact. Monomorphized, evidence-dictionary,
+irrelevant-evidence-erased, and shared-code strategies agree on semantic
+identity, values, failures, observations, occurrence support, diagnostics,
+resource outcomes, and declared layout/ABI. Every strategy retains the exact
+cold link from InstantiationUseRef through InstantiationKey, SpecializationKey,
+strategy-specific PhysicalReuseKey, and ArtifactId without collapsing nominal
+Applications or Activations. The hot ABI contains no static evidence or
+Authorization token for a Mode whose entire dynamic-prerequisite schema is
+empty. Issued or effect authority is not part of this pure fixture and cannot
+be fabricated.
+
+The native/Wasm game subprofile preallocates declared frame regions, buffers,
+active-frontier, continuation, and trace capacity. `capacity + 1` and partial
+initialization failure publish nothing and close every established root/Lease;
+an already attempted foreign allocation records cleanup success, failure, or
+pending quarantine rather than claiming atomic rollback.
+After initialization, its Clause/Wasm/adapter-controlled loop performs zero
+allocation, `memory.grow`, global scan, whole-carrier clone, observable
+destructor/finalizer work, implicit ARC work, or unbounded teardown. Exact receipts
+record allocation calls/bytes, pool high-water, Wasm pages, adapter calls, and
+resource ledger before/after. Foreign calls retain declared contracts; a whole-
+browser zero-allocation claim requires instrumented warm-up/lazy-cache evidence.
+The fixture does not require every release time to be statically known; it
+proves the runtime causal boundary at which each obligation closes.
+
+### 6. Agent-native workbench proof
+
+One long-lived stdio workbench must execute accepted Clause package definitions
+through CLCP03 and the generic runtime. Its exact request surface is `parse`,
+`check`, `explain`, `query`, `diff`, `propose`, `admit`, `run`, and `hotReload`.
+Rust owns bounded framing, exact pins, cache storage, transactions, and
+scheduling only. A Rust parser, type/constraint checker, semantic query engine,
+diagnostic switch, or alternate evaluator fails the gate.
+
+The first proof uses one arithmetic definition and one RelationSchema with one
+request. A transactional source edit must produce stable typed diagnostics,
+exact semantic dependencies, `why`, `prevent`, `achieve`, and `diff` answers,
+then a pure `run` result with no StateRevision. `propose` returns a candidate
+against one exact base; `admit` remains a distinct governed operation;
+`hotReload` preserves or rejects exact live pins and never silently migrates an
+Activation. Interactive calls may use accepted incremental summaries and do
+not rerun the full Lean/compiler-succession replay; exact replay remains the
+promotion gate. Compact Clause source stays the human audit and token surface.
+
+Every negative response fixes a stable typed code, rejecting semantic stage,
+exact failed formation or subject, unsatisfied obligation, source-origin set,
+dependency slice, and authoritative boundaries proven unchanged. Any suggested
+edit is separately typed advice, never a hidden rewrite or authority grant. An
+edit request names the exact source/package base and applies atomically; a stale
+base rejects with the current identity and no partial text or semantic change.
+
+Before sections 2–5 count as passed, this same workbench must also parse,
+check, canonical-print/parse, explain, edit, and rerun the combined authored
+generic/loop/builder/move/borrow/region/Lease specimen. The edit transcript
+fixes the exact affected and preserved dependency/cache sets; a semantic-IR-
+only side door does not pass.
+
+## Phase C — Process, effect, and integration breadth
+
+The remaining cases extend that same implementation with ongoing running,
+governed state, effects, materialization, host-freeze evolution, and passive
+rendering. Separate toy runtimes that merely share names do not pass.
+
+### 7. Recursive, streaming, and ongoing running
 
 Represent recursive dependency closure and an ongoing service or actor. One
 Activation must produce several Steps, yield, suspend, persist an identified
@@ -280,20 +462,28 @@ exist before suspension. The resumed Step:
 
 - retains the original ApplicationId, ActivationId, and RunId;
 - has a fresh StepId whose StepCauseFrontier contains exactly
-  `ContinuationTakeup(exact ContinuationId, exact ResumptionOccurrenceId)` and
-  `PriorStep(original RunId, original ActivationId, suspend-step)`;
-- consumes the newly identified ingress occurrence under its declared mode;
+  `ContinuationTakeup(exact ContinuationId, original RunId,
+  original ActivationId, suspend-step, exact ResumptionOccurrenceId)`; the
+  emitting Step is part of that cause and is not duplicated as `PriorStep`;
+- binds the newly identified ingress occurrence through that exact
+  ResumptionOccurrence under its declared mode;
 - emits a fresh ObservationId rather than replaying a cached observation;
-- retains the exact Program, session, world, policy, semantics, budget, and
-  cancellation-scope pins; and
+- retains one exact ActivationStartRecord covering StaticActivationBasis,
+  InitialContext, DynamicPrerequisiteBindings, and the occurrence-only cause
+  frontier; every fixed Application, Mode, constitution, initial-world,
+  session, policy, semantics, budget, and cancellation-scope pin derives from
+  that record rather than a duplicate authoritative field;
+- consumes the sole serialized affine configuration token; and
 - creates no ProgramRevision or StateRevision unless a separately staged
   candidate is admitted.
 
-The same fixture selects a Clause-declared linear resume policy. The first
-authorized resume consumes one exact continuation-use authority. A repeated or
+Because this fixture carries affine configuration, the first valid resume
+consumes one exact continuation-use/configuration token. A repeated or
 concurrent second use rejects as `continuation-already-consumed` before a Step,
-observation, effect attempt, or delta exists. This is a mode property, not a
-universal assertion that every continuation is linear.
+observation, effect attempt, or delta exists. A separate immutable/`Copy`
+remainder fixture may select reusable takeup; any mutable reusable fork must
+create fresh child Activation and configuration identities rather than
+duplicating the original token.
 
 Every pinned field has an exact one-field stale negative. Transplanting the
 unchanged continuation bytes into an equal-shaped but independently nominal
@@ -303,8 +493,9 @@ must name the mismatched identity class without treating equal content, a host
 handle, or possession of bytes as authority.
 
 The concurrency gate varies physical execution while keeping semantic
-causality fixed. A parent Activation creates two independent child
-Activations through exact `ChildOf` ActivationOrigins. Each child's first
+causality fixed. A parent Activation consumes one configuration owner and
+splits exact nonoverlapping left/right subconfiguration tokens before creating
+two independent child Activations through exact `ChildOf` ActivationOrigins. Each child's first
 StepCauseFrontier contains exactly one
 `ActivationStart(child ActivationId)`. One physical plan completes the left
 child first, a second completes the right child first, and a parallel plan
@@ -313,7 +504,9 @@ contains exactly two causes: `PriorStep(exact RunId, left ActivationId,
 left-terminal-step)` and `PriorStep(exact RunId, right ActivationId,
 right-terminal-step)`. Neither child's later StepCauseFrontier names the other
 child, trace serialization may differ, and the joined observation and support
-multiset are identical.
+multiset are identical. Join consumes both tokens exactly once and restores one
+owner. Overlapping write Lease, double/missing token, cancelled branch without
+close-or-return, and double join reject without publishing a configuration.
 
 Cancellation, yield, and deadline arbitration is also Clause data. The fixture
 declares an exact causal decision table and a logical deadline/budget boundary,
@@ -326,7 +519,15 @@ through cancellation must name the exact
 Ambient wall-clock timing, executor queue order, and whichever worker reports
 first may not break the tie.
 
-### 6. Relational recoverability and materialization
+The same ongoing Run executes for many multiples of its declared resident
+trace window. Configuration, active causal frontier, continuations,
+diagnostics, and trace bytes remain within their separate bounds. Exact
+externalization/compaction occurs under the selected retention contract; a
+later dependency on an evicted cause must rehydrate its checked witness within
+budget or reject typed. A compact summary, log position, or GC reachability may
+not authorize the Step.
+
+### 8. Relational recoverability and materialization
 
 Pure-mode observations may populate an activation-scoped result relation
 without creating a revision or turning every relation row into an execution.
@@ -379,24 +580,48 @@ unchanged. No fallback or failure may publish a prefix, lose support
 multiplicity, change semantic identity, or silently retry through an
 unaccounted plan.
 
-### 7. State transition and long-lived world pinning
+### 9. State transition and long-lived world pinning
 
-One authorized transition Activation stages a candidate State delta against an
-exact StateRevision. Candidate construction leaves the base unchanged.
+One valid transition Activation satisfying its selected Mode's exact declared
+prerequisites stages a candidate State delta against an exact StateRevision.
+Candidate construction leaves the base unchanged.
 Admission alone creates the successor StateRevision. Every later world-sensitive
 Step names the exact revision it observed. A live Activation never silently
 sees a Program or world change; migration, observation advance, or handoff is
 explicit and evidence-bearing.
 
-### 8. Honest external effect
+### 10. Honest external effect
 
-Exercise a causal graph with distinct intent, authorization, attempt, optional
-receipt, zero or more observations, governed Judgment, and later admission.
-Include success, failure before receipt, and timeout without receipt. Replaying
-trace data performs zero attempts. Failed later admission acknowledges the act
-and never claims rollback.
+Exercise two Mode-selected profiles. The strict governed-per-intent case forms a
+causal graph with distinct governed-intent and Admission occurrence, issued
+EffectAuthorization occurrence, independent exact CapabilityEvidence, effect
+Activation, attempt, optional receipt, zero or more observations, governed
+Judgment, and later Admission. The first three inputs occupy distinct named Mode
+slots; occurrence-producing inputs alone project to the cause frontier under
+those slot identities.
 
-### 9. Host-freeze evolution
+The cheap preauthorized case runs several bounded attempts under each of a
+session, Lease, batch, and Activation-local scope where applicable. It binds the
+exact intent occurrence, one previously issued EffectAuthorization occurrence,
+and independent CapabilityEvidence in three distinct slots; no attempt
+manufactures a StateRevision, Admission, or new AuthorizationOccurrence. A
+statically pinned issued authorization or capability may erase from the checked
+hot ABI but remains an exact semantic slot and cold explanation. Constitutive
+execution authority cannot replace issued effect authorization. Intent, issued
+authority, capability, attempt, optional receipt, Observation, Judgment, and any
+later Admission remain distinct.
+
+Both profiles include success, failure before receipt, and timeout without
+receipt. Replaying trace data performs zero attempts. Failed later Admission
+acknowledges the act and never claims rollback. Independent negatives omit,
+stale, transplant, or place in the wrong slot every prerequisite required by
+the selected profile. Governed-only negatives include unadmitted intent; both
+profiles reject constitutive-instead-of-issued EffectAuthorization. Every
+rejection leaves the affected EffectAttemptOccurrence and
+all authoritative boundaries unchanged; pre-Activation failures also allocate
+no ActivationId.
+
+### 11. Host-freeze evolution
 
 Freeze the Lean checker/model, Rust semantic boundary, toolchains, binaries,
 and host-mechanics manifest. Then perform one predecessor-authorized
@@ -419,7 +644,7 @@ The change must occur through Clause data alone with no construct-specific
 Lean/Rust semantic constructor, validator, callback, dispatch entry, formatter,
 refactor, analysis, dependency rule, or target semantic branch.
 
-### 10. Bounded Wasm and passive-render boundary
+### 12. Bounded Wasm and passive-render boundary
 
 The Wasm adapter receives bounded canonical bytes and returns bounded canonical
 bytes plus replaceable physical handles. The process-v1 companion fixes the
@@ -444,24 +669,47 @@ Wasm artifact and adapter path that produced it.
 The passive renderer consumes an immutable render frame and returns only a
 render observation. Its exact vectors include:
 
-- a valid frame pinned to one admitted StateRevision;
+- a valid admission-free frame pinned to exact RunId, ActivationId, producing
+  StepId, and ObservationId, with no StateRevision and no fabricated Admission;
+- a valid frame from the same process identities that additionally names an
+  unchanged observed `Wbase`;
+- a valid frame projected from one admitted StateRevision;
 - the same frozen frame presented through two independently allocated host
   objects, producing the same projection without acquiring shared mutable
   aliases;
-- a stale predecessor frame after its declared successor is already displayed;
+- a causally stale Step/Observation frame after its declared successor is
+  displayed, plus a stale admitted predecessor after its successor is
+  displayed;
+- two causally unordered frames, which may not acquire an order merely from
+  callback arrival and must follow the declared projection merge policy;
 - missing fields, non-finite numeric data, and an object count of exactly
   `limit + 1`;
 - canvas focus loss followed by keyboard input; and
 - disposal followed by another input event and render request.
 
 Every rejected frame leaves the scene projection and caller-owned frame bytes
-unchanged. The valid case may mutate only renderer-owned physical scene state;
+unchanged. Freshness is determined by declared process causality and, only when
+present, the admitted revision relation. It is never inferred from host object
+identity, callback order, or a compulsory StateRevision. The valid case may
+mutate only renderer-owned physical scene state;
 it cannot change Clause state, integrate movement, infer collision or
 groundedness, or perform Admission. The input case emits an immutable intent
 observation only while the canvas owns focus. Disposal removes listeners and
-resources exactly once and makes every later call a typed terminal rejection.
+resources exactly once through an explicit disposal Activation/Step and
+applicable effect receipt before wrapper reclamation; it makes every later call
+a typed terminal rejection. Initialization declares exact capacities and
+publishes no handle/view on partial failure, rolls back Clause-controlled state,
+and records foreign cleanup success, failure, or pending quarantine. After
+initialization, valid frame handling
+performs no Clause/Wasm/adapter-controlled allocation, `memory.grow`, whole-
+frame clone, global scan, observable destructor/finalizer work, or unbounded
+teardown. Receipts
+record controlled allocation calls/bytes, pool high-water, Wasm pages, adapter
+calls, and resource ledger before/after. Ratified foreign calls have declared
+allocation/disposal contracts; a whole-browser zero-allocation claim requires
+instrumented warm-up and lazy-cache evidence.
 
-### 11. Frozen ordinary-source ergonomics
+### 13. Frozen ordinary-source ergonomics
 
 The process machinery must remain absent from ordinary authored source unless
 the source is actually specifying a process boundary. The process-v1 companion
@@ -495,13 +743,50 @@ on collect ?actor
     ?coin state collected
 ```
 
+General-purpose function, static-use, loop, local-mutation, and lifetime
+boundaries:
+
+```clause
+function map
+  parameters
+    Item: Type
+    Result: Type
+  constraints
+    mapping: Maps Item to Result
+  given
+    items: Sequence of Item
+  yields
+    mapped: Sequence of Result
+  run
+    region output
+      mutable builder := empty Sequence of Result
+      borrow read items as source
+        lease write builder as sink
+          for item in source
+            append mapping(item) to sink
+      return freeze move builder
+
+upper-names := map(player-names) with
+  Item = Text
+  Result = Text
+  mapping = uppercase
+```
+
+This fourth block is the exact syntax-authority specimen. Its dependency
+context supplies the accepted meanings of `Type`, `Maps`, `Sequence`, `empty`,
+`append`, `freeze`, and `uppercase`; none is a host intrinsic selected by
+spelling. The companion freezes the UTF-8/LF bytes and the exact pre- and post-
+edit semantic/cache sets.
+
 The first two blocks contain no authored ApplicationId, ActivationId, StepId,
 RunId, ContinuationId, revision pin, authority token, scheduler, budget, trace,
 or materialization plan. Their checked crosswalk still exposes every required
 semantic identity and pin. The third exposes only the already canonical
 process-relevant `on`/`when`/`withdraw`/`admit` vocabulary; actual activation,
 event occurrence, Step identity, and constitutional Admission remain governed
-boundaries rather than user bookkeeping. Until continuation and race surface
+boundaries rather than user bookkeeping. The fourth exposes ownership/lifetime
+words only where they change alias, escape, or reclamation meaning. Until
+continuation and race surface
 syntax is separately ratified, those fixtures are Clause semantic data and
 exact observations, not invented source spelling.
 
@@ -514,18 +799,59 @@ The cross-phase program passes only when all of these are executable and exact:
   distinct ActivationIds, while independently nominalized equal-shaped
   Applications receive distinct ApplicationIds;
 - one Activation across multiple configurations and StepIds;
+- every ordinary Step consumes the exact current affine configuration token and
+  atomically produces its successor, with only declared disjoint split/join
+  permitted to branch or merge ownership and no inference from cause frontier;
+- valid StaticActivationBasis, exact InitialContext, complete named/
+  RoleId-indexed DynamicPrerequisiteBindings, and a separate occurrence-only
+  causal frontier for every Activation, with no binding, AuthorizationEvidence,
+  or capability token when the selected Mode's entire schema is empty;
+- exact sandbox/candidate running, read-only admitted-world use, persistent
+  nonauthoritative output/Continuation, and inert effect simulation with no
+  fabricated revision, real attempt, or constitutive authority, plus exact
+  authoritative/effect running pinned to an admitted constitution;
 - pure isolation with no revision;
+- observationally pure affine local mutation across anonymous reductions,
+  exact Step cuts, bounded restoration, non-escape, ownership-consuming
+  split/join/suspension, and checked in-place lowering without Admission or
+  mandatory trace retention;
+- rank-1 parameter and named constraint telescopes, total static
+  normalization, terminating complete resolution, exact resolution-scope
+  commitments, normalized evidence, distinct InstantiationUseRef/
+  InstantiationKey/SpecializationKey/PhysicalReuseKey roles, separate
+  compilation, finite self/mutual-recursion SCC keys, unrelated-edit reuse, and
+  Renameπ/substitution/solver equivariance;
+- rich Text/Bytes/numeric/algebraic/sequence/map values through Clause-owned
+  physical IR with native/Wasm parity, declared layout/ABI, and verified
+  monomorphization/dictionary/erasure strategies;
+- one exact Owned/RegionMember/ForeignManaged allocation root plus typed
+  Borrow/Lease edges, explicit close/dispose before bounded nonobservable
+  mechanical reclaim, root-wide compatibility and acknowledged quiescence, rejection of
+  cross-root strong cycles, one explicitly bounded managed-island fixture,
+  honest foreign disposal/quarantine, and no managed island, tracing GC, ARC,
+  or finalizer fallback in the game hot profile;
+- the long-lived agent workbench executing `parse`, `check`, `explain`,
+  `query`, `diff`, `propose`, `admit`, `run`, and `hotReload` as accepted Clause
+  package behavior rather than host semantics, including the ratified combined
+  generic/loop/builder/move/borrow/region/Lease source edit;
 - an intentionally ongoing Run with no fake terminal result;
 - suspension, persistence, handoff, cancellation, and resumption with exact
-  causal identity and pins, including executor destruction, continuation
-  rematerialization, and a fresh post-suspension observation;
+  causal identity and pins, including exact emitting-Step identity in the one
+  ContinuationTakeup cause, executor destruction, continuation rematerialization,
+  and a fresh post-suspension observation;
 - wrong-pin and equal-content continuation transplant rejection, plus exact
   enforcement of the fixture's Clause-declared linear reuse policy;
 - reversed and parallel child schedules with the same exact two-PriorStep join
   StepCauseFrontier, and Clause-declared cancellation/yield/deadline
   arbitration;
-- effect-stage honesty, including receipt absence;
-- exact Program and world pinning with no silent migration;
+- bounded long-run configuration/frontier/continuation/trace residency with
+  exact rehydration or typed unavailable-history rejection;
+- effect-stage honesty under both governed-per-intent and preauthorized local/
+  session/Lease/batch profiles, including three distinct intent/issued-
+  authorization/capability slots, governed-only Admission, no per-attempt
+  governance tax in the bounded preauthorized case, and honest receipt absence;
+- exact constitution and applicable Program/world/session pinning with no
+  silent migration or fabricated revision;
 - identity retention across source-only movement, serialization, process
   restart, machine relocation, and physical rematerialization when the exact
   ProgramSnapshot, ApplicationForm, and nominal identity remain unchanged;
@@ -541,16 +867,23 @@ The cross-phase program passes only when all of these are executable and exact:
   allocation, fallback, and disconnected-population accounting;
 - malformed, ungrounded, unauthorized, cyclic-without-anchor, wrong-revision,
   ambiguous-mode, and over-budget rejection before partial authority;
-- bounded Wasm and passive-render acceptance and exact malformed, oversized,
-  stale, focus-loss, and post-disposal negatives;
+- bounded Wasm and passive-render acceptance, controlled-allocation receipts,
+  and exact malformed, oversized, stale, focus-loss, and post-disposal
+  negatives;
+- admission-free frame freshness by exact Run/Activation/Step/Observation plus
+  optional unchanged Wbase, with an admitted-revision frame as one explicit
+  case rather than the universal frame contract;
 - source-to-Term-to-Application-to-Activation-to-artifact explanation;
 - deterministic Reading selection before child-domain checking, lossless
   source occurrences, canonical parse/print/parse meaning, exact focus,
   binding and origin preservation, local recovery, and semantic round trips;
-  and
+- exact local-name resolution to structured Designations through
+  checked namespace/import/export relations, plus canonical rejection of `/`
+  in authored identifiers until a reversible qualified-display grammar is
+  separately ratified; and
 - ordinary source at least as readable as the accepted surface, with process
-  machinery exposed only where semantically relevant, proven by the frozen
-  source specimens rather than a prose readability claim.
+  and ownership machinery exposed only where semantically relevant, proven by
+  all four frozen source specimens rather than a prose readability claim.
 
 ## Required negative evidence
 
@@ -577,28 +910,64 @@ The spike actively rejects or bounds:
   their exact rejection obligations;
 - hidden semantic cases in host enums, callbacks, dispatch tables, serializers,
   formatters, materializers, or generated runtimes;
+- mandatory dynamic Authorization for a Mode whose entire prerequisite schema
+  is empty; missing/extra/wrong-slot/multiplicity-collapsed bindings; non-
+  occurrence evidence fabricated into a causal edge; or erased issued/effect/
+  Admission evidence where it may vary;
+- governed-only Admission imposed on a preauthorized effect Mode, per-attempt
+  Admission/issuance manufactured inside a session/Lease/batch/local scope, or
+  any intent/authority/capability/attempt/receipt stage collapsed;
+- checked-candidate running that fabricates a ProgramRevision/RuntimeSession/
+  StateRevision or real EffectAttemptOccurrence, candidate content used as
+  constitutive authority, or an admitted-constitution binding whose revision
+  selects another snapshot;
+- ambient/global constraint lookup, source-order instance choice, open
+  instantiation, incomplete search reported as unsatisfied, uncommitted
+  negative dependency, cyclic derived-key preimage, higher-rank smuggling,
+  InstantiationKey used as a physical cache key, or host-owned specialization;
+- mutable local escape, shared alias, scratch retention, failure-visible
+  partial update, overlapping split/Lease, double continuation takeup,
+  missing/double join, cancellation without token/resource closure, or
+  Admission/StateRevision manufactured for ordinary local mutation;
+- semantic identity used as a residency root, unknown lifetime silently leaked,
+  Lease confused with reclamation ownership, observable destructor/finalizer
+  invoked by deallocation, cross-root Owned↔Owned ownership cycle, reclaim
+  before every holder acknowledges quiescence, a managed island crossing its
+  declared boundary/budget, or hidden managed-island/tracing/ARC/finalizer
+  fallback in the native/Wasm game profile;
 - source round trips that lose binding, occurrence, Application, or Referent
   continuity;
+- slash-joined source text crossing elaboration, defining identity or equality,
+  recovering a RoleId or OperatorRef, selecting behavior, or encoding
+  multi-segment kind/role/path conventions;
 - silent Program/world rebinding on continuation resume;
 - continuation transplant or Clause-declared single-use continuation reuse;
 - inferred causality from child completion or trace serialization order;
 - cancellation/yield/deadline arbitration hidden in wall time, queue order, or
   host race behavior;
+- unbounded resident causal/trace history, compact summary used as authority,
+  or evicted cause accepted without exact witness rehydration;
 - whole-graph invalidation, whole-state clone, whole-view rebuild, support-set
   clone, or disconnected-row traversal hidden behind a claimed local edit;
 - oversized materialization allocation, invisible fallback, partial physical
   publication, or work omitted from the operation's receipt;
 - malformed, oversized, or stale Wasm/render input causing partial output,
   handle allocation, scene mutation, leaked listeners, or semantic authority;
+- Clause/Wasm/adapter-controlled per-frame allocation, `memory.grow`, global
+  scan, whole-carrier clone, observable destructor/finalizer work, or unbounded teardown after
+  bounded frame initialization; or a browser-wide zero-allocation claim
+  without instrumented foreign evidence;
 - process IDs, scheduler policy, or materializer plans forced into routine
   authored source where no such distinction is relevant;
+- semantic-IR general-purpose evidence counted without the ratified combined
+  source fixture and exact workbench roundtrip/edit;
 - every machine/KExpr reduction being recorded as a semantic Step; and
 - generic Triple execution presented as a credible production hot path.
 
 ## Pass and falsification
 
 The mechanism passes only when Phase A meets the trust profile, one exact
-carrier passes the complete Phase B cross-phase program, Lean and Rust agree on
+carrier passes the complete Phase B and Phase C program, Lean and Rust agree on
 every declared observable and nonfunctional contract, every negative fixture
 fails for the intended reason, the unchanged v0 corpus crosswalks honestly, and
 host-freeze evolution adds no private semantic case.
@@ -608,9 +977,11 @@ distinct consumers; the neutral three-slot carrier requires arbitrary positions
 or untyped tags for roles, continuation, binding, effects, or authority;
 essential semantics survives only in host functions, schedulers, mutable
 objects, or undocumented lowering; relational reasoning becomes materially
-worse; every ephemeral reduction must become durable graph content; the trusted
-kernel grows a second sovereign language; or an ongoing Run cannot be
-distinguished from failed or ungrounded evaluation.
+worse; ordinary local mutation requires Admission or cannot lower without a
+mandatory collector; static reuse or physical specialization requires hidden
+host semantics; every ephemeral reduction must become durable graph content;
+the trusted kernel grows a second sovereign language; or an ongoing Run cannot
+be distinguished from failed or ungrounded evaluation.
 
 Failure preserves Clause's process-first relational mission and records the
 exact forcing counterexample. It does not authorize a static fact language, a

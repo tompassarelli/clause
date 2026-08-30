@@ -40,7 +40,9 @@ object]`.
 Fixture claims use the symbol Terms `fixture/type/proposition` and
 `fixture/mode/asserted` for their type and mode. This selects reproducible
 corpus data only; it does not admit the fixture Atom contract or make any such
-claim semantically true.
+claim semantically true. These frozen v0 manifest strings are not canonical
+Clause identifiers or qualified-designation syntax, and no host or runtime may
+recover kind, role, identity, or behavior from their slash-separated bytes.
 
 The manifest's `ground_rules` are the finite generic expansion of the pure
 program's two authored laws for this exact input graph. Each three-string item
@@ -99,31 +101,59 @@ observation while making the process kernel explicit. Its crosswalk must show:
 
 - each checked closed form and its ApplicationShapeId, committing to exact
   ClauseSemanticsId, exact RelationSchemaId, exact OperatorRef, the exact
-  eligible ModeId set, named RoleId bindings, context requirements, and the
-  complete resolved semantic-dependency/declaration closure, including proof
-  that it is empty where applicable;
+  eligible ModeId set, named RoleId bindings, context requirements, exact
+  InstantiationUseRefs with their InstantiationKeys and SpecializationKeys, and
+  the complete resolved semantic-dependency/declaration closure, including proof
+  that it is empty where applicable; PhysicalReuseKey is excluded;
+- local instantiation records in the ProgramSnapshot preimage, with every
+  same-snapshot InstantiationUseRef resolved only after the one snapshot hash,
+  cross-snapshot checking/specialization keys derived from independent
+  canonical content, and no derived key inserted back into that preimage;
 - exact RelationSchemaId, RoleId, OperatorRef, and ModeId references formed from
   ProgramSnapshotId plus typed snapshot-local declaration identities, with no
   silent identity carry across a changed snapshot;
 - nominal ApplicationId for every Application, with raw, open, quoted, or
   merely structural forms remaining non-nominal;
+- contextual ClauseJudgments over neutral Terms remaining distinct from
+  governed Judgments, ApplicationForms, and nominal Applications;
 - two activations of one exact Application with distinct ActivationIds and
   RunIds;
 - independently nominalized equal-shaped Applications with distinct
   ApplicationIds;
 - one Activation producing multiple StepIds across yield, suspension, and
   resumption;
+- one exact StaticActivationBasis per Activation, with the selected Mode's
+  named/RoleId-indexed multiplicity-aware DynamicPrerequisiteSchema and exact
+  bindings represented separately from its occurrence-only cause frontier; the
+  entire schema is permitted to be empty;
+- one exact CheckedConstitutionBinding per basis: checked candidate package and
+  snapshot bytes for nonauthoritative running, including read-only admitted-
+  world use, persisted output/Continuation, and inert effect simulation; or an
+  admitted ProgramRevision selecting that snapshot when joining an authoritative
+  RuntimeSession, proposing authoritative world change, relying on constitutive
+  Program authority, or performing a real effect; read-only use of an admitted
+  world alone remains valid in the checked-candidate form;
+- affine Activation-local slots, bounded Step-local scratch, anonymous internal
+  reductions, mandatory Step cuts, and exact escape/alias/lifetime outcomes;
+- every Step consuming the exact current affine configuration token and
+  atomically producing its successor, except that one declared disjoint
+  split/join protocol may branch or merge ownership without treating
+  StepCauseFrontier as configuration lineage;
 - nonempty finite typed StepCauseFrontiers rather than inferred log causality,
   with exact ActivationStart, PriorStep, ContinuationTakeup, and
   CancellationRequest causes where applicable;
-- exact ModeId, ExecutionAuthorization, ClauseSemanticsId,
-  ProgramSnapshotId, ProgramRevisionId, RuntimeSessionId, RuntimePolicyId, and
-  observed/base StateRevisionId pins where applicable;
+- one exact ActivationStartRecord from which Application, Mode, static basis,
+  semantics, constitution, initial world/session/policy, dynamic prerequisites,
+  and original cause frontier derive, plus only explicitly advanced current-
+  world, remaining-budget, and continuation-use fields where applicable;
 - identified Continuation only where it crosses a suspension, persistence, or
-  handoff boundary;
+  handoff boundary, carrying the sole affine configuration token and exact
+  ActivationStartRecord;
 - ObservationIds distinct from Values, Results, and trace Terms;
 - candidate deltas separate from continuations and Admission; and
-- effect intent, authorization, attempt, optional receipt, observations,
+- both governed-per-intent and preauthorized local/session/Lease/batch effect
+  profiles, preserving exact intent, issued EffectAuthorization, independent
+  CapabilityEvidence, attempt, optional receipt, observations,
   governed Judgment, and later Admission as a causal graph, with every actual
   event or attempt carrying an OccurrenceId plus exact provenance: producing
   Activation/Step for internal production or external-boundary provenance for
@@ -133,7 +163,10 @@ The companion must add exact cases for pure arithmetic, closure capture,
 user-defined algebraic data with exhaustive matching, n-ary role closure,
 duplicate equal Applications and Activations, an ongoing service, cancellation,
 timeout without receipt, resumable exhaustion, source movement, repeated premise
-slots, self-joins, and occurrence-exact supports. Malformed, open, wrong-mode,
+slots, self-joins, occurrence-exact supports, rich values and collections,
+rank-1 generic instantiation, local mutation, lifetime closure, native/Wasm
+specialization, bounded long-run trace retention, the ratified combined general-
+purpose source specimen, and the agent workbench proof. Malformed, open, wrong-mode,
 missing or unreachable match cases, ungrounded-known-role, wrong-revision
 resume, unauthorized cancel, fabricated receipt, and ambiguous-mode candidates
 reject before acquiring partial authority.
@@ -149,7 +182,8 @@ silently migrate a live Activation to a new Program or world revision.
 ### Exact companion record
 
 Every process-v1 case must commit exact input bytes and checksums, the selected
-semantics and Program/world/session pins, identity-allocation authority,
+semantics and Program/world/session pins, identity-allocation basis and
+applicable authority,
 Application/Activation/Run identities, ordered Step records with explicit
 nonempty typed StepCauseFrontiers, observations and occurrence-exact supports,
 outcome, continuation, candidate delta, Admission decision, and authoritative-
@@ -158,12 +192,26 @@ strategy, budget, total work receipt, physical-view hash, and handle/scene
 table before and after. A rejection fixes the rejecting stage, typed reason,
 obligations, and all boundaries proven unchanged.
 
+Where applicable the record also fixes StaticActivationBasis,
+CheckedConstitutionBinding, exact DynamicPrerequisiteSchema, slot-preserving
+bindings and occurrence-only projection, StaticParameterTelescope,
+StaticConstraintTelescope, resolution contracts and scope commitments,
+normalized evidence, InstantiationUseRefs, InstantiationKeys,
+SpecializationKeys, PhysicalReuseKeys, Activation-local slot and Step-scratch
+contracts, anonymous-reduction count, mandatory Step cuts, allocation roots,
+Borrow/Lease edges, retirement and explicit close/dispose events, physical
+reclamation receipt, trace-retention contract, declared layout/ABI, and erasure
+strategy. A local-only case must prove that no StateRevision, Admission, or
+mandatory retained trace was allocated.
+
 Names used while authoring the manifest are never semantic identity by
 spelling. Once the process-v1 identity encoding is accepted, the companion
 must carry its canonical ID bytes and preimages; equality/inequality-only
-placeholders cannot satisfy an exact gate. Each identity record names the
-Clause authority and predecessor evidence that allocated or retained it.
-Wrong-kind, wrong-authority, self-authorizing, equal-content transplant, and
+placeholders cannot satisfy an exact gate. Every identity record names its
+exact checked allocation basis. Authority, predecessor, or retention evidence
+is additionally required only when that identity kind's declared formation or
+governed boundary requires it; static allocation never invents authority.
+Wrong-kind, wrong-authority where applicable, self-authorizing, equal-content transplant, and
 already-used-occurrence variants reject before partial authority. Historical
 replay with an existing identity is not a fresh occurrence.
 
@@ -173,30 +221,37 @@ replay with an existing identity is not a fresh occurrence.
 
 1. activate one Application and run through at least one nonterminal Step;
 2. suspend at `suspend-step`, emit a boundary-crossing Continuation, and record
-   its complete canonical bytes and pins;
+   its complete canonical bytes, ActivationStartRecord, and sole affine
+   configuration-ownership token;
 3. terminate that executor and rematerialize the bytes in an independent
    runtime with no shared heap or handle table;
 4. supply one newly identified ingress occurrence absent from the serialized
    remainder; and
 5. resume the same Activation and Run, creating one fresh Step whose
    StepCauseFrontier contains exactly
-   `ContinuationTakeup(exact ContinuationId, exact ResumptionOccurrenceId)` and
-   `PriorStep(original RunId, original ActivationId, suspend-step)`, plus one
-   fresh ObservationId supported by that ingress occurrence.
+   `ContinuationTakeup(exact ContinuationId, original RunId,
+   original ActivationId, suspend-step, exact ResumptionOccurrenceId)`; the
+   emitting-Step edge is part of that one cause and is not duplicated as
+   `PriorStep`. The Step also emits one fresh ObservationId supported by the
+   ingress bound through that ResumptionOccurrence.
 
 The post-resume observation bytes and support must differ from every
 pre-suspension observation; trace replay does not pass. Separate one-field
-negative vectors change each of Application, Mode, ProgramSnapshot,
-ProgramRevision, RuntimeSession, observed/base StateRevision, runtime policy,
-semantics epoch, Activation, Run, emitting Step, remaining budget, cancellation
-scope, and continuation-use authority. Additional vectors transplant unchanged
+negative vectors change each field of ActivationStartRecord or its derived
+Application, Mode, constitution, initial-world/session/policy/semantics/budget/
+cancellation pin set, plus the current-world advance proof, Activation, Run,
+emitting Step, remaining budget, and configuration token. Additional vectors transplant unchanged
 bytes to an equal-shaped independent Application, Activation, Run, or session.
-All reject before a new Step. Under the fixture's Clause-declared linear policy,
-the first use succeeds and both sequential and concurrent reuse reject as
-`continuation-already-consumed` without duplicate observations or effects.
+All reject before a new Step. Because this fixture carries affine
+configuration, first takeup consumes its token and both sequential and
+concurrent reuse reject as `continuation-already-consumed` without duplicate
+observations or effects. A separate reusable vector must use an immutable/Copy
+remainder; a mutable reusable fork receives fresh child Activation and
+configuration identities.
 
 `join-left-first`, `join-right-first`, and `join-parallel` use fresh identities
-in separate Runs but the same Clause process data. Each child Activation has an
+in separate Runs but the same Clause process data. The parent split consumes
+one configuration owner and creates exact disjoint left/right tokens. Each child Activation has an
 exact `ChildOf` origin, and its first StepCauseFrontier is exactly
 one `ActivationStart(child ActivationId)`. The first two cases force opposite
 child completion orders; the third uses physically separate workers and a
@@ -205,7 +260,11 @@ barrier. In every Run the join StepCauseFrontier contains exactly two causes:
 `PriorStep(exact RunId, right ActivationId, right-terminal-step)`. Neither
 child's later StepCauseFrontier names the other child. Joined Value, observation
 content, occurrence-support multiset, candidate delta, and Admission decision
-are equal; trace order is explicitly permitted to differ.
+are equal; trace order is explicitly permitted to differ. The join consumes
+both tokens exactly once and restores one owner. Separate negatives cover an
+overlapping write Lease, cancelled branch without close-or-return, missing
+token, duplicate token, and double join; none publishes a successor
+configuration.
 
 The race fixture carries its cancellation/yield/deadline decision table and
 logical deadline boundary as Clause data. It fixes cases for yield causally
@@ -216,6 +275,14 @@ typed StepCauseFrontiers, including exact
 observe or carry through cancellation, yielded observations, continuation
 disposition, typed terminal outcome, and resource balance come from that table.
 Wall-clock arrival, log order, and first host callback are not inputs.
+
+`bounded-history-long-run` executes for at least ten times each configured
+resident window. It fixes maximum resident configuration, active-frontier,
+continuation, diagnostic, and trace bytes/records; exact externalization or
+compaction operations and acknowledgments; and resource-ledger high-water.
+Referencing one evicted cause either rehydrates its exact checked witness within
+budget or rejects `history-unavailable` before Step allocation. A compact
+summary, host log position, or GC reachability never supplies authority.
 
 ### Truth without implicit assertion
 
@@ -228,6 +295,101 @@ Hashes of the assertion set, governed Judgments, ProgramRevision, and
 StateRevision remain unchanged in all three cases. A separate later assertion
 and a separate later Judgment receive fresh occurrence identities; neither may
 be retroactively attributed to evaluation.
+
+### Exact effect-prerequisite vectors
+
+`governed-per-intent` binds three distinct Mode slots: exact governed
+EffectIntentOccurrence plus the AdmissionOccurrence establishing it; issued
+`AuthorizationOccurrenceId<EffectAuthorization>` covering that intent, action,
+scope, and policy; and independent `CapabilityEvidence<C>` covering the exact
+boundary, resource, pins, validity, and budget. The occurrence-only
+ActivationCauseFrontier projects the intent, Admission, Authorization, and any
+occurrence-backed capability under exact slot/ordinal labels. Only then may its
+ActivationId and EffectAttemptOccurrence be allocated.
+
+`preauthorized-effect` contains exact session, Lease, batch, and Activation-
+local variants. Each binds three distinct slots for the exact intent occurrence,
+a previously issued EffectAuthorization occurrence covering its bounded scope,
+and independent CapabilityEvidence, plus attempt bounds and renewal/expiry
+rules. The scope may cover several attempts. No preauthorized variant allocates
+a per-attempt StateRevision, AdmissionOccurrence, or new
+AuthorizationOccurrence. A statically pinned authorization or capability may
+erase from the checked hot ABI but retains its exact semantic slot and cold
+explanation. Constitutive execution authority never replaces issued effect
+authorization.
+
+Independent negatives cover every prerequisite required by the selected
+profile: missing, unadmitted when governed, stale, wrong-intent, and equal-
+content-transplanted intent; missing, wrong-kind, stale, wrong-scope/policy
+Authorization; and missing, expired, wrong-type/boundary/resource/pin
+capability. Governed-per-intent additionally rejects constitutive-instead-of-
+issued Authorization; preauthorized profiles reject any injected governed-only
+Admission slot and also reject constitutive-instead-of-issued authorization.
+Wrong-slot, duplicate-for-one-slot, and same-kind multiplicity collapse also
+reject. Every negative leaves its affected EffectAttemptOccurrence unallocated
+and every authoritative boundary unchanged; a pre-Activation failure also
+leaves ActivationId unallocated.
+
+### Recursive specialization and physical-strategy vectors
+
+`generic-self-scc` and `generic-mutual-scc` form closed rank-1 specializations
+with respectively one self-recursive member and two mutually recursive members.
+Canonical alpha-normalized local member anchors make each graph finite: one
+`SpecializationSccKey` commits to its complete multiplicity-preserving member
+graph and external dependency closure, and each member `SpecializationKey`
+selects from that object. Reordered source, renamed local spellings, reversed
+discovery order, and source-only movement preserve every key. A body or call-
+edge edit changes the whole SCC key and all dependent member specializations.
+Static-argument/evidence cycles remain a separate negative that rejects before
+SCC construction.
+
+Each positive specialization runs through monomorphized, dictionary-passing,
+irrelevant-evidence-erased, and shared-code physical strategies on native and
+Wasm targets. All produce the same declared semantic identities, values,
+observations, occurrence-exact supports, failures, diagnostics, and resource
+outcomes. Strategy-specific PhysicalReuseKeys and ArtifactIds may differ, but
+every result retains the exact cold link from InstantiationUseRef through
+InstantiationKey and SpecializationKey to its strategy and artifact; no
+strategy collapses nominal Applications or Activations.
+
+### Local lifetime and reclamation vectors
+
+Each allocation record carries exactly one Owned, RegionMember, or
+ForeignManaged root and zero or more typed Borrow/Lease edges. Forced failure
+or cancellation fires at every move, write, drop, Lease issue/revoke/close, and
+Step-cut boundary; exact Configuration_before and the resource ledger must be
+restored through an infallible suffix, bounded undo/shadow, or discarded
+private realization. Overlapping write Lease, scratch escape, cancelled split
+without returning custody, missing/double join, use-after-move, and unknown close
+obligation reject without publication.
+
+The root-wide matrix includes direct owner access plus every Borrow and Lease,
+and proves shared-read compatibility, exclusive/overlapping-write rejection,
+and disjoint-write acceptance. Reset/reclaim is withheld until every Borrow,
+Lease, Continuation, child, escape, asynchronous/foreign use, and close
+obligation has causally acknowledged quiescence. Silence, timeout, revocation
+request, and host unreachability do not close a token. Strong Owned↔Owned,
+Owned↔Region, and other cross-root cycles reject; one enclosing
+DeterministicRegion may reclaim an internal cycle only through its declared
+whole-region closure. A separate non-game `managed-island-bounded-cycle` vector
+declares its finite external roots, collection strategy, capacity, work/pause
+budget, trigger, and overflow result. It accepts only an entirely internal cycle;
+a strong edge crossing the island, open semantic obligation, budget overrun, or
+use in the controlled game hot profile rejects.
+
+`reclaim-without-observable-finalization` resets a Region and deallocates an
+Owned object while proving zero observable destructor, finalizer, callback,
+effect, or Observation invocations. A separate explicit close/dispose
+Activation and, where external, effect attempt/receipt must precede reclaim.
+Closing a foreign Lease discharges its declared adapter obligation but never
+claims the foreign heap reclaimed bytes at that instant.
+
+`bounded-mechanical-drop` proves a finite compiler-generated teardown that
+cannot call user/foreign code, emit an Observation, or cascade beyond its bound.
+`foreign-partial-init` fails after an external allocation attempt, publishes no
+Clause view or handle, restores all Clause-controlled state, and records exactly
+one of cleanup-success, cleanup-failure, or pending-quarantine without claiming
+atomic foreign rollback.
 
 ### Total materialization receipts
 
@@ -271,26 +433,73 @@ accepts a physical handle as semantic identity.
 
 The passive-host cases fix immutable input-frame bytes, prior scene-projection
 hash, expected render observation, resulting scene-projection hash, and listener
-and resource counts. They include a valid admitted-StateRevision frame; two
-independently allocated host objects containing that same frame; a stale
-predecessor after its successor is displayed; missing and non-finite fields;
-object count `limit + 1`; keyboard input after canvas focus loss; and input plus
-render after disposal. Rejection leaves both caller frame and scene projection
-unchanged. A valid render may change only renderer-owned physical objects.
-Disposal is terminal and idempotent, removes every owned listener/resource
-exactly once, and permits no later callback-owned work.
+and resource counts. They include a valid admission-free frame with exact
+Run/Activation/Step/Observation identity and no StateRevision; an otherwise
+identical frame with optional unchanged `Wbase`; a valid admitted-StateRevision
+frame; two independently allocated host objects containing the same immutable
+frame; a causally stale Step/Observation predecessor; a stale admitted predecessor after
+its successor is displayed; two causally unordered frames under an explicit
+merge policy; missing and non-finite fields; object count `limit + 1`;
+keyboard input after canvas focus loss; and input plus render after disposal.
+Callback or transport order never creates freshness. Rejection leaves both
+caller frame and scene projection unchanged. A valid render may change only
+renderer-owned physical objects. After initialization the Clause/Wasm/adapter-
+controlled path allocates nothing, does not call `memory.grow`, clone the whole
+frame/carrier, scan a global heap, invoke observable destructor/finalizer work,
+or trigger unbounded teardown. Initialization fixes capacities, Clause-state
+rollback, explicit foreign cleanup success/failure/quarantine, allocation calls/
+bytes, pool high-water, Wasm pages, adapter calls,
+and resource-ledger before/after; `capacity + 1` publishes nothing. Every
+foreign call has an allocation/disposal contract, and a browser-wide zero-
+allocation claim additionally requires instrumented warm-up/lazy-cache
+evidence. Disposal is an explicit terminal Activation/Step and applicable
+effect before wrapper reclamation, is idempotent, removes every owned
+listener/resource exactly once, and permits no later callback-owned work.
 
 ### Frozen ordinary-source specimens
 
-The companion copies the three exact code blocks in the adoption spike's
+The companion copies the three printed code blocks and the separately ratified
+fourth combined general-purpose source specimen in the adoption spike's
 “Frozen ordinary-source ergonomics” section into separately checksummed source
 files. Pure definition and relational request source contain no process IDs,
 revision pins, authority token, scheduler, budget, trace, or physical plan. The
 state-change specimen exposes only its semantically relevant canonical process
 words. Canonical parse/print/parse preserves the exact accepted projection,
-while the semantic crosswalk still exposes every generated identity, pin, and
-authority. A printer that injects process bookkeeping or a host sidecar needed
-to recover hidden meaning fails the fixture.
+while the semantic crosswalk still exposes every generated identity and pin
+plus the exact possibly empty DynamicPrerequisiteSchema, slot bindings, and
+occurrence-only projection. The fourth source combines rank-1 generic use,
+loop/builder, and move/borrow/region/Lease boundaries and must also pass one
+workbench edit with exact affected and preserved dependency/cache sets. A
+printer that injects process bookkeeping or a host sidecar needed to recover
+hidden meaning fails the fixture.
+
+### Agent-native workbench transcript
+
+The companion fixes one ordered request/response transcript against one
+long-lived stdio service. It includes `parse`, `check`, `explain`, `query`,
+`diff`, `propose`, `admit`, `run`, and `hotReload` over one arithmetic
+definition, one relation/query, and the ratified combined general-purpose
+source fixture. Exact responses contain canonical package and constitution plus
+applicable revision pins, stable typed diagnostics, rejecting semantic stage,
+exact failed formation/subject and obligation, source-origin sets, dependency
+slices, boundaries proven unchanged, and
+`why`/`prevent`/`achieve`/`diff` results. The pure run changes no StateRevision.
+The source proposal is distinct from Admission, and hot reload either preserves
+all live pins or rejects with exact obligations.
+
+The edit case names an exact source/package base, applies all changes atomically,
+and returns exact affected and preserved dependency/cache sets. A stale-base
+variant returns the current exact identity and leaves source, semantic package,
+and live pins unchanged. Suggested edits are separately typed advice rather
+than silently applied rewrites or authority.
+
+The transcript also fixes the Rust boundary: bounded stdio framing, pins,
+cache/transaction mechanics, and scheduling only. Every semantic response must
+come from accepted package definitions executed through CLCP03 and the generic
+runtime. A host parser, checker, query engine, diagnostic case, or secondary
+interpreter fails even if its bytes match once. Interactive requests may use
+accepted incremental summaries; the separately fixed promotion transcript
+performs exact Lean and compiler-succession replay.
 
 The evolution program admits two changes in order. Reapplying the second change
 to the root or to an equal-looking but different base rejects. Verification

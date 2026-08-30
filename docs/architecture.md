@@ -45,23 +45,38 @@ replaceable physical machinery.
 The semantic chain is:
 
 ```text
-neutral Term + FormationJudgment
+neutral Term + contextual ClauseJudgment / FormationJudgment
   -> checked closed ApplicationForm
      (exact RelationSchema, OperatorRef, complete named-role bindings,
       eligible Mode set, and context requirements)
   -- instantiate when nominal application continuity is required -->
      ApplicationId
-  -> fresh ActivationId under one selected eligible ModeId, exact initial
-     pins, typed ActivationCauseFrontier, and exactly one Run membership
+  -> fresh ActivationId under one selected eligible ModeId, exact
+     StaticActivationBasis with a checked-candidate or admitted-constitution
+     binding, initial pins, exact named DynamicPrerequisiteBindings, a separate
+     occurrence-only typed ActivationCauseFrontier, and exactly one Run
+     membership
   -> stable ActivationId across configurations related by causal StepIds,
-     each with a nonempty typed StepCauseFrontier
+     each consuming the exact current affine configuration token, producing its
+     successor token, and carrying a nonempty typed StepCauseFrontier
   -> Run(RunId, one unique root and uniquely owned child Activations)
   -> observations, continuations, and candidate deltas
   -> separately governed Admission
 ```
 
 Neither graph storage, mode existence, successful evaluation, nor a physical
-artifact authorizes activation or creates a successor revision.
+artifact supplies dynamic authority or creates a successor revision. Every
+Activation requires static formation/executability and one causal origin; a
+Mode may declare an entirely empty dynamic-prerequisite schema. Static basis
+and origin suffice without bindings only in that case. A checked-candidate
+binding supports exact sandbox/compiler/test running, read-only use of an exact
+admitted world, inert effect simulation, and physically persistent
+nonauthoritative output or Continuations without fabricating a ProgramRevision
+or authority. Joining an authoritative RuntimeSession, proposing authoritative
+world change, relying on constitutive Program authority, or performing a real
+external effect uses an admitted-constitution binding; merely reading a pinned
+admitted world does not. Only that binding or a separately supplied
+`IrreducibleRootConstitution` may support constitutive Authorization.
 
 Materialization, hashing, successful decoding, successful execution, and
 derivability do not authorize `Compiler0`. One irreducible external human-owner
@@ -117,8 +132,9 @@ semantic concept or the target package boundary. The target Rust
 responsibilities are `clause-package` for canonical CLCP bytes and validation,
 `clause-runtime` for construct-blind evaluation and the generic process
 protocol, `clause-materialization` for replaceable physical projections, and
-`clause-wasm` for the bounded Wasm transport adapter. The eventual `clause`
-crate is a public facade or CLI, not a shared semantic implementation. The
+`clause-wasm` for the bounded Wasm transport adapter. The target `clause` crate
+is the user-facing facade and CLI aggregation boundary, not a shared semantic
+implementation. The
 [roadmap](roadmap.md) alone records when this split occurs and the status of
 each implementation.
 
@@ -213,9 +229,13 @@ process execution:
 
 - canonical Terms and explicit equality contracts;
 - distinct identities where occurrence or continuity requires them;
-- contexts, strata, FormationJudgments, RelationSchemas, revision-indexed
-  extensions, OperatorRefs, modes, source Readings, ApplicationForms,
-  Applications, Judgments, JudgmentOccurrences, typed
+- contexts, strata, ClauseJudgments, FormationJudgments, RelationSchemas,
+  revision-indexed extensions, OperatorRefs, modes, source Readings, static
+  parameter and
+  constraint telescopes, finite constraint bases with terminating resolution
+  contracts, resolution-scope commitments, normalized evidence,
+  InstantiationUseRefs, InstantiationKeys, SpecializationKeys,
+  ApplicationForms, Applications, Judgments, JudgmentOccurrences, typed
   AuthorizationOccurrences, process contracts, and capabilities;
 - candidate successors, deltas, obligations, derivations, and certificates;
 - source origins and separately scoped traces, strategies, and physical
@@ -227,11 +247,17 @@ uses local declaration identities and contains none of the
 `ProgramSnapshotId`-scoped external references derived from itself. Hashing
 that preimage creates `ProgramSnapshotId` once; exact `RelationSchemaId`,
 `RoleId`, `OperatorRef`, `ModeId`, `ApplicationId`, and `JudgmentRef` values are
-then resolved, and `ApplicationShapeId` is derived from the resolved form.
-Neither those external references nor the shape ID are inserted back into the
-same preimage. Runtime Activations, Steps, Runs, observations, traces, and
-physical layouts remain outside snapshot identity unless governed semantic
-content explicitly makes them constitutive.
+then resolved. Exact InstantiationUseRefs are derived from canonical local use
+records; cross-snapshot InstantiationKeys and SpecializationKeys derive from
+independent canonical interface/body/dependency content; and
+`ApplicationShapeId` is derived from the resolved form with exact
+InstantiationUseRefs, InstantiationKeys, and SpecializationKeys.
+PhysicalReuseKey is excluded. None is inserted back into the same preimage.
+PhysicalReuseKeys additionally
+bind lowering, target/profile, ABI/layout/strategy, and physical dependencies
+outside snapshot identity. Runtime Activations,
+Steps, Runs, observations, traces, and physical layouts remain outside snapshot
+identity unless governed semantic content explicitly makes them constitutive.
 
 The package is not a new ontology. Lean values, Rust structs, proof terms,
 indexes, source maps, traces, caches, and strategies do not enter semantic
@@ -303,17 +329,22 @@ Rust may implement:
   Step, Run, continuation, observation, JudgmentOccurrence,
   AuthorizationOccurrence, and admission envelopes without interpreting their
   domain names;
+- owned and region-member allocation roots, foreign-managed resource records,
+  and separate Borrow/Lease access mechanics under accepted lifetime contracts,
+  including bounded arenas and deterministic mechanical reclamation;
 - indexes and incremental dependency maintenance;
 - durable persistence and transaction machinery;
 - operating-system, filesystem, network, browser, and foreign interfaces;
 - runtime scheduling and resource accounting;
-- native, Wasm, and JavaScript materialization; and
+- Clause-declared physical IR materialization into native, Wasm, JavaScript,
+  browser, data-system, and foreign ABIs; and
 - profiling and target-specific physical strategies.
 
 Rust may not parse Clause source or define what a RelationSchema, Application,
-Activation, Step, Run, production, binder, type, mode, transition, capability,
-effect occurrence, macro, diagnostic, identity, compiler revision, or admission
-means. It consumes an
+Activation, Step, Run, production, binder, static parameter, constraint,
+evidence argument, type, lifetime, mode, transition, capability, effect
+occurrence, macro, diagnostic, identity, compiler revision, or Admission means.
+It consumes an
 accepted package and may create checked proposals or optimized views. A Rust
 enum, trait, callback, plugin, formatter, validator, package-local `DefId`,
 pointer, arena index, row number, or object layout is never semantic authority
@@ -323,12 +354,65 @@ Rust stays `unsafe`-free until an unavoidable foreign boundary is identified
 and separately authorized. Any future unsafe module is isolated, documented,
 tested, and outside the constitutional checker.
 
+## Static abstraction, local state, and physical memory
+
+The general-purpose path is not a generic graph interpreter with governance on
+every mutation. Compiler-owned checking produces closed rank-1 instantiations,
+normalized constraint evidence, affine ActivationConfiguration ownership,
+Step cuts, one exact allocation root, and separate Borrow/Lease obligations before physical
+lowering. The physical IR makes calls, loops, control/data flow, layouts,
+borrows, moves, region resets, continuations, effect boundaries, and target ABI
+decisions explicit while retaining an exact refinement link to the semantic
+graph.
+
+Ordinary local mutation remains inside an affinely owned
+ActivationConfiguration and creates no StateRevision or Admission. A backend
+may lower anonymous reductions to registers, stack slots, mutable arrays,
+arenas, and in-place state-machine fields when non-escape, disjointness, failure
+restoration, and Step-cut preservation are checked. Concurrent mutable work
+uses ownership transfer, exact disjoint subconfiguration tokens, or explicit
+access leases; split and join consume those tokens exactly once and never rely
+on accidental host aliasing. Suspension likewise transfers the sole live
+configuration token into its Continuation; reusable mutable takeup must fork
+fresh child identities.
+
+Parametric code may use monomorphization, normalized evidence dictionaries,
+shared code, or complete erasure. Checking, semantic specialization, and
+physical cache reuse use their distinct exact keys. Constitutive execution evidence may likewise
+leave the hot ABI when the exact covered pins are frozen. Those are translation
+strategies, not semantic choices. Issued Authorization, effects, capabilities,
+and Admission evidence remain present at every boundary where they can vary.
+
+The native/Wasm game profile has no mandatory tracing collector, implicit ARC,
+or finalizer fallback. Compiler-generated ownership roots, borrows, leases,
+region reset, and deterministic teardown reclaim physical storage when every
+root-wide access, continuation, child, escape, close, and foreign obligation has
+causally acknowledged quiescence. Release time may depend on runtime causality;
+the compiler proves the rule rather than pretending every time is a static
+constant. Strong cycles across independently reclaimed roots, including
+Owned↔Owned, reject unless they use non-owning edges, one deterministic enclosing
+Region, or one explicitly bounded `ManagedIsland` physical region. Managed
+islands are never a default heap and are forbidden on the controlled native/
+Wasm game hot path. Region reset and owner deallocation invoke no observable
+destructor or finalizer; bounded compiler-proven nonobservable mechanical drop
+is permitted, while observable close/dispose is an explicit process/effect
+completed before reclaim. Browser and foreign
+allocations retain explicit foreign-manager roots plus typed Lease edges and
+require deterministic disposal even when the foreign runtime also has a GC.
+
+Rich values and collections, parameterization, ownership, physical IR, layout
+and ABI control, and native/Wasm specialization are early constitutional
+falsifiers. They are not deferred polish and are not implemented merely because
+this architecture names them.
+
 ## Clause-authored compiler
 
 Clause does not begin with a host frontend and migrate meaning later.
 `Compiler0` owns lossless reading and syntax selection, binding and occurrence
 identity, elaboration and formation/schema/operator/mode/effect checks, typed
-macros and transformations, origin construction, diagnostics, process-envelope
+macros and transformations, rank-1 parameter and constraint checking,
+normalized evidence, local ownership and lifetime checking, Step-cut analysis,
+physical-IR construction, origin construction, diagnostics, process-envelope
 construction, and successor production from genesis. Its semantic output uses
 RelationSchemas, operators, modes, ApplicationForms, nominal Applications,
 typed process envelopes, Judgments, and JudgmentOccurrences rather than host-
@@ -348,6 +432,26 @@ and process definitions, not new Term, KExpr, Lean, or Rust kernel cases.
 
 Host changes are allowed only for a genuinely new primitive physical
 capability or a generically translation-validated optimization strategy.
+
+### Agent-native workbench boundary
+
+The first developer loop is one long-lived stdio service, not a collection of
+host scripts or a second interpreter. The service accepts exact requests for
+`parse`, `check`, `explain`, `query`, `diff`, `propose`, `admit`, `run`, and
+`hotReload`. Those operations are accepted Clause package definitions executed
+through the fixed CLCP03 evaluator and the generic Clause runtime. Rust owns
+bounded transport, exact revision/session pins, replaceable caches,
+transactional request framing, and scheduling only; it does not parse source,
+solve Clause constraints, answer semantic queries, or invent diagnostics.
+
+Interactive checking may use accepted incremental summaries and need not replay
+the full Lean or compiler-succession proof on every edit. Exact replay remains
+the promotion and Admission gate. A source edit is proposed transactionally
+against one exact base, checked, and either retained as a non-authoritative
+candidate or separately admitted; `hotReload` never silently migrates live
+Activations. Human-readable source remains a compact audit and token surface,
+while machine responses use stable typed diagnostics, exact dependency and
+causal slices, and immutable pins.
 
 ## Machine-checkable host boundary
 
@@ -408,21 +512,37 @@ EvalHost(Pπ, π*(input)) = π*(EvalHost(P, input))
 
 This law neither directly permutes hash octets nor transfers a genesis anchor
 or acceptance judgment. Lean proves the generic laws and Rust exercises
-canonical re-encoding, reordered tables, recomputed derived IDs, replay receipts, and outcomes through metamorphic
-vectors.
+canonical re-encoding, reordered tables, recomputed derived IDs, replay
+receipts, and outcomes through metamorphic vectors.
 
 ## Execution and physical freedom
 
 Pure running returns values and evidence without creating an authoritative
 revision. Transition Steps may stage candidate deltas; Admission alone creates
 the successor revision. State transition and external effects cross distinct
-boundaries: State Admission may admit effect intents; a separate
-AuthorizationOccurrence issues an exact EffectAuthorization Judgment; and a
-separately identified effect Activation names both in its typed cause frontier
-before producing an attempt occurrence. Receipts are optional, observations
-form a causal graph, governed JudgmentOccurrences issue assessments, and a
-later separate AdmissionOccurrence may record a claim or State successor.
-Candidate delta and continuation never collapse.
+boundaries. Each effect Mode selects an exact profile. Every real-effect
+Activation binds independent dynamic slots for the exact intent occurrence,
+issued EffectAuthorization occurrence, and CapabilityEvidence, projecting only
+their occurrence-backed components before an attempt. `GovernedPerIntent`
+additionally binds the intent's exact AdmissionOccurrence.
+`PreauthorizedEffect` instead binds a previously issued bounded activation,
+session, Lease, or batch scope; it may cover several attempts and creates no
+per-attempt Admission or issuance. Constitutive execution authority never
+replaces the issued effect-authorization slot. A statically pinned slot may
+erase from a checked hot ABI but remains in the exact semantic explanation.
+Intent, issued authority, capability, attempt, optional receipt, observations,
+governed JudgmentOccurrences, and any later Admission remain distinct in every
+profile. Candidate delta and continuation
+never collapse.
+
+Admission-free local running advances one affinely owned
+ActivationConfiguration through anonymous internal reductions and declared
+Step cuts. It may drive a loop, builder, request-local cache, simulation, actor
+state machine, or render projection without a StateRevision. An immutable frame
+from that path is keyed by exact Run, Activation, producing Step, and
+Observation identities plus optional unchanged `Wbase`. An admitted
+StateRevision pin is required only when the frame actually projects that
+boundary.
 
 Semantic State admission supplies an `AdmittedStateDelta` naming the exact
 ProgramRevision, RuntimeSession, predecessor and result StateRevisions, and
@@ -442,6 +562,25 @@ latency contract must remain an explicit strategy or evidence judgment.
 
 Generic Triple interpretation is permitted as a bounded reference path, not an
 ordinary production hot path.
+
+For the native/Wasm frame profile, initialization preallocates bounded
+transport buffers, Wasm memory, local regions, renderer pools, active-frontier,
+continuation, and trace capacity. Partial initialization publishes no handle or
+view and rolls back Clause-controlled state; every attempted foreign allocation
+records cleanup success, failure, or pending quarantine without claiming atomic
+external cleanup.
+Frame execution then performs no Clause/Wasm/adapter-controlled allocation,
+`memory.grow`, whole-carrier clone, global scan, observable destructor/finalizer, or
+unbounded destruction. Ratified foreign calls retain explicit allocation and
+disposal contracts; a browser-wide zero-allocation claim requires instrumented
+target evidence including warm-up and lazy caches. Typed failures leave the
+last visible projection and caller-owned inputs unchanged.
+
+Every long-lived runtime selects an explicit trace-retention contract with
+bounded resident configuration, active-frontier, continuation, diagnostic, and
+trace capacity. Exact externalization or compaction may reduce residency but
+cannot authorize new causal edges; an evicted cause must be rehydrated with its
+checked witness within budget or the dependent Step rejects typed.
 
 ## Admission and parity gates
 
