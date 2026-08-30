@@ -326,11 +326,11 @@ def decodeCompletion : Decoder ReplayCompletion := fun cursor => do
 
 def encodePlan (context : Context) : ReplayPlan → Option Bytes
   | .complete completion => do
-      pure (0x01 :: (← encodeCompletion completion))
+      pure (0x00 :: (← encodeCompletion completion))
   | .checkpoint checkpoint remaining => do
       let fields ← Encoding.many [encodeCheckpoint context checkpoint,
         encodePlan context remaining]
-      pure (0x00 :: fields)
+      pure (0x01 :: fields)
 
 def decodePlanFuel (context : Context) : Nat → Decoder ReplayPlan
   | 0 => Codec.failure .lengthOrCountOverflow 0
@@ -339,12 +339,12 @@ def decodePlanFuel (context : Context) : Nat → Decoder ReplayPlan
       let (tag, afterTag) ← Codec.readByte cursor
       match tag with
       | 0x00 =>
+          let (completion, after) ← decodeCompletion afterTag
+          pure (.complete completion, after)
+      | 0x01 =>
           let (checkpoint, c1) ← decodeCheckpoint context afterTag
           let (remaining, c2) ← decodePlanFuel context fuel c1
           pure (.checkpoint checkpoint remaining, c2)
-      | 0x01 =>
-          let (completion, after) ← decodeCompletion afterTag
-          pure (.complete completion, after)
       | _ => .error { code := .unknownSumTag, offset := offset }
 
 def decodePlan (context : Context) : Decoder ReplayPlan := fun cursor =>
@@ -397,6 +397,11 @@ def checkpointBytes : Bytes := (encodePlan context checkpointPlan).getD []
 def invalidExpressionReferenceBytes : Bytes :=
   checkpointBytes.take 10 ++ [0x00, 0x00, 0x00, 0x01] ++
     checkpointBytes.drop 14
+
+theorem replayPlanTagsFollowDeclarationOrder :
+    completionBytes.head? = some 0x00 ∧
+      checkpointBytes.head? = some 0x01 := by
+  decide
 
 theorem invalidTagRejects :
     failure? context (0xff :: completionBytes.drop 1) =
