@@ -7,9 +7,11 @@ use clause_package::{
 };
 
 mod executable;
+mod persistent_session;
 mod wasm_boundary;
 
 pub use executable::*;
+pub use persistent_session::*;
 pub use wasm_boundary::*;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -56,18 +58,28 @@ impl From<ProcessError> for RuntimeInitError {
 /// The package owns every executable proposal. Advancing dispatches only on
 /// the universal `ProcessRecordV2` wire structure retained by the checked
 /// package; it has no callback or semantic-identifier selection surface.
-pub struct ProcessRuntime<'a> {
-    package: &'a CheckedProcessPackage,
-    authority: &'a AuthorityStore,
+pub struct ProcessRuntime {
+    package: CheckedProcessPackage,
+    authority: AuthorityStore,
     carrier: ProcessCarrier,
 }
 
-impl<'a> ProcessRuntime<'a> {
+impl ProcessRuntime {
     /// Instantiate after rejecting every unsupported package surface. This
     /// happens before any package record becomes visible in the carrier.
     pub fn instantiate(
-        package: &'a CheckedProcessPackage,
-        authority: &'a AuthorityStore,
+        package: &CheckedProcessPackage,
+        authority: &AuthorityStore,
+    ) -> Result<Self, RuntimeInitError> {
+        Self::instantiate_owned(package.clone(), authority.clone())
+    }
+
+    /// Instantiate while transferring the exact checked package and authority
+    /// store into the runtime. Persistent hosts use this path so neither input
+    /// is cloned for each command.
+    pub fn instantiate_owned(
+        package: CheckedProcessPackage,
+        authority: AuthorityStore,
     ) -> Result<Self, RuntimeInitError> {
         for (record_index, record) in package.records().iter().enumerate() {
             if let ProcessRecordV2::Steps(steps) = record
@@ -79,7 +91,7 @@ impl<'a> ProcessRuntime<'a> {
                 });
             }
         }
-        let carrier = ProcessCarrier::instantiate(package, authority)?;
+        let carrier = ProcessCarrier::instantiate(&package, &authority)?;
         Ok(Self {
             package,
             authority,
@@ -90,7 +102,7 @@ impl<'a> ProcessRuntime<'a> {
     /// Apply exactly the next package-owned record. `None` means the checked
     /// package is complete; rejection preserves the current record cursor.
     pub fn advance(&mut self) -> Result<Option<ProcessRecordV2>, ProcessError> {
-        self.carrier.advance_package(self.package, self.authority)
+        self.carrier.advance_package(&self.package, &self.authority)
     }
 
     /// Apply live records through the same checked carrier that owns package
@@ -100,7 +112,7 @@ impl<'a> ProcessRuntime<'a> {
         &mut self,
         records: &[ProcessRecordV2],
     ) -> Result<(), ProcessIngressError> {
-        self.carrier.apply_ingress(records, self.authority)
+        self.carrier.apply_ingress(records, &self.authority)
     }
 
     #[must_use]
