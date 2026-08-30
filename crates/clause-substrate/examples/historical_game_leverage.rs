@@ -1,9 +1,15 @@
+//! Historical game-leverage driver over a quarantined noncanonical parser fixture.
+//!
+//! This is not canonical Clause source or the current game-development path.
+
 use clause_substrate::game_leverage::{
     Change, IndexedMaterialization, IndexedPlan, ProgramIr, World, reference_materialize,
 };
 use std::time::Instant;
 
-const SOURCE: &str = include_str!("spatial_visibility.clause");
+const SOURCE: &str = include_str!(
+    "../tests/fixtures/historical/noncanonical_slash_qualified_spatial_visibility.fixture"
+);
 
 fn world(program: &ProgramIr, noise: usize) -> World {
     let mut world = World::default();

@@ -979,8 +979,50 @@ fn indexed_project(pattern: &PatternIr, bindings: &BTreeMap<String, String>) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
+    use std::path::Path;
 
-    const SOURCE: &str = include_str!("../examples/spatial_visibility.clause");
+    const HISTORICAL_FIXTURE_MARKER: &str = concat!(
+        "NONCANONICAL_HISTORICAL_FIXTURE_ONLY: NOT CLAUSE SOURCE; ",
+        "SLASH-QUALIFIED TOKENS HAVE NO GRAMMAR"
+    );
+    const HISTORICAL_FIXTURE_PATH: &str =
+        "tests/fixtures/historical/noncanonical_slash_qualified_spatial_visibility.fixture";
+    const SOURCE: &str = include_str!(
+        "../tests/fixtures/historical/noncanonical_slash_qualified_spatial_visibility.fixture"
+    );
+
+    #[test]
+    fn slash_qualified_fixture_remains_marked_and_quarantined() {
+        let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+
+        assert_eq!(SOURCE.lines().next(), Some(HISTORICAL_FIXTURE_MARKER));
+        assert!(HISTORICAL_FIXTURE_PATH.starts_with("tests/fixtures/historical/"));
+        assert!(!HISTORICAL_FIXTURE_PATH.ends_with(".clause"));
+        assert!(crate_root.join(HISTORICAL_FIXTURE_PATH).is_file());
+    }
+
+    #[test]
+    fn canonical_clause_examples_require_a_ratified_parser_before_publication() {
+        let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let mut clause_sources = fs::read_dir(crate_root.join("examples"))
+            .expect("public example directory is readable")
+            .map(|entry| entry.map(|entry| entry.path()))
+            .collect::<Result<Vec<_>, _>>()
+            .expect("every public example entry is readable")
+            .into_iter()
+            .filter(|path| {
+                path.extension()
+                    .is_some_and(|extension| extension == "clause")
+            })
+            .collect::<Vec<_>>();
+        clause_sources.sort();
+
+        assert!(
+            clause_sources.is_empty(),
+            "public .clause examples require a ratified canonical parser first: {clause_sources:?}"
+        );
+    }
 
     fn world(program: &ProgramIr, noise: usize) -> World {
         let mut world = World::default();
