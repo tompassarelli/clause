@@ -26,6 +26,8 @@ const canvas_removals = ({value: 0, watches: {}});
 
 const released_pointers = ({value: 0, watches: {}});
 
+const focus_requests = ({value: 0, watches: {}});
+
 const pixel_ratio = ({value: 0.0, watches: {}});
 
 function vector3() {
@@ -66,7 +68,8 @@ function fakeGroup() {
 
 function fakeCanvas_bang() {
   return {[$$bc$property_key($$bc$keyword("addEventListener"))]: (kind, handler) => canvas_listeners.value.set(kind, handler), [$$bc$property_key($$bc$keyword("removeEventListener"))]: (kind, __handler) => canvas_listeners.value.delete(kind), [$$bc$property_key($$bc$keyword("getBoundingClientRect"))]: () => ({[$$bc$property_key($$bc$keyword("left"))]: 10.0, [$$bc$property_key($$bc$keyword("top"))]: 20.0, [$$bc$property_key($$bc$keyword("width"))]: 200.0, [$$bc$property_key($$bc$keyword("height"))]: 100.0}), [$$bc$property_key($$bc$keyword("setPointerCapture"))]: (pointer_id) => pointer_captures.value.add(pointer_id), [$$bc$property_key($$bc$keyword("hasPointerCapture"))]: (pointer_id) => pointer_captures.value.has(pointer_id), [$$bc$property_key($$bc$keyword("releasePointerCapture"))]: (pointer_id) => { pointer_captures.value.delete(pointer_id);
-return (() => { const _a = released_pointers; const _old = _a.value; _a.value = (((_x) => (_x + 1)))(_old); for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _a.value); return _a.value; })(); }, [$$bc$property_key($$bc$keyword("setAttribute"))]: (__name, __value) => null, [$$bc$property_key($$bc$keyword("remove"))]: () => (() => { const _a = canvas_removals; const _old = _a.value; _a.value = (((_x) => (_x + 1)))(_old); for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _a.value); return _a.value; })()};
+return (() => { const _a = released_pointers; const _old = _a.value; _a.value = (((_x) => (_x + 1)))(_old); for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _a.value); return _a.value; })(); }, [$$bc$property_key($$bc$keyword("focus"))]: (__options) => { (() => { const _a = focus_requests; const _old = _a.value; _a.value = (((_x) => (_x + 1)))(_old); for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _a.value); return _a.value; })();
+return (canvas_listeners.value.get("focus"))({}); }, [$$bc$property_key($$bc$keyword("setAttribute"))]: (__name, __value) => null, [$$bc$property_key($$bc$keyword("remove"))]: () => (() => { const _a = canvas_removals; const _old = _a.value; _a.value = (((_x) => (_x + 1)))(_old); for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _a.value); return _a.value; })()};
 }
 
 function fakeRenderer_bang(__options) {
@@ -104,6 +107,7 @@ function reset_fixture_bang() {
   (() => { const _a = context_losses, _v = 0; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })();
   (() => { const _a = canvas_removals, _v = 0; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })();
   (() => { const _a = released_pointers, _v = 0; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })();
+  (() => { const _a = focus_requests, _v = 0; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })();
   return (() => { const _a = pixel_ratio, _v = 0.0; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })();
 }
 
@@ -112,9 +116,25 @@ const three = {[$$bc$property_key($$bc$keyword("Scene"))]: fakeScene, [$$bc$prop
 const arena = shell["create-jump-arena-shell!"](fakeMount(), fakeBrowser_bang(), three, (input) => emitted_inputs.value.push(input));
 const frame = sample_frame();
 const before = JSON.stringify(frame);
+const resize_handler = browser_listeners.value.get("resize");
+const focus_handler = canvas_listeners.value.get("focus");
+const blur_handler = canvas_listeners.value.get("blur");
+const key_down = canvas_listeners.value.get("keydown");
+const key_up = canvas_listeners.value.get("keyup");
+const pointer_down = canvas_listeners.value.get("pointerdown");
+const pointer_move = canvas_listeners.value.get("pointermove");
+const pointer_up = canvas_listeners.value.get("pointerup");
+const pointer_cancel = canvas_listeners.value.get("pointercancel");
 (arena.renderFrame)(frame);
-(browser_listeners.value.get("keydown"))({[$$bc$property_key($$bc$keyword("code"))]: "Space", [$$bc$property_key($$bc$keyword("repeat"))]: false});
-(canvas_listeners.value.get("pointerdown"))({[$$bc$property_key($$bc$keyword("clientX"))]: 110.0, [$$bc$property_key($$bc$keyword("clientY"))]: 70.0, [$$bc$property_key($$bc$keyword("pointerId"))]: 9, [$$bc$property_key($$bc$keyword("button"))]: 0, [$$bc$property_key($$bc$keyword("buttons"))]: 1});
+key_down({[$$bc$property_key($$bc$keyword("code"))]: "Space", [$$bc$property_key($$bc$keyword("repeat"))]: false});
+test.expect(emitted_inputs.value.length).toBe(0);
+focus_handler({});
+key_down({[$$bc$property_key($$bc$keyword("code"))]: "Space", [$$bc$property_key($$bc$keyword("repeat"))]: false});
+test.expect(emitted_inputs.value.length).toBe(1);
+blur_handler({});
+key_down({[$$bc$property_key($$bc$keyword("code"))]: "Space", [$$bc$property_key($$bc$keyword("repeat"))]: false});
+test.expect(emitted_inputs.value.length).toBe(1);
+pointer_down({[$$bc$property_key($$bc$keyword("clientX"))]: 110.0, [$$bc$property_key($$bc$keyword("clientY"))]: 70.0, [$$bc$property_key($$bc$keyword("pointerId"))]: 9, [$$bc$property_key($$bc$keyword("button"))]: 0, [$$bc$property_key($$bc$keyword("buttons"))]: 1});
 test.expect(JSON.stringify(frame)).toBe(before);
 test.expect(frame.player.position).toEqual({[$$bc$property_key($$bc$keyword("x"))]: 2.0, [$$bc$property_key($$bc$keyword("y"))]: 3.0, [$$bc$property_key($$bc$keyword("z"))]: 4.0});
 test.expect(frame.player.velocity).toEqual({[$$bc$property_key($$bc$keyword("x"))]: 5.0, [$$bc$property_key($$bc$keyword("y"))]: 6.0, [$$bc$property_key($$bc$keyword("z"))]: 7.0});
@@ -122,10 +142,28 @@ test.expect(frame.player.grounded).toBe(false);
 test.expect(render_count.value).toBe(1);
 test.expect(emitted_inputs.value.length).toBe(2);
 test.expect(pixel_ratio.value).toBe(2.0);
+test.expect(browser_listeners.value.has("keydown")).toBe(false);
+test.expect(browser_listeners.value.has("keyup")).toBe(false);
+test.expect(focus_requests.value).toBe(1);
 (arena.dispose)();
 (arena.dispose)();
+key_down({[$$bc$property_key($$bc$keyword("code"))]: "KeyW", [$$bc$property_key($$bc$keyword("repeat"))]: false});
+focus_handler({});
+blur_handler({});
+key_down({[$$bc$property_key($$bc$keyword("code"))]: "KeyW", [$$bc$property_key($$bc$keyword("repeat"))]: false});
+key_up({[$$bc$property_key($$bc$keyword("code"))]: "KeyW", [$$bc$property_key($$bc$keyword("repeat"))]: false});
+pointer_down({[$$bc$property_key($$bc$keyword("clientX"))]: 110.0, [$$bc$property_key($$bc$keyword("clientY"))]: 70.0, [$$bc$property_key($$bc$keyword("pointerId"))]: 10, [$$bc$property_key($$bc$keyword("button"))]: 0, [$$bc$property_key($$bc$keyword("buttons"))]: 1});
+pointer_move({[$$bc$property_key($$bc$keyword("clientX"))]: 111.0, [$$bc$property_key($$bc$keyword("clientY"))]: 71.0, [$$bc$property_key($$bc$keyword("pointerId"))]: 9, [$$bc$property_key($$bc$keyword("button"))]: 0, [$$bc$property_key($$bc$keyword("buttons"))]: 1});
+pointer_up({[$$bc$property_key($$bc$keyword("clientX"))]: 111.0, [$$bc$property_key($$bc$keyword("clientY"))]: 71.0, [$$bc$property_key($$bc$keyword("pointerId"))]: 9, [$$bc$property_key($$bc$keyword("button"))]: 0, [$$bc$property_key($$bc$keyword("buttons"))]: 0});
+pointer_cancel({[$$bc$property_key($$bc$keyword("clientX"))]: 111.0, [$$bc$property_key($$bc$keyword("clientY"))]: 71.0, [$$bc$property_key($$bc$keyword("pointerId"))]: 9, [$$bc$property_key($$bc$keyword("button"))]: 0, [$$bc$property_key($$bc$keyword("buttons"))]: 0});
+resize_handler();
+test.expect(() => (arena.renderFrame)(frame)).toThrow("jump arena shell is disposed");
 test.expect(browser_listeners.value.size).toBe(0);
 test.expect(canvas_listeners.value.size).toBe(0);
+test.expect(pointer_captures.value.size).toBe(0);
+test.expect(emitted_inputs.value.length).toBe(2);
+test.expect(focus_requests.value).toBe(1);
+test.expect(render_count.value).toBe(1);
 test.expect(released_pointers.value).toBe(1);
 test.expect(resource_disposals.value).toBe(4);
 test.expect(renderer_disposals.value).toBe(1);

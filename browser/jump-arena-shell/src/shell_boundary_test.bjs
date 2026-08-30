@@ -20,6 +20,7 @@
 (def context-losses Any (atom 0))
 (def canvas-removals Any (atom 0))
 (def released-pointers Any (atom 0))
+(def focus-requests Any (atom 0))
 (def pixel-ratio Any (atom 0.0))
 
 (defn vector3 [] Any
@@ -89,6 +90,10 @@
                             (do
                               (.delete @pointer-captures pointer-id)
                               (swap! released-pointers inc)))
+   :focus (fn [_options Any] Any
+            (do
+              (swap! focus-requests inc)
+              ((.get @canvas-listeners "focus") {})))
    :setAttribute (fn
                    [_name Any
                     _value Any] Any
@@ -159,6 +164,7 @@
     (reset! context-losses 0)
     (reset! canvas-removals 0)
     (reset! released-pointers 0)
+    (reset! focus-requests 0)
     (reset! pixel-ratio 0.0)))
 
 (test/test
@@ -181,15 +187,30 @@
                     three
                     (fn [input Any] Any (.push @emitted-inputs input)))
          frame Any (sample-frame)
-         before String (.stringify JSON frame)]
+         before String (.stringify JSON frame)
+         resize-handler Any (.get @browser-listeners "resize")
+         focus-handler Any (.get @canvas-listeners "focus")
+         blur-handler Any (.get @canvas-listeners "blur")
+         key-down Any (.get @canvas-listeners "keydown")
+         key-up Any (.get @canvas-listeners "keyup")
+         pointer-down Any (.get @canvas-listeners "pointerdown")
+         pointer-move Any (.get @canvas-listeners "pointermove")
+         pointer-up Any (.get @canvas-listeners "pointerup")
+         pointer-cancel Any (.get @canvas-listeners "pointercancel")]
      ((.-renderFrame arena) frame)
-     ((.get @browser-listeners "keydown") {:code "Space" :repeat false})
-     ((.get @canvas-listeners "pointerdown")
-      {:clientX 110.0
-       :clientY 70.0
-       :pointerId 9
-       :button 0
-       :buttons 1})
+     (key-down {:code "Space" :repeat false})
+     (.toBe (test/expect (.-length @emitted-inputs)) 0)
+     (focus-handler {})
+     (key-down {:code "Space" :repeat false})
+     (.toBe (test/expect (.-length @emitted-inputs)) 1)
+     (blur-handler {})
+     (key-down {:code "Space" :repeat false})
+     (.toBe (test/expect (.-length @emitted-inputs)) 1)
+     (pointer-down {:clientX 110.0
+                    :clientY 70.0
+                    :pointerId 9
+                    :button 0
+                    :buttons 1})
      (.toBe (test/expect (.stringify JSON frame)) before)
      (.toEqual (test/expect (.-position (.-player frame)))
                {:x 2.0 :y 3.0 :z 4.0})
@@ -199,10 +220,45 @@
      (.toBe (test/expect @render-count) 1)
      (.toBe (test/expect (.-length @emitted-inputs)) 2)
      (.toBe (test/expect @pixel-ratio) 2.0)
+     (.toBe (test/expect (.has @browser-listeners "keydown")) false)
+     (.toBe (test/expect (.has @browser-listeners "keyup")) false)
+     (.toBe (test/expect @focus-requests) 1)
      ((.-dispose arena))
      ((.-dispose arena))
+     (key-down {:code "KeyW" :repeat false})
+     (focus-handler {})
+     (blur-handler {})
+     (key-down {:code "KeyW" :repeat false})
+     (key-up {:code "KeyW" :repeat false})
+     (pointer-down {:clientX 110.0
+                    :clientY 70.0
+                    :pointerId 10
+                    :button 0
+                    :buttons 1})
+     (pointer-move {:clientX 111.0
+                    :clientY 71.0
+                    :pointerId 9
+                    :button 0
+                    :buttons 1})
+     (pointer-up {:clientX 111.0
+                  :clientY 71.0
+                  :pointerId 9
+                  :button 0
+                  :buttons 0})
+     (pointer-cancel {:clientX 111.0
+                      :clientY 71.0
+                      :pointerId 9
+                      :button 0
+                      :buttons 0})
+     (resize-handler)
+     (.toThrow (test/expect (fn [] Any ((.-renderFrame arena) frame)))
+               "jump arena shell is disposed")
      (.toBe (test/expect (.-size @browser-listeners)) 0)
      (.toBe (test/expect (.-size @canvas-listeners)) 0)
+     (.toBe (test/expect (.-size @pointer-captures)) 0)
+     (.toBe (test/expect (.-length @emitted-inputs)) 2)
+     (.toBe (test/expect @focus-requests) 1)
+     (.toBe (test/expect @render-count) 1)
      (.toBe (test/expect @released-pointers) 1)
      (.toBe (test/expect @resource-disposals) 4)
      (.toBe (test/expect @renderer-disposals) 1)

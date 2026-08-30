@@ -101,7 +101,8 @@ function create_jump_arena_shell_bang(mount, browser, three, emit_input) {
   const player_mesh = new mesh_ctor(player_geometry, player_material);
   const platform_group = new group_ctor();
   const disposed = ({value: false, watches: {}});
-  const current_frame = ({value: null, watches: {}});
+  const canvas_focused = ({value: false, watches: {}});
+  const has_frame = ({value: false, watches: {}});
   const platform_meshes = ({value: [], watches: {}});
   const active_pointers = new Set();
   (scene.background = new color_ctor(1116716));
@@ -121,39 +122,60 @@ function create_jump_arena_shell_bang(mount, browser, three, emit_input) {
   renderer.setSize(width, height, false);
   (camera.aspect = (width / height));
   camera.updateProjectionMatrix();
-  if ((current_frame.value != null)) {
+  if (((_truthy) => _truthy !== false && _truthy != null)(has_frame.value)) {
     return renderer.render(scene, camera);
   }
 } };
-  const key_down = (event) => emit_input(keyboard_input("down", event));
-  const key_up = (event) => emit_input(keyboard_input("up", event));
+  const focus_canvas = () => { if ((!((_truthy) => _truthy !== false && _truthy != null)(disposed.value))) {
+  return (() => { const _a = canvas_focused, _v = true; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })();
+} };
+  const blur_canvas = () => { if ((!((_truthy) => _truthy !== false && _truthy != null)(disposed.value))) {
+  return (() => { const _a = canvas_focused, _v = false; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })();
+} };
+  const key_down = (event) => { if (((_truthy) => _truthy !== false && _truthy != null)(((!((_truthy) => _truthy !== false && _truthy != null)(disposed.value)) && canvas_focused.value))) {
+  return emit_input(keyboard_input("down", event));
+} };
+  const key_up = (event) => { if (((_truthy) => _truthy !== false && _truthy != null)(((!((_truthy) => _truthy !== false && _truthy != null)(disposed.value)) && canvas_focused.value))) {
+  return emit_input(keyboard_input("up", event));
+} };
   const pointer_event = (phase, event) => emit_input(pointer_input(phase, event, canvas));
-  const pointer_down = (event) => { active_pointers.add(event.pointerId);
-canvas.setPointerCapture(event.pointerId);
-return pointer_event("down", event); };
-  const pointer_move = (event) => pointer_event("move", event);
-  const pointer_up = (event) => { if (((_truthy) => _truthy !== false && _truthy != null)(canvas.hasPointerCapture(event.pointerId))) {
-  canvas.releasePointerCapture(event.pointerId);
-}
-active_pointers.delete(event.pointerId);
-return pointer_event("up", event); };
-  const pointer_cancel = (event) => { if (((_truthy) => _truthy !== false && _truthy != null)(canvas.hasPointerCapture(event.pointerId))) {
-  canvas.releasePointerCapture(event.pointerId);
-}
-active_pointers.delete(event.pointerId);
-return pointer_event("cancel", event); };
-  const render_frame = (incoming) => { const frame = require_frozen_frame(incoming);
-const player = frame.player;
-const position = player.position;
-const yaw = player.yaw;
-(() => { const _a = current_frame, _v = frame; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })();
-player_mesh.position.set(position.x, position.y, position.z);
-(player_mesh.rotation.y = yaw);
-(() => { platform_meshes.value.forEach((mesh) => {
+  const pointer_down = (event) => { if ((!((_truthy) => _truthy !== false && _truthy != null)(disposed.value))) {
+  canvas.focus({[$$bc$property_key($$bc$keyword("preventScroll"))]: true});
+  active_pointers.add(event.pointerId);
+  canvas.setPointerCapture(event.pointerId);
+  return pointer_event("down", event);
+} };
+  const pointer_move = (event) => { if ((!((_truthy) => _truthy !== false && _truthy != null)(disposed.value))) {
+  return pointer_event("move", event);
+} };
+  const pointer_up = (event) => { if ((!((_truthy) => _truthy !== false && _truthy != null)(disposed.value))) {
+  if (((_truthy) => _truthy !== false && _truthy != null)(canvas.hasPointerCapture(event.pointerId))) {
+    canvas.releasePointerCapture(event.pointerId);
+  }
+  active_pointers.delete(event.pointerId);
+  return pointer_event("up", event);
+} };
+  const pointer_cancel = (event) => { if ((!((_truthy) => _truthy !== false && _truthy != null)(disposed.value))) {
+  if (((_truthy) => _truthy !== false && _truthy != null)(canvas.hasPointerCapture(event.pointerId))) {
+    canvas.releasePointerCapture(event.pointerId);
+  }
+  active_pointers.delete(event.pointerId);
+  return pointer_event("cancel", event);
+} };
+  const render_frame = (incoming) => { if (((_truthy) => _truthy !== false && _truthy != null)(disposed.value)) {
+  return (() => { throw new Error("jump arena shell is disposed"); })();
+} else {
+  const frame = require_frozen_frame(incoming);
+  const player = frame.player;
+  const position = player.position;
+  const yaw = player.yaw;
+  player_mesh.position.set(position.x, position.y, position.z);
+  (player_mesh.rotation.y = yaw);
+  (() => { platform_meshes.value.forEach((mesh) => {
   platform_group.remove(mesh);
 }); })();
-(() => { const _a = platform_meshes, _v = []; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })();
-(() => { frame.world.platforms.forEach((platform) => {
+  (() => { const _a = platform_meshes, _v = []; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })();
+  (() => { frame.world.platforms.forEach((platform) => {
   const mesh = new mesh_ctor(platform_geometry, platform_material);
   const platform_position = platform.position;
   const size = platform.size;
@@ -162,15 +184,21 @@ player_mesh.position.set(position.x, position.y, position.z);
   platform_group.add(mesh);
   platform_meshes.value.push(mesh);
 }); })();
-camera.position.set((position.x + (Math.sin(yaw) * 7.5)), (position.y + 4.8), (position.z + (Math.cos(yaw) * 7.5)));
-camera.lookAt(position.x, (position.y + 1.0), position.z);
-renderer.render(scene, camera);
-return frame; };
+  camera.position.set((position.x + (Math.sin(yaw) * 7.5)), (position.y + 4.8), (position.z + (Math.cos(yaw) * 7.5)));
+  camera.lookAt(position.x, (position.y + 1.0), position.z);
+  renderer.render(scene, camera);
+  (() => { const _a = has_frame, _v = true; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })();
+  return frame;
+} };
   const dispose = () => { if ((!((_truthy) => _truthy !== false && _truthy != null)(disposed.value))) {
   (() => { const _a = disposed, _v = true; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })();
+  (() => { const _a = canvas_focused, _v = false; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })();
+  (() => { const _a = has_frame, _v = false; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })();
   browser.removeEventListener("resize", resize);
-  browser.removeEventListener("keydown", key_down);
-  browser.removeEventListener("keyup", key_up);
+  canvas.removeEventListener("focus", focus_canvas);
+  canvas.removeEventListener("blur", blur_canvas);
+  canvas.removeEventListener("keydown", key_down);
+  canvas.removeEventListener("keyup", key_up);
   canvas.removeEventListener("pointerdown", pointer_down);
   canvas.removeEventListener("pointermove", pointer_move);
   canvas.removeEventListener("pointerup", pointer_up);
@@ -191,8 +219,10 @@ return frame; };
   return canvas.remove();
 } };
   browser.addEventListener("resize", resize);
-  browser.addEventListener("keydown", key_down);
-  browser.addEventListener("keyup", key_up);
+  canvas.addEventListener("focus", focus_canvas);
+  canvas.addEventListener("blur", blur_canvas);
+  canvas.addEventListener("keydown", key_down);
+  canvas.addEventListener("keyup", key_up);
   canvas.addEventListener("pointerdown", pointer_down);
   canvas.addEventListener("pointermove", pointer_move);
   canvas.addEventListener("pointerup", pointer_up);

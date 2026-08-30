@@ -102,7 +102,8 @@
           player-mesh Any (new mesh-ctor player-geometry player-material)
           platform-group Any (new group-ctor)
           disposed Any (atom false)
-          current-frame Any (atom nil)
+          canvas-focused Any (atom false)
+          has-frame Any (atom false)
           platform-meshes Any (atom [])
           active-pointers Any (new Set)]
       (set! (.-background scene) (new color-ctor 1116716))
@@ -124,74 +125,91 @@
                          (.setSize renderer width height false)
                          (set! (.-aspect camera) (/ width height))
                          (.updateProjectionMatrix camera)
-                         (when (some? @current-frame)
+                         (when @has-frame
                            (.render renderer scene camera)))))
+            focus-canvas (fn [] Any
+                           (when (not @disposed)
+                             (reset! canvas-focused true)))
+            blur-canvas (fn [] Any
+                          (when (not @disposed)
+                            (reset! canvas-focused false)))
             key-down (fn [event Any] Any
-                       (emit-input (keyboard-input "down" event)))
+                       (when (and (not @disposed) @canvas-focused)
+                         (emit-input (keyboard-input "down" event))))
             key-up (fn [event Any] Any
-                     (emit-input (keyboard-input "up" event)))
+                     (when (and (not @disposed) @canvas-focused)
+                       (emit-input (keyboard-input "up" event))))
             pointer-event (fn
                             [phase String
                              event Any] Any
                             (emit-input (pointer-input phase event canvas)))
             pointer-down (fn [event ArenaPointerEvent] Any
-                           (do
+                           (when (not @disposed)
+                             (.focus canvas {:preventScroll true})
                              (.add active-pointers (.-pointerId event))
                              (.setPointerCapture canvas (.-pointerId event))
                              (pointer-event "down" event)))
-            pointer-move (fn [event ArenaPointerEvent] Any (pointer-event "move" event))
+            pointer-move (fn [event ArenaPointerEvent] Any
+                           (when (not @disposed)
+                             (pointer-event "move" event)))
             pointer-up (fn [event ArenaPointerEvent] Any
-                         (do
+                         (when (not @disposed)
                            (when (.hasPointerCapture canvas (.-pointerId event))
                              (.releasePointerCapture canvas (.-pointerId event)))
                            (.delete active-pointers (.-pointerId event))
                            (pointer-event "up" event)))
             pointer-cancel (fn [event ArenaPointerEvent] Any
-                             (do
+                             (when (not @disposed)
                                (when (.hasPointerCapture canvas (.-pointerId event))
                                  (.releasePointerCapture canvas (.-pointerId event)))
                                (.delete active-pointers (.-pointerId event))
                                (pointer-event "cancel" event)))
             render-frame (fn [incoming ArenaFrame] ArenaFrame
-                           (let [frame ArenaFrame (require-frozen-frame incoming)
-                                 player ArenaPlayerFrame (.-player frame)
-                                 position ArenaVec3 (.-position player)
-                                 yaw Float (.-yaw player)]
-                             (reset! current-frame frame)
-                             (.set (.-position player-mesh)
-                                   (.-x position) (.-y position) (.-z position))
-                             (set! (.-y (.-rotation player-mesh)) yaw)
-                             (doseq [mesh Any @platform-meshes]
-                               (.remove platform-group mesh))
-                             (reset! platform-meshes [])
-                             (doseq [platform ArenaPlatformFrame (.-platforms (.-world frame))]
-                               (let [mesh Any (new mesh-ctor platform-geometry platform-material)
-                                     platform-position ArenaVec3 (.-position platform)
-                                     size ArenaVec3 (.-size platform)]
-                                 (.set (.-position mesh)
-                                       (.-x platform-position)
-                                       (.-y platform-position)
-                                       (.-z platform-position))
-                                 (.set (.-scale mesh)
-                                       (.-x size) (.-y size) (.-z size))
-                                 (.add platform-group mesh)
-                                 (.push @platform-meshes mesh)))
-                             (.set (.-position camera)
-                                   (+ (.-x position) (* (.sin Math yaw) 7.5))
-                                   (+ (.-y position) 4.8)
-                                   (+ (.-z position) (* (.cos Math yaw) 7.5)))
-                             (.lookAt camera
-                                      (.-x position)
-                                      (+ (.-y position) 1.0)
-                                      (.-z position))
-                             (.render renderer scene camera)
-                             frame))
+                           (if @disposed
+                             (throw (new Error "jump arena shell is disposed"))
+                             (let [frame ArenaFrame (require-frozen-frame incoming)
+                                   player ArenaPlayerFrame (.-player frame)
+                                   position ArenaVec3 (.-position player)
+                                   yaw Float (.-yaw player)]
+                               (.set (.-position player-mesh)
+                                     (.-x position) (.-y position) (.-z position))
+                               (set! (.-y (.-rotation player-mesh)) yaw)
+                               (doseq [mesh Any @platform-meshes]
+                                 (.remove platform-group mesh))
+                               (reset! platform-meshes [])
+                               (doseq [platform ArenaPlatformFrame (.-platforms (.-world frame))]
+                                 (let [mesh Any (new mesh-ctor platform-geometry platform-material)
+                                       platform-position ArenaVec3 (.-position platform)
+                                       size ArenaVec3 (.-size platform)]
+                                   (.set (.-position mesh)
+                                         (.-x platform-position)
+                                         (.-y platform-position)
+                                         (.-z platform-position))
+                                   (.set (.-scale mesh)
+                                         (.-x size) (.-y size) (.-z size))
+                                   (.add platform-group mesh)
+                                   (.push @platform-meshes mesh)))
+                               (.set (.-position camera)
+                                     (+ (.-x position) (* (.sin Math yaw) 7.5))
+                                     (+ (.-y position) 4.8)
+                                     (+ (.-z position) (* (.cos Math yaw) 7.5)))
+                               (.lookAt camera
+                                        (.-x position)
+                                        (+ (.-y position) 1.0)
+                                        (.-z position))
+                               (.render renderer scene camera)
+                               (reset! has-frame true)
+                               frame)))
             dispose (fn [] Any
                       (when (not @disposed)
                         (reset! disposed true)
+                        (reset! canvas-focused false)
+                        (reset! has-frame false)
                         (.removeEventListener browser "resize" resize)
-                        (.removeEventListener browser "keydown" key-down)
-                        (.removeEventListener browser "keyup" key-up)
+                        (.removeEventListener canvas "focus" focus-canvas)
+                        (.removeEventListener canvas "blur" blur-canvas)
+                        (.removeEventListener canvas "keydown" key-down)
+                        (.removeEventListener canvas "keyup" key-up)
                         (.removeEventListener canvas "pointerdown" pointer-down)
                         (.removeEventListener canvas "pointermove" pointer-move)
                         (.removeEventListener canvas "pointerup" pointer-up)
@@ -212,8 +230,10 @@
                         (.forceContextLoss renderer)
                         (.remove canvas)))]
         (.addEventListener browser "resize" resize)
-        (.addEventListener browser "keydown" key-down)
-        (.addEventListener browser "keyup" key-up)
+        (.addEventListener canvas "focus" focus-canvas)
+        (.addEventListener canvas "blur" blur-canvas)
+        (.addEventListener canvas "keydown" key-down)
+        (.addEventListener canvas "keyup" key-up)
         (.addEventListener canvas "pointerdown" pointer-down)
         (.addEventListener canvas "pointermove" pointer-move)
         (.addEventListener canvas "pointerup" pointer-up)

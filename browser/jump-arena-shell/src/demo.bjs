@@ -30,7 +30,7 @@
            {:position (frozen-vec3 x y z)
             :size (frozen-vec3 width height depth)}))
 
-(def sample-frame Any
+(def static-sample-frame Any
   (.freeze Object
            {:player (.freeze Object
                              {:position (frozen-vec3 0.0 1.15 0.0)
@@ -63,8 +63,8 @@
    window
    three
    (fn [input Any] Any
-     (.dispatchEvent mount (new CustomEvent "clause-input" {:detail input})))))
+     (.dispatchEvent mount (new CustomEvent "arena-shell-input" {:detail input})))))
 
-((.-renderFrame arena) sample-frame)
+((.-renderFrame arena) static-sample-frame)
 
 (.addEventListener window "beforeunload" (.-dispose arena) {:once true})
