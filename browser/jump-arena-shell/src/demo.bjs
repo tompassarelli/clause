@@ -1,70 +1,91 @@
 #lang beagle/js
 
 (ns jump-arena-shell.demo
-  (:require [jump-arena-shell.shell :as shell]))
+  (:require [jump-arena-shell.wasm-cartridge-port :as wasm]
+            [jump-arena-shell.wasm-workbench-shell :as integration]
+            [jump-arena-shell.workbench :as workbench]))
 
-(require '["three" :as THREE])
+(require '["#clause-runtime-wasm" :refer [initSync]])
 
-(declare-extern
-  [document window
-   THREE/Scene THREE/Color
-   THREE/PerspectiveCamera THREE/WebGLRenderer
-   THREE/HemisphereLight THREE/DirectionalLight
-   THREE/BoxGeometry THREE/MeshStandardMaterial
-   THREE/Mesh THREE/Group] Any)
+(declare-extern [document window fetch] Any)
 
-(defn frozen-vec3
-  [x Float
-   y Float
-   z Float] Any
-  (.freeze Object {:x x :y y :z z}))
+(def module-path String "./generated/wasm/clause_runtime_bg.wasm")
+(def request-path String "./fixtures/wasm-jump-v1/jump-v1.cwr1.hex")
 
-(defn frozen-platform
-  [x Float
-   y Float
-   z Float
-   width Float
-   height Float
-   depth Float] Any
-  (.freeze Object
-           {:position (frozen-vec3 x y z)
-            :size (frozen-vec3 width height depth)}))
+(defn demo-policy [] workbench/WorkbenchPolicy
+  (workbench/->WorkbenchPolicy
+   8 8 32 128 4096
+   (workbench/->WorkbenchSequenceLimits
+    64 16 8 8 16)))
 
-(def static-sample-frame Any
-  (.freeze Object
-           {:player (.freeze Object
-                             {:position (frozen-vec3 0.0 1.15 0.0)
-                              :velocity (frozen-vec3 0.0 0.0 0.0)
-                              :yaw 0.0
-                              :grounded true})
-            :world (.freeze Object
-                            {:platforms (.freeze Object
-                                                 [(frozen-platform 0.0 -0.25 0.0 12.0 0.5 12.0)
-                                                  (frozen-platform 4.0 1.0 -2.0 3.0 0.5 3.0)
-                                                  (frozen-platform -3.0 2.2 -5.0 2.5 0.5 2.5)])})}))
+(defn fetch-text! [path String] (Promise String)
+  (.then (fetch path)
+         (fn [response Any] Any
+           (if (.-ok response)
+             (.text response)
+             (.reject Promise (new Error (str "Unable to load " path)))))))
 
-(def mount Any (.querySelector document "#arena"))
+(defn fetch-bytes! [path String] (Promise Any)
+  (.then (fetch path)
+         (fn [response Any] Any
+           (if (.-ok response)
+             (.arrayBuffer response)
+             (.reject Promise (new Error (str "Unable to load " path)))))))
 
-(def three Any
-  {:Scene THREE/Scene
-   :Color THREE/Color
-   :PerspectiveCamera THREE/PerspectiveCamera
-   :WebGLRenderer THREE/WebGLRenderer
-   :HemisphereLight THREE/HemisphereLight
-   :DirectionalLight THREE/DirectionalLight
-   :BoxGeometry THREE/BoxGeometry
-   :MeshStandardMaterial THREE/MeshStandardMaterial
-   :Mesh THREE/Mesh
-   :Group THREE/Group})
+(def status Any (.querySelector document "#replay-status"))
+(def result Any (.querySelector document "#replay-result"))
+(def active-composition Any (atom nil))
 
-(def arena Any
-  (shell/create-jump-arena-shell!
-   mount
-   window
-   three
-   (fn [input Any] Any
-     (.dispatchEvent mount (new CustomEvent "arena-shell-input" {:detail input})))))
+(defn create-result-shell! [_emit-input (Fn [Any] Any)] Any
+  (let [disposed Any (atom false)]
+    (.freeze Object
+             {:renderFrame (fn [values Any] Any
+                             (if @disposed
+                               (throw (new Error "replay result shell is disposed"))
+                               (do
+                                 (set! (.-textContent status)
+                                       "Separate Admission accepted; exact scalar result:")
+                                 (set! (.-textContent result)
+                                       (.stringify JSON values))
+                                 values)))
+              :dispose (fn [] Any
+                         (when (not @disposed)
+                           (reset! disposed true)))})))
 
-((.-renderFrame arena) static-sample-frame)
+(def load-demo Any
+  (.catch
+   (.then
+    (.then
+     (.all Promise [(fetch-bytes! module-path)
+                    (fetch-text! request-path)])
+     (fn [assets Any] Any
+       (integration/load-passive-wasm-workbench-shell!
+        (integration/create-sync-wasm-initializer initSync)
+        (nth assets 0)
+        create-result-shell!
+        integration/project-nonempty-cwo1-result-frame
+        window
+        (wasm/decode-cwr1-hex (nth assets 1))
+        (workbench/->FixedTick 16)
+        (demo-policy)
+        (fn [_receipt Any] Any nil))))
+    (fn [composition Any] Any
+      (do
+        (reset! active-composition composition)
+        (set! (.-textContent status)
+              "Exact replay loaded; awaiting separate Admission.")
+        composition)))
+   (fn [_error Any] Any
+     (do
+       (set! (.-textContent status) "Replay load failed safely.")
+       (set! (.-textContent result) "")
+       nil))))
 
-(.addEventListener window "beforeunload" (.-dispose arena) {:once true})
+(.addEventListener
+ window
+ "beforeunload"
+ (fn [] Any
+   (let [composition Any @active-composition]
+     (when (not (nil? composition))
+       ((.-dispose composition)))))
+ {:once true})

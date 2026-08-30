@@ -5,6 +5,8 @@
             [jump-arena-shell.wasm-cartridge-port :as wasm]
             [jump-arena-shell.workbench :as workbench]))
 
+(declare-extern [ArrayBuffer] Any)
+
 (def wasm-module-max-bytes Int (* 16 1024 1024))
 (def player-frame-values Int 8)
 (def platform-frame-values Int 6)
@@ -23,6 +25,12 @@
   (if (exact-module-bytes? value)
     value
     (throw (new Error "Wasm module bytes are outside the browser bound"))))
+
+(js/export
+  (defn create-sync-wasm-initializer [initialize-sync (Fn [Any] Any)] (Fn [Any] (Promise Any))
+    (fn [input Any] (Promise Any)
+      (.resolve Promise
+                (initialize-sync {:module (.-module_or_path input)})))))
 
 (defn numeric-frame-value
   [values Any
@@ -90,6 +98,13 @@
           (recur (+ offset platform-frame-values)
                  (conj platforms (project-platform values offset))))))))
 
+(js/export
+  (defn project-nonempty-cwo1-result-frame [values Any] Any
+    (if (and (.isArray Array values)
+             (> (.-length values) 0))
+      values
+      (throw (new Error "CWO1 result view awaits an admitted scalar projection")))))
+
 (defn schedule-fixed-tick
   [browser Any
    delay Int
@@ -99,6 +114,7 @@
 
 (defn create-composition!
   [create-shell (Fn [(Fn [Any] Any)] Any)
+   project-frame (Fn [Any] Any)
    browser Any
    module Any
    exact-request-bytes Any
@@ -127,7 +143,7 @@
                       (schedule-fixed-tick browser delay tick))
                     (fn [values Any] Any
                       ((.-renderFrame passive-shell)
-                       (project-cwo1-arena-frame values)))
+                       (project-frame values)))
                     emit-receipt
                     (wasm/->ExactProcessRequest exact-request-bytes))
         disposed Any (atom false)
@@ -156,6 +172,7 @@
      (fn [emit-input (Fn [Any] Any)] Any
        (shell/create-jump-arena-shell!
         mount browser three emit-input))
+     project-cwo1-arena-frame
      browser
      module
      exact-request-bytes
@@ -165,22 +182,22 @@
 
 (js/export
   (defn load-passive-wasm-workbench-shell!
-    [initialize-module (Fn [Any] Any)
+    [initialize-module (Fn [Any] (Promise Any))
      exact-module-bytes Any
-     mount Any
+     create-shell (Fn [(Fn [Any] Any)] Any)
+     project-frame (Fn [Any] Any)
      browser Any
-     three Any
      exact-request-bytes Any
      fixed-tick workbench/FixedTick
      policy workbench/WorkbenchPolicy
-     emit-receipt (Fn [workbench/LifecycleReceipt] Any)] Any
+     emit-receipt (Fn [workbench/LifecycleReceipt] Any)] (Promise Any)
     (.then (initialize-module
-            {:module_or_path (require-module-bytes exact-module-bytes)})
+           {:module_or_path (require-module-bytes exact-module-bytes)})
            (fn [module Any] Any
-             (create-passive-wasm-workbench-shell!
-              mount
+             (create-composition!
+              create-shell
+              project-frame
               browser
-              three
               module
               exact-request-bytes
               fixed-tick
