@@ -6,7 +6,6 @@ macro_rules! id {
         $kind::from_bytes(raw_id($tag))
     };
 }
-
 fn decode_hex(source: &str) -> Vec<u8> {
     let digits = source
         .bytes()
@@ -166,14 +165,13 @@ fn headless_program() -> ExecutableProgramV1 {
     }
 }
 
-fn checked_program_package() -> (CheckedProcessPackage, Vec<ProcessRecordV2>) {
+fn checked_program_package(checker_count: usize) -> CheckedProcessPackage {
     let source = include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../../test-vectors/process-v2/positive/process-v2-core.hex"
     ));
     let decoded = decode_process_package(&decode_hex(source)).expect("base package decodes");
     let mut candidate = decoded.candidate().clone();
-    let templates = candidate.records.clone();
     candidate.records.clear();
 
     let scope = candidate.snapshot.constitution.semantics;
@@ -194,14 +192,44 @@ fn checked_program_package() -> (CheckedProcessPackage, Vec<ProcessRecordV2>) {
         application.form.dependency_closure.push(dependency.clone());
         application.form.dependency_closure.sort();
     }
+    match checker_count {
+        0 => candidate.snapshot.constitution.operators[0].modes[0]
+            .contract
+            .formation_checks
+            .clear(),
+        1 => {}
+        2 => {
+            let mut duplicate = candidate.snapshot.constitution.operators[0].modes[0].clone();
+            duplicate.id = ModeLocalId::new(3);
+            candidate.snapshot.constitution.operators[0]
+                .modes
+                .push(duplicate);
+            let dependency = LocalSemanticDependencyV2::Mode(LocalModeRefV2 {
+                operator: OperatorLocalId::new(1),
+                mode: ModeLocalId::new(3),
+            });
+            candidate.snapshot.constitution.formations[0]
+                .direct_dependencies
+                .push(dependency.clone());
+            candidate.snapshot.constitution.formations[0]
+                .direct_dependencies
+                .sort();
+            for application in &mut candidate.snapshot.constitution.applications {
+                application.form.eligible_modes.push(ModeLocalId::new(3));
+                application.form.eligible_modes.sort();
+                application.form.dependency_closure.push(dependency.clone());
+                application.form.dependency_closure.sort();
+            }
+        }
+        _ => panic!("fixture supports zero, one, or two eligible checker Modes"),
+    }
     candidate.claimed_snapshot =
         derive_program_snapshot_id(&candidate.snapshot).expect("program snapshot is canonical");
     let bytes = encode_process_package(&candidate).expect("program package encodes");
-    let checked = check_process_package(
+    check_process_package(
         decode_process_package(&bytes).expect("program package decodes"),
     )
-    .expect("program package checks");
-    (checked, templates)
+    .expect("program package checks")
 }
 
 #[derive(Clone, Copy)]
@@ -214,6 +242,40 @@ struct CarrierFacts {
     root_policy: RootPolicyId,
     pure_boundary: BoundaryRef,
     state_boundary: BoundaryRef,
+}
+
+impl CarrierFacts {
+    fn executable(self) -> ExecutableAuthorityFactsV1 {
+        ExecutableAuthorityFactsV1 {
+            program_revision: self.revision,
+            session: self.session,
+            initial_state: self.initial_state,
+            policy: self.policy,
+            session_start: self.session_start,
+            root_policy: self.root_policy,
+            admission_authorization: RootAdmissionAuthorizationRef {
+                policy: self.root_policy,
+                local: AdmissionAuthorizationLocalId::new(1),
+            },
+            judgment_authority: RootJudgmentAuthorityRef {
+                policy: self.root_policy,
+                local: JudgmentAuthorityLocalId::new(0),
+            },
+            occurrence_ingress: ExecutableBoundaryFactV1 {
+                boundary: self.pure_boundary,
+                evidence: id!(ExternalEvidenceRef, 181),
+            },
+            judgment_ingress: ExecutableBoundaryFactV1 {
+                boundary: self.state_boundary,
+                evidence: id!(ExternalEvidenceRef, 186),
+            },
+            admission_ingress: ExecutableBoundaryFactV1 {
+                boundary: self.state_boundary,
+                evidence: id!(ExternalEvidenceRef, 190),
+            },
+            budget_units: 100,
+        }
+    }
 }
 
 fn carrier_authority(checked: &CheckedProcessPackage) -> (AuthorityStore, CarrierFacts) {
@@ -381,196 +443,35 @@ fn raw_id(tag: u8) -> [u8; IDENTITY_BYTES] {
     bytes
 }
 
-fn activation_template(records: &[ProcessRecordV2], tag: u8) -> ActivationProposalV2 {
-    records
-        .iter()
-        .find_map(|record| match record {
-            ProcessRecordV2::Activation(proposal) if proposal.id == id!(ActivationId, tag) => {
-                Some(proposal.clone())
-            }
-            _ => None,
-        })
-        .expect("activation template exists")
-}
-
-fn step_template(records: &[ProcessRecordV2], tag: u8) -> StepProposalV2 {
-    records
-        .iter()
-        .find_map(|record| match record {
-            ProcessRecordV2::Steps(steps) => steps
-                .iter()
-                .find(|step| step.id == id!(StepId, tag))
-                .cloned(),
-            _ => None,
-        })
-        .expect("Step template exists")
-}
-
-fn external_trigger_template(
-    records: &[ProcessRecordV2],
-    tag: u8,
-) -> ExternalTriggerOccurrenceV2 {
-    records
-        .iter()
-        .find_map(|record| match record {
-            ProcessRecordV2::ExternalTrigger(trigger)
-                if trigger.id == id!(ExternalTriggerOccurrenceId, tag) =>
-            {
-                Some(trigger.clone())
-            }
-            _ => None,
-        })
-        .expect("external-trigger template exists")
-}
-
-fn judgment_template(records: &[ProcessRecordV2], tag: u8) -> JudgmentOccurrenceV2 {
-    records
-        .iter()
-        .find_map(|record| match record {
-            ProcessRecordV2::Judgment(judgment)
-                if judgment.body.id == id!(JudgmentOccurrenceId, tag) =>
-            {
-                Some(judgment.clone())
-            }
-            _ => None,
-        })
-        .expect("Judgment template exists")
-}
-
-fn admission_template(records: &[ProcessRecordV2]) -> StateAdmissionDecisionV2 {
-    records
-        .iter()
-        .find_map(|record| match record {
-            ProcessRecordV2::AdmissionDecision(decision)
-                if decision.delta == id!(CandidateDeltaId, 80) =>
-            {
-                Some(decision.clone())
-            }
-            _ => None,
-        })
-        .expect("Admission template exists")
-}
-
-fn rebind_activation(
-    proposal: &mut ActivationProposalV2,
-    package: &CheckedProcessPackage,
-    facts: CarrierFacts,
-) {
-    let snapshot = package.constitution().snapshot();
-    proposal.application.snapshot = snapshot;
-    proposal.mode.operator.snapshot = snapshot;
-    proposal.pins.snapshot = snapshot;
-    proposal.pins.program_revision = facts.revision;
-    if proposal.pins.runtime_session.is_some() {
-        proposal.pins.observed_state = Some(facts.initial_state);
-    }
-    let executable = package
-        .constitution()
-        .executable_contract(proposal.application, proposal.mode)
-        .expect("rebound Application and Mode remain executable");
-    proposal.pins.context_requirements = executable.application_context_requirements;
-    proposal.pins.constitutive_dependencies = executable.application_dependency_closure;
-    proposal.static_basis.execution_authorizations.clear();
-    for prerequisite in &mut proposal.causes.prerequisites {
-        prerequisite.kind.snapshot = snapshot;
-    }
-}
-
-fn configuration_term(
-    package: &CheckedProcessPackage,
-    values: &[ExecutableValueV1],
-) -> Term {
-    executable_configuration_term_v1(
-        TermScope {
-            universe: package.constitution().universe(),
-            semantics: package.constitution().semantics(),
-        },
-        values,
-    )
-    .expect("Configuration values encode canonically")
-}
-
-fn carry_latest_step(
-    runtime: &mut ExecutableProcessRuntimeV1<'_>,
-    package: &CheckedProcessPackage,
-    facts: CarrierFacts,
-    prior: Option<StepRef>,
-    remaining_budget: u64,
-    candidate_delta: Option<CandidateDeltaV2>,
-) -> (Option<StepRef>, u64) {
-    let bridge_step = runtime
-        .steps()
-        .last()
-        .expect("the executable bridge just advanced")
-        .clone();
-    let ordinal = u8::try_from(runtime.steps().len()).expect("bounded scenario Step count");
-    let occurrence = EnteredObservationV2 {
-        observation: ObservationProposalV2::Value {
-            id: ObservationId::from_bytes(raw_id(130 + ordinal)),
-            value: executable_occurrence_term_v1(
-                TermScope {
-                    universe: package.constitution().universe(),
-                    semantics: package.constitution().semantics(),
-                },
-                &bridge_step.occurrence,
-            )
-            .expect("opaque occurrence encodes canonically"),
-            supports: vec![],
-        },
-        provenance: EnteredThrough {
-            boundary: facts.pure_boundary,
-            evidence: id!(ExternalEvidenceRef, 181),
-            causes: vec![CausalRef::ExternalTrigger(id!(
-                ExternalTriggerOccurrenceId,
-                12
-            ))],
-        },
-    };
-    let reference = StepRef {
-        run: runtime.run(),
-        activation: runtime.activation(),
-        step: bridge_step.id,
-    };
-    let after_budget = remaining_budget - 1;
-    let step = StepProposalV2 {
-        id: bridge_step.id,
-        run: reference.run,
-        activation: reference.activation,
-        before: bridge_step.before,
-        after: ConfigurationProposal {
-            id: bridge_step.after,
-            value: configuration_term(package, runtime.configuration()),
-        },
-        observed_state: Some(facts.initial_state),
-        budget: StepBudgetTransitionV2 {
-            before: Budget {
-                remaining_units: remaining_budget,
-            },
-            consumed_units: 1,
-            after: Budget {
-                remaining_units: after_budget,
-            },
-        },
-        causes: vec![prior.map_or(
-            StepCause::ActivationStart(runtime.activation()),
-            StepCause::PriorStep,
-        )],
-        observations: vec![],
-        candidate_delta,
-        outcome: StepOutcomeProposalV2::Progress,
-    };
-    runtime
-        .apply_carrier_ingress(&[
-            ProcessRecordV2::EnteredObservation(occurrence),
-            ProcessRecordV2::Steps(vec![step]),
-        ])
-        .expect("computed occurrence and Step enter the checked carrier atomically");
-    (Some(reference), after_budget)
-}
-
 #[test]
-fn package_owned_headless_scenario_reaches_one_admitted_render_state() {
-    let (package, templates) = checked_program_package();
+fn package_owned_headless_api_reaches_one_admitted_render_state() {
+    for checker_count in [0, 2] {
+        let rejected_package = checked_program_package(checker_count);
+        let rejected_application = ApplicationId {
+            snapshot: rejected_package.constitution().snapshot(),
+            local: ApplicationLocalId::new(1),
+        };
+        let (rejected_authority, rejected_facts) = carrier_authority(&rejected_package);
+        let mut rejected_runtime = ExecutableProcessRuntimeV1::instantiate(
+            &rejected_package,
+            &rejected_authority,
+            rejected_application,
+        )
+        .expect("negative package still has a checked executable program");
+        let error = rejected_runtime
+            .start_carrier_process(rejected_facts.executable())
+            .expect_err("missing or duplicate checker Mode fails closed");
+        assert!(match checker_count {
+            0 => matches!(error, ExecutableCarrierErrorV1::MissingCheckerMode),
+            2 => matches!(error, ExecutableCarrierErrorV1::AmbiguousCheckerMode),
+            _ => unreachable!(),
+        });
+        assert_eq!(rejected_runtime.carrier().carrier().activation_count(), 0);
+        assert_eq!(rejected_runtime.carrier().carrier().observation_count(), 0);
+        assert_eq!(rejected_runtime.carrier().carrier().candidate_delta_count(), 0);
+    }
+
+    let package = checked_program_package(1);
     let application = ApplicationId {
         snapshot: package.constitution().snapshot(),
         local: ApplicationLocalId::new(1),
@@ -578,245 +479,68 @@ fn package_owned_headless_scenario_reaches_one_admitted_render_state() {
     let (authority, facts) = carrier_authority(&package);
     let mut runtime = ExecutableProcessRuntimeV1::instantiate(&package, &authority, application)
         .expect("checked package executable instantiates");
-
-    let mut checker_activation = activation_template(&templates, 22);
-    rebind_activation(&mut checker_activation, &package, facts);
-    let checker_step = step_template(&templates, 53);
-    let mut state_activation = activation_template(&templates, 23);
-    rebind_activation(&mut state_activation, &package, facts);
-    state_activation.id = runtime.activation();
-    state_activation.membership = RunMembership::RootOf(runtime.run());
-    state_activation.initial_configuration.id = runtime.configuration_id();
-    state_activation.initial_configuration.value =
-        configuration_term(&package, runtime.configuration());
     runtime
-        .apply_carrier_ingress(&[
-            ProcessRecordV2::ExternalTrigger(external_trigger_template(&templates, 12)),
-            ProcessRecordV2::Activation(checker_activation),
-            ProcessRecordV2::Steps(vec![checker_step]),
-            ProcessRecordV2::Activation(state_activation),
-        ])
-        .expect("carrier accepts the package-bound activation basis");
-    assert_eq!(runtime.carrier().carrier().state_revision_count(), 1);
+        .start_carrier_process(facts.executable())
+        .expect("production bridge synthesizes the Activation");
 
-    let mut prior = None;
-    let mut remaining_budget = 100;
-
-    runtime.advance(occurrence(0, &[1.0])).expect("input applies");
-    (prior, remaining_budget) = carry_latest_step(
-        &mut runtime,
-        &package,
-        facts,
-        prior,
-        remaining_budget,
-        None,
-    );
-    runtime.advance(occurrence(2, &[0.25])).expect("ground tick applies");
-    (prior, remaining_budget) = carry_latest_step(
-        &mut runtime,
-        &package,
-        facts,
-        prior,
-        remaining_budget,
-        None,
-    );
+    runtime
+        .advance_carrier_occurrence(occurrence(0, &[1.0]))
+        .expect("opaque input enters with its computed Step");
+    runtime
+        .advance_carrier_occurrence(occurrence(2, &[0.25]))
+        .expect("ground Step enters");
     assert_eq!(value(runtime.configuration(), 0), 10.0);
     assert_eq!(value(runtime.configuration(), 2), 2.0);
 
-    runtime.advance(occurrence(1, &[])).expect("grounded impulse applies");
-    (prior, remaining_budget) = carry_latest_step(
-        &mut runtime,
-        &package,
-        facts,
-        prior,
-        remaining_budget,
-        None,
-    );
+    runtime
+        .advance_carrier_occurrence(occurrence(1, &[]))
+        .expect("grounded impulse enters");
     assert_eq!(value(runtime.configuration(), 3), 8.0);
     assert_eq!(runtime.configuration()[5].as_boolean(), Some(false));
-
     let before_rejected = runtime.configuration().to_vec();
     let rejected = runtime
-        .advance(occurrence(1, &[]))
+        .advance_carrier_occurrence(occurrence(1, &[]))
         .expect("unmatched occurrence still advances Configuration custody");
     assert!(!rejected.rule_applied);
     assert_eq!(runtime.configuration(), before_rejected);
-    (prior, remaining_budget) = carry_latest_step(
-        &mut runtime,
-        &package,
-        facts,
-        prior,
-        remaining_budget,
-        None,
-    );
 
     for _ in 0..6 {
-        runtime.advance(occurrence(2, &[0.25])).expect("airborne tick applies");
-        (prior, remaining_budget) = carry_latest_step(
-            &mut runtime,
-            &package,
-            facts,
-            prior,
-            remaining_budget,
-            None,
-        );
+        runtime
+            .advance_carrier_occurrence(occurrence(2, &[0.25]))
+            .expect("airborne Step enters");
     }
-    runtime.advance(occurrence(2, &[0.25])).expect("landing tick applies");
+    runtime
+        .advance_carrier_occurrence_and_emit_candidate(occurrence(2, &[0.25]))
+        .expect("landing Step emits the one candidate");
     assert_eq!(value(runtime.configuration(), 1), 0.0);
     assert_eq!(value(runtime.configuration(), 3), 0.0);
     assert_eq!(runtime.configuration()[5].as_boolean(), Some(true));
-    assert!(runtime.candidate().is_none());
+    let candidate = runtime.candidate().expect("candidate is retained").clone();
+    assert_eq!(candidate.base, facts.initial_state);
     assert!(runtime.judgment().is_none());
     assert!(runtime.admission().is_none());
-
-    let base = facts.initial_state;
-    let candidate = runtime.emit_candidate(base).expect("candidate is emitted").clone();
-    assert_eq!(candidate.base, base);
-    assert!(runtime.judgment().is_none());
-    assert!(runtime.admission().is_none());
-
-    let mut carrier_candidate = step_template(&templates, 56)
-        .candidate_delta
-        .expect("stateful template carries a candidate");
-    carrier_candidate.id = candidate.id;
-    carrier_candidate.base = base;
-    carrier_candidate.proposed_payload = configuration_term(&package, runtime.configuration());
-    carrier_candidate.obligations[0].id.delta = candidate.id;
-    let (producer, after_candidate_budget) = carry_latest_step(
-        &mut runtime,
-        &package,
-        facts,
-        prior,
-        remaining_budget,
-        Some(carrier_candidate),
-    );
-    let producer = producer.expect("candidate-producing Step entered the carrier");
-    remaining_budget = after_candidate_budget;
-    assert_eq!(candidate.produced_by, producer.step);
-    assert_eq!(
-        runtime
-            .carrier()
-            .carrier()
-            .candidate_delta(candidate.id)
-            .expect("candidate is owned by ProcessCarrier")
-            .produced_by,
-        producer
-    );
-    assert_eq!(runtime.carrier().carrier().state_revision_count(), 1);
-
-    let judgment = runtime.judge(true).expect("candidate is judged").clone();
-    assert_eq!(judgment.candidate, candidate.id);
-    assert!(runtime.admission().is_none());
-
-    let mut verdict = judgment_template(&templates, 90);
-    let mut obligation = judgment_template(&templates, 91);
-    for record in [&mut verdict, &mut obligation] {
-        record.body.judgment.delta = candidate.id;
-        record.body.judgment.session = facts.session;
-        record.body.judgment.policy = facts.policy;
-        record.body.supports[0].source = SupportSource::Step(producer);
-        record.provenance = OccurrenceProvenance::EnteredThrough(EnteredThrough {
-            boundary: facts.state_boundary,
-            evidence: if record.body.id == judgment.id {
-                id!(ExternalEvidenceRef, 186)
-            } else {
-                id!(ExternalEvidenceRef, 187)
-            },
-            causes: vec![CausalRef::CandidateDelta(candidate.id)],
-        });
-    }
-    runtime
-        .apply_carrier_ingress(&[
-            ProcessRecordV2::Judgment(verdict),
-            ProcessRecordV2::Judgment(obligation),
-        ])
-        .expect("carrier accepts separate verdict and obligation Judgments");
     assert!(runtime
         .carrier()
         .carrier()
-        .judgment(judgment.id)
+        .candidate_delta(candidate.id)
         .is_some());
-    assert!(runtime.carrier().carrier().decision(candidate.id).is_none());
+    assert_eq!(runtime.carrier().carrier().state_revision_count(), 1);
 
-    let mut admission = admission_template(&templates);
-    admission.delta = candidate.id;
-    admission.provenance = EnteredThrough {
-        boundary: facts.state_boundary,
-        evidence: id!(ExternalEvidenceRef, 190),
-        causes: vec![
-            CausalRef::CandidateDelta(candidate.id),
-            CausalRef::Judgment(id!(JudgmentOccurrenceId, 90)),
-            CausalRef::Judgment(id!(JudgmentOccurrenceId, 91)),
-        ],
-    };
-    let StateAdmissionOutcomeV2::Admit(ref mut carrier_successor) = admission.outcome else {
-        panic!("selected template is an admitting decision");
-    };
-    carrier_successor.session = facts.session;
-    carrier_successor.predecessor = Some(base);
-    carrier_successor.cause = StateRevisionCause::Admission {
-        occurrence: admission.occurrence,
-        run: producer.run,
-        activation: producer.activation,
-        step: producer.step,
-    };
-    carrier_successor.payload = configuration_term(&package, runtime.configuration());
-    carrier_successor.canonical_state_snapshot = canonical_term_bytes(&carrier_successor.payload)
-        .expect("successor payload is canonical")
-        .into_boxed_slice();
-    carrier_successor.policy = facts.policy;
-    carrier_successor.semantics = package.constitution().semantics();
-    carrier_successor.id = carrier_successor.derived_id();
-    let successor_id = carrier_successor.id;
-    runtime
-        .apply_carrier_ingress(&[ProcessRecordV2::AdmissionDecision(admission)])
-        .expect("carrier admits the judged candidate into one successor");
     let successor = runtime
-        .admit_with_state_id(successor_id)
-        .expect("bridge records the carrier-derived successor")
+        .settle_carrier_process()
+        .expect("production bridge synthesizes Judgment and Admission")
         .clone();
-    assert_eq!(successor.predecessor, base);
-    assert_ne!(successor.id, base);
-
-    runtime
-        .apply_carrier_ingress(&[ProcessRecordV2::EnteredObservation(
-            EnteredObservationV2 {
-                observation: ObservationProposalV2::Value {
-                    id: id!(ObservationId, 100),
-                    value: configuration_term(&package, runtime.configuration()),
-                    supports: vec![SupportUse {
-                        slot: SupportSlotId::new(0),
-                        role: Term::atom(
-                            TermScope {
-                                universe: package.constitution().universe(),
-                                semantics: package.constitution().semantics(),
-                            },
-                            b"clause/process-observed-state-v1".to_vec(),
-                            successor.id.as_bytes().to_vec(),
-                            EqualityContract::ExactOctetsV1,
-                        )
-                        .expect("Observation role is canonical"),
-                        source: SupportSource::Admission(id!(AdmissionOccurrenceId, 94)),
-                    }],
-                },
-                provenance: EnteredThrough {
-                    boundary: facts.pure_boundary,
-                    evidence: id!(ExternalEvidenceRef, 181),
-                    causes: vec![CausalRef::Admission(id!(AdmissionOccurrenceId, 94))],
-                },
-            },
-        )])
-        .expect("render Observation enters after and through the exact Admission");
-    let observation = runtime.observe(&[0, 1, 3, 5]).expect("render projection exists");
+    assert_eq!(successor.predecessor, facts.initial_state);
+    assert_ne!(successor.id, facts.initial_state);
+    let observation = runtime
+        .observe_carrier_state(&[0, 1, 3, 5])
+        .expect("production bridge synthesizes the admitted render Observation");
     assert_eq!(observation.state, successor.id);
     assert_eq!(observation.value[0].as_number(), Some(10.0));
     assert_eq!(observation.value[1].as_number(), Some(0.0));
     assert_eq!(observation.value[2].as_number(), Some(0.0));
     assert_eq!(observation.value[3].as_boolean(), Some(true));
 
-    assert_eq!(runtime.package(), package.id());
-    assert_eq!(runtime.application(), application);
-    assert!(runtime.carrier().carrier().accepted_ingress_record_count() > 0);
     assert_eq!(runtime.carrier().carrier().candidate_delta_count(), 1);
     assert_eq!(runtime.carrier().carrier().decision_count(), 1);
     assert_eq!(runtime.carrier().carrier().state_revision_count(), 2);
@@ -825,5 +549,4 @@ fn package_owned_headless_scenario_reaches_one_admitted_render_state() {
         .carrier()
         .observation(observation.id)
         .is_some());
-    assert_eq!(remaining_budget, 89);
 }

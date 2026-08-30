@@ -1,12 +1,7 @@
 use std::error::Error;
 use std::fmt;
 
-use clause_package::{
-    AdmissionOccurrenceId, ApplicationId, CandidateDeltaId, CheckedProcessPackage,
-    ConfigurationId, EqualityContract, JudgmentOccurrenceId, LocalSemanticDependencyV2,
-    ObservationId, ProcessIngressError, ProcessPackageId, ProcessRecordV2, RunId,
-    StateRevisionId, StepId, Term,
-};
+use clause_package::*;
 
 use super::ProcessRuntime;
 
@@ -242,6 +237,40 @@ pub struct ExecutableObservationV1 {
     pub value: Vec<ExecutableValueV1>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ExecutableBoundaryFactV1 {
+    pub boundary: BoundaryRef,
+    pub evidence: ExternalEvidenceRef,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ExecutableAuthorityFactsV1 {
+    pub program_revision: ProgramRevisionId,
+    pub session: RuntimeSessionId,
+    pub initial_state: StateRevisionId,
+    pub policy: RuntimePolicyId,
+    pub session_start: SessionStartOccurrenceId,
+    pub root_policy: RootPolicyId,
+    pub admission_authorization: RootAdmissionAuthorizationRef,
+    pub judgment_authority: RootJudgmentAuthorityRef,
+    pub occurrence_ingress: ExecutableBoundaryFactV1,
+    pub judgment_ingress: ExecutableBoundaryFactV1,
+    pub admission_ingress: ExecutableBoundaryFactV1,
+    pub budget_units: u64,
+}
+
+#[derive(Clone, Debug)]
+struct CarrierExecutionV1 {
+    facts: ExecutableAuthorityFactsV1,
+    mode: ModeId,
+    checker_mode: ModeId,
+    state_started: bool,
+    remaining_budget: u64,
+    prior_step: Option<StepRef>,
+    formation_observation: Option<ObservationId>,
+    formation_term: Option<Term>,
+}
+
 pub struct ExecutableProcessRuntimeV1<'a> {
     carrier: ProcessRuntime<'a>,
     package: ProcessPackageId,
@@ -256,6 +285,7 @@ pub struct ExecutableProcessRuntimeV1<'a> {
     judgment: Option<ExecutableJudgmentV1>,
     admission: Option<ExecutableAdmissionV1>,
     state: Option<ExecutableStateRevisionV1>,
+    carrier_execution: Option<CarrierExecutionV1>,
 }
 
 impl<'a> ExecutableProcessRuntimeV1<'a> {
@@ -301,7 +331,397 @@ impl<'a> ExecutableProcessRuntimeV1<'a> {
             judgment: None,
             admission: None,
             state: None,
+            carrier_execution: None,
         })
+    }
+
+    /// Start the unique stateful, effect-free Mode constituted for this
+    /// Application. The caller supplies operational authority facts only;
+    /// package structure supplies the executable Mode and all semantic pins.
+    pub fn start_carrier_process(
+        &mut self,
+        facts: ExecutableAuthorityFactsV1,
+    ) -> Result<(), ExecutableCarrierErrorV1> {
+        if self.carrier_execution.is_some() {
+            return Err(ExecutableCarrierErrorV1::AlreadyStarted);
+        }
+        let constitution = self.carrier.carrier().constitution();
+        let declaration = constitution
+            .application_by_id(self.application)
+            .ok_or(ExecutableCarrierErrorV1::Executable(
+                ExecutableErrorV1::UnknownApplication,
+            ))?;
+        let snapshot = constitution.snapshot();
+        let mut selected = None;
+        for local in &declaration.form.eligible_modes {
+            let mode = ModeId {
+                operator: OperatorRef {
+                    snapshot,
+                    local: declaration.form.operator,
+                },
+                local: *local,
+            };
+            let record = constitution
+                .mode_by_id(mode)
+                .ok_or(ExecutableCarrierErrorV1::UnsupportedSurface)?;
+            if record.contract.state_delta_domain.is_some() && record.contract.effect_intents.is_empty() {
+                if selected.replace(mode).is_some() {
+                    return Err(ExecutableCarrierErrorV1::AmbiguousStatefulMode);
+                }
+            }
+        }
+        let mode = selected.ok_or(ExecutableCarrierErrorV1::MissingStatefulMode)?;
+        let mode_record = constitution
+            .mode_by_id(mode)
+            .ok_or(ExecutableCarrierErrorV1::UnsupportedSurface)?;
+        let executable = constitution
+            .executable_contract(self.application, mode)
+            .ok_or(ExecutableCarrierErrorV1::UnsupportedSurface)?;
+        if !executable.authorization_requirements.is_empty()
+            || !mode_record.contract.capability_requirements.is_empty()
+            || !mode_record.contract.scheduling_requirements.is_empty()
+            || !mode_record.contract.resource_requirements.is_empty()
+        {
+            return Err(ExecutableCarrierErrorV1::UnsupportedSurface);
+        }
+        let target = mode_record
+            .contract
+            .state_delta_domain
+            .as_ref()
+            .expect("selected stateful Mode has a delta domain");
+        let mut checker_mode = None;
+        for local in &declaration.form.eligible_modes {
+            let candidate = ModeId {
+                operator: OperatorRef {
+                    snapshot,
+                    local: declaration.form.operator,
+                },
+                local: *local,
+            };
+            if candidate == mode {
+                continue;
+            }
+            let record = constitution
+                .mode_by_id(candidate)
+                .ok_or(ExecutableCarrierErrorV1::UnsupportedSurface)?;
+            if record.contract.state_delta_domain.is_none()
+                && record.contract.effect_intents.is_empty()
+                && record.contract.formation_checks.binary_search(target).is_ok()
+            {
+                if checker_mode.replace(candidate).is_some() {
+                    return Err(ExecutableCarrierErrorV1::AmbiguousCheckerMode);
+                }
+            }
+        }
+        let checker_mode = checker_mode.ok_or(ExecutableCarrierErrorV1::MissingCheckerMode)?;
+        self.carrier_execution = Some(CarrierExecutionV1 {
+            facts,
+            mode,
+            checker_mode,
+            state_started: false,
+            remaining_budget: facts.budget_units,
+            prior_step: None,
+            formation_observation: None,
+            formation_term: None,
+        });
+        Ok(())
+    }
+
+    pub fn advance_carrier_occurrence(
+        &mut self,
+        occurrence: ExecutableOccurrenceV1,
+    ) -> Result<&ExecutableStepV1, ExecutableCarrierErrorV1> {
+        self.advance_carrier_occurrence_inner(occurrence, false)
+    }
+
+    pub fn advance_carrier_occurrence_and_emit_candidate(
+        &mut self,
+        occurrence: ExecutableOccurrenceV1,
+    ) -> Result<&ExecutableStepV1, ExecutableCarrierErrorV1> {
+        self.advance_carrier_occurrence_inner(occurrence, true)
+    }
+
+    fn advance_carrier_occurrence_inner(
+        &mut self,
+        occurrence: ExecutableOccurrenceV1,
+        emit_candidate: bool,
+    ) -> Result<&ExecutableStepV1, ExecutableCarrierErrorV1> {
+        let execution = self
+            .carrier_execution
+            .as_ref()
+            .ok_or(ExecutableCarrierErrorV1::NotStarted)?;
+        if execution.remaining_budget == 0 {
+            return Err(ExecutableCarrierErrorV1::BudgetExhausted);
+        }
+        if emit_candidate && self.candidate.is_some() {
+            return Err(ExecutableCarrierErrorV1::Executable(
+                ExecutableErrorV1::CandidateAlreadyEmitted,
+            ));
+        }
+        let old_configuration = self.configuration.clone();
+        let old_configuration_id = self.configuration_id;
+        let old_step_count = self.steps.len();
+        self.advance(occurrence)
+            .map_err(ExecutableCarrierErrorV1::Executable)?;
+        let bridge_step = self.steps.last().expect("advance appended one Step").clone();
+        let execution = self.carrier_execution.as_ref().expect("execution remains started");
+        let facts = execution.facts;
+        let prior_step = execution.prior_step;
+        let mode = execution.mode;
+        let remaining_budget = execution.remaining_budget;
+        let ordinal = u8::try_from(self.steps.len()).map_err(|_| {
+            ExecutableCarrierErrorV1::Executable(ExecutableErrorV1::ResourceLimit)
+        })?;
+        let scope = TermScope {
+            universe: self.carrier.carrier().constitution().universe(),
+            semantics: self.carrier.carrier().constitution().semantics(),
+        };
+        let occurrence_id = ObservationId::from_bytes(identity_bytes(130 + ordinal));
+        let mut entered_occurrence = EnteredObservationV2 {
+            observation: ObservationProposalV2::Value {
+                id: occurrence_id,
+                value: executable_occurrence_term_v1(scope, &bridge_step.occurrence)
+                    .map_err(ExecutableCarrierErrorV1::Executable)?,
+                supports: vec![],
+            },
+            provenance: EnteredThrough {
+                boundary: facts.occurrence_ingress.boundary,
+                evidence: facts.occurrence_ingress.evidence,
+                causes: prior_step.map_or_else(
+                    || vec![CausalRef::SessionStart(facts.session_start)],
+                    |step| vec![CausalRef::Step(step)],
+                ),
+            },
+        };
+        let reference = StepRef {
+            run: self.run,
+            activation: self.activation,
+            step: bridge_step.id,
+        };
+        let mut ingress = Vec::new();
+        let mut formation_observation = execution.formation_observation;
+        let mut formation_term = execution.formation_term.clone();
+        if !execution.state_started {
+            let trigger = ExternalTriggerOccurrenceId::from_bytes(identity_bytes(10));
+            ingress.push(ProcessRecordV2::ExternalTrigger(
+                ExternalTriggerOccurrenceV2 {
+                    id: trigger,
+                    provenance: EnteredThrough {
+                        boundary: facts.occurrence_ingress.boundary,
+                        evidence: facts.occurrence_ingress.evidence,
+                        causes: vec![],
+                    },
+                },
+            ));
+            entered_occurrence.provenance.causes = vec![CausalRef::ExternalTrigger(trigger)];
+            ingress.push(ProcessRecordV2::EnteredObservation(entered_occurrence.clone()));
+            let constitution = self.carrier.carrier().constitution();
+            let checker_activation = ActivationId::from_bytes(identity_bytes(22));
+            let checker_run = RunId::from_bytes(identity_bytes(30));
+            let checker_before = ConfigurationId::from_bytes(identity_bytes(42));
+            let checker_after = ConfigurationId::from_bytes(identity_bytes(63));
+            ingress.push(ProcessRecordV2::Activation(ActivationProposalV2 {
+                id: checker_activation,
+                application: self.application,
+                mode: execution.checker_mode,
+                pins: activation_pins_v1(
+                    constitution,
+                    self.application,
+                    execution.checker_mode,
+                    facts,
+                    false,
+                )?,
+                static_basis: ActivationStaticBasis {
+                    execution_authorizations: vec![],
+                    judgment_authorities: vec![],
+                },
+                causes: ActivationCauseFrontierV2 {
+                    origin: ActivationOrigin::RootedBy(RootTrigger::External(trigger)),
+                    prerequisites: vec![],
+                },
+                membership: RunMembership::RootOf(checker_run),
+                initial_configuration: ConfigurationProposal {
+                    id: checker_before,
+                    value: executable_configuration_term_v1(scope, &old_configuration)
+                        .map_err(ExecutableCarrierErrorV1::Executable)?,
+                },
+            }));
+            let state_mode = constitution
+                .mode_by_id(mode)
+                .ok_or(ExecutableCarrierErrorV1::UnsupportedSurface)?;
+            let target = state_mode
+                .contract
+                .state_delta_domain
+                .clone()
+                .ok_or(ExecutableCarrierErrorV1::MissingStatefulMode)?;
+            let id = ObservationId::from_bytes(identity_bytes(84));
+            let subject = executable_configuration_term_v1(scope, &self.configuration)
+                .map_err(ExecutableCarrierErrorV1::Executable)?;
+            ingress.push(ProcessRecordV2::Steps(vec![StepProposalV2 {
+                id: StepId::from_bytes(identity_bytes(53)),
+                run: checker_run,
+                activation: checker_activation,
+                before: checker_before,
+                after: ConfigurationProposal {
+                    id: checker_after,
+                    value: subject.clone(),
+                },
+                observed_state: None,
+                budget: StepBudgetTransitionV2 {
+                    before: Budget {
+                        remaining_units: facts.budget_units,
+                    },
+                    consumed_units: 1,
+                    after: Budget {
+                        remaining_units: facts.budget_units - 1,
+                    },
+                },
+                causes: vec![StepCause::ActivationStart(checker_activation)],
+                observations: vec![ObservationProposalV2::Formation {
+                    id,
+                    subject: subject.clone(),
+                    target,
+                    supports: vec![SupportUse {
+                        slot: SupportSlotId::new(0),
+                        role: runtime_role_term(
+                            scope,
+                            b"clause/process-occurrence-support-v1",
+                        )?,
+                        source: SupportSource::Observation(occurrence_id),
+                    }],
+                }],
+                candidate_delta: None,
+                outcome: StepOutcomeProposalV2::Progress,
+            }]));
+            formation_observation = Some(id);
+            formation_term = Some(subject);
+            let state_contract = constitution
+                .executable_contract(self.application, mode)
+                .ok_or(ExecutableCarrierErrorV1::UnsupportedSurface)?;
+            let prerequisite = state_contract
+                .dynamic_prerequisites
+                .iter()
+                .find(|requirement| {
+                    requirement.occurrence_kind == ActivationPrerequisiteKind::Observation
+                        && requirement.cardinality.contains(1)
+                        && matches!(
+                            requirement.scope,
+                            PrerequisiteScope::SameSemantics
+                                | PrerequisiteScope::SameProgramRevision
+                        )
+                })
+                .ok_or(ExecutableCarrierErrorV1::MissingCheckerPrerequisite)?;
+            ingress.push(ProcessRecordV2::Activation(ActivationProposalV2 {
+                id: self.activation,
+                application: self.application,
+                mode,
+                pins: activation_pins_v1(
+                    constitution,
+                    self.application,
+                    mode,
+                    facts,
+                    true,
+                )?,
+                static_basis: ActivationStaticBasis {
+                    execution_authorizations: vec![],
+                    judgment_authorities: vec![],
+                },
+                causes: ActivationCauseFrontierV2 {
+                    origin: ActivationOrigin::RootedBy(RootTrigger::SessionStart(
+                        facts.session_start,
+                    )),
+                    prerequisites: vec![ActivationPrerequisiteUseV2 {
+                        kind: prerequisite.kind,
+                        prerequisite: ActivationPrerequisite::Observation(id),
+                    }],
+                },
+                membership: RunMembership::RootOf(self.run),
+                initial_configuration: ConfigurationProposal {
+                    id: old_configuration_id,
+                    value: executable_configuration_term_v1(scope, &old_configuration)
+                        .map_err(ExecutableCarrierErrorV1::Executable)?,
+                },
+            }));
+        } else {
+            ingress.push(ProcessRecordV2::EnteredObservation(entered_occurrence));
+        }
+        let candidate_delta = if emit_candidate {
+            let id = CandidateDeltaId::from_bytes(identity_bytes(80));
+            let configuration = executable_configuration_term_v1(scope, &self.configuration)
+                .map_err(ExecutableCarrierErrorV1::Executable)?;
+            self.candidate = Some(ExecutableCandidateV1 {
+                id,
+                base: facts.initial_state,
+                produced_by: reference.step,
+                configuration: self.configuration.clone(),
+            });
+            Some(CandidateDeltaV2 {
+                id,
+                base: facts.initial_state,
+                delta: DomainBoundTermV2 {
+                    term: formation_term
+                        .clone()
+                        .ok_or(ExecutableCarrierErrorV1::MissingFormationEvidence)?,
+                    evidence: formation_observation
+                        .ok_or(ExecutableCarrierErrorV1::MissingFormationEvidence)?,
+                },
+                proposed_payload: configuration,
+                evidence: vec![SupportUse {
+                    slot: SupportSlotId::new(0),
+                    role: runtime_role_term(scope, b"clause/process-state-base-v1")?,
+                    source: SupportSource::SessionStart(facts.session_start),
+                }],
+                obligations: vec![],
+            })
+        } else {
+            None
+        };
+        let after_budget = remaining_budget - 1;
+        let step = StepProposalV2 {
+            id: reference.step,
+            run: reference.run,
+            activation: reference.activation,
+            before: bridge_step.before,
+            after: ConfigurationProposal {
+                id: bridge_step.after,
+                value: executable_configuration_term_v1(scope, &self.configuration)
+                    .map_err(ExecutableCarrierErrorV1::Executable)?,
+            },
+            observed_state: Some(facts.initial_state),
+            budget: StepBudgetTransitionV2 {
+                before: Budget {
+                    remaining_units: remaining_budget,
+                },
+                consumed_units: 1,
+                after: Budget {
+                    remaining_units: after_budget,
+                },
+            },
+            causes: vec![prior_step.map_or(
+                StepCause::ActivationStart(self.activation),
+                StepCause::PriorStep,
+            )],
+            observations: vec![],
+            candidate_delta,
+            outcome: StepOutcomeProposalV2::Progress,
+        };
+        ingress.push(ProcessRecordV2::Steps(vec![step]));
+        if let Err(error) = self.carrier.apply_ingress(&ingress) {
+            self.configuration = old_configuration;
+            self.configuration_id = old_configuration_id;
+            self.steps.truncate(old_step_count);
+            if emit_candidate {
+                self.candidate = None;
+            }
+            return Err(ExecutableCarrierErrorV1::Ingress(error));
+        }
+        let execution = self.carrier_execution.as_mut().expect("execution remains started");
+        execution.remaining_budget = after_budget;
+        execution.prior_step = Some(reference);
+        execution.formation_observation = formation_observation;
+        execution.formation_term = formation_term;
+        execution.state_started = true;
+        Ok(self.steps.last().expect("accepted Step remains retained"))
     }
 
     pub fn advance(
@@ -356,6 +776,187 @@ impl<'a> ExecutableProcessRuntimeV1<'a> {
         records: &[ProcessRecordV2],
     ) -> Result<(), ProcessIngressError> {
         self.carrier.apply_ingress(records)
+    }
+
+    /// Issue the carrier Judgment and Admission for the one computed
+    /// candidate, deriving the successor identity from its complete preimage.
+    pub fn settle_carrier_process(
+        &mut self,
+    ) -> Result<&ExecutableStateRevisionV1, ExecutableCarrierErrorV1> {
+        if self.state.is_some() {
+            return Err(ExecutableCarrierErrorV1::Executable(
+                ExecutableErrorV1::AlreadyAdmitted,
+            ));
+        }
+        let execution = self
+            .carrier_execution
+            .as_ref()
+            .ok_or(ExecutableCarrierErrorV1::NotStarted)?;
+        let facts = execution.facts;
+        let producer = execution
+            .prior_step
+            .ok_or(ExecutableCarrierErrorV1::Executable(ExecutableErrorV1::NoStep))?;
+        let candidate = self
+            .candidate
+            .as_ref()
+            .ok_or(ExecutableCarrierErrorV1::Executable(
+                ExecutableErrorV1::NoCandidate,
+            ))?
+            .clone();
+        let scope = TermScope {
+            universe: self.carrier.carrier().constitution().universe(),
+            semantics: self.carrier.carrier().constitution().semantics(),
+        };
+        let judgment_id = JudgmentOccurrenceId::from_bytes(identity_bytes(90));
+        let judgment = JudgmentOccurrenceV2 {
+            body: JudgmentOccurrenceBodyV2 {
+                id: judgment_id,
+                judgment: AdmissionJudgment {
+                    delta: candidate.id,
+                    session: facts.session,
+                    policy: facts.policy,
+                    claim: AdmissionJudgmentClaim::Verdict(AdmissionDisposition::Admit),
+                },
+                authority: JudgmentAuthorityEvidence::IrreducibleRoot {
+                    policy: facts.root_policy,
+                    authority: facts.judgment_authority,
+                },
+                supports: vec![SupportUse {
+                    slot: SupportSlotId::new(0),
+                    role: runtime_role_term(scope, b"clause/process-candidate-producer-v1")?,
+                    source: SupportSource::Step(producer),
+                }],
+            },
+            provenance: OccurrenceProvenance::EnteredThrough(EnteredThrough {
+                boundary: facts.judgment_ingress.boundary,
+                evidence: facts.judgment_ingress.evidence,
+                causes: vec![CausalRef::CandidateDelta(candidate.id)],
+            }),
+        };
+        self.carrier
+            .apply_ingress(&[ProcessRecordV2::Judgment(judgment)])
+            .map_err(ExecutableCarrierErrorV1::Ingress)?;
+        self.judgment = Some(ExecutableJudgmentV1 {
+            id: judgment_id,
+            candidate: candidate.id,
+            accepted: true,
+        });
+        let admission_id = AdmissionOccurrenceId::from_bytes(identity_bytes(94));
+        let payload = executable_configuration_term_v1(scope, &candidate.configuration)
+            .map_err(ExecutableCarrierErrorV1::Executable)?;
+        let mut successor = StateRevision {
+            id: StateRevisionId::from_bytes(identity_bytes(0)),
+            session: facts.session,
+            predecessor: Some(candidate.base),
+            cause: StateRevisionCause::Admission {
+                occurrence: admission_id,
+                run: producer.run,
+                activation: producer.activation,
+                step: producer.step,
+            },
+            canonical_state_snapshot: canonical_term_bytes(&payload)
+                .map_err(|_| ExecutableCarrierErrorV1::UnsupportedSurface)?
+                .into_boxed_slice(),
+            payload,
+            policy: facts.policy,
+            semantics: scope.semantics,
+        };
+        successor.id = successor.derived_id();
+        let decision = StateAdmissionDecisionV2 {
+            occurrence: admission_id,
+            delta: candidate.id,
+            authorization: AdmissionAuthorizationEvidence::IrreducibleRoot {
+                policy: facts.root_policy,
+                authorization: facts.admission_authorization,
+            },
+            evidence: vec![SupportUse {
+                slot: SupportSlotId::new(0),
+                role: runtime_role_term(scope, b"clause/process-admission-verdict-v1")?,
+                source: SupportSource::Judgment(judgment_id),
+            }],
+            verdict: judgment_id,
+            obligation_judgments: vec![],
+            provenance: EnteredThrough {
+                boundary: facts.admission_ingress.boundary,
+                evidence: facts.admission_ingress.evidence,
+                causes: vec![
+                    CausalRef::CandidateDelta(candidate.id),
+                    CausalRef::Judgment(judgment_id),
+                ],
+            },
+            outcome: StateAdmissionOutcomeV2::Admit(successor.clone()),
+        };
+        self.carrier
+            .apply_ingress(&[ProcessRecordV2::AdmissionDecision(decision)])
+            .map_err(ExecutableCarrierErrorV1::Ingress)?;
+        self.admission = Some(ExecutableAdmissionV1 {
+            id: admission_id,
+            candidate: candidate.id,
+            judgment: judgment_id,
+        });
+        self.state = Some(ExecutableStateRevisionV1 {
+            id: successor.id,
+            predecessor: candidate.base,
+            admission: admission_id,
+            configuration: candidate.configuration,
+        });
+        Ok(self.state.as_ref().expect("settled State is retained"))
+    }
+
+    /// Project selected values and enter the projection as an Observation
+    /// causally pinned to the exact Admission that created its State.
+    pub fn observe_carrier_state(
+        &mut self,
+        slots: &[u16],
+    ) -> Result<ExecutableObservationV1, ExecutableCarrierErrorV1> {
+        let observation = self
+            .observe(slots)
+            .map_err(ExecutableCarrierErrorV1::Executable)?;
+        let execution = self
+            .carrier_execution
+            .as_ref()
+            .ok_or(ExecutableCarrierErrorV1::NotStarted)?;
+        let facts = execution.facts;
+        let admission = self
+            .admission
+            .as_ref()
+            .ok_or(ExecutableCarrierErrorV1::Executable(
+                ExecutableErrorV1::NoAdmission,
+            ))?;
+        let scope = TermScope {
+            universe: self.carrier.carrier().constitution().universe(),
+            semantics: self.carrier.carrier().constitution().semantics(),
+        };
+        let value = executable_values_term(scope, CONFIGURATION_KIND, &observation.value)
+            .map_err(ExecutableCarrierErrorV1::Executable)?;
+        let state_role = Term::atom(
+            scope,
+            b"clause/process-observed-state-v1".to_vec(),
+            observation.state.as_bytes().to_vec(),
+            EqualityContract::ExactOctetsV1,
+        )
+        .map_err(|_| ExecutableCarrierErrorV1::UnsupportedSurface)?;
+        self.carrier
+            .apply_ingress(&[ProcessRecordV2::EnteredObservation(
+                EnteredObservationV2 {
+                    observation: ObservationProposalV2::Value {
+                        id: observation.id,
+                        value,
+                        supports: vec![SupportUse {
+                            slot: SupportSlotId::new(0),
+                            role: state_role,
+                            source: SupportSource::Admission(admission.id),
+                        }],
+                    },
+                    provenance: EnteredThrough {
+                        boundary: facts.occurrence_ingress.boundary,
+                        evidence: facts.occurrence_ingress.evidence,
+                        causes: vec![CausalRef::Admission(admission.id)],
+                    },
+                },
+            )])
+            .map_err(ExecutableCarrierErrorV1::Ingress)?;
+        Ok(observation)
     }
 
     pub fn emit_candidate(
@@ -523,6 +1124,98 @@ impl fmt::Display for ExecutableErrorV1 {
 }
 
 impl Error for ExecutableErrorV1 {}
+
+#[derive(Debug)]
+pub enum ExecutableCarrierErrorV1 {
+    Executable(ExecutableErrorV1),
+    Ingress(ProcessIngressError),
+    AlreadyStarted,
+    NotStarted,
+    MissingStatefulMode,
+    AmbiguousStatefulMode,
+    MissingCheckerMode,
+    AmbiguousCheckerMode,
+    MissingCheckerPrerequisite,
+    MissingFormationEvidence,
+    BudgetExhausted,
+    UnsupportedSurface,
+}
+
+impl fmt::Display for ExecutableCarrierErrorV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "{self:?}")
+    }
+}
+
+impl Error for ExecutableCarrierErrorV1 {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::Executable(error) => Some(error),
+            Self::Ingress(error) => Some(error),
+            _ => None,
+        }
+    }
+}
+
+fn runtime_role_term(
+    scope: TermScope,
+    kind: &[u8],
+) -> Result<Term, ExecutableCarrierErrorV1> {
+    Term::atom(
+        scope,
+        kind.to_vec(),
+        Vec::new(),
+        EqualityContract::ExactOctetsV1,
+    )
+    .map_err(|_| ExecutableCarrierErrorV1::UnsupportedSurface)
+}
+
+fn activation_pins_v1(
+    constitution: &ResolvedProgramConstitutionV2,
+    application: ApplicationId,
+    mode: ModeId,
+    facts: ExecutableAuthorityFactsV1,
+    stateful: bool,
+) -> Result<ActivationPins, ExecutableCarrierErrorV1> {
+    let executable = constitution
+        .executable_contract(application, mode)
+        .ok_or(ExecutableCarrierErrorV1::UnsupportedSurface)?;
+    let mode_record = constitution
+        .mode_by_id(mode)
+        .ok_or(ExecutableCarrierErrorV1::UnsupportedSurface)?;
+    if !executable.authorization_requirements.is_empty()
+        || !mode_record.contract.capability_requirements.is_empty()
+        || !mode_record.contract.scheduling_requirements.is_empty()
+        || !mode_record.contract.resource_requirements.is_empty()
+    {
+        return Err(ExecutableCarrierErrorV1::UnsupportedSurface);
+    }
+    let mut context_requirements = executable.application_context_requirements;
+    context_requirements.extend(executable.static_basis.context_requirements);
+    context_requirements.sort_unstable();
+    context_requirements.dedup();
+    let mut constitutive_dependencies = executable.application_dependency_closure;
+    constitutive_dependencies.extend(executable.static_basis.constitutive_dependencies);
+    constitutive_dependencies.sort_unstable();
+    constitutive_dependencies.dedup();
+    Ok(ActivationPins {
+        semantics: constitution.semantics(),
+        snapshot: constitution.snapshot(),
+        program_revision: facts.program_revision,
+        runtime_session: stateful.then_some(facts.session),
+        observed_state: stateful.then_some(facts.initial_state),
+        runtime_policy: stateful.then_some(facts.policy),
+        context_requirements,
+        constitutive_dependencies,
+        capabilities: vec![],
+        scheduling_requirements: vec![],
+        resource_requirements: vec![],
+        cancellation_scope: CancellationScope::Activation,
+        budget: Budget {
+            remaining_units: facts.budget_units,
+        },
+    })
+}
 
 fn validate_program(program: &ExecutableProgramV1) -> Result<(), ExecutableErrorV1> {
     if program.initial_configuration.len() > MAX_PROGRAM_ITEMS || program.rules.len() > MAX_PROGRAM_ITEMS {
