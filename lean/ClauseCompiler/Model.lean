@@ -98,7 +98,6 @@ structure CoreManifest where
   nominalDeclarationTags : List UInt8
   compilerEvidenceTags : List UInt8
   valueTags : List UInt8
-  evalOutcomeTags : List UInt8
   decodeVerdictTags : List UInt8
   decodeCodeTags : List UInt8
   authorizationStageTags : List UInt8
@@ -156,12 +155,6 @@ def KValue.sort : KValue → KSort
   | .bytes _ => .bytes
   | .term _ => .term
 
-structure EvalOutcome where
-  value : KValue
-  remainingFuel : Fuel
-  observations : Term
-deriving DecidableEq, Repr
-
 /- `EvalRequest` is checker-constructed replay context, never Frame03 data.  The
 predecessor package is supplied separately with its canonical decode binding
 and acceptance premise; this digest binds that exact input without recursively
@@ -177,7 +170,9 @@ deriving DecidableEq, Repr
 
 structure EvalReceipt where
   formatVersion : UInt8
-  expected : EvalOutcome
+  expectedValueHash : Hash32
+  expectedRemainingFuel : Fuel
+  expectedObservationsHash : Hash32
 deriving DecidableEq, Repr
 
 inductive CompilerEvidence where

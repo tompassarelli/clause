@@ -286,7 +286,7 @@ Identity has five disjoint provenance cases:
 - **source/content** — an ID defined from one independently supplied exact
   content preimage, notably `SourceArtifactId`; and
 - **other derived** — origins, build requests, compiler semantics, revisions,
-  packages, receipt outcomes, observations, and other hashes defined
+  packages, receipt commitments, replay outcomes, observations, and other hashes defined
   from canonical preimages.
 
 This partition is by each declaration's recorded provenance, never by an ID
@@ -329,8 +329,8 @@ reference ambiguity, or collision rejects the transform.
 
 After the case split, `Renameπ` restores every affected canonical order,
 canonically re-encodes the result, transforms and rechecks replay requests,
-receipt outcomes, and derivation conclusions, attaches transformed evidence, and
-recomputes final whole-package identity.
+receipt commitments, replay outcomes, and derivation conclusions, attaches
+transformed evidence, and recomputes final whole-package identity.
 
 An external genesis anchor or actual acceptance judgment is not transferred
 by `Renameπ`; only the generic decode, check, and evaluation mechanism is
@@ -367,7 +367,7 @@ AcceptGenesis(A0, P0, R0, E0, Gc, Ga, I0) :=
   ∧ observe(w0).exactSelectedBytes = exactBytes(P0)
   ∧ observe(w0).selectedByteLength = byteLength(exactBytes(P0))
   ∧ observe(w0).selectedPackageHash = CompilerPackageHash(P0)
-  ∧ CanonicalCLCPv2(P0)
+  ∧ CanonicalCLCPv3(P0)
   ∧ exactBytes(P0.frame01) = exactCoreManifestBytes
   ∧ P0.subject.lineage = Genesis
   ∧ CoreWF(P0.subject)
@@ -447,7 +447,13 @@ Replay(P, CompileRequest) =
 
 CompileReceipt = EvalReceipt(
   formatVersion = 00,
-  expected = Returned(TermValue(Built(S)), Fc, Oc))
+  expectedValueHash =
+    DH("clause/eval-receipt-value/v1",
+       CanonicalKValueBytes(TermValue(Built(S)))),
+  expectedRemainingFuel = Fc,
+  expectedObservationsHash =
+    DH("clause/eval-receipt-observations/v1",
+       CanonicalTermBytes(Oc)))
 
 AdmissionRequest = EvalRequest(
   acceptedPredecessorPackageHash = H,
@@ -464,7 +470,13 @@ Replay(P, AdmissionRequest) =
 
 AdmissionReceipt = EvalReceipt(
   formatVersion = 00,
-  expected = Returned(TermValue(Propose(S)), Fa, Oa))
+  expectedValueHash =
+    DH("clause/eval-receipt-value/v1",
+       CanonicalKValueBytes(TermValue(Propose(S)))),
+  expectedRemainingFuel = Fa,
+  expectedObservationsHash =
+    DH("clause/eval-receipt-observations/v1",
+       CanonicalTermBytes(Oa)))
 
 AcceptSuccessor(P, Q, R, E, I) :=
   AcceptedCompiler(exactBytes(P))
@@ -490,11 +502,13 @@ AcceptSuccessor(P, Q, R, E, I) :=
       Q) = Authorized(exactBytes(Q))
 ```
 
-`Fc`, `Oc`, `Fa`, and `Oa` are the actual outcomes of complete replay.
-The receipts must reproduce them exactly; they never select them. The checker
-constructs the compile request without Frame 03 input, retains `Oc` from that
-verified actual replay, and uses that value—not an independently trusted
-receipt field—to construct the admission argument.
+`Fc`, `Oc`, `Fa`, and `Oa` are the actual outcomes of complete replay. The
+receipts commit to their canonical bytes and exact fuel; they never select or
+carry those outcomes. The checker constructs the compile request without Frame
+03 input, retains `Oc` from that verified actual replay, and uses that
+value—not receipt data—to construct the admission argument. Authorization also
+inspects the actual returned constructor and exact subject bytes independently
+of the commitments.
 
 Both predecessor entrypoints are distinct definitions with the exact
 `[Term] -> Term` signatures frozen by the Core ABI. `R`, `Built`,
@@ -505,13 +519,14 @@ wrong signature or shape, a `Rejected`/`Reject` return, a subject mismatch,
 a changed remaining-fuel value or observation, or an undeclared physical input
 rejects.
 
-Each receipt states only one expected outcome. The separately supplied
-predecessor bytes and acceptance premise are bound through
-`acceptedPredecessorPackageHash`; no receipt recursively embeds `P`, names
-`Q`, contains a trace, or can add an evaluation rule. Complete replay is the
+Each receipt is exactly 73 bytes and states only the two canonical commitments
+and exact remaining fuel. The separately supplied predecessor bytes and
+acceptance premise are bound through `acceptedPredecessorPackageHash`; no
+receipt recursively embeds `P`, names `Q`, carries an outcome or trace, or can
+add an evaluation rule. Complete replay plus actual result inspection is the
 proof-producing check. The package hash in `Q`'s lineage is only a predecessor
-locator; the checker resolves it to already accepted exact `P` and compares
-the complete bytes.
+locator; the checker resolves it to already accepted exact `P` and compares the
+complete bytes.
 
 The generic packager adds exactly `E = Q.evidence` without changing `S`.
 Lean completely replays both requests, checks the final identity's exact bytes

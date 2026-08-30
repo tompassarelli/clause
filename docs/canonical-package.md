@@ -155,7 +155,6 @@ CoreManifest =
   nominalDeclarationTags:Seq<U8>
   compilerEvidenceTags:Seq<U8>
   valueTags:Seq<U8>
-  evalOutcomeTags:Seq<U8>
   decodeVerdictTags:Seq<U8>
   decodeCodeTags:Seq<U8>
   authorizationStageTags:Seq<U8>
@@ -247,7 +246,6 @@ lineageTags = [00, 01]
 nominalDeclarationTags = [00, 01, 02]
 compilerEvidenceTags = [00, 01]
 valueTags = [00, 01]
-evalOutcomeTags = [00]
 decodeVerdictTags = [00, 01]
 decodeCodeTags = [00, 01, 02, 03, 04, 05, 06, 07, 08, 09]
 authorizationStageTags = [40, 41, 42, 43, 44, 45, 46, 47, 48]
@@ -292,11 +290,11 @@ evaluationRules = [
 
 receiptFormatVersion = 00
 
-receiptSignature = "EvalReceipt(formatVersion:ReceiptFormatVersion,expected:Returned(value:KValue,remainingFuel:U64,observations:Term)); ReceiptFormatVersion=00; KValue=00 BytesValue(Blob)|01 TermValue(Term)"
+receiptSignature = "EvalReceipt(formatVersion:ReceiptFormatVersion,expectedValueHash:Hash32,expectedRemainingFuel:U64,expectedObservationsHash:Hash32); ReceiptFormatVersion=00; expectedValueHash=DH(clause/eval-receipt-value/v1,canonical KValue bytes); expectedObservationsHash=DH(clause/eval-receipt-observations/v1,canonical Term bytes); KValue=00 BytesValue(Blob)|01 TermValue(Term)"
 
 contractClauses = [
   "C00: U8=one octet;U32=four-octet unsigned big-endian;U64=eight-octet unsigned big-endian;Blob=U32 length||octets[length];Seq<X>=U32 count||X[count];Frame<X>=U8 tag||U32 payloadLength||X;Id32 and Hash32 are exactly 32 octets;Span=Id32 sourceArtifactId||U64 start||U64 end with start<=end<=source length;record fields concatenate in displayed order;sum variants begin with displayed U8;all arithmetic is checked before cursor change conversion iteration or allocation;every bounded value consumes exactly;no padding trailing bytes or alternate spelling",
-  "C01: Term=00 Atom(kind:Blob,payload:Blob,equality:Blob)|01 Triple(first:Term,second:Term,third:Term); KSort=00 Bytes|01 Term; frameTags,termTags,sortTags,expressionForms,abiForms,premisePolicyTags,lineageTags,nominalDeclarationTags,compilerEvidenceTags,valueTags,evalOutcomeTags,decodeVerdictTags,decodeCodeTags,authorizationStageTags,authorizationCodeTags,staticRules,evaluationRules,receiptFormatVersion and physical profile values above are the complete closed tag sets and signatures",
+  "C01: Term=00 Atom(kind:Blob,payload:Blob,equality:Blob)|01 Triple(first:Term,second:Term,third:Term); KSort=00 Bytes|01 Term; frameTags,termTags,sortTags,expressionForms,abiForms,premisePolicyTags,lineageTags,nominalDeclarationTags,compilerEvidenceTags,valueTags,decodeVerdictTags,decodeCodeTags,authorizationStageTags,authorizationCodeTags,staticRules,evaluationRules,receiptFormatVersion and physical profile values above are the complete closed tag sets and signatures",
   "C02: KTag=clause/core-abi/tag/v1; KBytes=clause/core-abi/bytes/v1; KId32=clause/core-abi/id32/v1; KU64=clause/core-abi/u64/v1; KEq=clause/core/bytes-equal/v1; Tag(t)=Atom(KTag,U8(t),KEq); Bytes(b)=Atom(KBytes,b,KEq); Id(id)=Atom(KId32,id,KEq) iff len(id)=32; Nat64(n)=Atom(KU64,U64(n),KEq); List([])=Tag(00); List(x::xs)=Triple(Tag(01),x,List(xs)); Record(t,xs)=Triple(Tag(t),List(xs),Tag(00)); Core ABI constructors and field counts are exactly abiForms in tag order; wrong Atom kind field count wrapper fixed width list shape or trailing field is invalid",
   "C03: CompilerSubject=lineage,nominalDeclarations,interface,program,buildRequest; lineage=00 Genesis|01 Successor(predecessorLocator:Hash32,changeOccurrenceId:Id32); interface=compile:Id32,admitPropose:Id32; Definition=id:Id32,arguments:Seq<KSort>,result:KSort,body:KExpr; definitions are sorted unique by id",
   "C04: NominalDeclaration=00 Seed(domain,id)|01 RetainedSeed(domain,id,predecessorRevisionId)|02 Allocated(domain,id,changeInput:NominalWireRef,producerInput:NominalWireRef,localSlot:U64); NominalWireRef=domain:Id32||id:Id32; declarations are sorted unique by domain||id and every nominal reference resolves exactly one declaration in its required domain",
@@ -305,16 +303,16 @@ contractClauses = [
   "C07: Delta is the canonical sorted unique definition table; Gamma and runtime environments use index-zero-first Var order; a definition is well formed iff its body has its declared result under its declared argument sorts and all transitive Call and Request references resolve; there is no subsorting, coercion, implicit argument, host value, fallback rule, or package-defined rule",
   "C08: J(expression,environment,fuelBefore,observationsBefore)=>(value,fuelAfter,observationsAfter) is the sole successful evaluation judgment; values are only BytesValue or TermValue; fuel is U64; every rule consumes one unit before premises; zero fuel has no judgment; premises run strictly left-to-right and thread exact fuel and observations; integer overflow, bad value sort, unresolved definition, malformed observation, physical failure, or out-of-fuel has no successful judgment",
   "C09: observationPolicy 00 appends exactly one canonical observation for each successful physical Request and none otherwise; observation indices are 0..n-1; the sole operation is Sha256OpId:[Bytes]->Bytes; SHA-256 is FIPS 180-4 over successive eight-bit message units and returns big-endian H0||H1||H2||H3||H4||H5||H6||H7; every other operation or signature is invalid",
-  "C10: EvalReceipt is receiptSignature above with formatVersion 00 and only expected:EvalOutcome; it contains no request, predecessor package, expression, environment, rule, premise, node, graph, trace, or authority; unknown formatVersion is DecodeRejected(06,formatVersionOffset)",
+  "C10: EvalReceipt is receiptSignature above and exactly 73 bytes: formatVersion 00, expectedValueHash:Hash32, expectedRemainingFuel:U64, expectedObservationsHash:Hash32; it contains no returned value, observations, request, predecessor package, expression, environment, rule, premise, node, graph, trace, or authority; unknown formatVersion is DecodeRejected(06,formatVersionOffset)",
   "C11: EvalRequest is checker-constructed and never encoded; it binds acceptedPredecessorPackageHash=CompilerPackageHash(exact already-accepted predecessor bytes), derived CoreContractId and PhysicalProfileId, exact entrypoint, canonical arguments, and exact nonzero fuel; its expression is Call(entrypoint,map(ValueLiteral,arguments)) under empty environment and Observations([])",
-  "C12: Complete deterministic replay under evaluation rules 30..3e is the only receipt verification; success requires exact equality of returned value, remaining fuel, and canonical observations with receipt.expected; faults have no receipt form; an optional trace is diagnostic only and never admission authority",
+  "C12: Complete deterministic replay under evaluation rules 30..3e is the only receipt verification; success requires DH(clause/eval-receipt-value/v1,canonical actual KValue bytes)=expectedValueHash, actual remaining fuel=expectedRemainingFuel, and DH(clause/eval-receipt-observations/v1,canonical actual Observations Term bytes)=expectedObservationsHash; an unencodable actual value is replay failure and unencodable observations are observation mismatch; faults have no receipt form; an optional trace is diagnostic only and never admission authority",
   "C13: CompilerEvidence=00 GenesisEvidence with no payload|01 SuccessorEvidence(compileReceipt:EvalReceipt,admissionReceipt:EvalReceipt); evidence is never executable compiler meaning and cannot add a Core, evaluation rule, request, trace, or authority",
   "V01: VerifyEvalReceipt first requires receipt formatVersion 00",
   "V02: VerifyEvalReceipt strictly decodes the separately supplied exact predecessor bytes, requires caller-supplied acceptance of those exact bytes, requires request.acceptedPredecessorPackageHash=CompilerPackageHash(exact bytes), requires predecessor Frame01 byte-equal exactCoreManifestBytes, and independently derives CoreContractId and PhysicalProfileId",
   "V03: VerifyEvalReceipt requires both derived IDs equal the checker-constructed request fields, statically checks the predecessor under rules 20..2b, resolves the request entrypoint exactly once, and requires argument sorts equal its signature",
   "V04: VerifyEvalReceipt constructs Call(entrypoint,map(ValueLiteral,arguments)) without receipt input, where only BytesValue maps to BytesLiteral and TermValue maps to TermLiteral",
   "V05: VerifyEvalReceipt completely evaluates that call under empty environment, request fuelLimit, and Observations([]) using only fixed rules 30..3e and the carried physical profile",
-  "V06: VerifyEvalReceipt requires exact equality of the replayed value, remaining fuel, and canonical observations with receipt.expected",
+  "V06: VerifyEvalReceipt canonicalizes and domain-hashes the actual replayed value and Observations Term and requires exact expectedValueHash, expectedRemainingFuel, and expectedObservationsHash equality; it never uses receipt data to construct either replay",
   "V07: success requires every prior step and uses no graph, trace, callback, theorem name, host rule registry, Boolean evaluator, or package rule",
   "D00: StrictDecode returns only Decoded(exactInput,candidate) or DecodeRejected(code,offset); codes in precedence order are 00 WrongMagic,01 UnknownVersion,02 FrameTagOrderOrCount,03 Truncated,04 LengthOrCountOverflow,05 InvalidFixedWidth,06 UnknownSumTag,07 BoundedValueUnderConsumed,08 BoundedValueOverConsumed,09 TrailingBytes; fields are read depth-first in encoded order and equal-offset ties use lower code",
   "D01: StrictDecode handles only closed byte grammar; order, uniqueness, exact manifest equality, reference bounds, ABI meaning, entrypoint signature, identity derivation, lineage/evidence consistency, receipt replay semantics, and profile conformance are authorization checks; malformed bytes never produce Unauthorized",
@@ -324,12 +322,12 @@ contractClauses = [
   "A42: GenesisAnchor rows=[lineage not Genesis->(42,69),supplied E not byte-identical Q.evidence or E not empty GenesisEvidence->(42,6a),ownerAnchor=Missing->(42,6b),ownerAnchor=Supplied(w) and observe(w) is not a self-consistent observation of the complete exact candidate because selectedByteLength!=byteLength(exactSelectedBytes) or selectedPackageHash!=CompilerPackageHash(exactSelectedBytes) or exactSelectedBytes is not octet-for-octet equal exactInput->(42,6c)]; length and hash checks never substitute for the final exact-byte equality or create authority",
   "A43: ExactPredecessor rows=[lineage not Successor->(43,6d),candidate self candidate-basis or candidate-rule authority->(43,6f),supplied predecessor not already accepted including stale revision->(43,6e),locator differs CompilerPackageHash(P)->(43,70),resolved bytes not byte-identical accepted P->(43,71)]",
   "A44: BuildRequest rows=[wrong ABI shape->(44,72),R not byte-identical Q.subject.buildRequest->(44,73),base route or exact base mismatch->(44,74),core ID mismatch->(44,75),profile ID mismatch->(44,76),source order or duplicate->(44,77),source artifact derivation->(44,78),IdentityPlan order uniqueness provenance retention or seed binding->(44,79),request lineage or nominal change occurrence mismatch->(44,7a),declared physical inputs nonempty->(44,7b),on genesis Gc or Ga zero or R.compileFuel!=Gc or R.admissionFuel!=Ga; on successor either R fuel zero->(44,7c)]",
-  "A45: CompileEvaluation rows=[evidence or compile receipt shape->(45,7d),no successful complete replay->(45,80),replayed value differs receipt.expected.value->(45,7e),remaining fuel differs receipt.expected.remainingFuel->(45,7f),replayed result not Built->(45,81),Built bytes differ Q.subject->(45,82),canonical compile observations differ receipt.expected.observations->(45,83)]",
-  "A46: AdmissionEvaluation rows=[admission receipt shape->(46,7d),construct admission request from verified actual compile observations then no successful complete replay->(46,80),replayed value differs receipt.expected.value->(46,7e),remaining fuel differs receipt.expected.remainingFuel->(46,7f),replayed result not Propose->(46,81),Propose bytes differ Q.subject->(46,82),canonical admission observations differ receipt.expected.observations->(46,83)]",
+  "A45: CompileEvaluation rows=[evidence or compile receipt shape->(45,7d),no successful complete replay or actual KValue has no canonical encoding->(45,80),DH(clause/eval-receipt-value/v1,canonical actual KValue bytes) differs expectedValueHash->(45,7e),remaining fuel differs expectedRemainingFuel->(45,7f),actual result not Built->(45,81),Built bytes differ Q.subject->(45,82),canonical actual compile Observations Term has no encoding or its DH(clause/eval-receipt-observations/v1,bytes) differs expectedObservationsHash->(45,83)]",
+  "A46: AdmissionEvaluation rows=[admission receipt shape->(46,7d),construct admission request from verified actual compile observations then no successful complete replay or actual KValue has no canonical encoding->(46,80),DH(clause/eval-receipt-value/v1,canonical actual KValue bytes) differs expectedValueHash->(46,7e),remaining fuel differs expectedRemainingFuel->(46,7f),actual result not Propose->(46,81),Propose bytes differ Q.subject->(46,82),canonical actual admission Observations Term has no encoding or its DH(clause/eval-receipt-observations/v1,bytes) differs expectedObservationsHash->(46,83)]",
   "A47: EvidenceAttachment rows=[E not byte-identical Q.evidence->(47,84),Frame02 differs certified subject->(47,85),attaching E does not reproduce exact Q->(47,86)]",
   "A48: FinalAuthorization rows=[I.exactPackageBytes not byte-identical exactInput or I.packageHash!=DH(clause/compiler-package/v1,I.exactPackageBytes)->(48,87)]",
-  "H00: DH(d,xs)=SHA256(U32(len(d))||ASCII(d)||each(U64(len(x))||x)); CoreContractId=DH(clause/core-contract/v1,exactCoreManifestBytes); PhysicalProfileId=DH(clause/physical-profile/v1,exactPhysicalProfileBytes); CompilerSemanticsId=DH(clause/compiler-semantics/v1,canonical(interface||program)); CompilerRevisionId=DH(clause/compiler-revision/v1,exactCompilerSubjectBytes); CompilerPackageHash=DH(clause/compiler-package/v1,exactWholePackageBytes); SourceArtifactId=DH(clause/source-artifact/v1,exactSourceBytes); BuildRequestId=DH(clause/compiler-build-request/v1,canonicalTermBytes(BuildRequest)); OriginId=DH(clause/origin/v1,canonicalAcyclicOriginNode); hashes never grant compiler authority",
-  "P00: Package bytes are magic CLCP,version 03,Frame(01,CoreManifestV1),Frame(02,CompilerSubject),Frame(03,CompilerEvidence),EOF exactly once in order; Frame03 is excluded from subject and revision identities; successor evidence contains only two trace-free receipts and no predecessor bytes, candidate evidence, or candidate whole-package identity; only exact genesis anchor or separately supplied already-accepted exact predecessor can authorize"
+  "H00: DH(d,xs)=SHA256(U32(len(d))||ASCII(d)||each(U64(len(x))||x)); CoreContractId=DH(clause/core-contract/v1,exactCoreManifestBytes); PhysicalProfileId=DH(clause/physical-profile/v1,exactPhysicalProfileBytes); EvalReceiptValueHash=DH(clause/eval-receipt-value/v1,canonicalKValueBytes); EvalReceiptObservationsHash=DH(clause/eval-receipt-observations/v1,canonicalObservationsTermBytes); CompilerSemanticsId=DH(clause/compiler-semantics/v1,canonical(interface||program)); CompilerRevisionId=DH(clause/compiler-revision/v1,exactCompilerSubjectBytes); CompilerPackageHash=DH(clause/compiler-package/v1,exactWholePackageBytes); SourceArtifactId=DH(clause/source-artifact/v1,exactSourceBytes); BuildRequestId=DH(clause/compiler-build-request/v1,canonicalTermBytes(BuildRequest)); OriginId=DH(clause/origin/v1,canonicalAcyclicOriginNode); hashes never grant compiler authority",
+  "P00: Package bytes are magic CLCP,version 03,Frame(01,CoreManifestV1),Frame(02,CompilerSubject),Frame(03,CompilerEvidence),EOF exactly once in order; Frame03 is excluded from subject and revision identities; successor Frame03 payload is exactly 147 bytes: tag 01 then two ordered 73-byte trace-free receipts; it contains no predecessor bytes, candidate evidence, returned value, observations, or candidate whole-package identity; only exact genesis anchor or separately supplied already-accepted exact predecessor can authorize"
 ]
 
 physicalProfile = {
@@ -704,19 +702,19 @@ accepting request fields from Frame 03.
 | | declared physical inputs is nonempty | `(44,7b)` |
 | | on genesis, either explicit fuel input is zero or differs from its exact request field; on a successor, either request fuel is zero | `(44,7c)` |
 | `45 CompileEvaluation` | successor evidence or compile-receipt shape is wrong | `(45,7d)` |
-| | complete compile replay has no successful outcome | `(45,80)` |
-| | replayed value differs from `compileReceipt.expected.value` | `(45,7e)` |
-| | replayed remaining fuel differs from `compileReceipt.expected.remainingFuel` | `(45,7f)` |
+| | complete compile replay has no successful outcome, or the actual value has no canonical encoding | `(45,80)` |
+| | the domain hash of canonical actual value bytes differs from `compileReceipt.expectedValueHash` | `(45,7e)` |
+| | replayed remaining fuel differs from `compileReceipt.expectedRemainingFuel` | `(45,7f)` |
 | | replayed result is not canonical `Built` | `(45,81)` |
 | | `Built` bytes differ from `exactCompilerSubjectBytes(Q)` | `(45,82)` |
-| | replayed canonical observations differ from `compileReceipt.expected.observations` | `(45,83)` |
+| | canonical actual observations have no encoding, or their domain hash differs from `compileReceipt.expectedObservationsHash` | `(45,83)` |
 | `46 AdmissionEvaluation` | admission-receipt shape is wrong | `(46,7d)` |
-| | the checker constructs `AdmissionRequest` from verified actual compile observations and complete admission replay has no successful outcome | `(46,80)` |
-| | replayed value differs from `admissionReceipt.expected.value` | `(46,7e)` |
-| | replayed remaining fuel differs from `admissionReceipt.expected.remainingFuel` | `(46,7f)` |
+| | the checker constructs `AdmissionRequest` from verified actual compile observations and complete admission replay has no successful outcome, or the actual value has no canonical encoding | `(46,80)` |
+| | the domain hash of canonical actual value bytes differs from `admissionReceipt.expectedValueHash` | `(46,7e)` |
+| | replayed remaining fuel differs from `admissionReceipt.expectedRemainingFuel` | `(46,7f)` |
 | | replayed result is not canonical `Propose` | `(46,81)` |
 | | proposed bytes differ from `exactCompilerSubjectBytes(Q)` | `(46,82)` |
-| | replayed canonical observations differ from `admissionReceipt.expected.observations` | `(46,83)` |
+| | canonical actual observations have no encoding, or their domain hash differs from `admissionReceipt.expectedObservationsHash` | `(46,83)` |
 | `47 EvidenceAttachment` | supplied `E` is not byte-identical `Q.evidence` | `(47,84)` |
 | | Frame 02 differs from the exact subject certified at compile/admission | `(47,85)` |
 | | attaching exact `E` does not reproduce complete exact `Q` | `(47,86)` |
@@ -838,28 +836,27 @@ CompilerEvidence =
 
 EvalReceipt =
   formatVersion:ReceiptFormatVersion
-  expected:EvalOutcome
+  expectedValueHash:Hash32
+  expectedRemainingFuel:U64
+  expectedObservationsHash:Hash32
 
 ReceiptFormatVersion = 00
 
 KValue =
     00 BytesValue(value:Blob)
   | 01 TermValue(value:Term)
-
-EvalOutcome =
-  00 Returned(
-       value:KValue,
-       remainingFuel:U64,
-       observations:Term)
 ```
 
 `GenesisEvidence` has no payload. A successor Frame 03 contains exactly two
-receipts in compile-then-admission order. Each receipt contains only format
-version `00` and the exact expected outcome. It contains no evaluation request,
-predecessor bytes, expression, environment, rule tag, premise, node, graph, or
-trace. Unknown receipt versions reject at the version octet. Optional traces
-may explain or debug a run, but they are outside authorization and cannot
-supply a result, skip replay, or add authority.
+73-byte receipts in compile-then-admission order, so the complete successor
+evidence payload is exactly 147 bytes including its leading `01` tag. A receipt
+contains only format version `00`, canonical value and observation commitments,
+and exact remaining fuel. It contains no returned value, observations,
+evaluation request, predecessor bytes, expression, environment, rule tag,
+premise, node, graph, or trace. Unknown receipt versions reject at the version
+octet. Optional traces and full outcomes may accompany a reproducible corpus,
+but they are outside authorization and cannot supply a result, skip replay, or
+add authority.
 
 The checker constructs this non-wire request for each replay:
 
@@ -898,8 +895,10 @@ algorithm, in order:
 5. completely replay that call under the empty environment, exact request fuel,
    `Observations([])`, fixed evaluation rules `30..3e`, and the carried
    physical profile; and
-6. require exact equality of replayed value, remaining fuel, and canonical
-   observations with `receipt.expected`.
+6. canonically encode the actual value and `Observations` Term, hash them under
+   `clause/eval-receipt-value/v1` and
+   `clause/eval-receipt-observations/v1`, and require those hashes plus actual
+   remaining fuel to equal the three receipt fields.
 
 Success requires every step. There is no graph, trace, callback, theorem name,
 host rule registry, Boolean-evaluator assertion, or package-defined rule.

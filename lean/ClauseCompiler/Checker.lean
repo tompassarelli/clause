@@ -412,6 +412,7 @@ structure Result where
   value : KValue
   fuel : Fuel
   observations : List Term
+deriving DecidableEq, Repr
 
 def result (value : KValue) (fuel : Fuel) (observations : List Term) : Result := {
   value := value
@@ -419,110 +420,460 @@ def result (value : KValue) (fuel : Fuel) (observations : List Term) : Result :=
   observations := observations
 }
 
-def evaluate (budget : Nat) (program : List Definition) (profile : PhysicalProfile)
-    (expression : KExpr) (environment : List KValue) (fuel : Fuel)
-    (observations : List Term) : Option Result :=
-  match budget, fuel with
-  | 0, _ | _, 0 => none
-  | budget + 1, fuel + 1 =>
-    let charged := fuel
-    let rec evaluateSequence (currentFuel : Fuel) (currentObservations : List Term) :
-        KExprSeq → Option (List KValue × Fuel × List Term)
-      | .nil => some ([], currentFuel, currentObservations)
-      | .cons head tail => do
-          let first ← evaluate budget program profile head environment
-            currentFuel currentObservations
-          let (remaining, finalFuel, finalObservations) ←
-            evaluateSequence first.fuel first.observations tail
-          pure (first.value :: remaining, finalFuel, finalObservations)
-    match expression with
-    | .bytesLiteral value => some (result (.bytes value) charged observations)
-    | .termLiteral value => some (result (.term value) charged observations)
-    | .var index => do
-        let value ← nth? environment index
-        pure (result value charged observations)
-    | .makeAtom kind payload equality => do
-        let k ← evaluate budget program profile kind environment charged observations
-        let p ← evaluate budget program profile payload environment k.fuel k.observations
-        let e ← evaluate budget program profile equality environment p.fuel p.observations
-        match k.value, p.value, e.value with
-        | .bytes kb, .bytes pb, .bytes eb =>
-            pure (result (.term (.atom kb pb eb)) e.fuel e.observations)
-        | _, _, _ => none
-    | .makeTriple first second third => do
-        let a ← evaluate budget program profile first environment charged observations
-        let b ← evaluate budget program profile second environment a.fuel a.observations
-        let c ← evaluate budget program profile third environment b.fuel b.observations
-        match a.value, b.value, c.value with
-        | .term av, .term bv, .term cv =>
-            pure (result (.term (.triple av bv cv)) c.fuel c.observations)
-        | _, _, _ => none
-    | .letValue value body => do
-        let result ← evaluate budget program profile value environment charged observations
-        evaluate budget program profile body (result.value :: environment)
-          result.fuel result.observations
-    | .caseTerm scrutinee atomBody tripleBody => do
-        let selected ← evaluate budget program profile scrutinee environment charged observations
-        match selected.value with
-        | .term (.atom kind payload equality) =>
-            evaluate budget program profile atomBody
-              ([KValue.bytes kind, KValue.bytes payload, KValue.bytes equality] ++ environment)
-              selected.fuel selected.observations
-        | .term (.triple first second third) =>
-            evaluate budget program profile tripleBody
-              ([KValue.term first, KValue.term second, KValue.term third] ++ environment)
-              selected.fuel selected.observations
-        | _ => none
-    | .caseBytes scrutinee emptyBody consBody => do
-        let selected ← evaluate budget program profile scrutinee environment charged observations
-        match selected.value with
-        | .bytes [] =>
-            evaluate budget program profile emptyBody environment
-              selected.fuel selected.observations
-        | .bytes (head :: tail) =>
-            evaluate budget program profile consBody
-              ([KValue.bytes [head], KValue.bytes tail] ++ environment)
-              selected.fuel selected.observations
-        | _ => none
-    | .concatBytes parts => do
-        let (values, finalFuel, finalObservations) ←
-          evaluateSequence charged observations parts
-        let rec concatenate : List KValue → Option Bytes
-          | [] => some []
-          | .bytes bytes :: tail => do pure (bytes ++ (← concatenate tail))
-          | _ => none
-        pure (result (.bytes (← concatenate values)) finalFuel finalObservations)
-    | .caseBytesEqual left right equalBody unequalBody => do
-        let a ← evaluate budget program profile left environment charged observations
-        let b ← evaluate budget program profile right environment a.fuel a.observations
-        match a.value, b.value with
-        | KValue.bytes av, KValue.bytes bv =>
-            evaluate budget program profile
-              (if av = bv then equalBody else unequalBody)
-              environment b.fuel b.observations
-        | _, _ => none
-    | .call definitionId arguments => do
-        let definition ← Static.findDefinition definitionId program
-        let (values, finalFuel, finalObservations) ←
-          evaluateSequence charged observations arguments
-        evaluate budget program profile definition.body values finalFuel finalObservations
-    | .request operationId arguments => do
-        let operation ← Static.findOperation operationId profile.operations
-        if operation.operationId ≠ Fixed.sha256OperationId ||
-            operation.arguments ≠ [.bytes] || operation.result ≠ .bytes then none else
-        let (values, finalFuel, finalObservations) ←
-          evaluateSequence charged observations arguments
-        match values with
-        | [.bytes input] =>
-            let digest := SHA256.hash input
-            let item := ABI.observation finalObservations.length operationId
-              [.bytes input] (.bytes digest)
-            pure (result (.bytes digest) finalFuel (finalObservations ++ [item]))
-        | _ => none
+inductive SequencePurpose where
+  | concatenate
+  | callBody (body : KExpr)
+  | requestDigest (operationId : Id32)
+
+inductive Continuation where
+  | atomPayload (payload equality : KExpr) (environment : List KValue)
+  | atomEquality (kind : Bytes) (equality : KExpr) (environment : List KValue)
+  | atomFinish (kind payload : Bytes)
+  | tripleSecond (second third : KExpr) (environment : List KValue)
+  | tripleThird (first : Term) (third : KExpr) (environment : List KValue)
+  | tripleFinish (first second : Term)
+  | letBody (body : KExpr) (environment : List KValue)
+  | caseTerm (atomBody tripleBody : KExpr) (environment : List KValue)
+  | caseBytes (emptyBody consBody : KExpr) (environment : List KValue)
+  | equalRight (right equalBody unequalBody : KExpr) (environment : List KValue)
+  | equalBranch (left : Bytes) (equalBody unequalBody : KExpr)
+      (environment : List KValue)
+  | sequence (purpose : SequencePurpose) (remaining : KExprSeq)
+      (environment : List KValue) (valuesReversed : List KValue)
+
+inductive Control where
+  | evaluate (expression : KExpr) (environment : List KValue)
+  | returned (value : KValue)
+
+structure Machine where
+  control : Control
+  continuations : List Continuation
+  fuel : Fuel
+  observations : List Term
+
+def evaluating (expression : KExpr) (environment : List KValue)
+    (continuations : List Continuation) (fuel : Fuel)
+    (observations : List Term) : Machine := {
+  control := .evaluate expression environment
+  continuations := continuations
+  fuel := fuel
+  observations := observations
+}
+
+def returning (value : KValue) (continuations : List Continuation)
+    (fuel : Fuel) (observations : List Term) : Machine := {
+  control := .returned value
+  continuations := continuations
+  fuel := fuel
+  observations := observations
+}
+
+def concatenate (values : List KValue) : Option Bytes :=
+  let rec loop : List KValue → Bytes → Option Bytes
+    | [], reversed => some reversed.reverse
+    | .bytes bytes :: tail, reversed =>
+        loop tail (bytes.reverse ++ reversed)
+    | _ :: _, _ => none
+  loop values []
+
+def finishSequence (purpose : SequencePurpose) (valuesReversed : List KValue)
+    (continuations : List Continuation) (fuel : Fuel)
+    (observations : List Term) : Option Machine :=
+  let values := valuesReversed.reverse
+  match purpose with
+  | .concatenate => do
+      pure (returning (.bytes (← concatenate values))
+        continuations fuel observations)
+  | .callBody body =>
+      pure (evaluating body values continuations fuel observations)
+  | .requestDigest operationId =>
+      match values with
+      | [.bytes input] =>
+          let digest := SHA256.hash input
+          let item := ABI.observation observations.length operationId
+            [.bytes input] (.bytes digest)
+          pure (returning (.bytes digest) continuations fuel
+            (observations ++ [item]))
+      | _ => none
+
+def step (program : List Definition) (profile : PhysicalProfile)
+    (machine : Machine) : Option (Sum Result Machine) :=
+  match machine.control with
+  | .evaluate expression environment =>
+      match machine.fuel with
+      | 0 => none
+      | charged + 1 =>
+        let continuations := machine.continuations
+        let observations := machine.observations
+        match expression with
+        | .bytesLiteral value =>
+            some (.inr (returning (.bytes value) continuations charged observations))
+        | .termLiteral value =>
+            some (.inr (returning (.term value) continuations charged observations))
+        | .var index => do
+            let value ← nth? environment index
+            pure (.inr (returning value continuations charged observations))
+        | .makeAtom kind payload equality =>
+            some (.inr (evaluating kind environment
+              (.atomPayload payload equality environment :: continuations)
+              charged observations))
+        | .makeTriple first second third =>
+            some (.inr (evaluating first environment
+              (.tripleSecond second third environment :: continuations)
+              charged observations))
+        | .letValue value body =>
+            some (.inr (evaluating value environment
+              (.letBody body environment :: continuations)
+              charged observations))
+        | .caseTerm scrutinee atomBody tripleBody =>
+            some (.inr (evaluating scrutinee environment
+              (.caseTerm atomBody tripleBody environment :: continuations)
+              charged observations))
+        | .caseBytes scrutinee emptyBody consBody =>
+            some (.inr (evaluating scrutinee environment
+              (.caseBytes emptyBody consBody environment :: continuations)
+              charged observations))
+        | .concatBytes parts =>
+            match parts with
+            | .nil =>
+                some (.inr (returning (.bytes []) continuations charged observations))
+            | .cons head tail =>
+                some (.inr (evaluating head environment
+                  (.sequence .concatenate tail environment [] :: continuations)
+                  charged observations))
+        | .caseBytesEqual left right equalBody unequalBody =>
+            some (.inr (evaluating left environment
+              (.equalRight right equalBody unequalBody environment :: continuations)
+              charged observations))
+        | .call definitionId arguments => do
+            let definition ← Static.findDefinition definitionId program
+            match arguments with
+            | .nil =>
+                pure (.inr (evaluating definition.body [] continuations
+                  charged observations))
+            | .cons head tail =>
+                pure (.inr (evaluating head environment
+                  (.sequence (.callBody definition.body) tail environment [] ::
+                    continuations)
+                  charged observations))
+        | .request operationId arguments => do
+            let operation ← Static.findOperation operationId profile.operations
+            if operation.operationId ≠ Fixed.sha256OperationId ||
+                operation.arguments ≠ [.bytes] || operation.result ≠ .bytes then none
+            else
+              match arguments with
+              | .nil => none
+              | .cons head tail =>
+                  pure (.inr (evaluating head environment
+                    (.sequence (.requestDigest operationId) tail environment [] ::
+                      continuations)
+                    charged observations))
+  | .returned value =>
+      match machine.continuations with
+      | [] => some (.inl (result value machine.fuel machine.observations))
+      | continuation :: remaining =>
+          match continuation with
+          | .atomPayload payload equality environment =>
+              match value with
+              | .bytes kind =>
+                  some (.inr (evaluating payload environment
+                    (.atomEquality kind equality environment :: remaining)
+                    machine.fuel machine.observations))
+              | _ => none
+          | .atomEquality kind equality environment =>
+              match value with
+              | .bytes payload =>
+                  some (.inr (evaluating equality environment
+                    (.atomFinish kind payload :: remaining)
+                    machine.fuel machine.observations))
+              | _ => none
+          | .atomFinish kind payload =>
+              match value with
+              | .bytes equality =>
+                  some (.inr (returning (.term (.atom kind payload equality))
+                    remaining machine.fuel machine.observations))
+              | _ => none
+          | .tripleSecond second third environment =>
+              match value with
+              | .term first =>
+                  some (.inr (evaluating second environment
+                    (.tripleThird first third environment :: remaining)
+                    machine.fuel machine.observations))
+              | _ => none
+          | .tripleThird first third environment =>
+              match value with
+              | .term second =>
+                  some (.inr (evaluating third environment
+                    (.tripleFinish first second :: remaining)
+                    machine.fuel machine.observations))
+              | _ => none
+          | .tripleFinish first second =>
+              match value with
+              | .term third =>
+                  some (.inr (returning (.term (.triple first second third))
+                    remaining machine.fuel machine.observations))
+              | _ => none
+          | .letBody body environment =>
+              some (.inr (evaluating body (value :: environment) remaining
+                machine.fuel machine.observations))
+          | .caseTerm atomBody tripleBody environment =>
+              match value with
+              | .term (.atom kind payload equality) =>
+                  some (.inr (evaluating atomBody
+                    ([.bytes kind, .bytes payload, .bytes equality] ++ environment)
+                    remaining machine.fuel machine.observations))
+              | .term (.triple first second third) =>
+                  some (.inr (evaluating tripleBody
+                    ([.term first, .term second, .term third] ++ environment)
+                    remaining machine.fuel machine.observations))
+              | _ => none
+          | .caseBytes emptyBody consBody environment =>
+              match value with
+              | .bytes [] =>
+                  some (.inr (evaluating emptyBody environment remaining
+                    machine.fuel machine.observations))
+              | .bytes (head :: tail) =>
+                  some (.inr (evaluating consBody
+                    ([.bytes [head], .bytes tail] ++ environment)
+                    remaining machine.fuel machine.observations))
+              | _ => none
+          | .equalRight right equalBody unequalBody environment =>
+              match value with
+              | .bytes left =>
+                  some (.inr (evaluating right environment
+                    (.equalBranch left equalBody unequalBody environment :: remaining)
+                    machine.fuel machine.observations))
+              | _ => none
+          | .equalBranch left equalBody unequalBody environment =>
+              match value with
+              | .bytes right =>
+                  some (.inr (evaluating
+                    (if left = right then equalBody else unequalBody)
+                    environment remaining machine.fuel machine.observations))
+              | _ => none
+          | .sequence purpose remainingExpressions sequenceEnvironment values =>
+              let values := value :: values
+              match remainingExpressions with
+              | .nil => do
+                  let next ← finishSequence purpose values remaining
+                    machine.fuel machine.observations
+                  pure (.inr next)
+              | .cons head tail =>
+                  some (.inr (evaluating head sequenceEnvironment
+                    (.sequence purpose tail sequenceEnvironment values :: remaining)
+                    machine.fuel machine.observations))
+
+def loop (program : List Definition) (profile : PhysicalProfile) :
+    Nat → Machine → Option Result
+  | 0, _ => none
+  | budget + 1, machine =>
+      match step program profile machine with
+      | none => none
+      | some (.inl complete) => some complete
+      | some (.inr next) => loop program profile budget next
+
+def transitionBudget (fuel : Fuel) : Nat := fuel * 2 + 1
+
 def run (program : List Definition) (profile : PhysicalProfile)
     (expression : KExpr) (environment : List KValue) (fuel : Fuel)
     (observations : List Term) : Option Result :=
-  evaluate (fuel + 1) program profile expression environment fuel observations
+  loop program profile (transitionBudget fuel)
+    (evaluating expression environment [] fuel observations)
+
+namespace Regression
+
+def atomA : Term := .atom [0xa1] [0xa2] [0xa3]
+def atomB : Term := .atom [0xb1] [0xb2] [0xb3]
+def atomC : Term := .atom [0xc1] [0xc2] [0xc3]
+
+def runClosed (expression : KExpr) (fuel : Fuel) : Option Result :=
+  run [] Fixed.physicalProfile expression [] fuel []
+
+theorem rule30BytesLiteral :
+    runClosed (.bytesLiteral [0x30]) 1 =
+      some (result (.bytes [0x30]) 0 []) := by
+  decide
+
+theorem rule31TermLiteral :
+    runClosed (.termLiteral atomA) 1 =
+      some (result (.term atomA) 0 []) := by
+  decide
+
+theorem rule32Var :
+    run [] Fixed.physicalProfile (.var 1)
+      [.bytes [0x00], .bytes [0x32]] 1 [] =
+      some (result (.bytes [0x32]) 0 []) := by
+  decide
+
+theorem rule33MakeAtom :
+    runClosed (.makeAtom (.bytesLiteral [0x01]) (.bytesLiteral [0x02])
+      (.bytesLiteral [0x03])) 4 =
+      some (result (.term (.atom [0x01] [0x02] [0x03])) 0 []) := by
+  decide
+
+theorem rule34MakeTriple :
+    runClosed (.makeTriple (.termLiteral atomA) (.termLiteral atomB)
+      (.termLiteral atomC)) 4 =
+      some (result (.term (.triple atomA atomB atomC)) 0 []) := by
+  decide
+
+theorem rule35Let :
+    runClosed (.letValue (.bytesLiteral [0x35]) (.var 0)) 3 =
+      some (result (.bytes [0x35]) 0 []) := by
+  decide
+
+theorem rule36CaseTermAtom :
+    runClosed (.caseTerm (.termLiteral atomA) (.var 1)
+      (.termLiteral atomB)) 3 =
+      some (result (.bytes [0xa2]) 0 []) := by
+  decide
+
+theorem rule37CaseTermTriple :
+    runClosed (.caseTerm (.termLiteral (.triple atomA atomB atomC))
+      (.termLiteral atomA) (.var 2)) 3 =
+      some (result (.term atomC) 0 []) := by
+  decide
+
+theorem rule38CaseBytesEmpty :
+    runClosed (.caseBytes (.bytesLiteral []) (.bytesLiteral [0x38])
+      (.bytesLiteral [0xff])) 3 =
+      some (result (.bytes [0x38]) 0 []) := by
+  decide
+
+theorem rule39CaseBytesCons :
+    runClosed (.caseBytes (.bytesLiteral [0x39, 0x3a])
+      (.bytesLiteral []) (.concatBytes (KExprSeq.ofList [.var 0, .var 1]))) 5 =
+      some (result (.bytes [0x39, 0x3a]) 0 []) := by
+  decide
+
+theorem rule3aConcatLeftToRight :
+    runClosed (.concatBytes (KExprSeq.ofList [
+      .bytesLiteral [0x3a], .bytesLiteral [0x00]])) 3 =
+      some (result (.bytes [0x3a, 0x00]) 0 []) := by
+  decide
+
+theorem rule3bEqualBranch :
+    runClosed (.caseBytesEqual (.bytesLiteral [0x3b])
+      (.bytesLiteral [0x3b]) (.bytesLiteral [0x01])
+      (.bytesLiteral [0x00])) 4 =
+      some (result (.bytes [0x01]) 0 []) := by
+  decide
+
+theorem rule3cUnequalBranch :
+    runClosed (.caseBytesEqual (.bytesLiteral [0x3c])
+      (.bytesLiteral [0xff]) (.bytesLiteral [0x00])
+      (.bytesLiteral [0x01])) 4 =
+      some (result (.bytes [0x01]) 0 []) := by
+  decide
+
+def rule3dId : Id32 := List.replicate 31 0x00 ++ [0x3d]
+
+def rule3dProgram : List Definition := [{
+  id := rule3dId
+  arguments := [.bytes, .bytes]
+  result := .bytes
+  body := .concatBytes (KExprSeq.ofList [.var 0, .var 1])
+}]
+
+theorem rule3dCallArgumentsLeftToRightAndIsolated :
+    run rule3dProgram Fixed.physicalProfile
+      (.call rule3dId (KExprSeq.ofList [
+        .bytesLiteral [0x3d], .bytesLiteral [0x00]]))
+      [.bytes [0xff]] 6 [] =
+      some (result (.bytes [0x3d, 0x00]) 0 []) := by
+  decide
+
+def rule3ePriorObservation : Term := .atom [0x3e] [] []
+def rule3eInput : Bytes := [0x61, 0x62, 0x63]
+def rule3eDigest : Bytes := SHA256.hash rule3eInput
+
+def rule3eMachine0 : Machine :=
+  evaluating (.request Fixed.sha256OperationId
+    (KExprSeq.ofList [.bytesLiteral rule3eInput])) [] [] 2
+    [rule3ePriorObservation]
+
+def rule3eMachine1 : Machine :=
+  evaluating (.bytesLiteral rule3eInput) []
+    [.sequence (.requestDigest Fixed.sha256OperationId) .nil [] []] 1
+    [rule3ePriorObservation]
+
+def rule3eMachine2 : Machine :=
+  returning (.bytes rule3eInput)
+    [.sequence (.requestDigest Fixed.sha256OperationId) .nil [] []] 0
+    [rule3ePriorObservation]
+
+def rule3eMachine3 : Machine :=
+  returning (.bytes rule3eDigest) [] 0 [rule3ePriorObservation,
+    ABI.observation 1 Fixed.sha256OperationId
+      [.bytes rule3eInput] (.bytes rule3eDigest)]
+
+theorem fixedSha256OperationLookup :
+    Static.findOperation Fixed.sha256OperationId
+      Fixed.physicalProfile.operations = some {
+        operationId := Fixed.sha256OperationId
+        arguments := [.bytes]
+        result := .bytes
+      } := by
+  simp [Fixed.physicalProfile, Static.findOperation]
+
+theorem rule3eStep0 :
+    step [] Fixed.physicalProfile rule3eMachine0 = some (.inr rule3eMachine1) := by
+  simp [rule3eMachine0, rule3eMachine1, step, evaluating,
+    fixedSha256OperationLookup, KExprSeq.ofList]
+
+theorem rule3eStep1 :
+    step [] Fixed.physicalProfile rule3eMachine1 = some (.inr rule3eMachine2) := by
+  rfl
+
+theorem rule3eStep2 :
+    step [] Fixed.physicalProfile rule3eMachine2 = some (.inr rule3eMachine3) := by
+  simp [rule3eMachine2, rule3eMachine3, step, returning,
+    finishSequence, rule3eDigest]
+
+theorem rule3eStep3 :
+    step [] Fixed.physicalProfile rule3eMachine3 = some (.inl
+      (result (.bytes rule3eDigest) 0 [rule3ePriorObservation,
+        ABI.observation 1 Fixed.sha256OperationId
+          [.bytes rule3eInput] (.bytes rule3eDigest)])) := by
+  rfl
+
+theorem rule3eRequestAppendsObservation :
+    run [] Fixed.physicalProfile
+      (.request Fixed.sha256OperationId
+        (KExprSeq.ofList [.bytesLiteral rule3eInput])) [] 2
+      [rule3ePriorObservation] =
+      some (result (.bytes rule3eDigest) 0 [rule3ePriorObservation,
+        ABI.observation 1 Fixed.sha256OperationId
+          [.bytes rule3eInput] (.bytes rule3eDigest)]) := by
+  change loop [] Fixed.physicalProfile 5 rule3eMachine0 = _
+  simp only [loop, rule3eStep0, rule3eStep1, rule3eStep2, rule3eStep3]
+
+def recursiveBytesId : Id32 := List.replicate 31 0x00 ++ [0x90]
+
+def recursiveBytesProgram : List Definition := [{
+  id := recursiveBytesId
+  arguments := [.bytes]
+  result := .bytes
+  body := .caseBytes (.var 0)
+    (.bytesLiteral [])
+    (.call recursiveBytesId (.cons (.var 1) .nil))
+}]
+
+def recursiveBytesExpression (size : Nat) : KExpr :=
+  .call recursiveBytesId
+    (.cons (.bytesLiteral (List.replicate size 0x61)) .nil)
+
+def recursiveBytesFuel (size : Nat) : Fuel := size * 4 + 5
+
+def recursiveBytesRun (size : Nat) : Option Result :=
+  run recursiveBytesProgram Fixed.physicalProfile
+    (recursiveBytesExpression size) [] (recursiveBytesFuel size) []
+
+theorem recursiveBytesThree :
+    recursiveBytesRun 3 = some (result (.bytes []) 0 []) := by
+  decide
+
+end Regression
 
 end Evaluator
 
@@ -562,11 +913,14 @@ def run (predecessor : DecodedPackage) (request : EvalRequest) :
     predecessor.package.manifest.physicalProfile
     (requestExpression request) [] request.fuelLimit []
 
-def outcome (result : Evaluator.Result) : EvalOutcome := {
-  value := result.value
-  remainingFuel := result.fuel
-  observations := ABI.observations result.observations
-}
+def matchesReceipt (result : Evaluator.Result) (receipt : EvalReceipt) : Bool :=
+  match evalReceiptValueHash result.value,
+      evalReceiptObservationsHash (ABI.observations result.observations) with
+  | some valueHash, some observationsHash =>
+      valueHash = receipt.expectedValueHash &&
+      result.fuel = receipt.expectedRemainingFuel &&
+      observationsHash = receipt.expectedObservationsHash
+  | _, _ => false
 
 def verifyEvalReceipt (exactAcceptedPredecessor : Bytes)
     (_accepted : AcceptedExact exactAcceptedPredecessor)
@@ -578,7 +932,7 @@ def verifyEvalReceipt (exactAcceptedPredecessor : Bytes)
       requestWellFormed exactAcceptedPredecessor predecessor request &&
       match run predecessor request with
       | none => false
-      | some result => outcome result = receipt.expected
+      | some result => matchesReceipt result receipt
 
 theorem nonconformingDefinitionsRejectReceipt
     (exactAcceptedPredecessor : Bytes)
@@ -677,11 +1031,10 @@ def profileEscapeRequest : EvalRequest := {
 
 def profileEscapeReceipt : EvalReceipt := {
   formatVersion := 0x00
-  expected := {
-    value := .term profileEscapeTerm
-    remainingFuel := 0
-    observations := ABI.emptyObservations
-  }
+  expectedValueHash := (evalReceiptValueHash (.term profileEscapeTerm)).getD []
+  expectedRemainingFuel := 0
+  expectedObservationsHash :=
+    (evalReceiptObservationsHash ABI.emptyObservations).getD []
 }
 
 theorem profileEscapeProgramWellTyped :

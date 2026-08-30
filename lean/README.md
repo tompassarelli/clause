@@ -85,15 +85,17 @@ authority and relative derivability are not semantic truth.
 `ClauseCompiler` implements the construct-blind CLCP v3 compiler carrier. Its
 strict decoder accepts only version `03`; Frame 03 successor evidence contains
 exactly a compile receipt and admission receipt. Each `EvalReceipt` contains
-only format version `00` and one expected `EvalOutcome`.
+only format version `00`, a canonical value commitment, exact remaining fuel,
+and a canonical observation commitment. Each receipt is exactly 73 bytes.
 
 Evaluation requests are never encoded. The checker constructs the predecessor
 package hash, carried core/profile IDs, entrypoint, arguments, and fuel from the
 separately supplied exact accepted predecessor and candidate build request. It
-then completely evaluates the call and compares returned value, remaining fuel,
-and canonical observations exactly. Admission uses the verified actual compile
-observations. No node graph, trace, callback, or receipt-produced assertion can
-grant authority.
+then completely evaluates the call, domain-hashes the canonical actual value
+and observations, compares both commitments and remaining fuel, and separately
+inspects the actual `Built` or `Propose` value. Admission uses the verified
+actual compile observations. No node graph, trace, callback, or
+receipt-produced assertion can grant authority.
 
 ## Checks
 

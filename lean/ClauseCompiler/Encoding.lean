@@ -133,7 +133,6 @@ def manifest (value : CoreManifest) : Option Bytes := do
     seq (fun x => some [x]) value.nominalDeclarationTags,
     seq (fun x => some [x]) value.compilerEvidenceTags,
     seq (fun x => some [x]) value.valueTags,
-    seq (fun x => some [x]) value.evalOutcomeTags,
     seq (fun x => some [x]) value.decodeVerdictTags,
     seq (fun x => some [x]) value.decodeCodeTags,
     seq (fun x => some [x]) value.authorizationStageTags,
@@ -173,17 +172,35 @@ def kvalue : KValue → Option Bytes
   | .bytes value => (0x00 :: ·) <$> blob value
   | .term value => (0x01 :: ·) <$> term value
 
-def evalOutcome (value : EvalOutcome) : Option Bytes := do
-  pure (0x00 :: (← many [kvalue value.value, u64 value.remainingFuel,
-    term value.observations]))
-
 def evalReceipt (value : EvalReceipt) : Option Bytes := do
-  pure (value.formatVersion :: (← evalOutcome value.expected))
+  pure (value.formatVersion :: (← many [fixed32 value.expectedValueHash,
+    u64 value.expectedRemainingFuel, fixed32 value.expectedObservationsHash]))
 
 def evidence : CompilerEvidence → Option Bytes
   | .genesis => some [0x00]
   | .successor compile admission => do
       pure (0x01 :: (← many [evalReceipt compile, evalReceipt admission]))
+
+namespace Regression
+
+def compactReceipt : EvalReceipt := {
+  formatVersion := 0x00
+  expectedValueHash := List.replicate 32 0x11
+  expectedRemainingFuel := 7
+  expectedObservationsHash := List.replicate 32 0x22
+}
+
+theorem compactReceiptIs73Bytes :
+    (evalReceipt compactReceipt).map List.length = some 73 := by
+  decide
+
+theorem successorEvidenceIs147Bytes :
+    (evidence (.successor compactReceipt compactReceipt)).map List.length =
+      some 147 := by
+  set_option maxRecDepth 100000 in
+    decide
+
+end Regression
 
 def package (value : CompilerPackage) : Option Bytes := do
   let manifestPayload ← manifest value.manifest
@@ -324,6 +341,13 @@ def domainHash (domain : String) (components : List Bytes) : Hash32 :=
     (Encoding.u64 component.length).getD [] ++ component)
   SHA256.hash (domainPrefix ++ fields)
 
+def evalReceiptValueHash (value : KValue) : Option Hash32 := do
+  pure (domainHash "clause/eval-receipt-value/v1" [← Encoding.kvalue value])
+
+def evalReceiptObservationsHash (observations : Term) : Option Hash32 := do
+  pure (domainHash "clause/eval-receipt-observations/v1"
+    [← Encoding.term observations])
+
 namespace Fixed
 
 def named (tag : UInt8) (signature : String) : NamedSignature :=
@@ -413,11 +437,11 @@ def evaluationRules : List RuleSignature := [
   rule 0x3d 0x07 "after charge resolve exactly d, evaluate args left-to-right, then evaluate its body under exactly the argument values with no caller environment; return the body outcome",
   rule 0x3e 0x01 "after charge evaluate the sole argument as BytesValue(input), compute FIPS-180-4 SHA-256(input), return BytesValue(H0||H1||H2||H3||H4||H5||H6||H7), and append exactly Observation(len(o),Sha256OpId,[Value(Bytes,input)],Value(Bytes,digest))"]
 
-def receiptSignature : Bytes := ascii "EvalReceipt(formatVersion:ReceiptFormatVersion,expected:Returned(value:KValue,remainingFuel:U64,observations:Term)); ReceiptFormatVersion=00; KValue=00 BytesValue(Blob)|01 TermValue(Term)"
+def receiptSignature : Bytes := ascii "EvalReceipt(formatVersion:ReceiptFormatVersion,expectedValueHash:Hash32,expectedRemainingFuel:U64,expectedObservationsHash:Hash32); ReceiptFormatVersion=00; expectedValueHash=DH(clause/eval-receipt-value/v1,canonical KValue bytes); expectedObservationsHash=DH(clause/eval-receipt-observations/v1,canonical Term bytes); KValue=00 BytesValue(Blob)|01 TermValue(Term)"
 
 def contractClauses : List Bytes := [
   ascii "C00: U8=one octet;U32=four-octet unsigned big-endian;U64=eight-octet unsigned big-endian;Blob=U32 length||octets[length];Seq<X>=U32 count||X[count];Frame<X>=U8 tag||U32 payloadLength||X;Id32 and Hash32 are exactly 32 octets;Span=Id32 sourceArtifactId||U64 start||U64 end with start<=end<=source length;record fields concatenate in displayed order;sum variants begin with displayed U8;all arithmetic is checked before cursor change conversion iteration or allocation;every bounded value consumes exactly;no padding trailing bytes or alternate spelling",
-  ascii "C01: Term=00 Atom(kind:Blob,payload:Blob,equality:Blob)|01 Triple(first:Term,second:Term,third:Term); KSort=00 Bytes|01 Term; frameTags,termTags,sortTags,expressionForms,abiForms,premisePolicyTags,lineageTags,nominalDeclarationTags,compilerEvidenceTags,valueTags,evalOutcomeTags,decodeVerdictTags,decodeCodeTags,authorizationStageTags,authorizationCodeTags,staticRules,evaluationRules,receiptFormatVersion and physical profile values above are the complete closed tag sets and signatures",
+  ascii "C01: Term=00 Atom(kind:Blob,payload:Blob,equality:Blob)|01 Triple(first:Term,second:Term,third:Term); KSort=00 Bytes|01 Term; frameTags,termTags,sortTags,expressionForms,abiForms,premisePolicyTags,lineageTags,nominalDeclarationTags,compilerEvidenceTags,valueTags,decodeVerdictTags,decodeCodeTags,authorizationStageTags,authorizationCodeTags,staticRules,evaluationRules,receiptFormatVersion and physical profile values above are the complete closed tag sets and signatures",
   ascii "C02: KTag=clause/core-abi/tag/v1; KBytes=clause/core-abi/bytes/v1; KId32=clause/core-abi/id32/v1; KU64=clause/core-abi/u64/v1; KEq=clause/core/bytes-equal/v1; Tag(t)=Atom(KTag,U8(t),KEq); Bytes(b)=Atom(KBytes,b,KEq); Id(id)=Atom(KId32,id,KEq) iff len(id)=32; Nat64(n)=Atom(KU64,U64(n),KEq); List([])=Tag(00); List(x::xs)=Triple(Tag(01),x,List(xs)); Record(t,xs)=Triple(Tag(t),List(xs),Tag(00)); Core ABI constructors and field counts are exactly abiForms in tag order; wrong Atom kind field count wrapper fixed width list shape or trailing field is invalid",
   ascii "C03: CompilerSubject=lineage,nominalDeclarations,interface,program,buildRequest; lineage=00 Genesis|01 Successor(predecessorLocator:Hash32,changeOccurrenceId:Id32); interface=compile:Id32,admitPropose:Id32; Definition=id:Id32,arguments:Seq<KSort>,result:KSort,body:KExpr; definitions are sorted unique by id",
   ascii "C04: NominalDeclaration=00 Seed(domain,id)|01 RetainedSeed(domain,id,predecessorRevisionId)|02 Allocated(domain,id,changeInput:NominalWireRef,producerInput:NominalWireRef,localSlot:U64); NominalWireRef=domain:Id32||id:Id32; declarations are sorted unique by domain||id and every nominal reference resolves exactly one declaration in its required domain",
@@ -426,16 +450,16 @@ def contractClauses : List Bytes := [
   ascii "C07: Delta is the canonical sorted unique definition table; Gamma and runtime environments use index-zero-first Var order; a definition is well formed iff its body has its declared result under its declared argument sorts and all transitive Call and Request references resolve; there is no subsorting, coercion, implicit argument, host value, fallback rule, or package-defined rule",
   ascii "C08: J(expression,environment,fuelBefore,observationsBefore)=>(value,fuelAfter,observationsAfter) is the sole successful evaluation judgment; values are only BytesValue or TermValue; fuel is U64; every rule consumes one unit before premises; zero fuel has no judgment; premises run strictly left-to-right and thread exact fuel and observations; integer overflow, bad value sort, unresolved definition, malformed observation, physical failure, or out-of-fuel has no successful judgment",
   ascii "C09: observationPolicy 00 appends exactly one canonical observation for each successful physical Request and none otherwise; observation indices are 0..n-1; the sole operation is Sha256OpId:[Bytes]->Bytes; SHA-256 is FIPS 180-4 over successive eight-bit message units and returns big-endian H0||H1||H2||H3||H4||H5||H6||H7; every other operation or signature is invalid",
-  ascii "C10: EvalReceipt is receiptSignature above with formatVersion 00 and only expected:EvalOutcome; it contains no request, predecessor package, expression, environment, rule, premise, node, graph, trace, or authority; unknown formatVersion is DecodeRejected(06,formatVersionOffset)",
+  ascii "C10: EvalReceipt is receiptSignature above and exactly 73 bytes: formatVersion 00, expectedValueHash:Hash32, expectedRemainingFuel:U64, expectedObservationsHash:Hash32; it contains no returned value, observations, request, predecessor package, expression, environment, rule, premise, node, graph, trace, or authority; unknown formatVersion is DecodeRejected(06,formatVersionOffset)",
   ascii "C11: EvalRequest is checker-constructed and never encoded; it binds acceptedPredecessorPackageHash=CompilerPackageHash(exact already-accepted predecessor bytes), derived CoreContractId and PhysicalProfileId, exact entrypoint, canonical arguments, and exact nonzero fuel; its expression is Call(entrypoint,map(ValueLiteral,arguments)) under empty environment and Observations([])",
-  ascii "C12: Complete deterministic replay under evaluation rules 30..3e is the only receipt verification; success requires exact equality of returned value, remaining fuel, and canonical observations with receipt.expected; faults have no receipt form; an optional trace is diagnostic only and never admission authority",
+  ascii "C12: Complete deterministic replay under evaluation rules 30..3e is the only receipt verification; success requires DH(clause/eval-receipt-value/v1,canonical actual KValue bytes)=expectedValueHash, actual remaining fuel=expectedRemainingFuel, and DH(clause/eval-receipt-observations/v1,canonical actual Observations Term bytes)=expectedObservationsHash; an unencodable actual value is replay failure and unencodable observations are observation mismatch; faults have no receipt form; an optional trace is diagnostic only and never admission authority",
   ascii "C13: CompilerEvidence=00 GenesisEvidence with no payload|01 SuccessorEvidence(compileReceipt:EvalReceipt,admissionReceipt:EvalReceipt); evidence is never executable compiler meaning and cannot add a Core, evaluation rule, request, trace, or authority",
   ascii "V01: VerifyEvalReceipt first requires receipt formatVersion 00",
   ascii "V02: VerifyEvalReceipt strictly decodes the separately supplied exact predecessor bytes, requires caller-supplied acceptance of those exact bytes, requires request.acceptedPredecessorPackageHash=CompilerPackageHash(exact bytes), requires predecessor Frame01 byte-equal exactCoreManifestBytes, and independently derives CoreContractId and PhysicalProfileId",
   ascii "V03: VerifyEvalReceipt requires both derived IDs equal the checker-constructed request fields, statically checks the predecessor under rules 20..2b, resolves the request entrypoint exactly once, and requires argument sorts equal its signature",
   ascii "V04: VerifyEvalReceipt constructs Call(entrypoint,map(ValueLiteral,arguments)) without receipt input, where only BytesValue maps to BytesLiteral and TermValue maps to TermLiteral",
   ascii "V05: VerifyEvalReceipt completely evaluates that call under empty environment, request fuelLimit, and Observations([]) using only fixed rules 30..3e and the carried physical profile",
-  ascii "V06: VerifyEvalReceipt requires exact equality of the replayed value, remaining fuel, and canonical observations with receipt.expected",
+  ascii "V06: VerifyEvalReceipt canonicalizes and domain-hashes the actual replayed value and Observations Term and requires exact expectedValueHash, expectedRemainingFuel, and expectedObservationsHash equality; it never uses receipt data to construct either replay",
   ascii "V07: success requires every prior step and uses no graph, trace, callback, theorem name, host rule registry, Boolean evaluator, or package rule",
   ascii "D00: StrictDecode returns only Decoded(exactInput,candidate) or DecodeRejected(code,offset); codes in precedence order are 00 WrongMagic,01 UnknownVersion,02 FrameTagOrderOrCount,03 Truncated,04 LengthOrCountOverflow,05 InvalidFixedWidth,06 UnknownSumTag,07 BoundedValueUnderConsumed,08 BoundedValueOverConsumed,09 TrailingBytes; fields are read depth-first in encoded order and equal-offset ties use lower code",
   ascii "D01: StrictDecode handles only closed byte grammar; order, uniqueness, exact manifest equality, reference bounds, ABI meaning, entrypoint signature, identity derivation, lineage/evidence consistency, receipt replay semantics, and profile conformance are authorization checks; malformed bytes never produce Unauthorized",
@@ -445,12 +469,12 @@ def contractClauses : List Bytes := [
   ascii "A42: GenesisAnchor rows=[lineage not Genesis->(42,69),supplied E not byte-identical Q.evidence or E not empty GenesisEvidence->(42,6a),ownerAnchor=Missing->(42,6b),ownerAnchor=Supplied(w) and observe(w) is not a self-consistent observation of the complete exact candidate because selectedByteLength!=byteLength(exactSelectedBytes) or selectedPackageHash!=CompilerPackageHash(exactSelectedBytes) or exactSelectedBytes is not octet-for-octet equal exactInput->(42,6c)]; length and hash checks never substitute for the final exact-byte equality or create authority",
   ascii "A43: ExactPredecessor rows=[lineage not Successor->(43,6d),candidate self candidate-basis or candidate-rule authority->(43,6f),supplied predecessor not already accepted including stale revision->(43,6e),locator differs CompilerPackageHash(P)->(43,70),resolved bytes not byte-identical accepted P->(43,71)]",
   ascii "A44: BuildRequest rows=[wrong ABI shape->(44,72),R not byte-identical Q.subject.buildRequest->(44,73),base route or exact base mismatch->(44,74),core ID mismatch->(44,75),profile ID mismatch->(44,76),source order or duplicate->(44,77),source artifact derivation->(44,78),IdentityPlan order uniqueness provenance retention or seed binding->(44,79),request lineage or nominal change occurrence mismatch->(44,7a),declared physical inputs nonempty->(44,7b),on genesis Gc or Ga zero or R.compileFuel!=Gc or R.admissionFuel!=Ga; on successor either R fuel zero->(44,7c)]",
-  ascii "A45: CompileEvaluation rows=[evidence or compile receipt shape->(45,7d),no successful complete replay->(45,80),replayed value differs receipt.expected.value->(45,7e),remaining fuel differs receipt.expected.remainingFuel->(45,7f),replayed result not Built->(45,81),Built bytes differ Q.subject->(45,82),canonical compile observations differ receipt.expected.observations->(45,83)]",
-  ascii "A46: AdmissionEvaluation rows=[admission receipt shape->(46,7d),construct admission request from verified actual compile observations then no successful complete replay->(46,80),replayed value differs receipt.expected.value->(46,7e),remaining fuel differs receipt.expected.remainingFuel->(46,7f),replayed result not Propose->(46,81),Propose bytes differ Q.subject->(46,82),canonical admission observations differ receipt.expected.observations->(46,83)]",
+  ascii "A45: CompileEvaluation rows=[evidence or compile receipt shape->(45,7d),no successful complete replay or actual KValue has no canonical encoding->(45,80),DH(clause/eval-receipt-value/v1,canonical actual KValue bytes) differs expectedValueHash->(45,7e),remaining fuel differs expectedRemainingFuel->(45,7f),actual result not Built->(45,81),Built bytes differ Q.subject->(45,82),canonical actual compile Observations Term has no encoding or its DH(clause/eval-receipt-observations/v1,bytes) differs expectedObservationsHash->(45,83)]",
+  ascii "A46: AdmissionEvaluation rows=[admission receipt shape->(46,7d),construct admission request from verified actual compile observations then no successful complete replay or actual KValue has no canonical encoding->(46,80),DH(clause/eval-receipt-value/v1,canonical actual KValue bytes) differs expectedValueHash->(46,7e),remaining fuel differs expectedRemainingFuel->(46,7f),actual result not Propose->(46,81),Propose bytes differ Q.subject->(46,82),canonical actual admission Observations Term has no encoding or its DH(clause/eval-receipt-observations/v1,bytes) differs expectedObservationsHash->(46,83)]",
   ascii "A47: EvidenceAttachment rows=[E not byte-identical Q.evidence->(47,84),Frame02 differs certified subject->(47,85),attaching E does not reproduce exact Q->(47,86)]",
   ascii "A48: FinalAuthorization rows=[I.exactPackageBytes not byte-identical exactInput or I.packageHash!=DH(clause/compiler-package/v1,I.exactPackageBytes)->(48,87)]",
-  ascii "H00: DH(d,xs)=SHA256(U32(len(d))||ASCII(d)||each(U64(len(x))||x)); CoreContractId=DH(clause/core-contract/v1,exactCoreManifestBytes); PhysicalProfileId=DH(clause/physical-profile/v1,exactPhysicalProfileBytes); CompilerSemanticsId=DH(clause/compiler-semantics/v1,canonical(interface||program)); CompilerRevisionId=DH(clause/compiler-revision/v1,exactCompilerSubjectBytes); CompilerPackageHash=DH(clause/compiler-package/v1,exactWholePackageBytes); SourceArtifactId=DH(clause/source-artifact/v1,exactSourceBytes); BuildRequestId=DH(clause/compiler-build-request/v1,canonicalTermBytes(BuildRequest)); OriginId=DH(clause/origin/v1,canonicalAcyclicOriginNode); hashes never grant compiler authority",
-  ascii "P00: Package bytes are magic CLCP,version 03,Frame(01,CoreManifestV1),Frame(02,CompilerSubject),Frame(03,CompilerEvidence),EOF exactly once in order; Frame03 is excluded from subject and revision identities; successor evidence contains only two trace-free receipts and no predecessor bytes, candidate evidence, or candidate whole-package identity; only exact genesis anchor or separately supplied already-accepted exact predecessor can authorize"]
+  ascii "H00: DH(d,xs)=SHA256(U32(len(d))||ASCII(d)||each(U64(len(x))||x)); CoreContractId=DH(clause/core-contract/v1,exactCoreManifestBytes); PhysicalProfileId=DH(clause/physical-profile/v1,exactPhysicalProfileBytes); EvalReceiptValueHash=DH(clause/eval-receipt-value/v1,canonicalKValueBytes); EvalReceiptObservationsHash=DH(clause/eval-receipt-observations/v1,canonicalObservationsTermBytes); CompilerSemanticsId=DH(clause/compiler-semantics/v1,canonical(interface||program)); CompilerRevisionId=DH(clause/compiler-revision/v1,exactCompilerSubjectBytes); CompilerPackageHash=DH(clause/compiler-package/v1,exactWholePackageBytes); SourceArtifactId=DH(clause/source-artifact/v1,exactSourceBytes); BuildRequestId=DH(clause/compiler-build-request/v1,canonicalTermBytes(BuildRequest)); OriginId=DH(clause/origin/v1,canonicalAcyclicOriginNode); hashes never grant compiler authority",
+  ascii "P00: Package bytes are magic CLCP,version 03,Frame(01,CoreManifestV1),Frame(02,CompilerSubject),Frame(03,CompilerEvidence),EOF exactly once in order; Frame03 is excluded from subject and revision identities; successor Frame03 payload is exactly 147 bytes: tag 01 then two ordered 73-byte trace-free receipts; it contains no predecessor bytes, candidate evidence, returned value, observations, or candidate whole-package identity; only exact genesis anchor or separately supplied already-accepted exact predecessor can authorize"]
 
 def coreManifest : CoreManifest := {
   manifestVersion := 0x00
@@ -464,7 +488,6 @@ def coreManifest : CoreManifest := {
   nominalDeclarationTags := [0x00, 0x01, 0x02]
   compilerEvidenceTags := [0x00, 0x01]
   valueTags := [0x00, 0x01]
-  evalOutcomeTags := [0x00]
   decodeVerdictTags := [0x00, 0x01]
   decodeCodeTags := [0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09]
   authorizationStageTags := [0x40, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48]

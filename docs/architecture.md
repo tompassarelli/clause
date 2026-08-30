@@ -138,8 +138,10 @@ and their domain-separated package hash.
 Entrypoint signature mismatch is only `(CoreWellFormedness,
 EntrypointSignature)`. Successor evidence contains two trace-free receipts.
 `VerifyEvalReceipt` independently constructs each exact request, completely
-replays the manifest's `30..3e` rules, and compares value, remaining fuel, and
-observations exactly.
+replays the manifest's `30..3e` rules, and compares canonical value and
+observation commitments plus exact remaining fuel. Authorization separately
+inspects the actual `Built` or `Propose` result and passes actual verified
+compile observations into admission.
 
 The package must carry every semantics-affecting object needed by a judgment:
 
@@ -198,7 +200,7 @@ The constitutional checker is accepted only when all of these hold:
 - every successor replay request is checker-constructed from the separately
   supplied already accepted predecessor, fixed core and physical profiles,
   entrypoint, canonical inputs, and fuel, while its compact receipt contains
-  only the exact returned value, remaining fuel, and observations;
+  only canonical value and observation commitments plus exact remaining fuel;
   and
 - `leanchecker` or equivalent replay is treated as a same-kernel consistency
   check, not an independent verifier.

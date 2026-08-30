@@ -341,7 +341,10 @@ def replayRequest (predecessor : AcceptedPredecessor)
 }
 
 def receiptShapeValid (receipt : EvalReceipt) : Bool :=
-  receipt.formatVersion = Fixed.coreManifest.receiptFormatVersion
+  receipt.formatVersion = Fixed.coreManifest.receiptFormatVersion &&
+  receipt.expectedValueHash.length = 32 &&
+  receipt.expectedRemainingFuel ≤ Encoding.u64Maximum &&
+  receipt.expectedObservationsHash.length = 32
 
 def replay (predecessor : AcceptedPredecessor)
     (request : EvalRequest) : Option Evaluator.Result :=
@@ -362,21 +365,27 @@ def compileReplay (candidate : DecodedPackage) (request : ABI.BuildRequest)
     match replay predecessor evalRequest with
     | none => fail .evaluationFault
     | some result =>
-      if result.value ≠ receipt.expected.value then fail .receiptValueMismatch
-      else if result.fuel ≠ receipt.expected.remainingFuel then fail .receiptFuelMismatch
-      else
-        match result.value with
-        | .term value =>
-            match ABI.builtBytes value with
-            | none => fail .unexpectedResult
-            | some bytes =>
-                if bytes ≠ candidate.exactSubjectPayload then fail .subjectMismatch
-                else
-                  let observations := ABI.observations result.observations
-                  if observations ≠ receipt.expected.observations then
-                    fail .observationMismatch
-                  else .ok observations
-        | _ => fail .unexpectedResult
+      match evalReceiptValueHash result.value with
+      | none => fail .evaluationFault
+      | some valueHash =>
+        if valueHash ≠ receipt.expectedValueHash then fail .receiptValueMismatch
+        else if result.fuel ≠ receipt.expectedRemainingFuel then fail .receiptFuelMismatch
+        else
+          match result.value with
+          | .term value =>
+              match ABI.builtBytes value with
+              | none => fail .unexpectedResult
+              | some bytes =>
+                  if bytes ≠ candidate.exactSubjectPayload then fail .subjectMismatch
+                  else
+                    let observations := ABI.observations result.observations
+                    match evalReceiptObservationsHash observations with
+                    | none => fail .observationMismatch
+                    | some observationsHash =>
+                        if observationsHash ≠ receipt.expectedObservationsHash then
+                          fail .observationMismatch
+                        else .ok observations
+          | _ => fail .unexpectedResult
 
 def admissionRequestTerm (request : Term) (subjectBytes : Bytes)
     (observations : Term) : Term :=
@@ -397,20 +406,27 @@ def admissionReplay (candidate : DecodedPackage) (request : ABI.BuildRequest)
     match replay predecessor evalRequest with
     | none => fail .evaluationFault
     | some result =>
-      if result.value ≠ receipt.expected.value then fail .receiptValueMismatch
-      else if result.fuel ≠ receipt.expected.remainingFuel then fail .receiptFuelMismatch
-      else
-        match result.value with
-        | .term value =>
-            match ABI.proposedBytes value with
-            | none => fail .unexpectedResult
-            | some bytes =>
-                if bytes ≠ candidate.exactSubjectPayload then fail .subjectMismatch
-                else if ABI.observations result.observations ≠
-                    receipt.expected.observations then
-                  fail .observationMismatch
-                else .ok ()
-        | _ => fail .unexpectedResult
+      match evalReceiptValueHash result.value with
+      | none => fail .evaluationFault
+      | some valueHash =>
+        if valueHash ≠ receipt.expectedValueHash then fail .receiptValueMismatch
+        else if result.fuel ≠ receipt.expectedRemainingFuel then fail .receiptFuelMismatch
+        else
+          match result.value with
+          | .term value =>
+              match ABI.proposedBytes value with
+              | none => fail .unexpectedResult
+              | some bytes =>
+                  if bytes ≠ candidate.exactSubjectPayload then fail .subjectMismatch
+                  else
+                    let observations := ABI.observations result.observations
+                    match evalReceiptObservationsHash observations with
+                    | none => fail .observationMismatch
+                    | some observationsHash =>
+                        if observationsHash ≠ receipt.expectedObservationsHash then
+                          fail .observationMismatch
+                        else .ok ()
+          | _ => fail .unexpectedResult
 
 private def authorizeDecodedSuccessor (request : SuccessorAuthorizationRequest)
     (exactInput : Bytes) (candidate : DecodedPackage)
@@ -494,6 +510,33 @@ theorem compileReceiptFormatPrecedesReplay (candidate : DecodedPackage)
       code := .evidenceShapeMismatch
     } := by
   simp [compileReplay, shapeInvalid]
+
+theorem shortValueHashInvalidatesReceiptShape :
+    receiptShapeValid {
+      formatVersion := Fixed.coreManifest.receiptFormatVersion
+      expectedValueHash := List.replicate 31 0x00
+      expectedRemainingFuel := 0
+      expectedObservationsHash := List.replicate 32 0x00
+    } = false := by
+  decide
+
+theorem fuelOverflowInvalidatesReceiptShape :
+    receiptShapeValid {
+      formatVersion := Fixed.coreManifest.receiptFormatVersion
+      expectedValueHash := List.replicate 32 0x00
+      expectedRemainingFuel := Encoding.u64Maximum + 1
+      expectedObservationsHash := List.replicate 32 0x00
+    } = false := by
+  decide
+
+theorem shortObservationsHashInvalidatesReceiptShape :
+    receiptShapeValid {
+      formatVersion := Fixed.coreManifest.receiptFormatVersion
+      expectedValueHash := List.replicate 32 0x00
+      expectedRemainingFuel := 0
+      expectedObservationsHash := List.replicate 31 0x00
+    } = false := by
+  decide
 
 theorem unknownRequestSignatureFailsProfile (program : List Definition)
     (environment : List KSort)

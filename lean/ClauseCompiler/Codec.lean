@@ -14,6 +14,7 @@ open ClauseCompiler
 
 structure Cursor where
   input : Bytes
+  remaining : Bytes
   position : Nat
   limit : Nat
 
@@ -29,16 +30,21 @@ def readByte : Decoder UInt8 := fun cursor =>
     else
       .error { code := .truncated, offset := cursor.input.length }
   else
-    match cursor.input.drop cursor.position with
+    match cursor.remaining with
     | [] => .error { code := .truncated, offset := cursor.input.length }
-    | value :: _ => .ok (value, { cursor with position := cursor.position + 1 })
+    | value :: remaining => .ok (value, {
+        cursor with
+        remaining := remaining
+        position := cursor.position + 1
+      })
 
-def readBytes : Nat → Decoder Bytes
-  | 0 => fun cursor => .ok ([], cursor)
-  | remaining + 1 => fun cursor => do
-      let (head, afterHead) ← readByte cursor
-      let (tail, afterTail) ← readBytes remaining afterHead
-      pure (head :: tail, afterTail)
+def readBytes (count : Nat) : Decoder Bytes := fun cursor =>
+  let rec loop : Nat → Cursor → Bytes → Except DecodeFailure (Bytes × Cursor)
+    | 0, current, reversed => pure (reversed.reverse, current)
+    | remaining + 1, current, reversed => do
+        let (head, afterHead) ← readByte current
+        loop remaining afterHead (head :: reversed)
+  loop count cursor []
 
 def expectByte (expected : UInt8) (code : DecodeCode) : Decoder Unit :=
   fun cursor => do
@@ -76,13 +82,13 @@ def counted (decoder : Decoder α) : Decoder (List α) := fun cursor => do
   if count > afterCount.limit - afterCount.position then
     .error { code := .lengthOrCountOverflow, offset := countOffset }
   else
-    let rec loop : Nat → Cursor → Except DecodeFailure (List α × Cursor)
-      | 0, current => pure ([], current)
-      | remaining + 1, current => do
+    let rec loop : Nat → Cursor → List α →
+        Except DecodeFailure (List α × Cursor)
+      | 0, current, reversed => pure (reversed.reverse, current)
+      | remaining + 1, current, reversed => do
           let (head, afterHead) ← decoder current
-          let (tail, afterTail) ← loop remaining afterHead
-          pure (head :: tail, afterTail)
-    loop count afterCount
+          loop remaining afterHead (head :: reversed)
+    loop count afterCount []
 
 def byteSeq : Decoder (List UInt8) := counted readByte
 
@@ -214,17 +220,16 @@ def manifest : Decoder CoreManifest := fun cursor => do
   let (nominalDeclarationTags, c9) ← byteSeq c8
   let (compilerEvidenceTags, c10) ← byteSeq c9
   let (valueTags, c11) ← byteSeq c10
-  let (evalOutcomeTags, c12) ← byteSeq c11
-  let (decodeVerdictTags, c13) ← byteSeq c12
-  let (decodeCodeTags, c14) ← byteSeq c13
-  let (authorizationStageTags, c15) ← byteSeq c14
-  let (authorizationCodeTags, c16) ← byteSeq c15
-  let (staticRules, c17) ← counted ruleSignature c16
-  let (evaluationRules, c18) ← counted ruleSignature c17
-  let (receiptFormatVersion, c19) ← readByte c18
-  let (receiptSignature, c20) ← blob c19
-  let (contractClauses, c21) ← counted blob c20
-  let (profile, c22) ← physicalProfile c21
+  let (decodeVerdictTags, c12) ← byteSeq c11
+  let (decodeCodeTags, c13) ← byteSeq c12
+  let (authorizationStageTags, c14) ← byteSeq c13
+  let (authorizationCodeTags, c15) ← byteSeq c14
+  let (staticRules, c16) ← counted ruleSignature c15
+  let (evaluationRules, c17) ← counted ruleSignature c16
+  let (receiptFormatVersion, c18) ← readByte c17
+  let (receiptSignature, c19) ← blob c18
+  let (contractClauses, c20) ← counted blob c19
+  let (profile, c21) ← physicalProfile c20
   pure ({
     manifestVersion := manifestVersion
     frameTags := frameTags
@@ -237,7 +242,6 @@ def manifest : Decoder CoreManifest := fun cursor => do
     nominalDeclarationTags := nominalDeclarationTags
     compilerEvidenceTags := compilerEvidenceTags
     valueTags := valueTags
-    evalOutcomeTags := evalOutcomeTags
     decodeVerdictTags := decodeVerdictTags
     decodeCodeTags := decodeCodeTags
     authorizationStageTags := authorizationStageTags
@@ -248,7 +252,7 @@ def manifest : Decoder CoreManifest := fun cursor => do
     receiptSignature := receiptSignature
     contractClauses := contractClauses
     physicalProfile := profile
-  }, c22)
+  }, c21)
 
 def lineage : Decoder CompilerLineage := fun cursor => do
   let offset := cursor.position
@@ -324,31 +328,21 @@ def kvalue : Decoder KValue := fun cursor => do
   | 0x01 => let (v, c2) ← term c1; pure (.term v, c2)
   | _ => .error { code := .unknownSumTag, offset := offset }
 
-def evalOutcome : Decoder EvalOutcome := fun cursor => do
-  let offset := cursor.position
-  let (tag, c1) ← readByte cursor
-  if tag = 0x00 then
-    let (value, c2) ← kvalue c1
-    let (remaining, c3) ← u64 c2
-    let (observations, c4) ← term c3
-    pure ({
-      value := value
-      remainingFuel := remaining
-      observations := observations
-    }, c4)
-  else .error { code := .unknownSumTag, offset := offset }
-
 def evalReceipt : Decoder EvalReceipt := fun cursor => do
   let formatOffset := cursor.position
   let (formatVersion, c1) ← readByte cursor
   if formatVersion ≠ 0x00 then
     .error { code := .unknownSumTag, offset := formatOffset }
   else
-    let (expected, c2) ← evalOutcome c1
+    let (expectedValueHash, c2) ← fixed32 c1
+    let (expectedRemainingFuel, c3) ← u64 c2
+    let (expectedObservationsHash, c4) ← fixed32 c3
     pure ({
       formatVersion := formatVersion
-      expected := expected
-    }, c2)
+      expectedValueHash := expectedValueHash
+      expectedRemainingFuel := expectedRemainingFuel
+      expectedObservationsHash := expectedObservationsHash
+    }, c4)
 
 def evidence : Decoder CompilerEvidence := fun cursor => do
   let offset := cursor.position
@@ -385,9 +379,10 @@ def boundedFrame (expectedTag : UInt8) (decoder : Decoder α) :
         else if afterValue.position > payloadEnd then
           .error { code := .boundedValueOverConsumed, offset := payloadEnd }
         else
-          let payload := (cursor.input.drop payloadStart).take length
+          let payload := c2.remaining.take length
           pure ((value, payload), {
             c2 with
+            remaining := afterValue.remaining
             position := payloadEnd
             limit := cursor.limit
           })
@@ -404,6 +399,7 @@ def consumeMagic : Decoder Unit := fun cursor => do
 def strictDecode (input : Bytes) : DecodeVerdict :=
   let start : Cursor := {
     input := input
+    remaining := input
     position := 0
     limit := input.length
   }
@@ -427,7 +423,7 @@ def strictDecode (input : Bytes) : DecodeVerdict :=
       }
       pure decoded
     else
-      let next := input.getD c5.position 0xff
+      let next := c5.remaining.head?.getD 0xff
       if next = 0x01 || next = 0x02 || next = 0x03 then
         .error { code := .frameTagOrderOrCount, offset := c5.position }
       else
@@ -455,5 +451,57 @@ theorem missing_frames_vector :
     rejection? (strictDecode [0x43, 0x4c, 0x43, 0x50, 0x03]) =
       some { code := .frameTagOrderOrCount, offset := 5 } := by
   decide
+
+namespace Regression
+
+def compactReceipt : EvalReceipt := Encoding.Regression.compactReceipt
+
+def compactReceiptBytes : Bytes :=
+  (Encoding.evalReceipt compactReceipt).getD []
+
+def decodeReceiptExactly (input : Bytes) : Except DecodeFailure EvalReceipt := do
+  let (receipt, cursor) ← evalReceipt {
+    input := input
+    remaining := input
+    position := 0
+    limit := input.length
+  }
+  if cursor.position = input.length then
+    pure receipt
+  else
+    .error { code := .trailingBytes, offset := cursor.position }
+
+def decodedReceipt? (input : Bytes) : Option EvalReceipt :=
+  match decodeReceiptExactly input with
+  | .ok receipt => some receipt
+  | .error _ => none
+
+def receiptFailure? (input : Bytes) : Option DecodeFailure :=
+  match decodeReceiptExactly input with
+  | .ok _ => none
+  | .error failure => some failure
+
+theorem compactReceiptRoundTrips :
+    compactReceiptBytes.length = 73 ∧
+      decodedReceipt? compactReceiptBytes = some compactReceipt := by
+  set_option maxRecDepth 100000 in
+    decide
+
+theorem compactReceiptUnknownFormatRejects :
+    receiptFailure? (0x01 :: compactReceiptBytes.drop 1) =
+      some { code := .unknownSumTag, offset := 0 } := by
+  decide
+
+theorem compactReceiptTruncatedValueHashRejects :
+    receiptFailure? (compactReceiptBytes.take 32) =
+      some { code := .truncated, offset := 32 } := by
+  decide
+
+theorem compactReceiptTruncatedFuelRejects :
+    receiptFailure? (compactReceiptBytes.take 40) =
+      some { code := .truncated, offset := 40 } := by
+  decide
+
+end Regression
 
 end ClauseCompiler.Codec
