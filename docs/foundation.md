@@ -102,13 +102,16 @@ admit(BaseRevision, candidate delta, evidence,
   = (AdmissionOccurrenceId, SuccessorRevision | Rejection)
 ```
 
-The process semantics is this typed activation, step, observation,
-continuation, and admission relation. Actual Runs instantiate it. The Clause
-Graph is the canonical inspectable carrier of process constitution and admitted
-boundaries. It neither runs by being stored nor acquires independent authority.
-Every physical execution must refine the process semantics and preserve its
-declared identities, observations, effects, failures, resources, diagnostics,
-and causal order.
+The transition semantics is this typed Activation, Step, observation,
+continuation, and Run relation. Actual Runs instantiate it. Admission remains a
+separate authority relation and the only boundary that creates a governed
+successor. The Clause Graph is the canonical inspectable carrier of checked
+process constitution, admitted boundaries, and the process relations retained
+or recoverable for their declared consumers. It neither runs by being stored
+nor acquires independent authority. Every physical execution must refine the
+selected constitution and transition semantics and preserve their declared
+identities, observations, effects, failures, resources, diagnostics, and causal
+order.
 
 These names are constitutional:
 
@@ -583,6 +586,14 @@ authority are separate checked concepts:
   required to use capability `C` under its declared scope, pins, validity, and
   resource contract. It is present only when the selected Mode declares that
   dynamic prerequisite and never substitutes for Authorization or Admission.
+
+`StaticActivationBasis` establishes callability. Any required
+`AuthorizationEvidence<ExecutionAuthorization>` licenses running only under the
+selected Mode's exact contract. Neither licenses a real effect attempt or
+Admission: a real effect attempt requires the selected effect profile's exact
+intent, separately issued `AuthorizationOccurrenceId<EffectAuthorization>`, and
+independent `CapabilityEvidence<C>`, while Admission requires separately typed
+`AuthorizationEvidence<AdmissionAuthorization>`.
 
 A RelationSchema without an operator can still form checked role bindings,
 revision-indexed relational rows, assertion content, and open patterns. None of
@@ -1673,13 +1684,24 @@ process constitution; a StateRevision selects one admitted process boundary.
 Neither graph presence nor row presence makes an Application activate, an
 observation true, or a candidate authoritative.
 
-Clause process semantics owns meaning. The graph is its canonical inspectable
-carrier and explanation surface: it must hold every constitutive relationship
-and every admitted boundary that can affect declared meaning. Actual running is
-not reducible to whichever graph or trace projection was retained. Conversely,
-an opaque runtime cannot bypass the graph: every externally meaningful
-Activation has recoverable identity, exact constitution and applicable revision
-pins, mode, declared dynamic prerequisites,
+Clause meaning has three explicit seams. The typed graph distinguishes neutral
+`RawTriple`/`Term` structure, checked ApplicationForms, nominal Applications,
+RelationSchemas, revision-indexed RelationExtensions, OperatorRefs, Modes,
+identities, contracts, and authority interfaces; a checked process constitution
+fixes their exact governing declarations and relations. Transition semantics
+governs Activations, Steps, observations, continuations, and Run order under
+that constitution. Admission separately governs authoritative successor
+formation. The graph is their canonical inspectable carrier and explanation
+surface: it must hold every constitutive relationship and admitted boundary
+that can affect declared meaning, plus every process relation required by a
+declared consumer. Truth status is extrinsic to representation: no Term, graph
+node or edge, ApplicationForm, RelationExtension row, or trace is true merely
+by existing.
+
+Actual running is not reducible to whichever graph or trace projection was
+retained. Conversely, an opaque runtime cannot bypass the graph: every
+externally meaningful Activation has recoverable identity, exact constitution
+and applicable revision pins, mode, declared dynamic prerequisites,
 capabilities, evidence, and causal relation. A lossless CST remains necessary
 for tokens, indentation, comments, whitespace, errors, and incomplete edits,
 but it is a projection-recovery structure rather than a sovereign AST.
@@ -1692,6 +1714,11 @@ code may bootstrap that kernel and optimize checked meaning; it may not retain
 a second secret language.
 
 ## Relations and higher arity
+
+Relations use open-ended, schema-checked named-role bindings, not arbitrary
+roles. Open-endedness means schemas may declare new role vocabularies; each
+binding is checked against one exact RelationSchema, and an ApplicationForm
+closes that schema's required roles under its recorded eligible Modes.
 
 One checked relational Reading may read a Triple as:
 
@@ -2864,7 +2891,9 @@ it does not claim that an implementation already embodies the mechanism.
 > configuration runs without Admission, while Admission alone creates an
 > authoritative successor. Relations constrain and expose admissible
 > Applications and Runs. Observations report what running distinguished. Terms
-> and the Clause Graph are the neutral, recursive, inspectable carrier of this
-> process semantics. Parametric declarations and causal-affine lifetimes remain
-> Clause meaning; physical execution refines and may erase or specialize them
-> aggressively. One process authority. No hidden host language.**
+> and the Clause Graph are the neutral, recursive, inspectable carrier of
+> checked constitution and declared process relations. Parametric declarations
+> and causal-affine lifetimes remain Clause meaning; physical execution refines
+> and may erase or specialize them aggressively. Typed constitution, explicit
+> transition semantics, and separate Admission authority. No hidden host
+> language.**

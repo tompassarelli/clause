@@ -32,9 +32,15 @@ Clause Admission:
                authoritative compiler and Program successor
 ```
 
-Clause process semantics owns meaning. The Clause Graph is its canonical
-inspectable carrier; the canonical carrier contract is its host-neutral
-transport and checking form. The accepted compiler package
+The foundation divides Clause meaning among a typed process constitution,
+transition semantics, and Admission. The Clause Graph canonically carries the
+checked constitution and declared process relations; transition semantics
+governs Activations, Steps, observations, continuations, and Run order under
+that constitution; and Admission alone establishes governed successors. Truth
+status is extrinsic to graph representation, and neither graph storage nor
+trace retention runs anything. The graph is the inspectable explanation
+surface; the canonical carrier contract is its host-neutral transport and
+checking form. The accepted compiler package
 owns reading, syntax selection, binding and occurrence identity, elaboration,
 type, mode, and effect checking, typed macros and transformations, origins,
 diagnostics, and compiler

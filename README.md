@@ -1,12 +1,15 @@
 # Clause
 
 Clause is a process-first relational programming language. Its source describes
-applications, relationships, laws, transitions, and effects; its semantics
-defines how typed activations actually run. The Clause Graph is the canonical
-inspectable shape of that process, while checked physical implementations may
-specialize it into efficient native, Wasm, browser, or data-system execution.
-A lower-case clause is a contextual judgment over a neutral Term, not an
-Application, assertion, or runtime event.
+applications, relationships, laws, transitions, and effects. Its checked
+process constitution fixes typed schemas, Applications, Modes, identities, and
+contracts; transition semantics defines how Activations run through Steps and
+continuations within Runs; and Admission alone establishes governed successors.
+The Clause Graph is the canonical inspectable carrier and explanation surface,
+while checked physical implementations may specialize accepted meaning into
+efficient native, Wasm, browser, or data-system execution. Truth status is
+extrinsic to representation. A lower-case clause is a contextual judgment over
+a neutral Term, not an Application, assertion, or runtime event.
 
 The target is a general-purpose language for agent-authored software, not a
 governed-state niche. Ordinary local mutation needs no Admission or
