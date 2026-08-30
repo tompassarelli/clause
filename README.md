@@ -1,173 +1,90 @@
 # Clause
 
-Clause is a process-first relational programming language. Humans declare
-applications, relationships, laws, transitions, effects, and physical
-constraints. Clause defines which typed activations and causal steps are
-admissible, then specializes that meaning into efficient execution.
+Clause is a process-first relational programming language. Its source describes
+applications, relationships, laws, transitions, and effects; its semantics
+defines how typed activations actually run. The Clause Graph is the canonical
+inspectable shape of that process, while checked physical implementations may
+specialize it into efficient native, Wasm, browser, or data-system execution.
 
-Its constitutional mechanism is deliberately small:
+> **Current status:** Clause has an accepted semantic constitution and canonical
+> source design, but no supported parser, compiler, runtime, CLI, Wasm boundary,
+> renderer integration, or example application yet. The
+> [roadmap](docs/roadmap.md) is the sole implementation-status authority.
 
-```text
-RawTriple = [Term, Term, Term]
-Term      = Atom | RawTriple
+## A Clause transition
 
-ApplicationForm = checked operator + exact named roles
-                  + mode eligibility + context requirements
-Application     = nominal node instantiating one exact form
-Activation      = one actual engagement under exact mode and context
-Step            = causal carry-through between configurations
-Run             = causal closure rooted at one Activation
-Admission       = the only boundary that creates an authoritative successor
+This canonical source form describes a complete transition from a pinned state
+observation to a candidate delta:
+
+```clause
+on collect ?actor
+  when
+    ?coin state active
+    ?coin owner ?actor
+  withdraw
+    ?coin state active
+  admit
+    ?coin state collected
 ```
 
-Triple slots are structurally neutral. Terms hold distinctions; they do not
-assert, activate, or authorize themselves. A checked ApplicationForm is
-configured application possibility, and a lower-case clause/Application is a
-nominal node with `ApplicationId`. Every Application has that identity; quoted,
-open, and merely structural forms are not Applications. Every actual activation
-is distinct; one Activation persists through multiple StepIds, configurations,
-suspension, and resumption. A trace describes a Run without becoming it.
-Configured binders, transfers, requests, or tasks may have Application identity;
-an actual event or effect attempt has a separate OccurrenceId plus exact
-provenance. Internally produced occurrences name their producing Activation and
-Step, while external triggers name their external-boundary provenance and
-causally precede the Activation they trigger.
+The spelling is canonical but is not yet runnable by a supported toolchain.
+`on` declares process constitution; it does not execute merely by being stored.
+A matching occurrence can activate one exact Application under a selected Mode
+and context. `when` observes one StateRevision, while `withdraw` and source
+`admit` stage a candidate delta. Only a separate governed Admission can create
+the successor StateRevision.
 
-Clause process semantics owns meaning. The Clause Graph is its canonical
-inspectable carrier and explanation surface, not an independent source of
-authority and not merely transport. Relations constrain or expose admissible
-applications and runs; modes declare how an Application may activate; explicit
-authorization permits activation; admission alone makes a Program, State, or
-other governed successor authoritative. Physical execution may specialize
-aggressively only as a checked refinement of those declared observations,
-identities, effects, failures, resources, diagnostics, and causal relations.
-
-## Implementation constitution
+The semantic path is:
 
 ```text
-Clause semantics  owns the process contract.
-Canonical carrier preserves its host-neutral representation.
-Compiler0         is one literal externally owner-anchored Clause package.
-Lean 4            checks the fixed constitution and complete receipt replays.
-Rust              evaluates the fixed generic machine and physical operations.
-Clause            owns source and compiler evolution from genesis.
+neutral Term
+  -> checked, closed ApplicationForm
+  -> nominal Application
+  -> Activation under exact mode, revisions, authority, and cause frontier
+  -> causal Steps within one Run
+  -> observations, results, continuations, and candidate deltas
+  -> governed Admission, when authoritative change is requested
 ```
 
-Neither Lean nor Rust may invent a semantic category absent from accepted
-Clause process semantics.
-Lean syntax is not Clause syntax, Rust types are not Clause ontology, and no
-host representation or wire format is independently authoritative.
+One Application may be activated many times; every Activation remains distinct
+and keeps one identity across its Steps, suspension, and resumption. Pure
+running can return a value and evidence without creating any revision. See the
+[language tour](docs/language-tour.md) for relations, modes, laws, queries,
+layout, and more canonical source examples.
 
-The process-first constitution is not yet a supported implementation. Existing
-Lean and Rust bootstrap artifacts are evidence for narrower package and checker
-contracts, not a Clause compiler. Exact implementation status lives only in the
-[roadmap](docs/roadmap.md).
+## Read the contracts
 
-The compiler contract specifies CLCP v3 and one literal `Compiler0`.
-Its subject/evidence split prevents evidence from self-hashing or
-self-authorizing. One external human-owner act supplies an opaque genesis
-anchor witness whose observation carries the complete selected byte sequence;
-materialization, hashes, derivability, decoding, and successful execution do
-not. The non-package-wire request represents the anchor as `Missing` or
-`Supplied(witness)`, so absence and exact selected-byte mismatch are distinct
-ordered failures. Every successor must be compiled and proposed by the already
-accepted exact predecessor through two fixed `[Term] -> Term` entrypoints and canonical
-request, result, observation, and trace-free receipt forms. Frame 01 carries the
-complete exact generic machine manifest; no host maps a symbolic core ID to
-private rules. Its closed static/evaluation rule table, fuel and observation
-semantics, receipt grammar, and replay checker are part of the canonical bytes.
-Malformed wire input has a separate deterministic decode verdict, while every
-decoded authorization failure has one fixed stage/code pair selected by
-pairwise-disjoint first-failure precedence. Genesis authorization explicitly
-binds its supplied anchor observation byte-for-byte, exact `BuildRequest`,
-empty `GenesisEvidence`, both nonzero fuel limits, and the final package's
-complete exact bytes plus domain-separated hash before returning `Authorized`.
-
-The fixed host evaluator has sufficient generic byte inspection, construction,
-equality, recursion, and hashing mechanics but remains construct-blind:
-package data may steer package-program control, never select a host semantic
-handler. `Compiler0` owns reading, binding, elaboration, effects, typed macros,
-origins, diagnostics, and evolution as package data. Host-independence renames
-only explicit seed nominal identities; `NewId` allocations and every other
-derived identity are recomputed once from transformed preimages. Hash bytes
-are never directly permuted.
-
-The CLCP v3 contract fixes its exact bytes, carried manifest, 73-byte replay
-receipt, KExpr evaluation order, machine continuation/fuel behavior,
-`admitPropose`, and `CompilerRevisionId` as compiler-machine mechanics rather
-than the universal process kernel. Process identities, revision pins, evidence,
-authorization, and admission belong in Clause-owned outer Terms and envelopes.
-Git history is not source authority.
-
-## Repository layout
-
-| Path | Authority |
+| Document | Owns |
 | --- | --- |
-| [`docs/foundation.md`](docs/foundation.md) | Clause meaning and minimal calculus |
-| [`docs/syntax.md`](docs/syntax.md) | Canonical human-readable source |
-| [`docs/architecture.md`](docs/architecture.md) | Implementation and trust boundaries |
-| [`docs/canonical-package.md`](docs/canonical-package.md) | CLCP v3 wire contract and CLCP v1 bootstrap evidence boundary |
-| [`docs/compiler-genesis.md`](docs/compiler-genesis.md) | Compiler genesis, succession, and host-freeze contract |
-| [`docs/adoption-spike.md`](docs/adoption-spike.md) | Falsifiable constitutional experiment |
-| [`docs/roadmap.md`](docs/roadmap.md) | Current implementation status and sequence |
-| [`docs/design-evidence.md`](docs/design-evidence.md) | Evidence, alternatives, and uncertainty |
-| [`docs/execution-corpus.md`](docs/execution-corpus.md) | Frozen v0 cross-host execution/admission/replay observations |
-| [`lean/`](lean/) | Lean constitutional-model and trust-gate bootstrap |
-| [`crates/clause-substrate/`](crates/clause-substrate/) | Historical Rust bootstrap crate path only; its target responsibility split is in the roadmap |
-| [`test-vectors/`](test-vectors/) | Shared canonical-package and execution corpora |
+| [Language tour](docs/language-tour.md) | Compact introduction through canonical examples |
+| [Semantic foundation](docs/foundation.md) | Clause meaning, process identities, effects, and Admission |
+| [Syntax](docs/syntax.md) | The sole canonical human-readable source design |
+| [Architecture](docs/architecture.md) | Trust, host, compiler, runtime, and physical boundaries |
+| [Canonical packages](docs/canonical-package.md) | Exact CLCP transport and compiler-machine wire contracts |
+| [Compiler genesis](docs/compiler-genesis.md) | External genesis anchor and predecessor-owned succession |
+| [Adoption spike](docs/adoption-spike.md) | Executable falsifiers for the constitutional design |
+| [Roadmap](docs/roadmap.md) | Current implementation facts, dependency order, and exit evidence |
 
-Each public contract has one owner. Canonical bytes cannot select authority;
-compiler genesis cannot redefine Clause meaning or source syntax; evidence and
-the spike cannot add semantics; status lives only in the roadmap.
+The frozen [execution corpus](docs/execution-corpus.md) preserves narrower v0
+observations while the process-v1 companion is built. Historical experiments,
+including the game-leverage materialization probe, are evidence rather than
+supported language features.
 
-## Bootstrap checks
+## Bootstrap evidence
+
+The repository currently contains a Lean constitutional/checker bootstrap, a
+historical combined Rust bootstrap crate, and exact shared test vectors. The
+shortest broad checks are:
 
 ```sh
-cd lean
-lake build
-lake env leanchecker --fresh ClauseCore
-cd ..
-cargo check --workspace --locked
+(cd lean && lake build && lake env leanchecker --fresh ClauseCore)
 cargo test --workspace --locked --all-targets
-cargo clippy --workspace --locked --all-targets -- -D warnings
 ```
 
-`ClauseCore` is the historical Lean bootstrap module name, not Clause's
-semantic kernel. The package name `clause-substrate` in the Rust commands below
-is likewise historical, not the target crate architecture.
-
-These commands exercise bootstrap evidence only. They do not establish the
-process-first language semantics or any supported language feature. The
-[roadmap](docs/roadmap.md) owns the exact current claims and gaps.
-
-## Game-leverage falsifier
-
-The bounded `game_leverage` experiment parses one historical, noncanonical
-co-cell visibility fixture into one experimental semantic IR. It materializes
-the unchanged source law with two materially distinct schedules: an exhaustive
-whole-world tuple interpreter that validates grounded premise occurrences and
-derives conclusions from them, and an indexed incremental plan whose
-binder-selected join roles are validated by the fixture-declared lookup modes.
-The reference interpreter neither consumes the indexed plan nor uses its
-binding-map matcher and projector. Both schedules operate on parsed semantic
-data and Fact access directly; no renderer participates. Run its deterministic
-Fact-set equality, trace, alpha-renaming, support-counting, mutation, and
-work-locality gates with:
-
-```sh
-cargo test --locked -p clause-substrate game_leverage
-cargo run --locked --release -p clause-substrate --example game_leverage
-```
-
-The example reports direct timings without imposing a machine-dependent timing
-threshold. Its hard gates are exact experimental Fact-set output equality after
-every update, name-independent planning, at least 100x unrelated-population scan
-growth, and indexed move work fixed at two counterpart-bucket probes and eight
-local pair visits. The fixture uses historical `RelationShape`, arrow-mode, and
-conclusion-first syntax. Its domain names are parsed labels and are not
-type-checked. These are historical experimental Fact-set semantics, not current
-canonical Clause syntax or typed Clause semantics, a supported parser,
-constitutional admission, or a general spatial engine.
+These commands check their bounded bootstrap contracts; they do not establish
+the still-missing language implementation. `ClauseCore` and
+`clause-substrate` are historical implementation names, not names for Clause
+semantics or the target package architecture.
 
 Clause is available under the [MIT License](LICENSE-MIT) or the
 [Apache License, Version 2.0](LICENSE-APACHE), at your option.
