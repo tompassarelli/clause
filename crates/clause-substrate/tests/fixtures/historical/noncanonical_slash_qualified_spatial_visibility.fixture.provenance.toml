@@ -1,0 +1,7 @@
+format = "clause-historical-fixture-provenance-v1"
+classification = "NONCANONICAL_HISTORICAL_FIXTURE_ONLY: NOT CLAUSE SOURCE; SLASH-QUALIFIED TOKENS HAVE NO GRAMMAR"
+canonical_clause_source = false
+purpose = "Frozen cold-semantics and rename-equivariance oracle"
+source_commit = "373feb16e7aee978f9ff4a643fa1da4d013ad7d0"
+source_path = "crates/clause-substrate/examples/spatial_visibility.clause"
+sha256 = "ddde835d4289bd3f0bffa2014f98595ccbac4fc4a13c3f1691d5054bbc563176"

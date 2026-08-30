@@ -983,15 +983,25 @@ mod tests {
     use std::io;
     use std::path::{Path, PathBuf};
 
-    const HISTORICAL_FIXTURE_MARKER: &str = concat!(
+    const HISTORICAL_FIXTURE_CLASSIFICATION: &str = concat!(
         "NONCANONICAL_HISTORICAL_FIXTURE_ONLY: NOT CLAUSE SOURCE; ",
         "SLASH-QUALIFIED TOKENS HAVE NO GRAMMAR"
     );
+    const HISTORICAL_FIXTURE_SHA256: &str =
+        "ddde835d4289bd3f0bffa2014f98595ccbac4fc4a13c3f1691d5054bbc563176";
     const HISTORICAL_FIXTURE_PATH: &str =
         "tests/fixtures/historical/noncanonical_slash_qualified_spatial_visibility.fixture";
+    const HISTORICAL_FIXTURE_PROVENANCE_PATH: &str = concat!(
+        "tests/fixtures/historical/",
+        "noncanonical_slash_qualified_spatial_visibility.fixture.provenance.toml"
+    );
     const SOURCE: &str = include_str!(
         "../tests/fixtures/historical/noncanonical_slash_qualified_spatial_visibility.fixture"
     );
+    const SOURCE_PROVENANCE: &str = include_str!(concat!(
+        "../tests/fixtures/historical/",
+        "noncanonical_slash_qualified_spatial_visibility.fixture.provenance.toml"
+    ));
 
     fn clause_sources_below(root: &Path) -> io::Result<Vec<PathBuf>> {
         let mut pending_directories = vec![root.to_owned()];
@@ -1028,13 +1038,34 @@ mod tests {
     }
 
     #[test]
-    fn slash_qualified_fixture_remains_marked_and_quarantined() {
+    fn slash_qualified_fixture_remains_classified_and_quarantined() {
         let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let fixture_path = crate_root.join(HISTORICAL_FIXTURE_PATH);
+        let provenance_path = crate_root.join(HISTORICAL_FIXTURE_PROVENANCE_PATH);
 
-        assert_eq!(SOURCE.lines().next(), Some(HISTORICAL_FIXTURE_MARKER));
+        assert_eq!(SOURCE.lines().next(), Some("Viewer"));
         assert!(HISTORICAL_FIXTURE_PATH.starts_with("tests/fixtures/historical/"));
         assert!(!HISTORICAL_FIXTURE_PATH.ends_with(".clause"));
-        assert!(crate_root.join(HISTORICAL_FIXTURE_PATH).is_file());
+        assert!(fixture_path.is_file());
+        assert!(provenance_path.is_file());
+        assert_eq!(fixture_path.parent(), provenance_path.parent());
+        assert!(SOURCE_PROVENANCE.contains(&format!(
+            "classification = \"{HISTORICAL_FIXTURE_CLASSIFICATION}\""
+        )));
+        assert!(SOURCE_PROVENANCE.contains("canonical_clause_source = false"));
+        assert!(SOURCE_PROVENANCE.contains(&format!("sha256 = \"{HISTORICAL_FIXTURE_SHA256}\"")));
+        assert!(SOURCE_PROVENANCE.contains("format = \"clause-historical-fixture-provenance-v1\""));
+        assert!(
+            SOURCE_PROVENANCE
+                .contains("purpose = \"Frozen cold-semantics and rename-equivariance oracle\"")
+        );
+        assert!(
+            SOURCE_PROVENANCE
+                .contains("source_commit = \"373feb16e7aee978f9ff4a643fa1da4d013ad7d0\"")
+        );
+        assert!(SOURCE_PROVENANCE.contains(
+            "source_path = \"crates/clause-substrate/examples/spatial_visibility.clause\""
+        ));
     }
 
     #[test]
