@@ -1,4 +1,7 @@
-# Clause Core Lean bootstrap model
+# Clause Lean bootstrap model
+
+The existing `ClauseCore` Lean module name identifies a bootstrap artifact. It
+does not name Clause's semantic kernel or an independent source of meaning.
 
 This package contains Clause's smallest provisional representation:
 
@@ -9,12 +12,15 @@ Term(index) = Atom | [Term, Term, Term]
 
 The index contains an explicit universe and Clause semantics epoch. Candidate
 representation comparison is recursive and index-bound. It becomes semantic
-structural equality only after a later Clause judgment validates the Atom kind,
-payload canonicalization, and equality contract. Triples contain no identity
-field; nominal identity remains an ordinary Atom role granted by judgment.
+structural equality only after future formation and governed Judgment machinery
+validates the Atom kind, payload canonicalization, and equality contract.
+Triples contain no identity field; nominal identity remains an ordinary Atom
+role granted under checked formation and governance.
 
 `JudgmentClaim`, `ContextCandidate`, and `ClauseJudgmentCandidate` remain raw
-candidate carriers. `GroundRuleCandidate`, `DerivationBasisCandidate`, and
+candidate carriers. `ClauseJudgmentCandidate` is a frozen provisional code
+type, not the current Clause semantic model. `GroundRuleCandidate`,
+`DerivationBasisCandidate`, and
 `DerivationCertificate` implement finite one-pass ground certificates using
 only addressed roots and generic rule application. `checkRelative_sound`
 connects executable success to `DerivableFrom` the exact supplied basis.
@@ -76,9 +82,10 @@ auxiliary-only mutation breaks exact positive binding but correctly does not
 change v0 authority.
 
 This tranche still does not define Atom-contract admission, semantic structural
-equality, valid Clause judgments, identity judgments, Mode, Run, Trace, Delta,
-general Admission, Revision, Clause source, or any language feature. Package
-authority and relative derivability are not semantic truth.
+equality, checked application formation, governed Judgment, the process kernel,
+identity judgments, Mode, Run, Trace, Delta, general Admission, Revision,
+Clause source, or any language feature. Package authority and relative
+derivability are not semantic truth.
 
 ## CLCP v3 compiler constitution
 

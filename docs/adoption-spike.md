@@ -1,82 +1,142 @@
-# Clause Constitutional Adoption Spike
+# Clause Process-First Constitutional Adoption Spike
 
-> **Status:** Authorized falsification design; not implemented.
+> **Status:** Authorized cross-phase falsification program; not implemented.
 >
 > **Authority:** Normative only for the experiment deciding whether the
 > mechanism in the [foundation](foundation.md) survives. It cannot add Clause
-> semantics or canonical syntax.
+> semantics, canonical syntax, or implementation status.
 
 ## Decision question
 
-Can one generic recursive Term, Clause-judgment, Run, and admission kernel carry
-the dangerous semantics of a general-purpose language while Lean and Rust
-remain checker/reference and physical implementation boundaries rather than
-private semantic authorities?
+Can one neutral recursive Term carrier plus checked formation, nominal
+Applications, distinct Activations, causal Steps and Runs, typed continuation,
+and governed admission carry a general-purpose process-first relational
+language while Lean and Rust remain checker/reference and physical boundaries
+rather than private semantic authorities?
 
-The decisive test is:
+The decisive questions are:
 
-> Can Clause add and understand a new language concept by adding Clause data
-> and judgments, or must a host learn a new semantic secret?
+1. Do ApplicationForm, Application, Activation, Configuration, Step, Run, and
+   Continuation have distinct consumers and invariants across pure, effectful,
+   and ongoing programs?
+2. Can RelationSchemas, extensions, operators, modes, source Readings,
+   ExecutionAuthorizations, and capabilities remain distinct without making
+   ordinary source bureaucratic?
+3. Can Clause add and understand a new language concept by changing accepted
+   Clause data alone, or must a host learn a new semantic secret?
+4. Can checked implementations specialize aggressively while preserving cold
+   process semantics and exact relational observations?
 
-The spike starts from the accepted calculus, constructs its own canonical
-vectors, and must justify every claimed behavior directly.
+The spike starts from the accepted calculus, consumes exact frozen oracles, and
+must justify every claimed behavior directly.
 
-## Constraints
+## Frozen and versioned oracles
 
-- Clause owns the Term algebra, equality contracts, contexts, judgments,
-  identity rules, Runs, admission, canonical package, codec, and certificates.
-- Lean is the constitutional checker and reference Run-semantics host. Lean
-  syntax, expressions, type classes, serialization, and feature-specific
-  inductives are not Clause semantics.
-- Rust is the physical package, persistence, runtime, FFI, and backend host.
-  Rust enums, traits, handles, layouts, and callbacks are not Clause semantics.
-- No additional primary compiler host is introduced.
-- No external semantic authority or imported ontology participates.
-- The experiment uses readable relation-first source for the source-facing
-  gates; graph bookkeeping does not leak into routine programs.
-- A pass authorizes further implementation only. It does not establish product
-  ergonomics, scale, target performance, or maintenance economics.
+`clause:test-vectors/execution/**` remains byte-for-byte Clause execution corpus
+v0. Its three canonical source programs and manifest observations are frozen:
 
-## Phase A — Minimal constitutional package
+- recursive pure dependency closure;
+- admitted State change plus separate effect evidence; and
+- predecessor-bound Program evolution.
 
-Before implementing Clause surface syntax, define the generic core required by
-every gate:
+The six v0 outcome tags remain exactly `returned`, `choices`, `yielded`,
+`suspended`, `failed`, and `exhausted`. They are compatibility evidence, not
+the complete process ontology.
+
+A separate versioned process-v1 companion must crosswalk those exact bytes into
+ApplicationForms, ApplicationIds, ActivationIds, StepIds, RunIds,
+ContinuationIds where a boundary is crossed, ObservationIds, exact program and
+world pins, and candidate/admission evidence. It must not rewrite or infer new
+identity from fixture-local v0 names. Source movement, duplicate equal
+occurrences, n-ary role closure, closure capture, pure arithmetic, an ongoing
+service, cancellation, budget exhaustion, and effect timeout require new
+process-v1 fixtures.
+
+The historical `game_leverage` position/radius law and two later candidates are
+experimental evidence only. Terms `2811f52` was rejected. Materialization
+`274136a` is a clean candidate whose independent review was interrupted; it is
+unreviewed and unaccepted. Preserve the unchanged source law as a cold-
+semantics oracle; do not promote host-selected relation meanings or
+materializer-owned admission from either candidate.
+
+## Phase A — Minimal process constitution
+
+Before surface implementation, define the generic core required by every gate:
 
 ```text
 Atom(kind, canonical payload, declared equality contract)
 RawTriple = [Term, Term, Term]
 Term = Atom | RawTriple
 
-Γ ⊢ t clause : T @ M
+Γ ⊢ t : T @ interpretation
 
-Γ ; M ⊢ runρ(t) ↦ ⟨Γ̂, outcome, τ⟩
+Γ ⊢ form(t, OperatorRef, exact named-role bindings, requirements)
+  : ApplicationForm<ResultDomain>
 
-Γ ⊢ Γ̂ admissible
-───────────────────
-admit(Γ, Γ̂) = Γ′
+Application(ApplicationId, exact ApplicationForm)
+
+activate(ApplicationId, ModeId, InitialContext)
+  = ActivationId + InitialConfiguration
+
+Configuration_before
+  -- StepId(predecessors = Frontier) ; observations ; delta ; continuation -->
+Configuration_after
+
+Run(RunId, root = ActivationId, causal closure)
+
+admit(BaseRevision, delta, evidence, authority, obligations)
+  = SuccessorRevision | Rejection
 ```
 
 The core must represent:
 
 - contextually opaque Atoms and explicit refinements across universes;
-- structural Term equality indexed by universe and semantics epoch;
-- same identity, equal value, and equivalent denotation as distinct judgments;
-- explicit identities for occurrences, binders, definitions, entities,
-  concepts, Runs, effects, sessions, and revisions only where continuity
-  requires them;
-- immutable contexts and typed candidate successors;
-- returned, finite-choice, yielded, suspended, failed, and exhausted outcomes;
+- structurally neutral Triple slots and structural Term equality indexed by
+  universe and semantics epoch;
+- FormationJudgment distinct from governed Judgment;
+- closed ApplicationForms with exact OperatorRef, RelationSchema, named-role
+  closure, mode eligibility, and context requirements;
+- snapshot-local RelationSchema, Role, Operator, and Mode declarations whose
+  exact external references include ProgramSnapshotId and never silently carry
+  across a changed snapshot;
+- `ApplicationShapeId` only for closed forms, committing to ClauseSemanticsId,
+  exact OperatorRef and roles, context requirements, and the full resolved
+  semantic-dependency/declaration closure, including proof that it is empty
+  where applicable;
+- mandatory nominal `ApplicationId` for every Application, with raw, quoted,
+  open, and merely structural forms remaining non-nominal ApplicationForms or
+  Terms rather than anonymous Applications;
+- configured binders, transfers, requests, and tasks distinguished from actual
+  event/effect occurrences, which carry typed OccurrenceId plus exact
+  provenance: producing Activation/Step for internal production or external-
+  boundary provenance for an ingress trigger;
+- fresh `ActivationId` for every engagement and one stable Activation across
+  any number of configurations and StepIds;
+- Step predecessor frontiers as finite sets so concurrency remains a partial
+  order rather than log order;
+- RunId as a causal envelope distinct from ActivationId, including child
+  activation, handoff, and cancellation scope;
+- typed continuation as semantic remainder, with exact identified pins when it
+  crosses suspension, handoff, persistence, or executor boundaries;
+- ObservationId distinct from observed Value and Result;
+- immutable typed candidate deltas separate from continuations;
+- activation-scoped result relations, separately admitted revision-indexed
+  relation extensions, and occurrence-exact support;
 - total, productive, bounded, partial, nondeterministic, streaming, reactive,
-  and effectful mode contracts;
-- Clause-authored schemas, stable named roles, readings, completion rules,
-  capabilities, laws, and obligations;
+  and effectful Mode contracts;
+- distinct Reading, derivation authorization, ExecutionAuthorization,
+  admission authority, and effect/resource capability;
+- non-operator RelationSchemas able to form checked bindings, proposition and
+  assertion content, rows, and patterns without forming ApplicationForms;
 - source occurrences, scope, binding, quotation, hygiene, phase, and origin;
-- deltas, traces, derivations, certificates, strategies, and evidence; and
+- immutable ProgramSnapshot, ProgramRevision, RuntimeSession, and StateRevision
+  boundaries with exact pinning and no silent migration; and
 - canonical package bytes with cycle-aware, terminating, fail-closed reload.
 
-Raw Triples receive no mandatory nominal identity. Private interning handles
-cannot escape as identity. Cycles use explicit identity anchors rather than
-recursive content hashes.
+Raw Triples receive no mandatory nominal identity. A relation or mode may exist
+without executable authorization. Private interning handles, Wasm handles,
+pointers, table indexes, paths, spans, or log positions cannot escape as
+semantic identity.
 
 ### Lean trust profile
 
@@ -101,167 +161,228 @@ The decoder, object-language model, certificate proposition, and theorem
 connecting certificate acceptance to Clause validity are part of the audited
 trusted boundary. Their size and dependency closure are measured.
 
-### Rust boundary
+### Rust and compiler-machine boundary
 
 Rust independently decodes the same package and may build physical indexes,
-stores, interpreters, or generated plans. Its output must agree with the Lean
-reference relation for every declared observable and nonfunctional contract.
-Rust may not reimplement semantic classification through a closed feature enum,
-opaque callback, source-form match, or private side table.
+stores, interpreters, schedulers, adapters, or generated plans. Its output must
+agree with the reference process relation for every declared observable and
+nonfunctional contract. Rust may not reimplement semantic classification
+through a closed feature enum, source-form match, semantic-name switch, opaque
+callback, or private side table.
 
-## Gates 1–8
+The exact CLCP v3 bytes, carried hashed manifest, 73-byte receipt,
+left-to-right KExpr evaluator, machine Continuation, evaluator step, fuel
+exhaustion, `admitPropose`, and `CompilerRevisionId` remain compiler-machine
+mechanics. They do not define semantic Activation, Step, Run, Continuation, or
+general Admission. Clause-owned outer Terms and envelopes carry those process
+objects through the fixed machine.
 
-### 1. Pure evaluation
+## Phase B — Cross-phase process proving program
 
-Represent and run integer addition.
+All cases below must inhabit one semantic carrier and process protocol. Separate
+toy runtimes that merely share names do not pass. This is a cross-phase
+acceptance program: the semantic process cases can run before Compiler0, Terms,
+or materialization integration, while the host-freeze and physical parity cases
+complete only in the later integration phase.
 
-Required distinctions:
+### 1. Pure arithmetic and repeated activation
 
-- expression Term, result value, and denotation are not one identity;
-- the mode is deterministic and effect-free;
-- the authoritative context is unchanged; and
-- equivalent syntax may produce equal values without collapsing occurrences.
+Represent a pure deterministic integer addition Application. Activate one exact
+Application twice. Required observations:
 
-### 2. Binding and closure
+- one ApplicationId and two distinct ActivationIds and RunIds;
+- two independently nominalized equal-shaped Applications have distinct
+  ApplicationIds;
+- distinct Step and Observation occurrences even when returned Values are
+  equal;
+- expression Term, Application, result Value, and denotation remain separate;
+- no ProgramRevision or StateRevision is created; and
+- a direct-call specialization is observationally equivalent.
 
-Represent a binder-introducing function, lexical capture, application, and
-canonical source projection.
+### 2. Binding, closure, and hygienic compilation
 
-Required distinctions:
+Represent a binder-introducing function, lexical capture, application, and a
+binder-introducing macro/compiler process.
 
-- binder identity is independent of spelling and source position;
-- every use resolves through explicit scope relationships;
-- alpha-equivalent forms may be denotationally equivalent without sharing
-  occurrence identity; and
-- closure capture is inspectable Clause data, not host environment state.
+- Binder identity is independent of spelling and source position.
+- Every use resolves through explicit scope relations.
+- Captured identity is inspectable Clause data, not host environment state.
+- Alpha-equivalent forms may be denotationally equivalent without sharing
+  occurrence or Application identity.
+- Macro/compiler Steps produce a checked candidate Program delta with origins,
+  obligations, and evidence; only admission creates the successor revision.
 
-### 3. Algebraic data and exhaustive matching
+### 3. User-defined algebraic data and exhaustive matching
 
-Represent a user-defined sum type, constructors, patterns, and exhaustive
-matching without adding host feature constructors.
+Represent a user-defined sum type, constructors, patterns, and exhaustive match
+as Clause-authored declarations and process definitions. The checker accepts an
+exhaustive match and rejects missing and unreachable cases with exact
+obligations. Pattern binding and result type remain graph-native and
+source-projectable. No Term, KExpr, Lean, or Rust kernel constructor may be
+added for the feature. The first fixture is semantic IR and observations; it
+does not ratify algebraic-data or match source spelling.
 
-The checker rejects missing and unreachable cases with exact obligations.
-Pattern binding and result type remain graph-native and source-projectable.
+### 4. Exact n-ary role formation
 
-### 4. Structural and nominal higher arity
+Represent a transfer with actor, amount, source, and destination roles. Two
+equal structural descriptions may instantiate distinct Applications. Missing,
+extra, duplicate, wrong-type, wrong-cardinality, or position-recovered roles
+reject. One RelationSchema with no eligible executable Mode remains
+inspectable but cannot activate.
 
-Represent one structural value and two equal-looking but independently
-identified transfers using stable named roles.
+### 5. Recursive, streaming, and ongoing running
 
-Every role has identity, type, cardinality, and complete atomic admission.
-Source order is irrelevant after elaboration. Structural equality must not
-collapse transfer occurrence or entity identity.
+Represent recursive dependency closure and an ongoing service or actor. One
+Activation must produce several Steps, yield, suspend, persist an identified
+Continuation, resume under exact pins, and remain live without manufacturing a
+terminal result. Cancellation, terminal timeout, and budget exhaustion have
+typed outcomes. An ungrounded cycle remains distinguishable from a productive
+ongoing process.
 
-### 5. Recursive derivation and honest modes
+### 6. Relational recoverability and materialization
 
-Represent recursive reachability with exact independent supports. Exercise:
+Pure-mode observations may populate an activation-scoped result relation
+without creating a revision or turning every relation row into an execution.
+Only a later explicit Admission may place selected observed bindings into a
+revision-indexed RelationExtension. Applications, causal edges, continuations,
+evidence, bindings, and supports remain exactly queryable in either scope.
 
-- one proven terminating mode;
-- one bounded or productive mode;
-- one nondeterministic or streaming mode; and
-- explicit partiality or exhaustion.
+Run one unchanged spatial law through a cold scan and an indexed/incremental
+plan. They must agree on observations, occurrence-exact supports, candidate
+deltas, failures, and declared resources. Repeated premise slots, self-joins,
+and equal content from distinct Activations remain distinct. Disconnected
+population growth must not increase declared local update work. Oversized
+extents and allocation exhaustion take a visible typed fallback or exhaustion
+path without partial publication.
 
-The compiler may prove termination for restricted modes but must not claim a
-universal halting or executability decision.
+Semantic admission first supplies an `AdmittedStateDelta` with exact Program,
+session, predecessor/result StateRevision, and producing Activation/Step
+identity. A separate physical update envelope pins that delta plus the exact
+semantic graph/contract, physical plan, and budget. The materializer may
+validate, project, and apply the envelope to its view, but may not allocate or
+admit State history; plan identity never enters `StateRevisionId`.
 
-### 6. State and effects as Runs
+### 7. State transition and long-lived world pinning
 
-Represent a State transition that stages a candidate successor and effect
-intent. Admission accepts the State successor and authorization. A separately
-identified effect Run performs the external attempt and produces receipt or
-failure evidence for later admission.
+One authorized transition Activation stages a candidate State delta against an
+exact StateRevision. Candidate construction leaves the base unchanged.
+Admission alone creates the successor StateRevision. Every later world-sensitive
+Step names the exact revision it observed. A live Activation never silently
+sees a Program or world change; migration, observation advance, or handoff is
+explicit and evidence-bearing.
 
-The gate distinguishes current world, event request, transition occurrence,
-candidate delta, admitted successor, effect intent, authorization, attempt,
-receipt, observation, and evidence. Replay of trace data never repeats the act.
+### 8. Honest external effect
 
-### 7. Typed hygienic macro
+Exercise a causal graph with distinct intent, authorization, attempt, optional
+receipt, zero or more observations, governed Judgment, and later admission.
+Include success, failure before receipt, and timeout without receipt. Replaying
+trace data performs zero attempts. Failed later admission acknowledges the act
+and never claims rollback.
 
-Represent a binder-introducing macro as a typed transformation between explicit
-syntax contexts. It preserves source origin, binding, phase, types,
-capabilities, and diagnostics. Expansion is a candidate successor admitted only
-after its obligations pass.
+### 9. Host-freeze evolution
 
-### 8. Host-freeze extension
+Freeze the Lean checker/model, Rust semantic boundary, toolchains, binaries,
+and host-mechanics manifest. Then perform one predecessor-authorized
+`Compiler0 -> Compiler1` evolution that changes:
 
-Freeze the Lean checker/model and Rust semantic boundary. Then add through
-Clause data alone a new abstraction combining:
+- one binding form;
+- one effect form;
+- one typed macro;
+- one diagnostic behavior.
 
-- a binder;
-- an effect capability;
-- a State transition; and
-- custom readable syntax with canonical printing.
+The accepted process-v1 outer envelope is already fixed in Compiler0 before
+this evolution. Compiler1 populates that unchanged envelope; changing its shape
+would be a fifth host-freeze variable and does not pass this falsifier.
 
-The feature must require no construct-specific Lean/Rust semantic constructor,
-validator, callback, dispatch entry, formatter, refactor, analysis, dependency
-rule, or target semantic branch. Failure of this gate falsifies the claimed
-single authority.
+The user-defined algebraic data and exhaustive-match case must also pass under
+the same frozen hosts, including exact missing-case and unreachable-case
+rejections.
 
-## Cross-cutting obligations
+The change must occur through Clause data alone with no construct-specific
+Lean/Rust semantic constructor, validator, callback, dispatch entry, formatter,
+refactor, analysis, dependency rule, or target semantic branch.
 
-Every gate must preserve:
+## Exact acceptance
 
-- deterministic reading selection before child-domain checking;
-- lossless source occurrences and canonical parse/print/parse meaning;
-- exact role identity and complete n-ary neighborhoods;
-- local dependency invalidation rather than routine whole-graph recomputation;
-- canonical reload and tamper rejection;
-- occurrence-exact derivation support and retraction;
-- act/trace separation under retry, cancellation, and failure;
-- explicit strategy judgments for observable ABI, layout, overflow,
-  floating-point, ordering, synchronization, durability, resource, and latency
-  contracts; and
-- specialization into a non-generic hot path for at least one query, State
-  transition, and generated target operation.
+The cross-phase program passes only when all of these are executable and exact:
 
-For the specialization check, add a large disconnected set of unrelated Terms.
-The selected plan and semantic result must stay identical, and measured graph
-or index access must remain bounded by the declared dependency closure plus
-documented lookup cost.
+- ApplicationForm/Application/Activation separation;
+- one exact Application activated twice retains one ApplicationId and receives
+  distinct ActivationIds, while independently nominalized equal-shaped
+  Applications receive distinct ApplicationIds;
+- one Activation across multiple configurations and StepIds;
+- pure isolation with no revision;
+- an intentionally ongoing Run with no fake terminal result;
+- suspension, persistence, handoff, cancellation, and resumption with exact
+  causal identity and pins;
+- effect-stage honesty, including receipt absence;
+- exact Program and world pinning with no silent migration;
+- identity retention across source-only movement, serialization, process
+  restart, machine relocation, and physical rematerialization when the exact
+  ProgramSnapshot, ApplicationForm, and nominal identity remain unchanged;
+- new ApplicationId after a semantic or snapshot-local declaration revision,
+  with any intended continuity represented separately by ReferentId evidence;
+- independent concurrent Steps not ordered by storage serialization;
+- no implicit assertion from formation, evaluation, or observation;
+- relational recovery of admissible bindings, accepted observations,
+  dependencies, causal edges, and occurrence-exact supports;
+- malformed, ungrounded, unauthorized, cyclic-without-anchor, wrong-revision,
+  ambiguous-mode, and over-budget rejection before partial authority;
+- source-to-Term-to-Application-to-Activation-to-artifact explanation;
+- deterministic Reading selection before child-domain checking, lossless
+  source occurrences, canonical parse/print/parse meaning, exact focus,
+  binding and origin preservation, local recovery, and semantic round trips;
+  and
+- ordinary source at least as readable as the accepted surface, with process
+  machinery exposed only where semantically relevant.
 
 ## Required negative evidence
 
 The spike actively rejects or bounds:
 
-- malformed, incomplete, duplicate-role, and missing-role candidates;
-- accidental deduplication of equal occurrences or entities;
-- host handles, pointers, row IDs, or source spans leaking as identity;
-- expression/result/denotation collapse;
-- propositions treated as assertions or traces treated as occurrences;
-- effect replay, fabricated receipts, and false rollback claims;
-- quoted, pattern, hypothetical, or speculative Terms executed as authority;
+- accidental identity on every Triple or operator meaning in Triple slot 2;
+- incomplete or open formation candidates receiving semantic
+  ApplicationShapeId;
+- accidental deduplication of equal Applications, Activations, observations,
+  premise occurrences, effect occurrences, or supports;
+- host handles, pointers, row IDs, source spans, or Wasm handles leaking as
+  identity;
+- Application/Activation/Step/Run/trace collapse;
+- propositions treated as assertions or relation rows treated as process
+  occurrences;
+- fabricated receipts, replayed effects, or false rollback claims;
+- quoted, pattern, hypothetical, or speculative forms executed as authority;
 - NaN, signed-zero, Unicode-normalization, or numeric-width disagreement;
-- opaque or cross-epoch Atom equality;
-- total modes with unproved termination and productive modes without progress;
+- total Modes with unproved termination and productive Modes without progress;
 - hostile, recursive, nondeterministic, or phase-escaping macros;
+- non-exhaustive or unreachable algebraic-data match cases accepted without
+  their exact rejection obligations;
 - hidden semantic cases in host enums, callbacks, dispatch tables, serializers,
-  formatters, or generated runtimes;
-- a Lean trust escape or unlisted axiom in the certificate closure;
-- unexplained Lean/Rust disagreement;
-- source round trips that lose binding, occurrence, or concept continuity;
+  formatters, materializers, or generated runtimes;
+- source round trips that lose binding, occurrence, Application, or Referent
+  continuity;
+- silent Program/world rebinding on continuation resume;
 - whole-graph invalidation for a local edit;
-- pure evaluation that creates an authoritative revision; and
-- generic Triple execution presented as a credible production strategy.
+- every machine/KExpr reduction being recorded as a semantic Step; and
+- generic Triple execution presented as a credible production hot path.
 
 ## Pass and falsification
 
-The mechanism passes only when Phase A meets the trust profile, all eight gates
-pass over one exact Clause Core contract, Lean and Rust agree on every declared
-observable and nonfunctional contract, every negative fixture fails for the
-intended reason, and the host-freeze extension adds no private semantic case.
+The mechanism passes only when Phase A meets the trust profile, one exact
+carrier passes the complete Phase B cross-phase program, Lean and Rust agree on
+every declared observable and nonfunctional contract, every negative fixture
+fails for the intended reason, the unchanged v0 corpus crosswalks honestly, and
+host-freeze evolution adds no private semantic case.
 
-The mechanism is falsified if a dangerous feature requires private host
-semantics, mandatory identity on every Triple, positional convention, untyped
-tags, act/trace collapse, an untracked meaning-changing representation,
-ordinary graph-wide recomputation, unreadable graph ceremony, or generic
-execution that cannot specialize.
+Reject or narrow the mechanism if Application, Activation, and Step have no
+distinct consumers; the neutral three-slot carrier requires arbitrary positions
+or untyped tags for roles, continuation, binding, effects, or authority;
+essential semantics survives only in host functions, schedulers, mutable
+objects, or undocumented lowering; relational reasoning becomes materially
+worse; every ephemeral reduction must become durable graph content; the trusted
+kernel grows a second sovereign language; or an ongoing Run cannot be
+distinguished from failed or ungrounded evaluation.
 
-Lean is rejected as the constitutional host if ordinary generic work requires
-pervasive proof ceremony, constitutional `partial`/`unsafe` escape, distortion
-of Clause modes to fit Lean, unworkable canonical exchange, intolerable feedback
-cost, or a checker substantially larger and less comprehensible than the
-boundary it protects.
-
-Failure preserves the general-purpose Clause mission and records the exact
-forcing counterexample. It does not authorize silently shrinking the language
-or introducing a second semantic authority.
+Failure preserves Clause's process-first relational mission and records the
+exact forcing counterexample. It does not authorize a static fact language, a
+static application language, hidden host semantics, or silent scope reduction.

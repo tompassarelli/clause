@@ -1,7 +1,7 @@
 # Clause Syntax
 
 > **Status:** Canonical source design is accepted but not yet fully implemented.
-> The process-first Term kernel remains subject to the
+> The process-first Application/Activation kernel remains subject to the
 > [adoption spike](adoption-spike.md).
 >
 > **Authority:** Sole authority for canonical Clause source. The
@@ -16,26 +16,27 @@ canonical.
 
 ## Governing rule
 
-> Every line elaborates to a Term and a designated focus. Every indented child
-> receives the parent focus as its omitted left operand under the parent's
-> declared reading. Indentation determines containment and supplies no domain
-> relation of its own.
+> Every line elaborates to a Term, candidate formations, and a designated
+> focus. Every indented child receives the parent focus as its omitted left
+> operand under the parent's declared Reading. Indentation determines
+> containment and supplies no domain relation of its own.
 
 Conceptually:
 
 ```text
-elaborate(line) -> (term, focus)
+elaborate(line) -> (term, candidate formations, focus)
 ```
 
 A subject-focus reading designates the subject Term directly. A construct head
 may instead designate a structural declaration Term as focus and one explicit
 child relation. For example, `enum Game` can elaborate a bare `Chess` child as
 `[enum-declaration, has-member-entry, Chess]`; checked elaboration then produces
-the ordinary membership judgment. The parent reading selects focus and child
+the ordinary membership formation and assertion candidate. The parent Reading
+selects focus and child
 relation before inspecting the child's domain meaning. The child never guesses
 them from indentation.
 
-The parser selects a candidate reading deterministically from the explicit
+The parser selects a candidate Reading deterministically from the explicit
 head/operator and declared grammar in the already selected ElaborationContext.
 Missing or competing readings are errors. Later schema or type checking may
 reject the candidate, but cannot regroup the CST, reinterpret a sibling, or
@@ -137,8 +138,10 @@ for n in 101..106
   Door-{n} ∈ Door
 ```
 
-This is the accepted language shape. No parser implements it yet; the
-[roadmap](roadmap.md) records that implementation status.
+This is the accepted source shape. It does not expose ActivationIds, StepIds,
+or graph bookkeeping when those are not semantically relevant. No parser
+implements it yet; the [roadmap](roadmap.md) records that implementation
+status.
 
 ## Declarations and source context
 
@@ -231,13 +234,15 @@ Focused `state locked` is an ordinary declared relation with the focused
 Referent in its declared subject role. It is not object-field mutation or a
 scoped definition. Cardinality belongs to the relation contract.
 
-## Relation declarations
+## Relation, operator, mode, and Reading declarations
 
-A relation declaration states three things explicitly:
+The compact `relation` block is a source grouping convenience. Checked
+elaboration keeps its semantic products distinct:
 
-1. durable semantic identity;
-2. human-facing reading; and
-3. executable lookup modes.
+1. a durable `RelationSchema` identity with exact named roles and constraints;
+2. a human-facing source `Reading`;
+3. an `OperatorRef` when the declaration supplies an operator; and
+4. zero or more `Mode` declarations for that operator.
 
 ```clause
 relation egress/connects
@@ -246,13 +251,27 @@ relation egress/connects
   mode given door origin yields destination: many
 ```
 
-- `egress/connects` is the semantic designation.
-- `reads` defines exact mixfix grammar; Clause does not perform probabilistic
+- `egress/connects` is the schema/operator designation in this grouped form;
+  the checked graph retains the distinct identities and relation between them.
+- `reads` defines an exact source Reading; Clause does not perform probabilistic
   natural-language parsing.
 - Braces distinguish role binders from literal phrase words.
 - `subject door` is required before focus may omit that role. The first role is
   never implicitly the subject.
-- Each `mode` names known inputs, yielded outputs, and cardinality.
+- Each `mode` names known inputs, yielded outputs, and cardinality. Full checked
+  mode content also includes purity/effects, failures, nondeterminism, ordering,
+  continuation, scheduling, identity, resources, time, cost, and admissible
+  physical strategies where those are relevant.
+
+A RelationSchema may have no operator or executable mode. In the currently
+ratified compact source projection, a `relation` block with no `mode` clause
+declares a schema and Reading only; one or more `mode` clauses also establish
+the grouped OperatorRef. The semantic carrier still permits an operator with
+zero modes, but no canonical source spelling for that distinct case is ratified
+yet. An operator may otherwise have several modes. Schema, extension, operator,
+mode, Reading, derivation authorization, ExecutionAuthorization, admission
+authority, and effect capability never imply one another. Activation selects
+one exact eligible `ModeId` and requires separate ExecutionAuthorization.
 
 All result cardinalities are written as words:
 
@@ -266,17 +285,22 @@ mode given thing yields value: many
 Omitting cardinality is invalid; absence never defaults to `one`. `0..1`, `+`,
 and `*` are not canonical cardinality punctuation.
 
-Once declared, ordinary facts stay compact:
+Once declared, ordinary relational assertions stay compact:
 
 ```clause
 iron-door connects Cellar to Armory
 ```
 
-Surface word order is not semantic storage. Elaboration resolves one relation
-identity and exact named RoleIds over recursively parsed Terms. The target
-kernel represents the complete application as recursive three-slot Terms and
-may materialize an indexed named-role map for checking or execution. No
-semantic consumer may recover a role from tuple position or source order.
+Surface word order is not semantic storage. Elaboration resolves one
+RelationSchema and exact named RoleIds over recursively parsed Terms. Checked
+formation closes every required role and rejects missing, extra, duplicate, or
+wrong-cardinality bindings. A schema without an operator can form a checked
+relational row, assertion, or pattern, but not an ApplicationForm. When the
+Reading also selects an exact OperatorRef, checked formation may produce an
+ApplicationForm represented with recursive structurally neutral three-slot
+Terms. An implementation may materialize an indexed named-role map for checking
+or execution. No semantic consumer may recover an operator or role from Triple
+position, tuple position, graph adjacency, or source order.
 
 ## Terms and conventional operators
 
@@ -288,9 +312,11 @@ Term = Atom | [Term, Term, Term]
 ```
 
 The surface does not require three printed tokens per compound form. Declared
-readings, focus, delimiters, and conventional operators recover one exact Term
-and Clause judgment. Merely parsing or constructing a Term does not assert it,
-execute it, authorize it, or identify a unique occurrence.
+Readings, focus, delimiters, and conventional operators recover one exact Term
+and candidate formations. Checked formation may then produce a closed
+ApplicationForm. Merely parsing or constructing a Term does not create an
+Application, assert it, activate it, authorize it, or identify a unique
+occurrence.
 
 Canonical structural terms include:
 
@@ -305,8 +331,8 @@ false
 Vec2 { x: 3.0, y: 4.0 }
 ```
 
-Relation roles accept recursive terms, including declared cardinality-one
-applications:
+Relation roles accept recursive Terms, including declared cardinality-one
+application forms:
 
 ```clause
 position of player
@@ -317,8 +343,11 @@ length (position of player - position of coin)
 `+`, `-`, `*`, `/`, `<`, `<=`, `>`, `>=`, `=`, and `!=` retain their strong
 conventional infix readings when an exact declared relation contract supports
 them. Parentheses group recursive terms. Those operators still elaborate to
-ordinary role-labelled relations; they do not create a second primitive
-numeric ontology.
+ordinary role-labelled application-form candidates; checked formation may
+close them as ApplicationForms. They do not create a second primitive numeric
+ontology. A closed form may be quoted or inspected without becoming a nominal
+Application. Every Application receives `ApplicationId`; every Activation then
+receives a distinct `ActivationId`.
 
 `:=` is definition and `=` is equality. Canonical relation modes use `given`
 and `yields`; `->` is not generic directional punctuation.
@@ -350,7 +379,8 @@ their implementation shares pattern machinery.
 
 ## Events, deltas, and revisions
 
-Events, reusable deltas, and program changes share one fact-delta vocabulary:
+Events, reusable deltas, and program changes share one relational-content delta
+vocabulary:
 
 ```clause
 on collect ?actor
@@ -363,11 +393,23 @@ on collect ?actor
     ?coin state collected
 ```
 
-`when` constrains one pre-state. All `withdraw` and `admit` facts are grounded,
-conflict-checked, and staged as one candidate successor of the transition Run.
-Only admission commits the successor StateRevision. Source order never resolves
-competing declarative writes, and a trace of the transition is not the
-transition occurrence itself.
+`when` constrains one exact observed/base StateRevision. All `withdraw` and
+`admit` content is grounded, conflict-checked, and staged as one candidate delta
+by an authorized transition Activation and its Steps. The source word `admit`
+names candidate additions in this established delta vocabulary; it does not
+perform constitutional Admission. Only the separate governance operation
+commits the successor StateRevision. Source order never resolves competing
+declarative writes, and a trace of the transition is not the Activation, Step,
+or transition occurrence itself.
+
+The `on` block declares process constitution. Merely representing it or an
+event does not run it. An actual trigger remains an independently identified
+event occurrence; activation requires an exact nominal Application, selected
+ModeId, initial program/session/world pins, and ExecutionAuthorization. The
+configured event ApplicationId is not the actual event OccurrenceId; the latter
+carries exact provenance. An internally produced trigger names its producing
+Activation and Step. An external trigger instead names exact external-boundary
+provenance and causally precedes the Activation it triggers.
 
 A reusable change set is explicit:
 
@@ -396,19 +438,21 @@ revision impact/adopt from impact
   apply impact/import-change
 ```
 
-Canonical source has no `~>` transition nesting and no signed `+ fact` or
-`- fact` delta lines. Those forms hide the common transactional structure and
+Canonical source has no `~>` transition nesting and no signed delta lines.
+Those forms hide the common transactional structure and
 collide visually with textual diffs.
 
 ## Requests
 
-Requests have explicit heads and a shared block envelope. A relational clause
-never becomes a query merely because it contains a variable or because exactly
-one program context happens to match elsewhere.
+Requests have explicit heads and a shared block envelope. A relational
+ApplicationForm never becomes a query merely because it contains a variable or
+because exactly one program context happens to match elsewhere.
 
 The operand after `in` is resolved to an exact ProgramRevision before request
-execution. Results retain that exact revision even when the authored operand is
-a navigational ProgramRef.
+activation. A request activates an Application under an observation-seeking
+mode; it is not a false assertion. Observations and results retain that exact
+revision and Activation identity even when the authored operand is a
+navigational ProgramRef.
 
 Projection:
 
@@ -477,9 +521,9 @@ diff impact to impact/adopt
 recorded choice evidence; no unseeded `first` or hidden random selection is
 permitted.
 
-The initial `where` envelope supports one recursive relational clause until the
-checked query plan gains an explicit conjunction node. This is an honest
-current design bound, not indentation-based conjunction inference.
+The initial `where` envelope supports one recursive relational application
+pattern until the checked query plan gains an explicit conjunction node. This
+is an honest current design bound, not indentation-based conjunction inference.
 
 ## Prefix binders and interpolation
 

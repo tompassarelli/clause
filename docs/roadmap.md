@@ -9,371 +9,475 @@
 
 ## Current position
 
-Clause is at a clean constitutional bootstrap with a compiler-genesis contract.
-The live repository contains:
+Clause has accepted a process-first constitutional reset and has not yet
+implemented it. The public implementation evidence predating the reset remains
+valuable but narrower than the new semantic claim:
 
-- the accepted process-first semantic foundation;
-- the canonical source design;
-- a provisional Lean 4 model containing indexed Atom/Term representations,
-  generic candidate Context/Judgment carriers, a relative finite ground-
-  certificate checker and soundness theorem, the strict CLCP v1 codec, the
-  literal bootstrap and predecessor-authorized successor, exact executable
-  vectors, and a bounded trust audit; and
-- a semantic-empty Rust physical substrate with an independent strict CLCP v1
-  codec, exact-byte carrier, relative certificate checker, predecessor-only
-  package authorization witness, and shared-corpus tests; and
-- the accepted contract for strict CLCP v3, one externally owner-anchored literal
-  `Compiler0`, a fixed construct-blind universal evaluator, exact
-  predecessor-only succession, and Clause-owned source/compiler behavior.
+- one neutral recursive `Term = Atom | RawTriple` carrier with no mandatory
+  Triple identity;
+- provisional Lean Context/Judgment carriers and a relative finite ground-
+  certificate checker;
+- strict CLCP v1 Lean/Rust codec parity and literal predecessor authority;
+- the CLCP v3 Lean strict codec, carried manifest, evaluator/replay model, and
+  complete 73-byte-receipt replay checker;
+- the frozen v0 execution source/observation corpus; and
+- the bounded historical `game_leverage` cold-scan/indexed experiment.
 
-There is no supported parser, compiler, runtime, persistence format, CLI,
-backend, or example application. The Lean CLCP v3 codec and complete replay
-checker are implemented; Rust parity, literal `Compiler0`, genesis anchor, and
-compiler-evolution artifacts remain absent. No implemented language capability is
-claimed. Git history is not source authority or a design template.
+Those artifacts do not implement `FormationJudgment`, `RelationSchema`,
+`OperatorRef`, `ModeId`, `ApplicationForm`, `ApplicationId`, `ActivationId`,
+semantic `StepId`, `RunId`, typed Continuation, `ObservationId`, general
+Admission, or the process-v1 corpus. There is no supported parser, compiler,
+runtime, persistence format, CLI, Wasm boundary, renderer integration, or
+example application.
 
-The shared v0 execution corpus now fixes three substantial implementation
-targets: recursive pure dependency closure, a two-phase admitted State/effect
-protocol, and predecessor-bound Program evolution with two isolated replay
-runs. These are source and observation fixtures only. They do not make a
-parser, Run relation, Admission relation, effect adapter, or replay command
-implemented.
+The exact CLCP v3 bytes, hashed manifest, 73-byte receipt, left-to-right KExpr
+evaluator, machine Continuation, evaluator step, fuel exhaustion,
+`admitPropose`, and `CompilerRevisionId` remain frozen compiler-machine
+mechanics. They are not silently reinterpreted as universal process semantics.
+Clause-owned outer Terms and envelopes must carry process identities, pins,
+authorizations, evidence, and governed deltas through that fixed machine.
 
-The CLCP v1 literal proof bootstrap and its one preauthorized successor are
-fixed by exact bytes. Lean and Rust independently decode and re-encode the same
-positive corpus and reject the recorded negative classes. Those artifacts are
-narrow constitutional evidence, not `Compiler0` and not an implementation of
-the v3 contract. Atom equality contracts and broader resource/fuzz evidence
-remain later tranches.
+No implementation claim follows from a documentation specimen, local branch,
+test transcript, or host prototype. Git history is recovery, not semantic
+authority.
+
+Terms `2811f52` is a rejected semantic candidate and must not land unchanged.
+Materialization `274136a` is a clean candidate, but its independent review was
+interrupted; it remains unreviewed, unaccepted, and non-authoritative.
+
+## Preserved oracles
+
+The following evidence remains unchanged while the reset is implemented:
+
+- `clause:test-vectors/execution/**` stays byte-for-byte v0;
+- its six tags stay `returned`, `choices`, `yielded`, `suspended`, `failed`, and
+  `exhausted`;
+- pure dependency closure, State/effect fulfillment, and Program evolution
+  preserve their exact observations;
+- source-only movement preserves ApplicationId only when the exact
+  ProgramSnapshot, ApplicationForm, and nominal identity are unchanged;
+  cross-revision continuity uses separate ReferentId evidence;
+- equal assertion and premise occurrences remain distinct;
+- neutral Triple slots never acquire an inherent operator role;
+- CLCP v1/v3 exact-byte and replay evidence remains scoped to its published
+  contract; and
+- the unchanged position/radius source law remains the cold-semantics input for
+  later scan/indexed materialization parity.
+
+New process-v1 fixtures extend these oracles; they do not rewrite them.
 
 ## Lifecycle and sequencing
 
-Executable semantic capability advances continuously through three distinct
-states:
+Executable capability advances through three distinct states:
 
-1. **Experimental implementation and falsification artifacts** may land at any
-   time when they are explicitly non-authoritative, state a bounded claim, have
-   deterministic tests for that claim, remain reversible, and make no
-   supported-language claim.
-2. **Semantic candidates** additionally map their proposed meaning into
-   host-neutral Clause Core. They remain candidates: the
-   [foundation](foundation.md) is the sole semantic authority, the
-   [syntax](syntax.md) is the canonical syntax authority, and Lean, Rust, or
-   other host prototypes cannot invent Clause meaning.
-3. **Supported or admitted capability** requires every applicable proof,
-   cross-host parity, negative-fixture, hidden-authority, optimization, and
-   tracked-tree absence gate in the architecture and the phase exit evidence
-   below.
+1. An **experimental implementation or falsification artifact** may land with
+   explicit non-authority, a bounded claim, deterministic checks for that
+   claim, reversible scope, and no supported-language claim.
+2. A **semantic candidate** maps proposed behavior into the accepted process
+   constitution. It remains a candidate; Lean, Rust, a package, an index, a
+   browser, or successful execution cannot invent Clause meaning.
+3. **Supported or admitted capability** passes every applicable exact identity,
+   cross-host parity, negative-fixture, hidden-authority, cold-equivalence,
+   specialization, and absence gate before promotion or release.
 
-Constitutional dependencies block only promotion, admission, and release. They
-do not block independent semantic, execution, runtime, product, or evidence
-experiments and implementation. Semantic, execution, and evidence workstreams
-proceed concurrently; only a true input-to-output dependency edge serializes
-them. Landing an experiment or candidate records neither semantic acceptance
-nor supported-language status. In particular, this roadmap does not claim that
-the current game-leverage candidate is accepted or landed.
+Constitutional dependencies block integration and promotion, not bounded
+independent experiments. Implementation can proceed in parallel where paths
+and semantic inputs are genuinely independent. No candidate may be integrated
+against superseded `Clause = judgment`, graph-first, proposition-first, or
+host-owned game semantics.
 
-## Status summary
+## Gap matrix
 
-| Work | Status | Exit boundary |
+| Boundary | Current evidence | Missing exit evidence |
 | --- | --- | --- |
-| Semantic foundation | Accepted constitutional hypothesis | [Foundation](foundation.md) |
-| Canonical source design | Accepted; unimplemented | [Syntax](syntax.md) |
-| Repository reset | Complete | Live tree contains only current documents, licenses, and current package roots |
-| Lean package bootstrap | Complete | Lean 4.33.1 build at trust level zero, bounded declaration audit, and same-kernel replay |
-| Rust substrate bootstrap | Canonical-package codec complete; broader substrate scaffolded | Pinned Rust toolchain passes formatting, all-target checks/tests, Clippy, and forbids unsafe code |
-| Clause Core calculus | In progress; provisional Term, candidate Context/Judgment, relative ground-certificate checking, and narrow package authority | Admitted Atom/Term equality plus generic Context/Judgment/Run/Admission with no feature taxonomy |
-| CLCP v1 proof package | Lean/Rust codec and frozen-corpus parity complete; evidence only | Published exact corpus, strict nested decoding, byte-identical positive re-encoding, and matched negative verdict classes |
-| P1 compiler-genesis contract | Complete and published | [Compiler genesis](compiler-genesis.md) and [CLCP v3](canonical-package.md) agree on exact authority and host boundaries |
-| CLCP v3 generic hosts and literal Compiler0 | Experimental implementation in progress; Lean wire/receipt replay checker implemented; admission evidence pending | Independent strict codecs, fixed generic evaluator/checker, exact owner anchor, and shared positive/negative corpus |
-| Constitutional adoption and evolution | Experiments may proceed; promotion/admission awaits Rust parity and accepted Compiler0 | All eight spike gates plus one four-change predecessor-authorized Compiler1 and frozen hosts |
-| Clause-authored compiler behavior | Candidate implementation may proceed; supported use awaits admission | Reading, binding, elaboration, effects, macros, origins, diagnostics, and evolution execute from the accepted package |
-| Product gates | Experiments may proceed; supported release awaits the spike | Readability, incrementality, native/JS performance, systems coverage, and maintenance evidence |
+| Neutral representation | Term/Atom/RawTriple candidates exist | Accepted equality contracts and process-era checked formation |
+| Process constitution | Public documentation defines the candidate | Executable Formation/Application/Activation/Step/Run/Continuation rules |
+| Typed identity | Program/State identity design and occurrence evidence exist | Checked ApplicationShape/Application/Activation/Step/Run/Continuation/Observation domains and non-interchange proofs |
+| Relations and modes | Source design and historical relation experiments exist | Separate RelationSchema, revision-indexed extension, OperatorRef, Mode, Reading, and authorization contracts |
+| Compiler machine | CLCP v3 Lean replay is implemented | Rust v3 parity, literal process-aware Compiler0, external anchor, and accepted successor |
+| Compiler ownership | Genesis/host-freeze contract exists | Compiler0 migration away from provisional `JUDGMENT_ID`/check-decision payloads and one frozen-host evolution |
+| Execution oracle | v0 corpus is frozen | process-v1 crosswalk and one complete vertical slice |
+| Terms | `2811f52` is rejected; selected mechanics remain evidence | Rewrite under Application/Activation identity and exact role closure |
+| Materialization | `274136a` is clean but its review was interrupted; it is unreviewed and unaccepted | Independent review, admitted-delta input, occurrence-exact process supports, and genuine end-to-end locality |
+| Transition/effects | Source and rejected host-owned transition vectors exist | Clause-owned lowering and honest effect causal graph |
+| Wasm/browser | Passive shell candidate exists; no Wasm implementation | Bounded process ABI, native/Wasm parity, repaired passive shell, and full integration |
+| Product proof | Historical game-leverage experiment exists | Clause-owned playable mechanic, second substantial Clause-only extension, and passive rendering |
 
-## Phase 0 — Clean reset
+## Phase 0 — Freeze and crosswalk oracles
 
-**Status:** Complete.
+**Status:** v0 is frozen; process-v1 companion is missing.
 
-The reset established a supported line containing only current constitutional
-documents, licenses, and semantic-empty Lean/Rust package roots. Repository-wide
-absence checks covered every tracked source, test, example, document, generated
-consumer, host, and build or release file. Phase 1 then began from that exact
-boundary.
+Freeze the exact existing v0 bytes and their actual observations for:
 
-**Exit evidence:** tracked-tree census, documentation checks, and a successful
-empty Rust workspace build. The first Lean build is the entry check for
-Phase 1 because the pinned release toolchain was not locally available during
-the reset.
+- recursive pure dependency closure and its ground-rule negatives;
+- independently identified assertion occurrences;
+- candidate State delta versus admitted StateRevision;
+- effect intent, attempt, receipt, trace replay, and later receipt admission;
+  and
+- two Program changes from exact predecessors, including stale-base rejection.
 
-## Phase 1 — Constitutional calculus
+Add new exact process-v1 cases for the current gaps:
 
-**Status:** In progress.
+- pure arithmetic;
+- closure capture and source movement;
+- user-defined algebraic data plus exhaustive-match acceptance and exact
+  missing/unreachable-case rejection;
+- executable exact n-ary roles;
+- duplicate equal premise, Application, Activation, Step, and observation
+  occurrences;
+- query absence versus falsehood;
+- an ongoing service, suspension/resumption, cancellation, timeout without
+  receipt, and budget exhaustion; and
+- generated Rust/JavaScript/Wasm observation parity when those artifacts exist.
 
-Define in Lean the smallest host-neutral model required by the foundation:
+The companion maps the frozen v0 observations into the new identity and causal
+domains without changing v0 bytes or inferring IDs from fixture-local names.
+
+**Exit evidence:** exact v0 checksum preservation, explicit crosswalk rules,
+and negative vectors for wrong-mode, open form, ambiguous mode, stale revision,
+unauthorized cancellation, fabricated receipt, and ungrounded cycle.
+
+## Phase 1 — Process constitution
+
+**Status:** Documentation candidate; no implementation claim.
+
+Land one internally consistent public authority defining:
+
+- running, FormationJudgment, ApplicationForm, Application, Activation,
+  Configuration, Step, Run, Continuation, Observation, Result, Value,
+  Judgment, Admission, and Trace;
+- exact typed identity/equivalence rules;
+- RelationSchema, activation-scoped result relations, revision-indexed
+  RelationExtension, OperatorRef, Mode, Reading, ExecutionAuthorization, and
+  capability;
+- ProgramSnapshot as process constitution and StateRevision as admitted process
+  boundary;
+- exact long-lived Program/world pinning;
+- effect intent/authorization/attempt/optional-receipt/observation/Judgment/
+  admission causality;
+- graph-as-canonical-carrier and cold-semantics refinement; and
+- the implementation DAG and falsifiers in this roadmap.
+
+**Exit evidence:** one clean exact-object documentation review with no
+contradictory `Clause = judgment`, graph-authority, rest/motion, overloaded Run
+arrow, or continuation/candidate-delta collapse in the edited authority set.
+
+## Phase 2 — Checked formation and process identities
+
+**Status:** Not implemented.
+
+Introduce the smallest host-neutral checked distinctions:
 
 ```text
-Atom
-Term = Atom | [Term, Term, Term]
-Context
-Judgment
-Mode
-RunOutcome
-Run
-Delta
-Trace
-Admission
-Revision
+RelationSchemaId
+RoleId
+OperatorRef
+ModeId
+ApplicationShapeId
+ApplicationId
+ActivationId
+StepId
+RunId
+ContinuationId
+ObservationId
 ```
 
-The current provisional model contains:
+Keep `ReferentId` as the established nominal referent identity; do not add an
+indistinct universal `ConceptId`. Raw transport bytes may share width while
+semantic ID domains remain non-interchangeable.
+`ClauseId` is retired as a public identity domain; every nominal Application
+has ApplicationId, while raw, quoted, open, or merely structural forms are not
+anonymous Applications.
 
-- canonical-byte candidates and explicit universe/semantics indexes;
-- generic Atom kind and equality-contract references with no host callback;
-- exactly two Term constructors: Atom and a neutral three-Term Triple;
-- recursive candidate representation comparison, including explicit
-  cross-index rejection;
-- no identity field on Triple, while all nominal meaning remains deferred to a
-  future Clause judgment; and
-- generic, index-bound Judgment claims whose semantic fields remain ordinary
-  Terms, candidate Contexts enumerating claims, and proposed contextual
-  judgments pairing the two;
-- representation-only candidate premise lookup that grants no derivation or
-  authority;
-- generic ground rules, separately supplied root/rule bases, and topologically
-  ordered finite certificate traces;
-- an executable one-pass checker whose successful result has a kernel-checked
-  proof of `DerivableFrom` the exact supplied basis; and
-- positive shared-DAG evidence plus rejection of empty, missing, mismatched,
-  duplicate node-address, self-referential, forward, mutual-cycle,
-  altered-target, and self-authorizing all-equal specimens;
-- one candidate package record binding raw canonical-byte candidates, exact
-  structural index, exact lineage, decoded basis/certificate/target sections,
-  and all auxiliary content by strict decode and byte-for-byte re-encoding;
-- one total U8/U32 canonical codec with exact frame and EOF consumption;
-- the exact 334-byte literal bootstrap and 681-byte authorized successor;
-- an injective ordinary-Term basis-admission claim over the exact next INDEX
-  and BASIS frames; and
-- a two-constructor authority relation plus a theorem yielding only relative
-  derivability from the exact packaged basis.
+RelationSchemaId and OperatorRef pair `ProgramSnapshotId` with typed snapshot-
+local declaration identity; RoleId is local to its exact RelationSchemaId, and
+ModeId is local to its exact OperatorRef. A changed ProgramSnapshot never
+silently preserves any of them. Cross-revision continuity, where a real
+consumer requires it, is a separate ReferentId relation with explicit evidence.
+ProgramRevision lineage alone never supplies declaration identity or
+continuity.
 
-It deliberately does not yet define or claim a valid Context, a valid Clause
-Judgment relation, schematic rule formation or substitution, Mode, RunOutcome,
-Run, Delta, Trace, general Admission, Revision, Atom-contract validation,
-semantic structural equality, or nominal identity. Narrow package authority
-and relative derivability are not semantic truth or general Admission.
+Every ApplicationShapeId commits to ClauseSemanticsId, exact OperatorRef and
+roles, context requirements, and the complete resolved semantic-dependency/
+declaration closure, including proof that the closure is empty where applicable.
 
-The model must keep structural equality, value equality, denotational
-equivalence, occurrence identity, entity identity, concept continuity, and
-revision identity distinct. Clause is a judgment over a Term, not a constructor.
-Run is a relation, not a total host function. A trace is data about a Run, not
-the occurrence itself.
+Implement closed ApplicationForm formation, nominal Application allocation,
+fresh Activation, before/after Configurations under one stable ActivationId,
+finite Step predecessor frontiers, Run causal closure, exact continuation pins,
+and typed outcomes. Machine/KExpr reductions remain compiler mechanics rather
+than semantic Steps.
 
-Initial proofs protect only constitutional boundaries:
+**Exit evidence:** exact positive/negative identity vectors, reload and mobility
+tests, one Application activated twice with distinct ActivationIds,
+independently nominalized equal-shaped Applications with distinct
+ApplicationIds, one Activation across several Steps, concurrent Steps without
+invented total order, and no revision from pure running.
 
-- Term construction grants no assertion, execution, or authority;
-- accepted judgments are well-formed;
-- pure Runs preserve the authoritative context;
-- admitted candidates preserve context validity;
-- deterministic modes have at most one returned result;
-- effects require declared capability;
-- intent, attempt, receipt, observation, and evidence remain distinct; and
-- host handles cannot become Clause identity.
+## Phase 3 — Relation, operator, mode, and authorization split
 
-**Current evidence:** the pinned Lean 4.33.1 Term, Context/Judgment, relative
-certificate, canonical codec, literal authority, and executable vector model
-builds with `-t0` and warnings as errors. The exact positive corpus decodes and
-authorizes; wrong magic/version/order/tag/length, truncation, and trailing bytes
-reject. Bound-field, predecessor, authorization, self/cycle, cross-index,
-Context, nullary-rule, and bare-derivability adversaries retain the intended
-separate decode, binding, relative-check, and authority verdicts. A build-time
-environment audit covers the core and vectors and rejects every unsafe
-declaration, every partial declaration except seven exact compiler-generated
-runtime helpers for total recursion, foreign/replacement implementations, and
-axioms outside the explicit `propext` policy.
-`leanchecker --fresh ClauseCore` successfully replays the safe/total
-declarations through the same Lean kernel and excludes those enumerated runtime
-helpers. This is narrow v0 package authority, not semantic Admission, the full
-transitive trust closure or Phase 1 completion.
+**Status:** Not implemented.
 
-**Exit evidence:** safe/total completed calculus; no `sorry`, authored
-`unsafe` or `partial`, feature-specific syntax constructor, or unlisted axiom
-in the constitutional closure.
+Make role schema, extensional content, process operator, executable mode, source
+Reading, derivation authorization, ExecutionAuthorization, admission authority,
+and effect capability explicitly separate. Activation selects one exact mode
+only after role closure and authorization. A relation with zero modes remains
+valid and non-executable.
 
-## Phase 2 — CLCP v1 proof package and Rust parity
+A RelationSchema with no OperatorRef can still form checked bindings,
+relational rows, proposition/assertion content, and patterns. It cannot form an
+ApplicationForm.
 
-**Status:** Complete for the frozen CLCP v1 proof package and corpus boundary;
-not compiler-genesis completion.
+Retain the accepted readable `relation` block as source grouping sugar whose
+checked elaboration produces the separate objects. Ordinary source must not
+acquire identity or process bookkeeping ceremony.
+For the currently ratified projection, no `mode` clause means schema plus
+Reading only, while one or more `mode` clauses also establish the grouped
+OperatorRef. The semantic carrier may represent an operator with zero modes,
+but its distinct canonical source spelling remains unratified rather than
+ambiguous.
 
-The Clause-owned CLCP v1 grammar, literal bootstrap, one authorized successor,
-Lean decoder, independent Rust decoder, and canonical positive/negative corpus
-are fixed. Both implementations strictly validate nested predecessors,
-byte-identically re-encode the positives, and reproduce the recorded decode,
-exact-binding, certificate, and authority boundaries.
+**Exit evidence:** n-ary complete-role vectors, multiple modes on one operator,
+non-executable relation diagnosis, no positional role recovery, no implicit
+assertion, and exact revision-indexed relational querying.
 
-The Rust crate may add only physical decoding, indexing, persistence, and
-execution mechanics. It may not reproduce the semantic checker through Rust
-enums or construct-specific pattern matching.
+## Phase 4 — One complete process vertical slice
 
-**Exit evidence:** byte-exact cross-host round trips, package-bound Lean
-certificate checking, Rust/Lean observable parity, and dependency scans showing
-no hidden semantic authority.
+**Status:** Not implemented.
 
-## Phase 2a — P1 compiler-genesis contract
+Implement one semantic carrier covering:
 
-**Status:** Specified; implementation and independent acceptance evidence are
-pending.
+1. pure deterministic arithmetic;
+2. closure capture and hygienic binding;
+3. user-defined algebraic data and exhaustive matching, including exact missing
+   and unreachable case rejection;
+4. exact n-ary application formation;
+5. recursive derivation;
+6. a streaming or ongoing service with suspension and resumption;
+7. cancellation, timeout, and budget exhaustion;
+8. a State transition admitted as a new StateRevision;
+9. an external effect with optional receipt and later Judgment/admission;
+10. a hygienic macro/compiler process producing a checked Program delta; and
+11. one Application activated twice plus two independently nominalized equal-
+    shaped Applications.
 
-The [compiler-genesis contract](compiler-genesis.md) and
-[canonical-package contract](canonical-package.md) define:
+Activation-scoped result relations derived from pure observations must remain
+exactly queryable without creating a revision. Only explicit later Admission
+may place selected bindings in a revision-indexed RelationExtension. An
+intentionally ongoing Run must not manufacture a terminal result or be confused
+with an ungrounded cycle.
 
-- one literal `Compiler0` selected by an irreducible human-owner act and
-  supplied through the non-package-wire
-  `Missing | Supplied(OwnerAnchorWitness)` admission input, with complete
-  selected bytes observed for exact comparison;
-- CLCP v3 with separate subject and evidence frames;
-- one exact carried Core manifest whose canonical bytes close every generic
-  static/evaluation rule, replay receipt, and the one-operation physical profile;
-- a fixed universal `Bytes`/`Term` evaluator with operational byte inspection,
-  concatenation, equality, recursion, and hashing plus generic Lean rules;
-- exact predecessor-only succession through the fixed Core ABI, canonical
-  checker-constructed build/admission requests, results and observations, and
-  compact trace-free replay receipts;
-- Clause ownership of reading, binding, elaboration, effects, typed macros,
-  origins, diagnostics, and compiler evolution from genesis; and
-- the generic-mechanics versus semantic-dispatch audit and
-  structure-preserving seed-nominal renaming law with single-valued allocated
-  and derived identity recomputation; and
-- separate deterministic strict-decode errors plus an exhaustive ordered,
-  pairwise-disjoint first-failure authorization stage/code table; and
-- mandatory genesis request, reachable missing-anchor and supplied-witness
-  mismatch verdicts, empty evidence, explicit fuel-limit, and final exact-
-  package-bytes/hash bindings through the same authorization stages.
+This phase implements the semantic process slice in a host-neutral model and
+reference path. It does not depend on Compiler0 migration, the rejected Terms
+candidate, materialization, or the host-freeze evolution. Those integrations
+may use this contract only after its exact semantics are accepted.
 
-This contract phase is complete. Implementation evidence belongs to Phase 2b.
+The process-model candidate for this phase owns only
+`clause:lean/ClauseProcess.lean`, `clause:lean/ClauseProcess/**`, and
+`clause:test-vectors/process-v1/**`. One Phase 4 integrator alone owns any
+necessary shared Lean roots, manifests, or corpus indexes and produces the one
+exact accepted process object consumed by Phase 5.
 
-**Exit evidence:** one internally linked, directly implementable contract with
-no host-language semantic authority, no recursive certificate binding, an
-exact succession ABI, a self-contained generic checker contract, and explicit
-residual tractability uncertainty.
+**Exit evidence:** the semantic cases and negatives in
+[adoption-spike.md](adoption-spike.md) pass under one exact process contract,
+excluding the later materialization and frozen-host integration gates. The full
+cross-phase adoption program remains open through Phase 5.
 
-## Phase 2b — CLCP v3 genesis implementation
+## Phase 5 — Compiler host-freeze, Terms, and materialization
 
-**Status:** Experimental implementation is in progress; the Lean wire/receipt
-checker is implemented; promotion/admission still awaits scalable real replay,
-Rust parity, Compiler0, integration, and exit evidence.
+**Status:** Terms `2811f52` is rejected. Materialization `274136a` is clean but
+unreviewed, unaccepted, and requires migration. Compiler0 and Rust v3 work are
+preserved dirty candidates, not accepted implementations.
 
-Implement independent strict CLCP v3 decoding, the fixed generic Lean replay
-checker, the fixed generic Rust evaluator and physical profile,
-one literal `Compiler0`, its external exact-byte owner-anchor witness with
-`Missing` and mismatched-selection negatives, and
-stage-separated positive and adversarial vectors. Materialization provenance
-is recorded as untrusted evidence and cannot create the anchor.
+Bounded candidate work may proceed in parallel before this phase, but ordered
+integration begins only from the accepted Phase 4 process contract:
 
-This phase must measure complete replay tractability before adding checked
-optimization. It must not add a Rust or Lean
-Clause frontend, construct dispatch, third-language semantic bootstrap, or
-candidate/self authorization.
+1. complete and independently accept Rust CLCP v3 parity without changing the
+   frozen compiler-machine contract;
+2. rewrite and independently accept Terms around exact declarations, role
+   closure, Application/Activation/Step/Observation identity, and process
+   envelopes;
+3. migrate Compiler0 from provisional `JUDGMENT_ID` and check-decision payloads
+   to those schemas, operators, modes, ApplicationForms, and process envelopes;
+   complete lossless source occurrence preservation, deterministic Reading
+   selection, exact focus/binding/origins, canonical printing, local recovery,
+   and semantic round trips; then admit exact Compiler0 through the external
+   owner anchor;
+4. perform one predecessor-authorized Compiler0-to-Compiler1 host-freeze change
+   covering exactly one binding form, one effect form, one typed macro, and one
+   diagnostic behavior with zero host semantic changes. Compiler0 already fixes
+   the accepted process envelope and Compiler1 merely populates it. The user-
+   defined algebraic-data/exhaustive-match positive and missing/unreachable
+   negatives also pass under the frozen hosts; and
+5. refit and independently accept materialization behind admitted semantic
+   deltas, then complete cold scan/indexed parity and end-to-end locality.
 
-**Exit evidence:** exact-byte genesis acceptance; independent decode/re-encode
-parity; byte-identical carried-manifest identities; generic evaluation/check
-parity over every fixed rule; exact decode/authorization verdict, ABI, and
-receipt/replay-binding negatives; a checked generic-mechanics/host-target
-manifest; seed-renaming vectors with canonical reordering and allocation/
-derived-ID recomputation; and observed timings for the narrow compiler request.
+The materialization seam is exact:
 
-## Phase 3 — Dangerous semantic gates
+```text
+AdmittedStateDelta {
+  ClauseSemanticsId, ProgramRevisionId, RuntimeSessionId,
+  predecessor StateRevisionId, result StateRevisionId,
+  producing ActivationId, producing StepId, semantic delta
+}
 
-**Status:** Experimental implementation and falsification may proceed
-concurrently; promotion/admission awaits Phase 2b exit evidence.
+MaterializationUpdate {
+  AdmittedStateDelta,
+  exact semantic graph ref, exact contract ref, exact physical plan ref,
+  physical budget
+}
+```
 
-The cross-host source/observation corpus for pure computation, State/effects,
-and verified Program evolution is frozen in
-[`test-vectors/execution`](../test-vectors/execution). Lean reference semantics,
-Rust execution, public tooling, and isolated replay remain pending.
+Semantic governance creates `AdmittedStateDelta`. A materializer may validate,
+project, and apply `MaterializationUpdate` to a replaceable physical view and
+return a receipt or typed physical failure. It never allocates, admits, or owns
+State history. Graph, contract, and plan identity belong to the physical update
+and receipt; plan identity never enters `StateRevisionId`.
 
-Run the eight cases in [adoption-spike.md](adoption-spike.md):
+Parallel candidate lanes remain path-disjoint:
 
-1. pure evaluation;
-2. binding and closure;
-3. algebraic data and exhaustive matching;
-4. structural and nominal higher arity;
-5. recursive derivation and honest non-total modes;
-6. State and effect Runs;
-7. typed hygienic macro expansion; and
-8. a frozen-host extension combining binding, effects, transition, and custom
-   readable syntax.
+- Rust CLCP v3: `clause:crates/clause-substrate/src/compiler_package_v3/**`,
+  `clause:crates/clause-substrate/tests/compiler_package_v3.rs`, and
+  `clause:crates/clause-substrate/tests/evaluator_v3.rs`, plus the preserved
+  host-mechanics gates
+  `clause:crates/clause-substrate/tests/host_mechanics.rs` and
+  `clause:crates/clause-substrate/tests/fixtures/compiler_runtime/{host-mechanics.tsv,source-ast-mechanics.tsv}`;
+- Compiler0: `clause:compiler0/**`, `clause:tools/compiler0-materializer/**`,
+  and `clause:test-vectors/compiler-genesis/**`; this lane owns the lossless
+  parser/Reading selection, canonical printer, local recovery, and semantic
+  round-trip artifacts inside that scope;
+- Terms: `clause:docs/compiler-terms.md` and
+  `clause:test-vectors/compiler-terms/**`; and
+- materialization: `clause:crates/clause-substrate/src/materialization/**`,
+  `clause:crates/clause-substrate/tests/position_radius_materialization.rs`,
+  and `clause:test-vectors/materialization/**`.
 
-Every case uses generic Terms, schemas, judgments, modes, and certificates. A
-new per-feature Lean or Rust semantic branch falsifies the architecture.
+One integration owner alone edits shared workspace/package manifests, Lean
+build manifests and roots, `clause:crates/clause-substrate/src/lib.rs`, shared
+`clause:crates/clause-substrate/src/evaluator/mod.rs`,
+`clause:crates/clause-substrate/src/physical/mod.rs`,
+`clause:crates/clause-substrate/src/artifacts/mod.rs`, and shared corpus
+manifests/checksums. Scope-local corpus manifests remain with their named lane.
+Existing candidate edits to shared paths stay preserved as recovery evidence;
+the integrator reconciles them once, and candidate lanes make no further shared-
+path edits concurrently.
 
-The decisive evolution case is one ordinary `Compiler0 -> Compiler1`
-succession changing a binding form, an effect form, a typed macro, and
-diagnostic behavior. The same previously built Lean and Rust binaries,
-toolchains, and host-mechanics manifest must remain byte-identical. Any candidate
-or self basis, hash-only predecessor match, or host semantic dispatch
-falsifies the architecture.
+The dirty Rust candidate's removals under
+`clause:crates/clause-substrate/src/compiler_package_v2/**`,
+`clause:crates/clause-substrate/tests/compiler_package_v2.rs`, and
+`clause:crates/clause-substrate/tests/evaluator_v2.rs` are not an accepted
+retirement. The Phase 5 integrator keeps v2 live until the accepted v3 successor
+and every in-tree consumer have migrated, ports any still-required oracle, and
+only then removes the complete v2 surface in that same integrated change.
 
-## Phase 4 — First Clause-owned compilation
+The current `clause-substrate` name and single-crate boundary are historical
+bootstrap artifacts, not the target architecture. After the accepted v3,
+runtime, and materialization successors have been reconciled from their dirty
+lanes, the Phase 5 integration owner replaces that crate with responsibility
+boundaries:
 
-**Status:** Candidate implementation may proceed concurrently; supported or
-admitted use awaits a passing Phase 3.
+- `clause-package` owns exact CLCP codecs, canonical bytes, and package
+  validation;
+- `clause-runtime` owns the construct-blind evaluator and generic process
+  execution protocol; and
+- `clause-materialization` owns scan, index, and incremental physical
+  projections.
 
-Experiment against the compiler behavior specified for an eventually accepted
-package in this order; claim Clause ownership only after admission:
+Phase 6 adds `clause-wasm` as the bounded transport adapter. The crate name
+`clause` is reserved for a future public facade or CLI. No Rust crate named
+`clause-core`, `clause-common`, or `clause-semantics` may become a shared junk
+drawer or imply that host code owns language meaning. The old paths above name
+recovery scopes only; the split occurs once, after their accepted contents are
+known, so it does not conflict with either dirty P2 lane.
 
-1. schemas and relation modes;
-2. elaboration and macros;
-3. obligations and diagnostics;
-4. semantic queries, impact analysis, and refactoring;
-5. planning and source projection; and
-6. compiler orchestration and selected lowering.
+The unchanged spatial law must produce identical observation and occurrence-
+support multisets through cold scan and indexed/incremental plans. Repeated
+premise slots, self-joins, equal content from distinct Activations, fallback,
+allocation exhaustion, graph/plan pins, and disconnected-population locality
+must remain exact. Physical plan changes never change StateRevision identity.
 
-Lean remains the independent generic constitutional checker. Rust remains the
-generic evaluator and replaceable physical machinery. Neither host grows an
-ordinary-language feature taxonomy.
+**Exit evidence:** the complete cross-phase adoption program passes: accepted
+Compiler1 host-freeze evolution, user-defined algebraic-data/exhaustive-match
+positive and negatives under frozen hosts, independently reviewed Terms and
+materialization objects, lossless source occurrences, deterministic Reading
+selection, canonical parse/print/parse meaning, local recovery and semantic
+round trips, construct-blind hosts, cold parity, and measured end-to-end
+locality without hidden whole-state work.
 
-## Phase 5 — Canonical source and tooling
+## Phase 6 — Clause-owned transition, effects, Wasm, and passive rendering
 
-**Status:** Experimental implementation may proceed concurrently; supported
-tooling promotion awaits admitted Phases 3–4 capability.
+**Status:** No accepted implementation.
 
-Implement the grammar in [syntax.md](syntax.md) as a lossless source projection
-with deterministic readings, exact focus, binding and origin preservation,
-canonical printing, local recovery, and semantic round trips.
+Define the minimum Clause-owned process ABI as opaque accepted package
+entrypoints. Rust provides generic evaluation, bounded canonical-byte transport,
+physical scheduling, and exact-base atomic commit mechanics; it owns no game or
+Clause construct meaning. Materialization consumes admitted deltas as a checked
+projection. Wasm exposes bounded byte arrays and physical handles only.
 
-Files are transport containers, names are readable designations, and source
-order is not causality unless represented explicitly. Text diff is never the
-authoritative program diff.
+The typed BJS shell maps canvas-scoped physical input to immutable observation
+frames and immutable render observations pinned to an exact admitted
+StateRevision to Three.js. The render observation is not itself admitted. The
+shell owns no movement integration, gravity, collision, jump, groundedness,
+candidate admission, clock policy, or state mutation. Repair terminal disposal,
+canvas-scoped keyboard ownership, and inaccurate Wasm labeling before
+integration.
 
-## Phase 6 — Physical systems and product gates
+After the process ABI is accepted, Phase 6 candidate lanes remain disjoint:
 
-**Status:** Independent product and physical experiments may proceed;
-admission and release await the constitutional mechanism.
+- Clause-owned mechanic laws and semantic vectors:
+  `clause:test-vectors/jump-arena/**`;
+- construct-blind native process runtime:
+  `clause:crates/clause-runtime/src/process/**` and
+  `clause:crates/clause-runtime/tests/process_runtime.rs`;
+- bounded canonical-byte Wasm adapter:
+  `clause:crates/clause-wasm/**`; and
+- passive typed shell: `clause:browser/jump-arena-shell/**`.
 
-Measure independently:
+The rejected Rust `clause:crates/clause-substrate/src/transition.rs` is evidence
+only and is not a lane scope.
+One integration owner adds shared crate exports, workspace/package manifests,
+the final browser entrypoint, and cross-lane parity fixtures after the four
+candidates are accepted.
 
-- large-graph incremental dependency precision, time, and memory;
-- matched reference/native/Wasm/JavaScript behavior and performance;
-- ownership, concurrency, cancellation, failure, and security semantics;
-- packages, modules, separate compilation, FFI, ABI, and deployment;
-- real source ergonomics and comprehension; and
-- correct-change throughput and maintenance cost.
+Prove a playable 3D mechanic whose movement, jump, no-double-jump, gravity,
+landing, collision, and render projection are Clause-owned. Then add one second
+substantial mechanic by changing Clause alone.
 
-A mechanism pass does not waive these gates. Generic Triple interpretation may
-remain a bounded oracle but cannot be the production hot path.
+**Exit evidence:** native/Wasm canonical boundary parity; exact revision pins;
+scan/indexed observation parity; candidate immutability before admission;
+effect-stage honesty; passive renderer boundary; and zero semantic-name switches
+in Rust or BJS.
+
+## Phase 7 — Relational recovery, specialization, and release
+
+**Status:** Not started.
+
+Prove that activation-scoped pure result relations, explicitly admitted
+RelationExtensions and assertions, causal edges, continuations, evidence, and
+occurrence-exact supports remain relationally queryable without treating every
+relation row as execution or pure observation as admission. Then specialize
+accepted Applications and Runs into direct calls, register operations, packed
+layouts, state machines, actor loops, async continuations, indexes, database
+queries, native/Wasm/JavaScript artifacts, and later GPU kernels where useful.
+
+A production hot path must not route every reduction through a generic graph
+engine. Translation validation and the declared observable contract remain
+universal; physical allocation and schedule do not.
+
+**Exit evidence:** independent reproduction of the complete vertical slice and
+browser proof, exact published objects, usable source/tooling, measured product
+performance, and consolidated documentation with no superseded semantic
+authority.
 
 ## Completion standard
 
 A roadmap item is complete as supported or admitted capability only when its
-authoritative representation,
-identity rules, diagnostics, canonical encoding where applicable, executable
-behavior, negative cases, and narrow exit proof land together. Documentation
-specimens are not implementation evidence. A successful Lean evaluation
-without a kernel-checked package-bound proof proves no Clause admission. A Rust
-result without parity and traceability proves no Clause meaning.
+authoritative representation, identity rules, diagnostics, canonical encoding
+where applicable, executable behavior, negative cases, and narrow exit proof
+land together. A Lean evaluation without a kernel-checked package-bound proof
+proves no Clause admission. A Rust, Wasm, or browser result without process
+traceability and declared parity proves no Clause meaning.
 
-Never remove working capability before a tested successor exists. Every
-in-tree consumer must migrate to that successor before removal. A promoted
-change leaves one live supported architecture; once migration is complete,
-superseded source, tests, docs, fixtures, generated artifacts, and consumers
-are removed in the same change.
+Never remove working capability before a tested successor exists. Every in-tree
+consumer migrates before removal. Once migration is complete, superseded source,
+tests, docs, fixtures, generated artifacts, and consumers leave the live tree in
+the same change.

@@ -1,8 +1,8 @@
 # Clause Architecture
 
-> **Status:** Accepted host boundary plus a normative P1 compiler-genesis
-> contract; CLCP v3 Lean replay is implemented while cross-host compiler
-> acceptance remains pending.
+> **Status:** Accepted process-first host boundary plus a normative P1 compiler-
+> genesis contract. CLCP v3 Lean replay is implemented; the process kernel,
+> cross-host compiler acceptance, and runtime remain pending.
 >
 > **Authority:** Derived and non-semantic. The
 > [foundation](foundation.md) governs meaning, [syntax](syntax.md) governs
@@ -32,12 +32,31 @@ compiler root, and three implementation roles:
                   accepted compiler successor
 ```
 
-Clause Core owns meaning. The accepted compiler package owns reading, syntax
-selection, binding and occurrence identity, elaboration, type/mode/effect
-checking, typed macros and transformations, origins, diagnostics, and compiler
+Clause process semantics owns meaning. The Clause Graph is its canonical
+inspectable carrier; the canonical carrier contract is its host-neutral
+transport and checking form. The accepted compiler package
+owns reading, syntax selection, binding and occurrence identity, elaboration,
+type, mode, and effect checking, typed macros and transformations, origins,
+diagnostics, and compiler
 evolution from the earliest literal bootstrap. Lean checks only the fixed
 generic constitution. Rust executes only the fixed generic evaluator and
 replaceable physical machinery.
+
+The activated or admitted semantic chain is:
+
+```text
+checked ApplicationForm
+  -- instantiate when nominal application continuity is required -->
+     ApplicationId
+  -> distinct ActivationId under exact ModeId and initial pins
+  -> before/after ActivationConfigurations related by causal StepIds
+  -> Run(RunId, root = ActivationId, causal closure)
+  -> observations, continuations, and candidate deltas
+  -> separately governed admission
+```
+
+Neither graph storage, mode existence, successful evaluation, nor a physical
+artifact authorizes activation or creates a successor revision.
 
 Materialization, hashing, successful decoding, successful execution, and
 derivability do not authorize `Compiler0`. One irreducible external human-owner
@@ -59,8 +78,8 @@ Implementation is continuous, but authority is promoted in distinct states:
 1. An **experimental implementation or falsification artifact** may land with
    explicit non-authority, a bounded claim, deterministic tests for that claim,
    reversible scope, and no supported-language claim.
-2. A **semantic candidate** maps its proposed meaning into host-neutral Clause
-   Core. It remains a candidate and gains no authority from a Lean, Rust, or
+2. A **semantic candidate** maps its proposed meaning into the host-neutral
+   canonical carrier. It remains a candidate and gains no authority from a Lean, Rust, or
    other host representation.
 3. **Supported or admitted capability** passes every applicable constitutional
    proof, parity, negative, hidden-authority, optimization, and absence gate in
@@ -103,9 +122,9 @@ Separately, every in-tree consumer migrates before removal. Once that migration
 is complete, removal means absence from the live tree, including the superseded
 source, tests, fixtures, generated artifacts, documentation, and consumers.
 
-## Host-neutral Clause Core
+## Host-neutral canonical carrier
 
-The Clause Core contract is the transport and checking form of the calculus in
+The canonical carrier contract is the transport and checking form of the calculus in
 the foundation. CLCP v3 carries compiler execution through a fixed universal
 kernel:
 
@@ -113,13 +132,20 @@ kernel:
 RawTriple = [Term, Term, Term]
 Term      = Atom | RawTriple
 
-Γ ⊢ t clause : T @ M
+Γ ⊢ t : T @ interpretation
 
-Γ ; M ⊢ runρ(t) ↦ ⟨Γ̂, outcome, τ⟩
+Γ ⊢ form(t, OperatorRef, exact-role-bindings, requirements)
+  : ApplicationForm
 
-Γ ⊢ Γ̂ admissible
-───────────────────
-admit(Γ, Γ̂) = Γ′
+activate(ApplicationId, ModeId, InitialContext)
+  = ActivationId + InitialConfiguration
+
+Configuration_before
+  -- StepId(predecessors = Frontier) ; observations ; delta ; continuation -->
+Configuration_after
+
+admit(BaseRevision, delta, evidence, authority, obligations)
+  = SuccessorRevision | Rejection
 
 KSort = Bytes | Term
 
@@ -130,7 +156,8 @@ KExpr =
 ```
 
 Those `KExpr` cases are the complete host evaluator taxonomy. A token,
-production, binder, type, mode, effect, macro, diagnostic, or compiler version
+production, binder, RelationSchema, operator, mode, ApplicationForm,
+Activation, Step, effect, macro, diagnostic, or compiler version
 is package data and never a host expression case. `CaseBytes` exposes one
 octet and a tail, `ConcatBytes` constructs dynamic byte strings, and
 `CaseBytesEqual` supplies byte and hash comparison control. The package can
@@ -145,6 +172,16 @@ replay contract define fuel, environments, left-to-right evaluation,
 observations, and every local rule. `CoreContractId` and `PhysicalProfileId`
 are derived from those carried exact objects; there is no registry or
 package-defined metalanguage.
+
+The already specified CLCP v3 exact bytes, hashed carried manifest, 73-byte
+`EvalReceipt`, left-to-right KExpr evaluator, machine `Continuation`, evaluator
+step, out-of-fuel behavior, `admitPropose`, and `CompilerRevisionId` remain
+unchanged. Their names describe compiler-machine mechanics inside this exact
+contract. They are not `ApplicationId`, `ActivationId`, semantic `StepId`,
+`RunId`, typed Continuation, general Admission, or Program/State revision
+semantics. Clause-owned outer Terms and envelopes carry those process
+identities, pins, authorizations, evidence, and governed deltas through the
+fixed machine.
 
 The two distinct interface definitions have exact signatures
 `compile : [Term] -> Term` and `admitPropose : [Term] -> Term`. Their fixed
@@ -172,11 +209,14 @@ observation commitments plus exact remaining fuel. Authorization separately
 inspects the actual `Built` or `Propose` result and passes actual verified
 compile observations into admission.
 
-The package must carry every semantics-affecting object needed by a judgment:
+The package must carry every semantics-affecting object needed by formation and
+process execution:
 
 - canonical Terms and explicit equality contracts;
 - distinct identities where occurrence or continuity requires them;
-- contexts, strata, judgments, relation schemas, modes, and capabilities;
+- contexts, strata, FormationJudgments, RelationSchemas, revision-indexed
+  extensions, OperatorRefs, modes, source Readings, ExecutionAuthorizations,
+  Applications, process contracts, and capabilities;
 - candidate successors, deltas, obligations, derivations, and certificates;
 - source origins and separately scoped traces, strategies, and physical
   evidence; and
@@ -184,8 +224,9 @@ The package must carry every semantics-affecting object needed by a judgment:
 
 The package is not a new ontology. Lean values, Rust structs, proof terms,
 indexes, source maps, traces, caches, and strategies do not enter semantic
-identity unless an authored Clause judgment explicitly makes their content
-semantic. Lean proof terms remain local. Only Clause-native semantic evidence crosses the host-neutral boundary.
+identity unless an authored formation or governed Judgment explicitly makes
+their content semantic. Lean proof terms remain local. Only Clause-native
+semantic evidence crosses the host-neutral boundary.
 
 The implemented Lean and Rust CLCP v1 codecs derive from one Clause-owned
 specification and vector corpus. CLCP v3 keeps the same independent,
@@ -204,10 +245,11 @@ kinds, `Expr` constructors, type classes, or one inductive constructor per
 language form. Lean proves claims about Clause data; it does not parse Clause
 source, define Clause's ontology, select a compiler, or invent feature meaning.
 
-The reference Run semantics is relational and can represent total, bounded,
-partial, nondeterministic, streaming, reactive, and effectful modes. Fuelled
-interpreters may execute bounded specimens. Lean host termination never decides
-Clause partiality or converts an open process into a false total function.
+The reference process semantics is relational and can represent formation,
+Activation, causal Steps, continuation, admission, and total, bounded, partial,
+nondeterministic, streaming, reactive, and effectful modes. Fuelled interpreters
+may execute bounded specimens. Lean host termination never decides Clause
+partiality or converts an open process into a false total function.
 
 The constitutional checker is accepted only when all of these hold:
 
@@ -237,14 +279,18 @@ The constitutional checker is accepted only when all of these hold:
 No `unsafe`, `partial`, or `sorry` is permitted in the constitutional package.
 Clause partiality and effects are object-language data and relations.
 
-## Rust physical substrate
+## Rust physical implementations
 
 Rust may implement:
 
 - strict canonical decoding/re-encoding and interning;
 - the fixed construct-blind `Bytes`/`Term` evaluator, including generic byte
   destructuring, concatenation, equality, and fixed Core ABI validation;
-- generic `DefId` table lookup, fuel, continuations, and checked hashing;
+- generic `DefId` table lookup, fuel, machine continuations, and checked
+  hashing;
+- generic validation and transport of Clause-owned Application, Activation,
+  Step, Run, continuation, observation, and admission envelopes without
+  interpreting their domain names;
 - indexes and incremental dependency maintenance;
 - durable persistence and transaction machinery;
 - operating-system, filesystem, network, browser, and foreign interfaces;
@@ -252,15 +298,16 @@ Rust may implement:
 - native, Wasm, and JavaScript materialization; and
 - profiling and target-specific physical strategies.
 
-Rust may not parse Clause source or define what a Clause relation, production,
-binder, type, mode, transition, capability, effect occurrence, macro,
-diagnostic, identity, compiler revision, or admission means. It consumes an
+Rust may not parse Clause source or define what a RelationSchema, Application,
+Activation, Step, Run, production, binder, type, mode, transition, capability,
+effect occurrence, macro, diagnostic, identity, compiler revision, or admission
+means. It consumes an
 accepted package and may create checked proposals or optimized views. A Rust
 enum, trait, callback, plugin, formatter, validator, package-local `DefId`,
 pointer, arena index, row number, or object layout is never semantic authority
 or identity.
 
-The substrate remains `unsafe`-free until an unavoidable foreign boundary is
+The Rust implementation remains `unsafe`-free until an unavoidable foreign boundary is
 identified and separately authorized. Any future unsafe module is isolated,
 documented, tested, and outside the constitutional checker.
 
@@ -268,16 +315,24 @@ documented, tested, and outside the constitutional checker.
 
 Clause does not begin with a host frontend and migrate meaning later.
 `Compiler0` owns lossless reading and syntax selection, binding and occurrence
-identity, elaboration and schema/type/mode/effect checks, typed macros and
-transformations, origin construction, diagnostics, and successor production
-from genesis. Stable later capabilities—queries, impact analysis, refactoring,
-planning, projection, and selected lowering—also evolve as Clause package
-data.
+identity, elaboration and formation/schema/operator/mode/effect checks, typed
+macros and transformations, origin construction, diagnostics, process-envelope
+construction, and successor production from genesis. Its current provisional
+`JUDGMENT_ID` and check-decision payload design must migrate to
+RelationSchemas, operators, modes, ApplicationForms, and Clause-owned process
+envelopes before `Compiler0` is regenerated or accepted. Stable later
+capabilities—queries, impact analysis, refactoring, planning, projection, and
+selected lowering—also evolve as Clause package data.
 
 The constitutional host-freeze test is an ordinary predecessor-authorized
 `Compiler0 -> Compiler1` transition that changes one binding form, one effect
 form, one typed macro, and one diagnostic behavior with zero Lean or Rust
 source, toolchain, binary, or host-mechanics-manifest edits.
+
+The same frozen hosts must execute a Clause-defined algebraic data declaration,
+constructors, patterns, and exhaustive match, while rejecting missing and
+unreachable cases with exact obligations. These are user-defined Clause data
+and process definitions, not new Term, KExpr, Lean, or Rust kernel cases.
 
 Host changes are allowed only for a genuinely new primitive physical
 capability or a generically translation-validated optimization strategy.
@@ -346,11 +401,22 @@ vectors.
 
 ## Execution and physical freedom
 
-Pure Runs preserve the authoritative context. Authoritative Runs stage a
-candidate successor; admission alone creates the successor revision. State
-transition and external effects cross distinct boundaries: transition
-admission authorizes effect intents, separately identified effect Runs perform
-acts, and later evidence may record attempts, receipts, and observations.
+Pure running returns values and evidence without creating an authoritative
+revision. Transition Steps may stage candidate deltas; admission alone creates
+the successor revision. State transition and external effects cross distinct
+boundaries: transition admission may admit effect intents, separate
+authorization permits an effect Activation to attempt an act, receipts are
+optional, observations form a causal graph, and later Judgment/admission may
+record claims. Candidate delta and continuation never collapse.
+
+Semantic State admission supplies an `AdmittedStateDelta` naming the exact
+ProgramRevision, RuntimeSession, predecessor and result StateRevisions, and
+producing ActivationId and StepId. A separate physical update envelope adds the
+exact semantic graph/contract reference, materialization plan reference, and
+physical budget. A materializer may validate, project, and apply that envelope
+atomically to a replaceable view; it never allocates or admits State history.
+Plan identity belongs only to the physical envelope and receipt and never enters
+`StateRevisionId`.
 
 The compiler may lower accepted meaning into registers, structs, arrays,
 indexes, state machines, native instructions, Wasm, JavaScript, database
@@ -373,7 +439,7 @@ self-basis checking and hash-only predecessor equality reject.
 A semantic tranche may be promoted or admitted as supported capability only
 when:
 
-1. its Clause Core representation is host-neutral and canonical;
+1. its canonical carrier representation is host-neutral and canonical;
 2. Lean checks its certificate under the constitutional trust profile;
 3. Rust agrees on every declared observable and nonfunctional contract;
 4. negative fixtures fail for the intended reason;
@@ -387,6 +453,7 @@ when:
 
 The four-change compiler evolution and bounded
 [adoption spike](adoption-spike.md) decide whether this mechanism is viable.
-A pass authorizes promotion and admission of further capability; it does not
-prove source ergonomics, large-graph incrementality, target performance,
-replay tractability, or maintenance economics.
+A pass supplies evidence and satisfies the named gate; only the governing
+policy and authority may authorize promotion or admission. It does not prove
+source ergonomics, large-graph incrementality, target performance, replay
+tractability, or maintenance economics.

@@ -1,35 +1,59 @@
 # Clause
 
 Clause is a process-first relational programming language. Humans declare
-relationships, laws, transitions, effects, and physical constraints; Clause
-judges how recursively structured Terms may run and specializes accepted
-meaning into efficient execution.
+applications, relationships, laws, transitions, effects, and physical
+constraints. Clause defines which typed activations and causal steps are
+admissible, then specializes that meaning into efficient execution.
 
 Its constitutional mechanism is deliberately small:
 
 ```text
 RawTriple = [Term, Term, Term]
 Term      = Atom | RawTriple
-Clause    = contextual typed judgment over a Term
-Run       = judged carry-through to an outcome, trace, and candidate successor
-Admission = the only boundary that makes a successor authoritative
+
+ApplicationForm = checked operator + exact named roles
+                  + mode eligibility + context requirements
+Application     = nominal node instantiating one exact form
+Activation      = one actual engagement under exact mode and context
+Step            = causal carry-through between configurations
+Run             = causal closure rooted at one Activation
+Admission       = the only boundary that creates an authoritative successor
 ```
 
-Terms hold distinctions; they do not assert or execute themselves. The
-admitted judgment graph is the program at rest, Run is the program in motion,
-and a trace describes an occurrence without becoming that occurrence.
+Triple slots are structurally neutral. Terms hold distinctions; they do not
+assert, activate, or authorize themselves. A checked ApplicationForm is
+configured application possibility, and a lower-case clause/Application is a
+nominal node with `ApplicationId`. Every Application has that identity; quoted,
+open, and merely structural forms are not Applications. Every actual activation is distinct; one Activation persists
+through multiple StepIds, configurations, suspension, and resumption. A trace
+describes a Run without becoming it. Configured binders, transfers, requests,
+or tasks may have Application identity; an actual event or effect attempt has a
+separate OccurrenceId plus exact provenance. Internally produced occurrences
+name their producing Activation and Step, while external triggers name their
+external-boundary provenance and causally precede the Activation they trigger.
+
+Clause process semantics owns meaning. The Clause Graph is its canonical
+inspectable carrier and explanation surface, not an independent source of
+authority and not merely transport. Relations constrain or expose admissible
+applications and runs; modes declare how an Application may activate; explicit
+authorization permits activation; admission alone makes a Program, State, or
+other governed successor authoritative. Physical execution may specialize
+aggressively only as a checked refinement of those declared observations,
+identities, effects, failures, resources, diagnostics, and causal relations.
 
 ## Implementation constitution
 
 ```text
-Clause Core      owns the host-neutral semantic contract.
-Compiler0        is one literal externally owner-anchored Clause package.
-Lean 4           checks the fixed constitution and complete receipt replays.
-Rust             evaluates the fixed generic machine and physical operations.
-Clause           owns source and compiler evolution from genesis.
+Clause semantics  owns the process contract.
+Canonical carrier preserves its host-neutral representation.
+Compiler0         is one literal externally owner-anchored Clause package.
+Lean 4            checks the fixed constitution and complete receipt replays.
+Rust              evaluates the fixed generic machine and physical operations.
+Clause            owns source and compiler evolution from genesis.
 ```
 
-Neither Lean nor Rust may invent a semantic category absent from Clause Core.
+Neither Lean nor Rust may invent a semantic category absent from accepted
+Clause process semantics.
 Lean syntax is not Clause syntax, Rust types are not Clause ontology, and no
 host representation or wire format is independently authoritative.
 
@@ -67,11 +91,21 @@ only explicit seed nominal identities; `NewId` allocations and every other
 derived identity are recomputed once from transformed preimages. Hash bytes
 are never directly permuted.
 
-The CLCP v3 Lean codec and replay checker are implemented. Rust CLCP v3 parity,
-an accepted `Compiler0` package, genesis anchor, supported Clause source parser,
-compiler, runtime, durable persistence layer, and language features remain
-pending. Observed implementation status lives only in the
+The CLCP v3 Lean codec and replay checker are implemented. Those exact bytes,
+the carried manifest, the 73-byte replay receipt, KExpr evaluation order,
+machine continuation/fuel behavior, `admitPropose`, and `CompilerRevisionId`
+are frozen compiler-machine mechanics, not the universal process kernel.
+Process identities, revision pins, evidence, authorization, and admission must
+be represented by Clause-owned outer Terms and envelopes. Rust CLCP v3 parity,
+an accepted process-aware `Compiler0` package, genesis anchor, supported Clause
+source parser, compiler, runtime, durable persistence layer, and language
+features remain pending. Observed implementation status lives only in the
 [roadmap](docs/roadmap.md). Git history is not source authority.
+
+`Compiler0` must migrate its provisional `JUDGMENT_ID` and check-decision
+payloads to RelationSchemas, operators, modes, ApplicationForms, and the new
+process envelopes before regeneration or acceptance. No host semantic enum may
+perform that migration.
 
 ## Repository layout
 
@@ -87,10 +121,10 @@ pending. Observed implementation status lives only in the
 | [`docs/design-evidence.md`](docs/design-evidence.md) | Evidence, alternatives, and uncertainty |
 | [`docs/execution-corpus.md`](docs/execution-corpus.md) | Frozen cross-host Run, Admission, and replay observations |
 | [`lean/`](lean/) | Lean constitutional-model and trust-gate bootstrap |
-| [`crates/clause-substrate/`](crates/clause-substrate/) | Rust physical-substrate bootstrap |
+| [`crates/clause-substrate/`](crates/clause-substrate/) | Historical Rust bootstrap pending the responsibility split in the roadmap |
 | [`test-vectors/`](test-vectors/) | Shared canonical-package and execution corpora |
 
-Each public fact has one owner. Canonical bytes cannot select authority;
+Each public contract has one owner. Canonical bytes cannot select authority;
 compiler genesis cannot redefine Clause meaning or source syntax; evidence and
 the spike cannot add semantics; status lives only in the roadmap.
 
@@ -111,8 +145,9 @@ candidate Context/Judgment carriers, relative finite-certificate checker,
 literal proof-bootstrap boundary, independent Rust v1 corpus parity, and the
 Lean CLCP v3 strict codec/replay checker. They do not prove cross-host CLCP v3
 parity, `Compiler0`, the external genesis anchor, compiler succession,
-Atom canonicality, valid Clause judgments, Runs, general Admission, durable
-persistence, or any language feature.
+Atom canonicality, valid FormationJudgments, Application/Activation/Step/Run
+process semantics, general Admission, durable persistence, or any language
+feature.
 
 ## Game-leverage falsifier
 

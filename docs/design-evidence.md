@@ -6,14 +6,20 @@
 >
 > **Authority:** Informative. This document cannot change semantics, syntax, or
 > roadmap status.
+>
+> Historical `Context/Judgment` and `Run` language below describes the narrow
+> bootstrap evidence that exists. It is not the current semantic kernel. The
+> [foundation](foundation.md) now governs Formation, Application, Activation,
+> Step, Run, Continuation, Judgment, and Admission.
 
 ## Decision and boundary
 
 Clause provisionally adopts this implementation split:
 
 ```text
-Clause Core       = host-neutral semantic contract
-Lean 4            = constitutional checker and reference Run semantics
+Clause semantics  = process contract
+Canonical carrier = host-neutral transport and checking form
+Lean 4            = constitutional checker and eventual process reference
 Rust              = physical persistence, runtime, FFI, and backends
 Clause            = eventual author of the compiler middle
 ```
@@ -28,10 +34,11 @@ bootstrap convenience could become Clause ontology.
 
 ## Equality bootstrap order
 
-Semantic Term equality cannot honestly precede generic Clause judgment
-checking. Atom equality contracts are declarative Clause data, so raw presence
-of a contract Term or validity claim in a candidate Context cannot authorize
-itself. Conversely, a generic checker can use exact IDs and candidate
+Semantic Term equality cannot honestly precede checked Formation and governed
+admission of its equality contract. Atom equality contracts are declarative
+Clause data, so raw presence of a contract Term or validity claim in a
+candidate Context cannot authorize itself. Conversely, the existing provisional
+generic Context/Judgment checker can use exact IDs and candidate
 representation comparison for lookup and certificate binding without claiming
 semantic equality. The dependency is therefore stratified rather than cyclic:
 
@@ -157,7 +164,7 @@ Aeneas translates a supported Rust subset through Charon and its own
 intermediate representation into proof-assistant code, including Lean. That may
 later help verify isolated safe-Rust helpers in the physical substrate.
 
-It is not part of Clause Core, admission, or the initial trust chain. Its closed
+It is not part of the canonical carrier, admission, or the initial trust chain. Its closed
 translation IR, opaque-external assumptions, unsupported unsafe/concurrent Rust,
 and extra tool/version boundary cannot establish Clause meaning. It is optional
 verification prior art only.
