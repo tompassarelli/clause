@@ -1005,13 +1005,16 @@ value that passes canonical authorization must reproduce those exact bytes.
 Successful decoding returns a candidate package, never an accepted compiler:
 
 ```text
-bytes --strict decode--> candidate package
-candidate + external genesis anchor or accepted exact predecessor
+Clause-owned Application + context + already-authoritative predecessor/root
+      --activate--> compiler-evolution Activation / Run
+Run carries exact build inputs through compilation and `admitPropose`
+      --> exact candidate package bytes
+Run: bytes --strict decode--> candidate package
+Run: candidate + external genesis anchor or accepted exact predecessor
       --frozen constitutional check--> Authorized(exact package bytes)
                                        | Unauthorized(stage, code)
-Authorized checker evidence + Clause-owned Application and context
-      --activate / Run--> candidate compiler/Program delta + evidence
-candidate delta + evidence + authority + obligations
+Run --emit--> checker evidence + candidate compiler/Program delta + obligations
+authorized Run output + authority
       --governed outer Admission--> authoritative compiler + successor ProgramRevision
 ```
 

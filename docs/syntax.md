@@ -267,11 +267,14 @@ yet. An operator may otherwise have several modes. Schema, extension, operator,
 mode, Reading, derivation authorization, ExecutionAuthorization, admission
 authority, and effect capability never imply one another. Activation selects
 one exact eligible `ModeId` and cites exact
-`AuthorizationEvidence<ExecutionAuthorization>`: either a constitutive
-`JudgmentRef<ExecutionAuthorization>` whose declared scope covers the exact
-activation context, or an `AuthorizationOccurrenceId<ExecutionAuthorization>`
-that issued it. Constitutive and issued authorization are not interchangeable
-identity domains.
+`AuthorizationEvidence<ExecutionAuthorization>`: either a
+`ConstitutiveAuthorization<ExecutionAuthorization>` pairing an already
+authoritative `ProgramRevisionId` with its exact
+`JudgmentRef<ExecutionAuthorization>`, an irreducible root-policy anchor, or an
+`AuthorizationOccurrenceId<ExecutionAuthorization>` issued from an already
+authoritative basis. A bare JudgmentRef, including one inside the candidate
+ProgramSnapshot, is never authorization. Constitutive and issued authorization
+are not interchangeable identity domains.
 
 All result cardinalities are written as words:
 
