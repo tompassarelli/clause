@@ -3,12 +3,12 @@ import ClauseCompiler.Authorization
 /-!
 # Clause compiler constitution
 
-This is the additive CLCP-v2 constitutional surface.  `Codec.strictDecode`
+This is the additive CLCP-v3 constitutional surface.  `Codec.strictDecode`
 returns only a retained candidate or a deterministic decode rejection.
 `Authorization.authorizeBytesGenesis` consumes the fixed external owner
 capability only after strict decoding; `Authorization.authorizeBytesSuccessor`
 requires exact accepted predecessor bytes after the same strict boundary.
-Neither decoding, hashing, evaluation, nor certificate validity creates
+Neither decoding, hashing, evaluation, nor receipt replay creates
 compiler authority.
 -/
 

@@ -22,14 +22,14 @@ The live repository contains:
 - a semantic-empty Rust physical substrate with an independent strict CLCP v1
   codec, exact-byte carrier, relative certificate checker, predecessor-only
   package authorization witness, and shared-corpus tests; and
-- the P1 contract for strict CLCP v2, one externally owner-anchored literal
+- the accepted contract for strict CLCP v3, one externally owner-anchored literal
   `Compiler0`, a fixed construct-blind universal evaluator, exact
   predecessor-only succession, and Clause-owned source/compiler behavior.
 
 There is no supported parser, compiler, runtime, persistence format, CLI,
-backend, or example application. In particular, there is no CLCP v2 codec,
-universal evaluator, literal `Compiler0`, genesis anchor, v2 certificate
-checker, or compiler-evolution artifact. No implemented language capability is
+backend, or example application. The Lean CLCP v3 codec and complete replay
+checker are implemented; Rust parity, literal `Compiler0`, genesis anchor, and
+compiler-evolution artifacts remain absent. No implemented language capability is
 claimed. Git history is not source authority or a design template.
 
 The shared v0 execution corpus now fixes three substantial implementation
@@ -43,7 +43,7 @@ The CLCP v1 literal proof bootstrap and its one preauthorized successor are
 fixed by exact bytes. Lean and Rust independently decode and re-encode the same
 positive corpus and reject the recorded negative classes. Those artifacts are
 narrow constitutional evidence, not `Compiler0` and not an implementation of
-the v2 contract. Atom equality contracts and broader resource/fuzz evidence
+the v3 contract. Atom equality contracts and broader resource/fuzz evidence
 remain later tranches.
 
 ## Status summary
@@ -57,9 +57,9 @@ remain later tranches.
 | Rust substrate bootstrap | Canonical-package codec complete; broader substrate scaffolded | Pinned Rust toolchain passes formatting, all-target checks/tests, Clippy, and forbids unsafe code |
 | Clause Core calculus | In progress; provisional Term, candidate Context/Judgment, relative ground-certificate checking, and narrow package authority | Admitted Atom/Term equality plus generic Context/Judgment/Run/Admission with no feature taxonomy |
 | CLCP v1 proof package | Lean/Rust codec and frozen-corpus parity complete; evidence only | Published exact corpus, strict nested decoding, byte-identical positive re-encoding, and matched negative verdict classes |
-| P1 compiler-genesis contract | Specified; implementation evidence absent | [Compiler genesis](compiler-genesis.md) and [CLCP v2](canonical-package.md) agree on exact authority and host boundaries |
-| CLCP v2 generic hosts and literal Compiler0 | Pending | Independent strict codecs, fixed generic evaluator/checker, exact owner anchor, and shared positive/negative corpus |
-| Constitutional adoption and evolution | Blocked on CLCP v2 and Compiler0 | All eight spike gates plus one four-change predecessor-authorized Compiler1 and frozen hosts |
+| P1 compiler-genesis contract | Complete and published | [Compiler genesis](compiler-genesis.md) and [CLCP v3](canonical-package.md) agree on exact authority and host boundaries |
+| CLCP v3 generic hosts and literal Compiler0 | In progress; Lean receipt replay implemented | Independent strict codecs, fixed generic evaluator/checker, exact owner anchor, and shared positive/negative corpus |
+| Constitutional adoption and evolution | Blocked on Rust parity and accepted Compiler0 | All eight spike gates plus one four-change predecessor-authorized Compiler1 and frozen hosts |
 | Clause-authored compiler behavior | Contracted from genesis; implementation pending | Reading, binding, elaboration, effects, macros, origins, diagnostics, and evolution execute from the accepted package |
 | Product gates | Blocked on spike | Readability, incrementality, native/JS performance, systems coverage, and maintenance evidence |
 
@@ -203,14 +203,14 @@ The [compiler-genesis contract](compiler-genesis.md) and
   supplied through the non-package-wire
   `Missing | Supplied(OwnerAnchorWitness)` admission input, with complete
   selected bytes observed for exact comparison;
-- CLCP v2 with separate subject and evidence frames;
+- CLCP v3 with separate subject and evidence frames;
 - one exact carried Core manifest whose canonical bytes close every generic
-  static/evaluation/certificate rule and the one-operation physical profile;
+  static/evaluation rule, replay receipt, and the one-operation physical profile;
 - a fixed universal `Bytes`/`Term` evaluator with operational byte inspection,
   concatenation, equality, recursion, and hashing plus generic Lean rules;
 - exact predecessor-only succession through the fixed Core ABI, canonical
-  build/admission requests, results and observations, and non-recursive exact
-  certificate statements;
+  checker-constructed build/admission requests, results and observations, and
+  compact trace-free replay receipts;
 - Clause ownership of reading, binding, elaboration, effects, typed macros,
   origins, diagnostics, and compiler evolution from genesis; and
 - the generic-mechanics versus semantic-dispatch audit and
@@ -222,34 +222,34 @@ The [compiler-genesis contract](compiler-genesis.md) and
   mismatch verdicts, empty evidence, explicit fuel-limit, and final exact-
   package-bytes/hash bindings through the same authorization stages.
 
-This phase changes contracts only. It does not claim a v2 package, compiler,
-codec, checker, evaluator, fixture, host audit, or measurement.
+This contract phase is complete. Implementation evidence belongs to Phase 2b.
 
 **Exit evidence:** one internally linked, directly implementable contract with
 no host-language semantic authority, no recursive certificate binding, an
 exact succession ABI, a self-contained generic checker contract, and explicit
 residual tractability uncertainty.
 
-## Phase 2b — CLCP v2 genesis implementation
+## Phase 2b — CLCP v3 genesis implementation
 
-**Status:** Pending on accepted Phase 2a.
+**Status:** In progress. The Lean wire/receipt checker is implemented; scalable
+real replay, Rust parity, Compiler0, integration, and acceptance remain.
 
-Implement independent strict CLCP v2 decoding, the fixed generic Lean checker
-and certificate rules, the fixed generic Rust evaluator and physical profile,
+Implement independent strict CLCP v3 decoding, the fixed generic Lean replay
+checker, the fixed generic Rust evaluator and physical profile,
 one literal `Compiler0`, its external exact-byte owner-anchor witness with
 `Missing` and mismatched-selection negatives, and
 stage-separated positive and adversarial vectors. Materialization provenance
 is recorded as untrusted evidence and cannot create the anchor.
 
-This phase must measure evaluator and certificate tractability before adding
-proof compression or checked optimization. It must not add a Rust or Lean
+This phase must measure complete replay tractability before adding checked
+optimization. It must not add a Rust or Lean
 Clause frontend, construct dispatch, third-language semantic bootstrap, or
 candidate/self authorization.
 
 **Exit evidence:** exact-byte genesis acceptance; independent decode/re-encode
 parity; byte-identical carried-manifest identities; generic evaluation/check
 parity over every fixed rule; exact decode/authorization verdict, ABI, and
-certificate-binding negatives; a checked generic-mechanics/host-target
+receipt/replay-binding negatives; a checked generic-mechanics/host-target
 manifest; seed-renaming vectors with canonical reordering and allocation/
 derived-ID recomputation; and observed timings for the narrow compiler request.
 

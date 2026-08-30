@@ -1,7 +1,7 @@
 /-!
 # Clause compiler constitutional model
 
-This module is the fixed, construct-blind CLCP-v2 data model.  It deliberately
+This module is the fixed, construct-blind CLCP-v3 data model.  It deliberately
 contains no Clause token, grammar, binder, type, effect, macro, diagnostic, or
 compiler-version constructor.  Package programs can express those meanings
 only as data evaluated by the twelve closed `KExpr` forms below.
@@ -105,8 +105,8 @@ structure CoreManifest where
   authorizationCodeTags : List UInt8
   staticRules : List RuleSignature
   evaluationRules : List RuleSignature
-  certificateFormatVersion : UInt8
-  certificateSignature : Bytes
+  receiptFormatVersion : UInt8
+  receiptSignature : Bytes
   contractClauses : List Bytes
   physicalProfile : PhysicalProfile
 deriving DecidableEq, Repr
@@ -162,38 +162,28 @@ structure EvalOutcome where
   observations : Term
 deriving DecidableEq, Repr
 
-structure EvalStatement where
-  exactAcceptedPredecessor : Bytes
+/- `EvalRequest` is checker-constructed replay context, never Frame03 data.  The
+predecessor package is supplied separately with its canonical decode binding
+and acceptance premise; this digest binds that exact input without recursively
+embedding package bytes in successor evidence. -/
+structure EvalRequest where
+  acceptedPredecessorPackageHash : Hash32
   coreContractId : Hash32
   physicalProfileId : Hash32
   entrypoint : Id32
   arguments : List KValue
   fuelLimit : Fuel
+deriving DecidableEq, Repr
+
+structure EvalReceipt where
+  formatVersion : UInt8
   expected : EvalOutcome
 deriving DecidableEq, Repr
 
-structure EvalJudgment where
-  expression : KExpr
-  environment : List KValue
-  fuelBefore : Fuel
-  observationsBefore : Term
-  value : KValue
-  fuelAfter : Fuel
-  observationsAfter : Term
-
-structure EvalNode where
-  ruleTag : UInt8
-  premises : List Nat
-  conclusion : EvalJudgment
-
-structure EvalCertificate where
-  formatVersion : UInt8
-  statement : EvalStatement
-  nodes : List EvalNode
-
 inductive CompilerEvidence where
   | genesis
-  | successor (compileCertificate admissionCertificate : EvalCertificate)
+  | successor (compileReceipt admissionReceipt : EvalReceipt)
+deriving DecidableEq, Repr
 
 structure CompilerPackage where
   manifest : CoreManifest
@@ -275,7 +265,7 @@ inductive AuthorizationCode where
   | coreContractMismatch | physicalProfileMismatch | sourceOrderOrDuplicate
   | sourceArtifactMismatch | identityPlanMismatch | changeOccurrenceMismatch
   | physicalInputsNonempty | fuelInvalid | evidenceShapeMismatch
-  | certificateStatementMismatch | certificateRuleInvalid | evaluationFault
+  | receiptValueMismatch | receiptFuelMismatch | evaluationFault
   | unexpectedResult | subjectMismatch | observationMismatch
   | evidenceDetached | subjectChangedAfterCompile | packageChangedAfterEvidence
   | finalIdentityMismatch
@@ -297,7 +287,7 @@ def AuthorizationCode.tag : AuthorizationCode → UInt8
   | .sourceArtifactMismatch => 0x78 | .identityPlanMismatch => 0x79
   | .changeOccurrenceMismatch => 0x7a | .physicalInputsNonempty => 0x7b
   | .fuelInvalid => 0x7c | .evidenceShapeMismatch => 0x7d
-  | .certificateStatementMismatch => 0x7e | .certificateRuleInvalid => 0x7f
+  | .receiptValueMismatch => 0x7e | .receiptFuelMismatch => 0x7f
   | .evaluationFault => 0x80 | .unexpectedResult => 0x81
   | .subjectMismatch => 0x82 | .observationMismatch => 0x83
   | .evidenceDetached => 0x84 | .subjectChangedAfterCompile => 0x85

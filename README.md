@@ -24,7 +24,7 @@ and a trace describes an occurrence without becoming that occurrence.
 ```text
 Clause Core      owns the host-neutral semantic contract.
 Compiler0        is one literal externally owner-anchored Clause package.
-Lean 4           checks the fixed generic constitution and certificates.
+Lean 4           checks the fixed constitution and complete receipt replays.
 Rust             evaluates the fixed generic machine and physical operations.
 Clause           owns source and compiler evolution from genesis.
 ```
@@ -38,7 +38,7 @@ independently implement the narrow CLCP v1 codec, finite ground-certificate
 checker, literal proof bootstrap, and predecessor-only package witness against
 the shared corpus. That work is evidence, not a Clause compiler.
 
-The P1 contract now specifies CLCP v2 and one future literal `Compiler0`.
+The compiler contract specifies CLCP v3 and one future literal `Compiler0`.
 Its subject/evidence split prevents evidence from self-hashing or
 self-authorizing. One external human-owner act supplies an opaque genesis
 anchor witness whose observation carries the complete selected byte sequence;
@@ -47,10 +47,10 @@ not. The non-package-wire request represents the anchor as `Missing` or
 `Supplied(witness)`, so absence and exact selected-byte mismatch are distinct
 ordered failures. Every successor must be compiled and proposed by the already
 accepted exact predecessor through two fixed `[Term] -> Term` entrypoints and canonical
-request, result, observation, and certificate forms. Frame 01 carries the
+request, result, observation, and trace-free receipt forms. Frame 01 carries the
 complete exact generic machine manifest; no host maps a symbolic core ID to
 private rules. Its closed static/evaluation rule table, fuel and observation
-semantics, certificate grammar, and verifier are part of the canonical bytes.
+semantics, receipt grammar, and replay checker are part of the canonical bytes.
 Malformed wire input has a separate deterministic decode verdict, while every
 decoded authorization failure has one fixed stage/code pair selected by
 pairwise-disjoint first-failure precedence. Genesis authorization explicitly
@@ -67,9 +67,10 @@ only explicit seed nominal identities; `NewId` allocations and every other
 derived identity are recomputed once from transformed preimages. Hash bytes
 are never directly permuted.
 
-No CLCP v2 implementation, `Compiler0` package, genesis anchor, supported
-Clause source parser, compiler, runtime, durable persistence layer, or
-language feature exists yet. Observed implementation status lives only in the
+The CLCP v3 Lean codec and replay checker are implemented. Rust CLCP v3 parity,
+an accepted `Compiler0` package, genesis anchor, supported Clause source parser,
+compiler, runtime, durable persistence layer, and language features remain
+pending. Observed implementation status lives only in the
 [roadmap](docs/roadmap.md). Git history is not source authority.
 
 ## Repository layout
@@ -79,7 +80,7 @@ language feature exists yet. Observed implementation status lives only in the
 | [`docs/foundation.md`](docs/foundation.md) | Clause meaning and minimal calculus |
 | [`docs/syntax.md`](docs/syntax.md) | Canonical human-readable source |
 | [`docs/architecture.md`](docs/architecture.md) | Implementation and trust boundaries |
-| [`docs/canonical-package.md`](docs/canonical-package.md) | CLCP v2 wire contract and implemented CLCP v1 evidence boundary |
+| [`docs/canonical-package.md`](docs/canonical-package.md) | CLCP v3 wire contract and implemented CLCP v1 evidence boundary |
 | [`docs/compiler-genesis.md`](docs/compiler-genesis.md) | Compiler genesis, succession, and host-freeze contract |
 | [`docs/adoption-spike.md`](docs/adoption-spike.md) | Falsifiable constitutional experiment |
 | [`docs/roadmap.md`](docs/roadmap.md) | Current implementation status and sequence |
@@ -105,11 +106,11 @@ cargo test --workspace --locked --all-targets
 cargo clippy --workspace --locked --all-targets -- -D warnings
 ```
 
-Passing these commands proves only the currently implemented CLCP v1
-representation, candidate Context/Judgment carriers, relative
-finite-certificate checker, literal proof-bootstrap boundary, and independent
-Rust corpus parity. They do not implement or prove CLCP v2, the universal
-evaluator, `Compiler0`, the external genesis anchor, compiler succession,
+Passing these commands proves the implemented CLCP v1 representation,
+candidate Context/Judgment carriers, relative finite-certificate checker,
+literal proof-bootstrap boundary, independent Rust v1 corpus parity, and the
+Lean CLCP v3 strict codec/replay checker. They do not prove cross-host CLCP v3
+parity, `Compiler0`, the external genesis anchor, compiler succession,
 Atom canonicality, valid Clause judgments, Runs, general Admission, durable
 persistence, or any language feature.
 

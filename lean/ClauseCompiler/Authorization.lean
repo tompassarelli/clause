@@ -330,60 +330,40 @@ def resolvePredecessor : PredecessorInput → Option AcceptedPredecessor
           acceptance := acceptance
         }
 
-def statementShapeMatches (statement : EvalStatement) (predecessor : AcceptedPredecessor)
-    (entrypoint : Id32) (argument : Term) (fuel : Fuel) : Bool :=
-  statement.exactAcceptedPredecessor = predecessor.exactBytes &&
-  statement.coreContractId = Fixed.coreContractId &&
-  statement.physicalProfileId = Fixed.physicalProfileId &&
-  statement.entrypoint = entrypoint && statement.arguments = [.term argument] &&
-  statement.fuelLimit = fuel
+def replayRequest (predecessor : AcceptedPredecessor)
+    (entrypoint : Id32) (argument : Term) (fuel : Fuel) : EvalRequest := {
+  acceptedPredecessorPackageHash := compilerPackageHash predecessor.exactBytes
+  coreContractId := Fixed.coreContractId
+  physicalProfileId := Fixed.physicalProfileId
+  entrypoint := entrypoint
+  arguments := [.term argument]
+  fuelLimit := fuel
+}
 
-def certificateShapeValid (certificate : EvalCertificate) : Bool :=
-  certificate.formatVersion = Fixed.coreManifest.certificateFormatVersion
+def receiptShapeValid (receipt : EvalReceipt) : Bool :=
+  receipt.formatVersion = Fixed.coreManifest.receiptFormatVersion
 
-/- This is intentionally separate from evaluator preflight.  The authorization
-dispatcher must classify malformed format, statement, and graph rows before a
-later evaluation fault, result mismatch, or observation mismatch. -/
-def certificateGraphValid (predecessor : AcceptedPredecessor)
-    (certificate : EvalCertificate) : Bool :=
-  let statement := certificate.statement
-  let subject := predecessor.decoded.package.subject
-  let profile := predecessor.decoded.package.manifest.physicalProfile
-  predecessor.decoded.exactManifestPayload = Fixed.exactCoreManifestBytes &&
-  predecessor.decoded.package.manifest = Fixed.coreManifest &&
-  statement.coreContractId = Fixed.coreContractId &&
-  statement.physicalProfileId = Fixed.physicalProfileId &&
-  Static.definitionsWellFormed subject.program profile &&
-  Static.entrypointsWellFormed subject &&
-  match Static.findDefinition statement.entrypoint subject.program with
-  | none => false
-  | some entrypoint =>
-      all₂ (fun value expected => value.sort = expected)
-        statement.arguments entrypoint.arguments &&
-      Certificate.checkGraph subject.program profile statement certificate.nodes
+def replay (predecessor : AcceptedPredecessor)
+    (request : EvalRequest) : Option Evaluator.Result :=
+  if Replay.requestWellFormed predecessor.exactBytes predecessor.decoded request then
+    Replay.run predecessor.decoded request
+  else none
 
-def evaluateStatement (predecessor : AcceptedPredecessor)
-    (statement : EvalStatement) : Option Evaluator.Result :=
-  Evaluator.run predecessor.decoded.package.subject.program
-    predecessor.decoded.package.manifest.physicalProfile
-    (Certificate.requiredRoot statement).expression [] statement.fuelLimit []
-
-def compileFailure (candidate : DecodedPackage) (request : ABI.BuildRequest)
-    (predecessor : AcceptedPredecessor) (certificate : EvalCertificate) :
-    Option AuthorizationFailure :=
-  let fail code := some { stage := AuthorizationStage.compileEvaluation, code := code }
-  if !certificateShapeValid certificate then fail .evidenceShapeMismatch
-  else if !statementShapeMatches certificate.statement predecessor
-      predecessor.decoded.package.subject.interface.compile candidate.package.subject.buildRequest
-      request.compileFuel then fail .certificateStatementMismatch
-  else if !certificateGraphValid predecessor certificate then fail .certificateRuleInvalid
+def compileReplay (candidate : DecodedPackage) (request : ABI.BuildRequest)
+    (predecessor : AcceptedPredecessor) (receipt : EvalReceipt) :
+    Except AuthorizationFailure Term :=
+  let fail code : Except AuthorizationFailure Term :=
+    .error { stage := AuthorizationStage.compileEvaluation, code := code }
+  let evalRequest := replayRequest predecessor
+    predecessor.decoded.package.subject.interface.compile
+    candidate.package.subject.buildRequest request.compileFuel
+  if !receiptShapeValid receipt then fail .evidenceShapeMismatch
   else
-    match evaluateStatement predecessor certificate.statement with
+    match replay predecessor evalRequest with
     | none => fail .evaluationFault
     | some result =>
-      if result.value ≠ certificate.statement.expected.value ||
-          result.fuel ≠ certificate.statement.expected.remainingFuel then
-        fail .certificateRuleInvalid
+      if result.value ≠ receipt.expected.value then fail .receiptValueMismatch
+      else if result.fuel ≠ receipt.expected.remainingFuel then fail .receiptFuelMismatch
       else
         match result.value with
         | .term value =>
@@ -391,35 +371,34 @@ def compileFailure (candidate : DecodedPackage) (request : ABI.BuildRequest)
             | none => fail .unexpectedResult
             | some bytes =>
                 if bytes ≠ candidate.exactSubjectPayload then fail .subjectMismatch
-                else if ABI.observations result.observations ≠
-                    certificate.statement.expected.observations then
-                  fail .observationMismatch
-                else none
+                else
+                  let observations := ABI.observations result.observations
+                  if observations ≠ receipt.expected.observations then
+                    fail .observationMismatch
+                  else .ok observations
         | _ => fail .unexpectedResult
 
 def admissionRequestTerm (request : Term) (subjectBytes : Bytes)
     (observations : Term) : Term :=
   ABI.record 0x16 [request, ABI.bytes subjectBytes, observations]
 
-def admissionFailure (candidate : DecodedPackage) (request : ABI.BuildRequest)
-    (predecessor : AcceptedPredecessor) (compileCertificate admissionCertificate : EvalCertificate) :
-    Option AuthorizationFailure :=
-  let fail code := some { stage := AuthorizationStage.admissionEvaluation, code := code }
+def admissionReplay (candidate : DecodedPackage) (request : ABI.BuildRequest)
+    (predecessor : AcceptedPredecessor) (compileObservations : Term)
+    (receipt : EvalReceipt) : Except AuthorizationFailure Unit :=
+  let fail code : Except AuthorizationFailure Unit :=
+    .error { stage := AuthorizationStage.admissionEvaluation, code := code }
   let argument := admissionRequestTerm candidate.package.subject.buildRequest
-    candidate.exactSubjectPayload compileCertificate.statement.expected.observations
-  if !certificateShapeValid admissionCertificate then fail .evidenceShapeMismatch
-  else if !statementShapeMatches admissionCertificate.statement predecessor
-      predecessor.decoded.package.subject.interface.admitPropose argument
-      request.admissionFuel then fail .certificateStatementMismatch
-  else if !certificateGraphValid predecessor admissionCertificate then
-    fail .certificateRuleInvalid
+    candidate.exactSubjectPayload compileObservations
+  let evalRequest := replayRequest predecessor
+    predecessor.decoded.package.subject.interface.admitPropose
+    argument request.admissionFuel
+  if !receiptShapeValid receipt then fail .evidenceShapeMismatch
   else
-    match evaluateStatement predecessor admissionCertificate.statement with
+    match replay predecessor evalRequest with
     | none => fail .evaluationFault
     | some result =>
-      if result.value ≠ admissionCertificate.statement.expected.value ||
-          result.fuel ≠ admissionCertificate.statement.expected.remainingFuel then
-        fail .certificateRuleInvalid
+      if result.value ≠ receipt.expected.value then fail .receiptValueMismatch
+      else if result.fuel ≠ receipt.expected.remainingFuel then fail .receiptFuelMismatch
       else
         match result.value with
         | .term value =>
@@ -428,9 +407,9 @@ def admissionFailure (candidate : DecodedPackage) (request : ABI.BuildRequest)
             | some bytes =>
                 if bytes ≠ candidate.exactSubjectPayload then fail .subjectMismatch
                 else if ABI.observations result.observations ≠
-                    admissionCertificate.statement.expected.observations then
+                    receipt.expected.observations then
                   fail .observationMismatch
-                else none
+                else .ok ()
         | _ => fail .unexpectedResult
 
 private def authorizeDecodedSuccessor (request : SuccessorAuthorizationRequest)
@@ -472,12 +451,13 @@ private def authorizeDecodedSuccessor (request : SuccessorAuthorizationRequest)
                 match request.evidence with
                 | .genesis => deny .compileEvaluation .evidenceShapeMismatch
                 | .successor compile admission =>
-                  match compileFailure candidate buildRequest predecessor compile with
-                  | some failure => .unauthorized failure
-                  | none =>
-                    match admissionFailure candidate buildRequest predecessor compile admission with
-                    | some failure => .unauthorized failure
-                    | none =>
+                  match compileReplay candidate buildRequest predecessor compile with
+                  | .error failure => .unauthorized failure
+                  | .ok compileObservations =>
+                    match admissionReplay candidate buildRequest predecessor
+                        compileObservations admission with
+                    | .error failure => .unauthorized failure
+                    | .ok () =>
                       if !evidenceEqual request.evidence candidate.package.evidence then
                         deny .evidenceAttachment .evidenceDetached
                       else if Encoding.subject candidate.package.subject ≠
@@ -504,42 +484,16 @@ def authorizeBytesSuccessor (request : SuccessorAuthorizationRequest) (input : B
   | verdict@(.decoded candidate) =>
       (verdict, some (authorizeDecodedSuccessor request input candidate h))
 
-/- Kernel-checked adversarial precedence vectors.  Each theorem leaves every
-later input unconstrained, so the earlier false row must dominate any paired
-later defect. -/
-theorem compileFormatPrecedesLaterFailures (candidate : DecodedPackage)
+/- Kernel-checked adversarial precedence vector.  Receipt shape is
+classified before replay or any comparison of its claimed outcome. -/
+theorem compileReceiptFormatPrecedesReplay (candidate : DecodedPackage)
     (request : ABI.BuildRequest) (predecessor : AcceptedPredecessor)
-    (certificate : EvalCertificate) (shapeInvalid : certificateShapeValid certificate = false) :
-    compileFailure candidate request predecessor certificate = some {
+    (receipt : EvalReceipt) (shapeInvalid : receiptShapeValid receipt = false) :
+    compileReplay candidate request predecessor receipt = .error {
       stage := .compileEvaluation
       code := .evidenceShapeMismatch
     } := by
-  simp [compileFailure, shapeInvalid]
-
-theorem compileStatementPrecedesGraphAndEvaluation (candidate : DecodedPackage)
-    (request : ABI.BuildRequest) (predecessor : AcceptedPredecessor)
-    (certificate : EvalCertificate) (shapeValid : certificateShapeValid certificate = true)
-    (statementInvalid : !statementShapeMatches certificate.statement predecessor
-      predecessor.decoded.package.subject.interface.compile
-      candidate.package.subject.buildRequest request.compileFuel) :
-    compileFailure candidate request predecessor certificate = some {
-      stage := .compileEvaluation
-      code := .certificateStatementMismatch
-    } := by
-  simp [compileFailure, shapeValid, statementInvalid]
-
-theorem compileGraphPrecedesEvaluation (candidate : DecodedPackage)
-    (request : ABI.BuildRequest) (predecessor : AcceptedPredecessor)
-    (certificate : EvalCertificate) (shapeValid : certificateShapeValid certificate = true)
-    (statementValid : statementShapeMatches certificate.statement predecessor
-      predecessor.decoded.package.subject.interface.compile
-      candidate.package.subject.buildRequest request.compileFuel)
-    (graphInvalid : certificateGraphValid predecessor certificate = false) :
-    compileFailure candidate request predecessor certificate = some {
-      stage := .compileEvaluation
-      code := .certificateRuleInvalid
-    } := by
-  simp [compileFailure, shapeValid, statementValid, graphInvalid]
+  simp [compileReplay, shapeInvalid]
 
 theorem unknownRequestSignatureFailsProfile (program : List Definition)
     (environment : List KSort)

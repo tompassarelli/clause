@@ -2,7 +2,7 @@ import Lean
 import ClauseCompiler
 
 /-!
-# CLCP-v2 Lean trust gate
+# CLCP-v3 Lean trust gate
 
 The audit admits the one explicitly named external predecessor-acceptance
 premise.  It rejects unsafe, foreign, replacement, or any other axiomatic
@@ -16,7 +16,7 @@ run_cmd do
   let roots : Array Name := #[
     `ClauseCompiler.Authorization.authorizeBytesGenesis,
     `ClauseCompiler.Authorization.authorizeBytesSuccessor,
-    `ClauseCompiler.Certificate.verifyEvalCertificate,
+    `ClauseCompiler.Replay.verifyEvalReceipt,
     `ClauseCompiler.Codec.strictDecode,
     `ClauseCompiler.Encoding.package]
   for root in roots do
@@ -58,8 +58,6 @@ run_cmd do
     "ClauseCompiler.Static.findDefinition._unsafe_rec",
     "ClauseCompiler.instReprTerm.repr._unsafe_rec",
     "ClauseCompiler.Static.requestSeqConform._unsafe_rec",
-    "ClauseCompiler.Certificate.nodesValid.loop._unsafe_rec",
-    "ClauseCompiler.Certificate.traceExpressions._unsafe_rec",
     "ClauseCompiler.Static.inferSeq._unsafe_rec",
     "ClauseCompiler.KExprSeq.length._unsafe_rec",
     "ClauseCompiler.contains._unsafe_rec",
@@ -78,7 +76,6 @@ run_cmd do
     "ClauseCompiler.Encoding.exprSeqPayload._unsafe_rec",
     "ClauseCompiler.unique._unsafe_rec",
     "ClauseCompiler.Codec.counted.loop._unsafe_rec",
-    "ClauseCompiler.Certificate.markReachable._unsafe_rec",
     "ClauseCompiler.Codec.readBytes._unsafe_rec",
     "ClauseCompiler.Static.requestsConform._unsafe_rec",
     "ClauseCompiler.KExprSeq.ofList._unsafe_rec",

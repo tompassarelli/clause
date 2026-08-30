@@ -526,295 +526,73 @@ def run (program : List Definition) (profile : PhysicalProfile)
 
 end Evaluator
 
-namespace Certificate
-
-def sameExpr (left right : KExpr) : Bool :=
-  Encoding.expr left = Encoding.expr right
-
-def sameJudgment (left right : EvalJudgment) : Bool :=
-  Encoding.evalJudgment left = Encoding.evalJudgment right
-
-def premiseCount : KExpr → KValue → Option Nat
-  | .bytesLiteral _, _ | .termLiteral _, _ | .var _, _ => some 0
-  | .makeAtom _ _ _, .term (.atom ..) => some 3
-  | .makeTriple _ _ _, .term (.triple ..) => some 3
-  | .letValue _ _, _ => some 2
-  | .caseTerm _ _ _, _ => some 2
-  | .caseBytes _ _ _, _ => some 2
-  | .concatBytes parts, .bytes _ => some parts.length
-  | .caseBytesEqual _ _ _ _, _ => some 3
-  | .call _ arguments, _ => some (arguments.length + 1)
-  | .request _ arguments, _ => some arguments.length
-  | _, _ => none
-
-def premiseValue (prior : List EvalNode) (indices : List Nat) (position : Nat) :
-    Option KValue := do
-  let index ← nth? indices position
-  let node ← nth? prior index
-  pure node.conclusion.value
-
-def expectedRuleTag (prior : List EvalNode) (node : EvalNode) : Option UInt8 :=
-  match node.conclusion.expression, node.conclusion.value with
-  | .bytesLiteral _, .bytes _ => some 0x30
-  | .termLiteral _, .term _ => some 0x31
-  | .var _, _ => some 0x32
-  | .makeAtom _ _ _, .term (.atom ..) => some 0x33
-  | .makeTriple _ _ _, .term (.triple ..) => some 0x34
-  | .letValue _ _, _ => some 0x35
-  | .caseTerm _ _ _, _ =>
-      match premiseValue prior node.premises 0 with
-      | some (.term (.atom ..)) => some 0x36
-      | some (.term (.triple ..)) => some 0x37
-      | _ => none
-  | .caseBytes _ _ _, _ =>
-      match premiseValue prior node.premises 0 with
-      | some (.bytes []) => some 0x38
-      | some (.bytes (_ :: _)) => some 0x39
-      | _ => none
-  | .concatBytes _, .bytes _ => some 0x3a
-  | .caseBytesEqual _ _ _ _, _ =>
-      match premiseValue prior node.premises 0, premiseValue prior node.premises 1 with
-      | some (.bytes left), some (.bytes right) =>
-          if left = right then some 0x3b else some 0x3c
-      | _, _ => none
-  | .call _ _, _ => some 0x3d
-  | .request _ _, .bytes _ => some 0x3e
-  | _, _ => none
-
-def indicesEarlierUnique (index : Nat) (indices : List Nat) : Bool :=
-  unique indices && all (fun premise => premise < index) indices
-
-structure PremiseTrace where
-  judgments : List EvalJudgment
-  fuel : Fuel
-  observations : Term
-
-def directJudgment (program : List Definition) (profile : PhysicalProfile)
-    (expression : KExpr) (environment : List KValue) (fuel : Fuel)
-    (observations : Term) : Option EvalJudgment := do
-  let observationItems ← ABI.decodeObservations observations
-  let result ← Evaluator.run program profile expression environment fuel observationItems
-  pure {
-    expression := expression
-    environment := environment
-    fuelBefore := fuel
-    observationsBefore := observations
-    value := result.value
-    fuelAfter := result.fuel
-    observationsAfter := ABI.observations result.observations
-  }
-
-def traceExpressions (program : List Definition) (profile : PhysicalProfile)
-    (environment : List KValue) :
-    List KExpr → Fuel → Term → Option PremiseTrace
-  | [], fuel, observations => some {
-      judgments := []
-      fuel := fuel
-      observations := observations
-    }
-  | expression :: tail, fuel, observations => do
-      let judgment ← directJudgment program profile expression environment fuel observations
-      let remaining ← traceExpressions program profile environment tail
-        judgment.fuelAfter judgment.observationsAfter
-      pure {
-        judgments := judgment :: remaining.judgments
-        fuel := remaining.fuel
-        observations := remaining.observations
-      }
-
-def appendJudgment (trace : PremiseTrace) (judgment : EvalJudgment) : PremiseTrace := {
-  judgments := trace.judgments ++ [judgment]
-  fuel := judgment.fuelAfter
-  observations := judgment.observationsAfter
-}
-
-def expectedPremises (program : List Definition) (profile : PhysicalProfile)
-    (conclusion : EvalJudgment) : Option (List EvalJudgment) :=
-  match conclusion.fuelBefore with
-  | 0 => none
-  | charged + 1 => do
-      let trace ← match conclusion.expression with
-        | .bytesLiteral _ | .termLiteral _ | .var _ => some {
-            judgments := []
-            fuel := charged
-            observations := conclusion.observationsBefore
-          }
-        | .makeAtom kind payload equality =>
-            traceExpressions program profile conclusion.environment
-              [kind, payload, equality] charged conclusion.observationsBefore
-        | .makeTriple first second third =>
-            traceExpressions program profile conclusion.environment
-              [first, second, third] charged conclusion.observationsBefore
-        | .letValue value body => do
-            let valueTrace ← traceExpressions program profile conclusion.environment
-              [value] charged conclusion.observationsBefore
-            let valueJudgment ← valueTrace.judgments.head?
-            let bodyJudgment ← directJudgment program profile body
-              (valueJudgment.value :: conclusion.environment)
-              valueTrace.fuel valueTrace.observations
-            pure (appendJudgment valueTrace bodyJudgment)
-        | .caseTerm scrutinee atomBody tripleBody => do
-            let selectedTrace ← traceExpressions program profile conclusion.environment
-              [scrutinee] charged conclusion.observationsBefore
-            let selected ← selectedTrace.judgments.head?
-            let (body, environment) ← match selected.value with
-              | .term (.atom kind payload equality) => some (atomBody,
-                  [.bytes kind, .bytes payload, .bytes equality] ++ conclusion.environment)
-              | .term (.triple first second third) => some (tripleBody,
-                  [.term first, .term second, .term third] ++ conclusion.environment)
-              | _ => none
-            let bodyJudgment ← directJudgment program profile body environment
-              selectedTrace.fuel selectedTrace.observations
-            pure (appendJudgment selectedTrace bodyJudgment)
-        | .caseBytes scrutinee emptyBody consBody => do
-            let selectedTrace ← traceExpressions program profile conclusion.environment
-              [scrutinee] charged conclusion.observationsBefore
-            let selected ← selectedTrace.judgments.head?
-            let (body, environment) ← match selected.value with
-              | .bytes [] => some (emptyBody, conclusion.environment)
-              | .bytes (head :: tail) => some (consBody,
-                  [.bytes [head], .bytes tail] ++ conclusion.environment)
-              | _ => none
-            let bodyJudgment ← directJudgment program profile body environment
-              selectedTrace.fuel selectedTrace.observations
-            pure (appendJudgment selectedTrace bodyJudgment)
-        | .concatBytes parts =>
-            traceExpressions program profile conclusion.environment parts.toList
-              charged conclusion.observationsBefore
-        | .caseBytesEqual left right equalBody unequalBody => do
-            let operands ← traceExpressions program profile conclusion.environment
-              [left, right] charged conclusion.observationsBefore
-            let leftJudgment ← operands.judgments.head?
-            let rightJudgment ← (operands.judgments.drop 1).head?
-            let body ← match leftJudgment.value, rightJudgment.value with
-              | .bytes leftBytes, .bytes rightBytes =>
-                  some (if leftBytes = rightBytes then equalBody else unequalBody)
-              | _, _ => none
-            let bodyJudgment ← directJudgment program profile body conclusion.environment
-              operands.fuel operands.observations
-            pure (appendJudgment operands bodyJudgment)
-        | .call definitionId arguments => do
-            let definition ← Static.findDefinition definitionId program
-            let argumentsTrace ← traceExpressions program profile conclusion.environment
-              arguments.toList charged conclusion.observationsBefore
-            let bodyJudgment ← directJudgment program profile definition.body
-              (argumentsTrace.judgments.map (fun judgment => judgment.value))
-              argumentsTrace.fuel argumentsTrace.observations
-            pure (appendJudgment argumentsTrace bodyJudgment)
-        | .request _ arguments =>
-            traceExpressions program profile conclusion.environment arguments.toList
-              charged conclusion.observationsBefore
-      pure trace.judgments
-
-def premisesMatch (program : List Definition) (profile : PhysicalProfile)
-    (prior : List EvalNode) (node : EvalNode) : Bool :=
-  match expectedPremises program profile node.conclusion,
-      node.premises.mapM (fun premise => (nth? prior premise).map EvalNode.conclusion) with
-  | some expected, some actual => all₂ sameJudgment expected actual
-  | _, _ => false
-
-def nodeValid (program : List Definition) (profile : PhysicalProfile)
-    (prior : List EvalNode) (index : Nat) (node : EvalNode) : Bool :=
-  node.ruleTag = expectedRuleTag prior node &&
-  node.premises.length = premiseCount node.conclusion.expression node.conclusion.value &&
-  indicesEarlierUnique index node.premises &&
-  premisesMatch program profile prior node &&
-  match ABI.decodeObservations node.conclusion.observationsBefore with
-  | none => false
-  | some observations =>
-      match Evaluator.run program profile node.conclusion.expression
-          node.conclusion.environment node.conclusion.fuelBefore observations with
-      | none => false
-      | some result => result.value = node.conclusion.value &&
-          result.fuel = node.conclusion.fuelAfter &&
-          ABI.observations result.observations = node.conclusion.observationsAfter &&
-          all (fun premise => (nth? prior premise).isSome) node.premises
-
-def nodesValid (program : List Definition) (profile : PhysicalProfile) :
-    List EvalNode → Bool
-  | nodes =>
-      let rec loop (prior : List EvalNode) (index : Nat) : List EvalNode → Bool
-        | [] => true
-        | node :: tail => nodeValid program profile prior index node &&
-            loop (prior ++ [node]) (index + 1) tail
-      loop [] 0 nodes
-
-def markReachable (nodes : List EvalNode) : Nat → Nat → List Nat
-  | 0, root => [root]
-  | budget + 1, root =>
-      if let some node := nth? nodes root then
-        root :: node.premises.flatMap (markReachable nodes budget)
-      else []
-
-def allReachable (nodes : List EvalNode) : Bool :=
-  match nodes.length with
-  | 0 => false
-  | count + 1 =>
-      let reached := markReachable nodes (count + 1) count
-      all (fun index => contains index reached) (List.range (count + 1))
+namespace Replay
 
 def valueLiteral : KValue → KExpr
   | .bytes value => .bytesLiteral value
   | .term value => .termLiteral value
 
-def requiredRoot (statement : EvalStatement) : EvalJudgment := {
-  expression := .call statement.entrypoint
-    (KExprSeq.ofList (statement.arguments.map valueLiteral))
-  environment := []
-  fuelBefore := statement.fuelLimit
-  observationsBefore := ABI.emptyObservations
-  value := statement.expected.value
-  fuelAfter := statement.expected.remainingFuel
-  observationsAfter := statement.expected.observations
+def requestExpression (request : EvalRequest) : KExpr :=
+  .call request.entrypoint
+    (KExprSeq.ofList (request.arguments.map valueLiteral))
+
+def requestWellFormed (exactAcceptedPredecessor : Bytes)
+    (predecessor : DecodedPackage) (request : EvalRequest) : Bool :=
+  predecessor.exactInput = exactAcceptedPredecessor &&
+  request.acceptedPredecessorPackageHash =
+    compilerPackageHash exactAcceptedPredecessor &&
+  predecessor.exactManifestPayload = Fixed.exactCoreManifestBytes &&
+  predecessor.package.manifest = Fixed.coreManifest &&
+  request.coreContractId = Fixed.coreContractId &&
+  request.physicalProfileId = Fixed.physicalProfileId &&
+  request.fuelLimit > 0 &&
+  Static.definitionsWellFormed predecessor.package.subject.program
+    predecessor.package.manifest.physicalProfile &&
+  Static.entrypointsWellFormed predecessor.package.subject &&
+  match Static.findDefinition request.entrypoint
+      predecessor.package.subject.program with
+  | none => false
+  | some entrypoint =>
+      all₂ (fun value expected => value.sort = expected)
+        request.arguments entrypoint.arguments
+
+def run (predecessor : DecodedPackage) (request : EvalRequest) :
+    Option Evaluator.Result :=
+  Evaluator.run predecessor.package.subject.program
+    predecessor.package.manifest.physicalProfile
+    (requestExpression request) [] request.fuelLimit []
+
+def outcome (result : Evaluator.Result) : EvalOutcome := {
+  value := result.value
+  remainingFuel := result.fuel
+  observations := ABI.observations result.observations
 }
 
-def checkGraph (program : List Definition) (profile : PhysicalProfile)
-    (statement : EvalStatement) (nodes : List EvalNode) : Bool :=
-  nodesValid program profile nodes && allReachable nodes &&
-    match nodes.reverse with
-    | [] => false
-    | root :: _ => sameJudgment root.conclusion (requiredRoot statement)
-
-def verifyEvalCertificate (required : EvalStatement)
-    (_accepted : AcceptedExact required.exactAcceptedPredecessor)
-    (certificate : EvalCertificate) : Bool :=
-  certificate.formatVersion = 0x00 && certificate.statement = required &&
-  match Codec.strictDecode required.exactAcceptedPredecessor with
+def verifyEvalReceipt (exactAcceptedPredecessor : Bytes)
+    (_accepted : AcceptedExact exactAcceptedPredecessor)
+    (request : EvalRequest) (receipt : EvalReceipt) : Bool :=
+  receipt.formatVersion = Fixed.coreManifest.receiptFormatVersion &&
+  match Codec.strictDecode exactAcceptedPredecessor with
   | .rejected _ => false
   | .decoded predecessor =>
-      predecessor.exactManifestPayload = Fixed.exactCoreManifestBytes &&
-      required.coreContractId = Fixed.coreContractId &&
-      required.physicalProfileId = Fixed.physicalProfileId &&
-      predecessor.package.manifest = Fixed.coreManifest &&
-      Static.definitionsWellFormed predecessor.package.subject.program
-        predecessor.package.manifest.physicalProfile &&
-      Static.entrypointsWellFormed predecessor.package.subject &&
-      match Static.findDefinition required.entrypoint predecessor.package.subject.program with
+      requestWellFormed exactAcceptedPredecessor predecessor request &&
+      match run predecessor request with
       | none => false
-      | some entrypoint =>
-          all₂ (fun value expected => value.sort = expected)
-            required.arguments entrypoint.arguments &&
-          match Evaluator.run predecessor.package.subject.program
-              predecessor.package.manifest.physicalProfile
-              (requiredRoot required).expression [] required.fuelLimit [] with
-          | none => false
-          | some result => result.value = required.expected.value &&
-              result.fuel = required.expected.remainingFuel &&
-              ABI.observations result.observations = required.expected.observations &&
-              checkGraph predecessor.package.subject.program
-                predecessor.package.manifest.physicalProfile required certificate.nodes
+      | some result => outcome result = receipt.expected
 
-theorem nonconformingDefinitionsRejectCertificate
-    (required : EvalStatement)
-    (accepted : AcceptedExact required.exactAcceptedPredecessor)
-    (certificate : EvalCertificate)
+theorem nonconformingDefinitionsRejectReceipt
+    (exactAcceptedPredecessor : Bytes)
+    (accepted : AcceptedExact exactAcceptedPredecessor)
+    (request : EvalRequest)
+    (receipt : EvalReceipt)
     (predecessor : DecodedPackage)
-    (binding : Codec.strictDecode required.exactAcceptedPredecessor = .decoded predecessor)
+    (binding : Codec.strictDecode exactAcceptedPredecessor = .decoded predecessor)
     (profileFailure :
       Static.definitionsConformToProfile predecessor.package.subject.program
         predecessor.package.manifest.physicalProfile = false) :
-    verifyEvalCertificate required accepted certificate = false := by
-  simp [verifyEvalCertificate, binding, Static.definitionsWellFormed, profileFailure]
+    verifyEvalReceipt exactAcceptedPredecessor accepted request receipt = false := by
+  simp [verifyEvalReceipt, binding, requestWellFormed,
+    Static.definitionsWellFormed, profileFailure]
 
 namespace Regression
 
@@ -888,58 +666,22 @@ def profileEscapePackage : CompilerPackage := {
 
 def profileEscapeBytes : Bytes := (Encoding.package profileEscapePackage).getD []
 
-def profileEscapeStatement : EvalStatement := {
-  exactAcceptedPredecessor := profileEscapeBytes
+def profileEscapeRequest : EvalRequest := {
+  acceptedPredecessorPackageHash := compilerPackageHash profileEscapeBytes
   coreContractId := Fixed.coreContractId
   physicalProfileId := Fixed.physicalProfileId
   entrypoint := profileEscapeCompileId
   arguments := [.term profileEscapeTerm]
   fuelLimit := 3
+}
+
+def profileEscapeReceipt : EvalReceipt := {
+  formatVersion := 0x00
   expected := {
     value := .term profileEscapeTerm
     remainingFuel := 0
     observations := ABI.emptyObservations
   }
-}
-
-def profileEscapeArgumentNode : EvalNode := {
-  ruleTag := 0x31
-  premises := []
-  conclusion := {
-    expression := .termLiteral profileEscapeTerm
-    environment := []
-    fuelBefore := 2
-    observationsBefore := ABI.emptyObservations
-    value := .term profileEscapeTerm
-    fuelAfter := 1
-    observationsAfter := ABI.emptyObservations
-  }
-}
-
-def profileEscapeBodyNode : EvalNode := {
-  ruleTag := 0x32
-  premises := []
-  conclusion := {
-    expression := .var 0
-    environment := [.term profileEscapeTerm]
-    fuelBefore := 1
-    observationsBefore := ABI.emptyObservations
-    value := .term profileEscapeTerm
-    fuelAfter := 0
-    observationsAfter := ABI.emptyObservations
-  }
-}
-
-def profileEscapeRootNode : EvalNode := {
-  ruleTag := 0x3d
-  premises := [0, 1]
-  conclusion := requiredRoot profileEscapeStatement
-}
-
-def profileEscapeCertificate : EvalCertificate := {
-  formatVersion := 0x00
-  statement := profileEscapeStatement
-  nodes := [profileEscapeArgumentNode, profileEscapeBodyNode, profileEscapeRootNode]
 }
 
 theorem profileEscapeProgramWellTyped :
@@ -971,14 +713,16 @@ theorem unusedOutOfProfileRequestRejected
     Static.definitionsWellTyped profileEscapeProgram Fixed.physicalProfile = true ∧
     Static.definitionsConformToProfile profileEscapeProgram Fixed.physicalProfile = false ∧
     Static.definitionsWellFormed profileEscapeProgram Fixed.physicalProfile = false ∧
-    verifyEvalCertificate profileEscapeStatement accepted profileEscapeCertificate = false := by
+    verifyEvalReceipt profileEscapeBytes accepted
+      profileEscapeRequest profileEscapeReceipt = false := by
   refine ⟨profileEscapeOperationId_length, profileEscapeProgramWellTyped,
     profileEscapeProgramRejectedByProfile, profileEscapeProgramNotWellFormed, ?_⟩
-  exact nonconformingDefinitionsRejectCertificate
-    profileEscapeStatement accepted profileEscapeCertificate predecessor binding profileFailure
+  exact nonconformingDefinitionsRejectReceipt
+    profileEscapeBytes accepted profileEscapeRequest profileEscapeReceipt
+    predecessor binding profileFailure
 
 end Regression
 
-end Certificate
+end Replay
 
 end ClauseCompiler

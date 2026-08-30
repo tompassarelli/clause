@@ -1,8 +1,8 @@
 # Clause Canonical Packages
 
-> **Status:** CLCP v2 is the normative P1 compiler-package contract and is not
-> implemented. The CLCP v1 codec and corpus remain implemented narrow
-> bootstrap evidence pending their P2 migration.
+> **Status:** CLCP v3 is the normative compiler-package contract. Its Lean
+> codec and replay checker are implemented; Rust parity, literal Compiler0,
+> successor admission, and public release remain P2 acceptance work.
 >
 > **Authority:** This document owns canonical package representation and
 > canonical decoding. [Compiler genesis](compiler-genesis.md) owns compiler
@@ -12,20 +12,19 @@
 
 ## Version boundary
 
-CLCP v1 and CLCP v2 are distinct closed formats. A decoder selects a format
+CLCP v1 and CLCP v3 are distinct closed formats. A decoder selects a format
 only from the exact version octet after the `CLCP` magic and rejects all
 other versions. There is no permissive common envelope, fallback decoder,
 version inference, extension field, or alternate encoding.
 
-CLCP v2 is the compiler carrier required by the
+CLCP v3 is the compiler carrier required by the
 [genesis contract](compiler-genesis.md). It separates the compiler subject
-from checking evidence so a certificate never contains, hashes, or authorizes
+from checking evidence so a receipt never contains, hashes, or authorizes
 itself. The existing CLCP v1 implementation and byte corpus prove only their
-narrow finite-ground-certificate boundary. They are not `Compiler0`, a v2
-decoder, a universal evaluator, or evidence that the v2 contract is
-implemented.
+narrow finite-ground-certificate boundary. They are not `Compiler0`, a v3
+receipt, or authority for compiler evolution.
 
-## CLCP v2 primitive encodings
+## CLCP v3 primitive encodings
 
 ```text
 U8       = one octet
@@ -54,13 +53,13 @@ begin with the displayed `U8` tag. A symbolic identifier ending in `Id` is
 an `Id32` unless a different type is written explicitly. All displayed tag
 octets are hexadecimal.
 
-## CLCP v2 envelope
+## CLCP v3 envelope
 
 Every compiler package is exactly:
 
 ```text
 43 4c 43 50                 magic ASCII "CLCP"
-02                          version
+03                          version
 Frame(01, CoreManifest)
 Frame(02, CompilerSubject)
 Frame(03, CompilerEvidence)
@@ -71,10 +70,10 @@ All three frames occur exactly once and in that order. Unknown, missing,
 repeated, or reordered frames reject. Frame 01 carries the complete exact
 generic machine manifest; it is not an identifier resolved through a host
 registry. Its canonical bytes fix every sort, expression, Core ABI, static
-rule, evaluation rule, certificate rule, authorization verdict, and physical
+rule, evaluation rule, receipt contract, authorization verdict, and physical
 operation below. Package data cannot add a rule or reinterpret a tag.
 
-## CLCP v2 Terms and evaluator expressions
+## CLCP v3 Terms and evaluator expressions
 
 ```text
 Term =
@@ -163,8 +162,8 @@ CoreManifest =
   authorizationCodeTags:Seq<U8>
   staticRules:Seq<RuleSignature>
   evaluationRules:Seq<RuleSignature>
-  certificateFormatVersion:U8
-  certificateSignature:Blob
+  receiptFormatVersion:U8
+  receiptSignature:Blob
   contractClauses:Seq<Blob>
   physicalProfile:PhysicalProfile
 
@@ -291,13 +290,13 @@ evaluationRules = [
   (3e, 01, "after charge evaluate the sole argument as BytesValue(input), compute FIPS-180-4 SHA-256(input), return BytesValue(H0||H1||H2||H3||H4||H5||H6||H7), and append exactly Observation(len(o),Sha256OpId,[Value(Bytes,input)],Value(Bytes,digest))")
 ]
 
-certificateFormatVersion = 00
+receiptFormatVersion = 00
 
-certificateSignature = "EvalCertificate(formatVersion:CertificateFormatVersion,statement:EvalStatement,nodes:Seq<EvalNode>); CertificateFormatVersion=00; EvalStatement(exactAcceptedPredecessor:Blob,coreContractId:Hash32,physicalProfileId:Hash32,entrypoint:Id32,arguments:Seq<KValue>,fuelLimit:U64,expected:Returned(value:KValue,remainingFuel:U64,observations:Term)); KValue=00 BytesValue(Blob)|01 TermValue(Term); EvalNode(ruleTag:EvaluationRuleTag,premises:Seq<U32>,conclusion:EvalJudgment); EvaluationRuleTag=30|31|32|33|34|35|36|37|38|39|3a|3b|3c|3d|3e; EvalJudgment(expression:KExpr,environment:Seq<KValue>,fuelBefore:U64,observationsBefore:Term,value:KValue,fuelAfter:U64,observationsAfter:Term)"
+receiptSignature = "EvalReceipt(formatVersion:ReceiptFormatVersion,expected:Returned(value:KValue,remainingFuel:U64,observations:Term)); ReceiptFormatVersion=00; KValue=00 BytesValue(Blob)|01 TermValue(Term)"
 
 contractClauses = [
   "C00: U8=one octet;U32=four-octet unsigned big-endian;U64=eight-octet unsigned big-endian;Blob=U32 length||octets[length];Seq<X>=U32 count||X[count];Frame<X>=U8 tag||U32 payloadLength||X;Id32 and Hash32 are exactly 32 octets;Span=Id32 sourceArtifactId||U64 start||U64 end with start<=end<=source length;record fields concatenate in displayed order;sum variants begin with displayed U8;all arithmetic is checked before cursor change conversion iteration or allocation;every bounded value consumes exactly;no padding trailing bytes or alternate spelling",
-  "C01: Term=00 Atom(kind:Blob,payload:Blob,equality:Blob)|01 Triple(first:Term,second:Term,third:Term); KSort=00 Bytes|01 Term; frameTags,termTags,sortTags,expressionForms,abiForms,premisePolicyTags,lineageTags,nominalDeclarationTags,compilerEvidenceTags,valueTags,evalOutcomeTags,decodeVerdictTags,decodeCodeTags,authorizationStageTags,authorizationCodeTags,staticRules,evaluationRules,certificateFormatVersion and physical profile values above are the complete closed tag sets and signatures",
+  "C01: Term=00 Atom(kind:Blob,payload:Blob,equality:Blob)|01 Triple(first:Term,second:Term,third:Term); KSort=00 Bytes|01 Term; frameTags,termTags,sortTags,expressionForms,abiForms,premisePolicyTags,lineageTags,nominalDeclarationTags,compilerEvidenceTags,valueTags,evalOutcomeTags,decodeVerdictTags,decodeCodeTags,authorizationStageTags,authorizationCodeTags,staticRules,evaluationRules,receiptFormatVersion and physical profile values above are the complete closed tag sets and signatures",
   "C02: KTag=clause/core-abi/tag/v1; KBytes=clause/core-abi/bytes/v1; KId32=clause/core-abi/id32/v1; KU64=clause/core-abi/u64/v1; KEq=clause/core/bytes-equal/v1; Tag(t)=Atom(KTag,U8(t),KEq); Bytes(b)=Atom(KBytes,b,KEq); Id(id)=Atom(KId32,id,KEq) iff len(id)=32; Nat64(n)=Atom(KU64,U64(n),KEq); List([])=Tag(00); List(x::xs)=Triple(Tag(01),x,List(xs)); Record(t,xs)=Triple(Tag(t),List(xs),Tag(00)); Core ABI constructors and field counts are exactly abiForms in tag order; wrong Atom kind field count wrapper fixed width list shape or trailing field is invalid",
   "C03: CompilerSubject=lineage,nominalDeclarations,interface,program,buildRequest; lineage=00 Genesis|01 Successor(predecessorLocator:Hash32,changeOccurrenceId:Id32); interface=compile:Id32,admitPropose:Id32; Definition=id:Id32,arguments:Seq<KSort>,result:KSort,body:KExpr; definitions are sorted unique by id",
   "C04: NominalDeclaration=00 Seed(domain,id)|01 RetainedSeed(domain,id,predecessorRevisionId)|02 Allocated(domain,id,changeInput:NominalWireRef,producerInput:NominalWireRef,localSlot:U64); NominalWireRef=domain:Id32||id:Id32; declarations are sorted unique by domain||id and every nominal reference resolves exactly one declaration in its required domain",
@@ -306,31 +305,31 @@ contractClauses = [
   "C07: Delta is the canonical sorted unique definition table; Gamma and runtime environments use index-zero-first Var order; a definition is well formed iff its body has its declared result under its declared argument sorts and all transitive Call and Request references resolve; there is no subsorting, coercion, implicit argument, host value, fallback rule, or package-defined rule",
   "C08: J(expression,environment,fuelBefore,observationsBefore)=>(value,fuelAfter,observationsAfter) is the sole successful evaluation judgment; values are only BytesValue or TermValue; fuel is U64; every rule consumes one unit before premises; zero fuel has no judgment; premises run strictly left-to-right and thread exact fuel and observations; integer overflow, bad value sort, unresolved definition, malformed observation, physical failure, or out-of-fuel has no successful judgment",
   "C09: observationPolicy 00 appends exactly one canonical observation for each successful physical Request and none otherwise; observation indices are 0..n-1; the sole operation is Sha256OpId:[Bytes]->Bytes; SHA-256 is FIPS 180-4 over successive eight-bit message units and returns big-endian H0||H1||H2||H3||H4||H5||H6||H7; every other operation or signature is invalid",
-  "C10: Certificate format is certificateSignature above with formatVersion 00; nodes are indexed in encoded order; the last node is root; nodes is nonempty; every premise index is earlier than its consumer, appears in execution order, and is unique; every node is reachable from root; unknown ruleTag is DecodeRejected(06,ruleTagOffset), while a known tag with wrong expression, premise, state, value, fuel, environment, digest, or observation semantics is Unauthorized(stage,7f)",
-  "C11: A certificate node uses exactly one evaluation rule 30..3e and that rule's premisePolicy; the first premise begins after the parent's one-unit charge at observationsBefore; later premises begin at the prior premise's fuel and observations; Call has argument premises then one body premise under exactly argument values; RequestSha256 has one argument premise then fixed digest and one append; certificate nodes prove neither static well-formedness nor authority",
-  "C12: EvalStatement contains complete exact already-accepted predecessor bytes, derived manifest/profile IDs, exact entrypoint, canonical arguments, exact nonzero fuel limit, and Returned value,remainingFuel,Observations; its independently constructed root is Call(entrypoint,map(ValueLiteral,arguments)) under empty environment, statement fuel, and Observations([]); faults have no certificate form",
-  "C13: CompilerEvidence=00 GenesisEvidence with no payload|01 SuccessorEvidence(compileCertificate:EvalCertificate,admissionCertificate:EvalCertificate); evidence is never executable compiler meaning and cannot add a Core or certificate rule",
-  "V01: VerifyEvalCertificate first requires certificate formatVersion 00 and canonical byte equality of certificate.statement and the required EvalStatement",
-  "V02: VerifyEvalCertificate next strictly decodes required.exactAcceptedPredecessor, requires caller-supplied acceptance of those exact bytes, requires predecessor Frame01 byte-equal exactCoreManifestBytes, and independently derives CoreContractId and PhysicalProfileId",
-  "V03: VerifyEvalCertificate next requires both derived IDs equal the statement fields, statically checks the predecessor under rules 20..2b, resolves the entrypoint exactly once, and requires argument sorts equal its signature",
-  "V04: VerifyEvalCertificate next constructs Call(entrypoint,map(ValueLiteral,arguments)) without certificate input, where only BytesValue maps to BytesLiteral and TermValue maps to TermLiteral",
-  "V05: VerifyEvalCertificate next constructs the required root judgment with empty environment, fuelLimit, Observations([]), and exactly the value,remainingFuel,observations in required.expected",
-  "V06: VerifyEvalCertificate next scans nodes in encoded order and validates every exact known local rule, premise index, state transition, environment, value, fuel, and observation chain",
-  "V07: VerifyEvalCertificate finally requires every node reachable and the final conclusion canonical-byte-equal to the independently constructed root; success requires every prior step and uses no callback, theorem name, host rule registry, Boolean evaluator, or package rule",
+  "C10: EvalReceipt is receiptSignature above with formatVersion 00 and only expected:EvalOutcome; it contains no request, predecessor package, expression, environment, rule, premise, node, graph, trace, or authority; unknown formatVersion is DecodeRejected(06,formatVersionOffset)",
+  "C11: EvalRequest is checker-constructed and never encoded; it binds acceptedPredecessorPackageHash=CompilerPackageHash(exact already-accepted predecessor bytes), derived CoreContractId and PhysicalProfileId, exact entrypoint, canonical arguments, and exact nonzero fuel; its expression is Call(entrypoint,map(ValueLiteral,arguments)) under empty environment and Observations([])",
+  "C12: Complete deterministic replay under evaluation rules 30..3e is the only receipt verification; success requires exact equality of returned value, remaining fuel, and canonical observations with receipt.expected; faults have no receipt form; an optional trace is diagnostic only and never admission authority",
+  "C13: CompilerEvidence=00 GenesisEvidence with no payload|01 SuccessorEvidence(compileReceipt:EvalReceipt,admissionReceipt:EvalReceipt); evidence is never executable compiler meaning and cannot add a Core, evaluation rule, request, trace, or authority",
+  "V01: VerifyEvalReceipt first requires receipt formatVersion 00",
+  "V02: VerifyEvalReceipt strictly decodes the separately supplied exact predecessor bytes, requires caller-supplied acceptance of those exact bytes, requires request.acceptedPredecessorPackageHash=CompilerPackageHash(exact bytes), requires predecessor Frame01 byte-equal exactCoreManifestBytes, and independently derives CoreContractId and PhysicalProfileId",
+  "V03: VerifyEvalReceipt requires both derived IDs equal the checker-constructed request fields, statically checks the predecessor under rules 20..2b, resolves the request entrypoint exactly once, and requires argument sorts equal its signature",
+  "V04: VerifyEvalReceipt constructs Call(entrypoint,map(ValueLiteral,arguments)) without receipt input, where only BytesValue maps to BytesLiteral and TermValue maps to TermLiteral",
+  "V05: VerifyEvalReceipt completely evaluates that call under empty environment, request fuelLimit, and Observations([]) using only fixed rules 30..3e and the carried physical profile",
+  "V06: VerifyEvalReceipt requires exact equality of the replayed value, remaining fuel, and canonical observations with receipt.expected",
+  "V07: success requires every prior step and uses no graph, trace, callback, theorem name, host rule registry, Boolean evaluator, or package rule",
   "D00: StrictDecode returns only Decoded(exactInput,candidate) or DecodeRejected(code,offset); codes in precedence order are 00 WrongMagic,01 UnknownVersion,02 FrameTagOrderOrCount,03 Truncated,04 LengthOrCountOverflow,05 InvalidFixedWidth,06 UnknownSumTag,07 BoundedValueUnderConsumed,08 BoundedValueOverConsumed,09 TrailingBytes; fields are read depth-first in encoded order and equal-offset ties use lower code",
-  "D01: StrictDecode handles only closed byte grammar; order, uniqueness, exact manifest equality, reference bounds, ABI meaning, entrypoint signature, identity derivation, lineage/evidence consistency, known certificate-rule semantics, and profile conformance are authorization checks; malformed bytes never produce Unauthorized",
+  "D01: StrictDecode handles only closed byte grammar; order, uniqueness, exact manifest equality, reference bounds, ABI meaning, entrypoint signature, identity derivation, lineage/evidence consistency, receipt replay semantics, and profile conformance are authorization checks; malformed bytes never produce Unauthorized",
   "A00: Authorization starts only after Decoded(exactInput,Q) and requires exactly one explicit request: GenesisAuthorizationRequest(ownerAnchor,R,E,Gc,Ga,I) or SuccessorAuthorizationRequest(P,R,E,I), where ownerAnchor=Missing|Supplied(OwnerAnchorWitness), OwnerAnchorWitness is an opaque non-package-wire capability created only by the external human-owner selection act, observe(witness)=OwnerAnchorObservation(exactSelectedBytes:Blob,selectedByteLength:U64,selectedPackageHash:Hash32), Gc and Ga are U64, and I=FinalPackageIdentityInput(packageHash:Hash32,exactPackageBytes:Blob); no owner-anchor variant, witness, or observation is encoded in Q; the request variant, never candidate data, selects the route; stages run 40..48; successor skips 42; genesis skips 43,45,46,47; both run 44 and 48; each row condition belongs to exactly one stage and route; rows run left-to-right and collection failures use encoded item order; failure at position i means every earlier condition passed and condition i is false, so first-failure predicates are pairwise disjoint and the first false condition is the only verdict",
   "A40: CoreManifest rows=[manifest bytes differ exactCoreManifestBytes->(40,60)]",
   "A41: CoreWellFormedness rows=[subject or ABI semantic structure->(41,61),nominal provenance allocation retention or reference->(41,62),definition order or duplicate->(41,63),compile then admitPropose resolution->(41,64),entrypoints equal->(41,65),compile then admitPropose signature not [Term]->Term->(41,66),other static rule 20..2b->(41,67),Request outside exact profile->(41,68)]",
   "A42: GenesisAnchor rows=[lineage not Genesis->(42,69),supplied E not byte-identical Q.evidence or E not empty GenesisEvidence->(42,6a),ownerAnchor=Missing->(42,6b),ownerAnchor=Supplied(w) and observe(w) is not a self-consistent observation of the complete exact candidate because selectedByteLength!=byteLength(exactSelectedBytes) or selectedPackageHash!=CompilerPackageHash(exactSelectedBytes) or exactSelectedBytes is not octet-for-octet equal exactInput->(42,6c)]; length and hash checks never substitute for the final exact-byte equality or create authority",
   "A43: ExactPredecessor rows=[lineage not Successor->(43,6d),candidate self candidate-basis or candidate-rule authority->(43,6f),supplied predecessor not already accepted including stale revision->(43,6e),locator differs CompilerPackageHash(P)->(43,70),resolved bytes not byte-identical accepted P->(43,71)]",
   "A44: BuildRequest rows=[wrong ABI shape->(44,72),R not byte-identical Q.subject.buildRequest->(44,73),base route or exact base mismatch->(44,74),core ID mismatch->(44,75),profile ID mismatch->(44,76),source order or duplicate->(44,77),source artifact derivation->(44,78),IdentityPlan order uniqueness provenance retention or seed binding->(44,79),request lineage or nominal change occurrence mismatch->(44,7a),declared physical inputs nonempty->(44,7b),on genesis Gc or Ga zero or R.compileFuel!=Gc or R.admissionFuel!=Ga; on successor either R fuel zero->(44,7c)]",
-  "A45: CompileEvaluation rows=[evidence or compile certificate shape->(45,7d),statement predecessor manifest profile entrypoint arguments or fuel->(45,7e),known node premise root rule state fuel or observation semantics->(45,7f),no successful judgment->(45,80),result not Built->(45,81),Built bytes differ Q.subject->(45,82),compile observations differ root->(45,83)]",
-  "A46: AdmissionEvaluation rows=[certificate shape->(46,7d),statement predecessor manifest profile entrypoint arguments fuel or compile observations->(46,7e),known node premise root rule state fuel or observation semantics->(46,7f),no successful judgment->(46,80),result not Propose->(46,81),proposed bytes differ Q.subject->(46,82),admission observations differ root->(46,83)]",
+  "A45: CompileEvaluation rows=[evidence or compile receipt shape->(45,7d),no successful complete replay->(45,80),replayed value differs receipt.expected.value->(45,7e),remaining fuel differs receipt.expected.remainingFuel->(45,7f),replayed result not Built->(45,81),Built bytes differ Q.subject->(45,82),canonical compile observations differ receipt.expected.observations->(45,83)]",
+  "A46: AdmissionEvaluation rows=[admission receipt shape->(46,7d),construct admission request from verified actual compile observations then no successful complete replay->(46,80),replayed value differs receipt.expected.value->(46,7e),remaining fuel differs receipt.expected.remainingFuel->(46,7f),replayed result not Propose->(46,81),Propose bytes differ Q.subject->(46,82),canonical admission observations differ receipt.expected.observations->(46,83)]",
   "A47: EvidenceAttachment rows=[E not byte-identical Q.evidence->(47,84),Frame02 differs certified subject->(47,85),attaching E does not reproduce exact Q->(47,86)]",
   "A48: FinalAuthorization rows=[I.exactPackageBytes not byte-identical exactInput or I.packageHash!=DH(clause/compiler-package/v1,I.exactPackageBytes)->(48,87)]",
   "H00: DH(d,xs)=SHA256(U32(len(d))||ASCII(d)||each(U64(len(x))||x)); CoreContractId=DH(clause/core-contract/v1,exactCoreManifestBytes); PhysicalProfileId=DH(clause/physical-profile/v1,exactPhysicalProfileBytes); CompilerSemanticsId=DH(clause/compiler-semantics/v1,canonical(interface||program)); CompilerRevisionId=DH(clause/compiler-revision/v1,exactCompilerSubjectBytes); CompilerPackageHash=DH(clause/compiler-package/v1,exactWholePackageBytes); SourceArtifactId=DH(clause/source-artifact/v1,exactSourceBytes); BuildRequestId=DH(clause/compiler-build-request/v1,canonicalTermBytes(BuildRequest)); OriginId=DH(clause/origin/v1,canonicalAcyclicOriginNode); hashes never grant compiler authority",
-  "P00: Package bytes are magic CLCP,version 02,Frame(01,CoreManifestV1),Frame(02,CompilerSubject),Frame(03,CompilerEvidence),EOF exactly once in order; Frame03 is excluded from subject and revision identities; successor evidence contains predecessor bytes but never candidate evidence or candidate whole-package identity; only exact genesis anchor or already-accepted exact predecessor can authorize"
+  "P00: Package bytes are magic CLCP,version 03,Frame(01,CoreManifestV1),Frame(02,CompilerSubject),Frame(03,CompilerEvidence),EOF exactly once in order; Frame03 is excluded from subject and revision identities; successor evidence contains only two trace-free receipts and no predecessor bytes, candidate evidence, or candidate whole-package identity; only exact genesis anchor or separately supplied already-accepted exact predecessor can authorize"
 ]
 
 physicalProfile = {
@@ -343,7 +342,7 @@ Sha256OpId = DH("clause/physical-op/v1", "sha256")
 ```
 
 The sequences are encoded in displayed order. No other manifest value is CLCP
-v2. `exactCoreManifestBytes` is the canonical encoding of this exact
+v3. `exactCoreManifestBytes` is the canonical encoding of this exact
 `CoreManifestV1`; `exactPhysicalProfileBytes` is the canonical encoding of the
 displayed `PhysicalProfile` field value alone. Strict decode parses that closed structure;
 authorization then compares the carried Frame 01 payload byte for byte with
@@ -420,7 +419,7 @@ indices must be `0..nextIndex-1`. Integer overflow, malformed observations,
 out-of-fuel, an unresolved definition, a sort/value mismatch, or any physical
 failure has no successful judgment.
 
-## CLCP v2 fixed compiler ABI
+## CLCP v3 fixed compiler ABI
 
 The two compiler entrypoints exchange only `Term`, but their Term shapes are
 not package-defined. They use this fixed Core ABI. Let these literal ASCII
@@ -542,8 +541,8 @@ AuthorizationCode =
   | 7b PhysicalInputsNonempty
   | 7c FuelInvalid
   | 7d EvidenceShapeMismatch
-  | 7e CertificateStatementMismatch
-  | 7f CertificateRuleInvalid
+  | 7e ReceiptValueMismatch
+  | 7f ReceiptFuelMismatch
   | 80 EvaluationFault
   | 81 UnexpectedResult
   | 82 SubjectMismatch
@@ -592,7 +591,7 @@ request variant selects the authorization route before candidate lineage or
 evidence is inspected, so a wrong lineage has its route-specific table
 verdict. The genesis fuel limits are explicit `U64` inputs and have no ambient
 default. They must be nonzero and equal the two fuel fields in the exact
-genesis `BuildRequest`. Genesis has no evaluation certificate, remaining-fuel
+genesis `BuildRequest`. Genesis has no evaluation receipt, remaining-fuel
 value, or observation input. The final identity input always carries both the
 claimed hash and the complete exact bytes; a hash alone never identifies the
 candidate for authorization.
@@ -626,7 +625,7 @@ only for the externally anchored genesis subject. The request's
 `coreContractId` must equal `CoreContractId` derived from the exact carried
 Frame 01 bytes. Its `physicalProfileId` must equal `PhysicalProfileId` derived
 from that manifest's exact physical-profile suffix. `compileFuel` and
-`admissionFuel` are the respective statement limits and must be nonzero. The
+`admissionFuel` are the respective checker-constructed request limits and must be nonzero. The
 successor request's change occurrence must equal its lineage change occurrence,
 and `identityRetentions` must be the exact `IdentityPlan` validated with the
 subject's nominal declaration table.
@@ -664,14 +663,14 @@ bottom and returns the displayed pair for the first false row:
 Row ownership is closed rather than overlapping. `SubjectStructure` checks
 the residual outer subject and fixed-ABI structure not assigned to another
 `41` row or to stages `42..48`; in particular it does not classify route
-lineage, the supplied build request, evidence/certificates, or final identity.
+lineage, the supplied build request, evidence/receipts, or final identity.
 Stages `42` and `43` alone classify route authority, `44` alone classifies the
 supplied request, `45` and `46` alone classify their respective evaluation
 evidence, `47` alone classifies attachment, and `48` alone classifies the final
 identity input. An earlier stage never reads a later-stage value whose shape
-has not yet passed. Consequently successor stage `44` checks only that both
-request fuels are nonzero; compile and admission statement-limit equality is
-classified at `45` and `46`, respectively.
+has not yet passed. Consequently successor stage `44` checks that both request fuels are nonzero;
+stages `45` and `46` construct their exact evaluation requests rather than
+accepting request fields from Frame 03.
 
 | Stage | Ordered false condition | Exact `Unauthorized(stage, code)` |
 | --- | --- | --- |
@@ -704,27 +703,27 @@ classified at `45` and `46`, respectively.
 | | request, lineage, or nominal-table change occurrence differs | `(44,7a)` |
 | | declared physical inputs is nonempty | `(44,7b)` |
 | | on genesis, either explicit fuel input is zero or differs from its exact request field; on a successor, either request fuel is zero | `(44,7c)` |
-| `45 CompileEvaluation` | successor evidence or compile-certificate shape is wrong | `(45,7d)` |
-| | statement predecessor/manifest/profile/entrypoint/arguments/fuel differs | `(45,7e)` |
-| | a certificate node, premise, root, rule, state, fuel, or observation transition is invalid | `(45,7f)` |
-| | the requested evaluation has no successful judgment | `(45,80)` |
-| | result is not canonical `Built` | `(45,81)` |
+| `45 CompileEvaluation` | successor evidence or compile-receipt shape is wrong | `(45,7d)` |
+| | complete compile replay has no successful outcome | `(45,80)` |
+| | replayed value differs from `compileReceipt.expected.value` | `(45,7e)` |
+| | replayed remaining fuel differs from `compileReceipt.expected.remainingFuel` | `(45,7f)` |
+| | replayed result is not canonical `Built` | `(45,81)` |
 | | `Built` bytes differ from `exactCompilerSubjectBytes(Q)` | `(45,82)` |
-| | compile observations are not the certificate root's exact canonical observations | `(45,83)` |
-| `46 AdmissionEvaluation` | admission-certificate shape is wrong | `(46,7d)` |
-| | statement predecessor/manifest/profile/entrypoint/arguments/fuel differs, including compile observations in `AdmissionRequest` | `(46,7e)` |
-| | a certificate node, premise, root, rule, state, fuel, or observation transition is invalid | `(46,7f)` |
-| | the requested evaluation has no successful judgment | `(46,80)` |
-| | result is not canonical `Propose` | `(46,81)` |
+| | replayed canonical observations differ from `compileReceipt.expected.observations` | `(45,83)` |
+| `46 AdmissionEvaluation` | admission-receipt shape is wrong | `(46,7d)` |
+| | the checker constructs `AdmissionRequest` from verified actual compile observations and complete admission replay has no successful outcome | `(46,80)` |
+| | replayed value differs from `admissionReceipt.expected.value` | `(46,7e)` |
+| | replayed remaining fuel differs from `admissionReceipt.expected.remainingFuel` | `(46,7f)` |
+| | replayed result is not canonical `Propose` | `(46,81)` |
 | | proposed bytes differ from `exactCompilerSubjectBytes(Q)` | `(46,82)` |
-| | admission observations are not the certificate root's exact canonical observations | `(46,83)` |
+| | replayed canonical observations differ from `admissionReceipt.expected.observations` | `(46,83)` |
 | `47 EvidenceAttachment` | supplied `E` is not byte-identical `Q.evidence` | `(47,84)` |
 | | Frame 02 differs from the exact subject certified at compile/admission | `(47,85)` |
 | | attaching exact `E` does not reproduce complete exact `Q` | `(47,86)` |
 | `48 FinalAuthorization` | final-identity bytes differ from the decoded exact input, or its hash differs from `CompilerPackageHash` over those supplied exact bytes | `(48,87)` |
 
 Collection checks visit encoded fields, definitions, source units, identity
-rows, certificate nodes, and premises in their canonical order. Expand the
+rows and receipt fields in their canonical order. Expand the
 selected route into that one ordered sequence of conditions. For condition
 `c[i]`, its rejection predicate is `not c[i]` together with every earlier
 `c[j]`; those predicates are pairwise disjoint, and a later predicate is not
@@ -747,7 +746,7 @@ explicit final-identity input. No decoded failure can satisfy two rejection
 predicates or produce two observable pairs, and the result cannot degrade into
 a Boolean, hash-only success, or candidate subject.
 
-## CLCP v2 compiler subject
+## CLCP v3 compiler subject
 
 ```text
 CompilerSubject =
@@ -828,30 +827,20 @@ program are executable compiler meaning. The canonical build request is exact
 reproducibility input carried inside the subject, not a second executable
 authority.
 
-## CLCP v2 evidence
+## CLCP v3 evidence
 
 ```text
 CompilerEvidence =
     00 GenesisEvidence
   | 01 SuccessorEvidence(
-         compileCertificate:EvalCertificate,
-         admissionCertificate:EvalCertificate)
+         compileReceipt:EvalReceipt,
+         admissionReceipt:EvalReceipt)
 
-EvalCertificate =
-  formatVersion:CertificateFormatVersion
-  statement:EvalStatement
-  nodes:Seq<EvalNode>
-
-CertificateFormatVersion = 00
-
-EvalStatement =
-  exactAcceptedPredecessor:Blob
-  coreContractId:Hash32
-  physicalProfileId:Hash32
-  entrypoint:Id32
-  arguments:Seq<KValue>
-  fuelLimit:U64
+EvalReceipt =
+  formatVersion:ReceiptFormatVersion
   expected:EvalOutcome
+
+ReceiptFormatVersion = 00
 
 KValue =
     00 BytesValue(value:Blob)
@@ -862,102 +851,78 @@ EvalOutcome =
        value:KValue,
        remainingFuel:U64,
        observations:Term)
-
-EvalNode =
-  ruleTag:EvaluationRuleTag
-  premises:Seq<U32>
-  conclusion:EvalJudgment
-
-EvaluationRuleTag =
-    30 | 31 | 32 | 33 | 34 | 35 | 36 | 37
-  | 38 | 39 | 3a | 3b | 3c | 3d | 3e
-
-EvalJudgment =
-  expression:KExpr
-  environment:Seq<KValue>
-  fuelBefore:U64
-  observationsBefore:Term
-  value:KValue
-  fuelAfter:U64
-  observationsAfter:Term
 ```
 
-`GenesisEvidence` has no payload. Certificate format version is exactly `00`.
-Nodes are indexed from zero in encoded order. The root is the final node;
-empty node lists reject. Every premise index is smaller than its consumer,
-premises occur in execution order, no premise list contains a duplicate, and
-every node is reachable from the root. Unknown rule tags, a premise count that
-does not match the manifest policy and expression arity, unused nodes, forward
-references, trailing bytes, or package-supplied rules reject.
+`GenesisEvidence` has no payload. A successor Frame 03 contains exactly two
+receipts in compile-then-admission order. Each receipt contains only format
+version `00` and the exact expected outcome. It contains no evaluation request,
+predecessor bytes, expression, environment, rule tag, premise, node, graph, or
+trace. Unknown receipt versions reject at the version octet. Optional traces
+may explain or debug a run, but they are outside authorization and cannot
+supply a result, skip replay, or add authority.
 
-Each node is checked locally against the exact rule semantics in
-`CoreManifestV1`. Its conclusion expression must have the rule's expression
-tag; its premises must be exactly the recursive evaluations named by that
-expression and selected value case. The first premise starts after the parent
-rule's one-unit fuel charge and at `observationsBefore`; each later premise
-starts at the preceding conclusion's fuel and observations. The node's value,
-final fuel, and observations must be the exact construction defined by its
-rule. For `Call`, the argument premises are followed by exactly one body
-premise under the resolved definition's argument environment. For SHA-256,
-the one argument premise is followed by the fixed digest calculation and one
-observation append. This is the complete certificate rule set; certificate
-nodes do not prove static well-formedness, authority, or a package-specific
-semantic rule.
+The checker constructs this non-wire request for each replay:
 
-Every evaluation certificate has exactly one root conclusion: the displayed
-`EvalStatement`. Its predecessor field contains the complete exact bytes of an
-already accepted predecessor, so the statement does not rely on a hash to name
-authority. `coreContractId` and `physicalProfileId` are derived from the exact
-carried manifest and its exact encoded profile value. `entrypoint`, all
-canonical arguments, the exact fuel limit, returned value, remaining fuel,
-and canonical `Observations` Term are part of the statement. An evaluation
-fault has no successful certificate form.
+```text
+EvalRequest =
+  acceptedPredecessorPackageHash:Hash32
+  coreContractId:Hash32
+  physicalProfileId:Hash32
+  entrypoint:Id32
+  arguments:Seq<KValue>
+  fuelLimit:U64
+```
 
-`VerifyEvalCertificate(required, certificate)` is this algorithm, in order:
+The caller separately supplies the complete exact already-accepted predecessor
+bytes and their acceptance premise. The request binds those bytes with
+`acceptedPredecessorPackageHash = CompilerPackageHash(exactBytes)`; it does
+not recursively encode them. The core/profile IDs, entrypoint, arguments, and
+fuel are constructed from the accepted predecessor and exact candidate build
+request, never copied from Frame 03.
 
-1. require `certificate.formatVersion = 00` and canonical byte equality of
-   `certificate.statement` and `required`;
-2. strictly decode `required.exactAcceptedPredecessor`, require the caller's
-   exact accepted-predecessor premise for those bytes, require its carried
-   Frame 01 bytes equal `exactCoreManifestBytes`, and derive
-   `CoreContractId` and `PhysicalProfileId` from the carried manifest and its
-   canonically encoded physical-profile field;
-3. require those two derived values equal the statement fields, statically
-   check the predecessor subject under rules `20..2b`, resolve the entrypoint
-   exactly once, and require the arguments' sorts equal its signature;
-4. construct, without certificate input,
-   `Call(entrypoint, map(ValueLiteral, arguments))`, where `ValueLiteral`
-   maps only `BytesValue` to `BytesLiteral` and `TermValue` to `TermLiteral`;
-5. construct the required root judgment with that expression, empty
-   environment, `fuelLimit`, `Observations([])`, and the value, remaining fuel,
-   and observations from `required.expected`;
-6. scan nodes in encoded order and validate each exact local rule, premise
-   index, state transition, environment, value, fuel, and observation chain;
-   and
-7. require every node reachable and the final node's canonical conclusion
-   byte-equal to the independently constructed root judgment.
+`VerifyEvalReceipt(exactPredecessor, accepted, request, receipt)` is this
+algorithm, in order:
 
-The result is valid only if every step succeeds. No callback, theorem name,
-host rule registry, Boolean evaluator, or package-defined rule participates.
+1. require `receipt.formatVersion = 00`;
+2. strictly decode the separately supplied predecessor bytes, require the
+   caller's acceptance premise for those exact bytes, require the request's
+   predecessor hash to equal `CompilerPackageHash(exactBytes)`, require its
+   Frame 01 bytes equal `exactCoreManifestBytes`, and independently derive
+   `CoreContractId` and `PhysicalProfileId`;
+3. require those derived IDs equal the checker-constructed request fields,
+   statically check the predecessor subject under rules `20..2b`, resolve the
+   entrypoint exactly once, and require argument sorts equal its signature;
+4. construct `Call(entrypoint, map(ValueLiteral, arguments))` without receipt
+   input, where `ValueLiteral` maps only `BytesValue` to `BytesLiteral` and
+   `TermValue` to `TermLiteral`;
+5. completely replay that call under the empty environment, exact request fuel,
+   `Observations([])`, fixed evaluation rules `30..3e`, and the carried
+   physical profile; and
+6. require exact equality of replayed value, remaining fuel, and canonical
+   observations with `receipt.expected`.
 
-This binding is finite and non-recursive. A successor certificate may contain
-the earlier predecessor package, including that predecessor's already fixed
-evidence, but never the candidate's Frame 03 or whole-package identity.
+Success requires every step. There is no graph, trace, callback, theorem name,
+host rule registry, Boolean-evaluator assertion, or package-defined rule.
+
+For successor authorization the checker first constructs and replays
+`compile(BuildRequest)`, requires the exact result
+`Built(exactCompilerSubjectBytes)`, and retains the replay's actual canonical
+observations. It then constructs
+`admitPropose(AdmissionRequest(BuildRequest, exactCompilerSubjectBytes,
+actualCompileObservations))`, replays it completely, and requires the exact
+`Propose(exactCompilerSubjectBytes)` result. A claimed compile observation
+cannot steer admission until complete replay has reproduced it.
 
 Frame 03 is excluded from `exactCompilerSubjectBytes`,
 `CompilerSemanticsId`, and `CompilerRevisionId`. Predecessor compilation
 and admission target the exact subject bytes, then a generic packager attaches
-the two certificates without modifying the subject. This prevents evidence
-from containing or hashing itself.
+the two receipts without modifying the subject. No package contains recursively
+embedded predecessor packages or its own package hash, subject ID, or revision
+ID. `CompilerPackageHash` covers the final whole package and is computed only
+after canonical packaging; it can bind publication and exact predecessor
+selection but never creates compiler authority.
 
-No v2 package contains its own package hash, subject ID, or revision ID.
-`CompilerPackageHash` covers the final whole package, including evidence, and
-therefore is computed externally after canonical packaging. It may bind
-publication, retrieval, and the final `Authorized(exactWholePackageBytes)`
-result after evidence attachment; it is never an input to a certificate stored
-inside that package.
-
-## CLCP v2 canonical decoding
+## CLCP v3 canonical decoding
 
 Strict decoding has a separate result algebra; it never returns a Core ABI
 `Unauthorized` Term:
@@ -993,13 +958,13 @@ If two grammar checks are provably false at the same cursor, the lower
 Decode rejects only failures to parse the closed byte grammar: wrong magic or
 version; wrong frame tag/order/count; truncation; unsafe length/count
 arithmetic; wrong fixed width; unknown Term, KSort, KExpr, lineage, evidence,
-certificate-format, or certificate-rule tag; bounded under/over-consumption;
+receipt-format, or evaluation-rule tag; bounded under/over-consumption;
 and trailing bytes. Resource exhaustion is an implementation failure and
 cannot be reported as a different canonical verdict.
 
 Order/uniqueness, exact manifest equality, reference bounds, Core ABI and
 entrypoint signatures, identity derivations, evidence/lineage consistency,
-certificate graph/rule semantics, and physical-profile conformance are
+receipt replay semantics, and physical-profile conformance are
 authorization checks with the exact table pairs above. Consequently malformed
 strict-decode input never enters authorization, while every failure after
 `Decoded` reaches exactly one table pair.
@@ -1014,10 +979,10 @@ candidate + external genesis anchor or accepted exact predecessor
       --constitutional check--> accepted compiler
 ```
 
-An API that promotes a package on decode, hash match, certificate validity, or
+An API that promotes a package on decode, hash match, receipt production, or
 successful Rust execution is nonconforming.
 
-## CLCP v2 hashes and identities
+## CLCP v3 hashes and identities
 
 For ASCII domain `d` and byte components `x1 ... xn`:
 
@@ -1058,18 +1023,18 @@ OriginId =
   DH("clause/origin/v1", canonicalAcyclicOriginNode)
 ```
 
-The domains are part of the v2 contract despite their independent `v1`
+The domains are part of the v3 contract despite their independent `v1`
 domain versions; changing one requires a new domain and an explicit migration.
 Hashes establish content identity for lookup, comparison, publication, and
 reproducibility. They never establish compiler authority. An accepted
 predecessor locator must resolve to the already accepted exact bytes, and the
 checker must compare those bytes before succession checking.
 
-## CLCP v2 required corpus boundaries
+## CLCP v3 required corpus boundaries
 
-The future v2 corpus must separate decode, canonicality, core
-well-formedness, genesis-anchor, compile-certificate,
-admission-certificate, exact-binding, and final-authority verdicts. A negative
+The v3 corpus separates decode, canonicality, core well-formedness,
+genesis-anchor, compile replay/receipt, admission replay/receipt, exact binding,
+and final-authority verdicts. A negative
 specimen falsifies its named claim and does not imply every earlier stage must
 reject.
 
@@ -1077,13 +1042,12 @@ It must cover malformed, truncated, trailing, duplicate, and out-of-order
 encodings; root without anchor; candidate/self-basis authorization; wrong and
 stale predecessors; transplanted or detached evidence where `E != Q.evidence`;
 entrypoint signature and every Core ABI shape mismatch; build-request, subject,
-result, and observation alteration; a certificate statement that attempts to
-bind the candidate whole package; profile escape; and a valid hash paired with
-non-identical bytes. Metamorphic positives must rename nominal IDs across a
-canonical sort-order boundary, recompute dependent source/content and derived
-IDs as applicable, regenerate the certificate statement, and preserve the
-generic check/evaluation verdict. No such corpus or implementation is present
-in P1.
+result, remaining-fuel, and observation alteration; a receipt that attempts to
+substitute for replay; profile escape; recursively embedded predecessor bytes;
+and a valid hash paired with non-identical bytes. Metamorphic positives rename
+nominal IDs across a canonical sort-order boundary, recompute dependent
+source/content and derived IDs as applicable, regenerate both receipts from
+complete replay, and preserve the generic check/evaluation verdict.
 
 ## Implemented CLCP v1 evidence boundary
 

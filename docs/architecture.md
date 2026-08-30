@@ -1,7 +1,8 @@
 # Clause Architecture
 
 > **Status:** Accepted host boundary plus a normative P1 compiler-genesis
-> contract; CLCP v2 and compiler implementation are pending.
+> contract; CLCP v3 Lean replay is implemented while cross-host compiler
+> acceptance remains pending.
 >
 > **Authority:** Derived and non-semantic. The
 > [foundation](foundation.md) governs meaning, [syntax](syntax.md) governs
@@ -19,7 +20,7 @@ compiler root, and three implementation roles:
             and supplies an external anchor witness
                             |
                             v
-                  accepted CLCP v2 Compiler0
+                  accepted CLCP v3 Compiler0
                    /          |           \
                   v           v            v
         Clause-owned       Lean checks    Rust evaluates
@@ -61,10 +62,10 @@ crates/clause-substrate/    physical persistence/runtime/backend substrate
 docs/compiler-genesis.md    compiler identity and succession contract
 ```
 
-The implementation roots began semantic-empty. They currently implement only
-the narrower CLCP v1 proof bootstrap described in the
-[roadmap](roadmap.md). There is no CLCP v2 codec, universal evaluator,
-`Compiler0`, genesis anchor, or v2 certificate checker in the live tree.
+The implementation roots began semantic-empty. They implement the narrower
+CLCP v1 proof bootstrap plus the Lean CLCP v3 strict codec and complete replay
+checker described in the [roadmap](roadmap.md). Rust v3 parity, `Compiler0`,
+the genesis anchor, and accepted successor evidence remain pending.
 New work derives only from the current Clause contract. Git history is
 recovery, not an implementation input.
 
@@ -76,7 +77,7 @@ gate that teaches it.
 ## Host-neutral Clause Core
 
 The Clause Core contract is the transport and checking form of the calculus in
-the foundation. CLCP v2 carries compiler execution through a fixed universal
+the foundation. CLCP v3 carries compiler execution through a fixed universal
 kernel:
 
 ```text
@@ -107,11 +108,11 @@ octet and a tail, `ConcatBytes` constructs dynamic byte strings, and
 therefore read exact source and construct exact output without a host lexer or
 string/equality callback.
 
-CLCP v2 Frame 01 carries the complete exact `CoreManifestV1`, not a symbolic
+CLCP v3 Frame 01 carries the complete exact `CoreManifestV1`, not a symbolic
 ID resolved by a host. Its canonical bytes enumerate every Term, sort,
-expression, Core ABI, authorization, static-rule, evaluation-rule, certificate,
+expression, Core ABI, authorization, static-rule, evaluation-rule, receipt,
 and physical-profile tag and signature. The fixed prose semantics and closed
-certificate grammar define fuel, environments, left-to-right evaluation,
+replay contract define fuel, environments, left-to-right evaluation,
 observations, and every local rule. `CoreContractId` and `PhysicalProfileId`
 are derived from those carried exact objects; there is no registry or
 package-defined metalanguage.
@@ -135,9 +136,10 @@ canonical `Unauthorized(stage, code)`. Genesis must bind its exact
 fuel inputs, and a final identity containing both complete exact package bytes
 and their domain-separated package hash.
 Entrypoint signature mismatch is only `(CoreWellFormedness,
-EntrypointSignature)`. Successful evaluation certificates are closed DAGs over
-the manifest's `30..3e` rules, and `VerifyEvalCertificate` independently
-constructs the exact invocation/root judgment before checking every node.
+EntrypointSignature)`. Successor evidence contains two trace-free receipts.
+`VerifyEvalReceipt` independently constructs each exact request, completely
+replays the manifest's `30..3e` rules, and compares value, remaining fuel, and
+observations exactly.
 
 The package must carry every semantics-affecting object needed by a judgment:
 
@@ -152,11 +154,10 @@ The package must carry every semantics-affecting object needed by a judgment:
 The package is not a new ontology. Lean values, Rust structs, proof terms,
 indexes, source maps, traces, caches, and strategies do not enter semantic
 identity unless an authored Clause judgment explicitly makes their content
-semantic. Lean proof terms remain local. Only Clause-native certificate data
-crosses the host-neutral boundary.
+semantic. Lean proof terms remain local. Only Clause-native semantic evidence crosses the host-neutral boundary.
 
 The implemented Lean and Rust CLCP v1 codecs derive from one Clause-owned
-specification and vector corpus. CLCP v2 keeps the same independent,
+specification and vector corpus. CLCP v3 keeps the same independent,
 strict-codec requirement while replacing the v1 carrier with the compiler
 subject/evidence split in the [canonical-package contract](canonical-package.md).
 No host serializer is a wire format.
@@ -165,7 +166,7 @@ No host serializer is a wire format.
 
 Lean models the fixed byte decoder, `Term`, `KSort`, `KExpr`,
 the exact carried core manifest, definition-table well-formedness, generic
-evaluation and certificate rules,
+evaluation rules and trace-free receipt replay,
 exact-byte genesis selection, exact-predecessor succession, and the sealed
 compiler physical profile. Clause features do not become Lean `Syntax`
 kinds, `Expr` constructors, type classes, or one inductive constructor per
@@ -194,10 +195,10 @@ The constitutional checker is accepted only when all of these hold:
   implementation;
 - the transitive axiom closure is checked against an explicit policy, including
   deliberate decisions for `propext`, `Quot.sound`, and `Classical.choice`;
-- every successor evaluation certificate is bound to the complete exact
-  already accepted predecessor, fixed core and physical profiles, entrypoint,
-  canonical inputs, exact returned value, candidate subject, and observations,
-  while excluding its own candidate evidence frame and whole-package identity;
+- every successor replay request is checker-constructed from the separately
+  supplied already accepted predecessor, fixed core and physical profiles,
+  entrypoint, canonical inputs, and fuel, while its compact receipt contains
+  only the exact returned value, remaining fuel, and observations;
   and
 - `leanchecker` or equivalent replay is treated as a same-kernel consistency
   check, not an independent verifier.
@@ -256,7 +257,7 @@ The trusted host may perform fixed generic mechanics:
 
 ```text
 WireCodec | CoreABI | ByteMachine | DefinitionTable | KernelStep |
-CertificateStep | PhysicalDispatch
+ReplayStep | PhysicalDispatch
 ```
 
 Codec mechanics inspect bytes, tags, lengths, and bounds. The byte machine
@@ -277,7 +278,7 @@ A source-AST and information-flow extractor enumerates every reachable branch
 and indirect target, labels its fixed mechanic class and taint sources, and
 proves that a package-influenced outcome is only canonical data, a fixed
 error, a child `KExpr`, a selected package definition, or the one fixed
-mechanic handler named by an enumerated wire, ABI, expression, certificate, or
+mechanic handler named by an enumerated wire, ABI, expression, replay-state, or
 physical tag. For a given fixed tag and signature, the target is invariant
 under all semantic IDs and raw payloads; package data cannot create a target or
 select different host code for the same mechanic. Any unclassified site or
@@ -292,7 +293,7 @@ resolved declaration image and are never mapped independently.
 their sole image is recomputed from transformed allocation inputs. Fixed
 core/physical IDs remain fixed; source/content IDs follow their exact
 preimages; and origins, requests, semantics, revisions, packages, and
-certificate hashes are recomputed from transformed preimages. The
+receipt and package hashes are recomputed from transformed preimages. The
 transformation restores canonical ordering and updates all dependent
 references before canonical re-encoding. If
 `StrictDecode(P) = Decoded(P,D)`, `Dπ = Renameπ(D)`,
@@ -302,15 +303,15 @@ hosts satisfy:
 ```text
 StrictDecode(Pπ) = Decoded(Pπ, Dπ)
 EncodeCanonical(Dπ) = Pπ
-VerifyEvalCertificate(π*(statement), π*(certificate))
-  = VerifyEvalCertificate(statement, certificate)
+VerifyEvalReceipt(π*(exactPredecessor), π*(request), π*(receipt))
+  = VerifyEvalReceipt(exactPredecessor, request, receipt)
 EvalHost(Pπ, π*(input)) = π*(EvalHost(P, input))
 ```
 
 This law neither directly permutes hash octets nor transfers a genesis anchor
 or acceptance judgment. Lean proves the generic laws and Rust exercises
-canonical re-encoding, reordered tables, recomputed derived IDs, certificates,
-and outcomes through metamorphic vectors.
+canonical re-encoding, reordered tables, recomputed derived IDs, replay receipts, and outcomes through metamorphic
+vectors.
 
 ## Execution and physical freedom
 
@@ -355,5 +356,5 @@ A semantic tranche may land only when:
 The four-change compiler evolution and bounded
 [adoption spike](adoption-spike.md) decide whether this mechanism is viable.
 A pass authorizes further implementation; it does not prove source ergonomics,
-large-graph incrementality, target performance, certificate tractability, or
+large-graph incrementality, target performance, replay tractability, or
 maintenance economics.

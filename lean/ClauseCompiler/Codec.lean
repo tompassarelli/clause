@@ -1,7 +1,7 @@
 import ClauseCompiler.Encoding
 
 /-!
-# Strict CLCP-v2 codec
+# Strict CLCP-v3 codec
 
 The decoder retains one absolute cursor into the complete input and one bounded
 end for the current frame.  It reports a separate deterministic decode algebra;
@@ -221,8 +221,8 @@ def manifest : Decoder CoreManifest := fun cursor => do
   let (authorizationCodeTags, c16) ← byteSeq c15
   let (staticRules, c17) ← counted ruleSignature c16
   let (evaluationRules, c18) ← counted ruleSignature c17
-  let (certificateFormatVersion, c19) ← readByte c18
-  let (certificateSignature, c20) ← blob c19
+  let (receiptFormatVersion, c19) ← readByte c18
+  let (receiptSignature, c20) ← blob c19
   let (contractClauses, c21) ← counted blob c20
   let (profile, c22) ← physicalProfile c21
   pure ({
@@ -244,8 +244,8 @@ def manifest : Decoder CoreManifest := fun cursor => do
     authorizationCodeTags := authorizationCodeTags
     staticRules := staticRules
     evaluationRules := evaluationRules
-    certificateFormatVersion := certificateFormatVersion
-    certificateSignature := certificateSignature
+    receiptFormatVersion := receiptFormatVersion
+    receiptSignature := receiptSignature
     contractClauses := contractClauses
     physicalProfile := profile
   }, c22)
@@ -338,65 +338,17 @@ def evalOutcome : Decoder EvalOutcome := fun cursor => do
     }, c4)
   else .error { code := .unknownSumTag, offset := offset }
 
-def evalStatement : Decoder EvalStatement := fun cursor => do
-  let (predecessor, c1) ← blob cursor
-  let (coreId, c2) ← fixed32 c1
-  let (profileId, c3) ← fixed32 c2
-  let (entrypoint, c4) ← fixed32 c3
-  let (arguments, c5) ← counted kvalue c4
-  let (fuel, c6) ← u64 c5
-  let (expected, c7) ← evalOutcome c6
-  pure ({
-    exactAcceptedPredecessor := predecessor
-    coreContractId := coreId
-    physicalProfileId := profileId
-    entrypoint := entrypoint
-    arguments := arguments
-    fuelLimit := fuel
-    expected := expected
-  }, c7)
-
-def evalJudgment : Decoder EvalJudgment := fun cursor => do
-  let (expression, c1) ← expr cursor
-  let (environment, c2) ← counted kvalue c1
-  let (fuelBefore, c3) ← u64 c2
-  let (observationsBefore, c4) ← term c3
-  let (value, c5) ← kvalue c4
-  let (fuelAfter, c6) ← u64 c5
-  let (observationsAfter, c7) ← term c6
-  pure ({
-    expression := expression
-    environment := environment
-    fuelBefore := fuelBefore
-    observationsBefore := observationsBefore
-    value := value
-    fuelAfter := fuelAfter
-    observationsAfter := observationsAfter
-  }, c7)
-
-def evalNode : Decoder EvalNode := fun cursor => do
-  let tagOffset := cursor.position
-  let (ruleTag, c1) ← readByte cursor
-  if ruleTag < 0x30 || ruleTag > 0x3e then
-    .error { code := .unknownSumTag, offset := tagOffset }
-  else
-    let (premises, c2) ← counted u32 c1
-    let (conclusion, c3) ← evalJudgment c2
-    pure ({ ruleTag := ruleTag, premises := premises, conclusion := conclusion }, c3)
-
-def evalCertificate : Decoder EvalCertificate := fun cursor => do
+def evalReceipt : Decoder EvalReceipt := fun cursor => do
   let formatOffset := cursor.position
   let (formatVersion, c1) ← readByte cursor
   if formatVersion ≠ 0x00 then
     .error { code := .unknownSumTag, offset := formatOffset }
   else
-    let (statementValue, c2) ← evalStatement c1
-    let (nodes, c3) ← counted evalNode c2
+    let (expected, c2) ← evalOutcome c1
     pure ({
       formatVersion := formatVersion
-      statement := statementValue
-      nodes := nodes
-    }, c3)
+      expected := expected
+    }, c2)
 
 def evidence : Decoder CompilerEvidence := fun cursor => do
   let offset := cursor.position
@@ -404,8 +356,8 @@ def evidence : Decoder CompilerEvidence := fun cursor => do
   match tag with
   | 0x00 => pure (.genesis, c1)
   | 0x01 =>
-      let (compile, c2) ← evalCertificate c1
-      let (admission, c3) ← evalCertificate c2
+      let (compile, c2) ← evalReceipt c1
+      let (admission, c3) ← evalReceipt c2
       pure (.successor compile admission, c3)
   | _ => .error { code := .unknownSumTag, offset := offset }
 
@@ -457,7 +409,7 @@ def strictDecode (input : Bytes) : DecodeVerdict :=
   }
   match (do
     let ((), c1) ← consumeMagic start
-    let ((), c2) ← expectByte 0x02 .unknownVersion c1
+    let ((), c2) ← expectByte 0x03 .unknownVersion c1
     let ((manifestValue, manifestBytes), c3) ← boundedFrame 0x01 manifest c2
     let ((subjectValue, subjectBytes), c4) ← boundedFrame 0x02 subject c3
     let ((evidenceValue, evidenceBytes), c5) ← boundedFrame 0x03 evidence c4
@@ -495,12 +447,12 @@ theorem wrong_magic_vector : rejection? (strictDecode [0x00]) =
   decide
 
 theorem unknown_version_vector :
-    rejection? (strictDecode [0x43, 0x4c, 0x43, 0x50, 0x03]) =
+    rejection? (strictDecode [0x43, 0x4c, 0x43, 0x50, 0x02]) =
       some { code := .unknownVersion, offset := 4 } := by
   decide
 
 theorem missing_frames_vector :
-    rejection? (strictDecode [0x43, 0x4c, 0x43, 0x50, 0x02]) =
+    rejection? (strictDecode [0x43, 0x4c, 0x43, 0x50, 0x03]) =
       some { code := .frameTagOrderOrCount, offset := 5 } := by
   decide
 
