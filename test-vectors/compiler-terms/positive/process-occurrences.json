@@ -1,5 +1,5 @@
 {
-  "schema": "clause/compiler-terms/process-occurrences-positive-v3",
+  "schema": "clause/compiler-terms/process-occurrences-positive-v4",
   "context_ref": "../context.json",
   "shared_context_pins": {
     "pin_set_id": "pins:base:01",
@@ -15,7 +15,7 @@
       "remaining": 32
     },
     "scheduler_constraints": {
-      "semantic_order": "typed-cause-frontier-only",
+      "semantic_order": "run-order-union-of-step-cause-frontier-and-configuration-succession",
       "result_order": "canonical-binding-order"
     }
   },
@@ -30,15 +30,24 @@
         "application_id": "application-id:02",
         "mode_id": "mode-id:04"
       },
-      "authorization_evidence": [
+      "dynamic_prerequisite_schema": [
         {
-          "kind": "Constitutive",
-          "program_revision_id": "pr:01",
-          "judgment_ref": "judgment-ref:02",
-          "authorization_type": "ExecutionAuthorization"
+          "prerequisite_slot_id": {
+            "mode_id": "mode-id:04",
+            "prerequisite_local_id": "prerequisite:execution-authorization"
+          },
+          "requirement_kind": {
+            "kind": "Authorization",
+            "authorization_type": "ExecutionAuthorization"
+          },
+          "expected_type": "AuthorizationEvidence<ExecutionAuthorization>",
+          "cardinality": {
+            "minimum": 1,
+            "maximum": 1
+          },
+          "cause_projection_schema": []
         }
-      ],
-      "capabilities": []
+      ]
     },
     {
       "pin_set_id": "pins:mode:05",
@@ -50,21 +59,40 @@
         "application_id": "application-id:01",
         "mode_id": "mode-id:05"
       },
-      "authorization_evidence": [
+      "dynamic_prerequisite_schema": [
         {
-          "kind": "Constitutive",
-          "program_revision_id": "pr:01",
-          "judgment_ref": "judgment-ref:02",
-          "authorization_type": "ExecutionAuthorization"
+          "prerequisite_slot_id": {
+            "mode_id": "mode-id:05",
+            "prerequisite_local_id": "prerequisite:execution-authorization"
+          },
+          "requirement_kind": {
+            "kind": "Authorization",
+            "authorization_type": "ExecutionAuthorization"
+          },
+          "expected_type": "AuthorizationEvidence<ExecutionAuthorization>",
+          "cardinality": {
+            "minimum": 1,
+            "maximum": 1
+          },
+          "cause_projection_schema": []
         },
         {
-          "kind": "Constitutive",
-          "program_revision_id": "pr:01",
-          "judgment_ref": "judgment-ref:01",
-          "authorization_type": "DerivationAuthorization"
+          "prerequisite_slot_id": {
+            "mode_id": "mode-id:05",
+            "prerequisite_local_id": "prerequisite:derivation-authorization"
+          },
+          "requirement_kind": {
+            "kind": "Authorization",
+            "authorization_type": "DerivationAuthorization"
+          },
+          "expected_type": "AuthorizationEvidence<DerivationAuthorization>",
+          "cardinality": {
+            "minimum": 1,
+            "maximum": 1
+          },
+          "cause_projection_schema": []
         }
-      ],
-      "capabilities": []
+      ]
     },
     {
       "pin_set_id": "pins:mode:06",
@@ -76,21 +104,40 @@
         "application_id": "application-id:03",
         "mode_id": "mode-id:06"
       },
-      "authorization_evidence": [
+      "dynamic_prerequisite_schema": [
         {
-          "kind": "Constitutive",
-          "program_revision_id": "pr:01",
-          "judgment_ref": "judgment-ref:02",
-          "authorization_type": "ExecutionAuthorization"
+          "prerequisite_slot_id": {
+            "mode_id": "mode-id:06",
+            "prerequisite_local_id": "prerequisite:execution-authorization"
+          },
+          "requirement_kind": {
+            "kind": "Authorization",
+            "authorization_type": "ExecutionAuthorization"
+          },
+          "expected_type": "AuthorizationEvidence<ExecutionAuthorization>",
+          "cardinality": {
+            "minimum": 1,
+            "maximum": 1
+          },
+          "cause_projection_schema": []
         },
         {
-          "kind": "Constitutive",
-          "program_revision_id": "pr:01",
-          "judgment_ref": "judgment-ref:01",
-          "authorization_type": "DerivationAuthorization"
+          "prerequisite_slot_id": {
+            "mode_id": "mode-id:06",
+            "prerequisite_local_id": "prerequisite:derivation-authorization"
+          },
+          "requirement_kind": {
+            "kind": "Authorization",
+            "authorization_type": "DerivationAuthorization"
+          },
+          "expected_type": "AuthorizationEvidence<DerivationAuthorization>",
+          "cardinality": {
+            "minimum": 1,
+            "maximum": 1
+          },
+          "cause_projection_schema": []
         }
-      ],
-      "capabilities": []
+      ]
     }
   ],
   "admitted_relation_occurrences": [
@@ -227,58 +274,51 @@
         "kind": "RootOf",
         "run_id": "run:01"
       },
-      "activation_cause_frontier": {
-        "origin": {
-          "kind": "RootedBy",
-          "trigger": {
-            "kind": "ExternalTrigger",
-            "external_trigger_occurrence_id": "trigger:01"
-          }
+      "activation_start_record": {
+        "static_activation_basis": {
+          "exact_mode_pin_set_ref": "pins:mode:05"
         },
-        "prerequisites": [
+        "initial_context": {
+          "exact_shared_context_pin_set_ref": "pins:base:01"
+        },
+        "dynamic_prerequisite_bindings": [
           {
-            "kind": "Authorization",
-            "authorization_type": "ExecutionAuthorization",
-            "authorization_evidence": {
+            "prerequisite_slot_id": {
+              "mode_id": "mode-id:05",
+              "prerequisite_local_id": "prerequisite:execution-authorization"
+            },
+            "repeated_value_ordinal": 0,
+            "value": {
               "kind": "Constitutive",
               "program_revision_id": "pr:01",
-              "judgment_ref": "judgment-ref:02"
+              "judgment_ref": "judgment-ref:02",
+              "authorization_type": "ExecutionAuthorization"
             }
           },
           {
-            "kind": "Authorization",
-            "authorization_type": "DerivationAuthorization",
-            "authorization_evidence": {
+            "prerequisite_slot_id": {
+              "mode_id": "mode-id:05",
+              "prerequisite_local_id": "prerequisite:derivation-authorization"
+            },
+            "repeated_value_ordinal": 0,
+            "value": {
               "kind": "Constitutive",
               "program_revision_id": "pr:01",
-              "judgment_ref": "judgment-ref:01"
+              "judgment_ref": "judgment-ref:01",
+              "authorization_type": "DerivationAuthorization"
             }
           }
-        ]
-      },
-    "initial_context": {
-      "pin_set_ref": "pins:mode:05",
-      "selected_mode_id": "mode-id:05",
-      "executable_validity_evidence": {
-        "executable_validity_id": "executable-validity:01",
-        "application_id": "application-id:01",
-        "mode_id": "mode-id:05"
-      },
-      "authorization_evidence": [
-        {
-          "kind": "Constitutive",
-          "program_revision_id": "pr:01",
-          "judgment_ref": "judgment-ref:02",
-          "authorization_type": "ExecutionAuthorization"
-        },
-        {
-          "kind": "Constitutive",
-          "program_revision_id": "pr:01",
-          "judgment_ref": "judgment-ref:01",
-          "authorization_type": "DerivationAuthorization"
+        ],
+        "activation_cause_frontier": {
+          "origin": {
+            "kind": "RootedBy",
+            "trigger": {
+              "kind": "ExternalTrigger",
+              "external_trigger_occurrence_id": "trigger:01"
+            }
+          },
+          "occurrence_causes": []
         }
-      ],
-      "capabilities": []
       }
     },
     {
@@ -289,42 +329,37 @@
         "kind": "ChildIn",
         "run_id": "run:01"
       },
-      "activation_cause_frontier": {
-        "origin": {
-          "kind": "ChildOf",
-          "run_id": "run:01",
-          "parent_activation_id": "activation:law:01",
-          "parent_step_id": "step:law:start:01"
+      "activation_start_record": {
+        "static_activation_basis": {
+          "exact_mode_pin_set_ref": "pins:mode:04"
         },
-        "prerequisites": [
+        "initial_context": {
+          "exact_shared_context_pin_set_ref": "pins:base:01"
+        },
+        "dynamic_prerequisite_bindings": [
           {
-            "kind": "Authorization",
-            "authorization_type": "ExecutionAuthorization",
-            "authorization_evidence": {
+            "prerequisite_slot_id": {
+              "mode_id": "mode-id:04",
+              "prerequisite_local_id": "prerequisite:execution-authorization"
+            },
+            "repeated_value_ordinal": 0,
+            "value": {
               "kind": "Constitutive",
               "program_revision_id": "pr:01",
-              "judgment_ref": "judgment-ref:02"
+              "judgment_ref": "judgment-ref:02",
+              "authorization_type": "ExecutionAuthorization"
             }
           }
-        ]
-      },
-    "initial_context": {
-      "pin_set_ref": "pins:mode:04",
-      "selected_mode_id": "mode-id:04",
-      "executable_validity_evidence": {
-        "executable_validity_id": "executable-validity:01",
-        "application_id": "application-id:02",
-        "mode_id": "mode-id:04"
-      },
-      "authorization_evidence": [
-        {
-          "kind": "Constitutive",
-          "program_revision_id": "pr:01",
-          "judgment_ref": "judgment-ref:02",
-          "authorization_type": "ExecutionAuthorization"
+        ],
+        "activation_cause_frontier": {
+          "origin": {
+            "kind": "ChildOf",
+            "run_id": "run:01",
+            "parent_activation_id": "activation:law:01",
+            "parent_step_id": "step:law:start:01"
+          },
+          "occurrence_causes": []
         }
-      ],
-      "capabilities": []
       }
     },
     {
@@ -335,58 +370,51 @@
         "kind": "RootOf",
         "run_id": "run:02"
       },
-      "activation_cause_frontier": {
-        "origin": {
-          "kind": "RootedBy",
-          "trigger": {
-            "kind": "ExternalTrigger",
-            "external_trigger_occurrence_id": "trigger:02"
-          }
+      "activation_start_record": {
+        "static_activation_basis": {
+          "exact_mode_pin_set_ref": "pins:mode:05"
         },
-        "prerequisites": [
+        "initial_context": {
+          "exact_shared_context_pin_set_ref": "pins:base:01"
+        },
+        "dynamic_prerequisite_bindings": [
           {
-            "kind": "Authorization",
-            "authorization_type": "ExecutionAuthorization",
-            "authorization_evidence": {
+            "prerequisite_slot_id": {
+              "mode_id": "mode-id:05",
+              "prerequisite_local_id": "prerequisite:execution-authorization"
+            },
+            "repeated_value_ordinal": 0,
+            "value": {
               "kind": "Constitutive",
               "program_revision_id": "pr:01",
-              "judgment_ref": "judgment-ref:02"
+              "judgment_ref": "judgment-ref:02",
+              "authorization_type": "ExecutionAuthorization"
             }
           },
           {
-            "kind": "Authorization",
-            "authorization_type": "DerivationAuthorization",
-            "authorization_evidence": {
+            "prerequisite_slot_id": {
+              "mode_id": "mode-id:05",
+              "prerequisite_local_id": "prerequisite:derivation-authorization"
+            },
+            "repeated_value_ordinal": 0,
+            "value": {
               "kind": "Constitutive",
               "program_revision_id": "pr:01",
-              "judgment_ref": "judgment-ref:01"
+              "judgment_ref": "judgment-ref:01",
+              "authorization_type": "DerivationAuthorization"
             }
           }
-        ]
-      },
-    "initial_context": {
-      "pin_set_ref": "pins:mode:05",
-      "selected_mode_id": "mode-id:05",
-      "executable_validity_evidence": {
-        "executable_validity_id": "executable-validity:01",
-        "application_id": "application-id:01",
-        "mode_id": "mode-id:05"
-      },
-      "authorization_evidence": [
-        {
-          "kind": "Constitutive",
-          "program_revision_id": "pr:01",
-          "judgment_ref": "judgment-ref:02",
-          "authorization_type": "ExecutionAuthorization"
-        },
-        {
-          "kind": "Constitutive",
-          "program_revision_id": "pr:01",
-          "judgment_ref": "judgment-ref:01",
-          "authorization_type": "DerivationAuthorization"
+        ],
+        "activation_cause_frontier": {
+          "origin": {
+            "kind": "RootedBy",
+            "trigger": {
+              "kind": "ExternalTrigger",
+              "external_trigger_occurrence_id": "trigger:02"
+            }
+          },
+          "occurrence_causes": []
         }
-      ],
-      "capabilities": []
       }
     },
     {
@@ -397,42 +425,37 @@
         "kind": "ChildIn",
         "run_id": "run:02"
       },
-      "activation_cause_frontier": {
-        "origin": {
-          "kind": "ChildOf",
-          "run_id": "run:02",
-          "parent_activation_id": "activation:law:02",
-          "parent_step_id": "step:law:start:02"
+      "activation_start_record": {
+        "static_activation_basis": {
+          "exact_mode_pin_set_ref": "pins:mode:04"
         },
-        "prerequisites": [
+        "initial_context": {
+          "exact_shared_context_pin_set_ref": "pins:base:01"
+        },
+        "dynamic_prerequisite_bindings": [
           {
-            "kind": "Authorization",
-            "authorization_type": "ExecutionAuthorization",
-            "authorization_evidence": {
+            "prerequisite_slot_id": {
+              "mode_id": "mode-id:04",
+              "prerequisite_local_id": "prerequisite:execution-authorization"
+            },
+            "repeated_value_ordinal": 0,
+            "value": {
               "kind": "Constitutive",
               "program_revision_id": "pr:01",
-              "judgment_ref": "judgment-ref:02"
+              "judgment_ref": "judgment-ref:02",
+              "authorization_type": "ExecutionAuthorization"
             }
           }
-        ]
-      },
-    "initial_context": {
-      "pin_set_ref": "pins:mode:04",
-      "selected_mode_id": "mode-id:04",
-      "executable_validity_evidence": {
-        "executable_validity_id": "executable-validity:01",
-        "application_id": "application-id:02",
-        "mode_id": "mode-id:04"
-      },
-      "authorization_evidence": [
-        {
-          "kind": "Constitutive",
-          "program_revision_id": "pr:01",
-          "judgment_ref": "judgment-ref:02",
-          "authorization_type": "ExecutionAuthorization"
+        ],
+        "activation_cause_frontier": {
+          "origin": {
+            "kind": "ChildOf",
+            "run_id": "run:02",
+            "parent_activation_id": "activation:law:02",
+            "parent_step_id": "step:law:start:02"
+          },
+          "occurrence_causes": []
         }
-      ],
-      "capabilities": []
       }
     },
     {
@@ -443,58 +466,51 @@
         "kind": "RootOf",
         "run_id": "run:03"
       },
-      "activation_cause_frontier": {
-        "origin": {
-          "kind": "RootedBy",
-          "trigger": {
-            "kind": "ExternalTrigger",
-            "external_trigger_occurrence_id": "trigger:03"
-          }
+      "activation_start_record": {
+        "static_activation_basis": {
+          "exact_mode_pin_set_ref": "pins:mode:06"
         },
-        "prerequisites": [
+        "initial_context": {
+          "exact_shared_context_pin_set_ref": "pins:base:01"
+        },
+        "dynamic_prerequisite_bindings": [
           {
-            "kind": "Authorization",
-            "authorization_type": "ExecutionAuthorization",
-            "authorization_evidence": {
+            "prerequisite_slot_id": {
+              "mode_id": "mode-id:06",
+              "prerequisite_local_id": "prerequisite:execution-authorization"
+            },
+            "repeated_value_ordinal": 0,
+            "value": {
               "kind": "Constitutive",
               "program_revision_id": "pr:01",
-              "judgment_ref": "judgment-ref:02"
+              "judgment_ref": "judgment-ref:02",
+              "authorization_type": "ExecutionAuthorization"
             }
           },
           {
-            "kind": "Authorization",
-            "authorization_type": "DerivationAuthorization",
-            "authorization_evidence": {
+            "prerequisite_slot_id": {
+              "mode_id": "mode-id:06",
+              "prerequisite_local_id": "prerequisite:derivation-authorization"
+            },
+            "repeated_value_ordinal": 0,
+            "value": {
               "kind": "Constitutive",
               "program_revision_id": "pr:01",
-              "judgment_ref": "judgment-ref:01"
+              "judgment_ref": "judgment-ref:01",
+              "authorization_type": "DerivationAuthorization"
             }
           }
-        ]
-      },
-    "initial_context": {
-      "pin_set_ref": "pins:mode:06",
-      "selected_mode_id": "mode-id:06",
-      "executable_validity_evidence": {
-        "executable_validity_id": "executable-validity:01",
-        "application_id": "application-id:03",
-        "mode_id": "mode-id:06"
-      },
-      "authorization_evidence": [
-        {
-          "kind": "Constitutive",
-          "program_revision_id": "pr:01",
-          "judgment_ref": "judgment-ref:02",
-          "authorization_type": "ExecutionAuthorization"
-        },
-        {
-          "kind": "Constitutive",
-          "program_revision_id": "pr:01",
-          "judgment_ref": "judgment-ref:01",
-          "authorization_type": "DerivationAuthorization"
+        ],
+        "activation_cause_frontier": {
+          "origin": {
+            "kind": "RootedBy",
+            "trigger": {
+              "kind": "ExternalTrigger",
+              "external_trigger_occurrence_id": "trigger:03"
+            }
+          },
+          "occurrence_causes": []
         }
-      ],
-      "capabilities": []
       }
     }
   ],
@@ -511,8 +527,31 @@
           "activation_id": "activation:law:01"
         }
       ],
-      "configuration_before": "configuration:law:01:initial",
-      "configuration_after": "configuration:law:01:predicate-ready",
+      "step_configuration_transition": {
+        "kind": "Serial",
+        "consume": {
+          "custody": "affine",
+          "activation_configuration_token": {
+            "activation_id": "activation:law:01",
+            "configuration_predecessor": {
+              "kind": "ActivationStart",
+              "activation_id": "activation:law:01"
+            },
+            "configuration_commitment": "configuration:law:01:initial"
+          }
+        },
+        "produce": {
+          "custody": "affine",
+          "activation_configuration_token": {
+            "activation_id": "activation:law:01",
+            "configuration_predecessor": {
+              "kind": "ConfigurationAfter",
+              "step_id": "step:law:start:01"
+            },
+            "configuration_commitment": "configuration:law:01:predicate-ready"
+          }
+        }
+      },
       "observed_base_state_revision_id": "state:01",
       "emitted_observation_ids": [],
       "emitted_support_occurrence_ids": []
@@ -529,8 +568,31 @@
           "activation_id": "activation:predicate:01"
         }
       ],
-      "configuration_before": "configuration:predicate:01:initial",
-      "configuration_after": "configuration:predicate:01:return-true",
+      "step_configuration_transition": {
+        "kind": "Serial",
+        "consume": {
+          "custody": "affine",
+          "activation_configuration_token": {
+            "activation_id": "activation:predicate:01",
+            "configuration_predecessor": {
+              "kind": "ActivationStart",
+              "activation_id": "activation:predicate:01"
+            },
+            "configuration_commitment": "configuration:predicate:01:initial"
+          }
+        },
+        "produce": {
+          "custody": "affine",
+          "activation_configuration_token": {
+            "activation_id": "activation:predicate:01",
+            "configuration_predecessor": {
+              "kind": "ConfigurationAfter",
+              "step_id": "step:predicate:01"
+            },
+            "configuration_commitment": "configuration:predicate:01:return-true"
+          }
+        }
+      },
       "observed_base_state_revision_id": "state:01",
       "emitted_observation_ids": [
         "observation:predicate:01"
@@ -557,8 +619,31 @@
           "predecessor_step_id": "step:law:start:01"
         }
       ],
-      "configuration_before": "configuration:law:01:predicate-ready",
-      "configuration_after": "configuration:law:01:conclusion-emitted",
+      "step_configuration_transition": {
+        "kind": "Serial",
+        "consume": {
+          "custody": "affine",
+          "activation_configuration_token": {
+            "activation_id": "activation:law:01",
+            "configuration_predecessor": {
+              "kind": "ConfigurationAfter",
+              "step_id": "step:law:start:01"
+            },
+            "configuration_commitment": "configuration:law:01:predicate-ready"
+          }
+        },
+        "produce": {
+          "custody": "affine",
+          "activation_configuration_token": {
+            "activation_id": "activation:law:01",
+            "configuration_predecessor": {
+              "kind": "ConfigurationAfter",
+              "step_id": "step:law:emit:01"
+            },
+            "configuration_commitment": "configuration:law:01:conclusion-emitted"
+          }
+        }
+      },
       "observed_base_state_revision_id": "state:01",
       "emitted_observation_ids": [
         "observation:conclusion:01"
@@ -581,8 +666,31 @@
           "predecessor_step_id": "step:law:emit:01"
         }
       ],
-      "configuration_before": "configuration:law:01:conclusion-emitted",
-      "configuration_after": "configuration:law:01:returned",
+      "step_configuration_transition": {
+        "kind": "Serial",
+        "consume": {
+          "custody": "affine",
+          "activation_configuration_token": {
+            "activation_id": "activation:law:01",
+            "configuration_predecessor": {
+              "kind": "ConfigurationAfter",
+              "step_id": "step:law:emit:01"
+            },
+            "configuration_commitment": "configuration:law:01:conclusion-emitted"
+          }
+        },
+        "produce": {
+          "custody": "affine",
+          "activation_configuration_token": {
+            "activation_id": "activation:law:01",
+            "configuration_predecessor": {
+              "kind": "ConfigurationAfter",
+              "step_id": "step:law:support:03"
+            },
+            "configuration_commitment": "configuration:law:01:returned"
+          }
+        }
+      },
       "observed_base_state_revision_id": "state:01",
       "emitted_observation_ids": [],
       "emitted_support_occurrence_ids": [
@@ -601,8 +709,31 @@
           "activation_id": "activation:law:02"
         }
       ],
-      "configuration_before": "configuration:law:02:initial",
-      "configuration_after": "configuration:law:02:predicate-ready",
+      "step_configuration_transition": {
+        "kind": "Serial",
+        "consume": {
+          "custody": "affine",
+          "activation_configuration_token": {
+            "activation_id": "activation:law:02",
+            "configuration_predecessor": {
+              "kind": "ActivationStart",
+              "activation_id": "activation:law:02"
+            },
+            "configuration_commitment": "configuration:law:02:initial"
+          }
+        },
+        "produce": {
+          "custody": "affine",
+          "activation_configuration_token": {
+            "activation_id": "activation:law:02",
+            "configuration_predecessor": {
+              "kind": "ConfigurationAfter",
+              "step_id": "step:law:start:02"
+            },
+            "configuration_commitment": "configuration:law:02:predicate-ready"
+          }
+        }
+      },
       "observed_base_state_revision_id": "state:01",
       "emitted_observation_ids": [],
       "emitted_support_occurrence_ids": []
@@ -619,8 +750,31 @@
           "activation_id": "activation:predicate:02"
         }
       ],
-      "configuration_before": "configuration:predicate:02:initial",
-      "configuration_after": "configuration:predicate:02:return-true",
+      "step_configuration_transition": {
+        "kind": "Serial",
+        "consume": {
+          "custody": "affine",
+          "activation_configuration_token": {
+            "activation_id": "activation:predicate:02",
+            "configuration_predecessor": {
+              "kind": "ActivationStart",
+              "activation_id": "activation:predicate:02"
+            },
+            "configuration_commitment": "configuration:predicate:02:initial"
+          }
+        },
+        "produce": {
+          "custody": "affine",
+          "activation_configuration_token": {
+            "activation_id": "activation:predicate:02",
+            "configuration_predecessor": {
+              "kind": "ConfigurationAfter",
+              "step_id": "step:predicate:02"
+            },
+            "configuration_commitment": "configuration:predicate:02:return-true"
+          }
+        }
+      },
       "observed_base_state_revision_id": "state:01",
       "emitted_observation_ids": [
         "observation:predicate:02"
@@ -647,8 +801,31 @@
           "predecessor_step_id": "step:predicate:02"
         }
       ],
-      "configuration_before": "configuration:law:02:predicate-ready",
-      "configuration_after": "configuration:law:02:returned",
+      "step_configuration_transition": {
+        "kind": "Serial",
+        "consume": {
+          "custody": "affine",
+          "activation_configuration_token": {
+            "activation_id": "activation:law:02",
+            "configuration_predecessor": {
+              "kind": "ConfigurationAfter",
+              "step_id": "step:law:start:02"
+            },
+            "configuration_commitment": "configuration:law:02:predicate-ready"
+          }
+        },
+        "produce": {
+          "custody": "affine",
+          "activation_configuration_token": {
+            "activation_id": "activation:law:02",
+            "configuration_predecessor": {
+              "kind": "ConfigurationAfter",
+              "step_id": "step:law:emit:02"
+            },
+            "configuration_commitment": "configuration:law:02:returned"
+          }
+        }
+      },
       "observed_base_state_revision_id": "state:01",
       "emitted_observation_ids": [
         "observation:conclusion:02"
@@ -669,8 +846,31 @@
           "activation_id": "activation:self-join:01"
         }
       ],
-      "configuration_before": "configuration:self-join:01:initial",
-      "configuration_after": "configuration:self-join:01:returned",
+      "step_configuration_transition": {
+        "kind": "Serial",
+        "consume": {
+          "custody": "affine",
+          "activation_configuration_token": {
+            "activation_id": "activation:self-join:01",
+            "configuration_predecessor": {
+              "kind": "ActivationStart",
+              "activation_id": "activation:self-join:01"
+            },
+            "configuration_commitment": "configuration:self-join:01:initial"
+          }
+        },
+        "produce": {
+          "custody": "affine",
+          "activation_configuration_token": {
+            "activation_id": "activation:self-join:01",
+            "configuration_predecessor": {
+              "kind": "ConfigurationAfter",
+              "step_id": "step:self-join:01"
+            },
+            "configuration_commitment": "configuration:self-join:01:returned"
+          }
+        }
+      },
       "observed_base_state_revision_id": "state:01",
       "emitted_observation_ids": [
         "observation:self-join:01"
@@ -680,6 +880,183 @@
       ]
     }
   ],
+  "run_order_projection": {
+    "definition": "transitive-closure-of-step-cause-frontier-edges-union-step-configuration-succession-edges",
+    "edge_collection_semantics": "finite exact sets; transport order creates no causal edge",
+    "step_cause_frontier_edges": [
+      {
+        "run_id": "run:01",
+        "predecessor_step_id": "step:law:start:01",
+        "consumer_step_id": "step:predicate:01",
+        "projected_from": {
+          "kind": "ActivationStart",
+          "activation_id": "activation:predicate:01",
+          "activation_origin_kind": "ChildOf"
+        }
+      },
+      {
+        "run_id": "run:01",
+        "predecessor_step_id": "step:predicate:01",
+        "consumer_step_id": "step:law:emit:01",
+        "projected_from": {
+          "kind": "PriorStep"
+        }
+      },
+      {
+        "run_id": "run:01",
+        "predecessor_step_id": "step:law:start:01",
+        "consumer_step_id": "step:law:emit:01",
+        "projected_from": {
+          "kind": "PriorStep"
+        }
+      },
+      {
+        "run_id": "run:01",
+        "predecessor_step_id": "step:law:emit:01",
+        "consumer_step_id": "step:law:support:03",
+        "projected_from": {
+          "kind": "PriorStep"
+        }
+      },
+      {
+        "run_id": "run:02",
+        "predecessor_step_id": "step:law:start:02",
+        "consumer_step_id": "step:predicate:02",
+        "projected_from": {
+          "kind": "ActivationStart",
+          "activation_id": "activation:predicate:02",
+          "activation_origin_kind": "ChildOf"
+        }
+      },
+      {
+        "run_id": "run:02",
+        "predecessor_step_id": "step:law:start:02",
+        "consumer_step_id": "step:law:emit:02",
+        "projected_from": {
+          "kind": "PriorStep"
+        }
+      },
+      {
+        "run_id": "run:02",
+        "predecessor_step_id": "step:predicate:02",
+        "consumer_step_id": "step:law:emit:02",
+        "projected_from": {
+          "kind": "PriorStep"
+        }
+      }
+    ],
+    "step_configuration_succession_edges": [
+      {
+        "run_id": "run:01",
+        "predecessor_step_id": "step:law:start:01",
+        "consumer_step_id": "step:law:emit:01",
+        "consumed_configuration_predecessor": {
+          "kind": "ConfigurationAfter",
+          "step_id": "step:law:start:01"
+        }
+      },
+      {
+        "run_id": "run:01",
+        "predecessor_step_id": "step:law:emit:01",
+        "consumer_step_id": "step:law:support:03",
+        "consumed_configuration_predecessor": {
+          "kind": "ConfigurationAfter",
+          "step_id": "step:law:emit:01"
+        }
+      },
+      {
+        "run_id": "run:02",
+        "predecessor_step_id": "step:law:start:02",
+        "consumer_step_id": "step:law:emit:02",
+        "consumed_configuration_predecessor": {
+          "kind": "ConfigurationAfter",
+          "step_id": "step:law:start:02"
+        }
+      }
+    ],
+    "incoming_run_edges": [
+      {
+        "run_id": "run:01",
+        "consumer_step_id": "step:law:start:01",
+        "edges": []
+      },
+      {
+        "run_id": "run:01",
+        "consumer_step_id": "step:predicate:01",
+        "edges": [
+          {
+            "predecessor_step_id": "step:law:start:01",
+            "from_step_cause_frontier": true,
+            "from_configuration_succession": false
+          }
+        ]
+      },
+      {
+        "run_id": "run:01",
+        "consumer_step_id": "step:law:emit:01",
+        "edges": [
+          {
+            "predecessor_step_id": "step:predicate:01",
+            "from_step_cause_frontier": true,
+            "from_configuration_succession": false
+          },
+          {
+            "predecessor_step_id": "step:law:start:01",
+            "from_step_cause_frontier": true,
+            "from_configuration_succession": true
+          }
+        ]
+      },
+      {
+        "run_id": "run:01",
+        "consumer_step_id": "step:law:support:03",
+        "edges": [
+          {
+            "predecessor_step_id": "step:law:emit:01",
+            "from_step_cause_frontier": true,
+            "from_configuration_succession": true
+          }
+        ]
+      },
+      {
+        "run_id": "run:02",
+        "consumer_step_id": "step:law:start:02",
+        "edges": []
+      },
+      {
+        "run_id": "run:02",
+        "consumer_step_id": "step:predicate:02",
+        "edges": [
+          {
+            "predecessor_step_id": "step:law:start:02",
+            "from_step_cause_frontier": true,
+            "from_configuration_succession": false
+          }
+        ]
+      },
+      {
+        "run_id": "run:02",
+        "consumer_step_id": "step:law:emit:02",
+        "edges": [
+          {
+            "predecessor_step_id": "step:law:start:02",
+            "from_step_cause_frontier": true,
+            "from_configuration_succession": true
+          },
+          {
+            "predecessor_step_id": "step:predicate:02",
+            "from_step_cause_frontier": true,
+            "from_configuration_succession": false
+          }
+        ]
+      },
+      {
+        "run_id": "run:03",
+        "consumer_step_id": "step:self-join:01",
+        "edges": []
+      }
+    ]
+  },
   "observations": [
     {
       "observation_id": "observation:predicate:01",

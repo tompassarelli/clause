@@ -1,6 +1,6 @@
 {
   "schema": "clause/compiler-terms/manifest-v3",
-  "status": "candidate-process-v1-terms",
+  "status": "candidate-process-v2-terms",
   "authority": {
     "semantic": "docs/foundation.md",
     "source_projection": "docs/syntax.md",
@@ -202,8 +202,11 @@
         "one exact Application has two distinct root Activations and Runs",
         "predicate work is a child Activation with exact mode and context pins",
         "universal executable validity is separate from Mode-declared authorization",
-        "every initial context carries exact executable-validity evidence, exactly its Mode authorization set, and an explicit capability set",
-        "Steps carry typed cause frontiers instead of log order",
+        "every ActivationStartRecord separates StaticActivationBasis, InitialContext, multiplicity-aware DynamicPrerequisiteBindings, and its occurrence-only ActivationCauseFrontier",
+        "every dynamic prerequisite binding preserves its exact Mode-owned slot and repeated-value ordinal without turning constitutive evidence into a causal edge",
+        "every Step carries one exact Serial transition consuming and producing affine ActivationConfigurationTokens",
+        "child ActivationStart projects the exact ChildOf parent Step while ConfigurationSuccessionEdges remain separately derived and inspectable",
+        "IncomingRunEdges are the exact union of StepCauseFrontierEdges and StepConfigurationSuccessionEdges, and their transitive closure determines RunOrder instead of log order",
         "equal observation content retains distinct ObservationIds",
         "supports bind exact authorization, mode, context, environment, and predicate observation",
         "a self-join repeats one selected AssertionOccurrenceId in two distinct premise slots",

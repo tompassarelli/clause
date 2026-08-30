@@ -228,21 +228,32 @@ Activation {
   ActivationId,
   ApplicationId,
   selectedModeId,
-  ActivationCauseFrontier,
   RunMembership,
-  initialContext
+  ActivationStartRecord {
+    StaticActivationBasis,
+    InitialContext,
+    DynamicPrerequisiteBindings,
+    occurrenceOnlyActivationCauseFrontier
+  }
 }
 
 Step {
   StepId,
   owner: (RunId, ActivationId),
   causeFrontier,
-  configurationBefore,
-  configurationAfter,
+  StepConfigurationTransition:
+    Serial(consume affine ActivationConfigurationToken,
+           produce affine ActivationConfigurationToken),
   observedBaseStateRevisionId,
   emittedObservationIds,
   emittedSupportOccurrenceIds
 }
+
+IncomingRunEdges(StepId) =
+  StepCauseFrontierEdges(StepId)
+  union StepConfigurationSuccessionEdges(StepId)
+
+RunOrder = transitive closure of all IncomingRunEdges
 
 Observation {
   ObservationId,
@@ -257,17 +268,22 @@ Application/Mode pair in the exact snapshot. It grants no permission. Each
 Mode separately declares one exact finite authorization set, including the
 empty set where appropriate.
 
-The exact initial context pins ClauseSemanticsId, ProgramSnapshotId,
-ProgramRevisionId, RuntimeSessionId when present, RuntimePolicyId, observed or
-base StateRevisionId when world-sensitive, selected ModeId, authorization,
-budget, capabilities, and observable scheduler constraints.
-Every positive Activation repeats its exact executable-validity evidence and
-the exact evidence for every and only authorization in its selected Mode's
-finite set. `pins:mode:04` contains Execution authorization;
-`pins:mode:05` and `pins:mode:06` contain Execution plus Derivation
-authorization. Each also records an explicit empty capability set for these
-pure derivations. Empty is a checked set, not permission for undeclared host
-capabilities.
+The exact StaticActivationBasis and InitialContext jointly pin
+ClauseSemanticsId, ProgramSnapshotId, ProgramRevisionId, RuntimeSessionId when
+present, RuntimePolicyId, observed or base StateRevisionId when
+world-sensitive, selected ModeId, executable-validity evidence, budget,
+capabilities, and observable scheduler constraints. Every selected Mode owns
+one finite `DynamicPrerequisiteSchema`; every positive Activation supplies one
+canonical `DynamicPrerequisiteBindings` sequence that closes every exact
+PrerequisiteSlotId and repeated-value ordinal without omission or collapse.
+`pins:mode:04` requires Execution authorization; `pins:mode:05` and
+`pins:mode:06` require Execution plus Derivation authorization. Their exact
+constitutive evidence remains in those bindings and does not become a causal
+edge: each requirement's CauseProjectionSchema is empty. The separately
+recorded ActivationCauseFrontier therefore contains only its exact origin and
+the occurrence causes selected by such a projection. These fixtures have no
+projected prerequisite occurrences and no capability requirement; empty stays
+a checked finite set rather than permission for undeclared host capabilities.
 
 One Application may be activated repeatedly. Each root activation has a fresh
 ExternalTriggerOccurrenceId, ActivationId, and RunId. One ActivationId remains
@@ -279,10 +295,16 @@ index, table row, host object, or alias for another identity domain.
 A normal first Step of a Ready Activation has exactly
 ActivationStart(its own ActivationId). Its sole exception is the exact
 ActivationStart + CancellationRequest pair for an already validated matching
-ready-cancellation outcome. Later cause frontiers, configuration-succession
-edges, and IncomingRunEdges use the typed process rules in
-clause:docs/foundation.md. JSON order and a serialized trace create no causal
-edge.
+ready-cancellation outcome. A child ActivationStart projects the
+exact ChildOf parent Step into the StepCauseFrontier edge set without adding a
+second StepCause. Every Step separately records one exact Serial transition:
+it consumes one live affine ActivationConfigurationToken and produces the one
+successor token whose predecessor is `ConfigurationAfter(its StepId)`. Later
+Steps consume the immediately preceding token in that Activation, yielding
+inspectable StepConfigurationSuccessionEdges. The fixture records both edge
+sets and their exact per-Step `IncomingRunEdges`; semantic `RunOrder` is the
+transitive closure of their union. JSON order and a serialized trace create no
+causal edge.
 
 ## Laws, premise occurrences, and support
 

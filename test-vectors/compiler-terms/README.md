@@ -52,8 +52,13 @@ it.
 The process vector includes a support-only progress step: its conclusion
 Observation set stays unchanged while a fresh SupportOccurrenceId is emitted.
 Universal executable validity is separate from permission. Every Activation
-carries exact validity evidence, exactly the finite authorization set declared
-by its selected Mode, and an explicit capability set.
+carries one exact ActivationStartRecord. Its slot-and-repeated-ordinal-aware
+DynamicPrerequisiteBindings close exactly the finite authorization schema
+declared by the selected Mode, while constitutive evidence projects no
+occurrence cause. Every Step consumes and produces exact affine configuration
+custody through one Serial transition. The recorded ConfigurationSuccession
+and StepCauseFrontier edges remain separately inspectable; their union, not
+either transport order or a frontier-only projection, determines RunOrder.
 
 The corpus intentionally contains no physical plan or translation witness.
 The P3 graph-to-physical binding remains open.
