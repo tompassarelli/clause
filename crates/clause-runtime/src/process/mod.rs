@@ -7,8 +7,10 @@ use clause_package::{
 };
 
 mod executable;
+mod wasm_boundary;
 
 pub use executable::*;
+pub use wasm_boundary::*;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RuntimeInitError {

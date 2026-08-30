@@ -6,8 +6,14 @@ license = "MIT OR Apache-2.0"
 rust-version = "1.96"
 publish = false
 
+[lib]
+crate-type = ["cdylib", "rlib"]
+
 [dependencies]
 clause-package = { path = "../clause-package" }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = "=0.2.108"
 
 [workspace]
 resolver = "3"

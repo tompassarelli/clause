@@ -550,3 +550,66 @@ fn package_owned_headless_api_reaches_one_admitted_render_state() {
         .observation(observation.id)
         .is_some());
 }
+
+#[test]
+fn bounded_wasm_bytes_return_only_the_admitted_observation() {
+    let package = checked_program_package(1);
+    let request = WasmProcessRequestV1 {
+        package_bytes: package.exact_bytes().to_vec(),
+        application: ApplicationLocalId::new(1),
+        authority: WasmAuthorityInputV1 {
+            program: id!(ProgramId, 123),
+            change: id!(ProgramChangeOccurrenceId, 124),
+            session: id!(RuntimeSessionId, 120),
+            policy: id!(RuntimePolicyId, 121),
+            session_start: id!(SessionStartOccurrenceId, 122),
+            root_policy: id!(RootPolicyId, 125),
+            occurrence_boundary: id!(BoundaryRef, 126),
+            state_boundary: id!(BoundaryRef, 127),
+            occurrence_evidence: id!(ExternalEvidenceRef, 181),
+            occurrence_evidence_bytes: vec![181],
+            judgment_evidence: id!(ExternalEvidenceRef, 186),
+            judgment_evidence_bytes: vec![186],
+            admission_evidence: id!(ExternalEvidenceRef, 190),
+            admission_evidence_bytes: vec![190],
+            budget_units: 100,
+        },
+        occurrences: vec![encode_executable_occurrence_v1(&occurrence(0, &[1.0]))
+            .expect("opaque occurrence encodes")],
+        render_slots: vec![4],
+    };
+    let exact_request = encode_wasm_process_request_v1(&request).expect("bounded request encodes");
+    assert_eq!(
+        decode_wasm_process_request_v1(&exact_request).expect("exact request decodes"),
+        request
+    );
+
+    let mut boundary = WasmProcessBuffersV1::new();
+    for byte in exact_request {
+        boundary
+            .push_request_byte(byte)
+            .expect("request remains in the fixed bound");
+    }
+    boundary.dispatch().expect("production ProcessCarrier admits the run");
+    assert_eq!(boundary.status(), WasmProcessStatusV1::Ready);
+    let output = decode_wasm_process_observation_v1(boundary.response())
+        .expect("boundary returns one exact admitted Observation");
+    assert_eq!(output.observation, id!(ObservationId, 100));
+    assert_ne!(output.state, id!(StateRevisionId, 120));
+    assert_eq!(
+        output.exact_value_bytes,
+        [1_u8, 0, 0, 0, 0, 0, 0, 0, 0, 240, 63]
+    );
+
+    let oversized = vec![0; WASM_PROCESS_REQUEST_LIMIT_V1 + 1];
+    assert_eq!(
+        decode_wasm_process_request_v1(&oversized),
+        Err(WasmProcessStatusV1::RequestOutOfBounds)
+    );
+    boundary.reset();
+    for byte in b"bad!" {
+        boundary.push_request_byte(*byte).unwrap();
+    }
+    assert_eq!(boundary.dispatch(), Err(WasmProcessStatusV1::MalformedRequest));
+    assert_eq!(boundary.response(), &[]);
+}

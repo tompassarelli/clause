@@ -9,6 +9,7 @@ const MAGIC: &[u8; 4] = b"CXP1";
 const PROGRAM_KIND: &[u8] = b"clause/process-executable-v1";
 const CONFIGURATION_KIND: &[u8] = b"clause/process-configuration-v1";
 const OCCURRENCE_KIND: &[u8] = b"clause/process-occurrence-v1";
+const OCCURRENCE_MAGIC: &[u8; 4] = b"CXO1";
 const MAX_PROGRAM_ITEMS: usize = 65_536;
 const MAX_EXPRESSION_DEPTH: usize = 64;
 
@@ -64,6 +65,38 @@ pub fn executable_occurrence_term_v1(
         EqualityContract::ExactOctetsV1,
     )
     .map_err(|_| ExecutableErrorV1::MalformedProgram)
+}
+
+/// Encode one construct-blind external occurrence for transport across a
+/// byte-only host boundary.
+pub fn encode_executable_occurrence_v1(
+    occurrence: &ExecutableOccurrenceV1,
+) -> Result<Vec<u8>, ExecutableErrorV1> {
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(OCCURRENCE_MAGIC);
+    bytes.extend_from_slice(&occurrence.entry.to_le_bytes());
+    encode_values(&mut bytes, &occurrence.arguments)?;
+    Ok(bytes)
+}
+
+/// Strictly decode the exact occurrence transport. Dispatch remains on the
+/// numeric package entry selected by the checked executable program; this
+/// decoder has no Clause construct, game, role, or designation vocabulary.
+pub fn decode_executable_occurrence_v1(
+    bytes: &[u8],
+) -> Result<ExecutableOccurrenceV1, ExecutableErrorV1> {
+    let mut decoder = Decoder::new(bytes);
+    if decoder.take(OCCURRENCE_MAGIC.len())? != OCCURRENCE_MAGIC {
+        return Err(ExecutableErrorV1::MalformedOccurrence);
+    }
+    let occurrence = ExecutableOccurrenceV1 {
+        entry: decoder.u16()?,
+        arguments: decoder.values()?,
+    };
+    if !decoder.is_complete() {
+        return Err(ExecutableErrorV1::MalformedOccurrence);
+    }
+    Ok(occurrence)
 }
 
 fn executable_values_term(
@@ -1100,6 +1133,7 @@ pub enum ExecutableErrorV1 {
     MissingProgram,
     AmbiguousProgram,
     MalformedProgram,
+    MalformedOccurrence,
     UnknownApplication,
     CarrierRejected,
     ResourceLimit,
