@@ -1,6 +1,6 @@
 name = "clause_core"
 version = "0.0.0"
-defaultTargets = ["ClauseCore", "ClauseCoreVectors", "ClauseCoreTrust"]
+defaultTargets = ["ClauseCore", "ClauseCoreVectors", "ClauseCoreTrust", "ClauseCompiler", "ClauseCompilerTrust"]
 moreLeanArgs = ["-t0", "-DwarningAsError=true"]
 
 [[lean_lib]]
@@ -11,3 +11,9 @@ name = "ClauseCoreVectors"
 
 [[lean_lib]]
 name = "ClauseCoreTrust"
+
+[[lean_lib]]
+name = "ClauseCompiler"
+
+[[lean_lib]]
+name = "ClauseCompilerTrust"

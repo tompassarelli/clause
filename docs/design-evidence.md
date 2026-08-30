@@ -4,34 +4,47 @@
 > [foundation](foundation.md), [architecture](architecture.md), and
 > [adoption spike](adoption-spike.md).
 >
-> **Authority:** Informative. This document cannot change semantics, syntax, or
-> roadmap status.
+> **Authority:** Informative. This document cannot change semantics, syntax,
+> implementation boundaries, or roadmap status. The
+> [architecture](architecture.md) is the current authority for implementation
+> boundaries.
+>
+> Historical `Context/Judgment` and `Run` language below describes the narrow
+> bootstrap evidence that exists. It is not the current semantic kernel. The
+> [foundation](foundation.md) now governs Formation, Application, Activation,
+> Step, Run, Continuation, Judgment, and Admission.
 
-## Decision and boundary
+## Historical decision evidence
 
-Clause provisionally adopts this implementation split:
+The bootstrap design provisionally adopted this split:
 
 ```text
-Clause Core       = host-neutral semantic contract
-Lean 4            = constitutional checker and reference Run semantics
+Historical bootstrap split (not current boundary authority):
+Clause semantics  = process contract
+Canonical carrier = host-neutral transport and checking form
+Lean 4            = constitutional checker and eventual process reference
 Rust              = physical persistence, runtime, FFI, and backends
 Clause            = eventual author of the compiler middle
 ```
 
-The split exists to keep sophisticated parsers, macros, agents, elaborators,
-optimizers, and targets in the role of proposal producers while a smaller
-boundary decides whether proposed meaning is admissible.
+The split was proposed to keep sophisticated parsers, macros, agents,
+elaborators, optimizers, and targets in the role of proposal producers while a
+smaller boundary decides whether proposed meaning is admissible. The
+[architecture](architecture.md), not this historical decision record, governs
+the current boundary.
 
-The implementation packages begin semantic-empty and take only the current
-Clause calculus as authority. This removes the strongest path by which
-bootstrap convenience could become Clause ontology.
+The proposal required implementation packages to begin semantic-empty and take
+only the Clause calculus as authority. That invariant prevents bootstrap
+convenience from becoming Clause ontology; its current formulation belongs to
+the architecture.
 
 ## Equality bootstrap order
 
-Semantic Term equality cannot honestly precede generic Clause judgment
-checking. Atom equality contracts are declarative Clause data, so raw presence
-of a contract Term or validity claim in a candidate Context cannot authorize
-itself. Conversely, a generic checker can use exact IDs and candidate
+Semantic Term equality cannot honestly precede checked Formation and governed
+admission of its equality contract. Atom equality contracts are declarative
+Clause data, so raw presence of a contract Term or validity claim in a
+candidate Context cannot authorize itself. Conversely, the bootstrap's
+provisional generic Context/Judgment checker can use exact IDs and candidate
 representation comparison for lookup and certificate binding without claiming
 semantic equality. The dependency is therefore stratified rather than cyclic:
 
@@ -47,7 +60,7 @@ The first Context/Judgment carrier remains candidate data only. It introduces
 no `Term.semanticEq`, semantic `DecidableEq`, contract callback, function-valued
 proof field, opcode taxonomy, quotient, or raw-membership admission rule.
 
-The first checker tranche now implements only finite ground derivations
+The first checker tranche's evidence is limited to finite ground derivations
 relative to a separately supplied root/rule basis. Its executable acceptance is
 connected to the independent `DerivableFrom` proposition by a kernel-checked
 soundness theorem. Strictly earlier support references admit shared DAGs and
@@ -65,7 +78,7 @@ admitted.
 The checker deliberately stops at ground rules. Schematic variables,
 substitution, named-role normalization, rule formation, and basis evolution
 need a separate Clause-owned calculus and cannot enter as Lean callbacks or
-host matching. The v0 transport boundary now supplies only exact package and
+host matching. The v0 transport boundary supplies only exact package and
 predecessor-authorized basis selection; it does not add schematic semantics.
 
 The strict decoder groups exact raw bytes, structural index, lineage,
@@ -140,9 +153,11 @@ graphs.
   is not an independent verifier and skips unsafe/partial constants. Their
   absence is checked separately.
 
-This evidence selects Lean for the first semantic implementation tranche. The
-[adoption spike](adoption-spike.md) must still measure the trusted boundary,
-proof ceremony, compilation feedback, codec boundary, and Rust parity.
+This evidence selected Lean for the first semantic implementation tranche and
+defined the [adoption spike](adoption-spike.md) as the place to measure the
+trusted boundary, proof ceremony, compilation feedback, codec boundary, and
+Rust parity. Current sequencing and status live in the
+[roadmap](roadmap.md).
 
 ## Aeneas boundary
 
@@ -155,9 +170,9 @@ copied, adapted, vendored, built, or added as a dependency.
 
 Aeneas translates a supported Rust subset through Charon and its own
 intermediate representation into proof-assistant code, including Lean. That may
-later help verify isolated safe-Rust helpers in the physical substrate.
+later help verify isolated safe-Rust helpers in the physical Rust layer.
 
-It is not part of Clause Core, admission, or the initial trust chain. Its closed
+It is not part of the canonical carrier, admission, or the initial trust chain. Its closed
 translation IR, opaque-external assumptions, unsupported unsafe/concurrent Rust,
 and extra tool/version boundary cannot establish Clause meaning. It is optional
 verification prior art only.
@@ -176,20 +191,20 @@ owns physical execution but not Clause's constitutional semantics.
 OCaml is an excellent conventional compiler language. Adding it between Lean,
 Rust, and eventual Clause self-hosting would introduce another codec, build
 system, host taxonomy, and potential semantic authority without a unique
-required capability. It remains a fallback only if the Lean spike specifically
-falsifies Lean's suitability.
+required capability. The proposal retained it only as a fallback if the Lean
+spike specifically falsified Lean's suitability.
 
 ### Lean for the complete system
 
 Lean's unique value is precise checked meaning. Making it own the durable store,
 hot incremental engine, operating-system integration, production runtime, and
 all targets would unnecessarily bind Clause to Lean's runtime and FFI choices.
-Those remain Rust's replaceable physical domain.
+The proposal left those in Rust's replaceable physical domain.
 
 ### Immediate self-hosting
 
-Clause should eventually author its compiler middle, but it cannot honestly
-bootstrap its own checker before a smaller independent boundary exists.
+The proposal expected Clause eventually to author its compiler middle, but not
+to bootstrap its own checker before a smaller independent boundary exists.
 
 ## Prior art
 
@@ -234,5 +249,6 @@ The following remain unproved:
   without a second authority; and
 - that correct-change throughput and maintenance cost improve in practice.
 
-The bounded spike is the next honest evidence. More architecture prose cannot
-resolve these uncertainties.
+These are the uncertainties the bounded adoption spike was designed to test.
+Current sequencing and status live in the [roadmap](roadmap.md); more
+architecture prose cannot resolve them.
