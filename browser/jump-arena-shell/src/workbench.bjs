@@ -365,12 +365,9 @@
                              generation
                              reason))]
 
-                         [(AdmissionAccepted successor revision frame)
+                         [(AdmissionAccepted _successor revision frame)
                           (if (not (frozen-opaque? frame))
                             (do
-                              (when (not (identical? successor
-                                                      (.-session active)))
-                                (dispose-session-once! successor))
                               (restore-settled-phase!)
                               (emit-lifecycle!
                                "admission-frame-rejected"
@@ -378,7 +375,7 @@
                                "frame-not-frozen"))
                             (install-authority!
                              generation
-                             successor
+                             (.-session active)
                              revision
                              frame
                              false
@@ -467,22 +464,43 @@
                              reason))]
 
                          [(SessionStarted session revision frame)
-                          (if (not (frozen-opaque? frame))
-                            (do
-                              (dispose-session-once! session)
-                              (restore-settled-phase!)
-                              (emit-lifecycle!
-                               "session-frame-rejected"
-                               generation
-                               "frame-not-frozen"))
-                            (install-authority!
-                             generation
-                             session
-                             revision
-                             frame
-                             true
-                             "session-started"
-                             "fresh-runtime-session"))])))]
+                          (let [previous ActiveRuntime? (.-active current)
+                                previous-session Any (if (nil? previous)
+                                                       nil
+                                                       (.-session previous))]
+                            (if (and (not (nil? previous-session))
+                                     (identical? previous-session session))
+                              (do
+                                (dispose-session-once! session)
+                                (reset! state
+                                        (->WorkbenchState
+                                         "idle"
+                                         nil
+                                         (empty-configuration
+                                          (inc (.-revision
+                                                (.-configuration current))))
+                                         (.-latestReload current)
+                                         false))
+                                (emit-lifecycle!
+                                 "session-reused"
+                                 generation
+                                 "fresh-runtime-session-required"))
+                              (if (not (frozen-opaque? frame))
+                                (do
+                                  (dispose-session-once! session)
+                                  (restore-settled-phase!)
+                                  (emit-lifecycle!
+                                   "session-frame-rejected"
+                                   generation
+                                   "frame-not-frozen"))
+                                (install-authority!
+                                 generation
+                                 session
+                                 revision
+                                 frame
+                                 true
+                                 "session-started"
+                                 "fresh-runtime-session"))))])))]
 
                   [(DisposeRequested)
                    (let [current WorkbenchState @state]

@@ -229,6 +229,11 @@
        (.toEqual (test/expect @(.-rendered fixture)) [frame-0 frame-1])
        (.toBe (test/expect (.includes @(.-rendered fixture) candidate-frame))
               false))
+     (.toEqual (test/expect @(.-disposals fixture)) [])
+     (tick! fixture)
+     (.toBe (test/expect
+             (.-session (request-at (.-candidateRequests fixture) 1)))
+            session-0)
 
      (complete-request!
       (.-admissionRequests fixture)
@@ -329,6 +334,41 @@
        (.toEqual (test/expect @(.-rendered fixture)) [frame-0 frame-1])
        (.toContain (test/expect (receipt-events fixture))
                    "completion-stale")))))
+
+(test/test
+ "reload rejects and disposes a reused RuntimeSession"
+ (fn [] Any
+   (let [fixture Any (fake-fixture! (frozen {:opaque "package-a"}))
+         controller Any (.-controller fixture)
+         session Any (frozen {:opaque "session-0"})
+         frame Any (frozen {:opaque "frame-0"})]
+     (bootstrap!
+      fixture
+      (frozen {:opaque "accepted-a"})
+      session
+      (frozen {:opaque "revision-0"})
+      frame)
+     ((.-reloadPackage controller) (frozen {:opaque "package-b"}))
+     (complete-request!
+      (.-packageRequests fixture)
+      1
+      (workbench/->PackageAccepted (frozen {:opaque "accepted-b"})))
+     (complete-request!
+      (.-sessionRequests fixture)
+      1
+      (workbench/->SessionStarted
+       session
+       (frozen {:opaque "revision-reused"})
+       (frozen {:opaque "frame-reused"})))
+     (let [rejected Any (snapshot fixture)]
+       (.toBe (test/expect (.-phase rejected)) "idle")
+       (.toBe (test/expect (.-generation rejected)) 0)
+       (.toBe (test/expect (.-revision rejected)) nil)
+       (.toBe (test/expect (.-frame rejected)) nil)
+       (.toEqual (test/expect @(.-rendered fixture)) [frame])
+       (.toEqual (test/expect @(.-disposals fixture)) [session])
+       (.toContain (test/expect (receipt-events fixture))
+                   "session-reused")))))
 
 (test/test
  "disposal is terminal and idempotent"
