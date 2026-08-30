@@ -51,6 +51,29 @@ admitted only through the already accepted exact predecessor's `compile` and
 OCaml has no primary role. Aeneas is not part of the bootstrap or trust chain.
 It may be reconsidered later for isolated safe-Rust verification only.
 
+## Capability lifecycle
+
+Implementation is continuous, but authority is promoted in distinct states:
+
+1. An **experimental implementation or falsification artifact** may land with
+   explicit non-authority, a bounded claim, deterministic tests for that claim,
+   reversible scope, and no supported-language claim.
+2. A **semantic candidate** maps its proposed meaning into host-neutral Clause
+   Core. It remains a candidate and gains no authority from a Lean, Rust, or
+   other host representation.
+3. **Supported or admitted capability** passes every applicable constitutional
+   proof, parity, negative, hidden-authority, optimization, and absence gate in
+   this document before promotion or release.
+
+The [foundation](foundation.md) remains the sole semantic authority, and the
+[syntax](syntax.md) remains the canonical syntax authority. Prototypes may
+falsify, exercise, or implement a bounded candidate, but they cannot invent
+Clause meaning. Constitutional dependencies therefore block promotion,
+admission, and release, never independent semantic, execution, runtime,
+product, or evidence experiments and implementation. Semantic, execution, and
+evidence workstreams proceed concurrently; only true dependency edges
+serialize them.
+
 ## Live-tree boundary
 
 The repository contains two implementation roots and one compiler contract:
@@ -72,6 +95,12 @@ Every tracked source, test, example, document, generator, host, and release
 script must describe only the current architecture. Superseded material leaves
 no alias, shim, warning-only decoder, fixture, comment, generated consumer, or
 gate that teaches it.
+
+Working capability is removed only after a successor exists and passes
+deterministic tests for every replaced behavior used by an in-tree consumer.
+Every in-tree consumer migrates before removal. Once that migration is
+complete, removal means absence from the live tree, including the superseded
+source, tests, fixtures, generated artifacts, documentation, and consumers.
 
 ## Host-neutral Clause Core
 
@@ -338,7 +367,8 @@ admits a compiler successor only when the already accepted exact predecessor
 both compiles its exact subject and proposes its admission. Candidate or
 self-basis checking and hash-only predecessor equality reject.
 
-A semantic tranche may land only when:
+A semantic tranche may be promoted or admitted as supported capability only
+when:
 
 1. its Clause Core representation is host-neutral and canonical;
 2. Lean checks its certificate under the constitutional trust profile;
@@ -354,6 +384,6 @@ A semantic tranche may land only when:
 
 The four-change compiler evolution and bounded
 [adoption spike](adoption-spike.md) decide whether this mechanism is viable.
-A pass authorizes further implementation; it does not prove source ergonomics,
-large-graph incrementality, target performance, certificate tractability, or
-maintenance economics.
+A pass authorizes promotion and admission of further capability; it does not
+prove source ergonomics, large-graph incrementality, target performance,
+certificate tractability, or maintenance economics.

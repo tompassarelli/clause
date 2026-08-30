@@ -46,6 +46,33 @@ narrow constitutional evidence, not `Compiler0` and not an implementation of
 the v2 contract. Atom equality contracts and broader resource/fuzz evidence
 remain later tranches.
 
+## Lifecycle and sequencing
+
+Executable semantic capability advances continuously through three distinct
+states:
+
+1. **Experimental implementation and falsification artifacts** may land at any
+   time when they are explicitly non-authoritative, state a bounded claim, have
+   deterministic tests for that claim, remain reversible, and make no
+   supported-language claim.
+2. **Semantic candidates** additionally map their proposed meaning into
+   host-neutral Clause Core. They remain candidates: the
+   [foundation](foundation.md) is the sole semantic authority, the
+   [syntax](syntax.md) is the canonical syntax authority, and Lean, Rust, or
+   other host prototypes cannot invent Clause meaning.
+3. **Supported or admitted capability** requires every applicable proof,
+   cross-host parity, negative-fixture, hidden-authority, optimization, and
+   tracked-tree absence gate in the architecture and the phase exit evidence
+   below.
+
+Constitutional dependencies block only promotion, admission, and release. They
+do not block independent semantic, execution, runtime, product, or evidence
+experiments and implementation. Semantic, execution, and evidence workstreams
+proceed concurrently; only a true input-to-output dependency edge serializes
+them. Landing an experiment or candidate records neither semantic acceptance
+nor supported-language status. In particular, this roadmap does not claim that
+the current game-leverage candidate is accepted or landed.
+
 ## Status summary
 
 | Work | Status | Exit boundary |
@@ -58,10 +85,10 @@ remain later tranches.
 | Clause Core calculus | In progress; provisional Term, candidate Context/Judgment, relative ground-certificate checking, and narrow package authority | Admitted Atom/Term equality plus generic Context/Judgment/Run/Admission with no feature taxonomy |
 | CLCP v1 proof package | Lean/Rust codec and frozen-corpus parity complete; evidence only | Published exact corpus, strict nested decoding, byte-identical positive re-encoding, and matched negative verdict classes |
 | P1 compiler-genesis contract | Specified; implementation evidence absent | [Compiler genesis](compiler-genesis.md) and [CLCP v2](canonical-package.md) agree on exact authority and host boundaries |
-| CLCP v2 generic hosts and literal Compiler0 | Pending | Independent strict codecs, fixed generic evaluator/checker, exact owner anchor, and shared positive/negative corpus |
-| Constitutional adoption and evolution | Blocked on CLCP v2 and Compiler0 | All eight spike gates plus one four-change predecessor-authorized Compiler1 and frozen hosts |
-| Clause-authored compiler behavior | Contracted from genesis; implementation pending | Reading, binding, elaboration, effects, macros, origins, diagnostics, and evolution execute from the accepted package |
-| Product gates | Blocked on spike | Readability, incrementality, native/JS performance, systems coverage, and maintenance evidence |
+| CLCP v2 generic hosts and literal Compiler0 | Experimental implementation permitted; admission evidence pending | Independent strict codecs, fixed generic evaluator/checker, exact owner anchor, and shared positive/negative corpus |
+| Constitutional adoption and evolution | Experiments may proceed; promotion/admission awaits CLCP v2 and Compiler0 | All eight spike gates plus one four-change predecessor-authorized Compiler1 and frozen hosts |
+| Clause-authored compiler behavior | Candidate implementation may proceed; supported use awaits admission | Reading, binding, elaboration, effects, macros, origins, diagnostics, and evolution execute from the accepted package |
+| Product gates | Experiments may proceed; supported release awaits the spike | Readability, incrementality, native/JS performance, systems coverage, and maintenance evidence |
 
 ## Phase 0 — Clean reset
 
@@ -232,7 +259,8 @@ residual tractability uncertainty.
 
 ## Phase 2b — CLCP v2 genesis implementation
 
-**Status:** Pending on accepted Phase 2a.
+**Status:** Experimental implementation and falsification may proceed;
+promotion/admission awaits the Phase 2a contract and the exit evidence below.
 
 Implement independent strict CLCP v2 decoding, the fixed generic Lean checker
 and certificate rules, the fixed generic Rust evaluator and physical profile,
@@ -255,7 +283,8 @@ derived-ID recomputation; and observed timings for the narrow compiler request.
 
 ## Phase 3 — Dangerous semantic gates
 
-**Status:** Blocked on Phase 2b.
+**Status:** Experimental implementation and falsification may proceed
+concurrently; promotion/admission awaits Phase 2b exit evidence.
 
 The cross-host source/observation corpus for pure computation, State/effects,
 and verified Program evolution is frozen in
@@ -286,10 +315,11 @@ falsifies the architecture.
 
 ## Phase 4 — First Clause-owned compilation
 
-**Status:** Blocked on a passing Phase 3.
+**Status:** Candidate implementation may proceed concurrently; supported or
+admitted use awaits a passing Phase 3.
 
-Exercise the compiler behavior already owned by the accepted package in this
-order:
+Experiment against the compiler behavior specified for an eventually accepted
+package in this order; claim Clause ownership only after admission:
 
 1. schemas and relation modes;
 2. elaboration and macros;
@@ -304,7 +334,8 @@ ordinary-language feature taxonomy.
 
 ## Phase 5 — Canonical source and tooling
 
-**Status:** Blocked on Phases 3–4.
+**Status:** Experimental implementation may proceed concurrently; supported
+tooling promotion awaits admitted Phases 3–4 capability.
 
 Implement the grammar in [syntax.md](syntax.md) as a lossless source projection
 with deterministic readings, exact focus, binding and origin preservation,
@@ -316,7 +347,8 @@ authoritative program diff.
 
 ## Phase 6 — Physical systems and product gates
 
-**Status:** Blocked on the constitutional mechanism.
+**Status:** Independent product and physical experiments may proceed;
+admission and release await the constitutional mechanism.
 
 Measure independently:
 
@@ -332,12 +364,16 @@ remain a bounded oracle but cannot be the production hot path.
 
 ## Completion standard
 
-A roadmap item is complete only when its authoritative representation,
+A roadmap item is complete as supported or admitted capability only when its
+authoritative representation,
 identity rules, diagnostics, canonical encoding where applicable, executable
 behavior, negative cases, and narrow exit proof land together. Documentation
 specimens are not implementation evidence. A successful Lean evaluation
 without a kernel-checked package-bound proof proves no Clause admission. A Rust
 result without parity and traceability proves no Clause meaning.
 
-Every change leaves one live architecture. Superseded source, tests, docs,
-fixtures, generated artifacts, and consumers are removed in the same change.
+Never remove working capability before a tested successor exists. Every
+in-tree consumer must migrate to that successor before removal. A promoted
+change leaves one live supported architecture; once migration is complete,
+superseded source, tests, docs, fixtures, generated artifacts, and consumers
+are removed in the same change.
