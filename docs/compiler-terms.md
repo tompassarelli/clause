@@ -461,9 +461,42 @@ HOST_SEMANTIC_DISPATCH.
 clause:test-vectors/compiler-terms/manifest.json binds each transport file and
 its expected disposition. Positive files contain complete accepted candidates
 relative to the exact fixture context. Negative files contain the malformed
-candidate itself; expectation metadata lives only in the manifest. No
-negative is represented by a violates marker or by an error label standing in
-for the malformed structure.
+structure itself; expectation metadata lives only in the manifest. No negative
+is represented by a violates marker or by an error label standing in for the
+malformed structure.
+
+The three support-occurrence negatives use one additional transport envelope:
+
+~~~text
+SupportSubstitutionNegative {
+  contextRef,
+  substitution: {
+    targetSupportOccurrenceId,
+    replacement: IndependentSupportOccurrence
+  }
+}
+~~~
+
+This envelope is a validation-input counterfactual, not Clause substitution,
+retraction, mutation, or occurrence production. The referenced positive
+process vector remains immutable. The manifest normatively binds each vector
+ID to one exact target SupportOccurrenceId, one permitted-difference JSON
+Pointer and semantic class, the last validation stage through which every
+other field must remain equal, and the intended first semantic failure stage.
+The malformed file cannot grant itself another permitted difference.
+
+Before semantic validation, a fixture consumer resolves the target occurrence,
+requires the target to be emitted by its exact producing Step, requires the
+replacement to retain the target's SupportOccurrenceId and `produced_by`, and
+compares target and replacement by exact JSON structure after masking only the
+manifest-declared pointer. Object member order remains nonsemantic; array
+order and multiplicity remain exact. The declared pointer must exist in both
+values and actually differ. An unknown target, producer mismatch, changed
+identity, absent or unchanged target field, unlisted difference, or manifest
+stage mismatch invalidates the fixture before it can claim the expected Clause
+error. Passing this envelope check does not mutate or admit either occurrence;
+it supplies one exact malformed validation input whose first failure is then
+checked by the order below.
 
 Validation is deterministic and first-failure ordered:
 

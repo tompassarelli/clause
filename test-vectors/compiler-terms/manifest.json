@@ -54,6 +54,37 @@
       "trace serialization order"
     ]
   },
+  "negative_fixture_transport": {
+    "support_substitution_schema": "clause/compiler-terms/support-substitution-negative-v3",
+    "semantics": "validation-input-only-counterfactual; never mutation of the positive context or a Clause process operation",
+    "target_resolution": "exact SupportOccurrenceId in the referenced positive process vector",
+    "replacement_identity": "replacement SupportOccurrenceId and produced_by must equal the target, and the target must be emitted by that exact Step",
+    "comparison": "exact JSON structure outside the one normative JSON Pointer; object member order is nonsemantic and array order is retained",
+    "envelope_failure": "fixture invalid before semantic validation",
+    "contracts": {
+      "support-set-collapse": {
+        "target_support_occurrence_id": "support:self-join:01",
+        "difference_class": "ordered-premise-occurrence-multiplicity",
+        "difference_json_pointer": "/ordered_premise_selections",
+        "equal_through_validation_stage": 7,
+        "first_semantic_failure_stage": 8
+      },
+      "support-context-drift": {
+        "target_support_occurrence_id": "support:01",
+        "difference_class": "structural-environment-binding",
+        "difference_json_pointer": "/structural_environment/variable:target-point/x_raw",
+        "equal_through_validation_stage": 7,
+        "first_semantic_failure_stage": 8
+      },
+      "missing-exact-predicate-observation": {
+        "target_support_occurrence_id": "support:01",
+        "difference_class": "exact-predicate-observation",
+        "difference_json_pointer": "/exact_predicate_observation_id",
+        "equal_through_validation_stage": 8,
+        "first_semantic_failure_stage": 9
+      }
+    }
+  },
   "constitutive_projection": {
     "counts": {
       "terms": 16,

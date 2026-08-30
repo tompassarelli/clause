@@ -1,65 +1,68 @@
 {
-  "schema": "clause/compiler-terms/support-candidate-v3",
+  "schema": "clause/compiler-terms/support-substitution-negative-v3",
   "context_ref": "../positive/process-occurrences.json",
-  "candidate": {
-    "support_occurrence_id": "support:self-join:collapsed",
-    "produced_by": {
-      "run_id": "run:03",
-      "activation_id": "activation:self-join:01",
-      "step_id": "step:self-join:01"
-    },
-    "law_id": "law-id:02",
-    "derivation_mode_id": "mode-id:06",
-    "exact_context_pins": {
-      "pin_set_ref": "pins:mode:06",
-      "selected_mode_id": "mode-id:06"
-    },
-    "authorization_evidence": {
-      "kind": "Constitutive",
-      "program_revision_id": "pr:01",
-      "judgment_ref": "judgment-ref:01",
-      "authorization_type": "DerivationAuthorization"
-    },
-    "ordered_premise_selections": [
-      {
-        "ordinal": 0,
-        "premise_occurrence_id": "premise-id:04",
-        "selected_occurrence_id": "assertion:target-position:07"
-      }
-    ],
-    "structural_environment": {
-      "variable:left-point": {
-        "shape": "metric/Point2Q16",
-        "x_raw": 65536,
-        "y_raw": 65536
+  "substitution": {
+    "target_support_occurrence_id": "support:self-join:01",
+    "replacement": {
+      "support_occurrence_id": "support:self-join:01",
+      "produced_by": {
+        "run_id": "run:03",
+        "activation_id": "activation:self-join:01",
+        "step_id": "step:self-join:01"
       },
-      "variable:left-target": {
-        "referent": "target:07"
+      "law_id": "law-id:02",
+      "derivation_mode_id": "mode-id:06",
+      "exact_context_pins": {
+        "pin_set_ref": "pins:mode:06",
+        "selected_mode_id": "mode-id:06"
       },
-      "variable:right-point": {
-        "shape": "metric/Point2Q16",
-        "x_raw": 65536,
-        "y_raw": 65536
+      "authorization_evidence": {
+        "kind": "Constitutive",
+        "program_revision_id": "pr:01",
+        "judgment_ref": "judgment-ref:01",
+        "authorization_type": "DerivationAuthorization"
       },
-      "variable:right-target": {
-        "referent": "target:07"
+      "ordered_premise_selections": [
+        {
+          "ordinal": 0,
+          "premise_occurrence_id": "premise-id:04",
+          "selected_occurrence_id": "assertion:target-position:07"
+        }
+      ],
+      "structural_environment": {
+        "variable:left-point": {
+          "shape": "metric/Point2Q16",
+          "x_raw": 65536,
+          "y_raw": 65536
+        },
+        "variable:left-target": {
+          "referent": "target:07"
+        },
+        "variable:right-point": {
+          "shape": "metric/Point2Q16",
+          "x_raw": 65536,
+          "y_raw": 65536
+        },
+        "variable:right-target": {
+          "referent": "target:07"
+        },
+        "variable:space": {
+          "referent": "space:01"
+        }
       },
-      "variable:space": {
-        "referent": "space:01"
-      }
-    },
-    "exact_predicate_observation_id": null,
-    "conclusion_role_bindings": {
-      "role-id:17": {
-        "variable_local_id": "variable:left-target"
+      "exact_predicate_observation_id": null,
+      "conclusion_role_bindings": {
+        "role-id:17": {
+          "variable_local_id": "variable:left-target"
+        },
+        "role-id:18": {
+          "variable_local_id": "variable:right-target"
+        },
+        "role-id:19": {
+          "variable_local_id": "variable:space"
+        }
       },
-      "role-id:18": {
-        "variable_local_id": "variable:right-target"
-      },
-      "role-id:19": {
-        "variable_local_id": "variable:space"
-      }
-    },
-    "conclusion_observation_id": "observation:self-join:01"
+      "conclusion_observation_id": "observation:self-join:01"
+    }
   }
 }

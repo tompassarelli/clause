@@ -14,8 +14,11 @@ admitted package or executable runtime.
 - position-radius.clause is the unchanged ordinary-source oracle.
 - positive/ contains exact formation, process, support, ordering, predicate,
   signed-big-endian decoding, and bounded-fallback cases.
-- negative/ contains concrete malformed candidates. Expected errors and
-  first-failure stages are kept separately in manifest.json.
+- negative/ contains concrete malformed candidates. The three support
+  negatives use a validation-only substitution envelope naming one existing
+  support occurrence; manifest.json, not the malformed payload, fixes the one
+  field/class allowed to differ and the exact prior-stage equality boundary.
+  Expected errors and first-failure stages remain separate manifest authority.
 - SHA256SUMS binds transport bytes only. A file checksum is not a Clause
   semantic identity or authority.
 
@@ -26,6 +29,11 @@ occurrences are never set-normalized. The canonical-source-order Clause pair
 permutes both blocks and facts while retaining the same graph; the
 wrong-kind-rank negative proves that a transported rank is checked before it
 can influence ordering.
+Support substitution is only a counterfactual fixture input. It never mutates
+the positive context, creates an occurrence, or supplies Clause runtime
+semantics. A substitution envelope is invalid unless its replacement retains
+the target's exact occurrence and producer identities and differs only at the
+single manifest-declared JSON Pointer.
 The process vector includes a support-only progress step: its conclusion
 Observation set stays unchanged while a fresh SupportOccurrenceId is emitted.
 Universal executable validity is separate from permission. Every Activation

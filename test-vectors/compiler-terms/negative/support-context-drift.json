@@ -1,88 +1,86 @@
 {
-  "schema": "clause/compiler-terms/support-candidate-v3",
+  "schema": "clause/compiler-terms/support-substitution-negative-v3",
   "context_ref": "../positive/process-occurrences.json",
-  "candidate": {
-    "support_occurrence_id": "support:context-drift",
-    "produced_by": {
-      "run_id": "run:01",
-      "activation_id": "activation:law:01",
-      "step_id": "step:law:emit:01"
-    },
-    "law_id": "law-id:01",
-    "derivation_mode_id": "mode-id:05",
-    "exact_context_pins": {
-      "clause_semantics_id": "sem:01",
-      "program_snapshot_id": "ps:01",
-      "program_revision_id": "pr:01",
-      "runtime_session_id": "session:01",
-      "observed_state_revision_id": "state:01",
-      "runtime_policy_id": "policy:01",
-      "selected_mode_id": "mode-id:06"
-    },
-    "authorization_evidence": {
-      "kind": "Constitutive",
-      "program_revision_id": "pr:01",
-      "judgment_ref": "judgment-ref:01",
-      "authorization_type": "DerivationAuthorization"
-    },
-    "ordered_premise_selections": [
-      {
-        "ordinal": 0,
-        "premise_occurrence_id": "premise-id:00",
-        "selected_occurrence_id": "assertion:observer-position:01"
+  "substitution": {
+    "target_support_occurrence_id": "support:01",
+    "replacement": {
+      "support_occurrence_id": "support:01",
+      "produced_by": {
+        "run_id": "run:01",
+        "activation_id": "activation:law:01",
+        "step_id": "step:law:emit:01"
       },
-      {
-        "ordinal": 1,
-        "premise_occurrence_id": "premise-id:01",
-        "selected_occurrence_id": "assertion:radius:01"
+      "law_id": "law-id:01",
+      "derivation_mode_id": "mode-id:05",
+      "exact_context_pins": {
+        "pin_set_ref": "pins:mode:05",
+        "selected_mode_id": "mode-id:05"
       },
-      {
-        "ordinal": 2,
-        "premise_occurrence_id": "premise-id:02",
-        "selected_occurrence_id": "assertion:target-position:01"
+      "authorization_evidence": {
+        "kind": "Constitutive",
+        "program_revision_id": "pr:01",
+        "judgment_ref": "judgment-ref:01",
+        "authorization_type": "DerivationAuthorization"
       },
-      {
-        "ordinal": 3,
-        "premise_occurrence_id": "premise-id:03",
-        "selected_occurrence_id": "observation:predicate:01"
-      }
-    ],
-    "structural_environment": {
-      "variable:observer": {
-        "referent": "observer:01"
+      "ordered_premise_selections": [
+        {
+          "ordinal": 0,
+          "premise_occurrence_id": "premise-id:00",
+          "selected_occurrence_id": "assertion:observer-position:01"
+        },
+        {
+          "ordinal": 1,
+          "premise_occurrence_id": "premise-id:01",
+          "selected_occurrence_id": "assertion:radius:01"
+        },
+        {
+          "ordinal": 2,
+          "premise_occurrence_id": "premise-id:02",
+          "selected_occurrence_id": "assertion:target-position:01"
+        },
+        {
+          "ordinal": 3,
+          "premise_occurrence_id": "premise-id:03",
+          "selected_occurrence_id": "observation:predicate:01"
+        }
+      ],
+      "structural_environment": {
+        "variable:observer": {
+          "referent": "observer:01"
+        },
+        "variable:observer-point": {
+          "shape": "metric/Point2Q16",
+          "x_raw": 0,
+          "y_raw": 0
+        },
+        "variable:radius": {
+          "q16_raw": 327680
+        },
+        "variable:space": {
+          "referent": "space:01"
+        },
+        "variable:target": {
+          "referent": "target:01"
+        },
+        "variable:target-point": {
+          "shape": "metric/Point2Q16",
+          "x_raw": 196609,
+          "y_raw": 262144
+        }
       },
-      "variable:observer-point": {
-        "shape": "metric/Point2Q16",
-        "x_raw": 0,
-        "y_raw": 0
+      "exact_predicate_observation_id": "observation:predicate:01",
+      "conclusion_role_bindings": {
+        "role-id:14": {
+          "variable_local_id": "variable:observer"
+        },
+        "role-id:15": {
+          "variable_local_id": "variable:target"
+        },
+        "role-id:16": {
+          "variable_local_id": "variable:space"
+        }
       },
-      "variable:radius": {
-        "q16_raw": 327680
-      },
-      "variable:space": {
-        "referent": "space:01"
-      },
-      "variable:target": {
-        "referent": "target:01"
-      },
-      "variable:target-point": {
-        "shape": "metric/Point2Q16",
-        "x_raw": 196609,
-        "y_raw": 262144
-      }
-    },
-    "exact_predicate_observation_id": "observation:predicate:01",
-    "conclusion_role_bindings": {
-      "role-id:14": {
-        "variable_local_id": "variable:observer"
-      },
-      "role-id:15": {
-        "variable_local_id": "variable:target"
-      },
-      "role-id:16": {
-        "variable_local_id": "variable:space"
-      }
-    },
-    "conclusion_observation_id": "observation:conclusion:01"
+      "conclusion_observation_id": "observation:conclusion:01"
+    }
   }
 }
