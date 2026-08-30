@@ -1,0 +1,61 @@
+{
+  "format": "position-radius-streams-v1",
+  "unit_raw": 65536,
+  "bucket_width_raw": 1048576,
+  "maximum_ball_buckets": 4096,
+  "static_cases": [
+    {
+      "id": "three-four-boundary",
+      "observer_point": [0, 0],
+      "radius": 327680,
+      "target_point": [196608, 262144],
+      "same_space": true
+    },
+    {
+      "id": "one-raw-outside",
+      "observer_point": [0, 0],
+      "radius": 327680,
+      "target_point": [196608, 262145],
+      "same_space": true
+    },
+    {
+      "id": "aabb-corner",
+      "observer_point": [0, 0],
+      "radius": 327680,
+      "target_point": [327680, 327680],
+      "same_space": true
+    },
+    {
+      "id": "zero-exact",
+      "observer_point": [-1, 1048576],
+      "radius": 0,
+      "target_point": [-1, 1048576],
+      "same_space": true
+    },
+    {
+      "id": "zero-one-away",
+      "observer_point": [-1, 1048576],
+      "radius": 0,
+      "target_point": [0, 1048576],
+      "same_space": true
+    },
+    {
+      "id": "cross-space-equal",
+      "observer_point": [7, -1048577],
+      "radius": 0,
+      "target_point": [7, -1048577],
+      "same_space": false
+    },
+    {
+      "id": "extreme-coordinate-distance",
+      "observer_point": [-2147483648, -2147483648],
+      "radius": 2147483647,
+      "target_point": [2147483647, 2147483647],
+      "same_space": true
+    }
+  ],
+  "negative_bucket_coordinates": [-1048577, -1048576, -1, 0, 1],
+  "overflow_radius_raw": 67108864,
+  "disconnected_target_rows": 16384,
+  "unrelated_rows": 16384
+}

@@ -1,0 +1,147 @@
+{
+  "format": "position-radius-normalized-graph-v1",
+  "accepted_program_ref": "accepted/program/position-radius-v1",
+  "fixed_kind": "metric/fixed-q16-16-v1",
+  "fixed_equality": "equality/byte-exact-v1",
+  "bindings": {
+    "observer": "binding/observer",
+    "target": "binding/target",
+    "space": "binding/space",
+    "observer_point": "binding/observer-point",
+    "target_point": "binding/target-point",
+    "radius": "binding/radius"
+  },
+  "physical_profile": {
+    "premise_slots": [
+      {
+        "slot_ref": "physical/premise-slot/r61",
+        "input_ref": "world/observer-position-v1"
+      },
+      {
+        "slot_ref": "physical/premise-slot/r27",
+        "input_ref": "world/proximity-radius-v1"
+      },
+      {
+        "slot_ref": "physical/premise-slot/r83",
+        "input_ref": "world/target-position-v1"
+      }
+    ],
+    "point_premise_slot_ref": "physical/premise-slot/r83",
+    "range_premise_slot_refs": [
+      "physical/premise-slot/r61",
+      "physical/premise-slot/r27"
+    ],
+    "point_input_ref": "world/target-position-v1",
+    "center_input_ref": "world/observer-position-v1",
+    "extent_input_ref": "world/proximity-radius-v1",
+    "point_x_binding_ref": "physical/role/r17",
+    "point_y_binding_ref": "physical/role/r18",
+    "center_x_binding_ref": "physical/role/r02",
+    "center_y_binding_ref": "physical/role/r03",
+    "extent_binding_ref": "physical/role/r91"
+  },
+  "relations": [
+    {
+      "relation_ref": "world/observer-position-v1",
+      "mode_ref": "mode/observer-space-to-point-one-v1",
+      "key_bindings": ["observer", "space"],
+      "value_bindings": ["observer_point"]
+    },
+    {
+      "relation_ref": "world/proximity-radius-v1",
+      "mode_ref": "mode/observer-space-to-radius-one-v1",
+      "key_bindings": ["observer", "space"],
+      "value_bindings": ["radius"]
+    },
+    {
+      "relation_ref": "world/target-position-v1",
+      "mode_ref": "mode/target-space-to-point-one-v1",
+      "key_bindings": ["target", "space"],
+      "value_bindings": ["target_point"]
+    }
+  ],
+  "materialized_law": {
+    "law_ref": "world/radius-proximity-law-v1",
+    "authorization_ref": "world/radius-proximity-forward-v1",
+    "output_relation_ref": "world/in-proximity-v1",
+    "semantic_dependencies": [
+      "world/observer-position-v1",
+      "world/proximity-radius-v1",
+      "world/target-position-v1"
+    ]
+  },
+  "range_refinement": {
+    "refinement_ref": "refinement/range-aabb-v1",
+    "predicate_mode_ref": "mode/point-point-radius-to-verdict-one-v1",
+    "exact_filter_ref": "filter/within-radius-exact-v1",
+    "superset_witness_ref": "witness/aabb-superset-candidate-v1",
+    "x_path": ["second", "second"],
+    "y_path": ["third", "second"]
+  },
+  "scan_plan": {
+    "strategy_ref": "strategy/direct-scan-v1",
+    "join_order": [
+      "world/observer-position-v1",
+      "world/proximity-radius-v1",
+      "world/target-position-v1"
+    ]
+  },
+  "grid_plan": {
+    "strategy_ref": "strategy/dual-uniform-grid-v1",
+    "bucket_width_raw": 1048576,
+    "maximum_ball_buckets": 4096,
+    "point_index_ref": "physical/point-uniform-grid-v1",
+    "range_bucket_index_ref": "physical/range-bucket-uniform-grid-v1",
+    "overflow_policy_ref": "physical/same-space-overflow-v1"
+  },
+  "invalidation": [
+    {
+      "relation_ref": "world/observer-position-v1",
+      "old_key_bindings": ["observer", "space", "observer_point"],
+      "new_key_bindings": ["observer", "space", "observer_point"],
+      "anchor_bindings": ["observer", "space"]
+    },
+    {
+      "relation_ref": "world/proximity-radius-v1",
+      "old_key_bindings": ["observer", "space", "radius"],
+      "new_key_bindings": ["observer", "space", "radius"],
+      "anchor_bindings": ["observer", "space"]
+    },
+    {
+      "relation_ref": "world/target-position-v1",
+      "old_key_bindings": ["target", "space", "target_point"],
+      "new_key_bindings": ["target", "space", "target_point"],
+      "anchor_bindings": ["target", "space"]
+    }
+  ],
+  "counter_schema": [
+    "counter/scan-bound-support-visits",
+    "counter/build-dependency-rows",
+    "counter/build-point-bucket-writes",
+    "counter/build-range-bucket-writes",
+    "counter/build-candidate-pair-visits",
+    "counter/delta-rows",
+    "counter/dependency-misses",
+    "counter/admission-row-clones",
+    "counter/admission-history-clones",
+    "counter/admission-support-handles-cloned",
+    "counter/transaction-snapshots",
+    "counter/transaction-endpoint-rows-cloned",
+    "counter/transaction-index-entries-cloned",
+    "counter/transaction-support-handles-cloned",
+    "counter/grid-bucket-reads",
+    "counter/grid-membership-writes",
+    "counter/candidate-pair-visits",
+    "counter/bound-support-lookups",
+    "counter/bound-support-changes",
+    "counter/support-adds",
+    "counter/support-removes",
+    "counter/view-admits",
+    "counter/view-withdraws",
+    "counter/overflow-range-visits",
+    "counter/fallback-point-row-visits",
+    "counter/full-world-scans",
+    "counter/fallback-activations",
+    "counter/fallback-allocation-failures"
+  ]
+}

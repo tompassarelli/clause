@@ -1,0 +1,24 @@
+{
+  "format": "position-radius-expected-v1",
+  "included_case_ids": ["three-four-boundary", "zero-exact"],
+  "excluded_case_ids": [
+    "one-raw-outside",
+    "aabb-corner",
+    "zero-one-away",
+    "cross-space-equal",
+    "extreme-coordinate-distance"
+  ],
+  "mutation_gates": [
+    "strict-boundary-comparison",
+    "aabb-as-truth",
+    "truncating-negative-division",
+    "omitted-radius-invalidation",
+    "omitted-old-observer-ball-invalidation",
+    "omitted-target-observer-lookup",
+    "dropped-space-key",
+    "narrowed-squared-distance",
+    "swapped-output-projection",
+    "collapsed-support-set",
+    "spelling-based-dispatch"
+  ]
+}

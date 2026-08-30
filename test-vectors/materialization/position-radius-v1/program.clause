@@ -1,0 +1,32 @@
+referent Observer
+referent Target
+referent Space
+
+relation observer-position-v1
+  reads {observer: Observer, space: Space}
+  has {point: point2-v1}
+  subject observer
+  mode given observer, space yields point: one
+
+relation target-position-v1
+  reads {target: Target, space: Space}
+  has {point: point2-v1}
+  subject target
+  mode given target, space yields point: one
+
+relation proximity-radius-v1
+  reads {observer: Observer, space: Space}
+  has {radius: nonnegative-q16-16-v1}
+  subject observer
+  mode given observer, space yields radius: one
+
+law radius-proximity-law-v1
+  if
+    ?observer has observer-position ?observer-point in ?space
+    ?observer has proximity-radius ?radius in ?space
+    ?target has target-position ?target-point in ?space
+    within-radius-v1 ?target-point ?observer-point ?radius
+  then
+    ?observer has in-proximity ?target in ?space
+
+derive radius-proximity-law-v1

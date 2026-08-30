@@ -1,0 +1,69 @@
+{
+  "format": "position-radius-source-context-v1",
+  "bindings": [
+    {
+      "source_kind": "relation",
+      "local_designation": "observer-position-v1",
+      "opaque_ref": "world/observer-position-v1",
+      "normalized_graph_paths": [
+        "/physical_profile/premise_slots/0/input_ref",
+        "/physical_profile/center_input_ref",
+        "/relations/0/relation_ref",
+        "/materialized_law/semantic_dependencies/0",
+        "/scan_plan/join_order/0",
+        "/invalidation/0/relation_ref"
+      ]
+    },
+    {
+      "source_kind": "relation",
+      "local_designation": "target-position-v1",
+      "opaque_ref": "world/target-position-v1",
+      "normalized_graph_paths": [
+        "/physical_profile/premise_slots/2/input_ref",
+        "/physical_profile/point_input_ref",
+        "/relations/2/relation_ref",
+        "/materialized_law/semantic_dependencies/2",
+        "/scan_plan/join_order/2",
+        "/invalidation/2/relation_ref"
+      ]
+    },
+    {
+      "source_kind": "relation",
+      "local_designation": "proximity-radius-v1",
+      "opaque_ref": "world/proximity-radius-v1",
+      "normalized_graph_paths": [
+        "/physical_profile/premise_slots/1/input_ref",
+        "/physical_profile/extent_input_ref",
+        "/relations/1/relation_ref",
+        "/materialized_law/semantic_dependencies/1",
+        "/scan_plan/join_order/1",
+        "/invalidation/1/relation_ref"
+      ]
+    },
+    {
+      "source_kind": "law",
+      "local_designation": "radius-proximity-law-v1",
+      "opaque_ref": "world/radius-proximity-law-v1",
+      "normalized_graph_paths": [
+        "/materialized_law/law_ref"
+      ]
+    }
+  ],
+  "unbound_local_designations": [
+    {
+      "source_kind": "type-use",
+      "local_designation": "point2-v1",
+      "status": "unbound-unknown"
+    },
+    {
+      "source_kind": "type-use",
+      "local_designation": "nonnegative-q16-16-v1",
+      "status": "unbound-unknown"
+    },
+    {
+      "source_kind": "operator-use",
+      "local_designation": "within-radius-v1",
+      "status": "unbound-unknown"
+    }
+  ]
+}
