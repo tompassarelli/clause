@@ -7,7 +7,7 @@ use std::fmt;
 
 use sha2::{Digest, Sha256};
 
-use crate::compiler_package_v2::{
+use crate::compiler_package_v3::{
     Id32, KValue, MAX_TERM_NODES, MAX_WIRE_ITEMS, Term, sha256_operation_id, try_copy_bytes,
 };
 
@@ -17,7 +17,7 @@ const K_ID32: &[u8] = b"clause/core-abi/id32/v1";
 const K_U64: &[u8] = b"clause/core-abi/u64/v1";
 const K_EQ: &[u8] = b"clause/core/bytes-equal/v1";
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct PhysicalObservation {
     pub index: u64,
     pub operation_id: Id32,
@@ -25,7 +25,7 @@ pub struct PhysicalObservation {
     pub result: KValue,
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Debug, Default, Eq, PartialEq)]
 pub struct ObservationLog {
     items: Vec<PhysicalObservation>,
 }
@@ -203,7 +203,7 @@ fn value_term(value: &KValue) -> Result<Term, PhysicalError> {
     }
 }
 
-/// Canonical fixed-Core-ABI observations for certificate statements and
+/// Canonical fixed-Core-ABI observations for receipt commitments and
 /// judgments.
 pub fn observations_term(observations: &[PhysicalObservation]) -> Result<Term, PhysicalError> {
     if observations.len() > MAX_WIRE_ITEMS {

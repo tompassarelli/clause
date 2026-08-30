@@ -5,9 +5,8 @@
 //! lookup aids rather than exact-byte authority.
 
 use std::fmt;
-use std::sync::Arc;
 
-use crate::compiler_package_v2::{
+use crate::compiler_package_v3::{
     DecodeFailure, DecodedCompilerPackage, Hash32, compiler_package_hash, decode,
     source_artifact_id,
 };
@@ -15,11 +14,11 @@ use crate::compiler_package_v2::{
 #[derive(Debug)]
 pub struct ImmutableArtifact {
     id: Hash32,
-    bytes: Arc<[u8]>,
+    bytes: Vec<u8>,
 }
 
 impl ImmutableArtifact {
-    fn new(id: Hash32, bytes: Arc<[u8]>) -> Self {
+    fn new(id: Hash32, bytes: Vec<u8>) -> Self {
         Self { id, bytes }
     }
 
@@ -36,7 +35,7 @@ impl ImmutableArtifact {
 
 #[derive(Debug, Default)]
 pub struct ArtifactStore {
-    artifacts: Vec<(Hash32, Arc<ImmutableArtifact>)>,
+    artifacts: Vec<(Hash32, ImmutableArtifact)>,
 }
 
 impl ArtifactStore {
@@ -45,70 +44,81 @@ impl ArtifactStore {
         Self::default()
     }
 
-    pub fn intern_source(
-        &mut self,
-        bytes: impl Into<Arc<[u8]>>,
-    ) -> Result<Arc<ImmutableArtifact>, ArtifactError> {
-        let bytes = bytes.into();
-        self.intern_with_id(source_artifact_id(&bytes), bytes)
+    pub fn intern_source(&mut self, bytes: &[u8]) -> Result<&ImmutableArtifact, ArtifactError> {
+        self.intern_with_id(source_artifact_id(bytes), bytes)
     }
 
     fn intern_compiler_package(
         &mut self,
-        bytes: impl Into<Arc<[u8]>>,
-    ) -> Result<Arc<ImmutableArtifact>, ArtifactError> {
-        let bytes = bytes.into();
-        self.intern_with_id(compiler_package_hash(&bytes), bytes)
+        bytes: &[u8],
+    ) -> Result<&ImmutableArtifact, ArtifactError> {
+        self.intern_with_id(compiler_package_hash(bytes), bytes)
     }
 
     fn intern_with_id(
         &mut self,
         id: Hash32,
-        bytes: Arc<[u8]>,
-    ) -> Result<Arc<ImmutableArtifact>, ArtifactError> {
-        let candidate = ImmutableArtifact::new(id, bytes);
+        bytes: &[u8],
+    ) -> Result<&ImmutableArtifact, ArtifactError> {
         let position = self
             .artifacts
-            .binary_search_by_key(&candidate.id, |(id, _)| *id);
-        if let Ok(index) = position {
-            let existing = &self.artifacts[index].1;
-            if existing.exact_bytes() != candidate.exact_bytes() {
-                return Err(ArtifactError::HashCollision(candidate.id));
+            .binary_search_by_key(&id, |(candidate, _)| *candidate);
+        match position {
+            Ok(index) => {
+                let existing = self
+                    .artifacts
+                    .get(index)
+                    .map(|(_, artifact)| artifact)
+                    .ok_or(ArtifactError::ResourceExhausted)?;
+                if existing.exact_bytes() != bytes {
+                    return Err(ArtifactError::HashCollision(id));
+                }
+                Ok(existing)
             }
-            return Ok(Arc::clone(existing));
+            Err(index) => {
+                if index > self.artifacts.len() {
+                    return Err(ArtifactError::ResourceExhausted);
+                }
+                self.artifacts
+                    .try_reserve(1)
+                    .map_err(|_| ArtifactError::ResourceExhausted)?;
+                let mut exact_bytes = Vec::new();
+                exact_bytes
+                    .try_reserve_exact(bytes.len())
+                    .map_err(|_| ArtifactError::ResourceExhausted)?;
+                exact_bytes.extend_from_slice(bytes);
+                self.artifacts
+                    .insert(index, (id, ImmutableArtifact::new(id, exact_bytes)));
+                self.artifacts
+                    .get(index)
+                    .map(|(_, artifact)| artifact)
+                    .ok_or(ArtifactError::ResourceExhausted)
+            }
         }
-        self.artifacts
-            .try_reserve(1)
-            .map_err(|_| ArtifactError::ResourceExhausted)?;
-        let candidate = Arc::new(candidate);
-        self.artifacts.insert(
-            position.expect_err("successful search returned before insertion"),
-            (candidate.id, Arc::clone(&candidate)),
-        );
-        Ok(candidate)
     }
 
     #[must_use]
-    pub fn get(&self, id: Hash32) -> Option<Arc<ImmutableArtifact>> {
+    pub fn get(&self, id: Hash32) -> Option<&ImmutableArtifact> {
         self.artifacts
             .binary_search_by_key(&id, |(candidate, _)| *candidate)
             .ok()
-            .map(|index| Arc::clone(&self.artifacts[index].1))
+            .and_then(|index| self.artifacts.get(index))
+            .map(|(_, artifact)| artifact)
     }
 }
 
-/// Exact immutable CLCP-v2 bytes paired with their candidate-only strict
+/// Exact immutable CLCP-v3 bytes paired with their candidate-only strict
 /// decode. This type intentionally has no accepted/authorized state.
 #[derive(Debug)]
-pub struct CompilerPackageArtifact {
-    artifact: Arc<ImmutableArtifact>,
+pub struct CompilerPackageArtifact<'a> {
+    artifact: &'a ImmutableArtifact,
     candidate: DecodedCompilerPackage,
 }
 
-impl CompilerPackageArtifact {
+impl<'a> CompilerPackageArtifact<'a> {
     pub fn decode_and_intern(
-        store: &mut ArtifactStore,
-        bytes: impl Into<Arc<[u8]>>,
+        store: &'a mut ArtifactStore,
+        bytes: &[u8],
     ) -> Result<Self, CompilerArtifactError> {
         let artifact = store
             .intern_compiler_package(bytes)
@@ -121,8 +131,8 @@ impl CompilerPackageArtifact {
     }
 
     #[must_use]
-    pub fn artifact(&self) -> &Arc<ImmutableArtifact> {
-        &self.artifact
+    pub const fn artifact(&self) -> &ImmutableArtifact {
+        self.artifact
     }
 
     #[must_use]

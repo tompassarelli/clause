@@ -1,8 +1,10 @@
-class	reachable_sites	package_tainted_sites	code_target_count
-WireCodec	1477	1222	199
-CoreABI	110	98	29
-ByteMachine	10	10	1
-DefinitionTable	18	12	16
-KernelStep	577	459	102
-CertificateStep	259	220	49
-PhysicalDispatch	26	18	17
+schema	source_sha256	mir_sha256	cargo_lock_sha256	cargo_manifest_sha256	rustc_sha256	cfg_sha256	features	binding_sha256	root_count	context_count	site_count	fixed_handlers
+clause-host-mechanics-mir-v2	0e0163287598978d93551a36b7420077d9f09fd2b161a92f1888b36f472835f8	a48873bd209c7cbcdf6bd835767eda59ab8a2da1a4f0f359125c46b0b67e04fa	15a2cf599c74b621fcdd6617605dfef7574fcaccae5dbbd85affc7e4d485066d	ad7a02e673a694326d5b8d06a4051532d72d12add6ad60b730baa90bc0245828	2af3376cb254e69564e00978cada767f05432a299af78300c47d14c103366c1e	0ba2024cc3e469eee8723fd79fb933e48905e93862852310d993a30ccadce81e	-	df524cc738230e8c344474c4003c853089ab236fd38d458409dbc4d1fffd8b58	8	347	4815	<CoreWrapper<CtVariableCoreWrapper<Sha256VarCore, UInt<UInt<UInt<UInt<UInt<UInt<UTerm, B1>, B0>, B0>, B0>, B0>, B0>, sha2::OidSha256>> as Digest>::digest::<&Vec<u8>>
+class	reachable_sites	package_influenced_sites	resolved_target_count
+wire-codec	2191	1454	529
+core-abi	586	265	230
+byte-machine	75	73	58
+definition-table	23	23	28
+kernel-step	1877	1487	559
+receipt-step	29	29	25
+physical-dispatch	34	22	35

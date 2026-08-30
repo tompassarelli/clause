@@ -1,7 +1,7 @@
 use super::*;
 
 const MAGIC: &[u8; 4] = b"CLCP";
-const VERSION: u8 = 0x02;
+const VERSION: u8 = 0x03;
 
 struct EncodeBudget {
     items: usize,
@@ -198,11 +198,6 @@ fn encode_core_manifest_value_with_budget(
     encode_u8_sequence(&mut encoder, "value tags", &manifest.value_tags)?;
     encode_u8_sequence(
         &mut encoder,
-        "evaluation outcome tags",
-        &manifest.eval_outcome_tags,
-    )?;
-    encode_u8_sequence(
-        &mut encoder,
         "decode verdict tags",
         &manifest.decode_verdict_tags,
     )?;
@@ -227,8 +222,8 @@ fn encode_core_manifest_value_with_budget(
         &manifest.evaluation_rules,
         encode_rule_signature,
     )?;
-    encoder.u8(manifest.certificate_format_version)?;
-    encoder.blob("certificate signature", &manifest.certificate_signature)?;
+    encoder.u8(manifest.receipt_format_version)?;
+    encoder.blob("receipt signature", &manifest.receipt_signature)?;
     encoder.sequence(
         "contract clauses",
         &manifest.contract_clauses,
@@ -562,19 +557,17 @@ fn push_encode_expression<'a>(
 }
 
 fn encode_term_depth(current_depth: usize) -> Result<usize, EncodeError> {
-    if current_depth >= MAX_TERM_DEPTH {
-        Err(EncodeError::ResourceExhausted)
-    } else {
-        Ok(current_depth + 1)
-    }
+    current_depth
+        .checked_add(1)
+        .filter(|depth| *depth <= MAX_TERM_DEPTH)
+        .ok_or(EncodeError::ResourceExhausted)
 }
 
 fn encode_expression_depth(current_depth: usize) -> Result<usize, EncodeError> {
-    if current_depth >= MAX_EXPRESSION_DEPTH {
-        Err(EncodeError::ResourceExhausted)
-    } else {
-        Ok(current_depth + 1)
-    }
+    current_depth
+        .checked_add(1)
+        .filter(|depth| *depth <= MAX_EXPRESSION_DEPTH)
+        .ok_or(EncodeError::ResourceExhausted)
 }
 
 fn encode_subject_value(
@@ -603,6 +596,18 @@ fn encode_subject_value(
     encoder.sequence("definitions", &subject.program, encode_definition)?;
     encode_term(&mut encoder, &subject.build_request, 0)?;
     Ok(encoder.bytes)
+}
+
+pub(crate) fn canonical_subject_bytes(subject: &CompilerSubject) -> Result<Vec<u8>, EncodeError> {
+    let mut budget = EncodeBudget::new();
+    encode_subject_value(subject, &mut budget)
+}
+
+pub(crate) fn canonical_evidence_bytes(
+    evidence: &CompilerEvidence,
+) -> Result<Vec<u8>, EncodeError> {
+    let mut budget = EncodeBudget::new();
+    encode_evidence_value(evidence, &mut budget)
 }
 
 fn encode_nominal_declaration(
@@ -673,58 +678,28 @@ fn encode_evidence_value(
     match evidence {
         CompilerEvidence::Genesis => encoder.u8(0x00)?,
         CompilerEvidence::Successor {
-            compile_certificate,
-            admission_certificate,
+            compile_receipt,
+            admission_receipt,
         } => {
             encoder.u8(0x01)?;
-            encode_certificate(&mut encoder, compile_certificate)?;
-            encode_certificate(&mut encoder, admission_certificate)?;
+            encode_receipt(&mut encoder, compile_receipt)?;
+            encode_receipt(&mut encoder, admission_receipt)?;
         }
     }
     Ok(encoder.bytes)
 }
 
-fn encode_certificate(
-    encoder: &mut Encoder<'_>,
-    certificate: &EvalCertificate,
-) -> Result<(), EncodeError> {
-    if certificate.format_version != 0x00 {
+fn encode_receipt(encoder: &mut Encoder<'_>, receipt: &EvalReceipt) -> Result<(), EncodeError> {
+    if receipt.format_version != 0x00 {
         return Err(EncodeError::InvalidClosedTag {
-            field: "certificate format version",
-            tag: certificate.format_version,
+            field: "receipt format version",
+            tag: receipt.format_version,
         });
     }
-    encoder.u8(certificate.format_version)?;
-    encode_statement(encoder, &certificate.statement)?;
-    encoder.sequence("evaluation nodes", &certificate.nodes, |encoder, node| {
-        if !(0x30..=0x3e).contains(&node.rule_tag) {
-            return Err(EncodeError::InvalidClosedTag {
-                field: "evaluation rule",
-                tag: node.rule_tag,
-            });
-        }
-        encoder.u8(node.rule_tag)?;
-        encoder.sequence("node premises", &node.premises, |encoder, premise| {
-            encoder.u32(*premise)
-        })?;
-        encode_judgment(encoder, &node.conclusion)
-    })
-}
-
-fn encode_statement(
-    encoder: &mut Encoder<'_>,
-    statement: &EvalStatement,
-) -> Result<(), EncodeError> {
-    encoder.blob(
-        "accepted predecessor",
-        &statement.exact_accepted_predecessor,
-    )?;
-    encoder.fixed(statement.core_contract_id.as_bytes())?;
-    encoder.fixed(statement.physical_profile_id.as_bytes())?;
-    encoder.fixed(statement.entrypoint.as_bytes())?;
-    encoder.sequence("statement arguments", &statement.arguments, encode_value)?;
-    encoder.u64(statement.fuel_limit)?;
-    encode_outcome(encoder, &statement.expected)
+    encoder.u8(receipt.format_version)?;
+    encoder.fixed(receipt.expected_value_hash.as_bytes())?;
+    encoder.u64(receipt.expected_remaining_fuel)?;
+    encoder.fixed(receipt.expected_observations_hash.as_bytes())
 }
 
 fn encode_value(encoder: &mut Encoder<'_>, value: &KValue) -> Result<(), EncodeError> {
@@ -740,29 +715,18 @@ fn encode_value(encoder: &mut Encoder<'_>, value: &KValue) -> Result<(), EncodeE
     }
 }
 
-fn encode_outcome(encoder: &mut Encoder<'_>, outcome: &EvalOutcome) -> Result<(), EncodeError> {
-    match outcome {
-        EvalOutcome::Returned {
-            value,
-            remaining_fuel,
-            observations,
-        } => {
-            encoder.u8(0x00)?;
-            encode_value(encoder, value)?;
-            encoder.u64(*remaining_fuel)?;
-            encode_term(encoder, observations, 0)
-        }
-    }
+pub(crate) fn canonical_value_bytes(value: &KValue) -> Result<Vec<u8>, EncodeError> {
+    let mut budget = EncodeBudget::new();
+    let mut encoder = Encoder::new(&mut budget)?;
+    encode_value(&mut encoder, value)?;
+    Ok(encoder.bytes)
 }
 
-fn encode_judgment(encoder: &mut Encoder<'_>, judgment: &EvalJudgment) -> Result<(), EncodeError> {
-    encode_expr(encoder, &judgment.expression, 0)?;
-    encoder.sequence("judgment environment", &judgment.environment, encode_value)?;
-    encoder.u64(judgment.fuel_before)?;
-    encode_term(encoder, &judgment.observations_before, 0)?;
-    encode_value(encoder, &judgment.value)?;
-    encoder.u64(judgment.fuel_after)?;
-    encode_term(encoder, &judgment.observations_after, 0)
+pub(crate) fn canonical_term_bytes(value: &Term) -> Result<Vec<u8>, EncodeError> {
+    let mut budget = EncodeBudget::new();
+    let mut encoder = Encoder::new(&mut budget)?;
+    encode_term(&mut encoder, value, 0)?;
+    Ok(encoder.bytes)
 }
 
 #[derive(Clone, Copy)]
@@ -836,10 +800,8 @@ impl<'a> Cursor<'a> {
     }
 
     fn rejection(&self, code: DecodeCode, offset: usize) -> DecodeFailure {
-        DecodeFailure::Rejected(DecodeRejection {
-            code,
-            offset: u64::try_from(offset).expect("slice offset fits U64"),
-        })
+        let offset = u64::try_from(offset).map_or(u64::MAX, |offset| offset);
+        DecodeFailure::Rejected(DecodeRejection { code, offset })
     }
 
     fn read(&mut self, length: usize) -> Result<&'a [u8], DecodeFailure> {
@@ -860,44 +822,43 @@ impl<'a> Cursor<'a> {
             };
             return Err(self.rejection(code, offset));
         }
-        let value = &self.input[self.offset..end];
+        let value = self
+            .input
+            .get(self.offset..end)
+            .ok_or_else(|| self.rejection(DecodeCode::Truncated, self.offset))?;
         self.offset = end;
         Ok(value)
     }
 
     fn u8(&mut self) -> Result<u8, DecodeFailure> {
-        Ok(self.read(1)?[0])
+        let offset = self.offset;
+        self.read(1)?
+            .first()
+            .copied()
+            .ok_or_else(|| self.rejection(DecodeCode::Truncated, offset))
     }
 
     fn u32(&mut self) -> Result<u32, DecodeFailure> {
-        let bytes: [u8; 4] = self
-            .read(4)?
-            .try_into()
-            .expect("read returned exact U32 width");
+        let failure = self.rejection(DecodeCode::Truncated, self.offset);
+        let bytes: [u8; 4] = self.read(4)?.try_into().map_err(|_| failure)?;
         Ok(u32::from_be_bytes(bytes))
     }
 
     fn u64(&mut self) -> Result<u64, DecodeFailure> {
-        let bytes: [u8; 8] = self
-            .read(8)?
-            .try_into()
-            .expect("read returned exact U64 width");
+        let failure = self.rejection(DecodeCode::Truncated, self.offset);
+        let bytes: [u8; 8] = self.read(8)?.try_into().map_err(|_| failure)?;
         Ok(u64::from_be_bytes(bytes))
     }
 
     fn id32(&mut self) -> Result<Id32, DecodeFailure> {
-        let bytes: [u8; 32] = self
-            .read(32)?
-            .try_into()
-            .expect("read returned exact Id32 width");
+        let failure = self.rejection(DecodeCode::Truncated, self.offset);
+        let bytes: [u8; 32] = self.read(32)?.try_into().map_err(|_| failure)?;
         Ok(Id32(bytes))
     }
 
     fn hash32(&mut self) -> Result<Hash32, DecodeFailure> {
-        let bytes: [u8; 32] = self
-            .read(32)?
-            .try_into()
-            .expect("read returned exact Hash32 width");
+        let failure = self.rejection(DecodeCode::Truncated, self.offset);
+        let bytes: [u8; 32] = self.read(32)?.try_into().map_err(|_| failure)?;
         Ok(Hash32(bytes))
     }
 
@@ -1027,15 +988,14 @@ fn decode_core_manifest_value(cursor: &mut Cursor<'_>) -> Result<CoreManifest, D
         nominal_declaration_tags: cursor.sequence(|cursor| cursor.u8())?,
         compiler_evidence_tags: cursor.sequence(|cursor| cursor.u8())?,
         value_tags: cursor.sequence(|cursor| cursor.u8())?,
-        eval_outcome_tags: cursor.sequence(|cursor| cursor.u8())?,
         decode_verdict_tags: cursor.sequence(|cursor| cursor.u8())?,
         decode_code_tags: cursor.sequence(|cursor| cursor.u8())?,
         authorization_stage_tags: cursor.sequence(|cursor| cursor.u8())?,
         authorization_code_tags: cursor.sequence(|cursor| cursor.u8())?,
         static_rules: cursor.sequence(decode_rule_signature)?,
         evaluation_rules: cursor.sequence(decode_rule_signature)?,
-        certificate_format_version: cursor.u8()?,
-        certificate_signature: cursor.blob()?,
+        receipt_format_version: cursor.u8()?,
+        receipt_signature: cursor.blob()?,
         contract_clauses: cursor.sequence(|cursor| cursor.blob())?,
         physical_profile: decode_physical_profile(cursor)?,
     })
@@ -1084,19 +1044,19 @@ fn decode_sort(cursor: &mut Cursor<'_>) -> Result<KSort, DecodeFailure> {
 }
 
 fn term_depth(next: usize) -> Result<usize, DecodeFailure> {
-    if next >= MAX_TERM_DEPTH {
-        Err(DecodeFailure::ResourceExhausted)
-    } else {
-        Ok(next + 1)
-    }
+    next.checked_add(1)
+        .filter(|depth| *depth <= MAX_TERM_DEPTH)
+        .ok_or(DecodeFailure::ResourceExhausted)
 }
 
 fn expression_depth(next: usize) -> Result<usize, DecodeFailure> {
-    if next >= MAX_EXPRESSION_DEPTH {
-        Err(DecodeFailure::ResourceExhausted)
-    } else {
-        Ok(next + 1)
-    }
+    next.checked_add(1)
+        .filter(|depth| *depth <= MAX_EXPRESSION_DEPTH)
+        .ok_or(DecodeFailure::ResourceExhausted)
+}
+
+fn decode_box<T>(value: T) -> Result<FallibleBox<T>, DecodeFailure> {
+    FallibleBox::try_new(value).map_err(|_| DecodeFailure::ResourceExhausted)
 }
 
 fn decode_term(cursor: &mut Cursor<'_>, current_depth: usize) -> Result<Term, DecodeFailure> {
@@ -1109,11 +1069,12 @@ fn decode_term(cursor: &mut Cursor<'_>, current_depth: usize) -> Result<Term, De
             canonical_payload: cursor.blob()?,
             equality_contract: cursor.blob()?,
         }),
-        0x01 => Ok(Term::Triple(
-            Box::new(decode_term(cursor, next_depth)?),
-            Box::new(decode_term(cursor, next_depth)?),
-            Box::new(decode_term(cursor, next_depth)?),
-        )),
+        0x01 => {
+            let first = decode_box(decode_term(cursor, next_depth)?)?;
+            let second = decode_box(decode_term(cursor, next_depth)?)?;
+            let third = decode_box(decode_term(cursor, next_depth)?)?;
+            Ok(Term::Triple(first, second, third))
+        }
         _ => Err(unknown(cursor, offset)),
     }
 }
@@ -1254,9 +1215,9 @@ fn decode_expr(cursor: &mut Cursor<'_>, current_depth: usize) -> Result<KExpr, D
                         let payload = pop_decoded_expression(&mut results)?;
                         let kind = pop_decoded_expression(&mut results)?;
                         KExpr::MakeAtom {
-                            kind: Box::new(kind),
-                            payload: Box::new(payload),
-                            equality: Box::new(equality),
+                            kind: decode_box(kind)?,
+                            payload: decode_box(payload)?,
+                            equality: decode_box(equality)?,
                         }
                     }
                     FixedExpression::MakeTriple => {
@@ -1264,17 +1225,17 @@ fn decode_expr(cursor: &mut Cursor<'_>, current_depth: usize) -> Result<KExpr, D
                         let second = pop_decoded_expression(&mut results)?;
                         let first = pop_decoded_expression(&mut results)?;
                         KExpr::MakeTriple {
-                            first: Box::new(first),
-                            second: Box::new(second),
-                            third: Box::new(third),
+                            first: decode_box(first)?,
+                            second: decode_box(second)?,
+                            third: decode_box(third)?,
                         }
                     }
                     FixedExpression::Let => {
                         let body = pop_decoded_expression(&mut results)?;
                         let value = pop_decoded_expression(&mut results)?;
                         KExpr::Let {
-                            value: Box::new(value),
-                            body: Box::new(body),
+                            value: decode_box(value)?,
+                            body: decode_box(body)?,
                         }
                     }
                     FixedExpression::CaseTerm => {
@@ -1282,9 +1243,9 @@ fn decode_expr(cursor: &mut Cursor<'_>, current_depth: usize) -> Result<KExpr, D
                         let atom_body = pop_decoded_expression(&mut results)?;
                         let scrutinee = pop_decoded_expression(&mut results)?;
                         KExpr::CaseTerm {
-                            scrutinee: Box::new(scrutinee),
-                            atom_body: Box::new(atom_body),
-                            triple_body: Box::new(triple_body),
+                            scrutinee: decode_box(scrutinee)?,
+                            atom_body: decode_box(atom_body)?,
+                            triple_body: decode_box(triple_body)?,
                         }
                     }
                     FixedExpression::CaseBytes => {
@@ -1292,9 +1253,9 @@ fn decode_expr(cursor: &mut Cursor<'_>, current_depth: usize) -> Result<KExpr, D
                         let empty_body = pop_decoded_expression(&mut results)?;
                         let scrutinee = pop_decoded_expression(&mut results)?;
                         KExpr::CaseBytes {
-                            scrutinee: Box::new(scrutinee),
-                            empty_body: Box::new(empty_body),
-                            cons_body: Box::new(cons_body),
+                            scrutinee: decode_box(scrutinee)?,
+                            empty_body: decode_box(empty_body)?,
+                            cons_body: decode_box(cons_body)?,
                         }
                     }
                     FixedExpression::CaseBytesEqual => {
@@ -1303,10 +1264,10 @@ fn decode_expr(cursor: &mut Cursor<'_>, current_depth: usize) -> Result<KExpr, D
                         let right = pop_decoded_expression(&mut results)?;
                         let left = pop_decoded_expression(&mut results)?;
                         KExpr::CaseBytesEqual {
-                            left: Box::new(left),
-                            right: Box::new(right),
-                            equal_body: Box::new(equal_body),
-                            unequal_body: Box::new(unequal_body),
+                            left: decode_box(left)?,
+                            right: decode_box(right)?,
+                            equal_body: decode_box(equal_body)?,
+                            unequal_body: decode_box(unequal_body)?,
                         }
                     }
                 };
@@ -1354,11 +1315,14 @@ fn decode_expr(cursor: &mut Cursor<'_>, current_depth: usize) -> Result<KExpr, D
                     .try_reserve(1)
                     .map_err(|_| DecodeFailure::ResourceExhausted)?;
                 values.push(value);
+                let remaining = remaining
+                    .checked_sub(1)
+                    .ok_or(DecodeFailure::ResourceExhausted)?;
                 push_decode_expression(
                     &mut tasks,
                     DecodeExpressionTask::Sequence {
                         kind,
-                        remaining: remaining - 1,
+                        remaining,
                         depth,
                         values,
                     },
@@ -1378,7 +1342,10 @@ fn schedule_fixed_expression(
     children: usize,
     depth: usize,
 ) -> Result<(), DecodeFailure> {
-    reserve_decode_expressions(tasks, children + 1)?;
+    let additional = children
+        .checked_add(1)
+        .ok_or(DecodeFailure::ResourceExhausted)?;
+    reserve_decode_expressions(tasks, additional)?;
     tasks.push(DecodeExpressionTask::BuildFixed(kind));
     for _ in 0..children {
         tasks.push(DecodeExpressionTask::Read { depth });
@@ -1497,81 +1464,28 @@ fn decode_evidence_value(cursor: &mut Cursor<'_>) -> Result<CompilerEvidence, De
     let offset = cursor.offset;
     match cursor.u8()? {
         0x00 => Ok(CompilerEvidence::Genesis),
-        0x01 => Ok(CompilerEvidence::Successor {
-            compile_certificate: Box::new(decode_certificate(cursor)?),
-            admission_certificate: Box::new(decode_certificate(cursor)?),
-        }),
+        0x01 => {
+            let compile_receipt = decode_receipt(cursor)?;
+            let admission_receipt = decode_receipt(cursor)?;
+            Ok(CompilerEvidence::Successor {
+                compile_receipt,
+                admission_receipt,
+            })
+        }
         _ => Err(unknown(cursor, offset)),
     }
 }
 
-fn decode_certificate(cursor: &mut Cursor<'_>) -> Result<EvalCertificate, DecodeFailure> {
+fn decode_receipt(cursor: &mut Cursor<'_>) -> Result<EvalReceipt, DecodeFailure> {
     let format_offset = cursor.offset;
     let format_version = cursor.u8()?;
     if format_version != 0x00 {
         return Err(unknown(cursor, format_offset));
     }
-    Ok(EvalCertificate {
+    Ok(EvalReceipt {
         format_version,
-        statement: decode_statement(cursor)?,
-        nodes: cursor.sequence(decode_node)?,
-    })
-}
-
-fn decode_statement(cursor: &mut Cursor<'_>) -> Result<EvalStatement, DecodeFailure> {
-    Ok(EvalStatement {
-        exact_accepted_predecessor: cursor.blob()?,
-        core_contract_id: cursor.hash32()?,
-        physical_profile_id: cursor.hash32()?,
-        entrypoint: cursor.id32()?,
-        arguments: cursor.sequence(decode_value)?,
-        fuel_limit: cursor.u64()?,
-        expected: decode_outcome(cursor)?,
-    })
-}
-
-fn decode_value(cursor: &mut Cursor<'_>) -> Result<KValue, DecodeFailure> {
-    let offset = cursor.offset;
-    match cursor.u8()? {
-        0x00 => Ok(KValue::Bytes(cursor.blob()?)),
-        0x01 => Ok(KValue::Term(decode_term(cursor, 0)?)),
-        _ => Err(unknown(cursor, offset)),
-    }
-}
-
-fn decode_outcome(cursor: &mut Cursor<'_>) -> Result<EvalOutcome, DecodeFailure> {
-    let offset = cursor.offset;
-    match cursor.u8()? {
-        0x00 => Ok(EvalOutcome::Returned {
-            value: decode_value(cursor)?,
-            remaining_fuel: cursor.u64()?,
-            observations: decode_term(cursor, 0)?,
-        }),
-        _ => Err(unknown(cursor, offset)),
-    }
-}
-
-fn decode_node(cursor: &mut Cursor<'_>) -> Result<EvalNode, DecodeFailure> {
-    let rule_offset = cursor.offset;
-    let rule_tag = cursor.u8()?;
-    if !(0x30..=0x3e).contains(&rule_tag) {
-        return Err(unknown(cursor, rule_offset));
-    }
-    Ok(EvalNode {
-        rule_tag,
-        premises: cursor.sequence(|cursor| cursor.u32())?,
-        conclusion: decode_judgment(cursor)?,
-    })
-}
-
-fn decode_judgment(cursor: &mut Cursor<'_>) -> Result<EvalJudgment, DecodeFailure> {
-    Ok(EvalJudgment {
-        expression: decode_expr(cursor, 0)?,
-        environment: cursor.sequence(decode_value)?,
-        fuel_before: cursor.u64()?,
-        observations_before: decode_term(cursor, 0)?,
-        value: decode_value(cursor)?,
-        fuel_after: cursor.u64()?,
-        observations_after: decode_term(cursor, 0)?,
+        expected_value_hash: cursor.hash32()?,
+        expected_remaining_fuel: cursor.u64()?,
+        expected_observations_hash: cursor.hash32()?,
     })
 }
