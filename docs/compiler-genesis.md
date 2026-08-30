@@ -1,7 +1,7 @@
 # Clause Compiler Genesis and Succession
 
-> **Status:** Normative P1 contract; implementation and acceptance evidence are
-> pending.
+> **Status:** Normative contract; the CLCP v3 Lean codec and replay checker are
+> implemented, while cross-host acceptance and the literal compiler remain P2.
 >
 > **Authority:** This document owns compiler identity, genesis authority,
 > succession, and the Clause/Lean/Rust boundary. The
@@ -10,9 +10,9 @@
 > human-readable source design, and the [roadmap](roadmap.md) alone records
 > implementation status.
 
-This is a constitutional contract, not implementation evidence. The live tree
-does not yet contain a CLCP v2 package, a literal `Compiler0`, a genesis
-anchor, a universal evaluator, or the certificates described here. The
+This is a constitutional contract. The live tree contains the generic CLCP v3
+Lean codec and evaluator, but not yet an accepted literal `Compiler0`, a
+genesis anchor, cross-host parity, or the successor receipts described here. The
 existing CLCP v1 corpus is narrower bootstrap evidence and does not satisfy
 this contract.
 
@@ -25,7 +25,7 @@ object. Nothing inside those bytes can perform that act:
 - a materializer may produce candidate bytes but cannot authorize them;
 - a hash may identify or retrieve bytes but cannot authorize them;
 - canonical decoding and core well-formedness do not authorize them;
-- a derivation or evaluation certificate does not authorize them; and
+- a derivation or evaluation receipt does not authorize them; and
 - genesis evidence inside the package is empty and cannot select its carrier.
 
 After that one anchor, compiler authority moves only by exact predecessor
@@ -50,14 +50,15 @@ package and predecessor chain remain the only compiler authority.
 
 P1 freezes:
 
-- the strict CLCP v2 subject/evidence split and domain-separated identities;
+- the strict CLCP v3 subject/evidence split and domain-separated identities;
 - `Term = Atom | Triple`;
-- the exact carried Core manifest, closed static/evaluation/certificate rule
-  tables, one-operation physical profile, and deterministic verdict precedence;
+- the exact carried Core manifest, closed static/evaluation rule tables,
+  trace-free receipt contract, one-operation physical profile, and deterministic
+  verdict precedence;
 - a fixed construct-blind universal evaluator over `Bytes` and `Term`;
 - the exact Core ABI, `[Term] -> Term` `compile` and `admitPropose`
-  entrypoints, canonical requests/results/observations, and certificate
-  statements;
+  entrypoints, checker-constructed requests, canonical results/observations,
+  and trace-free replay receipts;
 - literal external genesis selection and exact predecessor-only succession;
 - lossless source, origin, occurrence, binding, elaboration, transformation,
   and diagnostic invariants;
@@ -130,7 +131,7 @@ The evaluator is intentionally tiny. Literal bytes, byte destructuring,
 concatenation and equality, recursive definitions, universal Terms, generic
 definition lookup, and SHA-256 make it operationally adequate to express a
 reader, graph algorithms, canonical encoding, diagnostics, and successor
-construction. Its time, space, certificate size, and optimization tractability
+construction. Its time, space, replay, and optimization tractability
 for a real compiler remain unproved P2 questions; that uncertainty cannot be
 resolved by adding a construct-specific host branch.
 
@@ -158,7 +159,7 @@ CompilerSubject = {
 
 `interface || program` is the authoritative executable compiler. The
 `buildRequest` is the exact canonical Core ABI Term defined by the
-[package contract](canonical-package.md#clcp-v2-fixed-compiler-abi). It carries
+[package contract](canonical-package.md#clcp-v3-fixed-compiler-abi). It carries
 the base locator, core and physical profiles, target profile, exact source
 units, base inputs, canonical identity plan, change occurrence, options,
 compile/admission fuel, and every declared physical input needed to reproduce
@@ -285,7 +286,7 @@ Identity has five disjoint provenance cases:
 - **source/content** — an ID defined from one independently supplied exact
   content preimage, notably `SourceArtifactId`; and
 - **other derived** — origins, build requests, compiler semantics, revisions,
-  packages, certificate conclusions, observations, and other hashes defined
+  packages, receipt commitments, replay outcomes, observations, and other hashes defined
   from canonical preimages.
 
 This partition is by each declaration's recorded provenance, never by an ID
@@ -327,9 +328,9 @@ missing or duplicate declaration, retention mismatch, allocation mismatch,
 reference ambiguity, or collision rejects the transform.
 
 After the case split, `Renameπ` restores every affected canonical order,
-canonically re-encodes the result, transforms and rechecks certificate
-statements and derivation conclusions, attaches transformed evidence, and
-recomputes final whole-package identity.
+canonically re-encodes the result, transforms and rechecks replay requests,
+receipt commitments, replay outcomes, and derivation conclusions, attaches
+transformed evidence, and recomputes final whole-package identity.
 
 An external genesis anchor or actual acceptance judgment is not transferred
 by `Renameπ`; only the generic decode, check, and evaluation mechanism is
@@ -366,7 +367,7 @@ AcceptGenesis(A0, P0, R0, E0, Gc, Ga, I0) :=
   ∧ observe(w0).exactSelectedBytes = exactBytes(P0)
   ∧ observe(w0).selectedByteLength = byteLength(exactBytes(P0))
   ∧ observe(w0).selectedPackageHash = CompilerPackageHash(P0)
-  ∧ CanonicalCLCPv2(P0)
+  ∧ CanonicalCLCPv3(P0)
   ∧ exactBytes(P0.frame01) = exactCoreManifestBytes
   ∧ P0.subject.lineage = Genesis
   ∧ CoreWF(P0.subject)
@@ -427,49 +428,73 @@ canonical build request `R`, evidence `E`, and final package identity input
 
 ```text
 S  = exactCompilerSubjectBytes(Q)
+H  = CompilerPackageHash(exactBytes(P))
 M  = exactBytes(P.frame01) = exactCoreManifestBytes
 X  = exactBytes(P.frame01.physicalProfile) = exactPhysicalProfileBytes
 C  = DH("clause/core-contract/v1", exactCoreManifestBytes)
 F  = DH("clause/physical-profile/v1", exactPhysicalProfileBytes)
-Oc = exact canonical compile Observations
-Oa = exact canonical admission Observations
-Fc = exact compile remaining fuel
-Fa = exact admission remaining fuel
 
-CompileStatement = EvalStatement(
-  exactAcceptedPredecessor = exactBytes(P),
+CompileRequest = EvalRequest(
+  acceptedPredecessorPackageHash = H,
   coreContractId = C,
   physicalProfileId = F,
   entrypoint = P.interface.compile,
   arguments = [TermValue(R)],
-  fuelLimit = R.compileFuel,
-  expected = Returned(TermValue(Built(S)), Fc, Oc))
+  fuelLimit = R.compileFuel)
 
-AdmissionStatement = EvalStatement(
-  exactAcceptedPredecessor = exactBytes(P),
+Replay(P, CompileRequest) =
+  Returned(TermValue(Built(S)), Fc, Oc)
+
+CompileReceipt = EvalReceipt(
+  formatVersion = 00,
+  expectedValueHash =
+    DH("clause/eval-receipt-value/v1",
+       CanonicalKValueBytes(TermValue(Built(S)))),
+  expectedRemainingFuel = Fc,
+  expectedObservationsHash =
+    DH("clause/eval-receipt-observations/v1",
+       CanonicalTermBytes(Oc)))
+
+AdmissionRequest = EvalRequest(
+  acceptedPredecessorPackageHash = H,
   coreContractId = C,
   physicalProfileId = F,
   entrypoint = P.interface.admitPropose,
-  arguments = [TermValue(AdmissionRequest(R, S, Oc))],
-  fuelLimit = R.admissionFuel,
-  expected = Returned(TermValue(Propose(S)), Fa, Oa))
+  arguments = [
+    TermValue(AdmissionRequest(R, S, Oc))
+  ],
+  fuelLimit = R.admissionFuel)
+
+Replay(P, AdmissionRequest) =
+  Returned(TermValue(Propose(S)), Fa, Oa)
+
+AdmissionReceipt = EvalReceipt(
+  formatVersion = 00,
+  expectedValueHash =
+    DH("clause/eval-receipt-value/v1",
+       CanonicalKValueBytes(TermValue(Propose(S)))),
+  expectedRemainingFuel = Fa,
+  expectedObservationsHash =
+    DH("clause/eval-receipt-observations/v1",
+       CanonicalTermBytes(Oa)))
 
 AcceptSuccessor(P, Q, R, E, I) :=
   AcceptedCompiler(exactBytes(P))
-  ∧ CanonicalCLCPv2(Q)
+  ∧ CanonicalCLCPv3(Q)
   ∧ exactBytes(Q.frame01) = exactCoreManifestBytes
   ∧ exactBytes(Q.frame01) = exactBytes(P.frame01)
-  ∧ Q.subject.lineage.predecessorLocator = CompilerPackageHash(P)
+  ∧ Q.subject.lineage.predecessorLocator = H
   ∧ Q.subject.lineage is Successor
   ∧ CoreWF(Q.subject)
   ∧ R = Q.subject.buildRequest
   ∧ ValidSuccessorBuildRequest(R, exactBytes(P), C, F,
                                Q.subject.lineage.changeOccurrenceId)
   ∧ E = Q.evidence
-  ∧ E = SuccessorEvidence(compileCertificate,
-                          admissionCertificate)
-  ∧ VerifyEvalCertificate(CompileStatement, compileCertificate)
-  ∧ VerifyEvalCertificate(AdmissionStatement, admissionCertificate)
+  ∧ E = SuccessorEvidence(CompileReceipt, AdmissionReceipt)
+  ∧ VerifyEvalReceipt(exactBytes(P), accepted(P),
+                      CompileRequest, CompileReceipt)
+  ∧ VerifyEvalReceipt(exactBytes(P), accepted(P),
+                      AdmissionRequest, AdmissionReceipt)
   ∧ I.exactPackageBytes = exactBytes(Q)
   ∧ I.packageHash = CompilerPackageHash(Q)
   ∧ AuthorizeDecoded(
@@ -477,73 +502,63 @@ AcceptSuccessor(P, Q, R, E, I) :=
       Q) = Authorized(exactBytes(Q))
 ```
 
-`Fc` and `Oc` are the exact remaining-fuel and observations fields decoded
-from the compile certificate statement; `Fa` and `Oa` are the corresponding
-admission fields. They are not host-selected expectations:
-`VerifyEvalCertificate` proves each against the independently constructed root
-judgment, and the admission argument reuses byte-identical `Oc`.
+`Fc`, `Oc`, `Fa`, and `Oa` are the actual outcomes of complete replay. The
+receipts commit to their canonical bytes and exact fuel; they never select or
+carry those outcomes. The checker constructs the compile request without Frame
+03 input, retains `Oc` from that verified actual replay, and uses that
+value—not receipt data—to construct the admission argument. Authorization also
+inspects the actual returned constructor and exact subject bytes independently
+of the commitments.
 
 Both predecessor entrypoints are distinct definitions with the exact
-`[Term] -> Term` signatures frozen by the Core ABI. `R`, `Built`, `Rejected`,
-`AdmissionRequest`, `Propose`, `Reject`, `Observations`, and every observation
-value have the one canonical Term representation defined by the
-[package contract](canonical-package.md#clcp-v2-fixed-compiler-abi). A wrong
-signature or shape, a `Rejected`/`Reject` return, a subject mismatch, a changed
-observation, or an undeclared physical input rejects.
+`[Term] -> Term` signatures frozen by the Core ABI. `R`, `Built`,
+`Rejected`, `AdmissionRequest`, `Propose`, `Reject`, `Observations`, and
+every observation value have the one canonical Term representation defined by
+the [package contract](canonical-package.md#clcp-v3-fixed-compiler-abi). A
+wrong signature or shape, a `Rejected`/`Reject` return, a subject mismatch,
+a changed remaining-fuel value or observation, or an undeclared physical input
+rejects.
 
-Each certificate states one non-recursive generic evaluation. It binds the
-complete exact already accepted predecessor, core contract, physical profile,
-entrypoint, canonical arguments, returned value, exact candidate subject, and
-ordered observations. It does not bind `exactBytes(Q)` or
-`CompilerPackageHash(Q)`, because either would include the certificate itself.
-The package hash in `Q`'s lineage is only a predecessor locator; the checker
-resolves it to `P` and compares exact bytes. Neither `Q`, a candidate-supplied
-predecessor, a basis or rule in `Q`, nor hash equality can replace the accepted
-exact predecessor.
+Each receipt is exactly 73 bytes and states only the two canonical commitments
+and exact remaining fuel. The separately supplied predecessor bytes and
+acceptance premise are bound through `acceptedPredecessorPackageHash`; no
+receipt recursively embeds `P`, names `Q`, carries an outcome or trace, or can
+add an evaluation rule. Complete replay plus actual result inspection is the
+proof-producing check. The package hash in `Q`'s lineage is only a predecessor
+locator; the checker resolves it to already accepted exact `P` and compares the
+complete bytes.
 
-The generic packager adds exactly `E = Q.evidence` without changing `S`. Lean
-checks both certificates and the final identity's exact bytes and
-domain-separated package hash, and only then returns the canonical
-authorization result `Authorized(exactBytes(Q))`, whose authority
-interpretation is exactly `AcceptedCompiler(exactBytes(Q))`. Only after that
-attachment may `CompilerPackageHash(Q)` bind publication or retrieval. Failure
-returns the unique first fixed `Unauthorized(stage, code)` and never a
-candidate package. Required
-rejection classes include a
-root tag without the external anchor, self-authorization, candidate-basis
-authorization, checking under the candidate, wrong or stale predecessor,
-altered subject after compilation, transplanted certificate, altered request,
-malformed trace, physical-profile escape, and correct hash paired with
-non-identical bytes.
+The generic packager adds exactly `E = Q.evidence` without changing `S`.
+Lean completely replays both requests, checks the final identity's exact bytes
+and domain-separated package hash, and only then returns
+`Authorized(exactBytes(Q))`. Failure returns the unique first fixed
+`Unauthorized(stage, code)` and never a partially accepted package.
 
-Malformed bytes instead return the separate canonical `DecodeRejected` value
-and never enter this predicate. An explicit genesis or successor request
-selects the route before candidate data is inspected. Every successfully
-decoded failure follows the package contract's ascending stage, row, and
-encoded-item precedence table: a rejection predicate includes passage of all
-earlier conditions, making the predicates pairwise disjoint and the result
-single-valued. There is no host-selected error priority. In particular, either
-entrypoint's signature mismatch is only
-`(CoreWellFormedness, EntrypointSignature)`.
+Strict decode failures retain their separate `DecodeRejected(code, offset)`
+algebra and never enter authorization. An explicit genesis or successor
+request selects the route before candidate data is inspected. Every decoded
+failure follows the package contract's ascending stage, row, and encoded-item
+precedence table; there is no host-selected error priority.
 
 ## Lean checker boundary
 
 Lean owns:
 
-- strict CLCP v2 decoding, its separate deterministic decode verdict, and
+- strict CLCP v3 decoding, its separate deterministic decode verdict, and
   canonicality;
 - exact-byte validation of the carried `CoreManifestV1` and physical profile;
 - `Bytes`, `Term`, `KSort`, `KExpr`, definition-table
   well-formedness, and fixed generic evaluation relations;
-- the closed `VerifyEvalCertificate` algorithm over fixed generic rule tags;
+- checker construction of exact `EvalRequest` values and complete
+  `VerifyEvalReceipt` replay over fixed generic rules;
 - exact-byte genesis selection as an explicit external premise;
 - exact-predecessor succession checking; and
 - enforcement of the sealed compiler physical profile.
 
 Lean contains no Clause source parser and no construct-specific lexical,
 grammar, binding, type, mode, effect, macro, diagnostic, or compiler-revision
-rule. A Lean proof says that the generic machine evaluated the already
-authoritative predecessor as claimed; it does not invent Clause feature
+rule. A Lean proof says that the generic machine completely replayed the already
+authoritative predecessor and matched the receipt exactly; it does not invent Clause feature
 meaning or select a compiler.
 
 ## Rust evaluator and physical boundary
@@ -584,7 +599,6 @@ HostMechanic =
   | ByteMachine(empty, head-tail, concat, equality)
   | DefinitionTable(key-order, hit-miss, selected-KExpr-data)
   | KernelStep(KSortTag, KExprTag, value-shape, fuel)
-  | CertificateStep(CoreCertificateRuleTag, premise-index)
   | PhysicalDispatch(fixed PhysicalOpId)
 ```
 
@@ -611,7 +625,7 @@ one `HostMechanic` class and controlling values, and rejects an unlabelled
 site. For a package-influenced site it must prove that the outcome is only
 canonical data, a fixed error, a child `KExpr`, a selected package definition,
 or the one fixed mechanic handler selected by an enumerated wire, Core ABI,
-`KExpr`, certificate-rule, or physical-operation tag. For a given fixed tag and
+`KExpr`, continuation-state, or physical-operation tag. For a given fixed tag and
 signature, the host code target must be invariant under every semantic ID and
 raw payload value. No package value may create a new target or select different
 host code for the same fixed mechanic. The checked artifact records source
@@ -627,15 +641,16 @@ induced replacement of all recomputed derived IDs and hashes. Then:
 StrictDecode(Pπ) = Decoded(Pπ, Dπ)
 EncodeCanonical(Dπ) = Pπ
 
-VerifyEvalCertificate(π*(statement), π*(certificate))
-  = VerifyEvalCertificate(statement, certificate)
+VerifyEvalReceipt(π*(exactPredecessor), π*(request), π*(receipt))
+  = VerifyEvalReceipt(exactPredecessor, request, receipt)
 
 EvalHost(Pπ, π*(input))
   = π*(EvalHost(P, input))
 ```
 
-The check law transforms the complete exact-predecessor premise and certificate
-statement together; it does not grant acceptance to renamed bytes. Canonical
+The check law transforms the separately supplied exact-predecessor premise,
+checker-constructed request, and receipt together; it does not grant acceptance
+to renamed bytes. Canonical
 orders are restored and content-derived values are recomputed, so neither
 hashes nor serialized bytes are asserted to stay fixed or to equal a direct
 bytewise permutation. Lean must prove these laws for the generic model, and
@@ -693,7 +708,7 @@ creates a new admission or change occurrence.
 ## Residual uncertainty
 
 The principal open risk is tractability: the fixed evaluator may make
-`Compiler0` execution or generic Lean certificate checking too large.
+`Compiler0` execution or generic Lean complete replay too large.
 Deterministic identity retention under realistic edits, sound static extraction
 of host-mechanic and semantic-dispatch influence, the exact Lean trust closure
 for decoding and SHA-256, and the size of self-source and immutable evidence
