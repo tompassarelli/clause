@@ -189,6 +189,35 @@
       }
     }
   ],
+  "external_trigger_occurrences": [
+    {
+      "external_trigger_occurrence_id": "trigger:01",
+      "provenance": {
+        "kind": "EnteredThrough",
+        "boundary_ref": "boundary:trigger-fixture",
+        "external_evidence_ref": "external-evidence:trigger:01",
+        "external_cause_frontier": []
+      }
+    },
+    {
+      "external_trigger_occurrence_id": "trigger:02",
+      "provenance": {
+        "kind": "EnteredThrough",
+        "boundary_ref": "boundary:trigger-fixture",
+        "external_evidence_ref": "external-evidence:trigger:02",
+        "external_cause_frontier": []
+      }
+    },
+    {
+      "external_trigger_occurrence_id": "trigger:03",
+      "provenance": {
+        "kind": "EnteredThrough",
+        "boundary_ref": "boundary:trigger-fixture",
+        "external_evidence_ref": "external-evidence:trigger:03",
+        "external_cause_frontier": []
+      }
+    }
+  ],
   "activations": [
     {
       "activation_id": "activation:law:01",
@@ -207,14 +236,6 @@
           }
         },
         "prerequisites": [
-          {
-            "kind": "ExecutableValidity",
-            "executable_validity_evidence": {
-              "executable_validity_id": "executable-validity:01",
-              "application_id": "application-id:01",
-              "mode_id": "mode-id:05"
-            }
-          },
           {
             "kind": "Authorization",
             "authorization_type": "ExecutionAuthorization",
@@ -277,14 +298,6 @@
         },
         "prerequisites": [
           {
-            "kind": "ExecutableValidity",
-            "executable_validity_evidence": {
-              "executable_validity_id": "executable-validity:01",
-              "application_id": "application-id:02",
-              "mode_id": "mode-id:04"
-            }
-          },
-          {
             "kind": "Authorization",
             "authorization_type": "ExecutionAuthorization",
             "authorization_evidence": {
@@ -331,14 +344,6 @@
           }
         },
         "prerequisites": [
-          {
-            "kind": "ExecutableValidity",
-            "executable_validity_evidence": {
-              "executable_validity_id": "executable-validity:01",
-              "application_id": "application-id:01",
-              "mode_id": "mode-id:05"
-            }
-          },
           {
             "kind": "Authorization",
             "authorization_type": "ExecutionAuthorization",
@@ -401,14 +406,6 @@
         },
         "prerequisites": [
           {
-            "kind": "ExecutableValidity",
-            "executable_validity_evidence": {
-              "executable_validity_id": "executable-validity:01",
-              "application_id": "application-id:02",
-              "mode_id": "mode-id:04"
-            }
-          },
-          {
             "kind": "Authorization",
             "authorization_type": "ExecutionAuthorization",
             "authorization_evidence": {
@@ -455,14 +452,6 @@
           }
         },
         "prerequisites": [
-          {
-            "kind": "ExecutableValidity",
-            "executable_validity_evidence": {
-              "executable_validity_id": "executable-validity:01",
-              "application_id": "application-id:03",
-              "mode_id": "mode-id:06"
-            }
-          },
           {
             "kind": "Authorization",
             "authorization_type": "ExecutionAuthorization",

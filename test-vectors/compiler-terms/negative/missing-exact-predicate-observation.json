@@ -39,7 +39,7 @@
       {
         "ordinal": 3,
         "premise_occurrence_id": "premise-id:03",
-        "selected_occurrence_id": "observation:conclusion:01"
+        "selected_occurrence_id": "observation:predicate:01"
       }
     ],
     "structural_environment": {

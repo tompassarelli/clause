@@ -9,6 +9,40 @@
     "runtime_session_id": "session:01",
     "state_revision_id": "state:01",
     "runtime_policy_id": "policy:01",
+    "boundary_anchors": [
+      {
+        "boundary_ref": "boundary:trigger-fixture",
+        "clause_semantics_id": "sem:01",
+        "program_snapshot_id": "ps:01",
+        "program_revision_id": "pr:01",
+        "runtime_session_id": "session:01",
+        "runtime_policy_id": "policy:01",
+        "permits": [
+          "ExternalTrigger"
+        ],
+        "constituted_before_occurrence": true
+      }
+    ],
+    "evidence_anchors": [
+      {
+        "external_evidence_ref": "external-evidence:trigger:01",
+        "boundary_ref": "boundary:trigger-fixture",
+        "exact_evidence": "fixture-trigger-evidence:01",
+        "authoritative_before_occurrence": true
+      },
+      {
+        "external_evidence_ref": "external-evidence:trigger:02",
+        "boundary_ref": "boundary:trigger-fixture",
+        "exact_evidence": "fixture-trigger-evidence:02",
+        "authoritative_before_occurrence": true
+      },
+      {
+        "external_evidence_ref": "external-evidence:trigger:03",
+        "boundary_ref": "boundary:trigger-fixture",
+        "exact_evidence": "fixture-trigger-evidence:03",
+        "authoritative_before_occurrence": true
+      }
+    ],
     "executable_validity": {
       "executable_validity_id": "executable-validity:01",
       "program_snapshot_id": "ps:01",
