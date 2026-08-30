@@ -139,19 +139,27 @@ SourceDesignationBinding {
   spelling,
   ReferentId,
   visibility,
+  optional semanticContinuity,
   origin
 }
 ~~~
 
 The binding table in `context.json` contains 468 collision-free aliases for the
-semantic-package projection, nine for the position/radius source, and eleven
-designations that exist only in the fixture context. Hyphens in an alias are
-ordinary spelling bytes. A consumer may not split them to recover namespace,
-kind, role, path, or identity. `NamespaceId` and `ReferentId` are the only
-corresponding semantic coordinates. Each of the 33 context records that carries
-Designation metadata names its exact `designation_binding_id` and repeats only
-the binding's slash-free local spelling; no record retains a free-standing
-qualified name.
+semantic-package projection, nine for the position/radius source, one
+additional context-only designation, and nineteen schema-scoped context Role
+designations. Hyphens in an alias are ordinary spelling bytes. A consumer may
+not split them to recover namespace, kind, role, path, or identity.
+`NamespaceId` and `ReferentId` are the only corresponding semantic coordinates.
+Each of the 33 context records that carries Designation metadata names its
+exact `designation_binding_id` and repeats only the binding's slash-free local
+spelling; no record retains a free-standing qualified name.
+
+Every context Role designation additionally names its exact
+RelationSchemaLocalId, resolved RelationSchemaId, RoleLocalId, resolved RoleId,
+and one semantic-package role binding. It reuses that role binding's ReferentId
+only under this explicit continuity evidence. Equal local spellings in distinct
+schema-scoped RoleIds therefore retain distinct ReferentIds; spelling equality
+never creates role identity or continuity.
 
 U+002F `/` is forbidden in quoted and unquoted authored Designation spelling.
 Quotation cannot bypass that rule, and a generated or forged structured

@@ -57,14 +57,16 @@
   "designation_projection": {
     "binding_context": "context.json#/designation_bindings",
     "namespace_resolution": "exact NamespaceId from an explicit binding; never inferred from source spelling or hyphen segments",
-    "referent_resolution": "exact opaque ReferentId from the same binding; spelling equality never establishes identity",
+    "referent_resolution": "exact opaque ReferentId from the same binding; spelling equality never establishes identity; ReferentId reuse requires explicit semantic-continuity evidence",
     "source_alias_counts": {
       "semantic_package": 468,
       "ordinary_source": 9,
-      "context_only": 11,
-      "total": 488
+      "context_only": 1,
+      "context_roles": 19,
+      "total": 497
     },
     "context_record_bindings": "all 33 designation-bearing context records carry an exact designation_binding_id and the same slash-free local spelling as that binding",
+    "context_role_identity": "each of 19 Role records binds its exact schema-scoped local and resolved RoleId to one semantic-package role binding and may reuse only that binding's ReferentId; equal role spelling supplies no continuity evidence",
     "authored_designation_slash": "forbidden in quoted and unquoted spelling",
     "slash_permitted_as_opaque_data": [
       "Atom",

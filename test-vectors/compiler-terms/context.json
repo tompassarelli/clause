@@ -8,7 +8,8 @@
     "rules": {
       "spelling": "local Designation spelling only; U+002F slash is forbidden",
       "namespace_resolution": "exact NamespaceId only; never infer namespace, kind, role, or path from spelling or hyphen segments",
-      "referent_identity": "exact opaque ReferentId only; spelling and binding order never derive identity",
+      "referent_identity": "exact opaque ReferentId only; spelling and binding order never derive identity; shared ReferentId requires explicit semantic_continuity evidence",
+      "role_designations": "each context Role designation binds one exact schema-scoped RoleId and reuses only the ReferentId of its explicitly cited semantic-package role binding",
       "origin": "source paths, prior spellings, JSON Pointers, and occurrence counts are nonconstitutive SourceMap/fixture evidence and may contain slash"
     },
     "opaque_slash_examples": [
@@ -28,8 +29,9 @@
     "counts": {
       "semantic_package_source_bindings": 468,
       "ordinary_source_bindings": 9,
-      "context_only_bindings": 11,
-      "total_bindings": 488
+      "context_only_bindings": 1,
+      "context_role_bindings": 19,
+      "total_bindings": 497
     },
     "namespaces": [
       {"namespace_id":"namespace-id:compiler-terms","visibility":"fixture-local","origin":{"kind":"source-unit","source_path":"test-vectors/compiler-terms/semantic-package.clause"}},
@@ -515,16 +517,25 @@
       {"binding_id":"designation-binding:0475","namespace_id":"namespace-id:world","spelling":"world-proximity-radius-v1","referent_id":"referent-id:source:0475","visibility":"fixture-local","origin":{"kind":"source-alias-migration","source_path":"test-vectors/compiler-terms/position-radius.clause","source_artifact_role":"ordinary-source-oracle","prior_spelling":"world/proximity-radius-v1","prior_occurrence_count":1,"context_json_pointers":["/constitutive_preimage/relation_schemas/3/designation","/constitutive_preimage/operators/3/designation"]}},
       {"binding_id":"designation-binding:0476","namespace_id":"namespace-id:world","spelling":"world-radius-proximity-law-v1","referent_id":"referent-id:source:0476","visibility":"fixture-local","origin":{"kind":"source-alias-migration","source_path":"test-vectors/compiler-terms/position-radius.clause","source_artifact_role":"ordinary-source-oracle","prior_spelling":"world/radius-proximity-law-v1","prior_occurrence_count":2,"context_json_pointers":["/constitutive_preimage/operators/4/designation","/constitutive_preimage/laws/1/designation"]}},
       {"binding_id":"designation-binding:0477","namespace_id":"namespace-id:world","spelling":"world-target-position-v1","referent_id":"referent-id:source:0477","visibility":"fixture-local","origin":{"kind":"source-alias-migration","source_path":"test-vectors/compiler-terms/position-radius.clause","source_artifact_role":"ordinary-source-oracle","prior_spelling":"world/target-position-v1","prior_occurrence_count":1,"context_json_pointers":["/constitutive_preimage/relation_schemas/4/designation","/constitutive_preimage/operators/5/designation"]}},
-      {"binding_id":"designation-binding:0478","namespace_id":"namespace-id:compiler-terms-context","spelling":"left-target","referent_id":"referent-id:source:0478","visibility":"fixture-local","origin":{"kind":"context-only-designation","context_path":"test-vectors/compiler-terms/context.json","prior_spelling":"left-target","context_json_pointers":["/constitutive_preimage/relation_schemas/2/roles/0/designation"]}},
-      {"binding_id":"designation-binding:0479","namespace_id":"namespace-id:compiler-terms-context","spelling":"observer","referent_id":"referent-id:source:0479","visibility":"fixture-local","origin":{"kind":"context-only-designation","context_path":"test-vectors/compiler-terms/context.json","prior_spelling":"observer","context_json_pointers":["/constitutive_preimage/relation_schemas/0/roles/1/designation","/constitutive_preimage/relation_schemas/1/roles/0/designation","/constitutive_preimage/relation_schemas/3/roles/1/designation"]}},
-      {"binding_id":"designation-binding:0480","namespace_id":"namespace-id:compiler-terms-context","spelling":"observer-point","referent_id":"referent-id:source:0480","visibility":"fixture-local","origin":{"kind":"context-only-designation","context_path":"test-vectors/compiler-terms/context.json","prior_spelling":"observer-point","context_json_pointers":["/constitutive_preimage/relation_schemas/5/roles/3/designation"]}},
-      {"binding_id":"designation-binding:0481","namespace_id":"namespace-id:compiler-terms-context","spelling":"point","referent_id":"referent-id:source:0481","visibility":"fixture-local","origin":{"kind":"context-only-designation","context_path":"test-vectors/compiler-terms/context.json","prior_spelling":"point","context_json_pointers":["/constitutive_preimage/relation_schemas/1/roles/2/designation","/constitutive_preimage/relation_schemas/4/roles/2/designation"]}},
-      {"binding_id":"designation-binding:0482","namespace_id":"namespace-id:compiler-terms-context","spelling":"radius","referent_id":"referent-id:source:0482","visibility":"fixture-local","origin":{"kind":"context-only-designation","context_path":"test-vectors/compiler-terms/context.json","prior_spelling":"radius","context_json_pointers":["/constitutive_preimage/relation_schemas/3/roles/0/designation","/constitutive_preimage/relation_schemas/5/roles/2/designation"]}},
-      {"binding_id":"designation-binding:0483","namespace_id":"namespace-id:compiler-terms-context","spelling":"right-target","referent_id":"referent-id:source:0483","visibility":"fixture-local","origin":{"kind":"context-only-designation","context_path":"test-vectors/compiler-terms/context.json","prior_spelling":"right-target","context_json_pointers":["/constitutive_preimage/relation_schemas/2/roles/1/designation"]}},
-      {"binding_id":"designation-binding:0484","namespace_id":"namespace-id:compiler-terms-context","spelling":"space","referent_id":"referent-id:source:0484","visibility":"fixture-local","origin":{"kind":"context-only-designation","context_path":"test-vectors/compiler-terms/context.json","prior_spelling":"space","context_json_pointers":["/constitutive_preimage/relation_schemas/0/roles/0/designation","/constitutive_preimage/relation_schemas/1/roles/1/designation","/constitutive_preimage/relation_schemas/2/roles/2/designation","/constitutive_preimage/relation_schemas/3/roles/2/designation","/constitutive_preimage/relation_schemas/4/roles/0/designation"]}},
-      {"binding_id":"designation-binding:0485","namespace_id":"namespace-id:compiler-terms-context","spelling":"target","referent_id":"referent-id:source:0485","visibility":"fixture-local","origin":{"kind":"context-only-designation","context_path":"test-vectors/compiler-terms/context.json","prior_spelling":"target","context_json_pointers":["/constitutive_preimage/relation_schemas/0/roles/2/designation","/constitutive_preimage/relation_schemas/4/roles/1/designation"]}},
-      {"binding_id":"designation-binding:0486","namespace_id":"namespace-id:compiler-terms-context","spelling":"target-point","referent_id":"referent-id:source:0486","visibility":"fixture-local","origin":{"kind":"context-only-designation","context_path":"test-vectors/compiler-terms/context.json","prior_spelling":"target-point","context_json_pointers":["/constitutive_preimage/relation_schemas/5/roles/1/designation"]}},
-      {"binding_id":"designation-binding:0487","namespace_id":"namespace-id:compiler-terms-context","spelling":"verdict","referent_id":"referent-id:source:0487","visibility":"fixture-local","origin":{"kind":"context-only-designation","context_path":"test-vectors/compiler-terms/context.json","prior_spelling":"verdict","context_json_pointers":["/constitutive_preimage/relation_schemas/5/roles/0/designation"]}},
+      {"binding_id":"designation-binding:context-role:01","namespace_id":"namespace-id:compiler-terms-context","spelling":"observer","referent_id":"referent-id:source:0378","visibility":"fixture-local","semantic_continuity":{"relation_schema_local_id":"schema:01","relation_schema_id":"relation-schema:01","role_local_id":"role:01","role_id":"role-id:01","semantic_package_designation_binding_id":"designation-binding:0378"},"origin":{"kind":"schema-scoped-role-designation","context_path":"test-vectors/compiler-terms/context.json","prior_spelling":"observer","context_json_pointers":["/constitutive_preimage/relation_schemas/1/roles/0/designation"]}},
+      {"binding_id":"designation-binding:context-role:02","namespace_id":"namespace-id:compiler-terms-context","spelling":"point","referent_id":"referent-id:source:0379","visibility":"fixture-local","semantic_continuity":{"relation_schema_local_id":"schema:01","relation_schema_id":"relation-schema:01","role_local_id":"role:02","role_id":"role-id:02","semantic_package_designation_binding_id":"designation-binding:0379"},"origin":{"kind":"schema-scoped-role-designation","context_path":"test-vectors/compiler-terms/context.json","prior_spelling":"point","context_json_pointers":["/constitutive_preimage/relation_schemas/1/roles/2/designation"]}},
+      {"binding_id":"designation-binding:context-role:03","namespace_id":"namespace-id:compiler-terms-context","spelling":"space","referent_id":"referent-id:source:0380","visibility":"fixture-local","semantic_continuity":{"relation_schema_local_id":"schema:01","relation_schema_id":"relation-schema:01","role_local_id":"role:03","role_id":"role-id:03","semantic_package_designation_binding_id":"designation-binding:0380"},"origin":{"kind":"schema-scoped-role-designation","context_path":"test-vectors/compiler-terms/context.json","prior_spelling":"space","context_json_pointers":["/constitutive_preimage/relation_schemas/1/roles/1/designation"]}},
+      {"binding_id":"designation-binding:context-role:04","namespace_id":"namespace-id:compiler-terms-context","spelling":"target","referent_id":"referent-id:source:0389","visibility":"fixture-local","semantic_continuity":{"relation_schema_local_id":"schema:02","relation_schema_id":"relation-schema:02","role_local_id":"role:04","role_id":"role-id:04","semantic_package_designation_binding_id":"designation-binding:0389"},"origin":{"kind":"schema-scoped-role-designation","context_path":"test-vectors/compiler-terms/context.json","prior_spelling":"target","context_json_pointers":["/constitutive_preimage/relation_schemas/4/roles/1/designation"]}},
+      {"binding_id":"designation-binding:context-role:05","namespace_id":"namespace-id:compiler-terms-context","spelling":"point","referent_id":"referent-id:source:0387","visibility":"fixture-local","semantic_continuity":{"relation_schema_local_id":"schema:02","relation_schema_id":"relation-schema:02","role_local_id":"role:05","role_id":"role-id:05","semantic_package_designation_binding_id":"designation-binding:0387"},"origin":{"kind":"schema-scoped-role-designation","context_path":"test-vectors/compiler-terms/context.json","prior_spelling":"point","context_json_pointers":["/constitutive_preimage/relation_schemas/4/roles/2/designation"]}},
+      {"binding_id":"designation-binding:context-role:06","namespace_id":"namespace-id:compiler-terms-context","spelling":"space","referent_id":"referent-id:source:0388","visibility":"fixture-local","semantic_continuity":{"relation_schema_local_id":"schema:02","relation_schema_id":"relation-schema:02","role_local_id":"role:06","role_id":"role-id:06","semantic_package_designation_binding_id":"designation-binding:0388"},"origin":{"kind":"schema-scoped-role-designation","context_path":"test-vectors/compiler-terms/context.json","prior_spelling":"space","context_json_pointers":["/constitutive_preimage/relation_schemas/4/roles/0/designation"]}},
+      {"binding_id":"designation-binding:context-role:07","namespace_id":"namespace-id:compiler-terms-context","spelling":"observer","referent_id":"referent-id:source:0381","visibility":"fixture-local","semantic_continuity":{"relation_schema_local_id":"schema:03","relation_schema_id":"relation-schema:03","role_local_id":"role:07","role_id":"role-id:07","semantic_package_designation_binding_id":"designation-binding:0381"},"origin":{"kind":"schema-scoped-role-designation","context_path":"test-vectors/compiler-terms/context.json","prior_spelling":"observer","context_json_pointers":["/constitutive_preimage/relation_schemas/3/roles/1/designation"]}},
+      {"binding_id":"designation-binding:context-role:08","namespace_id":"namespace-id:compiler-terms-context","spelling":"radius","referent_id":"referent-id:source:0382","visibility":"fixture-local","semantic_continuity":{"relation_schema_local_id":"schema:03","relation_schema_id":"relation-schema:03","role_local_id":"role:08","role_id":"role-id:08","semantic_package_designation_binding_id":"designation-binding:0382"},"origin":{"kind":"schema-scoped-role-designation","context_path":"test-vectors/compiler-terms/context.json","prior_spelling":"radius","context_json_pointers":["/constitutive_preimage/relation_schemas/3/roles/0/designation"]}},
+      {"binding_id":"designation-binding:context-role:09","namespace_id":"namespace-id:compiler-terms-context","spelling":"space","referent_id":"referent-id:source:0383","visibility":"fixture-local","semantic_continuity":{"relation_schema_local_id":"schema:03","relation_schema_id":"relation-schema:03","role_local_id":"role:09","role_id":"role-id:09","semantic_package_designation_binding_id":"designation-binding:0383"},"origin":{"kind":"schema-scoped-role-designation","context_path":"test-vectors/compiler-terms/context.json","prior_spelling":"space","context_json_pointers":["/constitutive_preimage/relation_schemas/3/roles/2/designation"]}},
+      {"binding_id":"designation-binding:context-role:10","namespace_id":"namespace-id:compiler-terms-context","spelling":"target-point","referent_id":"referent-id:source:0392","visibility":"fixture-local","semantic_continuity":{"relation_schema_local_id":"schema:04","relation_schema_id":"relation-schema:04","role_local_id":"role:10","role_id":"role-id:10","semantic_package_designation_binding_id":"designation-binding:0392"},"origin":{"kind":"schema-scoped-role-designation","context_path":"test-vectors/compiler-terms/context.json","prior_spelling":"target-point","context_json_pointers":["/constitutive_preimage/relation_schemas/5/roles/1/designation"]}},
+      {"binding_id":"designation-binding:context-role:11","namespace_id":"namespace-id:compiler-terms-context","spelling":"observer-point","referent_id":"referent-id:source:0390","visibility":"fixture-local","semantic_continuity":{"relation_schema_local_id":"schema:04","relation_schema_id":"relation-schema:04","role_local_id":"role:11","role_id":"role-id:11","semantic_package_designation_binding_id":"designation-binding:0390"},"origin":{"kind":"schema-scoped-role-designation","context_path":"test-vectors/compiler-terms/context.json","prior_spelling":"observer-point","context_json_pointers":["/constitutive_preimage/relation_schemas/5/roles/3/designation"]}},
+      {"binding_id":"designation-binding:context-role:12","namespace_id":"namespace-id:compiler-terms-context","spelling":"radius","referent_id":"referent-id:source:0391","visibility":"fixture-local","semantic_continuity":{"relation_schema_local_id":"schema:04","relation_schema_id":"relation-schema:04","role_local_id":"role:12","role_id":"role-id:12","semantic_package_designation_binding_id":"designation-binding:0391"},"origin":{"kind":"schema-scoped-role-designation","context_path":"test-vectors/compiler-terms/context.json","prior_spelling":"radius","context_json_pointers":["/constitutive_preimage/relation_schemas/5/roles/2/designation"]}},
+      {"binding_id":"designation-binding:context-role:13","namespace_id":"namespace-id:compiler-terms-context","spelling":"verdict","referent_id":"referent-id:source:0393","visibility":"fixture-local","semantic_continuity":{"relation_schema_local_id":"schema:04","relation_schema_id":"relation-schema:04","role_local_id":"role:13","role_id":"role-id:13","semantic_package_designation_binding_id":"designation-binding:0393"},"origin":{"kind":"schema-scoped-role-designation","context_path":"test-vectors/compiler-terms/context.json","prior_spelling":"verdict","context_json_pointers":["/constitutive_preimage/relation_schemas/5/roles/0/designation"]}},
+      {"binding_id":"designation-binding:context-role:14","namespace_id":"namespace-id:compiler-terms-context","spelling":"observer","referent_id":"referent-id:source:0375","visibility":"fixture-local","semantic_continuity":{"relation_schema_local_id":"schema:05","relation_schema_id":"relation-schema:05","role_local_id":"role:14","role_id":"role-id:14","semantic_package_designation_binding_id":"designation-binding:0375"},"origin":{"kind":"schema-scoped-role-designation","context_path":"test-vectors/compiler-terms/context.json","prior_spelling":"observer","context_json_pointers":["/constitutive_preimage/relation_schemas/0/roles/1/designation"]}},
+      {"binding_id":"designation-binding:context-role:15","namespace_id":"namespace-id:compiler-terms-context","spelling":"target","referent_id":"referent-id:source:0377","visibility":"fixture-local","semantic_continuity":{"relation_schema_local_id":"schema:05","relation_schema_id":"relation-schema:05","role_local_id":"role:15","role_id":"role-id:15","semantic_package_designation_binding_id":"designation-binding:0377"},"origin":{"kind":"schema-scoped-role-designation","context_path":"test-vectors/compiler-terms/context.json","prior_spelling":"target","context_json_pointers":["/constitutive_preimage/relation_schemas/0/roles/2/designation"]}},
+      {"binding_id":"designation-binding:context-role:16","namespace_id":"namespace-id:compiler-terms-context","spelling":"space","referent_id":"referent-id:source:0376","visibility":"fixture-local","semantic_continuity":{"relation_schema_local_id":"schema:05","relation_schema_id":"relation-schema:05","role_local_id":"role:16","role_id":"role-id:16","semantic_package_designation_binding_id":"designation-binding:0376"},"origin":{"kind":"schema-scoped-role-designation","context_path":"test-vectors/compiler-terms/context.json","prior_spelling":"space","context_json_pointers":["/constitutive_preimage/relation_schemas/0/roles/0/designation"]}},
+      {"binding_id":"designation-binding:context-role:17","namespace_id":"namespace-id:compiler-terms-context","spelling":"left-target","referent_id":"referent-id:source:0384","visibility":"fixture-local","semantic_continuity":{"relation_schema_local_id":"schema:06","relation_schema_id":"relation-schema:06","role_local_id":"role:17","role_id":"role-id:17","semantic_package_designation_binding_id":"designation-binding:0384"},"origin":{"kind":"schema-scoped-role-designation","context_path":"test-vectors/compiler-terms/context.json","prior_spelling":"left-target","context_json_pointers":["/constitutive_preimage/relation_schemas/2/roles/0/designation"]}},
+      {"binding_id":"designation-binding:context-role:18","namespace_id":"namespace-id:compiler-terms-context","spelling":"right-target","referent_id":"referent-id:source:0385","visibility":"fixture-local","semantic_continuity":{"relation_schema_local_id":"schema:06","relation_schema_id":"relation-schema:06","role_local_id":"role:18","role_id":"role-id:18","semantic_package_designation_binding_id":"designation-binding:0385"},"origin":{"kind":"schema-scoped-role-designation","context_path":"test-vectors/compiler-terms/context.json","prior_spelling":"right-target","context_json_pointers":["/constitutive_preimage/relation_schemas/2/roles/1/designation"]}},
+      {"binding_id":"designation-binding:context-role:19","namespace_id":"namespace-id:compiler-terms-context","spelling":"space","referent_id":"referent-id:source:0386","visibility":"fixture-local","semantic_continuity":{"relation_schema_local_id":"schema:06","relation_schema_id":"relation-schema:06","role_local_id":"role:19","role_id":"role-id:19","semantic_package_designation_binding_id":"designation-binding:0386"},"origin":{"kind":"schema-scoped-role-designation","context_path":"test-vectors/compiler-terms/context.json","prior_spelling":"space","context_json_pointers":["/constitutive_preimage/relation_schemas/2/roles/2/designation"]}},
       {"binding_id":"designation-binding:0488","namespace_id":"namespace-id:world","spelling":"world-same-space-target-pair-v1","referent_id":"referent-id:source:0488","visibility":"fixture-local","origin":{"kind":"context-only-designation","context_path":"test-vectors/compiler-terms/context.json","prior_spelling":"world/same-space-target-pair-v1","context_json_pointers":["/constitutive_preimage/relation_schemas/2/designation","/constitutive_preimage/operators/2/designation","/constitutive_preimage/laws/0/designation"]}}
     ]
   },
@@ -1040,24 +1051,24 @@
         "roles": [
           {
             "ordinal": 2,
-           "local_id": "role:16",
-            "designation_binding_id": "designation-binding:0484",
+            "local_id": "role:16",
+            "designation_binding_id": "designation-binding:context-role:16",
             "designation": "space",
             "domain": "Space",
             "cardinality": "one"
           },
           {
             "ordinal": 0,
-           "local_id": "role:14",
-            "designation_binding_id": "designation-binding:0479",
+            "local_id": "role:14",
+            "designation_binding_id": "designation-binding:context-role:14",
             "designation": "observer",
             "domain": "Observer",
             "cardinality": "one"
           },
           {
             "ordinal": 1,
-           "local_id": "role:15",
-            "designation_binding_id": "designation-binding:0485",
+            "local_id": "role:15",
+            "designation_binding_id": "designation-binding:context-role:15",
             "designation": "target",
             "domain": "Target",
             "cardinality": "one"
@@ -1072,24 +1083,24 @@
         "roles": [
           {
             "ordinal": 0,
-           "local_id": "role:01",
-            "designation_binding_id": "designation-binding:0479",
+            "local_id": "role:01",
+            "designation_binding_id": "designation-binding:context-role:01",
             "designation": "observer",
             "domain": "Observer",
             "cardinality": "one"
           },
           {
             "ordinal": 2,
-           "local_id": "role:03",
-            "designation_binding_id": "designation-binding:0484",
+            "local_id": "role:03",
+            "designation_binding_id": "designation-binding:context-role:03",
             "designation": "space",
             "domain": "Space",
             "cardinality": "one"
           },
           {
             "ordinal": 1,
-           "local_id": "role:02",
-            "designation_binding_id": "designation-binding:0481",
+            "local_id": "role:02",
+            "designation_binding_id": "designation-binding:context-role:02",
             "designation": "point",
             "domain": "metric/Point2Q16",
             "cardinality": "one"
@@ -1104,24 +1115,24 @@
         "roles": [
           {
             "ordinal": 0,
-           "local_id": "role:17",
-            "designation_binding_id": "designation-binding:0478",
+            "local_id": "role:17",
+            "designation_binding_id": "designation-binding:context-role:17",
             "designation": "left-target",
             "domain": "Target",
             "cardinality": "one"
           },
           {
             "ordinal": 1,
-           "local_id": "role:18",
-            "designation_binding_id": "designation-binding:0483",
+            "local_id": "role:18",
+            "designation_binding_id": "designation-binding:context-role:18",
             "designation": "right-target",
             "domain": "Target",
             "cardinality": "one"
           },
           {
             "ordinal": 2,
-           "local_id": "role:19",
-            "designation_binding_id": "designation-binding:0484",
+            "local_id": "role:19",
+            "designation_binding_id": "designation-binding:context-role:19",
             "designation": "space",
             "domain": "Space",
             "cardinality": "one"
@@ -1136,24 +1147,24 @@
         "roles": [
           {
             "ordinal": 1,
-           "local_id": "role:08",
-            "designation_binding_id": "designation-binding:0482",
+            "local_id": "role:08",
+            "designation_binding_id": "designation-binding:context-role:08",
             "designation": "radius",
             "domain": "metric/NonnegativeQ16",
             "cardinality": "one"
           },
           {
             "ordinal": 0,
-           "local_id": "role:07",
-            "designation_binding_id": "designation-binding:0479",
+            "local_id": "role:07",
+            "designation_binding_id": "designation-binding:context-role:07",
             "designation": "observer",
             "domain": "Observer",
             "cardinality": "one"
           },
           {
             "ordinal": 2,
-           "local_id": "role:09",
-            "designation_binding_id": "designation-binding:0484",
+            "local_id": "role:09",
+            "designation_binding_id": "designation-binding:context-role:09",
             "designation": "space",
             "domain": "Space",
             "cardinality": "one"
@@ -1168,24 +1179,24 @@
         "roles": [
           {
             "ordinal": 2,
-           "local_id": "role:06",
-            "designation_binding_id": "designation-binding:0484",
+            "local_id": "role:06",
+            "designation_binding_id": "designation-binding:context-role:06",
             "designation": "space",
             "domain": "Space",
             "cardinality": "one"
           },
           {
             "ordinal": 0,
-           "local_id": "role:04",
-            "designation_binding_id": "designation-binding:0485",
+            "local_id": "role:04",
+            "designation_binding_id": "designation-binding:context-role:04",
             "designation": "target",
             "domain": "Target",
             "cardinality": "one"
           },
           {
             "ordinal": 1,
-           "local_id": "role:05",
-            "designation_binding_id": "designation-binding:0481",
+            "local_id": "role:05",
+            "designation_binding_id": "designation-binding:context-role:05",
             "designation": "point",
             "domain": "metric/Point2Q16",
             "cardinality": "one"
@@ -1200,32 +1211,32 @@
         "roles": [
           {
             "ordinal": 3,
-           "local_id": "role:13",
-            "designation_binding_id": "designation-binding:0487",
+            "local_id": "role:13",
+            "designation_binding_id": "designation-binding:context-role:13",
             "designation": "verdict",
             "domain": "Boolean",
             "cardinality": "one"
           },
           {
             "ordinal": 0,
-           "local_id": "role:10",
-            "designation_binding_id": "designation-binding:0486",
+            "local_id": "role:10",
+            "designation_binding_id": "designation-binding:context-role:10",
             "designation": "target-point",
             "domain": "metric/Point2Q16",
             "cardinality": "one"
           },
           {
             "ordinal": 2,
-           "local_id": "role:12",
-            "designation_binding_id": "designation-binding:0482",
+            "local_id": "role:12",
+            "designation_binding_id": "designation-binding:context-role:12",
             "designation": "radius",
             "domain": "metric/NonnegativeQ16",
             "cardinality": "one"
           },
           {
             "ordinal": 1,
-           "local_id": "role:11",
-            "designation_binding_id": "designation-binding:0480",
+            "local_id": "role:11",
+            "designation_binding_id": "designation-binding:context-role:11",
             "designation": "observer-point",
             "domain": "metric/Point2Q16",
             "cardinality": "one"

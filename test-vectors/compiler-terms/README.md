@@ -6,10 +6,12 @@ admitted package or executable runtime.
 
 - context.json contains the exact fixture declarations, local Judgment
   declarations and post-snapshot resolutions, already authoritative external
-  premises, and 488 explicit source/context Designation bindings. Every
+  premises, and 497 explicit source/context Designation bindings. Every
   binding carries NamespaceId, slash-free local spelling, ReferentId,
   visibility, and origin; all 33 designation-bearing context records cite one
-  exact binding.
+  exact binding. Nineteen schema-scoped Role bindings also carry exact local
+  and resolved schema/Role identities plus the semantic-package role binding
+  that supplies their ReferentId. Equal role spellings never merge them.
 - semantic-package.clause is the Clause-authored structural projection of the
   exact 16 Terms, FormationJudgments, ApplicationForms, and Applications plus
   schemas, modes, the closed operator graph, laws, Judgments, and dependency
