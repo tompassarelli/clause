@@ -1,0 +1,547 @@
+{
+  "schema": "clause-jump-arena-vectors-v1",
+  "process_contract": "clause:test-vectors/jump-arena/process-ir.json",
+  "comparison": {
+    "decimal_values": "exact base-10 rationals",
+    "row_collections": "typed sets keyed by occurrence identity; JSON order is nonsemantic",
+    "cause_frontiers": "finite typed sets; listed order is canonical encoding order and adds no causal edge",
+    "empty_output": "an explicit empty array or null is an exact expected absence"
+  },
+  "program_constants": {
+    "arena": "jump-arena",
+    "player": "player-1",
+    "gravity": "-8",
+    "jump_speed": "8",
+    "move_speed": "5",
+    "floor_height": "0",
+    "min_x": "-10",
+    "max_x": "10",
+    "min_z": "-10",
+    "max_z": "10"
+  },
+  "authorization_evidence": [
+    {
+      "authorization_evidence_id": "authorization-evidence/execution",
+      "kind": "ConstitutiveAuthorization<ExecutionAuthorization>",
+      "program_revision_id": "program-revision/jump-arena-r0",
+      "judgment_ref": "judgment/execution/jump-arena-processes"
+    },
+    {
+      "authorization_evidence_id": "authorization-evidence/admission",
+      "kind": "ConstitutiveAuthorization<AdmissionAuthorization>",
+      "program_revision_id": "program-revision/jump-arena-r0",
+      "judgment_ref": "judgment/admission/jump-arena-state"
+    }
+  ],
+  "activation_cause_frontiers": [
+    {"activation_cause_frontier_id": "frontier/position-observe-1", "origin": {"RootedBy": {"ExternalTrigger": "occurrence/trigger/position-observe-1"}}, "prerequisites": [{"Authorization": "authorization-evidence/execution"}]},
+    {"activation_cause_frontier_id": "frontier/position-observe-2", "origin": {"RootedBy": {"ExternalTrigger": "occurrence/trigger/position-observe-2"}}, "prerequisites": [{"Authorization": "authorization-evidence/execution"}]},
+    {"activation_cause_frontier_id": "frontier/input-1", "origin": {"RootedBy": {"ExternalTrigger": "occurrence/trigger/input-1"}}, "prerequisites": [{"Authorization": "authorization-evidence/execution"}]},
+    {"activation_cause_frontier_id": "frontier/ground-tick-1", "origin": {"RootedBy": {"ExternalTrigger": "occurrence/trigger/ground-tick-1"}}, "prerequisites": [{"Authorization": "authorization-evidence/execution"}]},
+    {"activation_cause_frontier_id": "frontier/jump-1", "origin": {"RootedBy": {"ExternalTrigger": "occurrence/trigger/jump-1"}}, "prerequisites": [{"Authorization": "authorization-evidence/execution"}]},
+    {"activation_cause_frontier_id": "frontier/gravity-tick-1", "origin": {"RootedBy": {"ExternalTrigger": "occurrence/trigger/gravity-tick-1"}}, "prerequisites": [{"Authorization": "authorization-evidence/execution"}]},
+    {"activation_cause_frontier_id": "frontier/collision-tick-1", "origin": {"RootedBy": {"ExternalTrigger": "occurrence/trigger/collision-tick-1"}}, "prerequisites": [{"Authorization": "authorization-evidence/execution"}]},
+    {"activation_cause_frontier_id": "frontier/landing-tick-1", "origin": {"RootedBy": {"ExternalTrigger": "occurrence/trigger/landing-tick-1"}}, "prerequisites": [{"Authorization": "authorization-evidence/execution"}]},
+    {"activation_cause_frontier_id": "frontier/input-listener-1", "origin": {"RootedBy": {"ExternalTrigger": "occurrence/trigger/input-listener-start-1"}}, "prerequisites": [{"Authorization": "authorization-evidence/execution"}]},
+    {"activation_cause_frontier_id": "frontier/jump-airborne-rejected", "origin": {"RootedBy": {"ExternalTrigger": "occurrence/trigger/jump-airborne-rejected"}}, "prerequisites": [{"Authorization": "authorization-evidence/execution"}]}
+  ],
+  "initial_contexts": [
+    {"initial_context_id": "context/position-observe-w2", "clause_semantics_id": "semantics/process-v1", "program_snapshot_id": "program-snapshot/jump-arena-v1", "program_revision_id": "program-revision/jump-arena-r0", "runtime_session_id": "runtime-session/jump-arena-s0", "runtime_policy_id": "runtime-policy/deterministic-fixed-step-v1", "state_revision_id": "state/main-w2", "authorization_evidence_ids": ["authorization-evidence/execution"], "capabilities": [], "budget_units": 1, "continuation_scope": null, "cancellation_scope": "cancellation-scope/position-observe", "scheduler_constraints": "no observable order between independent requests"},
+    {"initial_context_id": "context/input-w0", "clause_semantics_id": "semantics/process-v1", "program_snapshot_id": "program-snapshot/jump-arena-v1", "program_revision_id": "program-revision/jump-arena-r0", "runtime_session_id": "runtime-session/jump-arena-s0", "runtime_policy_id": "runtime-policy/deterministic-fixed-step-v1", "state_revision_id": "state/main-w0", "authorization_evidence_ids": ["authorization-evidence/execution"], "capabilities": [], "budget_units": 3, "continuation_scope": null, "cancellation_scope": "cancellation-scope/input-1", "scheduler_constraints": "one root transition"},
+    {"initial_context_id": "context/ground-tick-w1", "clause_semantics_id": "semantics/process-v1", "program_snapshot_id": "program-snapshot/jump-arena-v1", "program_revision_id": "program-revision/jump-arena-r0", "runtime_session_id": "runtime-session/jump-arena-s0", "runtime_policy_id": "runtime-policy/deterministic-fixed-step-v1", "state_revision_id": "state/main-w1", "authorization_evidence_ids": ["authorization-evidence/execution"], "capabilities": [], "budget_units": 10, "continuation_scope": null, "cancellation_scope": "cancellation-scope/ground-tick-1", "scheduler_constraints": "one root transition"},
+    {"initial_context_id": "context/jump-w2", "clause_semantics_id": "semantics/process-v1", "program_snapshot_id": "program-snapshot/jump-arena-v1", "program_revision_id": "program-revision/jump-arena-r0", "runtime_session_id": "runtime-session/jump-arena-s0", "runtime_policy_id": "runtime-policy/deterministic-fixed-step-v1", "state_revision_id": "state/main-w2", "authorization_evidence_ids": ["authorization-evidence/execution"], "capabilities": [], "budget_units": 4, "continuation_scope": null, "cancellation_scope": "cancellation-scope/jump-1", "scheduler_constraints": "one root transition"},
+    {"initial_context_id": "context/gravity-tick-w3", "clause_semantics_id": "semantics/process-v1", "program_snapshot_id": "program-snapshot/jump-arena-v1", "program_revision_id": "program-revision/jump-arena-r0", "runtime_session_id": "runtime-session/jump-arena-s0", "runtime_policy_id": "runtime-policy/deterministic-fixed-step-v1", "state_revision_id": "state/main-w3", "authorization_evidence_ids": ["authorization-evidence/execution"], "capabilities": [], "budget_units": 10, "continuation_scope": null, "cancellation_scope": "cancellation-scope/gravity-tick-1", "scheduler_constraints": "one root transition"},
+    {"initial_context_id": "context/collision-tick-w0", "clause_semantics_id": "semantics/process-v1", "program_snapshot_id": "program-snapshot/jump-arena-v1", "program_revision_id": "program-revision/jump-arena-r0", "runtime_session_id": "runtime-session/jump-arena-collision", "runtime_policy_id": "runtime-policy/deterministic-fixed-step-v1", "state_revision_id": "state/collision-w0", "authorization_evidence_ids": ["authorization-evidence/execution"], "capabilities": [], "budget_units": 10, "continuation_scope": null, "cancellation_scope": "cancellation-scope/collision-tick-1", "scheduler_constraints": "one root transition"},
+    {"initial_context_id": "context/landing-tick-w0", "clause_semantics_id": "semantics/process-v1", "program_snapshot_id": "program-snapshot/jump-arena-v1", "program_revision_id": "program-revision/jump-arena-r0", "runtime_session_id": "runtime-session/jump-arena-landing", "runtime_policy_id": "runtime-policy/deterministic-fixed-step-v1", "state_revision_id": "state/landing-w0", "authorization_evidence_ids": ["authorization-evidence/execution"], "capabilities": [], "budget_units": 10, "continuation_scope": null, "cancellation_scope": "cancellation-scope/landing-tick-1", "scheduler_constraints": "one root transition"},
+    {"initial_context_id": "context/input-listener-w0", "clause_semantics_id": "semantics/process-v1", "program_snapshot_id": "program-snapshot/jump-arena-v1", "program_revision_id": "program-revision/jump-arena-r0", "runtime_session_id": "runtime-session/jump-arena-s0", "runtime_policy_id": "runtime-policy/deterministic-fixed-step-v1", "state_revision_id": "state/main-w0", "authorization_evidence_ids": ["authorization-evidence/execution"], "capabilities": [], "budget_units": 3, "continuation_scope": "continuation-scope/input-listener-1", "cancellation_scope": "cancellation-scope/input-listener-1", "scheduler_constraints": "causal input order only"},
+    {"initial_context_id": "context/jump-airborne-w3", "clause_semantics_id": "semantics/process-v1", "program_snapshot_id": "program-snapshot/jump-arena-v1", "program_revision_id": "program-revision/jump-arena-r0", "runtime_session_id": "runtime-session/jump-arena-s0", "runtime_policy_id": "runtime-policy/deterministic-fixed-step-v1", "state_revision_id": "state/main-w3", "authorization_evidence_ids": ["authorization-evidence/execution"], "capabilities": [], "budget_units": 4, "continuation_scope": null, "cancellation_scope": "cancellation-scope/jump-airborne-rejected", "scheduler_constraints": "one root transition"}
+  ],
+  "state_revisions": [
+    {
+      "state_revision_id": "state/main-w0",
+      "runtime_session_id": "runtime-session/jump-arena-s0",
+      "predecessor": null,
+      "cause": {"SessionStartOccurrenceId": "occurrence/session-start/main"},
+      "rows": {
+        "position": {"occurrence_id": "occurrence/state/main-position-0", "value": {"vec3": ["0", "0", "0"]}},
+        "velocity": {"occurrence_id": "occurrence/state/main-velocity-0", "value": {"vec3": ["0", "0", "0"]}},
+        "grounded": {"occurrence_id": "occurrence/state/main-grounded-0", "value": true},
+        "horizontal_intent": {"occurrence_id": "occurrence/state/main-intent-0", "value": {"vec3": ["0", "0", "0"]}}
+      }
+    },
+    {
+      "state_revision_id": "state/main-w1",
+      "runtime_session_id": "runtime-session/jump-arena-s0",
+      "predecessor": "state/main-w0",
+      "cause": {"TransitionOccurrenceId": "occurrence/transition/input-1"},
+      "rows": {
+        "position": {"occurrence_id": "occurrence/state/main-position-0", "value": {"vec3": ["0", "0", "0"]}},
+        "velocity": {"occurrence_id": "occurrence/state/main-velocity-0", "value": {"vec3": ["0", "0", "0"]}},
+        "grounded": {"occurrence_id": "occurrence/state/main-grounded-0", "value": true},
+        "horizontal_intent": {"occurrence_id": "occurrence/state/main-intent-1", "value": {"vec3": ["1", "0", "-1"]}}
+      }
+    },
+    {
+      "state_revision_id": "state/main-w2",
+      "runtime_session_id": "runtime-session/jump-arena-s0",
+      "predecessor": "state/main-w1",
+      "cause": {"TransitionOccurrenceId": "occurrence/transition/ground-tick-1"},
+      "rows": {
+        "position": {"occurrence_id": "occurrence/state/main-position-2", "value": {"vec3": ["2.5", "0", "-2.5"]}},
+        "velocity": {"occurrence_id": "occurrence/state/main-velocity-2", "value": {"vec3": ["5", "0", "-5"]}},
+        "grounded": {"occurrence_id": "occurrence/state/main-grounded-0", "value": true},
+        "horizontal_intent": {"occurrence_id": "occurrence/state/main-intent-1", "value": {"vec3": ["1", "0", "-1"]}}
+      }
+    },
+    {
+      "state_revision_id": "state/main-w3",
+      "runtime_session_id": "runtime-session/jump-arena-s0",
+      "predecessor": "state/main-w2",
+      "cause": {"TransitionOccurrenceId": "occurrence/transition/jump-1"},
+      "rows": {
+        "position": {"occurrence_id": "occurrence/state/main-position-2", "value": {"vec3": ["2.5", "0", "-2.5"]}},
+        "velocity": {"occurrence_id": "occurrence/state/main-velocity-3", "value": {"vec3": ["5", "8", "-5"]}},
+        "grounded": {"occurrence_id": "occurrence/state/main-grounded-3", "value": false},
+        "horizontal_intent": {"occurrence_id": "occurrence/state/main-intent-1", "value": {"vec3": ["1", "0", "-1"]}}
+      }
+    },
+    {
+      "state_revision_id": "state/main-w4",
+      "runtime_session_id": "runtime-session/jump-arena-s0",
+      "predecessor": "state/main-w3",
+      "cause": {"TransitionOccurrenceId": "occurrence/transition/gravity-tick-1"},
+      "rows": {
+        "position": {"occurrence_id": "occurrence/state/main-position-4", "value": {"vec3": ["3.75", "1.5", "-3.75"]}},
+        "velocity": {"occurrence_id": "occurrence/state/main-velocity-4", "value": {"vec3": ["5", "6", "-5"]}},
+        "grounded": {"occurrence_id": "occurrence/state/main-grounded-3", "value": false},
+        "horizontal_intent": {"occurrence_id": "occurrence/state/main-intent-1", "value": {"vec3": ["1", "0", "-1"]}}
+      }
+    },
+    {
+      "state_revision_id": "state/collision-w0",
+      "runtime_session_id": "runtime-session/jump-arena-collision",
+      "predecessor": null,
+      "cause": {"SessionStartOccurrenceId": "occurrence/session-start/collision"},
+      "rows": {
+        "position": {"occurrence_id": "occurrence/state/collision-position-0", "value": {"vec3": ["9.5", "0", "0"]}},
+        "velocity": {"occurrence_id": "occurrence/state/collision-velocity-0", "value": {"vec3": ["0", "0", "0"]}},
+        "grounded": {"occurrence_id": "occurrence/state/collision-grounded-0", "value": true},
+        "horizontal_intent": {"occurrence_id": "occurrence/state/collision-intent-0", "value": {"vec3": ["1", "0", "0"]}}
+      }
+    },
+    {
+      "state_revision_id": "state/collision-w1",
+      "runtime_session_id": "runtime-session/jump-arena-collision",
+      "predecessor": "state/collision-w0",
+      "cause": {"TransitionOccurrenceId": "occurrence/transition/collision-tick-1"},
+      "rows": {
+        "position": {"occurrence_id": "occurrence/state/collision-position-1", "value": {"vec3": ["10", "0", "0"]}},
+        "velocity": {"occurrence_id": "occurrence/state/collision-velocity-1", "value": {"vec3": ["2", "0", "0"]}},
+        "grounded": {"occurrence_id": "occurrence/state/collision-grounded-0", "value": true},
+        "horizontal_intent": {"occurrence_id": "occurrence/state/collision-intent-0", "value": {"vec3": ["1", "0", "0"]}}
+      }
+    },
+    {
+      "state_revision_id": "state/landing-w0",
+      "runtime_session_id": "runtime-session/jump-arena-landing",
+      "predecessor": null,
+      "cause": {"SessionStartOccurrenceId": "occurrence/session-start/landing"},
+      "rows": {
+        "position": {"occurrence_id": "occurrence/state/landing-position-0", "value": {"vec3": ["10", "0.25", "0"]}},
+        "velocity": {"occurrence_id": "occurrence/state/landing-velocity-0", "value": {"vec3": ["2", "-1", "0"]}},
+        "grounded": {"occurrence_id": "occurrence/state/landing-grounded-0", "value": false},
+        "horizontal_intent": {"occurrence_id": "occurrence/state/landing-intent-0", "value": {"vec3": ["1", "0", "0"]}}
+      }
+    },
+    {
+      "state_revision_id": "state/landing-w1",
+      "runtime_session_id": "runtime-session/jump-arena-landing",
+      "predecessor": "state/landing-w0",
+      "cause": {"TransitionOccurrenceId": "occurrence/transition/landing-tick-1"},
+      "rows": {
+        "position": {"occurrence_id": "occurrence/state/landing-position-1", "value": {"vec3": ["10", "0", "0"]}},
+        "velocity": {"occurrence_id": "occurrence/state/landing-velocity-1", "value": {"vec3": ["0", "0", "0"]}},
+        "grounded": {"occurrence_id": "occurrence/state/landing-grounded-1", "value": true},
+        "horizontal_intent": {"occurrence_id": "occurrence/state/landing-intent-0", "value": {"vec3": ["1", "0", "0"]}}
+      }
+    }
+  ],
+  "candidate_deltas": [
+    {
+      "candidate_delta_id": "candidate/input-1",
+      "base_state_revision_id": "state/main-w0",
+      "produced_by": {"run_id": "run/input-1", "activation_id": "activation/input-1", "step_id": "step/input-1"},
+      "transition_occurrence_id": "occurrence/transition/input-1",
+      "withdraw": ["occurrence/state/main-intent-0"],
+      "admit": [
+        {"occurrence_id": "occurrence/state/main-intent-1", "relation_schema_id": "relation-schema/arena-horizontal-intent", "bindings": {"player": "player-1", "value": {"vec3": ["1", "0", "-1"]}}}
+      ]
+    },
+    {
+      "candidate_delta_id": "candidate/ground-tick-1",
+      "base_state_revision_id": "state/main-w1",
+      "produced_by": {"run_id": "run/ground-tick-1", "activation_id": "activation/ground-tick-1", "step_id": "step/ground-tick-1"},
+      "transition_occurrence_id": "occurrence/transition/ground-tick-1",
+      "withdraw": ["occurrence/state/main-position-0", "occurrence/state/main-velocity-0"],
+      "admit": [
+        {"occurrence_id": "occurrence/state/main-position-2", "relation_schema_id": "relation-schema/arena-position", "bindings": {"player": "player-1", "value": {"vec3": ["2.5", "0", "-2.5"]}}},
+        {"occurrence_id": "occurrence/state/main-velocity-2", "relation_schema_id": "relation-schema/arena-velocity", "bindings": {"player": "player-1", "value": {"vec3": ["5", "0", "-5"]}}}
+      ]
+    },
+    {
+      "candidate_delta_id": "candidate/jump-1",
+      "base_state_revision_id": "state/main-w2",
+      "produced_by": {"run_id": "run/jump-1", "activation_id": "activation/jump-1", "step_id": "step/jump-1"},
+      "transition_occurrence_id": "occurrence/transition/jump-1",
+      "withdraw": ["occurrence/state/main-velocity-2", "occurrence/state/main-grounded-0"],
+      "admit": [
+        {"occurrence_id": "occurrence/state/main-velocity-3", "relation_schema_id": "relation-schema/arena-velocity", "bindings": {"player": "player-1", "value": {"vec3": ["5", "8", "-5"]}}},
+        {"occurrence_id": "occurrence/state/main-grounded-3", "relation_schema_id": "relation-schema/arena-grounded", "bindings": {"player": "player-1", "value": false}}
+      ]
+    },
+    {
+      "candidate_delta_id": "candidate/gravity-tick-1",
+      "base_state_revision_id": "state/main-w3",
+      "produced_by": {"run_id": "run/gravity-tick-1", "activation_id": "activation/gravity-tick-1", "step_id": "step/gravity-tick-1"},
+      "transition_occurrence_id": "occurrence/transition/gravity-tick-1",
+      "withdraw": ["occurrence/state/main-position-2", "occurrence/state/main-velocity-3"],
+      "admit": [
+        {"occurrence_id": "occurrence/state/main-position-4", "relation_schema_id": "relation-schema/arena-position", "bindings": {"player": "player-1", "value": {"vec3": ["3.75", "1.5", "-3.75"]}}},
+        {"occurrence_id": "occurrence/state/main-velocity-4", "relation_schema_id": "relation-schema/arena-velocity", "bindings": {"player": "player-1", "value": {"vec3": ["5", "6", "-5"]}}}
+      ]
+    },
+    {
+      "candidate_delta_id": "candidate/collision-tick-1",
+      "base_state_revision_id": "state/collision-w0",
+      "produced_by": {"run_id": "run/collision-tick-1", "activation_id": "activation/collision-tick-1", "step_id": "step/collision-tick-1"},
+      "transition_occurrence_id": "occurrence/transition/collision-tick-1",
+      "withdraw": ["occurrence/state/collision-position-0", "occurrence/state/collision-velocity-0"],
+      "admit": [
+        {"occurrence_id": "occurrence/state/collision-position-1", "relation_schema_id": "relation-schema/arena-position", "bindings": {"player": "player-1", "value": {"vec3": ["10", "0", "0"]}}},
+        {"occurrence_id": "occurrence/state/collision-velocity-1", "relation_schema_id": "relation-schema/arena-velocity", "bindings": {"player": "player-1", "value": {"vec3": ["2", "0", "0"]}}}
+      ]
+    },
+    {
+      "candidate_delta_id": "candidate/landing-tick-1",
+      "base_state_revision_id": "state/landing-w0",
+      "produced_by": {"run_id": "run/landing-tick-1", "activation_id": "activation/landing-tick-1", "step_id": "step/landing-tick-1"},
+      "transition_occurrence_id": "occurrence/transition/landing-tick-1",
+      "withdraw": ["occurrence/state/landing-position-0", "occurrence/state/landing-velocity-0", "occurrence/state/landing-grounded-0"],
+      "admit": [
+        {"occurrence_id": "occurrence/state/landing-position-1", "relation_schema_id": "relation-schema/arena-position", "bindings": {"player": "player-1", "value": {"vec3": ["10", "0", "0"]}}},
+        {"occurrence_id": "occurrence/state/landing-velocity-1", "relation_schema_id": "relation-schema/arena-velocity", "bindings": {"player": "player-1", "value": {"vec3": ["0", "0", "0"]}}},
+        {"occurrence_id": "occurrence/state/landing-grounded-1", "relation_schema_id": "relation-schema/arena-grounded", "bindings": {"player": "player-1", "value": true}}
+      ]
+    }
+  ],
+  "admissions": [
+    {"admission_occurrence_id": "occurrence/admission/input-1", "base_state_revision_id": "state/main-w0", "candidate_delta_id": "candidate/input-1", "evidence_step_id": "step/input-1", "authorization_evidence_id": "authorization-evidence/admission", "judgment_occurrence_id": "occurrence/judgment/input-1-obligations-pass", "successor_state_revision_id": "state/main-w1"},
+    {"admission_occurrence_id": "occurrence/admission/ground-tick-1", "base_state_revision_id": "state/main-w1", "candidate_delta_id": "candidate/ground-tick-1", "evidence_step_id": "step/ground-tick-1", "authorization_evidence_id": "authorization-evidence/admission", "judgment_occurrence_id": "occurrence/judgment/ground-tick-1-obligations-pass", "successor_state_revision_id": "state/main-w2"},
+    {"admission_occurrence_id": "occurrence/admission/jump-1", "base_state_revision_id": "state/main-w2", "candidate_delta_id": "candidate/jump-1", "evidence_step_id": "step/jump-1", "authorization_evidence_id": "authorization-evidence/admission", "judgment_occurrence_id": "occurrence/judgment/jump-1-obligations-pass", "successor_state_revision_id": "state/main-w3"},
+    {"admission_occurrence_id": "occurrence/admission/gravity-tick-1", "base_state_revision_id": "state/main-w3", "candidate_delta_id": "candidate/gravity-tick-1", "evidence_step_id": "step/gravity-tick-1", "authorization_evidence_id": "authorization-evidence/admission", "judgment_occurrence_id": "occurrence/judgment/gravity-tick-1-obligations-pass", "successor_state_revision_id": "state/main-w4"},
+    {"admission_occurrence_id": "occurrence/admission/collision-tick-1", "base_state_revision_id": "state/collision-w0", "candidate_delta_id": "candidate/collision-tick-1", "evidence_step_id": "step/collision-tick-1", "authorization_evidence_id": "authorization-evidence/admission", "judgment_occurrence_id": "occurrence/judgment/collision-tick-1-obligations-pass", "successor_state_revision_id": "state/collision-w1"},
+    {"admission_occurrence_id": "occurrence/admission/landing-tick-1", "base_state_revision_id": "state/landing-w0", "candidate_delta_id": "candidate/landing-tick-1", "evidence_step_id": "step/landing-tick-1", "authorization_evidence_id": "authorization-evidence/admission", "judgment_occurrence_id": "occurrence/judgment/landing-tick-1-obligations-pass", "successor_state_revision_id": "state/landing-w1"}
+  ],
+  "positive": [
+    {
+      "id": "same-application-two-pure-activations",
+      "application_id": "application/position-player-1",
+      "mode_id": "mode/position-observe-one",
+      "initial_context_id": "context/position-observe-w2",
+      "activations": [
+        {
+          "external_trigger": {"occurrence_id": "occurrence/trigger/position-observe-1", "value": "observe-position", "provenance": {"EnteredThrough": ["boundary/observation-request", "external-evidence/position-observe-1", []]}},
+          "activation_id": "activation/position-observe-1",
+          "activation_cause_frontier_id": "frontier/position-observe-1",
+          "run_id": "run/position-observe-1",
+          "run_membership": {"RootOf": "run/position-observe-1"},
+          "step_id": "step/position-observe-1",
+          "step_cause_frontier": [{"ActivationStart": "activation/position-observe-1"}],
+          "observations": [{"observation_id": "observation/position-1", "value": {"vec3": ["2.5", "0", "-2.5"]}, "provenance": {"ProducedBy": ["run/position-observe-1", "activation/position-observe-1", "step/position-observe-1"]}}]
+        },
+        {
+          "external_trigger": {"occurrence_id": "occurrence/trigger/position-observe-2", "value": "observe-position", "provenance": {"EnteredThrough": ["boundary/observation-request", "external-evidence/position-observe-2", []]}},
+          "activation_id": "activation/position-observe-2",
+          "activation_cause_frontier_id": "frontier/position-observe-2",
+          "run_id": "run/position-observe-2",
+          "run_membership": {"RootOf": "run/position-observe-2"},
+          "step_id": "step/position-observe-2",
+          "step_cause_frontier": [{"ActivationStart": "activation/position-observe-2"}],
+          "observations": [{"observation_id": "observation/position-2", "value": {"vec3": ["2.5", "0", "-2.5"]}, "provenance": {"ProducedBy": ["run/position-observe-2", "activation/position-observe-2", "step/position-observe-2"]}}]
+        }
+      ],
+      "candidate_deltas": [],
+      "admission_occurrences": [],
+      "created_state_revisions": [],
+      "assertions": [
+        "the ApplicationId is equal across both engagements",
+        "the trigger, Activation, Run, Step, and Observation identities are pairwise distinct",
+        "the observed Values are equal",
+        "pure observation leaves state/main-w2 authoritative and byte-identical"
+      ]
+    },
+    {
+      "id": "input-proposal-is-immutable-until-admission",
+      "application_id": "application/input-player-1-east-north",
+      "mode_id": "mode/input-propose-state",
+      "initial_context_id": "context/input-w0",
+      "trigger": {"ExternalTriggerOccurrenceId": "occurrence/trigger/input-1", "provenance": {"EnteredThrough": ["boundary/browser-input", "external-evidence/input-1", []]}},
+      "activation_id": "activation/input-1",
+      "activation_cause_frontier_id": "frontier/input-1",
+      "run_id": "run/input-1",
+      "run_membership": {"RootOf": "run/input-1"},
+      "step": {"step_id": "step/input-1", "step_cause_frontier": [{"ActivationStart": "activation/input-1"}], "observations": [], "candidate_delta_id": "candidate/input-1", "continuation": null},
+      "before_admission": {"authoritative_state_revision_ids": ["state/main-w0"], "base_payload_after_candidate": "exactly state/main-w0", "successor_allocated": false},
+      "admission_occurrence_id": "occurrence/admission/input-1",
+      "after_admission": {"authoritative_successor_state_revision_id": "state/main-w1", "base_payload": "still exactly state/main-w0"}
+    },
+    {
+      "id": "grounded-horizontal-movement",
+      "application_id": "application/tick-player-1-half",
+      "mode_id": "mode/tick-propose-state",
+      "initial_context_id": "context/ground-tick-w1",
+      "trigger": {"ExternalTriggerOccurrenceId": "occurrence/trigger/ground-tick-1", "provenance": {"EnteredThrough": ["boundary/fixed-step", "external-evidence/tick-half-1", []]}},
+      "activation_id": "activation/ground-tick-1",
+      "activation_cause_frontier_id": "frontier/ground-tick-1",
+      "run_id": "run/ground-tick-1",
+      "run_membership": {"RootOf": "run/ground-tick-1"},
+      "step": {"step_id": "step/ground-tick-1", "step_cause_frontier": [{"ActivationStart": "activation/ground-tick-1"}], "observations": [], "candidate_delta_id": "candidate/ground-tick-1", "continuation": null},
+      "admission_occurrence_id": "occurrence/admission/ground-tick-1",
+      "successor_state_revision_id": "state/main-w2"
+    },
+    {
+      "id": "grounded-jump-impulse",
+      "application_id": "application/jump-player-1",
+      "mode_id": "mode/jump-propose-state",
+      "initial_context_id": "context/jump-w2",
+      "trigger": {"ExternalTriggerOccurrenceId": "occurrence/trigger/jump-1", "provenance": {"EnteredThrough": ["boundary/browser-input", "external-evidence/jump-1", []]}},
+      "activation_id": "activation/jump-1",
+      "activation_cause_frontier_id": "frontier/jump-1",
+      "run_id": "run/jump-1",
+      "run_membership": {"RootOf": "run/jump-1"},
+      "step": {"step_id": "step/jump-1", "step_cause_frontier": [{"ActivationStart": "activation/jump-1"}], "observations": [], "candidate_delta_id": "candidate/jump-1", "continuation": null},
+      "admission_occurrence_id": "occurrence/admission/jump-1",
+      "successor_state_revision_id": "state/main-w3"
+    },
+    {
+      "id": "airborne-gravity",
+      "application_id": "application/tick-player-1-quarter",
+      "mode_id": "mode/tick-propose-state",
+      "initial_context_id": "context/gravity-tick-w3",
+      "trigger": {"ExternalTriggerOccurrenceId": "occurrence/trigger/gravity-tick-1", "provenance": {"EnteredThrough": ["boundary/fixed-step", "external-evidence/tick-quarter-1", []]}},
+      "activation_id": "activation/gravity-tick-1",
+      "activation_cause_frontier_id": "frontier/gravity-tick-1",
+      "run_id": "run/gravity-tick-1",
+      "run_membership": {"RootOf": "run/gravity-tick-1"},
+      "step": {"step_id": "step/gravity-tick-1", "step_cause_frontier": [{"ActivationStart": "activation/gravity-tick-1"}], "observations": [], "candidate_delta_id": "candidate/gravity-tick-1", "continuation": null},
+      "admission_occurrence_id": "occurrence/admission/gravity-tick-1",
+      "successor_state_revision_id": "state/main-w4"
+    },
+    {
+      "id": "east-wall-collision-clamps-and-reduces-velocity",
+      "application_id": "application/tick-player-1-quarter",
+      "mode_id": "mode/tick-propose-state",
+      "initial_context_id": "context/collision-tick-w0",
+      "trigger": {"ExternalTriggerOccurrenceId": "occurrence/trigger/collision-tick-1", "provenance": {"EnteredThrough": ["boundary/fixed-step", "external-evidence/collision-tick-1", []]}},
+      "activation_id": "activation/collision-tick-1",
+      "activation_cause_frontier_id": "frontier/collision-tick-1",
+      "run_id": "run/collision-tick-1",
+      "run_membership": {"RootOf": "run/collision-tick-1"},
+      "step": {"step_id": "step/collision-tick-1", "step_cause_frontier": [{"ActivationStart": "activation/collision-tick-1"}], "observations": [], "candidate_delta_id": "candidate/collision-tick-1", "continuation": null},
+      "exact_arithmetic": {"unclamped_x": "10.75", "clamped_x": "10", "result_velocity_x": "2"},
+      "admission_occurrence_id": "occurrence/admission/collision-tick-1",
+      "successor_state_revision_id": "state/collision-w1"
+    },
+    {
+      "id": "landing-at-wall-restores-groundedness",
+      "application_id": "application/tick-player-1-quarter",
+      "mode_id": "mode/tick-propose-state",
+      "initial_context_id": "context/landing-tick-w0",
+      "trigger": {"ExternalTriggerOccurrenceId": "occurrence/trigger/landing-tick-1", "provenance": {"EnteredThrough": ["boundary/fixed-step", "external-evidence/landing-tick-1", []]}},
+      "activation_id": "activation/landing-tick-1",
+      "activation_cause_frontier_id": "frontier/landing-tick-1",
+      "run_id": "run/landing-tick-1",
+      "run_membership": {"RootOf": "run/landing-tick-1"},
+      "step": {"step_id": "step/landing-tick-1", "step_cause_frontier": [{"ActivationStart": "activation/landing-tick-1"}], "observations": [], "candidate_delta_id": "candidate/landing-tick-1", "continuation": null},
+      "exact_arithmetic": {"unclamped_x": "11.25", "clamped_x": "10", "next_vertical_velocity": "-3", "unclamped_y": "-0.5", "landed_y": "0"},
+      "admission_occurrence_id": "occurrence/admission/landing-tick-1",
+      "successor_state_revision_id": "state/landing-w1"
+    },
+    {
+      "id": "input-listener-suspend-resume-cancel",
+      "application_id": "application/input-listener-player-1",
+      "mode_id": "mode/input-listener-reactive",
+      "initial_context_id": "context/input-listener-w0",
+      "trigger": {"ExternalTriggerOccurrenceId": "occurrence/trigger/input-listener-start-1", "provenance": {"EnteredThrough": ["boundary/listener-start", "external-evidence/input-listener-start-1", []]}},
+      "activation_id": "activation/input-listener-1",
+      "activation_cause_frontier_id": "frontier/input-listener-1",
+      "run_id": "run/input-listener-1",
+      "run_membership": {"RootOf": "run/input-listener-1"},
+      "steps": [
+        {
+          "step_id": "step/input-listener-start",
+          "step_cause_frontier": [{"ActivationStart": "activation/input-listener-1"}],
+          "observations": [{"observation_id": "observation/listener-ready-1", "value": "listener-ready", "provenance": {"ProducedBy": ["run/input-listener-1", "activation/input-listener-1", "step/input-listener-start"]}}],
+          "continuation": {
+            "continuation_id": "continuation/input-listener-1",
+            "run_id": "run/input-listener-1",
+            "activation_id": "activation/input-listener-1",
+            "emitting_step_id": "step/input-listener-start",
+            "application_id": "application/input-listener-player-1",
+            "mode_id": "mode/input-listener-reactive",
+            "program_snapshot_id": "program-snapshot/jump-arena-v1",
+            "program_revision_id": "program-revision/jump-arena-r0",
+            "runtime_session_id": "runtime-session/jump-arena-s0",
+            "state_revision_id": "state/main-w0",
+            "runtime_policy_id": "runtime-policy/deterministic-fixed-step-v1",
+            "clause_semantics_id": "semantics/process-v1",
+            "typed_remainder": "input-stream/await-next-observation",
+            "remaining_budget_units": 2,
+            "cancellation_scope": "cancellation-scope/input-listener-1",
+            "linear_use_authority": "continuation-use/input-listener-1",
+            "status": "suspended"
+          }
+        },
+        {
+          "resumption_occurrence": {
+            "occurrence_id": "occurrence/resumption/input-listener-1",
+            "target_continuation_id": "continuation/input-listener-1",
+            "target_activation_id": "activation/input-listener-1",
+            "provenance": {"EnteredThrough": ["boundary/browser-input", "external-evidence/listener-east-1", [{"ExternalInputOccurrenceId": "occurrence/external-input/listener-east-1"}]]}
+          },
+          "step_id": "step/input-listener-resume",
+          "step_cause_frontier": [
+            {"PriorStep": ["run/input-listener-1", "activation/input-listener-1", "step/input-listener-start"]},
+            {"ContinuationTakeup": ["continuation/input-listener-1", "occurrence/resumption/input-listener-1"]}
+          ],
+          "entered_input_occurrence": {"occurrence_id": "occurrence/external-input/listener-east-1", "value": {"vec3": ["1", "0", "0"]}, "provenance": {"EnteredThrough": ["boundary/browser-input", "external-evidence/listener-east-1", []]}},
+          "observations": [{"observation_id": "observation/input-listener-east-1", "value": {"vec3": ["1", "0", "0"]}, "provenance": {"ProducedBy": ["run/input-listener-1", "activation/input-listener-1", "step/input-listener-resume"]}}],
+          "continuation": {
+            "continuation_id": "continuation/input-listener-2",
+            "run_id": "run/input-listener-1",
+            "activation_id": "activation/input-listener-1",
+            "emitting_step_id": "step/input-listener-resume",
+            "application_id": "application/input-listener-player-1",
+            "mode_id": "mode/input-listener-reactive",
+            "program_snapshot_id": "program-snapshot/jump-arena-v1",
+            "program_revision_id": "program-revision/jump-arena-r0",
+            "runtime_session_id": "runtime-session/jump-arena-s0",
+            "state_revision_id": "state/main-w0",
+            "runtime_policy_id": "runtime-policy/deterministic-fixed-step-v1",
+            "clause_semantics_id": "semantics/process-v1",
+            "typed_remainder": "input-stream/await-next-observation",
+            "remaining_budget_units": 1,
+            "cancellation_scope": "cancellation-scope/input-listener-1",
+            "linear_use_authority": "continuation-use/input-listener-2",
+            "status": "live"
+          }
+        },
+        {
+          "cancellation_occurrence": {
+            "occurrence_id": "occurrence/cancellation/input-listener-1",
+            "target": {"ActivationId": "activation/input-listener-1"},
+            "provenance": {"EnteredThrough": ["boundary/browser-input", "external-evidence/listener-cancel-1", []]}
+          },
+          "step_id": "step/input-listener-cancel",
+          "step_cause_frontier": [
+            {"PriorStep": ["run/input-listener-1", "activation/input-listener-1", "step/input-listener-resume"]},
+            {"CancellationRequest": "occurrence/cancellation/input-listener-1"}
+          ],
+          "observations": [{"observation_id": "observation/input-listener-cancelled-1", "value": "cancelled", "provenance": {"ProducedBy": ["run/input-listener-1", "activation/input-listener-1", "step/input-listener-cancel"]}}],
+          "continuation": null,
+          "outcome": {"tag": "failed", "reason": "CANCELLED"}
+        }
+      ],
+      "candidate_deltas": [],
+      "admission_occurrences": [],
+      "created_state_revisions": [],
+      "assertions": ["one ActivationId and RunId persist through all three Steps", "suspension and resumption do not allocate another Application or Activation", "cancellation orders only the Step that cites its CancellationOccurrence"]
+    }
+  ],
+  "negative": [
+    {
+      "id": "airborne-double-jump-rejected",
+      "application_id": "application/jump-player-1",
+      "mode_id": "mode/jump-propose-state",
+      "initial_context_id": "context/jump-airborne-w3",
+      "trigger": {"ExternalTriggerOccurrenceId": "occurrence/trigger/jump-airborne-rejected", "provenance": {"EnteredThrough": ["boundary/browser-input", "external-evidence/jump-airborne-rejected", []]}},
+      "activation_id": "activation/jump-airborne-rejected",
+      "activation_cause_frontier_id": "frontier/jump-airborne-rejected",
+      "run_id": "run/jump-airborne-rejected",
+      "run_membership": {"RootOf": "run/jump-airborne-rejected"},
+      "step_id": "step/jump-airborne-rejected",
+      "step_cause_frontier": [{"ActivationStart": "activation/jump-airborne-rejected"}],
+      "outcome": {"tag": "failed", "reason": "NO_APPLICABLE_PROCESS_RULE", "failed_guard": "grounded = true"},
+      "observations": [],
+      "candidate_deltas": [],
+      "admission_occurrences": [],
+      "created_state_revisions": [],
+      "authoritative_state_after": "exactly state/main-w3"
+    },
+    {
+      "id": "stale-program-pin",
+      "application_id": "application/tick-player-1-quarter",
+      "selected_mode_id": "mode/tick-propose-state",
+      "initial_context_basis_id": "context/gravity-tick-w3",
+      "required_program_revision_id": "program-revision/jump-arena-r0",
+      "provided_program_revision_id": "program-revision/jump-arena-r1-stale",
+      "outcome": {"tag": "failed", "reason": "PROGRAM_REVISION_PIN_MISMATCH"},
+      "allocated": {"activation_ids": [], "run_ids": [], "step_ids": [], "observations": [], "candidate_deltas": [], "state_revisions": []}
+    },
+    {
+      "id": "stale-world-pin",
+      "application_id": "application/tick-player-1-quarter",
+      "selected_mode_id": "mode/tick-propose-state",
+      "initial_context_basis_id": "context/gravity-tick-w3",
+      "request_base_state_revision_id": "state/main-w3",
+      "provided_initial_context_state_revision_id": "state/main-w2",
+      "outcome": {"tag": "failed", "reason": "STATE_REVISION_PIN_MISMATCH"},
+      "allocated": {"activation_ids": [], "run_ids": [], "step_ids": [], "observations": [], "candidate_deltas": [], "state_revisions": []}
+    },
+    {
+      "id": "ambiguous-mode-selection",
+      "application_id": "application/tick-player-1-quarter",
+      "initial_context_id": "context/gravity-tick-w3",
+      "eligible_mode_ids": ["mode/tick-propose-state", "mode/tick-propose-state-audited"],
+      "selected_mode_id": null,
+      "outcome": {"tag": "failed", "reason": "AMBIGUOUS_MODE_SELECTION"},
+      "allocated": {"activation_ids": [], "run_ids": [], "step_ids": [], "observations": [], "candidate_deltas": [], "state_revisions": []}
+    },
+    {
+      "id": "wrong-mode-selection",
+      "application_id": "application/tick-player-1-quarter",
+      "initial_context_id": "context/gravity-tick-w3",
+      "eligible_mode_ids": ["mode/tick-propose-state", "mode/tick-propose-state-audited"],
+      "selected_mode_id": "mode/position-observe-one",
+      "outcome": {"tag": "failed", "reason": "MODE_NOT_ELIGIBLE"},
+      "allocated": {"activation_ids": [], "run_ids": [], "step_ids": [], "observations": [], "candidate_deltas": [], "state_revisions": []}
+    },
+    {
+      "id": "budget-exhausted-before-activation",
+      "application_id": "application/tick-player-1-quarter",
+      "selected_mode_id": "mode/tick-propose-state",
+      "initial_context_basis_id": "context/gravity-tick-w3",
+      "minimum_budget_units": 10,
+      "provided_budget_units": 9,
+      "outcome": {"tag": "exhausted", "obligations": ["BUDGET_AT_LEAST_10"]},
+      "allocated": {"activation_ids": [], "run_ids": [], "step_ids": [], "observations": [], "candidate_deltas": [], "state_revisions": []}
+    },
+    {
+      "id": "stale-continuation-world-pin",
+      "continuation_id": "continuation/input-listener-2",
+      "pinned_state_revision_id": "state/main-w0",
+      "provided_state_revision_id": "state/main-w1",
+      "outcome": {"tag": "failed", "reason": "CONTINUATION_STATE_REVISION_PIN_MISMATCH"},
+      "allocated": {"step_ids": [], "observations": [], "candidate_deltas": [], "state_revisions": []},
+      "continuation_after": "continuation/input-listener-2 remains byte-identical and live"
+    },
+    {
+      "id": "linear-continuation-reuse",
+      "continuation_id": "continuation/input-listener-1",
+      "linear_use_authority": "continuation-use/input-listener-1",
+      "prior_consuming_step_id": "step/input-listener-resume",
+      "outcome": {"tag": "failed", "reason": "CONTINUATION_ALREADY_CONSUMED"},
+      "allocated": {"step_ids": [], "observations": [], "candidate_deltas": [], "state_revisions": []}
+    }
+  ]
+}
