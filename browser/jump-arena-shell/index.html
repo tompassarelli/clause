@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Clause — Jump Arena Shell</title>
+  <style>
+    :root { color-scheme: dark; font-family: ui-sans-serif, system-ui, sans-serif; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #090d17; color: #eef3ff; }
+    main { width: min(1100px, 100vw); padding: 24px; }
+    h1 { margin: 0 0 12px; font-size: clamp(2rem, 5vw, 4rem); letter-spacing: -.05em; }
+    p { margin: 0 0 18px; color: #9dafd2; }
+    #arena { width: 100%; height: min(72vh, 680px); overflow: hidden; border: 1px solid #354467; border-radius: 20px; background: #111a2c; }
+    canvas { display: block; width: 100%; height: 100%; outline: none; }
+  </style>
+  <script type="importmap">
+    {"imports":{"beagle/core.js":"./generated/node_modules/beagle/core.js","three":"./node_modules/three/build/three.module.js"}}
+  </script>
+</head>
+<body>
+  <main>
+    <h1>Jump Arena</h1>
+    <p>Passive Clause/WASM view: input is emitted; only supplied immutable frames are rendered.</p>
+    <section id="arena" aria-label="Third-person jump arena"></section>
+  </main>
+  <script type="module" src="./generated/jump-arena-shell/demo.js"></script>
+</body>
+</html>
