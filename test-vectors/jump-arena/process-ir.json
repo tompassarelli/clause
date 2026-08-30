@@ -33,6 +33,68 @@
       "executable-requirement/sufficient-budget"
     ]
   },
+  "occurrence_provenance_contract": {
+    "allowed_variants": {
+      "ProducedBy": [
+        "RunId",
+        "ActivationId",
+        "StepId"
+      ],
+      "EnteredThrough": [
+        "BoundaryRef",
+        "ExternalEvidenceRef",
+        "ExternalCauseFrontier"
+      ]
+    },
+    "external_cause_frontier": {
+      "finite": true,
+      "typed": true,
+      "typed_references_only": true,
+      "self_future_and_cyclic_causes_rejected": true
+    },
+    "fixture_frontier_contracts": {
+      "JudgmentOccurrenceId": [
+        "TransitionOccurrenceId",
+        "ObservationId"
+      ],
+      "ProgramAdmissionOccurrenceId": [
+        "ProgramChangeOccurrenceId"
+      ],
+      "StateAdmissionOccurrenceId": [
+        "TransitionOccurrenceId",
+        "JudgmentOccurrenceId"
+      ]
+    }
+  },
+  "state_revision_cause_contract": {
+    "initial_cause_variant": "SessionStartOccurrenceId",
+    "successor_cause_variant": "TransitionOccurrence",
+    "successor_transition_fields": [
+      "transition_occurrence_id",
+      "run_id",
+      "activation_id",
+      "step_id"
+    ],
+    "admission_occurrence_field": "admission_occurrence_id",
+    "admission_occurrence_is_state_revision_cause": false,
+    "admission_occurrence_is_state_revision_identity": false
+  },
+  "activation_start_record_contract": {
+    "required_fields": [
+      "activation_start_record_ref",
+      "activation_id",
+      "application_id",
+      "mode_id",
+      "static_activation_basis_evidence_id",
+      "dynamic_prerequisite_binding_refs",
+      "activation_cause_frontier_id",
+      "initial_context_id"
+    ],
+    "static_activation_basis_source": "activation_executable_validity_evidence",
+    "dynamic_prerequisite_bindings_are_exact": true,
+    "empty_mode_prerequisite_schema_requires_empty_bindings": true,
+    "initial_context_is_complete": true
+  },
   "executable_validity_requirement_records": [
     {
       "executable_validity_requirement_ref": "executable-requirement/closed-application-form"
@@ -149,7 +211,7 @@
       "type_ref": "type/failure/cancelled"
     },
     {
-      "type_ref": "type/failure/budget-exhausted"
+      "type_ref": "type/obligation/resource-budget"
     },
     {
       "type_ref": "type/failure/continuation-pin-mismatch"
@@ -201,6 +263,21 @@
     },
     {
       "type_ref": "type/outcome/failed"
+    },
+    {
+      "type_ref": "type/outcome/exhausted"
+    },
+    {
+      "type_ref": "type/outcome/suspended"
+    },
+    {
+      "type_ref": "type/observation/premise-verdict"
+    },
+    {
+      "type_ref": "type/observation/premise-binding"
+    },
+    {
+      "type_ref": "type/observation/admission-obligation-result"
     }
   ],
   "referent_records": [
@@ -492,6 +569,29 @@
       "outcome_contract_ref": "outcome-contract/failure-before-step",
       "outcome_type_ref": "type/outcome/failed",
       "allocation_phase_ref": "allocation-phase/before-step"
+    },
+    {
+      "outcome_contract_ref": "outcome-contract/exhausted-before-activation",
+      "outcome_type_ref": "type/outcome/exhausted",
+      "allocation_phase_ref": "allocation-phase/before-activation",
+      "required_payload_field": "obligation_refs"
+    },
+    {
+      "outcome_contract_ref": "outcome-contract/suspended-after-step",
+      "outcome_type_ref": "type/outcome/suspended",
+      "allocation_phase_ref": "allocation-phase/after-step",
+      "required_payload_field": "continuation_record_ref"
+    }
+  ],
+  "outcome_obligation_contracts": [
+    {
+      "outcome_obligation_contract_ref": "outcome-obligation-contract/minimum-mode-budget",
+      "obligation_type_ref": "type/obligation/resource-budget",
+      "required_fields": [
+        "mode_id",
+        "required_budget_units",
+        "provided_budget_units"
+      ]
     }
   ],
   "shape_schemas": [
@@ -1626,6 +1726,9 @@
       "cardinality": "maybe",
       "purity": "pure",
       "determinism": "deterministic",
+      "exhaustion_obligation_type_refs": [
+        "type/obligation/resource-budget"
+      ],
       "minimum_budget_units": 3
     },
     {
@@ -1645,8 +1748,8 @@
       "observation_type_ids": [
         "type/observation/position"
       ],
-      "failure_type_ids": [
-        "type/failure/budget-exhausted"
+      "exhaustion_obligation_type_refs": [
+        "type/obligation/resource-budget"
       ],
       "minimum_budget_units": 1
     },
@@ -1830,8 +1933,10 @@
       "cardinality": "maybe",
       "purity": "state-transition-proposal",
       "determinism": "deterministic",
+      "exhaustion_obligation_type_refs": [
+        "type/obligation/resource-budget"
+      ],
       "failure_type_ids": [
-        "type/failure/budget-exhausted",
         "type/failure/no-applicable-process-rule"
       ],
       "minimum_budget_units": 3
@@ -1850,8 +1955,10 @@
       "cardinality": "maybe",
       "purity": "state-transition-proposal",
       "determinism": "deterministic",
+      "exhaustion_obligation_type_refs": [
+        "type/obligation/resource-budget"
+      ],
       "failure_type_ids": [
-        "type/failure/budget-exhausted",
         "type/failure/no-applicable-process-rule"
       ],
       "minimum_budget_units": 4
@@ -1871,8 +1978,10 @@
       "cardinality": "maybe",
       "purity": "state-transition-proposal",
       "determinism": "deterministic",
+      "exhaustion_obligation_type_refs": [
+        "type/obligation/resource-budget"
+      ],
       "failure_type_ids": [
-        "type/failure/budget-exhausted",
         "type/failure/numeric-domain",
         "type/failure/no-applicable-process-rule"
       ],
@@ -1893,8 +2002,10 @@
       "cardinality": "maybe",
       "purity": "state-transition-proposal",
       "determinism": "deterministic",
+      "exhaustion_obligation_type_refs": [
+        "type/obligation/resource-budget"
+      ],
       "failure_type_ids": [
-        "type/failure/budget-exhausted",
         "type/failure/numeric-domain"
       ],
       "minimum_budget_units": 12,
@@ -1920,9 +2031,11 @@
         "type/observation/horizontal-input",
         "type/observation/listener-cancelled"
       ],
+      "exhaustion_obligation_type_refs": [
+        "type/obligation/resource-budget"
+      ],
       "failure_type_ids": [
         "type/failure/cancelled",
-        "type/failure/budget-exhausted",
         "type/failure/continuation-pin-mismatch",
         "type/failure/continuation-already-consumed"
       ],
@@ -2727,8 +2840,34 @@
       ]
     }
   },
+  "program_admission_occurrence_contract": {
+    "required_fields": [
+      "admission_occurrence_id",
+      "provenance",
+      "target_type_ref",
+      "base_program_revision_id",
+      "candidate_program_snapshot_id",
+      "authorization_evidence",
+      "result_program_revision_id"
+    ],
+    "required_provenance_variant": "EnteredThrough",
+    "required_external_cause_kinds": [
+      "ProgramChangeOccurrenceId"
+    ]
+  },
   "program_admission_occurrence_record": {
     "admission_occurrence_id": "occurrence/program-admission/jump-arena-r0",
+    "provenance": {
+      "EnteredThrough": [
+        "boundary/governed-program-admission",
+        "external-evidence/program-admission/jump-arena-r0",
+        [
+          {
+            "ProgramChangeOccurrenceId": "occurrence/program-change/jump-arena-root"
+          }
+        ]
+      ]
+    },
     "target_type_ref": "ProgramRevision",
     "base_program_revision_id": null,
     "candidate_program_snapshot_id": "program-snapshot/jump-arena-v1",
@@ -3001,21 +3140,24 @@
         "StepId",
         "ApplicationId",
         "ModeId",
+        "ActivationStartRecordRef",
         "ProgramSnapshotId",
         "ProgramRevisionId",
         "RuntimeSessionId",
         "StateRevisionId",
-      "RuntimePolicyId",
-      "ClauseSemanticsId",
-      "AuthorizationEvidenceSet",
-      "CapabilitySet",
-      "scheduler-constraints",
-      "remaining-budget",
+        "RuntimePolicyId",
+        "ClauseSemanticsId",
+        "AuthorizationEvidenceSet",
+        "CapabilitySet",
+        "scheduler-constraints",
+        "configuration-ownership-token",
+        "remaining-budget",
         "cancellation-scope",
         "use-authority"
       ],
       "cancellation_failure_type_ref": "type/failure/cancelled",
-      "budget_failure_type_ref": "type/failure/budget-exhausted",
+      "budget_exhaustion_obligation_type_ref": "type/obligation/resource-budget",
+      "budget_exhausted_outcome_type_ref": "type/outcome/exhausted",
       "stale_pin_failure_type_ref": "type/failure/continuation-pin-mismatch",
       "reuse_failure_type_ref": "type/failure/continuation-already-consumed"
     }
@@ -3023,55 +3165,28 @@
   "admission_obligations": [
     {
       "obligation_id": "obligation/singleton-player-state",
-      "predicate_ref": "obligation-predicate/relation-cardinality-one",
-      "argument_refs": [
-        "relation-schema/arena-position",
-        "relation-schema/arena-velocity",
-        "relation-schema/arena-grounded",
-        "relation-schema/arena-horizontal-intent",
-        "referent/player-1"
-      ]
+      "ordered_index": 0,
+      "requirement_term_ref": "requirement-term/admission/singleton-player-state"
     },
     {
       "obligation_id": "obligation/arena-bounds-ordered",
-      "predicate_ref": "obligation-predicate/f64-less-or-equal-pairs",
-      "argument_refs": [
-        "program-binding/min-x",
-        "program-binding/max-x",
-        "program-binding/min-z",
-        "program-binding/max-z"
-      ]
+      "ordered_index": 1,
+      "requirement_term_ref": "requirement-term/admission/arena-bounds-ordered"
     },
     {
       "obligation_id": "obligation/position-inside-arena",
-      "predicate_ref": "obligation-predicate/vec3-horizontal-within-bounds",
-      "argument_refs": [
-        "relation-schema/arena-position",
-        "program-binding/min-x",
-        "program-binding/max-x",
-        "program-binding/min-z",
-        "program-binding/max-z"
-      ]
+      "ordered_index": 2,
+      "requirement_term_ref": "requirement-term/admission/position-inside-arena"
     },
     {
       "obligation_id": "obligation/grounded-state",
-      "predicate_ref": "obligation-predicate/grounded-implies-floor-zero-vertical",
-      "argument_refs": [
-        "relation-schema/arena-position",
-        "relation-schema/arena-velocity",
-        "relation-schema/arena-grounded",
-        "program-binding/floor-height",
-        "shape-role/vec3/y",
-        "value/f64/0"
-      ]
+      "ordered_index": 3,
+      "requirement_term_ref": "requirement-term/admission/grounded-state"
     },
     {
       "obligation_id": "obligation/exact-base",
-      "predicate_ref": "obligation-predicate/withdrawals-exist-in-exact-base",
-      "argument_refs": [
-        "type/candidate-state-delta",
-        "StateRevisionId"
-      ]
+      "ordered_index": 4,
+      "requirement_term_ref": "requirement-term/admission/exact-base"
     }
   ],
   "fixture_predicates": [
@@ -3206,6 +3321,11 @@
     ],
     "authorization_evidence_id": "authorization-evidence/admission",
     "judgment_issuance_authorization_evidence_id": "authorization-evidence/judgment-issuance",
+    "required_provenance_variant": "EnteredThrough",
+    "required_external_cause_kinds": [
+      "TransitionOccurrenceId",
+      "JudgmentOccurrenceId"
+    ],
     "required_obligation_ids": [
       "obligation/singleton-player-state",
       "obligation/arena-bounds-ordered",
@@ -3222,7 +3342,9 @@
     ],
     "candidate_authority": false,
     "partial_successor_visibility": false,
-    "source_projection": "projection-gap/outer-admission"
+    "source_projection": "projection-gap/outer-admission",
+    "obligation_evidence_identity_type": "ObservationId",
+    "judgment_evidence_must_be_step_produced": true
   },
   "host_boundary": {
     "generic_mechanics_allowed": [
@@ -3264,7 +3386,14 @@
       "admit_relation_schema_ids": [
         "relation-schema/arena-horizontal-intent"
       ],
-      "numeric_template_refs": []
+      "numeric_template_refs": [],
+      "premise_slots": [
+        {
+          "slot": "premise-slot/source-transition/input/00",
+          "role": "premise-role/prior-horizontal-intent",
+          "relation_schema_id": "relation-schema/arena-horizontal-intent"
+        }
+      ]
     },
     {
       "transition_declaration_ref": "source-transition/jump",
@@ -3290,7 +3419,24 @@
         "relation-schema/arena-velocity",
         "relation-schema/arena-grounded"
       ],
-      "numeric_template_refs": []
+      "numeric_template_refs": [],
+      "premise_slots": [
+        {
+          "slot": "premise-slot/source-transition/jump/00",
+          "role": "premise-role/player-velocity",
+          "relation_schema_id": "relation-schema/arena-velocity"
+        },
+        {
+          "slot": "premise-slot/source-transition/jump/01",
+          "role": "premise-role/grounded-true",
+          "relation_schema_id": "relation-schema/arena-grounded"
+        },
+        {
+          "slot": "premise-slot/source-transition/jump/02",
+          "role": "premise-role/arena-jump-speed",
+          "relation_schema_id": "relation-schema/arena-jump-speed"
+        }
+      ]
     },
     {
       "transition_declaration_ref": "source-transition/tick-grounded",
@@ -3326,6 +3472,75 @@
       ],
       "numeric_template_refs": [
         "numeric-template/horizontal-axis-binary64"
+      ],
+      "premise_slots": [
+        {
+          "slot": "premise-slot/source-transition/tick-grounded/00",
+          "role": "premise-role/dt-positive",
+          "relation_schema_id": "relation-schema/f64-compare",
+          "operator_ref": "operator/f64-greater-than",
+          "mode_id": "mode/f64-greater-than"
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-grounded/01",
+          "role": "premise-role/player-position",
+          "relation_schema_id": "relation-schema/arena-position"
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-grounded/02",
+          "role": "premise-role/player-velocity",
+          "relation_schema_id": "relation-schema/arena-velocity"
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-grounded/03",
+          "role": "premise-role/player-horizontal-intent",
+          "relation_schema_id": "relation-schema/arena-horizontal-intent"
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-grounded/04",
+          "role": "premise-role/player-grounded",
+          "relation_schema_id": "relation-schema/arena-grounded"
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-grounded/05",
+          "role": "premise-role/arena-move-speed",
+          "relation_schema_id": "relation-schema/arena-move-speed"
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-grounded/06",
+          "role": "premise-role/arena-floor-height",
+          "relation_schema_id": "relation-schema/arena-floor-height"
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-grounded/07",
+          "role": "premise-role/arena-min-x",
+          "relation_schema_id": "relation-schema/arena-min-x"
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-grounded/08",
+          "role": "premise-role/arena-max-x",
+          "relation_schema_id": "relation-schema/arena-max-x"
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-grounded/09",
+          "role": "premise-role/arena-min-z",
+          "relation_schema_id": "relation-schema/arena-min-z"
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-grounded/10",
+          "role": "premise-role/arena-max-z",
+          "relation_schema_id": "relation-schema/arena-max-z"
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-grounded/11",
+          "role": "premise-role/clamped-x",
+          "relation_schema_id": "relation-schema/scalar-clamped-between"
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-grounded/12",
+          "role": "premise-role/clamped-z",
+          "relation_schema_id": "relation-schema/scalar-clamped-between"
+        }
       ]
     },
     {
@@ -3364,6 +3579,87 @@
       "numeric_template_refs": [
         "numeric-template/horizontal-axis-binary64",
         "numeric-template/airborne-vertical-binary64"
+      ],
+      "premise_slots": [
+        {
+          "slot": "premise-slot/source-transition/tick-airborne/00",
+          "role": "premise-role/dt-positive",
+          "relation_schema_id": "relation-schema/f64-compare",
+          "operator_ref": "operator/f64-greater-than",
+          "mode_id": "mode/f64-greater-than"
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-airborne/01",
+          "role": "premise-role/player-position",
+          "relation_schema_id": "relation-schema/arena-position"
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-airborne/02",
+          "role": "premise-role/player-velocity",
+          "relation_schema_id": "relation-schema/arena-velocity"
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-airborne/03",
+          "role": "premise-role/player-horizontal-intent",
+          "relation_schema_id": "relation-schema/arena-horizontal-intent"
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-airborne/04",
+          "role": "premise-role/player-grounded",
+          "relation_schema_id": "relation-schema/arena-grounded"
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-airborne/05",
+          "role": "premise-role/arena-gravity",
+          "relation_schema_id": "relation-schema/arena-gravity"
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-airborne/06",
+          "role": "premise-role/arena-move-speed",
+          "relation_schema_id": "relation-schema/arena-move-speed"
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-airborne/07",
+          "role": "premise-role/arena-floor-height",
+          "relation_schema_id": "relation-schema/arena-floor-height"
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-airborne/08",
+          "role": "premise-role/arena-min-x",
+          "relation_schema_id": "relation-schema/arena-min-x"
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-airborne/09",
+          "role": "premise-role/arena-max-x",
+          "relation_schema_id": "relation-schema/arena-max-x"
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-airborne/10",
+          "role": "premise-role/arena-min-z",
+          "relation_schema_id": "relation-schema/arena-min-z"
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-airborne/11",
+          "role": "premise-role/arena-max-z",
+          "relation_schema_id": "relation-schema/arena-max-z"
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-airborne/12",
+          "role": "premise-role/clamped-x",
+          "relation_schema_id": "relation-schema/scalar-clamped-between"
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-airborne/13",
+          "role": "premise-role/clamped-z",
+          "relation_schema_id": "relation-schema/scalar-clamped-between"
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-airborne/14",
+          "role": "premise-role/remains-above-floor",
+          "relation_schema_id": "relation-schema/f64-compare",
+          "operator_ref": "operator/f64-greater-than",
+          "mode_id": "mode/f64-greater-than"
+        }
       ]
     },
     {
@@ -3404,6 +3700,87 @@
       "numeric_template_refs": [
         "numeric-template/horizontal-axis-binary64",
         "numeric-template/airborne-vertical-binary64"
+      ],
+      "premise_slots": [
+        {
+          "slot": "premise-slot/source-transition/tick-landing/00",
+          "role": "premise-role/dt-positive",
+          "relation_schema_id": "relation-schema/f64-compare",
+          "operator_ref": "operator/f64-greater-than",
+          "mode_id": "mode/f64-greater-than"
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-landing/01",
+          "role": "premise-role/player-position",
+          "relation_schema_id": "relation-schema/arena-position"
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-landing/02",
+          "role": "premise-role/player-velocity",
+          "relation_schema_id": "relation-schema/arena-velocity"
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-landing/03",
+          "role": "premise-role/player-horizontal-intent",
+          "relation_schema_id": "relation-schema/arena-horizontal-intent"
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-landing/04",
+          "role": "premise-role/player-grounded",
+          "relation_schema_id": "relation-schema/arena-grounded"
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-landing/05",
+          "role": "premise-role/arena-gravity",
+          "relation_schema_id": "relation-schema/arena-gravity"
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-landing/06",
+          "role": "premise-role/arena-move-speed",
+          "relation_schema_id": "relation-schema/arena-move-speed"
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-landing/07",
+          "role": "premise-role/arena-floor-height",
+          "relation_schema_id": "relation-schema/arena-floor-height"
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-landing/08",
+          "role": "premise-role/arena-min-x",
+          "relation_schema_id": "relation-schema/arena-min-x"
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-landing/09",
+          "role": "premise-role/arena-max-x",
+          "relation_schema_id": "relation-schema/arena-max-x"
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-landing/10",
+          "role": "premise-role/arena-min-z",
+          "relation_schema_id": "relation-schema/arena-min-z"
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-landing/11",
+          "role": "premise-role/arena-max-z",
+          "relation_schema_id": "relation-schema/arena-max-z"
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-landing/12",
+          "role": "premise-role/clamped-x",
+          "relation_schema_id": "relation-schema/scalar-clamped-between"
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-landing/13",
+          "role": "premise-role/clamped-z",
+          "relation_schema_id": "relation-schema/scalar-clamped-between"
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-landing/14",
+          "role": "premise-role/reaches-or-crosses-floor",
+          "relation_schema_id": "relation-schema/f64-compare",
+          "operator_ref": "operator/f64-less-or-equal",
+          "mode_id": "mode/f64-less-or-equal"
+        }
       ]
     }
   ],
@@ -3586,9 +3963,19 @@
     "typed_outcome": {
       "required_fields": [
         "outcome_type_ref",
-        "failure_type_ref",
         "outcome_contract_ref"
       ],
+      "variants": {
+        "type/outcome/failed": {
+          "required_payload_field": "failure_type_ref"
+        },
+        "type/outcome/exhausted": {
+          "required_payload_field": "obligation_refs"
+        },
+        "type/outcome/suspended": {
+          "required_payload_field": "continuation_record_ref"
+        }
+      },
       "untyped_reason_code": false
     },
     "activation_executable_validity": {
@@ -3642,6 +4029,25 @@
       "payload_edge": "input_type_ref-and-term_ref",
       "untyped_payload": false
     },
+    "continuation_record": {
+      "required_fields": [
+        "continuation_record_ref",
+        "continuation_id",
+        "run_id",
+        "activation_id",
+        "emitting_step_id",
+        "activation_start_record_ref",
+        "status_ref",
+        "configuration_ownership_token_ref",
+        "remainder_ref",
+        "remaining_budget_units",
+        "cancellation_scope",
+        "linear_use_authority_ref"
+      ],
+      "suspension_status_ref": "continuation-status/suspended",
+      "suspending_step_outcome_contract_ref": "outcome-contract/suspended-after-step",
+      "sole_live_configuration_transferred": true
+    },
     "fixture_assertion": {
       "required_fields": [
         "predicate_ref",
@@ -3652,15 +4058,35 @@
     "transition_occurrence": {
       "required_fields": [
         "transition_occurrence_id",
+        "provenance",
         "source_transition_declaration_ref",
         "application_id",
         "mode_id",
         "run_id",
         "activation_id",
         "step_id",
-        "candidate_delta_id"
+        "candidate_delta_id",
+        "premise_supports"
       ],
       "source_selection": "exact-typed-reference",
+      "source_spelling_dispatch": false,
+      "premise_support_contract_ref": "premise_support_contract"
+    },
+    "admission_obligation_observation": {
+      "required_fields_source": "admission_obligation_evaluation_contract.evidence_observation_required_fields",
+      "required_provenance_variant": "ProducedBy",
+      "required_result_value_domain": "type/bool",
+      "judgment_reference_field": "evidence_observation_id"
+    },
+    "premise_evidence_observation": {
+      "required_fields": [
+        "observation_id",
+        "observation_type_ref",
+        "evaluated_constraint",
+        "value_ref",
+        "provenance"
+      ],
+      "required_provenance_variant": "ProducedBy",
       "source_spelling_dispatch": false
     }
   },
@@ -3681,6 +4107,11 @@
     ],
     "required_authority_ref": "authority/jump-arena-obligation-checker",
     "required_authorization_evidence_id": "authorization-evidence/judgment-issuance",
+    "required_provenance_variant": "EnteredThrough",
+    "required_external_cause_kinds": [
+      "TransitionOccurrenceId",
+      "ObservationId"
+    ],
     "subject_required_fields": [
       "candidate_delta_id",
       "base_state_revision_id",
@@ -3703,8 +4134,8 @@
     "candidate_may_supply_authority": false,
     "obligation_result_required_fields": [
       "obligation_id",
-      "predicate_ref",
-      "evidence_occurrence_id",
+      "requirement_term_ref",
+      "evidence_observation_id",
       "result_value_ref"
     ],
     "required_result_value_ref": "value/bool/true"
@@ -3810,5 +4241,444 @@
       "axis_role_id": "shape-role/vec3/z",
       "bound_program_binding_ref": "program-binding/min-z"
     }
-  ]
+  ],
+  "obligation_requirement_expression_contract": {
+    "rename_equivariant": true,
+    "identifier_spelling_has_semantic_force": false,
+    "resolution_context_fields": [
+      "candidate_delta_id",
+      "base_state_revision_id",
+      "proposed_successor_payload_ref",
+      "program_revision_id"
+    ],
+    "node_variants": {
+      "All": "evaluate ordered children and return false at the first false child",
+      "Every": "iterate the resolved finite source set in canonical typed-reference order",
+      "ExactRelationCardinality": "count exact matching binding occurrences in the proposed successor payload and compare with expected_cardinality",
+      "F64CompareApplication": "execute the declared relation schema, operator, Mode, role bindings, and binary64 contract",
+      "ExactValue": "compare two resolved typed values under exact value identity",
+      "Implies": "true when condition is false; otherwise evaluate consequence",
+      "Member": "test exact typed-reference membership without spelling-based coercion",
+      "ProposedSuccessorRole": "resolve one role or shape component from an exact successor binding occurrence",
+      "ProgramBindingRole": "resolve one role from the exact admitted program binding occurrence",
+      "CandidateWithdrawOccurrences": "resolve the candidate withdrawal occurrence multiset without deduplication",
+      "BaseStatePayloadOccurrences": "resolve the exact base StateRevision payload occurrence set",
+      "CurrentItem": "the exact current member selected by Every"
+    },
+    "first_unsatisfied_requirement_stops_admission": true,
+    "unevaluated_later_requirements_emit_no_observation": true
+  },
+  "obligation_requirement_terms": [
+    {
+      "requirement_term_ref": "requirement-term/admission/singleton-player-state",
+      "expression": {
+        "All": [
+          {
+            "ExactRelationCardinality": {
+              "payload_source": "proposed_successor_payload_ref",
+              "relation_schema_id": "relation-schema/arena-position",
+              "subject_role_id": "role/arena-position/player",
+              "subject_ref": "referent/player-1",
+              "expected_cardinality": 1
+            }
+          },
+          {
+            "ExactRelationCardinality": {
+              "payload_source": "proposed_successor_payload_ref",
+              "relation_schema_id": "relation-schema/arena-velocity",
+              "subject_role_id": "role/arena-velocity/player",
+              "subject_ref": "referent/player-1",
+              "expected_cardinality": 1
+            }
+          },
+          {
+            "ExactRelationCardinality": {
+              "payload_source": "proposed_successor_payload_ref",
+              "relation_schema_id": "relation-schema/arena-grounded",
+              "subject_role_id": "role/arena-grounded/player",
+              "subject_ref": "referent/player-1",
+              "expected_cardinality": 1
+            }
+          },
+          {
+            "ExactRelationCardinality": {
+              "payload_source": "proposed_successor_payload_ref",
+              "relation_schema_id": "relation-schema/arena-horizontal-intent",
+              "subject_role_id": "role/arena-horizontal-intent/player",
+              "subject_ref": "referent/player-1",
+              "expected_cardinality": 1
+            }
+          }
+        ]
+      }
+    },
+    {
+      "requirement_term_ref": "requirement-term/admission/arena-bounds-ordered",
+      "expression": {
+        "All": [
+          {
+            "F64CompareApplication": {
+              "relation_schema_id": "relation-schema/f64-compare",
+              "operator_ref": "operator/f64-less-or-equal",
+              "mode_id": "mode/f64-less-or-equal",
+              "numeric_contract_ref": "atom-contract/f64-binary64",
+              "role_bindings": [
+                {
+                  "role_id": "role/f64-compare/left",
+                  "operand": {
+                    "ProgramBindingRole": {
+                      "binding_occurrence_ref": "program-binding/min-x",
+                      "role_id": "role/arena-min-x/value"
+                    }
+                  }
+                },
+                {
+                  "role_id": "role/f64-compare/right",
+                  "operand": {
+                    "ProgramBindingRole": {
+                      "binding_occurrence_ref": "program-binding/max-x",
+                      "role_id": "role/arena-max-x/value"
+                    }
+                  }
+                },
+                {
+                  "role_id": "role/f64-compare/result",
+                  "produced_role": true
+                }
+              ]
+            }
+          },
+          {
+            "F64CompareApplication": {
+              "relation_schema_id": "relation-schema/f64-compare",
+              "operator_ref": "operator/f64-less-or-equal",
+              "mode_id": "mode/f64-less-or-equal",
+              "numeric_contract_ref": "atom-contract/f64-binary64",
+              "role_bindings": [
+                {
+                  "role_id": "role/f64-compare/left",
+                  "operand": {
+                    "ProgramBindingRole": {
+                      "binding_occurrence_ref": "program-binding/min-z",
+                      "role_id": "role/arena-min-z/value"
+                    }
+                  }
+                },
+                {
+                  "role_id": "role/f64-compare/right",
+                  "operand": {
+                    "ProgramBindingRole": {
+                      "binding_occurrence_ref": "program-binding/max-z",
+                      "role_id": "role/arena-max-z/value"
+                    }
+                  }
+                },
+                {
+                  "role_id": "role/f64-compare/result",
+                  "produced_role": true
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "requirement_term_ref": "requirement-term/admission/position-inside-arena",
+      "expression": {
+        "All": [
+          {
+            "F64CompareApplication": {
+              "relation_schema_id": "relation-schema/f64-compare",
+              "operator_ref": "operator/f64-less-or-equal",
+              "mode_id": "mode/f64-less-or-equal",
+              "numeric_contract_ref": "atom-contract/f64-binary64",
+              "role_bindings": [
+                {
+                  "role_id": "role/f64-compare/left",
+                  "operand": {
+                    "ProgramBindingRole": {
+                      "binding_occurrence_ref": "program-binding/min-x",
+                      "role_id": "role/arena-min-x/value"
+                    }
+                  }
+                },
+                {
+                  "role_id": "role/f64-compare/right",
+                  "operand": {
+                    "ProposedSuccessorRole": {
+                      "relation_schema_id": "relation-schema/arena-position",
+                      "subject_ref": "referent/player-1",
+                      "role_id": "role/arena-position/value",
+                      "shape_role_id": "shape-role/vec3/x"
+                    }
+                  }
+                },
+                {
+                  "role_id": "role/f64-compare/result",
+                  "produced_role": true
+                }
+              ]
+            }
+          },
+          {
+            "F64CompareApplication": {
+              "relation_schema_id": "relation-schema/f64-compare",
+              "operator_ref": "operator/f64-less-or-equal",
+              "mode_id": "mode/f64-less-or-equal",
+              "numeric_contract_ref": "atom-contract/f64-binary64",
+              "role_bindings": [
+                {
+                  "role_id": "role/f64-compare/left",
+                  "operand": {
+                    "ProposedSuccessorRole": {
+                      "relation_schema_id": "relation-schema/arena-position",
+                      "subject_ref": "referent/player-1",
+                      "role_id": "role/arena-position/value",
+                      "shape_role_id": "shape-role/vec3/x"
+                    }
+                  }
+                },
+                {
+                  "role_id": "role/f64-compare/right",
+                  "operand": {
+                    "ProgramBindingRole": {
+                      "binding_occurrence_ref": "program-binding/max-x",
+                      "role_id": "role/arena-max-x/value"
+                    }
+                  }
+                },
+                {
+                  "role_id": "role/f64-compare/result",
+                  "produced_role": true
+                }
+              ]
+            }
+          },
+          {
+            "F64CompareApplication": {
+              "relation_schema_id": "relation-schema/f64-compare",
+              "operator_ref": "operator/f64-less-or-equal",
+              "mode_id": "mode/f64-less-or-equal",
+              "numeric_contract_ref": "atom-contract/f64-binary64",
+              "role_bindings": [
+                {
+                  "role_id": "role/f64-compare/left",
+                  "operand": {
+                    "ProgramBindingRole": {
+                      "binding_occurrence_ref": "program-binding/min-z",
+                      "role_id": "role/arena-min-z/value"
+                    }
+                  }
+                },
+                {
+                  "role_id": "role/f64-compare/right",
+                  "operand": {
+                    "ProposedSuccessorRole": {
+                      "relation_schema_id": "relation-schema/arena-position",
+                      "subject_ref": "referent/player-1",
+                      "role_id": "role/arena-position/value",
+                      "shape_role_id": "shape-role/vec3/z"
+                    }
+                  }
+                },
+                {
+                  "role_id": "role/f64-compare/result",
+                  "produced_role": true
+                }
+              ]
+            }
+          },
+          {
+            "F64CompareApplication": {
+              "relation_schema_id": "relation-schema/f64-compare",
+              "operator_ref": "operator/f64-less-or-equal",
+              "mode_id": "mode/f64-less-or-equal",
+              "numeric_contract_ref": "atom-contract/f64-binary64",
+              "role_bindings": [
+                {
+                  "role_id": "role/f64-compare/left",
+                  "operand": {
+                    "ProposedSuccessorRole": {
+                      "relation_schema_id": "relation-schema/arena-position",
+                      "subject_ref": "referent/player-1",
+                      "role_id": "role/arena-position/value",
+                      "shape_role_id": "shape-role/vec3/z"
+                    }
+                  }
+                },
+                {
+                  "role_id": "role/f64-compare/right",
+                  "operand": {
+                    "ProgramBindingRole": {
+                      "binding_occurrence_ref": "program-binding/max-z",
+                      "role_id": "role/arena-max-z/value"
+                    }
+                  }
+                },
+                {
+                  "role_id": "role/f64-compare/result",
+                  "produced_role": true
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "requirement_term_ref": "requirement-term/admission/grounded-state",
+      "expression": {
+        "Implies": {
+          "condition": {
+            "ExactValue": {
+              "actual": {
+                "ProposedSuccessorRole": {
+                  "relation_schema_id": "relation-schema/arena-grounded",
+                  "subject_ref": "referent/player-1",
+                  "role_id": "role/arena-grounded/value"
+                }
+              },
+              "expected": {
+                "ValueRef": "value/bool/true"
+              }
+            }
+          },
+          "consequence": {
+            "All": [
+              {
+                "F64CompareApplication": {
+                  "relation_schema_id": "relation-schema/f64-compare",
+                  "operator_ref": "operator/f64-equal",
+                  "mode_id": "mode/f64-equal",
+                  "numeric_contract_ref": "atom-contract/f64-binary64",
+                  "role_bindings": [
+                    {
+                      "role_id": "role/f64-compare/left",
+                      "operand": {
+                        "ProposedSuccessorRole": {
+                          "relation_schema_id": "relation-schema/arena-position",
+                          "subject_ref": "referent/player-1",
+                          "role_id": "role/arena-position/value",
+                          "shape_role_id": "shape-role/vec3/y"
+                        }
+                      }
+                    },
+                    {
+                      "role_id": "role/f64-compare/right",
+                      "operand": {
+                        "ProgramBindingRole": {
+                          "binding_occurrence_ref": "program-binding/floor-height",
+                          "role_id": "role/arena-floor-height/value"
+                        }
+                      }
+                    },
+                    {
+                      "role_id": "role/f64-compare/result",
+                      "produced_role": true
+                    }
+                  ]
+                }
+              },
+              {
+                "F64CompareApplication": {
+                  "relation_schema_id": "relation-schema/f64-compare",
+                  "operator_ref": "operator/f64-equal",
+                  "mode_id": "mode/f64-equal",
+                  "numeric_contract_ref": "atom-contract/f64-binary64",
+                  "role_bindings": [
+                    {
+                      "role_id": "role/f64-compare/left",
+                      "operand": {
+                        "ProposedSuccessorRole": {
+                          "relation_schema_id": "relation-schema/arena-velocity",
+                          "subject_ref": "referent/player-1",
+                          "role_id": "role/arena-velocity/value",
+                          "shape_role_id": "shape-role/vec3/y"
+                        }
+                      }
+                    },
+                    {
+                      "role_id": "role/f64-compare/right",
+                      "operand": {
+                        "ValueRef": "value/f64/0"
+                      }
+                    },
+                    {
+                      "role_id": "role/f64-compare/result",
+                      "produced_role": true
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "requirement_term_ref": "requirement-term/admission/exact-base",
+      "expression": {
+        "Every": {
+          "source": {
+            "CandidateWithdrawOccurrences": true
+          },
+          "satisfies": {
+            "Member": {
+              "member": {
+                "CurrentItem": true
+              },
+              "set": {
+                "BaseStatePayloadOccurrences": true
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "admission_obligation_evaluation_contract": {
+    "ordered_requirement_term_refs": [
+      "requirement-term/admission/singleton-player-state",
+      "requirement-term/admission/arena-bounds-ordered",
+      "requirement-term/admission/position-inside-arena",
+      "requirement-term/admission/grounded-state",
+      "requirement-term/admission/exact-base"
+    ],
+    "evaluation_context_source": "exact candidate-producing TransitionOccurrence and Step",
+    "evidence_observation_type_ref": "type/observation/admission-obligation-result",
+    "evidence_observation_provenance_variant": "ProducedBy",
+    "evidence_observation_required_fields": [
+      "observation_id",
+      "observation_type_ref",
+      "requirement_term_ref",
+      "candidate_delta_id",
+      "base_state_revision_id",
+      "proposed_successor_payload_ref",
+      "program_revision_id",
+      "value_ref",
+      "provenance"
+    ],
+    "candidate_evidence_is_authority": false,
+    "judgment_must_cite_exact_observation": true,
+    "first_false_stops_before_later_observation_or_admission": true
+  },
+  "premise_support_contract": {
+    "support_use_required_fields": [
+      "slot",
+      "role",
+      "source"
+    ],
+    "allowed_source_variants": [
+      "BindingOccurrenceId",
+      "ProgramBindingOccurrenceRef",
+      "ObservationId"
+    ],
+    "exact_slot_order_source": "source_transition_declarations[].premise_slots",
+    "one_support_use_per_declared_slot": true,
+    "duplicate_source_may_fill_distinct_slots": true,
+    "duplicate_slot_is_rejected": true,
+    "same_relation_schema_in_distinct_slots_is_not_deduplicated": true,
+    "source_identifier_spelling_dispatch": false
+  }
 }

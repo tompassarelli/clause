@@ -23,6 +23,16 @@
     "authorization-evidence/admission",
     "authorization-evidence/judgment-issuance"
   ],
+  "outcome_obligations": [
+    {
+      "outcome_obligation_ref": "outcome-obligation/budget-exhausted-before-activation",
+      "outcome_obligation_contract_ref": "outcome-obligation-contract/minimum-mode-budget",
+      "obligation_type_ref": "type/obligation/resource-budget",
+      "mode_id": "mode/tick-propose-state",
+      "required_budget_units": 10,
+      "provided_budget_units": 9
+    }
+  ],
   "activation_cause_frontiers": [
     {
       "activation_cause_frontier_id": "frontier/position-observe-1",
@@ -598,6 +608,18 @@
         "executable-requirement/sufficient-budget"
       ],
       "authorization_evidence_ids": []
+    }
+  ],
+  "activation_start_records": [
+    {
+      "activation_start_record_ref": "activation-start-record/input-listener-1",
+      "activation_id": "activation/input-listener-1",
+      "application_id": "application/input-listener-player-1",
+      "mode_id": "mode/input-listener-reactive",
+      "static_activation_basis_evidence_id": "executable-validity/input-listener-1",
+      "dynamic_prerequisite_binding_refs": [],
+      "activation_cause_frontier_id": "frontier/input-listener-1",
+      "initial_context_id": "context/input-listener-w0"
     }
   ],
   "binding_occurrences": [
@@ -1342,8 +1364,14 @@
       "runtime_session_id": "runtime-session/jump-arena-s0",
       "predecessor_state_revision_id": "state/main-w0",
       "cause": {
-        "AdmissionOccurrenceId": "occurrence/admission/input-1"
+        "TransitionOccurrence": {
+          "transition_occurrence_id": "occurrence/transition/input-1",
+          "run_id": "run/input-1",
+          "activation_id": "activation/input-1",
+          "step_id": "step/input-1"
+        }
       },
+      "admission_occurrence_id": "occurrence/admission/input-1",
       "state_revision_payload_ref": "state-payload/main-w1"
     },
     {
@@ -1351,8 +1379,14 @@
       "runtime_session_id": "runtime-session/jump-arena-s0",
       "predecessor_state_revision_id": "state/main-w1",
       "cause": {
-        "AdmissionOccurrenceId": "occurrence/admission/ground-tick-1"
+        "TransitionOccurrence": {
+          "transition_occurrence_id": "occurrence/transition/ground-tick-1",
+          "run_id": "run/ground-tick-1",
+          "activation_id": "activation/ground-tick-1",
+          "step_id": "step/ground-tick-1"
+        }
       },
+      "admission_occurrence_id": "occurrence/admission/ground-tick-1",
       "state_revision_payload_ref": "state-payload/main-w2"
     },
     {
@@ -1360,8 +1394,14 @@
       "runtime_session_id": "runtime-session/jump-arena-s0",
       "predecessor_state_revision_id": "state/main-w2",
       "cause": {
-        "AdmissionOccurrenceId": "occurrence/admission/jump-1"
+        "TransitionOccurrence": {
+          "transition_occurrence_id": "occurrence/transition/jump-1",
+          "run_id": "run/jump-1",
+          "activation_id": "activation/jump-1",
+          "step_id": "step/jump-1"
+        }
       },
+      "admission_occurrence_id": "occurrence/admission/jump-1",
       "state_revision_payload_ref": "state-payload/main-w3"
     },
     {
@@ -1369,8 +1409,14 @@
       "runtime_session_id": "runtime-session/jump-arena-s0",
       "predecessor_state_revision_id": "state/main-w3",
       "cause": {
-        "AdmissionOccurrenceId": "occurrence/admission/gravity-tick-1"
+        "TransitionOccurrence": {
+          "transition_occurrence_id": "occurrence/transition/gravity-tick-1",
+          "run_id": "run/gravity-tick-1",
+          "activation_id": "activation/gravity-tick-1",
+          "step_id": "step/gravity-tick-1"
+        }
       },
+      "admission_occurrence_id": "occurrence/admission/gravity-tick-1",
       "state_revision_payload_ref": "state-payload/main-w4"
     },
     {
@@ -1387,8 +1433,14 @@
       "runtime_session_id": "runtime-session/jump-arena-east-wall",
       "predecessor_state_revision_id": "state/east-wall-w0",
       "cause": {
-        "AdmissionOccurrenceId": "occurrence/admission/east-wall-tick-1"
+        "TransitionOccurrence": {
+          "transition_occurrence_id": "occurrence/transition/east-wall-tick-1",
+          "run_id": "run/east-wall-tick-1",
+          "activation_id": "activation/east-wall-tick-1",
+          "step_id": "step/east-wall-tick-1"
+        }
       },
+      "admission_occurrence_id": "occurrence/admission/east-wall-tick-1",
       "state_revision_payload_ref": "state-payload/east-wall-w1"
     },
     {
@@ -1405,8 +1457,14 @@
       "runtime_session_id": "runtime-session/jump-arena-west-wall",
       "predecessor_state_revision_id": "state/west-wall-w0",
       "cause": {
-        "AdmissionOccurrenceId": "occurrence/admission/west-wall-tick-1"
+        "TransitionOccurrence": {
+          "transition_occurrence_id": "occurrence/transition/west-wall-tick-1",
+          "run_id": "run/west-wall-tick-1",
+          "activation_id": "activation/west-wall-tick-1",
+          "step_id": "step/west-wall-tick-1"
+        }
       },
+      "admission_occurrence_id": "occurrence/admission/west-wall-tick-1",
       "state_revision_payload_ref": "state-payload/west-wall-w1"
     },
     {
@@ -1423,8 +1481,14 @@
       "runtime_session_id": "runtime-session/jump-arena-positive-z-wall",
       "predecessor_state_revision_id": "state/positive-z-wall-w0",
       "cause": {
-        "AdmissionOccurrenceId": "occurrence/admission/positive-z-wall-tick-1"
+        "TransitionOccurrence": {
+          "transition_occurrence_id": "occurrence/transition/positive-z-wall-tick-1",
+          "run_id": "run/positive-z-wall-tick-1",
+          "activation_id": "activation/positive-z-wall-tick-1",
+          "step_id": "step/positive-z-wall-tick-1"
+        }
       },
+      "admission_occurrence_id": "occurrence/admission/positive-z-wall-tick-1",
       "state_revision_payload_ref": "state-payload/positive-z-wall-w1"
     },
     {
@@ -1441,8 +1505,14 @@
       "runtime_session_id": "runtime-session/jump-arena-negative-z-wall",
       "predecessor_state_revision_id": "state/negative-z-wall-w0",
       "cause": {
-        "AdmissionOccurrenceId": "occurrence/admission/negative-z-wall-tick-1"
+        "TransitionOccurrence": {
+          "transition_occurrence_id": "occurrence/transition/negative-z-wall-tick-1",
+          "run_id": "run/negative-z-wall-tick-1",
+          "activation_id": "activation/negative-z-wall-tick-1",
+          "step_id": "step/negative-z-wall-tick-1"
+        }
       },
+      "admission_occurrence_id": "occurrence/admission/negative-z-wall-tick-1",
       "state_revision_payload_ref": "state-payload/negative-z-wall-w1"
     },
     {
@@ -1459,8 +1529,14 @@
       "runtime_session_id": "runtime-session/jump-arena-landing",
       "predecessor_state_revision_id": "state/landing-w0",
       "cause": {
-        "AdmissionOccurrenceId": "occurrence/admission/landing-tick-1"
+        "TransitionOccurrence": {
+          "transition_occurrence_id": "occurrence/transition/landing-tick-1",
+          "run_id": "run/landing-tick-1",
+          "activation_id": "activation/landing-tick-1",
+          "step_id": "step/landing-tick-1"
+        }
       },
+      "admission_occurrence_id": "occurrence/admission/landing-tick-1",
       "state_revision_payload_ref": "state-payload/landing-w1"
     }
   ],
@@ -1649,93 +1725,867 @@
   "transition_occurrences": [
     {
       "transition_occurrence_id": "occurrence/transition/input-1",
+      "provenance": {
+        "ProducedBy": [
+          "run/input-1",
+          "activation/input-1",
+          "step/input-1"
+        ]
+      },
       "source_transition_declaration_ref": "source-transition/input",
       "application_id": "application/input-player-1-east-north",
       "mode_id": "mode/input-propose-state",
       "run_id": "run/input-1",
       "activation_id": "activation/input-1",
       "step_id": "step/input-1",
-      "candidate_delta_id": "candidate/input-1"
+      "candidate_delta_id": "candidate/input-1",
+      "premise_supports": [
+        {
+          "slot": "premise-slot/source-transition/input/00",
+          "role": "premise-role/prior-horizontal-intent",
+          "source": {
+            "BindingOccurrenceId": "occurrence/state/main-intent-0"
+          }
+        }
+      ]
     },
     {
       "transition_occurrence_id": "occurrence/transition/ground-tick-1",
+      "provenance": {
+        "ProducedBy": [
+          "run/ground-tick-1",
+          "activation/ground-tick-1",
+          "step/ground-tick-1"
+        ]
+      },
       "source_transition_declaration_ref": "source-transition/tick-grounded",
       "application_id": "application/tick-player-1-half",
       "mode_id": "mode/tick-propose-state",
       "run_id": "run/ground-tick-1",
       "activation_id": "activation/ground-tick-1",
       "step_id": "step/ground-tick-1",
-      "candidate_delta_id": "candidate/ground-tick-1"
+      "candidate_delta_id": "candidate/ground-tick-1",
+      "premise_supports": [
+        {
+          "slot": "premise-slot/source-transition/tick-grounded/00",
+          "role": "premise-role/dt-positive",
+          "source": {
+            "ObservationId": "observation/premise/ground-tick-1/dt-positive"
+          }
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-grounded/01",
+          "role": "premise-role/player-position",
+          "source": {
+            "BindingOccurrenceId": "occurrence/state/main-position-0"
+          }
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-grounded/02",
+          "role": "premise-role/player-velocity",
+          "source": {
+            "BindingOccurrenceId": "occurrence/state/main-velocity-0"
+          }
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-grounded/03",
+          "role": "premise-role/player-horizontal-intent",
+          "source": {
+            "BindingOccurrenceId": "occurrence/state/main-intent-1"
+          }
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-grounded/04",
+          "role": "premise-role/player-grounded",
+          "source": {
+            "BindingOccurrenceId": "occurrence/state/main-grounded-0"
+          }
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-grounded/05",
+          "role": "premise-role/arena-move-speed",
+          "source": {
+            "ProgramBindingOccurrenceRef": "program-binding/move-speed"
+          }
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-grounded/06",
+          "role": "premise-role/arena-floor-height",
+          "source": {
+            "ProgramBindingOccurrenceRef": "program-binding/floor-height"
+          }
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-grounded/07",
+          "role": "premise-role/arena-min-x",
+          "source": {
+            "ProgramBindingOccurrenceRef": "program-binding/min-x"
+          }
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-grounded/08",
+          "role": "premise-role/arena-max-x",
+          "source": {
+            "ProgramBindingOccurrenceRef": "program-binding/max-x"
+          }
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-grounded/09",
+          "role": "premise-role/arena-min-z",
+          "source": {
+            "ProgramBindingOccurrenceRef": "program-binding/min-z"
+          }
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-grounded/10",
+          "role": "premise-role/arena-max-z",
+          "source": {
+            "ProgramBindingOccurrenceRef": "program-binding/max-z"
+          }
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-grounded/11",
+          "role": "premise-role/clamped-x",
+          "source": {
+            "ObservationId": "observation/premise/ground-tick-1/clamped-x"
+          }
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-grounded/12",
+          "role": "premise-role/clamped-z",
+          "source": {
+            "ObservationId": "observation/premise/ground-tick-1/clamped-z"
+          }
+        }
+      ]
     },
     {
       "transition_occurrence_id": "occurrence/transition/jump-1",
+      "provenance": {
+        "ProducedBy": [
+          "run/jump-1",
+          "activation/jump-1",
+          "step/jump-1"
+        ]
+      },
       "source_transition_declaration_ref": "source-transition/jump",
       "application_id": "application/jump-player-1",
       "mode_id": "mode/jump-propose-state",
       "run_id": "run/jump-1",
       "activation_id": "activation/jump-1",
       "step_id": "step/jump-1",
-      "candidate_delta_id": "candidate/jump-1"
+      "candidate_delta_id": "candidate/jump-1",
+      "premise_supports": [
+        {
+          "slot": "premise-slot/source-transition/jump/00",
+          "role": "premise-role/player-velocity",
+          "source": {
+            "BindingOccurrenceId": "occurrence/state/main-velocity-2"
+          }
+        },
+        {
+          "slot": "premise-slot/source-transition/jump/01",
+          "role": "premise-role/grounded-true",
+          "source": {
+            "BindingOccurrenceId": "occurrence/state/main-grounded-0"
+          }
+        },
+        {
+          "slot": "premise-slot/source-transition/jump/02",
+          "role": "premise-role/arena-jump-speed",
+          "source": {
+            "ProgramBindingOccurrenceRef": "program-binding/jump-speed"
+          }
+        }
+      ]
     },
     {
       "transition_occurrence_id": "occurrence/transition/gravity-tick-1",
+      "provenance": {
+        "ProducedBy": [
+          "run/gravity-tick-1",
+          "activation/gravity-tick-1",
+          "step/gravity-tick-1"
+        ]
+      },
       "source_transition_declaration_ref": "source-transition/tick-airborne",
       "application_id": "application/tick-player-1-quarter",
       "mode_id": "mode/tick-propose-state",
       "run_id": "run/gravity-tick-1",
       "activation_id": "activation/gravity-tick-1",
       "step_id": "step/gravity-tick-1",
-      "candidate_delta_id": "candidate/gravity-tick-1"
+      "candidate_delta_id": "candidate/gravity-tick-1",
+      "premise_supports": [
+        {
+          "slot": "premise-slot/source-transition/tick-airborne/00",
+          "role": "premise-role/dt-positive",
+          "source": {
+            "ObservationId": "observation/premise/gravity-tick-1/dt-positive"
+          }
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-airborne/01",
+          "role": "premise-role/player-position",
+          "source": {
+            "BindingOccurrenceId": "occurrence/state/main-position-2"
+          }
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-airborne/02",
+          "role": "premise-role/player-velocity",
+          "source": {
+            "BindingOccurrenceId": "occurrence/state/main-velocity-3"
+          }
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-airborne/03",
+          "role": "premise-role/player-horizontal-intent",
+          "source": {
+            "BindingOccurrenceId": "occurrence/state/main-intent-1"
+          }
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-airborne/04",
+          "role": "premise-role/player-grounded",
+          "source": {
+            "BindingOccurrenceId": "occurrence/state/main-grounded-3"
+          }
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-airborne/05",
+          "role": "premise-role/arena-gravity",
+          "source": {
+            "ProgramBindingOccurrenceRef": "program-binding/gravity"
+          }
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-airborne/06",
+          "role": "premise-role/arena-move-speed",
+          "source": {
+            "ProgramBindingOccurrenceRef": "program-binding/move-speed"
+          }
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-airborne/07",
+          "role": "premise-role/arena-floor-height",
+          "source": {
+            "ProgramBindingOccurrenceRef": "program-binding/floor-height"
+          }
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-airborne/08",
+          "role": "premise-role/arena-min-x",
+          "source": {
+            "ProgramBindingOccurrenceRef": "program-binding/min-x"
+          }
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-airborne/09",
+          "role": "premise-role/arena-max-x",
+          "source": {
+            "ProgramBindingOccurrenceRef": "program-binding/max-x"
+          }
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-airborne/10",
+          "role": "premise-role/arena-min-z",
+          "source": {
+            "ProgramBindingOccurrenceRef": "program-binding/min-z"
+          }
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-airborne/11",
+          "role": "premise-role/arena-max-z",
+          "source": {
+            "ProgramBindingOccurrenceRef": "program-binding/max-z"
+          }
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-airborne/12",
+          "role": "premise-role/clamped-x",
+          "source": {
+            "ObservationId": "observation/premise/gravity-tick-1/clamped-x"
+          }
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-airborne/13",
+          "role": "premise-role/clamped-z",
+          "source": {
+            "ObservationId": "observation/premise/gravity-tick-1/clamped-z"
+          }
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-airborne/14",
+          "role": "premise-role/remains-above-floor",
+          "source": {
+            "ObservationId": "observation/premise/gravity-tick-1/remains-above-floor"
+          }
+        }
+      ]
     },
     {
       "transition_occurrence_id": "occurrence/transition/east-wall-tick-1",
+      "provenance": {
+        "ProducedBy": [
+          "run/east-wall-tick-1",
+          "activation/east-wall-tick-1",
+          "step/east-wall-tick-1"
+        ]
+      },
       "source_transition_declaration_ref": "source-transition/tick-grounded",
       "application_id": "application/tick-player-1-quarter",
       "mode_id": "mode/tick-propose-state",
       "run_id": "run/east-wall-tick-1",
       "activation_id": "activation/east-wall-tick-1",
       "step_id": "step/east-wall-tick-1",
-      "candidate_delta_id": "candidate/east-wall-tick-1"
+      "candidate_delta_id": "candidate/east-wall-tick-1",
+      "premise_supports": [
+        {
+          "slot": "premise-slot/source-transition/tick-grounded/00",
+          "role": "premise-role/dt-positive",
+          "source": {
+            "ObservationId": "observation/premise/east-wall-tick-1/dt-positive"
+          }
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-grounded/01",
+          "role": "premise-role/player-position",
+          "source": {
+            "BindingOccurrenceId": "occurrence/state/east-wall-position-0"
+          }
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-grounded/02",
+          "role": "premise-role/player-velocity",
+          "source": {
+            "BindingOccurrenceId": "occurrence/state/east-wall-velocity-0"
+          }
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-grounded/03",
+          "role": "premise-role/player-horizontal-intent",
+          "source": {
+            "BindingOccurrenceId": "occurrence/state/east-wall-intent-0"
+          }
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-grounded/04",
+          "role": "premise-role/player-grounded",
+          "source": {
+            "BindingOccurrenceId": "occurrence/state/east-wall-grounded-0"
+          }
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-grounded/05",
+          "role": "premise-role/arena-move-speed",
+          "source": {
+            "ProgramBindingOccurrenceRef": "program-binding/move-speed"
+          }
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-grounded/06",
+          "role": "premise-role/arena-floor-height",
+          "source": {
+            "ProgramBindingOccurrenceRef": "program-binding/floor-height"
+          }
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-grounded/07",
+          "role": "premise-role/arena-min-x",
+          "source": {
+            "ProgramBindingOccurrenceRef": "program-binding/min-x"
+          }
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-grounded/08",
+          "role": "premise-role/arena-max-x",
+          "source": {
+            "ProgramBindingOccurrenceRef": "program-binding/max-x"
+          }
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-grounded/09",
+          "role": "premise-role/arena-min-z",
+          "source": {
+            "ProgramBindingOccurrenceRef": "program-binding/min-z"
+          }
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-grounded/10",
+          "role": "premise-role/arena-max-z",
+          "source": {
+            "ProgramBindingOccurrenceRef": "program-binding/max-z"
+          }
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-grounded/11",
+          "role": "premise-role/clamped-x",
+          "source": {
+            "ObservationId": "observation/premise/east-wall-tick-1/clamped-x"
+          }
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-grounded/12",
+          "role": "premise-role/clamped-z",
+          "source": {
+            "ObservationId": "observation/premise/east-wall-tick-1/clamped-z"
+          }
+        }
+      ]
     },
     {
       "transition_occurrence_id": "occurrence/transition/west-wall-tick-1",
+      "provenance": {
+        "ProducedBy": [
+          "run/west-wall-tick-1",
+          "activation/west-wall-tick-1",
+          "step/west-wall-tick-1"
+        ]
+      },
       "source_transition_declaration_ref": "source-transition/tick-grounded",
       "application_id": "application/tick-player-1-quarter",
       "mode_id": "mode/tick-propose-state",
       "run_id": "run/west-wall-tick-1",
       "activation_id": "activation/west-wall-tick-1",
       "step_id": "step/west-wall-tick-1",
-      "candidate_delta_id": "candidate/west-wall-tick-1"
+      "candidate_delta_id": "candidate/west-wall-tick-1",
+      "premise_supports": [
+        {
+          "slot": "premise-slot/source-transition/tick-grounded/00",
+          "role": "premise-role/dt-positive",
+          "source": {
+            "ObservationId": "observation/premise/west-wall-tick-1/dt-positive"
+          }
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-grounded/01",
+          "role": "premise-role/player-position",
+          "source": {
+            "BindingOccurrenceId": "occurrence/state/west-wall-position-0"
+          }
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-grounded/02",
+          "role": "premise-role/player-velocity",
+          "source": {
+            "BindingOccurrenceId": "occurrence/state/west-wall-velocity-0"
+          }
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-grounded/03",
+          "role": "premise-role/player-horizontal-intent",
+          "source": {
+            "BindingOccurrenceId": "occurrence/state/west-wall-intent-0"
+          }
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-grounded/04",
+          "role": "premise-role/player-grounded",
+          "source": {
+            "BindingOccurrenceId": "occurrence/state/west-wall-grounded-0"
+          }
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-grounded/05",
+          "role": "premise-role/arena-move-speed",
+          "source": {
+            "ProgramBindingOccurrenceRef": "program-binding/move-speed"
+          }
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-grounded/06",
+          "role": "premise-role/arena-floor-height",
+          "source": {
+            "ProgramBindingOccurrenceRef": "program-binding/floor-height"
+          }
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-grounded/07",
+          "role": "premise-role/arena-min-x",
+          "source": {
+            "ProgramBindingOccurrenceRef": "program-binding/min-x"
+          }
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-grounded/08",
+          "role": "premise-role/arena-max-x",
+          "source": {
+            "ProgramBindingOccurrenceRef": "program-binding/max-x"
+          }
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-grounded/09",
+          "role": "premise-role/arena-min-z",
+          "source": {
+            "ProgramBindingOccurrenceRef": "program-binding/min-z"
+          }
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-grounded/10",
+          "role": "premise-role/arena-max-z",
+          "source": {
+            "ProgramBindingOccurrenceRef": "program-binding/max-z"
+          }
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-grounded/11",
+          "role": "premise-role/clamped-x",
+          "source": {
+            "ObservationId": "observation/premise/west-wall-tick-1/clamped-x"
+          }
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-grounded/12",
+          "role": "premise-role/clamped-z",
+          "source": {
+            "ObservationId": "observation/premise/west-wall-tick-1/clamped-z"
+          }
+        }
+      ]
     },
     {
       "transition_occurrence_id": "occurrence/transition/positive-z-wall-tick-1",
+      "provenance": {
+        "ProducedBy": [
+          "run/positive-z-wall-tick-1",
+          "activation/positive-z-wall-tick-1",
+          "step/positive-z-wall-tick-1"
+        ]
+      },
       "source_transition_declaration_ref": "source-transition/tick-grounded",
       "application_id": "application/tick-player-1-quarter",
       "mode_id": "mode/tick-propose-state",
       "run_id": "run/positive-z-wall-tick-1",
       "activation_id": "activation/positive-z-wall-tick-1",
       "step_id": "step/positive-z-wall-tick-1",
-      "candidate_delta_id": "candidate/positive-z-wall-tick-1"
+      "candidate_delta_id": "candidate/positive-z-wall-tick-1",
+      "premise_supports": [
+        {
+          "slot": "premise-slot/source-transition/tick-grounded/00",
+          "role": "premise-role/dt-positive",
+          "source": {
+            "ObservationId": "observation/premise/positive-z-wall-tick-1/dt-positive"
+          }
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-grounded/01",
+          "role": "premise-role/player-position",
+          "source": {
+            "BindingOccurrenceId": "occurrence/state/positive-z-wall-position-0"
+          }
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-grounded/02",
+          "role": "premise-role/player-velocity",
+          "source": {
+            "BindingOccurrenceId": "occurrence/state/positive-z-wall-velocity-0"
+          }
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-grounded/03",
+          "role": "premise-role/player-horizontal-intent",
+          "source": {
+            "BindingOccurrenceId": "occurrence/state/positive-z-wall-intent-0"
+          }
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-grounded/04",
+          "role": "premise-role/player-grounded",
+          "source": {
+            "BindingOccurrenceId": "occurrence/state/positive-z-wall-grounded-0"
+          }
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-grounded/05",
+          "role": "premise-role/arena-move-speed",
+          "source": {
+            "ProgramBindingOccurrenceRef": "program-binding/move-speed"
+          }
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-grounded/06",
+          "role": "premise-role/arena-floor-height",
+          "source": {
+            "ProgramBindingOccurrenceRef": "program-binding/floor-height"
+          }
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-grounded/07",
+          "role": "premise-role/arena-min-x",
+          "source": {
+            "ProgramBindingOccurrenceRef": "program-binding/min-x"
+          }
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-grounded/08",
+          "role": "premise-role/arena-max-x",
+          "source": {
+            "ProgramBindingOccurrenceRef": "program-binding/max-x"
+          }
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-grounded/09",
+          "role": "premise-role/arena-min-z",
+          "source": {
+            "ProgramBindingOccurrenceRef": "program-binding/min-z"
+          }
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-grounded/10",
+          "role": "premise-role/arena-max-z",
+          "source": {
+            "ProgramBindingOccurrenceRef": "program-binding/max-z"
+          }
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-grounded/11",
+          "role": "premise-role/clamped-x",
+          "source": {
+            "ObservationId": "observation/premise/positive-z-wall-tick-1/clamped-x"
+          }
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-grounded/12",
+          "role": "premise-role/clamped-z",
+          "source": {
+            "ObservationId": "observation/premise/positive-z-wall-tick-1/clamped-z"
+          }
+        }
+      ]
     },
     {
       "transition_occurrence_id": "occurrence/transition/negative-z-wall-tick-1",
+      "provenance": {
+        "ProducedBy": [
+          "run/negative-z-wall-tick-1",
+          "activation/negative-z-wall-tick-1",
+          "step/negative-z-wall-tick-1"
+        ]
+      },
       "source_transition_declaration_ref": "source-transition/tick-grounded",
       "application_id": "application/tick-player-1-quarter",
       "mode_id": "mode/tick-propose-state",
       "run_id": "run/negative-z-wall-tick-1",
       "activation_id": "activation/negative-z-wall-tick-1",
       "step_id": "step/negative-z-wall-tick-1",
-      "candidate_delta_id": "candidate/negative-z-wall-tick-1"
+      "candidate_delta_id": "candidate/negative-z-wall-tick-1",
+      "premise_supports": [
+        {
+          "slot": "premise-slot/source-transition/tick-grounded/00",
+          "role": "premise-role/dt-positive",
+          "source": {
+            "ObservationId": "observation/premise/negative-z-wall-tick-1/dt-positive"
+          }
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-grounded/01",
+          "role": "premise-role/player-position",
+          "source": {
+            "BindingOccurrenceId": "occurrence/state/negative-z-wall-position-0"
+          }
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-grounded/02",
+          "role": "premise-role/player-velocity",
+          "source": {
+            "BindingOccurrenceId": "occurrence/state/negative-z-wall-velocity-0"
+          }
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-grounded/03",
+          "role": "premise-role/player-horizontal-intent",
+          "source": {
+            "BindingOccurrenceId": "occurrence/state/negative-z-wall-intent-0"
+          }
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-grounded/04",
+          "role": "premise-role/player-grounded",
+          "source": {
+            "BindingOccurrenceId": "occurrence/state/negative-z-wall-grounded-0"
+          }
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-grounded/05",
+          "role": "premise-role/arena-move-speed",
+          "source": {
+            "ProgramBindingOccurrenceRef": "program-binding/move-speed"
+          }
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-grounded/06",
+          "role": "premise-role/arena-floor-height",
+          "source": {
+            "ProgramBindingOccurrenceRef": "program-binding/floor-height"
+          }
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-grounded/07",
+          "role": "premise-role/arena-min-x",
+          "source": {
+            "ProgramBindingOccurrenceRef": "program-binding/min-x"
+          }
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-grounded/08",
+          "role": "premise-role/arena-max-x",
+          "source": {
+            "ProgramBindingOccurrenceRef": "program-binding/max-x"
+          }
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-grounded/09",
+          "role": "premise-role/arena-min-z",
+          "source": {
+            "ProgramBindingOccurrenceRef": "program-binding/min-z"
+          }
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-grounded/10",
+          "role": "premise-role/arena-max-z",
+          "source": {
+            "ProgramBindingOccurrenceRef": "program-binding/max-z"
+          }
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-grounded/11",
+          "role": "premise-role/clamped-x",
+          "source": {
+            "ObservationId": "observation/premise/negative-z-wall-tick-1/clamped-x"
+          }
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-grounded/12",
+          "role": "premise-role/clamped-z",
+          "source": {
+            "ObservationId": "observation/premise/negative-z-wall-tick-1/clamped-z"
+          }
+        }
+      ]
     },
     {
       "transition_occurrence_id": "occurrence/transition/landing-tick-1",
+      "provenance": {
+        "ProducedBy": [
+          "run/landing-tick-1",
+          "activation/landing-tick-1",
+          "step/landing-tick-1"
+        ]
+      },
       "source_transition_declaration_ref": "source-transition/tick-landing",
       "application_id": "application/tick-player-1-quarter",
       "mode_id": "mode/tick-propose-state",
       "run_id": "run/landing-tick-1",
       "activation_id": "activation/landing-tick-1",
       "step_id": "step/landing-tick-1",
-      "candidate_delta_id": "candidate/landing-tick-1"
+      "candidate_delta_id": "candidate/landing-tick-1",
+      "premise_supports": [
+        {
+          "slot": "premise-slot/source-transition/tick-landing/00",
+          "role": "premise-role/dt-positive",
+          "source": {
+            "ObservationId": "observation/premise/landing-tick-1/dt-positive"
+          }
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-landing/01",
+          "role": "premise-role/player-position",
+          "source": {
+            "BindingOccurrenceId": "occurrence/state/landing-position-0"
+          }
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-landing/02",
+          "role": "premise-role/player-velocity",
+          "source": {
+            "BindingOccurrenceId": "occurrence/state/landing-velocity-0"
+          }
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-landing/03",
+          "role": "premise-role/player-horizontal-intent",
+          "source": {
+            "BindingOccurrenceId": "occurrence/state/landing-intent-0"
+          }
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-landing/04",
+          "role": "premise-role/player-grounded",
+          "source": {
+            "BindingOccurrenceId": "occurrence/state/landing-grounded-0"
+          }
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-landing/05",
+          "role": "premise-role/arena-gravity",
+          "source": {
+            "ProgramBindingOccurrenceRef": "program-binding/gravity"
+          }
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-landing/06",
+          "role": "premise-role/arena-move-speed",
+          "source": {
+            "ProgramBindingOccurrenceRef": "program-binding/move-speed"
+          }
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-landing/07",
+          "role": "premise-role/arena-floor-height",
+          "source": {
+            "ProgramBindingOccurrenceRef": "program-binding/floor-height"
+          }
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-landing/08",
+          "role": "premise-role/arena-min-x",
+          "source": {
+            "ProgramBindingOccurrenceRef": "program-binding/min-x"
+          }
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-landing/09",
+          "role": "premise-role/arena-max-x",
+          "source": {
+            "ProgramBindingOccurrenceRef": "program-binding/max-x"
+          }
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-landing/10",
+          "role": "premise-role/arena-min-z",
+          "source": {
+            "ProgramBindingOccurrenceRef": "program-binding/min-z"
+          }
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-landing/11",
+          "role": "premise-role/arena-max-z",
+          "source": {
+            "ProgramBindingOccurrenceRef": "program-binding/max-z"
+          }
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-landing/12",
+          "role": "premise-role/clamped-x",
+          "source": {
+            "ObservationId": "observation/premise/landing-tick-1/clamped-x"
+          }
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-landing/13",
+          "role": "premise-role/clamped-z",
+          "source": {
+            "ObservationId": "observation/premise/landing-tick-1/clamped-z"
+          }
+        },
+        {
+          "slot": "premise-slot/source-transition/tick-landing/14",
+          "role": "premise-role/reaches-or-crosses-floor",
+          "source": {
+            "ObservationId": "observation/premise/landing-tick-1/reaches-or-crosses-floor"
+          }
+        }
+      ]
     }
   ],
   "judgment_occurrences": [
@@ -1747,39 +2597,59 @@
       "obligation_results": [
         {
           "obligation_id": "obligation/singleton-player-state",
-          "predicate_ref": "obligation-predicate/relation-cardinality-one",
-          "evidence_occurrence_id": "occurrence/obligation-evidence/input-1/singleton-player-state",
-          "result_value_ref": "value/bool/true"
+          "result_value_ref": "value/bool/true",
+          "requirement_term_ref": "requirement-term/admission/singleton-player-state",
+          "evidence_observation_id": "occurrence/obligation-evidence/input-1/singleton-player-state"
         },
         {
           "obligation_id": "obligation/arena-bounds-ordered",
-          "predicate_ref": "obligation-predicate/f64-less-or-equal-pairs",
-          "evidence_occurrence_id": "occurrence/obligation-evidence/input-1/arena-bounds-ordered",
-          "result_value_ref": "value/bool/true"
+          "result_value_ref": "value/bool/true",
+          "requirement_term_ref": "requirement-term/admission/arena-bounds-ordered",
+          "evidence_observation_id": "occurrence/obligation-evidence/input-1/arena-bounds-ordered"
         },
         {
           "obligation_id": "obligation/position-inside-arena",
-          "predicate_ref": "obligation-predicate/vec3-horizontal-within-bounds",
-          "evidence_occurrence_id": "occurrence/obligation-evidence/input-1/position-inside-arena",
-          "result_value_ref": "value/bool/true"
+          "result_value_ref": "value/bool/true",
+          "requirement_term_ref": "requirement-term/admission/position-inside-arena",
+          "evidence_observation_id": "occurrence/obligation-evidence/input-1/position-inside-arena"
         },
         {
           "obligation_id": "obligation/grounded-state",
-          "predicate_ref": "obligation-predicate/grounded-implies-floor-zero-vertical",
-          "evidence_occurrence_id": "occurrence/obligation-evidence/input-1/grounded-state",
-          "result_value_ref": "value/bool/true"
+          "result_value_ref": "value/bool/true",
+          "requirement_term_ref": "requirement-term/admission/grounded-state",
+          "evidence_observation_id": "occurrence/obligation-evidence/input-1/grounded-state"
         },
         {
           "obligation_id": "obligation/exact-base",
-          "predicate_ref": "obligation-predicate/withdrawals-exist-in-exact-base",
-          "evidence_occurrence_id": "occurrence/obligation-evidence/input-1/exact-base",
-          "result_value_ref": "value/bool/true"
+          "result_value_ref": "value/bool/true",
+          "requirement_term_ref": "requirement-term/admission/exact-base",
+          "evidence_observation_id": "occurrence/obligation-evidence/input-1/exact-base"
         }
       ],
       "provenance": {
-        "IssuedBy": [
-          "authority/jump-arena-obligation-checker",
-          "authorization-evidence/judgment-issuance"
+        "EnteredThrough": [
+          "boundary/governed-judgment-issuance",
+          "external-evidence/judgment/input-1-obligations-pass",
+          [
+            {
+              "TransitionOccurrenceId": "occurrence/transition/input-1"
+            },
+            {
+              "ObservationId": "occurrence/obligation-evidence/input-1/singleton-player-state"
+            },
+            {
+              "ObservationId": "occurrence/obligation-evidence/input-1/arena-bounds-ordered"
+            },
+            {
+              "ObservationId": "occurrence/obligation-evidence/input-1/position-inside-arena"
+            },
+            {
+              "ObservationId": "occurrence/obligation-evidence/input-1/grounded-state"
+            },
+            {
+              "ObservationId": "occurrence/obligation-evidence/input-1/exact-base"
+            }
+          ]
         ]
       },
       "subject": {
@@ -1812,39 +2682,59 @@
       "obligation_results": [
         {
           "obligation_id": "obligation/singleton-player-state",
-          "predicate_ref": "obligation-predicate/relation-cardinality-one",
-          "evidence_occurrence_id": "occurrence/obligation-evidence/ground-tick-1/singleton-player-state",
-          "result_value_ref": "value/bool/true"
+          "result_value_ref": "value/bool/true",
+          "requirement_term_ref": "requirement-term/admission/singleton-player-state",
+          "evidence_observation_id": "occurrence/obligation-evidence/ground-tick-1/singleton-player-state"
         },
         {
           "obligation_id": "obligation/arena-bounds-ordered",
-          "predicate_ref": "obligation-predicate/f64-less-or-equal-pairs",
-          "evidence_occurrence_id": "occurrence/obligation-evidence/ground-tick-1/arena-bounds-ordered",
-          "result_value_ref": "value/bool/true"
+          "result_value_ref": "value/bool/true",
+          "requirement_term_ref": "requirement-term/admission/arena-bounds-ordered",
+          "evidence_observation_id": "occurrence/obligation-evidence/ground-tick-1/arena-bounds-ordered"
         },
         {
           "obligation_id": "obligation/position-inside-arena",
-          "predicate_ref": "obligation-predicate/vec3-horizontal-within-bounds",
-          "evidence_occurrence_id": "occurrence/obligation-evidence/ground-tick-1/position-inside-arena",
-          "result_value_ref": "value/bool/true"
+          "result_value_ref": "value/bool/true",
+          "requirement_term_ref": "requirement-term/admission/position-inside-arena",
+          "evidence_observation_id": "occurrence/obligation-evidence/ground-tick-1/position-inside-arena"
         },
         {
           "obligation_id": "obligation/grounded-state",
-          "predicate_ref": "obligation-predicate/grounded-implies-floor-zero-vertical",
-          "evidence_occurrence_id": "occurrence/obligation-evidence/ground-tick-1/grounded-state",
-          "result_value_ref": "value/bool/true"
+          "result_value_ref": "value/bool/true",
+          "requirement_term_ref": "requirement-term/admission/grounded-state",
+          "evidence_observation_id": "occurrence/obligation-evidence/ground-tick-1/grounded-state"
         },
         {
           "obligation_id": "obligation/exact-base",
-          "predicate_ref": "obligation-predicate/withdrawals-exist-in-exact-base",
-          "evidence_occurrence_id": "occurrence/obligation-evidence/ground-tick-1/exact-base",
-          "result_value_ref": "value/bool/true"
+          "result_value_ref": "value/bool/true",
+          "requirement_term_ref": "requirement-term/admission/exact-base",
+          "evidence_observation_id": "occurrence/obligation-evidence/ground-tick-1/exact-base"
         }
       ],
       "provenance": {
-        "IssuedBy": [
-          "authority/jump-arena-obligation-checker",
-          "authorization-evidence/judgment-issuance"
+        "EnteredThrough": [
+          "boundary/governed-judgment-issuance",
+          "external-evidence/judgment/ground-tick-1-obligations-pass",
+          [
+            {
+              "TransitionOccurrenceId": "occurrence/transition/ground-tick-1"
+            },
+            {
+              "ObservationId": "occurrence/obligation-evidence/ground-tick-1/singleton-player-state"
+            },
+            {
+              "ObservationId": "occurrence/obligation-evidence/ground-tick-1/arena-bounds-ordered"
+            },
+            {
+              "ObservationId": "occurrence/obligation-evidence/ground-tick-1/position-inside-arena"
+            },
+            {
+              "ObservationId": "occurrence/obligation-evidence/ground-tick-1/grounded-state"
+            },
+            {
+              "ObservationId": "occurrence/obligation-evidence/ground-tick-1/exact-base"
+            }
+          ]
         ]
       },
       "subject": {
@@ -1877,39 +2767,59 @@
       "obligation_results": [
         {
           "obligation_id": "obligation/singleton-player-state",
-          "predicate_ref": "obligation-predicate/relation-cardinality-one",
-          "evidence_occurrence_id": "occurrence/obligation-evidence/jump-1/singleton-player-state",
-          "result_value_ref": "value/bool/true"
+          "result_value_ref": "value/bool/true",
+          "requirement_term_ref": "requirement-term/admission/singleton-player-state",
+          "evidence_observation_id": "occurrence/obligation-evidence/jump-1/singleton-player-state"
         },
         {
           "obligation_id": "obligation/arena-bounds-ordered",
-          "predicate_ref": "obligation-predicate/f64-less-or-equal-pairs",
-          "evidence_occurrence_id": "occurrence/obligation-evidence/jump-1/arena-bounds-ordered",
-          "result_value_ref": "value/bool/true"
+          "result_value_ref": "value/bool/true",
+          "requirement_term_ref": "requirement-term/admission/arena-bounds-ordered",
+          "evidence_observation_id": "occurrence/obligation-evidence/jump-1/arena-bounds-ordered"
         },
         {
           "obligation_id": "obligation/position-inside-arena",
-          "predicate_ref": "obligation-predicate/vec3-horizontal-within-bounds",
-          "evidence_occurrence_id": "occurrence/obligation-evidence/jump-1/position-inside-arena",
-          "result_value_ref": "value/bool/true"
+          "result_value_ref": "value/bool/true",
+          "requirement_term_ref": "requirement-term/admission/position-inside-arena",
+          "evidence_observation_id": "occurrence/obligation-evidence/jump-1/position-inside-arena"
         },
         {
           "obligation_id": "obligation/grounded-state",
-          "predicate_ref": "obligation-predicate/grounded-implies-floor-zero-vertical",
-          "evidence_occurrence_id": "occurrence/obligation-evidence/jump-1/grounded-state",
-          "result_value_ref": "value/bool/true"
+          "result_value_ref": "value/bool/true",
+          "requirement_term_ref": "requirement-term/admission/grounded-state",
+          "evidence_observation_id": "occurrence/obligation-evidence/jump-1/grounded-state"
         },
         {
           "obligation_id": "obligation/exact-base",
-          "predicate_ref": "obligation-predicate/withdrawals-exist-in-exact-base",
-          "evidence_occurrence_id": "occurrence/obligation-evidence/jump-1/exact-base",
-          "result_value_ref": "value/bool/true"
+          "result_value_ref": "value/bool/true",
+          "requirement_term_ref": "requirement-term/admission/exact-base",
+          "evidence_observation_id": "occurrence/obligation-evidence/jump-1/exact-base"
         }
       ],
       "provenance": {
-        "IssuedBy": [
-          "authority/jump-arena-obligation-checker",
-          "authorization-evidence/judgment-issuance"
+        "EnteredThrough": [
+          "boundary/governed-judgment-issuance",
+          "external-evidence/judgment/jump-1-obligations-pass",
+          [
+            {
+              "TransitionOccurrenceId": "occurrence/transition/jump-1"
+            },
+            {
+              "ObservationId": "occurrence/obligation-evidence/jump-1/singleton-player-state"
+            },
+            {
+              "ObservationId": "occurrence/obligation-evidence/jump-1/arena-bounds-ordered"
+            },
+            {
+              "ObservationId": "occurrence/obligation-evidence/jump-1/position-inside-arena"
+            },
+            {
+              "ObservationId": "occurrence/obligation-evidence/jump-1/grounded-state"
+            },
+            {
+              "ObservationId": "occurrence/obligation-evidence/jump-1/exact-base"
+            }
+          ]
         ]
       },
       "subject": {
@@ -1942,39 +2852,59 @@
       "obligation_results": [
         {
           "obligation_id": "obligation/singleton-player-state",
-          "predicate_ref": "obligation-predicate/relation-cardinality-one",
-          "evidence_occurrence_id": "occurrence/obligation-evidence/gravity-tick-1/singleton-player-state",
-          "result_value_ref": "value/bool/true"
+          "result_value_ref": "value/bool/true",
+          "requirement_term_ref": "requirement-term/admission/singleton-player-state",
+          "evidence_observation_id": "occurrence/obligation-evidence/gravity-tick-1/singleton-player-state"
         },
         {
           "obligation_id": "obligation/arena-bounds-ordered",
-          "predicate_ref": "obligation-predicate/f64-less-or-equal-pairs",
-          "evidence_occurrence_id": "occurrence/obligation-evidence/gravity-tick-1/arena-bounds-ordered",
-          "result_value_ref": "value/bool/true"
+          "result_value_ref": "value/bool/true",
+          "requirement_term_ref": "requirement-term/admission/arena-bounds-ordered",
+          "evidence_observation_id": "occurrence/obligation-evidence/gravity-tick-1/arena-bounds-ordered"
         },
         {
           "obligation_id": "obligation/position-inside-arena",
-          "predicate_ref": "obligation-predicate/vec3-horizontal-within-bounds",
-          "evidence_occurrence_id": "occurrence/obligation-evidence/gravity-tick-1/position-inside-arena",
-          "result_value_ref": "value/bool/true"
+          "result_value_ref": "value/bool/true",
+          "requirement_term_ref": "requirement-term/admission/position-inside-arena",
+          "evidence_observation_id": "occurrence/obligation-evidence/gravity-tick-1/position-inside-arena"
         },
         {
           "obligation_id": "obligation/grounded-state",
-          "predicate_ref": "obligation-predicate/grounded-implies-floor-zero-vertical",
-          "evidence_occurrence_id": "occurrence/obligation-evidence/gravity-tick-1/grounded-state",
-          "result_value_ref": "value/bool/true"
+          "result_value_ref": "value/bool/true",
+          "requirement_term_ref": "requirement-term/admission/grounded-state",
+          "evidence_observation_id": "occurrence/obligation-evidence/gravity-tick-1/grounded-state"
         },
         {
           "obligation_id": "obligation/exact-base",
-          "predicate_ref": "obligation-predicate/withdrawals-exist-in-exact-base",
-          "evidence_occurrence_id": "occurrence/obligation-evidence/gravity-tick-1/exact-base",
-          "result_value_ref": "value/bool/true"
+          "result_value_ref": "value/bool/true",
+          "requirement_term_ref": "requirement-term/admission/exact-base",
+          "evidence_observation_id": "occurrence/obligation-evidence/gravity-tick-1/exact-base"
         }
       ],
       "provenance": {
-        "IssuedBy": [
-          "authority/jump-arena-obligation-checker",
-          "authorization-evidence/judgment-issuance"
+        "EnteredThrough": [
+          "boundary/governed-judgment-issuance",
+          "external-evidence/judgment/gravity-tick-1-obligations-pass",
+          [
+            {
+              "TransitionOccurrenceId": "occurrence/transition/gravity-tick-1"
+            },
+            {
+              "ObservationId": "occurrence/obligation-evidence/gravity-tick-1/singleton-player-state"
+            },
+            {
+              "ObservationId": "occurrence/obligation-evidence/gravity-tick-1/arena-bounds-ordered"
+            },
+            {
+              "ObservationId": "occurrence/obligation-evidence/gravity-tick-1/position-inside-arena"
+            },
+            {
+              "ObservationId": "occurrence/obligation-evidence/gravity-tick-1/grounded-state"
+            },
+            {
+              "ObservationId": "occurrence/obligation-evidence/gravity-tick-1/exact-base"
+            }
+          ]
         ]
       },
       "subject": {
@@ -2007,39 +2937,59 @@
       "obligation_results": [
         {
           "obligation_id": "obligation/singleton-player-state",
-          "predicate_ref": "obligation-predicate/relation-cardinality-one",
-          "evidence_occurrence_id": "occurrence/obligation-evidence/east-wall-tick-1/singleton-player-state",
-          "result_value_ref": "value/bool/true"
+          "result_value_ref": "value/bool/true",
+          "requirement_term_ref": "requirement-term/admission/singleton-player-state",
+          "evidence_observation_id": "occurrence/obligation-evidence/east-wall-tick-1/singleton-player-state"
         },
         {
           "obligation_id": "obligation/arena-bounds-ordered",
-          "predicate_ref": "obligation-predicate/f64-less-or-equal-pairs",
-          "evidence_occurrence_id": "occurrence/obligation-evidence/east-wall-tick-1/arena-bounds-ordered",
-          "result_value_ref": "value/bool/true"
+          "result_value_ref": "value/bool/true",
+          "requirement_term_ref": "requirement-term/admission/arena-bounds-ordered",
+          "evidence_observation_id": "occurrence/obligation-evidence/east-wall-tick-1/arena-bounds-ordered"
         },
         {
           "obligation_id": "obligation/position-inside-arena",
-          "predicate_ref": "obligation-predicate/vec3-horizontal-within-bounds",
-          "evidence_occurrence_id": "occurrence/obligation-evidence/east-wall-tick-1/position-inside-arena",
-          "result_value_ref": "value/bool/true"
+          "result_value_ref": "value/bool/true",
+          "requirement_term_ref": "requirement-term/admission/position-inside-arena",
+          "evidence_observation_id": "occurrence/obligation-evidence/east-wall-tick-1/position-inside-arena"
         },
         {
           "obligation_id": "obligation/grounded-state",
-          "predicate_ref": "obligation-predicate/grounded-implies-floor-zero-vertical",
-          "evidence_occurrence_id": "occurrence/obligation-evidence/east-wall-tick-1/grounded-state",
-          "result_value_ref": "value/bool/true"
+          "result_value_ref": "value/bool/true",
+          "requirement_term_ref": "requirement-term/admission/grounded-state",
+          "evidence_observation_id": "occurrence/obligation-evidence/east-wall-tick-1/grounded-state"
         },
         {
           "obligation_id": "obligation/exact-base",
-          "predicate_ref": "obligation-predicate/withdrawals-exist-in-exact-base",
-          "evidence_occurrence_id": "occurrence/obligation-evidence/east-wall-tick-1/exact-base",
-          "result_value_ref": "value/bool/true"
+          "result_value_ref": "value/bool/true",
+          "requirement_term_ref": "requirement-term/admission/exact-base",
+          "evidence_observation_id": "occurrence/obligation-evidence/east-wall-tick-1/exact-base"
         }
       ],
       "provenance": {
-        "IssuedBy": [
-          "authority/jump-arena-obligation-checker",
-          "authorization-evidence/judgment-issuance"
+        "EnteredThrough": [
+          "boundary/governed-judgment-issuance",
+          "external-evidence/judgment/east-wall-tick-1-obligations-pass",
+          [
+            {
+              "TransitionOccurrenceId": "occurrence/transition/east-wall-tick-1"
+            },
+            {
+              "ObservationId": "occurrence/obligation-evidence/east-wall-tick-1/singleton-player-state"
+            },
+            {
+              "ObservationId": "occurrence/obligation-evidence/east-wall-tick-1/arena-bounds-ordered"
+            },
+            {
+              "ObservationId": "occurrence/obligation-evidence/east-wall-tick-1/position-inside-arena"
+            },
+            {
+              "ObservationId": "occurrence/obligation-evidence/east-wall-tick-1/grounded-state"
+            },
+            {
+              "ObservationId": "occurrence/obligation-evidence/east-wall-tick-1/exact-base"
+            }
+          ]
         ]
       },
       "subject": {
@@ -2072,39 +3022,59 @@
       "obligation_results": [
         {
           "obligation_id": "obligation/singleton-player-state",
-          "predicate_ref": "obligation-predicate/relation-cardinality-one",
-          "evidence_occurrence_id": "occurrence/obligation-evidence/west-wall-tick-1/singleton-player-state",
-          "result_value_ref": "value/bool/true"
+          "result_value_ref": "value/bool/true",
+          "requirement_term_ref": "requirement-term/admission/singleton-player-state",
+          "evidence_observation_id": "occurrence/obligation-evidence/west-wall-tick-1/singleton-player-state"
         },
         {
           "obligation_id": "obligation/arena-bounds-ordered",
-          "predicate_ref": "obligation-predicate/f64-less-or-equal-pairs",
-          "evidence_occurrence_id": "occurrence/obligation-evidence/west-wall-tick-1/arena-bounds-ordered",
-          "result_value_ref": "value/bool/true"
+          "result_value_ref": "value/bool/true",
+          "requirement_term_ref": "requirement-term/admission/arena-bounds-ordered",
+          "evidence_observation_id": "occurrence/obligation-evidence/west-wall-tick-1/arena-bounds-ordered"
         },
         {
           "obligation_id": "obligation/position-inside-arena",
-          "predicate_ref": "obligation-predicate/vec3-horizontal-within-bounds",
-          "evidence_occurrence_id": "occurrence/obligation-evidence/west-wall-tick-1/position-inside-arena",
-          "result_value_ref": "value/bool/true"
+          "result_value_ref": "value/bool/true",
+          "requirement_term_ref": "requirement-term/admission/position-inside-arena",
+          "evidence_observation_id": "occurrence/obligation-evidence/west-wall-tick-1/position-inside-arena"
         },
         {
           "obligation_id": "obligation/grounded-state",
-          "predicate_ref": "obligation-predicate/grounded-implies-floor-zero-vertical",
-          "evidence_occurrence_id": "occurrence/obligation-evidence/west-wall-tick-1/grounded-state",
-          "result_value_ref": "value/bool/true"
+          "result_value_ref": "value/bool/true",
+          "requirement_term_ref": "requirement-term/admission/grounded-state",
+          "evidence_observation_id": "occurrence/obligation-evidence/west-wall-tick-1/grounded-state"
         },
         {
           "obligation_id": "obligation/exact-base",
-          "predicate_ref": "obligation-predicate/withdrawals-exist-in-exact-base",
-          "evidence_occurrence_id": "occurrence/obligation-evidence/west-wall-tick-1/exact-base",
-          "result_value_ref": "value/bool/true"
+          "result_value_ref": "value/bool/true",
+          "requirement_term_ref": "requirement-term/admission/exact-base",
+          "evidence_observation_id": "occurrence/obligation-evidence/west-wall-tick-1/exact-base"
         }
       ],
       "provenance": {
-        "IssuedBy": [
-          "authority/jump-arena-obligation-checker",
-          "authorization-evidence/judgment-issuance"
+        "EnteredThrough": [
+          "boundary/governed-judgment-issuance",
+          "external-evidence/judgment/west-wall-tick-1-obligations-pass",
+          [
+            {
+              "TransitionOccurrenceId": "occurrence/transition/west-wall-tick-1"
+            },
+            {
+              "ObservationId": "occurrence/obligation-evidence/west-wall-tick-1/singleton-player-state"
+            },
+            {
+              "ObservationId": "occurrence/obligation-evidence/west-wall-tick-1/arena-bounds-ordered"
+            },
+            {
+              "ObservationId": "occurrence/obligation-evidence/west-wall-tick-1/position-inside-arena"
+            },
+            {
+              "ObservationId": "occurrence/obligation-evidence/west-wall-tick-1/grounded-state"
+            },
+            {
+              "ObservationId": "occurrence/obligation-evidence/west-wall-tick-1/exact-base"
+            }
+          ]
         ]
       },
       "subject": {
@@ -2137,39 +3107,59 @@
       "obligation_results": [
         {
           "obligation_id": "obligation/singleton-player-state",
-          "predicate_ref": "obligation-predicate/relation-cardinality-one",
-          "evidence_occurrence_id": "occurrence/obligation-evidence/positive-z-wall-tick-1/singleton-player-state",
-          "result_value_ref": "value/bool/true"
+          "result_value_ref": "value/bool/true",
+          "requirement_term_ref": "requirement-term/admission/singleton-player-state",
+          "evidence_observation_id": "occurrence/obligation-evidence/positive-z-wall-tick-1/singleton-player-state"
         },
         {
           "obligation_id": "obligation/arena-bounds-ordered",
-          "predicate_ref": "obligation-predicate/f64-less-or-equal-pairs",
-          "evidence_occurrence_id": "occurrence/obligation-evidence/positive-z-wall-tick-1/arena-bounds-ordered",
-          "result_value_ref": "value/bool/true"
+          "result_value_ref": "value/bool/true",
+          "requirement_term_ref": "requirement-term/admission/arena-bounds-ordered",
+          "evidence_observation_id": "occurrence/obligation-evidence/positive-z-wall-tick-1/arena-bounds-ordered"
         },
         {
           "obligation_id": "obligation/position-inside-arena",
-          "predicate_ref": "obligation-predicate/vec3-horizontal-within-bounds",
-          "evidence_occurrence_id": "occurrence/obligation-evidence/positive-z-wall-tick-1/position-inside-arena",
-          "result_value_ref": "value/bool/true"
+          "result_value_ref": "value/bool/true",
+          "requirement_term_ref": "requirement-term/admission/position-inside-arena",
+          "evidence_observation_id": "occurrence/obligation-evidence/positive-z-wall-tick-1/position-inside-arena"
         },
         {
           "obligation_id": "obligation/grounded-state",
-          "predicate_ref": "obligation-predicate/grounded-implies-floor-zero-vertical",
-          "evidence_occurrence_id": "occurrence/obligation-evidence/positive-z-wall-tick-1/grounded-state",
-          "result_value_ref": "value/bool/true"
+          "result_value_ref": "value/bool/true",
+          "requirement_term_ref": "requirement-term/admission/grounded-state",
+          "evidence_observation_id": "occurrence/obligation-evidence/positive-z-wall-tick-1/grounded-state"
         },
         {
           "obligation_id": "obligation/exact-base",
-          "predicate_ref": "obligation-predicate/withdrawals-exist-in-exact-base",
-          "evidence_occurrence_id": "occurrence/obligation-evidence/positive-z-wall-tick-1/exact-base",
-          "result_value_ref": "value/bool/true"
+          "result_value_ref": "value/bool/true",
+          "requirement_term_ref": "requirement-term/admission/exact-base",
+          "evidence_observation_id": "occurrence/obligation-evidence/positive-z-wall-tick-1/exact-base"
         }
       ],
       "provenance": {
-        "IssuedBy": [
-          "authority/jump-arena-obligation-checker",
-          "authorization-evidence/judgment-issuance"
+        "EnteredThrough": [
+          "boundary/governed-judgment-issuance",
+          "external-evidence/judgment/positive-z-wall-tick-1-obligations-pass",
+          [
+            {
+              "TransitionOccurrenceId": "occurrence/transition/positive-z-wall-tick-1"
+            },
+            {
+              "ObservationId": "occurrence/obligation-evidence/positive-z-wall-tick-1/singleton-player-state"
+            },
+            {
+              "ObservationId": "occurrence/obligation-evidence/positive-z-wall-tick-1/arena-bounds-ordered"
+            },
+            {
+              "ObservationId": "occurrence/obligation-evidence/positive-z-wall-tick-1/position-inside-arena"
+            },
+            {
+              "ObservationId": "occurrence/obligation-evidence/positive-z-wall-tick-1/grounded-state"
+            },
+            {
+              "ObservationId": "occurrence/obligation-evidence/positive-z-wall-tick-1/exact-base"
+            }
+          ]
         ]
       },
       "subject": {
@@ -2202,39 +3192,59 @@
       "obligation_results": [
         {
           "obligation_id": "obligation/singleton-player-state",
-          "predicate_ref": "obligation-predicate/relation-cardinality-one",
-          "evidence_occurrence_id": "occurrence/obligation-evidence/negative-z-wall-tick-1/singleton-player-state",
-          "result_value_ref": "value/bool/true"
+          "result_value_ref": "value/bool/true",
+          "requirement_term_ref": "requirement-term/admission/singleton-player-state",
+          "evidence_observation_id": "occurrence/obligation-evidence/negative-z-wall-tick-1/singleton-player-state"
         },
         {
           "obligation_id": "obligation/arena-bounds-ordered",
-          "predicate_ref": "obligation-predicate/f64-less-or-equal-pairs",
-          "evidence_occurrence_id": "occurrence/obligation-evidence/negative-z-wall-tick-1/arena-bounds-ordered",
-          "result_value_ref": "value/bool/true"
+          "result_value_ref": "value/bool/true",
+          "requirement_term_ref": "requirement-term/admission/arena-bounds-ordered",
+          "evidence_observation_id": "occurrence/obligation-evidence/negative-z-wall-tick-1/arena-bounds-ordered"
         },
         {
           "obligation_id": "obligation/position-inside-arena",
-          "predicate_ref": "obligation-predicate/vec3-horizontal-within-bounds",
-          "evidence_occurrence_id": "occurrence/obligation-evidence/negative-z-wall-tick-1/position-inside-arena",
-          "result_value_ref": "value/bool/true"
+          "result_value_ref": "value/bool/true",
+          "requirement_term_ref": "requirement-term/admission/position-inside-arena",
+          "evidence_observation_id": "occurrence/obligation-evidence/negative-z-wall-tick-1/position-inside-arena"
         },
         {
           "obligation_id": "obligation/grounded-state",
-          "predicate_ref": "obligation-predicate/grounded-implies-floor-zero-vertical",
-          "evidence_occurrence_id": "occurrence/obligation-evidence/negative-z-wall-tick-1/grounded-state",
-          "result_value_ref": "value/bool/true"
+          "result_value_ref": "value/bool/true",
+          "requirement_term_ref": "requirement-term/admission/grounded-state",
+          "evidence_observation_id": "occurrence/obligation-evidence/negative-z-wall-tick-1/grounded-state"
         },
         {
           "obligation_id": "obligation/exact-base",
-          "predicate_ref": "obligation-predicate/withdrawals-exist-in-exact-base",
-          "evidence_occurrence_id": "occurrence/obligation-evidence/negative-z-wall-tick-1/exact-base",
-          "result_value_ref": "value/bool/true"
+          "result_value_ref": "value/bool/true",
+          "requirement_term_ref": "requirement-term/admission/exact-base",
+          "evidence_observation_id": "occurrence/obligation-evidence/negative-z-wall-tick-1/exact-base"
         }
       ],
       "provenance": {
-        "IssuedBy": [
-          "authority/jump-arena-obligation-checker",
-          "authorization-evidence/judgment-issuance"
+        "EnteredThrough": [
+          "boundary/governed-judgment-issuance",
+          "external-evidence/judgment/negative-z-wall-tick-1-obligations-pass",
+          [
+            {
+              "TransitionOccurrenceId": "occurrence/transition/negative-z-wall-tick-1"
+            },
+            {
+              "ObservationId": "occurrence/obligation-evidence/negative-z-wall-tick-1/singleton-player-state"
+            },
+            {
+              "ObservationId": "occurrence/obligation-evidence/negative-z-wall-tick-1/arena-bounds-ordered"
+            },
+            {
+              "ObservationId": "occurrence/obligation-evidence/negative-z-wall-tick-1/position-inside-arena"
+            },
+            {
+              "ObservationId": "occurrence/obligation-evidence/negative-z-wall-tick-1/grounded-state"
+            },
+            {
+              "ObservationId": "occurrence/obligation-evidence/negative-z-wall-tick-1/exact-base"
+            }
+          ]
         ]
       },
       "subject": {
@@ -2267,39 +3277,59 @@
       "obligation_results": [
         {
           "obligation_id": "obligation/singleton-player-state",
-          "predicate_ref": "obligation-predicate/relation-cardinality-one",
-          "evidence_occurrence_id": "occurrence/obligation-evidence/landing-tick-1/singleton-player-state",
-          "result_value_ref": "value/bool/true"
+          "result_value_ref": "value/bool/true",
+          "requirement_term_ref": "requirement-term/admission/singleton-player-state",
+          "evidence_observation_id": "occurrence/obligation-evidence/landing-tick-1/singleton-player-state"
         },
         {
           "obligation_id": "obligation/arena-bounds-ordered",
-          "predicate_ref": "obligation-predicate/f64-less-or-equal-pairs",
-          "evidence_occurrence_id": "occurrence/obligation-evidence/landing-tick-1/arena-bounds-ordered",
-          "result_value_ref": "value/bool/true"
+          "result_value_ref": "value/bool/true",
+          "requirement_term_ref": "requirement-term/admission/arena-bounds-ordered",
+          "evidence_observation_id": "occurrence/obligation-evidence/landing-tick-1/arena-bounds-ordered"
         },
         {
           "obligation_id": "obligation/position-inside-arena",
-          "predicate_ref": "obligation-predicate/vec3-horizontal-within-bounds",
-          "evidence_occurrence_id": "occurrence/obligation-evidence/landing-tick-1/position-inside-arena",
-          "result_value_ref": "value/bool/true"
+          "result_value_ref": "value/bool/true",
+          "requirement_term_ref": "requirement-term/admission/position-inside-arena",
+          "evidence_observation_id": "occurrence/obligation-evidence/landing-tick-1/position-inside-arena"
         },
         {
           "obligation_id": "obligation/grounded-state",
-          "predicate_ref": "obligation-predicate/grounded-implies-floor-zero-vertical",
-          "evidence_occurrence_id": "occurrence/obligation-evidence/landing-tick-1/grounded-state",
-          "result_value_ref": "value/bool/true"
+          "result_value_ref": "value/bool/true",
+          "requirement_term_ref": "requirement-term/admission/grounded-state",
+          "evidence_observation_id": "occurrence/obligation-evidence/landing-tick-1/grounded-state"
         },
         {
           "obligation_id": "obligation/exact-base",
-          "predicate_ref": "obligation-predicate/withdrawals-exist-in-exact-base",
-          "evidence_occurrence_id": "occurrence/obligation-evidence/landing-tick-1/exact-base",
-          "result_value_ref": "value/bool/true"
+          "result_value_ref": "value/bool/true",
+          "requirement_term_ref": "requirement-term/admission/exact-base",
+          "evidence_observation_id": "occurrence/obligation-evidence/landing-tick-1/exact-base"
         }
       ],
       "provenance": {
-        "IssuedBy": [
-          "authority/jump-arena-obligation-checker",
-          "authorization-evidence/judgment-issuance"
+        "EnteredThrough": [
+          "boundary/governed-judgment-issuance",
+          "external-evidence/judgment/landing-tick-1-obligations-pass",
+          [
+            {
+              "TransitionOccurrenceId": "occurrence/transition/landing-tick-1"
+            },
+            {
+              "ObservationId": "occurrence/obligation-evidence/landing-tick-1/singleton-player-state"
+            },
+            {
+              "ObservationId": "occurrence/obligation-evidence/landing-tick-1/arena-bounds-ordered"
+            },
+            {
+              "ObservationId": "occurrence/obligation-evidence/landing-tick-1/position-inside-arena"
+            },
+            {
+              "ObservationId": "occurrence/obligation-evidence/landing-tick-1/grounded-state"
+            },
+            {
+              "ObservationId": "occurrence/obligation-evidence/landing-tick-1/exact-base"
+            }
+          ]
         ]
       },
       "subject": {
@@ -2328,6 +3358,20 @@
   "admissions": [
     {
       "admission_occurrence_id": "occurrence/admission/input-1",
+      "provenance": {
+        "EnteredThrough": [
+          "boundary/governed-state-admission",
+          "external-evidence/state-admission/input-1",
+          [
+            {
+              "TransitionOccurrenceId": "occurrence/transition/input-1"
+            },
+            {
+              "JudgmentOccurrenceId": "occurrence/judgment/input-1-obligations-pass"
+            }
+          ]
+        ]
+      },
       "base_state_revision_id": "state/main-w0",
       "candidate_delta_id": "candidate/input-1",
       "producing_run_id": "run/input-1",
@@ -2344,17 +3388,31 @@
         "obligation/grounded-state",
         "obligation/exact-base"
       ],
-      "obligation_evidence_occurrence_ids": [
+      "successor_state_revision_id": "state/main-w1",
+      "obligation_evidence_observation_ids": [
         "occurrence/obligation-evidence/input-1/singleton-player-state",
         "occurrence/obligation-evidence/input-1/arena-bounds-ordered",
         "occurrence/obligation-evidence/input-1/position-inside-arena",
         "occurrence/obligation-evidence/input-1/grounded-state",
         "occurrence/obligation-evidence/input-1/exact-base"
-      ],
-      "successor_state_revision_id": "state/main-w1"
+      ]
     },
     {
       "admission_occurrence_id": "occurrence/admission/ground-tick-1",
+      "provenance": {
+        "EnteredThrough": [
+          "boundary/governed-state-admission",
+          "external-evidence/state-admission/ground-tick-1",
+          [
+            {
+              "TransitionOccurrenceId": "occurrence/transition/ground-tick-1"
+            },
+            {
+              "JudgmentOccurrenceId": "occurrence/judgment/ground-tick-1-obligations-pass"
+            }
+          ]
+        ]
+      },
       "base_state_revision_id": "state/main-w1",
       "candidate_delta_id": "candidate/ground-tick-1",
       "producing_run_id": "run/ground-tick-1",
@@ -2371,17 +3429,31 @@
         "obligation/grounded-state",
         "obligation/exact-base"
       ],
-      "obligation_evidence_occurrence_ids": [
+      "successor_state_revision_id": "state/main-w2",
+      "obligation_evidence_observation_ids": [
         "occurrence/obligation-evidence/ground-tick-1/singleton-player-state",
         "occurrence/obligation-evidence/ground-tick-1/arena-bounds-ordered",
         "occurrence/obligation-evidence/ground-tick-1/position-inside-arena",
         "occurrence/obligation-evidence/ground-tick-1/grounded-state",
         "occurrence/obligation-evidence/ground-tick-1/exact-base"
-      ],
-      "successor_state_revision_id": "state/main-w2"
+      ]
     },
     {
       "admission_occurrence_id": "occurrence/admission/jump-1",
+      "provenance": {
+        "EnteredThrough": [
+          "boundary/governed-state-admission",
+          "external-evidence/state-admission/jump-1",
+          [
+            {
+              "TransitionOccurrenceId": "occurrence/transition/jump-1"
+            },
+            {
+              "JudgmentOccurrenceId": "occurrence/judgment/jump-1-obligations-pass"
+            }
+          ]
+        ]
+      },
       "base_state_revision_id": "state/main-w2",
       "candidate_delta_id": "candidate/jump-1",
       "producing_run_id": "run/jump-1",
@@ -2398,17 +3470,31 @@
         "obligation/grounded-state",
         "obligation/exact-base"
       ],
-      "obligation_evidence_occurrence_ids": [
+      "successor_state_revision_id": "state/main-w3",
+      "obligation_evidence_observation_ids": [
         "occurrence/obligation-evidence/jump-1/singleton-player-state",
         "occurrence/obligation-evidence/jump-1/arena-bounds-ordered",
         "occurrence/obligation-evidence/jump-1/position-inside-arena",
         "occurrence/obligation-evidence/jump-1/grounded-state",
         "occurrence/obligation-evidence/jump-1/exact-base"
-      ],
-      "successor_state_revision_id": "state/main-w3"
+      ]
     },
     {
       "admission_occurrence_id": "occurrence/admission/gravity-tick-1",
+      "provenance": {
+        "EnteredThrough": [
+          "boundary/governed-state-admission",
+          "external-evidence/state-admission/gravity-tick-1",
+          [
+            {
+              "TransitionOccurrenceId": "occurrence/transition/gravity-tick-1"
+            },
+            {
+              "JudgmentOccurrenceId": "occurrence/judgment/gravity-tick-1-obligations-pass"
+            }
+          ]
+        ]
+      },
       "base_state_revision_id": "state/main-w3",
       "candidate_delta_id": "candidate/gravity-tick-1",
       "producing_run_id": "run/gravity-tick-1",
@@ -2425,17 +3511,31 @@
         "obligation/grounded-state",
         "obligation/exact-base"
       ],
-      "obligation_evidence_occurrence_ids": [
+      "successor_state_revision_id": "state/main-w4",
+      "obligation_evidence_observation_ids": [
         "occurrence/obligation-evidence/gravity-tick-1/singleton-player-state",
         "occurrence/obligation-evidence/gravity-tick-1/arena-bounds-ordered",
         "occurrence/obligation-evidence/gravity-tick-1/position-inside-arena",
         "occurrence/obligation-evidence/gravity-tick-1/grounded-state",
         "occurrence/obligation-evidence/gravity-tick-1/exact-base"
-      ],
-      "successor_state_revision_id": "state/main-w4"
+      ]
     },
     {
       "admission_occurrence_id": "occurrence/admission/east-wall-tick-1",
+      "provenance": {
+        "EnteredThrough": [
+          "boundary/governed-state-admission",
+          "external-evidence/state-admission/east-wall-tick-1",
+          [
+            {
+              "TransitionOccurrenceId": "occurrence/transition/east-wall-tick-1"
+            },
+            {
+              "JudgmentOccurrenceId": "occurrence/judgment/east-wall-tick-1-obligations-pass"
+            }
+          ]
+        ]
+      },
       "base_state_revision_id": "state/east-wall-w0",
       "candidate_delta_id": "candidate/east-wall-tick-1",
       "producing_run_id": "run/east-wall-tick-1",
@@ -2452,17 +3552,31 @@
         "obligation/grounded-state",
         "obligation/exact-base"
       ],
-      "obligation_evidence_occurrence_ids": [
+      "successor_state_revision_id": "state/east-wall-w1",
+      "obligation_evidence_observation_ids": [
         "occurrence/obligation-evidence/east-wall-tick-1/singleton-player-state",
         "occurrence/obligation-evidence/east-wall-tick-1/arena-bounds-ordered",
         "occurrence/obligation-evidence/east-wall-tick-1/position-inside-arena",
         "occurrence/obligation-evidence/east-wall-tick-1/grounded-state",
         "occurrence/obligation-evidence/east-wall-tick-1/exact-base"
-      ],
-      "successor_state_revision_id": "state/east-wall-w1"
+      ]
     },
     {
       "admission_occurrence_id": "occurrence/admission/west-wall-tick-1",
+      "provenance": {
+        "EnteredThrough": [
+          "boundary/governed-state-admission",
+          "external-evidence/state-admission/west-wall-tick-1",
+          [
+            {
+              "TransitionOccurrenceId": "occurrence/transition/west-wall-tick-1"
+            },
+            {
+              "JudgmentOccurrenceId": "occurrence/judgment/west-wall-tick-1-obligations-pass"
+            }
+          ]
+        ]
+      },
       "base_state_revision_id": "state/west-wall-w0",
       "candidate_delta_id": "candidate/west-wall-tick-1",
       "producing_run_id": "run/west-wall-tick-1",
@@ -2479,17 +3593,31 @@
         "obligation/grounded-state",
         "obligation/exact-base"
       ],
-      "obligation_evidence_occurrence_ids": [
+      "successor_state_revision_id": "state/west-wall-w1",
+      "obligation_evidence_observation_ids": [
         "occurrence/obligation-evidence/west-wall-tick-1/singleton-player-state",
         "occurrence/obligation-evidence/west-wall-tick-1/arena-bounds-ordered",
         "occurrence/obligation-evidence/west-wall-tick-1/position-inside-arena",
         "occurrence/obligation-evidence/west-wall-tick-1/grounded-state",
         "occurrence/obligation-evidence/west-wall-tick-1/exact-base"
-      ],
-      "successor_state_revision_id": "state/west-wall-w1"
+      ]
     },
     {
       "admission_occurrence_id": "occurrence/admission/positive-z-wall-tick-1",
+      "provenance": {
+        "EnteredThrough": [
+          "boundary/governed-state-admission",
+          "external-evidence/state-admission/positive-z-wall-tick-1",
+          [
+            {
+              "TransitionOccurrenceId": "occurrence/transition/positive-z-wall-tick-1"
+            },
+            {
+              "JudgmentOccurrenceId": "occurrence/judgment/positive-z-wall-tick-1-obligations-pass"
+            }
+          ]
+        ]
+      },
       "base_state_revision_id": "state/positive-z-wall-w0",
       "candidate_delta_id": "candidate/positive-z-wall-tick-1",
       "producing_run_id": "run/positive-z-wall-tick-1",
@@ -2506,17 +3634,31 @@
         "obligation/grounded-state",
         "obligation/exact-base"
       ],
-      "obligation_evidence_occurrence_ids": [
+      "successor_state_revision_id": "state/positive-z-wall-w1",
+      "obligation_evidence_observation_ids": [
         "occurrence/obligation-evidence/positive-z-wall-tick-1/singleton-player-state",
         "occurrence/obligation-evidence/positive-z-wall-tick-1/arena-bounds-ordered",
         "occurrence/obligation-evidence/positive-z-wall-tick-1/position-inside-arena",
         "occurrence/obligation-evidence/positive-z-wall-tick-1/grounded-state",
         "occurrence/obligation-evidence/positive-z-wall-tick-1/exact-base"
-      ],
-      "successor_state_revision_id": "state/positive-z-wall-w1"
+      ]
     },
     {
       "admission_occurrence_id": "occurrence/admission/negative-z-wall-tick-1",
+      "provenance": {
+        "EnteredThrough": [
+          "boundary/governed-state-admission",
+          "external-evidence/state-admission/negative-z-wall-tick-1",
+          [
+            {
+              "TransitionOccurrenceId": "occurrence/transition/negative-z-wall-tick-1"
+            },
+            {
+              "JudgmentOccurrenceId": "occurrence/judgment/negative-z-wall-tick-1-obligations-pass"
+            }
+          ]
+        ]
+      },
       "base_state_revision_id": "state/negative-z-wall-w0",
       "candidate_delta_id": "candidate/negative-z-wall-tick-1",
       "producing_run_id": "run/negative-z-wall-tick-1",
@@ -2533,17 +3675,31 @@
         "obligation/grounded-state",
         "obligation/exact-base"
       ],
-      "obligation_evidence_occurrence_ids": [
+      "successor_state_revision_id": "state/negative-z-wall-w1",
+      "obligation_evidence_observation_ids": [
         "occurrence/obligation-evidence/negative-z-wall-tick-1/singleton-player-state",
         "occurrence/obligation-evidence/negative-z-wall-tick-1/arena-bounds-ordered",
         "occurrence/obligation-evidence/negative-z-wall-tick-1/position-inside-arena",
         "occurrence/obligation-evidence/negative-z-wall-tick-1/grounded-state",
         "occurrence/obligation-evidence/negative-z-wall-tick-1/exact-base"
-      ],
-      "successor_state_revision_id": "state/negative-z-wall-w1"
+      ]
     },
     {
       "admission_occurrence_id": "occurrence/admission/landing-tick-1",
+      "provenance": {
+        "EnteredThrough": [
+          "boundary/governed-state-admission",
+          "external-evidence/state-admission/landing-tick-1",
+          [
+            {
+              "TransitionOccurrenceId": "occurrence/transition/landing-tick-1"
+            },
+            {
+              "JudgmentOccurrenceId": "occurrence/judgment/landing-tick-1-obligations-pass"
+            }
+          ]
+        ]
+      },
       "base_state_revision_id": "state/landing-w0",
       "candidate_delta_id": "candidate/landing-tick-1",
       "producing_run_id": "run/landing-tick-1",
@@ -2560,14 +3716,14 @@
         "obligation/grounded-state",
         "obligation/exact-base"
       ],
-      "obligation_evidence_occurrence_ids": [
+      "successor_state_revision_id": "state/landing-w1",
+      "obligation_evidence_observation_ids": [
         "occurrence/obligation-evidence/landing-tick-1/singleton-player-state",
         "occurrence/obligation-evidence/landing-tick-1/arena-bounds-ordered",
         "occurrence/obligation-evidence/landing-tick-1/position-inside-arena",
         "occurrence/obligation-evidence/landing-tick-1/grounded-state",
         "occurrence/obligation-evidence/landing-tick-1/exact-base"
-      ],
-      "successor_state_revision_id": "state/landing-w1"
+      ]
     }
   ],
   "continuation_records": [
@@ -2579,6 +3735,7 @@
       "emitting_step_id": "step/input-listener-start",
       "application_id": "application/input-listener-player-1",
       "mode_id": "mode/input-listener-reactive",
+      "activation_start_record_ref": "activation-start-record/input-listener-1",
       "program_snapshot_id": "program-snapshot/jump-arena-v1",
       "program_revision_id": "program-revision/jump-arena-r0",
       "runtime_session_id": "runtime-session/jump-arena-s0",
@@ -2588,6 +3745,8 @@
       "authorization_evidence_ids": [],
       "capability_refs": [],
       "scheduler_constraints": "causal-input-order-only",
+      "status_ref": "continuation-status/suspended",
+      "configuration_ownership_token_ref": "configuration-ownership/input-listener-1",
       "remainder_ref": "continuation-remainder/input-stream-await-next-observation",
       "remaining_budget_units": 2,
       "cancellation_scope": "cancellation-scope/input-listener-1",
@@ -2601,6 +3760,7 @@
       "emitting_step_id": "step/input-listener-resume",
       "application_id": "application/input-listener-player-1",
       "mode_id": "mode/input-listener-reactive",
+      "activation_start_record_ref": "activation-start-record/input-listener-1",
       "program_snapshot_id": "program-snapshot/jump-arena-v1",
       "program_revision_id": "program-revision/jump-arena-r0",
       "runtime_session_id": "runtime-session/jump-arena-s0",
@@ -2610,6 +3770,8 @@
       "authorization_evidence_ids": [],
       "capability_refs": [],
       "scheduler_constraints": "causal-input-order-only",
+      "status_ref": "continuation-status/suspended",
+      "configuration_ownership_token_ref": "configuration-ownership/input-listener-2",
       "remainder_ref": "continuation-remainder/input-stream-await-next-observation",
       "remaining_budget_units": 1,
       "cancellation_scope": "cancellation-scope/input-listener-1",
@@ -3153,7 +4315,94 @@
             "ActivationStart": "activation/input-1"
           }
         ],
-        "observations": [],
+        "observations": [
+          {
+            "observation_id": "occurrence/obligation-evidence/input-1/singleton-player-state",
+            "observation_type_ref": "type/observation/admission-obligation-result",
+            "requirement_term_ref": "requirement-term/admission/singleton-player-state",
+            "candidate_delta_id": "candidate/input-1",
+            "base_state_revision_id": "state/main-w0",
+            "proposed_successor_payload_ref": "state-payload/main-w1",
+            "value_ref": "value/bool/true",
+            "provenance": {
+              "ProducedBy": [
+                "run/input-1",
+                "activation/input-1",
+                "step/input-1"
+              ]
+            },
+            "program_revision_id": "program-revision/jump-arena-r0"
+          },
+          {
+            "observation_id": "occurrence/obligation-evidence/input-1/arena-bounds-ordered",
+            "observation_type_ref": "type/observation/admission-obligation-result",
+            "requirement_term_ref": "requirement-term/admission/arena-bounds-ordered",
+            "candidate_delta_id": "candidate/input-1",
+            "base_state_revision_id": "state/main-w0",
+            "proposed_successor_payload_ref": "state-payload/main-w1",
+            "value_ref": "value/bool/true",
+            "provenance": {
+              "ProducedBy": [
+                "run/input-1",
+                "activation/input-1",
+                "step/input-1"
+              ]
+            },
+            "program_revision_id": "program-revision/jump-arena-r0"
+          },
+          {
+            "observation_id": "occurrence/obligation-evidence/input-1/position-inside-arena",
+            "observation_type_ref": "type/observation/admission-obligation-result",
+            "requirement_term_ref": "requirement-term/admission/position-inside-arena",
+            "candidate_delta_id": "candidate/input-1",
+            "base_state_revision_id": "state/main-w0",
+            "proposed_successor_payload_ref": "state-payload/main-w1",
+            "value_ref": "value/bool/true",
+            "provenance": {
+              "ProducedBy": [
+                "run/input-1",
+                "activation/input-1",
+                "step/input-1"
+              ]
+            },
+            "program_revision_id": "program-revision/jump-arena-r0"
+          },
+          {
+            "observation_id": "occurrence/obligation-evidence/input-1/grounded-state",
+            "observation_type_ref": "type/observation/admission-obligation-result",
+            "requirement_term_ref": "requirement-term/admission/grounded-state",
+            "candidate_delta_id": "candidate/input-1",
+            "base_state_revision_id": "state/main-w0",
+            "proposed_successor_payload_ref": "state-payload/main-w1",
+            "value_ref": "value/bool/true",
+            "provenance": {
+              "ProducedBy": [
+                "run/input-1",
+                "activation/input-1",
+                "step/input-1"
+              ]
+            },
+            "program_revision_id": "program-revision/jump-arena-r0"
+          },
+          {
+            "observation_id": "occurrence/obligation-evidence/input-1/exact-base",
+            "observation_type_ref": "type/observation/admission-obligation-result",
+            "requirement_term_ref": "requirement-term/admission/exact-base",
+            "candidate_delta_id": "candidate/input-1",
+            "base_state_revision_id": "state/main-w0",
+            "proposed_successor_payload_ref": "state-payload/main-w1",
+            "value_ref": "value/bool/true",
+            "provenance": {
+              "ProducedBy": [
+                "run/input-1",
+                "activation/input-1",
+                "step/input-1"
+              ]
+            },
+            "program_revision_id": "program-revision/jump-arena-r0"
+          }
+        ],
+        "transition_occurrence_id": "occurrence/transition/input-1",
         "candidate_delta_id": "candidate/input-1",
         "continuation_record_ref": null
       },
@@ -3224,7 +4473,196 @@
             "ActivationStart": "activation/ground-tick-1"
           }
         ],
-        "observations": [],
+        "observations": [
+          {
+            "observation_id": "observation/premise/ground-tick-1/dt-positive",
+            "observation_type_ref": "type/observation/premise-verdict",
+            "evaluated_constraint": {
+              "relation_schema_id": "relation-schema/f64-compare",
+              "operator_ref": "operator/f64-greater-than",
+              "mode_id": "mode/f64-greater-than",
+              "numeric_contract_ref": "atom-contract/f64-binary64",
+              "role_bindings": [
+                {
+                  "role_id": "role/f64-compare/left",
+                  "value_ref": "value/f64/0.5"
+                },
+                {
+                  "role_id": "role/f64-compare/right",
+                  "value_ref": "value/f64/0"
+                },
+                {
+                  "role_id": "role/f64-compare/result",
+                  "value_ref": "value/bool/true"
+                }
+              ]
+            },
+            "value_ref": "value/bool/true",
+            "provenance": {
+              "ProducedBy": [
+                "run/ground-tick-1",
+                "activation/ground-tick-1",
+                "step/ground-tick-1"
+              ]
+            }
+          },
+          {
+            "observation_id": "observation/premise/ground-tick-1/clamped-x",
+            "observation_type_ref": "type/observation/premise-binding",
+            "evaluated_constraint": {
+              "relation_schema_id": "relation-schema/scalar-clamped-between",
+              "operator_ref": "operator/scalar-clamped-between",
+              "mode_id": "mode/scalar-clamp-maybe",
+              "role_bindings": [
+                {
+                  "role_id": "role/scalar-clamped-between/value",
+                  "value_ref": "value/f64/2.5"
+                },
+                {
+                  "role_id": "role/scalar-clamped-between/lower",
+                  "value_ref": "value/f64/negative-10"
+                },
+                {
+                  "role_id": "role/scalar-clamped-between/upper",
+                  "value_ref": "value/f64/10"
+                },
+                {
+                  "role_id": "role/scalar-clamped-between/result",
+                  "value_ref": "value/f64/2.5"
+                }
+              ]
+            },
+            "value_ref": "value/f64/2.5",
+            "provenance": {
+              "ProducedBy": [
+                "run/ground-tick-1",
+                "activation/ground-tick-1",
+                "step/ground-tick-1"
+              ]
+            }
+          },
+          {
+            "observation_id": "observation/premise/ground-tick-1/clamped-z",
+            "observation_type_ref": "type/observation/premise-binding",
+            "evaluated_constraint": {
+              "relation_schema_id": "relation-schema/scalar-clamped-between",
+              "operator_ref": "operator/scalar-clamped-between",
+              "mode_id": "mode/scalar-clamp-maybe",
+              "role_bindings": [
+                {
+                  "role_id": "role/scalar-clamped-between/value",
+                  "value_ref": "value/f64/negative-2.5"
+                },
+                {
+                  "role_id": "role/scalar-clamped-between/lower",
+                  "value_ref": "value/f64/negative-10"
+                },
+                {
+                  "role_id": "role/scalar-clamped-between/upper",
+                  "value_ref": "value/f64/10"
+                },
+                {
+                  "role_id": "role/scalar-clamped-between/result",
+                  "value_ref": "value/f64/negative-2.5"
+                }
+              ]
+            },
+            "value_ref": "value/f64/negative-2.5",
+            "provenance": {
+              "ProducedBy": [
+                "run/ground-tick-1",
+                "activation/ground-tick-1",
+                "step/ground-tick-1"
+              ]
+            }
+          },
+          {
+            "observation_id": "occurrence/obligation-evidence/ground-tick-1/singleton-player-state",
+            "observation_type_ref": "type/observation/admission-obligation-result",
+            "requirement_term_ref": "requirement-term/admission/singleton-player-state",
+            "candidate_delta_id": "candidate/ground-tick-1",
+            "base_state_revision_id": "state/main-w1",
+            "proposed_successor_payload_ref": "state-payload/main-w2",
+            "value_ref": "value/bool/true",
+            "provenance": {
+              "ProducedBy": [
+                "run/ground-tick-1",
+                "activation/ground-tick-1",
+                "step/ground-tick-1"
+              ]
+            },
+            "program_revision_id": "program-revision/jump-arena-r0"
+          },
+          {
+            "observation_id": "occurrence/obligation-evidence/ground-tick-1/arena-bounds-ordered",
+            "observation_type_ref": "type/observation/admission-obligation-result",
+            "requirement_term_ref": "requirement-term/admission/arena-bounds-ordered",
+            "candidate_delta_id": "candidate/ground-tick-1",
+            "base_state_revision_id": "state/main-w1",
+            "proposed_successor_payload_ref": "state-payload/main-w2",
+            "value_ref": "value/bool/true",
+            "provenance": {
+              "ProducedBy": [
+                "run/ground-tick-1",
+                "activation/ground-tick-1",
+                "step/ground-tick-1"
+              ]
+            },
+            "program_revision_id": "program-revision/jump-arena-r0"
+          },
+          {
+            "observation_id": "occurrence/obligation-evidence/ground-tick-1/position-inside-arena",
+            "observation_type_ref": "type/observation/admission-obligation-result",
+            "requirement_term_ref": "requirement-term/admission/position-inside-arena",
+            "candidate_delta_id": "candidate/ground-tick-1",
+            "base_state_revision_id": "state/main-w1",
+            "proposed_successor_payload_ref": "state-payload/main-w2",
+            "value_ref": "value/bool/true",
+            "provenance": {
+              "ProducedBy": [
+                "run/ground-tick-1",
+                "activation/ground-tick-1",
+                "step/ground-tick-1"
+              ]
+            },
+            "program_revision_id": "program-revision/jump-arena-r0"
+          },
+          {
+            "observation_id": "occurrence/obligation-evidence/ground-tick-1/grounded-state",
+            "observation_type_ref": "type/observation/admission-obligation-result",
+            "requirement_term_ref": "requirement-term/admission/grounded-state",
+            "candidate_delta_id": "candidate/ground-tick-1",
+            "base_state_revision_id": "state/main-w1",
+            "proposed_successor_payload_ref": "state-payload/main-w2",
+            "value_ref": "value/bool/true",
+            "provenance": {
+              "ProducedBy": [
+                "run/ground-tick-1",
+                "activation/ground-tick-1",
+                "step/ground-tick-1"
+              ]
+            },
+            "program_revision_id": "program-revision/jump-arena-r0"
+          },
+          {
+            "observation_id": "occurrence/obligation-evidence/ground-tick-1/exact-base",
+            "observation_type_ref": "type/observation/admission-obligation-result",
+            "requirement_term_ref": "requirement-term/admission/exact-base",
+            "candidate_delta_id": "candidate/ground-tick-1",
+            "base_state_revision_id": "state/main-w1",
+            "proposed_successor_payload_ref": "state-payload/main-w2",
+            "value_ref": "value/bool/true",
+            "provenance": {
+              "ProducedBy": [
+                "run/ground-tick-1",
+                "activation/ground-tick-1",
+                "step/ground-tick-1"
+              ]
+            },
+            "program_revision_id": "program-revision/jump-arena-r0"
+          }
+        ],
+        "transition_occurrence_id": "occurrence/transition/ground-tick-1",
         "candidate_delta_id": "candidate/ground-tick-1",
         "continuation_record_ref": null
       },
@@ -3352,7 +4790,94 @@
             "ActivationStart": "activation/jump-1"
           }
         ],
-        "observations": [],
+        "observations": [
+          {
+            "observation_id": "occurrence/obligation-evidence/jump-1/singleton-player-state",
+            "observation_type_ref": "type/observation/admission-obligation-result",
+            "requirement_term_ref": "requirement-term/admission/singleton-player-state",
+            "candidate_delta_id": "candidate/jump-1",
+            "base_state_revision_id": "state/main-w2",
+            "proposed_successor_payload_ref": "state-payload/main-w3",
+            "value_ref": "value/bool/true",
+            "provenance": {
+              "ProducedBy": [
+                "run/jump-1",
+                "activation/jump-1",
+                "step/jump-1"
+              ]
+            },
+            "program_revision_id": "program-revision/jump-arena-r0"
+          },
+          {
+            "observation_id": "occurrence/obligation-evidence/jump-1/arena-bounds-ordered",
+            "observation_type_ref": "type/observation/admission-obligation-result",
+            "requirement_term_ref": "requirement-term/admission/arena-bounds-ordered",
+            "candidate_delta_id": "candidate/jump-1",
+            "base_state_revision_id": "state/main-w2",
+            "proposed_successor_payload_ref": "state-payload/main-w3",
+            "value_ref": "value/bool/true",
+            "provenance": {
+              "ProducedBy": [
+                "run/jump-1",
+                "activation/jump-1",
+                "step/jump-1"
+              ]
+            },
+            "program_revision_id": "program-revision/jump-arena-r0"
+          },
+          {
+            "observation_id": "occurrence/obligation-evidence/jump-1/position-inside-arena",
+            "observation_type_ref": "type/observation/admission-obligation-result",
+            "requirement_term_ref": "requirement-term/admission/position-inside-arena",
+            "candidate_delta_id": "candidate/jump-1",
+            "base_state_revision_id": "state/main-w2",
+            "proposed_successor_payload_ref": "state-payload/main-w3",
+            "value_ref": "value/bool/true",
+            "provenance": {
+              "ProducedBy": [
+                "run/jump-1",
+                "activation/jump-1",
+                "step/jump-1"
+              ]
+            },
+            "program_revision_id": "program-revision/jump-arena-r0"
+          },
+          {
+            "observation_id": "occurrence/obligation-evidence/jump-1/grounded-state",
+            "observation_type_ref": "type/observation/admission-obligation-result",
+            "requirement_term_ref": "requirement-term/admission/grounded-state",
+            "candidate_delta_id": "candidate/jump-1",
+            "base_state_revision_id": "state/main-w2",
+            "proposed_successor_payload_ref": "state-payload/main-w3",
+            "value_ref": "value/bool/true",
+            "provenance": {
+              "ProducedBy": [
+                "run/jump-1",
+                "activation/jump-1",
+                "step/jump-1"
+              ]
+            },
+            "program_revision_id": "program-revision/jump-arena-r0"
+          },
+          {
+            "observation_id": "occurrence/obligation-evidence/jump-1/exact-base",
+            "observation_type_ref": "type/observation/admission-obligation-result",
+            "requirement_term_ref": "requirement-term/admission/exact-base",
+            "candidate_delta_id": "candidate/jump-1",
+            "base_state_revision_id": "state/main-w2",
+            "proposed_successor_payload_ref": "state-payload/main-w3",
+            "value_ref": "value/bool/true",
+            "provenance": {
+              "ProducedBy": [
+                "run/jump-1",
+                "activation/jump-1",
+                "step/jump-1"
+              ]
+            },
+            "program_revision_id": "program-revision/jump-arena-r0"
+          }
+        ],
+        "transition_occurrence_id": "occurrence/transition/jump-1",
         "candidate_delta_id": "candidate/jump-1",
         "continuation_record_ref": null
       },
@@ -3392,7 +4917,228 @@
             "ActivationStart": "activation/gravity-tick-1"
           }
         ],
-        "observations": [],
+        "observations": [
+          {
+            "observation_id": "observation/premise/gravity-tick-1/dt-positive",
+            "observation_type_ref": "type/observation/premise-verdict",
+            "evaluated_constraint": {
+              "relation_schema_id": "relation-schema/f64-compare",
+              "operator_ref": "operator/f64-greater-than",
+              "mode_id": "mode/f64-greater-than",
+              "numeric_contract_ref": "atom-contract/f64-binary64",
+              "role_bindings": [
+                {
+                  "role_id": "role/f64-compare/left",
+                  "value_ref": "value/f64/0.25"
+                },
+                {
+                  "role_id": "role/f64-compare/right",
+                  "value_ref": "value/f64/0"
+                },
+                {
+                  "role_id": "role/f64-compare/result",
+                  "value_ref": "value/bool/true"
+                }
+              ]
+            },
+            "value_ref": "value/bool/true",
+            "provenance": {
+              "ProducedBy": [
+                "run/gravity-tick-1",
+                "activation/gravity-tick-1",
+                "step/gravity-tick-1"
+              ]
+            }
+          },
+          {
+            "observation_id": "observation/premise/gravity-tick-1/clamped-x",
+            "observation_type_ref": "type/observation/premise-binding",
+            "evaluated_constraint": {
+              "relation_schema_id": "relation-schema/scalar-clamped-between",
+              "operator_ref": "operator/scalar-clamped-between",
+              "mode_id": "mode/scalar-clamp-maybe",
+              "role_bindings": [
+                {
+                  "role_id": "role/scalar-clamped-between/value",
+                  "value_ref": "value/f64/3.75"
+                },
+                {
+                  "role_id": "role/scalar-clamped-between/lower",
+                  "value_ref": "value/f64/negative-10"
+                },
+                {
+                  "role_id": "role/scalar-clamped-between/upper",
+                  "value_ref": "value/f64/10"
+                },
+                {
+                  "role_id": "role/scalar-clamped-between/result",
+                  "value_ref": "value/f64/3.75"
+                }
+              ]
+            },
+            "value_ref": "value/f64/3.75",
+            "provenance": {
+              "ProducedBy": [
+                "run/gravity-tick-1",
+                "activation/gravity-tick-1",
+                "step/gravity-tick-1"
+              ]
+            }
+          },
+          {
+            "observation_id": "observation/premise/gravity-tick-1/clamped-z",
+            "observation_type_ref": "type/observation/premise-binding",
+            "evaluated_constraint": {
+              "relation_schema_id": "relation-schema/scalar-clamped-between",
+              "operator_ref": "operator/scalar-clamped-between",
+              "mode_id": "mode/scalar-clamp-maybe",
+              "role_bindings": [
+                {
+                  "role_id": "role/scalar-clamped-between/value",
+                  "value_ref": "value/f64/negative-3.75"
+                },
+                {
+                  "role_id": "role/scalar-clamped-between/lower",
+                  "value_ref": "value/f64/negative-10"
+                },
+                {
+                  "role_id": "role/scalar-clamped-between/upper",
+                  "value_ref": "value/f64/10"
+                },
+                {
+                  "role_id": "role/scalar-clamped-between/result",
+                  "value_ref": "value/f64/negative-3.75"
+                }
+              ]
+            },
+            "value_ref": "value/f64/negative-3.75",
+            "provenance": {
+              "ProducedBy": [
+                "run/gravity-tick-1",
+                "activation/gravity-tick-1",
+                "step/gravity-tick-1"
+              ]
+            }
+          },
+          {
+            "observation_id": "observation/premise/gravity-tick-1/remains-above-floor",
+            "observation_type_ref": "type/observation/premise-verdict",
+            "evaluated_constraint": {
+              "relation_schema_id": "relation-schema/f64-compare",
+              "operator_ref": "operator/f64-greater-than",
+              "mode_id": "mode/f64-greater-than",
+              "numeric_contract_ref": "atom-contract/f64-binary64",
+              "role_bindings": [
+                {
+                  "role_id": "role/f64-compare/left",
+                  "value_ref": "value/f64/1.5"
+                },
+                {
+                  "role_id": "role/f64-compare/right",
+                  "value_ref": "value/f64/0"
+                },
+                {
+                  "role_id": "role/f64-compare/result",
+                  "value_ref": "value/bool/true"
+                }
+              ]
+            },
+            "value_ref": "value/bool/true",
+            "provenance": {
+              "ProducedBy": [
+                "run/gravity-tick-1",
+                "activation/gravity-tick-1",
+                "step/gravity-tick-1"
+              ]
+            }
+          },
+          {
+            "observation_id": "occurrence/obligation-evidence/gravity-tick-1/singleton-player-state",
+            "observation_type_ref": "type/observation/admission-obligation-result",
+            "requirement_term_ref": "requirement-term/admission/singleton-player-state",
+            "candidate_delta_id": "candidate/gravity-tick-1",
+            "base_state_revision_id": "state/main-w3",
+            "proposed_successor_payload_ref": "state-payload/main-w4",
+            "value_ref": "value/bool/true",
+            "provenance": {
+              "ProducedBy": [
+                "run/gravity-tick-1",
+                "activation/gravity-tick-1",
+                "step/gravity-tick-1"
+              ]
+            },
+            "program_revision_id": "program-revision/jump-arena-r0"
+          },
+          {
+            "observation_id": "occurrence/obligation-evidence/gravity-tick-1/arena-bounds-ordered",
+            "observation_type_ref": "type/observation/admission-obligation-result",
+            "requirement_term_ref": "requirement-term/admission/arena-bounds-ordered",
+            "candidate_delta_id": "candidate/gravity-tick-1",
+            "base_state_revision_id": "state/main-w3",
+            "proposed_successor_payload_ref": "state-payload/main-w4",
+            "value_ref": "value/bool/true",
+            "provenance": {
+              "ProducedBy": [
+                "run/gravity-tick-1",
+                "activation/gravity-tick-1",
+                "step/gravity-tick-1"
+              ]
+            },
+            "program_revision_id": "program-revision/jump-arena-r0"
+          },
+          {
+            "observation_id": "occurrence/obligation-evidence/gravity-tick-1/position-inside-arena",
+            "observation_type_ref": "type/observation/admission-obligation-result",
+            "requirement_term_ref": "requirement-term/admission/position-inside-arena",
+            "candidate_delta_id": "candidate/gravity-tick-1",
+            "base_state_revision_id": "state/main-w3",
+            "proposed_successor_payload_ref": "state-payload/main-w4",
+            "value_ref": "value/bool/true",
+            "provenance": {
+              "ProducedBy": [
+                "run/gravity-tick-1",
+                "activation/gravity-tick-1",
+                "step/gravity-tick-1"
+              ]
+            },
+            "program_revision_id": "program-revision/jump-arena-r0"
+          },
+          {
+            "observation_id": "occurrence/obligation-evidence/gravity-tick-1/grounded-state",
+            "observation_type_ref": "type/observation/admission-obligation-result",
+            "requirement_term_ref": "requirement-term/admission/grounded-state",
+            "candidate_delta_id": "candidate/gravity-tick-1",
+            "base_state_revision_id": "state/main-w3",
+            "proposed_successor_payload_ref": "state-payload/main-w4",
+            "value_ref": "value/bool/true",
+            "provenance": {
+              "ProducedBy": [
+                "run/gravity-tick-1",
+                "activation/gravity-tick-1",
+                "step/gravity-tick-1"
+              ]
+            },
+            "program_revision_id": "program-revision/jump-arena-r0"
+          },
+          {
+            "observation_id": "occurrence/obligation-evidence/gravity-tick-1/exact-base",
+            "observation_type_ref": "type/observation/admission-obligation-result",
+            "requirement_term_ref": "requirement-term/admission/exact-base",
+            "candidate_delta_id": "candidate/gravity-tick-1",
+            "base_state_revision_id": "state/main-w3",
+            "proposed_successor_payload_ref": "state-payload/main-w4",
+            "value_ref": "value/bool/true",
+            "provenance": {
+              "ProducedBy": [
+                "run/gravity-tick-1",
+                "activation/gravity-tick-1",
+                "step/gravity-tick-1"
+              ]
+            },
+            "program_revision_id": "program-revision/jump-arena-r0"
+          }
+        ],
+        "transition_occurrence_id": "occurrence/transition/gravity-tick-1",
         "candidate_delta_id": "candidate/gravity-tick-1",
         "continuation_record_ref": null
       },
@@ -3565,7 +5311,196 @@
             "ActivationStart": "activation/east-wall-tick-1"
           }
         ],
-        "observations": [],
+        "observations": [
+          {
+            "observation_id": "observation/premise/east-wall-tick-1/dt-positive",
+            "observation_type_ref": "type/observation/premise-verdict",
+            "evaluated_constraint": {
+              "relation_schema_id": "relation-schema/f64-compare",
+              "operator_ref": "operator/f64-greater-than",
+              "mode_id": "mode/f64-greater-than",
+              "numeric_contract_ref": "atom-contract/f64-binary64",
+              "role_bindings": [
+                {
+                  "role_id": "role/f64-compare/left",
+                  "value_ref": "value/f64/0.25"
+                },
+                {
+                  "role_id": "role/f64-compare/right",
+                  "value_ref": "value/f64/0"
+                },
+                {
+                  "role_id": "role/f64-compare/result",
+                  "value_ref": "value/bool/true"
+                }
+              ]
+            },
+            "value_ref": "value/bool/true",
+            "provenance": {
+              "ProducedBy": [
+                "run/east-wall-tick-1",
+                "activation/east-wall-tick-1",
+                "step/east-wall-tick-1"
+              ]
+            }
+          },
+          {
+            "observation_id": "observation/premise/east-wall-tick-1/clamped-x",
+            "observation_type_ref": "type/observation/premise-binding",
+            "evaluated_constraint": {
+              "relation_schema_id": "relation-schema/scalar-clamped-between",
+              "operator_ref": "operator/scalar-clamped-between",
+              "mode_id": "mode/scalar-clamp-maybe",
+              "role_bindings": [
+                {
+                  "role_id": "role/scalar-clamped-between/value",
+                  "value_ref": "value/f64/10.75"
+                },
+                {
+                  "role_id": "role/scalar-clamped-between/lower",
+                  "value_ref": "value/f64/negative-10"
+                },
+                {
+                  "role_id": "role/scalar-clamped-between/upper",
+                  "value_ref": "value/f64/10"
+                },
+                {
+                  "role_id": "role/scalar-clamped-between/result",
+                  "value_ref": "value/f64/10"
+                }
+              ]
+            },
+            "value_ref": "value/f64/10",
+            "provenance": {
+              "ProducedBy": [
+                "run/east-wall-tick-1",
+                "activation/east-wall-tick-1",
+                "step/east-wall-tick-1"
+              ]
+            }
+          },
+          {
+            "observation_id": "observation/premise/east-wall-tick-1/clamped-z",
+            "observation_type_ref": "type/observation/premise-binding",
+            "evaluated_constraint": {
+              "relation_schema_id": "relation-schema/scalar-clamped-between",
+              "operator_ref": "operator/scalar-clamped-between",
+              "mode_id": "mode/scalar-clamp-maybe",
+              "role_bindings": [
+                {
+                  "role_id": "role/scalar-clamped-between/value",
+                  "value_ref": "value/f64/0"
+                },
+                {
+                  "role_id": "role/scalar-clamped-between/lower",
+                  "value_ref": "value/f64/negative-10"
+                },
+                {
+                  "role_id": "role/scalar-clamped-between/upper",
+                  "value_ref": "value/f64/10"
+                },
+                {
+                  "role_id": "role/scalar-clamped-between/result",
+                  "value_ref": "value/f64/0"
+                }
+              ]
+            },
+            "value_ref": "value/f64/0",
+            "provenance": {
+              "ProducedBy": [
+                "run/east-wall-tick-1",
+                "activation/east-wall-tick-1",
+                "step/east-wall-tick-1"
+              ]
+            }
+          },
+          {
+            "observation_id": "occurrence/obligation-evidence/east-wall-tick-1/singleton-player-state",
+            "observation_type_ref": "type/observation/admission-obligation-result",
+            "requirement_term_ref": "requirement-term/admission/singleton-player-state",
+            "candidate_delta_id": "candidate/east-wall-tick-1",
+            "base_state_revision_id": "state/east-wall-w0",
+            "proposed_successor_payload_ref": "state-payload/east-wall-w1",
+            "value_ref": "value/bool/true",
+            "provenance": {
+              "ProducedBy": [
+                "run/east-wall-tick-1",
+                "activation/east-wall-tick-1",
+                "step/east-wall-tick-1"
+              ]
+            },
+            "program_revision_id": "program-revision/jump-arena-r0"
+          },
+          {
+            "observation_id": "occurrence/obligation-evidence/east-wall-tick-1/arena-bounds-ordered",
+            "observation_type_ref": "type/observation/admission-obligation-result",
+            "requirement_term_ref": "requirement-term/admission/arena-bounds-ordered",
+            "candidate_delta_id": "candidate/east-wall-tick-1",
+            "base_state_revision_id": "state/east-wall-w0",
+            "proposed_successor_payload_ref": "state-payload/east-wall-w1",
+            "value_ref": "value/bool/true",
+            "provenance": {
+              "ProducedBy": [
+                "run/east-wall-tick-1",
+                "activation/east-wall-tick-1",
+                "step/east-wall-tick-1"
+              ]
+            },
+            "program_revision_id": "program-revision/jump-arena-r0"
+          },
+          {
+            "observation_id": "occurrence/obligation-evidence/east-wall-tick-1/position-inside-arena",
+            "observation_type_ref": "type/observation/admission-obligation-result",
+            "requirement_term_ref": "requirement-term/admission/position-inside-arena",
+            "candidate_delta_id": "candidate/east-wall-tick-1",
+            "base_state_revision_id": "state/east-wall-w0",
+            "proposed_successor_payload_ref": "state-payload/east-wall-w1",
+            "value_ref": "value/bool/true",
+            "provenance": {
+              "ProducedBy": [
+                "run/east-wall-tick-1",
+                "activation/east-wall-tick-1",
+                "step/east-wall-tick-1"
+              ]
+            },
+            "program_revision_id": "program-revision/jump-arena-r0"
+          },
+          {
+            "observation_id": "occurrence/obligation-evidence/east-wall-tick-1/grounded-state",
+            "observation_type_ref": "type/observation/admission-obligation-result",
+            "requirement_term_ref": "requirement-term/admission/grounded-state",
+            "candidate_delta_id": "candidate/east-wall-tick-1",
+            "base_state_revision_id": "state/east-wall-w0",
+            "proposed_successor_payload_ref": "state-payload/east-wall-w1",
+            "value_ref": "value/bool/true",
+            "provenance": {
+              "ProducedBy": [
+                "run/east-wall-tick-1",
+                "activation/east-wall-tick-1",
+                "step/east-wall-tick-1"
+              ]
+            },
+            "program_revision_id": "program-revision/jump-arena-r0"
+          },
+          {
+            "observation_id": "occurrence/obligation-evidence/east-wall-tick-1/exact-base",
+            "observation_type_ref": "type/observation/admission-obligation-result",
+            "requirement_term_ref": "requirement-term/admission/exact-base",
+            "candidate_delta_id": "candidate/east-wall-tick-1",
+            "base_state_revision_id": "state/east-wall-w0",
+            "proposed_successor_payload_ref": "state-payload/east-wall-w1",
+            "value_ref": "value/bool/true",
+            "provenance": {
+              "ProducedBy": [
+                "run/east-wall-tick-1",
+                "activation/east-wall-tick-1",
+                "step/east-wall-tick-1"
+              ]
+            },
+            "program_revision_id": "program-revision/jump-arena-r0"
+          }
+        ],
+        "transition_occurrence_id": "occurrence/transition/east-wall-tick-1",
         "candidate_delta_id": "candidate/east-wall-tick-1",
         "continuation_record_ref": null
       },
@@ -3649,7 +5584,196 @@
             "ActivationStart": "activation/west-wall-tick-1"
           }
         ],
-        "observations": [],
+        "observations": [
+          {
+            "observation_id": "observation/premise/west-wall-tick-1/dt-positive",
+            "observation_type_ref": "type/observation/premise-verdict",
+            "evaluated_constraint": {
+              "relation_schema_id": "relation-schema/f64-compare",
+              "operator_ref": "operator/f64-greater-than",
+              "mode_id": "mode/f64-greater-than",
+              "numeric_contract_ref": "atom-contract/f64-binary64",
+              "role_bindings": [
+                {
+                  "role_id": "role/f64-compare/left",
+                  "value_ref": "value/f64/0.25"
+                },
+                {
+                  "role_id": "role/f64-compare/right",
+                  "value_ref": "value/f64/0"
+                },
+                {
+                  "role_id": "role/f64-compare/result",
+                  "value_ref": "value/bool/true"
+                }
+              ]
+            },
+            "value_ref": "value/bool/true",
+            "provenance": {
+              "ProducedBy": [
+                "run/west-wall-tick-1",
+                "activation/west-wall-tick-1",
+                "step/west-wall-tick-1"
+              ]
+            }
+          },
+          {
+            "observation_id": "observation/premise/west-wall-tick-1/clamped-x",
+            "observation_type_ref": "type/observation/premise-binding",
+            "evaluated_constraint": {
+              "relation_schema_id": "relation-schema/scalar-clamped-between",
+              "operator_ref": "operator/scalar-clamped-between",
+              "mode_id": "mode/scalar-clamp-maybe",
+              "role_bindings": [
+                {
+                  "role_id": "role/scalar-clamped-between/value",
+                  "value_ref": "value/f64/negative-10.75"
+                },
+                {
+                  "role_id": "role/scalar-clamped-between/lower",
+                  "value_ref": "value/f64/negative-10"
+                },
+                {
+                  "role_id": "role/scalar-clamped-between/upper",
+                  "value_ref": "value/f64/10"
+                },
+                {
+                  "role_id": "role/scalar-clamped-between/result",
+                  "value_ref": "value/f64/negative-10"
+                }
+              ]
+            },
+            "value_ref": "value/f64/negative-10",
+            "provenance": {
+              "ProducedBy": [
+                "run/west-wall-tick-1",
+                "activation/west-wall-tick-1",
+                "step/west-wall-tick-1"
+              ]
+            }
+          },
+          {
+            "observation_id": "observation/premise/west-wall-tick-1/clamped-z",
+            "observation_type_ref": "type/observation/premise-binding",
+            "evaluated_constraint": {
+              "relation_schema_id": "relation-schema/scalar-clamped-between",
+              "operator_ref": "operator/scalar-clamped-between",
+              "mode_id": "mode/scalar-clamp-maybe",
+              "role_bindings": [
+                {
+                  "role_id": "role/scalar-clamped-between/value",
+                  "value_ref": "value/f64/0"
+                },
+                {
+                  "role_id": "role/scalar-clamped-between/lower",
+                  "value_ref": "value/f64/negative-10"
+                },
+                {
+                  "role_id": "role/scalar-clamped-between/upper",
+                  "value_ref": "value/f64/10"
+                },
+                {
+                  "role_id": "role/scalar-clamped-between/result",
+                  "value_ref": "value/f64/0"
+                }
+              ]
+            },
+            "value_ref": "value/f64/0",
+            "provenance": {
+              "ProducedBy": [
+                "run/west-wall-tick-1",
+                "activation/west-wall-tick-1",
+                "step/west-wall-tick-1"
+              ]
+            }
+          },
+          {
+            "observation_id": "occurrence/obligation-evidence/west-wall-tick-1/singleton-player-state",
+            "observation_type_ref": "type/observation/admission-obligation-result",
+            "requirement_term_ref": "requirement-term/admission/singleton-player-state",
+            "candidate_delta_id": "candidate/west-wall-tick-1",
+            "base_state_revision_id": "state/west-wall-w0",
+            "proposed_successor_payload_ref": "state-payload/west-wall-w1",
+            "value_ref": "value/bool/true",
+            "provenance": {
+              "ProducedBy": [
+                "run/west-wall-tick-1",
+                "activation/west-wall-tick-1",
+                "step/west-wall-tick-1"
+              ]
+            },
+            "program_revision_id": "program-revision/jump-arena-r0"
+          },
+          {
+            "observation_id": "occurrence/obligation-evidence/west-wall-tick-1/arena-bounds-ordered",
+            "observation_type_ref": "type/observation/admission-obligation-result",
+            "requirement_term_ref": "requirement-term/admission/arena-bounds-ordered",
+            "candidate_delta_id": "candidate/west-wall-tick-1",
+            "base_state_revision_id": "state/west-wall-w0",
+            "proposed_successor_payload_ref": "state-payload/west-wall-w1",
+            "value_ref": "value/bool/true",
+            "provenance": {
+              "ProducedBy": [
+                "run/west-wall-tick-1",
+                "activation/west-wall-tick-1",
+                "step/west-wall-tick-1"
+              ]
+            },
+            "program_revision_id": "program-revision/jump-arena-r0"
+          },
+          {
+            "observation_id": "occurrence/obligation-evidence/west-wall-tick-1/position-inside-arena",
+            "observation_type_ref": "type/observation/admission-obligation-result",
+            "requirement_term_ref": "requirement-term/admission/position-inside-arena",
+            "candidate_delta_id": "candidate/west-wall-tick-1",
+            "base_state_revision_id": "state/west-wall-w0",
+            "proposed_successor_payload_ref": "state-payload/west-wall-w1",
+            "value_ref": "value/bool/true",
+            "provenance": {
+              "ProducedBy": [
+                "run/west-wall-tick-1",
+                "activation/west-wall-tick-1",
+                "step/west-wall-tick-1"
+              ]
+            },
+            "program_revision_id": "program-revision/jump-arena-r0"
+          },
+          {
+            "observation_id": "occurrence/obligation-evidence/west-wall-tick-1/grounded-state",
+            "observation_type_ref": "type/observation/admission-obligation-result",
+            "requirement_term_ref": "requirement-term/admission/grounded-state",
+            "candidate_delta_id": "candidate/west-wall-tick-1",
+            "base_state_revision_id": "state/west-wall-w0",
+            "proposed_successor_payload_ref": "state-payload/west-wall-w1",
+            "value_ref": "value/bool/true",
+            "provenance": {
+              "ProducedBy": [
+                "run/west-wall-tick-1",
+                "activation/west-wall-tick-1",
+                "step/west-wall-tick-1"
+              ]
+            },
+            "program_revision_id": "program-revision/jump-arena-r0"
+          },
+          {
+            "observation_id": "occurrence/obligation-evidence/west-wall-tick-1/exact-base",
+            "observation_type_ref": "type/observation/admission-obligation-result",
+            "requirement_term_ref": "requirement-term/admission/exact-base",
+            "candidate_delta_id": "candidate/west-wall-tick-1",
+            "base_state_revision_id": "state/west-wall-w0",
+            "proposed_successor_payload_ref": "state-payload/west-wall-w1",
+            "value_ref": "value/bool/true",
+            "provenance": {
+              "ProducedBy": [
+                "run/west-wall-tick-1",
+                "activation/west-wall-tick-1",
+                "step/west-wall-tick-1"
+              ]
+            },
+            "program_revision_id": "program-revision/jump-arena-r0"
+          }
+        ],
+        "transition_occurrence_id": "occurrence/transition/west-wall-tick-1",
         "candidate_delta_id": "candidate/west-wall-tick-1",
         "continuation_record_ref": null
       },
@@ -3733,7 +5857,196 @@
             "ActivationStart": "activation/positive-z-wall-tick-1"
           }
         ],
-        "observations": [],
+        "observations": [
+          {
+            "observation_id": "observation/premise/positive-z-wall-tick-1/dt-positive",
+            "observation_type_ref": "type/observation/premise-verdict",
+            "evaluated_constraint": {
+              "relation_schema_id": "relation-schema/f64-compare",
+              "operator_ref": "operator/f64-greater-than",
+              "mode_id": "mode/f64-greater-than",
+              "numeric_contract_ref": "atom-contract/f64-binary64",
+              "role_bindings": [
+                {
+                  "role_id": "role/f64-compare/left",
+                  "value_ref": "value/f64/0.25"
+                },
+                {
+                  "role_id": "role/f64-compare/right",
+                  "value_ref": "value/f64/0"
+                },
+                {
+                  "role_id": "role/f64-compare/result",
+                  "value_ref": "value/bool/true"
+                }
+              ]
+            },
+            "value_ref": "value/bool/true",
+            "provenance": {
+              "ProducedBy": [
+                "run/positive-z-wall-tick-1",
+                "activation/positive-z-wall-tick-1",
+                "step/positive-z-wall-tick-1"
+              ]
+            }
+          },
+          {
+            "observation_id": "observation/premise/positive-z-wall-tick-1/clamped-x",
+            "observation_type_ref": "type/observation/premise-binding",
+            "evaluated_constraint": {
+              "relation_schema_id": "relation-schema/scalar-clamped-between",
+              "operator_ref": "operator/scalar-clamped-between",
+              "mode_id": "mode/scalar-clamp-maybe",
+              "role_bindings": [
+                {
+                  "role_id": "role/scalar-clamped-between/value",
+                  "value_ref": "value/f64/0"
+                },
+                {
+                  "role_id": "role/scalar-clamped-between/lower",
+                  "value_ref": "value/f64/negative-10"
+                },
+                {
+                  "role_id": "role/scalar-clamped-between/upper",
+                  "value_ref": "value/f64/10"
+                },
+                {
+                  "role_id": "role/scalar-clamped-between/result",
+                  "value_ref": "value/f64/0"
+                }
+              ]
+            },
+            "value_ref": "value/f64/0",
+            "provenance": {
+              "ProducedBy": [
+                "run/positive-z-wall-tick-1",
+                "activation/positive-z-wall-tick-1",
+                "step/positive-z-wall-tick-1"
+              ]
+            }
+          },
+          {
+            "observation_id": "observation/premise/positive-z-wall-tick-1/clamped-z",
+            "observation_type_ref": "type/observation/premise-binding",
+            "evaluated_constraint": {
+              "relation_schema_id": "relation-schema/scalar-clamped-between",
+              "operator_ref": "operator/scalar-clamped-between",
+              "mode_id": "mode/scalar-clamp-maybe",
+              "role_bindings": [
+                {
+                  "role_id": "role/scalar-clamped-between/value",
+                  "value_ref": "value/f64/10.75"
+                },
+                {
+                  "role_id": "role/scalar-clamped-between/lower",
+                  "value_ref": "value/f64/negative-10"
+                },
+                {
+                  "role_id": "role/scalar-clamped-between/upper",
+                  "value_ref": "value/f64/10"
+                },
+                {
+                  "role_id": "role/scalar-clamped-between/result",
+                  "value_ref": "value/f64/10"
+                }
+              ]
+            },
+            "value_ref": "value/f64/10",
+            "provenance": {
+              "ProducedBy": [
+                "run/positive-z-wall-tick-1",
+                "activation/positive-z-wall-tick-1",
+                "step/positive-z-wall-tick-1"
+              ]
+            }
+          },
+          {
+            "observation_id": "occurrence/obligation-evidence/positive-z-wall-tick-1/singleton-player-state",
+            "observation_type_ref": "type/observation/admission-obligation-result",
+            "requirement_term_ref": "requirement-term/admission/singleton-player-state",
+            "candidate_delta_id": "candidate/positive-z-wall-tick-1",
+            "base_state_revision_id": "state/positive-z-wall-w0",
+            "proposed_successor_payload_ref": "state-payload/positive-z-wall-w1",
+            "value_ref": "value/bool/true",
+            "provenance": {
+              "ProducedBy": [
+                "run/positive-z-wall-tick-1",
+                "activation/positive-z-wall-tick-1",
+                "step/positive-z-wall-tick-1"
+              ]
+            },
+            "program_revision_id": "program-revision/jump-arena-r0"
+          },
+          {
+            "observation_id": "occurrence/obligation-evidence/positive-z-wall-tick-1/arena-bounds-ordered",
+            "observation_type_ref": "type/observation/admission-obligation-result",
+            "requirement_term_ref": "requirement-term/admission/arena-bounds-ordered",
+            "candidate_delta_id": "candidate/positive-z-wall-tick-1",
+            "base_state_revision_id": "state/positive-z-wall-w0",
+            "proposed_successor_payload_ref": "state-payload/positive-z-wall-w1",
+            "value_ref": "value/bool/true",
+            "provenance": {
+              "ProducedBy": [
+                "run/positive-z-wall-tick-1",
+                "activation/positive-z-wall-tick-1",
+                "step/positive-z-wall-tick-1"
+              ]
+            },
+            "program_revision_id": "program-revision/jump-arena-r0"
+          },
+          {
+            "observation_id": "occurrence/obligation-evidence/positive-z-wall-tick-1/position-inside-arena",
+            "observation_type_ref": "type/observation/admission-obligation-result",
+            "requirement_term_ref": "requirement-term/admission/position-inside-arena",
+            "candidate_delta_id": "candidate/positive-z-wall-tick-1",
+            "base_state_revision_id": "state/positive-z-wall-w0",
+            "proposed_successor_payload_ref": "state-payload/positive-z-wall-w1",
+            "value_ref": "value/bool/true",
+            "provenance": {
+              "ProducedBy": [
+                "run/positive-z-wall-tick-1",
+                "activation/positive-z-wall-tick-1",
+                "step/positive-z-wall-tick-1"
+              ]
+            },
+            "program_revision_id": "program-revision/jump-arena-r0"
+          },
+          {
+            "observation_id": "occurrence/obligation-evidence/positive-z-wall-tick-1/grounded-state",
+            "observation_type_ref": "type/observation/admission-obligation-result",
+            "requirement_term_ref": "requirement-term/admission/grounded-state",
+            "candidate_delta_id": "candidate/positive-z-wall-tick-1",
+            "base_state_revision_id": "state/positive-z-wall-w0",
+            "proposed_successor_payload_ref": "state-payload/positive-z-wall-w1",
+            "value_ref": "value/bool/true",
+            "provenance": {
+              "ProducedBy": [
+                "run/positive-z-wall-tick-1",
+                "activation/positive-z-wall-tick-1",
+                "step/positive-z-wall-tick-1"
+              ]
+            },
+            "program_revision_id": "program-revision/jump-arena-r0"
+          },
+          {
+            "observation_id": "occurrence/obligation-evidence/positive-z-wall-tick-1/exact-base",
+            "observation_type_ref": "type/observation/admission-obligation-result",
+            "requirement_term_ref": "requirement-term/admission/exact-base",
+            "candidate_delta_id": "candidate/positive-z-wall-tick-1",
+            "base_state_revision_id": "state/positive-z-wall-w0",
+            "proposed_successor_payload_ref": "state-payload/positive-z-wall-w1",
+            "value_ref": "value/bool/true",
+            "provenance": {
+              "ProducedBy": [
+                "run/positive-z-wall-tick-1",
+                "activation/positive-z-wall-tick-1",
+                "step/positive-z-wall-tick-1"
+              ]
+            },
+            "program_revision_id": "program-revision/jump-arena-r0"
+          }
+        ],
+        "transition_occurrence_id": "occurrence/transition/positive-z-wall-tick-1",
         "candidate_delta_id": "candidate/positive-z-wall-tick-1",
         "continuation_record_ref": null
       },
@@ -3817,7 +6130,196 @@
             "ActivationStart": "activation/negative-z-wall-tick-1"
           }
         ],
-        "observations": [],
+        "observations": [
+          {
+            "observation_id": "observation/premise/negative-z-wall-tick-1/dt-positive",
+            "observation_type_ref": "type/observation/premise-verdict",
+            "evaluated_constraint": {
+              "relation_schema_id": "relation-schema/f64-compare",
+              "operator_ref": "operator/f64-greater-than",
+              "mode_id": "mode/f64-greater-than",
+              "numeric_contract_ref": "atom-contract/f64-binary64",
+              "role_bindings": [
+                {
+                  "role_id": "role/f64-compare/left",
+                  "value_ref": "value/f64/0.25"
+                },
+                {
+                  "role_id": "role/f64-compare/right",
+                  "value_ref": "value/f64/0"
+                },
+                {
+                  "role_id": "role/f64-compare/result",
+                  "value_ref": "value/bool/true"
+                }
+              ]
+            },
+            "value_ref": "value/bool/true",
+            "provenance": {
+              "ProducedBy": [
+                "run/negative-z-wall-tick-1",
+                "activation/negative-z-wall-tick-1",
+                "step/negative-z-wall-tick-1"
+              ]
+            }
+          },
+          {
+            "observation_id": "observation/premise/negative-z-wall-tick-1/clamped-x",
+            "observation_type_ref": "type/observation/premise-binding",
+            "evaluated_constraint": {
+              "relation_schema_id": "relation-schema/scalar-clamped-between",
+              "operator_ref": "operator/scalar-clamped-between",
+              "mode_id": "mode/scalar-clamp-maybe",
+              "role_bindings": [
+                {
+                  "role_id": "role/scalar-clamped-between/value",
+                  "value_ref": "value/f64/0"
+                },
+                {
+                  "role_id": "role/scalar-clamped-between/lower",
+                  "value_ref": "value/f64/negative-10"
+                },
+                {
+                  "role_id": "role/scalar-clamped-between/upper",
+                  "value_ref": "value/f64/10"
+                },
+                {
+                  "role_id": "role/scalar-clamped-between/result",
+                  "value_ref": "value/f64/0"
+                }
+              ]
+            },
+            "value_ref": "value/f64/0",
+            "provenance": {
+              "ProducedBy": [
+                "run/negative-z-wall-tick-1",
+                "activation/negative-z-wall-tick-1",
+                "step/negative-z-wall-tick-1"
+              ]
+            }
+          },
+          {
+            "observation_id": "observation/premise/negative-z-wall-tick-1/clamped-z",
+            "observation_type_ref": "type/observation/premise-binding",
+            "evaluated_constraint": {
+              "relation_schema_id": "relation-schema/scalar-clamped-between",
+              "operator_ref": "operator/scalar-clamped-between",
+              "mode_id": "mode/scalar-clamp-maybe",
+              "role_bindings": [
+                {
+                  "role_id": "role/scalar-clamped-between/value",
+                  "value_ref": "value/f64/negative-10.75"
+                },
+                {
+                  "role_id": "role/scalar-clamped-between/lower",
+                  "value_ref": "value/f64/negative-10"
+                },
+                {
+                  "role_id": "role/scalar-clamped-between/upper",
+                  "value_ref": "value/f64/10"
+                },
+                {
+                  "role_id": "role/scalar-clamped-between/result",
+                  "value_ref": "value/f64/negative-10"
+                }
+              ]
+            },
+            "value_ref": "value/f64/negative-10",
+            "provenance": {
+              "ProducedBy": [
+                "run/negative-z-wall-tick-1",
+                "activation/negative-z-wall-tick-1",
+                "step/negative-z-wall-tick-1"
+              ]
+            }
+          },
+          {
+            "observation_id": "occurrence/obligation-evidence/negative-z-wall-tick-1/singleton-player-state",
+            "observation_type_ref": "type/observation/admission-obligation-result",
+            "requirement_term_ref": "requirement-term/admission/singleton-player-state",
+            "candidate_delta_id": "candidate/negative-z-wall-tick-1",
+            "base_state_revision_id": "state/negative-z-wall-w0",
+            "proposed_successor_payload_ref": "state-payload/negative-z-wall-w1",
+            "value_ref": "value/bool/true",
+            "provenance": {
+              "ProducedBy": [
+                "run/negative-z-wall-tick-1",
+                "activation/negative-z-wall-tick-1",
+                "step/negative-z-wall-tick-1"
+              ]
+            },
+            "program_revision_id": "program-revision/jump-arena-r0"
+          },
+          {
+            "observation_id": "occurrence/obligation-evidence/negative-z-wall-tick-1/arena-bounds-ordered",
+            "observation_type_ref": "type/observation/admission-obligation-result",
+            "requirement_term_ref": "requirement-term/admission/arena-bounds-ordered",
+            "candidate_delta_id": "candidate/negative-z-wall-tick-1",
+            "base_state_revision_id": "state/negative-z-wall-w0",
+            "proposed_successor_payload_ref": "state-payload/negative-z-wall-w1",
+            "value_ref": "value/bool/true",
+            "provenance": {
+              "ProducedBy": [
+                "run/negative-z-wall-tick-1",
+                "activation/negative-z-wall-tick-1",
+                "step/negative-z-wall-tick-1"
+              ]
+            },
+            "program_revision_id": "program-revision/jump-arena-r0"
+          },
+          {
+            "observation_id": "occurrence/obligation-evidence/negative-z-wall-tick-1/position-inside-arena",
+            "observation_type_ref": "type/observation/admission-obligation-result",
+            "requirement_term_ref": "requirement-term/admission/position-inside-arena",
+            "candidate_delta_id": "candidate/negative-z-wall-tick-1",
+            "base_state_revision_id": "state/negative-z-wall-w0",
+            "proposed_successor_payload_ref": "state-payload/negative-z-wall-w1",
+            "value_ref": "value/bool/true",
+            "provenance": {
+              "ProducedBy": [
+                "run/negative-z-wall-tick-1",
+                "activation/negative-z-wall-tick-1",
+                "step/negative-z-wall-tick-1"
+              ]
+            },
+            "program_revision_id": "program-revision/jump-arena-r0"
+          },
+          {
+            "observation_id": "occurrence/obligation-evidence/negative-z-wall-tick-1/grounded-state",
+            "observation_type_ref": "type/observation/admission-obligation-result",
+            "requirement_term_ref": "requirement-term/admission/grounded-state",
+            "candidate_delta_id": "candidate/negative-z-wall-tick-1",
+            "base_state_revision_id": "state/negative-z-wall-w0",
+            "proposed_successor_payload_ref": "state-payload/negative-z-wall-w1",
+            "value_ref": "value/bool/true",
+            "provenance": {
+              "ProducedBy": [
+                "run/negative-z-wall-tick-1",
+                "activation/negative-z-wall-tick-1",
+                "step/negative-z-wall-tick-1"
+              ]
+            },
+            "program_revision_id": "program-revision/jump-arena-r0"
+          },
+          {
+            "observation_id": "occurrence/obligation-evidence/negative-z-wall-tick-1/exact-base",
+            "observation_type_ref": "type/observation/admission-obligation-result",
+            "requirement_term_ref": "requirement-term/admission/exact-base",
+            "candidate_delta_id": "candidate/negative-z-wall-tick-1",
+            "base_state_revision_id": "state/negative-z-wall-w0",
+            "proposed_successor_payload_ref": "state-payload/negative-z-wall-w1",
+            "value_ref": "value/bool/true",
+            "provenance": {
+              "ProducedBy": [
+                "run/negative-z-wall-tick-1",
+                "activation/negative-z-wall-tick-1",
+                "step/negative-z-wall-tick-1"
+              ]
+            },
+            "program_revision_id": "program-revision/jump-arena-r0"
+          }
+        ],
+        "transition_occurrence_id": "occurrence/transition/negative-z-wall-tick-1",
         "candidate_delta_id": "candidate/negative-z-wall-tick-1",
         "continuation_record_ref": null
       },
@@ -3901,7 +6403,228 @@
             "ActivationStart": "activation/landing-tick-1"
           }
         ],
-        "observations": [],
+        "observations": [
+          {
+            "observation_id": "observation/premise/landing-tick-1/dt-positive",
+            "observation_type_ref": "type/observation/premise-verdict",
+            "evaluated_constraint": {
+              "relation_schema_id": "relation-schema/f64-compare",
+              "operator_ref": "operator/f64-greater-than",
+              "mode_id": "mode/f64-greater-than",
+              "numeric_contract_ref": "atom-contract/f64-binary64",
+              "role_bindings": [
+                {
+                  "role_id": "role/f64-compare/left",
+                  "value_ref": "value/f64/0.25"
+                },
+                {
+                  "role_id": "role/f64-compare/right",
+                  "value_ref": "value/f64/0"
+                },
+                {
+                  "role_id": "role/f64-compare/result",
+                  "value_ref": "value/bool/true"
+                }
+              ]
+            },
+            "value_ref": "value/bool/true",
+            "provenance": {
+              "ProducedBy": [
+                "run/landing-tick-1",
+                "activation/landing-tick-1",
+                "step/landing-tick-1"
+              ]
+            }
+          },
+          {
+            "observation_id": "observation/premise/landing-tick-1/clamped-x",
+            "observation_type_ref": "type/observation/premise-binding",
+            "evaluated_constraint": {
+              "relation_schema_id": "relation-schema/scalar-clamped-between",
+              "operator_ref": "operator/scalar-clamped-between",
+              "mode_id": "mode/scalar-clamp-maybe",
+              "role_bindings": [
+                {
+                  "role_id": "role/scalar-clamped-between/value",
+                  "value_ref": "value/f64/11.25"
+                },
+                {
+                  "role_id": "role/scalar-clamped-between/lower",
+                  "value_ref": "value/f64/negative-10"
+                },
+                {
+                  "role_id": "role/scalar-clamped-between/upper",
+                  "value_ref": "value/f64/10"
+                },
+                {
+                  "role_id": "role/scalar-clamped-between/result",
+                  "value_ref": "value/f64/10"
+                }
+              ]
+            },
+            "value_ref": "value/f64/10",
+            "provenance": {
+              "ProducedBy": [
+                "run/landing-tick-1",
+                "activation/landing-tick-1",
+                "step/landing-tick-1"
+              ]
+            }
+          },
+          {
+            "observation_id": "observation/premise/landing-tick-1/clamped-z",
+            "observation_type_ref": "type/observation/premise-binding",
+            "evaluated_constraint": {
+              "relation_schema_id": "relation-schema/scalar-clamped-between",
+              "operator_ref": "operator/scalar-clamped-between",
+              "mode_id": "mode/scalar-clamp-maybe",
+              "role_bindings": [
+                {
+                  "role_id": "role/scalar-clamped-between/value",
+                  "value_ref": "value/f64/0"
+                },
+                {
+                  "role_id": "role/scalar-clamped-between/lower",
+                  "value_ref": "value/f64/negative-10"
+                },
+                {
+                  "role_id": "role/scalar-clamped-between/upper",
+                  "value_ref": "value/f64/10"
+                },
+                {
+                  "role_id": "role/scalar-clamped-between/result",
+                  "value_ref": "value/f64/0"
+                }
+              ]
+            },
+            "value_ref": "value/f64/0",
+            "provenance": {
+              "ProducedBy": [
+                "run/landing-tick-1",
+                "activation/landing-tick-1",
+                "step/landing-tick-1"
+              ]
+            }
+          },
+          {
+            "observation_id": "observation/premise/landing-tick-1/reaches-or-crosses-floor",
+            "observation_type_ref": "type/observation/premise-verdict",
+            "evaluated_constraint": {
+              "relation_schema_id": "relation-schema/f64-compare",
+              "operator_ref": "operator/f64-less-or-equal",
+              "mode_id": "mode/f64-less-or-equal",
+              "numeric_contract_ref": "atom-contract/f64-binary64",
+              "role_bindings": [
+                {
+                  "role_id": "role/f64-compare/left",
+                  "value_ref": "value/f64/negative-0.5"
+                },
+                {
+                  "role_id": "role/f64-compare/right",
+                  "value_ref": "value/f64/0"
+                },
+                {
+                  "role_id": "role/f64-compare/result",
+                  "value_ref": "value/bool/true"
+                }
+              ]
+            },
+            "value_ref": "value/bool/true",
+            "provenance": {
+              "ProducedBy": [
+                "run/landing-tick-1",
+                "activation/landing-tick-1",
+                "step/landing-tick-1"
+              ]
+            }
+          },
+          {
+            "observation_id": "occurrence/obligation-evidence/landing-tick-1/singleton-player-state",
+            "observation_type_ref": "type/observation/admission-obligation-result",
+            "requirement_term_ref": "requirement-term/admission/singleton-player-state",
+            "candidate_delta_id": "candidate/landing-tick-1",
+            "base_state_revision_id": "state/landing-w0",
+            "proposed_successor_payload_ref": "state-payload/landing-w1",
+            "value_ref": "value/bool/true",
+            "provenance": {
+              "ProducedBy": [
+                "run/landing-tick-1",
+                "activation/landing-tick-1",
+                "step/landing-tick-1"
+              ]
+            },
+            "program_revision_id": "program-revision/jump-arena-r0"
+          },
+          {
+            "observation_id": "occurrence/obligation-evidence/landing-tick-1/arena-bounds-ordered",
+            "observation_type_ref": "type/observation/admission-obligation-result",
+            "requirement_term_ref": "requirement-term/admission/arena-bounds-ordered",
+            "candidate_delta_id": "candidate/landing-tick-1",
+            "base_state_revision_id": "state/landing-w0",
+            "proposed_successor_payload_ref": "state-payload/landing-w1",
+            "value_ref": "value/bool/true",
+            "provenance": {
+              "ProducedBy": [
+                "run/landing-tick-1",
+                "activation/landing-tick-1",
+                "step/landing-tick-1"
+              ]
+            },
+            "program_revision_id": "program-revision/jump-arena-r0"
+          },
+          {
+            "observation_id": "occurrence/obligation-evidence/landing-tick-1/position-inside-arena",
+            "observation_type_ref": "type/observation/admission-obligation-result",
+            "requirement_term_ref": "requirement-term/admission/position-inside-arena",
+            "candidate_delta_id": "candidate/landing-tick-1",
+            "base_state_revision_id": "state/landing-w0",
+            "proposed_successor_payload_ref": "state-payload/landing-w1",
+            "value_ref": "value/bool/true",
+            "provenance": {
+              "ProducedBy": [
+                "run/landing-tick-1",
+                "activation/landing-tick-1",
+                "step/landing-tick-1"
+              ]
+            },
+            "program_revision_id": "program-revision/jump-arena-r0"
+          },
+          {
+            "observation_id": "occurrence/obligation-evidence/landing-tick-1/grounded-state",
+            "observation_type_ref": "type/observation/admission-obligation-result",
+            "requirement_term_ref": "requirement-term/admission/grounded-state",
+            "candidate_delta_id": "candidate/landing-tick-1",
+            "base_state_revision_id": "state/landing-w0",
+            "proposed_successor_payload_ref": "state-payload/landing-w1",
+            "value_ref": "value/bool/true",
+            "provenance": {
+              "ProducedBy": [
+                "run/landing-tick-1",
+                "activation/landing-tick-1",
+                "step/landing-tick-1"
+              ]
+            },
+            "program_revision_id": "program-revision/jump-arena-r0"
+          },
+          {
+            "observation_id": "occurrence/obligation-evidence/landing-tick-1/exact-base",
+            "observation_type_ref": "type/observation/admission-obligation-result",
+            "requirement_term_ref": "requirement-term/admission/exact-base",
+            "candidate_delta_id": "candidate/landing-tick-1",
+            "base_state_revision_id": "state/landing-w0",
+            "proposed_successor_payload_ref": "state-payload/landing-w1",
+            "value_ref": "value/bool/true",
+            "provenance": {
+              "ProducedBy": [
+                "run/landing-tick-1",
+                "activation/landing-tick-1",
+                "step/landing-tick-1"
+              ]
+            },
+            "program_revision_id": "program-revision/jump-arena-r0"
+          }
+        ],
+        "transition_occurrence_id": "occurrence/transition/landing-tick-1",
         "candidate_delta_id": "candidate/landing-tick-1",
         "continuation_record_ref": null
       },
@@ -4045,7 +6768,12 @@
             }
           ],
           "candidate_delta_id": null,
-          "continuation_record_ref": "continuation-record/input-listener-1"
+          "continuation_record_ref": "continuation-record/input-listener-1",
+          "outcome": {
+            "outcome_type_ref": "type/outcome/suspended",
+            "outcome_contract_ref": "outcome-contract/suspended-after-step",
+            "continuation_record_ref": "continuation-record/input-listener-1"
+          }
         },
         {
           "resumption_occurrence": {
@@ -4105,13 +6833,19 @@
             }
           ],
           "candidate_delta_id": null,
-          "continuation_record_ref": "continuation-record/input-listener-2"
+          "continuation_record_ref": "continuation-record/input-listener-2",
+          "outcome": {
+            "outcome_type_ref": "type/outcome/suspended",
+            "outcome_contract_ref": "outcome-contract/suspended-after-step",
+            "continuation_record_ref": "continuation-record/input-listener-2"
+          }
         },
         {
           "cancellation_occurrence": {
             "occurrence_id": "occurrence/cancellation/input-listener-1",
             "occurrence_type_ref": "type/cancellation-request",
             "target_activation_id": "activation/input-listener-1",
+            "target_continuation_id": "continuation/input-listener-2",
             "provenance": {
               "EnteredThrough": [
                 "boundary/browser-input",
@@ -4131,6 +6865,12 @@
             },
             {
               "CancellationRequest": "occurrence/cancellation/input-listener-1"
+            },
+            {
+              "ContinuationCancellation": [
+                "continuation/input-listener-2",
+                "occurrence/cancellation/input-listener-1"
+              ]
             }
           ],
           "observations": [
@@ -4149,11 +6889,11 @@
           ],
           "candidate_delta_id": null,
           "continuation_record_ref": null,
-      "outcome": {
-        "failure_type_ref": "type/failure/cancelled",
-        "outcome_type_ref": "type/outcome/failed",
-        "outcome_contract_ref": "outcome-contract/failure-after-activation"
-      }
+          "outcome": {
+            "failure_type_ref": "type/failure/cancelled",
+            "outcome_type_ref": "type/outcome/failed",
+            "outcome_contract_ref": "outcome-contract/failure-after-activation"
+          }
         }
       ],
       "candidate_delta_ids": [],
@@ -4401,9 +7141,11 @@
       "minimum_budget_units": 10,
       "provided_budget_units": 9,
       "outcome": {
-        "failure_type_ref": "type/failure/budget-exhausted",
-        "outcome_type_ref": "type/outcome/failed",
-        "outcome_contract_ref": "outcome-contract/failure-before-activation"
+        "outcome_type_ref": "type/outcome/exhausted",
+        "outcome_contract_ref": "outcome-contract/exhausted-before-activation",
+        "obligation_refs": [
+          "outcome-obligation/budget-exhausted-before-activation"
+        ]
       },
       "allocated": {
         "activation_ids": [],

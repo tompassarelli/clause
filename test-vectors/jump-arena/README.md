@@ -65,6 +65,29 @@ base revision authoritative and immutable. A separately authorized outer
 Admission, backed by a recorded typed JudgmentOccurrence, creates the
 successor StateRevision. Candidate output cannot authorize itself.
 
+Each Admission obligation now points to a structural requirement Term. Its
+meaning is carried by typed reference edges, declared relation/operator/Mode
+applications, and exact candidate/base bindings; no obligation is selected by
+identifier spelling. The candidate-producing Step emits one occurrence-exact
+Observation per satisfied requirement. The authorized JudgmentOccurrence cites
+those Observations, and Admission cites that Judgment. Candidate evidence is
+therefore inspectable without becoming authority. Evaluation is ordered and a
+first false requirement emits no synthetic success for later requirements.
+
+Judgment, Program Admission, and State Admission occurrences use only the
+constitutional `ProducedBy` or `EnteredThrough` provenance sum. The governed
+boundary occurrences in this corpus use `EnteredThrough` with exact typed
+occurrence frontiers. Every successor StateRevision is caused by the exact
+TransitionOccurrence and producing Run, Activation, and Step; its separate
+AdmissionOccurrence remains queryable evidence but is not state identity.
+
+Every source `when` line has a stable premise slot. Each
+TransitionOccurrence carries an ordered support use for every slot, including
+non-withdrawn state/program bindings, numeric guards, both same-relation clamp
+slots, and the airborne/landing branch verdict. Support identity is
+occurrence-exact: distinct slots are never collapsed merely because they cite
+the same occurrence or relation schema.
+
 Render frames are derived observation projections, not StateRevisions. Their
 identity key is the exact Run, Activation, Step, and Observation tuple. A frame
 may additionally retain the observed StateRevision and payload as a paired
@@ -112,12 +135,12 @@ The positive vectors cover:
   input Observation, and cancelling across three causally linked Steps.
 
 The negative vectors cover airborne double-jump, stale program and world pins,
-ambiguous or ineligible Mode selection, insufficient activation budget, stale
-continuation pins, linear-continuation reuse, and binary64 division by zero as
-a typed numeric-domain failure. Pre-activation and pre-Step failures allocate
-no process or state identities. The valid airborne jump Activation runs and
-returns the typed no-applicable-process-rule failure without creating a
-candidate or successor.
+ambiguous or ineligible Mode selection, activation-budget exhaustion with an
+exact resource obligation, stale continuation pins, linear-continuation reuse,
+and binary64 division by zero as a typed numeric-domain failure. Pre-activation
+exhaustion and pre-Step failures allocate no process or state identities. The
+valid airborne jump Activation runs and returns the typed
+no-applicable-process-rule failure without creating a candidate or successor.
 
 ## Host boundary and current gap
 
@@ -140,5 +163,7 @@ the current cheap gate is:
 
 A canonical process runtime must additionally prove typed-reference closure,
 occurrence-exact withdrawals, authority order, cause ownership, binary64
-operator traces, continuation pins, JudgmentOccurrence coverage, and
-Admission/successor lineage against this corpus.
+operator traces, ordered premise-slot/support bijections, occurrence-exact
+obligation Observations, first-failure behavior, continuation pins,
+JudgmentOccurrence coverage, and Admission/successor lineage against this
+corpus.
