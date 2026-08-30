@@ -107,8 +107,9 @@ receipt and an attempt without the admitted capability both reject.
 
 ## Required process-v1 companion
 
-A new separately versioned companion must preserve every v0 byte and
-observation while making the process kernel explicit. Its crosswalk must show:
+A new separately versioned companion must preserve every frozen v0 program
+payload and execution observation while making the process kernel explicit.
+Its crosswalk must show:
 
 - each checked closed form and its ApplicationShapeId, committing to exact
   ClauseSemanticsId, exact RelationSchemaId, exact OperatorRef, the exact
@@ -146,13 +147,16 @@ observation while making the process kernel explicit. Its crosswalk must show:
   world alone remains valid in the checked-candidate form;
 - affine Activation-local slots, bounded Step-local scratch, anonymous internal
   reductions, mandatory Step cuts, and exact escape/alias/lifetime outcomes;
-- every Step consuming the exact current affine configuration token and
-  atomically producing its successor, except that one declared disjoint
-  split/join protocol may branch or merge ownership without treating
-  StepCauseFrontier as configuration lineage;
+- every Step carrying exactly one Serial, Split, Branch, or Join configuration
+  transition, with one Mode-owned multiplicity-aware split/join contract,
+  pairwise-disjoint exact coverage, structurally anchored branch custody,
+  obligation-complete settlements, and canonical BranchKey-ordered Join;
 - nonempty finite typed StepCauseFrontiers rather than inferred log causality,
   with exact ActivationStart, PriorStep, ContinuationTakeup, and
   CancellationRequest causes where applicable;
+- Run order as the transitive closure of those typed frontier edges plus
+  separately typed configuration-succession edges, without inserting an
+  implicit PriorStep or treating storage/arrival order as semantics;
 - one exact ActivationStartRecord from which Application, Mode, static basis,
   semantics, constitution, initial world/session/policy, dynamic prerequisites,
   and original cause frontier derive, plus only explicitly advanced current-
@@ -262,20 +266,34 @@ configuration identities.
 
 `join-left-first`, `join-right-first`, and `join-parallel` use fresh identities
 in separate Runs but the same Clause process data. The parent split consumes
-one configuration owner and creates exact disjoint left/right tokens. Each child Activation has an
-exact `ChildOf` origin, and its first StepCauseFrontier is exactly
-one `ActivationStart(child ActivationId)`. The first two cases force opposite
-child completion orders; the third uses physically separate workers and a
-barrier. In every Run the join StepCauseFrontier contains exactly two causes:
+one configuration owner under one exact Mode-owned `SplitJoinContract` and
+creates exact disjoint left/right tokens. Each child Activation has an exact
+`ChildOf` origin, and its first StepCauseFrontier is exactly one
+`ActivationStart(child ActivationId)`. That cause projects the exact parent
+split Step from the checked ActivationCauseFrontier into RunOrder. Independently,
+the first child Branch Step consumes its exact split-produced
+`BranchConfigurationToken` and contributes the same endpoints as a typed
+configuration-succession edge. The two edge kinds remain inspectable, and
+neither inserts `PriorStep`. The first two cases
+force opposite child completion orders; the third uses physically separate
+workers and a barrier. Each terminal Branch Step consumes its current token
+into exactly one `Returned` or obligation-complete `Closed` settlement. In
+every Run the Join StepCauseFrontier contains exactly two causes:
 `PriorStep(exact RunId, left ActivationId, left-terminal-step)` and
 `PriorStep(exact RunId, right ActivationId, right-terminal-step)`. Neither
-child's later StepCauseFrontier names the other child. Joined Value, observation
-content, occurrence-support multiset, candidate delta, and Admission decision
-are equal; trace order is explicitly permitted to differ. The join consumes
-both tokens exactly once and restores one owner. Separate negatives cover an
-overlapping write Lease, cancelled branch without close-or-return, missing
-token, duplicate token, and double join; none publishes a successor
-configuration.
+child's later StepCauseFrontier names the other child. The canonical BranchKey-
+ordered settlement sequence, joined Value and configuration, observation
+content, occurrence-support multiset, candidate delta, Admission decision, and
+observable bytes are equal; trace order is explicitly permitted to differ.
+The Join consumes exactly one settlement per BranchKey in canonical BranchKey
+order and restores one owner. Separate negatives cover an overlapping
+partition or write Lease; a missing, extra, duplicate, wrong-key, already-used,
+wrong-contract, or cross-SplitInstance settlement; a Join frontier/settlement
+mismatch; a cancellation settlement leaving an exact AllocationRoot, Borrow,
+Lease, Continuation, effect, or close obligation neither discharged nor
+transferred exactly as declared; and double Join. None
+publishes a successor configuration. An obligation-complete `Closed`
+cancellation settlement is a valid exact Join input.
 
 The race fixture carries its cancellation/yield/deadline decision table and
 logical deadline boundary as Clause data. It fixes cases for yield causally
@@ -368,11 +386,16 @@ strategy collapses nominal Applications or Activations.
 Each allocation record carries exactly one Owned, RegionMember, or
 ForeignManaged root and zero or more typed Borrow/Lease edges. Forced failure
 or cancellation fires at every move, write, drop, Lease issue/revoke/close, and
-Step-cut boundary; exact Configuration_before and the resource ledger must be
-restored through an infallible suffix, bounded undo/shadow, or discarded
-private realization. Overlapping write Lease, scratch escape, cancelled split
-without returning custody, missing/double join, use-after-move, and unknown close
-obligation reject without publication.
+Step-cut boundary; the exact consumed ConfigurationCustody_before (whole token,
+branch token, or canonical settlement sequence selected by the transition) and
+the resource ledger must be restored through an infallible suffix, bounded
+undo/shadow, or discarded private realization, with no duplicate or residual
+custody. Overlapping write Lease, scratch escape, a cancelled split branch whose
+`Closed` settlement leaves an exact AllocationRoot, Borrow, Lease,
+Continuation, effect, or close obligation neither discharged nor transferred
+exactly as declared, missing/double Join, use-after-move,
+and unknown close obligation reject without publication. An obligation-complete
+`Closed` cancellation settlement remains valid.
 
 The root-wide matrix includes direct owner access plus every Borrow and Lease,
 and proves shared-read compatibility, exclusive/overlapping-write rejection,

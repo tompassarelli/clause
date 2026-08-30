@@ -27,3 +27,6 @@ source must reproduce that expansion unchanged.
 It grants no Clause identity, authority, admission, or package equality.
 Run `./verify-historical-v0.sh` to check both the original program-byte hashes
 and the noncanonical historical-source boundary.
+Run `./verify-historical-v0-test.sh` to prove that extra files, canonical
+`.clause` files and symlinks, malformed checksum records, payload substitution,
+and altered authority metadata fail closed.

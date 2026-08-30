@@ -104,13 +104,17 @@ Application(ApplicationId, exact ApplicationForm)
 activate(ActivationStartRecord)
   = ActivationId + RunMembership + InitialConfiguration
 
-consume exact affine ConfigurationToken_before(Configuration_before)
-  + optional Wbase
-  -- StepId(causes = StepCauseFrontier) ; observations ; delta ; continuation -->
-produce exact affine ConfigurationToken_after(Configuration_after)
-  + same optional Wbase
+StepConfigurationTransition := Serial | Split | Branch | Join
 
-Run(RunId, root = ActivationId, causal closure)
+consume exact affine ConfigurationCustody_before + optional Wbase
+  -- StepId(causes = StepCauseFrontier,
+            transition = exact StepConfigurationTransition) ;
+     observations ; delta ; continuation -->
+produce exact affine ConfigurationCustody_after + same optional Wbase
+
+Run(RunId, root = ActivationId,
+    order = transitive closure(typed frontier edges
+                               ∪ typed configuration-succession edges))
 
 admit(BaseRevision, candidate delta, evidence,
       AuthorizationEvidence<AdmissionAuthorization>,
@@ -162,12 +166,19 @@ The core must represent:
 - affine Activation-local slots, bounded Step-local scratch, anonymous internal
   reductions, exact Step-cut and escape rules, and checked in-place lowering
   without Admission or revision creation;
-- universal per-Step consumption of the exact current affine configuration token
-  and atomic production of its successor, with branching or merging only through
-  a declared disjoint split/join protocol independent of StepCauseFrontier;
+- a closed `StepConfigurationTransition` sum: Serial consumes and succeeds one
+  whole token; Split uses one Mode-owned, canonical multiplicity-aware contract
+  with pairwise-disjoint exact coverage to consume that token into structurally
+  anchored branch tokens; Branch advances or settles one exact branch; Join
+  consumes one canonical settlement per BranchKey and restores one whole owner;
+- no residual whole token after Split, no new Split/Join/Settlement identity
+  domain, and exact discharge or transfer of roots, Borrows, Leases,
+  Continuations, effects, and close obligations before a branch can close;
 - nonempty finite typed StepCauseFrontiers built from exact ActivationStart,
   PriorStep, ContinuationTakeup, and CancellationRequest causes so concurrency
-  remains a partial order rather than log order;
+  remains a partial order rather than log order, while typed configuration-
+  succession edges independently order every producer-to-consumer custody
+  transfer without inserting an implicit PriorStep;
 - RunId as a causal envelope distinct from ActivationId, including child
   activation, handoff, and cancellation scope;
 - typed continuation as semantic remainder, with the sole affine configuration
@@ -380,14 +391,20 @@ Lease edges, trace-retention contract, and resource balance. Thousands of
 internal reductions create no extra StepId, StateRevision, Admission, or
 mandatory trace record. Functional and in-place implementations of the pure
 builder agree observationally. Forced failure or cancellation at every move,
-write, drop, and Lease boundary leaves the semantic before-configuration and
-resource ledger exact through an infallible suffix, bounded undo/shadow, or
-unpublished realization. Borrow/Lease compatibility is checked across each
+write, drop, and Lease boundary restores the exact consumed
+`ConfigurationCustody_before`—whole token, branch token, or canonical
+settlement sequence as selected by the transition—and the resource ledger
+through an infallible suffix, bounded undo/shadow, or unpublished realization,
+with no duplicate or residual custody. Borrow/Lease compatibility is checked across each
 root's complete alias set including owner access, and reset/reclaim waits for
 causal quiescence acknowledgments from every Borrow, Lease, Continuation, child,
 escape, asynchronous/foreign use, and close obligation. Shared mutable alias,
-overlapping write Lease, Step-scratch escape, double continuation takeup,
-cancelled split branch, missing/double join, any strong cycle across
+overlapping write Lease, Step-scratch escape, double continuation takeup, a
+cancelled split branch whose `Closed` settlement leaves an exact
+`AllocationRoot` (`Owned`, `RegionMember`, or `ForeignManaged`, including a
+Clause-owned foreign-wrapper obligation), Borrow, Lease, Continuation, effect,
+or close obligation neither discharged nor transferred exactly as declared,
+missing/double join, any strong cycle across
 independently reclaimed roots including Owned↔Owned, unknown close obligation,
 observable destructor-at-reclaim, and use-after-move each reject at the exact
 formation or lifetime stage. A bounded compiler-proven nonobservable mechanical
@@ -509,20 +526,35 @@ must name the mismatched identity class without treating equal content, a host
 handle, or possession of bytes as authority.
 
 The concurrency gate varies physical execution while keeping semantic
-causality fixed. A parent Activation consumes one configuration owner and
-splits exact nonoverlapping left/right subconfiguration tokens before creating
-two independent child Activations through exact `ChildOf` ActivationOrigins. Each child's first
-StepCauseFrontier contains exactly one
-`ActivationStart(child ActivationId)`. One physical plan completes the left
-child first, a second completes the right child first, and a parallel plan
-releases both behind a barrier. In all three runs the join StepCauseFrontier
+causality fixed. A parent Activation consumes one configuration owner under one
+Mode-owned `SplitJoinContract` and splits exact nonoverlapping left/right
+subconfiguration tokens before creating two independent child Activations
+through exact `ChildOf` ActivationOrigins. Each child's first StepCauseFrontier
+contains exactly one `ActivationStart(child ActivationId)`; that cause's typed
+edge projection includes the exact parent split Step from the checked
+ActivationCauseFrontier. Independently, the first child Branch Step consumes
+its exact split-produced `BranchConfigurationToken`, contributing the same
+parent-to-child endpoints as a configuration-succession edge. The two typed
+edges remain separately inspectable, and neither inserts `PriorStep`. One physical plan completes
+the left child first, a second completes the right child first, and a parallel
+plan releases both behind a barrier. Each terminal Branch Step consumes its
+current `BranchConfigurationToken` into exactly one `Returned` or obligation-
+complete `Closed` settlement. In all three runs the Join StepCauseFrontier
 contains exactly two causes: `PriorStep(exact RunId, left ActivationId,
 left-terminal-step)` and `PriorStep(exact RunId, right ActivationId,
 right-terminal-step)`. Neither child's later StepCauseFrontier names the other
-child, trace serialization may differ, and the joined observation and support
-multiset are identical. Join consumes both tokens exactly once and restores one
-owner. Overlapping write Lease, double/missing token, cancelled branch without
-close-or-return, and double join reject without publishing a configuration.
+child, trace serialization may differ, and the canonical BranchKey-ordered
+settlement sequence, joined configuration, result, observations and their
+support multiset, candidate delta, Admission decision, and observable bytes are
+identical. Join consumes exactly one settlement per BranchKey in canonical
+BranchKey order and restores one owner. Overlapping partition or write Lease; a
+missing, extra, duplicate, wrong-key, already-used, wrong-contract, or cross-
+SplitInstance settlement; a Join frontier/settlement mismatch; cancellation
+whose `Closed` settlement leaves an exact AllocationRoot, Borrow, Lease,
+Continuation, effect, or close obligation neither discharged nor transferred
+exactly as declared; and double Join all reject without
+publishing a configuration. An obligation-complete `Closed` cancellation
+settlement is valid and remains an exact Join input.
 
 Cancellation, yield, and deadline arbitration is also Clause data. The fixture
 declares an exact causal decision table and a logical deadline/budget boundary,
@@ -815,9 +847,16 @@ The cross-phase program passes only when all of these are executable and exact:
   distinct ActivationIds, while independently nominalized equal-shaped
   Applications receive distinct ApplicationIds;
 - one Activation across multiple configurations and StepIds;
-- every ordinary Step consumes the exact current affine configuration token and
-  atomically produces its successor, with only declared disjoint split/join
-  permitted to branch or merge ownership and no inference from cause frontier;
+- every Step has exactly one Serial, Split, Branch, or Join configuration
+  transition; Split/Branch/Join preserve exact structured custody, coverage,
+  settlement, and obligation closure without a residual parent token or a new
+  global identity domain;
+- Run order is exactly the transitive closure of separately inspectable typed
+  StepCauseFrontier edges and typed configuration-succession edges, including
+  `s1 <run s2` when `s2` consumes `ConfigurationAfter(s1)` without a redundant
+  `PriorStep(s1)`, and parent-Step-before-child-first-Step order projected by
+  `ActivationStart` from an exact `ChildOf` or `HandoffFrom` origin without an
+  inserted `PriorStep` or a required configuration transfer;
 - valid StaticActivationBasis, exact InitialContext, complete named/
   RoleId-indexed DynamicPrerequisiteBindings, and a separate occurrence-only
   causal frontier for every Activation, with no binding, AuthorizationEvidence,
@@ -857,9 +896,10 @@ The cross-phase program passes only when all of these are executable and exact:
   and a fresh post-suspension observation;
 - wrong-pin and equal-content continuation transplant rejection, plus exact
   enforcement of the fixture's Clause-declared linear reuse policy;
-- reversed and parallel child schedules with the same exact two-PriorStep join
-  StepCauseFrontier, and Clause-declared cancellation/yield/deadline
-  arbitration;
+- reversed and parallel child schedules with the same BranchKey-canonical
+  settlements, joined result and bytes, the same exact settlement-terminal
+  PriorSteps in the Join frontier, and Clause-declared cancellation/yield/
+  deadline arbitration;
 - bounded long-run configuration/frontier/continuation/trace residency with
   exact rehydration or typed unavailable-history rejection;
 - effect-stage honesty under both governed-per-intent and preauthorized local/
@@ -945,8 +985,15 @@ The spike actively rejects or bounds:
   negative dependency, cyclic derived-key preimage, higher-rank smuggling,
   InstantiationKey used as a physical cache key, or host-owned specialization;
 - mutable local escape, shared alias, scratch retention, failure-visible
-  partial update, overlapping split/Lease, double continuation takeup,
-  missing/double join, cancellation without token/resource closure, or
+  partial update, rollback that fails to restore the exact whole-token,
+  branch-token, or canonical-settlement-sequence custody input, overlapping or
+  incomplete partition, residual whole-parent token, cross-split/equal-content
+  branch transplant, missing/extra/duplicate/wrong-key/already-used/
+  wrong-contract settlement, double join, wrong-split or repeated branch
+  takeup, Join frontier/settlement mismatch, cancellation leaving any exact
+  AllocationRoot/Borrow/Lease/Continuation/effect/close obligation neither
+  discharged nor transferred exactly as declared, host
+  arrival-order dispatch, or
   Admission/StateRevision manufactured for ordinary local mutation;
 - semantic identity used as a residency root, unknown lifetime silently leaked,
   Lease confused with reclamation ownership, observable destructor/finalizer

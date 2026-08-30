@@ -158,11 +158,13 @@ edit with exact diagnostics plus affected and preserved dependency/cache sets.
 
 ## Phase 0 — Freeze and crosswalk oracles
 
-**Status:** The v0 execution/admission/replay observation corpus is frozen;
-its slash-bearing source projections still need path-level historical
-quarantine, and the process-v1 companion is missing.
+**Status:** The v0 execution/admission/replay observations and original source-
+payload hashes are frozen; the slash-bearing source projections are quarantined
+under the historical noncanonical fixture path, and the process-v1 companion
+is missing.
 
-Freeze the exact existing v0 bytes and their actual observations for:
+Freeze the three exact original v0 source-payload byte streams and their actual
+execution observations for:
 
 - recursive pure dependency closure and its ground-rule negatives;
 - independently identified assertion occurrences;
@@ -292,7 +294,9 @@ slot-preserving DynamicPrerequisiteBindings, separate occurrence-only
 ActivationCauseFrontier, ActivationStartRecord, and Run membership,
 before/after Configurations under one stable ActivationId, nonempty finite typed
 StepCauseFrontiers built from ActivationStart, PriorStep, ContinuationTakeup,
-and CancellationRequest causes, Run causal closure, one exact
+and CancellationRequest causes, typed configuration-succession edges, Run order
+as the union closure of both edge kinds, the closed Serial/Split/Branch/Join
+affine configuration-transition sum, one exact
 ActivationStartRecord from which fixed continuation pins derive, and typed
 outcomes. Machine/KExpr reductions remain compiler mechanics rather
 than semantic Steps.
