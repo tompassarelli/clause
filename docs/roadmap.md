@@ -198,13 +198,16 @@ consumer requires it, is a separate ReferentId relation with explicit evidence.
 ProgramRevision lineage alone never supplies declaration identity or
 continuity.
 
-Every ApplicationShapeId commits to ClauseSemanticsId, exact OperatorRef and
-roles, context requirements, and the complete resolved semantic-dependency/
-declaration closure, including proof that the closure is empty where applicable.
+Every ApplicationShapeId commits to ClauseSemanticsId, exact RelationSchemaId,
+exact OperatorRef, the exact eligible ModeId set, named-role bindings, context
+requirements, and the complete resolved semantic-dependency/declaration
+closure, including proof that the closure is empty where applicable.
 
 Implement closed ApplicationForm formation, nominal Application allocation,
-fresh Activation, before/after Configurations under one stable ActivationId,
-finite Step predecessor frontiers, Run causal closure, exact continuation pins,
+fresh Activation with an exact ActivationCauseFrontier and Run membership,
+before/after Configurations under one stable ActivationId, nonempty finite typed
+StepCauseFrontiers built from ActivationStart, PriorStep, ContinuationTakeup,
+and CancellationRequest causes, Run causal closure, exact continuation pins,
 and typed outcomes. Machine/KExpr reductions remain compiler mechanics rather
 than semantic Steps.
 

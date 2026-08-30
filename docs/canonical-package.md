@@ -1,8 +1,6 @@
 # Clause Canonical Packages
 
-> **Status:** CLCP v3 is the normative compiler-package contract. Its Lean
-> codec and replay checker are implemented; Rust parity, literal Compiler0,
-> successor admission, and public release remain P2 acceptance work.
+> **Contract:** CLCP v3 is the normative compiler-package contract.
 >
 > **Authority:** This document owns canonical package representation and
 > canonical decoding. [Compiler genesis](compiler-genesis.md) owns compiler
@@ -1009,9 +1007,17 @@ Successful decoding returns a candidate package, never an accepted compiler:
 ```text
 bytes --strict decode--> candidate package
 candidate + external genesis anchor or accepted exact predecessor
-      --constitutional check--> accepted compiler
+      --frozen constitutional check--> Authorized(exact package bytes)
+                                       | Unauthorized(stage, code)
+Authorized checker evidence + Clause-owned Application and context
+      --activate / Run--> candidate compiler/Program delta + evidence
+candidate delta + evidence + authority + obligations
+      --governed outer Admission--> authoritative compiler + successor ProgramRevision
 ```
 
+The frozen checker ends at exact authorization evidence. It does not itself
+admit a compiler or construct a Clause `ProgramRevision`; only the governed
+outer `Admission` of a candidate delta emitted by a Clause-owned `Run` does so.
 An API that promotes a package on decode, hash match, receipt production, or
 successful Rust execution is nonconforming.
 

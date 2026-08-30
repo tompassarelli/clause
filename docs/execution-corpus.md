@@ -1,8 +1,5 @@
 # Clause v0 execution corpus and process-v1 boundary
 
-> **Status:** Frozen implementation contract; execution support is not yet
-> implemented.
->
 > **Authority:** The [foundation](foundation.md) alone defines Clause meaning,
 > the [syntax](syntax.md) alone defines canonical source, and the
 > [roadmap](roadmap.md) alone defines implementation status. This document and
@@ -100,7 +97,11 @@ receipt and an attempt without the admitted capability both reject.
 A new separately versioned companion must preserve every v0 byte and
 observation while making the process kernel explicit. Its crosswalk must show:
 
-- each checked closed form and exact resolved declaration closure;
+- each checked closed form and its ApplicationShapeId, committing to exact
+  ClauseSemanticsId, exact RelationSchemaId, exact OperatorRef, the exact
+  eligible ModeId set, named RoleId bindings, context requirements, and the
+  complete resolved semantic-dependency/declaration closure, including proof
+  that it is empty where applicable;
 - exact RelationSchemaId, RoleId, OperatorRef, and ModeId references formed from
   ProgramSnapshotId plus typed snapshot-local declaration identities, with no
   silent identity carry across a changed snapshot;
@@ -112,7 +113,9 @@ observation while making the process kernel explicit. Its crosswalk must show:
   ApplicationIds;
 - one Activation producing multiple StepIds across yield, suspension, and
   resumption;
-- finite predecessor frontiers rather than inferred log causality;
+- nonempty finite typed StepCauseFrontiers rather than inferred log causality,
+  with exact ActivationStart, PriorStep, ContinuationTakeup, and
+  CancellationRequest causes where applicable;
 - exact ModeId, ExecutionAuthorization, ClauseSemanticsId,
   ProgramSnapshotId, ProgramRevisionId, RuntimeSessionId, RuntimePolicyId, and
   observed/base StateRevisionId pins where applicable;
@@ -148,12 +151,12 @@ silently migrate a live Activation to a new Program or world revision.
 Every process-v1 case must commit exact input bytes and checksums, the selected
 semantics and Program/world/session pins, identity-allocation authority,
 Application/Activation/Run identities, ordered Step records with explicit
-predecessor sets, observations and occurrence-exact supports, outcome,
-continuation, candidate delta, Admission decision, and authoritative-boundary
-hashes before and after. A physical case additionally commits its strategy,
-budget, total work receipt, physical-view hash, and handle/scene table before
-and after. A rejection fixes the rejecting stage, typed reason, obligations,
-and all boundaries proven unchanged.
+nonempty typed StepCauseFrontiers, observations and occurrence-exact supports,
+outcome, continuation, candidate delta, Admission decision, and authoritative-
+boundary hashes before and after. A physical case additionally commits its
+strategy, budget, total work receipt, physical-view hash, and handle/scene
+table before and after. A rejection fixes the rejecting stage, typed reason,
+obligations, and all boundaries proven unchanged.
 
 Names used while authoring the manifest are never semantic identity by
 spelling. Once the process-v1 identity encoding is accepted, the companion
@@ -176,8 +179,10 @@ replay with an existing identity is not a fresh occurrence.
 4. supply one newly identified ingress occurrence absent from the serialized
    remainder; and
 5. resume the same Activation and Run, creating one fresh Step whose
-   predecessor set is exactly `{suspend-step}` and one fresh ObservationId
-   supported by that ingress occurrence.
+   StepCauseFrontier contains exactly
+   `ContinuationTakeup(exact ContinuationId, exact ResumptionOccurrenceId)` and
+   `PriorStep(original RunId, original ActivationId, suspend-step)`, plus one
+   fresh ObservationId supported by that ingress occurrence.
 
 The post-resume observation bytes and support must differ from every
 pre-suspension observation; trace replay does not pass. Separate one-field
@@ -191,20 +196,26 @@ the first use succeeds and both sequential and concurrent reuse reject as
 `continuation-already-consumed` without duplicate observations or effects.
 
 `join-left-first`, `join-right-first`, and `join-parallel` use fresh identities
-in separate Runs but the same Clause process data. The first two force opposite
+in separate Runs but the same Clause process data. Each child Activation has an
+exact `ChildOf` origin, and its first StepCauseFrontier is exactly
+one `ActivationStart(child ActivationId)`. The first two cases force opposite
 child completion orders; the third uses physically separate workers and a
-barrier. In every Run the join Step's predecessor set is exactly that Run's two
-child terminal StepIds. Neither child names the other as a predecessor. Joined
-Value, observation content, occurrence-support multiset, candidate delta, and
-Admission decision are equal; trace order is explicitly permitted to differ.
+barrier. In every Run the join StepCauseFrontier contains exactly two causes:
+`PriorStep(exact RunId, left ActivationId, left-terminal-step)` and
+`PriorStep(exact RunId, right ActivationId, right-terminal-step)`. Neither
+child's later StepCauseFrontier names the other child. Joined Value, observation
+content, occurrence-support multiset, candidate delta, and Admission decision
+are equal; trace order is explicitly permitted to differ.
 
 The race fixture carries its cancellation/yield/deadline decision table and
 logical deadline boundary as Clause data. It fixes cases for yield causally
 before cancel, cancel causally before yield, and cancel concurrent with the
 deadline, then runs each under opposite queue order and worker count. Expected
-Step frontiers, yielded observations, continuation disposition, typed terminal
-outcome, and resource balance come from that table. Wall-clock arrival, log
-order, and first host callback are not inputs.
+typed StepCauseFrontiers, including exact
+`CancellationRequest(CancellationOccurrenceId)` causes only for Steps that
+observe or carry through cancellation, yielded observations, continuation
+disposition, typed terminal outcome, and resource balance come from that table.
+Wall-clock arrival, log order, and first host callback are not inputs.
 
 ### Truth without implicit assertion
 

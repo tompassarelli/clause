@@ -76,11 +76,11 @@ Term = Atom | RawTriple
 
 Application(ApplicationId, exact ApplicationForm)
 
-activate(ApplicationId, ModeId, InitialContext)
-  = ActivationId + InitialConfiguration
+activate(ApplicationId, ModeId, InitialContext, ActivationCauseFrontier)
+  = ActivationId + RunMembership + InitialConfiguration
 
 Configuration_before
-  -- StepId(predecessors = Frontier) ; observations ; delta ; continuation -->
+  -- StepId(causes = StepCauseFrontier) ; observations ; delta ; continuation -->
 Configuration_after
 
 Run(RunId, root = ActivationId, causal closure)
@@ -101,9 +101,10 @@ The core must represent:
   exact external references include ProgramSnapshotId and never silently carry
   across a changed snapshot;
 - `ApplicationShapeId` only for closed forms, committing to ClauseSemanticsId,
-  exact OperatorRef and roles, context requirements, and the full resolved
-  semantic-dependency/declaration closure, including proof that it is empty
-  where applicable;
+  exact RelationSchemaId, exact OperatorRef, the exact eligible ModeId set,
+  named-role bindings, context requirements, and the full resolved semantic-
+  dependency/declaration closure, including proof that it is empty where
+  applicable;
 - mandatory nominal `ApplicationId` for every Application, with raw, quoted,
   open, and merely structural forms remaining non-nominal ApplicationForms or
   Terms rather than anonymous Applications;
@@ -113,8 +114,9 @@ The core must represent:
   boundary provenance for an ingress trigger;
 - fresh `ActivationId` for every engagement and one stable Activation across
   any number of configurations and StepIds;
-- Step predecessor frontiers as finite sets so concurrency remains a partial
-  order rather than log order;
+- nonempty finite typed StepCauseFrontiers built from exact ActivationStart,
+  PriorStep, ContinuationTakeup, and CancellationRequest causes so concurrency
+  remains a partial order rather than log order;
 - RunId as a causal envelope distinct from ActivationId, including child
   activation, handoff, and cancellation scope;
 - typed continuation as semantic remainder, with exact identified pins when it
@@ -277,8 +279,9 @@ independent runtime, and accept one fresh ingress observation that did not
 exist before suspension. The resumed Step:
 
 - retains the original ApplicationId, ActivationId, and RunId;
-- has a fresh StepId whose predecessor frontier is exactly the singleton
-  `suspend-step`;
+- has a fresh StepId whose StepCauseFrontier contains exactly
+  `ContinuationTakeup(exact ContinuationId, exact ResumptionOccurrenceId)` and
+  `PriorStep(original RunId, original ActivationId, suspend-step)`;
 - consumes the newly identified ingress occurrence under its declared mode;
 - emits a fresh ObservationId rather than replaying a cached observation;
 - retains the exact Program, session, world, policy, semantics, budget, and
@@ -301,11 +304,15 @@ handle, or possession of bytes as authority.
 
 The concurrency gate varies physical execution while keeping semantic
 causality fixed. A parent Activation creates two independent child
-Activations. One physical plan completes the left child first, a second
-completes the right child first, and a parallel plan releases both behind a
-barrier. In all three runs the join Step has predecessor frontier exactly
-`{left-terminal-step, right-terminal-step}`. Neither child Step lists the
-other, trace serialization may differ, and the joined observation and support
+Activations through exact `ChildOf` ActivationOrigins. Each child's first
+StepCauseFrontier contains exactly one
+`ActivationStart(child ActivationId)`. One physical plan completes the left
+child first, a second completes the right child first, and a parallel plan
+releases both behind a barrier. In all three runs the join StepCauseFrontier
+contains exactly two causes: `PriorStep(exact RunId, left ActivationId,
+left-terminal-step)` and `PriorStep(exact RunId, right ActivationId,
+right-terminal-step)`. Neither child's later StepCauseFrontier names the other
+child, trace serialization may differ, and the joined observation and support
 multiset are identical.
 
 Cancellation, yield, and deadline arbitration is also Clause data. The fixture
@@ -313,8 +320,11 @@ declares an exact causal decision table and a logical deadline/budget boundary,
 then exercises yield-before-cancel, cancel-before-yield, and causally concurrent
 cancel/deadline cases under reversed physical schedules. Each outcome, emitted
 observation set, terminal/nonterminal condition, continuation disposition, and
-Step frontier must match that table. Ambient wall-clock timing, executor queue
-order, and whichever worker reports first may not break the tie.
+typed StepCauseFrontier must match that table. A Step that observes or carries
+through cancellation must name the exact
+`CancellationRequest(CancellationOccurrenceId)` cause; unrelated Steps must not.
+Ambient wall-clock timing, executor queue order, and whichever worker reports
+first may not break the tie.
 
 ### 6. Relational recoverability and materialization
 
@@ -511,8 +521,9 @@ The cross-phase program passes only when all of these are executable and exact:
   rematerialization, and a fresh post-suspension observation;
 - wrong-pin and equal-content continuation transplant rejection, plus exact
   enforcement of the fixture's Clause-declared linear reuse policy;
-- reversed and parallel child schedules with the same exact two-predecessor
-  join frontier, and Clause-declared cancellation/yield/deadline arbitration;
+- reversed and parallel child schedules with the same exact two-PriorStep join
+  StepCauseFrontier, and Clause-declared cancellation/yield/deadline
+  arbitration;
 - effect-stage honesty, including receipt absence;
 - exact Program and world pinning with no silent migration;
 - identity retention across source-only movement, serialization, process

@@ -100,9 +100,10 @@ package hash, carried core/profile IDs, entrypoint, arguments, and fuel from the
 separately supplied exact accepted predecessor and candidate build request. It
 then completely evaluates the call, domain-hashes the canonical actual value
 and observations, compares both commitments and remaining fuel, and separately
-inspects the actual `Built` or `Propose` value. Admission uses the verified
-actual compile observations. No node graph, trace, callback, or
-receipt-produced assertion can grant authority.
+inspects the actual `Built` or `Propose` value. Evaluation of `admitPropose`
+uses the verified actual compile observations as proposal-check input; it does
+not perform Clause `Admission` or create an authoritative successor. No node
+graph, trace, callback, or receipt-produced assertion can grant authority.
 
 ## Checks
 
