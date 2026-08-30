@@ -8,7 +8,8 @@ use std::fmt;
 use sha2::{Digest, Sha256};
 
 use crate::compiler_package_v3::{
-    Id32, KValue, MAX_TERM_NODES, MAX_WIRE_ITEMS, Term, sha256_operation_id, try_copy_bytes,
+    Id32, KValue, MAX_TERM_NODES, MAX_WIRE_BYTES, MAX_WIRE_ITEMS, Term, sha256_operation_id,
+    try_copy_bytes,
 };
 
 const K_TAG: &[u8] = b"clause/core-abi/tag/v1";
@@ -28,12 +29,18 @@ pub struct PhysicalObservation {
 #[derive(Debug, Default, Eq, PartialEq)]
 pub struct ObservationLog {
     items: Vec<PhysicalObservation>,
+    retained_payload_bytes: usize,
 }
 
 impl ObservationLog {
     #[must_use]
     pub fn items(&self) -> &[PhysicalObservation] {
         &self.items
+    }
+
+    #[must_use]
+    pub const fn retained_payload_bytes(&self) -> usize {
+        self.retained_payload_bytes
     }
 
     pub fn try_to_term(&self) -> Result<Term, PhysicalError> {
@@ -73,6 +80,14 @@ impl SealedPhysical {
             return Err(PhysicalError::ResourceExhausted);
         }
         let digest = Sha256::digest(input);
+        let retained_payload_bytes = observations
+            .retained_payload_bytes
+            .checked_add(input.len())
+            .and_then(|bytes| bytes.checked_add(digest.len()))
+            .ok_or(PhysicalError::ResourceExhausted)?;
+        if retained_payload_bytes > MAX_WIRE_BYTES {
+            return Err(PhysicalError::ResourceExhausted);
+        }
         let result =
             KValue::Bytes(try_copy_bytes(&digest).map_err(|_| PhysicalError::ResourceExhausted)?);
         let recorded_result = result
@@ -88,6 +103,7 @@ impl SealedPhysical {
             arguments,
             result: recorded_result,
         });
+        observations.retained_payload_bytes = retained_payload_bytes;
         Ok(result)
     }
 }
@@ -232,4 +248,37 @@ pub fn observations_term(observations: &[PhysicalObservation]) -> Result<Term, P
         items.push(record(0x19, fields)?);
     }
     record(0x1a, one_field(list(items)?)?)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn observation_payload_budget_is_aggregate_and_failure_atomic() {
+        let physical = SealedPhysical::new();
+        let mut observations = ObservationLog::default();
+        let first_input = vec![0x5a; MAX_WIRE_BYTES - 32];
+
+        physical
+            .request(
+                sha256_operation_id(),
+                vec![KValue::Bytes(first_input)],
+                &mut observations,
+            )
+            .expect("one exact-limit observation fits");
+        assert_eq!(observations.retained_payload_bytes(), MAX_WIRE_BYTES);
+        assert_eq!(observations.items().len(), 1);
+
+        assert_eq!(
+            physical.request(
+                sha256_operation_id(),
+                vec![KValue::Bytes(Vec::new())],
+                &mut observations,
+            ),
+            Err(PhysicalError::ResourceExhausted)
+        );
+        assert_eq!(observations.retained_payload_bytes(), MAX_WIRE_BYTES);
+        assert_eq!(observations.items().len(), 1);
+    }
 }

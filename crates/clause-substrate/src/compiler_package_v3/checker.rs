@@ -6,7 +6,8 @@
 
 use std::fmt;
 
-use crate::evaluator::{Evaluation, Evaluator, StaticError};
+use crate::evaluator::{EvalError, Evaluation, Evaluator, StaticError};
+use crate::physical::PhysicalError;
 
 use super::codec::{canonical_evidence_bytes, canonical_subject_bytes};
 use super::{
@@ -651,7 +652,7 @@ fn allocations_are_acyclic(
     state.resize(declarations.len(), 0_u8);
 
     for start in 0..declarations.len() {
-        if state[start] == 2 {
+        if matches!(state.get(start), Some(2)) {
             continue;
         }
         let mut stack = Vec::new();
@@ -661,23 +662,34 @@ fn allocations_are_acyclic(
         stack.push((start, false));
         while let Some((index, exiting)) = stack.pop() {
             if exiting {
-                state[index] = 2;
+                let Some(slot) = state.get_mut(index) else {
+                    return Ok(false);
+                };
+                *slot = 2;
                 continue;
             }
-            match state[index] {
-                1 => return Ok(false),
-                2 => continue,
-                _ => state[index] = 1,
+            match state.get(index) {
+                None => return Ok(false),
+                Some(1) => return Ok(false),
+                Some(2) => continue,
+                Some(_) => {}
             }
+            let Some(slot) = state.get_mut(index) else {
+                return Ok(false);
+            };
+            *slot = 1;
             stack
                 .try_reserve(3)
                 .map_err(|_| AuthorizationCheckError::ResourceExhausted)?;
             stack.push((index, true));
+            let Some(declaration) = declarations.get(index) else {
+                return Ok(false);
+            };
             if let NominalDeclaration::Allocated {
                 change_input,
                 producer_input,
                 ..
-            } = &declarations[index]
+            } = declaration
             {
                 let Some(producer) = find_nominal_index(declarations, producer_input) else {
                     return Ok(false);
@@ -862,10 +874,16 @@ fn nominal_table_valid(subject: &CompilerSubject) -> Result<bool, AuthorizationC
 }
 
 fn program_strictly_sorted(subject: &CompilerSubject) -> bool {
-    subject
-        .program
-        .windows(2)
-        .all(|pair| pair[0].id < pair[1].id)
+    let mut prior: Option<Id32> = None;
+    for definition in &subject.program {
+        if let Some(prior_id) = prior
+            && prior_id >= definition.id
+        {
+            return false;
+        }
+        prior = Some(definition.id);
+    }
+    true
 }
 
 fn core_failure(
@@ -944,9 +962,7 @@ fn common_failure(
     candidate: &DecodedCompilerPackage,
 ) -> Result<Option<AuthorizationFailure>, AuthorizationCheckError> {
     let exact_manifest = map_encode(exact_core_manifest_bytes())?;
-    if candidate.exact_core_manifest() != exact_manifest
-        || candidate.package().core_manifest != super::CoreManifest::canonical_v1()
-    {
+    if candidate.exact_core_manifest() != exact_manifest {
         return Ok(Some(failure(
             AuthorizationStage::CoreManifest,
             AuthorizationCode::ManifestMismatch,
@@ -960,9 +976,16 @@ fn compiler_revision_id(exact_subject: &[u8]) -> Id32 {
 }
 
 fn references_strictly_sorted(references: &[NominalRefView]) -> bool {
-    references
-        .windows(2)
-        .all(|pair| (pair[0].domain, pair[0].id) < (pair[1].domain, pair[1].id))
+    let mut prior: Option<&NominalRefView> = None;
+    for reference in references {
+        if let Some(prior_reference) = prior
+            && (prior_reference.domain, prior_reference.id) >= (reference.domain, reference.id)
+        {
+            return false;
+        }
+        prior = Some(reference);
+    }
+    true
 }
 
 fn plan_valid(
@@ -1086,18 +1109,22 @@ fn build_failure(
     if request.physical_profile_id != map_encode(physical_profile_id())? {
         return Ok(fail(AuthorizationCode::PhysicalProfileMismatch));
     }
-    if request
-        .source_units
-        .windows(2)
-        .any(|pair| pair[0].unit_id >= pair[1].unit_id)
-        || request.source_units.iter().any(|source| {
-            !nominal_exists(
-                &candidate.package().subject.nominal_declarations,
-                source_unit_domain(),
-                source.unit_id,
-            )
-        })
-    {
+    let mut prior_unit_id = None;
+    for source in &request.source_units {
+        if let Some(prior) = prior_unit_id
+            && prior >= source.unit_id
+        {
+            return Ok(fail(AuthorizationCode::SourceOrderOrDuplicate));
+        }
+        prior_unit_id = Some(source.unit_id);
+    }
+    if request.source_units.iter().any(|source| {
+        !nominal_exists(
+            &candidate.package().subject.nominal_declarations,
+            source_unit_domain(),
+            source.unit_id,
+        )
+    }) {
         return Ok(fail(AuthorizationCode::SourceOrderOrDuplicate));
     }
     if request
@@ -1327,8 +1354,18 @@ fn replay_entrypoint(
     );
     match evaluator.replay_entrypoint(entrypoint, &[argument], fuel) {
         Ok(evaluation) => Ok(Some(evaluation)),
+        Err(error) if replay_error_is_resource_exhausted(&error) => resource(),
         Err(_) => Ok(None),
     }
+}
+
+fn replay_error_is_resource_exhausted(error: &EvalError) -> bool {
+    matches!(
+        error,
+        EvalError::ResourceExhausted
+            | EvalError::Static(StaticError::ResourceExhausted)
+            | EvalError::Physical(PhysicalError::ResourceExhausted)
+    )
 }
 
 fn compile_replay(
@@ -1352,6 +1389,7 @@ fn compile_replay(
     };
     let value_hash = match super::eval_receipt_value_hash(&result.value) {
         Ok(value) => value,
+        Err(EncodeError::ResourceExhausted) => return resource(),
         Err(_) => return Ok(fail(AuthorizationCode::EvaluationFault)),
     };
     if value_hash != receipt.expected_value_hash {
@@ -1368,10 +1406,12 @@ fn compile_replay(
     }
     let observations = match result.observations.try_to_term() {
         Ok(value) => value,
+        Err(PhysicalError::ResourceExhausted) => return resource(),
         Err(_) => return Ok(fail(AuthorizationCode::ObservationMismatch)),
     };
     let observations_hash = match super::eval_receipt_observations_hash(&observations) {
         Ok(value) => value,
+        Err(EncodeError::ResourceExhausted) => return resource(),
         Err(_) => return Ok(fail(AuthorizationCode::ObservationMismatch)),
     };
     if observations_hash != receipt.expected_observations_hash {
@@ -1412,6 +1452,7 @@ fn admission_replay(
     };
     let value_hash = match super::eval_receipt_value_hash(&result.value) {
         Ok(value) => value,
+        Err(EncodeError::ResourceExhausted) => return resource(),
         Err(_) => return Ok(fail(AuthorizationCode::EvaluationFault)),
     };
     if value_hash != receipt.expected_value_hash {
@@ -1428,10 +1469,12 @@ fn admission_replay(
     }
     let observations = match result.observations.try_to_term() {
         Ok(value) => value,
+        Err(PhysicalError::ResourceExhausted) => return resource(),
         Err(_) => return Ok(fail(AuthorizationCode::ObservationMismatch)),
     };
     let observations_hash = match super::eval_receipt_observations_hash(&observations) {
         Ok(value) => value,
+        Err(EncodeError::ResourceExhausted) => return resource(),
         Err(_) => return Ok(fail(AuthorizationCode::ObservationMismatch)),
     };
     if observations_hash != receipt.expected_observations_hash {
@@ -1642,7 +1685,7 @@ pub fn authorize_successor(
 mod tests {
     use super::*;
 
-    use crate::compiler_package_v3::{CompilerInterface, CoreManifest, Definition};
+    use crate::compiler_package_v3::{CompilerInterface, CoreManifest, Definition, FallibleBox};
 
     fn id(value: u8) -> Id32 {
         Id32([value; 32])
@@ -1664,6 +1707,10 @@ mod tests {
         }
     }
 
+    fn boxed_expression(value: KExpr) -> FallibleBox<KExpr> {
+        FallibleBox::try_new(value).expect("test expression allocation")
+    }
+
     fn nominal_ref_term(reference: NominalRefView) -> Term {
         record_term(0x04, vec![id_term(reference.domain), id_term(reference.id)])
             .expect("test nominal reference allocation")
@@ -1674,8 +1721,9 @@ mod tests {
             .expect("test reference wrapper allocation")
     }
 
-    fn build_request_term(
+    fn build_request_term_with_base(
         declarations: &[NominalDeclaration],
+        base: Term,
         change: Id32,
         compile_fuel: u64,
         admission_fuel: u64,
@@ -1700,7 +1748,7 @@ mod tests {
         record_term(
             0x13,
             vec![
-                record_term(0x10, Vec::new()).expect("genesis base"),
+                base,
                 id_term(Id32(core_contract_id().unwrap().0)),
                 id_term(Id32(physical_profile_id().unwrap().0)),
                 opaque(b"target"),
@@ -1715,6 +1763,258 @@ mod tests {
             ],
         )
         .expect("build request")
+    }
+
+    fn build_request_term(
+        declarations: &[NominalDeclaration],
+        change: Id32,
+        compile_fuel: u64,
+        admission_fuel: u64,
+    ) -> Term {
+        build_request_term_with_base(
+            declarations,
+            record_term(0x10, Vec::new()).expect("genesis base"),
+            change,
+            compile_fuel,
+            admission_fuel,
+        )
+    }
+
+    fn case_term_bytes(scrutinee: KExpr, triple_body: KExpr) -> KExpr {
+        KExpr::CaseTerm {
+            scrutinee: boxed_expression(scrutinee),
+            atom_body: boxed_expression(KExpr::BytesLiteral(Vec::new())),
+            triple_body: boxed_expression(triple_body),
+        }
+    }
+
+    fn atom_payload(scrutinee: KExpr) -> KExpr {
+        KExpr::CaseTerm {
+            scrutinee: boxed_expression(scrutinee),
+            atom_body: boxed_expression(KExpr::Var(1)),
+            triple_body: boxed_expression(KExpr::BytesLiteral(Vec::new())),
+        }
+    }
+
+    fn list_field_atom_payload(list: KExpr, field: usize) -> KExpr {
+        let selected = if field == 0 {
+            atom_payload(KExpr::Var(1))
+        } else {
+            list_field_atom_payload(KExpr::Var(2), field - 1)
+        };
+        case_term_bytes(list, selected)
+    }
+
+    fn build_base_field_payload(field: usize) -> KExpr {
+        case_term_bytes(
+            KExpr::Var(0),
+            case_term_bytes(
+                KExpr::Var(1),
+                case_term_bytes(KExpr::Var(1), list_field_atom_payload(KExpr::Var(1), field)),
+            ),
+        )
+    }
+
+    fn admission_subject_payload() -> KExpr {
+        case_term_bytes(KExpr::Var(0), list_field_atom_payload(KExpr::Var(1), 1))
+    }
+
+    fn result_expression(tag_value: u8, payload: KExpr) -> KExpr {
+        let subject = KExpr::MakeAtom {
+            kind: boxed_expression(KExpr::BytesLiteral(K_BYTES.to_vec())),
+            payload: boxed_expression(payload),
+            equality: boxed_expression(KExpr::BytesLiteral(K_EQ.to_vec())),
+        };
+        let fields = KExpr::MakeTriple {
+            first: boxed_expression(KExpr::TermLiteral(
+                tag(0x01).expect("test list marker allocation"),
+            )),
+            second: boxed_expression(subject),
+            third: boxed_expression(KExpr::TermLiteral(
+                tag(0x00).expect("test list terminator allocation"),
+            )),
+        };
+        KExpr::MakeTriple {
+            first: boxed_expression(KExpr::TermLiteral(
+                tag(tag_value).expect("test result marker allocation"),
+            )),
+            second: boxed_expression(fields),
+            third: boxed_expression(KExpr::TermLiteral(
+                tag(0x00).expect("test record terminator allocation"),
+            )),
+        }
+    }
+
+    const PREDECESSOR_HASH_MARKER: [u8; 32] = [0xa5; 32];
+    const PREDECESSOR_REVISION_MARKER: [u8; 32] = [0x5a; 32];
+
+    fn dynamic_subject_bytes(template: &[u8]) -> KExpr {
+        let mut parts = Vec::new();
+        let mut start = 0_usize;
+        let mut hash_fields = 0_usize;
+        let mut revision_fields = 0_usize;
+        while start < template.len() {
+            let hash = template[start..]
+                .windows(PREDECESSOR_HASH_MARKER.len())
+                .position(|window| window == PREDECESSOR_HASH_MARKER)
+                .map(|offset| start + offset);
+            let revision = template[start..]
+                .windows(PREDECESSOR_REVISION_MARKER.len())
+                .position(|window| window == PREDECESSOR_REVISION_MARKER)
+                .map(|offset| start + offset);
+            let next = match (hash, revision) {
+                (Some(hash), Some(revision)) if hash <= revision => Some((hash, true)),
+                (Some(_), Some(revision)) => Some((revision, false)),
+                (Some(hash), None) => Some((hash, true)),
+                (None, Some(revision)) => Some((revision, false)),
+                (None, None) => None,
+            };
+            let Some((position, is_hash)) = next else {
+                parts.push(KExpr::BytesLiteral(template[start..].to_vec()));
+                break;
+            };
+            if position > start {
+                parts.push(KExpr::BytesLiteral(template[start..position].to_vec()));
+            }
+            if is_hash {
+                parts.push(build_base_field_payload(0));
+                hash_fields += 1;
+            } else {
+                parts.push(build_base_field_payload(1));
+                revision_fields += 1;
+            }
+            start = position + PREDECESSOR_HASH_MARKER.len();
+        }
+        assert_eq!(hash_fields, 2, "subject has lineage and base hash fields");
+        assert_eq!(revision_fields, 1, "subject has one base revision field");
+        KExpr::ConcatBytes(parts)
+    }
+
+    fn successor_package(
+        predecessor_hash: Hash32,
+        predecessor_revision: Id32,
+        compile_fuel: u64,
+        admission_fuel: u64,
+    ) -> super::super::CompilerPackage {
+        let compile = id(11);
+        let admit = id(12);
+        let change = id(13);
+        let mut declarations = vec![
+            NominalDeclaration::Seed {
+                domain: definition_domain(),
+                id: compile,
+            },
+            NominalDeclaration::Seed {
+                domain: definition_domain(),
+                id: admit,
+            },
+            NominalDeclaration::Seed {
+                domain: change_occurrence_domain(),
+                id: change,
+            },
+        ];
+        declarations.sort_by_key(nominal_parts);
+        let base = record_term(
+            0x11,
+            vec![
+                id_term(Id32(predecessor_hash.0)),
+                id_term(predecessor_revision),
+            ],
+        )
+        .expect("accepted predecessor base");
+        let build_request =
+            build_request_term_with_base(&declarations, base, change, compile_fuel, admission_fuel);
+        let empty_receipt = EvalReceipt {
+            format_version: 0x00,
+            expected_value_hash: Hash32([0; 32]),
+            expected_remaining_fuel: 0,
+            expected_observations_hash: Hash32([0; 32]),
+        };
+        super::super::CompilerPackage {
+            core_manifest: CoreManifest::canonical_v1(),
+            subject: CompilerSubject {
+                lineage: CompilerLineage::Successor {
+                    predecessor_locator: predecessor_hash,
+                    change_occurrence_id: change,
+                },
+                nominal_declarations: declarations,
+                interface: CompilerInterface {
+                    compile,
+                    admit_propose: admit,
+                },
+                program: vec![
+                    Definition {
+                        id: compile,
+                        arguments: vec![KSort::Term],
+                        result: KSort::Term,
+                        body: KExpr::Var(0),
+                    },
+                    Definition {
+                        id: admit,
+                        arguments: vec![KSort::Term],
+                        result: KSort::Term,
+                        body: KExpr::Var(0),
+                    },
+                ],
+                build_request,
+            },
+            evidence: CompilerEvidence::Successor {
+                compile_receipt: empty_receipt,
+                admission_receipt: empty_receipt,
+            },
+        }
+    }
+
+    fn predecessor_package(
+        compile_body: KExpr,
+        admission_body: KExpr,
+    ) -> super::super::CompilerPackage {
+        let compile = id(1);
+        let admit = id(2);
+        let change = id(3);
+        let mut declarations = vec![
+            NominalDeclaration::Seed {
+                domain: definition_domain(),
+                id: compile,
+            },
+            NominalDeclaration::Seed {
+                domain: definition_domain(),
+                id: admit,
+            },
+            NominalDeclaration::Seed {
+                domain: change_occurrence_domain(),
+                id: change,
+            },
+        ];
+        declarations.sort_by_key(nominal_parts);
+        let build_request = build_request_term(&declarations, change, 1, 1);
+        super::super::CompilerPackage {
+            core_manifest: CoreManifest::canonical_v1(),
+            subject: CompilerSubject {
+                lineage: CompilerLineage::Genesis,
+                nominal_declarations: declarations,
+                interface: CompilerInterface {
+                    compile,
+                    admit_propose: admit,
+                },
+                program: vec![
+                    Definition {
+                        id: compile,
+                        arguments: vec![KSort::Term],
+                        result: KSort::Term,
+                        body: compile_body,
+                    },
+                    Definition {
+                        id: admit,
+                        arguments: vec![KSort::Term],
+                        result: KSort::Term,
+                        body: admission_body,
+                    },
+                ],
+                build_request,
+            },
+            evidence: CompilerEvidence::Genesis,
+        }
     }
 
     fn genesis_package() -> super::super::CompilerPackage {
@@ -1840,6 +2140,137 @@ mod tests {
                 AuthorizationStage::GenesisAnchor,
                 AuthorizationCode::MissingAnchor,
             )
+        );
+    }
+
+    #[test]
+    fn replay_resource_exhaustion_is_not_an_evaluation_fault() {
+        assert!(replay_error_is_resource_exhausted(
+            &EvalError::ResourceExhausted
+        ));
+        assert!(replay_error_is_resource_exhausted(&EvalError::Static(
+            StaticError::ResourceExhausted,
+        )));
+        assert!(replay_error_is_resource_exhausted(&EvalError::Physical(
+            PhysicalError::ResourceExhausted,
+        )));
+        assert!(!replay_error_is_resource_exhausted(&EvalError::OutOfFuel));
+    }
+
+    #[test]
+    fn exact_predecessor_replay_authorizes_a_complete_successor() {
+        const COMPILE_FUEL: u64 = 10_000;
+        const ADMISSION_FUEL: u64 = 10_000;
+
+        let template = successor_package(
+            Hash32(PREDECESSOR_HASH_MARKER),
+            Id32(PREDECESSOR_REVISION_MARKER),
+            COMPILE_FUEL,
+            ADMISSION_FUEL,
+        );
+        let template_bytes = encode(&template).expect("successor template encodes");
+        let template = decode(&template_bytes).expect("successor template decodes");
+        let compile_body = result_expression(0x14, dynamic_subject_bytes(template.exact_subject()));
+        let admission_body = result_expression(0x17, admission_subject_payload());
+        let predecessor = predecessor_package(compile_body, admission_body);
+        let predecessor_bytes = encode(&predecessor).expect("predecessor encodes");
+        let predecessor_decoded = decode(&predecessor_bytes).expect("predecessor decodes");
+        let predecessor_hash = compiler_package_hash(&predecessor_bytes);
+        let predecessor_revision = compiler_revision_id(predecessor_decoded.exact_subject());
+
+        let mut candidate = successor_package(
+            predecessor_hash,
+            predecessor_revision,
+            COMPILE_FUEL,
+            ADMISSION_FUEL,
+        );
+        let candidate_without_receipts =
+            encode(&candidate).expect("candidate subject encodes before receipts");
+        let candidate_decoded =
+            decode(&candidate_without_receipts).expect("candidate subject decodes");
+        let evaluator = Evaluator::new(&predecessor.subject.program)
+            .expect("accepted predecessor program checks");
+        let compile_argument = KValue::Term(
+            candidate
+                .subject
+                .build_request
+                .try_clone_resource()
+                .expect("compile argument clones"),
+        );
+        let compile_evaluation = evaluator
+            .replay_entrypoint(
+                predecessor.subject.interface.compile,
+                &[compile_argument],
+                COMPILE_FUEL,
+            )
+            .expect("predecessor compiles the candidate subject");
+        assert_eq!(
+            result_bytes(&compile_evaluation.value, 0x14)
+                .expect("compile result shape checks")
+                .expect("compile result is a subject"),
+            candidate_decoded.exact_subject(),
+        );
+        let compile_observations = compile_evaluation
+            .observations
+            .try_to_term()
+            .expect("compile observations canonicalize");
+        let compile_receipt = evaluator
+            .build_receipt(
+                predecessor.subject.interface.compile,
+                &[KValue::Term(
+                    candidate
+                        .subject
+                        .build_request
+                        .try_clone_resource()
+                        .expect("receipt argument clones"),
+                )],
+                COMPILE_FUEL,
+            )
+            .expect("compile receipt builds");
+        let admission_argument = admission_request_term(
+            &candidate.subject.build_request,
+            candidate_decoded.exact_subject(),
+            &compile_observations,
+        )
+        .expect("admission argument builds");
+        let admission_receipt = evaluator
+            .build_receipt(
+                predecessor.subject.interface.admit_propose,
+                &[KValue::Term(admission_argument)],
+                ADMISSION_FUEL,
+            )
+            .expect("admission receipt builds");
+        candidate.evidence = CompilerEvidence::Successor {
+            compile_receipt,
+            admission_receipt,
+        };
+
+        let candidate_bytes = encode(&candidate).expect("complete successor encodes");
+        let final_candidate = decode(&candidate_bytes).expect("complete successor decodes");
+        assert_eq!(
+            final_candidate.exact_subject(),
+            candidate_decoded.exact_subject(),
+            "receipt attachment cannot alter the compiled subject",
+        );
+        let acceptance = AcceptedExact::from_outer_admission(&predecessor_bytes);
+        let request = SuccessorAuthorizationRequest {
+            predecessor: PredecessorInput::Accepted {
+                exact_bytes: &predecessor_bytes,
+                acceptance,
+                offered_bytes: &predecessor_bytes,
+            },
+            build_request: &candidate.subject.build_request,
+            evidence: &candidate.evidence,
+            final_identity: FinalPackageIdentityInput {
+                package_hash: compiler_package_hash(&candidate_bytes),
+                exact_package_bytes: &candidate_bytes,
+            },
+        };
+
+        assert_eq!(
+            authorize_successor(&candidate_bytes, request)
+                .expect("complete successor authorization checks"),
+            AuthorizationVerdict::Authorized(candidate_bytes),
         );
     }
 

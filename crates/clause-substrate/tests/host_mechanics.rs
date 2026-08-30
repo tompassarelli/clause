@@ -5,10 +5,10 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::OnceLock;
 
-use clause_substrate::artifacts::{ArtifactStore, CompilerPackageArtifact};
+use clause_substrate::artifacts::{ArtifactStore, CompilerArtifactError, CompilerPackageArtifact};
 use clause_substrate::compiler_package_v3::{
     CompilerEvidence, CompilerInterface, CompilerLineage, CompilerPackage, CompilerSubject,
-    CoreManifest, Definition, Id32, KExpr, KSort, Term, encode,
+    CoreManifest, Definition, Id32, KExpr, KSort, Term, compiler_package_hash, encode,
 };
 use quote::ToTokens;
 use sha2::{Digest, Sha256};
@@ -86,6 +86,26 @@ const ROOTS: &[RootContract] = &[
             "artifacts::CompilerArtifactError",
         ],
     ),
+    RootContract::new(
+        "compiler_package_v3::checker::authorize_genesis",
+        Mechanic::AuthorizationStep,
+        &[
+            "compiler_package_v3::types::DecodedCompilerPackage",
+            "compiler_package_v3::checker::GenesisAuthorizationRequest",
+            "compiler_package_v3::checker::AuthorizationVerdict",
+            "compiler_package_v3::checker::AuthorizationCheckError",
+        ],
+    ),
+    RootContract::new(
+        "compiler_package_v3::checker::authorize_successor",
+        Mechanic::AuthorizationStep,
+        &[
+            "compiler_package_v3::types::DecodedCompilerPackage",
+            "compiler_package_v3::checker::SuccessorAuthorizationRequest",
+            "compiler_package_v3::checker::AuthorizationVerdict",
+            "compiler_package_v3::checker::AuthorizationCheckError",
+        ],
+    ),
 ];
 
 const CLOSED_WIRE_CODEC_FUNCTIONS: &[&str] = &[
@@ -125,6 +145,8 @@ const CLOSED_WIRE_CODEC_FUNCTIONS: &[&str] = &[
     "compiler_package_v3::codec::Encoder::u8",
     "compiler_package_v3::codec::canonical_term_bytes",
     "compiler_package_v3::codec::canonical_value_bytes",
+    "compiler_package_v3::codec::canonical_evidence_bytes",
+    "compiler_package_v3::codec::canonical_subject_bytes",
     "compiler_package_v3::codec::decode_box",
     "compiler_package_v3::codec::decode_core_manifest_value",
     "compiler_package_v3::codec::decode_definition",
@@ -140,6 +162,7 @@ const CLOSED_WIRE_CODEC_FUNCTIONS: &[&str] = &[
     "compiler_package_v3::codec::decode_subject_value",
     "compiler_package_v3::codec::decode_term",
     "compiler_package_v3::codec::encode_core_manifest_value_with_budget",
+    "compiler_package_v3::codec::encode_core_manifest_value",
     "compiler_package_v3::codec::encode_definition",
     "compiler_package_v3::codec::encode_evidence_value",
     "compiler_package_v3::codec::encode_expr",
@@ -148,6 +171,7 @@ const CLOSED_WIRE_CODEC_FUNCTIONS: &[&str] = &[
     "compiler_package_v3::codec::encode_nominal_declaration",
     "compiler_package_v3::codec::encode_nominal_ref",
     "compiler_package_v3::codec::encode_physical_profile",
+    "compiler_package_v3::codec::encode_physical_profile_value",
     "compiler_package_v3::codec::encode_receipt",
     "compiler_package_v3::codec::encode_rule_signature",
     "compiler_package_v3::codec::encode_sort",
@@ -170,11 +194,32 @@ const CLOSED_WIRE_CODEC_FUNCTIONS: &[&str] = &[
 
 const CLOSED_CORE_ABI_FUNCTIONS: &[&str] = &[
     "compiler_package_v3::manifest::compiler_package_hash",
+    "compiler_package_v3::manifest::CoreManifest::canonical_v1",
+    "compiler_package_v3::manifest::CoreManifest::try_canonical_v1",
+    "compiler_package_v3::manifest::PhysicalProfile::try_sealed_sha256",
+    "compiler_package_v3::manifest::clauses",
+    "compiler_package_v3::manifest::copy_bytes",
+    "compiler_package_v3::manifest::core_contract_id",
     "compiler_package_v3::manifest::domain_hash",
     "compiler_package_v3::manifest::eval_receipt_observations_hash",
     "compiler_package_v3::manifest::eval_receipt_value_hash",
+    "compiler_package_v3::manifest::exact_core_manifest_bytes",
+    "compiler_package_v3::manifest::exact_physical_profile_bytes",
+    "compiler_package_v3::manifest::physical_profile_id",
+    "compiler_package_v3::manifest::PhysicalProfile::sealed_sha256",
+    "compiler_package_v3::manifest::named",
+    "compiler_package_v3::manifest::rule",
+    "compiler_package_v3::manifest::reserve",
     "compiler_package_v3::manifest::sha256_operation_id",
+    "compiler_package_v3::manifest::source_artifact_id",
+    "compiler_package_v3::manifest::singleton",
+    "compiler_package_v3::manifest::tag_range",
     "compiler_package_v3::types::DecodedCompilerPackage::new",
+    "compiler_package_v3::types::DecodedCompilerPackage::exact_input",
+    "compiler_package_v3::types::DecodedCompilerPackage::exact_core_manifest",
+    "compiler_package_v3::types::DecodedCompilerPackage::exact_evidence",
+    "compiler_package_v3::types::DecodedCompilerPackage::exact_subject",
+    "compiler_package_v3::types::DecodedCompilerPackage::package",
     "compiler_package_v3::types::FallibleBox::into_inner",
     "compiler_package_v3::types::FallibleBox::try_new",
     "compiler_package_v3::types::Hash32::as_bytes",
@@ -229,6 +274,8 @@ const CLOSED_KERNEL_STEP_FUNCTIONS: &[&str] = &[
     "evaluator::EvaluationMachine::reserve_tasks",
     "evaluator::EvaluationMachine::run",
     "evaluator::EvaluationMachine::take_results",
+    "evaluator::LivenessWorkBudget::charge",
+    "evaluator::LivenessWorkBudget::new",
     "evaluator::Evaluator::check_physical_profile",
     "evaluator::Evaluator::infer",
     "evaluator::Evaluator::new_unprofiled",
@@ -242,6 +289,7 @@ const CLOSED_KERNEL_STEP_FUNCTIONS: &[&str] = &[
     "evaluator::RuntimeByteStore::new",
     "evaluator::RuntimeByteStore::owned",
     "evaluator::RuntimeByteStore::release",
+    "evaluator::RuntimeByteStore::replaced_owned_bytes",
     "evaluator::RuntimeByteStore::retain",
     "evaluator::RuntimeByteStore::split_first",
     "evaluator::RuntimeByteStore::try_copy",
@@ -263,6 +311,7 @@ const CLOSED_KERNEL_STEP_FUNCTIONS: &[&str] = &[
     "evaluator::RuntimeEnvironments::locate",
     "evaluator::RuntimeEnvironments::mark_live",
     "evaluator::RuntimeEnvironments::new",
+    "evaluator::RuntimeEnvironments::reserve_environment_pass",
     "evaluator::RuntimeEnvironments::release",
     "evaluator::RuntimeEnvironments::retain",
     "evaluator::RuntimeEnvironments::try_clone_value",
@@ -276,6 +325,7 @@ const CLOSED_KERNEL_STEP_FUNCTIONS: &[&str] = &[
     "evaluator::SortValues::get",
     "evaluator::SortValues::len",
     "evaluator::common_sort",
+    "evaluator::checked_concat_length",
     "evaluator::expect_runtime_bytes",
     "evaluator::expect_runtime_term",
     "evaluator::mark_live_expression",
@@ -292,6 +342,68 @@ const CLOSED_KERNEL_STEP_FUNCTIONS: &[&str] = &[
 ];
 
 const CLOSED_RECEIPT_STEP_FUNCTIONS: &[&str] = &["evaluator::value_literal"];
+
+const CLOSED_AUTHORIZATION_STEP_FUNCTIONS: &[&str] = &[
+    "compiler_package_v3::checker::OwnerAnchorWitness::observation",
+    "compiler_package_v3::checker::admission_replay",
+    "compiler_package_v3::checker::admission_request_term",
+    "compiler_package_v3::checker::allocations_are_acyclic",
+    "compiler_package_v3::checker::as_bytes",
+    "compiler_package_v3::checker::as_hash",
+    "compiler_package_v3::checker::as_id",
+    "compiler_package_v3::checker::as_tag",
+    "compiler_package_v3::checker::as_u64",
+    "compiler_package_v3::checker::atom",
+    "compiler_package_v3::checker::build_failure",
+    "compiler_package_v3::checker::bytes_term",
+    "compiler_package_v3::checker::change_occurrence_domain",
+    "compiler_package_v3::checker::common_failure",
+    "compiler_package_v3::checker::compile_replay",
+    "compiler_package_v3::checker::compiler_revision_id",
+    "compiler_package_v3::checker::copy_authorized",
+    "compiler_package_v3::checker::core_failure",
+    "compiler_package_v3::checker::decode_base",
+    "compiler_package_v3::checker::decode_build_request",
+    "compiler_package_v3::checker::decode_identity_plan",
+    "compiler_package_v3::checker::decode_nominal_ref",
+    "compiler_package_v3::checker::decode_ref_list",
+    "compiler_package_v3::checker::decode_ref_wrapper",
+    "compiler_package_v3::checker::decode_source_unit",
+    "compiler_package_v3::checker::definition_domain",
+    "compiler_package_v3::checker::deny",
+    "compiler_package_v3::checker::exactly",
+    "compiler_package_v3::checker::expression_nominal_references_valid",
+    "compiler_package_v3::checker::failure",
+    "compiler_package_v3::checker::final_failure",
+    "compiler_package_v3::checker::find_nominal",
+    "compiler_package_v3::checker::find_nominal_index",
+    "compiler_package_v3::checker::list_items",
+    "compiler_package_v3::checker::list_term",
+    "compiler_package_v3::checker::map_encode",
+    "compiler_package_v3::checker::new_nominal_id",
+    "compiler_package_v3::checker::nominal_domain",
+    "compiler_package_v3::checker::nominal_exists",
+    "compiler_package_v3::checker::nominal_parts",
+    "compiler_package_v3::checker::nominal_reference",
+    "compiler_package_v3::checker::nominal_table_valid",
+    "compiler_package_v3::checker::package_is_exactly_canonical",
+    "compiler_package_v3::checker::plan_valid",
+    "compiler_package_v3::checker::predecessor_evaluator",
+    "compiler_package_v3::checker::program_strictly_sorted",
+    "compiler_package_v3::checker::receipt_shape_valid",
+    "compiler_package_v3::checker::record_fields",
+    "compiler_package_v3::checker::record_term",
+    "compiler_package_v3::checker::references_strictly_sorted",
+    "compiler_package_v3::checker::replay_entrypoint",
+    "compiler_package_v3::checker::replay_error_is_resource_exhausted",
+    "compiler_package_v3::checker::resolve_predecessor",
+    "compiler_package_v3::checker::resource",
+    "compiler_package_v3::checker::result_bytes",
+    "compiler_package_v3::checker::source_unit_domain",
+    "compiler_package_v3::checker::tag",
+    "compiler_package_v3::checker::term_nominal_references_valid",
+    "compiler_package_v3::checker::wire_reference",
+];
 
 const CLOSED_PHYSICAL_DISPATCH_FUNCTIONS: &[&str] = &[
     "physical::SealedPhysical::new",
@@ -418,6 +530,85 @@ const CLOSED_ENUMS: &[(&str, &[&str])] = &[
         &["Read", "BuildFixed", "Sequence", "SequenceItem"],
     ),
     (
+        "compiler_package_v3::checker::AuthorizationStage",
+        &[
+            "CoreManifest",
+            "CoreWellFormedness",
+            "GenesisAnchor",
+            "ExactPredecessor",
+            "BuildRequest",
+            "CompileEvaluation",
+            "AdmissionEvaluation",
+            "EvidenceAttachment",
+            "FinalAuthorization",
+        ],
+    ),
+    (
+        "compiler_package_v3::checker::AuthorizationCode",
+        &[
+            "ManifestMismatch",
+            "SubjectStructure",
+            "NominalTable",
+            "DefinitionOrderOrDuplicate",
+            "EntrypointResolution",
+            "EntrypointAliased",
+            "EntrypointSignature",
+            "StaticRule",
+            "PhysicalRequestSignature",
+            "GenesisWrongLineage",
+            "GenesisEvidenceNotEmpty",
+            "MissingAnchor",
+            "AnchorBytesMismatch",
+            "SuccessorWrongLineage",
+            "PredecessorNotAccepted",
+            "CandidateOrSelfPredecessor",
+            "LocatorMismatch",
+            "PredecessorBytesMismatch",
+            "BuildRequestShape",
+            "DetachedBuildRequest",
+            "BaseMismatch",
+            "CoreContractMismatch",
+            "PhysicalProfileMismatch",
+            "SourceOrderOrDuplicate",
+            "SourceArtifactMismatch",
+            "IdentityPlanMismatch",
+            "ChangeOccurrenceMismatch",
+            "PhysicalInputsNonempty",
+            "FuelInvalid",
+            "EvidenceShapeMismatch",
+            "ReceiptValueMismatch",
+            "ReceiptFuelMismatch",
+            "EvaluationFault",
+            "UnexpectedResult",
+            "SubjectMismatch",
+            "ObservationMismatch",
+            "EvidenceDetached",
+            "SubjectChangedAfterCompile",
+            "PackageChangedAfterEvidence",
+            "FinalIdentityMismatch",
+        ],
+    ),
+    (
+        "compiler_package_v3::checker::AuthorizationVerdict",
+        &["Authorized", "Unauthorized"],
+    ),
+    (
+        "compiler_package_v3::checker::AuthorizationCheckError",
+        &["Decode", "ResourceExhausted"],
+    ),
+    (
+        "compiler_package_v3::checker::OwnerAnchorInput",
+        &["Missing", "Supplied"],
+    ),
+    (
+        "compiler_package_v3::checker::PredecessorInput",
+        &["Absent", "Accepted"],
+    ),
+    (
+        "compiler_package_v3::checker::BaseView",
+        &["Genesis", "Accepted"],
+    ),
+    (
         "evaluator::SortValues",
         &["Borrowed", "One", "Two", "Three"],
     ),
@@ -504,6 +695,25 @@ const CONSTITUTIONAL_NOMINALS: &[&str] = &[
     "compiler_package_v3::types::DecodeRejection",
     "compiler_package_v3::types::DecodeFailure",
     "compiler_package_v3::types::EncodeError",
+    "compiler_package_v3::checker::AuthorizationStage",
+    "compiler_package_v3::checker::AuthorizationCode",
+    "compiler_package_v3::checker::AuthorizationFailure",
+    "compiler_package_v3::checker::AuthorizationVerdict",
+    "compiler_package_v3::checker::AuthorizationCheckError",
+    "compiler_package_v3::checker::FinalPackageIdentityInput",
+    "compiler_package_v3::checker::OwnerAnchorObservation",
+    "compiler_package_v3::checker::OwnerAnchorWitness",
+    "compiler_package_v3::checker::OwnerAnchorInput",
+    "compiler_package_v3::checker::GenesisAuthorizationRequest",
+    "compiler_package_v3::checker::AcceptedExact",
+    "compiler_package_v3::checker::PredecessorInput",
+    "compiler_package_v3::checker::SuccessorAuthorizationRequest",
+    "compiler_package_v3::checker::NominalRefView",
+    "compiler_package_v3::checker::BaseView",
+    "compiler_package_v3::checker::SourceUnitView",
+    "compiler_package_v3::checker::IdentityPlanView",
+    "compiler_package_v3::checker::BuildRequestView",
+    "compiler_package_v3::checker::AcceptedPredecessor",
     "evaluator::StaticError",
     "evaluator::EvalError",
     "evaluator::Evaluation",
@@ -529,6 +739,7 @@ const CONSTITUTIONAL_NOMINALS: &[&str] = &[
     "evaluator::EvalTask",
     "evaluator::LiveExpression",
     "evaluator::LiveScanFrame",
+    "evaluator::LivenessWorkBudget",
     "evaluator::RuntimeResult",
     "evaluator::MachineResult",
     "evaluator::EvaluationMachine",
@@ -598,6 +809,7 @@ fn compiler_mir_proves_reachability_information_flow_and_fixed_dispatch() {
         Mechanic::DefinitionTable,
         Mechanic::KernelStep,
         Mechanic::ReceiptStep,
+        Mechanic::AuthorizationStep,
         Mechanic::PhysicalDispatch,
     ] {
         assert!(
@@ -651,6 +863,19 @@ fn artifacts_are_exact_deduplicated_and_candidate_only() {
         candidate.candidate().package().evidence,
         CompilerEvidence::Genesis
     ));
+}
+
+#[test]
+fn malformed_compiler_package_ingestion_does_not_mutate_the_store() {
+    let malformed = b"not a CLCP-v3 package";
+    let malformed_id = compiler_package_hash(malformed);
+    let mut store = ArtifactStore::new();
+
+    assert!(matches!(
+        CompilerPackageArtifact::decode_and_intern(&mut store, malformed),
+        Err(CompilerArtifactError::Decode(_))
+    ));
+    assert!(store.get(malformed_id).is_none());
 }
 
 #[derive(Clone, Debug)]
@@ -850,6 +1075,9 @@ impl SourceInventory {
             .iter()
             .filter(|function| function.name == name)
             .collect();
+        if source_ref.is_none() && top_level_path_segments(display).len() == 1 {
+            candidates.retain(|function| function.owner.is_none());
+        }
         if let Some((path, line, _)) = &source_ref {
             candidates.retain(|function| {
                 function.path == *path
@@ -1990,6 +2218,7 @@ enum Mechanic {
     DefinitionTable,
     KernelStep,
     ReceiptStep,
+    AuthorizationStep,
     PhysicalDispatch,
 }
 
@@ -2002,13 +2231,14 @@ impl Mechanic {
             Self::DefinitionTable => "definition-table",
             Self::KernelStep => "kernel-step",
             Self::ReceiptStep => "receipt-step",
+            Self::AuthorizationStep => "authorization-step",
             Self::PhysicalDispatch => "physical-dispatch",
         }
     }
 
     const fn allowed_outcomes(self) -> &'static [&'static str] {
         match self {
-            Self::WireCodec | Self::CoreAbi | Self::ReceiptStep => {
+            Self::WireCodec | Self::CoreAbi | Self::ReceiptStep | Self::AuthorizationStep => {
                 &["canonical-data", "fixed-error"]
             }
             Self::ByteMachine | Self::KernelStep => {
@@ -2749,6 +2979,8 @@ fn closed_source_mechanic(source: &str) -> Option<Mechanic> {
         Some(Mechanic::KernelStep)
     } else if CLOSED_RECEIPT_STEP_FUNCTIONS.contains(&source) {
         Some(Mechanic::ReceiptStep)
+    } else if CLOSED_AUTHORIZATION_STEP_FUNCTIONS.contains(&source) {
+        Some(Mechanic::AuthorizationStep)
     } else if CLOSED_PHYSICAL_DISPATCH_FUNCTIONS.contains(&source) {
         Some(Mechanic::PhysicalDispatch)
     } else {
@@ -2896,6 +3128,7 @@ fn is_primitive_contract(target: &str) -> bool {
         target,
         "core::bool::<impl bool>::then_some"
             | "core::num::<impl u8>::is_ascii_whitespace"
+            | "core::num::<impl u8>::checked_sub"
             | "core::num::<impl u32>::from_be_bytes"
             | "core::num::<impl u32>::to_be_bytes"
             | "core::num::<impl u64>::checked_sub"
@@ -2996,21 +3229,55 @@ fn is_ufcs_platform_contract(target: &str) -> bool {
     {
         return nominal_has_arity(contract.receiver, "Vec", 1);
     }
-    if trait_contract.path == "PartialEq"
-        && trait_contract.arguments.is_empty()
-        && method.generic_arguments.is_empty()
+    if trait_contract.path == "Extend"
+        && trait_contract.arguments.as_slice() == ["&types::KExpr"]
+        && nominal_has_exact_argument(contract.receiver, "Vec", "&types::KExpr")
+        && method.name == "extend"
+        && method.generic_arguments.as_slice() == ["Rev<std::slice::Iter<'_, types::KExpr>>"]
     {
-        return (matches!(method.name, "eq" | "ne")
-            && is_immutable_u8_slice_reference(contract.receiver))
-            || (method.name == "eq" && nominal_has_exact_argument(contract.receiver, "Vec", "u8"))
-            || (contract.receiver == "types::DecodeCode" && method.name == "eq")
-            || (contract.receiver == "types::Id32" && matches!(method.name, "eq" | "ne"))
-            || (contract.receiver == "types::KSort" && method.name == "eq");
+        return true;
+    }
+    if trait_contract.path == "PartialEq" && method.generic_arguments.is_empty() {
+        let homogeneous = trait_contract.arguments.is_empty();
+        let byte_vec_slice = nominal_has_exact_argument(contract.receiver, "Vec", "u8")
+            && trait_contract.arguments.as_slice() == ["&[u8]"];
+        let byte_slice_vec = is_immutable_u8_slice_reference(contract.receiver)
+            && trait_contract.arguments.as_slice() == ["Vec<u8>"];
+        let ksort_slice_array = contract.receiver == "&[types::KSort]"
+            && trait_contract.arguments.as_slice() == ["[types::KSort; 1]"];
+        return matches!(method.name, "eq" | "ne")
+            && ((homogeneous
+                && (is_immutable_u8_slice_reference(contract.receiver)
+                    || nominal_has_exact_argument(contract.receiver, "Vec", "u8")))
+                || byte_vec_slice
+                || byte_slice_vec
+                || ksort_slice_array
+                || (homogeneous
+                    && receiver_is_exact_nominal(
+                        contract.receiver,
+                        &[
+                            "types::CompilerEvidence",
+                            "types::CoreManifest",
+                            "types::Hash32",
+                            "types::Id32",
+                            "types::KSort",
+                            "types::NominalDeclaration",
+                            "types::Term",
+                            "Option<u8>",
+                            "(types::Id32, types::Id32)",
+                        ],
+                    ))
+                || (homogeneous
+                    && contract.receiver == "types::DecodeCode"
+                    && method.name == "eq"));
     }
     if trait_contract.path == "PartialOrd"
         && trait_contract.arguments.is_empty()
-        && contract.receiver == "types::Id32"
-        && method.name == "gt"
+        && matches!(
+            contract.receiver,
+            "types::Id32" | "(types::Id32, types::Id32)"
+        )
+        && matches!(method.name, "gt" | "ge" | "lt" | "le")
         && method.generic_arguments.is_empty()
     {
         return true;
@@ -3031,13 +3298,46 @@ fn is_ufcs_platform_contract(target: &str) -> bool {
     {
         return true;
     }
+    if trait_contract.path == "Clone"
+        && trait_contract.arguments.is_empty()
+        && nominal_has_exact_argument(contract.receiver, "std::ops::Range", "usize")
+        && method.name == "clone"
+        && method.generic_arguments.is_empty()
+    {
+        return true;
+    }
+    if trait_contract.path == "Index"
+        && matches!(
+            trait_contract.arguments.as_slice(),
+            ["std::ops::Range<usize>"] | ["usize"]
+        )
+        && nominal_has_exact_argument(contract.receiver, "Vec", "u8")
+        && method.name == "index"
+        && method.generic_arguments.is_empty()
+    {
+        return true;
+    }
+    if trait_contract.path == "IndexMut"
+        && method.name == "index_mut"
+        && method.generic_arguments.is_empty()
+    {
+        return (trait_contract.arguments.as_slice() == ["usize"]
+            && nominal_has_exact_argument(contract.receiver, "Vec", "u8"))
+            || (matches!(
+                trait_contract.arguments.as_slice(),
+                ["RangeTo<usize>"] | ["std::ops::RangeFrom<usize>"]
+            ) && contract.receiver == "[u8; 64]");
+    }
     if trait_contract.path == "TryInto"
         && trait_contract.arguments.len() == 1
-        && is_immutable_u8_slice_reference(contract.receiver)
         && method.name == "try_into"
         && method.generic_arguments.is_empty()
     {
-        return is_u8_array(trait_contract.arguments[0], &[4, 8, 32]);
+        return (is_immutable_u8_slice_reference(contract.receiver)
+            && is_u8_array(trait_contract.arguments[0], &[4, 8, 32]))
+            || (nominal_has_exact_argument(contract.receiver, "Vec", "&types::Term")
+                && trait_contract.arguments[0].starts_with("[&types::Term; ")
+                && trait_contract.arguments[0].ends_with(']'));
     }
     if trait_contract.path == "Into"
         && trait_contract.arguments.len() == 1
@@ -3054,8 +3354,22 @@ fn is_ufcs_platform_contract(target: &str) -> bool {
     {
         return matches!(
             (contract.receiver, trait_contract.arguments[0]),
-            ("u32", "usize") | ("u64", "usize") | ("usize", "u32")
+            ("u32", "usize")
+                | ("u64", "usize")
+                | ("usize", "u32")
+                | (
+                    "&[types::NominalDeclaration; 2]",
+                    "&[types::NominalDeclaration]"
+                )
         );
+    }
+    if trait_contract.path == "From"
+        && trait_contract.arguments.as_slice() == ["u8"]
+        && contract.receiver == "usize"
+        && method.name == "from"
+        && method.generic_arguments.is_empty()
+    {
+        return true;
     }
     false
 }
@@ -3089,7 +3403,7 @@ fn is_inherent_platform_contract(target: &str) -> bool {
         && generic_segment_arity(segments[1]) == Some(1)
         && matches!(
             segments[2],
-            "as_ref" | "copied" | "expect" | "is_none" | "take"
+            "as_ref" | "copied" | "expect" | "is_none" | "is_some" | "take"
         )
     {
         return true;
@@ -3133,6 +3447,7 @@ fn is_inherent_platform_contract(target: &str) -> bool {
                 | "new"
                 | "pop"
                 | "push"
+                | "resize"
                 | "truncate"
                 | "try_reserve"
                 | "try_reserve_exact"
@@ -3172,13 +3487,27 @@ fn is_inherent_platform_contract(target: &str) -> bool {
         return (segments.len() == 4
             && matches!(
                 segments[3],
-                "first" | "iter" | "last" | "last_mut" | "reverse" | "windows"
+                "contains"
+                    | "copy_from_slice"
+                    | "first"
+                    | "iter"
+                    | "last"
+                    | "last_mut"
+                    | "reverse"
+                    | "windows"
             ))
             || (segments.len() == 5
                 && matches!(segments[3], "get" | "get_mut")
                 && generic_segment_arity(segments[4]) == Some(1));
     }
     if segments.as_slice() == ["core", "str", "<impl str>", "as_bytes"] {
+        return true;
+    }
+    if segments.len() == 5
+        && segments[..3] == ["std", "ops", "RangeInclusive"]
+        && generic_segment_arguments(segments[3]).is_some_and(|arguments| arguments == ["u8"])
+        && segments[4] == "new"
+    {
         return true;
     }
     segments.len() == 6
@@ -3366,16 +3695,20 @@ fn is_into_iterator_receiver(value: &str) -> bool {
     }
     nominal_has_arity(value, "Enumerate", 1)
         || nominal_has_arity(value, "Rev", 1)
+        || nominal_has_arity(value, "Windows", 2)
         || nominal_has_arity(value, "Vec", 1)
         || nominal_has_arity(value, "Zip", 2)
         || nominal_has_arity(value, "std::ops::Range", 1)
+        || nominal_has_exact_argument(value, "std::ops::RangeInclusive", "u8")
 }
 
 fn is_iterator_receiver(value: &str) -> bool {
     nominal_has_arity(value, "Enumerate", 1)
         || nominal_has_arity(value, "Rev", 1)
+        || nominal_has_arity(value, "Windows", 2)
         || nominal_has_arity(value, "Zip", 2)
         || nominal_has_arity(value, "std::ops::Range", 1)
+        || nominal_has_exact_argument(value, "std::ops::RangeInclusive", "u8")
         || nominal_has_arity(value, "std::slice::Iter", 2)
         || nominal_has_arity(value, "std::slice::IterMut", 2)
         || nominal_has_arity(value, "std::vec::IntoIter", 1)
@@ -3391,6 +3724,12 @@ fn reference_contract(value: &str) -> Option<(bool, &str)> {
         value = value.strip_prefix("mut ")?.trim_start();
     }
     (!value.is_empty()).then_some((mutable, value))
+}
+
+fn receiver_is_exact_nominal(value: &str, candidates: &[&str]) -> bool {
+    candidates.contains(&value)
+        || reference_contract(value)
+            .is_some_and(|(mutable, referent)| !mutable && candidates.contains(&referent))
 }
 
 fn is_slice_type(value: &str) -> bool {
@@ -4564,6 +4903,7 @@ fn is_fixed_error_enum(nominal: &str) -> bool {
             | "compiler_package_v3::types::EncodeError"
             | "evaluator::StaticError"
             | "evaluator::EvalError"
+            | "compiler_package_v3::checker::AuthorizationCheckError"
             | "physical::PhysicalError"
     )
 }
@@ -4709,6 +5049,9 @@ fn terminal_name(value: &str) -> String {
 }
 
 fn target_receiver(value: &str) -> Option<String> {
+    if let Some((_, receiver, _)) = inherent_impl_target(value) {
+        return Some(receiver);
+    }
     let segments: Vec<_> = top_level_path_segments(value)
         .into_iter()
         .map(str::trim)
@@ -4730,12 +5073,27 @@ fn target_source_suffix(value: &str) -> Option<String> {
     if value.trim_start().starts_with('<') {
         return None;
     }
+    if let Some((module, receiver, method)) = inherent_impl_target(value) {
+        return Some(format!("{module}::{receiver}::{method}"));
+    }
     let segments: Vec<_> = top_level_path_segments(value)
         .into_iter()
         .map(str::trim)
         .filter(|segment| !is_standalone_generic_segment(segment))
         .collect();
     (segments.len() > 1).then(|| segments.join("::"))
+}
+
+fn inherent_impl_target(value: &str) -> Option<(String, String, String)> {
+    let (module, rest) = value.trim().split_once("::<impl ")?;
+    let (owner, method) = rest.split_once(">::")?;
+    let receiver = owner
+        .rsplit("::")
+        .next()?
+        .trim_matches(|character: char| !character.is_ascii_alphanumeric() && character != '_');
+    let method = terminal_name(method);
+    (!module.is_empty() && !receiver.is_empty() && !method.is_empty())
+        .then(|| (module.to_owned(), receiver.to_owned(), method))
 }
 
 fn is_standalone_generic_segment(segment: &str) -> bool {

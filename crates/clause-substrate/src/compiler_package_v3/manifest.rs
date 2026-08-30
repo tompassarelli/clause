@@ -1,3 +1,5 @@
+use std::collections::TryReserveError;
+
 use sha2::{Digest, Sha256};
 
 use super::codec::{
@@ -6,36 +8,89 @@ use super::codec::{
 };
 use super::{
     CoreManifest, EncodeError, Hash32, Id32, KSort, KValue, NamedSignature, PhysicalOperation,
-    PhysicalProfile, RuleSignature, Term,
+    PhysicalProfile, ResourceLimit, RuleSignature, Term, try_copy_bytes,
 };
 
-fn named(tag: u8, signature: &str) -> NamedSignature {
-    NamedSignature {
-        tag,
-        signature: signature.as_bytes().to_vec(),
+fn reserve(result: Result<(), TryReserveError>) -> Result<(), EncodeError> {
+    match result {
+        Ok(()) => Ok(()),
+        Err(_) => Err(EncodeError::ResourceExhausted),
     }
 }
 
-fn rule(tag: u8, premise_policy: u8, clause: &str) -> RuleSignature {
-    RuleSignature {
+macro_rules! try_results_vec {
+    ($($value:expr),* $(,)?) => {{
+        let mut values = Vec::new();
+        let count = <[()]>::len(&[$(try_results_vec!(@unit $value)),*]);
+        reserve(values.try_reserve_exact(count))?;
+        $(values.push($value?);)*
+        values
+    }};
+    (@unit $value:expr) => {{
+        let _ = stringify!($value);
+    }};
+}
+
+fn copy_bytes(value: &[u8]) -> Result<Vec<u8>, EncodeError> {
+    match try_copy_bytes(value) {
+        Ok(bytes) => Ok(bytes),
+        Err(ResourceLimit) => Err(EncodeError::ResourceExhausted),
+    }
+}
+
+fn named(tag: u8, signature: &str) -> Result<NamedSignature, EncodeError> {
+    Ok(NamedSignature {
+        tag,
+        signature: copy_bytes(signature.as_bytes())?,
+    })
+}
+
+fn rule(tag: u8, premise_policy: u8, clause: &str) -> Result<RuleSignature, EncodeError> {
+    Ok(RuleSignature {
         tag,
         premise_policy,
-        clause: clause.as_bytes().to_vec(),
-    }
+        clause: copy_bytes(clause.as_bytes())?,
+    })
 }
 
-fn clauses(values: &[&str]) -> Vec<Vec<u8>> {
-    values
-        .iter()
-        .map(|value| value.as_bytes().to_vec())
-        .collect()
+fn clauses(values: &[&str]) -> Result<Vec<Vec<u8>>, EncodeError> {
+    let mut clauses = Vec::new();
+    reserve(clauses.try_reserve_exact(values.len()))?;
+    for value in values {
+        clauses.push(copy_bytes(value.as_bytes())?);
+    }
+    Ok(clauses)
+}
+
+fn tag_range(first: u8, last: u8) -> Result<Vec<u8>, EncodeError> {
+    let width = last
+        .checked_sub(first)
+        .and_then(|width| usize::from(width).checked_add(1))
+        .ok_or(EncodeError::ResourceExhausted)?;
+    let mut tags = Vec::new();
+    reserve(tags.try_reserve_exact(width))?;
+    for tag in first..=last {
+        tags.push(tag);
+    }
+    Ok(tags)
+}
+
+fn singleton<T>(value: T) -> Result<Vec<T>, EncodeError> {
+    let mut values = Vec::new();
+    reserve(values.try_reserve_exact(1))?;
+    values.push(value);
+    Ok(values)
 }
 
 impl CoreManifest {
     /// The one exact `CoreManifestV1` value fixed by the accepted P1 contract.
     #[must_use]
     pub fn canonical_v1() -> Self {
-        let expression_forms = vec![
+        Self::try_canonical_v1().expect("fixed CoreManifestV1 allocation")
+    }
+
+    pub(crate) fn try_canonical_v1() -> Result<Self, EncodeError> {
+        let expression_forms = try_results_vec![
             named(0x00, "BytesLiteral(value:Blob)->Bytes"),
             named(0x01, "TermLiteral(value:Term)->Term"),
             named(0x02, "Var(index:U32)->EnvironmentSort"),
@@ -67,7 +122,7 @@ impl CoreManifest {
                 "Request(operation:Id32,arguments:PhysicalArguments)->PhysicalResult",
             ),
         ];
-        let abi_forms = vec![
+        let abi_forms = try_results_vec![
             named(0x00, "ListNil()"),
             named(0x01, "ListCons(head:Term,tail:List)"),
             named(0x02, "ValueBytes(value:Bytes)"),
@@ -108,7 +163,7 @@ impl CoreManifest {
             named(0x1b, "Authorized(packageBytes:Bytes)"),
             named(0x1c, "Unauthorized(stage:U8,code:U8)"),
         ];
-        let static_rules = vec![
+        let static_rules = try_results_vec![
             rule(0x20, 0x00, "Delta;Gamma |- BytesLiteral(b):Bytes"),
             rule(0x21, 0x00, "Delta;Gamma |- TermLiteral(t):Term"),
             rule(
@@ -162,7 +217,7 @@ impl CoreManifest {
                 "Delta;Gamma |- Request(op,args):r iff physicalProfile contains exactly op:(ss)->r and len(args)=len(ss) and every args[i]:ss[i] in encoded order",
             ),
         ];
-        let evaluation_rules = vec![
+        let evaluation_rules = try_results_vec![
             rule(
                 0x30,
                 0x00,
@@ -276,31 +331,31 @@ impl CoreManifest {
             "A48: FinalAuthorization rows=[I.exactPackageBytes not byte-identical exactInput or I.packageHash!=DH(clause/compiler-package/v1,I.exactPackageBytes)->(48,87)]",
             "H00: DH(d,xs)=SHA256(U32(len(d))||ASCII(d)||each(U64(len(x))||x)); CoreContractId=DH(clause/core-contract/v1,exactCoreManifestBytes); PhysicalProfileId=DH(clause/physical-profile/v1,exactPhysicalProfileBytes); EvalReceiptValueHash=DH(clause/eval-receipt-value/v1,canonicalKValueBytes); EvalReceiptObservationsHash=DH(clause/eval-receipt-observations/v1,canonicalObservationsTermBytes); CompilerSemanticsId=DH(clause/compiler-semantics/v1,canonical(interface||program)); CompilerRevisionId=DH(clause/compiler-revision/v1,exactCompilerSubjectBytes); CompilerPackageHash=DH(clause/compiler-package/v1,exactWholePackageBytes); SourceArtifactId=DH(clause/source-artifact/v1,exactSourceBytes); BuildRequestId=DH(clause/compiler-build-request/v1,canonicalTermBytes(BuildRequest)); OriginId=DH(clause/origin/v1,canonicalAcyclicOriginNode); hashes never grant compiler authority",
             "P00: Package bytes are magic CLCP,version 03,Frame(01,CoreManifestV1),Frame(02,CompilerSubject),Frame(03,CompilerEvidence),EOF exactly once in order; Frame03 is excluded from subject and revision identities; successor Frame03 payload is exactly 147 bytes: tag 01 then two ordered 73-byte trace-free receipts; it contains no predecessor bytes, candidate evidence, returned value, observations, or candidate whole-package identity; only exact genesis anchor or separately supplied already-accepted exact predecessor can authorize",
-        ]);
+        ])?;
 
-        Self {
+        Ok(Self {
             manifest_version: 0x00,
-            frame_tags: vec![0x01, 0x02, 0x03],
-            term_tags: vec![0x00, 0x01],
-            sort_tags: vec![0x00, 0x01],
+            frame_tags: copy_bytes(&[0x01, 0x02, 0x03])?,
+            term_tags: copy_bytes(&[0x00, 0x01])?,
+            sort_tags: copy_bytes(&[0x00, 0x01])?,
             expression_forms,
             abi_forms,
-            premise_policy_tags: (0x00..=0x07).collect(),
-            lineage_tags: vec![0x00, 0x01],
-            nominal_declaration_tags: vec![0x00, 0x01, 0x02],
-            compiler_evidence_tags: vec![0x00, 0x01],
-            value_tags: vec![0x00, 0x01],
-            decode_verdict_tags: vec![0x00, 0x01],
-            decode_code_tags: (0x00..=0x09).collect(),
-            authorization_stage_tags: (0x40..=0x48).collect(),
-            authorization_code_tags: (0x60..=0x87).collect(),
+            premise_policy_tags: tag_range(0x00, 0x07)?,
+            lineage_tags: copy_bytes(&[0x00, 0x01])?,
+            nominal_declaration_tags: copy_bytes(&[0x00, 0x01, 0x02])?,
+            compiler_evidence_tags: copy_bytes(&[0x00, 0x01])?,
+            value_tags: copy_bytes(&[0x00, 0x01])?,
+            decode_verdict_tags: copy_bytes(&[0x00, 0x01])?,
+            decode_code_tags: tag_range(0x00, 0x09)?,
+            authorization_stage_tags: tag_range(0x40, 0x48)?,
+            authorization_code_tags: tag_range(0x60, 0x87)?,
             static_rules,
             evaluation_rules,
             receipt_format_version: 0x00,
-            receipt_signature: b"EvalReceipt(formatVersion:ReceiptFormatVersion,expectedValueHash:Hash32,expectedRemainingFuel:U64,expectedObservationsHash:Hash32); ReceiptFormatVersion=00; expectedValueHash=DH(clause/eval-receipt-value/v1,canonical KValue bytes); expectedObservationsHash=DH(clause/eval-receipt-observations/v1,canonical Term bytes); KValue=00 BytesValue(Blob)|01 TermValue(Term)".to_vec(),
+            receipt_signature: copy_bytes(b"EvalReceipt(formatVersion:ReceiptFormatVersion,expectedValueHash:Hash32,expectedRemainingFuel:U64,expectedObservationsHash:Hash32); ReceiptFormatVersion=00; expectedValueHash=DH(clause/eval-receipt-value/v1,canonical KValue bytes); expectedObservationsHash=DH(clause/eval-receipt-observations/v1,canonical Term bytes); KValue=00 BytesValue(Blob)|01 TermValue(Term)")?,
             contract_clauses,
-            physical_profile: PhysicalProfile::sealed_sha256(),
-        }
+            physical_profile: PhysicalProfile::try_sealed_sha256()?,
+        })
     }
 }
 
@@ -308,15 +363,19 @@ impl PhysicalProfile {
     /// The only admitted compiler physical profile.
     #[must_use]
     pub fn sealed_sha256() -> Self {
-        Self {
+        Self::try_sealed_sha256().expect("fixed sealed SHA-256 profile allocation")
+    }
+
+    pub(crate) fn try_sealed_sha256() -> Result<Self, EncodeError> {
+        Ok(Self {
             profile_version: 0x00,
             observation_policy: 0x00,
-            operations: vec![PhysicalOperation {
+            operations: singleton(PhysicalOperation {
                 operation_id: sha256_operation_id(),
-                arguments: vec![KSort::Bytes],
+                arguments: singleton(KSort::Bytes)?,
                 result: KSort::Bytes,
-            }],
-        }
+            })?,
+        })
     }
 }
 
@@ -342,11 +401,11 @@ pub fn sha256_operation_id() -> Id32 {
 }
 
 pub fn exact_core_manifest_bytes() -> Result<Vec<u8>, EncodeError> {
-    encode_core_manifest_value(&CoreManifest::canonical_v1())
+    encode_core_manifest_value(&CoreManifest::try_canonical_v1()?)
 }
 
 pub fn exact_physical_profile_bytes() -> Result<Vec<u8>, EncodeError> {
-    encode_physical_profile_value(&PhysicalProfile::sealed_sha256())
+    encode_physical_profile_value(&PhysicalProfile::try_sealed_sha256()?)
 }
 
 pub fn core_contract_id() -> Result<Hash32, EncodeError> {

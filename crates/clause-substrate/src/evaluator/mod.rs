@@ -12,6 +12,9 @@ use crate::compiler_package_v3::{
 };
 use crate::physical::{ObservationLog, PhysicalError, SealedPhysical};
 
+const MAX_LIVENESS_WORK: usize =
+    MAX_EXPRESSION_NODES + MAX_EVALUATION_FRAMES + MAX_RUNTIME_ENVIRONMENTS;
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum StaticError {
     DefinitionsNotStrictlySorted { index: usize },
@@ -1129,6 +1132,43 @@ impl<'a> RuntimeByteStore<'a> {
         }
         Ok(())
     }
+
+    fn replaced_owned_bytes(&self, results: &[RuntimeResult<'_>]) -> Result<usize, EvalError> {
+        let mut consumed_references = Vec::new();
+        consumed_references
+            .try_reserve_exact(self.entries.len())
+            .map_err(|_| EvalError::ResourceExhausted)?;
+        consumed_references.resize(self.entries.len(), 0_usize);
+        for result in results {
+            let RuntimeValue::Bytes(bytes) = &result.value else {
+                return Err(EvalError::ValueSort {
+                    expected: KSort::Bytes,
+                    actual: KSort::Term,
+                });
+            };
+            let references = consumed_references
+                .get_mut(bytes.storage)
+                .ok_or(EvalError::ResourceExhausted)?;
+            *references = references
+                .checked_add(1)
+                .ok_or(EvalError::ResourceExhausted)?;
+        }
+        let mut replaced = 0_usize;
+        for (slot, consumed) in self.entries.iter().zip(consumed_references) {
+            let RuntimeByteSlot::Occupied(entry) = slot else {
+                if consumed != 0 {
+                    return Err(EvalError::ResourceExhausted);
+                }
+                continue;
+            };
+            if consumed != 0 && consumed == entry.references {
+                replaced = replaced
+                    .checked_add(entry.storage.owned_len())
+                    .ok_or(EvalError::ResourceExhausted)?;
+            }
+        }
+        Ok(replaced)
+    }
 }
 
 enum RuntimeTerm<'a> {
@@ -1468,19 +1508,48 @@ impl<'a> RuntimeEnvironments<'a> {
         }
     }
 
-    fn locate(&self, mut environment: usize, mut index: usize) -> Option<(usize, usize)> {
+    fn locate(
+        &self,
+        mut environment: usize,
+        mut index: usize,
+        work: &mut LivenessWorkBudget,
+    ) -> Result<Option<(usize, usize)>, EvalError> {
         loop {
-            let entry = self.entry(environment).ok()?;
+            work.charge(1)?;
+            let Ok(entry) = self.entry(environment) else {
+                return Ok(None);
+            };
             if index < entry.values.len() {
-                return Some((environment, index));
+                return Ok(Some((environment, index)));
             }
-            index = index.checked_sub(entry.values.len())?;
-            environment = entry.parent?;
+            let Some(next_index) = index.checked_sub(entry.values.len()) else {
+                return Ok(None);
+            };
+            let Some(parent) = entry.parent else {
+                return Ok(None);
+            };
+            index = next_index;
+            environment = parent;
         }
     }
 
-    fn begin_live_epoch(&mut self) -> u64 {
+    fn reserve_environment_pass(&self, work: &mut LivenessWorkBudget) -> Result<(), EvalError> {
+        for slot in &self.entries {
+            work.charge(2)?;
+            let RuntimeEnvironmentSlot::Occupied(entry) = slot else {
+                continue;
+            };
+            let RuntimeValues::Owned(values) = &entry.values else {
+                continue;
+            };
+            work.charge(values.len())?;
+        }
+        Ok(())
+    }
+
+    fn begin_live_epoch(&mut self, work: &mut LivenessWorkBudget) -> Result<u64, EvalError> {
         if self.live_epoch == u64::MAX {
+            self.reserve_environment_pass(work)?;
             for slot in &mut self.entries {
                 let RuntimeEnvironmentSlot::Occupied(entry) = slot else {
                     continue;
@@ -1496,13 +1565,19 @@ impl<'a> RuntimeEnvironments<'a> {
         } else {
             self.live_epoch = self.live_epoch.wrapping_add(1);
         }
-        self.live_epoch
+        Ok(self.live_epoch)
     }
 
-    fn mark_live(&mut self, environment: usize, index: usize, epoch: u64) -> Result<(), EvalError> {
+    fn mark_live(
+        &mut self,
+        environment: usize,
+        index: usize,
+        epoch: u64,
+        work: &mut LivenessWorkBudget,
+    ) -> Result<(), EvalError> {
         let reported_index = u32::try_from(index).unwrap_or(u32::MAX);
         let (environment, local_index) = self
-            .locate(environment, index)
+            .locate(environment, index, work)?
             .ok_or(EvalError::VariableOutOfBounds(reported_index))?;
         let entry = self.entry_mut(environment)?;
         let RuntimeValues::Owned(values) = &mut entry.values else {
@@ -1522,7 +1597,9 @@ impl<'a> RuntimeEnvironments<'a> {
         &mut self,
         epoch: u64,
         bytes: &mut RuntimeByteStore<'a>,
+        work: &mut LivenessWorkBudget,
     ) -> Result<usize, EvalError> {
+        self.reserve_environment_pass(work)?;
         let mut discarded = 0_usize;
         for slot in &mut self.entries {
             let RuntimeEnvironmentSlot::Occupied(entry) = slot else {
@@ -1612,6 +1689,24 @@ struct LiveScanFrame<'a> {
     expression: &'a KExpr,
     bound: usize,
     next_child: usize,
+}
+
+struct LivenessWorkBudget {
+    remaining: usize,
+}
+
+impl LivenessWorkBudget {
+    const fn new(limit: usize) -> Self {
+        Self { remaining: limit }
+    }
+
+    fn charge(&mut self, units: usize) -> Result<(), EvalError> {
+        self.remaining = self
+            .remaining
+            .checked_sub(units)
+            .ok_or(EvalError::ResourceExhausted)?;
+        Ok(())
+    }
 }
 
 fn push_live_scan_frame<'a>(
@@ -1719,10 +1814,11 @@ fn mark_live_expression<'expression>(
     environments: &mut RuntimeEnvironments<'expression>,
     epoch: u64,
     stack: &mut Vec<LiveScanFrame<'expression>>,
+    work: &mut LivenessWorkBudget,
     root: LiveExpression<'expression>,
 ) -> Result<usize, EvalError> {
     stack.clear();
-    let result = mark_live_expression_inner(environments, epoch, stack, root);
+    let result = mark_live_expression_inner(environments, epoch, stack, work, root);
     stack.clear();
     result
 }
@@ -1731,6 +1827,7 @@ fn mark_live_expression_inner<'expression>(
     environments: &mut RuntimeEnvironments<'expression>,
     epoch: u64,
     stack: &mut Vec<LiveScanFrame<'expression>>,
+    work: &mut LivenessWorkBudget,
     LiveExpression {
         expression,
         bound,
@@ -1743,6 +1840,7 @@ fn mark_live_expression_inner<'expression>(
     while !stack.is_empty() {
         let first_visit = matches!(stack.last(), Some(frame) if frame.next_child == 0);
         if first_visit {
+            work.charge(1)?;
             nodes = nodes.checked_add(1).ok_or(EvalError::ResourceExhausted)?;
             if nodes > MAX_EXPRESSION_NODES {
                 return Err(EvalError::ResourceExhausted);
@@ -1755,7 +1853,7 @@ fn mark_live_expression_inner<'expression>(
                     let outer_index = index
                         .checked_sub(frame.bound)
                         .ok_or(EvalError::ResourceExhausted)?;
-                    environments.mark_live(environment, outer_index, epoch)?;
+                    environments.mark_live(environment, outer_index, epoch, work)?;
                 }
             }
         }
@@ -1782,14 +1880,17 @@ fn mark_task_live_slots<'expression>(
     environments: &mut RuntimeEnvironments<'expression>,
     epoch: u64,
     stack: &mut Vec<LiveScanFrame<'expression>>,
+    work: &mut LivenessWorkBudget,
     task: &EvalTask<'expression>,
 ) -> Result<usize, EvalError> {
+    work.charge(1)?;
     let mut peak_depth = 0_usize;
     let mut mark = |expression, bound, environment| {
         let depth = mark_live_expression(
             environments,
             epoch,
             stack,
+            work,
             LiveExpression {
                 expression,
                 bound,
@@ -1838,6 +1939,23 @@ fn mark_task_live_slots<'expression>(
     Ok(peak_depth)
 }
 
+fn checked_concat_length<'a>(
+    values: impl IntoIterator<Item = Result<&'a [u8], EvalError>>,
+    limit: usize,
+) -> Result<usize, EvalError> {
+    let mut total = 0_usize;
+    for value in values {
+        let value = value?;
+        total = total
+            .checked_add(value.len())
+            .ok_or(EvalError::ByteLengthOverflow)?;
+        if total > limit {
+            return Err(EvalError::ByteLengthOverflow);
+        }
+    }
+    Ok(total)
+}
+
 struct RuntimeResult<'a> {
     value: RuntimeValue<'a>,
 }
@@ -1869,6 +1987,7 @@ struct EvaluationMachine<'a> {
     fuel: u64,
     observations: ObservationLog,
     live_scan_stack: Vec<LiveScanFrame<'a>>,
+    liveness_work_limit: usize,
     #[cfg(test)]
     liveness_reclamation_runs: usize,
     #[cfg(test)]
@@ -1894,6 +2013,7 @@ impl<'a> EvaluationMachine<'a> {
             fuel,
             observations: ObservationLog::default(),
             live_scan_stack,
+            liveness_work_limit: MAX_LIVENESS_WORK,
             #[cfg(test)]
             liveness_reclamation_runs: 0,
             #[cfg(test)]
@@ -1976,29 +2096,39 @@ impl<'a> EvaluationMachine<'a> {
         &mut self,
         current: Option<LiveExpression<'a>>,
         incoming: usize,
+        replacement: Option<Range<usize>>,
     ) -> Result<(), EvalError> {
-        let projected = self
+        let replaced = match replacement {
+            Some(range) => self.byte_store.replaced_owned_bytes(
+                self.results
+                    .get(range)
+                    .ok_or(EvalError::ResourceExhausted)?,
+            )?,
+            None => 0,
+        };
+        // This is the named logical runtime-byte contract: consumed result
+        // backing is replaced by the output. It is not a claim that the host
+        // allocator's temporary capacity or total heap is capped here.
+        let retained = self
             .byte_store
             .retained_owned_bytes
+            .checked_sub(replaced)
+            .ok_or(EvalError::ResourceExhausted)?;
+        let projected = retained
             .checked_add(incoming)
             .ok_or(EvalError::ResourceExhausted)?;
         if projected <= self.byte_store.owned_byte_limit {
             return Ok(());
         }
-        #[cfg(test)]
-        {
-            self.liveness_reclamation_runs = self
-                .liveness_reclamation_runs
-                .checked_add(1)
-                .ok_or(EvalError::ResourceExhausted)?;
-        }
-        let epoch = self.environments.begin_live_epoch();
+        let mut work = LivenessWorkBudget::new(self.liveness_work_limit);
+        let epoch = self.environments.begin_live_epoch(&mut work)?;
         let mut peak_depth = 0_usize;
         if let Some(current) = current {
             peak_depth = mark_live_expression(
                 &mut self.environments,
                 epoch,
                 &mut self.live_scan_stack,
+                &mut work,
                 current,
             )?;
         }
@@ -2007,6 +2137,7 @@ impl<'a> EvaluationMachine<'a> {
                 &mut self.environments,
                 epoch,
                 &mut self.live_scan_stack,
+                &mut work,
                 task,
             )?;
             peak_depth = peak_depth.max(depth);
@@ -2016,7 +2147,14 @@ impl<'a> EvaluationMachine<'a> {
             self.peak_liveness_scan_depth = self.peak_liveness_scan_depth.max(peak_depth);
         }
         self.environments
-            .discard_unmarked(epoch, &mut self.byte_store)?;
+            .discard_unmarked(epoch, &mut self.byte_store, &mut work)?;
+        #[cfg(test)]
+        {
+            self.liveness_reclamation_runs = self
+                .liveness_reclamation_runs
+                .checked_add(1)
+                .ok_or(EvalError::ResourceExhausted)?;
+        }
         let projected = self
             .byte_store
             .retained_owned_bytes
@@ -2332,6 +2470,7 @@ impl<'a> EvaluationMachine<'a> {
                         environment: parent,
                     }),
                     incoming,
+                    None,
                 )?;
                 let mut values = Vec::new();
                 values
@@ -2398,37 +2537,51 @@ impl<'a> EvaluationMachine<'a> {
     }
 
     fn finish_concat(&mut self, count: usize) -> Result<(), EvalError> {
-        let results = self.take_results(count)?;
-        let mut total = 0_usize;
-        for result in &results {
-            let RuntimeValue::Bytes(bytes) = &result.value else {
-                return Err(EvalError::ValueSort {
-                    expected: KSort::Bytes,
-                    actual: KSort::Term,
-                });
-            };
-            total = total
-                .checked_add(self.byte_store.get(bytes)?.len())
-                .ok_or(EvalError::ByteLengthOverflow)?;
-            if total > MAX_WIRE_BYTES {
-                return Err(EvalError::ByteLengthOverflow);
-            }
-        }
+        let start = self
+            .results
+            .len()
+            .checked_sub(count)
+            .ok_or(EvalError::ResourceExhausted)?;
+        let values = self
+            .results
+            .get(start..)
+            .ok_or(EvalError::ResourceExhausted)?
+            .iter()
+            .map(|result| {
+                let RuntimeValue::Bytes(bytes) = &result.value else {
+                    return Err(EvalError::ValueSort {
+                        expected: KSort::Bytes,
+                        actual: KSort::Term,
+                    });
+                };
+                self.byte_store.get(bytes)
+            });
+        let total = checked_concat_length(values, MAX_WIRE_BYTES)?;
+        self.prepare_owned_allocation(None, total, Some(start..self.results.len()))?;
         let mut bytes = Vec::new();
         bytes
             .try_reserve_exact(total)
             .map_err(|_| EvalError::ResourceExhausted)?;
-        for result in results {
-            let RuntimeValue::Bytes(part) = result.value else {
+        for result in self
+            .results
+            .get(start..)
+            .ok_or(EvalError::ResourceExhausted)?
+        {
+            let RuntimeValue::Bytes(part) = &result.value else {
                 return Err(EvalError::ValueSort {
                     expected: KSort::Bytes,
                     actual: KSort::Term,
                 });
             };
-            bytes.extend_from_slice(self.byte_store.get(&part)?);
+            bytes.extend_from_slice(self.byte_store.get(part)?);
+        }
+        let results = self.take_results(count)?;
+        for result in results {
+            let RuntimeValue::Bytes(part) = result.value else {
+                return Err(EvalError::ResourceExhausted);
+            };
             self.byte_store.release(part)?;
         }
-        self.prepare_owned_allocation(None, total)?;
         let value = RuntimeValue::Bytes(self.byte_store.owned(bytes)?);
         self.push_result(value)
     }
@@ -2494,7 +2647,7 @@ impl<'a> EvaluationMachine<'a> {
             KValue::Bytes(bytes) => bytes.len(),
             KValue::Term(_) => 0,
         };
-        self.prepare_owned_allocation(None, incoming)?;
+        self.prepare_owned_allocation(None, incoming, None)?;
         let value = RuntimeValue::owned(value, &mut self.byte_store)?;
         self.push_result(value)
     }
@@ -2753,6 +2906,29 @@ mod runtime_retention_tests {
     }
 
     #[test]
+    fn aggregate_liveness_work_exhaustion_is_visible_before_reclamation() {
+        let evaluator = Evaluator::new(&[]).expect("empty evaluator is well formed");
+        let expression = nested_owned_values(KExpr::BytesLiteral(Vec::new()));
+        let mut machine =
+            EvaluationMachine::new(&evaluator, &[], 100).expect("runtime machine allocation");
+        machine.byte_store.owned_byte_limit = 8;
+        machine.liveness_work_limit = 1;
+
+        assert!(matches!(
+            machine.run(&expression),
+            Err(EvalError::ResourceExhausted)
+        ));
+    }
+
+    #[test]
+    fn concat_length_limit_is_checked_without_allocating_the_output() {
+        assert_eq!(
+            checked_concat_length([Ok(&[0_u8; 4][..]), Ok(&[0_u8; 5][..])], 8,),
+            Err(EvalError::ByteLengthOverflow)
+        );
+    }
+
+    #[test]
     fn nested_binder_offsets_mark_the_exact_outer_slot() {
         let base = Vec::<KValue>::new();
         let mut environments = RuntimeEnvironments::new(&base).expect("base environment");
@@ -2766,13 +2942,17 @@ mod runtime_retention_tests {
             value: boxed(KExpr::BytesLiteral(Vec::new())),
             body: boxed(KExpr::Var(2)),
         };
-        let epoch = environments.begin_live_epoch();
+        let mut work = LivenessWorkBudget::new(MAX_LIVENESS_WORK);
+        let epoch = environments
+            .begin_live_epoch(&mut work)
+            .expect("liveness epoch");
         let mut stack = live_scan_stack();
 
         mark_live_expression(
             &mut environments,
             epoch,
             &mut stack,
+            &mut work,
             LiveExpression {
                 expression: &expression,
                 bound: 0,
@@ -2781,7 +2961,7 @@ mod runtime_retention_tests {
         )
         .expect("nested binder scan");
         environments
-            .discard_unmarked(epoch, &mut store)
+            .discard_unmarked(epoch, &mut store, &mut work)
             .expect("dead slot release");
 
         assert!(environments.get(environment, 0).is_none());
@@ -2827,13 +3007,16 @@ mod runtime_retention_tests {
             atom_body: &atom_body,
             triple_body: &triple_body,
         };
-        let epoch = environments.begin_live_epoch();
+        let mut work = LivenessWorkBudget::new(MAX_LIVENESS_WORK);
+        let epoch = environments
+            .begin_live_epoch(&mut work)
+            .expect("liveness epoch");
         let mut stack = live_scan_stack();
 
-        mark_task_live_slots(&mut environments, epoch, &mut stack, &task)
+        mark_task_live_slots(&mut environments, epoch, &mut stack, &mut work, &task)
             .expect("pending CaseTerm roots scan");
         environments
-            .discard_unmarked(epoch, &mut store)
+            .discard_unmarked(epoch, &mut store, &mut work)
             .expect("dead slot release");
 
         assert!(environments.get(environment, 0).is_some());
@@ -2859,13 +3042,16 @@ mod runtime_retention_tests {
             empty_body: &empty_body,
             cons_body: &cons_body,
         };
-        let epoch = environments.begin_live_epoch();
+        let mut work = LivenessWorkBudget::new(MAX_LIVENESS_WORK);
+        let epoch = environments
+            .begin_live_epoch(&mut work)
+            .expect("liveness epoch");
         let mut stack = live_scan_stack();
 
-        mark_task_live_slots(&mut environments, epoch, &mut stack, &task)
+        mark_task_live_slots(&mut environments, epoch, &mut stack, &mut work, &task)
             .expect("pending CaseBytes roots scan");
         environments
-            .discard_unmarked(epoch, &mut store)
+            .discard_unmarked(epoch, &mut store, &mut work)
             .expect("dead slot release");
 
         assert!(environments.get(environment, 0).is_none());
@@ -2970,13 +3156,17 @@ mod runtime_retention_tests {
                 .map(|_| KExpr::BytesLiteral(Vec::new()))
                 .collect(),
         );
-        let epoch = environments.begin_live_epoch();
+        let mut work = LivenessWorkBudget::new(MAX_LIVENESS_WORK);
+        let epoch = environments
+            .begin_live_epoch(&mut work)
+            .expect("liveness epoch");
         let mut stack = live_scan_stack();
 
         let peak = mark_live_expression(
             &mut environments,
             epoch,
             &mut stack,
+            &mut work,
             LiveExpression {
                 expression: &expression,
                 bound: 0,
@@ -3008,10 +3198,13 @@ mod runtime_retention_tests {
         };
         values[0].live_epoch = u64::MAX;
 
-        let epoch = environments.begin_live_epoch();
+        let mut work = LivenessWorkBudget::new(MAX_LIVENESS_WORK);
+        let epoch = environments
+            .begin_live_epoch(&mut work)
+            .expect("liveness epoch");
         assert_eq!(epoch, 1);
         environments
-            .discard_unmarked(epoch, &mut store)
+            .discard_unmarked(epoch, &mut store, &mut work)
             .expect("stale mark release");
 
         assert!(environments.get(environment, 0).is_none());
@@ -3036,12 +3229,16 @@ mod runtime_retention_tests {
                     .expect("deep test expression stays within wire bounds");
                 let base = Vec::<KValue>::new();
                 let mut environments = RuntimeEnvironments::new(&base).expect("base environment");
-                let epoch = environments.begin_live_epoch();
+                let mut work = LivenessWorkBudget::new(MAX_LIVENESS_WORK);
+                let epoch = environments
+                    .begin_live_epoch(&mut work)
+                    .expect("liveness epoch");
                 let mut stack = live_scan_stack();
                 let peak = mark_live_expression(
                     &mut environments,
                     epoch,
                     &mut stack,
+                    &mut work,
                     LiveExpression {
                         expression: &expression,
                         bound: 0,

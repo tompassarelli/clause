@@ -120,10 +120,10 @@ impl<'a> CompilerPackageArtifact<'a> {
         store: &'a mut ArtifactStore,
         bytes: &[u8],
     ) -> Result<Self, CompilerArtifactError> {
+        let candidate = decode(bytes).map_err(CompilerArtifactError::Decode)?;
         let artifact = store
-            .intern_compiler_package(bytes)
+            .intern_compiler_package(candidate.exact_input())
             .map_err(CompilerArtifactError::Artifact)?;
-        let candidate = decode(artifact.exact_bytes()).map_err(CompilerArtifactError::Decode)?;
         Ok(Self {
             artifact,
             candidate,
