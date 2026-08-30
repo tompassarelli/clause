@@ -17,10 +17,16 @@ model, Rust runtime, CLI, and clean replay must consume byte-for-byte unchanged:
 
 The frozen machine contract is
 [`test-vectors/execution/manifest.json`](../test-vectors/execution/manifest.json).
-The source projections use only syntax already ratified in
-[`syntax.md`](syntax.md). Effect capability and attempt data remain generic
-Terms in the manifest because their authored surface syntax is not yet
-ratified.
+Its three `.clause` files are frozen historical v0 source projections. Their
+slash-joined designations predate the current [`syntax.md`](syntax.md), which
+must reject those bytes as authored identifiers. The suffix, the corpus
+README's old canonical-source claim, and the manifest's `syntax_authority`
+field are legacy metadata inside the frozen bundle, not current conformance
+claims. The complete bundle must be moved behind an explicit historical
+fixture boundary without rewriting its exact oracle bytes before current tools
+or examples treat the path as Clause source. Effect capability and attempt
+data remain generic Terms in the manifest because their authored surface
+syntax is not yet ratified.
 
 ## Representation boundary
 
@@ -48,8 +54,9 @@ The manifest's `ground_rules` are the finite generic expansion of the pure
 program's two authored laws for this exact input graph. Each three-string item
 is shorthand for the same neutral subject/relation/object Triple. This lets the
 Lean and Rust execution tranches consume one executable oracle before source
-elaboration exists; the later parser must reproduce the same rules from source
-and may not replace or reinterpret them.
+elaboration exists. The process-v1 successor must express equivalent laws in
+separately accepted canonical source and reproduce the same expansion; a
+current parser must not reinterpret the historical v0 files.
 
 The corpus deliberately does not publish `ApplicationId`, `ActivationId`,
 `StepId`, `RunId`, `ContinuationId`, `ObservationId`, `ProgramSnapshotId`, or
@@ -456,9 +463,10 @@ evidence. Disposal is an explicit terminal Activation/Step and applicable
 effect before wrapper reclamation, is idempotent, removes every owned
 listener/resource exactly once, and permits no later callback-owned work.
 
-### Frozen ordinary-source specimens
+### Process-v1 canonical source specimens
 
-The companion copies the three printed code blocks and the separately ratified
+The companion does not copy or reinterpret the three historical v0 `.clause`
+files. It copies the three printed code blocks and the separately ratified
 fourth combined general-purpose source specimen in the adoption spike's
 “Frozen ordinary-source ergonomics” section into separately checksummed source
 files. Pure definition and relational request source contain no process IDs,

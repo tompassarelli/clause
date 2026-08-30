@@ -42,14 +42,19 @@ must justify every claimed behavior directly.
 
 ## Frozen and versioned oracles
 
-`clause:test-vectors/execution/**` remains byte-for-byte Clause execution corpus
-v0. Its three canonical source programs and manifest observations are frozen:
+`clause:test-vectors/execution/**` remains the byte-for-byte historical Clause
+execution corpus v0. Its three historical source projections and manifest
+observations are frozen:
 
 - recursive pure dependency closure;
 - admitted State change plus separate effect evidence; and
 - predecessor-bound Program evolution.
 
-The six v0 outcome tags remain exactly `returned`, `choices`, `yielded`,
+Those source bytes contain slash-joined designations from the superseded v0
+draft. They are not current canonical Clause source and no current reader may
+accept them as such. Their exact bundle requires path-level historical
+quarantine without rewriting the frozen oracle bytes. The six v0 outcome tags
+remain exactly `returned`, `choices`, `yielded`,
 `suspended`, `failed`, and `exhausted`. They are compatibility evidence, not
 the complete process ontology.
 
@@ -883,7 +888,8 @@ The cross-phase program passes only when all of these are executable and exact:
   separately ratified; and
 - ordinary source at least as readable as the accepted surface, with process
   and ownership machinery exposed only where semantically relevant, proven by
-  all four frozen source specimens rather than a prose readability claim.
+  all four process-v1 canonical source specimens rather than a prose
+  readability claim.
 
 ## Required negative evidence
 

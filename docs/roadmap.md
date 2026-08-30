@@ -57,7 +57,8 @@ merely by existing.
 
 The following evidence remains unchanged while the reset is implemented:
 
-- `clause:test-vectors/execution/**` stays byte-for-byte v0;
+- the complete `clause:test-vectors/execution/**` bundle stays byte-for-byte
+  historical v0 and must move behind a path-level historical-fixture boundary;
 - its six tags stay `returned`, `choices`, `yielded`, `suspended`, `failed`, and
   `exhausted`;
 - pure dependency closure, State/effect fulfillment, and Program evolution
@@ -156,7 +157,8 @@ edit with exact diagnostics plus affected and preserved dependency/cache sets.
 ## Phase 0 — Freeze and crosswalk oracles
 
 **Status:** The v0 execution/admission/replay observation corpus is frozen;
-the process-v1 companion is missing.
+its slash-bearing source projections still need path-level historical
+quarantine, and the process-v1 companion is missing.
 
 Freeze the exact existing v0 bytes and their actual observations for:
 
