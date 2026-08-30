@@ -8,3 +8,4 @@
 #![forbid(unsafe_code)]
 
 pub mod canonical_package;
+pub mod game_leverage;

@@ -113,5 +113,34 @@ evaluator, `Compiler0`, the external genesis anchor, compiler succession,
 Atom canonicality, valid Clause judgments, Runs, general Admission, durable
 persistence, or any language feature.
 
+## Game-leverage falsifier
+
+The bounded `game_leverage` experiment parses one historical, noncanonical
+co-cell visibility fixture into one experimental semantic IR. It materializes
+the unchanged source law with two materially distinct schedules: an exhaustive
+whole-world tuple interpreter that validates grounded premise occurrences and
+derives conclusions from them, and an indexed incremental plan whose
+binder-selected join roles are validated by the fixture-declared lookup modes.
+The reference interpreter neither consumes the indexed plan nor uses its
+binding-map matcher and projector. Both schedules operate on parsed semantic
+data and Fact access directly; no renderer participates. Run its deterministic
+Fact-set equality, trace, alpha-renaming, support-counting, mutation, and
+work-locality gates with:
+
+```sh
+cargo test --locked -p clause-substrate game_leverage
+cargo run --locked --release -p clause-substrate --example game_leverage
+```
+
+The example reports direct timings without imposing a machine-dependent timing
+threshold. Its hard gates are exact experimental Fact-set output equality after
+every update, name-independent planning, at least 100x unrelated-population scan
+growth, and indexed move work fixed at two counterpart-bucket probes and eight
+local pair visits. The fixture uses historical `RelationShape`, arrow-mode, and
+conclusion-first syntax. Its domain names are parsed labels and are not
+type-checked. These are historical experimental Fact-set semantics, not current
+canonical Clause syntax or typed Clause semantics, a supported parser,
+constitutional admission, or a general spatial engine.
+
 Clause is available under the [MIT License](LICENSE-MIT) or the
 [Apache License, Version 2.0](LICENSE-APACHE), at your option.

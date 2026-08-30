@@ -1,0 +1,27 @@
+Viewer
+Target
+Cell
+Noise
+
+spatial/viewer-cell: RelationShape
+  {observer: Viewer} views from {cell: Cell}
+  mode cell -> observer: many
+
+spatial/target-cell: RelationShape
+  {target: Target} appears in {cell: Cell}
+  mode cell -> target: many
+
+spatial/visible: RelationShape
+  {observer: Viewer} can see {target: Target}
+  mode observer -> target: many
+
+diagnostic/noise: RelationShape
+  {subject: Noise} is unrelated to {value: Noise}
+  mode subject -> value: many
+
+law spatial/co-cell-visibility
+  ?observer can see ?target if
+    ?observer views from ?cell
+    ?target appears in ?cell
+
+derive spatial/co-cell-visibility
