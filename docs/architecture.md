@@ -96,11 +96,11 @@ script must describe only the current architecture. Superseded material leaves
 no alias, shim, warning-only decoder, fixture, comment, generated consumer, or
 gate that teaches it.
 
-Working capability is removed only after a successor exists and passes
-deterministic tests for every replaced behavior used by an in-tree consumer.
-Every in-tree consumer migrates before removal. Once that migration is
-complete, removal means absence from the live tree, including the superseded
-source, tests, fixtures, generated artifacts, documentation, and consumers.
+Every removed working capability requires a successor with deterministic tests
+for each replaced behavior, regardless of current in-tree consumers. Separately,
+every in-tree consumer migrates before removal. Once that migration is complete,
+removal means absence from the live tree, including the superseded source,
+tests, fixtures, generated artifacts, documentation, and consumers.
 
 ## Host-neutral Clause Core
 
