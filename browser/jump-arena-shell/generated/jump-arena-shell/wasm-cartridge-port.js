@@ -165,7 +165,8 @@ function create_wasm_cartridge_port_bang(module, policy) {
   } })(), (accepted_package, __generation, complete) => (() => { try {
     const request = require_request(accepted_package);
   const session = WasmSession(request, ({value: false, watches: {}}));
-  return complete(workbench["->SessionStarted"](session, null, null));
+  const bootstrap_frame = workbench["create-workbench-envelope"](policy, "[]");
+  return complete(workbench["->SessionStarted"](session, null, bootstrap_frame));
   } catch (_catch_1) {
     switch ($$bd$catch_dispatch(_catch_1, [Error])) {
       case 0: {

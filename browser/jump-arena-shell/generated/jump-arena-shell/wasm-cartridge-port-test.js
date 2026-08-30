@@ -63,7 +63,7 @@ test.expect(calls).toEqual([]);
 test.expect(candidate.value.candidate.request.bytes).toEqual(request.bytes);
 test.expect(Object.isFrozen(candidate.value.candidate.request.bytes)).toBe(true);
 test.expect(started.value.revision).toBe(null);
-test.expect(started.value.frame).toBe(null);
+test.expect(started.value.frame).toEqual([]);
 (port.requestAdmission)(started.value.session, candidate.value.candidate, (result) => (() => { const _a = admitted, _v = result; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })());
 test.expect(calls[0]).toBe("reset");
 test.expect(calls[6]).toBe("dispatch");

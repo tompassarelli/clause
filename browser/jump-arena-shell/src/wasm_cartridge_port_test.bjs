@@ -84,7 +84,7 @@
                                     (.-bytes (.-request (.-candidate @candidate)))))
             true)
      (.toBe (test/expect (.-revision @started)) nil)
-     (.toBe (test/expect (.-frame @started)) nil)
+     (.toEqual (test/expect (.-frame @started)) [])
      ((.-requestAdmission port)
       (.-session @started)
       (.-candidate @candidate)

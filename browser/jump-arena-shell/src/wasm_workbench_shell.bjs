@@ -1,0 +1,192 @@
+#lang beagle/js
+
+(ns jump-arena-shell.wasm-workbench-shell
+  (:require [jump-arena-shell.shell :as shell]
+            [jump-arena-shell.wasm-cartridge-port :as wasm]
+            [jump-arena-shell.workbench :as workbench]))
+
+(def wasm-module-max-bytes Int (* 16 1024 1024))
+(def player-frame-values Int 8)
+(def platform-frame-values Int 6)
+
+(defn exact-module-bytes? [value Any] Bool
+  (if (nil? value)
+    false
+    (let [length Any (.-byteLength value)]
+      (and (or (instance? ArrayBuffer value)
+               (.isView ArrayBuffer value))
+           (.isSafeInteger Number length)
+           (<= 1 length)
+           (<= length wasm-module-max-bytes)))))
+
+(defn require-module-bytes [value Any] Any
+  (if (exact-module-bytes? value)
+    value
+    (throw (new Error "Wasm module bytes are outside the browser bound"))))
+
+(defn numeric-frame-value
+  [values Any
+   index Int] Float
+  (let [value Any (nth values index)]
+    (if (and (= (js/typeof value) "number")
+             (.isFinite Number value))
+      value
+      (throw (new Error "CWO1 arena frame requires finite numeric slots")))))
+
+(defn boolean-frame-value
+  [values Any
+   index Int] Bool
+  (let [value Any (nth values index)]
+    (if (= (js/typeof value) "boolean")
+      value
+      (throw (new Error "CWO1 arena frame requires a boolean grounded slot")))))
+
+(defn frozen-vec3
+  [x Float
+   y Float
+   z Float] Any
+  (.freeze Object {:x x :y y :z z}))
+
+(defn project-platform
+  [values Any
+   offset Int] Any
+  (.freeze Object
+           {:position (frozen-vec3
+                       (numeric-frame-value values offset)
+                       (numeric-frame-value values (+ offset 1))
+                       (numeric-frame-value values (+ offset 2)))
+            :size (frozen-vec3
+                   (numeric-frame-value values (+ offset 3))
+                   (numeric-frame-value values (+ offset 4))
+                   (numeric-frame-value values (+ offset 5)))}))
+
+(js/export
+  (defn project-cwo1-arena-frame [values Any] Any
+    (let [length Int (.-length values)]
+      (when (or (not (.isArray Array values))
+                (not (.isSafeInteger Number length))
+                (< length player-frame-values)
+                (not= (rem (- length player-frame-values)
+                           platform-frame-values)
+                      0))
+        (throw (new Error "CWO1 arena frame has an invalid scalar shape")))
+      (loop [offset Int player-frame-values
+             platforms (Vec Any) []]
+        (if (= offset length)
+          (.freeze Object
+                   {:player (.freeze Object
+                                     {:position (frozen-vec3
+                                                 (numeric-frame-value values 0)
+                                                 (numeric-frame-value values 1)
+                                                 (numeric-frame-value values 2))
+                                      :velocity (frozen-vec3
+                                                 (numeric-frame-value values 3)
+                                                 (numeric-frame-value values 4)
+                                                 (numeric-frame-value values 5))
+                                      :yaw (numeric-frame-value values 6)
+                                      :grounded (boolean-frame-value values 7)})
+                    :world (.freeze Object
+                                           {:platforms (.freeze Object platforms)})})
+          (recur (+ offset platform-frame-values)
+                 (conj platforms (project-platform values offset))))))))
+
+(defn schedule-fixed-tick
+  [browser Any
+   delay Int
+   tick (Fn [] Any)] (Fn [] Any)
+  (let [token Any (.setTimeout browser tick delay)]
+    (fn [] Any (.clearTimeout browser token))))
+
+(defn create-composition!
+  [create-shell (Fn [(Fn [Any] Any)] Any)
+   browser Any
+   module Any
+   exact-request-bytes Any
+   fixed-tick workbench/FixedTick
+   policy workbench/WorkbenchPolicy
+   emit-receipt (Fn [workbench/LifecycleReceipt] Any)] Any
+  (let [controller Any (atom nil)
+        passive-shell Any (create-shell
+                           (fn [input Any] Any
+                             (let [active Any @controller]
+                               (when (not (nil? active))
+                                 ((.-observeInput active)
+                                  (workbench/create-workbench-envelope
+                                   policy
+                                   (.stringify JSON [(.stringify JSON input)])))))))
+        port workbench/CartridgePort (wasm/create-wasm-cartridge-port
+                                      module
+                                      policy)
+        active Any (workbench/create-cartridge-workbench!
+                    port
+                    fixed-tick
+                    policy
+                    (fn
+                      [delay Int
+                       tick (Fn [] Any)] (Fn [] Any)
+                      (schedule-fixed-tick browser delay tick))
+                    (fn [values Any] Any
+                      ((.-renderFrame passive-shell)
+                       (project-cwo1-arena-frame values)))
+                    emit-receipt
+                    (wasm/->ExactProcessRequest exact-request-bytes))
+        disposed Any (atom false)
+        dispose Any (fn [] Any
+                      (when (not @disposed)
+                        (reset! disposed true)
+                        ((.-dispose active))
+                        ((.-dispose passive-shell))))]
+    (reset! controller active)
+    (.freeze Object
+             {:controller active
+              :shell passive-shell
+              :dispose dispose})))
+
+(js/export
+  (defn create-passive-wasm-workbench-shell!
+    [mount Any
+     browser Any
+     three Any
+     module Any
+     exact-request-bytes Any
+     fixed-tick workbench/FixedTick
+     policy workbench/WorkbenchPolicy
+     emit-receipt (Fn [workbench/LifecycleReceipt] Any)] Any
+    (create-composition!
+     (fn [emit-input (Fn [Any] Any)] Any
+       (shell/create-jump-arena-shell!
+        mount browser three emit-input))
+     browser
+     module
+     exact-request-bytes
+     fixed-tick
+     policy
+     emit-receipt)))
+
+(js/export
+  (defn load-passive-wasm-workbench-shell!
+    [initialize-module (Fn [Any] Any)
+     exact-module-bytes Any
+     mount Any
+     browser Any
+     three Any
+     exact-request-bytes Any
+     fixed-tick workbench/FixedTick
+     policy workbench/WorkbenchPolicy
+     emit-receipt (Fn [workbench/LifecycleReceipt] Any)] Any
+    (.then (initialize-module
+            {:module_or_path (require-module-bytes exact-module-bytes)})
+           (fn [module Any] Any
+             (create-passive-wasm-workbench-shell!
+              mount
+              browser
+              three
+              module
+              exact-request-bytes
+              fixed-tick
+              policy
+              emit-receipt)))))
+
+(js/export
+  (def create-passive-wasm-workbench-with-shell-factory Any
+    create-composition!))

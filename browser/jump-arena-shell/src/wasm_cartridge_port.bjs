@@ -218,8 +218,14 @@
         complete Any] Any
        (try
          (let [request ExactProcessRequest (require-request accepted-package)
-               session WasmSession (->WasmSession request (atom false))]
-           (complete (workbench/->SessionStarted session nil nil)))
+               session WasmSession (->WasmSession request (atom false))
+               bootstrap-frame Any (workbench/create-workbench-envelope
+                                    policy
+                                    "[]")]
+           (complete (workbench/->SessionStarted
+                      session
+                      nil
+                      bootstrap-frame)))
          (catch Error error
            (complete (workbench/->SessionFailed (reject-reason error))))))
      (fn

@@ -1,0 +1,130 @@
+#lang beagle/js
+
+(ns jump-arena-shell.wasm-workbench-shell-test
+  (:require [jump-arena-shell.wasm-workbench-shell :as integration]
+            [jump-arena-shell.workbench :as workbench]))
+
+(require '["bun:test" :as test])
+
+(declare-extern [test/test test/expect] Any)
+
+(defn policy [] workbench/WorkbenchPolicy
+  (let [maximum Int (.-MAX_SAFE_INTEGER Number)]
+    (workbench/->WorkbenchPolicy
+     8 8 32 128 512
+     (workbench/->WorkbenchSequenceLimits
+      maximum maximum maximum maximum maximum))))
+
+(defn identity [tag Int] Any
+  (let [bytes Any (new Array 32)]
+    (.fill bytes 0)
+    (.splice bytes 0 1 tag)
+    (.splice bytes 31 1 tag)
+    bytes))
+
+(defn cwo1 [values Any] Any
+  (let [bytes Any (.concat [67 87 79 49] (identity 11) (identity 22))
+        count Int (.-length values)]
+    (.push bytes (rem count 256))
+    (.push bytes (quot count 256))
+    (doseq [value Any values]
+      (if (= (js/typeof value) "boolean")
+        (do
+          (.push bytes 1)
+          (.push bytes (if value 1 0)))
+        (let [packed Any (new ArrayBuffer 8)
+              view Any (new DataView packed)]
+          (.setFloat64 view 0 value true)
+          (.push bytes 0)
+          (doseq [octet Int (new Uint8Array packed)]
+            (.push bytes octet)))))
+    bytes))
+
+(defn module-for!
+  [response Any
+   dispatches Any] Any
+  {:clause_process_v1_reset (fn [] Any nil)
+   :clause_process_v1_request_push (fn [_byte Int] Int 0)
+   :clause_process_v1_dispatch (fn [] Int
+                                 (do (swap! dispatches inc) 0))
+   :clause_process_v1_response_len (fn [] Int (.-length response))
+   :clause_process_v1_response_byte (fn [index Int] Int (nth response index))})
+
+(test/test
+ "passive shell renders only the admitted CWO1 successor frame"
+ (fn [] Any
+   (let [rendered Any []
+         disposed Any (atom 0)
+         emitted-input Any (atom nil)
+         scheduled Any (atom nil)
+         cancelled Any (atom 0)
+         dispatches Any (atom 0)
+         receipts Any []
+         browser Any {:setTimeout (fn
+                                    [tick Any
+                                     _delay Int] Int
+                                    (do (reset! scheduled tick) 41))
+                      :clearTimeout (fn [_token Any] Any (swap! cancelled inc))}
+         values Any [1.0 2.0 3.0 4.0 5.0 6.0 0.25 true
+                     0.0 -0.25 0.0 12.0 0.5 12.0]
+         composition Any (integration/create-passive-wasm-workbench-with-shell-factory
+                          (fn [emit-input Any] Any
+                            (do
+                              (reset! emitted-input emit-input)
+                              {:renderFrame (fn [frame Any] Any (.push rendered frame))
+                               :dispose (fn [] Any (swap! disposed inc))}))
+                          browser
+                          (module-for! (cwo1 values) dispatches)
+                          [67 87 82 49 1]
+                          (workbench/->FixedTick 16)
+                          (policy)
+                          (fn [receipt Any] Any (.push receipts receipt)))]
+     (.toEqual (test/expect rendered) [])
+     (.toBe (test/expect @dispatches) 0)
+     (.toBe (test/expect (.-phase ((.-snapshot (.-controller composition)))))
+            "ready")
+     (@emitted-input {:kind "keyboard" :phase "down" :code "Space" :repeat false})
+     (.toBe (test/expect @dispatches) 0)
+     (@scheduled)
+     (.toBe (test/expect @dispatches) 1)
+     (.toBe (test/expect (.-length rendered)) 1)
+     (let [frame Any (nth rendered 0)]
+       (.toEqual (test/expect [(.-x (.-position (.-player frame)))
+                              (.-y (.-position (.-player frame)))
+                              (.-z (.-position (.-player frame)))])
+                 [1 2 3])
+       (.toBe (test/expect (.-grounded (.-player frame))) true)
+       (.toBe (test/expect (.-length (.-platforms (.-world frame)))) 1))
+     ((.-dispose composition))
+     ((.-dispose composition))
+     (.toBe (test/expect @disposed) 1)
+     (.toBe (test/expect @cancelled) 1)
+     (@scheduled)
+     (.toBe (test/expect (.-length rendered)) 1))))
+
+(test/test
+ "browser loader injects bounded module bytes before composition"
+ (fn [] Any
+   (let [received Any (atom nil)
+         initializer Any (fn [input Any] Any
+                           (do
+                             (reset! received input)
+                             (.reject Promise (new Error "bounded loader probe"))))
+         module-bytes Any (new Uint8Array [0 97 115 109])]
+     (.catch
+      (integration/load-passive-wasm-workbench-shell!
+       initializer
+       module-bytes
+       nil
+       {:setTimeout (fn
+                      [_tick Any
+                       _delay Int] Int
+                      1)
+        :clearTimeout (fn [_token Any] Any nil)}
+       nil
+       [67 87 82 49 1]
+       (workbench/->FixedTick 16)
+       (policy)
+       (fn [_receipt Any] Any nil))
+      (fn [_error Any] Any
+        (.toBe (test/expect (.-module_or_path @received)) module-bytes))))))
