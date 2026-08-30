@@ -8,94 +8,94 @@ shape Vec3
   y: F64
   z: F64
 
-relation scalar/clamped-between
+relation clamped-between
   reads {value: F64} clamped between {lower: F64} and {upper: F64} as {result: F64}
   mode given value lower upper yields result: maybe
 
-relation arena/position
+relation position
   reads {player: Player} position {value: Vec3}
   subject player
   mode given player yields value: one
 
-relation arena/velocity
+relation velocity
   reads {player: Player} velocity {value: Vec3}
   subject player
   mode given player yields value: one
 
-relation arena/grounded
+relation grounded
   reads {player: Player} grounded {value: Bool}
   subject player
   mode given player yields value: one
 
-relation arena/horizontal-intent
+relation horizontal-intent
   reads {player: Player} horizontal intent {value: Vec3}
   subject player
   mode given player yields value: one
 
-relation arena/gravity
+relation gravity
   reads {arena: Arena} gravity {value: F64}
   subject arena
   mode given arena yields value: one
 
-relation arena/jump-speed
+relation jump-speed
   reads {arena: Arena} jump speed {value: F64}
   subject arena
   mode given arena yields value: one
 
-relation arena/move-speed
+relation move-speed
   reads {arena: Arena} move speed {value: F64}
   subject arena
   mode given arena yields value: one
 
-relation arena/floor-height
+relation floor-height
   reads {arena: Arena} floor height {value: F64}
   subject arena
   mode given arena yields value: one
 
-relation arena/min-x
+relation min-x
   reads {arena: Arena} minimum x {value: F64}
   subject arena
   mode given arena yields value: one
 
-relation arena/max-x
+relation max-x
   reads {arena: Arena} maximum x {value: F64}
   subject arena
   mode given arena yields value: one
 
-relation arena/min-z
+relation min-z
   reads {arena: Arena} minimum z {value: F64}
   subject arena
   mode given arena yields value: one
 
-relation arena/max-z
+relation max-z
   reads {arena: Arena} maximum z {value: F64}
   subject arena
   mode given arena yields value: one
 
-law scalar/clamp-lower
+law clamp-lower
   if
     ?lower <= ?upper
     ?value < ?lower
   then
     ?value clamped between ?lower and ?upper as ?lower
 
-law scalar/clamp-interior
+law clamp-interior
   if
     ?lower <= ?value
     ?value <= ?upper
   then
     ?value clamped between ?lower and ?upper as ?value
 
-law scalar/clamp-upper
+law clamp-upper
   if
     ?lower <= ?upper
     ?value > ?upper
   then
     ?value clamped between ?lower and ?upper as ?upper
 
-derive scalar/clamp-lower
-derive scalar/clamp-interior
-derive scalar/clamp-upper
+derive clamp-lower
+derive clamp-interior
+derive clamp-upper
 
 jump-arena ∈ Arena
 player-1 ∈ Player

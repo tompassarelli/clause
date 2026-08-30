@@ -1130,7 +1130,7 @@
     },
     {
       "relation_schema_id": "relation-schema/scalar-clamped-between",
-      "source_designation": "scalar/clamped-between",
+      "source_designation": "clamped-between",
       "roles": [
         {
           "role_id": "role/scalar-clamped-between/value",
@@ -1160,7 +1160,7 @@
     },
     {
       "relation_schema_id": "relation-schema/arena-position",
-      "source_designation": "arena/position",
+      "source_designation": "position",
       "roles": [
         {
           "role_id": "role/arena-position/player",
@@ -1178,7 +1178,7 @@
     },
     {
       "relation_schema_id": "relation-schema/arena-velocity",
-      "source_designation": "arena/velocity",
+      "source_designation": "velocity",
       "roles": [
         {
           "role_id": "role/arena-velocity/player",
@@ -1196,7 +1196,7 @@
     },
     {
       "relation_schema_id": "relation-schema/arena-grounded",
-      "source_designation": "arena/grounded",
+      "source_designation": "grounded",
       "roles": [
         {
           "role_id": "role/arena-grounded/player",
@@ -1214,7 +1214,7 @@
     },
     {
       "relation_schema_id": "relation-schema/arena-horizontal-intent",
-      "source_designation": "arena/horizontal-intent",
+      "source_designation": "horizontal-intent",
       "roles": [
         {
           "role_id": "role/arena-horizontal-intent/player",
@@ -1232,7 +1232,7 @@
     },
     {
       "relation_schema_id": "relation-schema/arena-gravity",
-      "source_designation": "arena/gravity",
+      "source_designation": "gravity",
       "roles": [
         {
           "role_id": "role/arena-gravity/arena",
@@ -1250,7 +1250,7 @@
     },
     {
       "relation_schema_id": "relation-schema/arena-jump-speed",
-      "source_designation": "arena/jump-speed",
+      "source_designation": "jump-speed",
       "roles": [
         {
           "role_id": "role/arena-jump-speed/arena",
@@ -1268,7 +1268,7 @@
     },
     {
       "relation_schema_id": "relation-schema/arena-move-speed",
-      "source_designation": "arena/move-speed",
+      "source_designation": "move-speed",
       "roles": [
         {
           "role_id": "role/arena-move-speed/arena",
@@ -1286,7 +1286,7 @@
     },
     {
       "relation_schema_id": "relation-schema/arena-floor-height",
-      "source_designation": "arena/floor-height",
+      "source_designation": "floor-height",
       "roles": [
         {
           "role_id": "role/arena-floor-height/arena",
@@ -1304,7 +1304,7 @@
     },
     {
       "relation_schema_id": "relation-schema/arena-min-x",
-      "source_designation": "arena/min-x",
+      "source_designation": "min-x",
       "roles": [
         {
           "role_id": "role/arena-min-x/arena",
@@ -1322,7 +1322,7 @@
     },
     {
       "relation_schema_id": "relation-schema/arena-max-x",
-      "source_designation": "arena/max-x",
+      "source_designation": "max-x",
       "roles": [
         {
           "role_id": "role/arena-max-x/arena",
@@ -1340,7 +1340,7 @@
     },
     {
       "relation_schema_id": "relation-schema/arena-min-z",
-      "source_designation": "arena/min-z",
+      "source_designation": "min-z",
       "roles": [
         {
           "role_id": "role/arena-min-z/arena",
@@ -1358,7 +1358,7 @@
     },
     {
       "relation_schema_id": "relation-schema/arena-max-z",
-      "source_designation": "arena/max-z",
+      "source_designation": "max-z",
       "roles": [
         {
           "role_id": "role/arena-max-z/arena",
@@ -2152,7 +2152,7 @@
   "source_law_declarations": [
     {
       "law_ref": "law/scalar-clamp-lower",
-      "source_designation": "scalar/clamp-lower",
+      "source_designation": "clamp-lower",
       "derivation_authorization_ref": "derivation-authorization/scalar-clamp-lower",
       "operator_refs": [
         "operator/f64-less-or-equal",
@@ -2162,7 +2162,7 @@
     },
     {
       "law_ref": "law/scalar-clamp-interior",
-      "source_designation": "scalar/clamp-interior",
+      "source_designation": "clamp-interior",
       "derivation_authorization_ref": "derivation-authorization/scalar-clamp-interior",
       "operator_refs": [
         "operator/f64-less-or-equal",
@@ -2171,7 +2171,7 @@
     },
     {
       "law_ref": "law/scalar-clamp-upper",
-      "source_designation": "scalar/clamp-upper",
+      "source_designation": "clamp-upper",
       "derivation_authorization_ref": "derivation-authorization/scalar-clamp-upper",
       "operator_refs": [
         "operator/f64-less-or-equal",
@@ -4152,8 +4152,8 @@
       "path": "clause:test-vectors/jump-arena/world.clause",
       "encoding": "UTF-8",
       "line_ending": "LF",
-      "byte_length": 6719,
-      "sha256": "2a40a6930ef0f6db39a6dad18cee542b440f7265959bad23097e81103393b77b"
+      "byte_length": 6598,
+      "sha256": "b5ab540ee769a6cdf2a1315b233b72b3c784296c9b656d92cc529814ed81cc24"
     }
   ],
   "nominal_allocation_basis_records": [
