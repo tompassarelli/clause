@@ -1,0 +1,262 @@
+#lang beagle/js
+
+(ns jump-arena-shell.wasm-cartridge-port
+  (:require [jump-arena-shell.workbench :as workbench]))
+
+(def cwr1-max-bytes Int (* 4 1024 1024))
+(def cwo1-max-bytes Int (* 64 1024))
+(def cwo1-prefix-bytes Int (+ 4 32 32))
+(def cwo1-identity-bytes Int 32)
+(def cwo1-max-values Int 256)
+
+(js/export
+  (defrecord ExactProcessRequest [bytes Any]))
+
+(js/export
+  (defrecord ExactProcessObservation [bytes Any]))
+
+(defrecord WasmCandidate [request ExactProcessRequest])
+
+(defrecord WasmSession
+  [initial ExactProcessRequest
+   disposed Any])
+
+(js/export
+  (defrecord Cwo1Observation
+    [observationId Any
+     stateRevisionId Any
+     values Any]))
+
+(defn exact-byte-array?
+  [bytes Any
+   maximum Int] Bool
+  (and (.isArray Array bytes)
+       (<= 1 (.-length bytes))
+       (<= (.-length bytes) maximum)
+       (.every bytes
+               (fn [byte Any] Bool
+                 (and (.isInteger Number byte)
+                      (<= 0 byte)
+                      (<= byte 255))))))
+
+(defn require-request [request ExactProcessRequest] ExactProcessRequest
+  (if (and (not (nil? request))
+           (exact-byte-array? (.-bytes request) cwr1-max-bytes))
+    (->ExactProcessRequest (.freeze Object (.slice (.-bytes request))))
+    (throw (new Error "cartridge request must carry bounded exact bytes"))))
+
+(defn process-status [status Any] Int
+  (if (.isSafeInteger Number status)
+    status
+    -1))
+
+(defn byte-at
+  [bytes Any
+   index Int] Int
+  (nth bytes index))
+
+(defn little-u16
+  [bytes Any
+   offset Int] Int
+  (+ (byte-at bytes offset)
+     (* 256 (byte-at bytes (inc offset)))))
+
+(defn frozen-byte-range
+  [bytes Any
+   start Int
+   end Int] Any
+  (.freeze Object (.slice bytes start end)))
+
+(defn finite-f64
+  [bytes Any
+   offset Int] Float
+  (let [packed Any (new Uint8Array (.slice bytes offset (+ offset 8)))
+        view Any (new DataView (.-buffer packed))
+        value Float (.getFloat64 view 0 true)]
+    (if (and (.isFinite Number value)
+             (not (and (= value 0.0)
+                       (= (byte-at bytes (+ offset 7)) 128))))
+      value
+      (throw (new Error "CWO1 number is not canonical finite f64")))))
+
+(js/export
+  (defn decode-cwo1-observation [incoming Any] Cwo1Observation
+    (if-not (exact-byte-array? incoming cwo1-max-bytes)
+      (throw (new Error "CWO1 response must carry bounded exact bytes"))
+      (let [length Int (.-length incoming)]
+        (when (< length (+ cwo1-prefix-bytes 2))
+          (throw (new Error "CWO1 response is truncated")))
+        (when (or (not= (byte-at incoming 0) 67)
+                  (not= (byte-at incoming 1) 87)
+                  (not= (byte-at incoming 2) 79)
+                  (not= (byte-at incoming 3) 49))
+          (throw (new Error "CWO1 response magic is invalid")))
+        (let [observation-id Any (frozen-byte-range
+                                  incoming
+                                  4
+                                  (+ 4 cwo1-identity-bytes))
+              state-revision-id Any (frozen-byte-range
+                                     incoming
+                                     (+ 4 cwo1-identity-bytes)
+                                     cwo1-prefix-bytes)
+              count Int (little-u16 incoming cwo1-prefix-bytes)]
+          (when (> count cwo1-max-values)
+            (throw (new Error "CWO1 render value count is out of bounds")))
+          (loop [index Int 0
+                 offset Int (+ cwo1-prefix-bytes 2)
+                 values (Vec Any) []]
+            (if (= index count)
+              (if (= offset length)
+                (->Cwo1Observation
+                 observation-id
+                 state-revision-id
+                 (.freeze Object values))
+                (throw (new Error "CWO1 response has trailing bytes")))
+              (do
+                (when (>= offset length)
+                  (throw (new Error "CWO1 value is truncated")))
+                (let [tag Int (byte-at incoming offset)]
+                  (cond
+                    (= tag 0)
+                    (if (> (+ offset 9) length)
+                      (throw (new Error "CWO1 number is truncated"))
+                      (recur (inc index)
+                             (+ offset 9)
+                             (conj values (finite-f64 incoming (inc offset)))))
+
+                    (= tag 1)
+                    (if (> (+ offset 2) length)
+                      (throw (new Error "CWO1 boolean is truncated"))
+                      (let [value Int (byte-at incoming (inc offset))]
+                        (if (> value 1)
+                          (throw (new Error "CWO1 boolean is invalid"))
+                          (recur (inc index)
+                                 (+ offset 2)
+                                 (conj values (= value 1))))))
+
+                    :else
+                    (throw (new Error "CWO1 value tag is invalid"))))))))))))
+
+(defn project-frame
+  [policy workbench/WorkbenchPolicy
+   observation Cwo1Observation] Any
+  (workbench/create-workbench-envelope
+   policy
+   (.stringify JSON (.-values observation))))
+
+(defn dispatch-exact-request
+  [module Any
+   request ExactProcessRequest] ExactProcessObservation
+  (let [checked ExactProcessRequest (require-request request)
+        reset Any (.-clause_process_v1_reset module)
+        push Any (.-clause_process_v1_request_push module)
+        dispatch Any (.-clause_process_v1_dispatch module)
+        response-length Any (.-clause_process_v1_response_len module)
+        response-byte Any (.-clause_process_v1_response_byte module)]
+    (reset)
+    (doseq [byte Int (.-bytes checked)]
+      (let [status Int (process-status (push byte))]
+        (when (not= status 0)
+          (throw (new Error (str "CWR1 byte transfer rejected with status " status))))))
+    (let [status Int (process-status (dispatch))]
+      (when (not= status 0)
+        (throw (new Error (str "CWR1 dispatch rejected with status " status)))))
+    (let [length Int (process-status (response-length))]
+      (when (or (< length (+ cwo1-prefix-bytes 2))
+                (> length cwo1-max-bytes))
+        (throw (new Error "CWO1 response length is out of bounds")))
+      (loop [index Int 0
+             bytes (Vec Int) []]
+        (if (= index length)
+          (->ExactProcessObservation (.freeze Object bytes))
+          (let [byte Int (process-status (response-byte index))]
+            (if (or (< byte 0) (> byte 255))
+              (throw (new Error "CWO1 response byte is out of bounds"))
+              (recur (inc index) (conj bytes byte)))))))))
+
+(defn require-session [value Any] WasmSession
+  (if (and (not (nil? value))
+           (not (nil? (.-initial value)))
+           (not (nil? (.-disposed value))))
+    value
+    (throw (new Error "Wasm session is invalid"))))
+
+(defn require-live-session [value Any] WasmSession
+  (let [session WasmSession (require-session value)]
+    (if @(.-disposed session)
+      (throw (new Error "Wasm session is disposed"))
+      session)))
+
+(defn require-candidate [value Any] WasmCandidate
+  (if (and (not (nil? value))
+           (not (nil? (.-request value))))
+    value
+    (throw (new Error "Wasm candidate is invalid"))))
+
+(defn reject-reason [error Any] String
+  (let [message Any (.-message error)]
+    (if (= (js/typeof message) "string")
+      message
+      "Wasm cartridge boundary rejected")))
+
+(defn create-wasm-cartridge-port!
+  [module Any
+   policy workbench/WorkbenchPolicy] workbench/CartridgePort
+  (workbench/->CartridgePort
+     (fn
+       [package-candidate Any
+        complete Any] Any
+       (try
+         (complete
+          (workbench/->PackageAccepted
+           (require-request package-candidate)))
+         (catch Error error
+           (complete (workbench/->PackageRejected (reject-reason error))))))
+     (fn
+       [accepted-package Any
+        _generation Int
+        complete Any] Any
+       (try
+         (let [request ExactProcessRequest (require-request accepted-package)
+               session WasmSession (->WasmSession request (atom false))]
+           (complete (workbench/->SessionStarted session nil nil)))
+         (catch Error error
+           (complete (workbench/->SessionFailed (reject-reason error))))))
+     (fn
+       [incoming-session Any
+        _fixed-tick workbench/FixedTick
+        _configuration workbench/InputConfiguration
+        complete Any] Any
+       (try
+         (let [session WasmSession (require-live-session incoming-session)]
+           (complete
+            (workbench/->CandidateProduced
+             (->WasmCandidate (.-initial session)))))
+         (catch Error error
+           (complete (workbench/->CandidateFailed (reject-reason error))))))
+     (fn
+       [incoming-session Any
+        incoming-candidate Any
+        complete Any] Any
+       (try
+         (let [session WasmSession (require-live-session incoming-session)
+               candidate WasmCandidate (require-candidate incoming-candidate)
+               response ExactProcessObservation (dispatch-exact-request
+                                                  module
+                                                  (.-request candidate))
+               observation Cwo1Observation (decode-cwo1-observation
+                                            (.-bytes response))
+               frame Any (project-frame policy observation)]
+           (complete
+            (workbench/->AdmissionAccepted
+             session
+             (.-stateRevisionId observation)
+             frame)))
+         (catch Error error
+           (complete (workbench/->AdmissionRejected (reject-reason error))))))
+     (fn [incoming-session Any] Any
+       (let [session WasmSession (require-session incoming-session)]
+         (reset! (.-disposed session) true)))))
+
+(js/export
+  (def create-wasm-cartridge-port Any create-wasm-cartridge-port!))

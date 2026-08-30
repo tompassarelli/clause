@@ -4,8 +4,8 @@
   "type": "module",
   "exports": "./generated/jump-arena-shell/shell.js",
   "scripts": {
-    "build": "beagle_root=${BEAGLE_HOME:-/home/tom/code/beagle/main} && \"$beagle_root/bin/beagle-build-all\" src/shell.bjs src/demo.bjs src/shell_boundary_test.bjs src/workbench.bjs src/workbench_boundary_test.bjs --out generated && install -Dm644 \"$beagle_root/beagle-lib/lib/beagle/core.js\" \"$beagle_root/beagle-lib/lib/beagle/exception-dispatch.js\" generated/node_modules/beagle/",
-    "test": "bun test ./generated/jump-arena-shell/shell-boundary-test.js ./generated/jump-arena-shell/workbench-boundary-test.js"
+    "build": "beagle_root=${BEAGLE_HOME:-/home/tom/code/beagle/main} && \"$beagle_root/bin/beagle-build-all\" src/shell.bjs src/demo.bjs src/shell_boundary_test.bjs src/workbench.bjs src/workbench_boundary_test.bjs src/wasm_cartridge_port.bjs src/wasm_cartridge_port_test.bjs --out generated && install -Dm644 \"$beagle_root/beagle-lib/lib/beagle/core.js\" \"$beagle_root/beagle-lib/lib/beagle/exception-dispatch.js\" generated/node_modules/beagle/",
+    "test": "bun test ./generated/jump-arena-shell/shell-boundary-test.js ./generated/jump-arena-shell/workbench-boundary-test.js ./generated/jump-arena-shell/wasm-cartridge-port-test.js"
   },
   "dependencies": {
     "three": "0.185.1"

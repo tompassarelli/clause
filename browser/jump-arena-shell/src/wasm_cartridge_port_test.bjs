@@ -1,0 +1,109 @@
+#lang beagle/js
+
+(ns jump-arena-shell.wasm-cartridge-port-test
+  (:require [jump-arena-shell.wasm-cartridge-port :as wasm]
+            [jump-arena-shell.workbench :as workbench]))
+
+(require '["bun:test" :as test])
+
+(declare-extern [test/test test/expect] Any)
+
+(defn policy [] workbench/WorkbenchPolicy
+  (let [maximum Int (.-MAX_SAFE_INTEGER Number)]
+    (workbench/->WorkbenchPolicy
+     8 8 32 128 512
+     (workbench/->WorkbenchSequenceLimits
+      maximum maximum maximum maximum maximum))))
+
+(defn identity [tag Int] Any
+  (let [bytes Any (new Array 32)]
+    (.fill bytes 0)
+    (.splice bytes 0 1 tag)
+    (.splice bytes 31 1 tag)
+    bytes))
+
+(defn cwo1 [values Any] Any
+  (let [bytes Any [67 87 79 49]]
+    (.push bytes (identity 11))
+    (.push bytes (identity 22))
+    (let [flat Any (.flat bytes)
+          count Int (.-length values)]
+      (.push flat (rem count 256))
+      (.push flat (quot count 256))
+      (doseq [value Any values]
+        (if (= (.-kind value) "boolean")
+          (do
+            (.push flat 1)
+            (.push flat (if (.-value value) 1 0)))
+          (let [packed Any (new ArrayBuffer 8)
+                view Any (new DataView packed)
+                octets Any (new Uint8Array packed)]
+            (.setFloat64 view 0 (.-value value) true)
+            (.push flat 0)
+            (doseq [octet Int octets]
+              (.push flat octet)))))
+      flat)))
+
+(defn module-for
+  [response Any
+   calls Any] Any
+  {:clause_process_v1_reset (fn [] Any (.push calls "reset"))
+   :clause_process_v1_request_push (fn [byte Int] Int
+                                     (do (.push calls byte) 0))
+   :clause_process_v1_dispatch (fn [] Int (do (.push calls "dispatch") 0))
+   :clause_process_v1_response_len (fn [] Int (.-length response))
+   :clause_process_v1_response_byte (fn [index Int] Int (nth response index))})
+
+(test/test
+ "candidate stays opaque and Wasm dispatch occurs only at admission"
+ (fn [] Any
+   (let [response Any (cwo1 [{:kind "number" :value 2.5}
+                              {:kind "boolean" :value true}])
+         calls Any []
+         port workbench/CartridgePort (wasm/create-wasm-cartridge-port
+                                       (module-for response calls)
+                                       (policy))
+         request wasm/ExactProcessRequest (wasm/->ExactProcessRequest
+                                           [67 87 82 49 0])
+         accepted Any (atom nil)
+         started Any (atom nil)
+         candidate Any (atom nil)
+         admitted Any (atom nil)]
+     ((.-acceptPackage port) request (fn [result Any] Any (reset! accepted result)))
+     ((.-startSession port) (.-acceptedPackage @accepted) 1
+      (fn [result Any] Any (reset! started result)))
+     ((.-runCandidate port)
+      (.-session @started)
+      (workbench/->FixedTick 16)
+      (workbench/->InputConfiguration 0 [])
+      (fn [result Any] Any (reset! candidate result)))
+     (.toEqual (test/expect calls) [])
+     (.toEqual (test/expect (.-bytes (.-request (.-candidate @candidate))))
+               (.-bytes request))
+     (.toBe (test/expect (.isFrozen Object
+                                    (.-bytes (.-request (.-candidate @candidate)))))
+            true)
+     (.toBe (test/expect (.-revision @started)) nil)
+     (.toBe (test/expect (.-frame @started)) nil)
+     ((.-requestAdmission port)
+      (.-session @started)
+      (.-candidate @candidate)
+      (fn [result Any] Any (reset! admitted result)))
+     (.toBe (test/expect (nth calls 0)) "reset")
+     (.toBe (test/expect (nth calls 6)) "dispatch")
+     (.toEqual (test/expect (.-revision @admitted)) (identity 22))
+     (.toEqual (test/expect (.-frame @admitted)) [2.5 true]))))
+
+(test/test
+ "strict CWO1 decoding rejects malformed and trailing bytes"
+ (fn [] Any
+   (let [valid Any (cwo1 [{:kind "boolean" :value false}])]
+     (.toThrow
+      (test/expect
+       (fn [] Any
+         (wasm/decode-cwo1-observation (.concat valid [0])))))
+     (let [bad Any (.slice valid)]
+       (.splice bad 0 1 88)
+       (.toThrow
+        (test/expect
+         (fn [] Any (wasm/decode-cwo1-observation bad))))))))
