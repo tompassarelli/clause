@@ -686,6 +686,7 @@ pub struct ProcessCarrier {
     causal_predecessors: BTreeMap<CausalRef, BTreeSet<CausalRef>>,
     causal_edge_count: usize,
     base_record_count: usize,
+    applied_base_record_count: usize,
     accepted_ingress_record_count: usize,
     accepted_ingress_bytes: usize,
 }
@@ -772,13 +773,46 @@ impl ProcessCarrier {
         package: &CheckedProcessPackage,
         authority: &AuthorityStore,
     ) -> Result<Self, ProcessError> {
+        let mut carrier = Self::instantiate(package, authority)?;
+        while carrier.advance_package(package, authority)?.is_some() {}
+        Ok(carrier)
+    }
+
+    /// Instantiate the checked package without executing any of its process
+    /// records. The complete record surface is rejected up front when it asks
+    /// for execution that the serial carrier does not support.
+    pub fn instantiate(
+        package: &CheckedProcessPackage,
+        authority: &AuthorityStore,
+    ) -> Result<Self, ProcessError> {
         let mut carrier = Self::empty(package)?;
         carrier.preflight_supported_records(package.records())?;
         carrier.bind_initial_states(package.initial_state_views(), authority)?;
-        for record in package.records() {
-            carrier.apply_record(record.clone(), authority)?;
-        }
         Ok(carrier)
+    }
+
+    /// Execute the next record from the exact checked package, in package
+    /// order. No caller-supplied semantic selector participates in dispatch.
+    pub fn advance_package(
+        &mut self,
+        package: &CheckedProcessPackage,
+        authority: &AuthorityStore,
+    ) -> Result<Option<ProcessRecordV2>, ProcessError> {
+        if package.id != self.package
+            || package.exact_bytes.as_ref() != self.exact_package_bytes.as_ref()
+            || package.records.len() != self.base_record_count
+        {
+            return Err(ProcessError::PackageBindingMismatch);
+        }
+        let Some(record) = package.records.get(self.applied_base_record_count).cloned() else {
+            return Ok(None);
+        };
+        self.apply_record(record.clone(), authority)?;
+        self.applied_base_record_count = self
+            .applied_base_record_count
+            .checked_add(1)
+            .expect("checked package record count is bounded");
+        Ok(Some(record))
     }
 
     fn empty(package: &CheckedProcessPackage) -> Result<Self, ProcessError> {
@@ -818,6 +852,7 @@ impl ProcessCarrier {
             causal_predecessors: BTreeMap::new(),
             causal_edge_count: 0,
             base_record_count: package.records.len(),
+            applied_base_record_count: 0,
             accepted_ingress_record_count: 0,
             accepted_ingress_bytes: 0,
         })
@@ -3404,6 +3439,11 @@ impl ProcessCarrier {
             activations: self.activations.len(),
             configurations: self.configurations.len(),
         }
+    }
+
+    #[must_use]
+    pub const fn applied_package_record_count(&self) -> usize {
+        self.applied_base_record_count
     }
 
     #[must_use]
