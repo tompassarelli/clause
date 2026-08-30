@@ -278,6 +278,58 @@
                    "admission-rejected")))))
 
 (test/test
+ "fixed ticks consume input into a fresh bounded configuration identity"
+ (fn [] Any
+   (let [fixture Any (fake-fixture! (frozen {:opaque "package"}))
+         controller Any (.-controller fixture)]
+     (bootstrap!
+      fixture
+      (frozen {:opaque "accepted"})
+      (frozen {:opaque "session"})
+      (frozen {:opaque "revision"})
+      (envelope "frame"))
+     ((.-observeInput controller) (envelope "input"))
+     (.toBe (test/expect (.-configurationRevision (snapshot fixture))) 2)
+     (.toBe (test/expect (.-pendingObservations (snapshot fixture))) 1)
+     (tick! fixture)
+     (let [consumed workbench/InputConfiguration (.-configuration
+                                                   (request-at
+                                                    (.-candidateRequests fixture)
+                                                    0))
+           current Any (snapshot fixture)]
+       (.toBe (test/expect (.-revision consumed)) 2)
+       (.toBe (test/expect (count (.-observations consumed))) 1)
+       (.toBe (test/expect (.-configurationRevision current)) 3)
+       (.toBe (test/expect (.-pendingObservations current)) 0)))))
+
+(test/test
+ "fixed tick configuration consumption fails before its declared ceiling"
+ (fn [] Any
+   (let [maximum Int (.-MAX_SAFE_INTEGER Number)
+         fixture Any (fake-fixture-with-policy!
+                      (frozen {:opaque "package"})
+                      (workbench-policy-with-sequences
+                       (sequence-limits maximum maximum maximum maximum 2)))
+         controller Any (.-controller fixture)]
+     (bootstrap!
+      fixture
+      (frozen {:opaque "accepted"})
+      (frozen {:opaque "session"})
+      (frozen {:opaque "revision"})
+      (envelope "frame"))
+     ((.-observeInput controller) (envelope "input"))
+     (tick! fixture)
+     (let [terminal Any (snapshot fixture)]
+       (.toBe (test/expect (.-phase terminal)) "disposed")
+       (.toBe (test/expect (.-configurationRevision terminal)) 2)
+       (.toBe (test/expect (.-pendingObservations terminal)) 1)
+       (.toBe (test/expect (.-length @(.-candidateRequests fixture))) 0)
+       (.toBe
+        (test/expect
+         (.-detail (nth (event-receipts fixture "counter-exhausted") 0)))
+        "configuration-revision")))))
+
+(test/test
  "each candidate and admission cycle has one exact operation identity"
  (fn [] Any
    (let [fixture Any (fake-fixture! (frozen {:opaque "package-a"}))
@@ -1141,7 +1193,7 @@
          (.toBe (test/expect (count (event-receipts fixture event))) 0))))))
 
 (test/test
- "port throws before completion restore authority and close late callbacks"
+ "port throws before completion restore authority and contain late callbacks"
  (fn [] Any
    (let [package-fixture Any (fake-fixture! (frozen {:opaque "package-a"}))
          package-session Any (frozen {:opaque "package-session"})
@@ -1149,6 +1201,7 @@
          package-frame Any (envelope "package-frame")
          session-fixture Any (fake-fixture! (frozen {:opaque "session-package"}))
          session-0 Any (frozen {:opaque "session-0"})
+         late-session Any (frozen {:opaque "late-session"})
          session-revision Any (frozen {:opaque "session-revision"})
          session-frame Any (envelope "session-frame")
          candidate-fixture Any (fake-fixture! (frozen {:opaque "candidate-package"}))
@@ -1203,10 +1256,11 @@
       (.-sessionRequests session-fixture)
       1
       (workbench/->SessionStarted
-       (frozen {:opaque "late-session"})
+       late-session
        (frozen {:opaque "late-revision"})
        (envelope "late-frame")))
      (.toBe (test/expect (.-revision (snapshot session-fixture))) session-revision)
+     (.toEqual (test/expect @(.-disposals session-fixture)) [late-session])
 
      (bootstrap!
       candidate-fixture
@@ -1256,8 +1310,70 @@
        (frozen {:opaque "late-revision"})
        (envelope "late-frame")))
      (.toBe
-      (test/expect (.-revision (snapshot admission-fixture)))
+     (test/expect (.-revision (snapshot admission-fixture)))
       admission-revision))))
+
+(test/test
+ "throwing RuntimeSession starts retain bounded identity custody"
+ (fn [] Any
+   (let [fixture Any (fake-fixture-with-policy!
+                      (frozen {:opaque "package-a"})
+                      (workbench-policy 8 3))
+         controller Any (.-controller fixture)
+         session-0 Any (frozen {:opaque "session-0"})
+         session-1 Any (frozen {:opaque "session-1"})
+         session-2 Any (frozen {:opaque "session-2"})]
+     (bootstrap!
+      fixture
+      (frozen {:opaque "accepted-a"})
+      session-0
+      (frozen {:opaque "revision-0"})
+      (envelope "frame-0"))
+     (reset! (.-sessionHook fixture)
+             (fn [_request Any] Any
+               (throw (new Error "session-boundary"))))
+
+     ((.-reloadPackage controller) (frozen {:opaque "package-b"}))
+     (complete-request!
+      (.-packageRequests fixture)
+      1
+      (workbench/->PackageAccepted (frozen {:opaque "accepted-b"})))
+     ((.-reloadPackage controller) (frozen {:opaque "package-c"}))
+     (complete-request!
+      (.-packageRequests fixture)
+      2
+      (workbench/->PackageAccepted (frozen {:opaque "accepted-c"})))
+
+     ((.-reloadPackage controller) (frozen {:opaque "package-d"}))
+     (complete-request!
+      (.-packageRequests fixture)
+      3
+      (workbench/->PackageAccepted (frozen {:opaque "accepted-d"})))
+     (.toBe (test/expect (.-length @(.-sessionRequests fixture))) 3)
+     (.toBe
+      (test/expect
+       (count (event-receipts fixture "session-boundary-failed")))
+      2)
+     (.toBe
+      (test/expect (count (event-receipts fixture "session-identity-limit")))
+      1)
+
+     (complete-request!
+      (.-sessionRequests fixture)
+      1
+      (workbench/->SessionStarted
+       session-1
+       (frozen {:opaque "late-revision-1"})
+       (envelope "late-frame-1")))
+     (complete-request!
+      (.-sessionRequests fixture)
+      2
+      (workbench/->SessionStarted
+       session-2
+       (frozen {:opaque "late-revision-2"})
+       (envelope "late-frame-2")))
+     (.toEqual (test/expect @(.-disposals fixture)) [session-1 session-2])
+     (.toBe (test/expect (.-generation (snapshot fixture))) 1))))
 
 (test/test
  "cancellation and session-disposal throws cannot escape terminal disposal"
@@ -1691,6 +1807,46 @@
        (.toBe (test/expect (.-length @(.-candidateRequests fixture))) 0)))))
 
 (test/test
+ "receipt exhaustion retires a fresh RuntimeSession with a rejected frame"
+ (fn [] Any
+   (let [maximum Int (.-MAX_SAFE_INTEGER Number)
+         fixture Any (fake-fixture-with-policy!
+                      (frozen {:opaque "package-a"})
+                      (workbench-policy-with-sequences
+                       (sequence-limits 8 maximum maximum maximum maximum)))
+         controller Any (.-controller fixture)
+         session-0 Any (frozen {:opaque "session-0"})
+         session-1 Any (frozen {:opaque "session-1"})]
+     (bootstrap!
+      fixture
+      (frozen {:opaque "accepted-a"})
+      session-0
+      (frozen {:opaque "revision-0"})
+      (envelope "frame-0"))
+     ((.-reloadPackage controller) (frozen {:opaque "package-b"}))
+     (complete-request!
+      (.-packageRequests fixture)
+      1
+      (workbench/->PackageAccepted (frozen {:opaque "accepted-b"})))
+     (complete-request!
+      (.-sessionRequests fixture)
+      1
+      (workbench/->SessionStarted
+       session-1
+       (frozen {:opaque "revision-1"})
+       (frozen {:opaque "unbranded-frame"})))
+     (let [terminal Any (snapshot fixture)
+           exhausted Any (event-receipts fixture "counter-exhausted")]
+       (.toBe (test/expect (.-phase terminal)) "disposed")
+       (.toEqual (test/expect @(.-disposals fixture)) [session-0 session-1])
+       (.toBe (test/expect (count exhausted)) 1)
+       (.toBe (test/expect (.-sequence (nth exhausted 0))) 8)
+       (.toBe (test/expect (.-detail (nth exhausted 0))) "receipt-sequence")
+       (.toBe
+        (test/expect (count (event-receipts fixture "session-frame-rejected")))
+        0)))))
+
+(test/test
  "generation operation input and configuration counters fail closed"
  (fn [] Any
    (let [maximum Int (.-MAX_SAFE_INTEGER Number)
@@ -1817,6 +1973,10 @@
       (.-packageRequests fixture)
       1
       (workbench/->PackageAccepted (frozen {:opaque "accepted-b"})))
+     (reset! (.-disposalHook fixture)
+             (fn [session Any] Any
+               (when (identical? session session-1)
+                 (throw (new Error "fresh-session-disposal-failed")))))
      (complete-request!
       (.-sessionRequests fixture)
       1
@@ -1831,7 +1991,7 @@
                                    fixture
                                    "counter-exhausted")
                                   0)))
-      "configuration-revision"))))
+      "configuration-revision:disposal-uncertain"))))
 
 (test/test
  "terminal disposal fences outstanding candidate and Admission completions"

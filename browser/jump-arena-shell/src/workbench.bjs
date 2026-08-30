@@ -471,7 +471,9 @@
                   :else
                   nil))
 
-              (counter-exhausted! [domain String] Any
+              (counter-exhausted-with-session!
+                [domain String
+                 uninstalled-session Any] Any
                 (let [current WorkbenchState @state]
                   (when (not (.-disposed current))
                     (let [active ActiveRuntime? (.-active current)
@@ -492,10 +494,18 @@
                                                       (cancel)
                                                       false)
                                                     (catch Error _error true))
-                            disposal-uncertain Bool (if (nil? active)
-                                                       false
-                                                       (dispose-session-once!
-                                                        (.-session active)))
+                            active-disposal-uncertain Bool (if (nil? active)
+                                                              false
+                                                              (dispose-session-once!
+                                                               (.-session active)))
+                            uninstalled-disposal-uncertain Bool (if (nil?
+                                                                      uninstalled-session)
+                                                                  false
+                                                                  (dispose-session-once!
+                                                                   uninstalled-session))
+                            disposal-uncertain Bool (or
+                                                      active-disposal-uncertain
+                                                      uninstalled-disposal-uncertain)
                             sequence Int (swap! receipt-sequence inc)
                             detail String (cond
                                             (and cancel-uncertain
@@ -535,6 +545,9 @@
                                  true))
                         (maybe-release-retired-sessions!))))))
 
+              (counter-exhausted! [domain String] Any
+                (counter-exhausted-with-session! domain nil))
+
               (ensure-capacity!
                 [receipts Int
                  inputs Int
@@ -551,6 +564,27 @@
                     true
                     (do
                       (counter-exhausted! failure)
+                      false))))
+
+              (ensure-capacity-retiring!
+                [receipts Int
+                 inputs Int
+                 generations Int
+                 operations Int
+                 configurations Int
+                 uninstalled-session Any] Bool
+                (let [failure Any (capacity-failure
+                                   receipts
+                                   inputs
+                                   generations
+                                   operations
+                                   configurations)]
+                  (if (nil? failure)
+                    true
+                    (do
+                      (counter-exhausted-with-session!
+                       failure
+                       uninstalled-session)
                       false))))
 
               (emit-lifecycle-for!
@@ -637,10 +671,17 @@
                  revision Any
                  frame Any
                  reset-configuration Bool
+                 uninstalled-session Any
                  accepted-event String
                  accepted-detail String] Any
                 (let [configuration-increment Int (if reset-configuration 1 0)]
-                  (when (ensure-capacity! 3 0 0 0 configuration-increment)
+                  (when (ensure-capacity-retiring!
+                         3
+                         0
+                         0
+                         0
+                         configuration-increment
+                         uninstalled-session)
                     (let [current WorkbenchState @state
                           operation-id Int (.-operationId current)
                           previous ActiveRuntime? (.-active current)
@@ -776,7 +817,7 @@
                        (when (and (not (.-disposed current))
                                   (= (.-phase current) "ready")
                                   (not (nil? active))
-                                  (ensure-capacity! 1 0 0 1 0))
+                                  (ensure-capacity! 1 0 0 1 1))
                          (let [generation Int (.-generation active)
                                operation-id Int (swap! operation-sequence inc)
                                configuration InputConfiguration (.-configuration current)]
@@ -786,7 +827,7 @@
                                     active
                                     operation-id
                                     (empty-configuration
-                                     (.-revision configuration))
+                                     (inc (.-revision configuration)))
                                     (.-latestReload current)
                                     false))
                            (emit-lifecycle!
@@ -916,6 +957,7 @@
                              revision
                              frame
                              false
+                             nil
                              "admission-accepted"
                              "successor"))])))]
 
@@ -1031,22 +1073,32 @@
                                    generation
                                    "accepted-package")
                                   (swap! retirement-reservations inc)
-                                  (let [settle Any (one-shot-transition!)]
+                                  (let [callback-completed (Atom Bool) (atom false)
+                                        boundary-reported (Atom Bool) (atom false)
+                                        complete-session! Any (fn [result SessionCompletion] Any
+                                         (if @callback-completed
+                                           false
+                                           (do
+                                             (reset! callback-completed true)
+                                             (dispatch!
+                                              (->SessionCompleted
+                                               generation
+                                               prior-session
+                                               result))
+                                             true)))]
                                     (try
                                       ((.-startSession port)
                                        accepted-package
                                        generation
-                                       (fn [result SessionCompletion] Any
-                                         (settle
-                                          (->SessionCompleted
-                                           generation
-                                           prior-session
-                                           result))))
+                                       complete-session!)
                                       (catch Error _error
-                                        (settle
-                                         (->SessionBoundaryFailed
-                                          generation
-                                          prior-session)))))))))])))]
+                                        (when (and (not @callback-completed)
+                                                   (not @boundary-reported))
+                                          (reset! boundary-reported true)
+                                          (dispatch!
+                                           (->SessionBoundaryFailed
+                                            generation
+                                            prior-session))))))))))])))]
 
                   [(PackageBoundaryFailed generation)
                    (let [current WorkbenchState @state]
@@ -1145,7 +1197,8 @@
                                  "fresh-runtime-session-required"))
 
                               (not (immutable-envelope? policy frame))
-                              (when (ensure-capacity! 1 0 0 0 0)
+                              (when (ensure-capacity-retiring!
+                                     1 0 0 0 0 session)
                                 (let [disposal-uncertain Bool (dispose-session-once!
                                                                session)]
                                   (restore-settled-phase!)
@@ -1157,22 +1210,18 @@
                                      "frame-not-deeply-immutable"))))
 
                               :else
-                              (if (ensure-capacity! 3 0 0 0 1)
-                                (install-authority!
-                                 generation
-                                 session
-                                 revision
-                                 frame
-                                 true
-                                 "session-started"
-                                 "fresh-runtime-session")
-                                (do
-                                  (dispose-session-once! session)
-                                  (maybe-release-retired-sessions!)))))])))]
+                              (install-authority!
+                               generation
+                               session
+                               revision
+                               frame
+                               true
+                               session
+                               "session-started"
+                               "fresh-runtime-session")))])))]
 
                   [(SessionBoundaryFailed generation _prior-session)
-                   (let [_remaining-reservations Int (swap! retirement-reservations dec)
-                         current WorkbenchState @state
+                   (let [current WorkbenchState @state
                          current-completion Bool (and (not (.-disposed current))
                               (= generation (.-latestReload current))
                               (= (.-phase current) "session-start"))]
