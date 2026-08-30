@@ -966,13 +966,19 @@ impl SourceInventory {
         validate_closed_enums(&enum_variants)?;
         let cargo_lock_digest = hash_file(&workspace_root.join("Cargo.lock"))?;
         let mut manifest_hasher = Sha256::new();
-        for path in [
-            workspace_root.join("Cargo.toml"),
-            manifest_dir.join("Cargo.toml"),
+        let crate_manifest = manifest_dir
+            .strip_prefix(&workspace_root)
+            .map_err(|error| AuditError::Io(error.to_string()))?
+            .join("Cargo.toml")
+            .to_string_lossy()
+            .replace('\\', "/");
+        for (label, path) in [
+            ("Cargo.toml".to_owned(), workspace_root.join("Cargo.toml")),
+            (crate_manifest, manifest_dir.join("Cargo.toml")),
         ] {
             let bytes = fs::read(&path)
                 .map_err(|error| AuditError::Io(format!("{}: {error}", path.display())))?;
-            manifest_hasher.update(path.to_string_lossy().as_bytes());
+            manifest_hasher.update(label.as_bytes());
             manifest_hasher.update([0]);
             manifest_hasher.update(bytes);
         }
