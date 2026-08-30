@@ -2,7 +2,8 @@ use std::error::Error;
 use std::fmt;
 
 use clause_package::{
-    AuthorityStore, CheckedProcessPackage, ProcessCarrier, ProcessError, ProcessRecordV2,
+    AuthorityStore, CheckedProcessPackage, ProcessCarrier, ProcessError, ProcessIngressError,
+    ProcessRecordV2,
 };
 
 mod executable;
@@ -88,6 +89,16 @@ impl<'a> ProcessRuntime<'a> {
     /// package is complete; rejection preserves the current record cursor.
     pub fn advance(&mut self) -> Result<Option<ProcessRecordV2>, ProcessError> {
         self.carrier.advance_package(self.package, self.authority)
+    }
+
+    /// Apply live records through the same checked carrier that owns package
+    /// replay. The runtime retains its original package and authority binding;
+    /// ingress cannot replace either one.
+    pub fn apply_ingress(
+        &mut self,
+        records: &[ProcessRecordV2],
+    ) -> Result<(), ProcessIngressError> {
+        self.carrier.apply_ingress(records, self.authority)
     }
 
     #[must_use]

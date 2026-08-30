@@ -4,13 +4,16 @@ use std::fmt;
 use clause_package::{
     AdmissionOccurrenceId, ApplicationId, CandidateDeltaId, CheckedProcessPackage,
     ConfigurationId, EqualityContract, JudgmentOccurrenceId, LocalSemanticDependencyV2,
-    ObservationId, ProcessPackageId, RunId, StateRevisionId, StepId, Term,
+    ObservationId, ProcessIngressError, ProcessPackageId, ProcessRecordV2, RunId,
+    StateRevisionId, StepId, Term,
 };
 
 use super::ProcessRuntime;
 
 const MAGIC: &[u8; 4] = b"CXP1";
 const PROGRAM_KIND: &[u8] = b"clause/process-executable-v1";
+const CONFIGURATION_KIND: &[u8] = b"clause/process-configuration-v1";
+const OCCURRENCE_KIND: &[u8] = b"clause/process-occurrence-v1";
 const MAX_PROGRAM_ITEMS: usize = 65_536;
 const MAX_EXPRESSION_DEPTH: usize = 64;
 
@@ -43,6 +46,45 @@ impl ExecutableValueV1 {
             Self::Number(_) => None,
         }
     }
+}
+
+pub fn executable_configuration_term_v1(
+    scope: clause_package::TermScope,
+    values: &[ExecutableValueV1],
+) -> Result<Term, ExecutableErrorV1> {
+    executable_values_term(scope, CONFIGURATION_KIND, values)
+}
+
+pub fn executable_occurrence_term_v1(
+    scope: clause_package::TermScope,
+    occurrence: &ExecutableOccurrenceV1,
+) -> Result<Term, ExecutableErrorV1> {
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&occurrence.entry.to_le_bytes());
+    encode_values(&mut bytes, &occurrence.arguments)?;
+    Term::atom(
+        scope,
+        OCCURRENCE_KIND.to_vec(),
+        bytes,
+        EqualityContract::ExactOctetsV1,
+    )
+    .map_err(|_| ExecutableErrorV1::MalformedProgram)
+}
+
+fn executable_values_term(
+    scope: clause_package::TermScope,
+    kind: &[u8],
+    values: &[ExecutableValueV1],
+) -> Result<Term, ExecutableErrorV1> {
+    let mut bytes = Vec::new();
+    encode_values(&mut bytes, values)?;
+    Term::atom(
+        scope,
+        kind.to_vec(),
+        bytes,
+        EqualityContract::ExactOctetsV1,
+    )
+    .map_err(|_| ExecutableErrorV1::MalformedProgram)
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -306,6 +348,16 @@ impl<'a> ExecutableProcessRuntimeV1<'a> {
         Ok(self.steps.last().expect("Step was just appended"))
     }
 
+    /// Submit bridge-produced canonical records to the checked carrier. This
+    /// is the only mutation path by which executable output becomes Clause
+    /// process state; executable trace values alone carry no authority.
+    pub fn apply_carrier_ingress(
+        &mut self,
+        records: &[ProcessRecordV2],
+    ) -> Result<(), ProcessIngressError> {
+        self.carrier.apply_ingress(records)
+    }
+
     pub fn emit_candidate(
         &mut self,
         base: StateRevisionId,
@@ -315,7 +367,7 @@ impl<'a> ExecutableProcessRuntimeV1<'a> {
         }
         let produced_by = self.steps.last().ok_or(ExecutableErrorV1::NoStep)?.id;
         self.candidate = Some(ExecutableCandidateV1 {
-            id: CandidateDeltaId::from_bytes(identity_bytes(96)),
+            id: CandidateDeltaId::from_bytes(identity_bytes(80)),
             base,
             produced_by,
             configuration: self.configuration.clone(),
@@ -329,7 +381,7 @@ impl<'a> ExecutableProcessRuntimeV1<'a> {
         }
         let candidate = self.candidate.as_ref().ok_or(ExecutableErrorV1::NoCandidate)?;
         self.judgment = Some(ExecutableJudgmentV1 {
-            id: JudgmentOccurrenceId::from_bytes(identity_bytes(97)),
+            id: JudgmentOccurrenceId::from_bytes(identity_bytes(90)),
             candidate: candidate.id,
             accepted,
         });
@@ -337,6 +389,13 @@ impl<'a> ExecutableProcessRuntimeV1<'a> {
     }
 
     pub fn admit(&mut self) -> Result<&ExecutableStateRevisionV1, ExecutableErrorV1> {
+        self.admit_with_state_id(StateRevisionId::from_bytes(identity_bytes(99)))
+    }
+
+    pub fn admit_with_state_id(
+        &mut self,
+        state: StateRevisionId,
+    ) -> Result<&ExecutableStateRevisionV1, ExecutableErrorV1> {
         if self.state.is_some() {
             return Err(ExecutableErrorV1::AlreadyAdmitted);
         }
@@ -346,12 +405,12 @@ impl<'a> ExecutableProcessRuntimeV1<'a> {
             return Err(ExecutableErrorV1::RejectedJudgment);
         }
         let admission = ExecutableAdmissionV1 {
-            id: AdmissionOccurrenceId::from_bytes(identity_bytes(98)),
+            id: AdmissionOccurrenceId::from_bytes(identity_bytes(94)),
             candidate: candidate.id,
             judgment: judgment.id,
         };
         self.state = Some(ExecutableStateRevisionV1 {
-            id: StateRevisionId::from_bytes(identity_bytes(99)),
+            id: state,
             predecessor: candidate.base,
             admission: admission.id,
             configuration: candidate.configuration.clone(),
@@ -407,6 +466,11 @@ impl<'a> ExecutableProcessRuntimeV1<'a> {
     #[must_use]
     pub fn configuration(&self) -> &[ExecutableValueV1] {
         &self.configuration
+    }
+
+    #[must_use]
+    pub const fn configuration_id(&self) -> ConfigurationId {
+        self.configuration_id
     }
 
     #[must_use]

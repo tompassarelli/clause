@@ -636,6 +636,14 @@ pub struct StateRevision {
     pub semantics: ClauseSemanticsId,
 }
 
+impl StateRevision {
+    /// Derive the identity committed by this complete revision preimage.
+    #[must_use]
+    pub fn derived_id(&self) -> StateRevisionId {
+        derive_successor_state_id(self)
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ProcessRecordV2 {
     ExternalTrigger(ExternalTriggerOccurrenceV2),
