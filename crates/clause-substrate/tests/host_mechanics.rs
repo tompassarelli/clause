@@ -1833,7 +1833,10 @@ fn parse_mir_function(
                 destination: destination.clone(),
                 value: value.clone(),
             });
-            if value.contains(" -> [") {
+            let diverging_call = value
+                .rsplit_once(" -> ")
+                .is_some_and(|(_, successor)| is_basic_block_id(successor));
+            if value.contains(" -> [") || diverging_call {
                 let (target, arguments) = call_parts(&value).ok_or_else(|| {
                     AuditError::MirParse(format!(
                         "{display} {}:{ordinal}: malformed call {trimmed}",
@@ -1996,6 +1999,12 @@ fn is_basic_block_header(line: &str) -> bool {
         && line.ends_with('{')
 }
 
+fn is_basic_block_id(value: &str) -> bool {
+    value.strip_prefix("bb").is_some_and(|digits| {
+        !digits.is_empty() && digits.bytes().all(|byte| byte.is_ascii_digit())
+    })
+}
+
 fn parse_assignment(line: &str) -> Option<(String, String)> {
     let (left, right) = line.split_once(" = ")?;
     let destination = base_local(left)?;
@@ -2010,8 +2019,12 @@ fn parse_assignment(line: &str) -> Option<(String, String)> {
 }
 
 fn call_parts(value: &str) -> Option<(String, Vec<String>)> {
-    let arrow = value.find(" -> [")?;
-    let call = &value[..arrow];
+    let (call, continuation) = value.rsplit_once(" -> ")?;
+    if !((continuation.starts_with('[') && continuation.ends_with(']'))
+        || is_basic_block_id(continuation))
+    {
+        return None;
+    }
     let open = top_level_open_paren(call)?;
     let close = matching_delimiter(call, open, '(', ')')?;
     if !call[close + 1..].trim().is_empty() {
