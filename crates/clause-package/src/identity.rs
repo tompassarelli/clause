@@ -52,6 +52,7 @@ macro_rules! local_id {
 }
 
 opaque_id!(ClauseSemanticsId);
+opaque_id!(UniverseId);
 opaque_id!(ProgramSnapshotId);
 opaque_id!(ProgramId);
 opaque_id!(ProgramRevisionId);
@@ -60,6 +61,7 @@ opaque_id!(RuntimeSessionId);
 opaque_id!(RuntimePolicyId);
 opaque_id!(StateRevisionId);
 opaque_id!(ApplicationShapeId);
+opaque_id!(ProcessPackageId);
 opaque_id!(ActivationId);
 opaque_id!(RunId);
 opaque_id!(StepId);
@@ -74,14 +76,23 @@ opaque_id!(HandoffOccurrenceId);
 opaque_id!(CancellationOccurrenceId);
 opaque_id!(AdmissionOccurrenceId);
 opaque_id!(RootPolicyId);
+opaque_id!(BoundaryRef);
+opaque_id!(ExternalEvidenceRef);
+opaque_id!(JudgmentOccurrenceId);
 
 local_id!(RelationSchemaLocalId);
 local_id!(RoleLocalId);
 local_id!(OperatorLocalId);
 local_id!(ModeLocalId);
 local_id!(ApplicationLocalId);
+local_id!(FormationLocalId);
+local_id!(CapabilityLocalId);
+local_id!(JudgmentLocalId);
+local_id!(JudgmentAuthorityLocalId);
 local_id!(ExecutionAuthorizationLocalId);
 local_id!(AdmissionAuthorizationLocalId);
+local_id!(SupportSlotId);
+local_id!(ObligationLocalId);
 
 /// One schema declaration in one exact Program snapshot.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -109,6 +120,44 @@ pub struct OperatorRef {
 pub struct ModeId {
     pub operator: OperatorRef,
     pub local: ModeLocalId,
+}
+
+/// One capability declaration in one exact Program snapshot.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct CapabilityRef {
+    pub snapshot: ProgramSnapshotId,
+    pub local: CapabilityLocalId,
+}
+
+/// One checked formation declaration in one exact Program snapshot.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct FormationRefV2 {
+    pub snapshot: ProgramSnapshotId,
+    pub local: FormationLocalId,
+}
+
+/// One immutable Judgment declaration in one exact Program snapshot.
+///
+/// This reference is assessed content, not its issuing authority, issuance
+/// occurrence, or an authorization to act.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct JudgmentRef {
+    pub snapshot: ProgramSnapshotId,
+    pub local: JudgmentLocalId,
+}
+
+/// One judgment-issuing authority declaration in one exact Program snapshot.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct JudgmentAuthorityRef {
+    pub snapshot: ProgramSnapshotId,
+    pub local: JudgmentAuthorityLocalId,
+}
+
+/// One judgment-issuing authority in an irreducible root policy.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct RootJudgmentAuthorityRef {
+    pub policy: RootPolicyId,
+    pub local: JudgmentAuthorityLocalId,
 }
 
 /// One nominal Application declaration in one exact Program snapshot.
@@ -144,4 +193,11 @@ pub struct RootExecutionAuthorizationRef {
 pub struct RootAdmissionAuthorizationRef {
     pub policy: RootPolicyId,
     pub local: AdmissionAuthorizationLocalId,
+}
+
+/// One exact obligation within one candidate delta.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ObligationId {
+    pub delta: CandidateDeltaId,
+    pub local: ObligationLocalId,
 }

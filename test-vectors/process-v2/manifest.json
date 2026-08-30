@@ -1,0 +1,90 @@
+{
+  "schema": "clause-process-v2-corpus-v1",
+  "wire": "CLPV version 2",
+  "hex_transport": "lowercase hexadecimal with ASCII whitespace ignored",
+  "checksum_scope": "exact .hex transport file bytes",
+  "authority": "package bytes are inert; authority is established separately",
+  "positive": [
+    {
+      "id": "process-v2-core",
+      "file": "positive/process-v2-core.hex",
+      "verdicts": {
+        "decode": "accept",
+        "check": "accept",
+        "external_authority": "accept",
+        "replay": "accept"
+      },
+      "identities": {
+        "program_snapshot": "6f7485f9c46254038ed8050f830b9d94d65c370f838b57bf54b469b77f4068d3",
+        "shared_application_shape": "fab9848a438fdffb278b0a4165e33211d1edb878515bfa79bac1d64373e1fe3c",
+        "process_package": "3f2fdecf4a5f2d1ae3e6eb4113a2b80c6da3a0b34cfe01ffd04a79df6cfe6d8b",
+        "program_revision": "a38aa40406ecc50e352134eb3845502dfa5a9c3c64228e6a0fe68cc28ad240f2",
+        "initial_state": "4406d21b7382c9d5de2be037062dc1b4e8eca3c9fd6fc8c0aecfadb909c95984",
+        "successor_state": "d13415d940d1410e18da69cb4c0e8de620b3822608953df11cac7d3dfd803f76"
+      },
+      "observations": {
+        "applications": 2,
+        "activations": 7,
+        "runs": 5,
+        "steps": 9,
+        "identified_observations": 8,
+        "continuations": 1,
+        "candidate_deltas": 2,
+        "admission_decisions": 2,
+        "state_revisions": 2
+      }
+    }
+  ],
+  "negative": [
+    {
+      "id": "self-authorizing-admission",
+      "file": "negative/self-authorizing-admission.hex",
+      "verdicts": {"decode": "accept", "check": "accept", "genesis_admission": "reject"},
+      "failure": "UnknownRootPolicy"
+    },
+    {
+      "id": "exact-byte-substitution",
+      "file": "negative/exact-byte-substitution.hex",
+      "base": "positive/process-v2-core.hex",
+      "verdicts": {"decode": "accept", "check": "accept", "expected_package_identity": "reject"},
+      "failure": "ProcessPackageId changed"
+    },
+    {
+      "id": "open-form-shape",
+      "file": "negative/open-form-shape.hex",
+      "verdicts": {"decode": "accept", "check": "reject", "replay": "not-run"},
+      "failure": "EligibleModeSetMismatch(ApplicationLocalId(1))"
+    },
+    {
+      "id": "unconstituted-external-trigger",
+      "file": "negative/unconstituted-external-trigger.hex",
+      "verdicts": {"decode": "accept", "check": "accept", "replay": "reject"},
+      "failure": "UnanchoredExternalProvenance"
+    },
+    {
+      "id": "resume-missing-fresh-ingress",
+      "file": "negative/resume-missing-fresh-ingress.hex",
+      "verdicts": {"decode": "accept", "check": "accept", "replay": "reject"},
+      "failure": "ResumptionRequiresFreshIngress"
+    },
+    {
+      "id": "linear-double-takeup",
+      "file": "negative/linear-double-takeup.hex",
+      "verdicts": {"decode": "accept", "check": "accept", "replay": "reject"},
+      "failure": "LinearContinuationAlreadyTaken"
+    },
+    {
+      "id": "support-collapse",
+      "file": "negative/support-collapse.hex",
+      "base": "positive/process-v2-core.hex",
+      "verdicts": {"decode": "reject", "check": "not-run", "replay": "not-run"},
+      "failure": "NonCanonicalOrder(support slots)"
+    },
+    {
+      "id": "admission-redicision",
+      "file": "negative/admission-redicision.hex",
+      "verdicts": {"decode": "accept", "check": "accept", "replay": "reject"},
+      "failure": "CandidateAlreadyDecided"
+    }
+  ]
+}

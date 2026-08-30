@@ -1,20 +1,30 @@
-//! Checked process-v1 carrier primitives.
+//! Checked process-first package and carrier primitives.
 //!
-//! Decoded values and proposals are inert candidate data. Only [`ProcessCarrier`]
-//! validation establishes checked Applications, Activations, Steps,
-//! continuations, Admissions, or State revisions.
+//! Decoded package data is inert. Formation checking establishes only an exact
+//! process constitution and package binding; separately established authority
+//! is required before runtime occurrences or admitted revisions can exist.
 
 #![forbid(unsafe_code)]
 
+mod authority;
 mod canonical;
+mod formation;
+mod hash;
 mod identity;
 mod process;
+mod provenance;
 mod term;
 
+pub use authority::*;
 pub use canonical::{
-    CanonicalDecodeError, CanonicalEncodeError, DecodedProcessVector, decode_process_vector,
-    encode_process_vector,
+    CanonicalDecodeError, CanonicalEncodeError, DecodedProcessPackage, ProcessPackageCheckError,
+    ProgramSnapshotPreimageV2, RevisionJudgmentAuthorityGrantPreimageV2,
+    RevisionStateAdmissionGrantPreimageV2, RevisionStaticExecutionGrantPreimageV2,
+    RevisionSuccessorGrantPreimageV2, canonical_term_bytes, check_process_package,
+    decode_process_package, derive_program_snapshot_id, encode_process_package,
 };
+pub use formation::*;
 pub use identity::*;
 pub use process::*;
-pub use term::{Atom, RawTriple, Term, TermError};
+pub use provenance::*;
+pub use term::{Atom, EqualityContract, RawTriple, Term, TermError, TermScope};
