@@ -1354,11 +1354,6 @@ fn build_core_package_from_snapshot(
         step: id!(StepId, 51),
         ..a1_step1
     };
-    let parent_step = StepRef {
-        run: id!(RunId, 32),
-        activation: id!(ActivationId, 22),
-        step: id!(StepId, 53),
-    };
     let admit_producer = StepRef {
         run: id!(RunId, 33),
         activation: id!(ActivationId, 23),
@@ -1599,14 +1594,28 @@ fn build_core_package_from_snapshot(
         semantics: scope().semantics,
     };
 
-    let mut activation_25 = child_activation(context, 25, 45, id!(RunId, 32), parent_step);
+    let mut activation_25 = root_activation(
+        context,
+        25,
+        35,
+        45,
+        1,
+        RootTrigger::External(id!(ExternalTriggerOccurrenceId, 12)),
+    );
     require_formation_observation(&mut activation_25, context, 86);
-    let mut activation_26 = child_activation(context, 26, 46, id!(RunId, 32), parent_step);
+    let mut activation_26 = root_activation(
+        context,
+        26,
+        36,
+        46,
+        1,
+        RootTrigger::External(id!(ExternalTriggerOccurrenceId, 12)),
+    );
     require_formation_observation(&mut activation_26, context, 87);
 
     let child_left_step = step(
         54,
-        32,
+        35,
         25,
         45,
         64,
@@ -1616,7 +1625,7 @@ fn build_core_package_from_snapshot(
     );
     let child_right_step = step(
         55,
-        32,
+        36,
         26,
         46,
         65,
@@ -1671,7 +1680,7 @@ fn build_core_package_from_snapshot(
             60,
             61,
             budget(90, 10, 80),
-            vec![StepCause::PriorStep(a1_step1)],
+            vec![],
             StepOutcomeProposalV2::Suspend(continuation(context)),
         )]),
         ProcessRecordV2::Steps(vec![step(
@@ -2271,13 +2280,40 @@ fn process_v2_core_exercises_process_identity_lifecycle_truth_and_admission() {
         carrier.application(second_application).unwrap().shape()
     );
     assert_eq!(carrier.activation_count(), 7);
-    assert_eq!(carrier.run_count(), 5);
+    assert_eq!(carrier.run_count(), 7);
     assert_eq!(carrier.step_count(), 9);
     assert_eq!(carrier.observation_count(), 8);
     assert_eq!(carrier.continuation_count(), 1);
     assert_eq!(carrier.candidate_delta_count(), 2);
     assert_eq!(carrier.decision_count(), 2);
     assert_eq!(carrier.state_revision_count(), 2);
+    assert!(
+        carrier
+            .step(id!(StepId, 51))
+            .expect("serial Step 51 remains inspectable")
+            .proposal()
+            .causes
+            .is_empty(),
+        "configuration succession does not manufacture semantic causality"
+    );
+    assert_eq!(
+        carrier
+            .configuration(id!(ConfigurationId, 61))
+            .expect("serial successor Configuration remains inspectable")
+            .predecessor,
+        ConfigurationPredecessorV2::ConfigurationAfter(StepRef {
+            run: id!(RunId, 30),
+            activation: id!(ActivationId, 20),
+            step: id!(StepId, 51),
+        })
+    );
+    assert_eq!(
+        carrier
+            .configuration(id!(ConfigurationId, 40))
+            .expect("initial Configuration remains inspectable")
+            .predecessor,
+        ConfigurationPredecessorV2::ActivationStart(id!(ActivationId, 20))
+    );
     assert_eq!(
         carrier.activation(id!(ActivationId, 20)).unwrap().status(),
         ActivationStatus::Terminal(ActivationTerminal::Returned)
@@ -2292,7 +2328,7 @@ fn process_v2_core_exercises_process_identity_lifecycle_truth_and_admission() {
             .unwrap()
             .consumed()
     );
-    assert_eq!(carrier.run_members(id!(RunId, 32)).unwrap().len(), 3);
+    assert_eq!(carrier.run_members(id!(RunId, 32)).unwrap().len(), 1);
     assert!(matches!(
         carrier.observation(id!(ObservationId, 50)).unwrap().content,
         ObservationContentV2::Truth {
@@ -3056,7 +3092,7 @@ fn process_v2_named_mutations_have_exact_stage_specific_verdicts() {
     let double_authority = establish_core_authority(&double_checked, context, true);
     assert_eq!(
         ProcessCarrier::replay(&double_checked, &double_authority).unwrap_err(),
-        ProcessError::LinearContinuationAlreadyTaken(id!(ContinuationId, 70))
+        ProcessError::HandoffUnsupported
     );
 
     let collapsed = collapse_support_slot(&core_bytes);
@@ -3079,7 +3115,7 @@ fn process_v2_named_mutations_have_exact_stage_specific_verdicts() {
 }
 
 #[test]
-fn runtime_identity_frontiers_budget_and_cancellation_reject_exact_mutations() {
+fn runtime_configuration_custody_budget_and_cancellation_are_exact() {
     let (core, context) = finalized_core_package();
 
     let mut missing_frontier = core.clone();
@@ -3096,13 +3132,22 @@ fn runtime_identity_frontiers_budget_and_cancellation_reject_exact_mutations() {
     resumed
         .causes
         .retain(|cause| !matches!(cause, StepCause::PriorStep(_)));
+    let carrier = replay_core_candidate(&missing_frontier, context)
+        .expect("Configuration custody does not manufacture a semantic PriorStep cause");
     assert_eq!(
-        replay_core_candidate(&missing_frontier, context).unwrap_err(),
-        ProcessError::CurrentStepFrontierMismatch
+        carrier
+            .configuration(id!(ConfigurationId, 68))
+            .expect("resumed Step installs Configuration 68")
+            .predecessor,
+        ConfigurationPredecessorV2::ConfigurationAfter(StepRef {
+            run: id!(RunId, 30),
+            activation: id!(ActivationId, 20),
+            step: id!(StepId, 58),
+        })
     );
 
-    let mut stale_frontier = core.clone();
-    let resumed = stale_frontier
+    let mut foreign_cause = core.clone();
+    let resumed = foreign_cause
         .records
         .iter_mut()
         .find_map(|record| match record {
@@ -3116,16 +3161,16 @@ fn runtime_identity_frontiers_budget_and_cancellation_reject_exact_mutations() {
         .causes
         .iter_mut()
         .find(|cause| matches!(cause, StepCause::PriorStep(_)))
-        .expect("resumed Step cites its current local frontier");
+        .expect("resumed Step has one semantic prior-Step cause");
     *prior = StepCause::PriorStep(StepRef {
-        run: id!(RunId, 30),
-        activation: id!(ActivationId, 20),
-        step: id!(StepId, 50),
+        run: id!(RunId, 31),
+        activation: id!(ActivationId, 21),
+        step: id!(StepId, 52),
     });
     resumed.causes.sort_unstable();
     assert_eq!(
-        replay_core_candidate(&stale_frontier, context).unwrap_err(),
-        ProcessError::CurrentStepFrontierMismatch
+        replay_core_candidate(&foreign_cause, context).unwrap_err(),
+        ProcessError::StepCauseOwnerMismatch(id!(StepId, 52))
     );
 
     let (mut wrong_handoff_application, context) = linear_double_takeup_package();
@@ -3142,7 +3187,7 @@ fn runtime_identity_frontiers_budget_and_cancellation_reject_exact_mutations() {
     child.application = core_application(context.snapshot, 2);
     assert_eq!(
         replay_core_candidate(&wrong_handoff_application, context).unwrap_err(),
-        ProcessError::HandoffCauseMismatch
+        ProcessError::HandoffUnsupported
     );
 
     let mut wrong_cancellation_scope = core.clone();
@@ -3474,10 +3519,18 @@ fn formation_evidence_must_be_prior_declared_distinct_and_causal() {
         activation: id!(ActivationId, 22),
         step: id!(StepId, 53),
     };
-    let activation = child_activation(context, 27, 47, id!(RunId, 32), checker);
+    let mut activation = root_activation(
+        context,
+        27,
+        37,
+        47,
+        1,
+        RootTrigger::External(id!(ExternalTriggerOccurrenceId, 12)),
+    );
+    require_formation_observation(&mut activation, context, 88);
     let first = step(
         59,
-        32,
+        37,
         27,
         47,
         69,
@@ -3485,22 +3538,15 @@ fn formation_evidence_must_be_prior_declared_distinct_and_causal() {
         vec![StepCause::ActivationStart(id!(ActivationId, 27))],
         StepOutcomeProposalV2::Progress,
     );
-    let mut causes = vec![
-        StepCause::PriorStep(StepRef {
-            run: id!(RunId, 32),
-            activation: id!(ActivationId, 22),
-            step: id!(StepId, 53),
-        }),
-        StepCause::PriorStep(StepRef {
-            run: id!(RunId, 32),
-            activation: id!(ActivationId, 27),
-            step: id!(StepId, 59),
-        }),
-    ];
+    let mut causes = vec![StepCause::PriorStep(StepRef {
+        run: id!(RunId, 37),
+        activation: id!(ActivationId, 27),
+        step: id!(StepId, 59),
+    })];
     causes.sort_unstable();
     let second = step(
         60,
-        32,
+        37,
         27,
         69,
         70,
@@ -3613,7 +3659,7 @@ fn handoff_occurrence_requires_mode_permission_before_admission() {
         }));
     assert_eq!(
         replay_core_candidate(&candidate, context).unwrap_err(),
-        ProcessError::HandoffNotPermitted
+        ProcessError::HandoffUnsupported
     );
 }
 
@@ -3922,7 +3968,13 @@ fn step_batches_roll_back_every_completed_step_after_later_failure() {
         .expect("Activation 21 remains present");
     assert_eq!(activation.status(), ActivationStatus::Ready);
     assert_eq!(activation.latest_configuration(), id!(ConfigurationId, 41));
-    assert!(activation.current_step_frontier().is_empty());
+    assert_eq!(
+        carrier
+            .configuration(id!(ConfigurationId, 41))
+            .expect("initial Configuration remains present")
+            .predecessor,
+        ConfigurationPredecessorV2::ActivationStart(id!(ActivationId, 21))
+    );
     assert_eq!(
         activation.remaining_budget(),
         Budget {

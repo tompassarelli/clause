@@ -2482,6 +2482,34 @@ pub fn canonical_term_bytes(term: &Term) -> Result<Vec<u8>, CanonicalEncodeError
     encode_wire(term)
 }
 
+/// Canonical list payload used only to price cumulative live ingress. It is
+/// not a restart format and carries no identity or authority.
+pub(crate) fn canonical_process_record_bytes(
+    records: &[ProcessRecordV2],
+) -> Result<Vec<u8>, CanonicalEncodeError> {
+    if records.len() > MAX_LIST_ITEMS as usize {
+        return Err(CanonicalEncodeError::ListTooLong {
+            count: records.len(),
+            maximum: MAX_LIST_ITEMS,
+        });
+    }
+    for record in records {
+        validate_record_order_v2(record)?;
+    }
+    let count = u32::try_from(records.len()).map_err(|_| {
+        CanonicalEncodeError::LengthExceedsU32 {
+            field: "process record batch",
+            length: records.len(),
+        }
+    })?;
+    let mut encoder = Encoder::new();
+    encoder.u32(count);
+    for record in records {
+        record.encode(&mut encoder)?;
+    }
+    encoder.finish()
+}
+
 pub(crate) fn encode_application_shape_preimage_v2(
     shape: &ApplicationShapePreimageV2,
 ) -> Result<Vec<u8>, CanonicalEncodeError> {

@@ -26,7 +26,11 @@ use crate::provenance::{
 use crate::term::Term;
 
 const MAX_PROCESS_RECORDS: usize = 1_000_000;
+const MAX_RUNS: usize = 1_000_000;
+const MAX_ACTIVATIONS: usize = 1_000_000;
+const MAX_CONFIGURATIONS: usize = 1_000_000;
 const MAX_STEP_BATCH_ITEMS: usize = 1_000_000;
+const MAX_CARRIER_BYTES: usize = 256 * 1024 * 1024;
 const MAX_STEP_FRONTIER_ITEMS: usize = 1_000_000;
 const MAX_STEP_OBSERVATIONS: usize = 1_000_000;
 const MAX_CAUSAL_OCCURRENCES: usize = 4_000_000;
@@ -254,6 +258,15 @@ pub struct ConfigurationProposal {
     pub value: Term,
 }
 
+/// The exact serial custody edge that constitutes one Configuration.
+/// Semantic Step causality remains independent and may be empty after the
+/// first Step when this predecessor supplies configuration succession.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum ConfigurationPredecessorV2 {
+    ActivationStart(ActivationId),
+    ConfigurationAfter(StepRef),
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ActivationProposalV2 {
     pub id: ActivationId,
@@ -307,11 +320,15 @@ pub struct Activation {
     status: ActivationStatus,
     latest_configuration: ConfigurationId,
     start_causes: Box<[CausalRef]>,
-    current_step_frontier: Box<[StepRef]>,
     remaining_budget: Budget,
 }
 
 impl Activation {
+    #[must_use]
+    pub fn proposal(&self) -> &ActivationProposalV2 {
+        &self.proposal
+    }
+
     #[must_use]
     pub const fn id(&self) -> ActivationId {
         self.proposal.id
@@ -348,8 +365,8 @@ impl Activation {
     }
 
     #[must_use]
-    pub fn current_step_frontier(&self) -> &[StepRef] {
-        &self.current_step_frontier
+    pub fn start_causes(&self) -> &[CausalRef] {
+        &self.start_causes
     }
 
     #[must_use]
@@ -362,6 +379,7 @@ impl Activation {
 pub struct Configuration {
     pub id: ConfigurationId,
     pub activation: ActivationId,
+    pub predecessor: ConfigurationPredecessorV2,
     pub value: Term,
 }
 
@@ -631,6 +649,18 @@ pub enum ProcessRecordV2 {
     AdmissionDecision(StateAdmissionDecisionV2),
 }
 
+/// Current cumulative carrier usage at the constitutional live limits.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ProcessResourceUsageV2 {
+    pub base_records: usize,
+    pub accepted_ingress_records: usize,
+    pub base_package_bytes: usize,
+    pub accepted_ingress_bytes: usize,
+    pub runs: usize,
+    pub activations: usize,
+    pub configurations: usize,
+}
+
 #[derive(Clone, Debug)]
 pub struct ProcessCarrier {
     package: ProcessPackageId,
@@ -655,18 +685,28 @@ pub struct ProcessCarrier {
     cancellations: BTreeMap<CancellationOccurrenceId, CancellationOccurrenceV2>,
     causal_predecessors: BTreeMap<CausalRef, BTreeSet<CausalRef>>,
     causal_edge_count: usize,
+    base_record_count: usize,
+    accepted_ingress_record_count: usize,
+    accepted_ingress_bytes: usize,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct RecordBatchCardinality {
+    records: usize,
+    runs: usize,
+    activations: usize,
+    configurations: usize,
+    steps: usize,
 }
 
 struct PreparedActivationOrigin {
     causes: Vec<CausalRef>,
-    handoff: Option<(ContinuationId, HandoffOccurrenceId, ActivationId)>,
 }
 
 struct StepUndo {
     activation: ActivationId,
     previous_status: ActivationStatus,
     previous_configuration: ConfigurationId,
-    previous_frontier: Box<[StepRef]>,
     previous_budget: Budget,
     step: StepId,
     configuration: ConfigurationId,
@@ -686,7 +726,6 @@ enum RecordUndo {
         run: RunId,
         root: bool,
         configuration: ConfigurationId,
-        handoff: Option<(ContinuationId, HandoffOccurrenceId, ActivationId)>,
     },
     Resumption(ResumptionOccurrenceId),
     Handoff(HandoffOccurrenceId),
@@ -734,6 +773,7 @@ impl ProcessCarrier {
         authority: &AuthorityStore,
     ) -> Result<Self, ProcessError> {
         let mut carrier = Self::empty(package)?;
+        carrier.preflight_supported_records(package.records())?;
         carrier.bind_initial_states(package.initial_state_views(), authority)?;
         for record in package.records() {
             carrier.apply_record(record.clone(), authority)?;
@@ -777,6 +817,9 @@ impl ProcessCarrier {
             cancellations: BTreeMap::new(),
             causal_predecessors: BTreeMap::new(),
             causal_edge_count: 0,
+            base_record_count: package.records.len(),
+            accepted_ingress_record_count: 0,
+            accepted_ingress_bytes: 0,
         })
     }
 
@@ -849,10 +892,142 @@ impl ProcessCarrier {
         records: &[ProcessRecordV2],
         authority: &AuthorityStore,
     ) -> Result<(), ProcessIngressError> {
-        validate_record_batch_bounds(records, true, MAX_PROCESS_RECORDS, MAX_STEP_BATCH_ITEMS)
+        let cardinality = self.preflight_ingress_cardinality(records)?;
+        let ingress_bytes = crate::canonical::canonical_process_record_bytes(records)
+            .map_err(|cause| ProcessIngressError::Batch {
+                cause: Box::new(ProcessError::Canonical(cause)),
+            })?
+            .len();
+        self.apply_prepared_ingress(records, cardinality, ingress_bytes, authority)
+    }
+
+    fn preflight_ingress_cardinality(
+        &self,
+        records: &[ProcessRecordV2],
+    ) -> Result<RecordBatchCardinality, ProcessIngressError> {
+        self.preflight_supported_records(records)
             .map_err(|cause| ProcessIngressError::Batch {
                 cause: Box::new(cause),
             })?;
+        let cardinality =
+            validate_record_batch_bounds(records, true, MAX_PROCESS_RECORDS, MAX_STEP_BATCH_ITEMS)
+                .map_err(|cause| ProcessIngressError::Batch {
+                    cause: Box::new(cause),
+                })?;
+        let retained_records = checked_resource_add(
+            self.base_record_count,
+            self.accepted_ingress_record_count,
+            MAX_PROCESS_RECORDS,
+            ProcessResourceKindV2::Record,
+        )
+        .and_then(|current| {
+            checked_resource_add(
+                current,
+                cardinality.records,
+                MAX_PROCESS_RECORDS,
+                ProcessResourceKindV2::Record,
+            )
+        })
+        .map_err(|cause| ProcessIngressError::Batch {
+            cause: Box::new(cause),
+        })?;
+        debug_assert!(retained_records <= MAX_PROCESS_RECORDS);
+        for (current, growth, maximum, kind) in [
+            (
+                self.runs.len(),
+                cardinality.runs,
+                MAX_RUNS,
+                ProcessResourceKindV2::Run,
+            ),
+            (
+                self.activations.len(),
+                cardinality.activations,
+                MAX_ACTIVATIONS,
+                ProcessResourceKindV2::Activation,
+            ),
+            (
+                self.configurations.len(),
+                cardinality.configurations,
+                MAX_CONFIGURATIONS,
+                ProcessResourceKindV2::Configuration,
+            ),
+        ] {
+            checked_resource_add(current, growth, maximum, kind).map_err(|cause| {
+                ProcessIngressError::Batch {
+                    cause: Box::new(cause),
+                }
+            })?;
+        }
+        Ok(cardinality)
+    }
+
+    fn preflight_supported_records(
+        &self,
+        records: &[ProcessRecordV2],
+    ) -> Result<(), ProcessError> {
+        for record in records {
+            match record {
+                ProcessRecordV2::Activation(proposal) => {
+                    if !matches!(proposal.causes.origin, ActivationOrigin::RootedBy(_))
+                        || !matches!(proposal.membership, RunMembership::RootOf(_))
+                    {
+                        return Err(ProcessError::ChildActivationUnsupported);
+                    }
+                    let mode = self.mode_contract(proposal.mode)?;
+                    if !mode.contract.effect_intents.is_empty() {
+                        return Err(ProcessError::EffectfulModeUnsupported(proposal.mode));
+                    }
+                }
+                ProcessRecordV2::Handoff(_) => {
+                    return Err(ProcessError::HandoffUnsupported);
+                }
+                ProcessRecordV2::Steps(steps) => {
+                    for step in steps {
+                        if let Some(activation) = self.activations.get(&step.activation) {
+                            let mode = self.mode_contract(activation.mode())?;
+                            if !mode.contract.effect_intents.is_empty() {
+                                return Err(ProcessError::EffectfulModeUnsupported(
+                                    activation.mode(),
+                                ));
+                            }
+                        }
+                    }
+                }
+                ProcessRecordV2::ExternalTrigger(_)
+                | ProcessRecordV2::EnteredObservation(_)
+                | ProcessRecordV2::Resumption(_)
+                | ProcessRecordV2::Cancellation(_)
+                | ProcessRecordV2::Judgment(_)
+                | ProcessRecordV2::AdmissionDecision(_) => {}
+            }
+        }
+        Ok(())
+    }
+
+    fn apply_prepared_ingress(
+        &mut self,
+        records: &[ProcessRecordV2],
+        cardinality: RecordBatchCardinality,
+        ingress_bytes: usize,
+        authority: &AuthorityStore,
+    ) -> Result<(), ProcessIngressError> {
+        let next_ingress_bytes = self
+            .accepted_ingress_bytes
+            .checked_add(ingress_bytes)
+            .unwrap_or(usize::MAX);
+        let carrier_bytes = self
+            .exact_package_bytes
+            .len()
+            .checked_add(next_ingress_bytes)
+            .unwrap_or(usize::MAX);
+        if carrier_bytes > MAX_CARRIER_BYTES {
+            return Err(ProcessIngressError::Batch {
+                cause: Box::new(ProcessError::IngressByteLimitExceeded {
+                    count: carrier_bytes,
+                    maximum: MAX_CARRIER_BYTES,
+                }),
+            });
+        }
         let mut undo = Vec::new();
         undo.try_reserve_exact(records.len())
             .map_err(|_| ProcessIngressError::Batch {
@@ -879,6 +1054,11 @@ impl ProcessCarrier {
                 }
             }
         }
+        self.accepted_ingress_record_count = self
+            .accepted_ingress_record_count
+            .checked_add(cardinality.records)
+            .expect("preflight bounded accepted ingress records");
+        self.accepted_ingress_bytes = next_ingress_bytes;
         Ok(())
     }
 
@@ -903,22 +1083,12 @@ impl ProcessCarrier {
                 let run = proposal.membership.run();
                 let root = matches!(proposal.membership, RunMembership::RootOf(_));
                 let configuration = proposal.initial_configuration.id;
-                let handoff = match proposal.causes.origin {
-                    ActivationOrigin::HandoffFrom {
-                        parent_activation,
-                        continuation,
-                        handoff,
-                        ..
-                    } => Some((continuation, handoff, parent_activation)),
-                    ActivationOrigin::RootedBy(_) | ActivationOrigin::ChildOf { .. } => None,
-                };
                 self.activate(proposal, authority)?;
                 Ok(RecordUndo::Activation {
                     activation,
                     run,
                     root,
                     configuration,
-                    handoff,
                 })
             }
             ProcessRecordV2::Resumption(occurrence) => {
@@ -978,19 +1148,7 @@ impl ProcessCarrier {
                 run,
                 root,
                 configuration,
-                handoff,
             } => {
-                if let Some((continuation, handoff, parent_activation)) = handoff {
-                    self.continuations
-                        .get_mut(&continuation)
-                        .expect("live-ingress rollback retains parent Continuation")
-                        .takeups
-                        .remove(&ContinuationTakeupOccurrence::Handoff(handoff));
-                    self.activations
-                        .get_mut(&parent_activation)
-                        .expect("live-ingress rollback retains parent Activation")
-                        .status = ActivationStatus::Suspended(continuation);
-                }
                 self.activations.remove(&activation);
                 self.configurations.remove(&configuration);
                 if root {
@@ -1126,45 +1284,10 @@ impl ProcessCarrier {
 
     fn add_handoff(
         &mut self,
-        occurrence: HandoffOccurrenceV2,
-        authority: &AuthorityStore,
+        _occurrence: HandoffOccurrenceV2,
+        _authority: &AuthorityStore,
     ) -> Result<(), ProcessError> {
-        let id = occurrence.body.id;
-        if self.handoffs.contains_key(&id) {
-            return Err(ProcessError::DuplicateHandoff(id));
-        }
-        self.validate_continuation_occurrence(
-            occurrence.body.continuation,
-            occurrence.body.run,
-            occurrence.body.activation,
-            &occurrence.body.pins,
-        )?;
-        self.validate_occurrence_provenance(
-            &occurrence.provenance,
-            EnteredOccurrenceKind::Handoff,
-            authority,
-        )?;
-        let activation = self
-            .activations
-            .get(&occurrence.body.activation)
-            .ok_or(ProcessError::UnknownActivation(occurrence.body.activation))?;
-        if !self
-            .mode_contract(activation.mode())?
-            .contract
-            .continuation
-            .may_handoff()
-        {
-            return Err(ProcessError::HandoffNotPermitted);
-        }
-        self.validate_occurrence_consumer_pins(
-            &occurrence.provenance,
-            activation.pins(),
-            authority,
-        )?;
-        let causes = self.occurrence_causes(&occurrence.provenance)?;
-        self.register_causal(CausalRef::Handoff(id), causes)?;
-        self.handoffs.insert(id, occurrence);
-        Ok(())
+        Err(ProcessError::HandoffUnsupported)
     }
 
     fn add_cancellation(
@@ -1397,6 +1520,9 @@ impl ProcessCarrier {
             .constitution
             .executable_contract(proposal.application, proposal.mode)
             .ok_or(ProcessError::ModeNotEligible(proposal.mode))?;
+        if !self.mode_contract(proposal.mode)?.contract.effect_intents.is_empty() {
+            return Err(ProcessError::EffectfulModeUnsupported(proposal.mode));
+        }
         if application.id.snapshot != proposal.pins.snapshot
             || proposal.pins.snapshot != self.constitution.snapshot()
             || proposal.pins.semantics != self.constitution.semantics()
@@ -1419,13 +1545,7 @@ impl ProcessCarrier {
                     return Err(ProcessError::DuplicateRun(run_id));
                 }
             }
-            RunMembership::ChildIn(run_id) => {
-                if matches!(proposal.causes.origin, ActivationOrigin::RootedBy(_))
-                    || !self.runs.contains_key(&run_id)
-                {
-                    return Err(ProcessError::RunMembershipMismatch);
-                }
-            }
+            RunMembership::ChildIn(_) => return Err(ProcessError::ChildActivationUnsupported),
         }
         if let RunMembership::RootOf(run_id) = proposal.membership {
             self.runs.insert(run_id, proposal.id);
@@ -1436,6 +1556,7 @@ impl ProcessCarrier {
             Configuration {
                 id: proposal.initial_configuration.id,
                 activation: proposal.id,
+                predecessor: ConfigurationPredecessorV2::ActivationStart(proposal.id),
                 value: proposal.initial_configuration.value.clone(),
             },
         );
@@ -1449,24 +1570,9 @@ impl ProcessCarrier {
                 status: ActivationStatus::Ready,
                 latest_configuration: configuration,
                 start_causes: prepared_origin.causes.into_boxed_slice(),
-                current_step_frontier: Box::new([]),
                 remaining_budget: initial_budget,
             },
         );
-        if let Some((continuation, handoff, parent_activation)) = prepared_origin.handoff {
-            let continuation_record = self
-                .continuations
-                .get_mut(&continuation)
-                .expect("validated handoff retains its Continuation");
-            let inserted = continuation_record
-                .takeups
-                .insert(ContinuationTakeupOccurrence::Handoff(handoff));
-            assert!(inserted, "validated handoff takeup remains unique");
-            self.activations
-                .get_mut(&parent_activation)
-                .expect("validated handoff retains its parent Activation")
-                .status = ActivationStatus::Transferred(continuation);
-        }
         Ok(())
     }
 
@@ -1802,7 +1908,6 @@ impl ProcessCarrier {
         authority: &AuthorityStore,
     ) -> Result<PreparedActivationOrigin, ProcessError> {
         let mut causes = Vec::with_capacity(proposal.causes.prerequisites.len() + 2);
-        let mut prepared_handoff = None;
         match proposal.causes.origin {
             ActivationOrigin::RootedBy(RootTrigger::External(id)) => {
                 let trigger = self
@@ -1858,85 +1963,10 @@ impl ProcessCarrier {
                 causes.push(CausalRef::Admission(admission));
             }
             ActivationOrigin::ChildOf {
-                run,
-                parent_activation,
-                parent_step,
-            } => {
-                self.require_step_ref(StepRef {
-                    run,
-                    activation: parent_activation,
-                    step: parent_step,
-                })?;
-                if proposal.membership != RunMembership::ChildIn(run) {
-                    return Err(ProcessError::RunMembershipMismatch);
-                }
-                causes.push(CausalRef::Step(StepRef {
-                    run,
-                    activation: parent_activation,
-                    step: parent_step,
-                }));
-            }
-            ActivationOrigin::HandoffFrom {
-                run,
-                parent_activation,
-                parent_step,
-                continuation,
-                handoff,
-            } => {
-                self.require_step_ref(StepRef {
-                    run,
-                    activation: parent_activation,
-                    step: parent_step,
-                })?;
-                let handoff_record = self
-                    .handoffs
-                    .get(&handoff)
-                    .ok_or(ProcessError::UnknownHandoff(handoff))?;
-                let continuation_record = self
-                    .continuations
-                    .get(&continuation)
-                    .ok_or(ProcessError::UnknownContinuation(continuation))?;
-                let parent = self
-                    .activations
-                    .get(&parent_activation)
-                    .ok_or(ProcessError::UnknownActivation(parent_activation))?;
-                let parent_mode = self.mode_contract(parent.mode())?;
-                let mut resumed_pins = continuation_record.proposal.pins.activation_pins.clone();
-                resumed_pins.budget = continuation_record.proposal.pins.remaining_budget;
-                if proposal.membership != RunMembership::ChildIn(run)
-                    || handoff_record.body.continuation != continuation
-                    || handoff_record.body.run != run
-                    || handoff_record.body.activation != parent_activation
-                    || continuation_record.proposal.emitted_by != parent_step
-                    || !parent_mode.contract.continuation.may_handoff()
-                    || continuation_record.proposal.pins.run != run
-                    || continuation_record.proposal.pins.activation != parent_activation
-                    || proposal.application != continuation_record.proposal.pins.application
-                    || proposal.mode != continuation_record.proposal.pins.mode
-                    || proposal.pins != resumed_pins
-                    || proposal.initial_configuration.value
-                        != continuation_record.proposal.remainder
-                {
-                    return Err(ProcessError::HandoffCauseMismatch);
-                }
-                if continuation_record
-                    .takeups
-                    .contains(&ContinuationTakeupOccurrence::Handoff(handoff))
-                {
-                    return Err(ProcessError::DuplicateContinuationTakeup(continuation));
-                }
-                if continuation_record.use_policy == ContinuationUseV2::Linear
-                    && !continuation_record.takeups.is_empty()
-                {
-                    return Err(ProcessError::LinearContinuationAlreadyTaken(continuation));
-                }
-                causes.push(CausalRef::Step(StepRef {
-                    run,
-                    activation: parent_activation,
-                    step: parent_step,
-                }));
-                causes.push(CausalRef::Handoff(handoff));
-                prepared_handoff = Some((continuation, handoff, parent_activation));
+                ..
+            } => return Err(ProcessError::ChildActivationUnsupported),
+            ActivationOrigin::HandoffFrom { .. } => {
+                return Err(ProcessError::HandoffUnsupported);
             }
         }
         for prerequisite in &proposal.causes.prerequisites {
@@ -1948,10 +1978,7 @@ impl ProcessCarrier {
         causes.sort_unstable();
         causes.dedup();
         self.validate_causal_frontier(&causes)?;
-        Ok(PreparedActivationOrigin {
-            causes,
-            handoff: prepared_handoff,
-        })
+        Ok(PreparedActivationOrigin { causes })
     }
 
     fn mode_contract(&self, id: ModeId) -> Result<&crate::formation::ModePreimageV2, ProcessError> {
@@ -2230,7 +2257,7 @@ impl ProcessCarrier {
                 proposal.observations.len(),
             ));
         }
-        if proposal.causes.is_empty() || !is_strictly_sorted_unique(&proposal.causes) {
+        if !proposal.causes.is_empty() && !is_strictly_sorted_unique(&proposal.causes) {
             return Err(ProcessError::NonCanonicalSet("step causes"));
         }
         self.validate_runtime_term(&proposal.after.value)?;
@@ -2361,7 +2388,6 @@ impl ProcessCarrier {
             activation: activation.id(),
             previous_status: activation.status,
             previous_configuration: activation.latest_configuration,
-            previous_frontier: activation.current_step_frontier,
             previous_budget: activation.remaining_budget,
             step: reference.step,
             configuration: proposal.after.id,
@@ -2380,6 +2406,7 @@ impl ProcessCarrier {
             Configuration {
                 id: proposal.after.id,
                 activation: proposal.activation,
+                predecessor: ConfigurationPredecessorV2::ConfigurationAfter(reference),
                 value: proposal.after.value.clone(),
             },
         );
@@ -2439,7 +2466,6 @@ impl ProcessCarrier {
         activation_record.latest_configuration = proposal.after.id;
         activation_record.status = next_status;
         activation_record.remaining_budget = proposal.budget.after;
-        activation_record.current_step_frontier = Box::new([reference]);
         self.steps.insert(proposal.id, Step { proposal });
         Ok(undo)
     }
@@ -2469,7 +2495,6 @@ impl ProcessCarrier {
         if let Some(activation) = self.activations.get_mut(&undo.activation) {
             activation.status = undo.previous_status;
             activation.latest_configuration = undo.previous_configuration;
-            activation.current_step_frontier = undo.previous_frontier;
             activation.remaining_budget = undo.previous_budget;
         }
     }
@@ -2539,19 +2564,6 @@ impl ProcessCarrier {
                 .any(|cause| matches!(cause, StepCause::ActivationStart(_)))
             {
                 return Err(ProcessError::ActivationStartAfterFirstStep);
-            }
-            let local_frontier = proposal
-                .causes
-                .iter()
-                .filter_map(|cause| match cause {
-                    StepCause::PriorStep(step) if step.activation == proposal.activation => {
-                        Some(*step)
-                    }
-                    _ => None,
-                })
-                .collect::<Vec<_>>();
-            if local_frontier.as_slice() != activation.current_step_frontier() {
-                return Err(ProcessError::CurrentStepFrontierMismatch);
             }
         }
         let mut continuation_takeup = None;
@@ -3284,6 +3296,11 @@ impl ProcessCarrier {
     }
 
     #[must_use]
+    pub fn constitution(&self) -> &ResolvedProgramConstitutionV2 {
+        &self.constitution
+    }
+
+    #[must_use]
     pub fn application(&self, id: ApplicationId) -> Option<&Application> {
         self.applications.get(&id)
     }
@@ -3291,6 +3308,16 @@ impl ProcessCarrier {
     #[must_use]
     pub fn activation(&self, id: ActivationId) -> Option<&Activation> {
         self.activations.get(&id)
+    }
+
+    #[must_use]
+    pub fn run_root(&self, id: RunId) -> Option<&ActivationId> {
+        self.runs.get(&id)
+    }
+
+    #[must_use]
+    pub fn configuration(&self, id: ConfigurationId) -> Option<&Configuration> {
+        self.configurations.get(&id)
     }
 
     #[must_use]
@@ -3316,6 +3343,67 @@ impl ProcessCarrier {
     #[must_use]
     pub fn decision(&self, id: CandidateDeltaId) -> Option<&StateAdmissionDecisionV2> {
         self.decisions.get(&id)
+    }
+
+    #[must_use]
+    pub fn decision_by_occurrence(
+        &self,
+        id: AdmissionOccurrenceId,
+    ) -> Option<&StateAdmissionDecisionV2> {
+        self.decisions_by_occurrence
+            .get(&id)
+            .and_then(|delta| self.decisions.get(delta))
+    }
+
+    #[must_use]
+    pub fn external_trigger(
+        &self,
+        id: ExternalTriggerOccurrenceId,
+    ) -> Option<&ExternalTriggerOccurrenceV2> {
+        self.external_triggers.get(&id)
+    }
+
+    #[must_use]
+    pub fn resumption(&self, id: ResumptionOccurrenceId) -> Option<&ResumptionOccurrenceV2> {
+        self.resumptions.get(&id)
+    }
+
+    #[must_use]
+    pub fn cancellation(&self, id: CancellationOccurrenceId) -> Option<&CancellationOccurrenceV2> {
+        self.cancellations.get(&id)
+    }
+
+    #[must_use]
+    pub fn judgment(&self, id: JudgmentOccurrenceId) -> Option<&JudgmentOccurrenceV2> {
+        self.judgments.get(&id)
+    }
+
+    #[must_use]
+    pub fn causal_predecessors(&self, id: CausalRef) -> Option<&BTreeSet<CausalRef>> {
+        self.causal_predecessors.get(&id)
+    }
+
+    #[must_use]
+    pub const fn accepted_ingress_record_count(&self) -> usize {
+        self.accepted_ingress_record_count
+    }
+
+    #[must_use]
+    pub const fn accepted_ingress_bytes(&self) -> usize {
+        self.accepted_ingress_bytes
+    }
+
+    #[must_use]
+    pub fn resource_usage(&self) -> ProcessResourceUsageV2 {
+        ProcessResourceUsageV2 {
+            base_records: self.base_record_count,
+            accepted_ingress_records: self.accepted_ingress_record_count,
+            base_package_bytes: self.exact_package_bytes.len(),
+            accepted_ingress_bytes: self.accepted_ingress_bytes,
+            runs: self.runs.len(),
+            activations: self.activations.len(),
+            configurations: self.configurations.len(),
+        }
     }
 
     #[must_use]
@@ -3461,7 +3549,7 @@ fn validate_record_batch_bounds(
     reject_empty: bool,
     maximum_records: usize,
     maximum_steps: usize,
-) -> Result<(), ProcessError> {
+) -> Result<RecordBatchCardinality, ProcessError> {
     if reject_empty && records.is_empty() {
         return Err(ProcessError::EmptyIngressBatch);
     }
@@ -3471,35 +3559,113 @@ fn validate_record_batch_bounds(
             maximum: maximum_records,
         });
     }
-    checked_aggregate_step_count(
-        records.iter().filter_map(|record| match record {
-            ProcessRecordV2::Steps(steps) => Some(steps.len()),
+    let mut cardinality = RecordBatchCardinality {
+        records: records.len(),
+        ..RecordBatchCardinality::default()
+    };
+    for record in records {
+        match record {
+            ProcessRecordV2::Activation(activation) => {
+                cardinality.activations = checked_resource_add(
+                    cardinality.activations,
+                    1,
+                    MAX_ACTIVATIONS,
+                    ProcessResourceKindV2::Activation,
+                )?;
+                cardinality.configurations = checked_resource_add(
+                    cardinality.configurations,
+                    1,
+                    MAX_CONFIGURATIONS,
+                    ProcessResourceKindV2::Configuration,
+                )?;
+                if matches!(activation.membership, RunMembership::RootOf(_)) {
+                    cardinality.runs = checked_resource_add(
+                        cardinality.runs,
+                        1,
+                        MAX_RUNS,
+                        ProcessResourceKindV2::Run,
+                    )?;
+                }
+            }
+            ProcessRecordV2::Steps(steps) => {
+                cardinality.steps = checked_resource_add(
+                    cardinality.steps,
+                    steps.len(),
+                    maximum_steps,
+                    ProcessResourceKindV2::Step,
+                )?;
+                cardinality.configurations = checked_resource_add(
+                    cardinality.configurations,
+                    steps.len(),
+                    MAX_CONFIGURATIONS,
+                    ProcessResourceKindV2::Configuration,
+                )?;
+            }
             ProcessRecordV2::ExternalTrigger(_)
             | ProcessRecordV2::EnteredObservation(_)
-            | ProcessRecordV2::Activation(_)
             | ProcessRecordV2::Resumption(_)
             | ProcessRecordV2::Handoff(_)
             | ProcessRecordV2::Cancellation(_)
             | ProcessRecordV2::Judgment(_)
-            | ProcessRecordV2::AdmissionDecision(_) => None,
-        }),
-        maximum_steps,
-    )?;
-    Ok(())
+            | ProcessRecordV2::AdmissionDecision(_) => {}
+        }
+    }
+    Ok(cardinality)
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ProcessResourceKindV2 {
+    Record,
+    Run,
+    Activation,
+    Configuration,
+    Step,
+}
+
+fn checked_resource_add(
+    current: usize,
+    growth: usize,
+    maximum: usize,
+    kind: ProcessResourceKindV2,
+) -> Result<usize, ProcessError> {
+    let total = current.checked_add(growth).unwrap_or(usize::MAX);
+    if total > maximum {
+        return Err(match kind {
+            ProcessResourceKindV2::Record => ProcessError::RecordLimitExceeded {
+                count: total,
+                maximum,
+            },
+            ProcessResourceKindV2::Run => ProcessError::RunLimitExceeded {
+                count: total,
+                maximum,
+            },
+            ProcessResourceKindV2::Activation => ProcessError::ActivationLimitExceeded {
+                count: total,
+                maximum,
+            },
+            ProcessResourceKindV2::Configuration => ProcessError::ConfigurationLimitExceeded {
+                count: total,
+                maximum,
+            },
+            ProcessResourceKindV2::Step => ProcessError::StepBatchTooLarge(total),
+        });
+    }
+    Ok(total)
+}
+
+#[cfg(test)]
 fn checked_aggregate_step_count(
     counts: impl IntoIterator<Item = usize>,
     maximum: usize,
 ) -> Result<usize, ProcessError> {
-    let mut total = 0usize;
+    let mut total = 0;
     for count in counts {
-        total = total
-            .checked_add(count)
-            .ok_or(ProcessError::StepBatchTooLarge(usize::MAX))?;
-        if total > maximum {
-            return Err(ProcessError::StepBatchTooLarge(total));
-        }
+        total = checked_resource_add(
+            total,
+            count,
+            maximum,
+            ProcessResourceKindV2::Step,
+        )?;
     }
     Ok(total)
 }
@@ -3511,6 +3677,22 @@ fn is_strictly_sorted_unique_by<T, K: Ord>(values: &[T], key: impl Fn(&T) -> K) 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ProcessError {
     RecordLimitExceeded {
+        count: usize,
+        maximum: usize,
+    },
+    RunLimitExceeded {
+        count: usize,
+        maximum: usize,
+    },
+    ActivationLimitExceeded {
+        count: usize,
+        maximum: usize,
+    },
+    ConfigurationLimitExceeded {
+        count: usize,
+        maximum: usize,
+    },
+    IngressByteLimitExceeded {
         count: usize,
         maximum: usize,
     },
@@ -3611,13 +3793,13 @@ pub enum ProcessError {
     ModeNotEligible(ModeId),
     RootTriggerPinMismatch,
     RunMembershipMismatch,
-    HandoffCauseMismatch,
-    HandoffNotPermitted,
+    ChildActivationUnsupported,
+    HandoffUnsupported,
+    EffectfulModeUnsupported(ModeId),
     StepOwnerMismatch,
     StepCauseOwnerMismatch(StepId),
     StepWorldPinMismatch,
     InvalidFirstStepFrontier,
-    CurrentStepFrontierMismatch,
     ActivationStartAfterFirstStep,
     ActivationAlreadyTerminal(ActivationId),
     ActivationAlreadyTransferred(ActivationId),
