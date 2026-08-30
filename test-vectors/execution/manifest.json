@@ -1,11 +1,19 @@
 {
   "schema": "clause-execution-corpus-v0",
   "semantic_authority": "docs/foundation.md",
-  "syntax_authority": "docs/syntax.md",
+  "syntax_authority": null,
+  "source_projection_contract": {
+    "classification": "historical-v0-noncanonical-fixture",
+    "canonical_source_included": false,
+    "directory": "historical-v0/source-projections",
+    "suffix": ".clause-v0.txt",
+    "spelling_authority": "none",
+    "byte_identity": "the three projection contents retain their original frozen SHA-256 values"
+  },
   "contract": "docs/execution-corpus.md",
   "bootstrap_dependency": "2ea651db7c525249c465dceb0f8c5474d635fae6",
   "identity": {
-    "names": "fixture-local opaque references supplied by the admission context",
+    "names": "fixture-local opaque transport strings supplied by the admission context; slash is an uninterpreted payload byte",
     "public_program_snapshot_id": "unratified",
     "public_program_revision_id": "unratified",
     "host_string_dispatch": "forbidden"
@@ -42,7 +50,7 @@
     {
       "id": "pure-dependency-closure",
       "class": "pure-computation",
-      "source": "programs/pure-dependency-closure.clause",
+      "historical_source_projection": "historical-v0/source-projections/pure-dependency-closure.clause-v0.txt",
       "substantiality": {
         "domain_entities": 7,
         "base_relation_facts": 7,
@@ -244,7 +252,7 @@
     {
       "id": "state-effect-fulfillment",
       "class": "state-and-effects",
-      "source": "programs/state-effect-fulfillment.clause",
+      "historical_source_projection": "historical-v0/source-projections/state-effect-fulfillment.clause-v0.txt",
       "substantiality": {
         "authoritative_contexts": 3,
         "distinct_run_occurrences": 2,
@@ -405,7 +413,7 @@
     {
       "id": "verified-program-evolution",
       "class": "verified-package-evolution",
-      "source": "programs/verified-program-evolution.clause",
+      "historical_source_projection": "historical-v0/source-projections/verified-program-evolution.clause-v0.txt",
       "substantiality": {
         "base_relation_facts": 2,
         "ordered_change_occurrences": 2,
@@ -519,7 +527,7 @@
       "release Git object",
       "lean/lean-toolchain",
       "rust-toolchain.toml",
-      "source bytes",
+      "historical v0 source-projection bytes",
       "corpus bytes"
     ],
     "forbidden_inputs": [
@@ -532,7 +540,7 @@
       "unpublished artifact"
     ],
     "equal_observations": [
-      "source bytes",
+      "historical v0 source-projection bytes",
       "canonical package bytes",
       "verification decisions",
       "Run outcomes",
