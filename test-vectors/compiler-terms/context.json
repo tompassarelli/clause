@@ -11,6 +11,18 @@
     "runtime_policy_id": "policy:01",
     "boundary_anchors": [
       {
+        "boundary_ref": "boundary:state-fixture",
+        "clause_semantics_id": "sem:01",
+        "program_snapshot_id": "ps:01",
+        "program_revision_id": "pr:01",
+        "runtime_session_id": "session:01",
+        "runtime_policy_id": "policy:01",
+        "permits": [
+          "AssertionOccurrence"
+        ],
+        "constituted_before_occurrence": true
+      },
+      {
         "boundary_ref": "boundary:trigger-fixture",
         "clause_semantics_id": "sem:01",
         "program_snapshot_id": "ps:01",
@@ -24,6 +36,30 @@
       }
     ],
     "evidence_anchors": [
+      {
+        "external_evidence_ref": "external-evidence:observer-position:01",
+        "boundary_ref": "boundary:state-fixture",
+        "exact_evidence": "fixture-state-evidence:observer-position:01",
+        "authoritative_before_occurrence": true
+      },
+      {
+        "external_evidence_ref": "external-evidence:radius:01",
+        "boundary_ref": "boundary:state-fixture",
+        "exact_evidence": "fixture-state-evidence:radius:01",
+        "authoritative_before_occurrence": true
+      },
+      {
+        "external_evidence_ref": "external-evidence:target-position:01",
+        "boundary_ref": "boundary:state-fixture",
+        "exact_evidence": "fixture-state-evidence:target-position:01",
+        "authoritative_before_occurrence": true
+      },
+      {
+        "external_evidence_ref": "external-evidence:target-position:07",
+        "boundary_ref": "boundary:state-fixture",
+        "exact_evidence": "fixture-state-evidence:target-position:07",
+        "authoritative_before_occurrence": true
+      },
       {
         "external_evidence_ref": "external-evidence:trigger:01",
         "boundary_ref": "boundary:trigger-fixture",

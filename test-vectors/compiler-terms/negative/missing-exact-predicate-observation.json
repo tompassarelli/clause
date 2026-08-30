@@ -2,7 +2,7 @@
   "schema": "clause/compiler-terms/support-candidate-v3",
   "context_ref": "../positive/process-occurrences.json",
   "candidate": {
-    "support_occurrence_id": "support:aabb-only",
+    "support_occurrence_id": "support:01",
     "produced_by": {
       "run_id": "run:01",
       "activation_id": "activation:law:01",
