@@ -980,7 +980,8 @@ fn indexed_project(pattern: &PatternIr, bindings: &BTreeMap<String, String>) -> 
 mod tests {
     use super::*;
     use std::fs;
-    use std::path::Path;
+    use std::io;
+    use std::path::{Path, PathBuf};
 
     const HISTORICAL_FIXTURE_MARKER: &str = concat!(
         "NONCANONICAL_HISTORICAL_FIXTURE_ONLY: NOT CLAUSE SOURCE; ",
@@ -991,6 +992,40 @@ mod tests {
     const SOURCE: &str = include_str!(
         "../tests/fixtures/historical/noncanonical_slash_qualified_spatial_visibility.fixture"
     );
+
+    fn clause_sources_below(root: &Path) -> io::Result<Vec<PathBuf>> {
+        let mut pending_directories = vec![root.to_owned()];
+        let mut clause_sources = Vec::new();
+
+        while let Some(directory) = pending_directories.pop() {
+            for entry in fs::read_dir(directory)? {
+                let entry = entry?;
+                let path = entry.path();
+                let file_type = entry.file_type()?;
+
+                if file_type.is_symlink() {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        format!(
+                            "public example tree must not contain an escaping symlink: {}",
+                            path.display()
+                        ),
+                    ));
+                }
+                if file_type.is_dir() {
+                    pending_directories.push(path);
+                } else if path
+                    .extension()
+                    .is_some_and(|extension| extension == "clause")
+                {
+                    clause_sources.push(path);
+                }
+            }
+        }
+
+        clause_sources.sort();
+        Ok(clause_sources)
+    }
 
     #[test]
     fn slash_qualified_fixture_remains_marked_and_quarantined() {
@@ -1005,18 +1040,8 @@ mod tests {
     #[test]
     fn canonical_clause_examples_require_a_ratified_parser_before_publication() {
         let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
-        let mut clause_sources = fs::read_dir(crate_root.join("examples"))
-            .expect("public example directory is readable")
-            .map(|entry| entry.map(|entry| entry.path()))
-            .collect::<Result<Vec<_>, _>>()
-            .expect("every public example entry is readable")
-            .into_iter()
-            .filter(|path| {
-                path.extension()
-                    .is_some_and(|extension| extension == "clause")
-            })
-            .collect::<Vec<_>>();
-        clause_sources.sort();
+        let clause_sources = clause_sources_below(&crate_root.join("examples"))
+            .expect("the complete public example tree is recursively readable and contained");
 
         assert!(
             clause_sources.is_empty(),
