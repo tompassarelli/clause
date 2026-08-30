@@ -94,14 +94,17 @@ Term + FormationJudgment
   -> observations, result, continuation, or candidate delta
 ```
 
-An Application can be quoted, inspected, transformed, rejected, or activated.
+An ApplicationForm can be quoted, inspected, transformed, or rejected. A
+nominal Application instantiates one exact closed form and may be activated.
 Two activations of the same Application are different occurrences, and one
 Activation keeps its identity across many Steps, suspension, and resumption.
 A Run is the causal envelope rooted at one Activation, not whichever trace or
 total log order happened to be retained.
 
-An Activation is pinned to an exact Mode, ProgramRevision, RuntimeSession,
-observed world revision, authorization, budget, and cause frontier. Equal
+Every Activation pins exact `ClauseSemanticsId`, `ProgramSnapshotId`,
+`ProgramRevisionId`, selected `ModeId`, typed initial context, required
+authorization, and cause frontier. It also pins a RuntimeSession when present
+and an observed StateRevision when the Application is world-sensitive. Equal
 syntax run under different contexts therefore cannot silently collapse into
 one timeless `evaluates-to` edge.
 
