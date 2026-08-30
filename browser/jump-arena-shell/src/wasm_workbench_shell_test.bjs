@@ -2,11 +2,13 @@
 
 (ns jump-arena-shell.wasm-workbench-shell-test
   (:require [jump-arena-shell.wasm-workbench-shell :as integration]
+            [jump-arena-shell.wasm-cartridge-port :as wasm]
             [jump-arena-shell.workbench :as workbench]))
 
 (require '["bun:test" :as test])
+(require '["#clause-runtime-wasm" :refer [initSync]])
 
-(declare-extern [test/test test/expect] Any)
+(declare-extern [test/test test/expect Bun] Any)
 
 (defn policy [] workbench/WorkbenchPolicy
   (let [maximum Int (.-MAX_SAFE_INTEGER Number)]
@@ -50,6 +52,12 @@
    :clause_process_v1_response_len (fn [] Int (.-length response))
    :clause_process_v1_response_byte (fn [index Int] Int (nth response index))})
 
+(defn read-fixture-text! [path String] (Promise String)
+  (.text (.file Bun path)))
+
+(defn read-fixture-bytes! [path String] (Promise Any)
+  (.arrayBuffer (.file Bun path)))
+
 (test/test
  "passive shell renders only the admitted CWO1 successor frame"
  (fn [] Any
@@ -73,6 +81,7 @@
                               (reset! emitted-input emit-input)
                               {:renderFrame (fn [frame Any] Any (.push rendered frame))
                                :dispose (fn [] Any (swap! disposed inc))}))
+                          integration/project-cwo1-arena-frame
                           browser
                           (module-for! (cwo1 values) dispatches)
                           [67 87 82 49 1]
@@ -112,19 +121,87 @@
                              (.reject Promise (new Error "bounded loader probe"))))
          module-bytes Any (new Uint8Array [0 97 115 109])]
      (.catch
-      (integration/load-passive-wasm-workbench-shell!
+     (integration/load-passive-wasm-workbench-shell!
        initializer
        module-bytes
-       nil
+       (fn [_emit-input Any] Any
+         {:renderFrame (fn [_frame Any] Any nil)
+          :dispose (fn [] Any nil)})
+       integration/project-nonempty-cwo1-result-frame
        {:setTimeout (fn
                       [_tick Any
                        _delay Int] Int
                       1)
         :clearTimeout (fn [_token Any] Any nil)}
-       nil
        [67 87 82 49 1]
        (workbench/->FixedTick 16)
        (policy)
        (fn [_receipt Any] Any nil))
       (fn [_error Any] Any
         (.toBe (test/expect (.-module_or_path @received)) module-bytes))))))
+
+(defn ^:async exact-fixture-replay! [] (Promise Any)
+  (let [request-source String (await
+                               (read-fixture-text!
+                                "./fixtures/wasm-jump-v1/jump-v1.cwr1.hex"))
+        expected-source String (await
+                                (read-fixture-text!
+                                 "./fixtures/wasm-jump-v1/jump-v1.cwo1.hex"))
+        module-bytes Any (await
+                          (read-fixture-bytes!
+                           "./generated/wasm/clause_runtime_bg.wasm"))
+        request Any (wasm/decode-cwr1-hex request-source)
+        expected wasm/Cwo1Observation (wasm/decode-cwo1-observation
+                                       (wasm/decode-cwr1-hex expected-source))
+        rendered Any []
+        scheduled Any (atom nil)
+        cancelled Any (atom 0)
+        receipts Any []
+        browser Any {:setTimeout (fn
+                                   [tick Any
+                                    _delay Int] Int
+                                   (do (reset! scheduled tick) 73))
+                     :clearTimeout (fn [_token Any] Any (swap! cancelled inc))}
+        composition Any (await
+                         (integration/load-passive-wasm-workbench-shell!
+                          (integration/create-sync-wasm-initializer initSync)
+                          module-bytes
+                          (fn [_emit-input Any] Any
+                            {:renderFrame (fn [frame Any] Any (.push rendered frame))
+                             :dispose (fn [] Any nil)})
+                          integration/project-nonempty-cwo1-result-frame
+                          browser
+                          request
+                          (workbench/->FixedTick 16)
+                          (policy)
+                          (fn [receipt Any] Any (.push receipts receipt))))
+        before-events Any (.map receipts (fn [receipt Any] Any (.-event receipt)))]
+    (.toBe (test/expect (.-length request)) 5385)
+    (.toEqual (test/expect (.slice request 0 4)) [67 87 82 49])
+    (.toEqual (test/expect rendered) [])
+    (.toBe (test/expect (.includes before-events "admission-accepted")) false)
+    (@scheduled)
+    (let [events Any (.map receipts (fn [receipt Any] Any (.-event receipt)))
+          candidate-index Int (.indexOf events "candidate-produced")
+          request-index Int (.indexOf events "admission-requested")
+          accepted-index Int (.indexOf events "admission-accepted")
+          rendered-index Int (.indexOf events "frame-rendered")
+          snapshot Any ((.-snapshot (.-controller composition)))]
+      (.toBe (test/expect (.-length rendered)) 1)
+      (.toEqual (test/expect (nth rendered 0)) (.-values expected))
+      (.toEqual (test/expect (.-frame snapshot)) (.-values expected))
+      (.toEqual (test/expect (.-revision snapshot)) (.-stateRevisionId expected))
+      (.toBe (test/expect (and (< -1 candidate-index)
+                               (< candidate-index request-index)
+                               (< request-index accepted-index)
+                               (< accepted-index rendered-index)))
+             true))
+    ((.-dispose composition))
+    ((.-dispose composition))
+    (@scheduled)
+    (.toBe (test/expect @cancelled) 1)
+    (.toBe (test/expect (.-length rendered)) 1)))
+
+(test/test
+ "exact tracked CWR1 reaches one admitted neutral CWO1 replay through shipped Wasm"
+ exact-fixture-replay!)

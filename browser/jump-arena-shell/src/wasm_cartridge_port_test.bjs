@@ -107,3 +107,16 @@
        (.toThrow
         (test/expect
          (fn [] Any (wasm/decode-cwo1-observation bad))))))))
+
+(test/test
+ "CWR1 hex transport is exact and bounded"
+ (fn [] Any
+   (.toEqual (test/expect (wasm/decode-cwr1-hex "43 57\n52\t31"))
+             [67 87 82 49])
+   (doseq [source Any [""
+                       "0"
+                       "0g"
+                       "0A"]]
+     (.toThrow
+      (test/expect
+       (fn [] Any (wasm/decode-cwr1-hex source)))))))

@@ -75,4 +75,9 @@ test.expect(() => wasm["decode-cwo1-observation"](valid.concat([0]))).toThrow();
 const bad = valid.slice();
 bad.splice(0, 1, 88);
 return test.expect(() => wasm["decode-cwo1-observation"](bad)).toThrow(); });
+
+test.test("CWR1 hex transport is exact and bounded", () => { test.expect(wasm["decode-cwr1-hex"]("43 57\n52\t31")).toEqual([67, 87, 82, 49]);
+["", "0", "0g", "0A"].forEach((source) => {
+  test.expect(() => wasm["decode-cwr1-hex"](source)).toThrow();
+}); });
 //# sourceMappingURL=wasm-cartridge-port-test.js.map

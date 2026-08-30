@@ -4,10 +4,64 @@
   (:require [jump-arena-shell.workbench :as workbench]))
 
 (def cwr1-max-bytes Int (* 4 1024 1024))
+(def cwr1-hex-max-source-units Int (* 3 cwr1-max-bytes))
 (def cwo1-max-bytes Int (* 64 1024))
 (def cwo1-prefix-bytes Int (+ 4 32 32))
 (def cwo1-identity-bytes Int 32)
 (def cwo1-max-values Int 256)
+
+(defn hex-whitespace-code? [code Int] Bool
+  (or (= code 9)
+      (= code 10)
+      (= code 13)
+      (= code 32)))
+
+(defn lowercase-hex-nibble [code Int] Int
+  (cond
+    (and (<= 48 code) (<= code 57)) (- code 48)
+    (and (<= 97 code) (<= code 102)) (+ (- code 97) 10)
+    :else -1))
+
+(js/export
+  (defn decode-cwr1-hex [source Any] Any
+    (if-not (= (js/typeof source) "string")
+      (throw (new Error "CWR1 hex transport must be text"))
+      (let [length Int (.-length source)]
+        (when (or (= length 0)
+                  (> length cwr1-hex-max-source-units))
+          (throw (new Error "CWR1 hex transport is outside its source bound")))
+        (loop [index Int 0
+               high Int -1
+               bytes (Vec Int) []]
+          (if (= index length)
+            (cond
+              (not= high -1)
+              (throw (new Error "CWR1 hex transport has an incomplete byte"))
+
+              (= (count bytes) 0)
+              (throw (new Error "CWR1 hex transport is empty"))
+
+              :else
+              (.freeze Object bytes))
+            (let [code Int (.charCodeAt source index)
+                  nibble Int (lowercase-hex-nibble code)]
+              (cond
+                (hex-whitespace-code? code)
+                (recur (inc index) high bytes)
+
+                (< nibble 0)
+                (throw (new Error "CWR1 hex transport contains a non-hex unit"))
+
+                (= high -1)
+                (recur (inc index) nibble bytes)
+
+                (>= (count bytes) cwr1-max-bytes)
+                (throw (new Error "CWR1 hex transport exceeds its byte bound"))
+
+                :else
+                (recur (inc index)
+                       -1
+                       (conj bytes (+ (* high 16) nibble)))))))))))
 
 (js/export
   (defrecord ExactProcessRequest [bytes Any]))

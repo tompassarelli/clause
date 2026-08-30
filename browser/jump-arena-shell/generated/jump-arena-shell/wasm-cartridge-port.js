@@ -1,8 +1,10 @@
 import * as workbench from './workbench.js';
-import { conj_value as $$bc$conj_value, equivV as $$bc$equiv, record_value as $$bc$record_value, str as $$bc$str } from 'beagle/core.js';
+import { conj_value as $$bc$conj_value, count as $$bc$count, equivV as $$bc$equiv, record_value as $$bc$record_value, str as $$bc$str } from 'beagle/core.js';
 import { catch_dispatch as $$bd$catch_dispatch } from 'beagle/exception-dispatch.js';
 
 const cwr1_max_bytes = (4 * 1024 * 1024);
+
+const cwr1_hex_max_source_units = (3 * cwr1_max_bytes);
 
 const cwo1_max_bytes = (64 * 1024);
 
@@ -11,6 +13,28 @@ const cwo1_prefix_bytes = (4 + 32 + 32);
 const cwo1_identity_bytes = 32;
 
 const cwo1_max_values = 256;
+
+function hex_whitespace_code_p(code) {
+  return (($$bc$equiv(code, 9)) || (($$bc$equiv(code, 10)) || (($$bc$equiv(code, 13)) || ($$bc$equiv(code, 32)))));
+}
+
+function lowercase_hex_nibble(code) {
+  return ((((48 <= code) && (code <= 57))) ? (code - 48) : (((97 <= code) && (code <= 102))) ? ((code - 97) + 10) : -1);
+}
+
+function decode_cwr1_hex(source) {
+  if (($$bc$equiv(typeof source, "string"))) {
+    const length = source.length;
+    if ((($$bc$equiv(length, 0)) || (length > cwr1_hex_max_source_units))) {
+      (() => { throw new Error("CWR1 hex transport is outside its source bound"); })();
+    }
+    return (() => { let index = 0; let high = -1; let bytes = []; while (true) {
+    if ((index === length)) { return (((!($$bc$equiv(high, -1)))) ? (() => { throw new Error("CWR1 hex transport has an incomplete byte"); })() : (($$bc$equiv($$bc$count(bytes), 0))) ? (() => { throw new Error("CWR1 hex transport is empty"); })() : Object.freeze(bytes)); } else { const code = source.charCodeAt(index); const nibble = lowercase_hex_nibble(code); if (hex_whitespace_code_p(code)) { const _recur_0 = (index + 1); const _recur_1 = high; const _recur_2 = bytes; index = _recur_0; high = _recur_1; bytes = _recur_2; continue; } else if ((nibble < 0)) { return (() => { throw new Error("CWR1 hex transport contains a non-hex unit"); })(); } else if (($$bc$equiv(high, -1))) { const _recur_0 = (index + 1); const _recur_1 = nibble; const _recur_2 = bytes; index = _recur_0; high = _recur_1; bytes = _recur_2; continue; } else if (($$bc$count(bytes) >= cwr1_max_bytes)) { return (() => { throw new Error("CWR1 hex transport exceeds its byte bound"); })(); } else { const _recur_0 = (index + 1); const _recur_1 = -1; const _recur_2 = $$bc$conj_value(bytes, ((high * 16) + nibble)); index = _recur_0; high = _recur_1; bytes = _recur_2; continue; } }
+  } })();
+  } else {
+    return (() => { throw new Error("CWR1 hex transport must be text"); })();
+  }
+}
 
 function ExactProcessRequest(bytes) {
   return $$bc$record_value("jump-arena-shell.wasm-cartridge-port/ExactProcessRequest", {_tag: "ExactProcessRequest", bytes});
@@ -218,6 +242,7 @@ export { cwo1observation_observationId as "cwo1observation-observationId" };
 export { cwo1observation_stateRevisionId as "cwo1observation-stateRevisionId" };
 export { cwo1observation_values as "cwo1observation-values" };
 export { decode_cwo1_observation as "decode-cwo1-observation" };
+export { decode_cwr1_hex as "decode-cwr1-hex" };
 export { exactprocessobservation_bytes as "exactprocessobservation-bytes" };
 export { exactprocessrequest_bytes as "exactprocessrequest-bytes" };
 //# sourceMappingURL=wasm-cartridge-port.js.map

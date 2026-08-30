@@ -1,24 +1,52 @@
-import * as shell from './shell.js';
-import * as THREE from 'three';
-import { keyword as $$bc$keyword, property_key as $$bc$property_key } from 'beagle/core.js';
+import * as wasm from './wasm-cartridge-port.js';
+import * as integration from './wasm-workbench-shell.js';
+import * as workbench from './workbench.js';
+import { initSync } from '#clause-runtime-wasm';
+import { keyword as $$bc$keyword, property_key as $$bc$property_key, str as $$bc$str } from 'beagle/core.js';
 
-function frozen_vec3(x, y, z) {
-  return Object.freeze({[$$bc$property_key($$bc$keyword("x"))]: x, [$$bc$property_key($$bc$keyword("y"))]: y, [$$bc$property_key($$bc$keyword("z"))]: z});
+const module_path = "./generated/wasm/clause_runtime_bg.wasm";
+
+const request_path = "./fixtures/wasm-jump-v1/jump-v1.cwr1.hex";
+
+function demo_policy() {
+  return workbench["->WorkbenchPolicy"](8, 8, 32, 128, 4096, workbench["->WorkbenchSequenceLimits"](64, 16, 8, 8, 16));
 }
 
-function frozen_platform(x, y, z, width, height, depth) {
-  return Object.freeze({[$$bc$property_key($$bc$keyword("position"))]: frozen_vec3(x, y, z), [$$bc$property_key($$bc$keyword("size"))]: frozen_vec3(width, height, depth)});
+function fetch_text_bang(path) {
+  return fetch(path).then((response) => (((_truthy) => _truthy !== false && _truthy != null)(response.ok) ? response.text() : Promise.reject(new Error($$bc$str("Unable to load ", path)))));
 }
 
-const static_sample_frame = Object.freeze({[$$bc$property_key($$bc$keyword("player"))]: Object.freeze({[$$bc$property_key($$bc$keyword("position"))]: frozen_vec3(0.0, 1.15, 0.0), [$$bc$property_key($$bc$keyword("velocity"))]: frozen_vec3(0.0, 0.0, 0.0), [$$bc$property_key($$bc$keyword("yaw"))]: 0.0, [$$bc$property_key($$bc$keyword("grounded"))]: true}), [$$bc$property_key($$bc$keyword("world"))]: Object.freeze({[$$bc$property_key($$bc$keyword("platforms"))]: Object.freeze([frozen_platform(0.0, -0.25, 0.0, 12.0, 0.5, 12.0), frozen_platform(4.0, 1.0, -2.0, 3.0, 0.5, 3.0), frozen_platform(-3.0, 2.2, -5.0, 2.5, 0.5, 2.5)])})});
+function fetch_bytes_bang(path) {
+  return fetch(path).then((response) => (((_truthy) => _truthy !== false && _truthy != null)(response.ok) ? response.arrayBuffer() : Promise.reject(new Error($$bc$str("Unable to load ", path)))));
+}
 
-const mount = document.querySelector("#arena");
+const status = document.querySelector("#replay-status");
 
-const three = {[$$bc$property_key($$bc$keyword("Scene"))]: THREE.Scene, [$$bc$property_key($$bc$keyword("Color"))]: THREE.Color, [$$bc$property_key($$bc$keyword("PerspectiveCamera"))]: THREE.PerspectiveCamera, [$$bc$property_key($$bc$keyword("WebGLRenderer"))]: THREE.WebGLRenderer, [$$bc$property_key($$bc$keyword("HemisphereLight"))]: THREE.HemisphereLight, [$$bc$property_key($$bc$keyword("DirectionalLight"))]: THREE.DirectionalLight, [$$bc$property_key($$bc$keyword("BoxGeometry"))]: THREE.BoxGeometry, [$$bc$property_key($$bc$keyword("MeshStandardMaterial"))]: THREE.MeshStandardMaterial, [$$bc$property_key($$bc$keyword("Mesh"))]: THREE.Mesh, [$$bc$property_key($$bc$keyword("Group"))]: THREE.Group};
+const result = document.querySelector("#replay-result");
 
-const arena = shell["create-jump-arena-shell!"](mount, window, three, (input) => mount.dispatchEvent(new CustomEvent("arena-shell-input", {[$$bc$property_key($$bc$keyword("detail"))]: input})));
+const active_composition = ({value: null, watches: {}});
 
-(arena.renderFrame)(static_sample_frame);
+function create_result_shell_bang(__emit_input) {
+  const disposed = ({value: false, watches: {}});
+  return Object.freeze({[$$bc$property_key($$bc$keyword("renderFrame"))]: (values) => { if (((_truthy) => _truthy !== false && _truthy != null)(disposed.value)) {
+  return (() => { throw new Error("replay result shell is disposed"); })();
+} else {
+  (status.textContent = "Separate Admission accepted; exact scalar result:");
+  (result.textContent = JSON.stringify(values));
+  return values;
+} }, [$$bc$property_key($$bc$keyword("dispose"))]: () => { if ((!((_truthy) => _truthy !== false && _truthy != null)(disposed.value))) {
+  return (() => { const _a = disposed, _v = true; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })();
+} }});
+}
 
-window.addEventListener("beforeunload", arena.dispose, {[$$bc$property_key($$bc$keyword("once"))]: true});
+const load_demo = Promise.all([fetch_bytes_bang(module_path), fetch_text_bang(request_path)]).then((assets) => integration["load-passive-wasm-workbench-shell!"](integration["create-sync-wasm-initializer"](initSync), assets[0], create_result_shell_bang, integration["project-nonempty-cwo1-result-frame"], window, wasm["decode-cwr1-hex"](assets[1]), workbench["->FixedTick"](16), demo_policy(), (__receipt) => null)).then((composition) => { (() => { const _a = active_composition, _v = composition; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })();
+(status.textContent = "Exact replay loaded; awaiting separate Admission.");
+return composition; }).catch((__error) => { (status.textContent = "Replay load failed safely.");
+(result.textContent = "");
+return null; });
+
+window.addEventListener("beforeunload", () => { const composition = active_composition.value;
+if ((!(composition == null))) {
+  return (composition.dispose)();
+} }, {[$$bc$property_key($$bc$keyword("once"))]: true});
 //# sourceMappingURL=demo.js.map
