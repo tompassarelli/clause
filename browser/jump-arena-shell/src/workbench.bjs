@@ -1,0 +1,532 @@
+#lang beagle/js
+
+(ns jump-arena-shell.workbench)
+
+(js/export
+  (defrecord FixedTick [milliseconds Int]))
+
+(js/export
+  (defrecord InputObservation
+    [sequence Int
+     value Any]))
+
+(js/export
+  (defrecord InputConfiguration
+    [revision Int
+     observations (Vec InputObservation)]))
+
+(js/export
+  (defrecord LifecycleReceipt
+    [schema String
+     sequence Int
+     event String
+     phase String
+     activeGeneration Int
+     operationGeneration Int
+     configurationRevision Int
+     revision Any
+     detail String]))
+
+(js/export
+  (defrecord WorkbenchSnapshot
+    [phase String
+     generation Int
+     configurationRevision Int
+     pendingObservations Int
+     revision Any
+     frame Any
+     disposed Bool]))
+
+(js/export
+  (defunion PackageCheck
+    (PackageAccepted [acceptedPackage Any])
+    (PackageRejected [reason String])))
+
+(js/export
+  (defunion SessionCompletion
+    (SessionStarted
+      [session Any
+       revision Any
+       frame Any])
+    (SessionFailed [reason String])))
+
+(js/export
+  (defunion CandidateCompletion
+    (CandidateProduced [candidate Any])
+    (CandidateFailed [reason String])))
+
+(js/export
+  (defunion AdmissionCompletion
+    (AdmissionAccepted
+      [successor Any
+       revision Any
+       frame Any])
+    (AdmissionRejected [reason String])))
+
+(js/export
+  (defrecord CartridgePort
+    [acceptPackage (Fn [Any (Fn [PackageCheck] Any)] Any)
+     startSession (Fn [Any Int (Fn [SessionCompletion] Any)] Any)
+     runCandidate (Fn [Any FixedTick InputConfiguration (Fn [CandidateCompletion] Any)] Any)
+     requestAdmission (Fn [Any Any (Fn [AdmissionCompletion] Any)] Any)
+     disposeSession (Fn [Any] Any)]))
+
+(defrecord ActiveRuntime
+  [generation Int
+   session Any
+   revision Any
+   frame Any])
+
+(defrecord WorkbenchState
+  [phase String
+   active ActiveRuntime?
+   configuration InputConfiguration
+   latestReload Int
+   disposed Bool])
+
+(defunion WorkbenchTransition
+  (ObserveInput [value Any])
+  (FixedTickElapsed)
+  (CandidateCompleted
+    [generation Int
+     completion CandidateCompletion])
+  (AdmissionCompleted
+    [generation Int
+     completion AdmissionCompletion])
+  (ReloadRequested [packageCandidate Any])
+  (PackageCompleted
+    [generation Int
+     completion PackageCheck])
+  (SessionCompleted
+    [generation Int
+     completion SessionCompletion])
+  (DisposeRequested))
+
+(def lifecycle-schema String "clause-cartridge-workbench/v1")
+
+(defn empty-configuration [revision Int] InputConfiguration
+  (->InputConfiguration revision (.freeze Object [])))
+
+(defn active-generation [active ActiveRuntime?] Int
+  (if (nil? active) 0 (.-generation active)))
+
+(defn active-revision [active ActiveRuntime?] Any
+  (if (nil? active) nil (.-revision active)))
+
+(defn active-frame [active ActiveRuntime?] Any
+  (if (nil? active) nil (.-frame active)))
+
+(defn settled-phase [active ActiveRuntime?] String
+  (if (nil? active) "idle" "ready"))
+
+(defn frozen-opaque? [value Any] Bool
+  (and (not (nil? value)) (.isFrozen Object value)))
+
+(defn require-frozen-input [value Any] Any
+  (if (frozen-opaque? value)
+    value
+    (throw (new Error "workbench input observations must be frozen"))))
+
+(js/export
+  (defn create-cartridge-workbench!
+    [port CartridgePort
+     fixedTick FixedTick
+     scheduleFixedTick (Fn [Int (Fn [] Any)] (Fn [] Any))
+     renderFrame (Fn [Any] Any)
+     emitReceipt (Fn [LifecycleReceipt] Any)
+     initialPackageCandidate Any] Any
+    (let [state (Atom WorkbenchState) (atom (->WorkbenchState
+                 "idle"
+                 nil
+                 (empty-configuration 0)
+                 0
+                 false))
+          receipt-sequence (Atom Int) (atom 0)
+          input-sequence (Atom Int) (atom 0)
+          generation-sequence (Atom Int) (atom 0)
+          disposed-sessions Any (new Set)
+          cancel-fixed-tick (Atom (Fn [] Any)) (atom (fn [] Any nil))]
+      (letfn [(emit-lifecycle!
+                [event String
+                 operation-generation Int
+                 detail String] Any
+                (let [current WorkbenchState @state
+                      active ActiveRuntime? (.-active current)
+                      sequence Int (swap! receipt-sequence inc)]
+                  (emitReceipt
+                   (->LifecycleReceipt
+                    lifecycle-schema
+                    sequence
+                    event
+                    (.-phase current)
+                    (active-generation active)
+                    operation-generation
+                    (.-revision (.-configuration current))
+                    (active-revision active)
+                    detail))))
+
+              (dispose-session-once! [session Any] Any
+                (when (and (not (nil? session))
+                           (not (.has disposed-sessions session)))
+                  (.add disposed-sessions session)
+                  ((.-disposeSession port) session)))
+
+              (restore-settled-phase! [] Any
+                (let [current WorkbenchState @state
+                      active ActiveRuntime? (.-active current)]
+                  (reset! state
+                          (->WorkbenchState
+                           (settled-phase active)
+                           active
+                           (.-configuration current)
+                           (.-latestReload current)
+                           (.-disposed current)))))
+
+              (install-authority!
+                [generation Int
+                 session Any
+                 revision Any
+                 frame Any
+                 reset-configuration Bool
+                 accepted-event String
+                 accepted-detail String] Any
+                (let [current WorkbenchState @state
+                      previous ActiveRuntime? (.-active current)
+                      previous-session Any (if (nil? previous)
+                                             nil
+                                             (.-session previous))
+                      configuration InputConfiguration (.-configuration current)
+                      next-configuration InputConfiguration (if reset-configuration
+                        (empty-configuration (inc (.-revision configuration)))
+                        configuration)
+                      next-active ActiveRuntime (->ActiveRuntime generation session revision frame)]
+                  (emit-lifecycle!
+                   accepted-event
+                   generation
+                   accepted-detail)
+                  (reset! state
+                          (->WorkbenchState
+                           "successor"
+                           next-active
+                           next-configuration
+                           (.-latestReload current)
+                           false))
+                  (emit-lifecycle!
+                   "successor-installed"
+                   generation
+                   "port-successor")
+                  (reset! state
+                          (->WorkbenchState
+                           "render"
+                           next-active
+                           next-configuration
+                           (.-latestReload current)
+                           false))
+                  (renderFrame frame)
+                  (emit-lifecycle!
+                   "frame-rendered"
+                   generation
+                   "port-frame")
+                  (reset! state
+                          (->WorkbenchState
+                           "ready"
+                           next-active
+                           next-configuration
+                           (.-latestReload current)
+                           false))
+                  (when (and (not (nil? previous-session))
+                             (not (identical? previous-session session)))
+                    (dispose-session-once! previous-session))))
+
+              (stale-completion!
+                [operation-generation Int
+                 detail String] Any
+                (when (not (.-disposed @state))
+                  (emit-lifecycle!
+                   "completion-stale"
+                   operation-generation
+                   detail)))
+
+              (dispatch! [transition WorkbenchTransition] Any
+                (match transition
+                  [(ObserveInput value)
+                   (let [current WorkbenchState @state]
+                     (when (not (.-disposed current))
+                       (let [configuration InputConfiguration (.-configuration current)
+                             observation-sequence Int (swap! input-sequence inc)
+                             observation InputObservation (->InputObservation
+                              observation-sequence
+                              (require-frozen-input value))
+                             observations (Vec InputObservation) (.freeze Object
+                                      (conj (.-observations configuration)
+                                            observation))
+                             next-configuration InputConfiguration (->InputConfiguration
+                              (inc (.-revision configuration))
+                              observations)]
+                         (reset! state
+                                 (->WorkbenchState
+                                  (.-phase current)
+                                  (.-active current)
+                                  next-configuration
+                                  (.-latestReload current)
+                                  false))
+                         (emit-lifecycle!
+                          "configuration-observed"
+                          (active-generation (.-active current))
+                          "input"))))]
+
+                  [(FixedTickElapsed)
+                   (let [current WorkbenchState @state
+                         active ActiveRuntime? (.-active current)]
+                     (when (and (not (.-disposed current))
+                                (= (.-phase current) "ready")
+                                (not (nil? active)))
+                       (let [generation Int (.-generation active)
+                             configuration InputConfiguration (.-configuration current)]
+                         (reset! state
+                                 (->WorkbenchState
+                                  "candidate"
+                                  active
+                                  (empty-configuration
+                                   (.-revision configuration))
+                                  (.-latestReload current)
+                                  false))
+                         (emit-lifecycle!
+                          "candidate-requested"
+                          generation
+                          "fixed-tick")
+                         ((.-runCandidate port)
+                          (.-session active)
+                          fixedTick
+                          configuration
+                          (fn [completion CandidateCompletion] Any
+                            (dispatch!
+                             (->CandidateCompleted
+                              generation
+                              completion)))))))]
+
+                  [(CandidateCompleted generation completion)
+                   (let [current WorkbenchState @state
+                         active ActiveRuntime? (.-active current)]
+                     (if (or (.-disposed current)
+                             (nil? active)
+                             (not= generation (.-generation active))
+                             (not= (.-phase current) "candidate"))
+                       (stale-completion! generation "candidate")
+                       (match completion
+                         [(CandidateFailed reason)
+                          (do
+                            (restore-settled-phase!)
+                            (emit-lifecycle!
+                             "candidate-failed"
+                             generation
+                             reason))]
+
+                         [(CandidateProduced candidate)
+                          (do
+                            (reset! state
+                                    (->WorkbenchState
+                                     "admission"
+                                     active
+                                     (.-configuration current)
+                                     (.-latestReload current)
+                                     false))
+                            (emit-lifecycle!
+                             "candidate-produced"
+                             generation
+                             "candidate")
+                            (emit-lifecycle!
+                             "admission-requested"
+                             generation
+                             "candidate")
+                            ((.-requestAdmission port)
+                             (.-session active)
+                             candidate
+                             (fn [result AdmissionCompletion] Any
+                               (dispatch!
+                                (->AdmissionCompleted
+                                 generation
+                                 result)))))])))]
+
+                  [(AdmissionCompleted generation completion)
+                   (let [current WorkbenchState @state
+                         active ActiveRuntime? (.-active current)]
+                     (if (or (.-disposed current)
+                             (nil? active)
+                             (not= generation (.-generation active))
+                             (not= (.-phase current) "admission"))
+                       (stale-completion! generation "admission")
+                       (match completion
+                         [(AdmissionRejected reason)
+                          (do
+                            (restore-settled-phase!)
+                            (emit-lifecycle!
+                             "admission-rejected"
+                             generation
+                             reason))]
+
+                         [(AdmissionAccepted successor revision frame)
+                          (if (not (frozen-opaque? frame))
+                            (do
+                              (when (not (identical? successor
+                                                      (.-session active)))
+                                (dispose-session-once! successor))
+                              (restore-settled-phase!)
+                              (emit-lifecycle!
+                               "admission-frame-rejected"
+                               generation
+                               "frame-not-frozen"))
+                            (install-authority!
+                             generation
+                             successor
+                             revision
+                             frame
+                             false
+                             "admission-accepted"
+                             "successor"))])))]
+
+                  [(ReloadRequested package-candidate)
+                   (let [current WorkbenchState @state]
+                     (when (not (.-disposed current))
+                       (let [generation Int (swap! generation-sequence inc)]
+                         (reset! state
+                                 (->WorkbenchState
+                                  "package-check"
+                                  (.-active current)
+                                  (.-configuration current)
+                                  generation
+                                  false))
+                         (emit-lifecycle!
+                          "reload-requested"
+                          generation
+                          "package-candidate")
+                         ((.-acceptPackage port)
+                          package-candidate
+                          (fn [completion PackageCheck] Any
+                            (dispatch!
+                             (->PackageCompleted
+                              generation
+                              completion)))))))]
+
+                  [(PackageCompleted generation completion)
+                   (let [current WorkbenchState @state]
+                     (if (or (.-disposed current)
+                             (not= generation (.-latestReload current))
+                             (not= (.-phase current) "package-check"))
+                       (stale-completion! generation "package")
+                       (match completion
+                         [(PackageRejected reason)
+                          (do
+                            (restore-settled-phase!)
+                            (emit-lifecycle!
+                             "package-rejected"
+                             generation
+                             reason))]
+
+                         [(PackageAccepted accepted-package)
+                          (do
+                            (reset! state
+                                    (->WorkbenchState
+                                     "session-start"
+                                     (.-active current)
+                                     (.-configuration current)
+                                     generation
+                                     false))
+                            (emit-lifecycle!
+                             "package-accepted"
+                             generation
+                             "accepted-package")
+                            ((.-startSession port)
+                             accepted-package
+                             generation
+                             (fn [result SessionCompletion] Any
+                               (dispatch!
+                                (->SessionCompleted
+                                 generation
+                                 result)))))])))]
+
+                  [(SessionCompleted generation completion)
+                   (let [current WorkbenchState @state
+                         current-completion Bool (and (not (.-disposed current))
+                              (= generation (.-latestReload current))
+                              (= (.-phase current) "session-start"))]
+                     (if (not current-completion)
+                       (do
+                         (match completion
+                           [(SessionStarted session _revision _frame)
+                            (dispose-session-once! session)]
+                           [(SessionFailed _reason) nil])
+                         (stale-completion! generation "session"))
+                       (match completion
+                         [(SessionFailed reason)
+                          (do
+                            (restore-settled-phase!)
+                            (emit-lifecycle!
+                             "session-failed"
+                             generation
+                             reason))]
+
+                         [(SessionStarted session revision frame)
+                          (if (not (frozen-opaque? frame))
+                            (do
+                              (dispose-session-once! session)
+                              (restore-settled-phase!)
+                              (emit-lifecycle!
+                               "session-frame-rejected"
+                               generation
+                               "frame-not-frozen"))
+                            (install-authority!
+                             generation
+                             session
+                             revision
+                             frame
+                             true
+                             "session-started"
+                             "fresh-runtime-session"))])))]
+
+                  [(DisposeRequested)
+                   (let [current WorkbenchState @state]
+                     (when (not (.-disposed current))
+                       (let [active ActiveRuntime? (.-active current)
+                             generation Int (active-generation active)]
+                         (reset! state
+                                 (->WorkbenchState
+                                  "disposed"
+                                  active
+                                  (.-configuration current)
+                                  (.-latestReload current)
+                                  true))
+                         (@cancel-fixed-tick)
+                         (when (not (nil? active))
+                           (dispose-session-once! (.-session active)))
+                         (emit-lifecycle!
+                          "disposed"
+                          generation
+                          "terminal"))))]))
+
+              (snapshot! [] WorkbenchSnapshot
+                (let [current WorkbenchState @state
+                      active ActiveRuntime? (.-active current)
+                      configuration InputConfiguration (.-configuration current)]
+                  (->WorkbenchSnapshot
+                   (.-phase current)
+                   (active-generation active)
+                   (.-revision configuration)
+                   (count (.-observations configuration))
+                   (active-revision active)
+                   (active-frame active)
+                   (.-disposed current))))]
+        (reset! cancel-fixed-tick
+                (scheduleFixedTick
+                 (.-milliseconds fixedTick)
+                 (fn [] Any (dispatch! (->FixedTickElapsed)))))
+        (dispatch! (->ReloadRequested initialPackageCandidate))
+        (.freeze Object
+                 {:observeInput (fn [value Any] Any
+                                  (dispatch! (->ObserveInput value)))
+                  :reloadPackage (fn [package-candidate Any] Any
+                                   (dispatch!
+                                    (->ReloadRequested package-candidate)))
+                  :snapshot snapshot!
+                  :dispose (fn [] Any
+                             (dispatch! (->DisposeRequested)))})))))
