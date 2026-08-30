@@ -54,13 +54,64 @@
       "trace serialization order"
     ]
   },
+  "designation_projection": {
+    "binding_context": "context.json#/designation_bindings",
+    "namespace_resolution": "exact NamespaceId from an explicit binding; never inferred from source spelling or hyphen segments",
+    "referent_resolution": "exact opaque ReferentId from the same binding; spelling equality never establishes identity",
+    "source_alias_counts": {
+      "semantic_package": 468,
+      "ordinary_source": 9,
+      "context_only": 11,
+      "total": 488
+    },
+    "context_record_bindings": "all 33 designation-bearing context records carry an exact designation_binding_id and the same slash-free local spelling as that binding",
+    "authored_designation_slash": "forbidden in quoted and unquoted spelling",
+    "slash_permitted_as_opaque_data": [
+      "Atom",
+      "Text",
+      "identifier payload",
+      "SourceArtifact path",
+      "JSON Pointer",
+      "SourceMap prior spelling",
+      "hash-domain label"
+    ],
+    "source_alias_bijection": "each prior authored designation in the frozen source projections maps to one collision-free local spelling and one explicit binding; aliases do not encode namespace, kind, role, or path"
+  },
   "negative_fixture_transport": {
+    "application_form_substitution_schema": "clause/compiler-terms/application-form-substitution-negative-v3",
     "support_substitution_schema": "clause/compiler-terms/support-substitution-negative-v3",
     "semantics": "validation-input-only-counterfactual; never mutation of the positive context or a Clause process operation",
-    "target_resolution": "exact SupportOccurrenceId in the referenced positive process vector",
-    "replacement_identity": "replacement SupportOccurrenceId and produced_by must equal the target, and the target must be emitted by that exact Step",
-    "comparison": "exact JSON structure outside the one normative JSON Pointer; object member order is nonsemantic and array order is retained",
+    "application_form_target_resolution": "exact ApplicationFormLocalId in context.json, followed by the exact post-snapshot schema, operator, mode, and role-ID resolution tables",
+    "application_form_replacement_identity": "replacement term identity, resolved schema/operator/mode/role identities, bindings, context requirements, and dependency closure must equal the complete resolved target outside the one manifest-declared difference",
+    "support_target_resolution": "exact SupportOccurrenceId in the referenced positive process vector",
+    "support_replacement_identity": "replacement SupportOccurrenceId and produced_by must equal the target, and the target must be emitted by that exact Step",
+    "application_form_comparison": "resolve local IDs, canonicalize semantic sets and named_role_bindings by exact typed ID, then require exact JSON structure outside the one normative difference",
+    "support_comparison": "exact JSON structure outside the one normative JSON Pointer; object member order is nonsemantic and array order and multiplicity are retained",
     "envelope_failure": "fixture invalid before semantic validation",
+    "application_form_contracts": {
+      "missing-role": {
+        "target_application_form_local_id": "form:01",
+        "difference_class": "omit-exact-named-role-binding",
+        "difference_json_pointer": "/named_role_bindings",
+        "exact_original_element": {
+          "role_id": "role-id:15",
+          "binding": {
+            "produced_variable_id": "variable:target"
+          }
+        },
+        "equal_through_validation_stage": 2,
+        "first_semantic_failure_stage": 3
+      },
+      "ineligible-mode": {
+        "target_application_form_local_id": "form:01",
+        "difference_class": "replace-one-eligible-mode-id",
+        "difference_json_pointer": "/eligible_mode_ids/0",
+        "exact_original_value": "mode-id:05",
+        "exact_replacement_value": "mode-id:04",
+        "equal_through_validation_stage": 2,
+        "first_semantic_failure_stage": 3
+      }
+    },
     "contracts": {
       "support-set-collapse": {
         "target_support_occurrence_id": "support:self-join:01",
@@ -202,6 +253,26 @@
   ],
   "negative_vectors": [
     {
+      "id": "unquoted-authored-slash",
+      "file": "negative/unquoted-authored-slash.json",
+      "expected_error": "SOURCE_QUALIFIED_DESIGNATION_FORBIDDEN",
+      "first_failure_stage": 0,
+      "recovery": "the malformed declaration creates no Designation or declaration; reading resumes at recovery-sibling"
+    },
+    {
+      "id": "quoted-authored-slash",
+      "file": "negative/quoted-authored-slash.json",
+      "expected_error": "SOURCE_QUALIFIED_DESIGNATION_FORBIDDEN",
+      "first_failure_stage": 0,
+      "recovery": "quotation does not bypass local-spelling validation; reading resumes at recovery-sibling"
+    },
+    {
+      "id": "forged-local-spelling",
+      "file": "negative/forged-local-spelling.json",
+      "expected_error": "DESIGNATION_SPELLING_NOT_LOCAL",
+      "first_failure_stage": 1
+    },
+    {
       "id": "wrong-kind-rank",
       "file": "negative/wrong-kind-rank.json",
       "expected_error": "CANONICAL_KIND_RANK_MISMATCH",
@@ -280,8 +351,12 @@
       "first_failure_stage": 10
     }
   ],
+  "source_validation_order": [
+    "read authored designation spelling and reject U+002F slash before Designation resolution while preserving sibling recovery",
+    "form a structured Designation only after exact NamespaceId, slash-free local spelling, ReferentId, visibility, and origin are present"
+  ],
   "validation_order": [
-    "typed local-reference and JudgmentLocalId-to-JudgmentRef resolution, normative kind-rank validation, then canonical ordering",
+    "structured Designation formation, typed local-reference and JudgmentLocalId-to-JudgmentRef resolution, normative kind-rank validation, then canonical ordering",
     "RelationSchema, Role, Operator, and Mode closure",
     "FormationJudgment and ApplicationForm role, point-projection, mode, dependency, and context closure",
     "nominal Application identity",

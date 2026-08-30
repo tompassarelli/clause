@@ -1,40 +1,40 @@
 referent Observer
 referent Target
 referent Space
-referent metric/SignedQ16
-referent metric/NonnegativeQ16
+referent metric-SignedQ16
+referent metric-NonnegativeQ16
 
-shape metric/Point2Q16
-  x: metric/SignedQ16
-  y: metric/SignedQ16
+shape metric-Point2Q16
+  x: metric-SignedQ16
+  y: metric-SignedQ16
 
-relation world/observer-position-v1
-  reads {observer: Observer} has observer-position {point: metric/Point2Q16} in {space: Space}
+relation world-observer-position-v1
+  reads {observer: Observer} has observer-position {point: metric-Point2Q16} in {space: Space}
   subject observer
   mode given observer space yields point: one
 
-relation world/target-position-v1
-  reads {target: Target} has target-position {point: metric/Point2Q16} in {space: Space}
+relation world-target-position-v1
+  reads {target: Target} has target-position {point: metric-Point2Q16} in {space: Space}
   subject target
   mode given target space yields point: one
 
-relation world/proximity-radius-v1
-  reads {observer: Observer} has proximity-radius {radius: metric/NonnegativeQ16} in {space: Space}
+relation world-proximity-radius-v1
+  reads {observer: Observer} has proximity-radius {radius: metric-NonnegativeQ16} in {space: Space}
   subject observer
   mode given observer space yields radius: one
 
-relation world/in-proximity-v1
+relation world-in-proximity-v1
   reads {observer: Observer} has in-proximity {target: Target} in {space: Space}
   subject observer
   mode given observer space yields target: many
 
-law world/radius-proximity-law-v1
+law world-radius-proximity-law-v1
   if
     ?observer has observer-position ?observer-point in ?space
     ?observer has proximity-radius ?radius in ?space
     ?target has target-position ?target-point in ?space
-    metric/within-radius-v1 ?target-point ?observer-point ?radius
+    metric-within-radius-v1 ?target-point ?observer-point ?radius
   then
     ?observer has in-proximity ?target in ?space
 
-derive world/radius-proximity-law-v1
+derive world-radius-proximity-law-v1

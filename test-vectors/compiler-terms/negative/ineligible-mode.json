@@ -1,39 +1,54 @@
 {
-  "schema": "clause/compiler-terms/application-form-candidate-v3",
+  "schema": "clause/compiler-terms/application-form-substitution-negative-v3",
   "context_ref": "../context.json",
-  "candidate": {
-    "term_local_id": "term:01",
-    "relation_schema_id": "relation-schema:05",
-    "operator_ref": "operator-ref:05",
-    "eligible_mode_ids": [
-      "mode-id:04"
-    ],
-    "named_role_bindings": [
-      {
-        "role_id": "role-id:14",
-        "binding": {
-          "variable_id": "variable:observer"
+  "substitution": {
+    "target_application_form_local_id": "form:01",
+    "replacement": {
+      "term_local_id": "term:01",
+      "relation_schema_id": "relation-schema:05",
+      "operator_ref": "operator-ref:05",
+      "eligible_mode_ids": [
+        "mode-id:04"
+      ],
+      "named_role_bindings": [
+        {
+          "role_id": "role-id:14",
+          "binding": {
+            "variable_id": "variable:observer"
+          }
+        },
+        {
+          "role_id": "role-id:15",
+          "binding": {
+            "produced_variable_id": "variable:target"
+          }
+        },
+        {
+          "role_id": "role-id:16",
+          "binding": {
+            "variable_id": "variable:space"
+          }
         }
-      },
-      {
-        "role_id": "role-id:15",
-        "binding": {
-          "produced_variable_id": "variable:target"
-        }
-      },
-      {
-        "role_id": "role-id:16",
-        "binding": {
-          "variable_id": "variable:space"
-        }
-      }
-    ],
-    "context_requirements": [
-      "ProgramRevisionId",
-      "StateRevisionId",
-      "RuntimePolicyId",
-      "DerivationAuthorization",
-      "ExecutionAuthorization"
-    ]
+      ],
+      "context_requirements": [
+        "ClauseSemanticsId",
+        "ProgramSnapshotId",
+        "ProgramRevisionId",
+        "RuntimeSessionId",
+        "StateRevisionId",
+        "RuntimePolicyId",
+        "ExecutableValidity",
+        "DerivationAuthorization",
+        "ExecutionAuthorization",
+        "CapabilitySet",
+        "finite-budget"
+      ],
+      "exact_dependency_closure": [
+        "law:01",
+        "mode:05",
+        "operator:05",
+        "schema:05"
+      ]
+    }
   }
 }

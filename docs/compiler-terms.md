@@ -130,10 +130,36 @@ exact without claiming production Clause package hashes. Those IDs are test
 coordinates, not names from which a host may infer behavior and not evidence
 that the candidate snapshot was admitted.
 
-In the Clause source projection, qualified prefixes remain ordinary slash-
-joined atoms while opaque external-ID and numeric-encoding terminal atoms
-containing `:` or `.` use canonical backtick quoting. Quoting is lexical; it
-does not turn spelling into identity or host dispatch.
+The Clause source projections use local slash-free Designation spellings.
+Namespace membership is carried separately by an exact structured binding:
+
+~~~text
+SourceDesignationBinding {
+  NamespaceId,
+  spelling,
+  ReferentId,
+  visibility,
+  origin
+}
+~~~
+
+The binding table in `context.json` contains 468 collision-free aliases for the
+semantic-package projection, nine for the position/radius source, and eleven
+designations that exist only in the fixture context. Hyphens in an alias are
+ordinary spelling bytes. A consumer may not split them to recover namespace,
+kind, role, path, or identity. `NamespaceId` and `ReferentId` are the only
+corresponding semantic coordinates. Each of the 33 context records that carries
+Designation metadata names its exact `designation_binding_id` and repeats only
+the binding's slash-free local spelling; no record retains a free-standing
+qualified name.
+
+U+002F `/` is forbidden in quoted and unquoted authored Designation spelling.
+Quotation cannot bypass that rule, and a generated or forged structured
+Designation with slash in `spelling` fails before its ReferentId is used.
+Slash remains valid in Text, opaque Atom and identifier payloads, source paths,
+JSON Pointers, hash-domain labels, and SourceMap evidence such as the prior
+spellings retained by this migration. Those values are never implicitly split
+or promoted to Designations.
 
 Each candidate authorization Judgment is a `JudgmentLocalId` record whose
 subjects are exact local Law or Application identities and whose scope is the
@@ -339,9 +365,13 @@ case.
 
 ## Position/radius oracle
 
-clause:test-vectors/compiler-terms/position-radius.clause is preserved as the
-ordinary-source oracle. It declares observer position, target position,
-observer radius, within-radius, and in-proximity roles plus one unchanged law.
+clause:test-vectors/compiler-terms/position-radius.clause preserves the exact
+ordinary-source semantic oracle while replacing its nine prior slash-qualified
+spellings with explicit slash-free local aliases. It declares observer
+position, target position, observer radius, within-radius, and in-proximity
+roles plus the same law. `context.json` records the exact namespace,
+ReferentId, visibility, and origin for every alias; the spelling change itself
+does not manufacture identity.
 
 Coordinates are signed big-endian Q16.16 values and radius is nonnegative
 Q16.16. Decode to mathematical integers before arithmetic. For raw integers
@@ -465,7 +495,28 @@ structure itself; expectation metadata lives only in the manifest. No negative
 is represented by a violates marker or by an error label standing in for the
 malformed structure.
 
-The three support-occurrence negatives use one additional transport envelope:
+The two ApplicationForm negatives use a validation-only counterfactual
+envelope:
+
+~~~text
+ApplicationFormSubstitutionNegative {
+  contextRef,
+  substitution: {
+    targetApplicationFormLocalId,
+    replacement: ResolvedApplicationForm
+  }
+}
+~~~
+
+The manifest, not the malformed payload, names the exact target and the sole
+permitted change. `missing-role` equals the fully resolved `form:01` outside
+the omission of the exact produced-target role binding.
+`ineligible-mode` equals the same form outside replacement of `mode-id:05` by
+`mode-id:04`. Both retain all eleven context requirements and the complete
+four-member dependency closure, so neither has an undeclared second stage-3
+failure.
+
+The three support-occurrence negatives use the analogous transport envelope:
 
 ~~~text
 SupportSubstitutionNegative {
@@ -477,13 +528,13 @@ SupportSubstitutionNegative {
 }
 ~~~
 
-This envelope is a validation-input counterfactual, not Clause substitution,
-retraction, mutation, or occurrence production. The referenced positive
-process vector remains immutable. The manifest normatively binds each vector
-ID to one exact target SupportOccurrenceId, one permitted-difference JSON
-Pointer and semantic class, the last validation stage through which every
-other field must remain equal, and the intended first semantic failure stage.
-The malformed file cannot grant itself another permitted difference.
+These envelopes are validation-input counterfactuals, not Clause substitution,
+retraction, mutation, or occurrence production. The referenced context and
+positive process vector remain immutable. The manifest normatively binds each
+vector ID to one exact target, one permitted-difference JSON Pointer and
+semantic class, the last validation stage through which every other field must
+remain equal, and the intended first semantic failure stage. The malformed
+file cannot grant itself another permitted difference.
 
 Before semantic validation, a fixture consumer resolves the target occurrence,
 requires the target to be emitted by its exact producing Step, requires the
@@ -498,9 +549,17 @@ error. Passing this envelope check does not mutate or admit either occurrence;
 it supplies one exact malformed validation input whose first failure is then
 checked by the order below.
 
-Validation is deterministic and first-failure ordered:
+Authored Designation reading precedes semantic validation. Unquoted `x/y` and
+quoted `` `x/y` `` both fail with
+`SOURCE_QUALIFIED_DESIGNATION_FORBIDDEN` at the slash byte, create no
+Designation or declaration, and recover at the next valid sibling. A forged
+structured record fails `DESIGNATION_SPELLING_NOT_LOCAL` during stage 1 before
+its ReferentId participates in resolution.
 
-1. typed local-reference resolution and canonical ordering;
+Semantic validation is deterministic and first-failure ordered:
+
+1. structured Designation formation, typed local-reference resolution, and
+   canonical ordering;
 2. RelationSchema, Role, Operator, and Mode closure;
 3. FormationJudgment and ApplicationForm role/mode/context closure;
 4. nominal Application identity;
@@ -515,6 +574,8 @@ The decisive errors are:
 
 | Malformation | Error |
 | --- | --- |
+| slash in an unquoted or quoted authored Designation | SOURCE_QUALIFIED_DESIGNATION_FORBIDDEN |
+| slash in a forged structured Designation spelling | DESIGNATION_SPELLING_NOT_LOCAL |
 | RawTriple middle slot treated as an operator without formation | FORMATION_REQUIRED |
 | missing, extra, duplicate, or wrong-cardinality role | FORMATION_ROLE_CLOSURE_MISMATCH |
 | selected or eligible mode does not exactly close schema and context | FORMATION_ELIGIBLE_MODE_MISMATCH |

@@ -1,0 +1,13 @@
+{
+  "schema": "clause/compiler-terms/source-designation-negative-v1",
+  "context_ref": "../context.json",
+  "source_unit": {
+    "source_artifact_id": "source-artifact:negative:unquoted-authored-slash",
+    "utf8": "referent x/y\nreferent recovery-sibling\n",
+    "slash_byte_span": [
+      10,
+      11
+    ],
+    "recovery_sibling_spelling": "recovery-sibling"
+  }
+}

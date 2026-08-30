@@ -1,1936 +1,1936 @@
-referent compiler-terms/Term
-referent compiler-terms/RawTriple
-referent compiler-terms/FormationJudgment
-referent compiler-terms/RelationSchemaId
-referent compiler-terms/RoleId
-referent compiler-terms/OperatorRef
-referent compiler-terms/ModeId
-referent compiler-terms/ApplicationForm
-referent compiler-terms/ApplicationId
-referent compiler-terms/LawId
-referent compiler-terms/PremiseOccurrenceId
-referent compiler-terms/PremiseSlotId
-referent compiler-terms/VariableId
-referent compiler-terms/JudgmentLocalId
-referent compiler-terms/JudgmentRef
-referent compiler-terms/JudgmentKind
-referent compiler-terms/AuthorizationType
-referent compiler-terms/ProgramSnapshotScope
-referent compiler-terms/ConclusionProjection
-referent compiler-terms/ProjectionField
-referent compiler-terms/FormedType
-referent compiler-terms/PointComponentProjection
-referent compiler-terms/ExecutableValidity
-referent compiler-terms/AuthorizationSet
-referent compiler-terms/ExternalIdentifier
-referent compiler-terms/NumericEncoding
-referent compiler-terms/NumericDomain
-referent compiler-terms/NumericConstraint
-referent compiler-terms/RoleDomain
-referent compiler-terms/Purity
-referent compiler-terms/Determinism
-referent compiler-terms/Totality
-referent compiler-terms/Ordering
-referent compiler-terms/ContinuationContract
-referent compiler-terms/ContextRequirement
-referent compiler-terms/Ordinal
-referent compiler-terms/Cardinality
-referent compiler-terms/Binding
+referent Term
+referent RawTriple
+referent FormationJudgment
+referent RelationSchemaId
+referent RoleId
+referent OperatorRef
+referent ModeId
+referent ApplicationForm
+referent ApplicationId
+referent LawId
+referent PremiseOccurrenceId
+referent PremiseSlotId
+referent VariableId
+referent JudgmentLocalId
+referent JudgmentRef
+referent JudgmentKind
+referent AuthorizationType
+referent ProgramSnapshotScope
+referent ConclusionProjection
+referent ProjectionField
+referent FormedType
+referent PointComponentProjection
+referent ExecutableValidity
+referent AuthorizationSet
+referent ExternalIdentifier
+referent NumericEncoding
+referent NumericDomain
+referent NumericConstraint
+referent RoleDomain
+referent Purity
+referent Determinism
+referent Totality
+referent Ordering
+referent ContinuationContract
+referent ContextRequirement
+referent Ordinal
+referent Cardinality
+referent Binding
 
-shape compiler-terms/RawTripleRecord
-  slot-zero: compiler-terms/Term
-  slot-one: compiler-terms/Term
-  slot-two: compiler-terms/Term
+shape RawTripleRecord
+  slot-zero: Term
+  slot-one: Term
+  slot-two: Term
 
-shape compiler-terms/NamedRoleBinding
-  role-id: compiler-terms/RoleId
-  binding: compiler-terms/Binding
+shape NamedRoleBinding
+  role-id: RoleId
+  binding: Binding
 
-shape compiler-terms/PremiseOccurrence
-  occurrence-id: compiler-terms/PremiseOccurrenceId
-  ordinal: compiler-terms/Ordinal
-  schema-id: compiler-terms/RelationSchemaId
+shape PremiseOccurrence
+  occurrence-id: PremiseOccurrenceId
+  ordinal: Ordinal
+  schema-id: RelationSchemaId
 
-shape compiler-terms/PremiseSlot
-  slot-id: compiler-terms/PremiseSlotId
-  ordinal: compiler-terms/Ordinal
-  role-id: compiler-terms/RoleId
-  binding: compiler-terms/Binding
+shape PremiseSlot
+  slot-id: PremiseSlotId
+  ordinal: Ordinal
+  role-id: RoleId
+  binding: Binding
 
-relation compiler-terms/triple-slot-zero
-  reads {term: compiler-terms/RawTriple} has exact triple slot zero {value: compiler-terms/Term}
+relation triple-slot-zero
+  reads {term: RawTriple} has exact triple slot zero {value: Term}
   subject term
 
-relation compiler-terms/triple-slot-one
-  reads {term: compiler-terms/RawTriple} has exact triple slot one {value: compiler-terms/Term}
+relation triple-slot-one
+  reads {term: RawTriple} has exact triple slot one {value: Term}
   subject term
 
-relation compiler-terms/triple-slot-two
-  reads {term: compiler-terms/RawTriple} has exact triple slot two {value: compiler-terms/Term}
+relation triple-slot-two
+  reads {term: RawTriple} has exact triple slot two {value: Term}
   subject term
 
-relation compiler-terms/schema-role
-  reads {schema: compiler-terms/RelationSchemaId} has exact schema role {role: compiler-terms/RoleId}
+relation schema-role
+  reads {schema: RelationSchemaId} has exact schema role {role: RoleId}
   subject schema
 
-relation compiler-terms/role-ordinal
-  reads {role: compiler-terms/RoleId} has exact role ordinal {ordinal: compiler-terms/Ordinal}
+relation role-ordinal
+  reads {role: RoleId} has exact role ordinal {ordinal: Ordinal}
   subject role
 
-relation compiler-terms/role-domain
-  reads {role: compiler-terms/RoleId} has exact role domain {domain: compiler-terms/RoleDomain}
+relation role-domain
+  reads {role: RoleId} has exact role domain {domain: RoleDomain}
   subject role
 
-relation compiler-terms/role-cardinality
-  reads {role: compiler-terms/RoleId} has exact role cardinality {cardinality: compiler-terms/Cardinality}
+relation role-cardinality
+  reads {role: RoleId} has exact role cardinality {cardinality: Cardinality}
   subject role
 
-relation compiler-terms/operator-definition-schema
-  reads {operator: compiler-terms/OperatorRef} has exact relation schema definition {schema: compiler-terms/RelationSchemaId}
+relation operator-definition-schema
+  reads {operator: OperatorRef} has exact relation schema definition {schema: RelationSchemaId}
   subject operator
 
-relation compiler-terms/operator-definition-law
-  reads {operator: compiler-terms/OperatorRef} has exact law definition {law: compiler-terms/LawId}
+relation operator-definition-law
+  reads {operator: OperatorRef} has exact law definition {law: LawId}
   subject operator
 
-relation compiler-terms/mode-operator
-  reads {mode: compiler-terms/ModeId} selects exact mode operator {operator: compiler-terms/OperatorRef}
+relation mode-operator
+  reads {mode: ModeId} selects exact mode operator {operator: OperatorRef}
   subject mode
 
-relation compiler-terms/mode-schema
-  reads {mode: compiler-terms/ModeId} selects exact mode schema {schema: compiler-terms/RelationSchemaId}
+relation mode-schema
+  reads {mode: ModeId} selects exact mode schema {schema: RelationSchemaId}
   subject mode
 
-relation compiler-terms/mode-known-role
-  reads {mode: compiler-terms/ModeId} has exact known role {role: compiler-terms/RoleId}
+relation mode-known-role
+  reads {mode: ModeId} has exact known role {role: RoleId}
   subject mode
 
-relation compiler-terms/mode-produced-role
-  reads {mode: compiler-terms/ModeId} has exact produced role {role: compiler-terms/RoleId}
+relation mode-produced-role
+  reads {mode: ModeId} has exact produced role {role: RoleId}
   subject mode
 
-relation compiler-terms/mode-cardinality
-  reads {mode: compiler-terms/ModeId} has exact result cardinality {cardinality: compiler-terms/Cardinality}
+relation mode-cardinality
+  reads {mode: ModeId} has exact result cardinality {cardinality: Cardinality}
   subject mode
 
-relation compiler-terms/mode-purity
-  reads {mode: compiler-terms/ModeId} has exact purity contract {purity: compiler-terms/Purity}
+relation mode-purity
+  reads {mode: ModeId} has exact purity contract {purity: Purity}
   subject mode
 
-relation compiler-terms/mode-determinism
-  reads {mode: compiler-terms/ModeId} has exact determinism contract {determinism: compiler-terms/Determinism}
+relation mode-determinism
+  reads {mode: ModeId} has exact determinism contract {determinism: Determinism}
   subject mode
 
-relation compiler-terms/mode-totality
-  reads {mode: compiler-terms/ModeId} has exact totality contract {totality: compiler-terms/Totality}
+relation mode-totality
+  reads {mode: ModeId} has exact totality contract {totality: Totality}
   subject mode
 
-relation compiler-terms/mode-ordering
-  reads {mode: compiler-terms/ModeId} has exact result ordering {ordering: compiler-terms/Ordering}
+relation mode-ordering
+  reads {mode: ModeId} has exact result ordering {ordering: Ordering}
   subject mode
 
-relation compiler-terms/mode-continuation
-  reads {mode: compiler-terms/ModeId} has exact continuation contract {continuation: compiler-terms/ContinuationContract}
+relation mode-continuation
+  reads {mode: ModeId} has exact continuation contract {continuation: ContinuationContract}
   subject mode
 
-relation compiler-terms/mode-required-authorization
-  reads {mode: compiler-terms/ModeId} requires exact mode authorization {authorization: compiler-terms/AuthorizationType}
+relation mode-required-authorization
+  reads {mode: ModeId} requires exact mode authorization {authorization: AuthorizationType}
   subject mode
 
-relation compiler-terms/mode-executable-validity
-  reads {mode: compiler-terms/ModeId} requires exact executable validity {validity: compiler-terms/ExecutableValidity}
+relation mode-executable-validity
+  reads {mode: ModeId} requires exact executable validity {validity: ExecutableValidity}
   subject mode
 
-relation compiler-terms/mode-authorization-set
-  reads {mode: compiler-terms/ModeId} has exact mode authorization set {authorization-set: compiler-terms/AuthorizationSet}
+relation mode-authorization-set
+  reads {mode: ModeId} has exact mode authorization set {authorization-set: AuthorizationSet}
   subject mode
 
-relation compiler-terms/authorization-set-cardinality
-  reads {authorization-set: compiler-terms/AuthorizationSet} has exact authorization cardinality {cardinality: compiler-terms/Ordinal}
+relation authorization-set-cardinality
+  reads {authorization-set: AuthorizationSet} has exact authorization cardinality {cardinality: Ordinal}
   subject authorization-set
 
-relation compiler-terms/authorization-set-member
-  reads {authorization-set: compiler-terms/AuthorizationSet} has exact authorization member {authorization: compiler-terms/AuthorizationType}
+relation authorization-set-member
+  reads {authorization-set: AuthorizationSet} has exact authorization member {authorization: AuthorizationType}
   subject authorization-set
 
-relation compiler-terms/formation-subject
-  reads {formation: compiler-terms/FormationJudgment} forms exact term {term: compiler-terms/Term}
+relation formation-subject
+  reads {formation: FormationJudgment} forms exact term {term: Term}
   subject formation
 
-relation compiler-terms/formation-interpretation
-  reads {formation: compiler-terms/FormationJudgment} has exact interpretation {interpretation: compiler-terms/ApplicationForm}
+relation formation-interpretation
+  reads {formation: FormationJudgment} has exact interpretation {interpretation: ApplicationForm}
   subject formation
 
-relation compiler-terms/formation-formed-type
-  reads {formation: compiler-terms/FormationJudgment} forms exact type {formed-type: compiler-terms/FormedType}
+relation formation-formed-type
+  reads {formation: FormationJudgment} forms exact type {formed-type: FormedType}
   subject formation
 
-relation compiler-terms/formation-schema-dependency
-  reads {formation: compiler-terms/FormationJudgment} has exact formation schema dependency {schema: compiler-terms/RelationSchemaId}
+relation formation-schema-dependency
+  reads {formation: FormationJudgment} has exact formation schema dependency {schema: RelationSchemaId}
   subject formation
 
-relation compiler-terms/formation-operator-dependency
-  reads {formation: compiler-terms/FormationJudgment} has exact formation operator dependency {operator: compiler-terms/OperatorRef}
+relation formation-operator-dependency
+  reads {formation: FormationJudgment} has exact formation operator dependency {operator: OperatorRef}
   subject formation
 
-relation compiler-terms/formation-mode-dependency
-  reads {formation: compiler-terms/FormationJudgment} has exact formation mode dependency {mode: compiler-terms/ModeId}
+relation formation-mode-dependency
+  reads {formation: FormationJudgment} has exact formation mode dependency {mode: ModeId}
   subject formation
 
-relation compiler-terms/formation-law-dependency
-  reads {formation: compiler-terms/FormationJudgment} has exact formation law dependency {law: compiler-terms/LawId}
+relation formation-law-dependency
+  reads {formation: FormationJudgment} has exact formation law dependency {law: LawId}
   subject formation
 
-relation compiler-terms/formation-term-dependency
-  reads {formation: compiler-terms/FormationJudgment} has exact formation term dependency {term: compiler-terms/Term}
+relation formation-term-dependency
+  reads {formation: FormationJudgment} has exact formation term dependency {term: Term}
   subject formation
 
-relation compiler-terms/formation-formation-dependency
-  reads {formation: compiler-terms/FormationJudgment} has exact nested formation dependency {dependency: compiler-terms/FormationJudgment}
+relation formation-formation-dependency
+  reads {formation: FormationJudgment} has exact nested formation dependency {dependency: FormationJudgment}
   subject formation
 
-relation compiler-terms/formation-form-dependency
-  reads {formation: compiler-terms/FormationJudgment} has exact formation form dependency {form: compiler-terms/ApplicationForm}
+relation formation-form-dependency
+  reads {formation: FormationJudgment} has exact formation form dependency {form: ApplicationForm}
   subject formation
 
-relation compiler-terms/formation-application-dependency
-  reads {formation: compiler-terms/FormationJudgment} has exact formation application dependency {application: compiler-terms/ApplicationId}
+relation formation-application-dependency
+  reads {formation: FormationJudgment} has exact formation application dependency {application: ApplicationId}
   subject formation
 
-relation compiler-terms/form-schema
-  reads {form: compiler-terms/ApplicationForm} selects exact relation schema {schema: compiler-terms/RelationSchemaId}
+relation form-schema
+  reads {form: ApplicationForm} selects exact relation schema {schema: RelationSchemaId}
   subject form
 
-relation compiler-terms/form-term
-  reads {form: compiler-terms/ApplicationForm} represents exact form term {term: compiler-terms/Term}
+relation form-term
+  reads {form: ApplicationForm} represents exact form term {term: Term}
   subject form
 
-relation compiler-terms/form-operator
-  reads {form: compiler-terms/ApplicationForm} selects exact operator {operator: compiler-terms/OperatorRef}
+relation form-operator
+  reads {form: ApplicationForm} selects exact operator {operator: OperatorRef}
   subject form
 
-relation compiler-terms/form-eligible-mode
-  reads {form: compiler-terms/ApplicationForm} has exact eligible mode {mode: compiler-terms/ModeId}
+relation form-eligible-mode
+  reads {form: ApplicationForm} has exact eligible mode {mode: ModeId}
   subject form
 
-relation compiler-terms/form-role-binding
-  reads {form: compiler-terms/ApplicationForm} has exact named role binding {binding: compiler-terms/NamedRoleBinding}
+relation form-role-binding
+  reads {form: ApplicationForm} has exact named role binding {binding: NamedRoleBinding}
   subject form
 
-relation compiler-terms/binding-role
-  reads {binding: compiler-terms/NamedRoleBinding} selects exact bound role {role: compiler-terms/RoleId}
+relation binding-role
+  reads {binding: NamedRoleBinding} selects exact bound role {role: RoleId}
   subject binding
 
-relation compiler-terms/binding-variable
-  reads {binding: compiler-terms/NamedRoleBinding} binds exact role variable {variable: compiler-terms/VariableId}
+relation binding-variable
+  reads {binding: NamedRoleBinding} binds exact role variable {variable: VariableId}
   subject binding
 
-relation compiler-terms/binding-produced-variable
-  reads {binding: compiler-terms/NamedRoleBinding} binds exact produced variable {variable: compiler-terms/VariableId}
+relation binding-produced-variable
+  reads {binding: NamedRoleBinding} binds exact produced variable {variable: VariableId}
   subject binding
 
-relation compiler-terms/binding-constant
-  reads {binding: compiler-terms/NamedRoleBinding} binds exact role constant {constant: compiler-terms/Term}
+relation binding-constant
+  reads {binding: NamedRoleBinding} binds exact role constant {constant: Term}
   subject binding
 
-relation compiler-terms/form-context-requirement
-  reads {form: compiler-terms/ApplicationForm} requires exact context {requirement: compiler-terms/ContextRequirement}
+relation form-context-requirement
+  reads {form: ApplicationForm} requires exact context {requirement: ContextRequirement}
   subject form
 
-relation compiler-terms/form-schema-dependency
-  reads {form: compiler-terms/ApplicationForm} has exact form schema dependency {schema: compiler-terms/RelationSchemaId}
+relation form-schema-dependency
+  reads {form: ApplicationForm} has exact form schema dependency {schema: RelationSchemaId}
   subject form
 
-relation compiler-terms/form-operator-dependency
-  reads {form: compiler-terms/ApplicationForm} has exact form operator dependency {operator: compiler-terms/OperatorRef}
+relation form-operator-dependency
+  reads {form: ApplicationForm} has exact form operator dependency {operator: OperatorRef}
   subject form
 
-relation compiler-terms/form-mode-dependency
-  reads {form: compiler-terms/ApplicationForm} has exact form mode dependency {mode: compiler-terms/ModeId}
+relation form-mode-dependency
+  reads {form: ApplicationForm} has exact form mode dependency {mode: ModeId}
   subject form
 
-relation compiler-terms/form-law-dependency
-  reads {form: compiler-terms/ApplicationForm} has exact form law dependency {law: compiler-terms/LawId}
+relation form-law-dependency
+  reads {form: ApplicationForm} has exact form law dependency {law: LawId}
   subject form
 
-relation compiler-terms/form-term-dependency
-  reads {form: compiler-terms/ApplicationForm} has exact form term dependency {term: compiler-terms/Term}
+relation form-term-dependency
+  reads {form: ApplicationForm} has exact form term dependency {term: Term}
   subject form
 
-relation compiler-terms/form-formation-dependency
-  reads {form: compiler-terms/ApplicationForm} has exact form formation dependency {formation: compiler-terms/FormationJudgment}
+relation form-formation-dependency
+  reads {form: ApplicationForm} has exact form formation dependency {formation: FormationJudgment}
   subject form
 
-relation compiler-terms/form-form-dependency
-  reads {form: compiler-terms/ApplicationForm} has exact nested form dependency {dependency: compiler-terms/ApplicationForm}
+relation form-form-dependency
+  reads {form: ApplicationForm} has exact nested form dependency {dependency: ApplicationForm}
   subject form
 
-relation compiler-terms/form-application-dependency
-  reads {form: compiler-terms/ApplicationForm} has exact form application dependency {application: compiler-terms/ApplicationId}
+relation form-application-dependency
+  reads {form: ApplicationForm} has exact form application dependency {application: ApplicationId}
   subject form
 
-relation compiler-terms/form-point-component-projection
-  reads {form: compiler-terms/ApplicationForm} has exact point component projection {projection: compiler-terms/PointComponentProjection}
+relation form-point-component-projection
+  reads {form: ApplicationForm} has exact point component projection {projection: PointComponentProjection}
   subject form
 
-relation compiler-terms/point-projection-ordinal
-  reads {projection: compiler-terms/PointComponentProjection} has exact point projection ordinal {ordinal: compiler-terms/Ordinal}
+relation point-projection-ordinal
+  reads {projection: PointComponentProjection} has exact point projection ordinal {ordinal: Ordinal}
   subject projection
 
-relation compiler-terms/point-projection-source
-  reads {projection: compiler-terms/PointComponentProjection} projects exact point variable {variable: compiler-terms/VariableId}
+relation point-projection-source
+  reads {projection: PointComponentProjection} projects exact point variable {variable: VariableId}
   subject projection
 
-relation compiler-terms/point-projection-operator
-  reads {projection: compiler-terms/PointComponentProjection} applies exact point projection operator {operator: compiler-terms/OperatorRef}
+relation point-projection-operator
+  reads {projection: PointComponentProjection} applies exact point projection operator {operator: OperatorRef}
   subject projection
 
-relation compiler-terms/point-projection-mode
-  reads {projection: compiler-terms/PointComponentProjection} selects exact point projection mode {mode: compiler-terms/ModeId}
+relation point-projection-mode
+  reads {projection: PointComponentProjection} selects exact point projection mode {mode: ModeId}
   subject projection
 
-relation compiler-terms/point-projection-produced-variable
-  reads {projection: compiler-terms/PointComponentProjection} produces exact scalar variable {variable: compiler-terms/VariableId}
+relation point-projection-produced-variable
+  reads {projection: PointComponentProjection} produces exact scalar variable {variable: VariableId}
   subject projection
 
-relation compiler-terms/point-projection-application
-  reads {projection: compiler-terms/PointComponentProjection} selects exact projection application {application: compiler-terms/ApplicationId}
+relation point-projection-application
+  reads {projection: PointComponentProjection} selects exact projection application {application: ApplicationId}
   subject projection
 
-relation compiler-terms/application-form
-  reads {application: compiler-terms/ApplicationId} instantiates exact application form {form: compiler-terms/ApplicationForm}
+relation application-form
+  reads {application: ApplicationId} instantiates exact application form {form: ApplicationForm}
   subject application
 
-relation compiler-terms/operator-definition-root
-  reads {operator: compiler-terms/OperatorRef} has exact generic application graph root {application: compiler-terms/ApplicationId}
+relation operator-definition-root
+  reads {operator: OperatorRef} has exact generic application graph root {application: ApplicationId}
   subject operator
 
-relation compiler-terms/operator-definition-application
-  reads {operator: compiler-terms/OperatorRef} has exact generic graph application {application: compiler-terms/ApplicationId}
+relation operator-definition-application
+  reads {operator: OperatorRef} has exact generic graph application {application: ApplicationId}
   subject operator
 
-relation compiler-terms/external-relation-schema-identity
-  reads {schema: compiler-terms/RelationSchemaId} resolves exact external relation schema {identifier: compiler-terms/ExternalIdentifier}
+relation external-relation-schema-identity
+  reads {schema: RelationSchemaId} resolves exact external relation schema {identifier: ExternalIdentifier}
   subject schema
 
-relation compiler-terms/external-operator-identity
-  reads {operator: compiler-terms/OperatorRef} resolves exact external operator {identifier: compiler-terms/ExternalIdentifier}
+relation external-operator-identity
+  reads {operator: OperatorRef} resolves exact external operator {identifier: ExternalIdentifier}
   subject operator
 
-relation compiler-terms/external-mode-identity
-  reads {mode: compiler-terms/ModeId} resolves exact external mode {identifier: compiler-terms/ExternalIdentifier}
+relation external-mode-identity
+  reads {mode: ModeId} resolves exact external mode {identifier: ExternalIdentifier}
   subject mode
 
-relation compiler-terms/external-role-identity
-  reads {role: compiler-terms/RoleId} resolves exact external role {identifier: compiler-terms/ExternalIdentifier}
+relation external-role-identity
+  reads {role: RoleId} resolves exact external role {identifier: ExternalIdentifier}
   subject role
 
-relation compiler-terms/operator-numeric-encoding
-  reads {operator: compiler-terms/OperatorRef} requires exact numeric encoding {encoding: compiler-terms/NumericEncoding}
+relation operator-numeric-encoding
+  reads {operator: OperatorRef} requires exact numeric encoding {encoding: NumericEncoding}
   subject operator
 
-relation compiler-terms/operator-numeric-domain
-  reads {operator: compiler-terms/OperatorRef} requires exact intermediate domain {domain: compiler-terms/NumericDomain}
+relation operator-numeric-domain
+  reads {operator: OperatorRef} requires exact intermediate domain {domain: NumericDomain}
   subject operator
 
-relation compiler-terms/operator-numeric-constraint
-  reads {operator: compiler-terms/OperatorRef} requires exact numeric constraint {constraint: compiler-terms/NumericConstraint}
+relation operator-numeric-constraint
+  reads {operator: OperatorRef} requires exact numeric constraint {constraint: NumericConstraint}
   subject operator
 
-relation compiler-terms/law-premise-occurrence
-  reads {law: compiler-terms/LawId} has exact premise occurrence {occurrence: compiler-terms/PremiseOccurrenceId}
+relation law-premise-occurrence
+  reads {law: LawId} has exact premise occurrence {occurrence: PremiseOccurrenceId}
   subject law
 
-relation compiler-terms/law-mode
-  reads {law: compiler-terms/LawId} has exact derivation mode {mode: compiler-terms/ModeId}
+relation law-mode
+  reads {law: LawId} has exact derivation mode {mode: ModeId}
   subject law
 
-relation compiler-terms/law-operator
-  reads {law: compiler-terms/LawId} selects exact law operator {operator: compiler-terms/OperatorRef}
+relation law-operator
+  reads {law: LawId} selects exact law operator {operator: OperatorRef}
   subject law
 
-relation compiler-terms/law-conclusion-schema
-  reads {law: compiler-terms/LawId} selects exact conclusion schema {schema: compiler-terms/RelationSchemaId}
+relation law-conclusion-schema
+  reads {law: LawId} selects exact conclusion schema {schema: RelationSchemaId}
   subject law
 
-relation compiler-terms/law-conclusion-projection
-  reads {law: compiler-terms/LawId} selects exact conclusion projection {projection: compiler-terms/ConclusionProjection}
+relation law-conclusion-projection
+  reads {law: LawId} selects exact conclusion projection {projection: ConclusionProjection}
   subject law
 
-relation compiler-terms/law-context-requirement
-  reads {law: compiler-terms/LawId} requires exact context {requirement: compiler-terms/ContextRequirement}
+relation law-context-requirement
+  reads {law: LawId} requires exact context {requirement: ContextRequirement}
   subject law
 
-relation compiler-terms/premise-ordinal
-  reads {occurrence: compiler-terms/PremiseOccurrenceId} has exact premise ordinal {ordinal: compiler-terms/Ordinal}
+relation premise-ordinal
+  reads {occurrence: PremiseOccurrenceId} has exact premise ordinal {ordinal: Ordinal}
   subject occurrence
 
-relation compiler-terms/premise-schema
-  reads {occurrence: compiler-terms/PremiseOccurrenceId} selects exact premise schema {schema: compiler-terms/RelationSchemaId}
+relation premise-schema
+  reads {occurrence: PremiseOccurrenceId} selects exact premise schema {schema: RelationSchemaId}
   subject occurrence
 
-relation compiler-terms/premise-eligible-mode
-  reads {occurrence: compiler-terms/PremiseOccurrenceId} has exact premise mode {mode: compiler-terms/ModeId}
+relation premise-eligible-mode
+  reads {occurrence: PremiseOccurrenceId} has exact premise mode {mode: ModeId}
   subject occurrence
 
-relation compiler-terms/premise-slot
-  reads {occurrence: compiler-terms/PremiseOccurrenceId} has exact premise slot {slot: compiler-terms/PremiseSlotId}
+relation premise-slot
+  reads {occurrence: PremiseOccurrenceId} has exact premise slot {slot: PremiseSlotId}
   subject occurrence
 
-relation compiler-terms/slot-ordinal
-  reads {slot: compiler-terms/PremiseSlotId} has exact slot ordinal {ordinal: compiler-terms/Ordinal}
+relation slot-ordinal
+  reads {slot: PremiseSlotId} has exact slot ordinal {ordinal: Ordinal}
   subject slot
 
-relation compiler-terms/slot-role
-  reads {slot: compiler-terms/PremiseSlotId} instantiates exact schema role {role: compiler-terms/RoleId}
+relation slot-role
+  reads {slot: PremiseSlotId} instantiates exact schema role {role: RoleId}
   subject slot
 
-relation compiler-terms/slot-variable
-  reads {slot: compiler-terms/PremiseSlotId} binds exact variable {variable: compiler-terms/VariableId}
+relation slot-variable
+  reads {slot: PremiseSlotId} binds exact variable {variable: VariableId}
   subject slot
 
-relation compiler-terms/slot-constant
-  reads {slot: compiler-terms/PremiseSlotId} binds exact constant {constant: compiler-terms/Term}
+relation slot-constant
+  reads {slot: PremiseSlotId} binds exact constant {constant: Term}
   subject slot
 
-relation compiler-terms/derivation-authorization
-  reads {law: compiler-terms/LawId} requires exact derivation authorization {authorization: compiler-terms/JudgmentLocalId}
+relation derivation-authorization
+  reads {law: LawId} requires exact derivation authorization {authorization: JudgmentLocalId}
   subject law
 
-relation compiler-terms/conclusion-projection-field
-  reads {projection: compiler-terms/ConclusionProjection} has exact projection field {field: compiler-terms/ProjectionField}
+relation conclusion-projection-field
+  reads {projection: ConclusionProjection} has exact projection field {field: ProjectionField}
   subject projection
 
-relation compiler-terms/projection-field-ordinal
-  reads {field: compiler-terms/ProjectionField} has exact projection ordinal {ordinal: compiler-terms/Ordinal}
+relation projection-field-ordinal
+  reads {field: ProjectionField} has exact projection ordinal {ordinal: Ordinal}
   subject field
 
-relation compiler-terms/projection-field-role
-  reads {field: compiler-terms/ProjectionField} selects exact projected role {role: compiler-terms/RoleId}
+relation projection-field-role
+  reads {field: ProjectionField} selects exact projected role {role: RoleId}
   subject field
 
-relation compiler-terms/projection-field-variable
-  reads {field: compiler-terms/ProjectionField} selects exact projected variable {variable: compiler-terms/VariableId}
+relation projection-field-variable
+  reads {field: ProjectionField} selects exact projected variable {variable: VariableId}
   subject field
 
-relation compiler-terms/judgment-kind
-  reads {judgment: compiler-terms/JudgmentLocalId} has exact judgment kind {kind: compiler-terms/JudgmentKind}
+relation judgment-kind
+  reads {judgment: JudgmentLocalId} has exact judgment kind {kind: JudgmentKind}
   subject judgment
 
-relation compiler-terms/judgment-authorization-type
-  reads {judgment: compiler-terms/JudgmentLocalId} has exact authorization type {authorization: compiler-terms/AuthorizationType}
+relation judgment-authorization-type
+  reads {judgment: JudgmentLocalId} has exact authorization type {authorization: AuthorizationType}
   subject judgment
 
-relation compiler-terms/judgment-law-subject
-  reads {judgment: compiler-terms/JudgmentLocalId} authorizes exact law subject {law: compiler-terms/LawId}
+relation judgment-law-subject
+  reads {judgment: JudgmentLocalId} authorizes exact law subject {law: LawId}
   subject judgment
 
-relation compiler-terms/judgment-application-subject
-  reads {judgment: compiler-terms/JudgmentLocalId} authorizes exact application subject {application: compiler-terms/ApplicationId}
+relation judgment-application-subject
+  reads {judgment: JudgmentLocalId} authorizes exact application subject {application: ApplicationId}
   subject judgment
 
-relation compiler-terms/judgment-snapshot-scope
-  reads {judgment: compiler-terms/JudgmentLocalId} has exact containing snapshot scope {scope: compiler-terms/ProgramSnapshotScope}
+relation judgment-snapshot-scope
+  reads {judgment: JudgmentLocalId} has exact containing snapshot scope {scope: ProgramSnapshotScope}
   subject judgment
 
-compiler-terms/term/radius-proximity-v1
-  has exact triple slot zero compiler-terms/atom/observer
-  has exact triple slot one compiler-terms/atom/in-proximity
-  has exact triple slot two compiler-terms/atom/target-space
-
-compiler-terms/term/within-radius-v1
-  has exact triple slot zero compiler-terms/atom/target-point
-  has exact triple slot one compiler-terms/atom/within-radius
-  has exact triple slot two compiler-terms/atom/observer-point-radius
-
-compiler-terms/term/same-space-target-pair-v1
-  has exact triple slot zero compiler-terms/atom/left-target
-  has exact triple slot one compiler-terms/atom/same-space-pair
-  has exact triple slot two compiler-terms/atom/right-target-space
-
-compiler-terms/term/target-point-x-raw
-  has exact triple slot zero compiler-terms/atom/target-point
-  has exact triple slot one compiler-terms/atom/point2-q16-x-raw
-  has exact triple slot two compiler-terms/atom/target-x
-
-compiler-terms/term/target-point-y-raw
-  has exact triple slot zero compiler-terms/atom/target-point
-  has exact triple slot one compiler-terms/atom/point2-q16-y-raw
-  has exact triple slot two compiler-terms/atom/target-y
-
-compiler-terms/term/observer-point-x-raw
-  has exact triple slot zero compiler-terms/atom/observer-point
-  has exact triple slot one compiler-terms/atom/point2-q16-x-raw
-  has exact triple slot two compiler-terms/atom/observer-x
-
-compiler-terms/term/observer-point-y-raw
-  has exact triple slot zero compiler-terms/atom/observer-point
-  has exact triple slot one compiler-terms/atom/point2-q16-y-raw
-  has exact triple slot two compiler-terms/atom/observer-y
-
-compiler-terms/term/subtract-x-left
-  has exact triple slot zero compiler-terms/atom/target-x
-  has exact triple slot one compiler-terms/atom/sub-int
-  has exact triple slot two compiler-terms/atom/observer-x
-
-compiler-terms/term/subtract-x-right
-  has exact triple slot zero compiler-terms/atom/target-x
-  has exact triple slot one compiler-terms/atom/sub-int
-  has exact triple slot two compiler-terms/atom/observer-x
-
-compiler-terms/term/square-x
-  has exact triple slot zero compiler-terms/atom/delta-x-left
-  has exact triple slot one compiler-terms/atom/mul-int
-  has exact triple slot two compiler-terms/atom/delta-x-right
-
-compiler-terms/term/subtract-y-left
-  has exact triple slot zero compiler-terms/atom/target-y
-  has exact triple slot one compiler-terms/atom/sub-int
-  has exact triple slot two compiler-terms/atom/observer-y
-
-compiler-terms/term/subtract-y-right
-  has exact triple slot zero compiler-terms/atom/target-y
-  has exact triple slot one compiler-terms/atom/sub-int
-  has exact triple slot two compiler-terms/atom/observer-y
-
-compiler-terms/term/square-y
-  has exact triple slot zero compiler-terms/atom/delta-y-left
-  has exact triple slot one compiler-terms/atom/mul-int
-  has exact triple slot two compiler-terms/atom/delta-y-right
-
-compiler-terms/term/distance-square
-  has exact triple slot zero compiler-terms/atom/square-x
-  has exact triple slot one compiler-terms/atom/add-int
-  has exact triple slot two compiler-terms/atom/square-y
-
-compiler-terms/term/radius-square
-  has exact triple slot zero compiler-terms/atom/radius
-  has exact triple slot one compiler-terms/atom/mul-int
-  has exact triple slot two compiler-terms/atom/radius
-
-compiler-terms/term/within-radius-verdict
-  has exact triple slot zero compiler-terms/atom/distance-square
-  has exact triple slot one compiler-terms/atom/lte-int
-  has exact triple slot two compiler-terms/atom/radius-square
-
-compiler-terms/schema/observer-position-v1
-  has exact schema role compiler-terms/role/observer-position/observer
-  has exact schema role compiler-terms/role/observer-position/point
-  has exact schema role compiler-terms/role/observer-position/space
-
-compiler-terms/role/observer-position/observer
-  has exact role ordinal compiler-terms/ordinal/zero
-  has exact role domain compiler-terms/domain/Observer
-  has exact role cardinality compiler-terms/cardinality/one
-
-compiler-terms/role/observer-position/point
-  has exact role ordinal compiler-terms/ordinal/one
-  has exact role domain compiler-terms/domain/metric/Point2Q16
-  has exact role cardinality compiler-terms/cardinality/one
-
-compiler-terms/role/observer-position/space
-  has exact role ordinal compiler-terms/ordinal/two
-  has exact role domain compiler-terms/domain/Space
-  has exact role cardinality compiler-terms/cardinality/one
-
-compiler-terms/schema/target-position-v1
-  has exact schema role compiler-terms/role/target-position/target
-  has exact schema role compiler-terms/role/target-position/point
-  has exact schema role compiler-terms/role/target-position/space
-
-compiler-terms/role/target-position/target
-  has exact role ordinal compiler-terms/ordinal/zero
-  has exact role domain compiler-terms/domain/Target
-  has exact role cardinality compiler-terms/cardinality/one
-
-compiler-terms/role/target-position/point
-  has exact role ordinal compiler-terms/ordinal/one
-  has exact role domain compiler-terms/domain/metric/Point2Q16
-  has exact role cardinality compiler-terms/cardinality/one
-
-compiler-terms/role/target-position/space
-  has exact role ordinal compiler-terms/ordinal/two
-  has exact role domain compiler-terms/domain/Space
-  has exact role cardinality compiler-terms/cardinality/one
-
-compiler-terms/schema/proximity-radius-v1
-  has exact schema role compiler-terms/role/proximity-radius/observer
-  has exact schema role compiler-terms/role/proximity-radius/radius
-  has exact schema role compiler-terms/role/proximity-radius/space
-
-compiler-terms/role/proximity-radius/observer
-  has exact role ordinal compiler-terms/ordinal/zero
-  has exact role domain compiler-terms/domain/Observer
-  has exact role cardinality compiler-terms/cardinality/one
-
-compiler-terms/role/proximity-radius/radius
-  has exact role ordinal compiler-terms/ordinal/one
-  has exact role domain compiler-terms/domain/metric/NonnegativeQ16
-  has exact role cardinality compiler-terms/cardinality/one
-
-compiler-terms/role/proximity-radius/space
-  has exact role ordinal compiler-terms/ordinal/two
-  has exact role domain compiler-terms/domain/Space
-  has exact role cardinality compiler-terms/cardinality/one
-
-compiler-terms/schema/within-radius-v1
-  has exact schema role compiler-terms/role/within-radius/target-point
-  has exact schema role compiler-terms/role/within-radius/observer-point
-  has exact schema role compiler-terms/role/within-radius/radius
-  has exact schema role compiler-terms/role/within-radius/verdict
-
-compiler-terms/role/within-radius/target-point
-  has exact role ordinal compiler-terms/ordinal/zero
-  has exact role domain compiler-terms/domain/metric/Point2Q16
-  has exact role cardinality compiler-terms/cardinality/one
-
-compiler-terms/role/within-radius/observer-point
-  has exact role ordinal compiler-terms/ordinal/one
-  has exact role domain compiler-terms/domain/metric/Point2Q16
-  has exact role cardinality compiler-terms/cardinality/one
-
-compiler-terms/role/within-radius/radius
-  has exact role ordinal compiler-terms/ordinal/two
-  has exact role domain compiler-terms/domain/metric/NonnegativeQ16
-  has exact role cardinality compiler-terms/cardinality/one
-
-compiler-terms/role/within-radius/verdict
-  has exact role ordinal compiler-terms/ordinal/three
-  has exact role domain compiler-terms/domain/Boolean
-  has exact role cardinality compiler-terms/cardinality/one
-
-compiler-terms/schema/in-proximity-v1
-  has exact schema role compiler-terms/role/in-proximity/observer
-  has exact schema role compiler-terms/role/in-proximity/target
-  has exact schema role compiler-terms/role/in-proximity/space
-
-compiler-terms/role/in-proximity/observer
-  has exact role ordinal compiler-terms/ordinal/zero
-  has exact role domain compiler-terms/domain/Observer
-  has exact role cardinality compiler-terms/cardinality/one
-
-compiler-terms/role/in-proximity/target
-  has exact role ordinal compiler-terms/ordinal/one
-  has exact role domain compiler-terms/domain/Target
-  has exact role cardinality compiler-terms/cardinality/one
-
-compiler-terms/role/in-proximity/space
-  has exact role ordinal compiler-terms/ordinal/two
-  has exact role domain compiler-terms/domain/Space
-  has exact role cardinality compiler-terms/cardinality/one
-
-compiler-terms/schema/same-space-target-pair-v1
-  has exact schema role compiler-terms/role/same-space-target-pair/left-target
-  has exact schema role compiler-terms/role/same-space-target-pair/right-target
-  has exact schema role compiler-terms/role/same-space-target-pair/space
-
-compiler-terms/role/same-space-target-pair/left-target
-  has exact role ordinal compiler-terms/ordinal/zero
-  has exact role domain compiler-terms/domain/Target
-  has exact role cardinality compiler-terms/cardinality/one
-
-compiler-terms/role/same-space-target-pair/right-target
-  has exact role ordinal compiler-terms/ordinal/one
-  has exact role domain compiler-terms/domain/Target
-  has exact role cardinality compiler-terms/cardinality/one
-
-compiler-terms/role/same-space-target-pair/space
-  has exact role ordinal compiler-terms/ordinal/two
-  has exact role domain compiler-terms/domain/Space
-  has exact role cardinality compiler-terms/cardinality/one
-
-compiler-terms/operator/observer-position-v1
-  has exact relation schema definition compiler-terms/schema/observer-position-v1
-
-compiler-terms/operator/target-position-v1
-  has exact relation schema definition compiler-terms/schema/target-position-v1
-
-compiler-terms/operator/proximity-radius-v1
-  has exact relation schema definition compiler-terms/schema/proximity-radius-v1
-
-compiler-terms/operator/radius-proximity-v1
-  has exact law definition compiler-terms/law/radius-proximity-v1
-
-compiler-terms/operator/same-space-target-pair-v1
-  has exact law definition compiler-terms/law/same-space-target-pair-v1
-
-compiler-terms/mode/observer-position-v1
-  requires exact executable validity compiler-terms/executable-validity/universal
-  has exact mode authorization set compiler-terms/authorization-set/none
-  selects exact mode operator compiler-terms/operator/observer-position-v1
-  selects exact mode schema compiler-terms/schema/observer-position-v1
-  has exact known role compiler-terms/role/observer-position/observer
-  has exact known role compiler-terms/role/observer-position/space
-  has exact produced role compiler-terms/role/observer-position/point
-  has exact result cardinality compiler-terms/cardinality/one
-  has exact purity contract compiler-terms/purity/pure
-  has exact determinism contract compiler-terms/determinism/deterministic
-  has exact totality contract compiler-terms/totality/finite-total
-
-compiler-terms/mode/target-position-v1
-  requires exact executable validity compiler-terms/executable-validity/universal
-  has exact mode authorization set compiler-terms/authorization-set/none
-  selects exact mode operator compiler-terms/operator/target-position-v1
-  selects exact mode schema compiler-terms/schema/target-position-v1
-  has exact known role compiler-terms/role/target-position/target
-  has exact known role compiler-terms/role/target-position/space
-  has exact produced role compiler-terms/role/target-position/point
-  has exact result cardinality compiler-terms/cardinality/one
-  has exact purity contract compiler-terms/purity/pure
-  has exact determinism contract compiler-terms/determinism/deterministic
-  has exact totality contract compiler-terms/totality/finite-total
-
-compiler-terms/mode/proximity-radius-v1
-  requires exact executable validity compiler-terms/executable-validity/universal
-  has exact mode authorization set compiler-terms/authorization-set/none
-  selects exact mode operator compiler-terms/operator/proximity-radius-v1
-  selects exact mode schema compiler-terms/schema/proximity-radius-v1
-  has exact known role compiler-terms/role/proximity-radius/observer
-  has exact known role compiler-terms/role/proximity-radius/space
-  has exact produced role compiler-terms/role/proximity-radius/radius
-  has exact result cardinality compiler-terms/cardinality/one
-  has exact purity contract compiler-terms/purity/pure
-  has exact determinism contract compiler-terms/determinism/deterministic
-  has exact totality contract compiler-terms/totality/finite-total
-
-compiler-terms/mode/within-radius-v1
-  requires exact executable validity compiler-terms/executable-validity/universal
-  has exact mode authorization set compiler-terms/authorization-set/execution
-  selects exact mode operator compiler-terms/operator/within-radius-v1
-  selects exact mode schema compiler-terms/schema/within-radius-v1
-  has exact known role compiler-terms/role/within-radius/target-point
-  has exact known role compiler-terms/role/within-radius/observer-point
-  has exact known role compiler-terms/role/within-radius/radius
-  has exact produced role compiler-terms/role/within-radius/verdict
-  has exact result cardinality compiler-terms/cardinality/one
-  has exact purity contract compiler-terms/purity/pure
-  has exact determinism contract compiler-terms/determinism/deterministic
-  has exact totality contract compiler-terms/totality/total
-  has exact result ordering compiler-terms/ordering/single
-  has exact continuation contract compiler-terms/continuation/none
-  requires exact mode authorization compiler-terms/authorization-type/execution
-
-compiler-terms/mode/radius-proximity-v1
-  requires exact executable validity compiler-terms/executable-validity/universal
-  has exact mode authorization set compiler-terms/authorization-set/execution-and-derivation
-  selects exact mode operator compiler-terms/operator/radius-proximity-v1
-  selects exact mode schema compiler-terms/schema/in-proximity-v1
-  has exact known role compiler-terms/role/in-proximity/observer
-  has exact known role compiler-terms/role/in-proximity/space
-  has exact produced role compiler-terms/role/in-proximity/target
-  has exact result cardinality compiler-terms/cardinality/many
-  has exact purity contract compiler-terms/purity/pure
-  has exact determinism contract compiler-terms/determinism/deterministic
-  has exact totality contract compiler-terms/totality/finite-total
-  has exact result ordering compiler-terms/ordering/canonical-binding-order
-  has exact continuation contract compiler-terms/continuation/none
-  requires exact mode authorization compiler-terms/authorization-type/execution
-  requires exact mode authorization compiler-terms/authorization-type/derivation
-
-compiler-terms/mode/same-space-target-pair-v1
-  requires exact executable validity compiler-terms/executable-validity/universal
-  has exact mode authorization set compiler-terms/authorization-set/execution-and-derivation
-  selects exact mode operator compiler-terms/operator/same-space-target-pair-v1
-  selects exact mode schema compiler-terms/schema/same-space-target-pair-v1
-  has exact known role compiler-terms/role/same-space-target-pair/space
-  has exact produced role compiler-terms/role/same-space-target-pair/left-target
-  has exact produced role compiler-terms/role/same-space-target-pair/right-target
-  has exact result cardinality compiler-terms/cardinality/many
-  has exact purity contract compiler-terms/purity/pure
-  has exact determinism contract compiler-terms/determinism/deterministic
-  has exact totality contract compiler-terms/totality/finite-total
-  has exact result ordering compiler-terms/ordering/canonical-binding-order
-  has exact continuation contract compiler-terms/continuation/none
-  requires exact mode authorization compiler-terms/authorization-type/execution
-  requires exact mode authorization compiler-terms/authorization-type/derivation
-
-compiler-terms/authorization-set/none
-  has exact authorization cardinality compiler-terms/ordinal/zero
-
-compiler-terms/authorization-set/execution
-  has exact authorization cardinality compiler-terms/ordinal/one
-  has exact authorization member compiler-terms/authorization-type/execution
-
-compiler-terms/authorization-set/execution-and-derivation
-  has exact authorization cardinality compiler-terms/ordinal/two
-  has exact authorization member compiler-terms/authorization-type/execution
-  has exact authorization member compiler-terms/authorization-type/derivation
-
-compiler-terms/core-schema/int-binary
-  resolves exact external relation schema compiler-terms/external-id/`core-schema:int-binary`
-  has exact schema role compiler-terms/core-role/left
-  has exact schema role compiler-terms/core-role/right
-  has exact schema role compiler-terms/core-role/result
-
-compiler-terms/core-schema/int-comparison
-  resolves exact external relation schema compiler-terms/external-id/`core-schema:int-comparison`
-  has exact schema role compiler-terms/core-role/left
-  has exact schema role compiler-terms/core-role/right
-  has exact schema role compiler-terms/core-role/verdict
-
-compiler-terms/core-schema/point2-q16-component
-  resolves exact external relation schema compiler-terms/external-id/`core-schema:point2-q16-component`
-  has exact schema role compiler-terms/core-role/point
-  has exact schema role compiler-terms/core-role/raw
-
-compiler-terms/core-operator/sub-int
-  resolves exact external operator compiler-terms/external-id/`core-op:sub-int`
-
-compiler-terms/core-operator/mul-int
-  resolves exact external operator compiler-terms/external-id/`core-op:mul-int`
-
-compiler-terms/core-operator/add-int
-  resolves exact external operator compiler-terms/external-id/`core-op:add-int`
-
-compiler-terms/core-operator/lte-int
-  resolves exact external operator compiler-terms/external-id/`core-op:lte-int`
-
-compiler-terms/core-operator/point2-q16-x-raw
-  resolves exact external operator compiler-terms/external-id/`core-op:point2-q16-x-raw`
-
-compiler-terms/core-operator/point2-q16-y-raw
-  resolves exact external operator compiler-terms/external-id/`core-op:point2-q16-y-raw`
-
-compiler-terms/core-mode/sub-int-total
-  resolves exact external mode compiler-terms/external-id/`core-mode:sub-int-total`
-
-compiler-terms/core-mode/mul-int-total
-  resolves exact external mode compiler-terms/external-id/`core-mode:mul-int-total`
-
-compiler-terms/core-mode/add-int-total
-  resolves exact external mode compiler-terms/external-id/`core-mode:add-int-total`
-
-compiler-terms/core-mode/lte-int-total
-  resolves exact external mode compiler-terms/external-id/`core-mode:lte-int-total`
-
-compiler-terms/core-mode/point2-q16-x-raw-total
-  resolves exact external mode compiler-terms/external-id/`core-mode:point2-q16-x-raw-total`
-
-compiler-terms/core-mode/point2-q16-y-raw-total
-  resolves exact external mode compiler-terms/external-id/`core-mode:point2-q16-y-raw-total`
-
-compiler-terms/core-role/left
-  resolves exact external role compiler-terms/external-id/`core-role:left`
-
-compiler-terms/core-role/right
-  resolves exact external role compiler-terms/external-id/`core-role:right`
-
-compiler-terms/core-role/result
-  resolves exact external role compiler-terms/external-id/`core-role:result`
-
-compiler-terms/core-role/verdict
-  resolves exact external role compiler-terms/external-id/`core-role:verdict`
-
-compiler-terms/core-role/point
-  resolves exact external role compiler-terms/external-id/`core-role:point`
-
-compiler-terms/core-role/raw
-  resolves exact external role compiler-terms/external-id/`core-role:raw`
-
-compiler-terms/formation/radius-proximity-v1
-  forms exact term compiler-terms/term/radius-proximity-v1
-  forms exact type compiler-terms/formed-type/application-form-binding-set
-  has exact interpretation compiler-terms/form/radius-proximity-v1
-  has exact formation law dependency compiler-terms/law/radius-proximity-v1
-  has exact formation mode dependency compiler-terms/mode/radius-proximity-v1
-  has exact formation operator dependency compiler-terms/operator/radius-proximity-v1
-  has exact formation schema dependency compiler-terms/schema/in-proximity-v1
-
-compiler-terms/form/radius-proximity-v1
-  represents exact form term compiler-terms/term/radius-proximity-v1
-  selects exact relation schema compiler-terms/schema/in-proximity-v1
-  selects exact operator compiler-terms/operator/radius-proximity-v1
-  has exact eligible mode compiler-terms/mode/radius-proximity-v1
-  has exact named role binding compiler-terms/binding/conclusion-observer
-  has exact named role binding compiler-terms/binding/conclusion-target
-  has exact named role binding compiler-terms/binding/conclusion-space
-  requires exact context compiler-terms/context/clause-semantics
-  requires exact context compiler-terms/context/program-snapshot
-  requires exact context compiler-terms/context/program-revision
-  requires exact context compiler-terms/context/runtime-session
-  requires exact context compiler-terms/context/state-revision
-  requires exact context compiler-terms/context/runtime-policy
-  requires exact context compiler-terms/context/executable-validity
-  requires exact context compiler-terms/context/derivation-authorization
-  requires exact context compiler-terms/context/execution-authorization
-  requires exact context compiler-terms/context/capability-set
-  requires exact context compiler-terms/context/finite-budget
-  has exact form law dependency compiler-terms/law/radius-proximity-v1
-  has exact form mode dependency compiler-terms/mode/radius-proximity-v1
-  has exact form operator dependency compiler-terms/operator/radius-proximity-v1
-  has exact form schema dependency compiler-terms/schema/in-proximity-v1
-
-compiler-terms/binding/conclusion-observer
-  selects exact bound role compiler-terms/role/in-proximity/observer
-  binds exact role variable compiler-terms/variable/observer
-
-compiler-terms/binding/conclusion-target
-  selects exact bound role compiler-terms/role/in-proximity/target
-  binds exact produced variable compiler-terms/variable/target
-
-compiler-terms/binding/conclusion-space
-  selects exact bound role compiler-terms/role/in-proximity/space
-  binds exact role variable compiler-terms/variable/space
-
-compiler-terms/application/radius-proximity-v1
-  instantiates exact application form compiler-terms/form/radius-proximity-v1
-
-compiler-terms/formation/within-radius-v1
-  forms exact term compiler-terms/term/within-radius-v1
-  forms exact type compiler-terms/formed-type/application-form-boolean
-  has exact interpretation compiler-terms/form/within-radius-v1
-  has exact formation schema dependency compiler-terms/core-schema/int-binary
-  has exact formation schema dependency compiler-terms/core-schema/int-comparison
-  has exact formation schema dependency compiler-terms/core-schema/point2-q16-component
-  has exact formation mode dependency compiler-terms/core-mode/add-int-total
-  has exact formation mode dependency compiler-terms/core-mode/lte-int-total
-  has exact formation mode dependency compiler-terms/core-mode/mul-int-total
-  has exact formation mode dependency compiler-terms/core-mode/point2-q16-x-raw-total
-  has exact formation mode dependency compiler-terms/core-mode/point2-q16-y-raw-total
-  has exact formation mode dependency compiler-terms/core-mode/sub-int-total
-  has exact formation operator dependency compiler-terms/core-operator/add-int
-  has exact formation operator dependency compiler-terms/core-operator/lte-int
-  has exact formation operator dependency compiler-terms/core-operator/mul-int
-  has exact formation operator dependency compiler-terms/core-operator/point2-q16-x-raw
-  has exact formation operator dependency compiler-terms/core-operator/point2-q16-y-raw
-  has exact formation operator dependency compiler-terms/core-operator/sub-int
-  has exact formation term dependency compiler-terms/term/target-point-x-raw
-  has exact formation term dependency compiler-terms/term/target-point-y-raw
-  has exact formation term dependency compiler-terms/term/observer-point-x-raw
-  has exact formation term dependency compiler-terms/term/observer-point-y-raw
-  has exact formation term dependency compiler-terms/term/subtract-x-left
-  has exact formation term dependency compiler-terms/term/subtract-x-right
-  has exact formation term dependency compiler-terms/term/square-x
-  has exact formation term dependency compiler-terms/term/subtract-y-left
-  has exact formation term dependency compiler-terms/term/subtract-y-right
-  has exact formation term dependency compiler-terms/term/square-y
-  has exact formation term dependency compiler-terms/term/distance-square
-  has exact formation term dependency compiler-terms/term/radius-square
-  has exact formation term dependency compiler-terms/term/within-radius-verdict
-  has exact nested formation dependency compiler-terms/formation/target-point-x-raw
-  has exact nested formation dependency compiler-terms/formation/target-point-y-raw
-  has exact nested formation dependency compiler-terms/formation/observer-point-x-raw
-  has exact nested formation dependency compiler-terms/formation/observer-point-y-raw
-  has exact nested formation dependency compiler-terms/formation/subtract-x-left
-  has exact nested formation dependency compiler-terms/formation/subtract-x-right
-  has exact nested formation dependency compiler-terms/formation/square-x
-  has exact nested formation dependency compiler-terms/formation/subtract-y-left
-  has exact nested formation dependency compiler-terms/formation/subtract-y-right
-  has exact nested formation dependency compiler-terms/formation/square-y
-  has exact nested formation dependency compiler-terms/formation/distance-square
-  has exact nested formation dependency compiler-terms/formation/radius-square
-  has exact nested formation dependency compiler-terms/formation/within-radius-verdict
-  has exact formation form dependency compiler-terms/form/target-point-x-raw
-  has exact formation form dependency compiler-terms/form/target-point-y-raw
-  has exact formation form dependency compiler-terms/form/observer-point-x-raw
-  has exact formation form dependency compiler-terms/form/observer-point-y-raw
-  has exact formation form dependency compiler-terms/form/subtract-x-left
-  has exact formation form dependency compiler-terms/form/subtract-x-right
-  has exact formation form dependency compiler-terms/form/square-x
-  has exact formation form dependency compiler-terms/form/subtract-y-left
-  has exact formation form dependency compiler-terms/form/subtract-y-right
-  has exact formation form dependency compiler-terms/form/square-y
-  has exact formation form dependency compiler-terms/form/distance-square
-  has exact formation form dependency compiler-terms/form/radius-square
-  has exact formation form dependency compiler-terms/form/within-radius-verdict
-  has exact formation application dependency compiler-terms/application/target-point-x-raw
-  has exact formation application dependency compiler-terms/application/target-point-y-raw
-  has exact formation application dependency compiler-terms/application/observer-point-x-raw
-  has exact formation application dependency compiler-terms/application/observer-point-y-raw
-  has exact formation application dependency compiler-terms/application/subtract-x-left
-  has exact formation application dependency compiler-terms/application/subtract-x-right
-  has exact formation application dependency compiler-terms/application/square-x
-  has exact formation application dependency compiler-terms/application/subtract-y-left
-  has exact formation application dependency compiler-terms/application/subtract-y-right
-  has exact formation application dependency compiler-terms/application/square-y
-  has exact formation application dependency compiler-terms/application/distance-square
-  has exact formation application dependency compiler-terms/application/radius-square
-  has exact formation application dependency compiler-terms/application/within-radius-verdict
-  has exact formation mode dependency compiler-terms/mode/within-radius-v1
-  has exact formation operator dependency compiler-terms/operator/within-radius-v1
-  has exact formation schema dependency compiler-terms/schema/within-radius-v1
-
-compiler-terms/form/within-radius-v1
-  represents exact form term compiler-terms/term/within-radius-v1
-  selects exact relation schema compiler-terms/schema/within-radius-v1
-  selects exact operator compiler-terms/operator/within-radius-v1
-  has exact eligible mode compiler-terms/mode/within-radius-v1
-  has exact named role binding compiler-terms/binding/within-radius/target-point
-  has exact named role binding compiler-terms/binding/within-radius/observer-point
-  has exact named role binding compiler-terms/binding/within-radius/radius
-  has exact named role binding compiler-terms/binding/within-radius/verdict
-  has exact point component projection compiler-terms/point-projection/within-radius/target-x
-  has exact point component projection compiler-terms/point-projection/within-radius/target-y
-  has exact point component projection compiler-terms/point-projection/within-radius/observer-x
-  has exact point component projection compiler-terms/point-projection/within-radius/observer-y
-  requires exact context compiler-terms/context/clause-semantics
-  requires exact context compiler-terms/context/program-snapshot
-  requires exact context compiler-terms/context/program-revision
-  requires exact context compiler-terms/context/runtime-session
-  requires exact context compiler-terms/context/state-revision
-  requires exact context compiler-terms/context/runtime-policy
-  requires exact context compiler-terms/context/executable-validity
-  requires exact context compiler-terms/context/execution-authorization
-  requires exact context compiler-terms/context/capability-set
-  requires exact context compiler-terms/context/finite-budget
-  has exact form mode dependency compiler-terms/core-mode/add-int-total
-  has exact form mode dependency compiler-terms/core-mode/lte-int-total
-  has exact form mode dependency compiler-terms/core-mode/mul-int-total
-  has exact form mode dependency compiler-terms/core-mode/point2-q16-x-raw-total
-  has exact form mode dependency compiler-terms/core-mode/point2-q16-y-raw-total
-  has exact form mode dependency compiler-terms/core-mode/sub-int-total
-  has exact form operator dependency compiler-terms/core-operator/add-int
-  has exact form operator dependency compiler-terms/core-operator/lte-int
-  has exact form operator dependency compiler-terms/core-operator/mul-int
-  has exact form operator dependency compiler-terms/core-operator/point2-q16-x-raw
-  has exact form operator dependency compiler-terms/core-operator/point2-q16-y-raw
-  has exact form operator dependency compiler-terms/core-operator/sub-int
-  has exact form schema dependency compiler-terms/core-schema/int-binary
-  has exact form schema dependency compiler-terms/core-schema/int-comparison
-  has exact form schema dependency compiler-terms/core-schema/point2-q16-component
-  has exact form term dependency compiler-terms/term/target-point-x-raw
-  has exact form term dependency compiler-terms/term/target-point-y-raw
-  has exact form term dependency compiler-terms/term/observer-point-x-raw
-  has exact form term dependency compiler-terms/term/observer-point-y-raw
-  has exact form term dependency compiler-terms/term/subtract-x-left
-  has exact form term dependency compiler-terms/term/subtract-x-right
-  has exact form term dependency compiler-terms/term/square-x
-  has exact form term dependency compiler-terms/term/subtract-y-left
-  has exact form term dependency compiler-terms/term/subtract-y-right
-  has exact form term dependency compiler-terms/term/square-y
-  has exact form term dependency compiler-terms/term/distance-square
-  has exact form term dependency compiler-terms/term/radius-square
-  has exact form term dependency compiler-terms/term/within-radius-verdict
-  has exact form formation dependency compiler-terms/formation/target-point-x-raw
-  has exact form formation dependency compiler-terms/formation/target-point-y-raw
-  has exact form formation dependency compiler-terms/formation/observer-point-x-raw
-  has exact form formation dependency compiler-terms/formation/observer-point-y-raw
-  has exact form formation dependency compiler-terms/formation/subtract-x-left
-  has exact form formation dependency compiler-terms/formation/subtract-x-right
-  has exact form formation dependency compiler-terms/formation/square-x
-  has exact form formation dependency compiler-terms/formation/subtract-y-left
-  has exact form formation dependency compiler-terms/formation/subtract-y-right
-  has exact form formation dependency compiler-terms/formation/square-y
-  has exact form formation dependency compiler-terms/formation/distance-square
-  has exact form formation dependency compiler-terms/formation/radius-square
-  has exact form formation dependency compiler-terms/formation/within-radius-verdict
-  has exact nested form dependency compiler-terms/form/target-point-x-raw
-  has exact nested form dependency compiler-terms/form/target-point-y-raw
-  has exact nested form dependency compiler-terms/form/observer-point-x-raw
-  has exact nested form dependency compiler-terms/form/observer-point-y-raw
-  has exact nested form dependency compiler-terms/form/subtract-x-left
-  has exact nested form dependency compiler-terms/form/subtract-x-right
-  has exact nested form dependency compiler-terms/form/square-x
-  has exact nested form dependency compiler-terms/form/subtract-y-left
-  has exact nested form dependency compiler-terms/form/subtract-y-right
-  has exact nested form dependency compiler-terms/form/square-y
-  has exact nested form dependency compiler-terms/form/distance-square
-  has exact nested form dependency compiler-terms/form/radius-square
-  has exact nested form dependency compiler-terms/form/within-radius-verdict
-  has exact form application dependency compiler-terms/application/target-point-x-raw
-  has exact form application dependency compiler-terms/application/target-point-y-raw
-  has exact form application dependency compiler-terms/application/observer-point-x-raw
-  has exact form application dependency compiler-terms/application/observer-point-y-raw
-  has exact form application dependency compiler-terms/application/subtract-x-left
-  has exact form application dependency compiler-terms/application/subtract-x-right
-  has exact form application dependency compiler-terms/application/square-x
-  has exact form application dependency compiler-terms/application/subtract-y-left
-  has exact form application dependency compiler-terms/application/subtract-y-right
-  has exact form application dependency compiler-terms/application/square-y
-  has exact form application dependency compiler-terms/application/distance-square
-  has exact form application dependency compiler-terms/application/radius-square
-  has exact form application dependency compiler-terms/application/within-radius-verdict
-  has exact form mode dependency compiler-terms/mode/within-radius-v1
-  has exact form operator dependency compiler-terms/operator/within-radius-v1
-  has exact form schema dependency compiler-terms/schema/within-radius-v1
-
-compiler-terms/binding/within-radius/target-point
-  selects exact bound role compiler-terms/role/within-radius/target-point
-  binds exact role variable compiler-terms/variable/target-point
-
-compiler-terms/binding/within-radius/observer-point
-  selects exact bound role compiler-terms/role/within-radius/observer-point
-  binds exact role variable compiler-terms/variable/observer-point
-
-compiler-terms/binding/within-radius/radius
-  selects exact bound role compiler-terms/role/within-radius/radius
-  binds exact role variable compiler-terms/variable/radius
-
-compiler-terms/binding/within-radius/verdict
-  selects exact bound role compiler-terms/role/within-radius/verdict
-  binds exact produced variable compiler-terms/variable/verdict
-
-compiler-terms/point-projection/within-radius/target-x
-  has exact point projection ordinal compiler-terms/ordinal/zero
-  projects exact point variable compiler-terms/variable/target-point
-  applies exact point projection operator compiler-terms/core-operator/point2-q16-x-raw
-  selects exact point projection mode compiler-terms/core-mode/point2-q16-x-raw-total
-  produces exact scalar variable compiler-terms/variable/target-x
-  selects exact projection application compiler-terms/application/target-point-x-raw
-
-compiler-terms/point-projection/within-radius/target-y
-  has exact point projection ordinal compiler-terms/ordinal/one
-  projects exact point variable compiler-terms/variable/target-point
-  applies exact point projection operator compiler-terms/core-operator/point2-q16-y-raw
-  selects exact point projection mode compiler-terms/core-mode/point2-q16-y-raw-total
-  produces exact scalar variable compiler-terms/variable/target-y
-  selects exact projection application compiler-terms/application/target-point-y-raw
-
-compiler-terms/point-projection/within-radius/observer-x
-  has exact point projection ordinal compiler-terms/ordinal/two
-  projects exact point variable compiler-terms/variable/observer-point
-  applies exact point projection operator compiler-terms/core-operator/point2-q16-x-raw
-  selects exact point projection mode compiler-terms/core-mode/point2-q16-x-raw-total
-  produces exact scalar variable compiler-terms/variable/observer-x
-  selects exact projection application compiler-terms/application/observer-point-x-raw
-
-compiler-terms/point-projection/within-radius/observer-y
-  has exact point projection ordinal compiler-terms/ordinal/three
-  projects exact point variable compiler-terms/variable/observer-point
-  applies exact point projection operator compiler-terms/core-operator/point2-q16-y-raw
-  selects exact point projection mode compiler-terms/core-mode/point2-q16-y-raw-total
-  produces exact scalar variable compiler-terms/variable/observer-y
-  selects exact projection application compiler-terms/application/observer-point-y-raw
-
-compiler-terms/application/within-radius-v1
-  instantiates exact application form compiler-terms/form/within-radius-v1
-
-compiler-terms/operator/within-radius-v1
-  has exact generic application graph root compiler-terms/application/within-radius-verdict
-  has exact generic graph application compiler-terms/application/target-point-x-raw
-  has exact generic graph application compiler-terms/application/target-point-y-raw
-  has exact generic graph application compiler-terms/application/observer-point-x-raw
-  has exact generic graph application compiler-terms/application/observer-point-y-raw
-  has exact generic graph application compiler-terms/application/subtract-x-left
-  has exact generic graph application compiler-terms/application/subtract-x-right
-  has exact generic graph application compiler-terms/application/square-x
-  has exact generic graph application compiler-terms/application/subtract-y-left
-  has exact generic graph application compiler-terms/application/subtract-y-right
-  has exact generic graph application compiler-terms/application/square-y
-  has exact generic graph application compiler-terms/application/distance-square
-  has exact generic graph application compiler-terms/application/radius-square
-  has exact generic graph application compiler-terms/application/within-radius-verdict
-  requires exact numeric encoding compiler-terms/numeric-encoding/`signed-big-endian-q16.16`
-  requires exact intermediate domain compiler-terms/numeric-domain/mathematical-integer
-  requires exact numeric constraint compiler-terms/numeric-constraint/decode-before-arithmetic
-  requires exact numeric constraint compiler-terms/numeric-constraint/inclusive-comparison
-  requires exact numeric constraint compiler-terms/numeric-constraint/no-wrapping
-  requires exact numeric constraint compiler-terms/numeric-constraint/no-saturation
-  requires exact numeric constraint compiler-terms/numeric-constraint/no-rounding
-  requires exact numeric constraint compiler-terms/numeric-constraint/no-square-root
-  requires exact numeric constraint compiler-terms/numeric-constraint/no-floating-point-conversion
-  requires exact numeric constraint compiler-terms/numeric-constraint/no-narrowing
-
-compiler-terms/formation/target-point-x-raw
-  forms exact term compiler-terms/term/target-point-x-raw
-  forms exact type compiler-terms/formed-type/application-form-mathematical-integer
-  has exact interpretation compiler-terms/form/target-point-x-raw
-  has exact formation schema dependency compiler-terms/core-schema/point2-q16-component
-  has exact formation operator dependency compiler-terms/core-operator/point2-q16-x-raw
-  has exact formation mode dependency compiler-terms/core-mode/point2-q16-x-raw-total
-
-compiler-terms/form/target-point-x-raw
-  represents exact form term compiler-terms/term/target-point-x-raw
-  selects exact relation schema compiler-terms/core-schema/point2-q16-component
-  selects exact operator compiler-terms/core-operator/point2-q16-x-raw
-  has exact eligible mode compiler-terms/core-mode/point2-q16-x-raw-total
-  has exact named role binding compiler-terms/binding/target-point-x-raw/point
-  has exact named role binding compiler-terms/binding/target-point-x-raw/raw
-  requires exact context compiler-terms/context/clause-semantics
-  requires exact context compiler-terms/context/program-snapshot
-  requires exact context compiler-terms/context/program-revision
-  requires exact context compiler-terms/context/runtime-session
-  requires exact context compiler-terms/context/runtime-policy
-  requires exact context compiler-terms/context/executable-validity
-  requires exact context compiler-terms/context/capability-set
-  requires exact context compiler-terms/context/finite-budget
-  has exact form schema dependency compiler-terms/core-schema/point2-q16-component
-  has exact form operator dependency compiler-terms/core-operator/point2-q16-x-raw
-  has exact form mode dependency compiler-terms/core-mode/point2-q16-x-raw-total
-
-compiler-terms/binding/target-point-x-raw/point
-  selects exact bound role compiler-terms/core-role/point
-  binds exact role variable compiler-terms/variable/target-point
-
-compiler-terms/binding/target-point-x-raw/raw
-  selects exact bound role compiler-terms/core-role/raw
-  binds exact produced variable compiler-terms/variable/target-x
-
-compiler-terms/application/target-point-x-raw
-  instantiates exact application form compiler-terms/form/target-point-x-raw
-
-compiler-terms/formation/target-point-y-raw
-  forms exact term compiler-terms/term/target-point-y-raw
-  forms exact type compiler-terms/formed-type/application-form-mathematical-integer
-  has exact interpretation compiler-terms/form/target-point-y-raw
-  has exact formation schema dependency compiler-terms/core-schema/point2-q16-component
-  has exact formation operator dependency compiler-terms/core-operator/point2-q16-y-raw
-  has exact formation mode dependency compiler-terms/core-mode/point2-q16-y-raw-total
-
-compiler-terms/form/target-point-y-raw
-  represents exact form term compiler-terms/term/target-point-y-raw
-  selects exact relation schema compiler-terms/core-schema/point2-q16-component
-  selects exact operator compiler-terms/core-operator/point2-q16-y-raw
-  has exact eligible mode compiler-terms/core-mode/point2-q16-y-raw-total
-  has exact named role binding compiler-terms/binding/target-point-y-raw/point
-  has exact named role binding compiler-terms/binding/target-point-y-raw/raw
-  requires exact context compiler-terms/context/clause-semantics
-  requires exact context compiler-terms/context/program-snapshot
-  requires exact context compiler-terms/context/program-revision
-  requires exact context compiler-terms/context/runtime-session
-  requires exact context compiler-terms/context/runtime-policy
-  requires exact context compiler-terms/context/executable-validity
-  requires exact context compiler-terms/context/capability-set
-  requires exact context compiler-terms/context/finite-budget
-  has exact form schema dependency compiler-terms/core-schema/point2-q16-component
-  has exact form operator dependency compiler-terms/core-operator/point2-q16-y-raw
-  has exact form mode dependency compiler-terms/core-mode/point2-q16-y-raw-total
-
-compiler-terms/binding/target-point-y-raw/point
-  selects exact bound role compiler-terms/core-role/point
-  binds exact role variable compiler-terms/variable/target-point
-
-compiler-terms/binding/target-point-y-raw/raw
-  selects exact bound role compiler-terms/core-role/raw
-  binds exact produced variable compiler-terms/variable/target-y
-
-compiler-terms/application/target-point-y-raw
-  instantiates exact application form compiler-terms/form/target-point-y-raw
-
-compiler-terms/formation/observer-point-x-raw
-  forms exact term compiler-terms/term/observer-point-x-raw
-  forms exact type compiler-terms/formed-type/application-form-mathematical-integer
-  has exact interpretation compiler-terms/form/observer-point-x-raw
-  has exact formation schema dependency compiler-terms/core-schema/point2-q16-component
-  has exact formation operator dependency compiler-terms/core-operator/point2-q16-x-raw
-  has exact formation mode dependency compiler-terms/core-mode/point2-q16-x-raw-total
-
-compiler-terms/form/observer-point-x-raw
-  represents exact form term compiler-terms/term/observer-point-x-raw
-  selects exact relation schema compiler-terms/core-schema/point2-q16-component
-  selects exact operator compiler-terms/core-operator/point2-q16-x-raw
-  has exact eligible mode compiler-terms/core-mode/point2-q16-x-raw-total
-  has exact named role binding compiler-terms/binding/observer-point-x-raw/point
-  has exact named role binding compiler-terms/binding/observer-point-x-raw/raw
-  requires exact context compiler-terms/context/clause-semantics
-  requires exact context compiler-terms/context/program-snapshot
-  requires exact context compiler-terms/context/program-revision
-  requires exact context compiler-terms/context/runtime-session
-  requires exact context compiler-terms/context/runtime-policy
-  requires exact context compiler-terms/context/executable-validity
-  requires exact context compiler-terms/context/capability-set
-  requires exact context compiler-terms/context/finite-budget
-  has exact form schema dependency compiler-terms/core-schema/point2-q16-component
-  has exact form operator dependency compiler-terms/core-operator/point2-q16-x-raw
-  has exact form mode dependency compiler-terms/core-mode/point2-q16-x-raw-total
-
-compiler-terms/binding/observer-point-x-raw/point
-  selects exact bound role compiler-terms/core-role/point
-  binds exact role variable compiler-terms/variable/observer-point
-
-compiler-terms/binding/observer-point-x-raw/raw
-  selects exact bound role compiler-terms/core-role/raw
-  binds exact produced variable compiler-terms/variable/observer-x
-
-compiler-terms/application/observer-point-x-raw
-  instantiates exact application form compiler-terms/form/observer-point-x-raw
-
-compiler-terms/formation/observer-point-y-raw
-  forms exact term compiler-terms/term/observer-point-y-raw
-  forms exact type compiler-terms/formed-type/application-form-mathematical-integer
-  has exact interpretation compiler-terms/form/observer-point-y-raw
-  has exact formation schema dependency compiler-terms/core-schema/point2-q16-component
-  has exact formation operator dependency compiler-terms/core-operator/point2-q16-y-raw
-  has exact formation mode dependency compiler-terms/core-mode/point2-q16-y-raw-total
-
-compiler-terms/form/observer-point-y-raw
-  represents exact form term compiler-terms/term/observer-point-y-raw
-  selects exact relation schema compiler-terms/core-schema/point2-q16-component
-  selects exact operator compiler-terms/core-operator/point2-q16-y-raw
-  has exact eligible mode compiler-terms/core-mode/point2-q16-y-raw-total
-  has exact named role binding compiler-terms/binding/observer-point-y-raw/point
-  has exact named role binding compiler-terms/binding/observer-point-y-raw/raw
-  requires exact context compiler-terms/context/clause-semantics
-  requires exact context compiler-terms/context/program-snapshot
-  requires exact context compiler-terms/context/program-revision
-  requires exact context compiler-terms/context/runtime-session
-  requires exact context compiler-terms/context/runtime-policy
-  requires exact context compiler-terms/context/executable-validity
-  requires exact context compiler-terms/context/capability-set
-  requires exact context compiler-terms/context/finite-budget
-  has exact form schema dependency compiler-terms/core-schema/point2-q16-component
-  has exact form operator dependency compiler-terms/core-operator/point2-q16-y-raw
-  has exact form mode dependency compiler-terms/core-mode/point2-q16-y-raw-total
-
-compiler-terms/binding/observer-point-y-raw/point
-  selects exact bound role compiler-terms/core-role/point
-  binds exact role variable compiler-terms/variable/observer-point
-
-compiler-terms/binding/observer-point-y-raw/raw
-  selects exact bound role compiler-terms/core-role/raw
-  binds exact produced variable compiler-terms/variable/observer-y
-
-compiler-terms/application/observer-point-y-raw
-  instantiates exact application form compiler-terms/form/observer-point-y-raw
-
-compiler-terms/formation/subtract-x-left
-  forms exact term compiler-terms/term/subtract-x-left
-  forms exact type compiler-terms/formed-type/application-form-mathematical-integer
-  has exact interpretation compiler-terms/form/subtract-x-left
-  has exact formation schema dependency compiler-terms/core-schema/int-binary
-  has exact formation operator dependency compiler-terms/core-operator/sub-int
-  has exact formation mode dependency compiler-terms/core-mode/sub-int-total
-
-compiler-terms/form/subtract-x-left
-  represents exact form term compiler-terms/term/subtract-x-left
-  selects exact relation schema compiler-terms/core-schema/int-binary
-  selects exact operator compiler-terms/core-operator/sub-int
-  has exact eligible mode compiler-terms/core-mode/sub-int-total
-  has exact named role binding compiler-terms/binding/subtract-x-left/left
-  has exact named role binding compiler-terms/binding/subtract-x-left/right
-  has exact named role binding compiler-terms/binding/subtract-x-left/result
-  requires exact context compiler-terms/context/clause-semantics
-  requires exact context compiler-terms/context/program-snapshot
-  requires exact context compiler-terms/context/program-revision
-  requires exact context compiler-terms/context/runtime-session
-  requires exact context compiler-terms/context/runtime-policy
-  requires exact context compiler-terms/context/executable-validity
-  requires exact context compiler-terms/context/capability-set
-  requires exact context compiler-terms/context/finite-budget
-  has exact form schema dependency compiler-terms/core-schema/int-binary
-  has exact form operator dependency compiler-terms/core-operator/sub-int
-  has exact form mode dependency compiler-terms/core-mode/sub-int-total
-
-compiler-terms/binding/subtract-x-left/left
-  selects exact bound role compiler-terms/core-role/left
-  binds exact role variable compiler-terms/variable/target-x
-
-compiler-terms/binding/subtract-x-left/right
-  selects exact bound role compiler-terms/core-role/right
-  binds exact role variable compiler-terms/variable/observer-x
-
-compiler-terms/binding/subtract-x-left/result
-  selects exact bound role compiler-terms/core-role/result
-  binds exact produced variable compiler-terms/variable/delta-x-left
-
-compiler-terms/application/subtract-x-left
-  instantiates exact application form compiler-terms/form/subtract-x-left
-
-compiler-terms/formation/subtract-x-right
-  forms exact term compiler-terms/term/subtract-x-right
-  forms exact type compiler-terms/formed-type/application-form-mathematical-integer
-  has exact interpretation compiler-terms/form/subtract-x-right
-  has exact formation schema dependency compiler-terms/core-schema/int-binary
-  has exact formation operator dependency compiler-terms/core-operator/sub-int
-  has exact formation mode dependency compiler-terms/core-mode/sub-int-total
-
-compiler-terms/form/subtract-x-right
-  represents exact form term compiler-terms/term/subtract-x-right
-  selects exact relation schema compiler-terms/core-schema/int-binary
-  selects exact operator compiler-terms/core-operator/sub-int
-  has exact eligible mode compiler-terms/core-mode/sub-int-total
-  has exact named role binding compiler-terms/binding/subtract-x-right/left
-  has exact named role binding compiler-terms/binding/subtract-x-right/right
-  has exact named role binding compiler-terms/binding/subtract-x-right/result
-  requires exact context compiler-terms/context/clause-semantics
-  requires exact context compiler-terms/context/program-snapshot
-  requires exact context compiler-terms/context/program-revision
-  requires exact context compiler-terms/context/runtime-session
-  requires exact context compiler-terms/context/runtime-policy
-  requires exact context compiler-terms/context/executable-validity
-  requires exact context compiler-terms/context/capability-set
-  requires exact context compiler-terms/context/finite-budget
-  has exact form schema dependency compiler-terms/core-schema/int-binary
-  has exact form operator dependency compiler-terms/core-operator/sub-int
-  has exact form mode dependency compiler-terms/core-mode/sub-int-total
-
-compiler-terms/binding/subtract-x-right/left
-  selects exact bound role compiler-terms/core-role/left
-  binds exact role variable compiler-terms/variable/target-x
-
-compiler-terms/binding/subtract-x-right/right
-  selects exact bound role compiler-terms/core-role/right
-  binds exact role variable compiler-terms/variable/observer-x
-
-compiler-terms/binding/subtract-x-right/result
-  selects exact bound role compiler-terms/core-role/result
-  binds exact produced variable compiler-terms/variable/delta-x-right
-
-compiler-terms/application/subtract-x-right
-  instantiates exact application form compiler-terms/form/subtract-x-right
-
-compiler-terms/formation/square-x
-  forms exact term compiler-terms/term/square-x
-  forms exact type compiler-terms/formed-type/application-form-mathematical-integer
-  has exact interpretation compiler-terms/form/square-x
-  has exact formation schema dependency compiler-terms/core-schema/int-binary
-  has exact formation operator dependency compiler-terms/core-operator/mul-int
-  has exact formation mode dependency compiler-terms/core-mode/mul-int-total
-
-compiler-terms/form/square-x
-  represents exact form term compiler-terms/term/square-x
-  selects exact relation schema compiler-terms/core-schema/int-binary
-  selects exact operator compiler-terms/core-operator/mul-int
-  has exact eligible mode compiler-terms/core-mode/mul-int-total
-  has exact named role binding compiler-terms/binding/square-x/left
-  has exact named role binding compiler-terms/binding/square-x/right
-  has exact named role binding compiler-terms/binding/square-x/result
-  requires exact context compiler-terms/context/clause-semantics
-  requires exact context compiler-terms/context/program-snapshot
-  requires exact context compiler-terms/context/program-revision
-  requires exact context compiler-terms/context/runtime-session
-  requires exact context compiler-terms/context/runtime-policy
-  requires exact context compiler-terms/context/executable-validity
-  requires exact context compiler-terms/context/capability-set
-  requires exact context compiler-terms/context/finite-budget
-  has exact form schema dependency compiler-terms/core-schema/int-binary
-  has exact form operator dependency compiler-terms/core-operator/mul-int
-  has exact form mode dependency compiler-terms/core-mode/mul-int-total
-
-compiler-terms/binding/square-x/left
-  selects exact bound role compiler-terms/core-role/left
-  binds exact role variable compiler-terms/variable/delta-x-left
-
-compiler-terms/binding/square-x/right
-  selects exact bound role compiler-terms/core-role/right
-  binds exact role variable compiler-terms/variable/delta-x-right
-
-compiler-terms/binding/square-x/result
-  selects exact bound role compiler-terms/core-role/result
-  binds exact produced variable compiler-terms/variable/square-x
-
-compiler-terms/application/square-x
-  instantiates exact application form compiler-terms/form/square-x
-
-compiler-terms/formation/subtract-y-left
-  forms exact term compiler-terms/term/subtract-y-left
-  forms exact type compiler-terms/formed-type/application-form-mathematical-integer
-  has exact interpretation compiler-terms/form/subtract-y-left
-  has exact formation schema dependency compiler-terms/core-schema/int-binary
-  has exact formation operator dependency compiler-terms/core-operator/sub-int
-  has exact formation mode dependency compiler-terms/core-mode/sub-int-total
-
-compiler-terms/form/subtract-y-left
-  represents exact form term compiler-terms/term/subtract-y-left
-  selects exact relation schema compiler-terms/core-schema/int-binary
-  selects exact operator compiler-terms/core-operator/sub-int
-  has exact eligible mode compiler-terms/core-mode/sub-int-total
-  has exact named role binding compiler-terms/binding/subtract-y-left/left
-  has exact named role binding compiler-terms/binding/subtract-y-left/right
-  has exact named role binding compiler-terms/binding/subtract-y-left/result
-  requires exact context compiler-terms/context/clause-semantics
-  requires exact context compiler-terms/context/program-snapshot
-  requires exact context compiler-terms/context/program-revision
-  requires exact context compiler-terms/context/runtime-session
-  requires exact context compiler-terms/context/runtime-policy
-  requires exact context compiler-terms/context/executable-validity
-  requires exact context compiler-terms/context/capability-set
-  requires exact context compiler-terms/context/finite-budget
-  has exact form schema dependency compiler-terms/core-schema/int-binary
-  has exact form operator dependency compiler-terms/core-operator/sub-int
-  has exact form mode dependency compiler-terms/core-mode/sub-int-total
-
-compiler-terms/binding/subtract-y-left/left
-  selects exact bound role compiler-terms/core-role/left
-  binds exact role variable compiler-terms/variable/target-y
-
-compiler-terms/binding/subtract-y-left/right
-  selects exact bound role compiler-terms/core-role/right
-  binds exact role variable compiler-terms/variable/observer-y
-
-compiler-terms/binding/subtract-y-left/result
-  selects exact bound role compiler-terms/core-role/result
-  binds exact produced variable compiler-terms/variable/delta-y-left
-
-compiler-terms/application/subtract-y-left
-  instantiates exact application form compiler-terms/form/subtract-y-left
-
-compiler-terms/formation/subtract-y-right
-  forms exact term compiler-terms/term/subtract-y-right
-  forms exact type compiler-terms/formed-type/application-form-mathematical-integer
-  has exact interpretation compiler-terms/form/subtract-y-right
-  has exact formation schema dependency compiler-terms/core-schema/int-binary
-  has exact formation operator dependency compiler-terms/core-operator/sub-int
-  has exact formation mode dependency compiler-terms/core-mode/sub-int-total
-
-compiler-terms/form/subtract-y-right
-  represents exact form term compiler-terms/term/subtract-y-right
-  selects exact relation schema compiler-terms/core-schema/int-binary
-  selects exact operator compiler-terms/core-operator/sub-int
-  has exact eligible mode compiler-terms/core-mode/sub-int-total
-  has exact named role binding compiler-terms/binding/subtract-y-right/left
-  has exact named role binding compiler-terms/binding/subtract-y-right/right
-  has exact named role binding compiler-terms/binding/subtract-y-right/result
-  requires exact context compiler-terms/context/clause-semantics
-  requires exact context compiler-terms/context/program-snapshot
-  requires exact context compiler-terms/context/program-revision
-  requires exact context compiler-terms/context/runtime-session
-  requires exact context compiler-terms/context/runtime-policy
-  requires exact context compiler-terms/context/executable-validity
-  requires exact context compiler-terms/context/capability-set
-  requires exact context compiler-terms/context/finite-budget
-  has exact form schema dependency compiler-terms/core-schema/int-binary
-  has exact form operator dependency compiler-terms/core-operator/sub-int
-  has exact form mode dependency compiler-terms/core-mode/sub-int-total
-
-compiler-terms/binding/subtract-y-right/left
-  selects exact bound role compiler-terms/core-role/left
-  binds exact role variable compiler-terms/variable/target-y
-
-compiler-terms/binding/subtract-y-right/right
-  selects exact bound role compiler-terms/core-role/right
-  binds exact role variable compiler-terms/variable/observer-y
-
-compiler-terms/binding/subtract-y-right/result
-  selects exact bound role compiler-terms/core-role/result
-  binds exact produced variable compiler-terms/variable/delta-y-right
-
-compiler-terms/application/subtract-y-right
-  instantiates exact application form compiler-terms/form/subtract-y-right
-
-compiler-terms/formation/square-y
-  forms exact term compiler-terms/term/square-y
-  forms exact type compiler-terms/formed-type/application-form-mathematical-integer
-  has exact interpretation compiler-terms/form/square-y
-  has exact formation schema dependency compiler-terms/core-schema/int-binary
-  has exact formation operator dependency compiler-terms/core-operator/mul-int
-  has exact formation mode dependency compiler-terms/core-mode/mul-int-total
-
-compiler-terms/form/square-y
-  represents exact form term compiler-terms/term/square-y
-  selects exact relation schema compiler-terms/core-schema/int-binary
-  selects exact operator compiler-terms/core-operator/mul-int
-  has exact eligible mode compiler-terms/core-mode/mul-int-total
-  has exact named role binding compiler-terms/binding/square-y/left
-  has exact named role binding compiler-terms/binding/square-y/right
-  has exact named role binding compiler-terms/binding/square-y/result
-  requires exact context compiler-terms/context/clause-semantics
-  requires exact context compiler-terms/context/program-snapshot
-  requires exact context compiler-terms/context/program-revision
-  requires exact context compiler-terms/context/runtime-session
-  requires exact context compiler-terms/context/runtime-policy
-  requires exact context compiler-terms/context/executable-validity
-  requires exact context compiler-terms/context/capability-set
-  requires exact context compiler-terms/context/finite-budget
-  has exact form schema dependency compiler-terms/core-schema/int-binary
-  has exact form operator dependency compiler-terms/core-operator/mul-int
-  has exact form mode dependency compiler-terms/core-mode/mul-int-total
-
-compiler-terms/binding/square-y/left
-  selects exact bound role compiler-terms/core-role/left
-  binds exact role variable compiler-terms/variable/delta-y-left
-
-compiler-terms/binding/square-y/right
-  selects exact bound role compiler-terms/core-role/right
-  binds exact role variable compiler-terms/variable/delta-y-right
-
-compiler-terms/binding/square-y/result
-  selects exact bound role compiler-terms/core-role/result
-  binds exact produced variable compiler-terms/variable/square-y
-
-compiler-terms/application/square-y
-  instantiates exact application form compiler-terms/form/square-y
-
-compiler-terms/formation/distance-square
-  forms exact term compiler-terms/term/distance-square
-  forms exact type compiler-terms/formed-type/application-form-mathematical-integer
-  has exact interpretation compiler-terms/form/distance-square
-  has exact formation schema dependency compiler-terms/core-schema/int-binary
-  has exact formation operator dependency compiler-terms/core-operator/add-int
-  has exact formation mode dependency compiler-terms/core-mode/add-int-total
-
-compiler-terms/form/distance-square
-  represents exact form term compiler-terms/term/distance-square
-  selects exact relation schema compiler-terms/core-schema/int-binary
-  selects exact operator compiler-terms/core-operator/add-int
-  has exact eligible mode compiler-terms/core-mode/add-int-total
-  has exact named role binding compiler-terms/binding/distance-square/left
-  has exact named role binding compiler-terms/binding/distance-square/right
-  has exact named role binding compiler-terms/binding/distance-square/result
-  requires exact context compiler-terms/context/clause-semantics
-  requires exact context compiler-terms/context/program-snapshot
-  requires exact context compiler-terms/context/program-revision
-  requires exact context compiler-terms/context/runtime-session
-  requires exact context compiler-terms/context/runtime-policy
-  requires exact context compiler-terms/context/executable-validity
-  requires exact context compiler-terms/context/capability-set
-  requires exact context compiler-terms/context/finite-budget
-  has exact form schema dependency compiler-terms/core-schema/int-binary
-  has exact form operator dependency compiler-terms/core-operator/add-int
-  has exact form mode dependency compiler-terms/core-mode/add-int-total
-
-compiler-terms/binding/distance-square/left
-  selects exact bound role compiler-terms/core-role/left
-  binds exact role variable compiler-terms/variable/square-x
-
-compiler-terms/binding/distance-square/right
-  selects exact bound role compiler-terms/core-role/right
-  binds exact role variable compiler-terms/variable/square-y
-
-compiler-terms/binding/distance-square/result
-  selects exact bound role compiler-terms/core-role/result
-  binds exact produced variable compiler-terms/variable/distance-square
-
-compiler-terms/application/distance-square
-  instantiates exact application form compiler-terms/form/distance-square
-
-compiler-terms/formation/radius-square
-  forms exact term compiler-terms/term/radius-square
-  forms exact type compiler-terms/formed-type/application-form-mathematical-integer
-  has exact interpretation compiler-terms/form/radius-square
-  has exact formation schema dependency compiler-terms/core-schema/int-binary
-  has exact formation operator dependency compiler-terms/core-operator/mul-int
-  has exact formation mode dependency compiler-terms/core-mode/mul-int-total
-
-compiler-terms/form/radius-square
-  represents exact form term compiler-terms/term/radius-square
-  selects exact relation schema compiler-terms/core-schema/int-binary
-  selects exact operator compiler-terms/core-operator/mul-int
-  has exact eligible mode compiler-terms/core-mode/mul-int-total
-  has exact named role binding compiler-terms/binding/radius-square/left
-  has exact named role binding compiler-terms/binding/radius-square/right
-  has exact named role binding compiler-terms/binding/radius-square/result
-  requires exact context compiler-terms/context/clause-semantics
-  requires exact context compiler-terms/context/program-snapshot
-  requires exact context compiler-terms/context/program-revision
-  requires exact context compiler-terms/context/runtime-session
-  requires exact context compiler-terms/context/runtime-policy
-  requires exact context compiler-terms/context/executable-validity
-  requires exact context compiler-terms/context/capability-set
-  requires exact context compiler-terms/context/finite-budget
-  has exact form schema dependency compiler-terms/core-schema/int-binary
-  has exact form operator dependency compiler-terms/core-operator/mul-int
-  has exact form mode dependency compiler-terms/core-mode/mul-int-total
-
-compiler-terms/binding/radius-square/left
-  selects exact bound role compiler-terms/core-role/left
-  binds exact role variable compiler-terms/variable/radius
-
-compiler-terms/binding/radius-square/right
-  selects exact bound role compiler-terms/core-role/right
-  binds exact role variable compiler-terms/variable/radius
-
-compiler-terms/binding/radius-square/result
-  selects exact bound role compiler-terms/core-role/result
-  binds exact produced variable compiler-terms/variable/radius-square
-
-compiler-terms/application/radius-square
-  instantiates exact application form compiler-terms/form/radius-square
-
-compiler-terms/formation/within-radius-verdict
-  forms exact term compiler-terms/term/within-radius-verdict
-  forms exact type compiler-terms/formed-type/application-form-boolean
-  has exact interpretation compiler-terms/form/within-radius-verdict
-  has exact formation schema dependency compiler-terms/core-schema/int-comparison
-  has exact formation operator dependency compiler-terms/core-operator/lte-int
-  has exact formation mode dependency compiler-terms/core-mode/lte-int-total
-
-compiler-terms/form/within-radius-verdict
-  represents exact form term compiler-terms/term/within-radius-verdict
-  selects exact relation schema compiler-terms/core-schema/int-comparison
-  selects exact operator compiler-terms/core-operator/lte-int
-  has exact eligible mode compiler-terms/core-mode/lte-int-total
-  has exact named role binding compiler-terms/binding/within-radius-verdict/left
-  has exact named role binding compiler-terms/binding/within-radius-verdict/right
-  has exact named role binding compiler-terms/binding/within-radius-verdict/verdict
-  requires exact context compiler-terms/context/clause-semantics
-  requires exact context compiler-terms/context/program-snapshot
-  requires exact context compiler-terms/context/program-revision
-  requires exact context compiler-terms/context/runtime-session
-  requires exact context compiler-terms/context/runtime-policy
-  requires exact context compiler-terms/context/executable-validity
-  requires exact context compiler-terms/context/capability-set
-  requires exact context compiler-terms/context/finite-budget
-  has exact form schema dependency compiler-terms/core-schema/int-comparison
-  has exact form operator dependency compiler-terms/core-operator/lte-int
-  has exact form mode dependency compiler-terms/core-mode/lte-int-total
-
-compiler-terms/binding/within-radius-verdict/left
-  selects exact bound role compiler-terms/core-role/left
-  binds exact role variable compiler-terms/variable/distance-square
-
-compiler-terms/binding/within-radius-verdict/right
-  selects exact bound role compiler-terms/core-role/right
-  binds exact role variable compiler-terms/variable/radius-square
-
-compiler-terms/binding/within-radius-verdict/verdict
-  selects exact bound role compiler-terms/core-role/verdict
-  binds exact produced variable compiler-terms/variable/verdict
-
-compiler-terms/application/within-radius-verdict
-  instantiates exact application form compiler-terms/form/within-radius-verdict
-
-compiler-terms/formation/same-space-target-pair-v1
-  forms exact term compiler-terms/term/same-space-target-pair-v1
-  forms exact type compiler-terms/formed-type/application-form-binding-set
-  has exact interpretation compiler-terms/form/same-space-target-pair-v1
-  has exact formation law dependency compiler-terms/law/same-space-target-pair-v1
-  has exact formation mode dependency compiler-terms/mode/same-space-target-pair-v1
-  has exact formation operator dependency compiler-terms/operator/same-space-target-pair-v1
-  has exact formation schema dependency compiler-terms/schema/same-space-target-pair-v1
-
-compiler-terms/form/same-space-target-pair-v1
-  represents exact form term compiler-terms/term/same-space-target-pair-v1
-  selects exact relation schema compiler-terms/schema/same-space-target-pair-v1
-  selects exact operator compiler-terms/operator/same-space-target-pair-v1
-  has exact eligible mode compiler-terms/mode/same-space-target-pair-v1
-  has exact named role binding compiler-terms/binding/same-space/left-target
-  has exact named role binding compiler-terms/binding/same-space/right-target
-  has exact named role binding compiler-terms/binding/same-space/space
-  requires exact context compiler-terms/context/clause-semantics
-  requires exact context compiler-terms/context/program-snapshot
-  requires exact context compiler-terms/context/program-revision
-  requires exact context compiler-terms/context/runtime-session
-  requires exact context compiler-terms/context/state-revision
-  requires exact context compiler-terms/context/runtime-policy
-  requires exact context compiler-terms/context/executable-validity
-  requires exact context compiler-terms/context/derivation-authorization
-  requires exact context compiler-terms/context/execution-authorization
-  requires exact context compiler-terms/context/capability-set
-  requires exact context compiler-terms/context/finite-budget
-  has exact form law dependency compiler-terms/law/same-space-target-pair-v1
-  has exact form mode dependency compiler-terms/mode/same-space-target-pair-v1
-  has exact form operator dependency compiler-terms/operator/same-space-target-pair-v1
-  has exact form schema dependency compiler-terms/schema/same-space-target-pair-v1
-
-compiler-terms/binding/same-space/left-target
-  selects exact bound role compiler-terms/role/same-space-target-pair/left-target
-  binds exact produced variable compiler-terms/variable/left-target
-
-compiler-terms/binding/same-space/right-target
-  selects exact bound role compiler-terms/role/same-space-target-pair/right-target
-  binds exact produced variable compiler-terms/variable/right-target
-
-compiler-terms/binding/same-space/space
-  selects exact bound role compiler-terms/role/same-space-target-pair/space
-  binds exact role variable compiler-terms/variable/space
-
-compiler-terms/application/same-space-target-pair-v1
-  instantiates exact application form compiler-terms/form/same-space-target-pair-v1
-
-compiler-terms/law/radius-proximity-v1
-  selects exact law operator compiler-terms/operator/radius-proximity-v1
-  has exact derivation mode compiler-terms/mode/radius-proximity-v1
-  selects exact conclusion schema compiler-terms/schema/in-proximity-v1
-  selects exact conclusion projection compiler-terms/projection/in-proximity-v1
-  has exact premise occurrence compiler-terms/premise/observer-position
-  has exact premise occurrence compiler-terms/premise/proximity-radius
-  has exact premise occurrence compiler-terms/premise/target-position
-  has exact premise occurrence compiler-terms/premise/within-radius
-  requires exact context compiler-terms/context/program-revision
-  requires exact context compiler-terms/context/state-revision
-  requires exact context compiler-terms/context/runtime-policy
-  requires exact context compiler-terms/context/derivation-authorization
-  requires exact derivation authorization compiler-terms/judgment/radius-proximity
-
-compiler-terms/projection/in-proximity-v1
-  has exact projection field compiler-terms/projection-field/in-proximity/observer
-  has exact projection field compiler-terms/projection-field/in-proximity/target
-  has exact projection field compiler-terms/projection-field/in-proximity/space
-
-compiler-terms/projection-field/in-proximity/observer
-  has exact projection ordinal compiler-terms/ordinal/zero
-  selects exact projected role compiler-terms/role/in-proximity/observer
-  selects exact projected variable compiler-terms/variable/observer
-
-compiler-terms/projection-field/in-proximity/target
-  has exact projection ordinal compiler-terms/ordinal/one
-  selects exact projected role compiler-terms/role/in-proximity/target
-  selects exact projected variable compiler-terms/variable/target
-
-compiler-terms/projection-field/in-proximity/space
-  has exact projection ordinal compiler-terms/ordinal/two
-  selects exact projected role compiler-terms/role/in-proximity/space
-  selects exact projected variable compiler-terms/variable/space
-
-compiler-terms/premise/observer-position
-  has exact premise ordinal compiler-terms/ordinal/zero
-  selects exact premise schema compiler-terms/schema/observer-position-v1
-  has exact premise mode compiler-terms/mode/observer-position-v1
-  has exact premise slot compiler-terms/slot/observer-position/observer
-  has exact premise slot compiler-terms/slot/observer-position/point
-  has exact premise slot compiler-terms/slot/observer-position/space
-
-compiler-terms/premise/proximity-radius
-  has exact premise ordinal compiler-terms/ordinal/one
-  selects exact premise schema compiler-terms/schema/proximity-radius-v1
-  has exact premise mode compiler-terms/mode/proximity-radius-v1
-  has exact premise slot compiler-terms/slot/proximity-radius/observer
-  has exact premise slot compiler-terms/slot/proximity-radius/radius
-  has exact premise slot compiler-terms/slot/proximity-radius/space
-
-compiler-terms/premise/target-position
-  has exact premise ordinal compiler-terms/ordinal/two
-  selects exact premise schema compiler-terms/schema/target-position-v1
-  has exact premise mode compiler-terms/mode/target-position-v1
-  has exact premise slot compiler-terms/slot/target-position/target
-  has exact premise slot compiler-terms/slot/target-position/point
-  has exact premise slot compiler-terms/slot/target-position/space
-
-compiler-terms/premise/within-radius
-  has exact premise ordinal compiler-terms/ordinal/three
-  selects exact premise schema compiler-terms/schema/within-radius-v1
-  has exact premise mode compiler-terms/mode/within-radius-v1
-  has exact premise slot compiler-terms/slot/within-radius/target-point
-  has exact premise slot compiler-terms/slot/within-radius/observer-point
-  has exact premise slot compiler-terms/slot/within-radius/radius
-  has exact premise slot compiler-terms/slot/within-radius/verdict
-
-compiler-terms/slot/observer-position/observer
-  has exact slot ordinal compiler-terms/ordinal/zero
-  instantiates exact schema role compiler-terms/role/observer-position/observer
-  binds exact variable compiler-terms/variable/observer
-
-compiler-terms/slot/observer-position/point
-  has exact slot ordinal compiler-terms/ordinal/one
-  instantiates exact schema role compiler-terms/role/observer-position/point
-  binds exact variable compiler-terms/variable/observer-point
-
-compiler-terms/slot/observer-position/space
-  has exact slot ordinal compiler-terms/ordinal/two
-  instantiates exact schema role compiler-terms/role/observer-position/space
-  binds exact variable compiler-terms/variable/space
-
-compiler-terms/slot/proximity-radius/observer
-  has exact slot ordinal compiler-terms/ordinal/zero
-  instantiates exact schema role compiler-terms/role/proximity-radius/observer
-  binds exact variable compiler-terms/variable/observer
-
-compiler-terms/slot/proximity-radius/radius
-  has exact slot ordinal compiler-terms/ordinal/one
-  instantiates exact schema role compiler-terms/role/proximity-radius/radius
-  binds exact variable compiler-terms/variable/radius
-
-compiler-terms/slot/proximity-radius/space
-  has exact slot ordinal compiler-terms/ordinal/two
-  instantiates exact schema role compiler-terms/role/proximity-radius/space
-  binds exact variable compiler-terms/variable/space
-
-compiler-terms/slot/target-position/target
-  has exact slot ordinal compiler-terms/ordinal/zero
-  instantiates exact schema role compiler-terms/role/target-position/target
-  binds exact variable compiler-terms/variable/target
-
-compiler-terms/slot/target-position/point
-  has exact slot ordinal compiler-terms/ordinal/one
-  instantiates exact schema role compiler-terms/role/target-position/point
-  binds exact variable compiler-terms/variable/target-point
-
-compiler-terms/slot/target-position/space
-  has exact slot ordinal compiler-terms/ordinal/two
-  instantiates exact schema role compiler-terms/role/target-position/space
-  binds exact variable compiler-terms/variable/space
-
-compiler-terms/slot/within-radius/target-point
-  has exact slot ordinal compiler-terms/ordinal/zero
-  instantiates exact schema role compiler-terms/role/within-radius/target-point
-  binds exact variable compiler-terms/variable/target-point
-
-compiler-terms/slot/within-radius/observer-point
-  has exact slot ordinal compiler-terms/ordinal/one
-  instantiates exact schema role compiler-terms/role/within-radius/observer-point
-  binds exact variable compiler-terms/variable/observer-point
-
-compiler-terms/slot/within-radius/radius
-  has exact slot ordinal compiler-terms/ordinal/two
-  instantiates exact schema role compiler-terms/role/within-radius/radius
-  binds exact variable compiler-terms/variable/radius
-
-compiler-terms/slot/within-radius/verdict
-  has exact slot ordinal compiler-terms/ordinal/three
-  instantiates exact schema role compiler-terms/role/within-radius/verdict
+term-radius-proximity-v1
+  has exact triple slot zero atom-observer
+  has exact triple slot one atom-in-proximity
+  has exact triple slot two atom-target-space
+
+term-within-radius-v1
+  has exact triple slot zero atom-target-point
+  has exact triple slot one atom-within-radius
+  has exact triple slot two atom-observer-point-radius
+
+term-same-space-target-pair-v1
+  has exact triple slot zero atom-left-target
+  has exact triple slot one atom-same-space-pair
+  has exact triple slot two atom-right-target-space
+
+term-target-point-x-raw
+  has exact triple slot zero atom-target-point
+  has exact triple slot one atom-point2-q16-x-raw
+  has exact triple slot two atom-target-x
+
+term-target-point-y-raw
+  has exact triple slot zero atom-target-point
+  has exact triple slot one atom-point2-q16-y-raw
+  has exact triple slot two atom-target-y
+
+term-observer-point-x-raw
+  has exact triple slot zero atom-observer-point
+  has exact triple slot one atom-point2-q16-x-raw
+  has exact triple slot two atom-observer-x
+
+term-observer-point-y-raw
+  has exact triple slot zero atom-observer-point
+  has exact triple slot one atom-point2-q16-y-raw
+  has exact triple slot two atom-observer-y
+
+term-subtract-x-left
+  has exact triple slot zero atom-target-x
+  has exact triple slot one atom-sub-int
+  has exact triple slot two atom-observer-x
+
+term-subtract-x-right
+  has exact triple slot zero atom-target-x
+  has exact triple slot one atom-sub-int
+  has exact triple slot two atom-observer-x
+
+term-square-x
+  has exact triple slot zero atom-delta-x-left
+  has exact triple slot one atom-mul-int
+  has exact triple slot two atom-delta-x-right
+
+term-subtract-y-left
+  has exact triple slot zero atom-target-y
+  has exact triple slot one atom-sub-int
+  has exact triple slot two atom-observer-y
+
+term-subtract-y-right
+  has exact triple slot zero atom-target-y
+  has exact triple slot one atom-sub-int
+  has exact triple slot two atom-observer-y
+
+term-square-y
+  has exact triple slot zero atom-delta-y-left
+  has exact triple slot one atom-mul-int
+  has exact triple slot two atom-delta-y-right
+
+term-distance-square
+  has exact triple slot zero atom-square-x
+  has exact triple slot one atom-add-int
+  has exact triple slot two atom-square-y
+
+term-radius-square
+  has exact triple slot zero atom-radius
+  has exact triple slot one atom-mul-int
+  has exact triple slot two atom-radius
+
+term-within-radius-verdict
+  has exact triple slot zero atom-distance-square
+  has exact triple slot one atom-lte-int
+  has exact triple slot two atom-radius-square
+
+schema-observer-position-v1
+  has exact schema role role-observer-position-observer
+  has exact schema role role-observer-position-point
+  has exact schema role role-observer-position-space
+
+role-observer-position-observer
+  has exact role ordinal ordinal-zero
+  has exact role domain domain-Observer
+  has exact role cardinality cardinality-one
+
+role-observer-position-point
+  has exact role ordinal ordinal-one
+  has exact role domain domain-metric-Point2Q16
+  has exact role cardinality cardinality-one
+
+role-observer-position-space
+  has exact role ordinal ordinal-two
+  has exact role domain domain-Space
+  has exact role cardinality cardinality-one
+
+schema-target-position-v1
+  has exact schema role role-target-position-target
+  has exact schema role role-target-position-point
+  has exact schema role role-target-position-space
+
+role-target-position-target
+  has exact role ordinal ordinal-zero
+  has exact role domain domain-Target
+  has exact role cardinality cardinality-one
+
+role-target-position-point
+  has exact role ordinal ordinal-one
+  has exact role domain domain-metric-Point2Q16
+  has exact role cardinality cardinality-one
+
+role-target-position-space
+  has exact role ordinal ordinal-two
+  has exact role domain domain-Space
+  has exact role cardinality cardinality-one
+
+schema-proximity-radius-v1
+  has exact schema role role-proximity-radius-observer
+  has exact schema role role-proximity-radius-radius
+  has exact schema role role-proximity-radius-space
+
+role-proximity-radius-observer
+  has exact role ordinal ordinal-zero
+  has exact role domain domain-Observer
+  has exact role cardinality cardinality-one
+
+role-proximity-radius-radius
+  has exact role ordinal ordinal-one
+  has exact role domain domain-metric-NonnegativeQ16
+  has exact role cardinality cardinality-one
+
+role-proximity-radius-space
+  has exact role ordinal ordinal-two
+  has exact role domain domain-Space
+  has exact role cardinality cardinality-one
+
+schema-within-radius-v1
+  has exact schema role role-within-radius-target-point
+  has exact schema role role-within-radius-observer-point
+  has exact schema role role-within-radius-radius
+  has exact schema role role-within-radius-verdict
+
+role-within-radius-target-point
+  has exact role ordinal ordinal-zero
+  has exact role domain domain-metric-Point2Q16
+  has exact role cardinality cardinality-one
+
+role-within-radius-observer-point
+  has exact role ordinal ordinal-one
+  has exact role domain domain-metric-Point2Q16
+  has exact role cardinality cardinality-one
+
+role-within-radius-radius
+  has exact role ordinal ordinal-two
+  has exact role domain domain-metric-NonnegativeQ16
+  has exact role cardinality cardinality-one
+
+role-within-radius-verdict
+  has exact role ordinal ordinal-three
+  has exact role domain domain-Boolean
+  has exact role cardinality cardinality-one
+
+schema-in-proximity-v1
+  has exact schema role role-in-proximity-observer
+  has exact schema role role-in-proximity-target
+  has exact schema role role-in-proximity-space
+
+role-in-proximity-observer
+  has exact role ordinal ordinal-zero
+  has exact role domain domain-Observer
+  has exact role cardinality cardinality-one
+
+role-in-proximity-target
+  has exact role ordinal ordinal-one
+  has exact role domain domain-Target
+  has exact role cardinality cardinality-one
+
+role-in-proximity-space
+  has exact role ordinal ordinal-two
+  has exact role domain domain-Space
+  has exact role cardinality cardinality-one
+
+schema-same-space-target-pair-v1
+  has exact schema role role-same-space-target-pair-left-target
+  has exact schema role role-same-space-target-pair-right-target
+  has exact schema role role-same-space-target-pair-space
+
+role-same-space-target-pair-left-target
+  has exact role ordinal ordinal-zero
+  has exact role domain domain-Target
+  has exact role cardinality cardinality-one
+
+role-same-space-target-pair-right-target
+  has exact role ordinal ordinal-one
+  has exact role domain domain-Target
+  has exact role cardinality cardinality-one
+
+role-same-space-target-pair-space
+  has exact role ordinal ordinal-two
+  has exact role domain domain-Space
+  has exact role cardinality cardinality-one
+
+operator-observer-position-v1
+  has exact relation schema definition schema-observer-position-v1
+
+operator-target-position-v1
+  has exact relation schema definition schema-target-position-v1
+
+operator-proximity-radius-v1
+  has exact relation schema definition schema-proximity-radius-v1
+
+operator-radius-proximity-v1
+  has exact law definition law-radius-proximity-v1
+
+operator-same-space-target-pair-v1
+  has exact law definition law-same-space-target-pair-v1
+
+mode-observer-position-v1
+  requires exact executable validity executable-validity-universal
+  has exact mode authorization set authorization-set-none
+  selects exact mode operator operator-observer-position-v1
+  selects exact mode schema schema-observer-position-v1
+  has exact known role role-observer-position-observer
+  has exact known role role-observer-position-space
+  has exact produced role role-observer-position-point
+  has exact result cardinality cardinality-one
+  has exact purity contract purity-pure
+  has exact determinism contract determinism-deterministic
+  has exact totality contract totality-finite-total
+
+mode-target-position-v1
+  requires exact executable validity executable-validity-universal
+  has exact mode authorization set authorization-set-none
+  selects exact mode operator operator-target-position-v1
+  selects exact mode schema schema-target-position-v1
+  has exact known role role-target-position-target
+  has exact known role role-target-position-space
+  has exact produced role role-target-position-point
+  has exact result cardinality cardinality-one
+  has exact purity contract purity-pure
+  has exact determinism contract determinism-deterministic
+  has exact totality contract totality-finite-total
+
+mode-proximity-radius-v1
+  requires exact executable validity executable-validity-universal
+  has exact mode authorization set authorization-set-none
+  selects exact mode operator operator-proximity-radius-v1
+  selects exact mode schema schema-proximity-radius-v1
+  has exact known role role-proximity-radius-observer
+  has exact known role role-proximity-radius-space
+  has exact produced role role-proximity-radius-radius
+  has exact result cardinality cardinality-one
+  has exact purity contract purity-pure
+  has exact determinism contract determinism-deterministic
+  has exact totality contract totality-finite-total
+
+mode-within-radius-v1
+  requires exact executable validity executable-validity-universal
+  has exact mode authorization set authorization-set-execution
+  selects exact mode operator operator-within-radius-v1
+  selects exact mode schema schema-within-radius-v1
+  has exact known role role-within-radius-target-point
+  has exact known role role-within-radius-observer-point
+  has exact known role role-within-radius-radius
+  has exact produced role role-within-radius-verdict
+  has exact result cardinality cardinality-one
+  has exact purity contract purity-pure
+  has exact determinism contract determinism-deterministic
+  has exact totality contract totality-total
+  has exact result ordering ordering-single
+  has exact continuation contract continuation-none
+  requires exact mode authorization authorization-type-execution
+
+mode-radius-proximity-v1
+  requires exact executable validity executable-validity-universal
+  has exact mode authorization set authorization-set-execution-and-derivation
+  selects exact mode operator operator-radius-proximity-v1
+  selects exact mode schema schema-in-proximity-v1
+  has exact known role role-in-proximity-observer
+  has exact known role role-in-proximity-space
+  has exact produced role role-in-proximity-target
+  has exact result cardinality cardinality-many
+  has exact purity contract purity-pure
+  has exact determinism contract determinism-deterministic
+  has exact totality contract totality-finite-total
+  has exact result ordering ordering-canonical-binding-order
+  has exact continuation contract continuation-none
+  requires exact mode authorization authorization-type-execution
+  requires exact mode authorization authorization-type-derivation
+
+mode-same-space-target-pair-v1
+  requires exact executable validity executable-validity-universal
+  has exact mode authorization set authorization-set-execution-and-derivation
+  selects exact mode operator operator-same-space-target-pair-v1
+  selects exact mode schema schema-same-space-target-pair-v1
+  has exact known role role-same-space-target-pair-space
+  has exact produced role role-same-space-target-pair-left-target
+  has exact produced role role-same-space-target-pair-right-target
+  has exact result cardinality cardinality-many
+  has exact purity contract purity-pure
+  has exact determinism contract determinism-deterministic
+  has exact totality contract totality-finite-total
+  has exact result ordering ordering-canonical-binding-order
+  has exact continuation contract continuation-none
+  requires exact mode authorization authorization-type-execution
+  requires exact mode authorization authorization-type-derivation
+
+authorization-set-none
+  has exact authorization cardinality ordinal-zero
+
+authorization-set-execution
+  has exact authorization cardinality ordinal-one
+  has exact authorization member authorization-type-execution
+
+authorization-set-execution-and-derivation
+  has exact authorization cardinality ordinal-two
+  has exact authorization member authorization-type-execution
+  has exact authorization member authorization-type-derivation
+
+core-schema-int-binary
+  resolves exact external relation schema external-id-core-schema-int-binary
+  has exact schema role core-role-left
+  has exact schema role core-role-right
+  has exact schema role core-role-result
+
+core-schema-int-comparison
+  resolves exact external relation schema external-id-core-schema-int-comparison
+  has exact schema role core-role-left
+  has exact schema role core-role-right
+  has exact schema role core-role-verdict
+
+core-schema-point2-q16-component
+  resolves exact external relation schema external-id-core-schema-point2-q16-component
+  has exact schema role core-role-point
+  has exact schema role core-role-raw
+
+core-operator-sub-int
+  resolves exact external operator external-id-core-op-sub-int
+
+core-operator-mul-int
+  resolves exact external operator external-id-core-op-mul-int
+
+core-operator-add-int
+  resolves exact external operator external-id-core-op-add-int
+
+core-operator-lte-int
+  resolves exact external operator external-id-core-op-lte-int
+
+core-operator-point2-q16-x-raw
+  resolves exact external operator external-id-core-op-point2-q16-x-raw
+
+core-operator-point2-q16-y-raw
+  resolves exact external operator external-id-core-op-point2-q16-y-raw
+
+core-mode-sub-int-total
+  resolves exact external mode external-id-core-mode-sub-int-total
+
+core-mode-mul-int-total
+  resolves exact external mode external-id-core-mode-mul-int-total
+
+core-mode-add-int-total
+  resolves exact external mode external-id-core-mode-add-int-total
+
+core-mode-lte-int-total
+  resolves exact external mode external-id-core-mode-lte-int-total
+
+core-mode-point2-q16-x-raw-total
+  resolves exact external mode external-id-core-mode-point2-q16-x-raw-total
+
+core-mode-point2-q16-y-raw-total
+  resolves exact external mode external-id-core-mode-point2-q16-y-raw-total
+
+core-role-left
+  resolves exact external role external-id-core-role-left
+
+core-role-right
+  resolves exact external role external-id-core-role-right
+
+core-role-result
+  resolves exact external role external-id-core-role-result
+
+core-role-verdict
+  resolves exact external role external-id-core-role-verdict
+
+core-role-point
+  resolves exact external role external-id-core-role-point
+
+core-role-raw
+  resolves exact external role external-id-core-role-raw
+
+formation-radius-proximity-v1
+  forms exact term term-radius-proximity-v1
+  forms exact type formed-type-application-form-binding-set
+  has exact interpretation form-radius-proximity-v1
+  has exact formation law dependency law-radius-proximity-v1
+  has exact formation mode dependency mode-radius-proximity-v1
+  has exact formation operator dependency operator-radius-proximity-v1
+  has exact formation schema dependency schema-in-proximity-v1
+
+form-radius-proximity-v1
+  represents exact form term term-radius-proximity-v1
+  selects exact relation schema schema-in-proximity-v1
+  selects exact operator operator-radius-proximity-v1
+  has exact eligible mode mode-radius-proximity-v1
+  has exact named role binding binding-conclusion-observer
+  has exact named role binding binding-conclusion-target
+  has exact named role binding binding-conclusion-space
+  requires exact context context-clause-semantics
+  requires exact context context-program-snapshot
+  requires exact context context-program-revision
+  requires exact context context-runtime-session
+  requires exact context context-state-revision
+  requires exact context context-runtime-policy
+  requires exact context context-executable-validity
+  requires exact context context-derivation-authorization
+  requires exact context context-execution-authorization
+  requires exact context context-capability-set
+  requires exact context context-finite-budget
+  has exact form law dependency law-radius-proximity-v1
+  has exact form mode dependency mode-radius-proximity-v1
+  has exact form operator dependency operator-radius-proximity-v1
+  has exact form schema dependency schema-in-proximity-v1
+
+binding-conclusion-observer
+  selects exact bound role role-in-proximity-observer
+  binds exact role variable variable-observer
+
+binding-conclusion-target
+  selects exact bound role role-in-proximity-target
+  binds exact produced variable variable-target
+
+binding-conclusion-space
+  selects exact bound role role-in-proximity-space
+  binds exact role variable variable-space
+
+application-radius-proximity-v1
+  instantiates exact application form form-radius-proximity-v1
+
+formation-within-radius-v1
+  forms exact term term-within-radius-v1
+  forms exact type formed-type-application-form-boolean
+  has exact interpretation form-within-radius-v1
+  has exact formation schema dependency core-schema-int-binary
+  has exact formation schema dependency core-schema-int-comparison
+  has exact formation schema dependency core-schema-point2-q16-component
+  has exact formation mode dependency core-mode-add-int-total
+  has exact formation mode dependency core-mode-lte-int-total
+  has exact formation mode dependency core-mode-mul-int-total
+  has exact formation mode dependency core-mode-point2-q16-x-raw-total
+  has exact formation mode dependency core-mode-point2-q16-y-raw-total
+  has exact formation mode dependency core-mode-sub-int-total
+  has exact formation operator dependency core-operator-add-int
+  has exact formation operator dependency core-operator-lte-int
+  has exact formation operator dependency core-operator-mul-int
+  has exact formation operator dependency core-operator-point2-q16-x-raw
+  has exact formation operator dependency core-operator-point2-q16-y-raw
+  has exact formation operator dependency core-operator-sub-int
+  has exact formation term dependency term-target-point-x-raw
+  has exact formation term dependency term-target-point-y-raw
+  has exact formation term dependency term-observer-point-x-raw
+  has exact formation term dependency term-observer-point-y-raw
+  has exact formation term dependency term-subtract-x-left
+  has exact formation term dependency term-subtract-x-right
+  has exact formation term dependency term-square-x
+  has exact formation term dependency term-subtract-y-left
+  has exact formation term dependency term-subtract-y-right
+  has exact formation term dependency term-square-y
+  has exact formation term dependency term-distance-square
+  has exact formation term dependency term-radius-square
+  has exact formation term dependency term-within-radius-verdict
+  has exact nested formation dependency formation-target-point-x-raw
+  has exact nested formation dependency formation-target-point-y-raw
+  has exact nested formation dependency formation-observer-point-x-raw
+  has exact nested formation dependency formation-observer-point-y-raw
+  has exact nested formation dependency formation-subtract-x-left
+  has exact nested formation dependency formation-subtract-x-right
+  has exact nested formation dependency formation-square-x
+  has exact nested formation dependency formation-subtract-y-left
+  has exact nested formation dependency formation-subtract-y-right
+  has exact nested formation dependency formation-square-y
+  has exact nested formation dependency formation-distance-square
+  has exact nested formation dependency formation-radius-square
+  has exact nested formation dependency formation-within-radius-verdict
+  has exact formation form dependency form-target-point-x-raw
+  has exact formation form dependency form-target-point-y-raw
+  has exact formation form dependency form-observer-point-x-raw
+  has exact formation form dependency form-observer-point-y-raw
+  has exact formation form dependency form-subtract-x-left
+  has exact formation form dependency form-subtract-x-right
+  has exact formation form dependency form-square-x
+  has exact formation form dependency form-subtract-y-left
+  has exact formation form dependency form-subtract-y-right
+  has exact formation form dependency form-square-y
+  has exact formation form dependency form-distance-square
+  has exact formation form dependency form-radius-square
+  has exact formation form dependency form-within-radius-verdict
+  has exact formation application dependency application-target-point-x-raw
+  has exact formation application dependency application-target-point-y-raw
+  has exact formation application dependency application-observer-point-x-raw
+  has exact formation application dependency application-observer-point-y-raw
+  has exact formation application dependency application-subtract-x-left
+  has exact formation application dependency application-subtract-x-right
+  has exact formation application dependency application-square-x
+  has exact formation application dependency application-subtract-y-left
+  has exact formation application dependency application-subtract-y-right
+  has exact formation application dependency application-square-y
+  has exact formation application dependency application-distance-square
+  has exact formation application dependency application-radius-square
+  has exact formation application dependency application-within-radius-verdict
+  has exact formation mode dependency mode-within-radius-v1
+  has exact formation operator dependency operator-within-radius-v1
+  has exact formation schema dependency schema-within-radius-v1
+
+form-within-radius-v1
+  represents exact form term term-within-radius-v1
+  selects exact relation schema schema-within-radius-v1
+  selects exact operator operator-within-radius-v1
+  has exact eligible mode mode-within-radius-v1
+  has exact named role binding binding-within-radius-target-point
+  has exact named role binding binding-within-radius-observer-point
+  has exact named role binding binding-within-radius-radius
+  has exact named role binding binding-within-radius-verdict
+  has exact point component projection point-projection-within-radius-target-x
+  has exact point component projection point-projection-within-radius-target-y
+  has exact point component projection point-projection-within-radius-observer-x
+  has exact point component projection point-projection-within-radius-observer-y
+  requires exact context context-clause-semantics
+  requires exact context context-program-snapshot
+  requires exact context context-program-revision
+  requires exact context context-runtime-session
+  requires exact context context-state-revision
+  requires exact context context-runtime-policy
+  requires exact context context-executable-validity
+  requires exact context context-execution-authorization
+  requires exact context context-capability-set
+  requires exact context context-finite-budget
+  has exact form mode dependency core-mode-add-int-total
+  has exact form mode dependency core-mode-lte-int-total
+  has exact form mode dependency core-mode-mul-int-total
+  has exact form mode dependency core-mode-point2-q16-x-raw-total
+  has exact form mode dependency core-mode-point2-q16-y-raw-total
+  has exact form mode dependency core-mode-sub-int-total
+  has exact form operator dependency core-operator-add-int
+  has exact form operator dependency core-operator-lte-int
+  has exact form operator dependency core-operator-mul-int
+  has exact form operator dependency core-operator-point2-q16-x-raw
+  has exact form operator dependency core-operator-point2-q16-y-raw
+  has exact form operator dependency core-operator-sub-int
+  has exact form schema dependency core-schema-int-binary
+  has exact form schema dependency core-schema-int-comparison
+  has exact form schema dependency core-schema-point2-q16-component
+  has exact form term dependency term-target-point-x-raw
+  has exact form term dependency term-target-point-y-raw
+  has exact form term dependency term-observer-point-x-raw
+  has exact form term dependency term-observer-point-y-raw
+  has exact form term dependency term-subtract-x-left
+  has exact form term dependency term-subtract-x-right
+  has exact form term dependency term-square-x
+  has exact form term dependency term-subtract-y-left
+  has exact form term dependency term-subtract-y-right
+  has exact form term dependency term-square-y
+  has exact form term dependency term-distance-square
+  has exact form term dependency term-radius-square
+  has exact form term dependency term-within-radius-verdict
+  has exact form formation dependency formation-target-point-x-raw
+  has exact form formation dependency formation-target-point-y-raw
+  has exact form formation dependency formation-observer-point-x-raw
+  has exact form formation dependency formation-observer-point-y-raw
+  has exact form formation dependency formation-subtract-x-left
+  has exact form formation dependency formation-subtract-x-right
+  has exact form formation dependency formation-square-x
+  has exact form formation dependency formation-subtract-y-left
+  has exact form formation dependency formation-subtract-y-right
+  has exact form formation dependency formation-square-y
+  has exact form formation dependency formation-distance-square
+  has exact form formation dependency formation-radius-square
+  has exact form formation dependency formation-within-radius-verdict
+  has exact nested form dependency form-target-point-x-raw
+  has exact nested form dependency form-target-point-y-raw
+  has exact nested form dependency form-observer-point-x-raw
+  has exact nested form dependency form-observer-point-y-raw
+  has exact nested form dependency form-subtract-x-left
+  has exact nested form dependency form-subtract-x-right
+  has exact nested form dependency form-square-x
+  has exact nested form dependency form-subtract-y-left
+  has exact nested form dependency form-subtract-y-right
+  has exact nested form dependency form-square-y
+  has exact nested form dependency form-distance-square
+  has exact nested form dependency form-radius-square
+  has exact nested form dependency form-within-radius-verdict
+  has exact form application dependency application-target-point-x-raw
+  has exact form application dependency application-target-point-y-raw
+  has exact form application dependency application-observer-point-x-raw
+  has exact form application dependency application-observer-point-y-raw
+  has exact form application dependency application-subtract-x-left
+  has exact form application dependency application-subtract-x-right
+  has exact form application dependency application-square-x
+  has exact form application dependency application-subtract-y-left
+  has exact form application dependency application-subtract-y-right
+  has exact form application dependency application-square-y
+  has exact form application dependency application-distance-square
+  has exact form application dependency application-radius-square
+  has exact form application dependency application-within-radius-verdict
+  has exact form mode dependency mode-within-radius-v1
+  has exact form operator dependency operator-within-radius-v1
+  has exact form schema dependency schema-within-radius-v1
+
+binding-within-radius-target-point
+  selects exact bound role role-within-radius-target-point
+  binds exact role variable variable-target-point
+
+binding-within-radius-observer-point
+  selects exact bound role role-within-radius-observer-point
+  binds exact role variable variable-observer-point
+
+binding-within-radius-radius
+  selects exact bound role role-within-radius-radius
+  binds exact role variable variable-radius
+
+binding-within-radius-verdict
+  selects exact bound role role-within-radius-verdict
+  binds exact produced variable variable-verdict
+
+point-projection-within-radius-target-x
+  has exact point projection ordinal ordinal-zero
+  projects exact point variable variable-target-point
+  applies exact point projection operator core-operator-point2-q16-x-raw
+  selects exact point projection mode core-mode-point2-q16-x-raw-total
+  produces exact scalar variable variable-target-x
+  selects exact projection application application-target-point-x-raw
+
+point-projection-within-radius-target-y
+  has exact point projection ordinal ordinal-one
+  projects exact point variable variable-target-point
+  applies exact point projection operator core-operator-point2-q16-y-raw
+  selects exact point projection mode core-mode-point2-q16-y-raw-total
+  produces exact scalar variable variable-target-y
+  selects exact projection application application-target-point-y-raw
+
+point-projection-within-radius-observer-x
+  has exact point projection ordinal ordinal-two
+  projects exact point variable variable-observer-point
+  applies exact point projection operator core-operator-point2-q16-x-raw
+  selects exact point projection mode core-mode-point2-q16-x-raw-total
+  produces exact scalar variable variable-observer-x
+  selects exact projection application application-observer-point-x-raw
+
+point-projection-within-radius-observer-y
+  has exact point projection ordinal ordinal-three
+  projects exact point variable variable-observer-point
+  applies exact point projection operator core-operator-point2-q16-y-raw
+  selects exact point projection mode core-mode-point2-q16-y-raw-total
+  produces exact scalar variable variable-observer-y
+  selects exact projection application application-observer-point-y-raw
+
+application-within-radius-v1
+  instantiates exact application form form-within-radius-v1
+
+operator-within-radius-v1
+  has exact generic application graph root application-within-radius-verdict
+  has exact generic graph application application-target-point-x-raw
+  has exact generic graph application application-target-point-y-raw
+  has exact generic graph application application-observer-point-x-raw
+  has exact generic graph application application-observer-point-y-raw
+  has exact generic graph application application-subtract-x-left
+  has exact generic graph application application-subtract-x-right
+  has exact generic graph application application-square-x
+  has exact generic graph application application-subtract-y-left
+  has exact generic graph application application-subtract-y-right
+  has exact generic graph application application-square-y
+  has exact generic graph application application-distance-square
+  has exact generic graph application application-radius-square
+  has exact generic graph application application-within-radius-verdict
+  requires exact numeric encoding numeric-encoding-signed-big-endian-q16-16
+  requires exact intermediate domain numeric-domain-mathematical-integer
+  requires exact numeric constraint numeric-constraint-decode-before-arithmetic
+  requires exact numeric constraint numeric-constraint-inclusive-comparison
+  requires exact numeric constraint numeric-constraint-no-wrapping
+  requires exact numeric constraint numeric-constraint-no-saturation
+  requires exact numeric constraint numeric-constraint-no-rounding
+  requires exact numeric constraint numeric-constraint-no-square-root
+  requires exact numeric constraint numeric-constraint-no-floating-point-conversion
+  requires exact numeric constraint numeric-constraint-no-narrowing
+
+formation-target-point-x-raw
+  forms exact term term-target-point-x-raw
+  forms exact type formed-type-application-form-mathematical-integer
+  has exact interpretation form-target-point-x-raw
+  has exact formation schema dependency core-schema-point2-q16-component
+  has exact formation operator dependency core-operator-point2-q16-x-raw
+  has exact formation mode dependency core-mode-point2-q16-x-raw-total
+
+form-target-point-x-raw
+  represents exact form term term-target-point-x-raw
+  selects exact relation schema core-schema-point2-q16-component
+  selects exact operator core-operator-point2-q16-x-raw
+  has exact eligible mode core-mode-point2-q16-x-raw-total
+  has exact named role binding binding-target-point-x-raw-point
+  has exact named role binding binding-target-point-x-raw-raw
+  requires exact context context-clause-semantics
+  requires exact context context-program-snapshot
+  requires exact context context-program-revision
+  requires exact context context-runtime-session
+  requires exact context context-runtime-policy
+  requires exact context context-executable-validity
+  requires exact context context-capability-set
+  requires exact context context-finite-budget
+  has exact form schema dependency core-schema-point2-q16-component
+  has exact form operator dependency core-operator-point2-q16-x-raw
+  has exact form mode dependency core-mode-point2-q16-x-raw-total
+
+binding-target-point-x-raw-point
+  selects exact bound role core-role-point
+  binds exact role variable variable-target-point
+
+binding-target-point-x-raw-raw
+  selects exact bound role core-role-raw
+  binds exact produced variable variable-target-x
+
+application-target-point-x-raw
+  instantiates exact application form form-target-point-x-raw
+
+formation-target-point-y-raw
+  forms exact term term-target-point-y-raw
+  forms exact type formed-type-application-form-mathematical-integer
+  has exact interpretation form-target-point-y-raw
+  has exact formation schema dependency core-schema-point2-q16-component
+  has exact formation operator dependency core-operator-point2-q16-y-raw
+  has exact formation mode dependency core-mode-point2-q16-y-raw-total
+
+form-target-point-y-raw
+  represents exact form term term-target-point-y-raw
+  selects exact relation schema core-schema-point2-q16-component
+  selects exact operator core-operator-point2-q16-y-raw
+  has exact eligible mode core-mode-point2-q16-y-raw-total
+  has exact named role binding binding-target-point-y-raw-point
+  has exact named role binding binding-target-point-y-raw-raw
+  requires exact context context-clause-semantics
+  requires exact context context-program-snapshot
+  requires exact context context-program-revision
+  requires exact context context-runtime-session
+  requires exact context context-runtime-policy
+  requires exact context context-executable-validity
+  requires exact context context-capability-set
+  requires exact context context-finite-budget
+  has exact form schema dependency core-schema-point2-q16-component
+  has exact form operator dependency core-operator-point2-q16-y-raw
+  has exact form mode dependency core-mode-point2-q16-y-raw-total
+
+binding-target-point-y-raw-point
+  selects exact bound role core-role-point
+  binds exact role variable variable-target-point
+
+binding-target-point-y-raw-raw
+  selects exact bound role core-role-raw
+  binds exact produced variable variable-target-y
+
+application-target-point-y-raw
+  instantiates exact application form form-target-point-y-raw
+
+formation-observer-point-x-raw
+  forms exact term term-observer-point-x-raw
+  forms exact type formed-type-application-form-mathematical-integer
+  has exact interpretation form-observer-point-x-raw
+  has exact formation schema dependency core-schema-point2-q16-component
+  has exact formation operator dependency core-operator-point2-q16-x-raw
+  has exact formation mode dependency core-mode-point2-q16-x-raw-total
+
+form-observer-point-x-raw
+  represents exact form term term-observer-point-x-raw
+  selects exact relation schema core-schema-point2-q16-component
+  selects exact operator core-operator-point2-q16-x-raw
+  has exact eligible mode core-mode-point2-q16-x-raw-total
+  has exact named role binding binding-observer-point-x-raw-point
+  has exact named role binding binding-observer-point-x-raw-raw
+  requires exact context context-clause-semantics
+  requires exact context context-program-snapshot
+  requires exact context context-program-revision
+  requires exact context context-runtime-session
+  requires exact context context-runtime-policy
+  requires exact context context-executable-validity
+  requires exact context context-capability-set
+  requires exact context context-finite-budget
+  has exact form schema dependency core-schema-point2-q16-component
+  has exact form operator dependency core-operator-point2-q16-x-raw
+  has exact form mode dependency core-mode-point2-q16-x-raw-total
+
+binding-observer-point-x-raw-point
+  selects exact bound role core-role-point
+  binds exact role variable variable-observer-point
+
+binding-observer-point-x-raw-raw
+  selects exact bound role core-role-raw
+  binds exact produced variable variable-observer-x
+
+application-observer-point-x-raw
+  instantiates exact application form form-observer-point-x-raw
+
+formation-observer-point-y-raw
+  forms exact term term-observer-point-y-raw
+  forms exact type formed-type-application-form-mathematical-integer
+  has exact interpretation form-observer-point-y-raw
+  has exact formation schema dependency core-schema-point2-q16-component
+  has exact formation operator dependency core-operator-point2-q16-y-raw
+  has exact formation mode dependency core-mode-point2-q16-y-raw-total
+
+form-observer-point-y-raw
+  represents exact form term term-observer-point-y-raw
+  selects exact relation schema core-schema-point2-q16-component
+  selects exact operator core-operator-point2-q16-y-raw
+  has exact eligible mode core-mode-point2-q16-y-raw-total
+  has exact named role binding binding-observer-point-y-raw-point
+  has exact named role binding binding-observer-point-y-raw-raw
+  requires exact context context-clause-semantics
+  requires exact context context-program-snapshot
+  requires exact context context-program-revision
+  requires exact context context-runtime-session
+  requires exact context context-runtime-policy
+  requires exact context context-executable-validity
+  requires exact context context-capability-set
+  requires exact context context-finite-budget
+  has exact form schema dependency core-schema-point2-q16-component
+  has exact form operator dependency core-operator-point2-q16-y-raw
+  has exact form mode dependency core-mode-point2-q16-y-raw-total
+
+binding-observer-point-y-raw-point
+  selects exact bound role core-role-point
+  binds exact role variable variable-observer-point
+
+binding-observer-point-y-raw-raw
+  selects exact bound role core-role-raw
+  binds exact produced variable variable-observer-y
+
+application-observer-point-y-raw
+  instantiates exact application form form-observer-point-y-raw
+
+formation-subtract-x-left
+  forms exact term term-subtract-x-left
+  forms exact type formed-type-application-form-mathematical-integer
+  has exact interpretation form-subtract-x-left
+  has exact formation schema dependency core-schema-int-binary
+  has exact formation operator dependency core-operator-sub-int
+  has exact formation mode dependency core-mode-sub-int-total
+
+form-subtract-x-left
+  represents exact form term term-subtract-x-left
+  selects exact relation schema core-schema-int-binary
+  selects exact operator core-operator-sub-int
+  has exact eligible mode core-mode-sub-int-total
+  has exact named role binding binding-subtract-x-left-left
+  has exact named role binding binding-subtract-x-left-right
+  has exact named role binding binding-subtract-x-left-result
+  requires exact context context-clause-semantics
+  requires exact context context-program-snapshot
+  requires exact context context-program-revision
+  requires exact context context-runtime-session
+  requires exact context context-runtime-policy
+  requires exact context context-executable-validity
+  requires exact context context-capability-set
+  requires exact context context-finite-budget
+  has exact form schema dependency core-schema-int-binary
+  has exact form operator dependency core-operator-sub-int
+  has exact form mode dependency core-mode-sub-int-total
+
+binding-subtract-x-left-left
+  selects exact bound role core-role-left
+  binds exact role variable variable-target-x
+
+binding-subtract-x-left-right
+  selects exact bound role core-role-right
+  binds exact role variable variable-observer-x
+
+binding-subtract-x-left-result
+  selects exact bound role core-role-result
+  binds exact produced variable variable-delta-x-left
+
+application-subtract-x-left
+  instantiates exact application form form-subtract-x-left
+
+formation-subtract-x-right
+  forms exact term term-subtract-x-right
+  forms exact type formed-type-application-form-mathematical-integer
+  has exact interpretation form-subtract-x-right
+  has exact formation schema dependency core-schema-int-binary
+  has exact formation operator dependency core-operator-sub-int
+  has exact formation mode dependency core-mode-sub-int-total
+
+form-subtract-x-right
+  represents exact form term term-subtract-x-right
+  selects exact relation schema core-schema-int-binary
+  selects exact operator core-operator-sub-int
+  has exact eligible mode core-mode-sub-int-total
+  has exact named role binding binding-subtract-x-right-left
+  has exact named role binding binding-subtract-x-right-right
+  has exact named role binding binding-subtract-x-right-result
+  requires exact context context-clause-semantics
+  requires exact context context-program-snapshot
+  requires exact context context-program-revision
+  requires exact context context-runtime-session
+  requires exact context context-runtime-policy
+  requires exact context context-executable-validity
+  requires exact context context-capability-set
+  requires exact context context-finite-budget
+  has exact form schema dependency core-schema-int-binary
+  has exact form operator dependency core-operator-sub-int
+  has exact form mode dependency core-mode-sub-int-total
+
+binding-subtract-x-right-left
+  selects exact bound role core-role-left
+  binds exact role variable variable-target-x
+
+binding-subtract-x-right-right
+  selects exact bound role core-role-right
+  binds exact role variable variable-observer-x
+
+binding-subtract-x-right-result
+  selects exact bound role core-role-result
+  binds exact produced variable variable-delta-x-right
+
+application-subtract-x-right
+  instantiates exact application form form-subtract-x-right
+
+formation-square-x
+  forms exact term term-square-x
+  forms exact type formed-type-application-form-mathematical-integer
+  has exact interpretation form-square-x
+  has exact formation schema dependency core-schema-int-binary
+  has exact formation operator dependency core-operator-mul-int
+  has exact formation mode dependency core-mode-mul-int-total
+
+form-square-x
+  represents exact form term term-square-x
+  selects exact relation schema core-schema-int-binary
+  selects exact operator core-operator-mul-int
+  has exact eligible mode core-mode-mul-int-total
+  has exact named role binding binding-square-x-left
+  has exact named role binding binding-square-x-right
+  has exact named role binding binding-square-x-result
+  requires exact context context-clause-semantics
+  requires exact context context-program-snapshot
+  requires exact context context-program-revision
+  requires exact context context-runtime-session
+  requires exact context context-runtime-policy
+  requires exact context context-executable-validity
+  requires exact context context-capability-set
+  requires exact context context-finite-budget
+  has exact form schema dependency core-schema-int-binary
+  has exact form operator dependency core-operator-mul-int
+  has exact form mode dependency core-mode-mul-int-total
+
+binding-square-x-left
+  selects exact bound role core-role-left
+  binds exact role variable variable-delta-x-left
+
+binding-square-x-right
+  selects exact bound role core-role-right
+  binds exact role variable variable-delta-x-right
+
+binding-square-x-result
+  selects exact bound role core-role-result
+  binds exact produced variable variable-square-x
+
+application-square-x
+  instantiates exact application form form-square-x
+
+formation-subtract-y-left
+  forms exact term term-subtract-y-left
+  forms exact type formed-type-application-form-mathematical-integer
+  has exact interpretation form-subtract-y-left
+  has exact formation schema dependency core-schema-int-binary
+  has exact formation operator dependency core-operator-sub-int
+  has exact formation mode dependency core-mode-sub-int-total
+
+form-subtract-y-left
+  represents exact form term term-subtract-y-left
+  selects exact relation schema core-schema-int-binary
+  selects exact operator core-operator-sub-int
+  has exact eligible mode core-mode-sub-int-total
+  has exact named role binding binding-subtract-y-left-left
+  has exact named role binding binding-subtract-y-left-right
+  has exact named role binding binding-subtract-y-left-result
+  requires exact context context-clause-semantics
+  requires exact context context-program-snapshot
+  requires exact context context-program-revision
+  requires exact context context-runtime-session
+  requires exact context context-runtime-policy
+  requires exact context context-executable-validity
+  requires exact context context-capability-set
+  requires exact context context-finite-budget
+  has exact form schema dependency core-schema-int-binary
+  has exact form operator dependency core-operator-sub-int
+  has exact form mode dependency core-mode-sub-int-total
+
+binding-subtract-y-left-left
+  selects exact bound role core-role-left
+  binds exact role variable variable-target-y
+
+binding-subtract-y-left-right
+  selects exact bound role core-role-right
+  binds exact role variable variable-observer-y
+
+binding-subtract-y-left-result
+  selects exact bound role core-role-result
+  binds exact produced variable variable-delta-y-left
+
+application-subtract-y-left
+  instantiates exact application form form-subtract-y-left
+
+formation-subtract-y-right
+  forms exact term term-subtract-y-right
+  forms exact type formed-type-application-form-mathematical-integer
+  has exact interpretation form-subtract-y-right
+  has exact formation schema dependency core-schema-int-binary
+  has exact formation operator dependency core-operator-sub-int
+  has exact formation mode dependency core-mode-sub-int-total
+
+form-subtract-y-right
+  represents exact form term term-subtract-y-right
+  selects exact relation schema core-schema-int-binary
+  selects exact operator core-operator-sub-int
+  has exact eligible mode core-mode-sub-int-total
+  has exact named role binding binding-subtract-y-right-left
+  has exact named role binding binding-subtract-y-right-right
+  has exact named role binding binding-subtract-y-right-result
+  requires exact context context-clause-semantics
+  requires exact context context-program-snapshot
+  requires exact context context-program-revision
+  requires exact context context-runtime-session
+  requires exact context context-runtime-policy
+  requires exact context context-executable-validity
+  requires exact context context-capability-set
+  requires exact context context-finite-budget
+  has exact form schema dependency core-schema-int-binary
+  has exact form operator dependency core-operator-sub-int
+  has exact form mode dependency core-mode-sub-int-total
+
+binding-subtract-y-right-left
+  selects exact bound role core-role-left
+  binds exact role variable variable-target-y
+
+binding-subtract-y-right-right
+  selects exact bound role core-role-right
+  binds exact role variable variable-observer-y
+
+binding-subtract-y-right-result
+  selects exact bound role core-role-result
+  binds exact produced variable variable-delta-y-right
+
+application-subtract-y-right
+  instantiates exact application form form-subtract-y-right
+
+formation-square-y
+  forms exact term term-square-y
+  forms exact type formed-type-application-form-mathematical-integer
+  has exact interpretation form-square-y
+  has exact formation schema dependency core-schema-int-binary
+  has exact formation operator dependency core-operator-mul-int
+  has exact formation mode dependency core-mode-mul-int-total
+
+form-square-y
+  represents exact form term term-square-y
+  selects exact relation schema core-schema-int-binary
+  selects exact operator core-operator-mul-int
+  has exact eligible mode core-mode-mul-int-total
+  has exact named role binding binding-square-y-left
+  has exact named role binding binding-square-y-right
+  has exact named role binding binding-square-y-result
+  requires exact context context-clause-semantics
+  requires exact context context-program-snapshot
+  requires exact context context-program-revision
+  requires exact context context-runtime-session
+  requires exact context context-runtime-policy
+  requires exact context context-executable-validity
+  requires exact context context-capability-set
+  requires exact context context-finite-budget
+  has exact form schema dependency core-schema-int-binary
+  has exact form operator dependency core-operator-mul-int
+  has exact form mode dependency core-mode-mul-int-total
+
+binding-square-y-left
+  selects exact bound role core-role-left
+  binds exact role variable variable-delta-y-left
+
+binding-square-y-right
+  selects exact bound role core-role-right
+  binds exact role variable variable-delta-y-right
+
+binding-square-y-result
+  selects exact bound role core-role-result
+  binds exact produced variable variable-square-y
+
+application-square-y
+  instantiates exact application form form-square-y
+
+formation-distance-square
+  forms exact term term-distance-square
+  forms exact type formed-type-application-form-mathematical-integer
+  has exact interpretation form-distance-square
+  has exact formation schema dependency core-schema-int-binary
+  has exact formation operator dependency core-operator-add-int
+  has exact formation mode dependency core-mode-add-int-total
+
+form-distance-square
+  represents exact form term term-distance-square
+  selects exact relation schema core-schema-int-binary
+  selects exact operator core-operator-add-int
+  has exact eligible mode core-mode-add-int-total
+  has exact named role binding binding-distance-square-left
+  has exact named role binding binding-distance-square-right
+  has exact named role binding binding-distance-square-result
+  requires exact context context-clause-semantics
+  requires exact context context-program-snapshot
+  requires exact context context-program-revision
+  requires exact context context-runtime-session
+  requires exact context context-runtime-policy
+  requires exact context context-executable-validity
+  requires exact context context-capability-set
+  requires exact context context-finite-budget
+  has exact form schema dependency core-schema-int-binary
+  has exact form operator dependency core-operator-add-int
+  has exact form mode dependency core-mode-add-int-total
+
+binding-distance-square-left
+  selects exact bound role core-role-left
+  binds exact role variable variable-square-x
+
+binding-distance-square-right
+  selects exact bound role core-role-right
+  binds exact role variable variable-square-y
+
+binding-distance-square-result
+  selects exact bound role core-role-result
+  binds exact produced variable variable-distance-square
+
+application-distance-square
+  instantiates exact application form form-distance-square
+
+formation-radius-square
+  forms exact term term-radius-square
+  forms exact type formed-type-application-form-mathematical-integer
+  has exact interpretation form-radius-square
+  has exact formation schema dependency core-schema-int-binary
+  has exact formation operator dependency core-operator-mul-int
+  has exact formation mode dependency core-mode-mul-int-total
+
+form-radius-square
+  represents exact form term term-radius-square
+  selects exact relation schema core-schema-int-binary
+  selects exact operator core-operator-mul-int
+  has exact eligible mode core-mode-mul-int-total
+  has exact named role binding binding-radius-square-left
+  has exact named role binding binding-radius-square-right
+  has exact named role binding binding-radius-square-result
+  requires exact context context-clause-semantics
+  requires exact context context-program-snapshot
+  requires exact context context-program-revision
+  requires exact context context-runtime-session
+  requires exact context context-runtime-policy
+  requires exact context context-executable-validity
+  requires exact context context-capability-set
+  requires exact context context-finite-budget
+  has exact form schema dependency core-schema-int-binary
+  has exact form operator dependency core-operator-mul-int
+  has exact form mode dependency core-mode-mul-int-total
+
+binding-radius-square-left
+  selects exact bound role core-role-left
+  binds exact role variable variable-radius
+
+binding-radius-square-right
+  selects exact bound role core-role-right
+  binds exact role variable variable-radius
+
+binding-radius-square-result
+  selects exact bound role core-role-result
+  binds exact produced variable variable-radius-square
+
+application-radius-square
+  instantiates exact application form form-radius-square
+
+formation-within-radius-verdict
+  forms exact term term-within-radius-verdict
+  forms exact type formed-type-application-form-boolean
+  has exact interpretation form-within-radius-verdict
+  has exact formation schema dependency core-schema-int-comparison
+  has exact formation operator dependency core-operator-lte-int
+  has exact formation mode dependency core-mode-lte-int-total
+
+form-within-radius-verdict
+  represents exact form term term-within-radius-verdict
+  selects exact relation schema core-schema-int-comparison
+  selects exact operator core-operator-lte-int
+  has exact eligible mode core-mode-lte-int-total
+  has exact named role binding binding-within-radius-verdict-left
+  has exact named role binding binding-within-radius-verdict-right
+  has exact named role binding binding-within-radius-verdict-verdict
+  requires exact context context-clause-semantics
+  requires exact context context-program-snapshot
+  requires exact context context-program-revision
+  requires exact context context-runtime-session
+  requires exact context context-runtime-policy
+  requires exact context context-executable-validity
+  requires exact context context-capability-set
+  requires exact context context-finite-budget
+  has exact form schema dependency core-schema-int-comparison
+  has exact form operator dependency core-operator-lte-int
+  has exact form mode dependency core-mode-lte-int-total
+
+binding-within-radius-verdict-left
+  selects exact bound role core-role-left
+  binds exact role variable variable-distance-square
+
+binding-within-radius-verdict-right
+  selects exact bound role core-role-right
+  binds exact role variable variable-radius-square
+
+binding-within-radius-verdict-verdict
+  selects exact bound role core-role-verdict
+  binds exact produced variable variable-verdict
+
+application-within-radius-verdict
+  instantiates exact application form form-within-radius-verdict
+
+formation-same-space-target-pair-v1
+  forms exact term term-same-space-target-pair-v1
+  forms exact type formed-type-application-form-binding-set
+  has exact interpretation form-same-space-target-pair-v1
+  has exact formation law dependency law-same-space-target-pair-v1
+  has exact formation mode dependency mode-same-space-target-pair-v1
+  has exact formation operator dependency operator-same-space-target-pair-v1
+  has exact formation schema dependency schema-same-space-target-pair-v1
+
+form-same-space-target-pair-v1
+  represents exact form term term-same-space-target-pair-v1
+  selects exact relation schema schema-same-space-target-pair-v1
+  selects exact operator operator-same-space-target-pair-v1
+  has exact eligible mode mode-same-space-target-pair-v1
+  has exact named role binding binding-same-space-left-target
+  has exact named role binding binding-same-space-right-target
+  has exact named role binding binding-same-space-space
+  requires exact context context-clause-semantics
+  requires exact context context-program-snapshot
+  requires exact context context-program-revision
+  requires exact context context-runtime-session
+  requires exact context context-state-revision
+  requires exact context context-runtime-policy
+  requires exact context context-executable-validity
+  requires exact context context-derivation-authorization
+  requires exact context context-execution-authorization
+  requires exact context context-capability-set
+  requires exact context context-finite-budget
+  has exact form law dependency law-same-space-target-pair-v1
+  has exact form mode dependency mode-same-space-target-pair-v1
+  has exact form operator dependency operator-same-space-target-pair-v1
+  has exact form schema dependency schema-same-space-target-pair-v1
+
+binding-same-space-left-target
+  selects exact bound role role-same-space-target-pair-left-target
+  binds exact produced variable variable-left-target
+
+binding-same-space-right-target
+  selects exact bound role role-same-space-target-pair-right-target
+  binds exact produced variable variable-right-target
+
+binding-same-space-space
+  selects exact bound role role-same-space-target-pair-space
+  binds exact role variable variable-space
+
+application-same-space-target-pair-v1
+  instantiates exact application form form-same-space-target-pair-v1
+
+law-radius-proximity-v1
+  selects exact law operator operator-radius-proximity-v1
+  has exact derivation mode mode-radius-proximity-v1
+  selects exact conclusion schema schema-in-proximity-v1
+  selects exact conclusion projection projection-in-proximity-v1
+  has exact premise occurrence premise-observer-position
+  has exact premise occurrence premise-proximity-radius
+  has exact premise occurrence premise-target-position
+  has exact premise occurrence premise-within-radius
+  requires exact context context-program-revision
+  requires exact context context-state-revision
+  requires exact context context-runtime-policy
+  requires exact context context-derivation-authorization
+  requires exact derivation authorization judgment-radius-proximity
+
+projection-in-proximity-v1
+  has exact projection field projection-field-in-proximity-observer
+  has exact projection field projection-field-in-proximity-target
+  has exact projection field projection-field-in-proximity-space
+
+projection-field-in-proximity-observer
+  has exact projection ordinal ordinal-zero
+  selects exact projected role role-in-proximity-observer
+  selects exact projected variable variable-observer
+
+projection-field-in-proximity-target
+  has exact projection ordinal ordinal-one
+  selects exact projected role role-in-proximity-target
+  selects exact projected variable variable-target
+
+projection-field-in-proximity-space
+  has exact projection ordinal ordinal-two
+  selects exact projected role role-in-proximity-space
+  selects exact projected variable variable-space
+
+premise-observer-position
+  has exact premise ordinal ordinal-zero
+  selects exact premise schema schema-observer-position-v1
+  has exact premise mode mode-observer-position-v1
+  has exact premise slot slot-observer-position-observer
+  has exact premise slot slot-observer-position-point
+  has exact premise slot slot-observer-position-space
+
+premise-proximity-radius
+  has exact premise ordinal ordinal-one
+  selects exact premise schema schema-proximity-radius-v1
+  has exact premise mode mode-proximity-radius-v1
+  has exact premise slot slot-proximity-radius-observer
+  has exact premise slot slot-proximity-radius-radius
+  has exact premise slot slot-proximity-radius-space
+
+premise-target-position
+  has exact premise ordinal ordinal-two
+  selects exact premise schema schema-target-position-v1
+  has exact premise mode mode-target-position-v1
+  has exact premise slot slot-target-position-target
+  has exact premise slot slot-target-position-point
+  has exact premise slot slot-target-position-space
+
+premise-within-radius
+  has exact premise ordinal ordinal-three
+  selects exact premise schema schema-within-radius-v1
+  has exact premise mode mode-within-radius-v1
+  has exact premise slot slot-within-radius-target-point
+  has exact premise slot slot-within-radius-observer-point
+  has exact premise slot slot-within-radius-radius
+  has exact premise slot slot-within-radius-verdict
+
+slot-observer-position-observer
+  has exact slot ordinal ordinal-zero
+  instantiates exact schema role role-observer-position-observer
+  binds exact variable variable-observer
+
+slot-observer-position-point
+  has exact slot ordinal ordinal-one
+  instantiates exact schema role role-observer-position-point
+  binds exact variable variable-observer-point
+
+slot-observer-position-space
+  has exact slot ordinal ordinal-two
+  instantiates exact schema role role-observer-position-space
+  binds exact variable variable-space
+
+slot-proximity-radius-observer
+  has exact slot ordinal ordinal-zero
+  instantiates exact schema role role-proximity-radius-observer
+  binds exact variable variable-observer
+
+slot-proximity-radius-radius
+  has exact slot ordinal ordinal-one
+  instantiates exact schema role role-proximity-radius-radius
+  binds exact variable variable-radius
+
+slot-proximity-radius-space
+  has exact slot ordinal ordinal-two
+  instantiates exact schema role role-proximity-radius-space
+  binds exact variable variable-space
+
+slot-target-position-target
+  has exact slot ordinal ordinal-zero
+  instantiates exact schema role role-target-position-target
+  binds exact variable variable-target
+
+slot-target-position-point
+  has exact slot ordinal ordinal-one
+  instantiates exact schema role role-target-position-point
+  binds exact variable variable-target-point
+
+slot-target-position-space
+  has exact slot ordinal ordinal-two
+  instantiates exact schema role role-target-position-space
+  binds exact variable variable-space
+
+slot-within-radius-target-point
+  has exact slot ordinal ordinal-zero
+  instantiates exact schema role role-within-radius-target-point
+  binds exact variable variable-target-point
+
+slot-within-radius-observer-point
+  has exact slot ordinal ordinal-one
+  instantiates exact schema role role-within-radius-observer-point
+  binds exact variable variable-observer-point
+
+slot-within-radius-radius
+  has exact slot ordinal ordinal-two
+  instantiates exact schema role role-within-radius-radius
+  binds exact variable variable-radius
+
+slot-within-radius-verdict
+  has exact slot ordinal ordinal-three
+  instantiates exact schema role role-within-radius-verdict
   binds exact constant true
 
-compiler-terms/law/same-space-target-pair-v1
-  selects exact law operator compiler-terms/operator/same-space-target-pair-v1
-  has exact derivation mode compiler-terms/mode/same-space-target-pair-v1
-  selects exact conclusion schema compiler-terms/schema/same-space-target-pair-v1
-  selects exact conclusion projection compiler-terms/projection/same-space-target-pair-v1
-  has exact premise occurrence compiler-terms/premise/same-space/left-target-position
-  has exact premise occurrence compiler-terms/premise/same-space/right-target-position
-  requires exact context compiler-terms/context/program-revision
-  requires exact context compiler-terms/context/state-revision
-  requires exact context compiler-terms/context/runtime-policy
-  requires exact context compiler-terms/context/derivation-authorization
-  requires exact derivation authorization compiler-terms/judgment/radius-proximity
+law-same-space-target-pair-v1
+  selects exact law operator operator-same-space-target-pair-v1
+  has exact derivation mode mode-same-space-target-pair-v1
+  selects exact conclusion schema schema-same-space-target-pair-v1
+  selects exact conclusion projection projection-same-space-target-pair-v1
+  has exact premise occurrence premise-same-space-left-target-position
+  has exact premise occurrence premise-same-space-right-target-position
+  requires exact context context-program-revision
+  requires exact context context-state-revision
+  requires exact context context-runtime-policy
+  requires exact context context-derivation-authorization
+  requires exact derivation authorization judgment-radius-proximity
 
-compiler-terms/projection/same-space-target-pair-v1
-  has exact projection field compiler-terms/projection-field/same-space/left-target
-  has exact projection field compiler-terms/projection-field/same-space/right-target
-  has exact projection field compiler-terms/projection-field/same-space/space
+projection-same-space-target-pair-v1
+  has exact projection field projection-field-same-space-left-target
+  has exact projection field projection-field-same-space-right-target
+  has exact projection field projection-field-same-space-space
 
-compiler-terms/projection-field/same-space/left-target
-  has exact projection ordinal compiler-terms/ordinal/zero
-  selects exact projected role compiler-terms/role/same-space-target-pair/left-target
-  selects exact projected variable compiler-terms/variable/left-target
+projection-field-same-space-left-target
+  has exact projection ordinal ordinal-zero
+  selects exact projected role role-same-space-target-pair-left-target
+  selects exact projected variable variable-left-target
 
-compiler-terms/projection-field/same-space/right-target
-  has exact projection ordinal compiler-terms/ordinal/one
-  selects exact projected role compiler-terms/role/same-space-target-pair/right-target
-  selects exact projected variable compiler-terms/variable/right-target
+projection-field-same-space-right-target
+  has exact projection ordinal ordinal-one
+  selects exact projected role role-same-space-target-pair-right-target
+  selects exact projected variable variable-right-target
 
-compiler-terms/projection-field/same-space/space
-  has exact projection ordinal compiler-terms/ordinal/two
-  selects exact projected role compiler-terms/role/same-space-target-pair/space
-  selects exact projected variable compiler-terms/variable/space
+projection-field-same-space-space
+  has exact projection ordinal ordinal-two
+  selects exact projected role role-same-space-target-pair-space
+  selects exact projected variable variable-space
 
-compiler-terms/premise/same-space/left-target-position
-  has exact premise ordinal compiler-terms/ordinal/zero
-  selects exact premise schema compiler-terms/schema/target-position-v1
-  has exact premise mode compiler-terms/mode/target-position-v1
-  has exact premise slot compiler-terms/slot/same-space/left-target-position/target
-  has exact premise slot compiler-terms/slot/same-space/left-target-position/point
-  has exact premise slot compiler-terms/slot/same-space/left-target-position/space
+premise-same-space-left-target-position
+  has exact premise ordinal ordinal-zero
+  selects exact premise schema schema-target-position-v1
+  has exact premise mode mode-target-position-v1
+  has exact premise slot slot-same-space-left-target-position-target
+  has exact premise slot slot-same-space-left-target-position-point
+  has exact premise slot slot-same-space-left-target-position-space
 
-compiler-terms/premise/same-space/right-target-position
-  has exact premise ordinal compiler-terms/ordinal/one
-  selects exact premise schema compiler-terms/schema/target-position-v1
-  has exact premise mode compiler-terms/mode/target-position-v1
-  has exact premise slot compiler-terms/slot/same-space/right-target-position/target
-  has exact premise slot compiler-terms/slot/same-space/right-target-position/point
-  has exact premise slot compiler-terms/slot/same-space/right-target-position/space
+premise-same-space-right-target-position
+  has exact premise ordinal ordinal-one
+  selects exact premise schema schema-target-position-v1
+  has exact premise mode mode-target-position-v1
+  has exact premise slot slot-same-space-right-target-position-target
+  has exact premise slot slot-same-space-right-target-position-point
+  has exact premise slot slot-same-space-right-target-position-space
 
-compiler-terms/slot/same-space/left-target-position/target
-  has exact slot ordinal compiler-terms/ordinal/zero
-  instantiates exact schema role compiler-terms/role/target-position/target
-  binds exact variable compiler-terms/variable/left-target
+slot-same-space-left-target-position-target
+  has exact slot ordinal ordinal-zero
+  instantiates exact schema role role-target-position-target
+  binds exact variable variable-left-target
 
-compiler-terms/slot/same-space/left-target-position/point
-  has exact slot ordinal compiler-terms/ordinal/one
-  instantiates exact schema role compiler-terms/role/target-position/point
-  binds exact variable compiler-terms/variable/left-point
+slot-same-space-left-target-position-point
+  has exact slot ordinal ordinal-one
+  instantiates exact schema role role-target-position-point
+  binds exact variable variable-left-point
 
-compiler-terms/slot/same-space/left-target-position/space
-  has exact slot ordinal compiler-terms/ordinal/two
-  instantiates exact schema role compiler-terms/role/target-position/space
-  binds exact variable compiler-terms/variable/space
+slot-same-space-left-target-position-space
+  has exact slot ordinal ordinal-two
+  instantiates exact schema role role-target-position-space
+  binds exact variable variable-space
 
-compiler-terms/slot/same-space/right-target-position/target
-  has exact slot ordinal compiler-terms/ordinal/zero
-  instantiates exact schema role compiler-terms/role/target-position/target
-  binds exact variable compiler-terms/variable/right-target
+slot-same-space-right-target-position-target
+  has exact slot ordinal ordinal-zero
+  instantiates exact schema role role-target-position-target
+  binds exact variable variable-right-target
 
-compiler-terms/slot/same-space/right-target-position/point
-  has exact slot ordinal compiler-terms/ordinal/one
-  instantiates exact schema role compiler-terms/role/target-position/point
-  binds exact variable compiler-terms/variable/right-point
+slot-same-space-right-target-position-point
+  has exact slot ordinal ordinal-one
+  instantiates exact schema role role-target-position-point
+  binds exact variable variable-right-point
 
-compiler-terms/slot/same-space/right-target-position/space
-  has exact slot ordinal compiler-terms/ordinal/two
-  instantiates exact schema role compiler-terms/role/target-position/space
-  binds exact variable compiler-terms/variable/space
+slot-same-space-right-target-position-space
+  has exact slot ordinal ordinal-two
+  instantiates exact schema role role-target-position-space
+  binds exact variable variable-space
 
-compiler-terms/judgment/radius-proximity
-  has exact judgment kind compiler-terms/judgment-kind/authorization
-  has exact authorization type compiler-terms/authorization-type/derivation
-  authorizes exact law subject compiler-terms/law/radius-proximity-v1
-  authorizes exact law subject compiler-terms/law/same-space-target-pair-v1
-  has exact containing snapshot scope compiler-terms/scope/containing-program-snapshot
+judgment-radius-proximity
+  has exact judgment kind judgment-kind-authorization
+  has exact authorization type authorization-type-derivation
+  authorizes exact law subject law-radius-proximity-v1
+  authorizes exact law subject law-same-space-target-pair-v1
+  has exact containing snapshot scope scope-containing-program-snapshot
 
-compiler-terms/judgment/process-execution
-  has exact judgment kind compiler-terms/judgment-kind/authorization
-  has exact authorization type compiler-terms/authorization-type/execution
-  authorizes exact application subject compiler-terms/application/radius-proximity-v1
-  authorizes exact application subject compiler-terms/application/within-radius-v1
-  authorizes exact application subject compiler-terms/application/same-space-target-pair-v1
-  has exact containing snapshot scope compiler-terms/scope/containing-program-snapshot
+judgment-process-execution
+  has exact judgment kind judgment-kind-authorization
+  has exact authorization type authorization-type-execution
+  authorizes exact application subject application-radius-proximity-v1
+  authorizes exact application subject application-within-radius-v1
+  authorizes exact application subject application-same-space-target-pair-v1
+  has exact containing snapshot scope scope-containing-program-snapshot

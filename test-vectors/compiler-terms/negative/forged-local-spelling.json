@@ -1,0 +1,14 @@
+{
+  "schema": "clause/compiler-terms/designation-candidate-negative-v1",
+  "context_ref": "../context.json",
+  "candidate": {
+    "namespace_id": "namespace-id:world",
+    "spelling": "forged/local-spelling",
+    "referent_id": "referent-id:forged:01",
+    "visibility": "fixture-local",
+    "origin": {
+      "kind": "forged-candidate",
+      "source_artifact_id": "source-artifact:negative:forged-local-spelling"
+    }
+  }
+}
