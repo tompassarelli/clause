@@ -1,0 +1,64 @@
+{
+  "schema": "clause/compiler-terms/activation-set-candidate-v3",
+  "context_ref": "../positive/process-occurrences.json",
+  "candidate": {
+    "activations": [
+      {
+        "activation_id": "activation:collapsed",
+        "application_id": "application-id:01",
+        "selected_mode_id": "mode-id:05",
+        "run_membership": {
+          "kind": "RootOf",
+          "run_id": "run:collapsed"
+        },
+        "root_trigger_occurrence_id": "trigger:01",
+        "context_pin_set_ref": "pins:mode:05"
+      },
+      {
+        "activation_id": "activation:collapsed",
+        "application_id": "application-id:01",
+        "selected_mode_id": "mode-id:05",
+        "run_membership": {
+          "kind": "RootOf",
+          "run_id": "run:collapsed"
+        },
+        "root_trigger_occurrence_id": "trigger:02",
+        "context_pin_set_ref": "pins:mode:05"
+      }
+    ],
+    "steps": [
+      {
+        "step_id": "step:collapsed",
+        "owner": {
+          "run_id": "run:collapsed",
+          "activation_id": "activation:collapsed"
+        },
+        "cause_frontier": [
+          {
+            "kind": "ActivationStart",
+            "activation_id": "activation:collapsed"
+          }
+        ],
+        "emitted_observation_ids": [
+          "observation:collapsed"
+        ]
+      },
+      {
+        "step_id": "step:collapsed",
+        "owner": {
+          "run_id": "run:collapsed",
+          "activation_id": "activation:collapsed"
+        },
+        "cause_frontier": [
+          {
+            "kind": "ActivationStart",
+            "activation_id": "activation:collapsed"
+          }
+        ],
+        "emitted_observation_ids": [
+          "observation:collapsed"
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,130 @@
+{
+  "schema": "clause/compiler-terms/canonical-order-positive-v3",
+  "context_ref": "process-occurrences.json",
+  "records": [
+    {
+      "record_kind": "ApplicationForm",
+      "kind_rank": 5,
+      "local_id": "form:01",
+      "payload": {
+        "schema": "schema:05",
+        "operator": "operator:05",
+        "eligible_modes": [
+          "mode:05"
+        ]
+      }
+    },
+    {
+      "record_kind": "RelationSchema",
+      "kind_rank": 1,
+      "local_id": "schema:05",
+      "payload": {
+        "roles": [
+          {
+            "ordinal": 2,
+            "local_id": "role:16"
+          },
+          {
+            "ordinal": 0,
+            "local_id": "role:14"
+          },
+          {
+            "ordinal": 1,
+            "local_id": "role:15"
+          }
+        ]
+      }
+    },
+    {
+      "record_kind": "Mode",
+      "kind_rank": 3,
+      "local_id": "mode:05",
+      "payload": {
+        "schema": "schema:05",
+        "operator": "operator:05"
+      }
+    },
+    {
+      "record_kind": "Operator",
+      "kind_rank": 2,
+      "local_id": "operator:05",
+      "payload": {
+        "definition": "law:01"
+      }
+    }
+  ],
+  "semantic_sequences": [
+    {
+      "sequence_id": "premises:law:01",
+      "members": [
+        {
+          "ordinal": 2,
+          "identity": "premise:02"
+        },
+        {
+          "ordinal": 0,
+          "identity": "premise:00"
+        },
+        {
+          "ordinal": 3,
+          "identity": "premise:03"
+        },
+        {
+          "ordinal": 1,
+          "identity": "premise:01"
+        }
+      ]
+    },
+    {
+      "sequence_id": "support:self-join:01",
+      "members": [
+        {
+          "ordinal": 1,
+          "identity": "assertion:target-position:07",
+          "premise_occurrence_id": "premise:05"
+        },
+        {
+          "ordinal": 0,
+          "identity": "assertion:target-position:07",
+          "premise_occurrence_id": "premise:04"
+        }
+      ]
+    }
+  ],
+  "expected_canonical_record_keys": [
+    [
+      1,
+      "schema:05"
+    ],
+    [
+      2,
+      "operator:05"
+    ],
+    [
+      3,
+      "mode:05"
+    ],
+    [
+      5,
+      "form:01"
+    ]
+  ],
+  "expected_canonical_sequences": {
+    "premises:law:01": [
+      "premise:00",
+      "premise:01",
+      "premise:02",
+      "premise:03"
+    ],
+    "support:self-join:01": [
+      [
+        "premise:04",
+        "assertion:target-position:07"
+      ],
+      [
+        "premise:05",
+        "assertion:target-position:07"
+      ]
+    ]
+  }
+}

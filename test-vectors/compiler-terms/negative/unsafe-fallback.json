@@ -1,0 +1,30 @@
+{
+  "schema": "clause/compiler-terms/refinement-outcome-candidate-v3",
+  "context_ref": "../context.json",
+  "candidate": {
+    "extent_input": {
+      "origin_x": -2147483648,
+      "origin_y": -2147483648,
+      "radius": 2147483647,
+      "extent_arithmetic": "unrepresentable-in-selected-physical-width"
+    },
+    "physical_budget": {
+      "bucket_limit": 4096,
+      "candidate_limit": 4096,
+      "allocation_limit_bytes": 1048576,
+      "exact_scan_budget": 0
+    },
+    "selected_path": {
+      "kind": "clamp-extent-and-continue",
+      "clamped_max_x": -1,
+      "clamped_max_y": -1,
+      "dropped_buckets": 8192
+    },
+    "emitted_semantic_observations": [
+      "observation:partial-proximity-result"
+    ],
+    "emitted_support_occurrences": [
+      "support:partial-proximity-result"
+    ]
+  }
+}

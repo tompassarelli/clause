@@ -1,0 +1,29 @@
+compiler-terms/schema/in-proximity-v1
+  has exact schema role compiler-terms/role/in-proximity/observer
+  has exact schema role compiler-terms/role/in-proximity/target
+  has exact schema role compiler-terms/role/in-proximity/space
+
+compiler-terms/operator/radius-proximity-v1
+  has exact law definition compiler-terms/law/radius-proximity-v1
+
+compiler-terms/mode/radius-proximity-v1
+  selects exact mode operator compiler-terms/operator/radius-proximity-v1
+  selects exact mode schema compiler-terms/schema/in-proximity-v1
+  has exact known role compiler-terms/role/in-proximity/observer
+  has exact known role compiler-terms/role/in-proximity/space
+  has exact produced role compiler-terms/role/in-proximity/target
+
+compiler-terms/form/radius-proximity-v1
+  represents exact form term compiler-terms/term/radius-proximity-v1
+  selects exact relation schema compiler-terms/schema/in-proximity-v1
+  selects exact operator compiler-terms/operator/radius-proximity-v1
+  has exact eligible mode compiler-terms/mode/radius-proximity-v1
+  has exact named role binding compiler-terms/binding/conclusion-observer
+  has exact named role binding compiler-terms/binding/conclusion-target
+  has exact named role binding compiler-terms/binding/conclusion-space
+
+compiler-terms/law/radius-proximity-v1
+  has exact premise occurrence compiler-terms/premise/observer-position
+  has exact premise occurrence compiler-terms/premise/proximity-radius
+  has exact premise occurrence compiler-terms/premise/target-position
+  has exact premise occurrence compiler-terms/premise/within-radius

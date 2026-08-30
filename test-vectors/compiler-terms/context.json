@@ -1,0 +1,2048 @@
+{
+  "schema": "clause/compiler-terms/context-v3",
+  "authority": "fixture-premises-only",
+  "identity_note": "All fixture IDs are opaque exact test coordinates. They are not canonical Clause hashes or admitted identities.",
+  "external_basis": {
+    "clause_semantics_id": "sem:01",
+    "program_snapshot_id": "ps:01",
+    "program_revision_id": "pr:01",
+    "runtime_session_id": "session:01",
+    "state_revision_id": "state:01",
+    "runtime_policy_id": "policy:01",
+    "executable_validity": {
+      "executable_validity_id": "executable-validity:01",
+      "program_snapshot_id": "ps:01",
+      "program_revision_id": "pr:01",
+      "scope": "all-formed-application-mode-pairs-in-snapshot",
+      "authoritative_before_activation": true
+    },
+    "derivation_authorization": {
+      "kind": "ConstitutiveAuthorization",
+      "program_revision_id": "pr:01",
+      "judgment_ref": "judgment-ref:01",
+      "authorization_type": "DerivationAuthorization",
+      "subject": [
+        "law-id:01",
+        "law-id:02"
+      ],
+      "scope": {
+        "program_snapshot_id": "ps:01",
+        "runtime_session_id": "session:01",
+        "state_revision_id": "state:01",
+        "runtime_policy_id": "policy:01"
+      },
+      "authoritative_before_candidate": true
+    },
+    "execution_authorization": {
+      "kind": "ConstitutiveAuthorization",
+      "program_revision_id": "pr:01",
+      "judgment_ref": "judgment-ref:02",
+      "authorization_type": "ExecutionAuthorization",
+      "subject": [
+        "application-id:01",
+        "application-id:02",
+        "application-id:03"
+      ],
+      "scope": {
+        "program_snapshot_id": "ps:01",
+        "runtime_session_id": "session:01",
+        "state_revision_id": "state:01",
+        "runtime_policy_id": "policy:01"
+      },
+      "authoritative_before_candidate": true
+    },
+    "core_relation_schemas": [
+      {
+        "relation_schema_id": "core-schema:int-binary",
+        "role_ids": [
+          "core-role:left",
+          "core-role:right",
+          "core-role:result"
+        ]
+      },
+      {
+        "relation_schema_id": "core-schema:int-comparison",
+        "role_ids": [
+          "core-role:left",
+          "core-role:right",
+          "core-role:verdict"
+        ]
+      },
+      {
+        "relation_schema_id": "core-schema:point2-q16-component",
+        "role_ids": [
+          "core-role:point",
+          "core-role:raw"
+        ]
+      }
+    ],
+    "core_operators": [
+      {
+        "operator_ref": "core-op:sub-int",
+        "mode_id": "core-mode:sub-int-total",
+        "relation_schema_id": "core-schema:int-binary",
+        "known_roles": [
+          "core-role:left",
+          "core-role:right"
+        ],
+        "produced_roles": [
+          "core-role:result"
+        ],
+        "contract": {
+          "executable_validity": "required",
+          "required_authorizations": [],
+          "purity": "pure",
+          "determinism": "deterministic",
+          "totality": "total",
+          "cardinality": "one",
+          "arithmetic": "mathematical-integer"
+        }
+      },
+      {
+        "operator_ref": "core-op:mul-int",
+        "mode_id": "core-mode:mul-int-total",
+        "relation_schema_id": "core-schema:int-binary",
+        "known_roles": [
+          "core-role:left",
+          "core-role:right"
+        ],
+        "produced_roles": [
+          "core-role:result"
+        ],
+        "contract": {
+          "executable_validity": "required",
+          "required_authorizations": [],
+          "purity": "pure",
+          "determinism": "deterministic",
+          "totality": "total",
+          "cardinality": "one",
+          "arithmetic": "mathematical-integer"
+        }
+      },
+      {
+        "operator_ref": "core-op:add-int",
+        "mode_id": "core-mode:add-int-total",
+        "relation_schema_id": "core-schema:int-binary",
+        "known_roles": [
+          "core-role:left",
+          "core-role:right"
+        ],
+        "produced_roles": [
+          "core-role:result"
+        ],
+        "contract": {
+          "executable_validity": "required",
+          "required_authorizations": [],
+          "purity": "pure",
+          "determinism": "deterministic",
+          "totality": "total",
+          "cardinality": "one",
+          "arithmetic": "mathematical-integer"
+        }
+      },
+      {
+        "operator_ref": "core-op:lte-int",
+        "mode_id": "core-mode:lte-int-total",
+        "relation_schema_id": "core-schema:int-comparison",
+        "known_roles": [
+          "core-role:left",
+          "core-role:right"
+        ],
+        "produced_roles": [
+          "core-role:verdict"
+        ],
+        "contract": {
+          "executable_validity": "required",
+          "required_authorizations": [],
+          "purity": "pure",
+          "determinism": "deterministic",
+          "totality": "total",
+          "cardinality": "one",
+          "comparison": "inclusive-less-than-or-equal"
+        }
+      },
+      {
+        "operator_ref": "core-op:point2-q16-x-raw",
+        "mode_id": "core-mode:point2-q16-x-raw-total",
+        "relation_schema_id": "core-schema:point2-q16-component",
+        "known_roles": [
+          "core-role:point"
+        ],
+        "produced_roles": [
+          "core-role:raw"
+        ],
+        "contract": {
+          "executable_validity": "required",
+          "required_authorizations": [],
+          "purity": "pure",
+          "determinism": "deterministic",
+          "totality": "total",
+          "cardinality": "one",
+          "source_shape": "metric/Point2Q16",
+          "component": "x",
+          "result_domain": "mathematical-integer"
+        }
+      },
+      {
+        "operator_ref": "core-op:point2-q16-y-raw",
+        "mode_id": "core-mode:point2-q16-y-raw-total",
+        "relation_schema_id": "core-schema:point2-q16-component",
+        "known_roles": [
+          "core-role:point"
+        ],
+        "produced_roles": [
+          "core-role:raw"
+        ],
+        "contract": {
+          "executable_validity": "required",
+          "required_authorizations": [],
+          "purity": "pure",
+          "determinism": "deterministic",
+          "totality": "total",
+          "cardinality": "one",
+          "source_shape": "metric/Point2Q16",
+          "component": "y",
+          "result_domain": "mathematical-integer"
+        }
+      }
+    ],
+    "core_id_mappings": {
+      "relation_schemas": {
+        "compiler-terms/core-schema/int-binary": "core-schema:int-binary",
+        "compiler-terms/core-schema/int-comparison": "core-schema:int-comparison",
+        "compiler-terms/core-schema/point2-q16-component": "core-schema:point2-q16-component"
+      },
+      "operators": {
+        "compiler-terms/core-operator/add-int": "core-op:add-int",
+        "compiler-terms/core-operator/lte-int": "core-op:lte-int",
+        "compiler-terms/core-operator/mul-int": "core-op:mul-int",
+        "compiler-terms/core-operator/point2-q16-x-raw": "core-op:point2-q16-x-raw",
+        "compiler-terms/core-operator/point2-q16-y-raw": "core-op:point2-q16-y-raw",
+        "compiler-terms/core-operator/sub-int": "core-op:sub-int"
+      },
+      "modes": {
+        "compiler-terms/core-mode/add-int-total": "core-mode:add-int-total",
+        "compiler-terms/core-mode/lte-int-total": "core-mode:lte-int-total",
+        "compiler-terms/core-mode/mul-int-total": "core-mode:mul-int-total",
+        "compiler-terms/core-mode/point2-q16-x-raw-total": "core-mode:point2-q16-x-raw-total",
+        "compiler-terms/core-mode/point2-q16-y-raw-total": "core-mode:point2-q16-y-raw-total",
+        "compiler-terms/core-mode/sub-int-total": "core-mode:sub-int-total"
+      },
+      "roles": {
+        "compiler-terms/core-role/left": "core-role:left",
+        "compiler-terms/core-role/point": "core-role:point",
+        "compiler-terms/core-role/raw": "core-role:raw",
+        "compiler-terms/core-role/result": "core-role:result",
+        "compiler-terms/core-role/right": "core-role:right",
+        "compiler-terms/core-role/verdict": "core-role:verdict"
+      }
+    }
+  },
+  "constitutive_preimage": {
+    "terms": [
+      {
+        "kind_rank": 0,
+        "local_id": "term:03",
+        "term": {
+          "raw_triple": [
+            {
+              "atom": "atom:left-target"
+            },
+            {
+              "atom": "atom:same-space-pair"
+            },
+            {
+              "atom": "atom:right-target-space"
+            }
+          ]
+        }
+      },
+      {
+        "kind_rank": 0,
+        "local_id": "term:02",
+        "term": {
+          "raw_triple": [
+            {
+              "atom": "atom:target-point"
+            },
+            {
+              "atom": "atom:within-radius"
+            },
+            {
+              "atom": "atom:observer-point-radius"
+            }
+          ]
+        }
+      },
+      {
+        "kind_rank": 0,
+        "local_id": "term:01",
+        "term": {
+          "raw_triple": [
+            {
+              "atom": "atom:observer"
+            },
+            {
+              "atom": "atom:in-proximity"
+            },
+            {
+              "atom": "atom:target-space"
+            }
+          ]
+        }
+      },
+      {
+        "kind_rank": 0,
+        "local_id": "term:04",
+        "term": {
+          "raw_triple": [
+            { "atom": "atom:target-point" },
+            { "atom": "atom:point2-q16-x-raw" },
+            { "atom": "atom:target-x" }
+          ]
+        }
+      },
+      {
+        "kind_rank": 0,
+        "local_id": "term:05",
+        "term": {
+          "raw_triple": [
+            { "atom": "atom:target-point" },
+            { "atom": "atom:point2-q16-y-raw" },
+            { "atom": "atom:target-y" }
+          ]
+        }
+      },
+      {
+        "kind_rank": 0,
+        "local_id": "term:06",
+        "term": {
+          "raw_triple": [
+            { "atom": "atom:observer-point" },
+            { "atom": "atom:point2-q16-x-raw" },
+            { "atom": "atom:observer-x" }
+          ]
+        }
+      },
+      {
+        "kind_rank": 0,
+        "local_id": "term:07",
+        "term": {
+          "raw_triple": [
+            { "atom": "atom:observer-point" },
+            { "atom": "atom:point2-q16-y-raw" },
+            { "atom": "atom:observer-y" }
+          ]
+        }
+      },
+      {
+        "kind_rank": 0,
+        "local_id": "term:08",
+        "term": {
+          "raw_triple": [
+            { "atom": "atom:target-x" },
+            { "atom": "atom:sub-int" },
+            { "atom": "atom:observer-x" }
+          ]
+        }
+      },
+      {
+        "kind_rank": 0,
+        "local_id": "term:09",
+        "term": {
+          "raw_triple": [
+            { "atom": "atom:target-x" },
+            { "atom": "atom:sub-int" },
+            { "atom": "atom:observer-x" }
+          ]
+        }
+      },
+      {
+        "kind_rank": 0,
+        "local_id": "term:10",
+        "term": {
+          "raw_triple": [
+            { "atom": "atom:delta-x-left" },
+            { "atom": "atom:mul-int" },
+            { "atom": "atom:delta-x-right" }
+          ]
+        }
+      },
+      {
+        "kind_rank": 0,
+        "local_id": "term:11",
+        "term": {
+          "raw_triple": [
+            { "atom": "atom:target-y" },
+            { "atom": "atom:sub-int" },
+            { "atom": "atom:observer-y" }
+          ]
+        }
+      },
+      {
+        "kind_rank": 0,
+        "local_id": "term:12",
+        "term": {
+          "raw_triple": [
+            { "atom": "atom:target-y" },
+            { "atom": "atom:sub-int" },
+            { "atom": "atom:observer-y" }
+          ]
+        }
+      },
+      {
+        "kind_rank": 0,
+        "local_id": "term:13",
+        "term": {
+          "raw_triple": [
+            { "atom": "atom:delta-y-left" },
+            { "atom": "atom:mul-int" },
+            { "atom": "atom:delta-y-right" }
+          ]
+        }
+      },
+      {
+        "kind_rank": 0,
+        "local_id": "term:14",
+        "term": {
+          "raw_triple": [
+            { "atom": "atom:square-x" },
+            { "atom": "atom:add-int" },
+            { "atom": "atom:square-y" }
+          ]
+        }
+      },
+      {
+        "kind_rank": 0,
+        "local_id": "term:15",
+        "term": {
+          "raw_triple": [
+            { "atom": "atom:radius" },
+            { "atom": "atom:mul-int" },
+            { "atom": "atom:radius" }
+          ]
+        }
+      },
+      {
+        "kind_rank": 0,
+        "local_id": "term:16",
+        "term": {
+          "raw_triple": [
+            { "atom": "atom:distance-square" },
+            { "atom": "atom:lte-int" },
+            { "atom": "atom:radius-square" }
+          ]
+        }
+      }
+    ],
+    "relation_schemas": [
+      {
+        "kind_rank": 1,
+        "local_id": "schema:05",
+        "designation": "world/in-proximity-v1",
+        "roles": [
+          {
+            "ordinal": 2,
+            "local_id": "role:16",
+            "designation": "space",
+            "domain": "Space",
+            "cardinality": "one"
+          },
+          {
+            "ordinal": 0,
+            "local_id": "role:14",
+            "designation": "observer",
+            "domain": "Observer",
+            "cardinality": "one"
+          },
+          {
+            "ordinal": 1,
+            "local_id": "role:15",
+            "designation": "target",
+            "domain": "Target",
+            "cardinality": "one"
+          }
+        ]
+      },
+      {
+        "kind_rank": 1,
+        "local_id": "schema:01",
+        "designation": "world/observer-position-v1",
+        "roles": [
+          {
+            "ordinal": 0,
+            "local_id": "role:01",
+            "designation": "observer",
+            "domain": "Observer",
+            "cardinality": "one"
+          },
+          {
+            "ordinal": 2,
+            "local_id": "role:03",
+            "designation": "space",
+            "domain": "Space",
+            "cardinality": "one"
+          },
+          {
+            "ordinal": 1,
+            "local_id": "role:02",
+            "designation": "point",
+            "domain": "metric/Point2Q16",
+            "cardinality": "one"
+          }
+        ]
+      },
+      {
+        "kind_rank": 1,
+        "local_id": "schema:06",
+        "designation": "world/same-space-target-pair-v1",
+        "roles": [
+          {
+            "ordinal": 0,
+            "local_id": "role:17",
+            "designation": "left-target",
+            "domain": "Target",
+            "cardinality": "one"
+          },
+          {
+            "ordinal": 1,
+            "local_id": "role:18",
+            "designation": "right-target",
+            "domain": "Target",
+            "cardinality": "one"
+          },
+          {
+            "ordinal": 2,
+            "local_id": "role:19",
+            "designation": "space",
+            "domain": "Space",
+            "cardinality": "one"
+          }
+        ]
+      },
+      {
+        "kind_rank": 1,
+        "local_id": "schema:03",
+        "designation": "world/proximity-radius-v1",
+        "roles": [
+          {
+            "ordinal": 1,
+            "local_id": "role:08",
+            "designation": "radius",
+            "domain": "metric/NonnegativeQ16",
+            "cardinality": "one"
+          },
+          {
+            "ordinal": 0,
+            "local_id": "role:07",
+            "designation": "observer",
+            "domain": "Observer",
+            "cardinality": "one"
+          },
+          {
+            "ordinal": 2,
+            "local_id": "role:09",
+            "designation": "space",
+            "domain": "Space",
+            "cardinality": "one"
+          }
+        ]
+      },
+      {
+        "kind_rank": 1,
+        "local_id": "schema:02",
+        "designation": "world/target-position-v1",
+        "roles": [
+          {
+            "ordinal": 2,
+            "local_id": "role:06",
+            "designation": "space",
+            "domain": "Space",
+            "cardinality": "one"
+          },
+          {
+            "ordinal": 0,
+            "local_id": "role:04",
+            "designation": "target",
+            "domain": "Target",
+            "cardinality": "one"
+          },
+          {
+            "ordinal": 1,
+            "local_id": "role:05",
+            "designation": "point",
+            "domain": "metric/Point2Q16",
+            "cardinality": "one"
+          }
+        ]
+      },
+      {
+        "kind_rank": 1,
+        "local_id": "schema:04",
+        "designation": "metric/within-radius-v1",
+        "roles": [
+          {
+            "ordinal": 3,
+            "local_id": "role:13",
+            "designation": "verdict",
+            "domain": "Boolean",
+            "cardinality": "one"
+          },
+          {
+            "ordinal": 0,
+            "local_id": "role:10",
+            "designation": "target-point",
+            "domain": "metric/Point2Q16",
+            "cardinality": "one"
+          },
+          {
+            "ordinal": 2,
+            "local_id": "role:12",
+            "designation": "radius",
+            "domain": "metric/NonnegativeQ16",
+            "cardinality": "one"
+          },
+          {
+            "ordinal": 1,
+            "local_id": "role:11",
+            "designation": "observer-point",
+            "domain": "metric/Point2Q16",
+            "cardinality": "one"
+          }
+        ]
+      }
+    ],
+    "operators": [
+      {
+        "kind_rank": 2,
+        "local_id": "operator:04",
+        "designation": "metric/within-radius-v1",
+        "definition": {
+          "kind": "generic-application-graph",
+          "root_application_local_id": "application:16",
+          "application_local_ids": [
+            "application:04",
+            "application:05",
+            "application:06",
+            "application:07",
+            "application:08",
+            "application:09",
+            "application:10",
+            "application:11",
+            "application:12",
+            "application:13",
+            "application:14",
+            "application:15",
+            "application:16"
+          ],
+          "numeric_contract": {
+            "encoding": "signed-big-endian-q16.16",
+            "decode_before_arithmetic": true,
+            "intermediate_domain": "mathematical-integer",
+            "inclusive": true,
+            "forbidden": [
+              "wrapping",
+              "saturation",
+              "rounding",
+              "square-root",
+              "floating-point-conversion",
+              "narrowing"
+            ]
+          }
+        }
+      },
+      {
+        "kind_rank": 2,
+        "local_id": "operator:01",
+        "designation": "world/observer-position-v1"
+      },
+      {
+        "kind_rank": 2,
+        "local_id": "operator:06",
+        "designation": "world/same-space-target-pair-v1"
+      },
+      {
+        "kind_rank": 2,
+        "local_id": "operator:03",
+        "designation": "world/proximity-radius-v1"
+      },
+      {
+        "kind_rank": 2,
+        "local_id": "operator:05",
+        "designation": "world/radius-proximity-law-v1"
+      },
+      {
+        "kind_rank": 2,
+        "local_id": "operator:02",
+        "designation": "world/target-position-v1"
+      }
+    ],
+    "modes": [
+      {
+        "kind_rank": 3,
+        "local_id": "mode:05",
+        "operator_local_id": "operator:05",
+        "relation_schema_local_id": "schema:05",
+        "known_roles": [
+          "role:14",
+          "role:16"
+        ],
+        "produced_roles": [
+          "role:15"
+        ],
+        "contract": {
+          "executable_validity": "required",
+          "authorization_set": "authorization-set:execution-and-derivation",
+          "cardinality": "many",
+          "purity": "pure",
+          "determinism": "deterministic",
+          "totality": "finite-total",
+          "ordering": "canonical-binding-order",
+          "continuation": "none",
+          "required_authorizations": [
+            "ExecutionAuthorization",
+            "DerivationAuthorization"
+          ]
+        }
+      },
+      {
+        "kind_rank": 3,
+        "local_id": "mode:01",
+        "operator_local_id": "operator:01",
+        "relation_schema_local_id": "schema:01",
+        "known_roles": [
+          "role:01",
+          "role:03"
+        ],
+        "produced_roles": [
+          "role:02"
+        ],
+        "contract": {
+          "executable_validity": "required",
+          "authorization_set": "authorization-set:none",
+          "required_authorizations": [],
+          "cardinality": "one",
+          "purity": "pure",
+          "determinism": "deterministic",
+          "totality": "finite-total"
+        }
+      },
+      {
+        "kind_rank": 3,
+        "local_id": "mode:06",
+        "operator_local_id": "operator:06",
+        "relation_schema_local_id": "schema:06",
+        "known_roles": [
+          "role:19"
+        ],
+        "produced_roles": [
+          "role:17",
+          "role:18"
+        ],
+        "contract": {
+          "executable_validity": "required",
+          "authorization_set": "authorization-set:execution-and-derivation",
+          "cardinality": "many",
+          "purity": "pure",
+          "determinism": "deterministic",
+          "totality": "finite-total",
+          "ordering": "canonical-binding-order",
+          "continuation": "none",
+          "required_authorizations": [
+            "ExecutionAuthorization",
+            "DerivationAuthorization"
+          ]
+        }
+      },
+      {
+        "kind_rank": 3,
+        "local_id": "mode:02",
+        "operator_local_id": "operator:02",
+        "relation_schema_local_id": "schema:02",
+        "known_roles": [
+          "role:04",
+          "role:06"
+        ],
+        "produced_roles": [
+          "role:05"
+        ],
+        "contract": {
+          "executable_validity": "required",
+          "authorization_set": "authorization-set:none",
+          "required_authorizations": [],
+          "cardinality": "one",
+          "purity": "pure",
+          "determinism": "deterministic",
+          "totality": "finite-total"
+        }
+      },
+      {
+        "kind_rank": 3,
+        "local_id": "mode:04",
+        "operator_local_id": "operator:04",
+        "relation_schema_local_id": "schema:04",
+        "known_roles": [
+          "role:10",
+          "role:11",
+          "role:12"
+        ],
+        "produced_roles": [
+          "role:13"
+        ],
+        "contract": {
+          "executable_validity": "required",
+          "authorization_set": "authorization-set:execution",
+          "cardinality": "one",
+          "purity": "pure",
+          "determinism": "deterministic",
+          "totality": "total",
+          "ordering": "single",
+          "continuation": "none",
+          "required_authorizations": [
+            "ExecutionAuthorization"
+          ]
+        }
+      },
+      {
+        "kind_rank": 3,
+        "local_id": "mode:03",
+        "operator_local_id": "operator:03",
+        "relation_schema_local_id": "schema:03",
+        "known_roles": [
+          "role:07",
+          "role:09"
+        ],
+        "produced_roles": [
+          "role:08"
+        ],
+        "contract": {
+          "executable_validity": "required",
+          "authorization_set": "authorization-set:none",
+          "required_authorizations": [],
+          "cardinality": "one",
+          "purity": "pure",
+          "determinism": "deterministic",
+          "totality": "finite-total"
+        }
+      }
+    ],
+    "formation_judgments": [
+      {
+        "kind_rank": 4,
+        "local_id": "formation:03",
+        "subject_term_local_id": "term:03",
+        "formed_type": "ApplicationForm<BindingSet>",
+        "interpretation": {
+          "application_form_local_id": "form:03"
+        },
+        "exact_dependency_closure": [
+          "law:02",
+          "mode:06",
+          "operator:06",
+          "schema:06"
+        ]
+      },
+      {
+        "kind_rank": 4,
+        "local_id": "formation:02",
+        "subject_term_local_id": "term:02",
+        "formed_type": "ApplicationForm<Boolean>",
+        "interpretation": {
+          "application_form_local_id": "form:02"
+        },
+        "exact_dependency_closure": [
+          "application:04",
+          "application:05",
+          "application:06",
+          "application:07",
+          "application:08",
+          "application:09",
+          "application:10",
+          "application:11",
+          "application:12",
+          "application:13",
+          "application:14",
+          "application:15",
+          "application:16",
+          "core-mode:add-int-total",
+          "core-mode:lte-int-total",
+          "core-mode:mul-int-total",
+          "core-mode:point2-q16-x-raw-total",
+          "core-mode:point2-q16-y-raw-total",
+          "core-mode:sub-int-total",
+          "core-op:add-int",
+          "core-op:lte-int",
+          "core-op:mul-int",
+          "core-op:point2-q16-x-raw",
+          "core-op:point2-q16-y-raw",
+          "core-op:sub-int",
+          "core-schema:int-binary",
+          "core-schema:int-comparison",
+          "core-schema:point2-q16-component",
+          "form:04",
+          "form:05",
+          "form:06",
+          "form:07",
+          "form:08",
+          "form:09",
+          "form:10",
+          "form:11",
+          "form:12",
+          "form:13",
+          "form:14",
+          "form:15",
+          "form:16",
+          "formation:04",
+          "formation:05",
+          "formation:06",
+          "formation:07",
+          "formation:08",
+          "formation:09",
+          "formation:10",
+          "formation:11",
+          "formation:12",
+          "formation:13",
+          "formation:14",
+          "formation:15",
+          "formation:16",
+          "mode:04",
+          "operator:04",
+          "schema:04",
+          "term:04",
+          "term:05",
+          "term:06",
+          "term:07",
+          "term:08",
+          "term:09",
+          "term:10",
+          "term:11",
+          "term:12",
+          "term:13",
+          "term:14",
+          "term:15",
+          "term:16"
+        ]
+      },
+      {
+        "kind_rank": 4,
+        "local_id": "formation:01",
+        "subject_term_local_id": "term:01",
+        "formed_type": "ApplicationForm<BindingSet>",
+        "interpretation": {
+          "application_form_local_id": "form:01"
+        },
+        "exact_dependency_closure": [
+          "law:01",
+          "mode:05",
+          "operator:05",
+          "schema:05"
+        ]
+      },
+      {
+        "kind_rank": 4,
+        "local_id": "formation:04",
+        "subject_term_local_id": "term:04",
+        "formed_type": "ApplicationForm<MathematicalInteger>",
+        "interpretation": { "application_form_local_id": "form:04" },
+        "exact_dependency_closure": [
+          "core-mode:point2-q16-x-raw-total",
+          "core-op:point2-q16-x-raw",
+          "core-schema:point2-q16-component"
+        ]
+      },
+      {
+        "kind_rank": 4,
+        "local_id": "formation:05",
+        "subject_term_local_id": "term:05",
+        "formed_type": "ApplicationForm<MathematicalInteger>",
+        "interpretation": { "application_form_local_id": "form:05" },
+        "exact_dependency_closure": [
+          "core-mode:point2-q16-y-raw-total",
+          "core-op:point2-q16-y-raw",
+          "core-schema:point2-q16-component"
+        ]
+      },
+      {
+        "kind_rank": 4,
+        "local_id": "formation:06",
+        "subject_term_local_id": "term:06",
+        "formed_type": "ApplicationForm<MathematicalInteger>",
+        "interpretation": { "application_form_local_id": "form:06" },
+        "exact_dependency_closure": [
+          "core-mode:point2-q16-x-raw-total",
+          "core-op:point2-q16-x-raw",
+          "core-schema:point2-q16-component"
+        ]
+      },
+      {
+        "kind_rank": 4,
+        "local_id": "formation:07",
+        "subject_term_local_id": "term:07",
+        "formed_type": "ApplicationForm<MathematicalInteger>",
+        "interpretation": { "application_form_local_id": "form:07" },
+        "exact_dependency_closure": [
+          "core-mode:point2-q16-y-raw-total",
+          "core-op:point2-q16-y-raw",
+          "core-schema:point2-q16-component"
+        ]
+      },
+      {
+        "kind_rank": 4,
+        "local_id": "formation:08",
+        "subject_term_local_id": "term:08",
+        "formed_type": "ApplicationForm<MathematicalInteger>",
+        "interpretation": { "application_form_local_id": "form:08" },
+        "exact_dependency_closure": ["core-mode:sub-int-total", "core-op:sub-int", "core-schema:int-binary"]
+      },
+      {
+        "kind_rank": 4,
+        "local_id": "formation:09",
+        "subject_term_local_id": "term:09",
+        "formed_type": "ApplicationForm<MathematicalInteger>",
+        "interpretation": { "application_form_local_id": "form:09" },
+        "exact_dependency_closure": ["core-mode:sub-int-total", "core-op:sub-int", "core-schema:int-binary"]
+      },
+      {
+        "kind_rank": 4,
+        "local_id": "formation:10",
+        "subject_term_local_id": "term:10",
+        "formed_type": "ApplicationForm<MathematicalInteger>",
+        "interpretation": { "application_form_local_id": "form:10" },
+        "exact_dependency_closure": ["core-mode:mul-int-total", "core-op:mul-int", "core-schema:int-binary"]
+      },
+      {
+        "kind_rank": 4,
+        "local_id": "formation:11",
+        "subject_term_local_id": "term:11",
+        "formed_type": "ApplicationForm<MathematicalInteger>",
+        "interpretation": { "application_form_local_id": "form:11" },
+        "exact_dependency_closure": ["core-mode:sub-int-total", "core-op:sub-int", "core-schema:int-binary"]
+      },
+      {
+        "kind_rank": 4,
+        "local_id": "formation:12",
+        "subject_term_local_id": "term:12",
+        "formed_type": "ApplicationForm<MathematicalInteger>",
+        "interpretation": { "application_form_local_id": "form:12" },
+        "exact_dependency_closure": ["core-mode:sub-int-total", "core-op:sub-int", "core-schema:int-binary"]
+      },
+      {
+        "kind_rank": 4,
+        "local_id": "formation:13",
+        "subject_term_local_id": "term:13",
+        "formed_type": "ApplicationForm<MathematicalInteger>",
+        "interpretation": { "application_form_local_id": "form:13" },
+        "exact_dependency_closure": ["core-mode:mul-int-total", "core-op:mul-int", "core-schema:int-binary"]
+      },
+      {
+        "kind_rank": 4,
+        "local_id": "formation:14",
+        "subject_term_local_id": "term:14",
+        "formed_type": "ApplicationForm<MathematicalInteger>",
+        "interpretation": { "application_form_local_id": "form:14" },
+        "exact_dependency_closure": ["core-mode:add-int-total", "core-op:add-int", "core-schema:int-binary"]
+      },
+      {
+        "kind_rank": 4,
+        "local_id": "formation:15",
+        "subject_term_local_id": "term:15",
+        "formed_type": "ApplicationForm<MathematicalInteger>",
+        "interpretation": { "application_form_local_id": "form:15" },
+        "exact_dependency_closure": ["core-mode:mul-int-total", "core-op:mul-int", "core-schema:int-binary"]
+      },
+      {
+        "kind_rank": 4,
+        "local_id": "formation:16",
+        "subject_term_local_id": "term:16",
+        "formed_type": "ApplicationForm<Boolean>",
+        "interpretation": { "application_form_local_id": "form:16" },
+        "exact_dependency_closure": ["core-mode:lte-int-total", "core-op:lte-int", "core-schema:int-comparison"]
+      }
+    ],
+    "application_forms": [
+      {
+        "kind_rank": 5,
+        "local_id": "form:03",
+        "term_local_id": "term:03",
+        "relation_schema_local_id": "schema:06",
+        "operator_local_id": "operator:06",
+        "eligible_mode_local_ids": [
+          "mode:06"
+        ],
+        "named_role_bindings": [
+          {
+            "role_local_id": "role:17",
+            "binding": {
+              "produced_variable_local_id": "variable:left-target"
+            }
+          },
+          {
+            "role_local_id": "role:18",
+            "binding": {
+              "produced_variable_local_id": "variable:right-target"
+            }
+          },
+          {
+            "role_local_id": "role:19",
+            "binding": {
+              "variable_local_id": "variable:space"
+            }
+          }
+        ],
+        "context_requirements": [
+          "ClauseSemanticsId",
+          "ProgramSnapshotId",
+          "ProgramRevisionId",
+          "RuntimeSessionId",
+          "StateRevisionId",
+          "RuntimePolicyId",
+          "ExecutableValidity",
+          "DerivationAuthorization",
+          "ExecutionAuthorization",
+          "CapabilitySet",
+          "finite-budget"
+        ],
+        "exact_dependency_closure": [
+          "law:02",
+          "mode:06",
+          "operator:06",
+          "schema:06"
+        ]
+      },
+      {
+        "kind_rank": 5,
+        "local_id": "form:01",
+        "term_local_id": "term:01",
+        "relation_schema_local_id": "schema:05",
+        "operator_local_id": "operator:05",
+        "eligible_mode_local_ids": [
+          "mode:05"
+        ],
+        "named_role_bindings": [
+          {
+            "role_local_id": "role:16",
+            "binding": {
+              "variable_local_id": "variable:space"
+            }
+          },
+          {
+            "role_local_id": "role:14",
+            "binding": {
+              "variable_local_id": "variable:observer"
+            }
+          },
+          {
+            "role_local_id": "role:15",
+            "binding": {
+              "produced_variable_local_id": "variable:target"
+            }
+          }
+        ],
+        "context_requirements": [
+          "ClauseSemanticsId",
+          "ProgramSnapshotId",
+          "ProgramRevisionId",
+          "RuntimeSessionId",
+          "StateRevisionId",
+          "RuntimePolicyId",
+          "ExecutableValidity",
+          "DerivationAuthorization",
+          "ExecutionAuthorization",
+          "CapabilitySet",
+          "finite-budget"
+        ],
+        "exact_dependency_closure": [
+          "law:01",
+          "mode:05",
+          "operator:05",
+          "schema:05"
+        ]
+      },
+      {
+        "kind_rank": 5,
+        "local_id": "form:02",
+        "term_local_id": "term:02",
+        "relation_schema_local_id": "schema:04",
+        "operator_local_id": "operator:04",
+        "eligible_mode_local_ids": [
+          "mode:04"
+        ],
+        "named_role_bindings": [
+          {
+            "role_local_id": "role:13",
+            "binding": {
+              "produced_variable_local_id": "variable:verdict"
+            }
+          },
+          {
+            "role_local_id": "role:10",
+            "binding": {
+              "variable_local_id": "variable:target-point"
+            }
+          },
+          {
+            "role_local_id": "role:12",
+            "binding": {
+              "variable_local_id": "variable:radius"
+            }
+          },
+          {
+            "role_local_id": "role:11",
+            "binding": {
+              "variable_local_id": "variable:observer-point"
+            }
+          }
+        ],
+        "point_component_projections": [
+          {
+            "ordinal": 0,
+            "application_local_id": "application:04",
+            "application_form_local_id": "form:04",
+            "source_variable_local_id": "variable:target-point",
+            "produced_variable_local_id": "variable:target-x"
+          },
+          {
+            "ordinal": 1,
+            "application_local_id": "application:05",
+            "application_form_local_id": "form:05",
+            "source_variable_local_id": "variable:target-point",
+            "produced_variable_local_id": "variable:target-y"
+          },
+          {
+            "ordinal": 2,
+            "application_local_id": "application:06",
+            "application_form_local_id": "form:06",
+            "source_variable_local_id": "variable:observer-point",
+            "produced_variable_local_id": "variable:observer-x"
+          },
+          {
+            "ordinal": 3,
+            "application_local_id": "application:07",
+            "application_form_local_id": "form:07",
+            "source_variable_local_id": "variable:observer-point",
+            "produced_variable_local_id": "variable:observer-y"
+          }
+        ],
+        "context_requirements": [
+          "ClauseSemanticsId",
+          "ProgramSnapshotId",
+          "ProgramRevisionId",
+          "RuntimeSessionId",
+          "StateRevisionId",
+          "RuntimePolicyId",
+          "ExecutableValidity",
+          "ExecutionAuthorization",
+          "CapabilitySet",
+          "finite-budget"
+        ],
+        "exact_dependency_closure": [
+          "application:04",
+          "application:05",
+          "application:06",
+          "application:07",
+          "application:08",
+          "application:09",
+          "application:10",
+          "application:11",
+          "application:12",
+          "application:13",
+          "application:14",
+          "application:15",
+          "application:16",
+          "core-mode:add-int-total",
+          "core-mode:lte-int-total",
+          "core-mode:mul-int-total",
+          "core-mode:point2-q16-x-raw-total",
+          "core-mode:point2-q16-y-raw-total",
+          "core-mode:sub-int-total",
+          "core-op:add-int",
+          "core-op:lte-int",
+          "core-op:mul-int",
+          "core-op:point2-q16-x-raw",
+          "core-op:point2-q16-y-raw",
+          "core-op:sub-int",
+          "core-schema:int-binary",
+          "core-schema:int-comparison",
+          "core-schema:point2-q16-component",
+          "form:04",
+          "form:05",
+          "form:06",
+          "form:07",
+          "form:08",
+          "form:09",
+          "form:10",
+          "form:11",
+          "form:12",
+          "form:13",
+          "form:14",
+          "form:15",
+          "form:16",
+          "formation:04",
+          "formation:05",
+          "formation:06",
+          "formation:07",
+          "formation:08",
+          "formation:09",
+          "formation:10",
+          "formation:11",
+          "formation:12",
+          "formation:13",
+          "formation:14",
+          "formation:15",
+          "formation:16",
+          "mode:04",
+          "operator:04",
+          "schema:04",
+          "term:04",
+          "term:05",
+          "term:06",
+          "term:07",
+          "term:08",
+          "term:09",
+          "term:10",
+          "term:11",
+          "term:12",
+          "term:13",
+          "term:14",
+          "term:15",
+          "term:16"
+        ]
+      },
+      {
+        "kind_rank": 5,
+        "local_id": "form:04",
+        "term_local_id": "term:04",
+        "relation_schema_id": "core-schema:point2-q16-component",
+        "operator_ref": "core-op:point2-q16-x-raw",
+        "eligible_mode_ids": ["core-mode:point2-q16-x-raw-total"],
+        "named_role_bindings": [
+          { "role_id": "core-role:point", "binding": { "variable_local_id": "variable:target-point" } },
+          { "role_id": "core-role:raw", "binding": { "produced_variable_local_id": "variable:target-x" } }
+        ],
+        "context_requirements": ["ClauseSemanticsId", "ProgramSnapshotId", "ProgramRevisionId", "RuntimeSessionId", "RuntimePolicyId", "ExecutableValidity", "CapabilitySet", "finite-budget"],
+        "exact_dependency_closure": ["core-mode:point2-q16-x-raw-total", "core-op:point2-q16-x-raw", "core-schema:point2-q16-component"]
+      },
+      {
+        "kind_rank": 5,
+        "local_id": "form:05",
+        "term_local_id": "term:05",
+        "relation_schema_id": "core-schema:point2-q16-component",
+        "operator_ref": "core-op:point2-q16-y-raw",
+        "eligible_mode_ids": ["core-mode:point2-q16-y-raw-total"],
+        "named_role_bindings": [
+          { "role_id": "core-role:point", "binding": { "variable_local_id": "variable:target-point" } },
+          { "role_id": "core-role:raw", "binding": { "produced_variable_local_id": "variable:target-y" } }
+        ],
+        "context_requirements": ["ClauseSemanticsId", "ProgramSnapshotId", "ProgramRevisionId", "RuntimeSessionId", "RuntimePolicyId", "ExecutableValidity", "CapabilitySet", "finite-budget"],
+        "exact_dependency_closure": ["core-mode:point2-q16-y-raw-total", "core-op:point2-q16-y-raw", "core-schema:point2-q16-component"]
+      },
+      {
+        "kind_rank": 5,
+        "local_id": "form:06",
+        "term_local_id": "term:06",
+        "relation_schema_id": "core-schema:point2-q16-component",
+        "operator_ref": "core-op:point2-q16-x-raw",
+        "eligible_mode_ids": ["core-mode:point2-q16-x-raw-total"],
+        "named_role_bindings": [
+          { "role_id": "core-role:point", "binding": { "variable_local_id": "variable:observer-point" } },
+          { "role_id": "core-role:raw", "binding": { "produced_variable_local_id": "variable:observer-x" } }
+        ],
+        "context_requirements": ["ClauseSemanticsId", "ProgramSnapshotId", "ProgramRevisionId", "RuntimeSessionId", "RuntimePolicyId", "ExecutableValidity", "CapabilitySet", "finite-budget"],
+        "exact_dependency_closure": ["core-mode:point2-q16-x-raw-total", "core-op:point2-q16-x-raw", "core-schema:point2-q16-component"]
+      },
+      {
+        "kind_rank": 5,
+        "local_id": "form:07",
+        "term_local_id": "term:07",
+        "relation_schema_id": "core-schema:point2-q16-component",
+        "operator_ref": "core-op:point2-q16-y-raw",
+        "eligible_mode_ids": ["core-mode:point2-q16-y-raw-total"],
+        "named_role_bindings": [
+          { "role_id": "core-role:point", "binding": { "variable_local_id": "variable:observer-point" } },
+          { "role_id": "core-role:raw", "binding": { "produced_variable_local_id": "variable:observer-y" } }
+        ],
+        "context_requirements": ["ClauseSemanticsId", "ProgramSnapshotId", "ProgramRevisionId", "RuntimeSessionId", "RuntimePolicyId", "ExecutableValidity", "CapabilitySet", "finite-budget"],
+        "exact_dependency_closure": ["core-mode:point2-q16-y-raw-total", "core-op:point2-q16-y-raw", "core-schema:point2-q16-component"]
+      },
+      {
+        "kind_rank": 5,
+        "local_id": "form:08",
+        "term_local_id": "term:08",
+        "relation_schema_id": "core-schema:int-binary",
+        "operator_ref": "core-op:sub-int",
+        "eligible_mode_ids": ["core-mode:sub-int-total"],
+        "named_role_bindings": [
+          { "role_id": "core-role:left", "binding": { "variable_local_id": "variable:target-x" } },
+          { "role_id": "core-role:right", "binding": { "variable_local_id": "variable:observer-x" } },
+          { "role_id": "core-role:result", "binding": { "produced_variable_local_id": "variable:delta-x-left" } }
+        ],
+        "context_requirements": ["ClauseSemanticsId", "ProgramSnapshotId", "ProgramRevisionId", "RuntimeSessionId", "RuntimePolicyId", "ExecutableValidity", "CapabilitySet", "finite-budget"],
+        "exact_dependency_closure": ["core-mode:sub-int-total", "core-op:sub-int", "core-schema:int-binary"]
+      },
+      {
+        "kind_rank": 5,
+        "local_id": "form:09",
+        "term_local_id": "term:09",
+        "relation_schema_id": "core-schema:int-binary",
+        "operator_ref": "core-op:sub-int",
+        "eligible_mode_ids": ["core-mode:sub-int-total"],
+        "named_role_bindings": [
+          { "role_id": "core-role:left", "binding": { "variable_local_id": "variable:target-x" } },
+          { "role_id": "core-role:right", "binding": { "variable_local_id": "variable:observer-x" } },
+          { "role_id": "core-role:result", "binding": { "produced_variable_local_id": "variable:delta-x-right" } }
+        ],
+        "context_requirements": ["ClauseSemanticsId", "ProgramSnapshotId", "ProgramRevisionId", "RuntimeSessionId", "RuntimePolicyId", "ExecutableValidity", "CapabilitySet", "finite-budget"],
+        "exact_dependency_closure": ["core-mode:sub-int-total", "core-op:sub-int", "core-schema:int-binary"]
+      },
+      {
+        "kind_rank": 5,
+        "local_id": "form:10",
+        "term_local_id": "term:10",
+        "relation_schema_id": "core-schema:int-binary",
+        "operator_ref": "core-op:mul-int",
+        "eligible_mode_ids": ["core-mode:mul-int-total"],
+        "named_role_bindings": [
+          { "role_id": "core-role:left", "binding": { "variable_local_id": "variable:delta-x-left" } },
+          { "role_id": "core-role:right", "binding": { "variable_local_id": "variable:delta-x-right" } },
+          { "role_id": "core-role:result", "binding": { "produced_variable_local_id": "variable:square-x" } }
+        ],
+        "context_requirements": ["ClauseSemanticsId", "ProgramSnapshotId", "ProgramRevisionId", "RuntimeSessionId", "RuntimePolicyId", "ExecutableValidity", "CapabilitySet", "finite-budget"],
+        "exact_dependency_closure": ["core-mode:mul-int-total", "core-op:mul-int", "core-schema:int-binary"]
+      },
+      {
+        "kind_rank": 5,
+        "local_id": "form:11",
+        "term_local_id": "term:11",
+        "relation_schema_id": "core-schema:int-binary",
+        "operator_ref": "core-op:sub-int",
+        "eligible_mode_ids": ["core-mode:sub-int-total"],
+        "named_role_bindings": [
+          { "role_id": "core-role:left", "binding": { "variable_local_id": "variable:target-y" } },
+          { "role_id": "core-role:right", "binding": { "variable_local_id": "variable:observer-y" } },
+          { "role_id": "core-role:result", "binding": { "produced_variable_local_id": "variable:delta-y-left" } }
+        ],
+        "context_requirements": ["ClauseSemanticsId", "ProgramSnapshotId", "ProgramRevisionId", "RuntimeSessionId", "RuntimePolicyId", "ExecutableValidity", "CapabilitySet", "finite-budget"],
+        "exact_dependency_closure": ["core-mode:sub-int-total", "core-op:sub-int", "core-schema:int-binary"]
+      },
+      {
+        "kind_rank": 5,
+        "local_id": "form:12",
+        "term_local_id": "term:12",
+        "relation_schema_id": "core-schema:int-binary",
+        "operator_ref": "core-op:sub-int",
+        "eligible_mode_ids": ["core-mode:sub-int-total"],
+        "named_role_bindings": [
+          { "role_id": "core-role:left", "binding": { "variable_local_id": "variable:target-y" } },
+          { "role_id": "core-role:right", "binding": { "variable_local_id": "variable:observer-y" } },
+          { "role_id": "core-role:result", "binding": { "produced_variable_local_id": "variable:delta-y-right" } }
+        ],
+        "context_requirements": ["ClauseSemanticsId", "ProgramSnapshotId", "ProgramRevisionId", "RuntimeSessionId", "RuntimePolicyId", "ExecutableValidity", "CapabilitySet", "finite-budget"],
+        "exact_dependency_closure": ["core-mode:sub-int-total", "core-op:sub-int", "core-schema:int-binary"]
+      },
+      {
+        "kind_rank": 5,
+        "local_id": "form:13",
+        "term_local_id": "term:13",
+        "relation_schema_id": "core-schema:int-binary",
+        "operator_ref": "core-op:mul-int",
+        "eligible_mode_ids": ["core-mode:mul-int-total"],
+        "named_role_bindings": [
+          { "role_id": "core-role:left", "binding": { "variable_local_id": "variable:delta-y-left" } },
+          { "role_id": "core-role:right", "binding": { "variable_local_id": "variable:delta-y-right" } },
+          { "role_id": "core-role:result", "binding": { "produced_variable_local_id": "variable:square-y" } }
+        ],
+        "context_requirements": ["ClauseSemanticsId", "ProgramSnapshotId", "ProgramRevisionId", "RuntimeSessionId", "RuntimePolicyId", "ExecutableValidity", "CapabilitySet", "finite-budget"],
+        "exact_dependency_closure": ["core-mode:mul-int-total", "core-op:mul-int", "core-schema:int-binary"]
+      },
+      {
+        "kind_rank": 5,
+        "local_id": "form:14",
+        "term_local_id": "term:14",
+        "relation_schema_id": "core-schema:int-binary",
+        "operator_ref": "core-op:add-int",
+        "eligible_mode_ids": ["core-mode:add-int-total"],
+        "named_role_bindings": [
+          { "role_id": "core-role:left", "binding": { "variable_local_id": "variable:square-x" } },
+          { "role_id": "core-role:right", "binding": { "variable_local_id": "variable:square-y" } },
+          { "role_id": "core-role:result", "binding": { "produced_variable_local_id": "variable:distance-square" } }
+        ],
+        "context_requirements": ["ClauseSemanticsId", "ProgramSnapshotId", "ProgramRevisionId", "RuntimeSessionId", "RuntimePolicyId", "ExecutableValidity", "CapabilitySet", "finite-budget"],
+        "exact_dependency_closure": ["core-mode:add-int-total", "core-op:add-int", "core-schema:int-binary"]
+      },
+      {
+        "kind_rank": 5,
+        "local_id": "form:15",
+        "term_local_id": "term:15",
+        "relation_schema_id": "core-schema:int-binary",
+        "operator_ref": "core-op:mul-int",
+        "eligible_mode_ids": ["core-mode:mul-int-total"],
+        "named_role_bindings": [
+          { "role_id": "core-role:left", "binding": { "variable_local_id": "variable:radius" } },
+          { "role_id": "core-role:right", "binding": { "variable_local_id": "variable:radius" } },
+          { "role_id": "core-role:result", "binding": { "produced_variable_local_id": "variable:radius-square" } }
+        ],
+        "context_requirements": ["ClauseSemanticsId", "ProgramSnapshotId", "ProgramRevisionId", "RuntimeSessionId", "RuntimePolicyId", "ExecutableValidity", "CapabilitySet", "finite-budget"],
+        "exact_dependency_closure": ["core-mode:mul-int-total", "core-op:mul-int", "core-schema:int-binary"]
+      },
+      {
+        "kind_rank": 5,
+        "local_id": "form:16",
+        "term_local_id": "term:16",
+        "relation_schema_id": "core-schema:int-comparison",
+        "operator_ref": "core-op:lte-int",
+        "eligible_mode_ids": ["core-mode:lte-int-total"],
+        "named_role_bindings": [
+          { "role_id": "core-role:left", "binding": { "variable_local_id": "variable:distance-square" } },
+          { "role_id": "core-role:right", "binding": { "variable_local_id": "variable:radius-square" } },
+          { "role_id": "core-role:verdict", "binding": { "produced_variable_local_id": "variable:verdict" } }
+        ],
+        "context_requirements": ["ClauseSemanticsId", "ProgramSnapshotId", "ProgramRevisionId", "RuntimeSessionId", "RuntimePolicyId", "ExecutableValidity", "CapabilitySet", "finite-budget"],
+        "exact_dependency_closure": ["core-mode:lte-int-total", "core-op:lte-int", "core-schema:int-comparison"]
+      }
+    ],
+    "applications": [
+      {
+        "kind_rank": 6,
+        "local_id": "application:03",
+        "application_form_local_id": "form:03"
+      },
+      {
+        "kind_rank": 6,
+        "local_id": "application:02",
+        "application_form_local_id": "form:02"
+      },
+      {
+        "kind_rank": 6,
+        "local_id": "application:01",
+        "application_form_local_id": "form:01"
+      },
+      { "kind_rank": 6, "local_id": "application:04", "application_form_local_id": "form:04" },
+      { "kind_rank": 6, "local_id": "application:05", "application_form_local_id": "form:05" },
+      { "kind_rank": 6, "local_id": "application:06", "application_form_local_id": "form:06" },
+      { "kind_rank": 6, "local_id": "application:07", "application_form_local_id": "form:07" },
+      { "kind_rank": 6, "local_id": "application:08", "application_form_local_id": "form:08" },
+      { "kind_rank": 6, "local_id": "application:09", "application_form_local_id": "form:09" },
+      { "kind_rank": 6, "local_id": "application:10", "application_form_local_id": "form:10" },
+      { "kind_rank": 6, "local_id": "application:11", "application_form_local_id": "form:11" },
+      { "kind_rank": 6, "local_id": "application:12", "application_form_local_id": "form:12" },
+      { "kind_rank": 6, "local_id": "application:13", "application_form_local_id": "form:13" },
+      { "kind_rank": 6, "local_id": "application:14", "application_form_local_id": "form:14" },
+      { "kind_rank": 6, "local_id": "application:15", "application_form_local_id": "form:15" },
+      { "kind_rank": 6, "local_id": "application:16", "application_form_local_id": "form:16" }
+    ],
+    "laws": [
+      {
+        "kind_rank": 7,
+        "local_id": "law:02",
+        "designation": "world/same-space-target-pair-v1",
+        "operator_local_id": "operator:06",
+        "derivation_mode_local_id": "mode:06",
+        "conclusion_schema_local_id": "schema:06",
+        "context_requirements": [
+          "ProgramRevisionId",
+          "StateRevisionId",
+          "RuntimePolicyId",
+          "DerivationAuthorization"
+        ],
+        "premise_occurrences": [
+          {
+            "ordinal": 1,
+            "local_id": "premise:05",
+            "relation_schema_local_id": "schema:02",
+            "eligible_mode_local_ids": [
+              "mode:02"
+            ],
+            "slots": [
+              {
+                "ordinal": 2,
+                "local_id": "slot:17",
+                "role_local_id": "role:06",
+                "variable_local_id": "variable:space"
+              },
+              {
+                "ordinal": 0,
+                "local_id": "slot:15",
+                "role_local_id": "role:04",
+                "variable_local_id": "variable:right-target"
+              },
+              {
+                "ordinal": 1,
+                "local_id": "slot:16",
+                "role_local_id": "role:05",
+                "variable_local_id": "variable:right-point"
+              }
+            ]
+          },
+          {
+            "ordinal": 0,
+            "local_id": "premise:04",
+            "relation_schema_local_id": "schema:02",
+            "eligible_mode_local_ids": [
+              "mode:02"
+            ],
+            "slots": [
+              {
+                "ordinal": 1,
+                "local_id": "slot:13",
+                "role_local_id": "role:05",
+                "variable_local_id": "variable:left-point"
+              },
+              {
+                "ordinal": 2,
+                "local_id": "slot:14",
+                "role_local_id": "role:06",
+                "variable_local_id": "variable:space"
+              },
+              {
+                "ordinal": 0,
+                "local_id": "slot:12",
+                "role_local_id": "role:04",
+                "variable_local_id": "variable:left-target"
+              }
+            ]
+          }
+        ],
+        "conclusion_projection": [
+          {
+            "ordinal": 2,
+            "role_local_id": "role:19",
+            "variable_local_id": "variable:space"
+          },
+          {
+            "ordinal": 0,
+            "role_local_id": "role:17",
+            "variable_local_id": "variable:left-target"
+          },
+          {
+            "ordinal": 1,
+            "role_local_id": "role:18",
+            "variable_local_id": "variable:right-target"
+          }
+        ],
+        "derivation_authorization_local_id": "judgment:01"
+      },
+      {
+        "kind_rank": 7,
+        "local_id": "law:01",
+        "designation": "world/radius-proximity-law-v1",
+        "operator_local_id": "operator:05",
+        "derivation_mode_local_id": "mode:05",
+        "conclusion_schema_local_id": "schema:05",
+        "context_requirements": [
+          "ProgramRevisionId",
+          "StateRevisionId",
+          "RuntimePolicyId",
+          "DerivationAuthorization"
+        ],
+        "premise_occurrences": [
+          {
+            "ordinal": 3,
+            "local_id": "premise:03",
+            "relation_schema_local_id": "schema:04",
+            "eligible_mode_local_ids": [
+              "mode:04"
+            ],
+            "slots": [
+              {
+                "ordinal": 3,
+                "local_id": "slot:11",
+                "role_local_id": "role:13",
+                "constant": {
+                  "atom": true
+                }
+              },
+              {
+                "ordinal": 0,
+                "local_id": "slot:08",
+                "role_local_id": "role:10",
+                "variable_local_id": "variable:target-point"
+              },
+              {
+                "ordinal": 2,
+                "local_id": "slot:10",
+                "role_local_id": "role:12",
+                "variable_local_id": "variable:radius"
+              },
+              {
+                "ordinal": 1,
+                "local_id": "slot:09",
+                "role_local_id": "role:11",
+                "variable_local_id": "variable:observer-point"
+              }
+            ]
+          },
+          {
+            "ordinal": 0,
+            "local_id": "premise:00",
+            "relation_schema_local_id": "schema:01",
+            "eligible_mode_local_ids": [
+              "mode:01"
+            ],
+            "slots": [
+              {
+                "ordinal": 2,
+                "local_id": "slot:02",
+                "role_local_id": "role:03",
+                "variable_local_id": "variable:space"
+              },
+              {
+                "ordinal": 0,
+                "local_id": "slot:00",
+                "role_local_id": "role:01",
+                "variable_local_id": "variable:observer"
+              },
+              {
+                "ordinal": 1,
+                "local_id": "slot:01",
+                "role_local_id": "role:02",
+                "variable_local_id": "variable:observer-point"
+              }
+            ]
+          },
+          {
+            "ordinal": 2,
+            "local_id": "premise:02",
+            "relation_schema_local_id": "schema:02",
+            "eligible_mode_local_ids": [
+              "mode:02"
+            ],
+            "slots": [
+              {
+                "ordinal": 1,
+                "local_id": "slot:06",
+                "role_local_id": "role:05",
+                "variable_local_id": "variable:target-point"
+              },
+              {
+                "ordinal": 0,
+                "local_id": "slot:05",
+                "role_local_id": "role:04",
+                "variable_local_id": "variable:target"
+              },
+              {
+                "ordinal": 2,
+                "local_id": "slot:07",
+                "role_local_id": "role:06",
+                "variable_local_id": "variable:space"
+              }
+            ]
+          },
+          {
+            "ordinal": 1,
+            "local_id": "premise:01",
+            "relation_schema_local_id": "schema:03",
+            "eligible_mode_local_ids": [
+              "mode:03"
+            ],
+            "slots": [
+              {
+                "ordinal": 0,
+                "local_id": "slot:03",
+                "role_local_id": "role:07",
+                "variable_local_id": "variable:observer"
+              },
+              {
+                "ordinal": 2,
+                "local_id": "slot:04-space",
+                "role_local_id": "role:09",
+                "variable_local_id": "variable:space"
+              },
+              {
+                "ordinal": 1,
+                "local_id": "slot:04",
+                "role_local_id": "role:08",
+                "variable_local_id": "variable:radius"
+              }
+            ]
+          }
+        ],
+        "conclusion_projection": [
+          {
+            "ordinal": 1,
+            "role_local_id": "role:15",
+            "variable_local_id": "variable:target"
+          },
+          {
+            "ordinal": 2,
+            "role_local_id": "role:16",
+            "variable_local_id": "variable:space"
+          },
+          {
+            "ordinal": 0,
+            "role_local_id": "role:14",
+            "variable_local_id": "variable:observer"
+          }
+        ],
+        "derivation_authorization_local_id": "judgment:01"
+      }
+    ],
+    "judgments": [
+      {
+        "kind_rank": 8,
+        "local_id": "judgment:01",
+        "judgment_kind": "Authorization",
+        "authorization_type": "DerivationAuthorization",
+        "subjects": [
+          {
+            "kind": "Law",
+            "law_local_id": "law:01"
+          },
+          {
+            "kind": "Law",
+            "law_local_id": "law:02"
+          }
+        ],
+        "program_snapshot_scope": {
+          "kind": "ContainingProgramSnapshot"
+        }
+      },
+      {
+        "kind_rank": 8,
+        "local_id": "judgment:02",
+        "judgment_kind": "Authorization",
+        "authorization_type": "ExecutionAuthorization",
+        "subjects": [
+          {
+            "kind": "Application",
+            "application_local_id": "application:01"
+          },
+          {
+            "kind": "Application",
+            "application_local_id": "application:02"
+          },
+          {
+            "kind": "Application",
+            "application_local_id": "application:03"
+          }
+        ],
+        "program_snapshot_scope": {
+          "kind": "ContainingProgramSnapshot"
+        }
+      }
+    ]
+  },
+  "post_snapshot_resolution": {
+    "program_snapshot_id": "ps:01",
+    "program_revision_selection": {
+      "program_revision_id": "pr:01",
+      "selects_program_snapshot_id": "ps:01"
+    },
+    "relation_schema_ids": {
+      "schema:01": "relation-schema:01",
+      "schema:02": "relation-schema:02",
+      "schema:03": "relation-schema:03",
+      "schema:04": "relation-schema:04",
+      "schema:05": "relation-schema:05",
+      "schema:06": "relation-schema:06"
+    },
+    "operator_refs": {
+      "operator:01": "operator-ref:01",
+      "operator:02": "operator-ref:02",
+      "operator:03": "operator-ref:03",
+      "operator:04": "operator-ref:04",
+      "operator:05": "operator-ref:05",
+      "operator:06": "operator-ref:06"
+    },
+    "mode_ids": {
+      "mode:01": "mode-id:01",
+      "mode:02": "mode-id:02",
+      "mode:03": "mode-id:03",
+      "mode:04": "mode-id:04",
+      "mode:05": "mode-id:05",
+      "mode:06": "mode-id:06"
+    },
+    "application_ids": {
+      "application:01": "application-id:01",
+      "application:02": "application-id:02",
+      "application:03": "application-id:03",
+      "application:04": "application-id:04",
+      "application:05": "application-id:05",
+      "application:06": "application-id:06",
+      "application:07": "application-id:07",
+      "application:08": "application-id:08",
+      "application:09": "application-id:09",
+      "application:10": "application-id:10",
+      "application:11": "application-id:11",
+      "application:12": "application-id:12",
+      "application:13": "application-id:13",
+      "application:14": "application-id:14",
+      "application:15": "application-id:15",
+      "application:16": "application-id:16"
+    },
+    "role_ids": {
+      "role:01": "role-id:01",
+      "role:02": "role-id:02",
+      "role:03": "role-id:03",
+      "role:04": "role-id:04",
+      "role:05": "role-id:05",
+      "role:06": "role-id:06",
+      "role:07": "role-id:07",
+      "role:08": "role-id:08",
+      "role:09": "role-id:09",
+      "role:10": "role-id:10",
+      "role:11": "role-id:11",
+      "role:12": "role-id:12",
+      "role:13": "role-id:13",
+      "role:14": "role-id:14",
+      "role:15": "role-id:15",
+      "role:16": "role-id:16",
+      "role:17": "role-id:17",
+      "role:18": "role-id:18",
+      "role:19": "role-id:19"
+    },
+    "law_ids": {
+      "law:01": "law-id:01",
+      "law:02": "law-id:02"
+    },
+    "judgment_refs": {
+      "judgment:01": {
+        "judgment_ref": "judgment-ref:01",
+        "program_snapshot_id": "ps:01",
+        "judgment_kind": "Authorization",
+        "authorization_type": "DerivationAuthorization",
+        "resolved_subjects": [
+          {
+            "kind": "Law",
+            "law_id": "law-id:01"
+          },
+          {
+            "kind": "Law",
+            "law_id": "law-id:02"
+          }
+        ]
+      },
+      "judgment:02": {
+        "judgment_ref": "judgment-ref:02",
+        "program_snapshot_id": "ps:01",
+        "judgment_kind": "Authorization",
+        "authorization_type": "ExecutionAuthorization",
+        "resolved_subjects": [
+          {
+            "kind": "Application",
+            "application_id": "application-id:01"
+          },
+          {
+            "kind": "Application",
+            "application_id": "application-id:02"
+          },
+          {
+            "kind": "Application",
+            "application_id": "application-id:03"
+          }
+        ]
+      }
+    },
+    "premise_occurrence_ids": {
+      "premise:00": "premise-id:00",
+      "premise:01": "premise-id:01",
+      "premise:02": "premise-id:02",
+      "premise:03": "premise-id:03",
+      "premise:04": "premise-id:04",
+      "premise:05": "premise-id:05"
+    },
+    "application_forms": {
+      "form:01": {
+        "term_local_id": "term:01",
+        "relation_schema_id": "relation-schema:05",
+        "operator_ref": "operator-ref:05",
+        "eligible_mode_ids": [
+          "mode-id:05"
+        ]
+      },
+      "form:02": {
+        "term_local_id": "term:02",
+        "relation_schema_id": "relation-schema:04",
+        "operator_ref": "operator-ref:04",
+        "eligible_mode_ids": [
+          "mode-id:04"
+        ]
+      },
+      "form:03": {
+        "term_local_id": "term:03",
+        "relation_schema_id": "relation-schema:06",
+        "operator_ref": "operator-ref:06",
+        "eligible_mode_ids": [
+          "mode-id:06"
+        ]
+      },
+      "form:04": {
+        "term_local_id": "term:04",
+        "relation_schema_id": "core-schema:point2-q16-component",
+        "operator_ref": "core-op:point2-q16-x-raw",
+        "eligible_mode_ids": ["core-mode:point2-q16-x-raw-total"]
+      },
+      "form:05": {
+        "term_local_id": "term:05",
+        "relation_schema_id": "core-schema:point2-q16-component",
+        "operator_ref": "core-op:point2-q16-y-raw",
+        "eligible_mode_ids": ["core-mode:point2-q16-y-raw-total"]
+      },
+      "form:06": {
+        "term_local_id": "term:06",
+        "relation_schema_id": "core-schema:point2-q16-component",
+        "operator_ref": "core-op:point2-q16-x-raw",
+        "eligible_mode_ids": ["core-mode:point2-q16-x-raw-total"]
+      },
+      "form:07": {
+        "term_local_id": "term:07",
+        "relation_schema_id": "core-schema:point2-q16-component",
+        "operator_ref": "core-op:point2-q16-y-raw",
+        "eligible_mode_ids": ["core-mode:point2-q16-y-raw-total"]
+      },
+      "form:08": {
+        "term_local_id": "term:08",
+        "relation_schema_id": "core-schema:int-binary",
+        "operator_ref": "core-op:sub-int",
+        "eligible_mode_ids": ["core-mode:sub-int-total"]
+      },
+      "form:09": {
+        "term_local_id": "term:09",
+        "relation_schema_id": "core-schema:int-binary",
+        "operator_ref": "core-op:sub-int",
+        "eligible_mode_ids": ["core-mode:sub-int-total"]
+      },
+      "form:10": {
+        "term_local_id": "term:10",
+        "relation_schema_id": "core-schema:int-binary",
+        "operator_ref": "core-op:mul-int",
+        "eligible_mode_ids": ["core-mode:mul-int-total"]
+      },
+      "form:11": {
+        "term_local_id": "term:11",
+        "relation_schema_id": "core-schema:int-binary",
+        "operator_ref": "core-op:sub-int",
+        "eligible_mode_ids": ["core-mode:sub-int-total"]
+      },
+      "form:12": {
+        "term_local_id": "term:12",
+        "relation_schema_id": "core-schema:int-binary",
+        "operator_ref": "core-op:sub-int",
+        "eligible_mode_ids": ["core-mode:sub-int-total"]
+      },
+      "form:13": {
+        "term_local_id": "term:13",
+        "relation_schema_id": "core-schema:int-binary",
+        "operator_ref": "core-op:mul-int",
+        "eligible_mode_ids": ["core-mode:mul-int-total"]
+      },
+      "form:14": {
+        "term_local_id": "term:14",
+        "relation_schema_id": "core-schema:int-binary",
+        "operator_ref": "core-op:add-int",
+        "eligible_mode_ids": ["core-mode:add-int-total"]
+      },
+      "form:15": {
+        "term_local_id": "term:15",
+        "relation_schema_id": "core-schema:int-binary",
+        "operator_ref": "core-op:mul-int",
+        "eligible_mode_ids": ["core-mode:mul-int-total"]
+      },
+      "form:16": {
+        "term_local_id": "term:16",
+        "relation_schema_id": "core-schema:int-comparison",
+        "operator_ref": "core-op:lte-int",
+        "eligible_mode_ids": ["core-mode:lte-int-total"]
+      }
+    }
+  }
+}

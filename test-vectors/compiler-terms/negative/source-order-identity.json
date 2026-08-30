@@ -1,0 +1,43 @@
+{
+  "schema": "clause/compiler-terms/constitutive-preimage-candidate-v3",
+  "candidate": {
+    "identity_allocation": {
+      "local_key_preimage_fields": [
+        "json_table_index",
+        "source_line",
+        "designation"
+      ]
+    },
+    "records": [
+      {
+        "json_table_index": 0,
+        "source_line": 41,
+        "designation": "world/in-proximity-v1",
+        "allocated_local_id": "local-id:0"
+      },
+      {
+        "json_table_index": 1,
+        "source_line": 10,
+        "designation": "world/observer-position-v1",
+        "allocated_local_id": "local-id:1"
+      }
+    ],
+    "reordered_transport_claim": {
+      "records": [
+        {
+          "json_table_index": 0,
+          "source_line": 10,
+          "designation": "world/observer-position-v1",
+          "allocated_local_id": "local-id:0"
+        },
+        {
+          "json_table_index": 1,
+          "source_line": 41,
+          "designation": "world/in-proximity-v1",
+          "allocated_local_id": "local-id:1"
+        }
+      ],
+      "claimed_different_constitutive_identity": true
+    }
+  }
+}

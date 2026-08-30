@@ -1,0 +1,16 @@
+{
+  "schema": "clause/compiler-terms/wrong-kind-rank-negative-v3",
+  "context_ref": "../positive/canonical-order-a.json",
+  "candidate": {
+    "record_kind": "ApplicationForm",
+    "kind_rank": 1,
+    "local_id": "form:01",
+    "payload": {
+      "schema": "schema:05",
+      "operator": "operator:05",
+      "eligible_modes": [
+        "mode:05"
+      ]
+    }
+  }
+}

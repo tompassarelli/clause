@@ -1,0 +1,269 @@
+{
+  "schema": "clause/compiler-terms/manifest-v3",
+  "status": "candidate-process-v1-terms",
+  "authority": {
+    "semantic": "docs/foundation.md",
+    "source_projection": "docs/syntax.md",
+    "terms_contract": "docs/compiler-terms.md",
+    "claims_excluded": [
+      "admitted ProgramSnapshot",
+      "admitted compiler package",
+      "canonical Clause package bytes",
+      "executable compiler",
+      "supported runtime",
+      "materialization contract",
+      "physical plan",
+      "graph-to-physical binding",
+      "Program or State Admission"
+    ]
+  },
+  "sources": {
+    "semantic_package": "semantic-package.clause",
+    "ordinary_source_oracle": "position-radius.clause",
+    "canonical_source_permutations": [
+      "positive/canonical-source-order-a.clause",
+      "positive/canonical-source-order-b.clause"
+    ],
+    "fixture_context": "context.json",
+    "checksum_manifest": "SHA256SUMS"
+  },
+  "canonicalization": {
+    "record_order": "kind rank, then unsigned UTF-8 bytes of typed local key",
+    "normative_kind_ranks": {
+      "Term": 0,
+      "RelationSchema": 1,
+      "Operator": 2,
+      "Mode": 3,
+      "FormationJudgment": 4,
+      "ApplicationForm": 5,
+      "Application": 6,
+      "Law": 7,
+      "Judgment": 8
+    },
+    "kind_rank_validation": "derive record kind from the typed collection or record_kind, then reject a supplied kind_rank that differs from the normative map",
+    "semantic_sets": "typed canonical identity after duplicate rejection",
+    "named_role_bindings": "exact RoleId",
+    "semantic_sequences": "explicit contiguous ordinal after duplicate and gap rejection",
+    "support_occurrences": "occurrence multiset keyed by SupportOccurrenceId",
+    "nonsemantic_order": [
+      "JSON object order",
+      "JSON table order",
+      "source file order",
+      "graph traversal order",
+      "host insertion order",
+      "trace serialization order"
+    ]
+  },
+  "constitutive_projection": {
+    "counts": {
+      "terms": 16,
+      "formation_judgments": 16,
+      "application_forms": 16,
+      "applications": 16
+    },
+    "within_radius_operator": {
+      "root_application_local_id": "application:16",
+      "inner_application_local_ids": [
+        "application:04",
+        "application:05",
+        "application:06",
+        "application:07",
+        "application:08",
+        "application:09",
+        "application:10",
+        "application:11",
+        "application:12",
+        "application:13",
+        "application:14",
+        "application:15",
+        "application:16"
+      ],
+      "point_component_roles": [
+        "core-role:point",
+        "core-role:raw"
+      ],
+      "integer_binary_roles": [
+        "core-role:left",
+        "core-role:right",
+        "core-role:result"
+      ],
+      "integer_comparison_roles": [
+        "core-role:left",
+        "core-role:right",
+        "core-role:verdict"
+      ]
+    }
+  },
+  "execution_context": {
+    "executable_validity": "universal for every formed Application and eligible Mode in the exact snapshot; never authorization",
+    "mode_authorization_sets": {
+      "mode:04": [
+        "ExecutionAuthorization"
+      ],
+      "mode:05": [
+        "ExecutionAuthorization",
+        "DerivationAuthorization"
+      ],
+      "mode:06": [
+        "ExecutionAuthorization",
+        "DerivationAuthorization"
+      ]
+    }
+  },
+  "positive_vectors": [
+    {
+      "id": "process-occurrences",
+      "file": "positive/process-occurrences.json",
+      "proves": [
+        "one exact Application has two distinct root Activations and Runs",
+        "predicate work is a child Activation with exact mode and context pins",
+        "universal executable validity is separate from Mode-declared authorization",
+        "every initial context carries exact executable-validity evidence, exactly its Mode authorization set, and an explicit capability set",
+        "Steps carry typed cause frontiers instead of log order",
+        "equal observation content retains distinct ObservationIds",
+        "supports bind exact authorization, mode, context, environment, and predicate observation",
+        "a self-join repeats one selected AssertionOccurrenceId in two distinct premise slots",
+        "support-only growth is progress while the exact conclusion occurrence set remains unchanged",
+        "mixed conclusion and support growth remains a separate progress case",
+        "pure derivation creates no ProgramRevision, StateRevision, or AdmissionOccurrence"
+      ]
+    },
+    {
+      "id": "canonical-order-a",
+      "file": "positive/canonical-order-a.json",
+      "proves": [
+        "canonical constitutive and semantic sequence order"
+      ]
+    },
+    {
+      "id": "canonical-order-b",
+      "file": "positive/canonical-order-b.json",
+      "proves": [
+        "JSON table permutations normalize to the same abstract canonical preimage"
+      ]
+    },
+    {
+      "id": "canonical-source-order-a",
+      "file": "positive/canonical-source-order-a.clause",
+      "proves": [
+        "Clause source blocks and facts have nonsemantic transport order"
+      ]
+    },
+    {
+      "id": "canonical-source-order-b",
+      "file": "positive/canonical-source-order-b.clause",
+      "proves": [
+        "permuted Clause source normalizes to the same abstract graph"
+      ]
+    },
+    {
+      "id": "refinement-requirements",
+      "file": "positive/refinement-requirements.json",
+      "proves": [
+        "inclusive widened Q16.16 predicate vectors including a binary64-rounding discriminator",
+        "signed-big-endian Q16.16 byte decoding",
+        "AABB is candidate-only",
+        "oversized extent takes exact fallback under explicit population, row, work, and allocation bounds",
+        "exhaustion returns no semantic verdict",
+        "P3 graph-to-physical binding remains deliberately unknown"
+      ]
+    }
+  ],
+  "negative_vectors": [
+    {
+      "id": "wrong-kind-rank",
+      "file": "negative/wrong-kind-rank.json",
+      "expected_error": "CANONICAL_KIND_RANK_MISMATCH",
+      "first_failure_stage": 1
+    },
+    {
+      "id": "raw-triple-operator-smuggling",
+      "file": "negative/raw-triple-operator-smuggling.json",
+      "expected_error": "FORMATION_REQUIRED",
+      "first_failure_stage": 3
+    },
+    {
+      "id": "missing-role",
+      "file": "negative/missing-role.json",
+      "expected_error": "FORMATION_ROLE_CLOSURE_MISMATCH",
+      "first_failure_stage": 3
+    },
+    {
+      "id": "ineligible-mode",
+      "file": "negative/ineligible-mode.json",
+      "expected_error": "FORMATION_ELIGIBLE_MODE_MISMATCH",
+      "first_failure_stage": 3
+    },
+    {
+      "id": "collapsed-process-identities",
+      "file": "negative/collapsed-process-identities.json",
+      "expected_error": "PROCESS_IDENTITY_COLLAPSE",
+      "first_failure_stage": 7
+    },
+    {
+      "id": "collapsed-self-join",
+      "file": "negative/collapsed-self-join.json",
+      "expected_error": "PREMISE_OCCURRENCE_MULTIPLICITY_MISMATCH",
+      "first_failure_stage": 5
+    },
+    {
+      "id": "support-set-collapse",
+      "file": "negative/support-set-collapse.json",
+      "expected_error": "SUPPORT_MULTIPLICITY_MISMATCH",
+      "first_failure_stage": 8
+    },
+    {
+      "id": "support-context-drift",
+      "file": "negative/support-context-drift.json",
+      "expected_error": "SUPPORT_CONTEXT_MISMATCH",
+      "first_failure_stage": 8
+    },
+    {
+      "id": "candidate-self-authorization",
+      "file": "negative/candidate-self-authorization.json",
+      "expected_error": "AUTHORIZATION_CYCLE",
+      "first_failure_stage": 6
+    },
+    {
+      "id": "source-order-identity",
+      "file": "negative/source-order-identity.json",
+      "expected_error": "CONSTITUTIVE_ORDER_DEPENDENCE",
+      "first_failure_stage": 1
+    },
+    {
+      "id": "missing-exact-predicate-observation",
+      "file": "negative/missing-exact-predicate-observation.json",
+      "expected_error": "EXACT_PREDICATE_OBSERVATION_REQUIRED",
+      "first_failure_stage": 9
+    },
+    {
+      "id": "unsafe-fallback",
+      "file": "negative/unsafe-fallback.json",
+      "expected_error": "UNSAFE_REFINEMENT_FALLBACK",
+      "first_failure_stage": 10
+    },
+    {
+      "id": "host-callback-dispatch",
+      "file": "negative/host-callback-dispatch.json",
+      "expected_error": "HOST_SEMANTIC_DISPATCH",
+      "first_failure_stage": 10
+    }
+  ],
+  "validation_order": [
+    "typed local-reference and JudgmentLocalId-to-JudgmentRef resolution, normative kind-rank validation, then canonical ordering",
+    "RelationSchema, Role, Operator, and Mode closure",
+    "FormationJudgment and ApplicationForm role, point-projection, mode, dependency, and context closure",
+    "nominal Application identity",
+    "law premise occurrence, slot, variable, and projection closure",
+    "pre-existing Clause-owned authorization",
+    "Activation, Run, Step, Observation, and exact context pins",
+    "structural support environment and occurrence multiplicity",
+    "exact predicate observation and support-sensitive fixed point",
+    "refinement safety and host-semantic exclusion"
+  ],
+  "residual": {
+    "p3_graph_to_physical_binding": "unknown-and-unassigned",
+    "materialization_authority": "unassigned",
+    "admission_authority": "unassigned"
+  }
+}

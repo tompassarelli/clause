@@ -1,0 +1,1195 @@
+{
+  "schema": "clause/compiler-terms/process-occurrences-positive-v3",
+  "context_ref": "../context.json",
+  "shared_context_pins": {
+    "pin_set_id": "pins:base:01",
+    "clause_semantics_id": "sem:01",
+    "program_snapshot_id": "ps:01",
+    "program_revision_id": "pr:01",
+    "runtime_session_id": "session:01",
+    "observed_state_revision_id": "state:01",
+    "runtime_policy_id": "policy:01",
+    "capabilities": [],
+    "budget": {
+      "kind": "finite-steps",
+      "remaining": 32
+    },
+    "scheduler_constraints": {
+      "semantic_order": "typed-cause-frontier-only",
+      "result_order": "canonical-binding-order"
+    }
+  },
+  "exact_mode_pin_sets": [
+    {
+      "pin_set_id": "pins:mode:04",
+      "base_pin_set_ref": "pins:base:01",
+      "application_id": "application-id:02",
+      "selected_mode_id": "mode-id:04",
+      "executable_validity_evidence": {
+        "executable_validity_id": "executable-validity:01",
+        "application_id": "application-id:02",
+        "mode_id": "mode-id:04"
+      },
+      "authorization_evidence": [
+        {
+          "kind": "Constitutive",
+          "program_revision_id": "pr:01",
+          "judgment_ref": "judgment-ref:02",
+          "authorization_type": "ExecutionAuthorization"
+        }
+      ],
+      "capabilities": []
+    },
+    {
+      "pin_set_id": "pins:mode:05",
+      "base_pin_set_ref": "pins:base:01",
+      "application_id": "application-id:01",
+      "selected_mode_id": "mode-id:05",
+      "executable_validity_evidence": {
+        "executable_validity_id": "executable-validity:01",
+        "application_id": "application-id:01",
+        "mode_id": "mode-id:05"
+      },
+      "authorization_evidence": [
+        {
+          "kind": "Constitutive",
+          "program_revision_id": "pr:01",
+          "judgment_ref": "judgment-ref:02",
+          "authorization_type": "ExecutionAuthorization"
+        },
+        {
+          "kind": "Constitutive",
+          "program_revision_id": "pr:01",
+          "judgment_ref": "judgment-ref:01",
+          "authorization_type": "DerivationAuthorization"
+        }
+      ],
+      "capabilities": []
+    },
+    {
+      "pin_set_id": "pins:mode:06",
+      "base_pin_set_ref": "pins:base:01",
+      "application_id": "application-id:03",
+      "selected_mode_id": "mode-id:06",
+      "executable_validity_evidence": {
+        "executable_validity_id": "executable-validity:01",
+        "application_id": "application-id:03",
+        "mode_id": "mode-id:06"
+      },
+      "authorization_evidence": [
+        {
+          "kind": "Constitutive",
+          "program_revision_id": "pr:01",
+          "judgment_ref": "judgment-ref:02",
+          "authorization_type": "ExecutionAuthorization"
+        },
+        {
+          "kind": "Constitutive",
+          "program_revision_id": "pr:01",
+          "judgment_ref": "judgment-ref:01",
+          "authorization_type": "DerivationAuthorization"
+        }
+      ],
+      "capabilities": []
+    }
+  ],
+  "admitted_relation_occurrences": [
+    {
+      "assertion_occurrence_id": "assertion:observer-position:01",
+      "state_revision_id": "state:01",
+      "relation_schema_id": "relation-schema:01",
+      "role_bindings": {
+        "role-id:01": {
+          "referent": "observer:01"
+        },
+        "role-id:02": {
+          "shape": "metric/Point2Q16",
+          "x_raw": 0,
+          "y_raw": 0
+        },
+        "role-id:03": {
+          "referent": "space:01"
+        }
+      },
+      "provenance": {
+        "kind": "EnteredThrough",
+        "boundary_ref": "boundary:state-fixture",
+        "external_evidence_ref": "external-evidence:observer-position:01",
+        "external_cause_frontier": []
+      }
+    },
+    {
+      "assertion_occurrence_id": "assertion:radius:01",
+      "state_revision_id": "state:01",
+      "relation_schema_id": "relation-schema:03",
+      "role_bindings": {
+        "role-id:07": {
+          "referent": "observer:01"
+        },
+        "role-id:08": {
+          "q16_raw": 327680
+        },
+        "role-id:09": {
+          "referent": "space:01"
+        }
+      },
+      "provenance": {
+        "kind": "EnteredThrough",
+        "boundary_ref": "boundary:state-fixture",
+        "external_evidence_ref": "external-evidence:radius:01",
+        "external_cause_frontier": []
+      }
+    },
+    {
+      "assertion_occurrence_id": "assertion:target-position:01",
+      "state_revision_id": "state:01",
+      "relation_schema_id": "relation-schema:02",
+      "role_bindings": {
+        "role-id:04": {
+          "referent": "target:01"
+        },
+        "role-id:05": {
+          "shape": "metric/Point2Q16",
+          "x_raw": 196608,
+          "y_raw": 262144
+        },
+        "role-id:06": {
+          "referent": "space:01"
+        }
+      },
+      "provenance": {
+        "kind": "EnteredThrough",
+        "boundary_ref": "boundary:state-fixture",
+        "external_evidence_ref": "external-evidence:target-position:01",
+        "external_cause_frontier": []
+      }
+    },
+    {
+      "assertion_occurrence_id": "assertion:target-position:07",
+      "state_revision_id": "state:01",
+      "relation_schema_id": "relation-schema:02",
+      "role_bindings": {
+        "role-id:04": {
+          "referent": "target:07"
+        },
+        "role-id:05": {
+          "shape": "metric/Point2Q16",
+          "x_raw": 65536,
+          "y_raw": 65536
+        },
+        "role-id:06": {
+          "referent": "space:01"
+        }
+      },
+      "provenance": {
+        "kind": "EnteredThrough",
+        "boundary_ref": "boundary:state-fixture",
+        "external_evidence_ref": "external-evidence:target-position:07",
+        "external_cause_frontier": []
+      }
+    }
+  ],
+  "activations": [
+    {
+      "activation_id": "activation:law:01",
+      "application_id": "application-id:01",
+      "selected_mode_id": "mode-id:05",
+      "run_membership": {
+        "kind": "RootOf",
+        "run_id": "run:01"
+      },
+      "activation_cause_frontier": {
+        "origin": {
+          "kind": "RootedBy",
+          "trigger": {
+            "kind": "ExternalTrigger",
+            "external_trigger_occurrence_id": "trigger:01"
+          }
+        },
+        "prerequisites": [
+          {
+            "kind": "ExecutableValidity",
+            "executable_validity_evidence": {
+              "executable_validity_id": "executable-validity:01",
+              "application_id": "application-id:01",
+              "mode_id": "mode-id:05"
+            }
+          },
+          {
+            "kind": "Authorization",
+            "authorization_type": "ExecutionAuthorization",
+            "authorization_evidence": {
+              "kind": "Constitutive",
+              "program_revision_id": "pr:01",
+              "judgment_ref": "judgment-ref:02"
+            }
+          },
+          {
+            "kind": "Authorization",
+            "authorization_type": "DerivationAuthorization",
+            "authorization_evidence": {
+              "kind": "Constitutive",
+              "program_revision_id": "pr:01",
+              "judgment_ref": "judgment-ref:01"
+            }
+          }
+        ]
+      },
+    "initial_context": {
+      "pin_set_ref": "pins:mode:05",
+      "selected_mode_id": "mode-id:05",
+      "executable_validity_evidence": {
+        "executable_validity_id": "executable-validity:01",
+        "application_id": "application-id:01",
+        "mode_id": "mode-id:05"
+      },
+      "authorization_evidence": [
+        {
+          "kind": "Constitutive",
+          "program_revision_id": "pr:01",
+          "judgment_ref": "judgment-ref:02",
+          "authorization_type": "ExecutionAuthorization"
+        },
+        {
+          "kind": "Constitutive",
+          "program_revision_id": "pr:01",
+          "judgment_ref": "judgment-ref:01",
+          "authorization_type": "DerivationAuthorization"
+        }
+      ],
+      "capabilities": []
+      }
+    },
+    {
+      "activation_id": "activation:predicate:01",
+      "application_id": "application-id:02",
+      "selected_mode_id": "mode-id:04",
+      "run_membership": {
+        "kind": "ChildIn",
+        "run_id": "run:01"
+      },
+      "activation_cause_frontier": {
+        "origin": {
+          "kind": "ChildOf",
+          "run_id": "run:01",
+          "parent_activation_id": "activation:law:01",
+          "parent_step_id": "step:law:start:01"
+        },
+        "prerequisites": [
+          {
+            "kind": "ExecutableValidity",
+            "executable_validity_evidence": {
+              "executable_validity_id": "executable-validity:01",
+              "application_id": "application-id:02",
+              "mode_id": "mode-id:04"
+            }
+          },
+          {
+            "kind": "Authorization",
+            "authorization_type": "ExecutionAuthorization",
+            "authorization_evidence": {
+              "kind": "Constitutive",
+              "program_revision_id": "pr:01",
+              "judgment_ref": "judgment-ref:02"
+            }
+          }
+        ]
+      },
+    "initial_context": {
+      "pin_set_ref": "pins:mode:04",
+      "selected_mode_id": "mode-id:04",
+      "executable_validity_evidence": {
+        "executable_validity_id": "executable-validity:01",
+        "application_id": "application-id:02",
+        "mode_id": "mode-id:04"
+      },
+      "authorization_evidence": [
+        {
+          "kind": "Constitutive",
+          "program_revision_id": "pr:01",
+          "judgment_ref": "judgment-ref:02",
+          "authorization_type": "ExecutionAuthorization"
+        }
+      ],
+      "capabilities": []
+      }
+    },
+    {
+      "activation_id": "activation:law:02",
+      "application_id": "application-id:01",
+      "selected_mode_id": "mode-id:05",
+      "run_membership": {
+        "kind": "RootOf",
+        "run_id": "run:02"
+      },
+      "activation_cause_frontier": {
+        "origin": {
+          "kind": "RootedBy",
+          "trigger": {
+            "kind": "ExternalTrigger",
+            "external_trigger_occurrence_id": "trigger:02"
+          }
+        },
+        "prerequisites": [
+          {
+            "kind": "ExecutableValidity",
+            "executable_validity_evidence": {
+              "executable_validity_id": "executable-validity:01",
+              "application_id": "application-id:01",
+              "mode_id": "mode-id:05"
+            }
+          },
+          {
+            "kind": "Authorization",
+            "authorization_type": "ExecutionAuthorization",
+            "authorization_evidence": {
+              "kind": "Constitutive",
+              "program_revision_id": "pr:01",
+              "judgment_ref": "judgment-ref:02"
+            }
+          },
+          {
+            "kind": "Authorization",
+            "authorization_type": "DerivationAuthorization",
+            "authorization_evidence": {
+              "kind": "Constitutive",
+              "program_revision_id": "pr:01",
+              "judgment_ref": "judgment-ref:01"
+            }
+          }
+        ]
+      },
+    "initial_context": {
+      "pin_set_ref": "pins:mode:05",
+      "selected_mode_id": "mode-id:05",
+      "executable_validity_evidence": {
+        "executable_validity_id": "executable-validity:01",
+        "application_id": "application-id:01",
+        "mode_id": "mode-id:05"
+      },
+      "authorization_evidence": [
+        {
+          "kind": "Constitutive",
+          "program_revision_id": "pr:01",
+          "judgment_ref": "judgment-ref:02",
+          "authorization_type": "ExecutionAuthorization"
+        },
+        {
+          "kind": "Constitutive",
+          "program_revision_id": "pr:01",
+          "judgment_ref": "judgment-ref:01",
+          "authorization_type": "DerivationAuthorization"
+        }
+      ],
+      "capabilities": []
+      }
+    },
+    {
+      "activation_id": "activation:predicate:02",
+      "application_id": "application-id:02",
+      "selected_mode_id": "mode-id:04",
+      "run_membership": {
+        "kind": "ChildIn",
+        "run_id": "run:02"
+      },
+      "activation_cause_frontier": {
+        "origin": {
+          "kind": "ChildOf",
+          "run_id": "run:02",
+          "parent_activation_id": "activation:law:02",
+          "parent_step_id": "step:law:start:02"
+        },
+        "prerequisites": [
+          {
+            "kind": "ExecutableValidity",
+            "executable_validity_evidence": {
+              "executable_validity_id": "executable-validity:01",
+              "application_id": "application-id:02",
+              "mode_id": "mode-id:04"
+            }
+          },
+          {
+            "kind": "Authorization",
+            "authorization_type": "ExecutionAuthorization",
+            "authorization_evidence": {
+              "kind": "Constitutive",
+              "program_revision_id": "pr:01",
+              "judgment_ref": "judgment-ref:02"
+            }
+          }
+        ]
+      },
+    "initial_context": {
+      "pin_set_ref": "pins:mode:04",
+      "selected_mode_id": "mode-id:04",
+      "executable_validity_evidence": {
+        "executable_validity_id": "executable-validity:01",
+        "application_id": "application-id:02",
+        "mode_id": "mode-id:04"
+      },
+      "authorization_evidence": [
+        {
+          "kind": "Constitutive",
+          "program_revision_id": "pr:01",
+          "judgment_ref": "judgment-ref:02",
+          "authorization_type": "ExecutionAuthorization"
+        }
+      ],
+      "capabilities": []
+      }
+    },
+    {
+      "activation_id": "activation:self-join:01",
+      "application_id": "application-id:03",
+      "selected_mode_id": "mode-id:06",
+      "run_membership": {
+        "kind": "RootOf",
+        "run_id": "run:03"
+      },
+      "activation_cause_frontier": {
+        "origin": {
+          "kind": "RootedBy",
+          "trigger": {
+            "kind": "ExternalTrigger",
+            "external_trigger_occurrence_id": "trigger:03"
+          }
+        },
+        "prerequisites": [
+          {
+            "kind": "ExecutableValidity",
+            "executable_validity_evidence": {
+              "executable_validity_id": "executable-validity:01",
+              "application_id": "application-id:03",
+              "mode_id": "mode-id:06"
+            }
+          },
+          {
+            "kind": "Authorization",
+            "authorization_type": "ExecutionAuthorization",
+            "authorization_evidence": {
+              "kind": "Constitutive",
+              "program_revision_id": "pr:01",
+              "judgment_ref": "judgment-ref:02"
+            }
+          },
+          {
+            "kind": "Authorization",
+            "authorization_type": "DerivationAuthorization",
+            "authorization_evidence": {
+              "kind": "Constitutive",
+              "program_revision_id": "pr:01",
+              "judgment_ref": "judgment-ref:01"
+            }
+          }
+        ]
+      },
+    "initial_context": {
+      "pin_set_ref": "pins:mode:06",
+      "selected_mode_id": "mode-id:06",
+      "executable_validity_evidence": {
+        "executable_validity_id": "executable-validity:01",
+        "application_id": "application-id:03",
+        "mode_id": "mode-id:06"
+      },
+      "authorization_evidence": [
+        {
+          "kind": "Constitutive",
+          "program_revision_id": "pr:01",
+          "judgment_ref": "judgment-ref:02",
+          "authorization_type": "ExecutionAuthorization"
+        },
+        {
+          "kind": "Constitutive",
+          "program_revision_id": "pr:01",
+          "judgment_ref": "judgment-ref:01",
+          "authorization_type": "DerivationAuthorization"
+        }
+      ],
+      "capabilities": []
+      }
+    }
+  ],
+  "steps": [
+    {
+      "step_id": "step:law:start:01",
+      "owner": {
+        "run_id": "run:01",
+        "activation_id": "activation:law:01"
+      },
+      "cause_frontier": [
+        {
+          "kind": "ActivationStart",
+          "activation_id": "activation:law:01"
+        }
+      ],
+      "configuration_before": "configuration:law:01:initial",
+      "configuration_after": "configuration:law:01:predicate-ready",
+      "observed_base_state_revision_id": "state:01",
+      "emitted_observation_ids": [],
+      "emitted_support_occurrence_ids": []
+    },
+    {
+      "step_id": "step:predicate:01",
+      "owner": {
+        "run_id": "run:01",
+        "activation_id": "activation:predicate:01"
+      },
+      "cause_frontier": [
+        {
+          "kind": "ActivationStart",
+          "activation_id": "activation:predicate:01"
+        }
+      ],
+      "configuration_before": "configuration:predicate:01:initial",
+      "configuration_after": "configuration:predicate:01:return-true",
+      "observed_base_state_revision_id": "state:01",
+      "emitted_observation_ids": [
+        "observation:predicate:01"
+      ],
+      "emitted_support_occurrence_ids": []
+    },
+    {
+      "step_id": "step:law:emit:01",
+      "owner": {
+        "run_id": "run:01",
+        "activation_id": "activation:law:01"
+      },
+      "cause_frontier": [
+        {
+          "kind": "PriorStep",
+          "run_id": "run:01",
+          "predecessor_activation_id": "activation:predicate:01",
+          "predecessor_step_id": "step:predicate:01"
+        },
+        {
+          "kind": "PriorStep",
+          "run_id": "run:01",
+          "predecessor_activation_id": "activation:law:01",
+          "predecessor_step_id": "step:law:start:01"
+        }
+      ],
+      "configuration_before": "configuration:law:01:predicate-ready",
+      "configuration_after": "configuration:law:01:conclusion-emitted",
+      "observed_base_state_revision_id": "state:01",
+      "emitted_observation_ids": [
+        "observation:conclusion:01"
+      ],
+      "emitted_support_occurrence_ids": [
+        "support:01"
+      ]
+    },
+    {
+      "step_id": "step:law:support:03",
+      "owner": {
+        "run_id": "run:01",
+        "activation_id": "activation:law:01"
+      },
+      "cause_frontier": [
+        {
+          "kind": "PriorStep",
+          "run_id": "run:01",
+          "predecessor_activation_id": "activation:law:01",
+          "predecessor_step_id": "step:law:emit:01"
+        }
+      ],
+      "configuration_before": "configuration:law:01:conclusion-emitted",
+      "configuration_after": "configuration:law:01:returned",
+      "observed_base_state_revision_id": "state:01",
+      "emitted_observation_ids": [],
+      "emitted_support_occurrence_ids": [
+        "support:03"
+      ]
+    },
+    {
+      "step_id": "step:law:start:02",
+      "owner": {
+        "run_id": "run:02",
+        "activation_id": "activation:law:02"
+      },
+      "cause_frontier": [
+        {
+          "kind": "ActivationStart",
+          "activation_id": "activation:law:02"
+        }
+      ],
+      "configuration_before": "configuration:law:02:initial",
+      "configuration_after": "configuration:law:02:predicate-ready",
+      "observed_base_state_revision_id": "state:01",
+      "emitted_observation_ids": [],
+      "emitted_support_occurrence_ids": []
+    },
+    {
+      "step_id": "step:predicate:02",
+      "owner": {
+        "run_id": "run:02",
+        "activation_id": "activation:predicate:02"
+      },
+      "cause_frontier": [
+        {
+          "kind": "ActivationStart",
+          "activation_id": "activation:predicate:02"
+        }
+      ],
+      "configuration_before": "configuration:predicate:02:initial",
+      "configuration_after": "configuration:predicate:02:return-true",
+      "observed_base_state_revision_id": "state:01",
+      "emitted_observation_ids": [
+        "observation:predicate:02"
+      ],
+      "emitted_support_occurrence_ids": []
+    },
+    {
+      "step_id": "step:law:emit:02",
+      "owner": {
+        "run_id": "run:02",
+        "activation_id": "activation:law:02"
+      },
+      "cause_frontier": [
+        {
+          "kind": "PriorStep",
+          "run_id": "run:02",
+          "predecessor_activation_id": "activation:law:02",
+          "predecessor_step_id": "step:law:start:02"
+        },
+        {
+          "kind": "PriorStep",
+          "run_id": "run:02",
+          "predecessor_activation_id": "activation:predicate:02",
+          "predecessor_step_id": "step:predicate:02"
+        }
+      ],
+      "configuration_before": "configuration:law:02:predicate-ready",
+      "configuration_after": "configuration:law:02:returned",
+      "observed_base_state_revision_id": "state:01",
+      "emitted_observation_ids": [
+        "observation:conclusion:02"
+      ],
+      "emitted_support_occurrence_ids": [
+        "support:02"
+      ]
+    },
+    {
+      "step_id": "step:self-join:01",
+      "owner": {
+        "run_id": "run:03",
+        "activation_id": "activation:self-join:01"
+      },
+      "cause_frontier": [
+        {
+          "kind": "ActivationStart",
+          "activation_id": "activation:self-join:01"
+        }
+      ],
+      "configuration_before": "configuration:self-join:01:initial",
+      "configuration_after": "configuration:self-join:01:returned",
+      "observed_base_state_revision_id": "state:01",
+      "emitted_observation_ids": [
+        "observation:self-join:01"
+      ],
+      "emitted_support_occurrence_ids": [
+        "support:self-join:01"
+      ]
+    }
+  ],
+  "observations": [
+    {
+      "observation_id": "observation:predicate:01",
+      "provenance": {
+        "kind": "ProducedBy",
+        "run_id": "run:01",
+        "activation_id": "activation:predicate:01",
+        "step_id": "step:predicate:01"
+      },
+      "content": {
+        "relation_schema_id": "relation-schema:04",
+        "role_bindings": {
+          "role-id:10": {
+            "shape": "metric/Point2Q16",
+            "x_raw": 196608,
+            "y_raw": 262144
+          },
+          "role-id:11": {
+            "shape": "metric/Point2Q16",
+            "x_raw": 0,
+            "y_raw": 0
+          },
+          "role-id:12": {
+            "q16_raw": 327680
+          },
+          "role-id:13": {
+            "atom": true
+          }
+        }
+      }
+    },
+    {
+      "observation_id": "observation:conclusion:01",
+      "provenance": {
+        "kind": "ProducedBy",
+        "run_id": "run:01",
+        "activation_id": "activation:law:01",
+        "step_id": "step:law:emit:01"
+      },
+      "content": {
+        "relation_schema_id": "relation-schema:05",
+        "role_bindings": {
+          "role-id:14": {
+            "referent": "observer:01"
+          },
+          "role-id:15": {
+            "referent": "target:01"
+          },
+          "role-id:16": {
+            "referent": "space:01"
+          }
+        }
+      }
+    },
+    {
+      "observation_id": "observation:predicate:02",
+      "provenance": {
+        "kind": "ProducedBy",
+        "run_id": "run:02",
+        "activation_id": "activation:predicate:02",
+        "step_id": "step:predicate:02"
+      },
+      "content": {
+        "relation_schema_id": "relation-schema:04",
+        "role_bindings": {
+          "role-id:10": {
+            "shape": "metric/Point2Q16",
+            "x_raw": 196608,
+            "y_raw": 262144
+          },
+          "role-id:11": {
+            "shape": "metric/Point2Q16",
+            "x_raw": 0,
+            "y_raw": 0
+          },
+          "role-id:12": {
+            "q16_raw": 327680
+          },
+          "role-id:13": {
+            "atom": true
+          }
+        }
+      }
+    },
+    {
+      "observation_id": "observation:conclusion:02",
+      "provenance": {
+        "kind": "ProducedBy",
+        "run_id": "run:02",
+        "activation_id": "activation:law:02",
+        "step_id": "step:law:emit:02"
+      },
+      "content": {
+        "relation_schema_id": "relation-schema:05",
+        "role_bindings": {
+          "role-id:14": {
+            "referent": "observer:01"
+          },
+          "role-id:15": {
+            "referent": "target:01"
+          },
+          "role-id:16": {
+            "referent": "space:01"
+          }
+        }
+      }
+    },
+    {
+      "observation_id": "observation:self-join:01",
+      "provenance": {
+        "kind": "ProducedBy",
+        "run_id": "run:03",
+        "activation_id": "activation:self-join:01",
+        "step_id": "step:self-join:01"
+      },
+      "content": {
+        "relation_schema_id": "relation-schema:06",
+        "role_bindings": {
+          "role-id:17": {
+            "referent": "target:07"
+          },
+          "role-id:18": {
+            "referent": "target:07"
+          },
+          "role-id:19": {
+            "referent": "space:01"
+          }
+        }
+      }
+    }
+  ],
+  "support_occurrences": [
+    {
+      "support_occurrence_id": "support:01",
+      "produced_by": {
+        "run_id": "run:01",
+        "activation_id": "activation:law:01",
+        "step_id": "step:law:emit:01"
+      },
+      "law_id": "law-id:01",
+      "derivation_mode_id": "mode-id:05",
+      "exact_context_pins": {
+        "pin_set_ref": "pins:mode:05",
+        "selected_mode_id": "mode-id:05"
+      },
+      "authorization_evidence": {
+        "kind": "Constitutive",
+        "program_revision_id": "pr:01",
+        "judgment_ref": "judgment-ref:01",
+        "authorization_type": "DerivationAuthorization"
+      },
+      "ordered_premise_selections": [
+        {
+          "ordinal": 0,
+          "premise_occurrence_id": "premise-id:00",
+          "selected_occurrence_id": "assertion:observer-position:01"
+        },
+        {
+          "ordinal": 1,
+          "premise_occurrence_id": "premise-id:01",
+          "selected_occurrence_id": "assertion:radius:01"
+        },
+        {
+          "ordinal": 2,
+          "premise_occurrence_id": "premise-id:02",
+          "selected_occurrence_id": "assertion:target-position:01"
+        },
+        {
+          "ordinal": 3,
+          "premise_occurrence_id": "premise-id:03",
+          "selected_occurrence_id": "observation:predicate:01"
+        }
+      ],
+      "structural_environment": {
+        "variable:observer": {
+          "referent": "observer:01"
+        },
+        "variable:observer-point": {
+          "shape": "metric/Point2Q16",
+          "x_raw": 0,
+          "y_raw": 0
+        },
+        "variable:radius": {
+          "q16_raw": 327680
+        },
+        "variable:space": {
+          "referent": "space:01"
+        },
+        "variable:target": {
+          "referent": "target:01"
+        },
+        "variable:target-point": {
+          "shape": "metric/Point2Q16",
+          "x_raw": 196608,
+          "y_raw": 262144
+        }
+      },
+      "exact_predicate_observation_id": "observation:predicate:01",
+      "conclusion_role_bindings": {
+        "role-id:14": {
+          "variable_local_id": "variable:observer"
+        },
+        "role-id:15": {
+          "variable_local_id": "variable:target"
+        },
+        "role-id:16": {
+          "variable_local_id": "variable:space"
+        }
+      },
+      "conclusion_observation_id": "observation:conclusion:01"
+    },
+    {
+      "support_occurrence_id": "support:02",
+      "produced_by": {
+        "run_id": "run:02",
+        "activation_id": "activation:law:02",
+        "step_id": "step:law:emit:02"
+      },
+      "law_id": "law-id:01",
+      "derivation_mode_id": "mode-id:05",
+      "exact_context_pins": {
+        "pin_set_ref": "pins:mode:05",
+        "selected_mode_id": "mode-id:05"
+      },
+      "authorization_evidence": {
+        "kind": "Constitutive",
+        "program_revision_id": "pr:01",
+        "judgment_ref": "judgment-ref:01",
+        "authorization_type": "DerivationAuthorization"
+      },
+      "ordered_premise_selections": [
+        {
+          "ordinal": 0,
+          "premise_occurrence_id": "premise-id:00",
+          "selected_occurrence_id": "assertion:observer-position:01"
+        },
+        {
+          "ordinal": 1,
+          "premise_occurrence_id": "premise-id:01",
+          "selected_occurrence_id": "assertion:radius:01"
+        },
+        {
+          "ordinal": 2,
+          "premise_occurrence_id": "premise-id:02",
+          "selected_occurrence_id": "assertion:target-position:01"
+        },
+        {
+          "ordinal": 3,
+          "premise_occurrence_id": "premise-id:03",
+          "selected_occurrence_id": "observation:predicate:02"
+        }
+      ],
+      "structural_environment": {
+        "variable:observer": {
+          "referent": "observer:01"
+        },
+        "variable:observer-point": {
+          "shape": "metric/Point2Q16",
+          "x_raw": 0,
+          "y_raw": 0
+        },
+        "variable:radius": {
+          "q16_raw": 327680
+        },
+        "variable:space": {
+          "referent": "space:01"
+        },
+        "variable:target": {
+          "referent": "target:01"
+        },
+        "variable:target-point": {
+          "shape": "metric/Point2Q16",
+          "x_raw": 196608,
+          "y_raw": 262144
+        }
+      },
+      "exact_predicate_observation_id": "observation:predicate:02",
+      "conclusion_role_bindings": {
+        "role-id:14": {
+          "variable_local_id": "variable:observer"
+        },
+        "role-id:15": {
+          "variable_local_id": "variable:target"
+        },
+        "role-id:16": {
+          "variable_local_id": "variable:space"
+        }
+      },
+      "conclusion_observation_id": "observation:conclusion:02"
+    },
+    {
+      "support_occurrence_id": "support:03",
+      "produced_by": {
+        "run_id": "run:01",
+        "activation_id": "activation:law:01",
+        "step_id": "step:law:support:03"
+      },
+      "law_id": "law-id:01",
+      "derivation_mode_id": "mode-id:05",
+      "exact_context_pins": {
+        "pin_set_ref": "pins:mode:05",
+        "selected_mode_id": "mode-id:05"
+      },
+      "authorization_evidence": {
+        "kind": "Constitutive",
+        "program_revision_id": "pr:01",
+        "judgment_ref": "judgment-ref:01",
+        "authorization_type": "DerivationAuthorization"
+      },
+      "ordered_premise_selections": [
+        {
+          "ordinal": 0,
+          "premise_occurrence_id": "premise-id:00",
+          "selected_occurrence_id": "assertion:observer-position:01"
+        },
+        {
+          "ordinal": 1,
+          "premise_occurrence_id": "premise-id:01",
+          "selected_occurrence_id": "assertion:radius:01"
+        },
+        {
+          "ordinal": 2,
+          "premise_occurrence_id": "premise-id:02",
+          "selected_occurrence_id": "assertion:target-position:01"
+        },
+        {
+          "ordinal": 3,
+          "premise_occurrence_id": "premise-id:03",
+          "selected_occurrence_id": "observation:predicate:01"
+        }
+      ],
+      "structural_environment": {
+        "variable:observer": {
+          "referent": "observer:01"
+        },
+        "variable:observer-point": {
+          "shape": "metric/Point2Q16",
+          "x_raw": 0,
+          "y_raw": 0
+        },
+        "variable:radius": {
+          "q16_raw": 327680
+        },
+        "variable:space": {
+          "referent": "space:01"
+        },
+        "variable:target": {
+          "referent": "target:01"
+        },
+        "variable:target-point": {
+          "shape": "metric/Point2Q16",
+          "x_raw": 196608,
+          "y_raw": 262144
+        }
+      },
+      "exact_predicate_observation_id": "observation:predicate:01",
+      "conclusion_role_bindings": {
+        "role-id:14": {
+          "variable_local_id": "variable:observer"
+        },
+        "role-id:15": {
+          "variable_local_id": "variable:target"
+        },
+        "role-id:16": {
+          "variable_local_id": "variable:space"
+        }
+      },
+      "conclusion_observation_id": "observation:conclusion:01"
+    },
+    {
+      "support_occurrence_id": "support:self-join:01",
+      "produced_by": {
+        "run_id": "run:03",
+        "activation_id": "activation:self-join:01",
+        "step_id": "step:self-join:01"
+      },
+      "law_id": "law-id:02",
+      "derivation_mode_id": "mode-id:06",
+      "exact_context_pins": {
+        "pin_set_ref": "pins:mode:06",
+        "selected_mode_id": "mode-id:06"
+      },
+      "authorization_evidence": {
+        "kind": "Constitutive",
+        "program_revision_id": "pr:01",
+        "judgment_ref": "judgment-ref:01",
+        "authorization_type": "DerivationAuthorization"
+      },
+      "ordered_premise_selections": [
+        {
+          "ordinal": 0,
+          "premise_occurrence_id": "premise-id:04",
+          "selected_occurrence_id": "assertion:target-position:07"
+        },
+        {
+          "ordinal": 1,
+          "premise_occurrence_id": "premise-id:05",
+          "selected_occurrence_id": "assertion:target-position:07"
+        }
+      ],
+      "structural_environment": {
+        "variable:left-point": {
+          "shape": "metric/Point2Q16",
+          "x_raw": 65536,
+          "y_raw": 65536
+        },
+        "variable:left-target": {
+          "referent": "target:07"
+        },
+        "variable:right-point": {
+          "shape": "metric/Point2Q16",
+          "x_raw": 65536,
+          "y_raw": 65536
+        },
+        "variable:right-target": {
+          "referent": "target:07"
+        },
+        "variable:space": {
+          "referent": "space:01"
+        }
+      },
+      "exact_predicate_observation_id": null,
+      "conclusion_role_bindings": {
+        "role-id:17": {
+          "variable_local_id": "variable:left-target"
+        },
+        "role-id:18": {
+          "variable_local_id": "variable:right-target"
+        },
+        "role-id:19": {
+          "variable_local_id": "variable:space"
+        }
+      },
+      "conclusion_observation_id": "observation:self-join:01"
+    }
+  ],
+  "fixed_point_vectors": [
+    {
+      "id": "new-conclusion-and-support-are-progress",
+      "current_conclusion_observation_ids": [
+        "observation:conclusion:01"
+      ],
+      "current_support_occurrence_ids": [
+        "support:01"
+      ],
+      "next_conclusion_observation_ids": [
+        "observation:conclusion:01",
+        "observation:conclusion:02"
+      ],
+      "next_support_occurrence_ids": [
+        "support:01",
+        "support:02"
+      ],
+      "expected_fixed": false
+    },
+    {
+      "id": "support-only-growth-is-progress",
+      "current_conclusion_observation_ids": [
+        "observation:conclusion:01"
+      ],
+      "current_support_occurrence_ids": [
+        "support:01"
+      ],
+      "next_conclusion_observation_ids": [
+        "observation:conclusion:01"
+      ],
+      "next_support_occurrence_ids": [
+        "support:01",
+        "support:03"
+      ],
+      "expected_fixed": false
+    },
+    {
+      "id": "unchanged-occurrences-are-fixed",
+      "current_conclusion_observation_ids": [
+        "observation:conclusion:01",
+        "observation:conclusion:02"
+      ],
+      "current_support_occurrence_ids": [
+        "support:01",
+        "support:02",
+        "support:03"
+      ],
+      "next_conclusion_observation_ids": [
+        "observation:conclusion:01",
+        "observation:conclusion:02"
+      ],
+      "next_support_occurrence_ids": [
+        "support:01",
+        "support:02",
+        "support:03"
+      ],
+      "expected_fixed": true
+    }
+  ],
+  "authority_result": {
+    "program_revision_created": false,
+    "state_revision_created": false,
+    "admission_occurrence_created": false,
+    "result_relation_scope": "activation-scoped-non-authoritative"
+  }
+}

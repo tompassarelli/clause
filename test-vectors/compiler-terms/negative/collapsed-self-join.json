@@ -1,0 +1,67 @@
+{
+  "schema": "clause/compiler-terms/law-candidate-v3",
+  "context_ref": "../context.json",
+  "candidate": {
+    "law_id": "law-id:02",
+    "derivation_mode_id": "mode-id:06",
+    "conclusion_schema_id": "relation-schema:06",
+    "premise_occurrences": [
+      {
+        "ordinal": 0,
+        "premise_occurrence_id": "premise-id:04",
+        "relation_schema_id": "relation-schema:02",
+        "eligible_mode_ids": [
+          "mode-id:02"
+        ],
+        "slots": [
+          {
+            "ordinal": 0,
+            "premise_slot_id": "premise-slot-id:12",
+            "role_id": "role-id:04",
+            "variable_id": "variable:left-target"
+          },
+          {
+            "ordinal": 1,
+            "premise_slot_id": "premise-slot-id:13",
+            "role_id": "role-id:05",
+            "variable_id": "variable:left-point"
+          },
+          {
+            "ordinal": 2,
+            "premise_slot_id": "premise-slot-id:14",
+            "role_id": "role-id:06",
+            "variable_id": "variable:space"
+          }
+        ]
+      },
+      {
+        "ordinal": 1,
+        "premise_occurrence_id": "premise-id:04",
+        "relation_schema_id": "relation-schema:02",
+        "eligible_mode_ids": [
+          "mode-id:02"
+        ],
+        "slots": [
+          {
+            "ordinal": 0,
+            "premise_slot_id": "premise-slot-id:12",
+            "role_id": "role-id:04",
+            "variable_id": "variable:right-target"
+          },
+          {
+            "ordinal": 1,
+            "premise_slot_id": "premise-slot-id:13",
+            "role_id": "role-id:05",
+            "variable_id": "variable:right-point"
+          },
+          {
+            "ordinal": 2,
+            "premise_slot_id": "premise-slot-id:14",
+            "role_id": "role-id:06",
+            "variable_id": "variable:space"
+          }
+        ]
+      }
+    ]
+  }
+}

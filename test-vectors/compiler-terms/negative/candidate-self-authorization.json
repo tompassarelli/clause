@@ -1,0 +1,34 @@
+{
+  "schema": "clause/compiler-terms/authorization-candidate-v3",
+  "context_ref": "../context.json",
+  "candidate": {
+    "candidate_program_snapshot_id": "candidate-snapshot:01",
+    "candidate_program_revision_id": "candidate-revision:01",
+    "judgment_declarations": [
+      {
+        "judgment_local_id": "candidate-judgment:derive",
+        "authorization_type": "DerivationAuthorization",
+        "subject": "law:01",
+        "scope": {
+          "program_snapshot_id": "candidate-snapshot:01"
+        }
+      }
+    ],
+    "derivation_activation": {
+      "activation_id": "activation:self-authorized",
+      "application_id": "application-id:01",
+      "selected_mode_id": "mode-id:05",
+      "authorization_evidence": {
+        "kind": "Constitutive",
+        "program_revision_id": "candidate-revision:01",
+        "judgment_ref": {
+          "program_snapshot_id": "candidate-snapshot:01",
+          "judgment_local_id": "candidate-judgment:derive"
+        }
+      },
+      "candidate_evidence_ids": [
+        "observation:produced-by-self-authorized-activation"
+      ]
+    }
+  }
+}

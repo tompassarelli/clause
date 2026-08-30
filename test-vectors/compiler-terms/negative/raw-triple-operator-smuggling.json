@@ -1,0 +1,26 @@
+{
+  "schema": "clause/compiler-terms/term-use-candidate-v3",
+  "context_ref": "../context.json",
+  "candidate": {
+    "term": {
+      "raw_triple": [
+        {
+          "atom": "atom:observer"
+        },
+        {
+          "atom": "atom:in-proximity"
+        },
+        {
+          "atom": "atom:target-space"
+        }
+      ]
+    },
+    "formation_judgment": null,
+    "execution_request": {
+      "operator_ref": {
+        "recover_from_raw_triple_slot": 1
+      },
+      "mode_id": "mode-id:05"
+    }
+  }
+}

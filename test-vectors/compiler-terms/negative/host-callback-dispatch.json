@@ -1,0 +1,20 @@
+{
+  "schema": "clause/compiler-terms/operator-candidate-v3",
+  "context_ref": "../context.json",
+  "candidate": {
+    "operator_ref": "operator-ref:04",
+    "mode_id": "mode-id:04",
+    "relation_schema_id": "relation-schema:04",
+    "definition": {
+      "kind": "host-callback",
+      "dispatch_key": {
+        "from_operator_designation": "metric/within-radius-v1"
+      },
+      "callback_symbol": "rust::predicates::within_radius_q16"
+    },
+    "fallback_registry": {
+      "relation-schema:04": "rust::predicates::within_radius_q16",
+      "operator-ref:04": "rust::predicates::within_radius_q16"
+    }
+  }
+}

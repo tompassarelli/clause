@@ -1,0 +1,130 @@
+{
+  "expected_canonical_sequences": {
+    "support:self-join:01": [
+      [
+        "premise:04",
+        "assertion:target-position:07"
+      ],
+      [
+        "premise:05",
+        "assertion:target-position:07"
+      ]
+    ],
+    "premises:law:01": [
+      "premise:00",
+      "premise:01",
+      "premise:02",
+      "premise:03"
+    ]
+  },
+  "semantic_sequences": [
+    {
+      "members": [
+        {
+          "premise_occurrence_id": "premise:04",
+          "identity": "assertion:target-position:07",
+          "ordinal": 0
+        },
+        {
+          "premise_occurrence_id": "premise:05",
+          "identity": "assertion:target-position:07",
+          "ordinal": 1
+        }
+      ],
+      "sequence_id": "support:self-join:01"
+    },
+    {
+      "members": [
+        {
+          "identity": "premise:01",
+          "ordinal": 1
+        },
+        {
+          "identity": "premise:03",
+          "ordinal": 3
+        },
+        {
+          "identity": "premise:00",
+          "ordinal": 0
+        },
+        {
+          "identity": "premise:02",
+          "ordinal": 2
+        }
+      ],
+      "sequence_id": "premises:law:01"
+    }
+  ],
+  "records": [
+    {
+      "record_kind": "Operator",
+      "payload": {
+        "definition": "law:01"
+      },
+      "local_id": "operator:05",
+      "kind_rank": 2
+    },
+    {
+      "record_kind": "Mode",
+      "payload": {
+        "operator": "operator:05",
+        "schema": "schema:05"
+      },
+      "local_id": "mode:05",
+      "kind_rank": 3
+    },
+    {
+      "record_kind": "RelationSchema",
+      "payload": {
+        "roles": [
+          {
+            "local_id": "role:15",
+            "ordinal": 1
+          },
+          {
+            "local_id": "role:14",
+            "ordinal": 0
+          },
+          {
+            "local_id": "role:16",
+            "ordinal": 2
+          }
+        ]
+      },
+      "local_id": "schema:05",
+      "kind_rank": 1
+    },
+    {
+      "record_kind": "ApplicationForm",
+      "payload": {
+        "eligible_modes": [
+          "mode:05"
+        ],
+        "operator": "operator:05",
+        "schema": "schema:05"
+      },
+      "local_id": "form:01",
+      "kind_rank": 5
+    }
+  ],
+  "expected_canonical_record_keys": [
+    [
+      1,
+      "schema:05"
+    ],
+    [
+      2,
+      "operator:05"
+    ],
+    [
+      3,
+      "mode:05"
+    ],
+    [
+      5,
+      "form:01"
+    ]
+  ],
+  "schema": "clause/compiler-terms/canonical-order-positive-v3",
+  "context_ref": "process-occurrences.json"
+}

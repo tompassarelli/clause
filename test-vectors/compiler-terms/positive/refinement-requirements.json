@@ -1,0 +1,176 @@
+{
+  "schema": "clause/compiler-terms/refinement-requirements-positive-v3",
+  "context_ref": "../context.json",
+  "semantic_predicate": {
+    "application_id": "application-id:02",
+    "relation_schema_id": "relation-schema:04",
+    "operator_ref": "operator-ref:04",
+    "mode_id": "mode-id:04",
+    "formula": "(tx - ox)^2 + (ty - oy)^2 <= r^2",
+    "integer_domain": "mathematical-integer",
+    "radius_domain": "nonnegative-q16.16",
+    "comparison": "inclusive"
+  },
+  "candidate_refinement": {
+    "formula": "ox-r <= tx <= ox+r and oy-r <= ty <= oy+r",
+    "claim": "semantic-predicate-true-implies-candidate-membership",
+    "truth_authority": false
+  },
+  "predicate_vectors": [
+    {
+      "id": "three-four-five-boundary",
+      "input": {
+        "tx": 196608,
+        "ty": 262144,
+        "ox": 0,
+        "oy": 0,
+        "r": 327680
+      },
+      "expected_exact": true,
+      "expected_candidate": true
+    },
+    {
+      "id": "one-raw-unit-outside-circle-inside-aabb",
+      "input": {
+        "tx": 327680,
+        "ty": 1,
+        "ox": 0,
+        "oy": 0,
+        "r": 327680
+      },
+      "expected_exact": false,
+      "expected_candidate": true
+    },
+    {
+      "id": "aabb-corner-is-not-circle-truth",
+      "input": {
+        "tx": 327680,
+        "ty": 327680,
+        "ox": 0,
+        "oy": 0,
+        "r": 327680
+      },
+      "expected_exact": false,
+      "expected_candidate": true
+    },
+    {
+      "id": "max-scale-number-rounding-discriminator",
+      "input": {
+        "tx": 2147483647,
+        "ty": 1,
+        "ox": 0,
+        "oy": 0,
+        "r": 2147483647
+      },
+      "expected_exact": false,
+      "expected_candidate": true
+    },
+    {
+      "id": "extreme-coordinate-no-overflow",
+      "input": {
+        "tx": 2147483647,
+        "ty": 2147483647,
+        "ox": -2147483648,
+        "oy": -2147483648,
+        "r": 2147483647
+      },
+      "expected_exact": false,
+      "expected_candidate": false
+    }
+  ],
+  "encoded_predicate_vectors": [
+    {
+      "id": "encoded-three-four-five-boundary",
+      "encoding": "signed-big-endian-q16.16",
+      "input_hex": {
+        "tx": "00030000",
+        "ty": "00040000",
+        "ox": "00000000",
+        "oy": "00000000",
+        "r": "00050000"
+      },
+      "expected_exact": true,
+      "expected_candidate": true
+    },
+    {
+      "id": "encoded-max-scale-number-rounding-discriminator",
+      "encoding": "signed-big-endian-q16.16",
+      "input_hex": {
+        "tx": "7fffffff",
+        "ty": "00000001",
+        "ox": "00000000",
+        "oy": "00000000",
+        "r": "7fffffff"
+      },
+      "expected_exact": false,
+      "expected_candidate": true
+    },
+    {
+      "id": "encoded-signed-extremes-do-not-wrap",
+      "encoding": "signed-big-endian-q16.16",
+      "input_hex": {
+        "tx": "7fffffff",
+        "ty": "7fffffff",
+        "ox": "80000000",
+        "oy": "80000000",
+        "r": "7fffffff"
+      },
+      "expected_exact": false,
+      "expected_candidate": false
+    }
+  ],
+  "bounded_outcomes": [
+    {
+      "id": "representable-bounded-candidate",
+      "extent_arithmetic": "representable",
+      "bucket_count": 64,
+      "candidate_limit": 4096,
+      "allocation_limit_bytes": 1048576,
+      "selected_path": "candidate-then-exact-predicate",
+      "semantic_verdict_allowed": true
+    },
+    {
+      "id": "oversized-extent-takes-exact-scan",
+      "extent_arithmetic": "representable",
+      "bucket_count": {
+        "encoding": "unsigned-decimal-string",
+        "value": "18446744073709551615"
+      },
+      "candidate_limit": 4096,
+      "population_size": 1024,
+      "population_limit": 4096,
+      "exact_scan_row_limit": 4096,
+      "exact_scan_work_limit": 8192,
+      "allocation_limit_bytes": 1048576,
+      "observed_exact_scan": {
+        "rows_scanned": 1024,
+        "work_units": 2048,
+        "allocation_bytes": 65536
+      },
+      "selected_path": "exact-scan-fallback",
+      "semantic_verdict_allowed": true
+    },
+    {
+      "id": "unrepresentable-extent-and-exhausted-scan",
+      "extent_arithmetic": "unrepresentable",
+      "candidate_limit": 4096,
+      "allocation_limit_bytes": 1048576,
+      "exact_scan_budget": 0,
+      "selected_path": "typed-exhausted",
+      "semantic_verdict_allowed": false
+    }
+  ],
+  "required_future_binding": {
+    "state": "deliberately-unknown",
+    "must_bind": [
+      "exact semantic contract",
+      "exact physical contract",
+      "exact physical plan",
+      "admitted state delta",
+      "physical budget"
+    ],
+    "defined_by_this_vector": false,
+    "materialization_authority_assigned": false,
+    "admission_authority_assigned": false
+  }
+}
