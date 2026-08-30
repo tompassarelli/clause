@@ -5,6 +5,10 @@ use clause_package::{
     AuthorityStore, CheckedProcessPackage, ProcessCarrier, ProcessError, ProcessRecordV2,
 };
 
+mod executable;
+
+pub use executable::*;
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RuntimeInitError {
     NonSerialStepBatch {
