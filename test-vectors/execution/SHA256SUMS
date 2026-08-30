@@ -3,5 +3,5 @@
 3111d312e7dfd5de210374154835d19a4f2f85053666e9005532e82a98f8f1f5  historical-v0/source-projections/pure-dependency-closure.clause-v0.txt
 ceffd028d7a4c394e2d2497d2d126c6b3a25a4889aeefa7a603b62f89ba128ca  historical-v0/source-projections/state-effect-fulfillment.clause-v0.txt
 e63e9a523e007257e7a2d0abab02aae04d8a8b3de165cdab4eeb2dbc1a9cce26  historical-v0/source-projections/verified-program-evolution.clause-v0.txt
-9bc849a731ea4d9796611b4aa735e40728f8cce730f329b841122635523c5130  verify-historical-v0-test.sh
-481bf5add7e69567156319326d0fdddc136ea77f2faec081c27c8942d58cc5ee  verify-historical-v0.sh
+75c59ae39fda271ff3d461eac979285d0bcea949c01bff6032cc2fd57218db7b  verify-historical-v0-test.sh
+e7124b24db3db32fbf1897d742bf28d8fad4b7722792951963b8caa10f318500  verify-historical-v0.sh

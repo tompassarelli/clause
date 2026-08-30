@@ -67,6 +67,29 @@ printf '\n' >> "$case_dir/$payload"
 rehash_payload "$case_dir" "$payload"
 expect_reject "$case_dir" 'execution-v0 original payload hash verification failed'
 
+case_dir="$(new_case)"
+sed -i '/^  "semantic_authority": /i\  "semantic_authority": "docs/hostile.md",' \
+  "$case_dir/manifest.json"
+rehash_manifest "$case_dir"
+expect_reject "$case_dir" 'execution-v0 manifest is malformed or contains duplicate object keys'
+
+case_dir="$(new_case)"
+sed -i '/^    "names": /i\    "names": "hostile",' "$case_dir/manifest.json"
+rehash_manifest "$case_dir"
+expect_reject "$case_dir" 'execution-v0 manifest is malformed or contains duplicate object keys'
+
+case_dir="$(new_case)"
+sed -i '/^    "term_json": {$/i\    "term_json": {"hostile": {"x": 1}},' \
+  "$case_dir/manifest.json"
+rehash_manifest "$case_dir"
+expect_reject "$case_dir" 'execution-v0 manifest is malformed or contains duplicate object keys'
+
+case_dir="$(new_case)"
+sed -i '/^  "source_projection_contract": {$/i\  "source_projection_contract": {},' \
+  "$case_dir/manifest.json"
+rehash_manifest "$case_dir"
+expect_reject "$case_dir" 'execution-v0 manifest is malformed or contains duplicate object keys'
+
 while IFS= read -r mutation; do
   case_dir="$(new_case)"
   jq "$mutation" "$case_dir/manifest.json" > "$case_dir/manifest.next.json"

@@ -85,10 +85,11 @@ activate(ActivationStartRecord) =
   (ActivationId, RunMembership, InitialConfiguration)
 
 ⟨RunId, ActivationId, ConfigurationCustody_before, optional Wbase⟩
-  -- StepId(owner = (RunId, ActivationId),
-            causes = StepCauseFrontier) ; observations ;
-     transition = StepConfigurationTransition ;
-     candidate delta ; continuation -->
+  -- StepRecord(s = fresh StepId,
+                owner = (RunId, ActivationId),
+                causes = StepCauseFrontier,
+                transition = StepConfigurationTransition(s),
+                observations, outcome, candidate delta, continuation) -->
 ⟨RunId, ActivationId, ConfigurationCustody_after, same optional Wbase⟩
 
 Run(RunId, unique root ActivationId, child Activations,
@@ -382,7 +383,7 @@ or continuity.
 | `ApplicationId` | One nominal Application instantiating one exact ApplicationForm under its exact semantics and snapshot-local declaration references. Every Application has one. Source-only movement may preserve it when the exact ProgramSnapshot and form are unchanged; a semantic or declaration revision creates a new ApplicationId, with any intended cross-revision continuity represented separately by ReferentId evidence. |
 | `OccurrenceId` and typed refinements | One actual source, assertion, external-trigger, Judgment issuance, authorization, resumption, handoff, cancellation, production, admission, effect-intent, effect-attempt, receipt, or observation occurrence. Every actual occurrence has the explicit provenance sum defined below; equal content never merges independent occurrences, and one refinement never substitutes for another. |
 | `ActivationId` | One actual engagement of one exact Application, mode, and initial context. Every activation is distinct, including repeated activation of equal content. |
-| `StepId` | One externally meaningful semantic carry-through in an Activation. It names an exact finite typed StepCauseFrontier; serialization order supplies no causal edge. |
+| `StepId` | One fresh nominal identity for an externally meaningful semantic carry-through in an Activation. The associated StepRecord, not the StepId, carries its exact owner, finite typed StepCauseFrontier, StepConfigurationTransition, and outputs; serialization order supplies no causal edge. |
 | `RunId` | One causal envelope with exactly one root Activation and unique membership for every child Activation it owns. It is not an alias for ActivationId or a log identifier. |
 | `ContinuationId` | One persisted, suspended, or handed-off semantic remainder. Ephemeral in-process remainder may be physically erased when refinement proves it unobservable. |
 | `ObservationId` | One occurrence reporting a distinction from an exact Step or external boundary. Equal observed values do not merge observations. |
@@ -806,7 +807,7 @@ StepCause :=
                        ResumptionOccurrenceId | HandoffOccurrenceId)
   | CancellationRequest(CancellationOccurrenceId)
 
-StepCauseFrontier := nonempty finite canonical set of StepCause
+StepCauseFrontier := finite canonical set of StepCause
 
 ConfigurationPredecessor :=
     ActivationStart(ActivationId)
@@ -819,15 +820,17 @@ ActivationConfigurationToken :=
 
 BranchKey := contract-local key, not a global identity domain
 
+BranchSlot := (exact BranchKey, exact repeated-spec ordinal), where ordinals
+              are contiguous and canonical within each repeated BranchKey
+
 BranchSpec :=
-    exact BranchKey
-  + exact repeated-spec ordinal
+    exact BranchSlot
   + exact child-Activation requirements
   + exact configuration partition
   + exact terminal settlement and join obligations
 
 SplitJoinContract :=
-    Mode-owned finite canonical sequence of BranchSpec
+    Mode-owned finite canonical BranchSlot-ordered sequence of BranchSpec
   + proof that the partitions are pairwise disjoint
     and exactly cover the consumed parent configuration
 
@@ -839,9 +842,23 @@ SplitInstance :=
 
 BranchConfigurationToken :=
     affine(exact SplitInstance,
-           exact contract-local BranchKey,
+           exact BranchSlot,
            exact child ActivationId,
            exact child ActivationConfigurationToken)
+
+SplitChildBinding :=
+    exact SplitInstance
+  + exact BranchSlot and matching BranchSpec
+  + exact fresh child ActivationId
+  + exact ActivationStartRecord whose ActivationOrigin is
+    ChildOf(SplitInstance.RunId,
+            SplitInstance.parent ActivationId,
+            SplitInstance.split StepId)
+    and whose start requirements exactly satisfy that BranchSpec
+  + exact ChildIn(SplitInstance.RunId)
+  + exact initial child ActivationConfigurationToken whose predecessor is
+    ActivationStart(child ActivationId)
+  + exact BranchConfigurationToken wrapping that initial token
 
 BranchDischargeProof :=
     every exact AllocationRoot (Owned, RegionMember, or ForeignManaged,
@@ -850,22 +867,48 @@ BranchDischargeProof :=
     transferred exactly as declared
 
 BranchSettlement :=
-    Returned(consumed terminal BranchConfigurationToken)
-  | Closed(consumed terminal BranchConfigurationToken,
+    Returned(exact BranchSlot,
+             consumed terminal BranchConfigurationToken)
+  | Closed(exact BranchSlot,
+           consumed terminal BranchConfigurationToken,
            terminal close-or-cancel StepId,
            typed outcome,
            exact BranchDischargeProof)
 
-StepConfigurationTransition :=
+StepConfigurationTransition(s : StepId) :=
     Serial(consume ActivationConfigurationToken,
-           produce ActivationConfigurationToken)
+           produce ActivationConfigurationToken whose predecessor is
+             ConfigurationAfter(s))
   | Split(consume parent ActivationConfigurationToken,
           exact SplitJoinContract,
-          produce canonical BranchConfigurationTokens)
+          produce canonical BranchConfigurationTokens whose exact
+            SplitInstance.split StepId is s)
   | Branch(consume BranchConfigurationToken,
-           produce BranchConfigurationToken | BranchSettlement)
-  | Join(consume canonical exact BranchSettlements,
-         produce parent ActivationConfigurationToken)
+           produce BranchConfigurationToken whose predecessor is
+                     ConfigurationAfter(s)
+                 | BranchSettlement whose consumed terminal token names
+                     ConfigurationAfter(s), and whose Closed terminal StepId
+                     is s)
+  | Join(consume canonical exact BranchSlot-ordered BranchSettlements,
+         produce parent ActivationConfigurationToken whose predecessor is
+           ConfigurationAfter(s))
+
+StepRecord(s : fresh StepId) :=
+    exact owner (RunId, ActivationId)
+  + exact StepCauseFrontier
+  + exact StepConfigurationTransition(s)
+  + exact observations, outcome, candidate delta, and Continuation outputs
+
+Ready(a : ActivationId) :=
+    exact constituted Activation a
+  + zero StepRecords owned by a
+  + live, unconsumed exact initial ConfigurationCustody
+
+SplitFormation :=
+  ν splitStepId, {childActivationId[slot] for each BranchSlot}.
+    exact Split StepRecord(splitStepId)
+  + exact SplitInstance
+  + canonical BranchSlot-ordered SplitChildBindings
 
 ConfigurationCustody :=
   the exact affine input and output token or settlement sequence selected by
@@ -877,10 +920,21 @@ ConfigurationSuccessionEdge(producer StepId, consumer StepId) :=
 
 StepCauseFrontierEdge(predecessor StepId, consumer StepId) :=
     an exact predecessor projected by one checked StepCause in the consumer's
-    StepCauseFrontier, where ActivationStart projects each same-Run Step
-    directly named by that Activation's exact checked ActivationCauseFrontier:
-    the parent Step in ChildOf or HandoffFrom and the exact producer Step of an
-    occurrence-backed Activation cause when that producer belongs to the Run
+    StepCauseFrontier, where ActivationStart projects the distinct union of the
+    exact ChildOf parent Step or HandoffFrom Continuation-emitter Step, direct
+    same-Run provenance roots of the exact HandoffOccurrence when that origin is
+    HandoffFrom, and exact producer Steps of ordinary occurrence-backed
+    Activation causes in that Run
+
+StepCauseFrontierEdges(s) :=
+    every StepCauseFrontierEdge whose consumer is s
+
+StepConfigurationSuccessionEdges(s) :=
+    every ConfigurationSuccessionEdge whose consumer is s
+
+IncomingRunEdges(s) :=
+    StepCauseFrontierEdges(s)
+  ∪ StepConfigurationSuccessionEdges(s)
 
 RunOrder := transitive closure(
     typed StepCauseFrontier edges
@@ -1029,51 +1083,77 @@ before an EffectAttemptOccurrence or partial authority exists.
 
 Run membership is assigned at activation and never inferred from later graph
 reachability. `RootedBy` allocates one fresh `RunId` and makes the Activation
-that Run's unique root. `ChildOf` and `HandoffFrom` require the named parent
-Step to belong to the named Run and assign the new Activation as a child of
-that same Run. Every Activation has exactly one owning `RunId`; every Run has
-exactly one root Activation; a child Activation does not silently root a second
-Run. A deliberately detached process uses a new typed root trigger and a new
-Run, while its trigger provenance may still name the earlier causal boundary.
-These rules prevent a child from being attached to an arbitrary or multiple
-Runs.
+that Run's unique root. `ChildOf` requires the named parent Step to belong to
+the named parent Activation and Run. `HandoffFrom` additionally requires its
+`parent StepId` to be the named Continuation's exact emitting Step, with the
+same recorded parent Activation and Run. Its exact `HandoffOccurrence` must
+target that Continuation and the destination's StaticActivationBasis and
+InitialContext, including every changed or preserved pin, and its typed
+provenance must be well-founded from already constituted roots. A wrong
+emitter, parent owner, Continuation, destination basis or pin, future root, or
+cycle rejects before child identity allocation. Both origins assign the new
+Activation as a child of that same Run. Every Activation has exactly one owning
+`RunId`; every Run has exactly one root Activation; a child Activation does not
+silently root a second Run. A deliberately detached process uses a new typed
+root trigger and a new Run, while its trigger provenance may still name the
+earlier causal boundary. These rules prevent a child from being attached to an
+arbitrary or multiple Runs.
 
 One stable `ActivationId` advances through any number of
 `ActivationConfiguration`s. Configuration is semantic execution state, not a
 new Application or Activation. Every externally meaningful carry-through has
-a fresh `StepId`, one exact owning Activation and Run, and a nonempty typed
-`StepCauseFrontier`.
+a fresh `StepId` and one exact `StepRecord` carrying its owning Activation and
+Run, finite typed `StepCauseFrontier`, separate
+`StepConfigurationTransition(s)`, and outputs. The StepId is not a content hash
+of that record and does not contain its transition.
 
-A Step frontier is checked and fixed before the StepId is allocated. Every
-cause must resolve to an already constituted object, and every internal cause
-must belong to the Step's owning Run. `PriorStep` is valid only when its Run,
-Activation, and Step fields exactly match the predecessor Step's recorded
-ownership. It may name Steps of any uniquely owned Activation in that Run,
-allowing parent/child or sibling joins without inventing a total order. The
-checker rejects a self reference, an unallocated or future Step, a
-cause reachable from the proposed Step, a pre-existing causal cycle, a
-wrong-Run or wrong-Activation owner, a wrong occurrence refinement, and a cause
-not permitted by the selected Mode. Duplicate cause encodings reject rather
-than disappearing during canonicalization; canonical typed ordering adds no
-causal edge. Since every accepted edge points from an already acyclic
-constituted cause to the fresh Step, the accepted frontier projection is a
-finite directed acyclic graph rather than serialization order. The complete
-`RunOrder` is the separately validated union with configuration-succession
-edges defined below.
+A Step proposal's frontier, transition, outputs, owner, and applicable outcome
+are checked under one fresh Step binder before its `StepId` is allocated and
+the `StepRecord` is published. Every cause must resolve to an already
+constituted object, and every internal cause must belong to the Step's owning
+Run. `PriorStep` is valid only when its Run, Activation, and Step fields exactly
+match the predecessor Step's recorded ownership. It may name Steps of any
+uniquely owned Activation in that Run, allowing parent/child or sibling joins
+without inventing a total order. The checker rejects a self reference, an
+unallocated or future Step, a cause reachable from the proposed Step, a pre-
+existing causal cycle, a wrong-Run or wrong-Activation owner, a wrong
+occurrence refinement, and a cause not permitted by the selected Mode.
+Duplicate cause encodings reject rather than disappearing during
+canonicalization; canonical typed ordering adds no causal edge. Since every
+accepted incoming edge points from an already acyclic constituted predecessor
+to the fresh Step, the accepted `IncomingRunEdges` preserve a finite directed
+acyclic graph rather than serialization order. The complete `RunOrder` is the
+separately validated union with configuration-succession edges defined below.
 
-The first Step of an Activation has the exact singleton frontier
-`{ActivationStart(that ActivationId)}`. Its inherited causal predecessors are
-the already checked `ActivationCauseFrontier`; they are not duplicated as
-StepCause entries. The typed edge projection of that one `ActivationStart`
-includes every exact same-Run Step ancestor projected by the frontier: in
-particular, the parent Step named by `ChildOf` or `HandoffFrom`, plus the
-producer Step of any occurrence-backed Activation cause when that producer is
-inside the same Run. Root/external occurrence provenance remains inspectable
-without manufacturing a cross-Run RunOrder edge. Thus the parent Step precedes
-the child's first Step even when no configuration token passes between them,
-while the child's canonical frontier bytes remain the singleton above.
-`ActivationStart` for another Activation rejects, and no later Step may contain
-any `ActivationStart`.
+`Ready(a)` holds only for a constituted Activation with zero owned Steps and
+live, unconsumed initial configuration custody. A normal first Step of a Ready
+Activation has the exact singleton frontier `{ActivationStart(a)}`. The sole
+exception is ready cancellation: after validating an exact existing
+CancellationOccurrence `c`, its target and provenance, every Application,
+Mode, constitution, world/session/policy and cancellation pin, and an exact
+Mode permission and causal condition, plus an exact matching `Cancel(c)`
+outcome, the first Step has exactly
+`{ActivationStart(a), CancellationRequest(c)}`. Wrong target, pins, Mode,
+occurrence kind, outcome, an extra cause, already-consumed initial custody, or
+a second cancellation rejects before StepId allocation.
+
+The inherited causal predecessors of `ActivationStart(a)` are not duplicated
+as StepCause entries. Its typed edge projection is the distinct union of the
+exact `ChildOf` parent Step or `HandoffFrom` Continuation-emitter Step, the
+direct same-Run provenance roots of the exact HandoffOccurrence when present,
+and ordinary same-Run Step ancestry from occurrence-backed Activation causes. A root or
+external occurrence remains inspectable without manufacturing a cross-Run
+RunOrder edge. Thus every exact same-Run ancestor precedes the child's first
+Step even when no configuration token passes between them, while the child's
+canonical frontier bytes remain the singleton or ready-cancellation pair
+above. `ActivationStart` for another Activation rejects, and no later Step may
+contain any `ActivationStart`.
+
+A nonfirst Step may have an empty `StepCauseFrontier` only when its checked
+transition contributes a configuration-succession predecessor. Every nonfirst
+Step must have at least one `IncomingRunEdges` member. An empty frontier never
+means that a serialized predecessor, scheduler visit, or fabricated
+`PriorStep` becomes semantic causality.
 
 `ContinuationTakeup` is valid only for a nonfirst Step of the Continuation's
 exact owning Activation in the same Run. Its Run, Activation, and Step fields
@@ -1084,9 +1164,10 @@ cause therefore records both the emitting Step and takeup occurrence; adding a
 second `PriorStep` for that same emitting edge is a duplicate and rejects. A
 semantic handoff that
 changes Application, Mode, or another semantic pin instead creates a child
-Activation through `HandoffFrom`; its first Step uses only that child's
-`ActivationStart`. A linear Continuation's already-consumed takeup rejects
-before Step allocation.
+Activation through `HandoffFrom`; its normal first Step uses that child's exact
+`ActivationStart` singleton, while validated ready cancellation may use only
+the constitutional pair. A linear Continuation's already-consumed takeup
+rejects before Step allocation.
 
 `CancellationRequest` is valid only when the exact existing
 CancellationOccurrence targets either the Step's owning Activation or its
@@ -1094,7 +1175,8 @@ owning Run; for a Run target, the Activation must already be a unique member of
 that Run. A cancellation targeting another Activation or Run, naming another
 occurrence kind, or depending on the proposed/future Step rejects. Each Step
 that observes or carries through cancellation names that occurrence
-explicitly. Two Steps are independent only when neither typed frontier edges
+explicitly. The ready-cancellation pair above is its only first-Step use. Two
+Steps are independent only when neither typed frontier edges
 nor typed configuration-succession edges order them; a total trace or log order
 is storage evidence only. Internal KExpr reduction, CPU instructions, scheduler
 ticks, and materializer visits are not semantic Steps unless the declared
@@ -1194,24 +1276,35 @@ There is never an implicit shared mutable alias. Parallel work either receives
 immutable values, transfers ownership to child Activations, or uses statically
 disjoint affine branch tokens or explicit access leases. A selected Mode owns
 each `SplitJoinContract`: its canonical multiplicity-aware BranchSpecs name
-contract-local BranchKeys and prove pairwise disjoint, exact coverage of the
-consumed parent configuration. Equal-content BranchSpecs remain separate by key
-and repeated-spec ordinal.
+typed `BranchSlot = (BranchKey, repeated-spec ordinal)` values and prove pairwise
+disjoint, exact coverage of the consumed parent configuration. Equal-content
+and equal-key BranchSpecs remain distinct by their complete BranchSlot.
 
-A Split Step consumes the sole whole-parent token and produces one
-`SplitInstance` plus exactly the contract's canonical BranchConfigurationTokens
-for fresh child Activations. The instance is structurally anchored by RunId,
-parent ActivationId, split StepId, and exact contract commitment; it receives no
-new global ID. The split leaves no residual whole-parent token. Any parent
-remainder that must survive is an explicit branch in the same contract.
+A `SplitFormation` consumes the sole whole-parent token and co-forms one fresh
+split StepId, one fresh child ActivationId per BranchSlot, the exact Split
+StepRecord, its structurally anchored `SplitInstance`, canonical
+`SplitChildBindings`, and every initial child and BranchConfigurationToken.
+Each binding carries its complete BranchSlot and matching BranchSpec, a fresh
+child identity, exact `ChildOf(instance.run, parent, splitStep)` origin,
+`ChildIn(instance.run)` membership, and live initial child custody. The
+instance is anchored by RunId, parent ActivationId, split StepId, and exact
+contract commitment; it receives no new global ID.
+
+The checker validates the parent token, every partition and BranchSpec, all
+freshness and child formation requirements, every origin and Run binding, and
+the complete canonical token set under the atomic fresh binders. Only then may
+it publish the Step, instance, children, bindings, and tokens together. Any
+failure publishes none of them and leaves the parent token live and unconsumed.
+The successful split leaves no residual whole-parent token. Any parent
+remainder that must survive is an explicit BranchSlot in the same contract.
 
 Every branch Step consumes only the token for its exact SplitInstance,
-BranchKey, child Activation, and current child predecessor. Terminal branch
+BranchSlot, child Activation, and current child predecessor. Terminal branch
 carry-through consumes that token into exactly one `BranchSettlement`.
 The terminal Step atomically forms its own `ConfigurationAfter(terminal
 StepId)` token and consumes it into the settlement, leaving no second live
 token or extra semantic Step. `Returned` preserves that terminal token as
-consumed settlement evidence;
+consumed settlement evidence and retains its BranchSlot;
 `Closed` additionally names the exact terminal close or cancellation Step,
 typed outcome, and proof that every exact AllocationRoot—`Owned`,
 `RegionMember`, or `ForeignManaged`, including every Clause-owned foreign-
@@ -1219,19 +1312,32 @@ wrapper obligation—plus every Borrow, Lease, Continuation, effect obligation,
 and close obligation was discharged or transferred. A cancelled branch can
 never disappear merely because it produced no value.
 
-A Join Step consumes exactly one settlement for every expected BranchSpec in
-canonical BranchKey order and restores one whole configuration owner. Its
+A Join Step consumes exactly one settlement for every expected BranchSlot in
+canonical BranchSlot order and restores one whole configuration owner. Its
 `StepCauseFrontier` contains one exact `PriorStep` for every settlement terminal
 Step, independent of completion or arrival order; any other cause must be
 separately permitted by the Mode. The frontier and configuration-transition
 records stay distinct even where they order the same endpoints. Cross-split or
-equal-content transplant, overlap, incomplete coverage, wrong-BranchKey,
+equal-content transplant, overlap, incomplete coverage, wrong-BranchSlot,
 wrong-contract, wrong-SplitInstance, missing, extra, duplicate, or already
 consumed settlement, frontier/settlement mismatch, and double join reject
-before publication. Opposite physical completion orders
-produce the same canonical settlement sequence, joined configuration, result,
-candidate delta, Admission decision, and observable bytes. Host arrival order
-never selects merge behavior. Static
+before publication.
+
+For schedule-parity checks, a typed `ScheduleIsomorphism π` is a type-
+preserving bijection over fresh run-local Run, Activation, Step, Continuation,
+Observation, and other occurrence identities. It preserves ownership,
+Activation origins, BranchSlots, frontiers, configuration transitions,
+both RunOrder edge kinds, occurrence/support multiplicity, outcomes, and all
+references between those identities while fixing the shared constitution,
+Application, Mode, SplitJoinContract, BranchSlots, base world, semantic pins,
+and schedule-independent content. Runs under opposite
+physical completion orders must satisfy `encode(π(runA)) = encode(runB)`.
+Only their schedule-independent payload, Value, Result, candidate-delta,
+Admission-decision, and continuation-disposition projections are required to
+be literally equal. Fresh `PriorStep` fields, settlements that retain terminal
+StepIds, candidate/decision records that retain fresh identities, and other
+identity-bearing bytes are isomorphic rather than equal.
+Host arrival order never selects merge behavior. Static
 partition and obligation proofs may erase under checked specialization;
 dynamically varying branch custody and settlement may not. The Split Step's
 `StepId` and Join Step's `StepId` already identify those occurrences, so Clause
@@ -2404,7 +2510,7 @@ accidental structure never defines Clause meaning:
 | host closure or function pointer | never Operator, Application, Mode, or Activation identity |
 | arbitrary host mutation | never an Effect without the typed causal boundary |
 | bytes or placement | never Value, Referent, Application, or revision identity by themselves |
-| observed thread interleaving | never semantic order beyond declared typed cause frontiers |
+| observed thread interleaving | never semantic order beyond declared typed frontier or configuration-succession edges |
 | thrown string | never an untyped substitute for rejection, cancellation, timeout, exhaustion, or absent evidence |
 | missing relation row | never false without an explicit closed-world contract |
 
@@ -2578,14 +2684,19 @@ The adoption spike and any migration must prove at least these cases:
 | Issued authorization cites itself, the candidate action, or candidate-produced authority as its issuance basis | Reject the authorization cycle before the authorized action acquires authority |
 | One exact Application independently root-activated twice | One ApplicationId; two distinct ExternalTriggerOccurrenceIds, ActivationIds, and Run roots |
 | A parent Step starts a child Activation | The child has a fresh ActivationId, inherits exactly the parent's RunId, and cannot also root or join another Run |
-| First Step contains another Activation's start or any additional StepCause | Reject; its frontier must be exactly `{ActivationStart(its own ActivationId)}` |
-| Fresh two-branch Join consumes both exact settlements | Its canonical settlement sequence is BranchKey-ordered, and its frontier contains the two exact settlement-terminal PriorSteps independent of physical completion or trace serialization order |
+| Normal first Step of a Ready Activation | Its frontier is exactly `{ActivationStart(its own ActivationId)}` |
+| Ready Activation is cancelled before ordinary carry-through | Its sole first-Step exception has exactly `{ActivationStart(its own ActivationId), CancellationRequest(c)}` and the checked outcome is the matching `Cancel(c)` |
+| First Step contains another Activation's start, an extra cause outside the ready-cancellation pair, mismatched cancellation target/pins/Mode/occurrence/outcome, consumed initial custody, or follows an existing Step | Reject before StepId allocation; no first-Step exception beyond the exact ready-cancellation pair exists |
+| Fresh two-branch Join consumes both exact settlements | Its canonical settlement sequence is BranchSlot-ordered, and its frontier contains the two exact settlement-terminal PriorSteps independent of physical completion or trace serialization order |
 | Later Step names itself, a future Step, a cyclic cause, or a cause with the wrong Run, Activation owner, or occurrence kind | Reject before StepId allocation; the previously constituted RunOrder DAG remains unchanged |
 | Step `s2` consumes `ConfigurationAfter(s1)` without `PriorStep(s1)` | Accept when every other contract holds; the typed configuration-succession edge establishes `s1 <run s2` without changing either StepCauseFrontier or inserting an implicit PriorStep |
+| Nonfirst Step has an empty StepCauseFrontier and consumes no predecessor custody | Reject before StepId allocation; every nonfirst Step requires nonempty IncomingRunEdges, and an empty frontier is permitted only when its transition contributes a configuration predecessor |
+| StepId is allocated for a validated carry-through | One fresh nominal StepId; its exact owner, finite frontier, StepConfigurationTransition, and outputs live in the associated StepRecord rather than in the identifier |
 | One Activation progresses, suspends, and resumes | One ActivationId and Run membership; several StepIds and configurations; the takeup cause names the exact Continuation, emitting Run/Activation/Step, and ResumptionOccurrence without a duplicate PriorStep edge |
 | Continuation takeup has stale pins, the wrong owner or target, or repeats a consumed linear use | Reject before Step allocation; semantic handoff with changed pins must create a child Activation through `HandoffFrom` |
 | An executor handoff preserves all semantic pins | Same ActivationId and Run membership; the takeup Step names the Continuation and HandoffOccurrence |
-| A semantic handoff changes Application, Mode, or a semantic pin | Fresh child ActivationId in the same Run through an exact HandoffFrom cause; the original Activation never changes identity or pins |
+| A semantic handoff changes Application, Mode, or a semantic pin | Fresh child ActivationId in the same Run through an exact HandoffFrom cause whose parent Step is the Continuation's exact emitter; destination basis/pins, HandoffOccurrence target, and well-founded provenance validate before allocation, and the original Activation never changes identity or pins |
+| Handoff Continuation emitter and direct same-Run HandoffOccurrence provenance root are distinct Steps | The child's ActivationStart projects both exact predecessors plus ordinary same-Run Activation occurrence ancestry as a distinct union; a coincident root appears once, while a missing, future, cyclic, or wrong-Run root rejects before allocation |
 | A cancellation races an independent Step | Only Steps whose typed cause frontier names the CancellationOccurrence are ordered after it; unrelated Steps remain unordered |
 | Step cites cancellation for another Activation or Run | Reject before Step allocation; Run-targeted cancellation applies only to already owned members of that Run |
 | Independent Steps are serialized in a log | No Run ordering unless a typed frontier edge or typed configuration-succession edge relates them; storage order alone contributes neither |
@@ -2632,16 +2743,18 @@ The adoption spike and any migration must prove at least these cases:
 | Pure Mode uses an in-place local builder | Accept only when it is observationally equivalent to the functional realization and no local reference, effect, delta, authority use, or undeclared resource/diagnostic distinction escapes |
 | Internal reduction fails or observes cancellation before its Step cut | The exact consumed ConfigurationCustody_before selected by Serial, Split, Branch, or Join is restored through infallible-after-write execution, bounded undo/shadow state, or unpublished private realization, with no duplicate or residual custody; escaped resources are never falsely rolled back |
 | Two concurrent computations request the same mutable local slot | Reject the alias or require an explicit disjoint split/lease and causal join; physical interleaving grants no shared ownership |
-| Parallel configuration split, branch cancellation, and join | One Mode-owned multiplicity-aware contract proves pairwise-disjoint exact coverage; Split consumes the whole token, every branch produces one exact settlement, and Join consumes one settlement per BranchKey in canonical order while citing every settlement-terminal Step |
+| Parallel configuration split, branch cancellation, and join | One Mode-owned multiplicity-aware contract proves pairwise-disjoint exact coverage; atomic SplitFormation co-forms the split Step, SplitInstance, one fresh ChildOf/ChildIn Activation and initial token per BranchSlot, and all bindings, every branch produces one exact BranchSlot-bearing settlement, and Join consumes one settlement per BranchSlot in canonical order while citing every settlement-terminal Step |
 | Split retains an implicit whole-parent token or omits a parent remainder | Reject; the Split leaves no whole token and every retained remainder must be an explicit branch in the exact-coverage contract |
-| Equal-content branch token or settlement is transplanted across SplitInstances, contracts, BranchKeys, or child Activations | Reject before custody changes; structured split ancestry, not content equality, controls use |
-| Branch partition overlaps, omits coverage, or changes multiplicity | Reject the Split before any branch token or child carry-through is published |
-| Join receives a missing, extra, duplicate, wrong-BranchKey, wrong-contract, wrong-SplitInstance, or already consumed settlement | Reject before Join Step publication and retain the previously valid branch custody state |
+| Split child, origin, Run membership, BranchSpec, binding, or initial token fails validation | Publish no split Step, SplitInstance, child Activation, binding, or token; retain the live unconsumed parent custody |
+| Repeated BranchSpecs share one BranchKey | Contiguous canonical repeated-spec ordinals form distinct BranchSlots carried without collapse through child bindings, tokens, Returned or Closed settlements, and Join; a wrong, missing, duplicate, or noncontiguous ordinal rejects before publication |
+| Equal-content branch token or settlement is transplanted across SplitInstances, contracts, BranchSlots, or child Activations | Reject before custody changes; structured split ancestry, not content equality, controls use |
+| Branch partition overlaps, omits coverage, or changes BranchSlot multiplicity | Reject the Split before its Step, instance, child, binding, or token set is published |
+| Join receives a missing, extra, duplicate, wrong-BranchSlot, wrong-contract, wrong-SplitInstance, or already consumed settlement | Reject before Join Step publication and retain the previously valid branch custody state |
 | Closed settlement leaves an exact AllocationRoot (Owned, RegionMember, or ForeignManaged, including a Clause-owned foreign-wrapper obligation), Borrow, Lease, Continuation, effect obligation, or close obligation neither discharged nor transferred exactly as declared | Reject closure; cancellation or missing return value cannot erase unresolved branch custody, while an exact declared transfer may preserve the resource under its destination owner |
 | Resumed branch uses another split/contract or repeats a consumed takeup | Reject before the resumed Step acquires branch custody |
 | Join frontier omits or adds a settlement-terminal Step | Reject; it must contain one exact PriorStep per consumed settlement terminal, with any additional cause separately Mode-permitted |
-| First Step of a ChildOf or HandoffFrom Activation has no configuration-succession edge from its parent Step | Its singleton ActivationStart frontier projects the exact checked parent-Step ancestry into a typed StepCauseFrontier edge, so parent precedes child without inserting PriorStep or changing frontier bytes |
-| Equal branch work completes in opposite physical orders | Same canonical BranchKey-ordered settlements, joined configuration, result, candidate delta, Admission decision, and observable bytes; host arrival order selects nothing |
+| First Step of a ChildOf or HandoffFrom Activation has no configuration-succession edge from its parent Step | Its ActivationStart cause projects the distinct exact same-Run ancestry union—ChildOf parent or HandoffFrom Continuation emitter, direct handoff-occurrence provenance roots, and ordinary Activation occurrence ancestry—into typed StepCauseFrontier edges, so each predecessor orders the child without an inserted PriorStep |
+| Equal branch work completes in opposite physical orders | A typed ScheduleIsomorphism maps every fresh run-local identity so `encode(π(runA)) = encode(runB)`; only schedule-independent payload/Value/Result/delta/Admission/continuation-disposition projections are literally equal, and identity-bearing PriorSteps or settlements are not |
 | Mutable work forks or rolls back | A semantic fork consumes one token into disjoint fresh child identities and a join contract; private speculative alternatives publish at most one successor; rollback is bounded restoration inside one unpublished Step attempt and cannot erase a completed occurrence, effect, or revision |
 | Suspension captures affine configuration | The sole ownership token moves into the Continuation; same-Activation takeup consumes it once, while reusable takeup requires immutable/Copy state or fresh child Activations |
 | Continuation is persisted or handed off with a host pointer, executor-local Borrow, nonportable Owned resource, or nontransferable foreign Lease | Reject before the configuration token moves; exact portable/rematerializable roots and acknowledged transferable Leases are required |

@@ -60,6 +60,86 @@ then
   fail 'execution-v0 original payload hash verification failed'
 fi
 
+if ! jq --stream --exit-status -n '
+  def frame_for($path; $depth; $kind):
+    {path: $path[0:$depth], kind: $kind, seen: {}, active: null};
+
+  def enter_path($path):
+    reduce range(0; $path | length) as $depth
+      (.;
+        ($path[$depth]) as $part
+        | (($part | type) as $part_type
+           | if $part_type == "string" then "object"
+             elif $part_type == "number" then "array"
+             else "invalid"
+             end) as $kind
+        | if (.ok | not) or $kind == "invalid" then
+            .ok = false
+          elif (.stack | length) < $depth then
+            .ok = false
+          elif (.stack | length) == $depth then
+            .stack += [frame_for($path; $depth; $kind)]
+          elif .stack[$depth].path != $path[0:$depth]
+               or .stack[$depth].kind != $kind then
+            .ok = false
+          else .
+          end
+        | if .ok and $kind == "object" then
+            if .stack[$depth].active == $part then .
+            elif (.stack[$depth].seen | has($part)) then .ok = false
+            else
+              .stack[$depth].seen[$part] = true
+              | .stack[$depth].active = $part
+            end
+          else .
+          end);
+
+  def consume($event):
+    if (($event | type) != "array"
+        or (($event | length) != 1 and ($event | length) != 2)
+        or (($event[0] | type) != "array")) then
+      .ok = false
+    else
+      ($event[0]) as $path
+      | if .complete then
+          .roots += 1 | .complete = false | .stack = []
+        else .
+        end
+      | if ($path | length) == 0 then
+          if ($event | length) == 2 then .complete = true
+          else .ok = false
+          end
+        elif ($event | length) == 2 then
+          enter_path($path)
+          | (($path | length) - 1) as $leaf_parent
+          | if .ok and .stack[$leaf_parent].kind == "object" then
+              .stack[$leaf_parent].active = null
+            else .
+            end
+        else
+          (($path | length) - 1) as $closing_depth
+          | if (.stack | length) <= $closing_depth
+               or .stack[$closing_depth].path != $path[0:$closing_depth] then
+              .ok = false
+            else
+              .stack = .stack[0:$closing_depth]
+              | if $closing_depth == 0 then .complete = true
+                elif .stack[$closing_depth - 1].kind == "object" then
+                  .stack[$closing_depth - 1].active = null
+                else .
+                end
+            end
+        end
+    end;
+
+  reduce inputs as $event
+    ({ok: true, roots: 0, complete: true, stack: []}; consume($event))
+  | .ok and .roots == 1 and .complete and (.stack | length) == 0
+' manifest.json >/dev/null 2>&1
+then
+  fail 'execution-v0 manifest is malformed or contains duplicate object keys'
+fi
+
 if ! jq --exit-status '
   (.schema == "clause-execution-corpus-v0")
   and (.semantic_authority == "docs/foundation.md")

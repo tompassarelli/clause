@@ -58,7 +58,9 @@ neutral Term + contextual ClauseJudgment / FormationJudgment
      membership
   -> stable ActivationId across configurations related by causal StepIds,
      each consuming the exact current affine configuration token, producing its
-     successor token, and carrying a nonempty typed StepCauseFrontier
+     successor token, and carrying a finite typed StepCauseFrontier; every
+     nonfirst Step has nonempty IncomingRunEdges from typed frontier and/or
+     configuration-succession edges
   -> Run(RunId, one unique root and uniquely owned child Activations)
   -> observations, continuations, and candidate deltas
   -> separately governed Admission

@@ -150,10 +150,15 @@ Its crosswalk must show:
 - every Step carrying exactly one Serial, Split, Branch, or Join configuration
   transition, with one Mode-owned multiplicity-aware split/join contract,
   pairwise-disjoint exact coverage, structurally anchored branch custody,
-  obligation-complete settlements, and canonical BranchKey-ordered Join;
-- nonempty finite typed StepCauseFrontiers rather than inferred log causality,
-  with exact ActivationStart, PriorStep, ContinuationTakeup, and
-  CancellationRequest causes where applicable;
+  typed `BranchSlot = (BranchKey, repeated-spec ordinal)`, atomic co-formation
+  of the split Step/instance/children/bindings/initial tokens, obligation-
+  complete BranchSlot-bearing settlements, and canonical BranchSlot-ordered
+  Join;
+- finite typed StepCauseFrontiers rather than inferred log causality, with a
+  normal first-Step ActivationStart singleton, the sole exact ready-cancellation
+  pair, and exact PriorStep, ContinuationTakeup, and CancellationRequest causes
+  where applicable; a nonfirst frontier may be empty only with a configuration
+  predecessor, and every nonfirst Step has nonempty IncomingRunEdges;
 - Run order as the transitive closure of those typed frontier edges plus
   separately typed configuration-succession edges, without inserting an
   implicit PriorStep or treating storage/arrival order as semantics;
@@ -199,10 +204,11 @@ silently migrate a live Activation to a new Program or world revision.
 Every process-v1 case must commit exact input bytes and checksums, the selected
 semantics and Program/world/session pins, identity-allocation basis and
 applicable authority,
-Application/Activation/Run identities, ordered Step records with explicit
-nonempty typed StepCauseFrontiers, observations and occurrence-exact supports,
-outcome, continuation, candidate delta, Admission decision, and authoritative-
-boundary hashes before and after. A physical case additionally commits its
+Application/Activation/Run identities, canonically encoded StepRecords with
+fresh nominal StepIds, explicit finite typed StepCauseFrontiers, separate exact
+StepConfigurationTransitions, IncomingRunEdges, observations and occurrence-
+exact supports, outcome, continuation, candidate delta, Admission decision, and
+authoritative-boundary hashes before and after. A physical case additionally commits its
 strategy, budget, total work receipt, physical-view hash, and handle/scene
 table before and after. A rejection fixes the rejecting stage, typed reason,
 obligations, and all boundaries proven unchanged.
@@ -264,13 +270,30 @@ observations or effects. A separate reusable vector must use an immutable/Copy
 remainder; a mutable reusable fork receives fresh child Activation and
 configuration identities.
 
+`handoff-distinct-roots` uses a Continuation emitted by Step `e` and a
+HandoffOccurrence whose direct same-Run provenance root is a different already
+constituted Step `p`. `HandoffFrom.parent_step` must equal `e` and match the
+Continuation's recorded Run and Activation; the occurrence targets that exact
+Continuation plus the destination StaticActivationBasis and InitialContext.
+The child first Step uses its exact legal ActivationStart frontier, whose edge
+projection contains the distinct union of `e`, `p`, and its ordinary same-Run
+Activation occurrence ancestry. A coincident emitter/provenance root appears
+once. One-field negatives select a wrong emitter, Continuation, parent Run or
+Activation, target basis or pin, future/cyclic occurrence, or omit either
+ancestry root; all reject before child or StepId allocation.
+
 `join-left-first`, `join-right-first`, and `join-parallel` use fresh identities
 in separate Runs but the same Clause process data. The parent split consumes
 one configuration owner under one exact Mode-owned `SplitJoinContract` and
-creates exact disjoint left/right tokens. Each child Activation has an exact
-`ChildOf` origin, and its first StepCauseFrontier is exactly one
-`ActivationStart(child ActivationId)`. That cause projects the exact parent
-split Step from the checked ActivationCauseFrontier into RunOrder. Independently,
+atomically co-forms the split Step, SplitInstance, and one typed BranchSlot,
+matching BranchSpec, fresh child Activation, exact ChildOf/ChildIn binding, and
+initial child and branch token per slot. Every component validates before any
+is published; a negative must leave the parent token live and publish no Step,
+instance, child, binding, or token. Each child Activation has an exact
+`ChildOf` origin, and its normal first StepCauseFrontier is exactly one
+`ActivationStart(child ActivationId)`. That cause projects the distinct union
+of the exact parent split Step, direct same-Run handoff provenance roots when
+present, and ordinary same-Run Activation occurrence ancestry into RunOrder. Independently,
 the first child Branch Step consumes its exact split-produced
 `BranchConfigurationToken` and contributes the same endpoints as a typed
 configuration-succession edge. The two edge kinds remain inspectable, and
@@ -281,19 +304,29 @@ into exactly one `Returned` or obligation-complete `Closed` settlement. In
 every Run the Join StepCauseFrontier contains exactly two causes:
 `PriorStep(exact RunId, left ActivationId, left-terminal-step)` and
 `PriorStep(exact RunId, right ActivationId, right-terminal-step)`. Neither
-child's later StepCauseFrontier names the other child. The canonical BranchKey-
-ordered settlement sequence, joined Value and configuration, observation
-content, occurrence-support multiset, candidate delta, Admission decision, and
-observable bytes are equal; trace order is explicitly permitted to differ.
-The Join consumes exactly one settlement per BranchKey in canonical BranchKey
-order and restores one owner. Separate negatives cover an overlapping
-partition or write Lease; a missing, extra, duplicate, wrong-key, already-used,
+child's later StepCauseFrontier names the other child. Each Run carries its
+canonical BranchSlot-ordered settlement sequence. A typed
+`ScheduleIsomorphism π` over every fresh run-local identity must satisfy
+`encode(π(runA)) = encode(runB)`. Joined payload/Value/Result, observation and
+support content, candidate delta, Admission decision, and continuation
+disposition are literally equal only as schedule-independent projections;
+fresh PriorSteps, terminal-Step-bearing settlements, and other identity bytes
+are isomorphic rather than equal. Trace order may differ. The Join consumes
+exactly one settlement per BranchSlot in canonical BranchSlot order and
+restores one owner. Separate negatives cover an overlapping partition or write
+Lease; a missing, extra, duplicate, wrong-slot, already-used,
 wrong-contract, or cross-SplitInstance settlement; a Join frontier/settlement
 mismatch; a cancellation settlement leaving an exact AllocationRoot, Borrow,
 Lease, Continuation, effect, or close obligation neither discharged nor
 transferred exactly as declared; and double Join. None
 publishes a successor configuration. An obligation-complete `Closed`
 cancellation settlement is a valid exact Join input.
+
+`join-repeated-key` declares two BranchSpecs with one equal BranchKey and
+contiguous ordinals zero and one. Atomic SplitFormation, both child bindings,
+tokens, Returned or Closed settlements, and canonical Join retain the two exact
+BranchSlots without collapse. A missing, duplicated, noncontiguous, reordered,
+or transplanted ordinal rejects before the applicable Split or Join publishes.
 
 The race fixture carries its cancellation/yield/deadline decision table and
 logical deadline boundary as Clause data. It fixes cases for yield causally
@@ -304,6 +337,18 @@ typed StepCauseFrontiers, including exact
 observe or carry through cancellation, yielded observations, continuation
 disposition, typed terminal outcome, and resource balance come from that table.
 Wall-clock arrival, log order, and first host callback are not inputs.
+
+`cancel-ready` constitutes one Activation with zero owned Steps and live,
+unconsumed initial custody, then presents one already validated cancellation
+occurrence. Its sole StepCauseFrontier is exactly
+`{ActivationStart(a), CancellationRequest(c)}` and its checked outcome is the
+matching `Cancel(c)`. One-field negatives change target, Application/Mode or
+context pins, occurrence refinement, outcome, add a cause, consume the initial
+token, or create a prior Step; each rejects before StepId allocation. The
+ordinary ready case retains the exact ActivationStart singleton. A nonfirst
+Step with an empty frontier passes only when its transition contributes a live
+configuration predecessor; a vector with empty IncomingRunEdges rejects before
+allocation.
 
 `bounded-history-long-run` executes for at least ten times each configured
 resident window. It fixes maximum resident configuration, active-frontier,

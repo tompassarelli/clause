@@ -276,10 +276,13 @@ observation content receives distinct ObservationIds when independently
 emitted. None of these identities is a content hash, source position, array
 index, table row, host object, or alias for another identity domain.
 
-The first Step of an Activation has exactly
-ActivationStart(its own ActivationId). Later cause frontiers use the typed
-process rules in clause:docs/foundation.md. JSON order and a serialized trace
-create no causal edge.
+A normal first Step of a Ready Activation has exactly
+ActivationStart(its own ActivationId). Its sole exception is the exact
+ActivationStart + CancellationRequest pair for an already validated matching
+ready-cancellation outcome. Later cause frontiers, configuration-succession
+edges, and IncomingRunEdges use the typed process rules in
+clause:docs/foundation.md. JSON order and a serialized trace create no causal
+edge.
 
 ## Laws, premise occurrences, and support
 

@@ -292,11 +292,15 @@ Implement closed ApplicationForm formation, nominal Application allocation,
 fresh Activation with an exact StaticActivationBasis, InitialContext,
 slot-preserving DynamicPrerequisiteBindings, separate occurrence-only
 ActivationCauseFrontier, ActivationStartRecord, and Run membership,
-before/after Configurations under one stable ActivationId, nonempty finite typed
-StepCauseFrontiers built from ActivationStart, PriorStep, ContinuationTakeup,
-and CancellationRequest causes, typed configuration-succession edges, Run order
-as the union closure of both edge kinds, the closed Serial/Split/Branch/Join
-affine configuration-transition sum, one exact
+before/after Configurations under one stable ActivationId, fresh nominal StepIds
+whose StepRecords separately carry finite typed StepCauseFrontiers and exact
+configuration transitions, the normal first-Step ActivationStart singleton and
+sole ready-cancellation pair, nonfirst IncomingRunEdges from frontier and/or
+configuration succession, the closed Serial/Split/Branch/Join affine
+configuration-transition sum with typed BranchSlots and atomic split
+Step/instance/child/binding/token co-formation, exact HandoffFrom binding to the
+Continuation emitter and destination basis/pins with well-founded occurrence
+provenance and distinct ActivationStart ancestry projection, one exact
 ActivationStartRecord from which fixed continuation pins derive, and typed
 outcomes. Machine/KExpr reductions remain compiler mechanics rather
 than semantic Steps.
