@@ -1315,7 +1315,7 @@ fn predecessor_evaluator<'a>(
     }
     match Evaluator::new(&predecessor.decoded.package().subject.program) {
         Ok(evaluator) => Ok(Some(evaluator)),
-        Err(StaticError::ResourceExhausted) => resource(),
+        Err(StaticError::RecursionLimit | StaticError::ResourceExhausted) => resource(),
         Err(_) => Ok(None),
     }
 }
@@ -1362,8 +1362,9 @@ fn replay_entrypoint(
 fn replay_error_is_resource_exhausted(error: &EvalError) -> bool {
     matches!(
         error,
-        EvalError::ResourceExhausted
-            | EvalError::Static(StaticError::ResourceExhausted)
+        EvalError::RecursionLimit
+            | EvalError::ResourceExhausted
+            | EvalError::Static(StaticError::RecursionLimit | StaticError::ResourceExhausted)
             | EvalError::Physical(PhysicalError::ResourceExhausted)
     )
 }
@@ -2017,6 +2018,50 @@ mod tests {
         }
     }
 
+    fn successor_authorization_with_compile_body(
+        compile_body: KExpr,
+        compile_fuel: u64,
+    ) -> Result<AuthorizationVerdict, AuthorizationCheckError> {
+        let predecessor = predecessor_package(compile_body, KExpr::Var(0));
+        let predecessor_bytes = encode(&predecessor).expect("predecessor encodes");
+        let predecessor_decoded = decode(&predecessor_bytes).expect("predecessor decodes");
+        let candidate = successor_package(
+            compiler_package_hash(&predecessor_bytes),
+            compiler_revision_id(predecessor_decoded.exact_subject()),
+            compile_fuel,
+            1,
+        );
+        let candidate_bytes = encode(&candidate).expect("candidate encodes");
+        let acceptance = AcceptedExact::from_outer_admission(&predecessor_bytes);
+        authorize_successor(
+            &candidate_bytes,
+            SuccessorAuthorizationRequest {
+                predecessor: PredecessorInput::Accepted {
+                    exact_bytes: &predecessor_bytes,
+                    acceptance,
+                    offered_bytes: &predecessor_bytes,
+                },
+                build_request: &candidate.subject.build_request,
+                evidence: &candidate.evidence,
+                final_identity: FinalPackageIdentityInput {
+                    package_hash: compiler_package_hash(&candidate_bytes),
+                    exact_package_bytes: &candidate_bytes,
+                },
+            },
+        )
+    }
+
+    fn doubling_bytes(rounds: usize) -> KExpr {
+        let mut expression = KExpr::BytesLiteral(vec![0x5a]);
+        for _ in 0..rounds {
+            expression = KExpr::Let {
+                value: boxed_expression(expression),
+                body: boxed_expression(KExpr::ConcatBytes(vec![KExpr::Var(0), KExpr::Var(0)])),
+            };
+        }
+        expression
+    }
+
     fn genesis_package() -> super::super::CompilerPackage {
         let compile = id(1);
         let admit = id(2);
@@ -2146,15 +2191,53 @@ mod tests {
     #[test]
     fn replay_resource_exhaustion_is_not_an_evaluation_fault() {
         assert!(replay_error_is_resource_exhausted(
+            &EvalError::RecursionLimit
+        ));
+        assert!(replay_error_is_resource_exhausted(
             &EvalError::ResourceExhausted
         ));
+        assert!(replay_error_is_resource_exhausted(&EvalError::Static(
+            StaticError::RecursionLimit,
+        )));
         assert!(replay_error_is_resource_exhausted(&EvalError::Static(
             StaticError::ResourceExhausted,
         )));
         assert!(replay_error_is_resource_exhausted(&EvalError::Physical(
             PhysicalError::ResourceExhausted,
         )));
+        assert!(!replay_error_is_resource_exhausted(
+            &EvalError::ByteLengthOverflow
+        ));
         assert!(!replay_error_is_resource_exhausted(&EvalError::OutOfFuel));
+    }
+
+    #[test]
+    fn successor_authorization_propagates_the_concat_byte_ceiling() {
+        let compile_body = KExpr::Let {
+            value: boxed_expression(doubling_bytes(24)),
+            body: boxed_expression(KExpr::Var(1)),
+        };
+
+        assert_eq!(
+            successor_authorization_with_compile_body(compile_body, 1_000),
+            Err(AuthorizationCheckError::ResourceExhausted),
+        );
+    }
+
+    #[test]
+    fn successor_authorization_propagates_the_runtime_recursion_ceiling() {
+        let compile_body = KExpr::Let {
+            value: boxed_expression(KExpr::Call {
+                definition_id: id(1),
+                arguments: vec![KExpr::Var(0)],
+            }),
+            body: boxed_expression(KExpr::Var(0)),
+        };
+
+        assert_eq!(
+            successor_authorization_with_compile_body(compile_body, 2_000_000),
+            Err(AuthorizationCheckError::ResourceExhausted),
+        );
     }
 
     #[test]

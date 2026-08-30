@@ -1939,18 +1939,17 @@ fn mark_task_live_slots<'expression>(
     Ok(peak_depth)
 }
 
-fn checked_concat_length<'a>(
-    values: impl IntoIterator<Item = Result<&'a [u8], EvalError>>,
+fn checked_concat_length(
+    lengths: impl IntoIterator<Item = Result<usize, EvalError>>,
     limit: usize,
 ) -> Result<usize, EvalError> {
     let mut total = 0_usize;
-    for value in values {
-        let value = value?;
+    for length in lengths {
         total = total
-            .checked_add(value.len())
+            .checked_add(length?)
             .ok_or(EvalError::ByteLengthOverflow)?;
         if total > limit {
-            return Err(EvalError::ByteLengthOverflow);
+            return Err(EvalError::ResourceExhausted);
         }
     }
     Ok(total)
@@ -2098,10 +2097,10 @@ impl<'a> EvaluationMachine<'a> {
         incoming: usize,
         replacement: Option<Range<usize>>,
     ) -> Result<(), EvalError> {
-        let replaced = match replacement {
+        let replaced = match replacement.as_ref() {
             Some(range) => self.byte_store.replaced_owned_bytes(
                 self.results
-                    .get(range)
+                    .get(range.clone())
                     .ok_or(EvalError::ResourceExhausted)?,
             )?,
             None => 0,
@@ -2155,9 +2154,20 @@ impl<'a> EvaluationMachine<'a> {
                 .checked_add(1)
                 .ok_or(EvalError::ResourceExhausted)?;
         }
-        let projected = self
+        let replaced = match replacement.as_ref() {
+            Some(range) => self.byte_store.replaced_owned_bytes(
+                self.results
+                    .get(range.clone())
+                    .ok_or(EvalError::ResourceExhausted)?,
+            )?,
+            None => 0,
+        };
+        let retained = self
             .byte_store
             .retained_owned_bytes
+            .checked_sub(replaced)
+            .ok_or(EvalError::ResourceExhausted)?;
+        let projected = retained
             .checked_add(incoming)
             .ok_or(EvalError::ResourceExhausted)?;
         if projected <= self.byte_store.owned_byte_limit {
@@ -2554,7 +2564,7 @@ impl<'a> EvaluationMachine<'a> {
                         actual: KSort::Term,
                     });
                 };
-                self.byte_store.get(bytes)
+                Ok(self.byte_store.get(bytes)?.len())
             });
         let total = checked_concat_length(values, MAX_WIRE_BYTES)?;
         self.prepare_owned_allocation(None, total, Some(start..self.results.len()))?;
@@ -2921,10 +2931,139 @@ mod runtime_retention_tests {
     }
 
     #[test]
-    fn concat_length_limit_is_checked_without_allocating_the_output() {
+    fn concat_physical_length_limit_is_resource_exhaustion_before_allocation() {
         assert_eq!(
-            checked_concat_length([Ok(&[0_u8; 4][..]), Ok(&[0_u8; 5][..])], 8,),
+            checked_concat_length([Ok(4), Ok(5)], 8),
+            Err(EvalError::ResourceExhausted)
+        );
+    }
+
+    #[test]
+    fn concat_semantic_length_overflow_is_distinct_from_the_physical_limit() {
+        assert_eq!(
+            checked_concat_length([Ok(usize::MAX), Ok(1)], usize::MAX),
             Err(EvalError::ByteLengthOverflow)
+        );
+    }
+
+    #[test]
+    fn concat_recomputes_replacement_credit_after_environment_reclamation() {
+        let evaluator = Evaluator::new(&[]).expect("empty evaluator is well formed");
+        let mut machine =
+            EvaluationMachine::new(&evaluator, &[], 100).expect("runtime machine allocation");
+        machine.byte_store.owned_byte_limit = 4;
+        let environment_value = owned_runtime_bytes(&mut machine.byte_store, 0x44, 4);
+        let RuntimeValue::Bytes(environment_bytes) = &environment_value else {
+            panic!("test environment value is bytes")
+        };
+        let result_bytes = machine
+            .byte_store
+            .retain(environment_bytes)
+            .expect("result aliases environment backing");
+        machine
+            .environments
+            .extend(vec![environment_value], None)
+            .expect("owned environment");
+        machine.results.push(RuntimeResult {
+            value: RuntimeValue::Bytes(result_bytes),
+        });
+
+        machine
+            .finish_concat(1)
+            .expect("reclaimed environment exposes exact replacement credit");
+
+        let RuntimeValue::Bytes(result) = &machine.results[0].value else {
+            panic!("concat result is bytes")
+        };
+        assert_eq!(
+            machine
+                .byte_store
+                .get(result)
+                .expect("concat result backing"),
+            vec![0x44; 4],
+        );
+        assert_eq!(machine.liveness_reclamation_runs, 1);
+        assert_eq!(machine.byte_store.retained_owned_bytes, 4);
+    }
+
+    #[test]
+    fn concat_replacement_credit_counts_every_repeated_alias() {
+        let evaluator = Evaluator::new(&[]).expect("empty evaluator is well formed");
+        let mut machine =
+            EvaluationMachine::new(&evaluator, &[], 100).expect("runtime machine allocation");
+        machine.byte_store.owned_byte_limit = 8;
+        let environment_value = owned_runtime_bytes(&mut machine.byte_store, 0x55, 4);
+        let RuntimeValue::Bytes(environment_bytes) = &environment_value else {
+            panic!("test environment value is bytes")
+        };
+        let first = machine
+            .byte_store
+            .retain(environment_bytes)
+            .expect("first result alias");
+        let second = machine
+            .byte_store
+            .retain(environment_bytes)
+            .expect("second result alias");
+        machine
+            .environments
+            .extend(vec![environment_value], None)
+            .expect("owned environment");
+        machine.results.extend([
+            RuntimeResult {
+                value: RuntimeValue::Bytes(first),
+            },
+            RuntimeResult {
+                value: RuntimeValue::Bytes(second),
+            },
+        ]);
+
+        machine
+            .finish_concat(2)
+            .expect("both consumed aliases release their one shared backing");
+
+        let RuntimeValue::Bytes(result) = &machine.results[0].value else {
+            panic!("concat result is bytes")
+        };
+        assert_eq!(
+            machine
+                .byte_store
+                .get(result)
+                .expect("concat result backing"),
+            vec![0x55; 8],
+        );
+        assert_eq!(machine.liveness_reclamation_runs, 1);
+        assert_eq!(machine.byte_store.retained_owned_bytes, 8);
+    }
+
+    #[test]
+    fn replacement_credit_requires_all_shared_references() {
+        let mut store = RuntimeByteStore::with_owned_byte_limit(4);
+        let original = store.owned(vec![0x66; 4]).expect("owned test backing");
+        let first_alias = store.retain(&original).expect("first alias");
+        let second_alias = store.retain(&original).expect("second alias");
+        let results = vec![
+            RuntimeResult {
+                value: RuntimeValue::Bytes(original),
+            },
+            RuntimeResult {
+                value: RuntimeValue::Bytes(first_alias),
+            },
+            RuntimeResult {
+                value: RuntimeValue::Bytes(second_alias),
+            },
+        ];
+
+        assert_eq!(
+            store
+                .replaced_owned_bytes(&results[..2])
+                .expect("partial replacement accounting"),
+            0,
+        );
+        assert_eq!(
+            store
+                .replaced_owned_bytes(&results)
+                .expect("complete replacement accounting"),
+            4,
         );
     }
 
