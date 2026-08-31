@@ -206,10 +206,6 @@ function process_configuration(input_sequence, revision, ordinal) {
   return workbench["->InputConfiguration"](revision, [workbench["->InputObservation"](input_sequence, workbench["create-workbench-envelope"](policy(), json_string([json_string({[$$bc$property_key($$bc$keyword("kind"))]: "process-occurrence", [$$bc$property_key($$bc$keyword("ordinal"))]: ordinal})])))]);
 }
 
-function contact_configuration(input_sequence, revision) {
-  return workbench["->InputConfiguration"](revision, [workbench["->InputObservation"](input_sequence, workbench["create-workbench-envelope"](policy(), json_string([json_string({[$$bc$property_key($$bc$keyword("kind"))]: "keyboard", [$$bc$property_key($$bc$keyword("code"))]: "KeyD", [$$bc$property_key($$bc$keyword("phase"))]: "up", [$$bc$property_key($$bc$keyword("repeat"))]: false})]))), workbench["->InputObservation"]((input_sequence + 1), workbench["create-workbench-envelope"](policy(), json_string([json_string({[$$bc$property_key($$bc$keyword("kind"))]: "keyboard", [$$bc$property_key($$bc$keyword("code"))]: "KeyE", [$$bc$property_key($$bc$keyword("phase"))]: "down", [$$bc$property_key($$bc$keyword("repeat"))]: false})])))]);
-}
-
 function key_envelope(code, phase) {
   return workbench["create-workbench-envelope"](arena_policy(), json_string([json_string({[$$bc$property_key($$bc$keyword("kind"))]: "keyboard", [$$bc$property_key($$bc$keyword("code"))]: code, [$$bc$property_key($$bc$keyword("phase"))]: phase, [$$bc$property_key($$bc$keyword("repeat"))]: false})]));
 }
@@ -336,31 +332,20 @@ register_gameplay_test("one real Wasm gameplay session moves into contact then a
 const request = wasm["->ExactProcessRequest"](wasm["decode-cwr1-hex"](assets[1]));
 const accepted = ({value: null, watches: {}});
 const started = ({value: null, watches: {}});
-const movement_candidate = ({value: null, watches: {}});
-const movement_admitted = ({value: null, watches: {}});
 const collect_candidate = ({value: null, watches: {}});
 const collect_admitted = ({value: null, watches: {}});
 (port.acceptPackage)(request, (result) => (() => { const _a = accepted, _v = result; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })());
 (port.startSession)(accepted.value.acceptedPackage, 1, (result) => (() => { const _a = started, _v = result; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })());
-(port.runCandidate)(started.value.session, workbench["->FixedTick"](16), key_configuration(1, 1, "KeyD"), (result) => (() => { const _a = movement_candidate, _v = result; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })());
+(port.runCandidate)(started.value.session, workbench["->FixedTick"](16), key_configuration(1, 1, "KeyD"), (result) => (() => { const _a = collect_candidate, _v = result; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })());
 test["expect"](json_string(started.value.frame)).toBe("[]");
-(port.requestAdmission)(started.value.session, movement_candidate.value.candidate, (result) => (() => { const _a = movement_admitted, _v = result; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })());
-const active_frame = wasm["decode-projected-term-frame"](movement_admitted.value.frame);
-const player_x = active_frame.player.position.x;
-const active_collectible = active_frame.world.collectibles[0];
-const active_collectible_state = active_collectible.state;
-const collectible_x = active_collectible.position.x;
-test["expect"](active_collectible_state).toBe("active");
-test["expect"]($$bc$str(player_x)).toBe($$bc$str(collectible_x));
-(port.runCandidate)(started.value.session, workbench["->FixedTick"](16), contact_configuration(2, 2), (result) => (() => { const _a = collect_candidate, _v = result; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })());
-const retained_frame = wasm["decode-projected-term-frame"](movement_admitted.value.frame);
-const retained_state = retained_frame.world.collectibles[0].state;
-test["expect"](retained_state).toBe("active");
 (port.requestAdmission)(started.value.session, collect_candidate.value.candidate, (result) => (() => { const _a = collect_admitted, _v = result; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })());
 const collected_frame = wasm["decode-projected-term-frame"](collect_admitted.value.frame);
+const player_x = collected_frame.player.position.x;
 const collected_collectible = collected_frame.world.collectibles[0];
 const collected_collectible_state = collected_collectible.state;
+const collectible_x = collected_collectible.position.x;
 test["expect"](collected_collectible_state).toBe("collected");
+test["expect"]($$bc$str(player_x)).toBe($$bc$str(collectible_x));
 (port.disposeSession)(started.value.session);
 return null; }));
 
@@ -396,16 +381,10 @@ test["expect"](json_string(base_start.frame)).toBe("[]");
 const contact = wasm["decode-projected-term-frame"]((controller.snapshot)().frame);
 const player_x = contact.player.position.x;
 const contact_collectible = contact.world.collectibles[0];
-test["expect"]($$bc$str(contact_collectible.state)).toBe("active");
+test["expect"]($$bc$str(contact_collectible.state)).toBe("collected");
 test["expect"]($$bc$str(player_x)).toBe($$bc$str(contact_collectible.position.x));
 (controller.observeInput)(key_envelope("KeyD", "up"));
-(controller.observeInput)(key_envelope("KeyE", "down"));
-(scheduled_tick.value)();
-const base_admitted = (controller.snapshot)();
-const base_frame = wasm["decode-projected-term-frame"](base_admitted.frame);
-const base_collectible = base_frame.world.collectibles[0];
-test["expect"]($$bc$str(base_collectible.state)).toBe("collected");
-test["expect"]($$bc$str(base_admitted.generation)).toBe("1");
+test["expect"]($$bc$str((controller.snapshot)().generation)).toBe("1");
 const old_session = sessions.value[0];
 (() => { const _a = delay_next_candidate, _v = true; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })();
 (scheduled_tick.value)();
@@ -432,9 +411,6 @@ const retired_result = ({value: null, watches: {}});
 test["expect"]($$bc$str(retired_result.value.reason)).toBe("Wasm session is disposed");
 test["expect"]($$bc$str(Object.is((controller.snapshot)().revision, changed_revision))).toBe("true");
 (controller.observeInput)(key_envelope("KeyD", "down"));
-(scheduled_tick.value)();
-(controller.observeInput)(key_envelope("KeyD", "up"));
-(controller.observeInput)(key_envelope("KeyE", "down"));
 (scheduled_tick.value)();
 const changed_admitted = (controller.snapshot)();
 const changed_frame = wasm["decode-projected-term-frame"](changed_admitted.frame);

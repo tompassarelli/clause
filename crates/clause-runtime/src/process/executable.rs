@@ -176,12 +176,12 @@ pub struct ExecutableInputBindingV1 {
     pub occurrence: ExecutableOccurrenceV1,
 }
 
-/// The fixed tick is a separate package Role and executable entry. Its sole
-/// argument is the exact tick duration in seconds.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+/// The fixed tick is a separate package Role and ordered executable entry
+/// chain. Every entry receives the exact tick duration in seconds.
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ExecutableTickBindingV1 {
     pub role: LocalRoleRefV2,
-    pub entry: u16,
+    pub entries: Vec<u16>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -514,10 +514,17 @@ pub fn lower_canonical_jump_handler_v1(
 }
 
 /// Physical coordinates for one construct-blind scalar source transition.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExecutableCanonicalScalarParameterBindingV1 {
+    pub parameter: Vec<u8>,
+    pub slot: u16,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ExecutableCanonicalScalarBindingV1 {
     pub entry: u16,
     pub state_slot: u16,
+    pub parameters: Vec<ExecutableCanonicalScalarParameterBindingV1>,
 }
 
 /// Refine a checked one-cell numeric source transition into CPP1. Rust sees
@@ -538,10 +545,54 @@ pub fn lower_canonical_scalar_handler_v1(
         return Err(ExecutableErrorV1::MalformedProgram);
     };
     *initial = lower_scalar_value(&source.initial_value)?;
-    let assignment = lower_scalar_expression(&source.result, binding.state_slot, 0)?;
+    let source_parameters = source.parameters.iter().cloned().collect::<BTreeSet<_>>();
+    if source_parameters.len() != source.parameters.len()
+        || binding.parameters.len() != source.parameters.len()
+    {
+        return Err(ExecutableErrorV1::MalformedProgram);
+    }
+    let mut parameter_slots = BTreeMap::new();
+    for parameter in &binding.parameters {
+        if !source_parameters.contains(&parameter.parameter)
+            || program
+                .initial_configuration
+                .get(usize::from(parameter.slot))
+                .is_none()
+            || parameter_slots
+                .insert(parameter.parameter.clone(), parameter.slot)
+                .is_some()
+        {
+            return Err(ExecutableErrorV1::MalformedProgram);
+        }
+    }
+    if parameter_slots.len() != source_parameters.len() {
+        return Err(ExecutableErrorV1::MalformedProgram);
+    }
+    let assignment =
+        lower_scalar_expression(&source.result, binding.state_slot, &parameter_slots, 0)?;
+    let predicates = source
+        .predicates
+        .iter()
+        .map(|predicate| match predicate {
+            CanonicalScalarPredicateV1::Equal(left, right) => Ok(ExecutableExpressionV1::Equal(
+                Box::new(lower_scalar_expression(
+                    left,
+                    binding.state_slot,
+                    &parameter_slots,
+                    0,
+                )?),
+                Box::new(lower_scalar_expression(
+                    right,
+                    binding.state_slot,
+                    &parameter_slots,
+                    0,
+                )?),
+            )),
+        })
+        .collect::<Result<Vec<_>, ExecutableErrorV1>>()?;
     let rule = ExecutableRuleV1 {
         entry: binding.entry,
-        predicates: vec![],
+        predicates,
         assignments: vec![(binding.state_slot, assignment)],
     };
     let insertion = program
@@ -556,6 +607,7 @@ pub fn lower_canonical_scalar_handler_v1(
 fn lower_scalar_expression(
     expression: &CanonicalScalarExpressionV1,
     state_slot: u16,
+    parameter_slots: &BTreeMap<Vec<u8>, u16>,
     depth: usize,
 ) -> Result<ExecutableExpressionV1, ExecutableErrorV1> {
     if depth >= MAX_EXPRESSION_DEPTH {
@@ -565,12 +617,27 @@ fn lower_scalar_expression(
                 right: &CanonicalScalarExpressionV1|
      -> Result<_, ExecutableErrorV1> {
         Ok((
-            Box::new(lower_scalar_expression(left, state_slot, depth + 1)?),
-            Box::new(lower_scalar_expression(right, state_slot, depth + 1)?),
+            Box::new(lower_scalar_expression(
+                left,
+                state_slot,
+                parameter_slots,
+                depth + 1,
+            )?),
+            Box::new(lower_scalar_expression(
+                right,
+                state_slot,
+                parameter_slots,
+                depth + 1,
+            )?),
         ))
     };
     Ok(match expression {
         CanonicalScalarExpressionV1::Current => ExecutableExpressionV1::Slot(state_slot),
+        CanonicalScalarExpressionV1::Parameter(parameter) => ExecutableExpressionV1::Slot(
+            *parameter_slots
+                .get(parameter)
+                .ok_or(ExecutableErrorV1::MalformedProgram)?,
+        ),
         CanonicalScalarExpressionV1::Number(bits) => {
             ExecutableExpressionV1::Constant(ExecutableValueV1::Number(*bits))
         }
@@ -1016,7 +1083,10 @@ fn encode_input_plan(
     }
     bytes.extend_from_slice(&input.tick.role.schema.get().to_le_bytes());
     bytes.extend_from_slice(&input.tick.role.role.get().to_le_bytes());
-    bytes.extend_from_slice(&input.tick.entry.to_le_bytes());
+    encode_count(bytes, input.tick.entries.len())?;
+    for entry in &input.tick.entries {
+        bytes.extend_from_slice(&entry.to_le_bytes());
+    }
     Ok(())
 }
 
@@ -1048,7 +1118,14 @@ fn decode_input_plan(
                         schema: RelationSchemaLocalId::new(decoder.u32()?),
                         role: RoleLocalId::new(decoder.u32()?),
                     },
-                    entry: decoder.u16()?,
+                    entries: {
+                        let count = decoder.count()?;
+                        let mut entries = Vec::with_capacity(count);
+                        for _ in 0..count {
+                            entries.push(decoder.u16()?);
+                        }
+                        entries
+                    },
                 },
             }))
         }
@@ -1951,17 +2028,31 @@ impl ExecutableProcessRuntimeV1 {
                 ExecutableErrorV1::MalformedInputConfiguration,
             ));
         }
-        let entry = self.input.as_ref().map(|input| input.tick.entry).ok_or(
-            ExecutableCarrierErrorV1::Executable(ExecutableErrorV1::MissingInputPlan),
-        )?;
+        let entries = self
+            .input
+            .as_ref()
+            .map(|input| input.tick.entries.clone())
+            .ok_or(ExecutableCarrierErrorV1::Executable(
+                ExecutableErrorV1::MissingInputPlan,
+            ))?;
         let seconds = f64::from(fixed_tick_milliseconds) / 1_000.0;
-        let occurrence = ExecutableOccurrenceV1 {
-            entry,
-            arguments: vec![
-                ExecutableValueV1::number(seconds).map_err(ExecutableCarrierErrorV1::Executable)?,
-            ],
+        let argument =
+            ExecutableValueV1::number(seconds).map_err(ExecutableCarrierErrorV1::Executable)?;
+        let Some((last, preceding)) = entries.split_last() else {
+            return Err(ExecutableCarrierErrorV1::Executable(
+                ExecutableErrorV1::MalformedInputConfiguration,
+            ));
         };
-        self.advance_carrier_occurrence_and_emit_candidate(occurrence)
+        for entry in preceding {
+            self.advance_carrier_occurrence(ExecutableOccurrenceV1 {
+                entry: *entry,
+                arguments: vec![argument],
+            })?;
+        }
+        self.advance_carrier_occurrence_and_emit_candidate(ExecutableOccurrenceV1 {
+            entry: *last,
+            arguments: vec![argument],
+        })
     }
 
     /// Issue one exact, single-use Admission authorization occurrence under
@@ -3480,11 +3571,16 @@ fn validate_input_plan_shape(
             return Err(ExecutableErrorV1::MalformedProgram);
         }
     }
+    let entries = input.tick.entries.iter().copied().collect::<BTreeSet<_>>();
     if !roles.insert(input.tick.role)
-        || !program
-            .rules
+        || input.tick.entries.is_empty()
+        || input.tick.entries.len() > MAX_PROGRAM_ITEMS
+        || entries.len() != input.tick.entries.len()
+        || input
+            .tick
+            .entries
             .iter()
-            .any(|rule| rule.entry == input.tick.entry)
+            .any(|entry| !program.rules.iter().any(|rule| rule.entry == *entry))
     {
         return Err(ExecutableErrorV1::MalformedProgram);
     }

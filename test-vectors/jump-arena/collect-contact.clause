@@ -1,0 +1,24 @@
+referent State
+referent Collectible
+referent active
+referent collected
+referent spent
+
+relation state
+  reads {collectible: Collectible} state {value: State}
+  subject collectible
+  mode given collectible yields value: one
+
+coin-1 state active
+
+on collect ?collectible
+  when
+    ?collectible state ?state
+    player-1 position Vec3 { x: ?player-x, y: ?player-y, z: ?player-z }
+    ?state = active
+    ?player-x = 0.08
+    ?player-z = 0.0
+  withdraw
+    ?collectible state ?state
+  include
+    ?collectible state collected

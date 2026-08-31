@@ -234,28 +234,6 @@
       (json-string [(json-string {:kind "process-occurrence"
                                   :ordinal ordinal})])))]))
 
-(defn contact-configuration
-  [input-sequence Int
-   revision Int] workbench/InputConfiguration
-  (workbench/->InputConfiguration
-   revision
-   [(workbench/->InputObservation
-     input-sequence
-     (workbench/create-workbench-envelope
-      (policy)
-      (json-string [(json-string {:kind "keyboard"
-                                  :code "KeyD"
-                                  :phase "up"
-                                  :repeat false})])))
-    (workbench/->InputObservation
-     (inc input-sequence)
-     (workbench/create-workbench-envelope
-      (policy)
-      (json-string [(json-string {:kind "keyboard"
-                                  :code "KeyE"
-                                  :phase "down"
-                                  :repeat false})])))]))
-
 (defn key-envelope
   [code String
    phase String] Any
@@ -560,8 +538,6 @@
               request wasm/ExactProcessRequest (wasm/->ExactProcessRequest (wasm/decode-cwr1-hex (nth assets 1)))
               accepted Any (atom nil)
               started Any (atom nil)
-              movement-candidate Any (atom nil)
-              movement-admitted Any (atom nil)
               collect-candidate Any (atom nil)
               collect-admitted Any (atom nil)]
           ((.-acceptPackage port) request
@@ -572,35 +548,19 @@
            (.-session @started)
            (workbench/->FixedTick 16)
            (key-configuration 1 1 "KeyD")
-           (fn [result Any] Any (reset! movement-candidate result)))
-          (.toBe (test/expect (json-string (.-frame @started))) "[]")
-          ((.-requestAdmission port)
-           (.-session @started)
-           (.-candidate @movement-candidate)
-           (fn [result Any] Any (reset! movement-admitted result)))
-          (let [active-frame Any (wasm/decode-projected-term-frame (.-frame @movement-admitted))
-                player-x Float (.-x (.-position (.-player active-frame)))
-                active-collectible Any (nth (.-collectibles (.-world active-frame)) 0)
-                active-collectible-state String (.-state active-collectible)
-                collectible-x Float (.-x (.-position active-collectible))]
-            (.toBe (test/expect active-collectible-state) "active")
-            (.toBe (test/expect (str player-x)) (str collectible-x)))
-          ((.-runCandidate port)
-           (.-session @started)
-           (workbench/->FixedTick 16)
-           (contact-configuration 2 2)
            (fn [result Any] Any (reset! collect-candidate result)))
-          (let [retained-frame Any (wasm/decode-projected-term-frame (.-frame @movement-admitted))
-                retained-state String (.-state (nth (.-collectibles (.-world retained-frame)) 0))]
-            (.toBe (test/expect retained-state) "active"))
+          (.toBe (test/expect (json-string (.-frame @started))) "[]")
           ((.-requestAdmission port)
            (.-session @started)
            (.-candidate @collect-candidate)
            (fn [result Any] Any (reset! collect-admitted result)))
           (let [collected-frame Any (wasm/decode-projected-term-frame (.-frame @collect-admitted))
+                player-x Float (.-x (.-position (.-player collected-frame)))
                 collected-collectible Any (nth (.-collectibles (.-world collected-frame)) 0)
-                collected-collectible-state String (.-state collected-collectible)]
-            (.toBe (test/expect collected-collectible-state) "collected"))
+                collected-collectible-state String (.-state collected-collectible)
+                collectible-x Float (.-x (.-position collected-collectible))]
+            (.toBe (test/expect collected-collectible-state) "collected")
+            (.toBe (test/expect (str player-x)) (str collectible-x)))
           ((.-disposeSession port) (.-session @started))
           nil))))))
 
@@ -689,17 +649,11 @@
                              (.-frame ((.-snapshot controller))))
                 player-x Float (.-x (.-position (.-player contact)))
                 contact-collectible Any (nth (.-collectibles (.-world contact)) 0)]
-            (.toBe (test/expect (str (.-state contact-collectible))) "active")
+            (.toBe (test/expect (str (.-state contact-collectible))) "collected")
             (.toBe (test/expect (str player-x))
                    (str (.-x (.-position contact-collectible)))))
           ((.-observeInput controller) (key-envelope "KeyD" "up"))
-          ((.-observeInput controller) (key-envelope "KeyE" "down"))
-          (@scheduled-tick)
-          (let [base-admitted Any ((.-snapshot controller))
-                base-frame Any (wasm/decode-projected-term-frame (.-frame base-admitted))
-                base-collectible Any (nth (.-collectibles (.-world base-frame)) 0)]
-            (.toBe (test/expect (str (.-state base-collectible))) "collected")
-            (.toBe (test/expect (str (.-generation base-admitted))) "1"))
+          (.toBe (test/expect (str (.-generation ((.-snapshot controller))))) "1")
 
           (let [old-session Any (nth @sessions 0)]
             (reset! delay-next-candidate true)
@@ -744,9 +698,6 @@
                        "true")))
 
           ((.-observeInput controller) (key-envelope "KeyD" "down"))
-          (@scheduled-tick)
-          ((.-observeInput controller) (key-envelope "KeyD" "up"))
-          ((.-observeInput controller) (key-envelope "KeyE" "down"))
           (@scheduled-tick)
           (let [changed-admitted Any ((.-snapshot controller))
                 changed-frame Any (wasm/decode-projected-term-frame (.-frame changed-admitted))

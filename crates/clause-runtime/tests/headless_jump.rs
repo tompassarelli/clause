@@ -27,6 +27,10 @@ const COLLECT_STATE: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../test-vectors/jump-arena/collect-state.clause"
 ));
+const COLLECT_CONTACT: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../test-vectors/jump-arena/collect-contact.clause"
+));
 const LEDGER: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../test-vectors/ledger/ledger.clause"
@@ -37,10 +41,10 @@ fn gameplay_source() -> Vec<u8> {
 }
 
 fn gameplay_source_with_world(world: &[u8]) -> Vec<u8> {
-    let mut source = Vec::with_capacity(world.len() + COLLECT_STATE.len() + 1);
+    let mut source = Vec::with_capacity(world.len() + COLLECT_CONTACT.len() + 1);
     source.extend_from_slice(world);
     source.push(b'\n');
-    source.extend_from_slice(COLLECT_STATE);
+    source.extend_from_slice(COLLECT_CONTACT);
     source
 }
 
@@ -241,6 +245,7 @@ fn scalar_program(
         ExecutableCanonicalScalarBindingV1 {
             entry: 0,
             state_slot: 0,
+            parameters: vec![],
         },
     )
     .expect("source-owned scalar transition lowers to one physical state slot");
@@ -464,6 +469,18 @@ fn headless_program(
             ExecutableCanonicalScalarBindingV1 {
                 entry: 3,
                 state_slot: 28,
+                parameters: collectible
+                    .parameters
+                    .iter()
+                    .map(|parameter| ExecutableCanonicalScalarParameterBindingV1 {
+                        slot: match parameter.as_slice() {
+                            b"?player-x" => 0,
+                            b"?player-z" => 12,
+                            _ => panic!("contact source requested an unknown physical parameter"),
+                        },
+                        parameter: parameter.clone(),
+                    })
+                    .collect(),
             },
         )
         .expect("source-owned collect handler lowers beside arena state");
@@ -582,7 +599,7 @@ fn physical_plan_with_source(
     };
     let (input_handler, jump_handler, tick_program, scalar_handler) =
         source_handlers(source, scope);
-    let mut input_events = vec![
+    let input_events = vec![
         ExecutableInputBindingV1 {
             role: role(15),
             source: ExecutableInputSourceV1::Keyboard {
@@ -624,16 +641,6 @@ fn physical_plan_with_source(
             occurrence: occurrence(1, &[]),
         },
     ];
-    if scalar_handler.is_some() {
-        input_events.push(ExecutableInputBindingV1 {
-            role: role(25),
-            source: ExecutableInputSourceV1::Keyboard {
-                code: b"KeyE".to_vec(),
-                phase: ExecutableKeyPhaseV1::Down,
-            },
-            occurrence: occurrence(3, &[]),
-        });
-    }
     ExecutablePhysicalPlanV1 {
         application_shape: constitution
             .application_shape(application)
@@ -651,7 +658,11 @@ fn physical_plan_with_source(
             events: input_events,
             tick: ExecutableTickBindingV1 {
                 role: role(20),
-                entry: 2,
+                entries: if scalar_handler.is_some() {
+                    vec![2, 3]
+                } else {
+                    vec![2]
+                },
             },
         }),
         program: headless_program(
@@ -802,55 +813,26 @@ fn browser_gameplay_state_admission_scopes(source: &[u8]) -> Vec<StateAdmissionS
         .apply_opaque_input(&encode_executable_occurrence_v1(&occurrence(0, &[1.0, 0.0])).unwrap())
         .expect("gameplay horizontal input advances");
     session
-        .apply_opaque_input_and_emit_candidate(
-            &encode_executable_occurrence_v1(&occurrence(2, &[0.016])).unwrap(),
-        )
-        .expect("gameplay tick emits one movement candidate");
-    let movement = session
-        .candidate()
-        .expect("movement candidate lookup succeeds")
-        .expect("movement candidate exists")
-        .clone();
-    let mut scopes = vec![StateAdmissionScope {
-        session: facts.session,
-        base: movement.base,
-        delta: movement.id,
-    }];
-    let (movement_policy, movement_authorization) =
-        exact_root_admission_policy(package_id, facts.session, movement.base, movement.id, 243);
-    session
-        .establish_root_policy(movement_policy)
-        .expect("gameplay movement receives separate external authority");
-    session
-        .admit_candidate(movement_authorization)
-        .expect("gameplay movement establishes the contact configuration");
-
-    session
-        .apply_opaque_input(&encode_executable_occurrence_v1(&occurrence(3, &[])).unwrap())
-        .expect("gameplay contact input advances locally");
-    session
-        .apply_opaque_input_and_emit_candidate(
-            &encode_executable_occurrence_v1(&occurrence(2, &[0.016])).unwrap(),
-        )
-        .expect("gameplay contact tick emits one collect candidate");
+        .apply_fixed_tick_and_emit_candidate(16)
+        .expect("gameplay tick executes movement and contact as one candidate chain");
     let collect = session
         .candidate()
-        .expect("collect candidate lookup succeeds")
-        .expect("collect candidate exists")
+        .expect("automatic-contact candidate lookup succeeds")
+        .expect("automatic-contact candidate exists")
         .clone();
-    scopes.push(StateAdmissionScope {
+    let scopes = vec![StateAdmissionScope {
         session: facts.session,
         base: collect.base,
         delta: collect.id,
-    });
+    }];
     let (collect_policy, collect_authorization) =
-        exact_root_admission_policy(package_id, facts.session, collect.base, collect.id, 244);
+        exact_root_admission_policy(package_id, facts.session, collect.base, collect.id, 243);
     session
         .establish_root_policy(collect_policy)
-        .expect("gameplay collect receives separate external authority");
+        .expect("automatic contact receives separate external authority");
     session
         .admit_candidate(collect_authorization)
-        .expect("gameplay collect establishes the collected configuration");
+        .expect("automatic contact establishes the collected configuration");
     scopes
 }
 
@@ -1842,8 +1824,6 @@ fn browser_gameplay_fixture_request_for_package(
                     .expect("gameplay input occurrence encodes"),
                 encode_executable_occurrence_v1(&occurrence(2, &[0.016]))
                     .expect("gameplay tick occurrence encodes"),
-                encode_executable_occurrence_v1(&occurrence(3, &[]))
-                    .expect("gameplay collect occurrence encodes"),
             ]
         },
         render_slots: vec![],
@@ -2090,6 +2070,173 @@ fn canonical_source_collect_changes_symbolic_state_only_after_admission() {
     .expect("changed projected symbolic state is an Atom");
     assert_eq!(changed_state.kind(), b"clause/process-projected-symbol-v1");
     assert_eq!(changed_state.canonical_payload(), b"spent");
+}
+
+#[test]
+fn automatic_contact_tick_keeps_collection_hidden_until_admission_and_inactive_away() {
+    let source = gameplay_source();
+    let package = checked_program_package_with_scopes_and_roles(1, Vec::new(), 25);
+    let package_id = package.id();
+    let application = ApplicationId {
+        snapshot: package.constitution().snapshot(),
+        local: ApplicationLocalId::new(1),
+    };
+    let plan = physical_plan_with_source(&package, &source);
+    let input = plan
+        .input
+        .as_ref()
+        .expect("gameplay CPP1 carries one physical input plan");
+    assert_eq!(input.tick.entries, [2, 3]);
+    assert!(input.events.iter().all(|binding| {
+        !matches!(
+            &binding.source,
+            ExecutableInputSourceV1::Keyboard { code, .. } if code == b"KeyE"
+        )
+    }));
+    let contact_rule = plan
+        .program
+        .rules
+        .iter()
+        .find(|rule| rule.entry == 3)
+        .expect("Clause contact meaning lowers to the final chained entry");
+    assert_eq!(
+        contact_rule.predicates,
+        [
+            ExecutableExpressionV1::Equal(
+                Box::new(ExecutableExpressionV1::Slot(28)),
+                Box::new(ExecutableExpressionV1::Constant(
+                    ExecutableValueV1::symbol(b"active").expect("active is a bounded symbol"),
+                )),
+            ),
+            ExecutableExpressionV1::Equal(
+                Box::new(ExecutableExpressionV1::Slot(0)),
+                Box::new(ExecutableExpressionV1::Constant(number(0.08))),
+            ),
+            ExecutableExpressionV1::Equal(
+                Box::new(ExecutableExpressionV1::Slot(12)),
+                Box::new(ExecutableExpressionV1::Constant(number(0.0))),
+            ),
+        ]
+    );
+
+    let (authority, facts) =
+        carrier_authority_for_plan(&package, &plan, BROWSER_GAMEPLAY_ALLOCATION_ROOT_TAG);
+    let allocation = RuntimeAllocationEpochV1::recorded_for(
+        raw_id(BROWSER_GAMEPLAY_ALLOCATION_ROOT_TAG),
+        &package,
+        application,
+        &plan,
+        facts.executable(),
+    )
+    .expect("automatic-contact allocation binds the exact package and CPP1 plan");
+    let mut session = PersistentProcessSessionV1::rematerialize(
+        package,
+        authority,
+        application,
+        plan,
+        facts.executable(),
+        allocation,
+    )
+    .expect("automatic-contact native session opens");
+    let initial_world = session.world_base();
+    session
+        .apply_physical_input(&ExecutableInputSourceV1::Keyboard {
+            code: b"KeyD".to_vec(),
+            phase: ExecutableKeyPhaseV1::Down,
+        })
+        .expect("ordinary movement input advances without a contact trigger");
+    let contact_step = session
+        .apply_fixed_tick_and_emit_candidate(16)
+        .expect("one fixed tick executes movement then Clause-owned contact");
+    assert_eq!(contact_step.occurrence.entry, 3);
+    assert!(contact_step.rule_applied);
+    let candidate = session
+        .candidate()
+        .expect("contact candidate lookup succeeds")
+        .expect("the final chained entry emits one hidden candidate")
+        .clone();
+    assert_eq!(
+        candidate.configuration[28],
+        ExecutableValueV1::symbol(b"collected").expect("collected is a bounded symbol")
+    );
+    assert_eq!(candidate.configuration[0], number(0.08));
+    assert_eq!(session.carrier().unwrap().candidate_delta_count(), 1);
+    assert_eq!(session.world_base(), initial_world);
+    assert!(session.last_admitted().is_none());
+    assert_eq!(session.carrier().unwrap().decision_count(), 0);
+    assert_eq!(session.carrier().unwrap().state_revision_count(), 1);
+
+    let (successor, projection) = session
+        .admit_candidate_with_projection(facts.admission_authorization())
+        .expect("separate Admission alone installs the collected world state");
+    assert_eq!(successor.predecessor, initial_world);
+    assert_eq!(successor.configuration, candidate.configuration);
+    assert_ne!(session.world_base(), initial_world);
+    assert_eq!(session.carrier().unwrap().decision_count(), 1);
+    assert_eq!(session.carrier().unwrap().state_revision_count(), 2);
+    let projection = projection.expect("Admission emits the passive renderer projection");
+    assert_eq!(projection.state, successor.id);
+    let player = projected_object_field(&projection.term, b"player");
+    let player_position = projected_object_field(player, b"position");
+    assert_eq!(
+        projected_number(projected_object_field(player_position, b"x")),
+        0.08
+    );
+    let world = projected_object_field(&projection.term, b"world");
+    let collectible = projected_array_first(projected_object_field(world, b"collectibles"));
+    assert_eq!(
+        projected_object_field(collectible, b"state")
+            .as_atom()
+            .expect("projected collectible state is a symbol Atom")
+            .canonical_payload(),
+        b"collected"
+    );
+
+    let away_package = checked_program_package_with_scopes_and_roles(1, Vec::new(), 25);
+    let away_application = ApplicationId {
+        snapshot: away_package.constitution().snapshot(),
+        local: ApplicationLocalId::new(1),
+    };
+    let away_plan = physical_plan_with_source(&away_package, &source);
+    let (away_authority, away_facts) = carrier_authority_for_plan(
+        &away_package,
+        &away_plan,
+        BROWSER_GAMEPLAY_CHANGED_ALLOCATION_ROOT_TAG,
+    );
+    let away_allocation = RuntimeAllocationEpochV1::recorded_for(
+        raw_id(BROWSER_GAMEPLAY_CHANGED_ALLOCATION_ROOT_TAG),
+        &away_package,
+        away_application,
+        &away_plan,
+        away_facts.executable(),
+    )
+    .expect("away-from-contact allocation binds the exact package and CPP1 plan");
+    let mut away_session = PersistentProcessSessionV1::rematerialize(
+        away_package,
+        away_authority,
+        away_application,
+        away_plan,
+        away_facts.executable(),
+        away_allocation,
+    )
+    .expect("away-from-contact native session opens");
+    let away_step = away_session
+        .apply_fixed_tick_and_emit_candidate(16)
+        .expect("away tick still completes the ordered movement/contact chain");
+    assert_eq!(away_step.occurrence.entry, 3);
+    assert!(!away_step.rule_applied);
+    let away_candidate = away_session
+        .candidate()
+        .expect("away candidate lookup succeeds")
+        .expect("the movement tick emits its sole final candidate");
+    assert_eq!(
+        away_candidate.configuration[28],
+        ExecutableValueV1::symbol(b"active").expect("active is a bounded symbol")
+    );
+    assert_eq!(away_session.carrier().unwrap().candidate_delta_count(), 1);
+    assert_eq!(away_session.carrier().unwrap().decision_count(), 0);
+    assert_eq!(away_session.carrier().unwrap().state_revision_count(), 1);
+    assert_eq!(package_id, session.package().unwrap());
 }
 
 #[test]

@@ -246,12 +246,20 @@ pub enum CanonicalScalarValueV1 {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CanonicalScalarExpressionV1 {
     Current,
+    Parameter(Vec<u8>),
     Number(u64),
     Symbol(Vec<u8>),
     Add(Box<Self>, Box<Self>),
     Subtract(Box<Self>, Box<Self>),
     Multiply(Box<Self>, Box<Self>),
     Divide(Box<Self>, Box<Self>),
+}
+
+/// One construct-blind predicate over the scalar cell and source-bound
+/// parameters. Physical state coordinates remain absent until refinement.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum CanonicalScalarPredicateV1 {
+    Equal(CanonicalScalarExpressionV1, CanonicalScalarExpressionV1),
 }
 
 /// Checked source-owned meaning for the bounded one-cell scalar transition
@@ -264,6 +272,8 @@ pub struct CanonicalScalarHandlerV1 {
     pub initial_assertion_origin: CanonicalSourceOriginV1,
     pub include_origin: CanonicalSourceOriginV1,
     pub initial_value: CanonicalScalarValueV1,
+    pub parameters: Vec<Vec<u8>>,
+    pub predicates: Vec<CanonicalScalarPredicateV1>,
     pub result: CanonicalScalarExpressionV1,
 }
 
@@ -629,6 +639,8 @@ struct ScalarHandlerCst {
     origin: CanonicalSourceOriginV1,
     producer: CanonicalSemanticProducerV1,
     relation: Vec<u8>,
+    parameters: Vec<Vec<u8>>,
+    predicates: Vec<CanonicalScalarPredicateV1>,
     result: CanonicalScalarExpressionV1,
     include: HandlerIncludeCst,
 }
@@ -1322,6 +1334,8 @@ pub fn elaborate_canonical_source_package_v1(
         initial_assertion_origin: parts.initial_origin,
         include_origin: parts.handler.include.origin,
         initial_value: parts.initial_value.clone(),
+        parameters: parts.handler.parameters.clone(),
+        predicates: parts.handler.predicates.clone(),
         result: parts.handler.result.clone(),
     });
     let tick_parts = tick_program_parts(cst)?;
@@ -2388,7 +2402,7 @@ fn parse_scalar_handler(
     }
 
     let mut section = "";
-    let mut when = None;
+    let mut when = Vec::new();
     let mut withdraw = None;
     let mut include = None;
     let mut seen_sections = BTreeSet::new();
@@ -2416,25 +2430,32 @@ fn parse_scalar_handler(
             return Ok(None);
         }
         let entry = (trimmed, line_origin(artifact, *line));
-        let target = match section {
-            "when" => &mut when,
-            "withdraw" => &mut withdraw,
-            "include" => &mut include,
+        match section {
+            "when" => when.push(entry),
+            "withdraw" => {
+                if withdraw.replace(entry).is_some() {
+                    return Ok(None);
+                }
+            }
+            "include" => {
+                if include.replace(entry).is_some() {
+                    return Ok(None);
+                }
+            }
             _ => return Ok(None),
-        };
-        if target.replace(entry).is_some() {
-            return Ok(None);
         }
     }
-    let (Some((when, _)), Some((withdraw, _)), Some((include, include_origin))) =
-        (when, withdraw, include)
-    else {
+    let (Some((withdraw, _)), Some((include, include_origin))) = (withdraw, include) else {
         return Ok(None);
     };
-    if when != withdraw {
+    let state_bindings = when
+        .iter()
+        .filter(|(candidate, _)| *candidate == withdraw)
+        .collect::<Vec<_>>();
+    let [state_binding] = state_bindings.as_slice() else {
         return Ok(None);
-    }
-    let when_parts = when.split_whitespace().collect::<Vec<_>>();
+    };
+    let when_parts = state_binding.0.split_whitespace().collect::<Vec<_>>();
     if when_parts.len() < 3 || when_parts[0] != *subject {
         return Ok(None);
     }
@@ -2452,6 +2473,35 @@ fn parse_scalar_handler(
     let Some(result) = parse_scalar_expression(result_source, current) else {
         return Ok(None);
     };
+    let mut declared_parameters = BTreeSet::new();
+    let mut predicates = Vec::new();
+    for (condition, _) in when
+        .iter()
+        .copied()
+        .filter(|(condition, _)| *condition != withdraw)
+    {
+        if let Some(parameters) = parse_scalar_parameter_declaration(condition) {
+            declared_parameters.extend(parameters);
+            continue;
+        }
+        let Some(predicate) = parse_scalar_predicate(condition, current) else {
+            return Ok(None);
+        };
+        predicates.push(predicate);
+    }
+    let mut used_parameters = BTreeSet::new();
+    collect_scalar_expression_parameters(&result, &mut used_parameters);
+    for predicate in &predicates {
+        match predicate {
+            CanonicalScalarPredicateV1::Equal(left, right) => {
+                collect_scalar_expression_parameters(left, &mut used_parameters);
+                collect_scalar_expression_parameters(right, &mut used_parameters);
+            }
+        }
+    }
+    if !used_parameters.is_subset(&declared_parameters) {
+        return Ok(None);
+    }
     Ok(Some(ScalarHandlerCst {
         origin,
         producer: semantic_producer(
@@ -2459,6 +2509,8 @@ fn parse_scalar_handler(
             &handler_semantic_producer(block),
         ),
         relation: relation.into_bytes(),
+        parameters: used_parameters.into_iter().collect(),
+        predicates,
         result,
         include: HandlerIncludeCst {
             origin: include_origin,
@@ -2469,18 +2521,7 @@ fn parse_scalar_handler(
 
 fn parse_scalar_expression(source: &str, current: &str) -> Option<CanonicalScalarExpressionV1> {
     let tokens = source.split_whitespace().collect::<Vec<_>>();
-    let atom = |value: &str| {
-        if value == current {
-            Some(CanonicalScalarExpressionV1::Current)
-        } else {
-            parse_source_number(value)
-                .map(CanonicalScalarExpressionV1::Number)
-                .or_else(|| {
-                    (!value.starts_with('?'))
-                        .then(|| CanonicalScalarExpressionV1::Symbol(value.as_bytes().to_vec()))
-                })
-        }
-    };
+    let atom = |value: &str| parse_scalar_atom(value, current);
     match tokens.as_slice() {
         [value] => atom(value),
         [left, operator, right] => {
@@ -2495,6 +2536,69 @@ fn parse_scalar_expression(source: &str, current: &str) -> Option<CanonicalScala
             })
         }
         _ => None,
+    }
+}
+
+fn parse_scalar_atom(source: &str, current: &str) -> Option<CanonicalScalarExpressionV1> {
+    if source == current {
+        Some(CanonicalScalarExpressionV1::Current)
+    } else if source.starts_with('?') {
+        Some(CanonicalScalarExpressionV1::Parameter(
+            source.as_bytes().to_vec(),
+        ))
+    } else {
+        parse_source_number(source)
+            .map(CanonicalScalarExpressionV1::Number)
+            .or_else(|| {
+                Some(CanonicalScalarExpressionV1::Symbol(
+                    source.as_bytes().to_vec(),
+                ))
+            })
+    }
+}
+
+fn parse_scalar_predicate(source: &str, current: &str) -> Option<CanonicalScalarPredicateV1> {
+    let tokens = source.split_whitespace().collect::<Vec<_>>();
+    let [left, "=", right] = tokens.as_slice() else {
+        return None;
+    };
+    Some(CanonicalScalarPredicateV1::Equal(
+        parse_scalar_atom(left, current)?,
+        parse_scalar_atom(right, current)?,
+    ))
+}
+
+fn parse_scalar_parameter_declaration(source: &str) -> Option<Vec<Vec<u8>>> {
+    let (_, vector) = split_vector_subject(source)?;
+    let components = parse_vec3_components(vector)?;
+    components
+        .into_iter()
+        .map(|component| {
+            component
+                .starts_with('?')
+                .then(|| component.as_bytes().to_vec())
+        })
+        .collect()
+}
+
+fn collect_scalar_expression_parameters(
+    expression: &CanonicalScalarExpressionV1,
+    parameters: &mut BTreeSet<Vec<u8>>,
+) {
+    match expression {
+        CanonicalScalarExpressionV1::Parameter(parameter) => {
+            parameters.insert(parameter.clone());
+        }
+        CanonicalScalarExpressionV1::Add(left, right)
+        | CanonicalScalarExpressionV1::Subtract(left, right)
+        | CanonicalScalarExpressionV1::Multiply(left, right)
+        | CanonicalScalarExpressionV1::Divide(left, right) => {
+            collect_scalar_expression_parameters(left, parameters);
+            collect_scalar_expression_parameters(right, parameters);
+        }
+        CanonicalScalarExpressionV1::Current
+        | CanonicalScalarExpressionV1::Number(_)
+        | CanonicalScalarExpressionV1::Symbol(_) => {}
     }
 }
 
@@ -3573,6 +3677,7 @@ fn scalar_expression_matches_value(
     let numeric = matches!(initial, CanonicalScalarValueV1::Number(_));
     match expression {
         CanonicalScalarExpressionV1::Current => true,
+        CanonicalScalarExpressionV1::Parameter(_) => true,
         CanonicalScalarExpressionV1::Number(_) => numeric,
         CanonicalScalarExpressionV1::Symbol(_) => !numeric,
         CanonicalScalarExpressionV1::Add(left, right)
