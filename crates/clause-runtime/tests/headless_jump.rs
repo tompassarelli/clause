@@ -37,78 +37,6 @@ fn number(value: f64) -> ExecutableValueV1 {
     ExecutableValueV1::number(value).expect("scenario numbers are finite")
 }
 
-fn n(value: f64) -> ExecutableExpressionV1 {
-    ExecutableExpressionV1::Constant(number(value))
-}
-
-fn b(value: bool) -> ExecutableExpressionV1 {
-    ExecutableExpressionV1::Constant(ExecutableValueV1::Boolean(value))
-}
-
-fn s(slot: u16) -> ExecutableExpressionV1 {
-    ExecutableExpressionV1::Slot(slot)
-}
-
-fn a(argument: u16) -> ExecutableExpressionV1 {
-    ExecutableExpressionV1::Argument(argument)
-}
-
-fn boxed(expression: ExecutableExpressionV1) -> Box<ExecutableExpressionV1> {
-    Box::new(expression)
-}
-
-fn add(left: ExecutableExpressionV1, right: ExecutableExpressionV1) -> ExecutableExpressionV1 {
-    ExecutableExpressionV1::Add(boxed(left), boxed(right))
-}
-
-fn sub(left: ExecutableExpressionV1, right: ExecutableExpressionV1) -> ExecutableExpressionV1 {
-    ExecutableExpressionV1::Subtract(boxed(left), boxed(right))
-}
-
-fn mul(left: ExecutableExpressionV1, right: ExecutableExpressionV1) -> ExecutableExpressionV1 {
-    ExecutableExpressionV1::Multiply(boxed(left), boxed(right))
-}
-
-fn div(left: ExecutableExpressionV1, right: ExecutableExpressionV1) -> ExecutableExpressionV1 {
-    ExecutableExpressionV1::Divide(boxed(left), boxed(right))
-}
-
-fn clamp(
-    value: ExecutableExpressionV1,
-    lower: ExecutableExpressionV1,
-    upper: ExecutableExpressionV1,
-) -> ExecutableExpressionV1 {
-    ExecutableExpressionV1::Clamp(boxed(value), boxed(lower), boxed(upper))
-}
-
-fn eq(left: ExecutableExpressionV1, right: ExecutableExpressionV1) -> ExecutableExpressionV1 {
-    ExecutableExpressionV1::Equal(boxed(left), boxed(right))
-}
-
-fn gt(left: ExecutableExpressionV1, right: ExecutableExpressionV1) -> ExecutableExpressionV1 {
-    ExecutableExpressionV1::GreaterThan(boxed(left), boxed(right))
-}
-
-fn le(left: ExecutableExpressionV1, right: ExecutableExpressionV1) -> ExecutableExpressionV1 {
-    ExecutableExpressionV1::LessThanOrEqual(boxed(left), boxed(right))
-}
-
-fn and(left: ExecutableExpressionV1, right: ExecutableExpressionV1) -> ExecutableExpressionV1 {
-    ExecutableExpressionV1::And(boxed(left), boxed(right))
-}
-
-fn next_x() -> ExecutableExpressionV1 {
-    clamp(add(s(0), mul(mul(s(4), s(8)), a(0))), s(10), s(11))
-}
-
-fn next_vertical_velocity() -> ExecutableExpressionV1 {
-    add(s(3), mul(s(6), a(0)))
-}
-
-fn next_y() -> ExecutableExpressionV1 {
-    add(s(1), mul(next_vertical_velocity(), a(0)))
-}
-
 fn projection_atom(scope: TermScope, kind: &[u8], payload: &[u8]) -> Term {
     Term::atom(
         scope,
@@ -175,7 +103,11 @@ fn projected_vec3(scope: TermScope, roles: [LocalRoleRefV2; 3]) -> Term {
 fn source_handlers(
     source: &[u8],
     scope: TermScope,
-) -> (CanonicalInputHandlerV1, CanonicalJumpHandlerV1) {
+) -> (
+    CanonicalInputHandlerV1,
+    CanonicalJumpHandlerV1,
+    CanonicalTickProgramV1,
+) {
     let cst = read_canonical_source_v1(source).expect("canonical arena source reads");
     let plan = plan_independent_canonical_source_allocations_v1(
         &cst,
@@ -198,6 +130,9 @@ fn source_handlers(
         compiled
             .jump_handler
             .expect("the bounded source profile owns one on-jump handler"),
+        compiled
+            .tick_program
+            .expect("the bounded source profile owns the three on-tick branches"),
     )
 }
 
@@ -205,15 +140,8 @@ fn headless_program(
     scope: TermScope,
     input: &CanonicalInputHandlerV1,
     jump: &CanonicalJumpHandlerV1,
+    tick: &CanonicalTickProgramV1,
 ) -> ExecutableProgramV1 {
-    let horizontal_assignments = || vec![(0, next_x()), (2, div(sub(next_x(), s(0)), a(0)))];
-    let mut grounded_tick = horizontal_assignments();
-    grounded_tick.extend([(1, s(9)), (3, n(0.0))]);
-    let mut airborne_tick = horizontal_assignments();
-    airborne_tick.extend([(1, next_y()), (3, next_vertical_velocity())]);
-    let mut landing_tick = horizontal_assignments();
-    landing_tick.extend([(1, s(9)), (3, n(0.0)), (5, b(true))]);
-
     let role = |id| LocalRoleRefV2 {
         schema: RelationSchemaLocalId::new(2),
         role: RoleLocalId::new(id),
@@ -267,22 +195,22 @@ fn headless_program(
     );
 
     let mut program = ExecutableProgramV1 {
-        // x, y, velocity, horizontal intent, grounded, and physical constants.
-        // The velocity, grounded, and jump-speed coordinates are placeholders
-        // populated only by the source-owned jump lowering below.
+        // Gameplay coordinates are placeholders populated only by source-owned
+        // input, jump, and tick lowering. The remaining values are passive
+        // renderer-only platform coordinates absent from canonical game source.
         initial_configuration: vec![
-            number(9.5),
+            number(0.0),
             number(0.0),
             number(0.0),
             number(0.0),
             number(0.0),
             ExecutableValueV1::Boolean(false),
-            number(-8.0),
             number(0.0),
-            number(5.0),
             number(0.0),
-            number(-10.0),
-            number(10.0),
+            number(0.0),
+            number(0.0),
+            number(0.0),
+            number(0.0),
             number(0.0),
             number(0.0),
             number(0.0),
@@ -293,24 +221,11 @@ fn headless_program(
             number(0.5),
             number(12.0),
             number(0.0),
+            number(0.0),
+            number(0.0),
+            number(0.0),
         ],
-        rules: vec![
-            ExecutableRuleV1 {
-                entry: 2,
-                predicates: vec![eq(s(5), b(true))],
-                assignments: grounded_tick,
-            },
-            ExecutableRuleV1 {
-                entry: 2,
-                predicates: vec![and(eq(s(5), b(false)), gt(next_y(), s(9)))],
-                assignments: airborne_tick,
-            },
-            ExecutableRuleV1 {
-                entry: 2,
-                predicates: vec![and(eq(s(5), b(false)), le(next_y(), s(9)))],
-                assignments: landing_tick,
-            },
-        ],
+        rules: vec![],
         projection: Some(ExecutableProjectionV1 {
             bindings: [
                 (1, 0, ExecutableValueKindV1::Number),
@@ -361,6 +276,26 @@ fn headless_program(
         },
     )
     .expect("source-owned jump handler lowers to its physical slots");
+    lower_canonical_tick_program_v1(
+        &mut program,
+        tick,
+        ExecutableCanonicalTickBindingV1 {
+            entry: 2,
+            delta_time_argument: 0,
+            position_slots: [0, 1, 12],
+            velocity_slots: [2, 3, 13],
+            intent_slots: [4, 22, 21],
+            grounded_slot: 5,
+            gravity_slot: 6,
+            move_speed_slot: 8,
+            floor_height_slot: 9,
+            minimum_x_slot: 10,
+            maximum_x_slot: 11,
+            minimum_z_slot: 23,
+            maximum_z_slot: 24,
+        },
+    )
+    .expect("source-owned tick program lowers to physical slots");
     program
 }
 
@@ -465,7 +400,7 @@ fn physical_plan_with_source(
         universe: constitution.universe(),
         semantics: constitution.semantics(),
     };
-    let (input_handler, jump_handler) = source_handlers(source, scope);
+    let (input_handler, jump_handler, tick_program) = source_handlers(source, scope);
     ExecutablePhysicalPlanV1 {
         application_shape: constitution
             .application_shape(application)
@@ -527,7 +462,7 @@ fn physical_plan_with_source(
                 entry: 2,
             },
         }),
-        program: headless_program(scope, &input_handler, &jump_handler),
+        program: headless_program(scope, &input_handler, &jump_handler, &tick_program),
     }
 }
 
@@ -1067,6 +1002,91 @@ fn admit_source_jump(source: &[u8], allocation_tag: u8, policy_tag: u8) -> (Vec<
     (plan_bytes, projection.term)
 }
 
+fn admit_source_tick(source: &[u8], allocation_tag: u8, policy_tag: u8) -> (Vec<u8>, Term) {
+    let package = checked_program_package_with_scopes(1, vec![]);
+    let package_id = package.id();
+    let application = ApplicationId {
+        snapshot: package.constitution().snapshot(),
+        local: ApplicationLocalId::new(1),
+    };
+    let plan = physical_plan_with_source(&package, source);
+    let plan_bytes = encode_executable_physical_plan_v1(&plan)
+        .expect("source-owned tick produces one exact CPP1 plan");
+    let (authority, facts) = carrier_authority(&package);
+    let allocation = RuntimeAllocationEpochV1::recorded_for(
+        raw_id(allocation_tag),
+        &package,
+        application,
+        &plan,
+        facts.executable(),
+    )
+    .expect("source tick session receives one recorded allocation root");
+    let mut session = PersistentProcessSessionV1::rematerialize(
+        package,
+        authority,
+        application,
+        plan,
+        facts.executable(),
+        allocation,
+    )
+    .expect("source tick session starts through the persistent runtime");
+    session
+        .apply_opaque_input(
+            &encode_executable_occurrence_v1(&occurrence(0, &[1.0, 0.0]))
+                .expect("source input occurrence encodes"),
+        )
+        .expect("source-owned horizontal intent enters before tick");
+    session
+        .apply_opaque_input_and_emit_candidate(
+            &encode_executable_occurrence_v1(&occurrence(2, &[3.0]))
+                .expect("source tick occurrence encodes"),
+        )
+        .expect("source-owned tick meaning produces one hidden candidate");
+    let candidate = session
+        .candidate()
+        .expect("candidate lookup succeeds")
+        .expect("tick Step retains one candidate")
+        .clone();
+    assert!(session.last_admitted().is_none());
+    let (policy, authorization) = exact_root_admission_policy(
+        package_id,
+        facts.session,
+        candidate.base,
+        candidate.id,
+        policy_tag,
+    );
+    session
+        .establish_root_policy(policy)
+        .expect("separate external tick authority is established");
+    let (successor, projection) = session
+        .admit_candidate_with_projection(authorization)
+        .expect("separate tick Admission creates the successor and projection");
+    assert_eq!(successor.predecessor, facts.initial_state);
+    let projection = projection.expect("admitted tick emits the renderer projection");
+    assert_eq!(projection.state, successor.id);
+    (plan_bytes, projection.term)
+}
+
+fn assert_tick_projection(term: &Term, expected_x: f64) {
+    let player = projected_object_field(term, b"player");
+    let position = projected_object_field(player, b"position");
+    assert_eq!(
+        projected_number(projected_object_field(position, b"x")),
+        expected_x
+    );
+    assert_eq!(
+        projected_number(projected_object_field(position, b"z")),
+        0.0
+    );
+    assert_eq!(
+        projected_object_field(player, b"grounded")
+            .as_atom()
+            .expect("projected Boolean Atom")
+            .canonical_payload(),
+        [1]
+    );
+}
+
 fn browser_fixture_request() -> WasmProcessRequestV1 {
     let package = checked_program_package(1);
     let physical_plan = physical_plan(&package);
@@ -1189,7 +1209,7 @@ fn canonical_source_input_reaches_persistent_admission_and_projection() {
     assert_eq!(successor.configuration[21].as_number(), Some(0.0));
     let projection = projection.expect("admitted source input emits the renderer projection");
     assert_eq!(projection.state, successor.id);
-    assert_arena_projection(&projection.term, 9.5, 0.0);
+    assert_arena_projection(&projection.term, 0.0, 0.0);
 }
 
 #[test]
@@ -1216,6 +1236,20 @@ fn canonical_source_jump_reaches_admission_and_source_only_changes_behavior() {
     assert_ne!(include_plan, base_plan);
     assert_ne!(include_plan, speed_plan);
     assert_jump_projection(&include_projection, 6.5);
+}
+
+#[test]
+fn canonical_source_tick_reaches_admission_and_source_only_clamp_change_alters_behavior() {
+    let (base_plan, base_projection) = admit_source_tick(WORLD, 219, 222);
+    assert_tick_projection(&base_projection, 10.0);
+
+    let changed_maximum = std::str::from_utf8(WORLD)
+        .expect("arena source is UTF-8")
+        .replacen("jump-arena maximum x 10.0", "jump-arena maximum x 2.0", 1);
+    let (changed_plan, changed_projection) =
+        admit_source_tick(changed_maximum.as_bytes(), 220, 223);
+    assert_ne!(changed_plan, base_plan);
+    assert_tick_projection(&changed_projection, 2.0);
 }
 
 #[test]
@@ -1286,8 +1320,8 @@ fn package_owned_headless_api_reaches_one_admitted_render_state() {
     runtime
         .advance_carrier_occurrence(occurrence(2, &[0.25]))
         .expect("ground Step enters");
-    assert_eq!(value(runtime.configuration(), 0), 10.0);
-    assert_eq!(value(runtime.configuration(), 2), 2.0);
+    assert_eq!(value(runtime.configuration(), 0), 1.25);
+    assert_eq!(value(runtime.configuration(), 2), 5.0);
 
     runtime
         .advance_carrier_occurrence(occurrence(1, &[]))
@@ -1765,7 +1799,7 @@ fn persistent_wasm_session_keeps_generation_sequence_and_admission_custody() {
             let projection = projection.expect("package projection is transported only now");
             let term = decode_canonical_term_bytes(&projection.exact_term_bytes)
                 .expect("projected Term remains exact and canonical");
-            assert_arena_projection(&term, 10.0, 0.0);
+            assert_arena_projection(&term, 2.5, 5.0);
         }
         other => panic!("unexpected Admission event: {other:?}"),
     }
@@ -1980,6 +2014,6 @@ fn shipped_cwr1_has_external_physical_plan_and_successive_issued_admission() {
         assert_ne!(successor, base);
         let term = decode_canonical_term_bytes(&projection.exact_term_bytes)
             .expect("fixture projection remains canonical");
-        assert_arena_projection(&term, 10.0, if ordinal == 0 { 2.0 } else { 0.0 });
+        assert_arena_projection(&term, 1.25 * (ordinal as f64 + 1.0), 5.0);
     }
 }

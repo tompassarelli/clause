@@ -139,7 +139,7 @@ fn canonical_world_declarations_reach_the_checked_package_with_exact_remainder()
     assert_eq!(compiled_again.emissions, compiled.emissions);
 
     let constitution = compiled.checked_package.constitution().preimage();
-    assert_eq!(constitution.formations.len(), 30);
+    assert_eq!(constitution.formations.len(), 54);
     assert_eq!(constitution.schemas.len(), 13);
     assert_eq!(constitution.operators.len(), 13);
     assert!(constitution.applications.is_empty());
@@ -160,7 +160,7 @@ fn canonical_world_declarations_reach_the_checked_package_with_exact_remainder()
         1,
         "the four-role clamped-between declaration remains structurally distinct"
     );
-    assert_eq!(compiled.emissions.len(), 71);
+    assert_eq!(compiled.emissions.len(), 95);
     assert!(compiled.emissions.iter().all(|emission| {
         cst.source_slice(emission.origin)
             .is_some_and(|source| !source.is_empty())
@@ -181,29 +181,13 @@ fn canonical_world_declarations_reach_the_checked_package_with_exact_remainder()
                 counts[index] += 1;
                 counts
             });
-    assert_eq!(unsupported_counts, [3, 3, 10, 3]);
+    assert_eq!(unsupported_counts, [0, 0, 2, 0]);
     let include_emissions = compiled
         .unsupported
         .iter()
         .flat_map(|unsupported| &unsupported.emissions)
         .collect::<Vec<_>>();
-    assert_eq!(include_emissions.len(), 7);
-    assert!(include_emissions.iter().all(|emission| {
-        emission.slot.production == CanonicalSourceProductionV1::HandlerInclude
-            && emission.allocations.is_empty()
-            && cst
-                .source_slice(emission.origin)
-                .is_some_and(|source| source.starts_with(b"    "))
-    }));
-    assert_eq!(
-        include_emissions
-            .iter()
-            .map(|emission| (&emission.producer, &emission.slot))
-            .collect::<BTreeSet<_>>()
-            .len(),
-        include_emissions.len(),
-        "independent include emissions retain distinct stable semantic slots"
-    );
+    assert!(include_emissions.is_empty());
 
     let input = compiled
         .input_handler
@@ -239,6 +223,33 @@ fn canonical_world_declarations_reach_the_checked_package_with_exact_remainder()
         jump.jump_speed_assertion_origin,
     ] {
         assert!(cst.source_slice(origin).is_some());
+    }
+
+    let tick = compiled
+        .tick_program
+        .expect("the bounded source profile lowers all three on-tick branches");
+    assert_eq!(tick.rules.len(), 3);
+    assert_eq!(tick.initial_position, [0.0_f64.to_bits(); 3]);
+    assert_eq!(tick.initial_velocity, [0.0_f64.to_bits(); 3]);
+    assert_eq!(tick.initial_intent, [0.0_f64.to_bits(); 3]);
+    assert!(tick.initial_grounded);
+    assert_eq!(tick.gravity, (-8.0_f64).to_bits());
+    assert_eq!(tick.move_speed, 5.0_f64.to_bits());
+    assert_eq!(tick.floor_height, 0.0_f64.to_bits());
+    assert_eq!(tick.minimum_x, (-10.0_f64).to_bits());
+    assert_eq!(tick.maximum_x, 10.0_f64.to_bits());
+    assert_eq!(tick.minimum_z, (-10.0_f64).to_bits());
+    assert_eq!(tick.maximum_z, 10.0_f64.to_bits());
+    for origin in
+        tick.assertion_origins
+            .iter()
+            .chain(&tick.clamp_law_origins)
+            .chain(&tick.derive_origins)
+            .chain(tick.rules.iter().flat_map(|rule| {
+                std::iter::once(&rule.handler_origin).chain(&rule.include_origins)
+            }))
+    {
+        assert!(cst.source_slice(*origin).is_some());
     }
 
     let carrier = ProcessCarrier::replay(&compiled.checked_package, &AuthorityStore::new())

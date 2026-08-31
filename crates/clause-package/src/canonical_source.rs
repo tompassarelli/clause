@@ -234,6 +234,91 @@ pub struct CanonicalJumpHandlerV1 {
     pub result_grounded: bool,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CanonicalTickValueV1 {
+    DeltaTime,
+    PositionComponent(u8),
+    VelocityComponent(u8),
+    IntentComponent(u8),
+    Grounded,
+    Gravity,
+    MoveSpeed,
+    FloorHeight,
+    MinimumX,
+    MaximumX,
+    MinimumZ,
+    MaximumZ,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum CanonicalTickExpressionV1 {
+    Value(CanonicalTickValueV1),
+    Number(u64),
+    Add(Box<Self>, Box<Self>),
+    Subtract(Box<Self>, Box<Self>),
+    Multiply(Box<Self>, Box<Self>),
+    Divide(Box<Self>, Box<Self>),
+    Clamp(Box<Self>, Box<Self>, Box<Self>),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum CanonicalTickPredicateV1 {
+    EqualBoolean(CanonicalTickValueV1, bool),
+    GreaterThan(CanonicalTickExpressionV1, CanonicalTickExpressionV1),
+    LessThanOrEqual(CanonicalTickExpressionV1, CanonicalTickExpressionV1),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CanonicalTickAssignmentTargetV1 {
+    PositionComponent(u8),
+    VelocityComponent(u8),
+    Grounded,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum CanonicalTickAssignmentValueV1 {
+    Number(CanonicalTickExpressionV1),
+    Boolean(bool),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CanonicalTickAssignmentV1 {
+    pub target: CanonicalTickAssignmentTargetV1,
+    pub value: CanonicalTickAssignmentValueV1,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CanonicalTickRuleV1 {
+    pub handler_origin: CanonicalSourceOriginV1,
+    pub include_origins: Vec<CanonicalSourceOriginV1>,
+    pub predicates: Vec<CanonicalTickPredicateV1>,
+    pub assignments: Vec<CanonicalTickAssignmentV1>,
+}
+
+/// Checked source-owned meaning for the three bounded `on tick` branches.
+/// The source owns all initial world values, arithmetic, predicates, clamp
+/// use, and result grouping. A later physical refinement supplies only the
+/// tick entry and configuration coordinates.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CanonicalTickProgramV1 {
+    pub artifact: CanonicalSourceArtifactIdV1,
+    pub initial_position: [u64; 3],
+    pub initial_velocity: [u64; 3],
+    pub initial_intent: [u64; 3],
+    pub initial_grounded: bool,
+    pub gravity: u64,
+    pub move_speed: u64,
+    pub floor_height: u64,
+    pub minimum_x: u64,
+    pub maximum_x: u64,
+    pub minimum_z: u64,
+    pub maximum_z: u64,
+    pub assertion_origins: Vec<CanonicalSourceOriginV1>,
+    pub clamp_law_origins: [CanonicalSourceOriginV1; 3],
+    pub derive_origins: [CanonicalSourceOriginV1; 3],
+    pub rules: Vec<CanonicalTickRuleV1>,
+}
+
 #[derive(Clone, Debug)]
 pub struct CanonicalSourceCstV1 {
     artifact: CanonicalSourceArtifactIdV1,
@@ -270,6 +355,7 @@ pub struct CanonicalSourcePackageSliceV1 {
     pub unsupported: Vec<CanonicalUnsupportedProductionV1>,
     pub input_handler: Option<CanonicalInputHandlerV1>,
     pub jump_handler: Option<CanonicalJumpHandlerV1>,
+    pub tick_program: Option<CanonicalTickProgramV1>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -332,6 +418,15 @@ pub enum CanonicalSourceErrorV1 {
         origin: CanonicalSourceOriginV1,
     },
     AmbiguousJumpInitialAssertion {
+        origin: CanonicalSourceOriginV1,
+    },
+    InvalidTickProfile {
+        origin: CanonicalSourceOriginV1,
+    },
+    MissingTickInitialAssertion {
+        origin: CanonicalSourceOriginV1,
+    },
+    AmbiguousTickInitialAssertion {
         origin: CanonicalSourceOriginV1,
     },
     UnknownModeRole {
@@ -407,6 +502,9 @@ enum CstKind {
     Relation(RelationCst),
     InputHandler(InputHandlerCst),
     JumpHandler(JumpHandlerCst),
+    TickHandler(TickHandlerCst),
+    ClampLaw(ClampLawCst),
+    ClampDerive(ClampDeriveCst),
     VectorAssertion(VectorAssertionCst),
     BooleanAssertion(BooleanAssertionCst),
     NumberAssertion(NumberAssertionCst),
@@ -476,6 +574,54 @@ struct JumpHandlerParts<'a> {
     velocity: &'a VectorAssertionCst,
     grounded: &'a BooleanAssertionCst,
     jump_speed: &'a NumberAssertionCst,
+}
+
+#[derive(Clone, Debug)]
+struct TickHandlerCst {
+    origin: CanonicalSourceOriginV1,
+    producer: CanonicalSemanticProducerV1,
+    predicates: Vec<CanonicalTickPredicateV1>,
+    assignments: Vec<CanonicalTickAssignmentV1>,
+    includes: Vec<HandlerIncludeCst>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+enum ClampBranchV1 {
+    Lower,
+    Interior,
+    Upper,
+}
+
+#[derive(Clone, Debug)]
+struct ClampLawCst {
+    origin: CanonicalSourceOriginV1,
+    designation: Vec<u8>,
+    branch: ClampBranchV1,
+}
+
+#[derive(Clone, Debug)]
+struct ClampDeriveCst {
+    origin: CanonicalSourceOriginV1,
+    designation: Vec<u8>,
+    branch: ClampBranchV1,
+}
+
+#[derive(Clone, Copy)]
+struct TickProgramParts<'a> {
+    handlers: [&'a TickHandlerCst; 3],
+    laws: [&'a ClampLawCst; 3],
+    derives: [&'a ClampDeriveCst; 3],
+    position: &'a VectorAssertionCst,
+    velocity: &'a VectorAssertionCst,
+    intent: &'a VectorAssertionCst,
+    grounded: &'a BooleanAssertionCst,
+    gravity: &'a NumberAssertionCst,
+    move_speed: &'a NumberAssertionCst,
+    floor_height: &'a NumberAssertionCst,
+    minimum_x: &'a NumberAssertionCst,
+    maximum_x: &'a NumberAssertionCst,
+    minimum_z: &'a NumberAssertionCst,
+    maximum_z: &'a NumberAssertionCst,
 }
 
 #[derive(Clone, Debug)]
@@ -820,6 +966,7 @@ fn allocation_requests(
     let mut requested = Vec::new();
     let input = input_handler_parts(cst)?;
     let jump = jump_handler_parts(cst)?;
+    let tick = tick_program_parts(cst)?;
     for item in &cst.items {
         match &item.kind {
             CstKind::Referent { designation } => {
@@ -920,11 +1067,49 @@ fn allocation_requests(
                     });
                 }
             }
+            CstKind::TickHandler(handler) => {
+                requested.push(AllocationRequest {
+                    producer: handler.producer.clone(),
+                    slot: head_slot(CanonicalSourceProductionV1::Handler),
+                    domain: AllocationDomain::Formation,
+                });
+                for include in &handler.includes {
+                    requested.push(AllocationRequest {
+                        producer: handler.producer.clone(),
+                        slot: child_slot(
+                            CanonicalSourceProductionV1::HandlerInclude,
+                            &include.local,
+                        ),
+                        domain: AllocationDomain::Formation,
+                    });
+                }
+            }
+            CstKind::ClampLaw(law) => requested.push(AllocationRequest {
+                producer: semantic_producer(CanonicalSourceProductionV1::Law, &law.designation),
+                slot: head_slot(CanonicalSourceProductionV1::Law),
+                domain: AllocationDomain::Formation,
+            }),
+            CstKind::ClampDerive(derive) => requested.push(AllocationRequest {
+                producer: semantic_producer(
+                    CanonicalSourceProductionV1::Derive,
+                    &derive.designation,
+                ),
+                slot: head_slot(CanonicalSourceProductionV1::Derive),
+                domain: AllocationDomain::Formation,
+            }),
             CstKind::VectorAssertion(assertion) => {
                 if input
                     .as_ref()
                     .is_some_and(|(_, selected)| selected.origin == assertion.origin)
                     || jump.is_some_and(|parts| parts.velocity.origin == assertion.origin)
+                    || tick.is_some_and(|parts| {
+                        [
+                            parts.position.origin,
+                            parts.velocity.origin,
+                            parts.intent.origin,
+                        ]
+                        .contains(&assertion.origin)
+                    })
                 {
                     requested.push(AllocationRequest {
                         producer: assertion_producer(&assertion.subject, &assertion.relation),
@@ -934,7 +1119,9 @@ fn allocation_requests(
                 }
             }
             CstKind::BooleanAssertion(assertion) => {
-                if jump.is_some_and(|parts| parts.grounded.origin == assertion.origin) {
+                if jump.is_some_and(|parts| parts.grounded.origin == assertion.origin)
+                    || tick.is_some_and(|parts| parts.grounded.origin == assertion.origin)
+                {
                     requested.push(AllocationRequest {
                         producer: assertion_producer(&assertion.subject, &assertion.relation),
                         slot: head_slot(CanonicalSourceProductionV1::Assertion),
@@ -943,7 +1130,20 @@ fn allocation_requests(
                 }
             }
             CstKind::NumberAssertion(assertion) => {
-                if jump.is_some_and(|parts| parts.jump_speed.origin == assertion.origin) {
+                if jump.is_some_and(|parts| parts.jump_speed.origin == assertion.origin)
+                    || tick.is_some_and(|parts| {
+                        [
+                            parts.gravity.origin,
+                            parts.move_speed.origin,
+                            parts.floor_height.origin,
+                            parts.minimum_x.origin,
+                            parts.maximum_x.origin,
+                            parts.minimum_z.origin,
+                            parts.maximum_z.origin,
+                        ]
+                        .contains(&assertion.origin)
+                    })
+                {
                     requested.push(AllocationRequest {
                         producer: assertion_producer(&assertion.subject, &assertion.relation),
                         slot: head_slot(CanonicalSourceProductionV1::Assertion),
@@ -1009,6 +1209,49 @@ pub fn elaborate_canonical_source_package_v1(
         required_grounded: parts.handler.required_grounded,
         result_velocity: parts.handler.result_velocity,
         result_grounded: parts.handler.result_grounded,
+    });
+    let tick_parts = tick_program_parts(cst)?;
+    let tick_program = tick_parts.map(|parts| CanonicalTickProgramV1 {
+        artifact: cst.artifact,
+        initial_position: [parts.position.x, parts.position.y, parts.position.z],
+        initial_velocity: [parts.velocity.x, parts.velocity.y, parts.velocity.z],
+        initial_intent: [parts.intent.x, parts.intent.y, parts.intent.z],
+        initial_grounded: parts.grounded.value,
+        gravity: parts.gravity.value,
+        move_speed: parts.move_speed.value,
+        floor_height: parts.floor_height.value,
+        minimum_x: parts.minimum_x.value,
+        maximum_x: parts.maximum_x.value,
+        minimum_z: parts.minimum_z.value,
+        maximum_z: parts.maximum_z.value,
+        assertion_origins: vec![
+            parts.position.origin,
+            parts.velocity.origin,
+            parts.intent.origin,
+            parts.grounded.origin,
+            parts.gravity.origin,
+            parts.move_speed.origin,
+            parts.floor_height.origin,
+            parts.minimum_x.origin,
+            parts.maximum_x.origin,
+            parts.minimum_z.origin,
+            parts.maximum_z.origin,
+        ],
+        clamp_law_origins: parts.laws.map(|law| law.origin),
+        derive_origins: parts.derives.map(|derive| derive.origin),
+        rules: parts
+            .handlers
+            .map(|handler| CanonicalTickRuleV1 {
+                handler_origin: handler.origin,
+                include_origins: handler
+                    .includes
+                    .iter()
+                    .map(|include| include.origin)
+                    .collect(),
+                predicates: handler.predicates.clone(),
+                assignments: handler.assignments.clone(),
+            })
+            .into(),
     });
 
     for item in &cst.items {
@@ -1247,11 +1490,86 @@ pub fn elaborate_canonical_source_package_v1(
                     ));
                 }
             }
+            CstKind::TickHandler(handler) => {
+                let head = head_slot(CanonicalSourceProductionV1::Handler);
+                let head_id = formation_id(plan, &handler.producer, &head)?;
+                formations.push(source_formation(
+                    scope,
+                    head_id,
+                    cst.source_slice(handler.origin)
+                        .expect("owned tick handler origin"),
+                    handler.origin,
+                    "tick-handler",
+                )?);
+                emissions.push(emission(
+                    plan,
+                    handler.producer.clone(),
+                    head,
+                    handler.origin,
+                ));
+                for include in &handler.includes {
+                    let slot =
+                        child_slot(CanonicalSourceProductionV1::HandlerInclude, &include.local);
+                    let id = formation_id(plan, &handler.producer, &slot)?;
+                    formations.push(source_formation(
+                        scope,
+                        id,
+                        cst.source_slice(include.origin)
+                            .expect("owned tick include origin"),
+                        include.origin,
+                        "handler-include",
+                    )?);
+                    emissions.push(emission(
+                        plan,
+                        handler.producer.clone(),
+                        slot,
+                        include.origin,
+                    ));
+                }
+            }
+            CstKind::ClampLaw(law) => {
+                let producer =
+                    semantic_producer(CanonicalSourceProductionV1::Law, &law.designation);
+                let slot = head_slot(CanonicalSourceProductionV1::Law);
+                let id = formation_id(plan, &producer, &slot)?;
+                formations.push(source_formation(
+                    scope,
+                    id,
+                    cst.source_slice(law.origin)
+                        .expect("owned clamp law origin"),
+                    law.origin,
+                    "clamp-law",
+                )?);
+                emissions.push(emission(plan, producer, slot, law.origin));
+            }
+            CstKind::ClampDerive(derive) => {
+                let producer =
+                    semantic_producer(CanonicalSourceProductionV1::Derive, &derive.designation);
+                let slot = head_slot(CanonicalSourceProductionV1::Derive);
+                let id = formation_id(plan, &producer, &slot)?;
+                formations.push(source_formation(
+                    scope,
+                    id,
+                    cst.source_slice(derive.origin)
+                        .expect("owned clamp derive origin"),
+                    derive.origin,
+                    "clamp-derive",
+                )?);
+                emissions.push(emission(plan, producer, slot, derive.origin));
+            }
             CstKind::VectorAssertion(assertion) => {
                 if input_parts
                     .as_ref()
                     .is_some_and(|(_, selected)| selected.origin == assertion.origin)
                     || jump_parts.is_some_and(|parts| parts.velocity.origin == assertion.origin)
+                    || tick_parts.is_some_and(|parts| {
+                        [
+                            parts.position.origin,
+                            parts.velocity.origin,
+                            parts.intent.origin,
+                        ]
+                        .contains(&assertion.origin)
+                    })
                 {
                     let producer = assertion_producer(&assertion.subject, &assertion.relation);
                     let slot = head_slot(CanonicalSourceProductionV1::Assertion);
@@ -1274,7 +1592,9 @@ pub fn elaborate_canonical_source_package_v1(
                 }
             }
             CstKind::BooleanAssertion(assertion) => {
-                if jump_parts.is_some_and(|parts| parts.grounded.origin == assertion.origin) {
+                if jump_parts.is_some_and(|parts| parts.grounded.origin == assertion.origin)
+                    || tick_parts.is_some_and(|parts| parts.grounded.origin == assertion.origin)
+                {
                     let producer = assertion_producer(&assertion.subject, &assertion.relation);
                     let slot = head_slot(CanonicalSourceProductionV1::Assertion);
                     let id = formation_id(plan, &producer, &slot)?;
@@ -1296,7 +1616,20 @@ pub fn elaborate_canonical_source_package_v1(
                 }
             }
             CstKind::NumberAssertion(assertion) => {
-                if jump_parts.is_some_and(|parts| parts.jump_speed.origin == assertion.origin) {
+                if jump_parts.is_some_and(|parts| parts.jump_speed.origin == assertion.origin)
+                    || tick_parts.is_some_and(|parts| {
+                        [
+                            parts.gravity.origin,
+                            parts.move_speed.origin,
+                            parts.floor_height.origin,
+                            parts.minimum_x.origin,
+                            parts.maximum_x.origin,
+                            parts.minimum_z.origin,
+                            parts.maximum_z.origin,
+                        ]
+                        .contains(&assertion.origin)
+                    })
+                {
                     let producer = assertion_producer(&assertion.subject, &assertion.relation);
                     let slot = head_slot(CanonicalSourceProductionV1::Assertion);
                     let id = formation_id(plan, &producer, &slot)?;
@@ -1355,6 +1688,7 @@ pub fn elaborate_canonical_source_package_v1(
         unsupported,
         input_handler,
         jump_handler,
+        tick_program,
     })
 }
 
@@ -1480,6 +1814,12 @@ fn parse_item(
         });
     }
     if head.starts_with("law ") {
+        if let Some(law) = parse_clamp_law(block, origin) {
+            return Ok(CstItem {
+                origin,
+                kind: CstKind::ClampLaw(law),
+            });
+        }
         return Ok(unsupported_item(
             artifact,
             block,
@@ -1490,6 +1830,12 @@ fn parse_item(
     }
     if head.starts_with("derive ") {
         require_leaf(block, artifact)?;
+        if let Some(derive) = parse_clamp_derive(head, origin) {
+            return Ok(CstItem {
+                origin,
+                kind: CstKind::ClampDerive(derive),
+            });
+        }
         return Ok(unsupported_item(
             artifact,
             block,
@@ -1509,6 +1855,12 @@ fn parse_item(
             return Ok(CstItem {
                 origin,
                 kind: CstKind::JumpHandler(handler),
+            });
+        }
+        if let Some(handler) = parse_tick_handler(artifact, block, origin)? {
+            return Ok(CstItem {
+                origin,
+                kind: CstKind::TickHandler(handler),
             });
         }
         let emissions = handler_include_emissions(artifact, block)?;
@@ -1815,6 +2167,450 @@ fn parse_jump_scalar(
         .map(CanonicalJumpScalarV1::VelocityComponent)
         .or_else(|| (source == jump_speed_parameter).then_some(CanonicalJumpScalarV1::JumpSpeed))
         .or_else(|| parse_source_number(source).map(CanonicalJumpScalarV1::Number))
+}
+
+fn parse_clamp_law(
+    block: &[SourceLine<'_>],
+    origin: CanonicalSourceOriginV1,
+) -> Option<ClampLawCst> {
+    let lines = block
+        .iter()
+        .filter(|line| !line.text.trim().is_empty())
+        .map(|line| line.text.trim())
+        .collect::<Vec<_>>();
+    let (designation, branch, expected): (&str, ClampBranchV1, &[&str]) = match lines.first()? {
+        &"law clamp-lower" => (
+            "clamp-lower",
+            ClampBranchV1::Lower,
+            &[
+                "law clamp-lower",
+                "if",
+                "?lower <= ?upper",
+                "?value < ?lower",
+                "then",
+                "?value clamped between ?lower and ?upper as ?lower",
+            ],
+        ),
+        &"law clamp-interior" => (
+            "clamp-interior",
+            ClampBranchV1::Interior,
+            &[
+                "law clamp-interior",
+                "if",
+                "?lower <= ?value",
+                "?value <= ?upper",
+                "then",
+                "?value clamped between ?lower and ?upper as ?value",
+            ],
+        ),
+        &"law clamp-upper" => (
+            "clamp-upper",
+            ClampBranchV1::Upper,
+            &[
+                "law clamp-upper",
+                "if",
+                "?lower <= ?upper",
+                "?value > ?upper",
+                "then",
+                "?value clamped between ?lower and ?upper as ?upper",
+            ],
+        ),
+        _ => return None,
+    };
+    (lines == expected).then(|| ClampLawCst {
+        origin,
+        designation: designation.as_bytes().to_vec(),
+        branch,
+    })
+}
+
+fn parse_clamp_derive(head: &str, origin: CanonicalSourceOriginV1) -> Option<ClampDeriveCst> {
+    let (designation, branch) = match head {
+        "derive clamp-lower" => (b"clamp-lower".as_slice(), ClampBranchV1::Lower),
+        "derive clamp-interior" => (b"clamp-interior".as_slice(), ClampBranchV1::Interior),
+        "derive clamp-upper" => (b"clamp-upper".as_slice(), ClampBranchV1::Upper),
+        _ => return None,
+    };
+    Some(ClampDeriveCst {
+        origin,
+        designation: designation.to_vec(),
+        branch,
+    })
+}
+
+fn parse_tick_handler(
+    artifact: CanonicalSourceArtifactIdV1,
+    block: &[SourceLine<'_>],
+    origin: CanonicalSourceOriginV1,
+) -> Result<Option<TickHandlerCst>, CanonicalSourceErrorV1> {
+    if block[0].text != "on tick ?player ?dt" {
+        return Ok(None);
+    }
+    let mut section = "";
+    let mut when = Vec::new();
+    let mut withdraw = Vec::new();
+    let mut include = Vec::new();
+    let mut seen_sections = BTreeSet::new();
+    for line in block
+        .iter()
+        .skip(1)
+        .filter(|line| !line.text.trim().is_empty())
+    {
+        let trimmed = line.text.trim();
+        if line.indent == 2 {
+            if trimmed == "admit" {
+                return Err(CanonicalSourceErrorV1::NonCanonicalKeyword {
+                    origin: line_origin(artifact, *line),
+                    keyword: b"admit".to_vec(),
+                });
+            }
+            if !matches!(trimmed, "when" | "withdraw" | "include") || !seen_sections.insert(trimmed)
+            {
+                return Err(CanonicalSourceErrorV1::InvalidTickProfile {
+                    origin: line_origin(artifact, *line),
+                });
+            }
+            section = trimmed;
+            continue;
+        }
+        if line.indent != 4 {
+            return Err(CanonicalSourceErrorV1::InvalidTickProfile {
+                origin: line_origin(artifact, *line),
+            });
+        }
+        let entry = (trimmed, line_origin(artifact, *line));
+        match section {
+            "when" => when.push(entry),
+            "withdraw" => withdraw.push(entry),
+            "include" => include.push(entry),
+            _ => {
+                return Err(CanonicalSourceErrorV1::InvalidTickProfile {
+                    origin: line_origin(artifact, *line),
+                });
+            }
+        }
+    }
+    if when.first().map(|entry| entry.0) != Some("?dt > 0.0") {
+        return Err(CanonicalSourceErrorV1::InvalidTickProfile { origin });
+    }
+    let grounded = when
+        .get(4)
+        .and_then(|entry| parse_boolean_clause(entry.0))
+        .filter(|(subject, relation, _)| *subject == "?player" && relation == "grounded")
+        .map(|(_, _, value)| value)
+        .ok_or(CanonicalSourceErrorV1::InvalidTickProfile { origin })?;
+    let grounded_branch = grounded && when.len() == 13 && withdraw.len() == 2 && include.len() == 2;
+    let airborne_branch =
+        !grounded && when.len() == 15 && withdraw.len() == 2 && include.len() == 2;
+    let landing_branch = !grounded && when.len() == 15 && withdraw.len() == 3 && include.len() == 3;
+    if !grounded_branch && !airborne_branch && !landing_branch {
+        return Err(CanonicalSourceErrorV1::InvalidTickProfile { origin });
+    }
+
+    let expected_position = if grounded_branch {
+        "?player position Vec3 { x: ?position-x, y: ?floor, z: ?position-z }"
+    } else {
+        "?player position Vec3 { x: ?position-x, y: ?position-y, z: ?position-z }"
+    };
+    let expected_velocity = if grounded_branch {
+        "?player velocity Vec3 { x: ?velocity-x, y: 0.0, z: ?velocity-z }"
+    } else {
+        "?player velocity Vec3 { x: ?velocity-x, y: ?velocity-y, z: ?velocity-z }"
+    };
+    let fixed_prefix = [
+        expected_position,
+        expected_velocity,
+        "?player horizontal intent Vec3 { x: ?intent-x, y: 0.0, z: ?intent-z }",
+    ];
+    if when[1..4].iter().map(|entry| entry.0).ne(fixed_prefix) {
+        return Err(CanonicalSourceErrorV1::InvalidTickProfile { origin });
+    }
+    let constants = if grounded_branch {
+        &when[5..11]
+    } else {
+        &when[5..12]
+    };
+    let expected_constants: &[&str] = if grounded_branch {
+        &[
+            "jump-arena move speed ?move-speed",
+            "jump-arena floor height ?floor",
+            "jump-arena minimum x ?min-x",
+            "jump-arena maximum x ?max-x",
+            "jump-arena minimum z ?min-z",
+            "jump-arena maximum z ?max-z",
+        ]
+    } else {
+        &[
+            "jump-arena gravity ?gravity",
+            "jump-arena move speed ?move-speed",
+            "jump-arena floor height ?floor",
+            "jump-arena minimum x ?min-x",
+            "jump-arena maximum x ?max-x",
+            "jump-arena minimum z ?min-z",
+            "jump-arena maximum z ?max-z",
+        ]
+    };
+    if constants
+        .iter()
+        .map(|entry| entry.0)
+        .ne(expected_constants.iter().copied())
+    {
+        return Err(CanonicalSourceErrorV1::InvalidTickProfile { origin });
+    }
+    let clamp_start = if grounded_branch { 11 } else { 12 };
+    let mut derived = BTreeMap::new();
+    for line in &when[clamp_start..clamp_start + 2] {
+        let (name, expression) = parse_tick_clamp_binding(line.0, &derived)
+            .ok_or(CanonicalSourceErrorV1::InvalidTickProfile { origin: line.1 })?;
+        derived.insert(name, expression);
+    }
+    if !derived.contains_key("?next-x") || !derived.contains_key("?next-z") {
+        return Err(CanonicalSourceErrorV1::InvalidTickProfile { origin });
+    }
+
+    let mut predicates = vec![
+        parse_tick_comparison(when[0].0, &derived)
+            .ok_or(CanonicalSourceErrorV1::InvalidTickProfile { origin: when[0].1 })?,
+        CanonicalTickPredicateV1::EqualBoolean(CanonicalTickValueV1::Grounded, grounded),
+    ];
+    if !grounded_branch {
+        predicates.push(
+            parse_tick_comparison(when[14].0, &derived)
+                .ok_or(CanonicalSourceErrorV1::InvalidTickProfile { origin: when[14].1 })?,
+        );
+    }
+    if withdraw.get(0).map(|entry| entry.0) != Some(expected_position)
+        || withdraw.get(1).map(|entry| entry.0) != Some(expected_velocity)
+        || (landing_branch
+            && withdraw.get(2).map(|entry| entry.0) != Some("?player grounded false"))
+    {
+        return Err(CanonicalSourceErrorV1::InvalidTickProfile { origin });
+    }
+
+    let mut assignments = Vec::new();
+    let (position_prefix, position_vector) = include
+        .first()
+        .and_then(|entry| split_vector_subject(entry.0))
+        .ok_or(CanonicalSourceErrorV1::InvalidTickProfile { origin })?;
+    let (velocity_prefix, velocity_vector) = include
+        .get(1)
+        .and_then(|entry| split_vector_subject(entry.0))
+        .ok_or(CanonicalSourceErrorV1::InvalidTickProfile { origin })?;
+    if position_prefix != "?player position" || velocity_prefix != "?player velocity" {
+        return Err(CanonicalSourceErrorV1::InvalidTickProfile { origin });
+    }
+    for (target, source) in parse_vec3_components(position_vector)
+        .ok_or(CanonicalSourceErrorV1::InvalidTickProfile { origin })?
+        .into_iter()
+        .enumerate()
+    {
+        assignments.push(CanonicalTickAssignmentV1 {
+            target: CanonicalTickAssignmentTargetV1::PositionComponent(target as u8),
+            value: CanonicalTickAssignmentValueV1::Number(
+                parse_tick_expression(source, &derived).ok_or(
+                    CanonicalSourceErrorV1::InvalidTickProfile {
+                        origin: include[0].1,
+                    },
+                )?,
+            ),
+        });
+    }
+    for (target, source) in parse_vec3_components(velocity_vector)
+        .ok_or(CanonicalSourceErrorV1::InvalidTickProfile { origin })?
+        .into_iter()
+        .enumerate()
+    {
+        assignments.push(CanonicalTickAssignmentV1 {
+            target: CanonicalTickAssignmentTargetV1::VelocityComponent(target as u8),
+            value: CanonicalTickAssignmentValueV1::Number(
+                parse_tick_expression(source, &derived).ok_or(
+                    CanonicalSourceErrorV1::InvalidTickProfile {
+                        origin: include[1].1,
+                    },
+                )?,
+            ),
+        });
+    }
+    if landing_branch {
+        if include[2].0 != "?player grounded true" {
+            return Err(CanonicalSourceErrorV1::InvalidTickProfile {
+                origin: include[2].1,
+            });
+        }
+        assignments.push(CanonicalTickAssignmentV1 {
+            target: CanonicalTickAssignmentTargetV1::Grounded,
+            value: CanonicalTickAssignmentValueV1::Boolean(true),
+        });
+    }
+    Ok(Some(TickHandlerCst {
+        origin,
+        producer: semantic_producer(
+            CanonicalSourceProductionV1::Handler,
+            &handler_semantic_producer(block),
+        ),
+        predicates,
+        assignments,
+        includes: include
+            .into_iter()
+            .map(|(local, origin)| HandlerIncludeCst {
+                origin,
+                local: local.as_bytes().to_vec(),
+            })
+            .collect(),
+    }))
+}
+
+fn parse_tick_clamp_binding(
+    source: &str,
+    derived: &BTreeMap<String, CanonicalTickExpressionV1>,
+) -> Option<(String, CanonicalTickExpressionV1)> {
+    let (value, rest) = source.split_once(" clamped between ")?;
+    let (bounds, result) = rest.split_once(" as ")?;
+    let (lower, upper) = bounds.split_once(" and ")?;
+    Some((
+        result.to_owned(),
+        CanonicalTickExpressionV1::Clamp(
+            Box::new(parse_tick_expression(value, derived)?),
+            Box::new(parse_tick_expression(lower, derived)?),
+            Box::new(parse_tick_expression(upper, derived)?),
+        ),
+    ))
+}
+
+fn parse_tick_comparison(
+    source: &str,
+    derived: &BTreeMap<String, CanonicalTickExpressionV1>,
+) -> Option<CanonicalTickPredicateV1> {
+    if let Some((left, right)) = source.split_once(" <= ") {
+        return Some(CanonicalTickPredicateV1::LessThanOrEqual(
+            parse_tick_expression(left, derived)?,
+            parse_tick_expression(right, derived)?,
+        ));
+    }
+    let (left, right) = source.split_once(" > ")?;
+    Some(CanonicalTickPredicateV1::GreaterThan(
+        parse_tick_expression(left, derived)?,
+        parse_tick_expression(right, derived)?,
+    ))
+}
+
+fn parse_tick_expression(
+    source: &str,
+    derived: &BTreeMap<String, CanonicalTickExpressionV1>,
+) -> Option<CanonicalTickExpressionV1> {
+    let mut parser = TickExpressionParser {
+        source: source.as_bytes(),
+        cursor: 0,
+        derived,
+    };
+    let expression = parser.additive()?;
+    parser.skip_spaces();
+    (parser.cursor == parser.source.len()).then_some(expression)
+}
+
+struct TickExpressionParser<'a> {
+    source: &'a [u8],
+    cursor: usize,
+    derived: &'a BTreeMap<String, CanonicalTickExpressionV1>,
+}
+
+impl TickExpressionParser<'_> {
+    fn additive(&mut self) -> Option<CanonicalTickExpressionV1> {
+        let mut value = self.multiplicative()?;
+        loop {
+            self.skip_spaces();
+            let operation = self.take_one(&[b'+', b'-']);
+            let Some(operation) = operation else { break };
+            let right = self.multiplicative()?;
+            value = match operation {
+                b'+' => CanonicalTickExpressionV1::Add(Box::new(value), Box::new(right)),
+                b'-' => CanonicalTickExpressionV1::Subtract(Box::new(value), Box::new(right)),
+                _ => unreachable!(),
+            };
+        }
+        Some(value)
+    }
+
+    fn multiplicative(&mut self) -> Option<CanonicalTickExpressionV1> {
+        let mut value = self.primary()?;
+        loop {
+            self.skip_spaces();
+            let operation = self.take_one(&[b'*', b'/']);
+            let Some(operation) = operation else { break };
+            let right = self.primary()?;
+            value = match operation {
+                b'*' => CanonicalTickExpressionV1::Multiply(Box::new(value), Box::new(right)),
+                b'/' => CanonicalTickExpressionV1::Divide(Box::new(value), Box::new(right)),
+                _ => unreachable!(),
+            };
+        }
+        Some(value)
+    }
+
+    fn primary(&mut self) -> Option<CanonicalTickExpressionV1> {
+        self.skip_spaces();
+        if self.source.get(self.cursor) == Some(&b'(') {
+            self.cursor += 1;
+            let value = self.additive()?;
+            self.skip_spaces();
+            (self.source.get(self.cursor) == Some(&b')')).then(|| self.cursor += 1)?;
+            return Some(value);
+        }
+        let start = self.cursor;
+        if self.source.get(self.cursor) == Some(&b'-') {
+            self.cursor += 1;
+        }
+        while let Some(byte) = self.source.get(self.cursor)
+            && !byte.is_ascii_whitespace()
+            && !matches!(*byte, b'+' | b'*' | b'/' | b'(' | b')')
+        {
+            self.cursor += 1;
+        }
+        (self.cursor > start).then_some(())?;
+        let atom = std::str::from_utf8(&self.source[start..self.cursor]).ok()?;
+        if let Some(value) = self.derived.get(atom) {
+            return Some(value.clone());
+        }
+        let value = match atom {
+            "?dt" => CanonicalTickValueV1::DeltaTime,
+            "?position-x" => CanonicalTickValueV1::PositionComponent(0),
+            "?position-y" => CanonicalTickValueV1::PositionComponent(1),
+            "?position-z" => CanonicalTickValueV1::PositionComponent(2),
+            "?velocity-x" => CanonicalTickValueV1::VelocityComponent(0),
+            "?velocity-y" => CanonicalTickValueV1::VelocityComponent(1),
+            "?velocity-z" => CanonicalTickValueV1::VelocityComponent(2),
+            "?intent-x" => CanonicalTickValueV1::IntentComponent(0),
+            "?intent-y" => CanonicalTickValueV1::IntentComponent(1),
+            "?intent-z" => CanonicalTickValueV1::IntentComponent(2),
+            "?gravity" => CanonicalTickValueV1::Gravity,
+            "?move-speed" => CanonicalTickValueV1::MoveSpeed,
+            "?floor" => CanonicalTickValueV1::FloorHeight,
+            "?min-x" => CanonicalTickValueV1::MinimumX,
+            "?max-x" => CanonicalTickValueV1::MaximumX,
+            "?min-z" => CanonicalTickValueV1::MinimumZ,
+            "?max-z" => CanonicalTickValueV1::MaximumZ,
+            _ => return parse_source_number(atom).map(CanonicalTickExpressionV1::Number),
+        };
+        Some(CanonicalTickExpressionV1::Value(value))
+    }
+
+    fn skip_spaces(&mut self) {
+        while self
+            .source
+            .get(self.cursor)
+            .is_some_and(u8::is_ascii_whitespace)
+        {
+            self.cursor += 1;
+        }
+    }
+
+    fn take_one(&mut self, accepted: &[u8]) -> Option<u8> {
+        let byte = *self.source.get(self.cursor)?;
+        accepted.contains(&byte).then(|| {
+            self.cursor += 1;
+            byte
+        })
+    }
 }
 
 fn parse_vector_assertion(
@@ -2268,6 +3064,221 @@ fn jump_handler_parts(
     }))
 }
 
+fn tick_program_parts(
+    cst: &CanonicalSourceCstV1,
+) -> Result<Option<TickProgramParts<'_>>, CanonicalSourceErrorV1> {
+    let handlers = cst
+        .items
+        .iter()
+        .filter_map(|item| match &item.kind {
+            CstKind::TickHandler(handler) => Some(handler),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    if handlers.is_empty() {
+        return Ok(None);
+    }
+    let origin = handlers[0].origin;
+    if handlers.len() != 3 {
+        return Err(CanonicalSourceErrorV1::InvalidTickProfile { origin });
+    }
+    let grounded = handlers
+        .iter()
+        .copied()
+        .filter(|handler| {
+            handler.predicates.iter().any(|predicate| {
+                matches!(
+                    predicate,
+                    CanonicalTickPredicateV1::EqualBoolean(CanonicalTickValueV1::Grounded, true)
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    let landing = handlers
+        .iter()
+        .copied()
+        .filter(|handler| {
+            handler.assignments.iter().any(|assignment| {
+                matches!(
+                    assignment,
+                    CanonicalTickAssignmentV1 {
+                        target: CanonicalTickAssignmentTargetV1::Grounded,
+                        value: CanonicalTickAssignmentValueV1::Boolean(true),
+                    }
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    let airborne = handlers
+        .iter()
+        .copied()
+        .filter(|handler| {
+            handler.predicates.iter().any(|predicate| {
+                matches!(
+                    predicate,
+                    CanonicalTickPredicateV1::EqualBoolean(CanonicalTickValueV1::Grounded, false)
+                )
+            }) && !handler.assignments.iter().any(|assignment| {
+                matches!(assignment.target, CanonicalTickAssignmentTargetV1::Grounded)
+            })
+        })
+        .collect::<Vec<_>>();
+    let ([grounded], [airborne], [landing]) =
+        (grounded.as_slice(), airborne.as_slice(), landing.as_slice())
+    else {
+        return Err(CanonicalSourceErrorV1::InvalidTickProfile { origin });
+    };
+
+    let mut laws = cst
+        .items
+        .iter()
+        .filter_map(|item| match &item.kind {
+            CstKind::ClampLaw(law) => Some(law),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let mut derives = cst
+        .items
+        .iter()
+        .filter_map(|item| match &item.kind {
+            CstKind::ClampDerive(derive) => Some(derive),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    laws.sort_by_key(|law| law.branch);
+    derives.sort_by_key(|derive| derive.branch);
+    if laws.iter().map(|law| law.branch).ne([
+        ClampBranchV1::Lower,
+        ClampBranchV1::Interior,
+        ClampBranchV1::Upper,
+    ]) || derives.iter().map(|derive| derive.branch).ne([
+        ClampBranchV1::Lower,
+        ClampBranchV1::Interior,
+        ClampBranchV1::Upper,
+    ]) || laws
+        .iter()
+        .map(|law| law.designation.as_slice())
+        .ne(derives.iter().map(|derive| derive.designation.as_slice()))
+    {
+        return Err(CanonicalSourceErrorV1::InvalidTickProfile { origin });
+    }
+    let [lower_law, interior_law, upper_law] = laws.as_slice() else {
+        unreachable!()
+    };
+    let [lower_derive, interior_derive, upper_derive] = derives.as_slice() else {
+        unreachable!()
+    };
+
+    let vectors = |relation: &[u8]| {
+        cst.items
+            .iter()
+            .filter_map(|item| match &item.kind {
+                CstKind::VectorAssertion(assertion) if assertion.relation == relation => {
+                    Some(assertion)
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+    };
+    let booleans = |relation: &[u8]| {
+        cst.items
+            .iter()
+            .filter_map(|item| match &item.kind {
+                CstKind::BooleanAssertion(assertion) if assertion.relation == relation => {
+                    Some(assertion)
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+    };
+    let numbers = |relation: &[u8]| {
+        cst.items
+            .iter()
+            .filter_map(|item| match &item.kind {
+                CstKind::NumberAssertion(assertion)
+                    if assertion.subject == b"jump-arena" && assertion.relation == relation =>
+                {
+                    Some(assertion)
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+    };
+    let position = vectors(b"position");
+    let velocity = vectors(b"velocity");
+    let intent = vectors(b"horizontal intent");
+    let grounded_assertions = booleans(b"grounded");
+    let gravity = numbers(b"gravity");
+    let move_speed = numbers(b"move speed");
+    let floor_height = numbers(b"floor height");
+    let minimum_x = numbers(b"minimum x");
+    let maximum_x = numbers(b"maximum x");
+    let minimum_z = numbers(b"minimum z");
+    let maximum_z = numbers(b"maximum z");
+    let (
+        [position],
+        [velocity],
+        [intent],
+        [grounded_assertion],
+        [gravity],
+        [move_speed],
+        [floor_height],
+        [minimum_x],
+        [maximum_x],
+        [minimum_z],
+        [maximum_z],
+    ) = (
+        position.as_slice(),
+        velocity.as_slice(),
+        intent.as_slice(),
+        grounded_assertions.as_slice(),
+        gravity.as_slice(),
+        move_speed.as_slice(),
+        floor_height.as_slice(),
+        minimum_x.as_slice(),
+        maximum_x.as_slice(),
+        minimum_z.as_slice(),
+        maximum_z.as_slice(),
+    )
+    else {
+        let missing = [
+            position.len(),
+            velocity.len(),
+            intent.len(),
+            grounded_assertions.len(),
+            gravity.len(),
+            move_speed.len(),
+            floor_height.len(),
+            minimum_x.len(),
+            maximum_x.len(),
+            minimum_z.len(),
+            maximum_z.len(),
+        ]
+        .contains(&0);
+        return Err(if missing {
+            CanonicalSourceErrorV1::MissingTickInitialAssertion { origin }
+        } else {
+            CanonicalSourceErrorV1::AmbiguousTickInitialAssertion { origin }
+        });
+    };
+    Ok(Some(TickProgramParts {
+        handlers: [*grounded, *airborne, *landing],
+        laws: [*lower_law, *interior_law, *upper_law],
+        derives: [*lower_derive, *interior_derive, *upper_derive],
+        position,
+        velocity,
+        intent,
+        grounded: grounded_assertion,
+        gravity,
+        move_speed,
+        floor_height,
+        minimum_x,
+        maximum_x,
+        minimum_z,
+        maximum_z,
+    }))
+}
+
 fn assertion_producer(subject: &[u8], relation: &[u8]) -> CanonicalSemanticProducerV1 {
     let mut key = Vec::new();
     frame_bytes(&mut key, subject);
@@ -2321,6 +3332,9 @@ fn validate_unique_designations(items: &[CstItem]) -> Result<(), CanonicalSource
         CstKind::Relation(relation) => Some(&relation.designation),
         CstKind::InputHandler(_)
         | CstKind::JumpHandler(_)
+        | CstKind::TickHandler(_)
+        | CstKind::ClampLaw(_)
+        | CstKind::ClampDerive(_)
         | CstKind::VectorAssertion(_)
         | CstKind::BooleanAssertion(_)
         | CstKind::NumberAssertion(_)

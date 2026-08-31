@@ -470,6 +470,248 @@ pub fn lower_canonical_jump_handler_v1(
     Ok(())
 }
 
+/// Physical coordinates for the source-owned three-branch `on tick` program.
+/// The binding contains no gameplay constants or expressions.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ExecutableCanonicalTickBindingV1 {
+    pub entry: u16,
+    pub delta_time_argument: u16,
+    pub position_slots: [u16; 3],
+    pub velocity_slots: [u16; 3],
+    pub intent_slots: [u16; 3],
+    pub grounded_slot: u16,
+    pub gravity_slot: u16,
+    pub move_speed_slot: u16,
+    pub floor_height_slot: u16,
+    pub minimum_x_slot: u16,
+    pub maximum_x_slot: u16,
+    pub minimum_z_slot: u16,
+    pub maximum_z_slot: u16,
+}
+
+/// Refine the checked source-owned tick slice into CPP1. Rust supplies only
+/// generic physical coordinates and scalar primitives; all initial values,
+/// predicates, arithmetic, clamp use, and assignments come from source.
+pub fn lower_canonical_tick_program_v1(
+    program: &mut ExecutableProgramV1,
+    source: &CanonicalTickProgramV1,
+    binding: ExecutableCanonicalTickBindingV1,
+) -> Result<(), ExecutableErrorV1> {
+    if program.rules.iter().any(|rule| rule.entry == binding.entry) {
+        return Err(ExecutableErrorV1::MalformedProgram);
+    }
+    let slots = binding
+        .position_slots
+        .into_iter()
+        .chain(binding.velocity_slots)
+        .chain(binding.intent_slots)
+        .chain([
+            binding.grounded_slot,
+            binding.gravity_slot,
+            binding.move_speed_slot,
+            binding.floor_height_slot,
+            binding.minimum_x_slot,
+            binding.maximum_x_slot,
+            binding.minimum_z_slot,
+            binding.maximum_z_slot,
+        ])
+        .collect::<BTreeSet<_>>();
+    if slots.len() != 17 {
+        return Err(ExecutableErrorV1::MalformedProgram);
+    }
+    let initial = binding
+        .position_slots
+        .into_iter()
+        .zip(source.initial_position)
+        .chain(
+            binding
+                .velocity_slots
+                .into_iter()
+                .zip(source.initial_velocity),
+        )
+        .chain(binding.intent_slots.into_iter().zip(source.initial_intent))
+        .map(|(slot, bits)| (slot, ExecutableValueV1::Number(bits)))
+        .chain([
+            (
+                binding.grounded_slot,
+                ExecutableValueV1::Boolean(source.initial_grounded),
+            ),
+            (
+                binding.gravity_slot,
+                ExecutableValueV1::Number(source.gravity),
+            ),
+            (
+                binding.move_speed_slot,
+                ExecutableValueV1::Number(source.move_speed),
+            ),
+            (
+                binding.floor_height_slot,
+                ExecutableValueV1::Number(source.floor_height),
+            ),
+            (
+                binding.minimum_x_slot,
+                ExecutableValueV1::Number(source.minimum_x),
+            ),
+            (
+                binding.maximum_x_slot,
+                ExecutableValueV1::Number(source.maximum_x),
+            ),
+            (
+                binding.minimum_z_slot,
+                ExecutableValueV1::Number(source.minimum_z),
+            ),
+            (
+                binding.maximum_z_slot,
+                ExecutableValueV1::Number(source.maximum_z),
+            ),
+        ]);
+    for (slot, value) in initial {
+        let Some(target) = program.initial_configuration.get_mut(usize::from(slot)) else {
+            return Err(ExecutableErrorV1::MalformedProgram);
+        };
+        *target = value;
+    }
+
+    let lower_expression =
+        |expression: &CanonicalTickExpressionV1| lower_tick_expression(expression, binding, 0);
+    let mut rules = Vec::with_capacity(source.rules.len());
+    for source_rule in &source.rules {
+        let mut predicates = Vec::with_capacity(source_rule.predicates.len());
+        for predicate in &source_rule.predicates {
+            predicates.push(match predicate {
+                CanonicalTickPredicateV1::EqualBoolean(value, expected) => {
+                    ExecutableExpressionV1::Equal(
+                        Box::new(lower_tick_value(*value, binding)?),
+                        Box::new(ExecutableExpressionV1::Constant(
+                            ExecutableValueV1::Boolean(*expected),
+                        )),
+                    )
+                }
+                CanonicalTickPredicateV1::GreaterThan(left, right) => {
+                    ExecutableExpressionV1::GreaterThan(
+                        Box::new(lower_expression(left)?),
+                        Box::new(lower_expression(right)?),
+                    )
+                }
+                CanonicalTickPredicateV1::LessThanOrEqual(left, right) => {
+                    ExecutableExpressionV1::LessThanOrEqual(
+                        Box::new(lower_expression(left)?),
+                        Box::new(lower_expression(right)?),
+                    )
+                }
+            });
+        }
+        let mut assignments = Vec::with_capacity(source_rule.assignments.len());
+        for assignment in &source_rule.assignments {
+            let slot = match assignment.target {
+                CanonicalTickAssignmentTargetV1::PositionComponent(index) => {
+                    binding.position_slots.get(usize::from(index)).copied()
+                }
+                CanonicalTickAssignmentTargetV1::VelocityComponent(index) => {
+                    binding.velocity_slots.get(usize::from(index)).copied()
+                }
+                CanonicalTickAssignmentTargetV1::Grounded => Some(binding.grounded_slot),
+            }
+            .ok_or(ExecutableErrorV1::MalformedProgram)?;
+            let value = match &assignment.value {
+                CanonicalTickAssignmentValueV1::Number(expression) => lower_expression(expression)?,
+                CanonicalTickAssignmentValueV1::Boolean(value) => {
+                    ExecutableExpressionV1::Constant(ExecutableValueV1::Boolean(*value))
+                }
+            };
+            assignments.push((slot, value));
+        }
+        rules.push(ExecutableRuleV1 {
+            entry: binding.entry,
+            predicates,
+            assignments,
+        });
+    }
+    let insertion = program
+        .rules
+        .iter()
+        .position(|existing| existing.entry > binding.entry)
+        .unwrap_or(program.rules.len());
+    program.rules.splice(insertion..insertion, rules);
+    Ok(())
+}
+
+fn lower_tick_value(
+    value: CanonicalTickValueV1,
+    binding: ExecutableCanonicalTickBindingV1,
+) -> Result<ExecutableExpressionV1, ExecutableErrorV1> {
+    let slot = match value {
+        CanonicalTickValueV1::DeltaTime => {
+            return Ok(ExecutableExpressionV1::Argument(
+                binding.delta_time_argument,
+            ));
+        }
+        CanonicalTickValueV1::PositionComponent(index) => {
+            binding.position_slots.get(usize::from(index)).copied()
+        }
+        CanonicalTickValueV1::VelocityComponent(index) => {
+            binding.velocity_slots.get(usize::from(index)).copied()
+        }
+        CanonicalTickValueV1::IntentComponent(index) => {
+            binding.intent_slots.get(usize::from(index)).copied()
+        }
+        CanonicalTickValueV1::Grounded => Some(binding.grounded_slot),
+        CanonicalTickValueV1::Gravity => Some(binding.gravity_slot),
+        CanonicalTickValueV1::MoveSpeed => Some(binding.move_speed_slot),
+        CanonicalTickValueV1::FloorHeight => Some(binding.floor_height_slot),
+        CanonicalTickValueV1::MinimumX => Some(binding.minimum_x_slot),
+        CanonicalTickValueV1::MaximumX => Some(binding.maximum_x_slot),
+        CanonicalTickValueV1::MinimumZ => Some(binding.minimum_z_slot),
+        CanonicalTickValueV1::MaximumZ => Some(binding.maximum_z_slot),
+    };
+    Ok(ExecutableExpressionV1::Slot(
+        slot.ok_or(ExecutableErrorV1::MalformedProgram)?,
+    ))
+}
+
+fn lower_tick_expression(
+    expression: &CanonicalTickExpressionV1,
+    binding: ExecutableCanonicalTickBindingV1,
+    depth: usize,
+) -> Result<ExecutableExpressionV1, ExecutableErrorV1> {
+    if depth >= MAX_EXPRESSION_DEPTH {
+        return Err(ExecutableErrorV1::MalformedProgram);
+    }
+    let lower_pair = |left: &CanonicalTickExpressionV1, right: &CanonicalTickExpressionV1| {
+        Ok::<_, ExecutableErrorV1>((
+            Box::new(lower_tick_expression(left, binding, depth + 1)?),
+            Box::new(lower_tick_expression(right, binding, depth + 1)?),
+        ))
+    };
+    Ok(match expression {
+        CanonicalTickExpressionV1::Value(value) => lower_tick_value(*value, binding)?,
+        CanonicalTickExpressionV1::Number(bits) => {
+            ExecutableExpressionV1::Constant(ExecutableValueV1::Number(*bits))
+        }
+        CanonicalTickExpressionV1::Add(left, right) => {
+            let (left, right) = lower_pair(left, right)?;
+            ExecutableExpressionV1::Add(left, right)
+        }
+        CanonicalTickExpressionV1::Subtract(left, right) => {
+            let (left, right) = lower_pair(left, right)?;
+            ExecutableExpressionV1::Subtract(left, right)
+        }
+        CanonicalTickExpressionV1::Multiply(left, right) => {
+            let (left, right) = lower_pair(left, right)?;
+            ExecutableExpressionV1::Multiply(left, right)
+        }
+        CanonicalTickExpressionV1::Divide(left, right) => {
+            let (left, right) = lower_pair(left, right)?;
+            ExecutableExpressionV1::Divide(left, right)
+        }
+        CanonicalTickExpressionV1::Clamp(value, lower, upper) => ExecutableExpressionV1::Clamp(
+            Box::new(lower_tick_expression(value, binding, depth + 1)?),
+            Box::new(lower_tick_expression(lower, binding, depth + 1)?),
+            Box::new(lower_tick_expression(upper, binding, depth + 1)?),
+        ),
+    })
+}
+
 /// The exact accepted lowering/refinement contract implemented by the plan.
 /// This prototype recognizes only its closed rule-machine realization.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
