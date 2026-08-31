@@ -356,6 +356,326 @@ pub struct ExecutableProgramV1 {
     pub projection: Option<ExecutableProjectionV1>,
 }
 
+/// Exact checked source-state to physical-coordinate refinement selected by
+/// the generic planner. The semantic state reference remains available for
+/// identity, diagnostics, and projection; `slot` is only physical data.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExecutableCanonicalStateBindingV1 {
+    pub state: CanonicalStateRefV1,
+    pub projection_role: LocalRoleRefV2,
+    pub slot: u16,
+}
+
+/// Exact checked handler to physical-entry refinement selected without host
+/// mechanic names or source traversal ordinals.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExecutableCanonicalHandlerBindingV1 {
+    pub handler: FormationLocalId,
+    pub trigger: CanonicalHandlerTriggerV1,
+    pub argument_count: u16,
+    pub entry: u16,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct ExecutableCanonicalProgramV1 {
+    pub program: ExecutableProgramV1,
+    pub states: Vec<ExecutableCanonicalStateBindingV1>,
+    pub handlers: Vec<ExecutableCanonicalHandlerBindingV1>,
+}
+
+/// Refine the checked construct-blind source IR into one portable scalar
+/// program. Slot and entry ordinals are allocated only after sorting exact
+/// semantic state/handler identities. Source order, mechanic names, and host
+/// callback registries do not participate.
+pub fn lower_canonical_executable_program_v1(
+    scope: TermScope,
+    state_cells: &[CanonicalStateCellV1],
+    handlers: &[CanonicalExecutableHandlerV1],
+    projection_roles: &[LocalRoleRefV2],
+) -> Result<ExecutableCanonicalProgramV1, ExecutableErrorV1> {
+    if state_cells.is_empty()
+        || handlers.is_empty()
+        || state_cells.len() > MAX_PROGRAM_ITEMS
+        || handlers.len() > MAX_PROGRAM_ITEMS
+        || projection_roles.len() < state_cells.len()
+    {
+        return Err(ExecutableErrorV1::MalformedProgram);
+    }
+    let mut ordered_states = state_cells.to_vec();
+    ordered_states.sort_by(|left, right| left.state.cmp(&right.state));
+    if ordered_states
+        .windows(2)
+        .any(|pair| pair[0].state == pair[1].state)
+    {
+        return Err(ExecutableErrorV1::MalformedProgram);
+    }
+    let mut roles = projection_roles.to_vec();
+    roles.sort();
+    roles.dedup();
+    if roles.len() < ordered_states.len() {
+        return Err(ExecutableErrorV1::MalformedProgram);
+    }
+
+    let mut slots = BTreeMap::new();
+    let mut state_bindings = Vec::with_capacity(ordered_states.len());
+    let mut initial_configuration = Vec::with_capacity(ordered_states.len());
+    for (ordinal, (cell, role)) in ordered_states.iter().zip(roles).enumerate() {
+        let slot = u16::try_from(ordinal).map_err(|_| ExecutableErrorV1::ResourceLimit)?;
+        if slots.insert(cell.state.clone(), slot).is_some() {
+            return Err(ExecutableErrorV1::MalformedProgram);
+        }
+        initial_configuration.push(lower_scalar_value(&cell.initial_value)?);
+        state_bindings.push(ExecutableCanonicalStateBindingV1 {
+            state: cell.state.clone(),
+            projection_role: role,
+            slot,
+        });
+    }
+
+    let mut ordered_handlers = handlers.to_vec();
+    ordered_handlers.sort_by_key(|handler| handler.id);
+    if ordered_handlers
+        .windows(2)
+        .any(|pair| pair[0].id == pair[1].id)
+    {
+        return Err(ExecutableErrorV1::MalformedProgram);
+    }
+    let mut rules = Vec::new();
+    let mut handler_bindings = Vec::with_capacity(ordered_handlers.len());
+    for (ordinal, handler) in ordered_handlers.iter().enumerate() {
+        let entry = u16::try_from(ordinal).map_err(|_| ExecutableErrorV1::ResourceLimit)?;
+        handler_bindings.push(ExecutableCanonicalHandlerBindingV1 {
+            handler: handler.id,
+            trigger: handler.trigger,
+            argument_count: handler.argument_count,
+            entry,
+        });
+        for source_rule in &handler.rules {
+            let predicates = source_rule
+                .predicates
+                .iter()
+                .map(|predicate| lower_canonical_predicate(predicate, &slots))
+                .collect::<Result<Vec<_>, _>>()?;
+            let assignments = source_rule
+                .assignments
+                .iter()
+                .map(|assignment| {
+                    Ok((
+                        *slots
+                            .get(&assignment.target)
+                            .ok_or(ExecutableErrorV1::MalformedProgram)?,
+                        lower_canonical_expression(&assignment.value, &slots, 0)?,
+                    ))
+                })
+                .collect::<Result<Vec<_>, ExecutableErrorV1>>()?;
+            rules.push(ExecutableRuleV1 {
+                entry,
+                predicates,
+                assignments,
+            });
+        }
+    }
+    let projection = canonical_source_projection(scope, &ordered_states, &state_bindings)?;
+    let program = ExecutableProgramV1 {
+        initial_configuration,
+        rules,
+        projection: Some(projection),
+    };
+    validate_program(&program)?;
+    Ok(ExecutableCanonicalProgramV1 {
+        program,
+        states: state_bindings,
+        handlers: handler_bindings,
+    })
+}
+
+fn lower_canonical_expression(
+    expression: &CanonicalExecutableExpressionV1,
+    slots: &BTreeMap<CanonicalStateRefV1, u16>,
+    depth: usize,
+) -> Result<ExecutableExpressionV1, ExecutableErrorV1> {
+    if depth >= MAX_EXPRESSION_DEPTH {
+        return Err(ExecutableErrorV1::MalformedProgram);
+    }
+    let pair = |left: &CanonicalExecutableExpressionV1,
+                right: &CanonicalExecutableExpressionV1|
+     -> Result<_, ExecutableErrorV1> {
+        Ok((
+            Box::new(lower_canonical_expression(left, slots, depth + 1)?),
+            Box::new(lower_canonical_expression(right, slots, depth + 1)?),
+        ))
+    };
+    Ok(match expression {
+        CanonicalExecutableExpressionV1::Constant(value) => {
+            ExecutableExpressionV1::Constant(lower_scalar_value(value)?)
+        }
+        CanonicalExecutableExpressionV1::State(state) => ExecutableExpressionV1::Slot(
+            *slots
+                .get(state)
+                .ok_or(ExecutableErrorV1::MalformedProgram)?,
+        ),
+        CanonicalExecutableExpressionV1::Argument(argument) => {
+            ExecutableExpressionV1::Argument(*argument)
+        }
+        CanonicalExecutableExpressionV1::Add(left, right) => {
+            let (left, right) = pair(left, right)?;
+            ExecutableExpressionV1::Add(left, right)
+        }
+        CanonicalExecutableExpressionV1::Subtract(left, right) => {
+            let (left, right) = pair(left, right)?;
+            ExecutableExpressionV1::Subtract(left, right)
+        }
+        CanonicalExecutableExpressionV1::Multiply(left, right) => {
+            let (left, right) = pair(left, right)?;
+            ExecutableExpressionV1::Multiply(left, right)
+        }
+        CanonicalExecutableExpressionV1::Divide(left, right) => {
+            let (left, right) = pair(left, right)?;
+            ExecutableExpressionV1::Divide(left, right)
+        }
+        CanonicalExecutableExpressionV1::Clamp(value, lower, upper) => {
+            ExecutableExpressionV1::Clamp(
+                Box::new(lower_canonical_expression(value, slots, depth + 1)?),
+                Box::new(lower_canonical_expression(lower, slots, depth + 1)?),
+                Box::new(lower_canonical_expression(upper, slots, depth + 1)?),
+            )
+        }
+    })
+}
+
+fn lower_canonical_predicate(
+    predicate: &CanonicalExecutablePredicateV1,
+    slots: &BTreeMap<CanonicalStateRefV1, u16>,
+) -> Result<ExecutableExpressionV1, ExecutableErrorV1> {
+    let pair = |left, right| {
+        Ok::<_, ExecutableErrorV1>((
+            Box::new(lower_canonical_expression(left, slots, 0)?),
+            Box::new(lower_canonical_expression(right, slots, 0)?),
+        ))
+    };
+    Ok(match predicate {
+        CanonicalExecutablePredicateV1::Equal(left, right) => {
+            let (left, right) = pair(left, right)?;
+            ExecutableExpressionV1::Equal(left, right)
+        }
+        CanonicalExecutablePredicateV1::GreaterThan(left, right) => {
+            let (left, right) = pair(left, right)?;
+            ExecutableExpressionV1::GreaterThan(left, right)
+        }
+        CanonicalExecutablePredicateV1::LessThanOrEqual(left, right) => {
+            let (left, right) = pair(left, right)?;
+            ExecutableExpressionV1::LessThanOrEqual(left, right)
+        }
+    })
+}
+
+fn projection_literal(
+    scope: TermScope,
+    kind: &[u8],
+    payload: &[u8],
+) -> Result<Term, ExecutableErrorV1> {
+    Term::atom(
+        scope,
+        kind.to_vec(),
+        payload.to_vec(),
+        EqualityContract::ExactOctetsV1,
+    )
+    .map_err(|_| ExecutableErrorV1::MalformedProgram)
+}
+
+fn projection_object(
+    scope: TermScope,
+    fields: Vec<(Vec<u8>, Term)>,
+) -> Result<Term, ExecutableErrorV1> {
+    let mut rest = projection_literal(scope, b"clause/js-object-end-v1", &[])?;
+    for (field, value) in fields.into_iter().rev() {
+        rest = Term::triple([
+            projection_literal(scope, b"clause/js-field-v1", &field)?,
+            value,
+            rest,
+        ])
+        .map_err(|_| ExecutableErrorV1::MalformedProgram)?;
+    }
+    Ok(rest)
+}
+
+fn canonical_source_projection(
+    scope: TermScope,
+    cells: &[CanonicalStateCellV1],
+    bindings: &[ExecutableCanonicalStateBindingV1],
+) -> Result<ExecutableProjectionV1, ExecutableErrorV1> {
+    let by_state = bindings
+        .iter()
+        .map(|binding| (binding.state.clone(), binding))
+        .collect::<BTreeMap<_, _>>();
+    let mut subjects = BTreeMap::<Vec<u8>, BTreeMap<Vec<u8>, Vec<&CanonicalStateCellV1>>>::new();
+    for cell in cells {
+        subjects
+            .entry(cell.state.subject.clone())
+            .or_default()
+            .entry(cell.state.relation_designation.clone())
+            .or_default()
+            .push(cell);
+    }
+    let mut subject_fields = Vec::with_capacity(subjects.len());
+    for (subject, relations) in subjects {
+        let mut relation_fields = Vec::with_capacity(relations.len());
+        for (relation, mut cells) in relations {
+            cells.sort_by(|left, right| left.state.path.cmp(&right.state.path));
+            let value = if cells.len() == 1 && cells[0].state.path == CanonicalStatePathV1::Scalar {
+                let binding = by_state
+                    .get(&cells[0].state)
+                    .ok_or(ExecutableErrorV1::MalformedProgram)?;
+                executable_projection_role_term_v1(
+                    scope,
+                    binding.projection_role,
+                    lower_scalar_value(&cells[0].initial_value)?.kind(),
+                )?
+            } else {
+                let fields = cells
+                    .into_iter()
+                    .map(|cell| {
+                        let CanonicalStatePathV1::Field { designation, .. } = &cell.state.path
+                        else {
+                            return Err(ExecutableErrorV1::MalformedProgram);
+                        };
+                        let binding = by_state
+                            .get(&cell.state)
+                            .ok_or(ExecutableErrorV1::MalformedProgram)?;
+                        Ok((
+                            designation.clone(),
+                            executable_projection_role_term_v1(
+                                scope,
+                                binding.projection_role,
+                                lower_scalar_value(&cell.initial_value)?.kind(),
+                            )?,
+                        ))
+                    })
+                    .collect::<Result<Vec<_>, ExecutableErrorV1>>()?;
+                projection_object(scope, fields)?
+            };
+            relation_fields.push((relation, value));
+        }
+        subject_fields.push((subject, projection_object(scope, relation_fields)?));
+    }
+    Ok(ExecutableProjectionV1 {
+        bindings: cells
+            .iter()
+            .map(|cell| {
+                let binding = by_state
+                    .get(&cell.state)
+                    .ok_or(ExecutableErrorV1::MalformedProgram)?;
+                Ok(ExecutableProjectionBindingV1 {
+                    role: binding.projection_role,
+                    slot: binding.slot,
+                    value_kind: lower_scalar_value(&cell.initial_value)?.kind(),
+                })
+            })
+            .collect::<Result<Vec<_>, ExecutableErrorV1>>()?,
+        template: projection_object(scope, subject_fields)?,
+    })
+}
+
 /// Physical slot realization for the source-owned X/Z input result. Event
 /// arguments remain ordered by the source handler's declared Vec3 fields;
 /// this record supplies only the target-specific configuration coordinates.

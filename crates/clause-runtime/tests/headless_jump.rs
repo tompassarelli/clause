@@ -2523,8 +2523,8 @@ fn automatic_spring_contact_launches_and_source_only_strength_changes_the_visibl
     let changed_source = std::str::from_utf8(&source)
         .expect("spring source is UTF-8")
         .replacen(
-            "?player launch strength 12.0",
-            "?player launch strength 16.0",
+            "?player velocity Vec3 { x: ?velocity-x, y: 12.0, z: ?velocity-z }",
+            "?player velocity Vec3 { x: ?velocity-x, y: 16.0, z: ?velocity-z }",
             1,
         );
     let (changed_cpp1, changed_projection) =

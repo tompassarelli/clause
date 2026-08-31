@@ -367,6 +367,25 @@ test["expect"](((airborne_frame.player.position.y > 0.0) ? "true" : "false")).to
 (port.disposeSession)(started.value.session);
 return null; }));
 
+const generic_source_test_runtime = require("bun:test");
+const register_generic_source_test = generic_source_test_runtime.test;
+register_generic_source_test("real Wasm executes a generically allocated Clause source plan", () => Promise.all([Bun.file("./generated/wasm/clause_runtime_bg.wasm").arrayBuffer(), Bun.file("./fixtures/wasm-generic-source-v1/generic-source-v1.cwr1.hex").text()]).then((assets) => { const port = wasm["create-wasm-cartridge-port"](initialize_real_session_module(assets[0]), arena_policy());
+const request = wasm["->ExactProcessRequest"](wasm["decode-cwr1-hex"](assets[1]));
+const accepted = ({value: null, watches: {}});
+const started = ({value: null, watches: {}});
+const candidate = ({value: null, watches: {}});
+const admitted = ({value: null, watches: {}});
+(port.acceptPackage)(request, (result) => (() => { const _a = accepted, _v = result; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })());
+(port.startSession)(accepted.value.acceptedPackage, 1, (result) => (() => { const _a = started, _v = result; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })());
+(port.runCandidate)(started.value.session, workbench["->FixedTick"](16), key_configuration(1, 1, "KeyD"), (result) => (() => { const _a = candidate, _v = result; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })());
+test["expect"](json_string(started.value.frame)).toBe("[]");
+(port.requestAdmission)(started.value.session, candidate.value.candidate, (result) => (() => { const _a = admitted, _v = result; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })());
+const frame = wasm["decode-projected-term-frame"](admitted.value.frame);
+const player = frame.player;
+test["expect"](((player.position.x > 0.0) ? "true" : "false")).toBe("true");
+(port.disposeSession)(started.value.session);
+return null; }));
+
 const coherent_test_runtime = require("bun:test");
 const register_coherent_test = coherent_test_runtime.test;
 register_coherent_test("one real Wasm session fails resets completes and launches from Clause source", () => Promise.all([Bun.file("./generated/wasm/clause_runtime_bg.wasm").arrayBuffer(), Bun.file("./fixtures/wasm-coherent-game-v1/coherent-game-v1.cwr1.hex").text()]).then((assets) => { const port = wasm["create-wasm-cartridge-port"](initialize_real_session_module(assets[0]), arena_policy());

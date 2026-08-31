@@ -1,7 +1,7 @@
 use std::time::Instant;
 
 use clause_package::{Term, decode_canonical_term_bytes};
-use clause_runtime::{ExecutableOccurrenceV1, ExecutableValueV1, encode_executable_occurrence_v1};
+use clause_runtime::{ExecutableValueV1, decode_wasm_process_request_v1};
 use clause_workbench::ResidentSourceWorkbenchV1;
 
 const WORLD: &[u8] = include_bytes!(concat!(
@@ -24,6 +24,28 @@ const OBJECTIVE: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../test-vectors/jump-arena/objective.clause"
 ));
+const LEDGER: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../test-vectors/ledger/ledger.clause"
+));
+const SOURCE_ONLY_AUTOMATIC_EXTENSION: &[u8] = br#"
+relation pulse-count
+  reads {objective: Objective} pulse count {value: F64}
+  subject objective
+  mode given objective yields value: one
+
+game-objective pulse count 0.0
+
+on count-pulse ?objective
+  when
+    ?objective pulse count ?count
+    player-1 position Vec3 { x: ?player-x, y: ?player-y, z: ?player-z }
+    ?player-y = 0.0
+  withdraw
+    ?objective pulse count ?count
+  include
+    ?objective pulse count ?count + 1.0
+"#;
 
 fn coherent_source(objective: &[u8]) -> Vec<u8> {
     let mut source = Vec::with_capacity(
@@ -38,23 +60,58 @@ fn coherent_source(objective: &[u8]) -> Vec<u8> {
     source
 }
 
-fn occurrence(entry: u16, arguments: &[f64]) -> Vec<u8> {
-    encode_executable_occurrence_v1(&ExecutableOccurrenceV1 {
-        entry,
-        arguments: arguments
-            .iter()
-            .copied()
-            .map(|value| ExecutableValueV1::number(value).expect("finite test number"))
-            .collect(),
-    })
-    .expect("resident occurrence encodes")
+fn coherent_source_with_automatic_extension() -> Vec<u8> {
+    let mut source = coherent_source(OBJECTIVE);
+    source.extend_from_slice(SOURCE_ONLY_AUTOMATIC_EXTENSION);
+    source
 }
 
-fn tick_chain(mut prefix: Vec<Vec<u8>>) -> Vec<Vec<u8>> {
-    prefix.push(occurrence(2, &[0.016]));
-    for entry in [3, 4, 5, 6, 7, 9] {
-        prefix.push(occurrence(entry, &[]));
+fn arguments(values: &[f64]) -> Vec<ExecutableValueV1> {
+    values
+        .iter()
+        .copied()
+        .map(|value| ExecutableValueV1::number(value).expect("finite test number"))
+        .collect()
+}
+
+fn decode_hex(source: &str) -> Vec<u8> {
+    let digits = source
+        .bytes()
+        .filter(|byte| !byte.is_ascii_whitespace())
+        .collect::<Vec<_>>();
+    assert_eq!(digits.len() % 2, 0, "fixture hex is complete");
+    digits
+        .chunks_exact(2)
+        .map(|pair| {
+            let digit = |value: u8| match value {
+                b'0'..=b'9' => value - b'0',
+                b'a'..=b'f' => value - b'a' + 10,
+                _ => panic!("fixture hex is lowercase"),
+            };
+            (digit(pair[0]) << 4) | digit(pair[1])
+        })
+        .collect()
+}
+
+fn lowercase_hex_lines(bytes: &[u8]) -> String {
+    const DIGITS: &[u8; 16] = b"0123456789abcdef";
+    let mut text = String::with_capacity(bytes.len() * 2 + bytes.len() / 64 + 1);
+    for line in bytes.chunks(64) {
+        for byte in line {
+            text.push(char::from(DIGITS[usize::from(byte >> 4)]));
+            text.push(char::from(DIGITS[usize::from(byte & 0x0f)]));
+        }
+        text.push('\n');
     }
+    text
+}
+
+fn tick_chain(workbench: &ResidentSourceWorkbenchV1, mut prefix: Vec<Vec<u8>>) -> Vec<Vec<u8>> {
+    prefix.extend(
+        workbench
+            .fixed_tick_occurrences(0.016)
+            .expect("checked source owns the exact tick chain"),
+    );
     prefix
 }
 
@@ -82,11 +139,52 @@ fn projected_symbol(term: &Term) -> &[u8] {
     atom.canonical_payload()
 }
 
+fn projected_number(term: &Term) -> f64 {
+    let atom = term.as_atom().expect("projected number is an Atom");
+    assert_eq!(atom.kind(), b"clause/process-projected-f64-v1");
+    f64::from_bits(u64::from_le_bytes(
+        atom.canonical_payload()
+            .try_into()
+            .expect("projected F64 is exact"),
+    ))
+}
+
+fn projected_boolean(term: &Term) -> bool {
+    let atom = term.as_atom().expect("projected Boolean is an Atom");
+    assert_eq!(atom.kind(), b"clause/process-projected-bool-v1");
+    match atom.canonical_payload() {
+        [0] => false,
+        [1] => true,
+        _ => panic!("projected Boolean payload is canonical"),
+    }
+}
+
 fn objective_state(exact_term_bytes: &[u8]) -> Vec<u8> {
     let term = decode_canonical_term_bytes(exact_term_bytes).expect("projection term decodes");
-    let world = projected_object_field(&term, b"world");
-    let objective = projected_object_field(world, b"objective");
-    projected_symbol(projected_object_field(objective, b"state")).to_vec()
+    let objective = projected_object_field(&term, b"game-objective");
+    projected_symbol(projected_object_field(objective, b"objective-state")).to_vec()
+}
+
+fn player_launch_state(exact_term_bytes: &[u8]) -> (f64, bool) {
+    let term = decode_canonical_term_bytes(exact_term_bytes).expect("projection term decodes");
+    let player = projected_object_field(&term, b"player-1");
+    let velocity = projected_object_field(player, b"velocity");
+    (
+        projected_number(projected_object_field(velocity, b"y")),
+        projected_boolean(projected_object_field(player, b"grounded")),
+    )
+}
+
+fn ledger_balance(exact_term_bytes: &[u8]) -> f64 {
+    let term = decode_canonical_term_bytes(exact_term_bytes).expect("projection term decodes");
+    let account = projected_object_field(&term, b"operating-account");
+    projected_number(projected_object_field(account, b"balance"))
+}
+
+fn pulse_count(exact_term_bytes: &[u8]) -> f64 {
+    let term = decode_canonical_term_bytes(exact_term_bytes).expect("projection term decodes");
+    let objective = projected_object_field(&term, b"game-objective");
+    projected_number(projected_object_field(objective, b"pulse-count"))
 }
 
 #[test]
@@ -150,7 +248,10 @@ fn coherent_source_fails_resets_completes_and_hot_reloads_in_one_workbench() {
         ResidentSourceWorkbenchV1::open(&source).expect("coherent source opens resident workbench");
     let base_generation = workbench.generation().clone();
 
-    let failure = tick_chain(vec![occurrence(0, &[0.0, -1.0])]);
+    let failure_input = workbench
+        .handler_occurrence(b"input", &arguments(&[0.0, -1.0]))
+        .expect("checked input handler accepts southward intent");
+    let failure = tick_chain(&workbench, vec![failure_input]);
     let failed_candidate = workbench
         .run_occurrences_to_candidate(&failure)
         .expect("hazard produces one hidden candidate");
@@ -164,7 +265,13 @@ fn coherent_source_fails_resets_completes_and_hot_reloads_in_one_workbench() {
         b"failed"
     );
 
-    let reset = tick_chain(vec![occurrence(0, &[0.0, 1.0]), occurrence(8, &[])]);
+    let north = workbench
+        .handler_occurrence(b"input", &arguments(&[0.0, 1.0]))
+        .expect("checked input handler accepts northward intent");
+    let reset_handler = workbench
+        .handler_occurrence(b"reset-objective", &[])
+        .expect("checked reset handler accepts its external occurrence");
+    let reset = tick_chain(&workbench, vec![north, reset_handler]);
     let reset_candidate = workbench
         .run_occurrences_to_candidate(&reset)
         .expect("reset produces one hidden candidate");
@@ -182,7 +289,10 @@ fn coherent_source_fails_resets_completes_and_hot_reloads_in_one_workbench() {
         b"playing"
     );
 
-    let completion = tick_chain(vec![occurrence(0, &[1.0, 0.0])]);
+    let east = workbench
+        .handler_occurrence(b"input", &arguments(&[1.0, 0.0]))
+        .expect("checked input handler accepts eastward intent");
+    let completion = tick_chain(&workbench, vec![east]);
     workbench
         .run_occurrences_to_candidate(&completion)
         .expect("movement and collection produce hidden completion");
@@ -197,6 +307,26 @@ fn coherent_source_fails_resets_completes_and_hot_reloads_in_one_workbench() {
     assert_eq!(
         objective_state(&completed.projection.exact_term_bytes),
         b"completed"
+    );
+
+    let spring_input = workbench
+        .handler_occurrence(b"input", &arguments(&[1.0, 0.0]))
+        .expect("checked input handler advances onto the spring");
+    let launch = tick_chain(&workbench, vec![spring_input]);
+    workbench
+        .run_occurrences_to_candidate(&launch)
+        .expect("source-owned spring transition remains hidden");
+    assert_eq!(
+        player_launch_state(&workbench.last_projection().unwrap().exact_term_bytes),
+        (0.0, true),
+        "spring velocity and airborne state remain invisible before Admission"
+    );
+    let launched = workbench
+        .admit()
+        .expect("separate Admission exposes the source-owned spring transition");
+    assert_eq!(
+        player_launch_state(&launched.projection.exact_term_bytes),
+        (12.0, false)
     );
 
     let changed_objective = std::str::from_utf8(OBJECTIVE)
@@ -228,4 +358,86 @@ fn coherent_source_fails_resets_completes_and_hot_reloads_in_one_workbench() {
         b"playing",
         "the edited completion threshold defers the objective by one tick"
     );
+}
+
+#[test]
+fn ledger_uses_the_same_checked_resident_binding_path() {
+    let mut workbench =
+        ResidentSourceWorkbenchV1::open(LEDGER).expect("ledger opens in the generic workbench");
+    workbench
+        .run_to_candidate()
+        .expect("source-owned deposit produces one hidden candidate");
+    assert!(workbench.last_projection().is_none());
+    let deposited = workbench
+        .admit()
+        .expect("separate Admission exposes the deposited balance");
+    assert_eq!(
+        ledger_balance(&deposited.projection.exact_term_bytes),
+        125.0
+    );
+
+    let changed = std::str::from_utf8(LEDGER)
+        .expect("ledger source is UTF-8")
+        .replacen(
+            "?account balance ?balance + 25.0",
+            "?account balance ?balance + 40.0",
+            1,
+        );
+    workbench
+        .hot_reload(changed.as_bytes())
+        .expect("Clause-only deposit edit hot reloads without a Rust binding change");
+    workbench
+        .run_to_candidate()
+        .expect("edited deposit produces one hidden candidate");
+    let changed = workbench
+        .admit()
+        .expect("separate Admission exposes the edited balance");
+    assert_eq!(ledger_balance(&changed.projection.exact_term_bytes), 140.0);
+}
+
+#[test]
+fn source_only_state_and_automatic_handler_need_no_host_binding_edit() {
+    let source = coherent_source_with_automatic_extension();
+    let mut workbench = ResidentSourceWorkbenchV1::open(&source)
+        .expect("source-only state and automatic handler allocate generically");
+    workbench
+        .run_to_candidate()
+        .expect("the new automatic handler participates in the checked tick chain");
+    assert!(workbench.last_projection().is_none());
+    let admitted = workbench
+        .admit()
+        .expect("separate Admission exposes the source-only state");
+    assert_eq!(pulse_count(&admitted.projection.exact_term_bytes), 1.0);
+}
+
+#[test]
+fn tracked_browser_carrier_uses_the_generic_source_plan() {
+    let source = std::str::from_utf8(WORLD)
+        .expect("world source is UTF-8")
+        .replace("player-1", "player");
+    let workbench = ResidentSourceWorkbenchV1::open(source.as_bytes())
+        .expect("browser fixture compiles through generic source bindings");
+    let current = decode_wasm_process_request_v1(&workbench.generation().cwr1)
+        .expect("generated generic CWR1 decodes");
+    let fixture_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../browser/jump-arena-shell/fixtures/wasm-generic-source-v1");
+    let fixture_path = fixture_root.join("generic-source-v1.cwr1.hex");
+    if std::env::var_os("CLAUSE_UPDATE_BROWSER_GENERIC_SOURCE_CWR1").is_some() {
+        std::fs::create_dir_all(&fixture_root).expect("generic browser fixture directory exists");
+        std::fs::write(
+            &fixture_path,
+            lowercase_hex_lines(&workbench.generation().cwr1),
+        )
+        .expect("generic browser fixture updates");
+    }
+    let tracked = std::fs::read_to_string(&fixture_path)
+        .expect("tracked generic browser CWR1 fixture exists");
+    let tracked = decode_wasm_process_request_v1(&decode_hex(&tracked))
+        .expect("tracked generic browser CWR1 decodes");
+    assert_eq!(tracked.package_bytes, current.package_bytes);
+    assert_eq!(tracked.application, current.application);
+    assert_eq!(tracked.physical_plan_bytes, current.physical_plan_bytes);
+    assert_eq!(tracked.authority, current.authority);
+    assert_eq!(tracked.occurrences, current.occurrences);
+    assert_eq!(tracked.render_slots, current.render_slots);
 }

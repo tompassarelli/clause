@@ -1,32 +1,27 @@
+use std::collections::BTreeMap;
 use std::error::Error;
 use std::fmt;
 
 use clause_package::{
-    CandidateDeltaId, CanonicalSourceContextV1, ProcessPackageId, ProgramChangeOccurrenceId,
-    StateRevisionId, TermScope, check_process_package, decode_process_package,
-    elaborate_canonical_source_package_v1, plan_independent_canonical_source_allocations_v1,
-    read_canonical_source_v1,
+    CandidateDeltaId, CanonicalHandlerTriggerV1, CanonicalSourceContextV1, ProcessPackageId,
+    ProgramChangeOccurrenceId, StateRevisionId, TermScope, check_process_package,
+    decode_process_package, elaborate_canonical_source_package_v1,
+    plan_independent_canonical_source_allocations_v1, read_canonical_source_v1,
 };
 use clause_runtime::{
-    ExecutableCanonicalInputBindingV1, ExecutableCanonicalJumpBindingV1,
-    ExecutableCanonicalScalarBindingV1, ExecutableCanonicalScalarParameterBindingV1,
-    ExecutableCanonicalTickBindingV1, ExecutableOccurrenceV1, WASM_SESSION_EVENT_LIMIT_V1,
-    WasmPersistentSessionBoundaryV1, WasmProcessRequestV1, WasmProcessStatusV1,
-    WasmSessionAdmissionScopeV1, WasmSessionAdmissionV1, WasmSessionAllocationV1,
-    WasmSessionCommandV1, WasmSessionEventKindV1, WasmSessionHandleV1, WasmSessionLimitsV1,
-    WasmSessionOpenV1, WasmSessionOperationV1, WasmSessionProjectionV1,
+    ExecutableCanonicalHandlerBindingV1, ExecutableInputBindingV1, ExecutableInputPlanV1,
+    ExecutableOccurrenceV1, ExecutableTickBindingV1, ExecutableValueV1,
+    WASM_SESSION_EVENT_LIMIT_V1, WasmPersistentSessionBoundaryV1, WasmProcessRequestV1,
+    WasmProcessStatusV1, WasmSessionAdmissionScopeV1, WasmSessionAdmissionV1,
+    WasmSessionAllocationV1, WasmSessionCommandV1, WasmSessionEventKindV1, WasmSessionHandleV1,
+    WasmSessionLimitsV1, WasmSessionOpenV1, WasmSessionOperationV1, WasmSessionProjectionV1,
     decode_executable_occurrence_v1, decode_executable_physical_plan_v1,
     decode_wasm_process_request_v1, encode_executable_occurrence_v1,
     encode_executable_physical_plan_v1, encode_wasm_process_request_v1,
-    encode_wasm_session_command_v1, encode_wasm_session_open_v1, lower_canonical_input_handler_v1,
-    lower_canonical_jump_handler_v1, lower_canonical_scalar_handler_v1,
-    lower_canonical_tick_program_v1,
+    encode_wasm_session_command_v1, encode_wasm_session_open_v1,
+    lower_canonical_executable_program_v1,
 };
 
-const BASE_TEMPLATE_CWR1_HEX: &str = include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../../browser/jump-arena-shell/fixtures/wasm-jump-v1/jump-v1.cwr1.hex"
-));
 const COHERENT_TEMPLATE_CWR1_HEX: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../browser/jump-arena-shell/fixtures/wasm-coherent-game-v1/coherent-game-v1.cwr1.hex"
@@ -83,7 +78,6 @@ pub struct ResidentSourceAdmissionV1 {
 pub struct ResidentSourceWorkbenchV1 {
     boundary: WasmPersistentSessionBoundaryV1,
     template: WasmProcessRequestV1,
-    base_template: WasmProcessRequestV1,
     coherent_template: WasmProcessRequestV1,
     generation: ResidentSourceGenerationV1,
     package: ProcessPackageId,
@@ -93,14 +87,14 @@ pub struct ResidentSourceWorkbenchV1 {
     last_projection: Option<WasmSessionProjectionV1>,
     next_change: u64,
     default_occurrences: Vec<Vec<u8>>,
+    handlers: BTreeMap<Vec<u8>, Vec<ExecutableCanonicalHandlerBindingV1>>,
 }
 
 impl ResidentSourceWorkbenchV1 {
     pub fn open(exact_source: &[u8]) -> Result<Self, ResidentSourceWorkbenchErrorV1> {
-        let base_template = decode_wasm_process_request_v1(&decode_hex(BASE_TEMPLATE_CWR1_HEX)?)?;
         let coherent_template =
             decode_wasm_process_request_v1(&decode_hex(COHERENT_TEMPLATE_CWR1_HEX)?)?;
-        let template = base_template.clone();
+        let template = coherent_template.clone();
         let mut workbench = Self {
             boundary: WasmPersistentSessionBoundaryV1::new(),
             generation: ResidentSourceGenerationV1 {
@@ -115,13 +109,13 @@ impl ResidentSourceWorkbenchV1 {
             package: ProcessPackageId::from_bytes([0; clause_package::IDENTITY_BYTES]),
             session: template.authority.session,
             template,
-            base_template,
             coherent_template,
             sequence: 0,
             pending: None,
             last_projection: None,
             next_change: 0,
             default_occurrences: Vec::new(),
+            handlers: BTreeMap::new(),
         };
         workbench.install_source(exact_source)?;
         Ok(workbench)
@@ -140,6 +134,83 @@ impl ResidentSourceWorkbenchV1 {
     #[must_use]
     pub fn last_projection(&self) -> Option<&WasmSessionProjectionV1> {
         self.last_projection.as_ref()
+    }
+
+    /// Encode one exact externally triggered handler occurrence by its
+    /// checked source designation. The designation selects a source handler;
+    /// it never selects a Rust semantic implementation.
+    pub fn handler_occurrence(
+        &self,
+        designation: &[u8],
+        arguments: &[ExecutableValueV1],
+    ) -> Result<Vec<u8>, ResidentSourceWorkbenchErrorV1> {
+        let matching = self
+            .handlers
+            .get(designation)
+            .into_iter()
+            .flatten()
+            .filter(|binding| binding.trigger == CanonicalHandlerTriggerV1::External)
+            .collect::<Vec<_>>();
+        let [binding] = matching.as_slice() else {
+            return Err(ResidentSourceWorkbenchErrorV1(format!(
+                "source handler designation is missing or ambiguous: {}",
+                String::from_utf8_lossy(designation)
+            )));
+        };
+        if usize::from(binding.argument_count) != arguments.len() {
+            return Err(ResidentSourceWorkbenchErrorV1(format!(
+                "source handler {} requires {} arguments, received {}",
+                String::from_utf8_lossy(designation),
+                binding.argument_count,
+                arguments.len()
+            )));
+        }
+        encode_executable_occurrence_v1(&ExecutableOccurrenceV1 {
+            entry: binding.entry,
+            arguments: arguments.to_vec(),
+        })
+        .map_err(|error| boxed_error("source handler occurrence encode", error))
+    }
+
+    /// Encode the exact checked fixed-tick chain. Source `on tick` roots
+    /// precede automatic reactions; identities break ties within each class.
+    pub fn fixed_tick_occurrences(
+        &self,
+        delta_seconds: f64,
+    ) -> Result<Vec<Vec<u8>>, ResidentSourceWorkbenchErrorV1> {
+        let delta = ExecutableValueV1::number(delta_seconds)
+            .map_err(|error| boxed_error("fixed tick value", error))?;
+        let mut bindings = self
+            .handlers
+            .values()
+            .flatten()
+            .filter(|binding| {
+                matches!(
+                    binding.trigger,
+                    CanonicalHandlerTriggerV1::FixedTickRoot | CanonicalHandlerTriggerV1::FixedTick
+                )
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        bindings.sort_by_key(|binding| {
+            (
+                u8::from(binding.trigger == CanonicalHandlerTriggerV1::FixedTick),
+                binding.handler,
+            )
+        });
+        bindings
+            .into_iter()
+            .map(|binding| {
+                encode_executable_occurrence_v1(&ExecutableOccurrenceV1 {
+                    entry: binding.entry,
+                    arguments: (binding.argument_count == 1)
+                        .then_some(delta)
+                        .into_iter()
+                        .collect(),
+                })
+                .map_err(|error| boxed_error("fixed tick occurrence encode", error))
+            })
+            .collect()
     }
 
     /// Compile and atomically install a fresh generation in this same
@@ -297,142 +368,122 @@ impl ResidentSourceWorkbenchV1 {
             &allocation_plan,
         )
         .map_err(|error| debug_error("canonical source elaboration", error))?;
-        self.template = match compiled.scalar_handlers.len() {
-            0 => self.base_template.clone(),
-            7 => self.coherent_template.clone(),
-            count => {
-                return Err(ResidentSourceWorkbenchErrorV1(format!(
-                    "resident physical profile does not bind {count} scalar handlers"
-                )));
-            }
-        };
+        self.template = self.coherent_template.clone();
         let decoded = decode_process_package(&self.template.package_bytes)
             .map_err(|error| boxed_error("selected template package decode", error))?;
-        let _package = check_process_package(decoded)
+        let selected_package = check_process_package(decoded)
             .map_err(|error| boxed_error("selected template package check", error))?;
         let mut physical_plan =
             decode_executable_physical_plan_v1(&self.template.physical_plan_bytes)
                 .map_err(|error| boxed_error("CPP1 template decode", error))?;
-        physical_plan.program.rules.clear();
-        let input = compiled.input_handler.as_ref().ok_or_else(|| {
-            ResidentSourceWorkbenchErrorV1("canonical source has no input handler".into())
-        })?;
-        let jump = compiled.jump_handler.as_ref().ok_or_else(|| {
-            ResidentSourceWorkbenchErrorV1("canonical source has no jump handler".into())
-        })?;
-        let tick = compiled.tick_program.as_ref().ok_or_else(|| {
-            ResidentSourceWorkbenchErrorV1("canonical source has no tick program".into())
-        })?;
-        lower_canonical_input_handler_v1(
-            &mut physical_plan.program,
-            input,
-            ExecutableCanonicalInputBindingV1 {
-                entry: 0,
-                x_slot: 4,
-                z_slot: 21,
-            },
+        let projection_roles = selected_package
+            .constitution()
+            .preimage()
+            .schemas
+            .iter()
+            .flat_map(|schema| {
+                schema
+                    .roles
+                    .iter()
+                    .map(|role| clause_package::LocalRoleRefV2 {
+                        schema: schema.id,
+                        role: role.id,
+                    })
+            })
+            .collect::<Vec<_>>();
+        let template_input = physical_plan.input.clone();
+        let lowered = lower_canonical_executable_program_v1(
+            scope,
+            &compiled.state_cells,
+            &compiled.executable_handlers,
+            &projection_roles,
         )
-        .map_err(|error| boxed_error("canonical input lowering", error))?;
-        lower_canonical_jump_handler_v1(
-            &mut physical_plan.program,
-            jump,
-            ExecutableCanonicalJumpBindingV1 {
-                entry: 1,
-                velocity_slots: [2, 3, 13],
-                grounded_slot: 5,
-                jump_speed_slot: 7,
-            },
-        )
-        .map_err(|error| boxed_error("canonical jump lowering", error))?;
-        lower_canonical_tick_program_v1(
-            &mut physical_plan.program,
-            tick,
-            ExecutableCanonicalTickBindingV1 {
-                entry: 2,
-                delta_time_argument: 0,
-                position_slots: [0, 1, 12],
-                velocity_slots: [2, 3, 13],
-                intent_slots: [4, 22, 21],
-                grounded_slot: 5,
-                gravity_slot: 6,
-                move_speed_slot: 8,
-                floor_height_slot: 9,
-                minimum_x_slot: 10,
-                maximum_x_slot: 11,
-                minimum_z_slot: 23,
-                maximum_z_slot: 24,
-            },
-        )
-        .map_err(|error| boxed_error("canonical tick lowering", error))?;
-        for (index, handler) in compiled.scalar_handlers.iter().enumerate() {
-            let (entry, state_slot, parameter_slots): (u16, u16, &[u16]) = match index {
-                0 => (3, 28, &[0, 12]),
-                1 => (4, 3, &[0, 12]),
-                2 => (5, 5, &[0, 12]),
-                3 => (6, 29, &[0, 12]),
-                4 => (7, 29, &[0, 12]),
-                5 => (8, 29, &[]),
-                6 => (9, 29, &[0, 12]),
-                _ => unreachable!("resident scalar profile was checked above"),
-            };
-            if handler.parameters.len() != parameter_slots.len() {
-                return Err(ResidentSourceWorkbenchErrorV1(format!(
-                    "resident scalar handler {index} has {} parameters; profile requires {}",
-                    handler.parameters.len(),
-                    parameter_slots.len()
-                )));
-            }
-            lower_canonical_scalar_handler_v1(
-                &mut physical_plan.program,
-                handler,
-                ExecutableCanonicalScalarBindingV1 {
-                    entry,
-                    state_slot,
-                    parameters: handler
-                        .parameters
-                        .iter()
-                        .zip(parameter_slots.iter().copied())
-                        .map(
-                            |(parameter, slot)| ExecutableCanonicalScalarParameterBindingV1 {
-                                parameter: parameter.clone(),
-                                slot,
-                            },
-                        )
-                        .collect(),
-                },
-            )
-            .map_err(|error| boxed_error("canonical scalar lowering", error))?;
+        .map_err(|error| boxed_error("generic canonical lowering", error))?;
+        let semantic_handlers = compiled
+            .executable_handlers
+            .iter()
+            .map(|handler| (handler.id, handler))
+            .collect::<BTreeMap<_, _>>();
+        self.handlers.clear();
+        for binding in &lowered.handlers {
+            let source = semantic_handlers.get(&binding.handler).ok_or_else(|| {
+                ResidentSourceWorkbenchErrorV1(
+                    "generic lowering returned an unknown handler identity".into(),
+                )
+            })?;
+            self.handlers
+                .entry(source.designation.clone())
+                .or_default()
+                .push(binding.clone());
         }
-        let template_input = self.template.occurrences.first().cloned().ok_or_else(|| {
-            ResidentSourceWorkbenchErrorV1("CWR1 template has no input occurrence".into())
-        })?;
+        physical_plan.program = lowered.program;
+
+        let has_tick = lowered.handlers.iter().any(|binding| {
+            matches!(
+                binding.trigger,
+                CanonicalHandlerTriggerV1::FixedTickRoot | CanonicalHandlerTriggerV1::FixedTick
+            )
+        });
         let template_tick = self.template.occurrences.last().ok_or_else(|| {
             ResidentSourceWorkbenchErrorV1("CWR1 template has no tick occurrence".into())
         })?;
         let template_tick = decode_executable_occurrence_v1(template_tick)
             .map_err(|error| boxed_error("template tick decode", error))?;
-        let tick_entries = physical_plan
-            .input
-            .as_ref()
-            .ok_or_else(|| {
-                ResidentSourceWorkbenchErrorV1("CPP1 template has no input plan".into())
-            })?
-            .tick
-            .entries
-            .clone();
-        let mut default_occurrences = Vec::with_capacity(tick_entries.len() + 1);
-        default_occurrences.push(template_input);
-        for (ordinal, entry) in tick_entries.into_iter().enumerate() {
+        let mut default_occurrences = Vec::new();
+        if has_tick {
+            let template_input = template_input.ok_or_else(|| {
+                ResidentSourceWorkbenchErrorV1("CPP1 template has no physical input plan".into())
+            })?;
+            let events = bind_physical_events(
+                &template_input.events,
+                &lowered.handlers,
+                &semantic_handlers,
+            )?;
+            if let Some(input) = events
+                .iter()
+                .find(|event| !event.occurrence.arguments.is_empty())
+            {
+                default_occurrences.push(
+                    encode_executable_occurrence_v1(&input.occurrence)
+                        .map_err(|error| boxed_error("default input occurrence encode", error))?,
+                );
+            }
+            let tick_entries = ordered_tick_bindings(&lowered.handlers);
+            for binding in &tick_entries {
+                default_occurrences.push(
+                    encode_executable_occurrence_v1(&ExecutableOccurrenceV1 {
+                        entry: binding.entry,
+                        arguments: (binding.argument_count == 1)
+                            .then(|| template_tick.arguments.clone())
+                            .unwrap_or_default(),
+                    })
+                    .map_err(|error| boxed_error("resident tick occurrence encode", error))?,
+                );
+            }
+            physical_plan.input = Some(ExecutableInputPlanV1 {
+                events,
+                tick: ExecutableTickBindingV1 {
+                    role: template_input.tick.role,
+                    entries: tick_entries.iter().map(|binding| binding.entry).collect(),
+                },
+            });
+        } else {
+            physical_plan.input = None;
+            let external = lowered
+                .handlers
+                .iter()
+                .find(|binding| binding.trigger == CanonicalHandlerTriggerV1::External)
+                .ok_or_else(|| {
+                    ResidentSourceWorkbenchErrorV1(
+                        "canonical source has no executable external handler".into(),
+                    )
+                })?;
             default_occurrences.push(
                 encode_executable_occurrence_v1(&ExecutableOccurrenceV1 {
-                    entry,
-                    arguments: if ordinal == 0 {
-                        template_tick.arguments.clone()
-                    } else {
-                        Vec::new()
-                    },
+                    entry: external.entry,
+                    arguments: Vec::new(),
                 })
-                .map_err(|error| boxed_error("resident occurrence encode", error))?,
+                .map_err(|error| boxed_error("default external occurrence encode", error))?,
             );
         }
         self.default_occurrences = default_occurrences;
@@ -495,6 +546,91 @@ impl ResidentSourceWorkbenchV1 {
         self.sequence = event.accepted_sequence;
         Ok(event.kind)
     }
+}
+
+fn ordered_tick_bindings(
+    handlers: &[ExecutableCanonicalHandlerBindingV1],
+) -> Vec<ExecutableCanonicalHandlerBindingV1> {
+    let mut tick = handlers
+        .iter()
+        .filter(|binding| {
+            matches!(
+                binding.trigger,
+                CanonicalHandlerTriggerV1::FixedTickRoot | CanonicalHandlerTriggerV1::FixedTick
+            )
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    tick.sort_by_key(|binding| {
+        (
+            u8::from(binding.trigger == CanonicalHandlerTriggerV1::FixedTick),
+            binding.handler,
+        )
+    });
+    tick
+}
+
+fn bind_physical_events(
+    template: &[ExecutableInputBindingV1],
+    bindings: &[ExecutableCanonicalHandlerBindingV1],
+    semantic: &BTreeMap<
+        clause_package::FormationLocalId,
+        &clause_package::CanonicalExecutableHandlerV1,
+    >,
+) -> Result<Vec<ExecutableInputBindingV1>, ResidentSourceWorkbenchErrorV1> {
+    let mut groups = BTreeMap::<u16, Vec<ExecutableInputBindingV1>>::new();
+    for event in template {
+        groups
+            .entry(event.occurrence.entry)
+            .or_default()
+            .push(event.clone());
+    }
+    let mut groups = groups.into_iter().collect::<Vec<_>>();
+    let mut external = bindings
+        .iter()
+        .filter(|binding| binding.trigger == CanonicalHandlerTriggerV1::External)
+        .map(|binding| {
+            let source = semantic.get(&binding.handler).ok_or_else(|| {
+                ResidentSourceWorkbenchErrorV1(
+                    "physical input binding names an unknown source handler".into(),
+                )
+            })?;
+            Ok((binding, source.designation.as_slice()))
+        })
+        .collect::<Result<Vec<_>, ResidentSourceWorkbenchErrorV1>>()?;
+    external.sort_by(|(left, left_name), (right, right_name)| {
+        (left.argument_count, *left_name, left.handler).cmp(&(
+            right.argument_count,
+            *right_name,
+            right.handler,
+        ))
+    });
+    let mut events = Vec::new();
+    for (binding, _) in external {
+        let Some(group_index) = groups.iter().position(|(_, events)| {
+            events.first().is_some_and(|event| {
+                event.occurrence.arguments.len() == usize::from(binding.argument_count)
+            }) && events.iter().all(|event| {
+                event.occurrence.arguments.len() == usize::from(binding.argument_count)
+            })
+        }) else {
+            return Err(ResidentSourceWorkbenchErrorV1(format!(
+                "physical adapter has no {}-argument source-handler ingress",
+                binding.argument_count
+            )));
+        };
+        let (_, group) = groups.remove(group_index);
+        events.extend(group.into_iter().map(|mut event| {
+            event.occurrence.entry = binding.entry;
+            event
+        }));
+    }
+    if events.is_empty() {
+        return Err(ResidentSourceWorkbenchErrorV1(
+            "physical adapter produced no source-handler ingress".into(),
+        ));
+    }
+    Ok(events)
 }
 
 fn decode_hex(source: &str) -> Result<Vec<u8>, ResidentSourceWorkbenchErrorV1> {

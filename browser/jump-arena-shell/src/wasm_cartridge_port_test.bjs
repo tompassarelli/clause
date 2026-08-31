@@ -623,6 +623,47 @@
           ((.-disposeSession port) (.-session @started))
           nil))))))
 
+(let [generic-source-test-runtime Any (require "bun:test")
+      register-generic-source-test Any (.-test generic-source-test-runtime)]
+  (register-generic-source-test
+   "real Wasm executes a generically allocated Clause source plan"
+   (fn [] Any
+     (.then
+      (.all Promise [(.arrayBuffer (.file Bun "./generated/wasm/clause_runtime_bg.wasm"))
+                     (.text (.file Bun
+                                   "./fixtures/wasm-generic-source-v1/generic-source-v1.cwr1.hex"))])
+      (fn [assets Any] Any
+        (let [port workbench/CartridgePort (wasm/create-wasm-cartridge-port
+               (initialize-real-session-module (nth assets 0))
+               (arena-policy))
+              request wasm/ExactProcessRequest (wasm/->ExactProcessRequest
+               (wasm/decode-cwr1-hex (nth assets 1)))
+              accepted Any (atom nil)
+              started Any (atom nil)
+              candidate Any (atom nil)
+              admitted Any (atom nil)]
+          ((.-acceptPackage port) request
+           (fn [result Any] Any (reset! accepted result)))
+          ((.-startSession port) (.-acceptedPackage @accepted) 1
+           (fn [result Any] Any (reset! started result)))
+          ((.-runCandidate port)
+           (.-session @started)
+           (workbench/->FixedTick 16)
+           (key-configuration 1 1 "KeyD")
+           (fn [result Any] Any (reset! candidate result)))
+          (.toBe (test/expect (json-string (.-frame @started))) "[]")
+          ((.-requestAdmission port)
+           (.-session @started)
+           (.-candidate @candidate)
+           (fn [result Any] Any (reset! admitted result)))
+          (let [frame Any (wasm/decode-projected-term-frame (.-frame @admitted))
+                player Any (.-player frame)]
+            (.toBe
+             (test/expect (if (> (.-x (.-position player)) 0.0) "true" "false"))
+             "true"))
+          ((.-disposeSession port) (.-session @started))
+          nil))))))
+
 (let [coherent-test-runtime Any (require "bun:test")
       register-coherent-test Any (.-test coherent-test-runtime)]
   (register-coherent-test
