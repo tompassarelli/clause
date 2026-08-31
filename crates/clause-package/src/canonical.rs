@@ -12,16 +12,17 @@ use crate::hash::{
 use crate::identity::*;
 use crate::process::*;
 use crate::provenance::*;
-use crate::term::{Atom, EqualityContract, Term, TermScope, TermValueRef};
+use crate::term::{
+    Atom, EqualityContract, MAX_TERM_DEPTH, MAX_TERM_NODES, Term, TermScope, TermValueRef,
+};
 
 const MAGIC: &[u8; 4] = b"CLPV";
 const VERSION: u8 = 2;
 const MAX_LIST_ITEMS: u32 = 1_000_000;
-const MAX_TERM_DEPTH: usize = 256;
 const MAX_CANONICAL_BYTES: usize = 256 * 1024 * 1024;
 // These are decoder-local resource refusals, not judgments that otherwise
 // canonical bytes have a different constitutional spelling.
-const MAX_DECODE_NODES: usize = 2 * MAX_CANONICAL_BYTES;
+const MAX_DECODE_NODES: usize = 2 * MAX_TERM_NODES;
 const MAX_DECODE_ALLOCATION_BYTES: usize = 512 * 1024 * 1024;
 
 /// One snapshot-local successor grant. Its authorization reference is resolved

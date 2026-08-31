@@ -3,6 +3,10 @@ use std::fmt;
 use crate::{ClauseSemanticsId, UniverseId};
 
 const MAX_ATOM_FIELD_BYTES: usize = 16 * 1024 * 1024;
+pub(crate) const MAX_TERM_DEPTH: usize = 256;
+// Every canonical Term node contributes at least its one-octet tag, so a Term
+// within the canonical byte ceiling cannot contain more nodes than this.
+pub(crate) const MAX_TERM_NODES: usize = 256 * 1024 * 1024;
 
 /// Exact index for structural equality. Equal payload bytes in different
 /// universes or Clause semantics epochs are not equal Terms.
@@ -86,13 +90,14 @@ impl Atom {
 pub struct RawTriple([Box<Term>; 3]);
 
 impl RawTriple {
-    fn new(slots: [Term; 3]) -> Result<Self, TermError> {
+    fn new(slots: [Term; 3]) -> Result<(Self, TermComplexity), TermError> {
         let scope = slots[0].scope;
         if slots.iter().any(|slot| slot.scope != scope) {
             return Err(TermError::MixedScopeTriple);
         }
+        let complexity = TermComplexity::for_triple(&slots)?;
         let [a, b, c] = slots;
-        Ok(Self([Box::new(a), Box::new(b), Box::new(c)]))
+        Ok((Self([Box::new(a), Box::new(b), Box::new(c)]), complexity))
     }
 
     #[must_use]
@@ -111,11 +116,50 @@ enum TermValue {
     RawTriple(RawTriple),
 }
 
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+struct TermComplexity {
+    depth: usize,
+    nodes: usize,
+}
+
+impl TermComplexity {
+    const ATOM: Self = Self { depth: 0, nodes: 1 };
+
+    fn for_triple(slots: &[Term; 3]) -> Result<Self, TermError> {
+        let depth = slots
+            .iter()
+            .map(|slot| slot.complexity.depth)
+            .max()
+            .expect("a RawTriple always has three slots")
+            .checked_add(1)
+            .ok_or(TermError::DepthExceeded {
+                maximum: MAX_TERM_DEPTH,
+            })?;
+        if depth > MAX_TERM_DEPTH {
+            return Err(TermError::DepthExceeded {
+                maximum: MAX_TERM_DEPTH,
+            });
+        }
+
+        let nodes = slots.iter().try_fold(1usize, |total, slot| {
+            total
+                .checked_add(slot.complexity.nodes)
+                .filter(|nodes| *nodes <= MAX_TERM_NODES)
+                .ok_or(TermError::NodeCountExceeded {
+                    maximum: MAX_TERM_NODES,
+                })
+        })?;
+
+        Ok(Self { depth, nodes })
+    }
+}
+
 /// Clause's neutral carrier, indexed by universe and semantics epoch.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Term {
     scope: TermScope,
     value: TermValue,
+    complexity: TermComplexity,
 }
 
 impl Term {
@@ -128,26 +172,25 @@ impl Term {
         Ok(Self {
             scope,
             value: TermValue::Atom(Atom::new(kind, canonical_payload, equality_contract)?),
+            complexity: TermComplexity::ATOM,
         })
     }
 
     pub fn raw_triple(slots: [Term; 3]) -> Result<Self, TermError> {
-        let triple = RawTriple::new(slots)?;
-        Ok(Self::from_raw_triple(triple))
+        let (triple, complexity) = RawTriple::new(slots)?;
+        let scope = triple.scope();
+        Ok(Self {
+            scope,
+            value: TermValue::RawTriple(triple),
+            complexity,
+        })
     }
 
     pub(crate) const fn from_atom(scope: TermScope, atom: Atom) -> Self {
         Self {
             scope,
             value: TermValue::Atom(atom),
-        }
-    }
-
-    pub(crate) fn from_raw_triple(triple: RawTriple) -> Self {
-        let scope = triple.scope();
-        Self {
-            scope,
-            value: TermValue::RawTriple(triple),
+            complexity: TermComplexity::ATOM,
         }
     }
 
@@ -191,6 +234,8 @@ pub enum TermError {
     EmptyKind,
     FieldTooLarge { field: &'static str, length: usize },
     MixedScopeTriple,
+    DepthExceeded { maximum: usize },
+    NodeCountExceeded { maximum: usize },
 }
 
 impl fmt::Display for TermError {
@@ -270,5 +315,31 @@ mod tests {
             slots[2].as_atom().expect("Atom slot").canonical_payload(),
             b"right"
         );
+    }
+
+    #[test]
+    fn programmatic_triples_reject_before_exceeding_the_canonical_depth() {
+        let term_scope = scope(1, 2);
+        let mut nested = atom(term_scope, b"leaf");
+        for depth in 1..=MAX_TERM_DEPTH {
+            nested = Term::raw_triple([
+                nested,
+                atom(term_scope, b"middle"),
+                atom(term_scope, b"right"),
+            ])
+            .unwrap_or_else(|error| panic!("depth {depth} must remain constructible: {error}"));
+        }
+
+        let result = Term::raw_triple([
+            nested,
+            atom(term_scope, b"middle"),
+            atom(term_scope, b"right"),
+        ]);
+        assert!(matches!(
+            result,
+            Err(TermError::DepthExceeded {
+                maximum: MAX_TERM_DEPTH
+            })
+        ));
     }
 }
