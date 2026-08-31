@@ -90,6 +90,8 @@ pub enum WasmSessionOperationV1 {
     TickCandidate(WasmSessionTickV1),
     IssueAdmission(WasmSessionAdmissionScopeV1),
     Admit(WasmSessionAdmissionV1),
+    Suspend,
+    Resume,
     Dispose,
 }
 
@@ -109,6 +111,7 @@ pub enum WasmSessionRejectionV1 {
     AdmissionScopeRejected = 4,
     AuthorityRejected = 5,
     AdmissionRejected = 6,
+    ContinuationRejected = 7,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -149,11 +152,34 @@ pub enum WasmSessionEventKindV1 {
     AdmissionAccepted {
         predecessor: StateRevisionId,
         successor: StateRevisionId,
+        admission: AdmissionOccurrenceId,
+        judgment: JudgmentOccurrenceId,
         run: RunId,
         activation: ActivationId,
         session: RuntimeSessionId,
         state_revision_count: u32,
         projection: Option<WasmSessionProjectionV1>,
+    },
+    Suspended {
+        step: StepId,
+        continuation: ContinuationId,
+        run: RunId,
+        activation: ActivationId,
+        before: ConfigurationId,
+        after: ConfigurationId,
+        remaining_budget: u64,
+        state_revision_count: u32,
+    },
+    Resumed {
+        occurrence: ResumptionOccurrenceId,
+        step: StepId,
+        continuation: ContinuationId,
+        run: RunId,
+        activation: ActivationId,
+        before: ConfigurationId,
+        after: ConfigurationId,
+        remaining_budget: u64,
+        state_revision_count: u32,
     },
     Disposed,
     Rejected(WasmSessionRejectionV1),
@@ -535,6 +561,39 @@ fn execute_operation(
         }
         WasmSessionOperationV1::IssueAdmission(input) => issue_admission(session, input),
         WasmSessionOperationV1::Admit(input) => admit(session, input),
+        WasmSessionOperationV1::Suspend => match session.suspend() {
+            Ok(suspension) => WasmSessionEventKindV1::Suspended {
+                step: suspension.step,
+                continuation: suspension.continuation,
+                run: suspension.run,
+                activation: suspension.activation,
+                before: suspension.before,
+                after: suspension.after,
+                remaining_budget: suspension.remaining_budget,
+                state_revision_count: state_revision_count(session)
+                    .expect("accepted suspension retains its carrier"),
+            },
+            Err(_) => {
+                WasmSessionEventKindV1::Rejected(WasmSessionRejectionV1::ContinuationRejected)
+            }
+        },
+        WasmSessionOperationV1::Resume => match session.resume() {
+            Ok(resumption) => WasmSessionEventKindV1::Resumed {
+                occurrence: resumption.occurrence,
+                step: resumption.step,
+                continuation: resumption.continuation,
+                run: resumption.run,
+                activation: resumption.activation,
+                before: resumption.before,
+                after: resumption.after,
+                remaining_budget: resumption.remaining_budget,
+                state_revision_count: state_revision_count(session)
+                    .expect("accepted resumption retains its carrier"),
+            },
+            Err(_) => {
+                WasmSessionEventKindV1::Rejected(WasmSessionRejectionV1::ContinuationRejected)
+            }
+        },
         WasmSessionOperationV1::Dispose => {
             session.dispose();
             WasmSessionEventKindV1::Disposed
@@ -602,6 +661,13 @@ fn admit(
         .expect("live Admission retains its prior Activation");
     match session.admit_issued_candidate_with_projection(input.authorization) {
         Ok((successor, projection)) => {
+            let admission = successor.admission;
+            let judgment = session
+                .carrier()
+                .expect("accepted Admission retains its carrier")
+                .decision_by_occurrence(admission)
+                .expect("accepted successor retains its Admission decision")
+                .verdict;
             let run = session.run().expect("Admission installs a fresh Run");
             let activation = session
                 .activation()
@@ -611,6 +677,8 @@ fn admit(
             WasmSessionEventKindV1::AdmissionAccepted {
                 predecessor: successor.predecessor,
                 successor: successor.id,
+                admission,
+                judgment,
                 run,
                 activation,
                 session: session.runtime_session(),
@@ -665,6 +733,8 @@ fn command_event_size(operation: &WasmSessionOperationV1) -> usize {
         | WasmSessionOperationV1::TickCandidate(_) => EVENT_HEADER_BYTES + 5 * IDENTITY_BYTES + 4,
         WasmSessionOperationV1::IssueAdmission(_) => EVENT_HEADER_BYTES + 5 * IDENTITY_BYTES + 4,
         WasmSessionOperationV1::Admit(_) => WASM_SESSION_EVENT_LIMIT_V1,
+        WasmSessionOperationV1::Suspend => EVENT_HEADER_BYTES + 6 * IDENTITY_BYTES + 8 + 4,
+        WasmSessionOperationV1::Resume => EVENT_HEADER_BYTES + 7 * IDENTITY_BYTES + 8 + 4,
     }
 }
 
@@ -826,6 +896,8 @@ pub fn encode_wasm_session_command_v1(
             }
         }
         WasmSessionOperationV1::Dispose => bytes.push(7),
+        WasmSessionOperationV1::Suspend => bytes.push(8),
+        WasmSessionOperationV1::Resume => bytes.push(9),
     }
     if bytes.len() > WASM_SESSION_COMMAND_LIMIT_V1 {
         return Err(WasmProcessStatusV1::RequestOutOfBounds);
@@ -873,6 +945,8 @@ pub fn decode_wasm_session_command_v1(
             authorization: IssuedAdmissionAuthorizationOccurrenceId::from_bytes(d.identity()?),
         }),
         7 => WasmSessionOperationV1::Dispose,
+        8 => WasmSessionOperationV1::Suspend,
+        9 => WasmSessionOperationV1::Resume,
         _ => return Err(WasmProcessStatusV1::MalformedRequest),
     };
     if !d.is_complete() {
@@ -982,6 +1056,8 @@ pub fn encode_wasm_session_event_v1(event: &WasmSessionEventV1) -> Vec<u8> {
         WasmSessionEventKindV1::AdmissionAccepted {
             predecessor,
             successor,
+            admission,
+            judgment,
             run,
             activation,
             session,
@@ -994,6 +1070,8 @@ pub fn encode_wasm_session_event_v1(event: &WasmSessionEventV1) -> Vec<u8> {
                 &[
                     predecessor.as_bytes(),
                     successor.as_bytes(),
+                    admission.as_bytes(),
+                    judgment.as_bytes(),
                     run.as_bytes(),
                     activation.as_bytes(),
                     session.as_bytes(),
@@ -1013,6 +1091,58 @@ pub fn encode_wasm_session_event_v1(event: &WasmSessionEventV1) -> Vec<u8> {
         WasmSessionEventKindV1::Rejected(rejection) => {
             bytes.push(7);
             bytes.extend_from_slice(&(*rejection as u32).to_le_bytes());
+        }
+        WasmSessionEventKindV1::Suspended {
+            step,
+            continuation,
+            run,
+            activation,
+            before,
+            after,
+            remaining_budget,
+            state_revision_count,
+        } => {
+            bytes.push(8);
+            put_ids(
+                &mut bytes,
+                &[
+                    step.as_bytes(),
+                    continuation.as_bytes(),
+                    run.as_bytes(),
+                    activation.as_bytes(),
+                    before.as_bytes(),
+                    after.as_bytes(),
+                ],
+            );
+            bytes.extend_from_slice(&remaining_budget.to_le_bytes());
+            bytes.extend_from_slice(&state_revision_count.to_le_bytes());
+        }
+        WasmSessionEventKindV1::Resumed {
+            occurrence,
+            step,
+            continuation,
+            run,
+            activation,
+            before,
+            after,
+            remaining_budget,
+            state_revision_count,
+        } => {
+            bytes.push(9);
+            put_ids(
+                &mut bytes,
+                &[
+                    occurrence.as_bytes(),
+                    step.as_bytes(),
+                    continuation.as_bytes(),
+                    run.as_bytes(),
+                    activation.as_bytes(),
+                    before.as_bytes(),
+                    after.as_bytes(),
+                ],
+            );
+            bytes.extend_from_slice(&remaining_budget.to_le_bytes());
+            bytes.extend_from_slice(&state_revision_count.to_le_bytes());
         }
     }
     bytes
@@ -1071,6 +1201,8 @@ pub fn decode_wasm_session_event_v1(
         5 => WasmSessionEventKindV1::AdmissionAccepted {
             predecessor: StateRevisionId::from_bytes(d.identity()?),
             successor: StateRevisionId::from_bytes(d.identity()?),
+            admission: AdmissionOccurrenceId::from_bytes(d.identity()?),
+            judgment: JudgmentOccurrenceId::from_bytes(d.identity()?),
             run: RunId::from_bytes(d.identity()?),
             activation: ActivationId::from_bytes(d.identity()?),
             session: RuntimeSessionId::from_bytes(d.identity()?),
@@ -1092,8 +1224,30 @@ pub fn decode_wasm_session_event_v1(
             4 => WasmSessionRejectionV1::AdmissionScopeRejected,
             5 => WasmSessionRejectionV1::AuthorityRejected,
             6 => WasmSessionRejectionV1::AdmissionRejected,
+            7 => WasmSessionRejectionV1::ContinuationRejected,
             _ => return Err(WasmProcessStatusV1::MalformedRequest),
         }),
+        8 => WasmSessionEventKindV1::Suspended {
+            step: StepId::from_bytes(d.identity()?),
+            continuation: ContinuationId::from_bytes(d.identity()?),
+            run: RunId::from_bytes(d.identity()?),
+            activation: ActivationId::from_bytes(d.identity()?),
+            before: ConfigurationId::from_bytes(d.identity()?),
+            after: ConfigurationId::from_bytes(d.identity()?),
+            remaining_budget: d.u64()?,
+            state_revision_count: d.u32()?,
+        },
+        9 => WasmSessionEventKindV1::Resumed {
+            occurrence: ResumptionOccurrenceId::from_bytes(d.identity()?),
+            step: StepId::from_bytes(d.identity()?),
+            continuation: ContinuationId::from_bytes(d.identity()?),
+            run: RunId::from_bytes(d.identity()?),
+            activation: ActivationId::from_bytes(d.identity()?),
+            before: ConfigurationId::from_bytes(d.identity()?),
+            after: ConfigurationId::from_bytes(d.identity()?),
+            remaining_budget: d.u64()?,
+            state_revision_count: d.u32()?,
+        },
         _ => return Err(WasmProcessStatusV1::MalformedRequest),
     };
     if !d.is_complete() {

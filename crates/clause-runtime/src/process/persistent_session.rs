@@ -11,8 +11,9 @@ use clause_package::{
 use super::{
     ExecutableAuthorityFactsV1, ExecutableCandidateV1, ExecutableCarrierErrorV1, ExecutableErrorV1,
     ExecutableInputSourceV1, ExecutablePhysicalPlanV1, ExecutableProcessRuntimeV1,
-    ExecutableProjectedObservationV1, ExecutableStateRevisionV1, ExecutableStepV1,
-    ExecutableValueV1, RuntimeAllocationEpochV1, decode_executable_occurrence_v1,
+    ExecutableProjectedObservationV1, ExecutableResumptionV1, ExecutableStateRevisionV1,
+    ExecutableStepV1, ExecutableSuspensionV1, ExecutableValueV1, RuntimeAllocationEpochV1,
+    decode_executable_occurrence_v1,
 };
 
 /// One native, long-lived execution binding for an exact package, Program
@@ -114,6 +115,14 @@ impl PersistentProcessSessionV1 {
             .runtime_mut()?
             .advance_carrier_occurrence_and_emit_candidate(occurrence)?
             .clone())
+    }
+
+    pub fn suspend(&mut self) -> Result<ExecutableSuspensionV1, PersistentProcessSessionErrorV1> {
+        Ok(self.runtime_mut()?.suspend_carrier_process()?)
+    }
+
+    pub fn resume(&mut self) -> Result<ExecutableResumptionV1, PersistentProcessSessionErrorV1> {
+        Ok(self.runtime_mut()?.resume_carrier_process()?)
     }
 
     /// Lower one checked, construct-blind physical observation through the
@@ -308,6 +317,16 @@ impl PersistentProcessSessionV1 {
 
     pub fn carrier(&self) -> Result<&ProcessCarrier, PersistentProcessSessionErrorV1> {
         Ok(self.runtime()?.carrier().carrier())
+    }
+
+    pub fn authority_facts(
+        &self,
+    ) -> Result<ExecutableAuthorityFactsV1, PersistentProcessSessionErrorV1> {
+        self.runtime()?
+            .authority_facts()
+            .ok_or(PersistentProcessSessionErrorV1::Carrier(
+                ExecutableCarrierErrorV1::NotStarted,
+            ))
     }
 
     fn runtime(&self) -> Result<&ExecutableProcessRuntimeV1, PersistentProcessSessionErrorV1> {

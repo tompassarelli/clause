@@ -46,6 +46,8 @@ enum RuntimeIdentityDomainV1 {
     StateObservation = 100,
     InputObservation = 130,
     IssuedAdmissionAuthorization = 140,
+    Continuation = 150,
+    Resumption = 151,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -59,6 +61,8 @@ struct RuntimeIdentityOrdinalsV1 {
     next_checker: u64,
     next_candidate: u64,
     next_admission_authorization: u64,
+    next_continuation: u64,
+    next_resumption: u64,
 }
 
 impl RuntimeIdentityOrdinalsV1 {
@@ -73,6 +77,8 @@ impl RuntimeIdentityOrdinalsV1 {
             next_checker: 0,
             next_candidate: 0,
             next_admission_authorization: 0,
+            next_continuation: 0,
+            next_resumption: 0,
         }
     }
 }
@@ -1533,6 +1539,29 @@ pub struct ExecutableCandidateV1 {
     pub configuration: Vec<ExecutableValueV1>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ExecutableSuspensionV1 {
+    pub step: StepId,
+    pub continuation: ContinuationId,
+    pub run: RunId,
+    pub activation: ActivationId,
+    pub before: ConfigurationId,
+    pub after: ConfigurationId,
+    pub remaining_budget: u64,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ExecutableResumptionV1 {
+    pub occurrence: ResumptionOccurrenceId,
+    pub step: StepId,
+    pub continuation: ContinuationId,
+    pub run: RunId,
+    pub activation: ActivationId,
+    pub before: ConfigurationId,
+    pub after: ConfigurationId,
+    pub remaining_budget: u64,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ExecutableJudgmentV1 {
     pub id: JudgmentOccurrenceId,
@@ -1586,6 +1615,8 @@ pub const EXECUTABLE_ADMISSION_PERMISSION_V1: BoundaryPermissionLocalId =
     BoundaryPermissionLocalId::new(3);
 pub const EXECUTABLE_ADMISSION_ISSUANCE_PERMISSION_V1: BoundaryPermissionLocalId =
     BoundaryPermissionLocalId::new(4);
+pub const EXECUTABLE_RESUMPTION_PERMISSION_V1: BoundaryPermissionLocalId =
+    BoundaryPermissionLocalId::new(5);
 
 #[must_use]
 pub fn executable_occurrence_boundary_anchor_v1(
@@ -1612,7 +1643,7 @@ pub fn executable_occurrence_boundary_anchor_v1(
             BoundaryOccurrencePermissionV2 {
                 id: EXECUTABLE_OBSERVATION_PERMISSION_V1,
                 kind: EnteredOccurrenceKind::Observation,
-                payload,
+                payload: payload.clone(),
                 pins,
                 cause_schema: vec![
                     BoundaryCauseRequirementV2 {
@@ -1690,10 +1721,24 @@ pub fn executable_state_boundary_anchor_v1(
             BoundaryOccurrencePermissionV2 {
                 id: EXECUTABLE_ADMISSION_ISSUANCE_PERMISSION_V1,
                 kind: EnteredOccurrenceKind::AdmissionAuthorization,
-                payload,
+                payload: payload.clone(),
                 pins,
                 cause_schema: vec![BoundaryCauseRequirementV2 {
                     kind: EnteredCauseKindV2::CandidateDelta,
+                    cardinality: exactly_one,
+                }],
+                support_schema: vec![],
+                replay: BoundaryReplayPolicyV2::Repeatable {
+                    maximum_occurrences: None,
+                },
+            },
+            BoundaryOccurrencePermissionV2 {
+                id: EXECUTABLE_RESUMPTION_PERMISSION_V1,
+                kind: EnteredOccurrenceKind::Resumption,
+                payload,
+                pins,
+                cause_schema: vec![BoundaryCauseRequirementV2 {
+                    kind: EnteredCauseKindV2::Step,
                     cardinality: exactly_one,
                 }],
                 support_schema: vec![],
@@ -1717,6 +1762,7 @@ pub struct ExecutableAuthorityFactsV1 {
     pub admission_authorization_issuer: RootAdmissionAuthorizationIssuerRef,
     pub trigger_ingress: ExecutableBoundaryFactV1,
     pub occurrence_ingress: ExecutableBoundaryFactV1,
+    pub resumption_ingress: ExecutableBoundaryFactV1,
     pub judgment_ingress: ExecutableBoundaryFactV1,
     pub admission_issuance_ingress: ExecutableBoundaryFactV1,
     pub admission_ingress: ExecutableBoundaryFactV1,
@@ -2007,6 +2053,7 @@ pub struct ExecutableProcessRuntimeV1 {
     identity_ordinals: RuntimeIdentityOrdinalsV1,
     active_candidate_ordinal: Option<u64>,
     issued_admission_authorization: Option<IssuedAdmissionAuthorizationOccurrenceId>,
+    suspended_continuation: Option<ContinuationId>,
 }
 
 impl ExecutableProcessRuntimeV1 {
@@ -2110,6 +2157,7 @@ impl ExecutableProcessRuntimeV1 {
             identity_ordinals: RuntimeIdentityOrdinalsV1::initial(),
             active_candidate_ordinal: None,
             issued_admission_authorization: None,
+            suspended_continuation: None,
         })
     }
 }
@@ -2318,6 +2366,303 @@ impl ExecutableProcessRuntimeV1 {
         self.advance_carrier_occurrence_inner(occurrence, true)
     }
 
+    /// Suspend the live Activation at one exact semantic Step and retain a
+    /// linear Continuation pinned to the complete execution context. The
+    /// physical host receives custody of the identifier only; it does not
+    /// manufacture the continuation or its pins.
+    pub fn suspend_carrier_process(
+        &mut self,
+    ) -> Result<ExecutableSuspensionV1, ExecutableCarrierErrorV1> {
+        if self.suspended_continuation.is_some() {
+            return Err(ExecutableCarrierErrorV1::AlreadySuspended);
+        }
+        if self.candidate.is_some() {
+            return Err(ExecutableCarrierErrorV1::Executable(
+                ExecutableErrorV1::CandidateAlreadyEmitted,
+            ));
+        }
+        let (facts, remaining_budget, prior_step) = {
+            let execution = self
+                .carrier_execution
+                .as_ref()
+                .ok_or(ExecutableCarrierErrorV1::NotStarted)?;
+            (
+                execution.facts,
+                execution.remaining_budget,
+                execution
+                    .prior_step
+                    .ok_or(ExecutableCarrierErrorV1::NotStarted)?,
+            )
+        };
+        if remaining_budget <= 1 {
+            return Err(ExecutableCarrierErrorV1::BudgetExhausted);
+        }
+        let activation = self
+            .carrier
+            .carrier()
+            .activation(self.activation)
+            .cloned()
+            .ok_or(ExecutableCarrierErrorV1::NotStarted)?;
+        let (step_ordinal, next_step_ordinal) =
+            stage_runtime_ordinal(self.identity_ordinals.next_step)
+                .map_err(ExecutableCarrierErrorV1::Executable)?;
+        let (configuration_ordinal, next_configuration_ordinal) =
+            stage_runtime_ordinal(self.identity_ordinals.next_configuration)
+                .map_err(ExecutableCarrierErrorV1::Executable)?;
+        let (continuation_ordinal, next_continuation_ordinal) =
+            stage_runtime_ordinal(self.identity_ordinals.next_continuation)
+                .map_err(ExecutableCarrierErrorV1::Executable)?;
+        let step = StepId::from_bytes(
+            runtime_identity_bytes(
+                self.allocation.root,
+                RuntimeIdentityDomainV1::Step,
+                step_ordinal,
+            )
+            .map_err(ExecutableCarrierErrorV1::Executable)?,
+        );
+        let after = ConfigurationId::from_bytes(
+            runtime_identity_bytes(
+                self.allocation.root,
+                RuntimeIdentityDomainV1::Configuration,
+                configuration_ordinal,
+            )
+            .map_err(ExecutableCarrierErrorV1::Executable)?,
+        );
+        let continuation = ContinuationId::from_bytes(
+            runtime_identity_bytes(
+                self.allocation.root,
+                RuntimeIdentityDomainV1::Continuation,
+                continuation_ordinal,
+            )
+            .map_err(ExecutableCarrierErrorV1::Executable)?,
+        );
+        let scope = TermScope {
+            universe: self.carrier.carrier().constitution().universe(),
+            semantics: self.carrier.carrier().constitution().semantics(),
+        };
+        let remainder = executable_configuration_term_v1(scope, &self.configuration)
+            .map_err(ExecutableCarrierErrorV1::Executable)?;
+        let after_budget = remaining_budget - 1;
+        let reference = StepRef {
+            run: self.run,
+            activation: self.activation,
+            step,
+        };
+        let record = StepProposalV2 {
+            id: step,
+            run: self.run,
+            activation: self.activation,
+            before: self.configuration_id,
+            after: ConfigurationProposal {
+                id: after,
+                value: remainder.clone(),
+            },
+            observed_state: Some(facts.initial_state),
+            budget: StepBudgetTransitionV2 {
+                before: Budget {
+                    remaining_units: remaining_budget,
+                },
+                consumed_units: 1,
+                after: Budget {
+                    remaining_units: after_budget,
+                },
+            },
+            causes: vec![StepCause::PriorStep(prior_step)],
+            observation_outcomes: vec![],
+            candidate_delta: None,
+            outcome: StepOutcomeProposalV2::Suspend(ContinuationProposalV2 {
+                id: continuation,
+                emitted_by: step,
+                pins: ContinuationPins {
+                    run: self.run,
+                    activation: self.activation,
+                    application: self.application,
+                    mode: activation.mode(),
+                    activation_pins: activation.pins().clone(),
+                    remaining_budget: Budget {
+                        remaining_units: after_budget,
+                    },
+                },
+                remainder,
+            }),
+        };
+        self.carrier
+            .apply_ingress(&[ProcessRecordV2::Steps(vec![record])])
+            .map_err(ExecutableCarrierErrorV1::Ingress)?;
+        let before = self.configuration_id;
+        self.configuration_id = after;
+        self.identity_ordinals.next_step = next_step_ordinal;
+        self.identity_ordinals.next_configuration = next_configuration_ordinal;
+        self.identity_ordinals.next_continuation = next_continuation_ordinal;
+        self.suspended_continuation = Some(continuation);
+        let execution = self
+            .carrier_execution
+            .as_mut()
+            .expect("suspension retains its execution");
+        execution.remaining_budget = after_budget;
+        execution.prior_step = Some(reference);
+        Ok(ExecutableSuspensionV1 {
+            step,
+            continuation,
+            run: self.run,
+            activation: self.activation,
+            before,
+            after,
+            remaining_budget: after_budget,
+        })
+    }
+
+    /// Consume the live linear Continuation through one fresh Resumption
+    /// occurrence and one semantic Step. Resumption keeps the same Run and
+    /// Activation; subsequent execution remains causally downstream of the
+    /// continuation takeup rather than host command order.
+    pub fn resume_carrier_process(
+        &mut self,
+    ) -> Result<ExecutableResumptionV1, ExecutableCarrierErrorV1> {
+        let continuation = self
+            .suspended_continuation
+            .ok_or(ExecutableCarrierErrorV1::NotSuspended)?;
+        let (facts, remaining_budget, emitter) = {
+            let execution = self
+                .carrier_execution
+                .as_ref()
+                .ok_or(ExecutableCarrierErrorV1::NotStarted)?;
+            (
+                execution.facts,
+                execution.remaining_budget,
+                execution
+                    .prior_step
+                    .ok_or(ExecutableCarrierErrorV1::NotStarted)?,
+            )
+        };
+        if remaining_budget <= 1 {
+            return Err(ExecutableCarrierErrorV1::BudgetExhausted);
+        }
+        let continuation_record = self
+            .carrier
+            .carrier()
+            .continuation(continuation)
+            .cloned()
+            .ok_or(ExecutableCarrierErrorV1::NotSuspended)?;
+        let (resumption_ordinal, next_resumption_ordinal) =
+            stage_runtime_ordinal(self.identity_ordinals.next_resumption)
+                .map_err(ExecutableCarrierErrorV1::Executable)?;
+        let (step_ordinal, next_step_ordinal) =
+            stage_runtime_ordinal(self.identity_ordinals.next_step)
+                .map_err(ExecutableCarrierErrorV1::Executable)?;
+        let (configuration_ordinal, next_configuration_ordinal) =
+            stage_runtime_ordinal(self.identity_ordinals.next_configuration)
+                .map_err(ExecutableCarrierErrorV1::Executable)?;
+        let occurrence = ResumptionOccurrenceId::from_bytes(
+            runtime_identity_bytes(
+                self.allocation.root,
+                RuntimeIdentityDomainV1::Resumption,
+                resumption_ordinal,
+            )
+            .map_err(ExecutableCarrierErrorV1::Executable)?,
+        );
+        let step = StepId::from_bytes(
+            runtime_identity_bytes(
+                self.allocation.root,
+                RuntimeIdentityDomainV1::Step,
+                step_ordinal,
+            )
+            .map_err(ExecutableCarrierErrorV1::Executable)?,
+        );
+        let after = ConfigurationId::from_bytes(
+            runtime_identity_bytes(
+                self.allocation.root,
+                RuntimeIdentityDomainV1::Configuration,
+                configuration_ordinal,
+            )
+            .map_err(ExecutableCarrierErrorV1::Executable)?,
+        );
+        let scope = TermScope {
+            universe: self.carrier.carrier().constitution().universe(),
+            semantics: self.carrier.carrier().constitution().semantics(),
+        };
+        let remainder = executable_configuration_term_v1(scope, &self.configuration)
+            .map_err(ExecutableCarrierErrorV1::Executable)?;
+        let after_budget = remaining_budget - 1;
+        let resumption = ResumptionOccurrenceV2 {
+            body: ResumptionOccurrenceBodyV2 {
+                id: occurrence,
+                continuation,
+                run: self.run,
+                activation: self.activation,
+                pins: continuation_record.proposal().pins.clone(),
+            },
+            provenance: OccurrenceProvenance::EnteredThrough(EnteredThrough {
+                boundary: facts.resumption_ingress.boundary,
+                evidence: facts.resumption_ingress.evidence,
+                permission: facts.resumption_ingress.permission,
+                payload: runtime_role_term(scope, b"clause/process-resumption-v1")?,
+                supports: vec![],
+                causes: vec![CausalRef::Step(emitter)],
+            }),
+        };
+        let record = StepProposalV2 {
+            id: step,
+            run: self.run,
+            activation: self.activation,
+            before: self.configuration_id,
+            after: ConfigurationProposal {
+                id: after,
+                value: remainder,
+            },
+            observed_state: Some(facts.initial_state),
+            budget: StepBudgetTransitionV2 {
+                before: Budget {
+                    remaining_units: remaining_budget,
+                },
+                consumed_units: 1,
+                after: Budget {
+                    remaining_units: after_budget,
+                },
+            },
+            causes: vec![StepCause::ContinuationTakeup {
+                continuation,
+                occurrence: ContinuationTakeupOccurrence::Resumption(occurrence),
+            }],
+            observation_outcomes: vec![],
+            candidate_delta: None,
+            outcome: StepOutcomeProposalV2::Progress,
+        };
+        self.carrier
+            .apply_ingress(&[
+                ProcessRecordV2::Resumption(resumption),
+                ProcessRecordV2::Steps(vec![record]),
+            ])
+            .map_err(ExecutableCarrierErrorV1::Ingress)?;
+        let before = self.configuration_id;
+        self.configuration_id = after;
+        self.identity_ordinals.next_resumption = next_resumption_ordinal;
+        self.identity_ordinals.next_step = next_step_ordinal;
+        self.identity_ordinals.next_configuration = next_configuration_ordinal;
+        self.suspended_continuation = None;
+        let reference = StepRef {
+            run: self.run,
+            activation: self.activation,
+            step,
+        };
+        let execution = self
+            .carrier_execution
+            .as_mut()
+            .expect("resumption retains its execution");
+        execution.remaining_budget = after_budget;
+        execution.prior_step = Some(reference);
+        Ok(ExecutableResumptionV1 {
+            occurrence,
+            step,
+            continuation,
+            run: self.run,
+            activation: self.activation,
+            before,
+            after,
+            remaining_budget: after_budget,
+        })
+    }
+
     /// Lower one construct-blind physical observation through the exact
     /// package-Role-indexed plan, then enter the resulting occurrence.
     pub fn advance_carrier_input(
@@ -2446,6 +2791,9 @@ impl ExecutableProcessRuntimeV1 {
         occurrence: ExecutableOccurrenceV1,
         emit_candidate: bool,
     ) -> Result<&ExecutableStepV1, ExecutableCarrierErrorV1> {
+        if self.suspended_continuation.is_some() {
+            return Err(ExecutableCarrierErrorV1::AlreadySuspended);
+        }
         let execution = self
             .carrier_execution
             .as_ref()
@@ -3291,6 +3639,7 @@ impl ExecutableProcessRuntimeV1 {
         self.state = None;
         self.active_candidate_ordinal = None;
         self.issued_admission_authorization = None;
+        self.suspended_continuation = None;
         self.identity_ordinals.next_run = next_run_ordinal;
         self.identity_ordinals.next_activation = next_activation_ordinal;
         self.identity_ordinals.next_configuration = next_configuration_ordinal;
@@ -3624,6 +3973,13 @@ impl ExecutableProcessRuntimeV1 {
     pub const fn admission(&self) -> Option<&ExecutableAdmissionV1> {
         self.admission.as_ref()
     }
+
+    #[must_use]
+    pub fn authority_facts(&self) -> Option<ExecutableAuthorityFactsV1> {
+        self.carrier_execution
+            .as_ref()
+            .map(|execution| execution.facts)
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -3677,6 +4033,8 @@ pub enum ExecutableCarrierErrorV1 {
     MissingCheckerMode,
     AmbiguousCheckerMode,
     AdmissionAuthorizationAlreadyIssued,
+    AlreadySuspended,
+    NotSuspended,
     MissingCheckerPrerequisite,
     MissingFormationEvidence,
     ConstitutiveAdmissionAuthorityUnavailable,

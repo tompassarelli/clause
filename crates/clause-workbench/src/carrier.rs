@@ -367,6 +367,7 @@ fn carrier_authority(
             vec![
                 EXECUTABLE_ADMISSION_PERMISSION_V1,
                 EXECUTABLE_ADMISSION_ISSUANCE_PERMISSION_V1,
+                EXECUTABLE_RESUMPTION_PERMISSION_V1,
             ],
             vec![190],
         ),
@@ -399,6 +400,11 @@ fn carrier_authority(
                 boundary: occurrence_boundary,
                 evidence: occurrence_evidence,
                 permission: EXECUTABLE_OBSERVATION_PERMISSION_V1,
+            },
+            resumption_ingress: ExecutableBoundaryFactV1 {
+                boundary: state_boundary,
+                evidence: admission_evidence,
+                permission: EXECUTABLE_RESUMPTION_PERMISSION_V1,
             },
             judgment_ingress: ExecutableBoundaryFactV1 {
                 boundary: state_boundary,

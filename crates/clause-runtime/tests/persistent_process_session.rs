@@ -70,9 +70,27 @@ fn checked_program_package() -> CheckedProcessPackage {
     let decoded = decode_process_package(&decode_hex(source)).expect("base package decodes");
     let mut candidate = decoded.candidate().clone();
     candidate.records.clear();
+    candidate.snapshot.constitution.operators[0].modes[1]
+        .contract
+        .continuation = ContinuationContractV2::Suspensible {
+        use_policy: ContinuationUseV2::Linear,
+        may_handoff: false,
+        may_cancel: false,
+    };
+    candidate.claimed_snapshot =
+        derive_program_snapshot_id(&candidate.snapshot).expect("program snapshot is canonical");
     let bytes = encode_process_package(&candidate).expect("program package encodes");
     check_process_package(decode_process_package(&bytes).expect("program package decodes"))
         .expect("program package checks")
+}
+
+fn open_fresh_session() -> PersistentProcessSessionV1 {
+    let package = checked_program_package();
+    let application = application(&package);
+    let plan = physical_plan(&package);
+    let (authority, facts) = carrier_authority(&package);
+    PersistentProcessSessionV1::open(package, authority, application, plan, facts.executable)
+        .expect("fresh conformance session opens")
 }
 
 fn physical_plan(package: &CheckedProcessPackage) -> ExecutablePhysicalPlanV1 {
@@ -251,6 +269,7 @@ fn carrier_authority(checked: &CheckedProcessPackage) -> (AuthorityStore, Sessio
             vec![
                 EXECUTABLE_ADMISSION_PERMISSION_V1,
                 EXECUTABLE_ADMISSION_ISSUANCE_PERMISSION_V1,
+                EXECUTABLE_RESUMPTION_PERMISSION_V1,
             ],
             vec![190],
         ),
@@ -288,6 +307,11 @@ fn carrier_authority(checked: &CheckedProcessPackage) -> (AuthorityStore, Sessio
                     boundary: occurrence_boundary,
                     evidence: occurrence_evidence,
                     permission: EXECUTABLE_OBSERVATION_PERMISSION_V1,
+                },
+                resumption_ingress: ExecutableBoundaryFactV1 {
+                    boundary: state_boundary,
+                    evidence: admission_evidence,
+                    permission: EXECUTABLE_RESUMPTION_PERMISSION_V1,
                 },
                 judgment_ingress: ExecutableBoundaryFactV1 {
                     boundary: state_boundary,
@@ -361,6 +385,171 @@ fn application(package: &CheckedProcessPackage) -> ApplicationId {
         snapshot: package.constitution().snapshot(),
         local: ApplicationLocalId::new(1),
     }
+}
+
+#[test]
+fn forked_process_branch_reconnects_through_separate_admission_and_retains_exact_explanation() {
+    let mut authoritative = open_fresh_session();
+    let branch_session = open_fresh_session();
+    let parent = authoritative.world_base();
+    let mut branch =
+        ForkedProcessBranchV1::fork(&authoritative, branch_session, 41, &opaque(1, 0.0))
+            .expect("exact equal-base session forks as one non-authoritative branch");
+    assert_eq!(branch.pins().parent_state, parent);
+    assert_ne!(
+        authoritative.allocation().root(),
+        branch.suspension().continuation.as_bytes(),
+        "physical allocation custody does not substitute for Continuation identity"
+    );
+
+    authoritative
+        .apply_opaque_input(&opaque(0, 10.0))
+        .expect("authoritative execution advances independently");
+    authoritative
+        .apply_opaque_input_and_emit_candidate(&opaque(1, 1.0))
+        .expect("authoritative execution emits its own candidate");
+    let first_authorization = authoritative
+        .issue_candidate_admission_authorization()
+        .expect("authoritative candidate receives exact issued authority");
+    let first_state = authoritative
+        .admit_issued_candidate_with_projection(first_authorization)
+        .expect("only Admission establishes the independently advanced base")
+        .0;
+    assert_eq!(first_state.predecessor, parent);
+    assert_ne!(first_state.id, parent);
+
+    let branch_commands = vec![opaque(0, 2.0), opaque(1, 3.0)];
+    let reconnect = branch
+        .resume_and_propose(&branch_commands)
+        .expect("branch resumes and emits a hidden CandidateDelta");
+    let retained = branch
+        .retained_candidate()
+        .expect("branch candidate remains retained and non-authoritative")
+        .clone();
+    assert_eq!(retained.id, reconnect.candidate);
+    assert_eq!(retained.base, parent);
+    assert_eq!(authoritative.world_base(), first_state.id);
+    assert_ne!(reconnect.ancestry.run, authoritative.run().unwrap());
+
+    for (tampered, expected) in [
+        (
+            {
+                let mut value = reconnect.clone();
+                value.pins.parent_state = id!(StateRevisionId, 201);
+                value
+            },
+            ProcessBranchPinV1::ParentState,
+        ),
+        (
+            {
+                let mut value = reconnect.clone();
+                value.pins.program_revision = id!(ProgramRevisionId, 202);
+                value
+            },
+            ProcessBranchPinV1::ProgramRevision,
+        ),
+        (
+            {
+                let mut value = reconnect.clone();
+                value.pins.root_policy = id!(RootPolicyId, 203);
+                value
+            },
+            ProcessBranchPinV1::RootPolicy,
+        ),
+        (
+            {
+                let mut value = reconnect.clone();
+                value.pins.input_evidence = id!(ExternalEvidenceRef, 204);
+                value
+            },
+            ProcessBranchPinV1::InputEvidence,
+        ),
+        (
+            {
+                let mut value = reconnect.clone();
+                value.pins.budget_units += 1;
+                value
+            },
+            ProcessBranchPinV1::Budget,
+        ),
+    ] {
+        let plan = CheckedReconnectAdmissionPlanV1 {
+            branch_candidate: reconnect.candidate,
+            authoritative_base: first_state.id,
+            occurrences: branch_commands.clone(),
+        };
+        assert!(matches!(
+            branch.adjudicate(&mut authoritative, &tampered, &plan),
+            Err(ProcessBranchErrorV1::PinMismatch(actual)) if actual == expected
+        ));
+        assert_eq!(authoritative.world_base(), first_state.id);
+        assert!(branch.explanation().is_none());
+    }
+
+    let stale_plan = CheckedReconnectAdmissionPlanV1 {
+        branch_candidate: reconnect.candidate,
+        authoritative_base: parent,
+        occurrences: branch_commands.clone(),
+    };
+    assert!(matches!(
+        branch.adjudicate(&mut authoritative, &reconnect, &stale_plan),
+        Err(ProcessBranchErrorV1::PinMismatch(
+            ProcessBranchPinV1::AuthoritativeBase
+        ))
+    ));
+    assert_eq!(authoritative.world_base(), first_state.id);
+
+    let plan = CheckedReconnectAdmissionPlanV1 {
+        branch_candidate: reconnect.candidate,
+        authoritative_base: first_state.id,
+        occurrences: branch_commands,
+    };
+    let admitted = branch
+        .adjudicate(&mut authoritative, &reconnect, &plan)
+        .expect("caller-selected replay plan produces one separately admitted successor");
+    assert_eq!(admitted.state.predecessor, first_state.id);
+    assert_eq!(admitted.state.id, authoritative.world_base());
+    assert_ne!(admitted.state.id, retained.base);
+    assert_eq!(admitted.explanation.branch_candidate, retained.id);
+    let decision = authoritative
+        .carrier()
+        .unwrap()
+        .decision_by_occurrence(admitted.state.admission)
+        .expect("Admission decision remains queryable");
+    assert_eq!(admitted.explanation.authoritative_candidate, decision.delta);
+    assert_eq!(admitted.explanation.admission, admitted.state.admission);
+    assert_eq!(admitted.explanation.successor, admitted.state.id);
+    assert!(
+        admitted
+            .explanation
+            .causal_records
+            .iter()
+            .any(|record| record.occurrence == CausalRef::CandidateDelta(retained.id))
+    );
+    let authoritative_occurrences = admitted
+        .explanation
+        .causal_records
+        .iter()
+        .filter(|record| {
+            matches!(
+                record.occurrence,
+                CausalRef::CandidateDelta(_) | CausalRef::Judgment(_) | CausalRef::Admission(_)
+            )
+        })
+        .collect::<Vec<_>>();
+    assert!(
+        authoritative_occurrences.iter().all(|record| {
+            !record
+                .predecessors
+                .contains(&CausalRef::CandidateDelta(retained.id))
+        }),
+        "the retained reconnect evidence is not rewritten into cross-Run order"
+    );
+    assert_eq!(
+        branch.explanation(),
+        Some(&admitted.explanation),
+        "the old branch remains retained and explainable after authoritative Admission"
+    );
 }
 
 #[test]

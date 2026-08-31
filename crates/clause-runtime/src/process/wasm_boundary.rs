@@ -6,10 +6,10 @@ use std::fmt;
 use clause_package::*;
 
 use super::{
-    ExecutableAuthorityFactsV1, ExecutableBoundaryFactV1, ExecutableProcessRuntimeV1,
-    ExecutableValueV1, RuntimeAllocationEpochV1, decode_executable_occurrence_v1,
-    decode_executable_physical_plan_v1, decode_runtime_allocation_epoch_v1,
-    encode_runtime_allocation_epoch_v1,
+    EXECUTABLE_RESUMPTION_PERMISSION_V1, ExecutableAuthorityFactsV1, ExecutableBoundaryFactV1,
+    ExecutableProcessRuntimeV1, ExecutableValueV1, RuntimeAllocationEpochV1,
+    decode_executable_occurrence_v1, decode_executable_physical_plan_v1,
+    decode_runtime_allocation_epoch_v1, encode_runtime_allocation_epoch_v1,
 };
 
 const REQUEST_MAGIC: &[u8; 4] = b"CWR1";
@@ -705,6 +705,20 @@ fn establish_authority_inner(
                             maximum_occurrences: None,
                         },
                     },
+                    BoundaryOccurrencePermissionV2 {
+                        id: EXECUTABLE_RESUMPTION_PERMISSION_V1,
+                        kind: EnteredOccurrenceKind::Resumption,
+                        payload: boundary_target.clone(),
+                        pins: state_pins,
+                        cause_schema: vec![BoundaryCauseRequirementV2 {
+                            kind: EnteredCauseKindV2::Step,
+                            cardinality: exactly_one,
+                        }],
+                        support_schema: vec![],
+                        replay: BoundaryReplayPolicyV2::Repeatable {
+                            maximum_occurrences: None,
+                        },
+                    },
                 ],
             })
         })
@@ -731,6 +745,7 @@ fn establish_authority_inner(
             vec![
                 BoundaryPermissionLocalId::new(3),
                 BoundaryPermissionLocalId::new(4),
+                EXECUTABLE_RESUMPTION_PERMISSION_V1,
             ],
             &input.admission_evidence_bytes,
         ),
@@ -764,6 +779,11 @@ fn establish_authority_inner(
                 boundary: input.occurrence_boundary,
                 evidence: input.occurrence_evidence,
                 permission: BoundaryPermissionLocalId::new(1),
+            },
+            resumption_ingress: ExecutableBoundaryFactV1 {
+                boundary: input.state_boundary,
+                evidence: input.admission_evidence,
+                permission: EXECUTABLE_RESUMPTION_PERMISSION_V1,
             },
             judgment_ingress: ExecutableBoundaryFactV1 {
                 boundary: input.state_boundary,

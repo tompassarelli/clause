@@ -1149,6 +1149,11 @@ impl CarrierFacts {
                 evidence: id!(ExternalEvidenceRef, 181),
                 permission: EXECUTABLE_OBSERVATION_PERMISSION_V1,
             },
+            resumption_ingress: ExecutableBoundaryFactV1 {
+                boundary: self.state_boundary,
+                evidence: id!(ExternalEvidenceRef, 190),
+                permission: EXECUTABLE_RESUMPTION_PERMISSION_V1,
+            },
             judgment_ingress: ExecutableBoundaryFactV1 {
                 boundary: self.state_boundary,
                 evidence: id!(ExternalEvidenceRef, 186),
@@ -1355,7 +1360,10 @@ fn carrier_authority_for_plan(
         (
             190,
             state_boundary,
-            vec![EXECUTABLE_ADMISSION_PERMISSION_V1],
+            vec![
+                EXECUTABLE_ADMISSION_PERMISSION_V1,
+                EXECUTABLE_RESUMPTION_PERMISSION_V1,
+            ],
         ),
     ] {
         authority
@@ -3580,6 +3588,7 @@ fn persistent_wasm_session_keeps_generation_sequence_and_admission_custody() {
             session: admitted_session,
             state_revision_count,
             projection,
+            ..
         } => {
             assert_eq!(predecessor, initial_world);
             assert_ne!(successor, initial_world);
