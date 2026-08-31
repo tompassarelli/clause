@@ -351,19 +351,25 @@ return {[$$bc$property_key($$bc$keyword("kind"))]: "opened", [$$bc$property_key(
 return {[$$bc$property_key($$bc$keyword("kind"))]: "candidate", [$$bc$property_key($$bc$keyword("slot"))]: slot, [$$bc$property_key($$bc$keyword("generation"))]: generation, [$$bc$property_key($$bc$keyword("sequence"))]: sequence, [$$bc$property_key($$bc$keyword("candidateId"))]: identity_at(53), [$$bc$property_key($$bc$keyword("base"))]: identity_at(85)}; })() : (($$bc$equiv(tag, 4))) ? (() => { if ((!($$bc$equiv(bytes.length, (21 + (5 * identity_bytes) + 4))))) {
   (() => { throw new Error("CSE1 issued authority event has an invalid shape"); })();
 }
-return {[$$bc$property_key($$bc$keyword("kind"))]: "issued", [$$bc$property_key($$bc$keyword("slot"))]: slot, [$$bc$property_key($$bc$keyword("generation"))]: generation, [$$bc$property_key($$bc$keyword("sequence"))]: sequence, [$$bc$property_key($$bc$keyword("authorization"))]: identity_at(21), [$$bc$property_key($$bc$keyword("packageId"))]: identity_at(53), [$$bc$property_key($$bc$keyword("sessionId"))]: identity_at(85), [$$bc$property_key($$bc$keyword("base"))]: identity_at(117), [$$bc$property_key($$bc$keyword("candidateId"))]: identity_at(149)}; })() : (($$bc$equiv(tag, 5))) ? (() => { const prefix_end = (21 + (5 * identity_bytes) + 4); const projection_tag = byte_at(bytes, prefix_end); const successor = identity_at(53); return ((($$bc$equiv(projection_tag, 0))) ? (() => { if ((!($$bc$equiv(bytes.length, (prefix_end + 1))))) {
+return {[$$bc$property_key($$bc$keyword("kind"))]: "issued", [$$bc$property_key($$bc$keyword("slot"))]: slot, [$$bc$property_key($$bc$keyword("generation"))]: generation, [$$bc$property_key($$bc$keyword("sequence"))]: sequence, [$$bc$property_key($$bc$keyword("authorization"))]: identity_at(21), [$$bc$property_key($$bc$keyword("packageId"))]: identity_at(53), [$$bc$property_key($$bc$keyword("sessionId"))]: identity_at(85), [$$bc$property_key($$bc$keyword("base"))]: identity_at(117), [$$bc$property_key($$bc$keyword("candidateId"))]: identity_at(149)}; })() : (($$bc$equiv(tag, 5))) ? (() => { const prefix_end = (21 + (7 * identity_bytes) + 4); const projection_tag = byte_at(bytes, prefix_end); const successor = identity_at(53); return ((($$bc$equiv(projection_tag, 0))) ? (() => { if ((!($$bc$equiv(bytes.length, (prefix_end + 1))))) {
   (() => { throw new Error("CSE1 Admission event has trailing bytes"); })();
 }
-return {[$$bc$property_key($$bc$keyword("kind"))]: "admission", [$$bc$property_key($$bc$keyword("slot"))]: slot, [$$bc$property_key($$bc$keyword("generation"))]: generation, [$$bc$property_key($$bc$keyword("sequence"))]: sequence, [$$bc$property_key($$bc$keyword("successor"))]: successor, [$$bc$property_key($$bc$keyword("projection"))]: null}; })() : (($$bc$equiv(projection_tag, 1))) ? (() => { const observation_offset = (prefix_end + 1); const term_record = parse_blob(bytes, (observation_offset + identity_bytes), cse1_max_bytes, "CSE1 projected Term"); if ((!($$bc$equiv(term_record.next, bytes.length)))) {
+return {[$$bc$property_key($$bc$keyword("kind"))]: "admission", [$$bc$property_key($$bc$keyword("slot"))]: slot, [$$bc$property_key($$bc$keyword("generation"))]: generation, [$$bc$property_key($$bc$keyword("sequence"))]: sequence, [$$bc$property_key($$bc$keyword("predecessor"))]: identity_at(21), [$$bc$property_key($$bc$keyword("successor"))]: successor, [$$bc$property_key($$bc$keyword("admissionId"))]: identity_at(85), [$$bc$property_key($$bc$keyword("judgmentId"))]: identity_at(117), [$$bc$property_key($$bc$keyword("run"))]: identity_at(149), [$$bc$property_key($$bc$keyword("activation"))]: identity_at(181), [$$bc$property_key($$bc$keyword("sessionId"))]: identity_at(213), [$$bc$property_key($$bc$keyword("projection"))]: null}; })() : (($$bc$equiv(projection_tag, 1))) ? (() => { const observation_offset = (prefix_end + 1); const term_record = parse_blob(bytes, (observation_offset + identity_bytes), cse1_max_bytes, "CSE1 projected Term"); if ((!($$bc$equiv(term_record.next, bytes.length)))) {
   (() => { throw new Error("CSE1 Admission projection has trailing bytes"); })();
 }
-return {[$$bc$property_key($$bc$keyword("kind"))]: "admission", [$$bc$property_key($$bc$keyword("slot"))]: slot, [$$bc$property_key($$bc$keyword("generation"))]: generation, [$$bc$property_key($$bc$keyword("sequence"))]: sequence, [$$bc$property_key($$bc$keyword("successor"))]: successor, [$$bc$property_key($$bc$keyword("projection"))]: {[$$bc$property_key($$bc$keyword("observationId"))]: identity_at(observation_offset), [$$bc$property_key($$bc$keyword("termBytes"))]: term_record.bytes}}; })() : (() => { throw new Error("CSE1 Admission projection tag is invalid"); })()); })() : (($$bc$equiv(tag, 6))) ? (() => { if ((!($$bc$equiv(bytes.length, 21)))) {
+return {[$$bc$property_key($$bc$keyword("kind"))]: "admission", [$$bc$property_key($$bc$keyword("slot"))]: slot, [$$bc$property_key($$bc$keyword("generation"))]: generation, [$$bc$property_key($$bc$keyword("sequence"))]: sequence, [$$bc$property_key($$bc$keyword("predecessor"))]: identity_at(21), [$$bc$property_key($$bc$keyword("successor"))]: successor, [$$bc$property_key($$bc$keyword("admissionId"))]: identity_at(85), [$$bc$property_key($$bc$keyword("judgmentId"))]: identity_at(117), [$$bc$property_key($$bc$keyword("run"))]: identity_at(149), [$$bc$property_key($$bc$keyword("activation"))]: identity_at(181), [$$bc$property_key($$bc$keyword("sessionId"))]: identity_at(213), [$$bc$property_key($$bc$keyword("projection"))]: {[$$bc$property_key($$bc$keyword("observationId"))]: identity_at(observation_offset), [$$bc$property_key($$bc$keyword("termBytes"))]: term_record.bytes}}; })() : (() => { throw new Error("CSE1 Admission projection tag is invalid"); })()); })() : (($$bc$equiv(tag, 6))) ? (() => { if ((!($$bc$equiv(bytes.length, 21)))) {
   (() => { throw new Error("CSE1 Disposed event has trailing bytes"); })();
 }
 return {[$$bc$property_key($$bc$keyword("kind"))]: "disposed", [$$bc$property_key($$bc$keyword("slot"))]: slot, [$$bc$property_key($$bc$keyword("generation"))]: generation, [$$bc$property_key($$bc$keyword("sequence"))]: sequence}; })() : (($$bc$equiv(tag, 7))) ? (() => { if ((!($$bc$equiv(bytes.length, 25)))) {
   (() => { throw new Error("CSE1 rejection has an invalid shape"); })();
 }
-return {[$$bc$property_key($$bc$keyword("kind"))]: "rejected", [$$bc$property_key($$bc$keyword("slot"))]: slot, [$$bc$property_key($$bc$keyword("generation"))]: generation, [$$bc$property_key($$bc$keyword("sequence"))]: sequence, [$$bc$property_key($$bc$keyword("reason"))]: little_u32(bytes, 21)}; })() : {[$$bc$property_key($$bc$keyword("kind"))]: "input", [$$bc$property_key($$bc$keyword("slot"))]: slot, [$$bc$property_key($$bc$keyword("generation"))]: generation, [$$bc$property_key($$bc$keyword("sequence"))]: sequence});
+return {[$$bc$property_key($$bc$keyword("kind"))]: "rejected", [$$bc$property_key($$bc$keyword("slot"))]: slot, [$$bc$property_key($$bc$keyword("generation"))]: generation, [$$bc$property_key($$bc$keyword("sequence"))]: sequence, [$$bc$property_key($$bc$keyword("reason"))]: little_u32(bytes, 21)}; })() : (($$bc$equiv(tag, 8))) ? (() => { if ((!($$bc$equiv(bytes.length, (21 + (6 * identity_bytes) + 8 + 4))))) {
+  (() => { throw new Error("CSE1 Suspended event has an invalid shape"); })();
+}
+return {[$$bc$property_key($$bc$keyword("kind"))]: "suspended", [$$bc$property_key($$bc$keyword("slot"))]: slot, [$$bc$property_key($$bc$keyword("generation"))]: generation, [$$bc$property_key($$bc$keyword("sequence"))]: sequence, [$$bc$property_key($$bc$keyword("step"))]: identity_at(21), [$$bc$property_key($$bc$keyword("continuation"))]: identity_at(53), [$$bc$property_key($$bc$keyword("run"))]: identity_at(85), [$$bc$property_key($$bc$keyword("activation"))]: identity_at(117), [$$bc$property_key($$bc$keyword("before"))]: identity_at(149), [$$bc$property_key($$bc$keyword("after"))]: identity_at(181), [$$bc$property_key($$bc$keyword("remainingBudget"))]: little_safe_u64(bytes, 213), [$$bc$property_key($$bc$keyword("stateRevisionCount"))]: little_u32(bytes, 221)}; })() : (($$bc$equiv(tag, 9))) ? (() => { if ((!($$bc$equiv(bytes.length, (21 + (7 * identity_bytes) + 8 + 4))))) {
+  (() => { throw new Error("CSE1 Resumed event has an invalid shape"); })();
+}
+return {[$$bc$property_key($$bc$keyword("kind"))]: "resumed", [$$bc$property_key($$bc$keyword("slot"))]: slot, [$$bc$property_key($$bc$keyword("generation"))]: generation, [$$bc$property_key($$bc$keyword("sequence"))]: sequence, [$$bc$property_key($$bc$keyword("occurrence"))]: identity_at(21), [$$bc$property_key($$bc$keyword("step"))]: identity_at(53), [$$bc$property_key($$bc$keyword("continuation"))]: identity_at(85), [$$bc$property_key($$bc$keyword("run"))]: identity_at(117), [$$bc$property_key($$bc$keyword("activation"))]: identity_at(149), [$$bc$property_key($$bc$keyword("before"))]: identity_at(181), [$$bc$property_key($$bc$keyword("after"))]: identity_at(213), [$$bc$property_key($$bc$keyword("remainingBudget"))]: little_safe_u64(bytes, 245), [$$bc$property_key($$bc$keyword("stateRevisionCount"))]: little_u32(bytes, 253)}; })() : {[$$bc$property_key($$bc$keyword("kind"))]: "input", [$$bc$property_key($$bc$keyword("slot"))]: slot, [$$bc$property_key($$bc$keyword("generation"))]: generation, [$$bc$property_key($$bc$keyword("sequence"))]: sequence});
   } else {
     return (() => { throw new Error("CSE1 event must carry bounded exact bytes"); })();
   }
@@ -446,6 +452,22 @@ function occurrence_candidate_command_bang(session, ordinal) {
     (() => { throw new Error("process occurrence ordinal is outside the cartridge"); })();
   }
   return blob_command_bang(session, 2, occurrences[ordinal]);
+}
+
+function occurrence_input_command_bang(session, ordinal) {
+  const occurrences = session.occurrences;
+  if (((ordinal < 0) || (ordinal >= occurrences.length))) {
+    (() => { throw new Error("process occurrence ordinal is outside the cartridge"); })();
+  }
+  return blob_command_bang(session, 1, occurrences[ordinal]);
+}
+
+function suspend_command_bang(session) {
+  return encode_session_command_bang(session, 8, null);
+}
+
+function resume_command_bang(session) {
+  return encode_session_command_bang(session, 9, null);
 }
 
 function admission_scope_bytes_bang(session, candidate) {
@@ -561,6 +583,53 @@ function require_candidate(value) {
   return (((!(value == null)) && ((!(value.candidateId == null)) && (!(value.base == null)))) ? value : (() => { throw new Error("Wasm candidate is invalid"); })());
 }
 
+function advance_session_occurrence_bang(module, incoming_session, ordinal) {
+  const session = require_live_session(incoming_session);
+  const event = apply_session_command_bang(module, session, occurrence_input_command_bang(session, ordinal));
+  if ((!($$bc$equiv(event.kind, "input")))) {
+    (() => { throw new Error("CWI1 process occurrence did not produce InputAccepted"); })();
+  }
+  return event;
+}
+
+function suspend_session_bang(module, incoming_session) {
+  const session = require_live_session(incoming_session);
+  const event = apply_session_command_bang(module, session, suspend_command_bang(session));
+  if ((!($$bc$equiv(event.kind, "suspended")))) {
+    (() => { throw new Error("CWI1 suspension did not produce Suspended"); })();
+  }
+  return event;
+}
+
+function resume_session_bang(module, incoming_session) {
+  const session = require_live_session(incoming_session);
+  const event = apply_session_command_bang(module, session, resume_command_bang(session));
+  if ((!($$bc$equiv(event.kind, "resumed")))) {
+    (() => { throw new Error("CWI1 resumption did not produce Resumed"); })();
+  }
+  return event;
+}
+
+function admit_session_candidate_bang(module, incoming_session, incoming_candidate) {
+  const session = require_live_session(incoming_session);
+  const candidate = require_candidate(incoming_candidate);
+  const scope = admission_scope_bytes_bang(session, candidate);
+  const issued = apply_session_command_bang(module, session, encode_session_command_bang(session, 5, scope));
+  if ((!($$bc$equiv(issued.kind, "issued")))) {
+    (() => { throw new Error("CWI1 issuance did not produce exact Admission authority"); })();
+  }
+  const payload = admission_scope_bytes_bang(session, candidate);
+  issued.authorization.forEach((byte) => {
+  payload.push(byte);
+});
+  const event = apply_session_command_bang(module, session, encode_session_command_bang(session, 6, payload));
+  if ((!($$bc$equiv(event.kind, "admission")))) {
+    (() => { throw new Error("CWI1 Admission did not produce AdmissionAccepted"); })();
+  }
+  (() => { const _a = session.world, _v = event.successor; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })();
+  return event;
+}
+
 function reject_reason(error) {
   const message = error.message;
   return (($$bc$equiv(typeof message, "string")) ? message : "Wasm cartridge boundary rejected");
@@ -633,21 +702,11 @@ function create_wasm_cartridge_port_bang(module, policy) {
   } })(), (incoming_session, incoming_candidate, complete) => (() => { try {
     const session = require_live_session(incoming_session);
   const candidate = require_candidate(incoming_candidate);
-  const scope = admission_scope_bytes_bang(session, candidate);
-  const issued = apply_session_command_bang(module, session, encode_session_command_bang(session, 5, scope));
-  if ((!($$bc$equiv(issued.kind, "issued")))) {
-    (() => { throw new Error("CWI1 issuance did not produce exact Admission authority"); })();
-  }
-  const payload = admission_scope_bytes_bang(session, candidate);
-  (() => { issued.authorization.forEach((byte) => {
-  payload.push(byte);
-}); })();
-  const event = apply_session_command_bang(module, session, encode_session_command_bang(session, 6, payload));
+  const event = admit_session_candidate_bang(module, session, candidate);
   const projection = event.projection;
-  if (((!($$bc$equiv(event.kind, "admission"))) || (projection == null))) {
+  if ((projection == null)) {
     (() => { throw new Error("Admission produced no package-declared frame Observation"); })();
   }
-  (() => { const _a = session.world, _v = event.successor; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })();
   const frame = workbench["create-workbench-envelope"](policy, JSON.stringify(projection.termBytes));
   return complete(workbench["->AdmissionAccepted"](session, event.successor, frame));
   } catch (_catch_3) {
@@ -679,6 +738,8 @@ export { ExactProcessRequest as "->ExactProcessRequest" };
 export { Cwo1Observation as "Cwo1Observation" };
 export { ExactProcessObservation as "ExactProcessObservation" };
 export { ExactProcessRequest as "ExactProcessRequest" };
+export { admit_session_candidate_bang as "admit-session-candidate!" };
+export { advance_session_occurrence_bang as "advance-session-occurrence!" };
 export { create_wasm_cartridge_port as "create-wasm-cartridge-port" };
 export { cse1_projected_term_json_max_source_units as "cse1-projected-term-json-max-source-units" };
 export { cse1_projected_term_max_properties as "cse1-projected-term-max-properties" };
@@ -690,4 +751,6 @@ export { decode_cwr1_hex as "decode-cwr1-hex" };
 export { decode_projected_term_frame as "decode-projected-term-frame" };
 export { exactprocessobservation_bytes as "exactprocessobservation-bytes" };
 export { exactprocessrequest_bytes as "exactprocessrequest-bytes" };
+export { resume_session_bang as "resume-session!" };
+export { suspend_session_bang as "suspend-session!" };
 //# sourceMappingURL=wasm-cartridge-port.js.map

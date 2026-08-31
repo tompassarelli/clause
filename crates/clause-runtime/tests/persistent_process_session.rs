@@ -1,5 +1,8 @@
 use clause_package::*;
 use clause_runtime::*;
+use std::fmt::Write;
+
+const BROWSER_PROCESS_CONTINUATION_ALLOCATION_ROOT_TAG: u8 = 220;
 
 macro_rules! id {
     ($kind:ident, $tag:expr) => {
@@ -94,11 +97,36 @@ fn open_fresh_session() -> PersistentProcessSessionV1 {
 }
 
 fn physical_plan(package: &CheckedProcessPackage) -> ExecutablePhysicalPlanV1 {
-    let snapshot = package.constitution().snapshot();
+    let constitution = package.constitution();
+    let snapshot = constitution.snapshot();
     let application = ApplicationLocalId::new(1);
+    let scope = TermScope {
+        universe: constitution.universe(),
+        semantics: constitution.semantics(),
+    };
+    let projection_role = LocalRoleRefV2 {
+        schema: RelationSchemaLocalId::new(1),
+        role: RoleLocalId::new(1),
+    };
+    let projection_end = Term::atom(
+        scope,
+        b"clause/js-object-end-v1".to_vec(),
+        vec![],
+        EqualityContract::ExactOctetsV1,
+    )
+    .expect("generic fixture projection has one object terminator");
+    let projection_field = Term::atom(
+        scope,
+        b"clause/js-field-v1".to_vec(),
+        b"value".to_vec(),
+        EqualityContract::ExactOctetsV1,
+    )
+    .expect("generic fixture projection has one field");
+    let projection_value =
+        executable_projection_role_term_v1(scope, projection_role, ExecutableValueKindV1::Number)
+            .expect("generic fixture projection binds one numeric role");
     ExecutablePhysicalPlanV1 {
-        application_shape: package
-            .constitution()
+        application_shape: constitution
             .application_shape(application)
             .expect("fixture Application has one exact semantic shape"),
         mode: ModeId {
@@ -111,8 +139,69 @@ fn physical_plan(package: &CheckedProcessPackage) -> ExecutablePhysicalPlanV1 {
         refinement: ExecutableRefinementV1::ClosedApplicationRuleMachineV1,
         target: ExecutablePhysicalTargetV1::PortableScalarInterpreterV1,
         input: None,
-        program: executable_program(),
+        program: ExecutableProgramV1 {
+            projection: Some(ExecutableProjectionV1 {
+                bindings: vec![ExecutableProjectionBindingV1 {
+                    role: projection_role,
+                    slot: 0,
+                    value_kind: ExecutableValueKindV1::Number,
+                }],
+                template: Term::triple([projection_field, projection_value, projection_end])
+                    .expect("generic fixture projection is one value object"),
+            }),
+            ..executable_program()
+        },
     }
+}
+
+fn browser_process_continuation_fixture_request() -> WasmProcessRequestV1 {
+    let package = checked_program_package();
+    let plan = physical_plan(&package);
+    let application = application(&package);
+    let (_, facts) = carrier_authority(&package);
+    let allocation = RuntimeAllocationEpochV1::recorded_for(
+        raw_id(BROWSER_PROCESS_CONTINUATION_ALLOCATION_ROOT_TAG),
+        &package,
+        application,
+        &plan,
+        facts.executable,
+    )
+    .expect("generic continuation fixture records one exact allocation epoch");
+    WasmProcessRequestV1 {
+        package_bytes: package.exact_bytes().to_vec(),
+        application: application.local,
+        physical_plan_bytes: encode_executable_physical_plan_v1(&plan)
+            .expect("generic continuation plan has one exact CWR1 payload"),
+        allocation,
+        authority: WasmAuthorityInputV1 {
+            program: id!(ProgramId, 123),
+            change: id!(ProgramChangeOccurrenceId, 124),
+            session: id!(RuntimeSessionId, 120),
+            policy: id!(RuntimePolicyId, 121),
+            session_start: id!(SessionStartOccurrenceId, 122),
+            root_policy: id!(RootPolicyId, 125),
+            occurrence_boundary: id!(BoundaryRef, 126),
+            state_boundary: id!(BoundaryRef, 127),
+            occurrence_evidence: id!(ExternalEvidenceRef, 181),
+            occurrence_evidence_bytes: vec![181],
+            judgment_evidence: id!(ExternalEvidenceRef, 186),
+            judgment_evidence_bytes: vec![186],
+            admission_evidence: id!(ExternalEvidenceRef, 190),
+            admission_evidence_bytes: vec![190],
+            budget_units: 100,
+        },
+        occurrences: vec![opaque(0, 2.0), opaque(1, 3.0)],
+        render_slots: vec![],
+    }
+}
+
+fn lowercase_hex_lines(bytes: &[u8]) -> String {
+    let mut encoded = String::with_capacity(bytes.len() * 2 + 1);
+    for byte in bytes {
+        write!(&mut encoded, "{byte:02x}").expect("writing to a String is infallible");
+    }
+    encoded.push('\n');
+    encoded
 }
 
 #[derive(Clone, Copy)]
@@ -549,6 +638,34 @@ fn forked_process_branch_reconnects_through_separate_admission_and_retains_exact
         branch.explanation(),
         Some(&admitted.explanation),
         "the old branch remains retained and explainable after authoritative Admission"
+    );
+}
+
+#[test]
+fn shipped_process_continuation_cwr1_is_exact() {
+    let request = browser_process_continuation_fixture_request();
+    let exact = encode_wasm_process_request_v1(&request)
+        .expect("generic continuation browser CWR1 fixture encodes");
+    let fixture_path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../browser/jump-arena-shell/fixtures/wasm-process-continuation-v1/",
+        "process-continuation-v1.cwr1.hex"
+    );
+    if std::env::var_os("CLAUSE_UPDATE_BROWSER_PROCESS_CONTINUATION_CWR1").is_some() {
+        std::fs::write(fixture_path, lowercase_hex_lines(&exact))
+            .expect("generic continuation browser CWR1 fixture update succeeds");
+        return;
+    }
+    let tracked = decode_hex(include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../browser/jump-arena-shell/fixtures/wasm-process-continuation-v1/",
+        "process-continuation-v1.cwr1.hex"
+    )));
+    assert_eq!(tracked, exact);
+    assert_eq!(
+        decode_wasm_process_request_v1(&tracked)
+            .expect("tracked generic continuation CWR1 decodes"),
+        request
     );
 }
 

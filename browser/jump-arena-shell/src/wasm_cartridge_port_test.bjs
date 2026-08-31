@@ -168,14 +168,49 @@
 
 (defn admission-event! [] Any
   (let [bytes Any (cse-header! 4 5)]
-    (put-identities! bytes [22 36 37 38 3])
+    (put-identities! bytes [22 36 37 38 41 42 3])
     (append-u32! bytes 2)
     (.push bytes 1)
     (put-identities! bytes [39])
     (append-blob! bytes [40 41 42])
     bytes))
 
+(defn suspended-event! [] Any
+  (let [bytes Any (cse-header! 2 8)]
+    (put-identities! bytes [34 35 23 24 36 37])
+    (append-u64! bytes 98)
+    (append-u32! bytes 1)
+    bytes))
+
+(defn resumed-event! [] Any
+  (let [bytes Any (cse-header! 3 9)]
+    (put-identities! bytes [38 39 35 23 24 37 40])
+    (append-u64! bytes 97)
+    (append-u32! bytes 1)
+    bytes))
+
+(defn resumed-candidate-event! [] Any
+  (let [bytes Any (cse-header! 4 3)]
+    (put-identities! bytes [41 42 22 23 24])
+    (append-u32! bytes 1)
+    bytes))
+
+(defn resumed-issuance-event! [] Any
+  (let [bytes Any (cse-header! 5 4)]
+    (put-identities! bytes [43 21 3 22 42])
+    (append-u32! bytes 1)
+    bytes))
+
+(defn resumed-admission-event! [] Any
+  (let [bytes Any (cse-header! 6 5)]
+    (put-identities! bytes [22 44 45 46 47 48 3])
+    (append-u32! bytes 2)
+    (.push bytes 0)
+    bytes))
+
 (defn disposed-event! [] Any (cse-header! 5 6))
+
+(defn resumed-disposed-event! [] Any (cse-header! 7 6))
 
 (defn throws?! [action (Fn [] Any)] Bool
   (try
@@ -381,6 +416,58 @@
      nil)))
 
 (test/test
+ "persistent CWI1 commands retain continuation custody and exact Admission identities"
+ (fn [] Nil
+   (let [requests Any []
+         module Any (module-for! [(opened-event!)
+                                  (input-event!)
+                                  (suspended-event!)
+                                  (resumed-event!)
+                                  (resumed-candidate-event!)
+                                  (resumed-issuance-event!)
+                                  (resumed-admission-event!)
+                                  (resumed-disposed-event!)]
+                                 requests)
+         port workbench/CartridgePort (wasm/create-wasm-cartridge-port module (policy))
+         request wasm/ExactProcessRequest (wasm/->ExactProcessRequest (minimal-cwr1!))
+         accepted Any (atom nil)
+         started Any (atom nil)
+         candidate Any (atom nil)]
+     ((.-acceptPackage port) request (fn [result Any] Any (reset! accepted result)))
+     ((.-startSession port) (.-acceptedPackage @accepted) 1
+      (fn [result Any] Any (reset! started result)))
+     (let [session Any (.-session @started)
+           input Any (wasm/advance-session-occurrence! module session 0)
+           suspension Any (wasm/suspend-session! module session)
+           resumption Any (wasm/resume-session! module session)]
+       (.toBe (test/expect (str (.-kind input))) "input")
+       (.toBe (test/expect (json-string (.-continuation suspension)))
+              (json-string (.-continuation resumption)))
+       (.toBe (test/expect (str (.-remainingBudget suspension))) "98")
+       (.toBe (test/expect (str (.-remainingBudget resumption))) "97")
+       ((.-runCandidate port)
+        session
+        (workbench/->FixedTick 16)
+        (process-configuration 1 1 0)
+        (fn [result Any] Any (reset! candidate result)))
+       (let [admission Any (wasm/admit-session-candidate!
+                            module session (.-candidate @candidate))]
+         (.toBe (test/expect (json-string (.-predecessor admission)))
+                (json-string (identity 22)))
+         (.toBe (test/expect (json-string (.-admissionId admission)))
+                (json-string (identity 45)))
+         (.toBe (test/expect (json-string (.-judgmentId admission)))
+                (json-string (identity 46)))
+         (.toBe (test/expect (json-string (.-successor admission)))
+                (json-string (identity 44))))
+       ((.-disposeSession port) session))
+     (.toBe (test/expect
+             (json-string (.map (.slice requests 1)
+                                (fn [bytes Any] Any (nth bytes 20)))))
+            "[1,8,9,2,5,6,7]")
+     nil)))
+
+(test/test
  "strict CWO1 decoding rejects malformed and trailing bytes"
  (fn [] Nil
    (let [valid Any (cwo1 [{:kind "boolean" :value false}])]
@@ -524,6 +611,62 @@
           (.toBe (test/expect (str base-score)) "1")
           (.toBe (test/expect (str changed-score)) "4")
           nil))))))
+
+(let [continuation-test-runtime Any (require "bun:test")
+      register-continuation-test Any (.-test continuation-test-runtime)]
+  (register-continuation-test
+   "real Wasm suspends resumes proposes and admits one domain-neutral process"
+   (fn [] Any
+     (.then
+      (.all Promise [(.arrayBuffer (.file Bun "./generated/wasm/clause_runtime_bg.wasm"))
+                     (.text (.file Bun
+                                   "./fixtures/wasm-process-continuation-v1/process-continuation-v1.cwr1.hex"))])
+      (fn [assets Any] Any
+        (let [module Any (initialize-real-session-module (nth assets 0))
+              port workbench/CartridgePort (wasm/create-wasm-cartridge-port module (policy))
+              request wasm/ExactProcessRequest (wasm/->ExactProcessRequest
+               (wasm/decode-cwr1-hex (nth assets 1)))
+              accepted Any (atom nil)
+              started Any (atom nil)
+              candidate Any (atom nil)]
+          ((.-acceptPackage port) request
+           (fn [result Any] Any (reset! accepted result)))
+          ((.-startSession port) (.-acceptedPackage @accepted) 1
+           (fn [result Any] Any (reset! started result)))
+          (let [session Any (.-session @started)
+                input Any (wasm/advance-session-occurrence! module session 0)
+                suspension Any (wasm/suspend-session! module session)
+                resumption Any (wasm/resume-session! module session)
+                suspension-budget Int (.-remainingBudget suspension)
+                resumption-budget Int (.-remainingBudget resumption)]
+            (.toBe (test/expect (str (.-kind input))) "input")
+            (.toBe (test/expect (json-string (.-continuation suspension)))
+                   (json-string (.-continuation resumption)))
+            (.toBe (test/expect (json-string (.-run suspension)))
+                   (json-string (.-run resumption)))
+            (.toBe (test/expect (json-string (.-activation suspension)))
+                   (json-string (.-activation resumption)))
+            (.toBe (test/expect (str resumption-budget))
+                   (str (dec suspension-budget)))
+            ((.-runCandidate port)
+             session
+             (workbench/->FixedTick 16)
+             (process-configuration 1 1 1)
+             (fn [result Any] Any (reset! candidate result)))
+            (let [proposed Any (.-candidate @candidate)
+                  admission Any (wasm/admit-session-candidate! module session proposed)]
+              (.toBe (test/expect (json-string (.-base proposed)))
+                     (json-string (.-predecessor admission)))
+              (.toBe (test/expect (str (.-length (.-admissionId admission)))) "32")
+              (.toBe (test/expect (str (.-length (.-judgmentId admission)))) "32")
+              (.toBe (test/expect
+                       (if (not= (json-string (.-successor admission))
+                                 (json-string (.-predecessor admission)))
+                         "true"
+                         "false"))
+                     "true"))
+            ((.-disposeSession port) session)
+            nil)))))))
 
 (let [symbol-test-runtime Any (require "bun:test")
       register-symbol-test Any (.-test symbol-test-runtime)]

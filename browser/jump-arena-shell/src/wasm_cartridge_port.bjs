@@ -501,7 +501,7 @@
              :candidateId (identity-at 149)})
 
           (= tag 5)
-          (let [prefix-end Int (+ 21 (* 5 identity-bytes) 4)
+          (let [prefix-end Int (+ 21 (* 7 identity-bytes) 4)
                 projection-tag Int (byte-at bytes prefix-end)
                 successor Any (identity-at 53)]
             (cond
@@ -510,7 +510,14 @@
                 (when (not= (.-length bytes) (inc prefix-end))
                   (throw (new Error "CSE1 Admission event has trailing bytes")))
                 {:kind "admission" :slot slot :generation generation :sequence sequence
-                 :successor successor :projection nil})
+                 :predecessor (identity-at 21)
+                 :successor successor
+                 :admissionId (identity-at 85)
+                 :judgmentId (identity-at 117)
+                 :run (identity-at 149)
+                 :activation (identity-at 181)
+                 :sessionId (identity-at 213)
+                 :projection nil})
 
               (= projection-tag 1)
               (let [observation-offset Int (inc prefix-end)
@@ -519,7 +526,13 @@
                 (when (not= (.-next term-record) (.-length bytes))
                   (throw (new Error "CSE1 Admission projection has trailing bytes")))
                 {:kind "admission" :slot slot :generation generation :sequence sequence
+                 :predecessor (identity-at 21)
                  :successor successor
+                 :admissionId (identity-at 85)
+                 :judgmentId (identity-at 117)
+                 :run (identity-at 149)
+                 :activation (identity-at 181)
+                 :sessionId (identity-at 213)
                  :projection {:observationId (identity-at observation-offset)
                               :termBytes (.-bytes term-record)}})
 
@@ -537,6 +550,35 @@
               (throw (new Error "CSE1 rejection has an invalid shape")))
             {:kind "rejected" :slot slot :generation generation :sequence sequence
              :reason (little-u32 bytes 21)})
+
+          (= tag 8)
+          (do
+            (when (not= (.-length bytes) (+ 21 (* 6 identity-bytes) 8 4))
+              (throw (new Error "CSE1 Suspended event has an invalid shape")))
+            {:kind "suspended" :slot slot :generation generation :sequence sequence
+             :step (identity-at 21)
+             :continuation (identity-at 53)
+             :run (identity-at 85)
+             :activation (identity-at 117)
+             :before (identity-at 149)
+             :after (identity-at 181)
+             :remainingBudget (little-safe-u64 bytes 213)
+             :stateRevisionCount (little-u32 bytes 221)})
+
+          (= tag 9)
+          (do
+            (when (not= (.-length bytes) (+ 21 (* 7 identity-bytes) 8 4))
+              (throw (new Error "CSE1 Resumed event has an invalid shape")))
+            {:kind "resumed" :slot slot :generation generation :sequence sequence
+             :occurrence (identity-at 21)
+             :step (identity-at 53)
+             :continuation (identity-at 85)
+             :run (identity-at 117)
+             :activation (identity-at 149)
+             :before (identity-at 181)
+             :after (identity-at 213)
+             :remainingBudget (little-safe-u64 bytes 245)
+             :stateRevisionCount (little-u32 bytes 253)})
 
           :else
           {:kind "input" :slot slot :generation generation :sequence sequence})))))
@@ -645,6 +687,20 @@
     (when (>= ordinal (.-length occurrences))
       (throw (new Error "process occurrence ordinal is outside the cartridge")))
     (blob-command! session 2 (nth occurrences ordinal))))
+
+(defn occurrence-input-command!
+  [session WasmSession
+   ordinal Int] Any
+  (let [occurrences Any (.-occurrences session)]
+    (when (or (< ordinal 0) (>= ordinal (.-length occurrences)))
+      (throw (new Error "process occurrence ordinal is outside the cartridge")))
+    (blob-command! session 1 (nth occurrences ordinal))))
+
+(defn suspend-command! [session WasmSession] Any
+  (encode-session-command! session 8 nil))
+
+(defn resume-command! [session WasmSession] Any
+  (encode-session-command! session 9 nil))
 
 (defn admission-scope-bytes!
   [session WasmSession
@@ -838,6 +894,60 @@
     value
     (throw (new Error "Wasm candidate is invalid"))))
 
+(js/export
+  (defn advance-session-occurrence!
+    [module Any
+     incoming-session Any
+     ordinal Int] Any
+    (let [session WasmSession (require-live-session incoming-session)
+          event Any (apply-session-command!
+                     module session (occurrence-input-command! session ordinal))]
+      (when (not= (.-kind event) "input")
+        (throw (new Error "CWI1 process occurrence did not produce InputAccepted")))
+      event)))
+
+(js/export
+  (defn suspend-session!
+    [module Any
+     incoming-session Any] Any
+    (let [session WasmSession (require-live-session incoming-session)
+          event Any (apply-session-command! module session (suspend-command! session))]
+      (when (not= (.-kind event) "suspended")
+        (throw (new Error "CWI1 suspension did not produce Suspended")))
+      event)))
+
+(js/export
+  (defn resume-session!
+    [module Any
+     incoming-session Any] Any
+    (let [session WasmSession (require-live-session incoming-session)
+          event Any (apply-session-command! module session (resume-command! session))]
+      (when (not= (.-kind event) "resumed")
+        (throw (new Error "CWI1 resumption did not produce Resumed")))
+      event)))
+
+(js/export
+  (defn admit-session-candidate!
+    [module Any
+     incoming-session Any
+     incoming-candidate Any] Any
+    (let [session WasmSession (require-live-session incoming-session)
+          candidate WasmCandidate (require-candidate incoming-candidate)
+          scope Any (admission-scope-bytes! session candidate)
+          issued Any (apply-session-command!
+                      module session (encode-session-command! session 5 scope))]
+      (when (not= (.-kind issued) "issued")
+        (throw (new Error "CWI1 issuance did not produce exact Admission authority")))
+      (let [payload Any (admission-scope-bytes! session candidate)]
+        (doseq [byte Int (.-authorization issued)]
+          (.push payload byte))
+        (let [event Any (apply-session-command!
+                         module session (encode-session-command! session 6 payload))]
+          (when (not= (.-kind event) "admission")
+            (throw (new Error "CWI1 Admission did not produce AdmissionAccepted")))
+          (reset! (.-world session) (.-successor event))
+          event)))))
+
 (defn reject-reason [error Any] String
   (let [message Any (.-message error)]
     (if (= (js/typeof message) "string")
@@ -939,34 +1049,18 @@
        (try
          (let [session WasmSession (require-live-session incoming-session)
                candidate WasmCandidate (require-candidate incoming-candidate)
-               scope Any (admission-scope-bytes! session candidate)
-               issued Any (apply-session-command!
-                            module
-                            session
-                            (encode-session-command! session 5 scope))]
-           (when (not= (.-kind issued) "issued")
-             (throw (new Error
-                     "CWI1 issuance did not produce exact Admission authority")))
-           (let [payload Any (admission-scope-bytes! session candidate)]
-             (doseq [byte Int (.-authorization issued)]
-               (.push payload byte))
-             (let [event Any (apply-session-command!
-                              module
-                              session
-                              (encode-session-command! session 6 payload))
-                   projection Any (.-projection event)]
-               (when (or (not= (.-kind event) "admission")
-                       (nil? projection))
+               event Any (admit-session-candidate! module session candidate)
+               projection Any (.-projection event)]
+           (when (nil? projection)
                (throw (new Error "Admission produced no package-declared frame Observation")))
-             (reset! (.-world session) (.-successor event))
-             (let [frame Any (workbench/create-workbench-envelope
-                              policy
-                              (.stringify JSON (.-termBytes projection)))]
+           (let [frame Any (workbench/create-workbench-envelope
+                            policy
+                            (.stringify JSON (.-termBytes projection)))]
            (complete
             (workbench/->AdmissionAccepted
              session
              (.-successor event)
-             frame))))))
+             frame))))
          (catch Error error
            (complete (workbench/->AdmissionRejected (reject-reason error))))))
      (fn [incoming-session Any] Any

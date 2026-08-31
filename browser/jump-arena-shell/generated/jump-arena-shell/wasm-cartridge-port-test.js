@@ -160,7 +160,7 @@ function issuance_event_bang() {
 
 function admission_event_bang() {
   const bytes = cse_header_bang(4, 5);
-  put_identities_bang(bytes, [22, 36, 37, 38, 3]);
+  put_identities_bang(bytes, [22, 36, 37, 38, 41, 42, 3]);
   append_u32_bang(bytes, 2);
   bytes.push(1);
   put_identities_bang(bytes, [39]);
@@ -168,8 +168,50 @@ function admission_event_bang() {
   return bytes;
 }
 
+function suspended_event_bang() {
+  const bytes = cse_header_bang(2, 8);
+  put_identities_bang(bytes, [34, 35, 23, 24, 36, 37]);
+  append_u64_bang(bytes, 98);
+  append_u32_bang(bytes, 1);
+  return bytes;
+}
+
+function resumed_event_bang() {
+  const bytes = cse_header_bang(3, 9);
+  put_identities_bang(bytes, [38, 39, 35, 23, 24, 37, 40]);
+  append_u64_bang(bytes, 97);
+  append_u32_bang(bytes, 1);
+  return bytes;
+}
+
+function resumed_candidate_event_bang() {
+  const bytes = cse_header_bang(4, 3);
+  put_identities_bang(bytes, [41, 42, 22, 23, 24]);
+  append_u32_bang(bytes, 1);
+  return bytes;
+}
+
+function resumed_issuance_event_bang() {
+  const bytes = cse_header_bang(5, 4);
+  put_identities_bang(bytes, [43, 21, 3, 22, 42]);
+  append_u32_bang(bytes, 1);
+  return bytes;
+}
+
+function resumed_admission_event_bang() {
+  const bytes = cse_header_bang(6, 5);
+  put_identities_bang(bytes, [22, 44, 45, 46, 47, 48, 3]);
+  append_u32_bang(bytes, 2);
+  bytes.push(0);
+  return bytes;
+}
+
 function disposed_event_bang() {
   return cse_header_bang(5, 6);
+}
+
+function resumed_disposed_event_bang() {
+  return cse_header_bang(7, 6);
 }
 
 function throws_p_bang(action) {
@@ -264,6 +306,33 @@ const after_dispose = ({value: null, watches: {}});
 test["expect"]($$bc$str(after_dispose.value.reason)).toBe("Wasm session is disposed");
 return null; });
 
+test["test"]("persistent CWI1 commands retain continuation custody and exact Admission identities", () => { const requests = [];
+const module = module_for_bang([opened_event_bang(), input_event_bang(), suspended_event_bang(), resumed_event_bang(), resumed_candidate_event_bang(), resumed_issuance_event_bang(), resumed_admission_event_bang(), resumed_disposed_event_bang()], requests);
+const port = wasm["create-wasm-cartridge-port"](module, policy());
+const request = wasm["->ExactProcessRequest"](minimal_cwr1_bang());
+const accepted = ({value: null, watches: {}});
+const started = ({value: null, watches: {}});
+const candidate = ({value: null, watches: {}});
+(port.acceptPackage)(request, (result) => (() => { const _a = accepted, _v = result; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })());
+(port.startSession)(accepted.value.acceptedPackage, 1, (result) => (() => { const _a = started, _v = result; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })());
+const session = started.value.session;
+const input = wasm["advance-session-occurrence!"](module, session, 0);
+const suspension = wasm["suspend-session!"](module, session);
+const resumption = wasm["resume-session!"](module, session);
+test["expect"]($$bc$str(input.kind)).toBe("input");
+test["expect"](json_string(suspension.continuation)).toBe(json_string(resumption.continuation));
+test["expect"]($$bc$str(suspension.remainingBudget)).toBe("98");
+test["expect"]($$bc$str(resumption.remainingBudget)).toBe("97");
+(port.runCandidate)(session, workbench["->FixedTick"](16), process_configuration(1, 1, 0), (result) => (() => { const _a = candidate, _v = result; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })());
+const admission = wasm["admit-session-candidate!"](module, session, candidate.value.candidate);
+test["expect"](json_string(admission.predecessor)).toBe(json_string(identity(22)));
+test["expect"](json_string(admission.admissionId)).toBe(json_string(identity(45)));
+test["expect"](json_string(admission.judgmentId)).toBe(json_string(identity(46)));
+test["expect"](json_string(admission.successor)).toBe(json_string(identity(44)));
+(port.disposeSession)(session);
+test["expect"](json_string(requests.slice(1).map((bytes) => bytes[20]))).toBe("[1,8,9,2,5,6,7]");
+return null; });
+
 test["test"]("strict CWO1 decoding rejects malformed and trailing bytes", () => { const valid = cwo1([{[$$bc$property_key($$bc$keyword("kind"))]: "boolean", [$$bc$property_key($$bc$keyword("value"))]: false}]);
 test["expect"]((throws_p_bang(() => wasm["decode-cwo1-observation"](valid.concat([0]))) ? "true" : "false")).toBe("true");
 const bad = valid.slice();
@@ -317,6 +386,37 @@ const base_score = base_frame.player.score;
 const changed_score = changed_frame.player.score;
 test["expect"]($$bc$str(base_score)).toBe("1");
 test["expect"]($$bc$str(changed_score)).toBe("4");
+return null; }));
+
+const continuation_test_runtime = require("bun:test");
+const register_continuation_test = continuation_test_runtime.test;
+register_continuation_test("real Wasm suspends resumes proposes and admits one domain-neutral process", () => Promise.all([Bun.file("./generated/wasm/clause_runtime_bg.wasm").arrayBuffer(), Bun.file("./fixtures/wasm-process-continuation-v1/process-continuation-v1.cwr1.hex").text()]).then((assets) => { const module = initialize_real_session_module(assets[0]);
+const port = wasm["create-wasm-cartridge-port"](module, policy());
+const request = wasm["->ExactProcessRequest"](wasm["decode-cwr1-hex"](assets[1]));
+const accepted = ({value: null, watches: {}});
+const started = ({value: null, watches: {}});
+const candidate = ({value: null, watches: {}});
+(port.acceptPackage)(request, (result) => (() => { const _a = accepted, _v = result; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })());
+(port.startSession)(accepted.value.acceptedPackage, 1, (result) => (() => { const _a = started, _v = result; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })());
+const session = started.value.session;
+const input = wasm["advance-session-occurrence!"](module, session, 0);
+const suspension = wasm["suspend-session!"](module, session);
+const resumption = wasm["resume-session!"](module, session);
+const suspension_budget = suspension.remainingBudget;
+const resumption_budget = resumption.remainingBudget;
+test["expect"]($$bc$str(input.kind)).toBe("input");
+test["expect"](json_string(suspension.continuation)).toBe(json_string(resumption.continuation));
+test["expect"](json_string(suspension.run)).toBe(json_string(resumption.run));
+test["expect"](json_string(suspension.activation)).toBe(json_string(resumption.activation));
+test["expect"]($$bc$str(resumption_budget)).toBe($$bc$str((suspension_budget - 1)));
+(port.runCandidate)(session, workbench["->FixedTick"](16), process_configuration(1, 1, 1), (result) => (() => { const _a = candidate, _v = result; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })());
+const proposed = candidate.value.candidate;
+const admission = wasm["admit-session-candidate!"](module, session, proposed);
+test["expect"](json_string(proposed.base)).toBe(json_string(admission.predecessor));
+test["expect"]($$bc$str(admission.admissionId.length)).toBe("32");
+test["expect"]($$bc$str(admission.judgmentId.length)).toBe("32");
+test["expect"](((!(json_string(admission.successor) === json_string(admission.predecessor))) ? "true" : "false")).toBe("true");
+(port.disposeSession)(session);
 return null; }));
 
 const symbol_test_runtime = require("bun:test");
