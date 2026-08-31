@@ -358,7 +358,11 @@
               accepted Any (atom nil)
               started Any (atom nil)
               candidate Any (atom nil)
-              admitted Any (atom nil)]
+              admitted Any (atom nil)
+              airborne-candidate Any (atom nil)
+              airborne-admitted Any (atom nil)
+              momentum-candidate Any (atom nil)
+              momentum-admitted Any (atom nil)]
           ((.-acceptPackage port) request
            (fn [result Any] Any (reset! accepted result)))
           ((.-startSession port) (.-acceptedPackage @accepted) 1
@@ -377,6 +381,45 @@
             (.toBe
              (test/expect
               (if (> (.-x (.-position (.-player frame))) 0.0) "true" "false"))
+             "true"))
+          ((.-runCandidate port)
+           (.-session @started)
+           (workbench/->FixedTick 16)
+           (key-configuration 2 2 "Space")
+           (fn [result Any] Any (reset! airborne-candidate result)))
+          ((.-requestAdmission port)
+           (.-session @started)
+           (.-candidate @airborne-candidate)
+           (fn [result Any] Any (reset! airborne-admitted result)))
+          (let [jump-frame Any (wasm/decode-projected-term-frame
+                                (.-frame @airborne-admitted))]
+            (.toBe
+             (test/expect
+              (if (and (> (.-x (.-position (.-player jump-frame))) 0.0)
+                       (> (.-y (.-position (.-player jump-frame))) 0.0)
+                       (= false (.-grounded (.-player jump-frame))))
+                "true"
+                "false"))
+             "true"))
+          ((.-runCandidate port)
+           (.-session @started)
+           (workbench/->FixedTick 16)
+           (workbench/->InputConfiguration 3 [])
+           (fn [result Any] Any (reset! momentum-candidate result)))
+          ((.-requestAdmission port)
+           (.-session @started)
+           (.-candidate @momentum-candidate)
+           (fn [result Any] Any (reset! momentum-admitted result)))
+          (let [airborne-frame Any (wasm/decode-projected-term-frame
+                                    (.-frame @airborne-admitted))
+                momentum-frame Any (wasm/decode-projected-term-frame
+                                    (.-frame @momentum-admitted))]
+            (.toBe
+             (test/expect
+              (if (> (.-x (.-position (.-player momentum-frame)))
+                     (.-x (.-position (.-player airborne-frame))))
+                "true"
+                "false"))
              "true"))
           ((.-disposeSession port) (.-session @started))
           nil))))))

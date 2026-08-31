@@ -170,8 +170,8 @@ on tick ?player ?dt
     jump-arena maximum x ?max-x
     jump-arena minimum z ?min-z
     jump-arena maximum z ?max-z
-    (?position-x + ?intent-x * ?move-speed * ?dt) clamped between ?min-x and ?max-x as ?next-x
-    (?position-z + ?intent-z * ?move-speed * ?dt) clamped between ?min-z and ?max-z as ?next-z
+    (?position-x + (?velocity-x + ?intent-x * ?move-speed * ?dt) * ?dt) clamped between ?min-x and ?max-x as ?next-x
+    (?position-z + (?velocity-z + ?intent-z * ?move-speed * ?dt) * ?dt) clamped between ?min-z and ?max-z as ?next-z
     ?position-y + (?velocity-y + ?gravity * ?dt) * ?dt > ?floor
   withdraw
     ?player position Vec3 { x: ?position-x, y: ?position-y, z: ?position-z }
@@ -194,8 +194,8 @@ on tick ?player ?dt
     jump-arena maximum x ?max-x
     jump-arena minimum z ?min-z
     jump-arena maximum z ?max-z
-    (?position-x + ?intent-x * ?move-speed * ?dt) clamped between ?min-x and ?max-x as ?next-x
-    (?position-z + ?intent-z * ?move-speed * ?dt) clamped between ?min-z and ?max-z as ?next-z
+    (?position-x + (?velocity-x + ?intent-x * ?move-speed * ?dt) * ?dt) clamped between ?min-x and ?max-x as ?next-x
+    (?position-z + (?velocity-z + ?intent-z * ?move-speed * ?dt) * ?dt) clamped between ?min-z and ?max-z as ?next-z
     ?position-y + (?velocity-y + ?gravity * ?dt) * ?dt <= ?floor
   withdraw
     ?player position Vec3 { x: ?position-x, y: ?position-y, z: ?position-z }

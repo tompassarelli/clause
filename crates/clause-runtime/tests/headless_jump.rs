@@ -1067,6 +1067,107 @@ fn admit_source_tick(source: &[u8], allocation_tag: u8, policy_tag: u8) -> (Vec<
     (plan_bytes, projection.term)
 }
 
+fn admit_source_jump_then_tick(
+    source: &[u8],
+    allocation_tag: u8,
+    policy_tag: u8,
+) -> (Vec<u8>, Term) {
+    let package = checked_program_package_with_scopes(1, vec![]);
+    let package_id = package.id();
+    let application = ApplicationId {
+        snapshot: package.constitution().snapshot(),
+        local: ApplicationLocalId::new(1),
+    };
+    let plan = physical_plan_with_source(&package, source);
+    let plan_bytes = encode_executable_physical_plan_v1(&plan)
+        .expect("source-owned air momentum produces one exact CPP1 plan");
+    let (authority, facts) = carrier_authority(&package);
+    let allocation = RuntimeAllocationEpochV1::recorded_for(
+        raw_id(allocation_tag),
+        &package,
+        application,
+        &plan,
+        facts.executable(),
+    )
+    .expect("air-momentum session receives one recorded allocation root");
+    let mut session = PersistentProcessSessionV1::rematerialize(
+        package,
+        authority,
+        application,
+        plan,
+        facts.executable(),
+        allocation,
+    )
+    .expect("air-momentum session starts through the persistent runtime");
+    session
+        .apply_opaque_input(
+            &encode_executable_occurrence_v1(&occurrence(0, &[1.0, 0.0]))
+                .expect("horizontal intent occurrence encodes"),
+        )
+        .expect("horizontal intent enters before jumping");
+
+    session
+        .apply_opaque_input_and_emit_candidate(
+            &encode_executable_occurrence_v1(&occurrence(1, &[])).expect("jump occurrence encodes"),
+        )
+        .expect("jump emits one hidden candidate");
+    let jump_candidate = session
+        .candidate()
+        .expect("jump candidate lookup succeeds")
+        .expect("jump candidate exists")
+        .clone();
+    let (jump_policy, jump_authorization) = exact_root_admission_policy(
+        package_id,
+        facts.session,
+        jump_candidate.base,
+        jump_candidate.id,
+        policy_tag,
+    );
+    session
+        .establish_root_policy(jump_policy)
+        .expect("jump authority is established separately");
+    let (jump_successor, _) = session
+        .admit_candidate_with_projection(jump_authorization)
+        .expect("jump Admission creates the airborne state");
+    let airborne = session
+        .configuration()
+        .expect("jump successor installs one live configuration");
+    assert_eq!(value(airborne, 2), 0.0);
+    assert_eq!(value(airborne, 3), 8.0);
+    assert_eq!(value(airborne, 4), 1.0);
+    assert_eq!(airborne[5], ExecutableValueV1::Boolean(false));
+
+    session
+        .apply_opaque_input_and_emit_candidate(
+            &encode_executable_occurrence_v1(&occurrence(2, &[0.25]))
+                .expect("airborne tick occurrence encodes"),
+        )
+        .expect("airborne tick emits one hidden candidate");
+    let tick_candidate = session
+        .candidate()
+        .expect("tick candidate lookup succeeds")
+        .expect("tick candidate exists")
+        .clone();
+    assert_eq!(tick_candidate.base, jump_successor.id);
+    let (tick_policy, tick_authorization) = exact_root_admission_policy(
+        package_id,
+        facts.session,
+        tick_candidate.base,
+        tick_candidate.id,
+        policy_tag + 1,
+    );
+    session
+        .establish_root_policy(tick_policy)
+        .expect("tick authority is established separately");
+    let (tick_successor, projection) = session
+        .admit_candidate_with_projection(tick_authorization)
+        .expect("airborne tick Admission creates the successor");
+    assert_eq!(tick_successor.predecessor, jump_successor.id);
+    let projection = projection.expect("admitted airborne tick emits the renderer projection");
+    assert_eq!(projection.state, tick_successor.id);
+    (plan_bytes, projection.term)
+}
+
 fn assert_tick_projection(term: &Term, expected_x: f64) {
     let player = projected_object_field(term, b"player");
     let position = projected_object_field(player, b"position");
@@ -1250,6 +1351,50 @@ fn canonical_source_tick_reaches_admission_and_source_only_clamp_change_alters_b
         admit_source_tick(changed_maximum.as_bytes(), 220, 223);
     assert_ne!(changed_plan, base_plan);
     assert_tick_projection(&changed_projection, 2.0);
+}
+
+#[test]
+fn clause_only_air_momentum_reaches_admission_without_host_semantic_changes() {
+    let source = std::str::from_utf8(WORLD).expect("arena source is UTF-8");
+    let legacy = source
+        .replace(
+            "(?position-x + (?velocity-x + ?intent-x * ?move-speed * ?dt) * ?dt)",
+            "(?position-x + ?intent-x * ?move-speed * ?dt)",
+        )
+        .replace(
+            "(?position-z + (?velocity-z + ?intent-z * ?move-speed * ?dt) * ?dt)",
+            "(?position-z + ?intent-z * ?move-speed * ?dt)",
+        );
+    let (legacy_plan, _) = admit_source_jump_then_tick(legacy.as_bytes(), 208, 209);
+    let (momentum_plan, projection) = admit_source_jump_then_tick(WORLD, 211, 212);
+
+    assert_ne!(legacy_plan, momentum_plan);
+    let player = projected_object_field(&projection, b"player");
+    let position = projected_object_field(player, b"position");
+    let velocity = projected_object_field(player, b"velocity");
+    assert_eq!(
+        projected_number(projected_object_field(position, b"x")),
+        0.3125
+    );
+    assert_eq!(
+        projected_number(projected_object_field(position, b"y")),
+        1.5
+    );
+    assert_eq!(
+        projected_number(projected_object_field(velocity, b"x")),
+        1.25
+    );
+    assert_eq!(
+        projected_number(projected_object_field(velocity, b"y")),
+        6.0
+    );
+    assert_eq!(
+        projected_object_field(player, b"grounded")
+            .as_atom()
+            .expect("projected Boolean Atom")
+            .canonical_payload(),
+        [0]
+    );
 }
 
 #[test]

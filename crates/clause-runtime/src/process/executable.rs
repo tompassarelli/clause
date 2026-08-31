@@ -1970,28 +1970,33 @@ impl ExecutableProcessRuntimeV1 {
         let mut next_checker_ordinal = self.identity_ordinals.next_checker;
         let mut activation_prerequisite = None;
         if !execution.state_started {
-            let trigger = ExternalTriggerOccurrenceId::from_bytes(
-                runtime_identity_bytes(
-                    self.allocation.root,
-                    RuntimeIdentityDomainV1::ExternalTrigger,
-                    0,
-                )
-                .map_err(ExecutableCarrierErrorV1::Executable)?,
-            );
-            ingress.push(ProcessRecordV2::ExternalTrigger(
-                ExternalTriggerOccurrenceV2 {
-                    id: trigger,
-                    provenance: EnteredThrough {
-                        boundary: facts.trigger_ingress.boundary,
-                        evidence: facts.trigger_ingress.evidence,
-                        permission: facts.trigger_ingress.permission,
-                        payload: runtime_role_term(scope, b"clause/process-external-trigger-v1")?,
-                        supports: vec![],
-                        causes: vec![],
+            if matches!(execution.epoch_origin, CausalRef::SessionStart(_)) {
+                let trigger = ExternalTriggerOccurrenceId::from_bytes(
+                    runtime_identity_bytes(
+                        self.allocation.root,
+                        RuntimeIdentityDomainV1::ExternalTrigger,
+                        0,
+                    )
+                    .map_err(ExecutableCarrierErrorV1::Executable)?,
+                );
+                ingress.push(ProcessRecordV2::ExternalTrigger(
+                    ExternalTriggerOccurrenceV2 {
+                        id: trigger,
+                        provenance: EnteredThrough {
+                            boundary: facts.trigger_ingress.boundary,
+                            evidence: facts.trigger_ingress.evidence,
+                            permission: facts.trigger_ingress.permission,
+                            payload: runtime_role_term(
+                                scope,
+                                b"clause/process-external-trigger-v1",
+                            )?,
+                            supports: vec![],
+                            causes: vec![],
+                        },
                     },
-                },
-            ));
-            entered_occurrence.provenance.causes = vec![CausalRef::ExternalTrigger(trigger)];
+                ));
+                entered_occurrence.provenance.causes = vec![CausalRef::ExternalTrigger(trigger)];
+            }
             ingress.push(ProcessRecordV2::EnteredObservation(
                 entered_occurrence.clone(),
             ));
@@ -2118,9 +2123,9 @@ impl ExecutableProcessRuntimeV1 {
                 },
                 prerequisite_bindings: vec![prerequisite.binding],
                 causes: ActivationCauseFrontierV2 {
-                    origin: ActivationOrigin::RootedBy(RootTrigger::SessionStart(
-                        facts.session_start,
-                    )),
+                    origin: ActivationOrigin::RootedBy(runtime_root_trigger(
+                        execution.epoch_origin,
+                    )?),
                     prerequisite_occurrences: prerequisite.causes,
                 },
                 membership: RunMembership::RootOf(self.run),
@@ -2664,17 +2669,12 @@ impl ExecutableProcessRuntimeV1 {
             ));
         }
         let prepared = self.prepare_carrier_settlement(authorization)?;
-        let (facts, mode, checker_mode, remaining_budget) = {
+        let (facts, remaining_budget) = {
             let execution = self
                 .carrier_execution
                 .as_ref()
                 .ok_or(ExecutableCarrierErrorV1::NotStarted)?;
-            (
-                execution.facts,
-                execution.mode,
-                execution.checker_mode,
-                execution.remaining_budget,
-            )
+            (execution.facts, execution.remaining_budget)
         };
         let (run_ordinal, next_run_ordinal) =
             stage_runtime_ordinal(self.identity_ordinals.next_run)
@@ -2716,57 +2716,6 @@ impl ExecutableProcessRuntimeV1 {
             universe: self.carrier.carrier().constitution().universe(),
             semantics: self.carrier.carrier().constitution().semantics(),
         };
-        let (checker_ordinal, next_checker_ordinal) =
-            stage_runtime_ordinal(self.identity_ordinals.next_checker)
-                .map_err(ExecutableCarrierErrorV1::Executable)?;
-        let (checker_records, formation, _) = self.prepare_formation_checker(
-            checker_mode,
-            next_facts,
-            &prepared.executable_state.configuration,
-            &prepared.executable_state.configuration,
-            CheckerOriginV1::Root(RootTrigger::Admitted(prepared.executable_admission.id)),
-            SupportSource::Admission(prepared.executable_admission.id),
-            checker_ordinal,
-            remaining_budget,
-        )?;
-        let prerequisite = activation_formation_prerequisite(
-            self.carrier.carrier().constitution(),
-            self.application,
-            mode,
-            formation,
-        )?;
-        let next_epoch = ProcessRecordV2::Activation(ActivationProposalV2 {
-            id: next_activation,
-            application: self.application,
-            mode,
-            pins: activation_pins_v1(
-                self.carrier.carrier().constitution(),
-                self.application,
-                mode,
-                next_facts,
-                true,
-            )?,
-            static_basis: ActivationStaticBasis {
-                execution_authorizations: vec![],
-                judgment_authorities: vec![],
-            },
-            prerequisite_bindings: vec![prerequisite.binding],
-            causes: ActivationCauseFrontierV2 {
-                origin: ActivationOrigin::RootedBy(RootTrigger::Admitted(
-                    prepared.executable_admission.id,
-                )),
-                prerequisite_occurrences: prerequisite.causes,
-            },
-            membership: RunMembership::RootOf(next_run),
-            initial_configuration: ConfigurationProposal {
-                id: next_configuration,
-                value: executable_configuration_term_v1(
-                    scope,
-                    &prepared.executable_state.configuration,
-                )
-                .map_err(ExecutableCarrierErrorV1::Executable)?,
-            },
-        });
         let projected =
             self.prepare_projected_observation(&prepared.executable_state, facts, scope)?;
         let mut ingress = vec![
@@ -2776,8 +2725,6 @@ impl ExecutableProcessRuntimeV1 {
         if let Some((record, _, _)) = &projected {
             ingress.push(record.clone());
         }
-        ingress.extend(checker_records);
-        ingress.push(next_epoch);
         self.carrier
             .apply_ingress(&ingress)
             .map_err(ExecutableCarrierErrorV1::Ingress)?;
@@ -2797,7 +2744,6 @@ impl ExecutableProcessRuntimeV1 {
         self.identity_ordinals.next_run = next_run_ordinal;
         self.identity_ordinals.next_activation = next_activation_ordinal;
         self.identity_ordinals.next_configuration = next_configuration_ordinal;
-        self.identity_ordinals.next_checker = next_checker_ordinal;
         if let Some((_, _, next_observation_ordinal)) = &projected {
             self.identity_ordinals.next_state_observation = *next_observation_ordinal;
         }
@@ -2808,7 +2754,7 @@ impl ExecutableProcessRuntimeV1 {
         execution.facts = next_facts;
         execution.remaining_budget = remaining_budget;
         execution.prior_step = None;
-        execution.state_started = true;
+        execution.state_started = false;
         execution.epoch_origin = CausalRef::Admission(admission);
         execution.state_base_support = SupportSource::Admission(admission);
         Ok((admitted, projected.map(|(_, observation, _)| observation)))
