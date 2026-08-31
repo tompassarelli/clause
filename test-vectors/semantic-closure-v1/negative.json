@@ -1,0 +1,109 @@
+{
+  "cases": [
+    {
+      "expected_rejection": "InvalidAllocationBasis",
+      "id": "identity-physical-basis",
+      "input": "Fresh basis uses source span, position, traversal, caller/random bytes, UUID, handle, or physical allocation"
+    },
+    {
+      "expected_rejection": "ContinuityWitnessMissing",
+      "id": "identity-retain-without-prior-plan",
+      "input": "an edit or hot reload claims Retain without the exact prior IdentityPlan and an explicit valid ContinuityWitness"
+    },
+    {
+      "expected_rejection": "InvalidRootAllocationBasis",
+      "id": "identity-root-self-bootstrap",
+      "input": "EnteredRootBasis cites the identity being allocated or lacks a declared root constructor and uniqueness witness"
+    },
+    {
+      "expected_rejection": "IdentityCollision",
+      "id": "identity-collision",
+      "input": "two distinct allocation judgments claim one typed identity"
+    },
+    {
+      "expected_rejection": "HashPreimageCollision",
+      "id": "hash-preimage-collision",
+      "input": "one digest is presented for two different canonical preimages"
+    },
+    {
+      "expected_rejection": "AuthorizationUseConflict",
+      "id": "authorization-linear-concurrency",
+      "input": "two concurrent requests atomically contend for one Linear authorization",
+      "required_winner": "exactly one request may publish; the other receives the subtype's typed conflict and rejection disposition"
+    },
+    {
+      "expected_rejection": "AuthorizationUseLimitExceeded",
+      "id": "authorization-bounded-concurrency",
+      "input": "concurrent publishes exceed an AtMost(n) authorization",
+      "required_winner": "at most n requests publish atomically"
+    },
+    {
+      "expected_rejection": "UndeclaredAuthorizationLifecycle",
+      "id": "authorization-optional-lifecycle",
+      "input": "revocation, delegation, renewal, expiry, or wall time changes validity without a subtype-declared occurrence/observation contract"
+    },
+    {
+      "expected_rejection": "CausalCycle",
+      "id": "authorization-admission-cycle",
+      "input": "authorization issuance depends on candidate evidence whose Admission depends on that authorization"
+    },
+    {
+      "expected_rejection": "ManufacturedRunOrder",
+      "id": "causal-cross-run-run-order",
+      "input": "a global CausalOrder path is projected as a RunOrder edge between different Runs"
+    },
+    {
+      "expected_rejection": "AccidentalCausalOrder",
+      "id": "causal-registration-total-order",
+      "input": "unrelated nodes are ordered only by encoding, registration, log, arrival, clock, or host schedule"
+    },
+    {
+      "expected_rejection": "MissingConfigurationSuccession",
+      "id": "causal-configuration-succession",
+      "input": "a consumer Step omits the edge from the configuration token or settlement it consumes"
+    },
+    {
+      "expected_rejection": "StepBoundaryMismatch",
+      "id": "step-pair-regrouped",
+      "input": "one Mode-declared atomic pair boundary is published as two Steps"
+    },
+    {
+      "expected_rejection": "UndeclaredStepBoundary",
+      "id": "step-invisible-safepoint",
+      "input": "a physical allocation safepoint, scheduler yield, or progress poll receives a StepBoundaryRef or causal edge without Mode declaration"
+    },
+    {
+      "expected_rejection": "RefinementWitnessMissing",
+      "id": "refinement-cpp1-tag",
+      "input": "CPP1 shape/Mode/role/byte checks and ClosedApplicationRuleMachineV1 tag are presented as semantic-transition adequacy"
+    },
+    {
+      "expected_rejection": "RefinementProgressViolation",
+      "id": "refinement-infinite-tau",
+      "input": "an infinite physical tau run is used to satisfy a Mode with a declared progress or fairness obligation"
+    },
+    {
+      "expected_rejection": "SemanticReleaseManifestSelfReference",
+      "id": "release-self-reference",
+      "input": "manifest commits to its own digest, ClauseSemanticsId, path, Git object, or publication tag"
+    },
+    {
+      "expected_rejection": "SemanticReleaseCommitmentMismatch",
+      "id": "release-content-drift",
+      "input": "foundation, syntax, architecture, compiler genesis, selected carrier/checker contract, or corpus root differs from the canonical semantic manifest"
+    },
+    {
+      "expected_rejection": "SemanticReleaseArtifactCommitmentMismatch",
+      "id": "release-artifact-content-drift",
+      "input": "checker/runtime implementation bytes, bounded claim label, or cited ClauseSemanticsId differs from the canonical artifact manifest"
+    },
+    {
+      "expected_rejection": "SemanticIdentityIncludesImplementation",
+      "id": "release-implementation-in-semantic-preimage",
+      "input": "a mutable checker/runtime implementation hash or bounded capability label is included in SemanticReleaseManifestV1 or ClauseSemanticsId derivation"
+    }
+  ],
+  "claim": "normative discriminating inputs only; no carrier or runtime checker executes these cases yet",
+  "schema": "clause/semantic-closure/negative-v1",
+  "status": "normative-unimplemented"
+}

@@ -86,6 +86,7 @@ activate(ActivationStartRecord) =
 
 ⟨RunId, ActivationId, ConfigurationCustody_before, optional Wbase⟩
   -- StepRecord(s = fresh StepId,
+                boundary = StepBoundaryRef,
                 owner = (RunId, ActivationId),
                 causes = StepCauseFrontier,
                 transition = StepConfigurationTransition(s),
@@ -96,10 +97,12 @@ Run(RunId, unique root ActivationId, child Activations,
     order = transitive closure(typed frontier edges
                                ∪ typed configuration-succession edges))
 
-admit(BaseRevision, candidate delta, evidence,
-      AuthorizationEvidence<AdmissionAuthorization>,
-      JudgmentOccurrences, obligations)
-  = (AdmissionOccurrenceId, SuccessorRevision | Rejection)
+AdmissionRequestKey = H(canonical AdmissionRequest)
+
+admit(AdmissionRequest) =
+  Cite(existing AdmissionOccurrence)
+  | Decide(AdmissionOccurrence(requestKey,
+                               SuccessorRevision | Rejection))
 ```
 
 The transition semantics is this typed Activation, Step, observation,
@@ -124,6 +127,7 @@ These names are constitutional:
 | FormationJudgment | A contextual typing/formation claim; it grants no policy or execution authority. |
 | ApplicationForm | A checked closed exact-schema/operator/named-role/eligible-Mode/context configuration over a Term. |
 | Application | A nominal node instantiating one exact ApplicationForm, with `ApplicationId`. |
+| AllocationJudgment | The typed `Retain` or `Fresh` decision that alone establishes continuity or a new identity in one declared identity domain. |
 | CheckedConstitutionBinding | The exact non-self-referential selection of either a checked non-authoritative ProgramSnapshot candidate or an admitted ProgramRevision selecting that snapshot. It fixes meaning but does not itself grant authority. |
 | StaticActivationBasis | The checked formation, mode-executability, dependency, exact constitution binding, and exact citations for any Mode prerequisite discharged statically that make one Application/Mode pair callable. It records but never creates or substitutes for Authorization, capability, or Admission authority. |
 | DynamicPrerequisiteSchema | The selected Mode's finite stable-slot contract for values that must be supplied when an Activation begins; it may be empty and is not a causal frontier. |
@@ -132,8 +136,10 @@ These names are constitutional:
 | Activation | One actual engagement of an Application under one selected mode, valid StaticActivationBasis, immutable initial pins, exact bindings for the Mode's possibly empty dynamic-prerequisite schema, one typed occurrence-only cause frontier, and one exact Run membership. |
 | ActivationConfiguration | Semantic process state before or after a Step of one stable `ActivationId`; it is not the stable identity. |
 | Internal reduction | An anonymous carry-through inside one Step cut. It may update exclusively owned local configuration but creates no Step, occurrence, trace, or revision unless a declared semantic boundary is crossed. |
-| Step | One externally meaningful carry-through under an exact finite typed cause frontier and exactly one Serial, Split, Branch, or Join configuration transition. |
+| StepBoundaryRef | One `(ModeId, boundary-local-id)` selecting a Mode-owned semantic grouping contract. |
+| Step | One externally meaningful instance of one exact StepBoundarySchema under an exact finite typed cause frontier and exactly one permitted configuration transition. |
 | Run | A process envelope with one unique root Activation, zero or more uniquely owned child Activations, and exact partial order from typed frontier plus configuration-succession edges. |
+| CausalOrder | The heterogeneous partial order obtained as the transitive closure of all checked direct causal edges. Every per-Run `RunOrder` edge embeds in it, while global paths never add `RunOrder` edges. |
 | Continuation | The typed semantic remainder of an Activation, never merely a host stack frame. |
 | Observation | An identified occurrence reporting a distinction from a Step or external boundary. |
 | OccurrenceProvenance | A checked sum naming either the exact producing Activation/Step or the exact external boundary, evidence, and typed causal frontier through which an occurrence entered. |
@@ -150,7 +156,7 @@ These names are constitutional:
 | AssertionOccurrence | One identified act placing proposition content under an assertive stance, source, scope, and authority. |
 | Judgment | Immutable checked assessment content naming its subject, stance, authority kind, policy, and scope. A declaration in a candidate snapshot is not authoritative merely by being checked. |
 | JudgmentOccurrence | One identified issuance of an exact Judgment by an exact authority under an exact policy and context; its issuance basis must already be authoritative. |
-| Authorization | A typed Judgment permitting one exact action and scope. Its use is either a constitutive citation anchored in an already authoritative ProgramRevision or `IrreducibleRootConstitution`, or an issued AuthorizationOccurrence whose basis was already authoritative. |
+| Authorization | A typed Judgment permitting one exact action and scope. Its use is either a constitutive citation anchored in an already authoritative ProgramRevision or `IrreducibleRootConstitution`, or an issued AuthorizationOccurrence whose basis was already authoritative; each subtype declares its own exact use contract. It is never a Capability. |
 | Entity | A domain-level continuity projection, not the universal kernel noun. |
 | Referent | Whatever a Designation picks out under an explicit identity protocol. |
 | Identifier | A typed token designating one declared identity domain; its bytes do not define the continuity relation. |
@@ -164,12 +170,13 @@ These names are constitutional:
 | StateRevision | One admitted runtime process boundary with exact session, predecessor, causal occurrence, payload, policy, and semantics. |
 | Effect | A boundary-crossing process whose intent occurrence, issued EffectAuthorization Judgment/occurrence, capability evidence, attempt occurrence, optional receipt occurrence, Observations, JudgmentOccurrences, and any Admission remain distinct. |
 | Admission | The only operation that creates an authoritative Program, State, or other governed successor. |
+| AdmissionRequest | Canonical complete content of one proposed Admission decision; its content-derived key is retry identity, while the authoritative decision remains nominal. |
 | Trace | A retained projection of a Run; it is never the Run itself. |
 | StaticParameterTelescope | One declaration-level, rank-1 ordered set of static parameters and their Clause-owned FormationJudgments. |
 | InstantiationUseRef | Exact snapshot-local provenance of one closed parametric use. It is not a cross-snapshot reuse key. |
 | InstantiationKey | Cross-snapshot semantic checking key over one canonical parametric interface, normalized arguments, constraint obligations, resolution-scope commitments, and evidence. It is not nominal Application or occurrence identity. |
 | SpecializationKey | Semantic implementation key adding the exact body and transitive semantic dependency closure to an InstantiationKey. |
-| PhysicalReuseKey | Physical cache key adding accepted lowering/refinement, target profile, ABI/layout/strategy, and physical dependencies to a SpecializationKey. |
+| PhysicalReuseKey | Physical cache key adding the exact AcceptedRefinementWitnessId, target profile, ABI/layout/strategy, and physical dependencies to a SpecializationKey. |
 | Lifetime root | Exactly one reclamation root for a physical allocation: affine owner, region membership, or a foreign manager. Borrow and Lease are separately typed access edges, not roots. |
 
 Capitalized **Clause** names the language. Lower-case **clause**, where used as
@@ -342,6 +349,89 @@ Semantic identity domains are disjoint even when a transport uses one fixed
 byte width for all of them. No unchecked cast, shared string, host handle, or
 wire `Id32` may substitute one domain for another.
 
+Every nominal or occurrence identity is established by one extensible typed
+allocation judgment owned by its identity domain:
+
+```text
+AllocationJudgment<D : IdentityDomain> :=
+    Retain(prior : Id<D>,
+           witness : ContinuityWitness<D>)
+  | Fresh(basis : FreshBasis<D>,
+          producer : SemanticProducerRef<D>,
+          slot : AllocationSlot<D>)
+
+AllocationSlot<D> :=
+    Singleton
+  | EmissionSlot(ProductionRef, stable semantic local slot,
+                 optional RepetitionSlotId)
+  | MultiplicitySlot(stable semantic role, RepetitionSlotId)
+  | DomainSlot(exact domain-declared stable semantic slot)
+
+FreshBasis<D> :=
+    ConstitutedBasis(exact finite D-declared predecessor inputs)
+  | EnteredRootBasis(exact RootAllocationConstructorRef<D>,
+                     exact BoundaryRef,
+                     exact RootUniquenessWitness<D>)
+```
+
+`ContinuityWitness<D>` is the exact domain-declared proof that the prior
+identity and proposed object are one continuing semantic occurrence or
+referent. `FreshBasis<D>` is a finite canonical well-founded allocation basis
+declared by `D`; it cannot cite the identity being allocated. The semantic
+producer is the exact constituted declaration, boundary, occurrence, or
+earlier binder whose declared act produces the identity. A slot distinguishes
+multiple products of one producer without borrowing traversal order. Domains
+extend these sums only through checked declarations fixing the basis,
+producer, slot, collision, and continuity contracts.
+
+An irreducible root is legal only through a domain-declared
+`RootAllocationConstructorRef<D>` already constituted outside the identity it
+allocates. Its entered boundary is an irreducible generative binder over one
+exact domain scope: it atomically validates a non-self-referential
+`RootUniquenessWitness<D>` establishing freshness in that scope and publishes
+the root allocation judgment once. A monotone counter, entropy, or another
+physical mechanism may realize the binder, but its raw bytes alone are never
+semantic uniqueness evidence. Source bytes, wall time, machine identity, a
+UUID, a handle, or physical allocation likewise cannot justify the witness.
+Domains without this exact scoped root rule can allocate only from an already
+constituted basis. Thus a fresh identity never bootstraps itself and the
+semantic rule requires no global historical scan.
+
+At checked candidate-snapshot construction every accepted source emission is
+assigned a stable `EmissionSlot` in the projected `IdentityPlan`. The slot is
+derived from the selected source production and its stable semantic child
+slot. When one child slot repeats, each member has an explicit
+`RepetitionSlotId`: a retained member carries its prior slot ID through the
+IdentityPlan and an inserted member receives a fresh slot ID under the exact
+candidate-change producer. A canonical ordinal may order the resulting
+encoding, but never proves continuity and insertion never renumbers retained
+members. Raw span, byte position, traversal order, caller bytes, random
+host UUID, pointer, handle, storage row, interning order, or physical allocation
+is never a semantic allocation basis. Such data may help realize an allocator
+or recover a source map but cannot justify `Retain`, `Fresh`, or equality.
+
+Allocation construction is checked as one finite dependency graph. A fresh
+basis may name already constituted predecessors or earlier fresh binders in
+one explicitly atomic constructor; the constructor checks the whole proposed
+graph for domain correctness, unique slots, collisions, and cycles before
+publishing any member. This is the generic rule that permits a Step and its
+outputs, or a split and its child bindings, to be co-formed without pretending
+that publication order is causality.
+
+Reload and replay observe the recorded `AllocationJudgment`; they never run a
+fresh allocator for an existing occurrence. Exact recomputation and byte
+equality apply only to rematerialization of that same recorded occurrence, or
+to an identity domain whose declaration says the identity is derived from an
+exact canonical preimage. Independently fresh causal identities need not and
+ordinarily must not have equal bytes. Their equivalence across independent
+elaboration or schedule realizations is a typed, domain-preserving nominal
+isomorphism that preserves every allocation-basis, producer, slot, and causal
+edge. A printer/elaborator round trip is identity-correct exactly when its
+projected IdentityPlans are equal for retained/derived identities and related
+by that isomorphism for independently fresh identities. A duplicate identity
+for distinct allocation judgments, or equal digest with different canonical
+preimages, is typed `IdentityCollision` rejection.
+
 Declarations, nominal Applications, and candidate constitutive Judgment
 declarations use typed snapshot-local identifiers inside the canonical
 ProgramSnapshot preimage. Their local presence does not make them authoritative.
@@ -381,12 +471,12 @@ or continuity.
 | `InstantiationUseRef` | Exact provenance of one closed use record in one ProgramSnapshot. The local record uses only snapshot-local or already resolved references; the external tuple resolves after ProgramSnapshotId exists. It changes with the containing snapshot and is never a cross-snapshot cache key. |
 | `InstantiationKey` | Semantic checking key over one canonical `ParametricInterfaceId`, normalized arguments, named constraint obligations, exact resolution-scope commitments, and normalized evidence. It is cross-snapshot reusable only when every nominal input has a portable typed reuse identity; otherwise it is deliberately snapshot-bound. It is never nominal continuity, authority, or sufficient physical-artifact identity. |
 | `SpecializationKey` | Cross-snapshot semantic implementation key adding the exact declaration-body content identity and transitive semantic dependency closure to an InstantiationKey. An interface-stable body change preserves checking reuse but invalidates specialization reuse. |
-| `PhysicalReuseKey` | Exact physical-cache key adding accepted lowering/refinement identity, target and feature profile, ABI/layout/strategy, and physical dependency closure to a SpecializationKey. `ArtifactId` remains the exact resulting bytes. |
+| `PhysicalReuseKey` | Exact physical-cache key adding one exact AcceptedRefinementWitnessId, target and feature profile, ABI/layout/strategy, and physical dependency closure to a SpecializationKey. `ArtifactId` remains the exact resulting bytes. |
 | `ApplicationShapeId` | Post-snapshot identity of canonical closed ApplicationForm content under one `ClauseSemanticsId`, including exact RelationSchemaId, OperatorRef, eligible ModeIds, named-role bindings, context requirements, exact InstantiationUseRefs with their InstantiationKeys and SpecializationKeys, and the exact resolved semantic-dependency/declaration closure, which may be proven empty. PhysicalReuseKey is excluded. It never occurs in its own ProgramSnapshot preimage. Open formation candidates are not ApplicationForms and have no semantic shape ID. Used for exact resolved-form comparison, never nominal occurrence or cross-snapshot reuse. |
 | `ApplicationId` | One nominal Application instantiating one exact ApplicationForm under its exact semantics and snapshot-local declaration references. Every Application has one. Source-only movement may preserve it when the exact ProgramSnapshot and form are unchanged; a semantic or declaration revision creates a new ApplicationId, with any intended cross-revision continuity represented separately by ReferentId evidence. |
 | `OccurrenceId` and typed refinements | One actual source, assertion, external-trigger, Judgment issuance, authorization, resumption, handoff, cancellation, production, admission, effect-intent, effect-attempt, receipt, or observation occurrence. Every actual occurrence has the explicit provenance sum defined below; equal content never merges independent occurrences, and one refinement never substitutes for another. |
 | `ActivationId` | One actual engagement of one exact Application, mode, and initial context. Every activation is distinct, including repeated activation of equal content. |
-| `StepId` | One fresh nominal identity for an externally meaningful semantic carry-through in an Activation. The associated StepRecord, not the StepId, carries its exact owner, finite typed StepCauseFrontier, StepConfigurationTransition, and outputs; serialization order supplies no causal edge. |
+| `StepId` | One fresh nominal identity for an externally meaningful semantic carry-through in an Activation. The associated StepRecord, not the StepId, cites its exact StepBoundaryRef/schema and carries its owner, finite typed StepCauseFrontier, permitted StepConfigurationTransition, and schema-labelled outputs; serialization order supplies no causal edge. |
 | `RunId` | One causal envelope with exactly one root Activation and unique membership for every child Activation it owns. It is not an alias for ActivationId or a log identifier. |
 | `ContinuationId` | One persisted, suspended, or handed-off semantic remainder. Ephemeral in-process remainder may be physically erased when refinement proves it unobservable. |
 | `ObservationId` | One occurrence reporting a distinction from an exact Step or external boundary. Equal observed values do not merge observations. |
@@ -904,11 +994,24 @@ StepConfigurationTransition(s : StepId) :=
          produce parent ActivationConfigurationToken whose predecessor is
            ConfigurationAfter(s))
 
+StepBoundaryRef := (exact ModeId, StepBoundaryLocalId)
+
+StepBoundarySchema :=
+    exact StepBoundaryRef owned by that Mode
+  + permitted transition/custody variant and exact before/after shape
+  + finite typed incoming-cause schema
+  + finite named output-role and output-kind schema, each with exact
+    cardinality and atomic-grouping contract
+  + exact visibility of semantic commit, failure, and cancellation
+  + only explicitly semantic scheduling, resource, or progress checkpoints
+
 StepRecord(s : fresh StepId) :=
-    exact owner (RunId, ActivationId)
+    exact StepBoundaryRef and its checked StepBoundarySchema
+  + exact owner (RunId, ActivationId)
   + exact StepCauseFrontier
   + exact StepConfigurationTransition(s)
-  + exact observations, outcome, candidate delta, and Continuation outputs
+  + exact schema-labelled observations, outcome, candidate delta,
+    Continuation, and other declared outputs
 
 Ready(a : ActivationId) :=
     exact constituted Activation a
@@ -950,7 +1053,61 @@ IncomingRunEdges(s) :=
 RunOrder := transitive closure(
     typed StepCauseFrontier edges
   ∪ typed ConfigurationSuccessionEdges)
+
+CausalNodeRef :=
+    Activation(RunId, ActivationId)
+  | Step(RunId, ActivationId, StepId)
+  | Occurrence(exact typed OccurrenceId)
+  | Output(exact typed producer output identity)
+  | Candidate(exact typed candidate identity)
+  | Judgment(JudgmentOccurrenceId)
+  | Admission(AdmissionOccurrenceId)
+  | Authorization(AuthorizationOccurrenceId<exact subtype>)
+  | EffectIntent(EffectIntentOccurrenceId)
+  | EffectAttempt(EffectAttemptOccurrenceId)
+  | Receipt(ReceiptOccurrenceId)
+  | Extension(exact node-kind declaration, exact typed identity)
+
+DirectCausalEdge :=
+    checked typed edge(CausalNodeRef predecessor,
+                       CausalNodeRef dependent,
+                       exact dependency role)
+
+CausalOrder := transitive closure(all DirectCausalEdges)
 ```
+
+One `StepBoundarySchema` may have arbitrarily many dynamic Step instances and
+may admit dynamically sized output batches only through its declared
+cardinality and stable output slots/RepetitionSlotIds; a canonical ordinal may
+order encoding but cannot establish output continuity. Conversely, a change to
+boundary placement, atomic grouping, cause shape, custody, output roles,
+visibility, or declared checkpoint changes the owning Mode's meaning and its
+exact `ModeId`. A compiler reduction, evaluator instruction, loop iteration,
+allocation safepoint, scheduler yield, logging boundary, or progress counter is
+not a Step unless the selected Mode declares it through a `StepBoundaryRef`.
+Anonymous reductions and invisible physical safepoints have no boundary ref,
+StepId, `StepRecord`, or causal edge.
+
+Every `RunOrder` edge is also one direct or transitively represented edge in
+`CausalOrder`, including both the Step cause frontier and configuration
+succession. `RunOrder` remains Step-only and per-Run: no global path through an
+Admission, authorization, effect, log, or another Run manufactures a cross-Run
+`RunOrder` edge. `CausalOrder` is heterogeneous and may order nodes from
+different Runs through their actual dependencies. Its direct edges include
+occurrence-to-Activation/Step projections, Step-to-output, output-to-candidate,
+candidate/evidence/support-to-Judgment, request inputs and authorization use to
+Admission, intent/authorization/capability-to-effect attempt, attempt-to-
+receipt/observation, and every exact incoming edge required by an extensible
+node declaration. Configuration succession is never omitted merely because a
+frontier edge also exists.
+
+Every published causal node therefore declares and checks its complete finite
+typed incoming schema. A predecessor is either already constituted or is an
+earlier fresh binder in one explicitly atomic constructor whose entire direct-
+edge graph is checked acyclic before publication. Encoding, registration,
+storage, traversal, log, arrival, clock, and host scheduling order add no edge.
+Nodes with no dependency path remain incomparable; canonical encoding order
+does not turn `CausalOrder` into a total order.
 
 `CheckedPackageRef` is an exact immutable binding to canonical package bytes,
 semantics epoch, decoded sections, and the checker result over those bytes. It
@@ -1509,17 +1666,97 @@ Run.
 ## Admission is the authority boundary
 
 ```text
-Γ ⊢ candidate delta well formed against exact BaseRevision
-Γ ⊢ evidence, AuthorizationEvidence<AdmissionAuthorization>,
-    JudgmentOccurrences, policy, and obligations sufficient
-Γ ⊢ authorization basis independently authoritative before Admission decision
+AdmissionRequest<T : AdmissionTarget> :=
+    exact target identity and target kind T
+  + exact base/root and target-policy branch or merge coordinates
+  + exact canonical candidate commitment
+  + exact evidence and occurrence-exact support commitments
+  + exact ordered authorization uses
+  + exact role-labelled JudgmentOccurrences
+  + exact obligation dispositions
+  + exact policy and semantics identities
+  + exact validity observations
+  + exact conflict and successor contract
+
+AdmissionRequestKey<T> = H(
+  "clause/admission-request/v1",
+  canonicalBytes(AdmissionRequest<T>))
+
+AdmissionOccurrence<T> :=
+    fresh nominal authoritative decision identity
+  + exact AdmissionRequestKey<T>
+  + exact Accepted(exact successor) | Rejected(exact typed disposition)
+  + exact direct causal incoming edges required by the request
+
+Γ ⊢ canonical request well formed against its exact base/root
+Γ ⊢ evidence, supports, authorization uses, JudgmentOccurrences,
+    obligations, policy, validity, semantics, and conflict contract sufficient
+Γ ⊢ every authorization basis independently authoritative before decision
 Γ ⊢ candidate, proposed successor, and their evidence supply no such basis
-───────────────────────────────────────────────────────────
-admit(BaseRevision, delta, evidence,
-      AuthorizationEvidence<AdmissionAuthorization>,
-      JudgmentOccurrences, obligations)
-  = (AdmissionOccurrenceId, SuccessorRevision | Rejection)
+─────────────────────────────────────────────────────────────
+admit(AdmissionRequest<T>) =
+  Cite(existing AdmissionOccurrence<T>) | Decide(new AdmissionOccurrence<T>)
 ```
+
+The canonical request is the complete content identity of a decision, not the
+decision occurrence. Its sequences preserve role, support, authorization-use,
+and obligation multiplicity; their canonical order is declared by the target
+contract rather than inherited from caller order. Same-key physical delivery,
+crash retry, or concurrent replay cites the one existing
+`AdmissionOccurrence`; it does not allocate a semantic attempt or make another
+decision. Any changed committed input creates another request key. A target may
+declare an observable `AdmissionAttemptOccurrence` with its own typed incoming
+schema, but retries have no such semantic occurrence by default.
+
+Each Admission target policy declares exactly:
+
+```text
+AdmissionTargetPolicy<T> :=
+    candidate re-review rule
+  + rejection finality and retry/change rule
+  + successor topology:
+      ExclusiveHead(compare-and-publish exact base)
+    | Branch(branch coordinate and predecessor rule)
+    | Merge(exact parent set and merge contract)
+  + atomic conflict detection and typed winner/loser result
+```
+
+`ExclusiveHead` permits exactly one winner for one current base. Branch and
+merge acceptance are not weaker authority kinds: they are explicit target
+successor policies. Branching therefore belongs to Admission target policy,
+never to the Authorization ontology.
+
+Authorization use is independently typed by authorization subtype:
+
+```text
+AuthorizationUse<A : Authorization> :=
+    exact AuthorizationEvidence<A>
+  + exact AuthorizationUseContract<A>
+  + exact subtype-specific AuthorizationUseOccurrence<A>
+    or declared LinearizationOccurrence<A>
+  + exact action/scope and validity observations
+
+AuthorizationUseContract<A : Authorization> :=
+    cardinality: Reusable | AtMost(exact bound) | Linear
+  + exact subtype-specific use/linearization occurrence kind
+  + exact subject/action/scope/policy/semantics coverage
+  + exact typed validity observations
+  + atomic validate-use-and-publish rule
+  + typed conflict and winner result
+  + rejection disposition: Preserve | Consume | exact subtype rule
+```
+
+Every authorization subtype declares this contract; generic Admission cannot
+guess it. Reusable use preserves authority within its exact scope. Bounded and
+linear use validates cardinality and publishes the use/decision atomically, so
+concurrent contenders receive one typed winner set and typed conflicts rather
+than both spending the same authority. Rejection preserves or consumes a use
+only as the subtype declares. Revocation, delegation, renewal, and expiry exist
+only when that subtype declares their exact occurrences, incoming causal
+schemas, validity effect, and conflict rule. Wall time affects authority only
+through a typed time observation named by that contract. Authorization remains
+a Judgment about permission; Capability remains independent evidence of access
+to a boundary or resource. Neither substitutes for the other.
 
 Running alone does not mutate authoritative Clause state. A candidate delta and
 a continuation are distinct: either, both, or neither may be emitted by one
@@ -1557,16 +1794,13 @@ An independent authority may use candidate/check evidence as the subject of its
 review without deriving its authority from that evidence. A self-supporting
 cycle rejects before an AdmissionOccurrence or successor is allocated.
 
-An actual invocation of this boundary is an `AdmissionOccurrence` with exact
-typed provenance. It consumes the applicable
-`AuthorizationEvidence<AdmissionAuthorization>` and JudgmentOccurrences but is
-neither an Authorization nor a Judgment itself. An
-AdmissionOccurrence may produce one exact successor or a typed Rejection;
-repeating an already decided admission does not invent a different successor
-identity merely because the attempt occurrence differs. The target revision's
-constitutional identity fields remain those declared for that revision kind;
-the AdmissionOccurrence remains queryable causal evidence unless that target's
-identity contract explicitly includes it.
+An actual authoritative decision at this boundary is the nominal
+`AdmissionOccurrence` above. It applies the request's exact authorization uses
+and role-labelled JudgmentOccurrences but is neither an Authorization nor a
+Judgment itself. It produces one exact successor or typed Rejection and remains
+queryable causal evidence. The target revision's constitutional identity
+fields remain those declared for that revision kind; request-key equality does
+not collapse independently declared successor identity.
 
 The strict governed-per-intent state/effect profile is a causal graph, not one
 mandatory total chain:
@@ -1937,7 +2171,7 @@ SpecializationKey = H(
 PhysicalReuseKey = H(
   "clause/physical-reuse/v1",
   SpecializationKey,
-  exact accepted lowering/refinement identity,
+  exact AcceptedRefinementWitnessId,
   target + features + runtime profile,
   ABI + layout + strategy,
   exact physical dependency closure
@@ -2063,13 +2297,18 @@ Focus {
 }
 
 Emission {
+  projectedSlot: EmissionSlot
   term: Term
   candidateFormations: FiniteCollection<FormationCandidate>
   stance: Stance
   origin: SourceSlice
 }
 
-elaborate(sourceConstruct, ElaborationContext) -> ElaborationResult | Error
+elaborate(sourceConstruct, ElaborationContext,
+          Independent
+          | RetainAgainst(exact prior IdentityPlan,
+                          explicit ContinuityWitnesses))
+  -> ElaborationResult + projected IdentityPlan | Error
 ```
 
 Each emission is checked and diagnosed independently and retains its own exact
@@ -2081,17 +2320,30 @@ become focus. A header with a declared open slot may allocate a structural or
 nominal focus. Indentation itself never means membership, body, containment,
 application, ownership, sequencing, or authority.
 
-For every closed printable source context:
+For every closed printable source context and checked projection `P`, the
+round-trip laws are relative to the projected identity plans:
 
 ```text
-elaborate(print(P)) ≅ P
+let P′ = elaborate(print(P), context, Independent)
+let α = TypedFreshAlpha(projectionIdentityPlan(P),
+                        projectionIdentityPlan(P′))
+projectedMeaning(α(P′)) = projectedMeaning(P)
+
+elaborate(print(P), context,
+          RetainAgainst(projectionIdentityPlan(P),
+                        explicit ContinuityWitnesses))
+  preserves exactly the Retain rows whose witnesses validate
 print(elaborate(source)) = canonical(source)
 ```
 
-The equivalence explicitly accounts for layout, comments, source occurrence
-identity, and fresh nominal allocation. Stable concept continuity belongs to
-the admitted graph, not coincidental source position. Ordinary source must not
-expose graph bookkeeping ceremony.
+`TypedFreshAlpha` is the named domain-preserving bijection over independently
+fresh identities; it preserves producer, EmissionSlot/RepetitionSlotId,
+multiplicity, and causality and is identity on retained/derived identities. An
+edit or hot reload obtains continuity only from the exact prior IdentityPlan
+and explicit valid `ContinuityWitness` values. The laws separately account for
+layout, comments, and source occurrence identity. Stable concept continuity
+belongs to the admitted graph, not coincidental source position. Ordinary
+source must not expose graph bookkeeping ceremony.
 
 ## Relational knowledge
 
@@ -2371,21 +2623,29 @@ Neither is a Program or authority merely by existing. The typed boundary is:
 read(SourceUnit)
   -> LosslessCST + SourceMap
 
-elaborate(LosslessCST, ElaborationContext)
-  -> candidate Terms, occurrences, formations, application-form candidates,
-     and declarations
+elaborate(LosslessCST, ElaborationContext,
+          Independent
+          | RetainAgainst(exact prior IdentityPlan,
+                          explicit ContinuityWitnesses))
+  -> candidate Terms, emissions, formations, application-form candidates,
+     declarations, and projected IdentityPlan
 
-check(candidate Terms, occurrences, formations, forms, and declarations)
+check(candidate Terms, emissions, formations, forms, declarations,
+      projected IdentityPlan)
   -> checked Terms, FormationJudgments, ApplicationForms, declarations,
-     or exact obligations
+     exact EmissionSlots and AllocationJudgments, or exact obligations
 
 propose_change(checked candidate, base ProgramRevision or root,
                ProgramProposalContext)
   -> ProgramChangeOccurrence
 
-admit(checked ProgramChangeOccurrence, base ProgramRevision or root,
-      ProgramAdmissionContext)
-  -> (AdmissionOccurrence, ProgramRevision | Rejection)
+form_admission_request(checked ProgramChangeOccurrence,
+                       ProgramAdmissionContext)
+  -> canonical AdmissionRequest<ProgramRevision>
+
+admit(canonical AdmissionRequest<ProgramRevision>)
+  -> Cite(existing AdmissionOccurrence)
+   | Decide(AdmissionOccurrence, ProgramRevision | Rejection)
 ```
 
 `ElaborationContext` owns only caller-selected scope, declarations, imports,
@@ -2401,11 +2661,11 @@ Admission policy, or AdmissionOccurrence capability. The exact
 occurrence boundary that records the proposal act; candidate content and the
 proposal context cannot allocate or authorize that occurrence themselves.
 
-`ProgramAdmissionContext` is consumed only by `admit` and contains the exact
-ProgramId, base or root, admission policy,
-`AuthorizationEvidence<AdmissionAuthorization>`, applicable
-JudgmentOccurrences, and AdmissionOccurrence-allocation capability. Its
-AuthorizationEvidence resolves only from
+`ProgramAdmissionContext` is consumed only to form the canonical request and
+contains the exact ProgramId, base or root, admission target policy, typed
+`AuthorizationUse<AdmissionAuthorization>` values, applicable role-labelled
+JudgmentOccurrences, obligation dispositions, validity observations, and
+AdmissionOccurrence-allocation capability. Each authorization use resolves only from
 an already authoritative ProgramRevision or `IrreducibleRootConstitution`, or from a
 governed AuthorizationOccurrence issued from such a basis; it is never looked
 up in the candidate snapshot being proposed. Revision existence is
@@ -2534,6 +2794,80 @@ control/dataflow IRs, heaps, structs, registers, database plans, native code,
 Wasm, JavaScript, and browser objects. They are checked refinements, not rival
 semantic substances.
 
+Every activated physical plan is justified by one versioned translation-
+validation judgment for the selected Mode transition system:
+
+```text
+RefinementObligations(Mode) := derive independently from the exact Mode's
+    determinism/nondeterminism contract
+  + totality/partiality/productivity contract
+  + pure/state/effect contract
+  + finite/streaming/reactive interaction contract
+  + termination/progress/liveness/fairness contract
+  + result-enumeration and cardinality contract
+  + cancellation/failure/resource/latency/bound contracts
+
+OpenSystemRefinementV1 :=
+    exact ClauseSemanticsId, ProgramSnapshotId, ApplicationShapeId, ModeId
+  + exact semantic transition-system commitment
+  + exact physical-plan bytes and target/runtime/compiler/ABI pins
+  + state relation R ⊆ PhysicalState × SemanticState
+  + contravariant semantic-input/environment representation relation
+  + covariant output/observation relation
+  + physical-event projection: Tau | exact semantic label
+  + typed nominal isomorphism for independently fresh identities
+  + resource and latency preorder
+  + exact Step, effect-attempt, and Admission linearization map
+  + exact derived RefinementObligations(Mode)
+  + exact certificate and checker/check route
+
+Γ ⊢ PhysicalPlan ≼₁ SelectedModeTransitionSystem
+  iff related initial states
+  and every semantically admitted/environment input has its declared
+      physical representation
+  and every physical output/observation maps covariantly
+  and every physical transition is stutter or matches one finite semantic
+      transition fragment under the event projection
+  and every declared Step/effect/Admission boundary has one exact
+      Mode-permitted linearization and no undeclared one
+  and all independently derived Mode result, progress, liveness, fairness,
+      resource, latency, cancellation, failure, and bound obligations hold
+```
+
+This is weak open-system refinement, not universal bisimulation or byte
+equality. A Mode that is deterministic, total, and pure requires equality of
+its declared extensional result and observations. Any nondeterministic Mode
+requires every concrete may-behavior to be contained in allowed semantic may-
+behavior plus preservation of its declared must/progress obligations; it
+requires complete outcome enumeration only when the Mode promises it. Any
+reactive or effectful Mode requires the weak simulation, liveness/fairness its
+independent axes declare, and exact Step/effect/Admission linearization where
+applicable. Deterministic-effectful, nondeterministic-reactive, partial-pure,
+and every other admitted combination therefore receive the conjunction of
+their exact Mode-axis obligations rather than being forced into a closed
+profile sum. Physical stutter is permitted; an infinite stutter violates any
+applicable progress or fairness obligation. A failure to decode, allocate, or
+materialize before activation may remain a typed physical rejection and need
+not be fabricated as a semantic transition.
+
+Checked lowering chains compose transitively only when adjacent pins and
+state/input/output/event relations match and the composed resource/latency
+preorder, nominal isomorphism, linearization, progress, and declared bounds are
+rechecked. The accepted certificate bytes and checker result derive one
+`AcceptedRefinementWitnessId`; `PhysicalReuseKey` binds that exact witness, not
+a strategy name or claimed refinement tag. A changed witness, plan, selected
+Mode system, pin, relation, projection, or bound invalidates reuse.
+
+CPP1 already places physical-plan allocation outside ProgramSnapshot identity
+and removes the earlier magic semantic-Term lookup. The runtime's `New` versus
+`Rematerialize` allocation epoch also distinguishes fresh execution from exact
+reloading. Those are implemented physical repairs, not proof of this judgment:
+the current CPP1 checker validates encoding shape, selected
+`ApplicationShapeId`/`ModeId`, role bindings, and exact bytes, while
+`ClosedApplicationRuleMachineV1` is only a tag. It does not yet validate
+semantic transition adequacy, nominal isomorphism, linearization, progress,
+resources/latency, or transitive lowering composition.
+
 A backend may keep truly unobservable decisions private. Any physical decision
 that can affect observable behavior or a declared ABI, layout, overflow,
 floating-point, ordering, determinism, synchronization, cancellation,
@@ -2561,6 +2895,74 @@ accidental structure never defines Clause meaning:
 | observed thread interleaving | never semantic order beyond declared typed frontier or configuration-succession edges |
 | thrown string | never an untyped substitute for rejection, cancellation, timeout, exhaustion, or absent evidence |
 | missing relation row | never false without an explicit closed-world contract |
+
+## Reproducible semantic release
+
+One canonical `SemanticReleaseManifestV1` is the complete preimage of a
+released `ClauseSemanticsId`:
+
+```text
+ClauseSemanticsId = SHA256(
+  UTF8("clause/semantic-release-manifest/v1\n")
+  || exact SemanticReleaseManifestV1 bytes)
+
+SemanticReleaseManifestV1 :=
+    exact manifest format/version and canonical-byte contract
+  + exact content commitment for this foundation
+  + exact content commitment for canonical syntax
+  + exact content commitment for architecture
+  + exact content commitment for compiler genesis/succession
+  + exact selected canonical carrier contract commitments
+  + exact semantic checker obligations carried by those authorities/contracts
+  + exact required identity/refinement/release metamorphic corpus root
+  + exact required authority/causality/grouping negative corpus root
+```
+
+The manifest is canonical UTF-8 JSON: no BOM; LF newlines; one final newline;
+two-space indentation; lexicographically ordered object keys; arrays in their
+declared semantic order; lowercase 64-nybble SHA-256 commitments. The manifest
+does not contain its own digest, `ClauseSemanticsId`, path, Git commit, tag, or
+publication object. A published Git commit or annotated tag is supplied
+externally and must contain the exact manifest and committed content; it cannot
+change the semantic preimage or create authority. Signatures, SBOMs, deployment
+facts, packaging ceremony, and provider metadata are outside this semantic
+manifest.
+
+`clause:semantic-release/manifest-v1.json` materializes this smallest manifest,
+and `clause:semantic-release/CLAUSE_SEMANTICS_ID` records the reproducible
+derived identifier. Mutable checker/runtime implementation hashes and bounded
+capability labels never enter those bytes: a behavior-preserving implementation
+edit cannot change Clause semantics.
+
+One separate non-semantic artifact manifest records those exact release facts:
+
+```text
+SemanticReleaseArtifactId = SHA256(
+  UTF8("clause/semantic-release-artifact/v1\n")
+  || exact SemanticReleaseArtifactManifestV1 bytes)
+
+SemanticReleaseArtifactManifestV1 :=
+    exact ClauseSemanticsId
+  + exact checker/runtime implementation content commitments
+  + exact bounded capability and incompleteness labels
+```
+
+`clause:semantic-release/artifact-v1.json` and
+`clause:semantic-release/SEMANTIC_RELEASE_ARTIFACT_ID` materialize that binding.
+The artifact manifest contains neither its own ID nor a Git publication object;
+the latter remains externally supplied. It certifies no carrier/runtime
+conformance beyond its exact bounded labels, and changing only an implementation
+hash or label changes `SemanticReleaseArtifactId` without changing
+`ClauseSemanticsId`.
+
+Universally, every hash-derived Clause identifier or reuse key has exactly one
+declared domain-separated canonical byte preimage. Construction retains or can
+reconstitute those exact bytes for collision checking. Reusing one digest for
+different bytes is typed `HashPreimageCollision` rejection, never equality,
+deduplication, overwrite, cache hit, or authority. This law applies to
+`ClauseSemanticsId`, `AdmissionRequestKey`, snapshots, shapes, instantiation and
+specialization keys, accepted refinement witnesses, physical reuse keys,
+semantic-release artifacts, and every later declared hash-derived identity.
 
 ## Causal-affine lifetime and reclamation
 
@@ -2719,6 +3121,33 @@ The adoption spike and any migration must prove at least these cases:
 
 | Case | Required result |
 | --- | --- |
+| Canonical print/re-elaboration runs independently with no prior IdentityPlan | Retained/derived identities intrinsic to the projection are exact; independently fresh identities are related by the named `TypedFreshAlpha` between the two `projectionIdentityPlan` values; source spans may differ |
+| Edit or hot reload claims continuity | It supplies `RetainAgainst(exact prior IdentityPlan, explicit ContinuityWitnesses)`; only validated witnesses produce `Retain`, while absence of the prior plan or witness produces `Fresh` or typed rejection as the domain declares |
+| A repeated equal emission is inserted between retained equal emissions | Under `RetainAgainst`, retained emissions keep their exact `RepetitionSlotId`; the inserted emission receives a fresh one; canonical encoding ordinals may change but establish no continuity |
+| The same recorded occurrence is reloaded | Observe its exact `AllocationJudgment` and identity bytes; allocate nothing fresh |
+| Equal source and causal content independently create two fresh occurrences | Distinct identities and allocation judgments; compare through typed nominal isomorphism rather than equal bytes |
+| Fresh allocation cites a span, position, traversal order, caller/random bytes, UUID, handle, or physical address, or a root cites itself | Reject the allocation basis before publication |
+| Two allocation judgments or canonical preimages claim one identity/digest | Typed identity/hash-preimage collision rejection; publish neither conflicting construction |
+| The identical canonical AdmissionRequest is delivered or physically attempted twice | One `AdmissionRequestKey` and one authoritative `AdmissionOccurrence`; the retry cites it and creates no attempt occurrence unless the target explicitly declares attempts observable |
+| Candidate, evidence, support multiplicity, authorization use, Judgment role, obligation disposition, policy, semantics, validity observation, or conflict contract changes | A different `AdmissionRequestKey` and a separately policy-governed decision |
+| Two concurrent requests use one reusable authorization inside its exact scope | Both uses may validate; each retains its exact subtype use/linearization occurrence and neither becomes a Capability |
+| Concurrent requests exceed an `AtMost(n)` authorization or contend for one `Linear` authorization | Atomic validate-use-and-publish selects at most the declared winner count; every loser receives the subtype's typed conflict and rejection disposition |
+| A policy mentions no revocation, delegation, renewal, expiry, or wall-time observation | None is invented; wall time changes no validity |
+| An authorization issuance depends on a candidate whose Admission depends on that authorization | Reject the heterogeneous causal cycle before either node publishes |
+| A Step in Run B consumes an output causally produced by Run A through a declared boundary | The heterogeneous dependency orders the nodes in `CausalOrder`; it creates no cross-Run `RunOrder` edge |
+| Two nodes are unrelated but encoded, registered, logged, or received in a fixed order | They remain incomparable in `CausalOrder` and every `RunOrder` |
+| A Step consumes configuration produced by an earlier Step without a frontier citation | Its configuration-succession edge is included in `RunOrder` and embeds in `CausalOrder` |
+| One Mode boundary atomically emits a declared pair | One Step instance with two distinct schema-labelled output slots; splitting it into two Steps changes Mode meaning |
+| One StepBoundarySchema emits batches of different allowed sizes across instances | Every instance cites the same boundary ref; values occupy stable output slots/RepetitionSlotIds and satisfy declared cardinality without creating schemas per value |
+| A runtime inserts an allocation safepoint, scheduler yield, or progress poll not declared by the Mode | No StepBoundaryRef, Step, StepId, or causal edge is created |
+| Deterministic total pure physical plan validates | Related initial states, a declared physical representation for every semantically admitted/environment input, weak finite matching, and extensional equality of every declared result/observation hold under exact pins |
+| Nondeterministic physical plan validates | Concrete may-behavior is contained in allowed semantics and declared must/progress obligations hold; outcome equality/enumeration is required only when the Mode promises it |
+| Reactive/effectful physical plan validates | Weak simulation plus Mode liveness/fairness and exact Step/effect/Admission linearization hold; infinite tau stutter cannot satisfy declared progress |
+| CPP1 plan carries `ClosedApplicationRuleMachineV1` and passes current shape/Mode/role/byte checks | It remains an unproved physical candidate until an `OpenSystemRefinementV1` witness is accepted; the tag grants no reuse identity |
+| Compiler0/Compiler1 host-freeze evolution changes only package-declared meaning under unchanged hosts | The exact checked refinement and host-mechanics evidence must still pass; a host semantic edit or unproved refinement rejects the freeze claim |
+| Two isolated producers use identical committed files and canonical manifest bytes | Identical `SemanticReleaseManifestV1` bytes and `ClauseSemanticsId`; externally supplied Git objects may differ without entering the preimage |
+| Identity-relevant authority, carrier/checker contract, or required corpus root changes | Different SemanticReleaseManifestV1 bytes and `ClauseSemanticsId`; same digest with different bytes is typed collision rejection |
+| Only a checker/runtime implementation hash or bounded capability label changes | Same `ClauseSemanticsId`; different SemanticReleaseArtifactManifestV1 bytes and `SemanticReleaseArtifactId` |
 | Same structural Triple constructed twice | Same Term; no Application, assertion, or execution implied |
 | Equal Terms used by independent source or assertion occurrences | Equal content; distinct occurrences |
 | Closed form compared as one exact resolved form | `ApplicationShapeId` binds `ClauseSemanticsId`, exact RelationSchemaId, OperatorRef, eligible ModeIds, roles, context requirements, exact InstantiationUseRefs with InstantiationKeys and SpecializationKeys, and the exact resolved semantic-dependency/declaration closure; PhysicalReuseKey is excluded and an open form has no shape ID |
@@ -2739,7 +3168,7 @@ The adoption spike and any migration must prove at least these cases:
 | Later Step names itself, a future Step, a cyclic cause, or a cause with the wrong Run, Activation owner, or occurrence kind | Reject before StepId allocation; the previously constituted RunOrder DAG remains unchanged |
 | Step `s2` consumes `ConfigurationAfter(s1)` without `PriorStep(s1)` | Accept when every other contract holds; the typed configuration-succession edge establishes `s1 <run s2` without changing either StepCauseFrontier or inserting an implicit PriorStep |
 | Nonfirst Step has an empty StepCauseFrontier and consumes no predecessor custody | Reject before StepId allocation; every nonfirst Step requires nonempty IncomingRunEdges, and an empty frontier is permitted only when its transition contributes a configuration predecessor |
-| StepId is allocated for a validated carry-through | One fresh nominal StepId; its exact owner, finite frontier, StepConfigurationTransition, and outputs live in the associated StepRecord rather than in the identifier |
+| StepId is allocated for a validated carry-through | One fresh nominal StepId; its StepBoundaryRef/schema, exact owner, finite frontier, permitted StepConfigurationTransition, and schema-labelled outputs live in the associated StepRecord rather than in the identifier |
 | One Activation progresses, suspends, and resumes | One ActivationId and Run membership; several StepIds and configurations; the takeup cause names the exact Continuation, emitting Run/Activation/Step, and ResumptionOccurrence without a duplicate PriorStep edge |
 | Continuation takeup has stale pins, the wrong owner or target, or repeats a consumed linear use | Reject before Step allocation; semantic handoff with changed pins must create a child Activation through `HandoffFrom` |
 | An executor handoff preserves all semantic pins | Same ActivationId and Run membership; the takeup Step names the Continuation and HandoffOccurrence |

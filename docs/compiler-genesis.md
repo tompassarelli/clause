@@ -320,6 +320,18 @@ NewId(domainId, changeInput, producerInput, localSlot) =
      U64(localSlot))
 ```
 
+This is one declared-derived specialization of the foundation's generic
+`AllocationJudgment<D>`, not an alternative allocation law. Each `IdentityPlan`
+row is `Retain(prior, exact CLCP continuity witness)` or
+`Fresh(exact predecessor-visible basis, exact semantic compiler producer,
+DomainSlot(localSlot))`. The CLCP domain declares `NewId` to be derived from
+that exact canonical preimage, so rematerializing the same change occurrence
+recomputes identical bytes. Another independently fresh causal occurrence is
+not forced through `NewId` merely to make its bytes equal; it follows its own
+identity domain and is compared through a typed nominal isomorphism. Raw source
+span, declaration position, table traversal, caller bytes, random host UUID,
+handle, and physical allocation are invalid CLCP bases or slots.
+
 Retained concepts carry their exact prior IDs through the canonical
 `IdentityPlan`. An allocated identity retains its original allocation row and
 preimage; it never changes provenance merely because a successor retains it.
@@ -401,6 +413,10 @@ After the case split, `Renameπ` restores every affected canonical order,
 canonically re-encodes the result, transforms and rechecks replay requests,
 receipt commitments, replay outcomes, and derivation conclusions, attaches
 transformed evidence, and recomputes final whole-package identity.
+The transformed allocation graph and every collision are checked before any
+renamed declaration is published. `Renameπ` is the typed identity isomorphism
+for the selected seed domain; it does not assert byte equality for independently
+fresh causal identities outside that declared-derived CLCP specialization.
 
 An external genesis anchor, governed Judgment, or actual Admission is not
 transferred by `Renameπ`; only the generic decode, check, and evaluation

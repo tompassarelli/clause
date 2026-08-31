@@ -111,6 +111,7 @@ StepConfigurationTransition(s : StepId) := Serial | Split | Branch | Join
 
 consume exact affine ConfigurationCustody_before + optional Wbase
   -- StepRecord(s = fresh StepId,
+                boundary = exact StepBoundaryRef,
                 owner = (RunId, ActivationId),
                 causes = StepCauseFrontier,
                 transition = exact StepConfigurationTransition(s),
@@ -123,10 +124,11 @@ IncomingRunEdges(s) := StepCauseFrontierEdges(s)
 Run(RunId, root = ActivationId,
     order = transitive closure(all IncomingRunEdges))
 
-admit(BaseRevision, candidate delta, evidence,
-      AuthorizationEvidence<AdmissionAuthorization>,
-      JudgmentOccurrences, obligations)
-  = (AdmissionOccurrenceId, SuccessorRevision | Rejection)
+AdmissionRequestKey = H(canonical AdmissionRequest)
+
+admit(canonical AdmissionRequest) =
+  Cite(existing AdmissionOccurrence)
+  | Decide(new AdmissionOccurrence(requestKey, SuccessorRevision | Rejection))
 ```
 
 The core must represent:
@@ -868,6 +870,20 @@ exact observations, not invented source spelling.
 
 The cross-phase program passes only when all of these are executable and exact:
 
+- typed `AllocationJudgment<D>` across declaration and causal identity domains,
+  including retained continuity witnesses, explicit stable EmissionSlot and
+  RepetitionSlotId plans, irreducible entered-root uniqueness, collision
+  rejection, exact reload, and typed isomorphism rather than equal bytes for
+  independently fresh causal identities;
+- canonical `AdmissionRequest`/`AdmissionRequestKey`, one nominal decision per
+  key under the exact target re-review/finality/ExclusiveHead/branch/merge
+  policy, and subtype-specific reusable/bounded/linear AuthorizationUseContract
+  with atomic conflict outcomes and no invented lifecycle occurrences;
+- one heterogeneous acyclic `CausalOrder` containing exact occurrence, output,
+  candidate, Judgment, Admission, authorization, effect, and extensible node
+  dependencies; every frontier and configuration-succession `RunOrder` edge
+  embeds in it, while cross-Run paths, encoding, logs, and arrival order add no
+  `RunOrder` edge or accidental total order;
 - ApplicationForm/Application/Activation separation;
 - one exact Application activated twice retains one ApplicationId and receives
   distinct ActivationIds, while independently nominalized equal-shaped
@@ -879,9 +895,11 @@ The cross-phase program passes only when all of these are executable and exact:
   residual parent token or a new global identity domain, while SplitFormation
   publishes its Step/instance/children/bindings/tokens atomically or none and
   repeated equal BranchKeys remain distinct by contiguous canonical ordinal;
-- a StepId is a fresh nominal identity whose StepRecord separately carries the
-  exact owner, finite StepCauseFrontier, StepConfigurationTransition, and
-  outputs;
+- a StepId is a fresh nominal identity whose StepRecord separately cites one
+  Mode-owned StepBoundaryRef/schema and carries the exact owner, finite
+  StepCauseFrontier, permitted StepConfigurationTransition, schema-labelled
+  outputs/cardinality/grouping, and declared visibility/checkpoints; pair and
+  dynamic-batch cases pass while invisible physical safepoints create no Step;
 - Ready means constituted Activation, zero owned Steps, and live unconsumed
   initial custody; its normal first frontier is the exact ActivationStart
   singleton and its sole cancellation exception is the exact ActivationStart +
@@ -918,6 +936,13 @@ The cross-phase program passes only when all of these are executable and exact:
 - rich Text/Bytes/numeric/algebraic/sequence/map values through Clause-owned
   physical IR with native/Wasm parity, declared layout/ABI, and verified
   monomorphization/dictionary/erasure strategies;
+- one accepted `OpenSystemRefinementV1` per activated physical plan with exact
+  pins, state relation, a declared physical representation for every
+  semantically admitted/environment input, covariant physical outputs/events,
+  weak finite matching, typed nominal isomorphism, resource/latency preorder, exact
+  Step/effect/Admission linearization, profile-appropriate result/progress/
+  fairness/bounds, and transitive checked composition; the CPP1 tag alone does
+  not satisfy this case;
 - one exact Owned/RegionMember/ForeignManaged allocation root plus typed
   Borrow/Lease edges, explicit close/dispose before bounded nonobservable
   mechanical reclaim, root-wide compatibility and acknowledged quiescence, rejection of
@@ -985,12 +1010,39 @@ The cross-phase program passes only when all of these are executable and exact:
 - ordinary source at least as readable as the accepted surface, with process
   and ownership machinery exposed only where semantically relevant, proven by
   all four canonical process source specimens rather than a prose
-  readability claim.
+  readability claim; and
+- two isolated materializations of the canonical non-self-referential
+  `SemanticReleaseManifestV1` produce identical bytes and ClauseSemanticsId,
+  bind the exact identity-relevant authority/carrier/checker-contract/corpus
+  commitments, remain independent of the supplied Git object, and reject a
+  digest/preimage collision; a separate `SemanticReleaseArtifactManifestV1`
+  binds mutable checker/runtime hashes and bounded claims while citing, but not
+  changing, that ClauseSemanticsId.
 
 ## Required negative evidence
 
 The spike actively rejects or bounds:
 
+- identity retention inferred from source position or canonical ordinal,
+  fresh-root self-bootstrap, raw UUID/random/handle allocation basis,
+  reallocation on reload, or equal bytes required for independently fresh
+  causal identities;
+- same-key Admission redicision, changed-request key reuse, non-atomic bounded
+  or linear authorization use, Authorization/Capability collapse, lifecycle or
+  wall-time validity not declared by the subtype, and authorization/Admission
+  causal cycles;
+- cross-Run RunOrder manufactured by heterogeneous paths, omitted
+  configuration succession, or causality inferred from encoding,
+  registration, log, arrival, or host scheduling order;
+- a StepProposal without a checked Mode-owned StepBoundaryRef/schema, a
+  physical safepoint promoted to Step, or a pair/batch regrouped without a Mode
+  meaning change;
+- CPP1 shape/Mode/role/byte validation, a refinement tag, or a host-freeze name
+  presented as semantic-transition adequacy; and
+- self-referential release identity, uncommitted authority/checker-contract/
+  corpus content, mutable implementation hash or capability label inside the
+  semantic preimage, Git object inside either preimage, or hash collision
+  treated as equality;
 - accidental identity on every Triple or operator meaning in Triple slot 2;
 - incomplete or open formation candidates receiving semantic
   ApplicationShapeId;

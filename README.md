@@ -26,7 +26,8 @@ lowering are early falsifiers, not implemented capability.
 > sessions, materialization, and a passive browser shell are implemented and
 > have focused tests, but none is a supported language implementation yet. The
 > [roadmap](docs/roadmap.md) is the sole implementation-status authority and
-> records the currently red aggregate Rust gate and open constitutional gaps.
+> records the stale prior aggregate result and exact open carrier/runtime gaps;
+> this constitutional tranche does not claim a current Rust-gate verdict.
 
 ## A Clause transition
 

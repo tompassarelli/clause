@@ -1,0 +1,42 @@
+{
+  "canonical_bytes": "utf8-no-bom-lf-two-space-indent-lexicographic-object-keys-final-newline-v1",
+  "content_commitments": {
+    "architecture": {
+      "path": "docs/architecture.md",
+      "sha256": "3f3c66937e5e42c6fe064c9f5c6482a69086939cff22e3da2b887a2e65742ab7"
+    },
+    "compiler_genesis": {
+      "path": "docs/compiler-genesis.md",
+      "sha256": "07f8028e70b96c94e7d68bd50a5acb306e1a4d42060055a7156c7d6a1f63cd0b"
+    },
+    "foundation": {
+      "path": "docs/foundation.md",
+      "sha256": "e2857ed5a698d1d39f4f735978443c878fbf4c151e202f55c72297e9590d0a17"
+    },
+    "selected_carrier_contract": [
+      {
+        "path": "docs/canonical-package.md",
+        "sha256": "af062a7b422be1441b9041fdfd0e1a4197ca95c282523cd852b8fa001ff5d9f6"
+      },
+      {
+        "path": "test-vectors/canonical-package/manifest.json",
+        "sha256": "b0045e5ec961e779667868d6b4c8eb280517e4c7f40ab50936f6373fe075c2b3"
+      }
+    ],
+    "syntax": {
+      "path": "docs/syntax.md",
+      "sha256": "f8e4047262f071b682b89fe69ab35fe9a5ea22f41ad2273405a4d51ca1cb0f46"
+    }
+  },
+  "corpus_roots": {
+    "metamorphic": {
+      "path": "test-vectors/semantic-closure-v1/metamorphic.json",
+      "sha256": "a5c8a55f5e13943256d1829cc0c12a9c79b6ba0a4d36a77b04aba4a4a5ea6e35"
+    },
+    "negative": {
+      "path": "test-vectors/semantic-closure-v1/negative.json",
+      "sha256": "a188ebc2ff9fe25eb1768aa10bd56d255418fc3d8e2c596013ab26de2cbc883c"
+    }
+  },
+  "schema": "clause/semantic-release-manifest/v1"
+}

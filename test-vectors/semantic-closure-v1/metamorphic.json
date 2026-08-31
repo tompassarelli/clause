@@ -1,0 +1,85 @@
+{
+  "cases": [
+    {
+      "expected": "identities intrinsic to the projection remain exact; fresh identities are related by the named TypedFreshAlpha between the two projectionIdentityPlan values; source spans may differ",
+      "id": "identity-print-elaboration-isomorphism",
+      "left": "one checked multi-emission projection P",
+      "right": "canonical print then elaborate(print(P), context, Independent)"
+    },
+    {
+      "expected": "the two retained equal emissions keep their RepetitionSlotIds; the inserted emission receives a fresh RepetitionSlotId; encoding ordinals may change",
+      "id": "identity-repetition-insertion",
+      "left": "two retained equal emissions in one stable semantic child slot and their exact prior IdentityPlan",
+      "right": "RetainAgainst(prior IdentityPlan, explicit ContinuityWitnesses) with one new equal emission inserted between them"
+    },
+    {
+      "expected": "exactly one AdmissionRequestKey and one authoritative AdmissionOccurrence; the retry cites the existing occurrence and creates no semantic attempt",
+      "id": "admission-same-request-retry",
+      "left": "one canonical AdmissionRequest",
+      "right": "a physical retry with byte-identical canonical AdmissionRequest"
+    },
+    {
+      "expected": "a distinct AdmissionRequestKey and a separately target-policy-governed decision",
+      "id": "admission-changed-request",
+      "left": "one canonical AdmissionRequest",
+      "right": "the request with exactly one committed candidate, evidence, support, authorization-use, Judgment-role, obligation, policy, semantics, validity, or conflict field changed"
+    },
+    {
+      "expected": "both dependency paths appear in heterogeneous CausalOrder; only each Run's declared frontier and configuration-succession edges appear in its RunOrder",
+      "id": "causal-cross-run-without-run-order",
+      "left": "Run A Step output enters a declared boundary consumed by Run B",
+      "right": "the same nodes encoded and registered in the opposite physical order"
+    },
+    {
+      "expected": "one StepBoundaryRef and one atomic Step with two labelled outputs in both realizations; regrouping as two Steps is not equivalent",
+      "id": "step-pair-grouping",
+      "left": "one physical instruction emits both members of a declared pair",
+      "right": "several physical instructions implement the same one declared atomic pair boundary"
+    },
+    {
+      "expected": "all instances cite one StepBoundaryRef; each batch satisfies declared cardinality and uses stable output slots/RepetitionSlotIds",
+      "id": "step-dynamic-batch-cardinality",
+      "left": "one boundary instance emits zero values",
+      "right": "another instance of the same schema emits three values"
+    },
+    {
+      "expected": "extensional declared-result equality under the exact state/input/output relations and finite weak matching",
+      "id": "refinement-deterministic-total-pure",
+      "left": "selected deterministic total pure Mode transition system",
+      "right": "physical plan with tau stutter and one matching semantic result"
+    },
+    {
+      "expected": "concrete may-behavior is contained in allowed semantics and declared must/progress obligations are preserved without requiring complete enumeration",
+      "id": "refinement-nondeterministic-containment",
+      "left": "selected nondeterministic Mode transition system",
+      "right": "physical plan choosing one allowed outcome"
+    },
+    {
+      "expected": "weak simulation, declared liveness/fairness, and exact Step/effect/Admission linearization under exact pins",
+      "id": "refinement-reactive-effectful",
+      "left": "selected reactive effectful Mode transition system",
+      "right": "physical event stream with finite tau fragments around semantic labels"
+    },
+    {
+      "expected": "the package-only semantic change is accepted only with unchanged host binaries/mechanics and an accepted refinement witness; CPP1 tag equality proves nothing",
+      "id": "compiler-host-freeze",
+      "left": "Compiler0 plus frozen hosts",
+      "right": "Compiler1 package-only evolution plus the same frozen hosts"
+    },
+    {
+      "expected": "byte-identical SemanticReleaseManifestV1 and ClauseSemanticsId; separately byte-identical SemanticReleaseArtifactManifestV1 and SemanticReleaseArtifactId for equal implementations/claims; supplied Git objects are external and may differ",
+      "id": "semantic-release-reproducibility",
+      "left": "isolated producer A over the exact committed inputs",
+      "right": "isolated producer B over the same exact committed inputs"
+    },
+    {
+      "expected": "identical SemanticReleaseManifestV1 bytes and ClauseSemanticsId; different SemanticReleaseArtifactManifestV1 bytes and SemanticReleaseArtifactId",
+      "id": "semantic-release-implementation-independence",
+      "left": "one implementation commitment and bounded capability label",
+      "right": "a behavior-preserving implementation edit or changed bounded label under the same semantic authority/contracts/corpora"
+    }
+  ],
+  "claim": "normative discriminating inputs only; no carrier or runtime checker executes these cases yet",
+  "schema": "clause/semantic-closure/metamorphic-v1",
+  "status": "normative-unimplemented"
+}

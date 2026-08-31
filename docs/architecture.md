@@ -64,12 +64,15 @@ neutral Term + contextual ClauseJudgment / FormationJudgment
      membership
   -> stable ActivationId across configurations related by causal StepIds,
      each consuming the exact current affine configuration token, producing its
-     successor token, and carrying a finite typed StepCauseFrontier; every
+     successor token, citing one Mode-owned StepBoundaryRef, and carrying a
+     finite typed StepCauseFrontier; every
      nonfirst Step has nonempty IncomingRunEdges from typed frontier and/or
      configuration-succession edges
-  -> Run(RunId, one unique root and uniquely owned child Activations)
+  -> Run(RunId, one unique root and uniquely owned child Activations,
+         per-Run RunOrder)
   -> observations, continuations, and candidate deltas
-  -> separately governed Admission
+  -> heterogeneous CausalOrder across actual dependencies
+  -> canonical AdmissionRequest and separately governed AdmissionOccurrence
 ```
 
 Neither graph storage, mode existence, successful evaluation, nor a physical
@@ -261,9 +264,9 @@ independent canonical interface/body/dependency content; and
 `ApplicationShapeId` is derived from the resolved form with exact
 InstantiationUseRefs, InstantiationKeys, and SpecializationKeys.
 PhysicalReuseKey is excluded. None is inserted back into the same preimage.
-PhysicalReuseKeys additionally
-bind lowering, target/profile, ABI/layout/strategy, and physical dependencies
-outside snapshot identity. Runtime Activations,
+PhysicalReuseKeys additionally bind the exact
+`AcceptedRefinementWitnessId`, target/profile, ABI/layout/strategy, and
+physical dependencies outside snapshot identity. Runtime Activations,
 Steps, Runs, observations, traces, and physical layouts remain outside snapshot
 identity unless governed semantic content explicitly makes them constitutive.
 
@@ -567,6 +570,28 @@ layouts, or browser objects. A physical decision that affects observable
 behavior or a declared ABI, layout, overflow, floating-point, ordering,
 determinism, synchronization, cancellation, durability, failure, resource, or
 latency contract must remain an explicit strategy or evidence judgment.
+
+Activation requires the foundation's checked `OpenSystemRefinementV1`, with
+exact semantic and physical pins, state/input/output relations, tau/event
+projection, typed nominal isomorphism, Step/effect/Admission linearization,
+resource/latency preorder, and Mode-appropriate result/progress/fairness/bound
+obligations. Checked lowering chains compose only through that judgment and
+their exact accepted witness identity enters `PhysicalReuseKey`. CPP1's
+external physical-plan allocation and removal of magic semantic-Term lookup
+are already-correct implementation facts, but its current
+`ClosedApplicationRuleMachineV1` tag and shape/Mode/role/byte checks are not a
+refinement certificate.
+
+Semantic publication uses only the foundation's canonical
+`SemanticReleaseManifestV1`: exact manifest bytes derive `ClauseSemanticsId`
+and bind the foundation, syntax, architecture, compiler genesis, selected
+carrier/checker contracts, and required corpus roots. Mutable checker/runtime
+implementation hashes and bounded capability labels live instead in one
+`SemanticReleaseArtifactManifestV1` whose `SemanticReleaseArtifactId` cites the
+exact `ClauseSemanticsId`; they cannot change semantic identity. The Git commit
+or tag containing either manifest is supplied externally and is not in either
+preimage. Release packaging, signing, deployment, and inventory metadata never
+enter the semantic manifest.
 
 Generic Triple interpretation is permitted as a bounded reference path, not an
 ordinary production hot path.

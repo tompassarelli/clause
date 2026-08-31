@@ -33,13 +33,20 @@ Focus {
 }
 
 Emission {
+  projectedSlot: EmissionSlot
   term: Term
   candidateFormations: FiniteCollection<FormationCandidate>
   stance: Stance
   origin: SourceSlice
 }
 
-elaborate(sourceConstruct, ElaborationContext) -> ElaborationResult | Error
+IdentityPlanInput :=
+    Independent
+  | RetainAgainst(exact prior IdentityPlan,
+                  explicit proposed ContinuityWitnesses)
+
+elaborate(sourceConstruct, ElaborationContext, IdentityPlanInput)
+  -> ElaborationResult + projected IdentityPlan | Error
 ```
 
 `SourceSlice` is the exact lossless subspan responsible for that emission, not
@@ -52,13 +59,48 @@ equality among emitted Terms never deduplicates emissions.
 One source construct may therefore emit several clauses. One semantic clause
 never secretly becomes a list of clauses. This is the common contract for
 membership groups, `enum` children, grouped declarations, and any later
-ratified macro or destructuring form.
+ratified macro or destructuring form. The selected production assigns every
+emission one stable semantic child slot. Repeated values in that slot each
+receive an explicit `RepetitionSlotId`: retained emissions keep that ID through
+the projected IdentityPlan and inserted emissions receive a fresh ID, so an
+insertion cannot renumber retained equal emissions. A canonical ordinal may
+order encoding but never proves continuity. Checked candidate-snapshot
+construction resolves that projection to the foundation's `EmissionSlot` and records the exact
+`AllocationJudgment` for every nominal emission product. Source span, byte
+position, traversal, formatting, caller order, or host allocation never fills
+that slot.
 
 Canonical printing followed by elaboration preserves the focus and the ordered
-emission multiplicity, Terms, candidate-formation obligations, and stances.
-Printing may replace physical source slices with their canonical printed
-slices, but the source map must retain the item correspondence; it may not
-merge equal emissions or transfer an origin between them.
+emission multiplicity, Terms, candidate-formation obligations, stances, and
+projected IdentityPlan. Printing may replace physical source slices with their
+canonical printed slices, but the source map must retain the item
+correspondence; it may not merge equal emissions or transfer an origin between
+them. Retained and derived identities remain exact; independently fresh
+identities are compared through the typed domain-preserving isomorphism induced
+by corresponding EmissionSlots, not by demanding equal fresh bytes.
+
+Precisely, for a checked projection `P`, re-elaboration is evaluated relative
+to `projectionIdentityPlan(P)`. An edit or hot reload uses
+`RetainAgainst(projectionIdentityPlan(P), explicit ContinuityWitnesses)`;
+checking accepts an exact `Retain` only where its witness validates and assigns
+`Fresh` to every inserted or discontinuous product. A first or deliberately
+independent elaboration uses `Independent`; its fresh outputs compare through a
+named `TypedFreshAlpha` domain-preserving bijection satisfying:
+
+```text
+projectedMeaning(α(elaborate(print(P), context, Independent)))
+  = projectedMeaning(P)
+
+α : TypedFreshAlpha(
+      projectionIdentityPlan(P),
+      projectionIdentityPlan(elaborate(print(P), context, Independent)))
+```
+
+`α` is identity on retained and declared-derived identities and maps only
+corresponding independently fresh identities while preserving domains,
+semantic producers, EmissionSlots/RepetitionSlotIds, multiplicity, and causal
+edges. No bare structural isomorphism, source alignment, or printer position
+may establish continuity.
 
 A subject-focus reading designates the subject Term directly. A construct head
 may instead designate a structural declaration Term as focus and an exact child
@@ -235,10 +277,12 @@ Each surface form has one conceptual job:
 An ordinary top-level relational line selects an assertive source production.
 Reading and elaboration produce proposition content, an assertive stance
 candidate, and an independent source-origin record; neither operation asserts
-the Term. Checked candidate-snapshot construction may then allocate one fresh
-nominal `AssertionOccurrence` for each accepted emission. Authority comes from
-that occurrence's admitted context, never from punctuation, parsing, or Term
-construction. Relation patterns inside `where`, `when`, `if`, and other
+the Term. Checked candidate-snapshot construction may then apply one typed
+`Fresh` allocation judgment for each accepted emission, using its exact
+`EmissionSlot`, semantic producer, and domain-declared basis, to establish one
+nominal `AssertionOccurrence`. Authority comes from that occurrence's admitted
+context, never from punctuation, parsing, Term construction, or the allocation
+act. Relation patterns inside `where`, `when`, `if`, and other
 declared child grammars select their grammar-owned non-assertive stances and do
 not become assertions merely because their Terms equal top-level content.
 

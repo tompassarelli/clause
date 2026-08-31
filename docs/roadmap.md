@@ -30,6 +30,14 @@ mechanics. They are not silently reinterpreted as universal process semantics.
 Clause-owned outer Terms and envelopes must carry process identities, pins,
 authorizations, evidence, and governed deltas through that fixed machine.
 
+The semantic closure is now ratified at the documentation and fixture layer:
+generic typed allocation/continuity, canonical Admission requests and typed
+authorization use, heterogeneous causal order, Mode-owned Step boundaries,
+versioned open-system refinement, and reproducible semantic-release identity.
+Canonical syntax already has independent multi-emission; each emission now has
+the required stable projected identity slot. These are architecture facts, not
+claims that the current carriers enforce them.
+
 No implementation claim follows from a documentation specimen, commit hash,
 test transcript, or host prototype. Git history is recovery, not semantic
 authority. This status is classified by artifact below rather than bound to a
@@ -39,18 +47,20 @@ checkpoint hash that becomes false on the next commit.
 
 | Artifact | Semantic status | Wire status | Implementation status | Test status | Supported status | Supersedes | Constitutional gaps |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Foundation and syntax | Accepted semantic and source authorities | Not a wire format | Documentation | Document examples only | Authority, not a toolchain | Process-first reset supersedes graph-first and clause-as-Application drafts | Normative lexer/CST/elaboration grammar and implemented reader remain open |
+| Foundation and syntax | Accepted semantic and source authorities, including semantic closure | Canonical SemanticReleaseManifestV1 binds identity-relevant authority/contracts and corpus roots; separate SemanticReleaseArtifactManifestV1 binds mutable implementations/claims | Documentation plus normative unexecuted closure fixtures | Manifest byte/root consistency only; semantic fixture executor remains open | Authority, not a toolchain | Process-first reset supersedes graph-first and clause-as-Application drafts | Normative lexer/CST/elaboration grammar, implemented reader, allocation/Admission/causality/Step/refinement checkers remain open |
 | CLCP v1 and v3 compiler machine | Bounded compiler-machine mechanics; not universal process semantics | Ratified exact CLCP contracts | Lean reference/checker and historical Rust substrate | Lean vectors plus Rust parity/replay tests | Bootstrap evidence only | Earlier provisional compiler-machine carriers | Process-aware Compiler0, external genesis exercise, and accepted succession remain open |
 | Compiler Terms fixtures | Semantic candidate over neutral Terms | Exact JSON fixture transport, not a language package | Rust fixture/checking support | Positive and negative corpus checks | No | Earlier positional and slash-qualified specimens | Full formation, source-origin, static prerequisite, and physical-refinement bindings remain open |
 | Frozen v0 execution corpus | Historical observation oracle | Exact historical bytes and checksums | Lean/Rust historical consumers | Checksum and observation checks | No | Nothing; retained as a frozen oracle | No current syntax or process identity authority |
-| `CLPV` process-v2 corpus and `clause-package` | Experimental reduced admitted-stateful profile | Rust-owned experimental encoding | Encode, strict decode, package checks, and identity carriers | Root gate reaches the crate; `aggregate_step_count_is_checked_across_record_boundaries` currently fails on overflow | No | Rejected process-v1 bytes and decoder | Stable prerequisite slots/ordinals/cause projection; absence outside Observation; continuation-edge uniqueness; candidate/admitted constitution sum; exact boundary payload contracts; independent wire specification; bounded Term construction |
-| `clause-runtime` native and Wasm sessions | Reversible physical experiment; successful execution creates no Clause authority | Rust-owned request/response encodings | Native process runtime, headless jump, persistent native session, and persistent Wasm session ABI | Compiled by the root gate; aggregate execution currently stops at the package failure | No | Earlier construct-blind and one-shot runtime experiments | Fresh semantic allocation epoch; remove magic executable-Term lookup; checked semantic-to-physical plan binding; full package contract |
+| `CLPV` process-v2 corpus and `clause-package` | Experimental reduced admitted-stateful profile | Rust-owned experimental encoding | Encode, strict decode, package checks, identity carriers, and a partial `CausalRef` graph | Prior aggregate result is stale and was not rerun for the documentation tranche | No | Rejected process-v1 bytes and decoder | `CausalRef` omits authorization/effect nodes and configuration-succession closure; AdmissionRequestKey/use contracts; StepBoundaryRef/schema; stable emission allocation plan; independent wire specification; bounded Term construction |
+| `clause-runtime` native and Wasm sessions | Reversible physical experiment; successful execution creates no Clause authority | Rust-owned request/response encodings plus external CPP1 physical-plan bytes | Native process runtime, headless jump, persistent native/Wasm session ABI, `New` versus exact `Rematerialize` allocation epoch, external physical plan, and no magic executable-Term lookup | Prior aggregate result is stale and was not rerun for the documentation tranche | No | Earlier construct-blind and one-shot runtime experiments | CPP1 checks shape/Mode/roles/bytes only; `StepProposalV2` has no StepBoundaryRef; accepted semantic-transition refinement witness, linearization/progress/resource checks, generic AllocationJudgment, and full package contract remain open |
 | `clause-materialization` | Experimental replaceable physical projection | JSON fixtures only | Cold scan, uniform grid, support, and work projection | Root gate reaches the crate; 32 tests pass | No | Historical substrate materialization probe | Exact admitted-delta input, occurrence-exact incremental contract, and accepted physical-plan binding |
 | Jump arena and browser shell | Experimental game/transport evidence | Bounded Rust/Wasm fixture bytes and generated JS declarations | Package-owned headless mechanic, Wasm adapters, persistent session boundary, passive shell | Focused Rust and BJS fixtures; browser generation is outside the root Rust gate | No | Static and host-owned gameplay demonstrations | Canonical source-to-package path, native/Wasm semantic parity after carrier repair, typed browser generation, controlled frame-allocation proof, Clause-only mechanic evolution |
 
-The root Rust gate is therefore real and currently red. Its package failure is
-an implementation defect exposed by the widened workspace, not omitted test
-coverage; no current Rust crate is supported while that aggregate gate fails.
+The root Rust gate remains the aggregate implementation gate, but its previously
+recorded red result predates the current runtime repairs and is stale. This
+constitutional documentation tranche does not rerun it and makes no green or
+red claim. No current Rust crate is supported regardless: the exact carrier
+gaps in the matrix remain open.
 
 ## Preserved oracles
 
@@ -141,6 +151,8 @@ edit with exact diagnostics plus affected and preserved dependency/cache sets.
 payload hashes are frozen; the slash-bearing source projections are quarantined
 under the historical noncanonical fixture path. An experimental process-v2
 Rust corpus exists, but it is a reduced profile and not the ratified companion.
+The semantic-closure-v1 metamorphic/negative corpus is now the normative
+companion, while its executable checker remains open.
 
 Freeze the three exact original v0 source-payload byte streams and their actual
 execution observations for:
@@ -177,7 +189,7 @@ unauthorized cancellation, fabricated receipt, and ungrounded cycle.
 
 ## Phase 1 — Process constitution
 
-**Status:** Documentation candidate; no implementation claim.
+**Status:** Accepted documentation authority; no carrier implementation claim.
 
 Land one internally consistent public authority defining:
 
@@ -220,7 +232,7 @@ set.
 
 ## Phase 2 — Checked formation and process identities
 
-**Status:** Not implemented.
+**Status:** Semantics ratified; not implemented.
 
 Introduce the smallest host-neutral checked distinctions:
 
@@ -294,7 +306,7 @@ invented total order, and no revision from pure running.
 
 ## Phase 3 — Relation, operator, mode, and authorization split
 
-**Status:** Not implemented.
+**Status:** Semantics ratified; not implemented.
 
 Make role schema, extensional content, process operator, executable mode, source
 Reading, derivation authorization, ExecutionAuthorization, admission authority,
@@ -599,7 +611,10 @@ boundary; and zero semantic-name switches in Rust or BJS.
 
 ## Phase 7 — Relational recovery, systems breadth, and release
 
-**Status:** Not started.
+**Status:** The canonical semantic-release manifest and derived semantics ID are
+materialized, while a separate artifact manifest binds exact checker/runtime
+hashes and honest incomplete capability labels. Carrier/runtime conformance,
+publication, and supported release remain not started.
 
 Prove that activation-scoped pure result relations, explicitly admitted
 RelationExtensions and assertions, causal edges, continuations, evidence, and
