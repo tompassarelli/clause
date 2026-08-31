@@ -189,13 +189,18 @@
       (fn [result Any] Any (reset! candidate result)))
      (.toBe (test/expect (str (.-length requests))) "3")
      (let [open-request Any (nth requests 0)
-           open-length Int (.-length open-request)]
+           open-length Int (.-length open-request)
+           allocation-tag Int (- open-length 325)]
        (.toBe (test/expect (json-string (.slice open-request 0 4)))
               "[67,87,83,49]")
        (.toBe (test/expect (json-string (.slice open-request 13 18)))
               "[1,0,0,0,8]")
-       (.toBe (test/expect (str (nth open-request (- open-length 17))))
-              "0"))
+       (.toBe (test/expect (str (nth open-request allocation-tag))) "1")
+       (.toBe (test/expect
+               (json-string (.slice open-request
+                                    (inc allocation-tag)
+                                    (+ allocation-tag 9))))
+              "[48,1,0,0,82,65,69,49]"))
      (.toBe (test/expect (json-string [(nth (nth requests 1) 20)
                                        (nth (nth requests 2) 20)]))
             "[1,2]")

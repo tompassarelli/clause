@@ -357,7 +357,7 @@
                                         "CWR1 physical plan")
           allocation Any (parse-blob bytes (.-next physical-plan) allocation-epoch-bytes
                                      "CWR1 allocation epoch")
-          _allocation-bytes Any (require-allocation-epoch allocation)
+          allocation-bytes Any (require-allocation-epoch allocation)
           authority-start Int (.-next allocation)
           identities-end Int (require-range bytes authority-start (* 9 identity-bytes)
                                             "CWR1 authority identities")
@@ -397,7 +397,8 @@
           (.push open-bytes byte))
         (doseq [byte Int (.slice bytes authority-start budget-end)]
           (.push open-bytes byte))
-        (.push open-bytes 0)
+        (.push open-bytes 1)
+        (append-blob! open-bytes allocation-bytes)
         (append-u64! open-bytes session-command-limit)
         (append-u32! open-bytes session-command-max-bytes)
         (append-u32! open-bytes cse1-max-bytes)

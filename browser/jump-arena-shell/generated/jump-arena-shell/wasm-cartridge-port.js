@@ -259,7 +259,7 @@ function parse_persistent_cartridge_bang(request) {
   const application_end = require_range(bytes, package_end, 4, "CWR1 application");
   const physical_plan = parse_blob(bytes, application_end, cwr1_max_bytes, "CWR1 physical plan");
   const allocation = parse_blob(bytes, physical_plan.next, allocation_epoch_bytes, "CWR1 allocation epoch");
-  const __allocation_bytes = require_allocation_epoch(allocation);
+  const allocation_bytes = require_allocation_epoch(allocation);
   const authority_start = allocation.next;
   const identities_end = require_range(bytes, authority_start, (9 * identity_bytes), "CWR1 authority identities");
   const occurrence_evidence = parse_blob(bytes, identities_end, cwr1_max_bytes, "CWR1 occurrence evidence");
@@ -286,7 +286,8 @@ function parse_persistent_cartridge_bang(request) {
   bytes.slice(authority_start, budget_end).forEach((byte) => {
   open_bytes.push(byte);
 });
-  open_bytes.push(0);
+  open_bytes.push(1);
+  append_blob_bang(open_bytes, allocation_bytes);
   append_u64_bang(open_bytes, session_command_limit);
   append_u32_bang(open_bytes, session_command_max_bytes);
   append_u32_bang(open_bytes, cse1_max_bytes);
