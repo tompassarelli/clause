@@ -369,6 +369,107 @@ pub fn lower_canonical_input_handler_v1(
     Ok(())
 }
 
+/// Physical coordinates for the source-owned `on jump` result and its three
+/// prerequisite assertion values.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ExecutableCanonicalJumpBindingV1 {
+    pub entry: u16,
+    pub velocity_slots: [u16; 3],
+    pub grounded_slot: u16,
+    pub jump_speed_slot: u16,
+}
+
+/// Refine the package-owned bounded `on jump` meaning into CPP1. Rust selects
+/// physical coordinates only; source owns initial values, predicate, and
+/// included results. Any preexisting rule at the entry fails closed.
+pub fn lower_canonical_jump_handler_v1(
+    program: &mut ExecutableProgramV1,
+    source: &CanonicalJumpHandlerV1,
+    binding: ExecutableCanonicalJumpBindingV1,
+) -> Result<(), ExecutableErrorV1> {
+    if program.rules.iter().any(|rule| rule.entry == binding.entry) {
+        return Err(ExecutableErrorV1::MalformedProgram);
+    }
+    let distinct_slots = binding
+        .velocity_slots
+        .into_iter()
+        .chain([binding.grounded_slot, binding.jump_speed_slot])
+        .collect::<BTreeSet<_>>();
+    if distinct_slots.len() != 5 {
+        return Err(ExecutableErrorV1::MalformedProgram);
+    }
+    for (slot, value) in binding
+        .velocity_slots
+        .into_iter()
+        .zip(source.initial_velocity)
+    {
+        let Some(target) = program.initial_configuration.get_mut(usize::from(slot)) else {
+            return Err(ExecutableErrorV1::MalformedProgram);
+        };
+        *target = ExecutableValueV1::Number(value);
+    }
+    let Some(grounded) = program
+        .initial_configuration
+        .get_mut(usize::from(binding.grounded_slot))
+    else {
+        return Err(ExecutableErrorV1::MalformedProgram);
+    };
+    *grounded = ExecutableValueV1::Boolean(source.initial_grounded);
+    let Some(jump_speed) = program
+        .initial_configuration
+        .get_mut(usize::from(binding.jump_speed_slot))
+    else {
+        return Err(ExecutableErrorV1::MalformedProgram);
+    };
+    *jump_speed = ExecutableValueV1::Number(source.jump_speed);
+
+    let expression = |value| match value {
+        CanonicalJumpScalarV1::VelocityComponent(index) => binding
+            .velocity_slots
+            .get(usize::from(index))
+            .copied()
+            .map(ExecutableExpressionV1::Slot),
+        CanonicalJumpScalarV1::JumpSpeed => {
+            Some(ExecutableExpressionV1::Slot(binding.jump_speed_slot))
+        }
+        CanonicalJumpScalarV1::Number(bits) => Some(ExecutableExpressionV1::Constant(
+            ExecutableValueV1::Number(bits),
+        )),
+    };
+    let mut assignments = Vec::with_capacity(4);
+    for (slot, value) in binding
+        .velocity_slots
+        .into_iter()
+        .zip(source.result_velocity)
+    {
+        assignments.push((
+            slot,
+            expression(value).ok_or(ExecutableErrorV1::MalformedProgram)?,
+        ));
+    }
+    assignments.push((
+        binding.grounded_slot,
+        ExecutableExpressionV1::Constant(ExecutableValueV1::Boolean(source.result_grounded)),
+    ));
+    let rule = ExecutableRuleV1 {
+        entry: binding.entry,
+        predicates: vec![ExecutableExpressionV1::Equal(
+            Box::new(ExecutableExpressionV1::Slot(binding.grounded_slot)),
+            Box::new(ExecutableExpressionV1::Constant(
+                ExecutableValueV1::Boolean(source.required_grounded),
+            )),
+        )],
+        assignments,
+    };
+    let insertion = program
+        .rules
+        .iter()
+        .position(|existing| existing.entry > rule.entry)
+        .unwrap_or(program.rules.len());
+    program.rules.insert(insertion, rule);
+    Ok(())
+}
+
 /// The exact accepted lowering/refinement contract implemented by the plan.
 /// This prototype recognizes only its closed rule-machine realization.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

@@ -172,14 +172,17 @@ fn projected_vec3(scope: TermScope, roles: [LocalRoleRefV2; 3]) -> Term {
     )
 }
 
-fn source_input_handler(source: &[u8], scope: TermScope) -> CanonicalInputHandlerV1 {
+fn source_handlers(
+    source: &[u8],
+    scope: TermScope,
+) -> (CanonicalInputHandlerV1, CanonicalJumpHandlerV1) {
     let cst = read_canonical_source_v1(source).expect("canonical arena source reads");
     let plan = plan_independent_canonical_source_allocations_v1(
         &cst,
         ProgramChangeOccurrenceId::from_bytes(raw_id(SOURCE_ALLOCATION_ROOT_TAG)),
     )
     .expect("canonical arena source receives rooted allocations");
-    elaborate_canonical_source_package_v1(
+    let compiled = elaborate_canonical_source_package_v1(
         &cst,
         CanonicalSourceContextV1 {
             universe: scope.universe,
@@ -187,12 +190,22 @@ fn source_input_handler(source: &[u8], scope: TermScope) -> CanonicalInputHandle
         },
         &plan,
     )
-    .expect("canonical arena source reaches the checked package boundary")
-    .input_handler
-    .expect("the bounded source profile owns one on-input handler")
+    .expect("canonical arena source reaches the checked package boundary");
+    (
+        compiled
+            .input_handler
+            .expect("the bounded source profile owns one on-input handler"),
+        compiled
+            .jump_handler
+            .expect("the bounded source profile owns one on-jump handler"),
+    )
 }
 
-fn headless_program(scope: TermScope, input: &CanonicalInputHandlerV1) -> ExecutableProgramV1 {
+fn headless_program(
+    scope: TermScope,
+    input: &CanonicalInputHandlerV1,
+    jump: &CanonicalJumpHandlerV1,
+) -> ExecutableProgramV1 {
     let horizontal_assignments = || vec![(0, next_x()), (2, div(sub(next_x(), s(0)), a(0)))];
     let mut grounded_tick = horizontal_assignments();
     grounded_tick.extend([(1, s(9)), (3, n(0.0))]);
@@ -254,16 +267,18 @@ fn headless_program(scope: TermScope, input: &CanonicalInputHandlerV1) -> Execut
     );
 
     let mut program = ExecutableProgramV1 {
-        // x, y, vx, vy, horizontal intent, grounded, and six package constants.
+        // x, y, velocity, horizontal intent, grounded, and physical constants.
+        // The velocity, grounded, and jump-speed coordinates are placeholders
+        // populated only by the source-owned jump lowering below.
         initial_configuration: vec![
             number(9.5),
             number(0.0),
             number(0.0),
             number(0.0),
             number(0.0),
-            ExecutableValueV1::Boolean(true),
+            ExecutableValueV1::Boolean(false),
             number(-8.0),
-            number(8.0),
+            number(0.0),
             number(5.0),
             number(0.0),
             number(-10.0),
@@ -280,11 +295,6 @@ fn headless_program(scope: TermScope, input: &CanonicalInputHandlerV1) -> Execut
             number(0.0),
         ],
         rules: vec![
-            ExecutableRuleV1 {
-                entry: 1,
-                predicates: vec![eq(s(5), b(true))],
-                assignments: vec![(3, s(7)), (5, b(false))],
-            },
             ExecutableRuleV1 {
                 entry: 2,
                 predicates: vec![eq(s(5), b(true))],
@@ -340,6 +350,17 @@ fn headless_program(scope: TermScope, input: &CanonicalInputHandlerV1) -> Execut
         },
     )
     .expect("source-owned input handler lowers to its physical slots");
+    lower_canonical_jump_handler_v1(
+        &mut program,
+        jump,
+        ExecutableCanonicalJumpBindingV1 {
+            entry: 1,
+            velocity_slots: [2, 3, 13],
+            grounded_slot: 5,
+            jump_speed_slot: 7,
+        },
+    )
+    .expect("source-owned jump handler lowers to its physical slots");
     program
 }
 
@@ -444,7 +465,7 @@ fn physical_plan_with_source(
         universe: constitution.universe(),
         semantics: constitution.semantics(),
     };
-    let input_handler = source_input_handler(source, scope);
+    let (input_handler, jump_handler) = source_handlers(source, scope);
     ExecutablePhysicalPlanV1 {
         application_shape: constitution
             .application_shape(application)
@@ -506,7 +527,7 @@ fn physical_plan_with_source(
                 entry: 2,
             },
         }),
-        program: headless_program(scope, &input_handler),
+        program: headless_program(scope, &input_handler, &jump_handler),
     }
 }
 
@@ -970,6 +991,82 @@ fn assert_arena_projection(term: &Term, expected_x: f64, expected_velocity_x: f6
     );
 }
 
+fn assert_jump_projection(term: &Term, expected_velocity_y: f64) {
+    let player = projected_object_field(term, b"player");
+    let velocity = projected_object_field(player, b"velocity");
+    assert_eq!(
+        [b"x".as_slice(), b"y".as_slice(), b"z".as_slice()]
+            .map(|field| projected_number(projected_object_field(velocity, field))),
+        [0.0, expected_velocity_y, 0.0]
+    );
+    assert_eq!(
+        projected_object_field(player, b"grounded")
+            .as_atom()
+            .expect("projected Boolean Atom")
+            .canonical_payload(),
+        [0]
+    );
+}
+
+fn admit_source_jump(source: &[u8], allocation_tag: u8, policy_tag: u8) -> (Vec<u8>, Term) {
+    let package = checked_program_package_with_scopes(1, vec![]);
+    let package_id = package.id();
+    let application = ApplicationId {
+        snapshot: package.constitution().snapshot(),
+        local: ApplicationLocalId::new(1),
+    };
+    let plan = physical_plan_with_source(&package, source);
+    let plan_bytes = encode_executable_physical_plan_v1(&plan)
+        .expect("source-owned jump produces one exact CPP1 plan");
+    let (authority, facts) = carrier_authority(&package);
+    let allocation = RuntimeAllocationEpochV1::recorded_for(
+        raw_id(allocation_tag),
+        &package,
+        application,
+        &plan,
+        facts.executable(),
+    )
+    .expect("source jump session receives one recorded allocation root");
+    let mut session = PersistentProcessSessionV1::rematerialize(
+        package,
+        authority,
+        application,
+        plan,
+        facts.executable(),
+        allocation,
+    )
+    .expect("source jump session starts through the persistent runtime");
+    session
+        .apply_opaque_input_and_emit_candidate(
+            &encode_executable_occurrence_v1(&occurrence(1, &[]))
+                .expect("source jump occurrence encodes"),
+        )
+        .expect("source-owned jump meaning produces one hidden candidate");
+    let candidate = session
+        .candidate()
+        .expect("candidate lookup succeeds")
+        .expect("jump Step retains one candidate")
+        .clone();
+    assert!(session.last_admitted().is_none());
+    let (policy, authorization) = exact_root_admission_policy(
+        package_id,
+        facts.session,
+        candidate.base,
+        candidate.id,
+        policy_tag,
+    );
+    session
+        .establish_root_policy(policy)
+        .expect("separate external jump authority is established");
+    let (successor, projection) = session
+        .admit_candidate_with_projection(authorization)
+        .expect("separate jump Admission creates the successor and projection");
+    assert_eq!(successor.predecessor, facts.initial_state);
+    let projection = projection.expect("admitted jump emits the renderer projection");
+    assert_eq!(projection.state, successor.id);
+    (plan_bytes, projection.term)
+}
+
 fn browser_fixture_request() -> WasmProcessRequestV1 {
     let package = checked_program_package(1);
     let physical_plan = physical_plan(&package);
@@ -1093,6 +1190,32 @@ fn canonical_source_input_reaches_persistent_admission_and_projection() {
     let projection = projection.expect("admitted source input emits the renderer projection");
     assert_eq!(projection.state, successor.id);
     assert_arena_projection(&projection.term, 9.5, 0.0);
+}
+
+#[test]
+fn canonical_source_jump_reaches_admission_and_source_only_changes_behavior() {
+    let (base_plan, base_projection) = admit_source_jump(WORLD, 213, 216);
+    assert_jump_projection(&base_projection, 8.0);
+
+    let changed_speed = std::str::from_utf8(WORLD)
+        .expect("arena source is UTF-8")
+        .replacen("jump-arena jump speed 8.0", "jump-arena jump speed 9.25", 1);
+    let (speed_plan, speed_projection) = admit_source_jump(changed_speed.as_bytes(), 214, 217);
+    assert_ne!(speed_plan, base_plan);
+    assert_jump_projection(&speed_projection, 9.25);
+
+    let changed_include = std::str::from_utf8(WORLD)
+        .expect("arena source is UTF-8")
+        .replacen(
+            "?player velocity Vec3 { x: ?velocity-x, y: ?jump-speed, z: ?velocity-z }",
+            "?player velocity Vec3 { x: ?velocity-x, y: 6.5, z: ?velocity-z }",
+            1,
+        );
+    let (include_plan, include_projection) =
+        admit_source_jump(changed_include.as_bytes(), 215, 218);
+    assert_ne!(include_plan, base_plan);
+    assert_ne!(include_plan, speed_plan);
+    assert_jump_projection(&include_projection, 6.5);
 }
 
 #[test]

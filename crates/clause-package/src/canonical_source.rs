@@ -208,6 +208,32 @@ pub struct CanonicalInputHandlerV1 {
     pub result_z: CanonicalInputScalarV1,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CanonicalJumpScalarV1 {
+    VelocityComponent(u8),
+    JumpSpeed,
+    Number(u64),
+}
+
+/// Checked source-owned meaning for the bounded `on jump` slice. Source owns
+/// the three prerequisite assertions, the grounded predicate, and every
+/// included value; a later physical refinement supplies only entry and slot
+/// coordinates.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CanonicalJumpHandlerV1 {
+    pub artifact: CanonicalSourceArtifactIdV1,
+    pub handler_origin: CanonicalSourceOriginV1,
+    pub velocity_assertion_origin: CanonicalSourceOriginV1,
+    pub grounded_assertion_origin: CanonicalSourceOriginV1,
+    pub jump_speed_assertion_origin: CanonicalSourceOriginV1,
+    pub initial_velocity: [u64; 3],
+    pub initial_grounded: bool,
+    pub jump_speed: u64,
+    pub required_grounded: bool,
+    pub result_velocity: [CanonicalJumpScalarV1; 3],
+    pub result_grounded: bool,
+}
+
 #[derive(Clone, Debug)]
 pub struct CanonicalSourceCstV1 {
     artifact: CanonicalSourceArtifactIdV1,
@@ -243,6 +269,7 @@ pub struct CanonicalSourcePackageSliceV1 {
     pub emissions: Vec<CanonicalSourceEmissionV1>,
     pub unsupported: Vec<CanonicalUnsupportedProductionV1>,
     pub input_handler: Option<CanonicalInputHandlerV1>,
+    pub jump_handler: Option<CanonicalJumpHandlerV1>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -296,6 +323,15 @@ pub enum CanonicalSourceErrorV1 {
         origin: CanonicalSourceOriginV1,
     },
     AmbiguousInputInitialAssertion {
+        origin: CanonicalSourceOriginV1,
+    },
+    InvalidJumpHandler {
+        origin: CanonicalSourceOriginV1,
+    },
+    MissingJumpInitialAssertion {
+        origin: CanonicalSourceOriginV1,
+    },
+    AmbiguousJumpInitialAssertion {
         origin: CanonicalSourceOriginV1,
     },
     UnknownModeRole {
@@ -370,7 +406,10 @@ enum CstKind {
     },
     Relation(RelationCst),
     InputHandler(InputHandlerCst),
+    JumpHandler(JumpHandlerCst),
     VectorAssertion(VectorAssertionCst),
+    BooleanAssertion(BooleanAssertionCst),
+    NumberAssertion(NumberAssertionCst),
     Unsupported(CanonicalUnsupportedProductionV1),
 }
 
@@ -391,7 +430,52 @@ struct VectorAssertionCst {
     subject: Vec<u8>,
     relation: Vec<u8>,
     x: u64,
+    y: u64,
     z: u64,
+}
+
+#[derive(Clone, Debug)]
+struct BooleanAssertionCst {
+    origin: CanonicalSourceOriginV1,
+    subject: Vec<u8>,
+    relation: Vec<u8>,
+    value: bool,
+}
+
+#[derive(Clone, Debug)]
+struct NumberAssertionCst {
+    origin: CanonicalSourceOriginV1,
+    subject: Vec<u8>,
+    relation: Vec<u8>,
+    value: u64,
+}
+
+#[derive(Clone, Debug)]
+struct HandlerIncludeCst {
+    origin: CanonicalSourceOriginV1,
+    local: Vec<u8>,
+}
+
+#[derive(Clone, Debug)]
+struct JumpHandlerCst {
+    origin: CanonicalSourceOriginV1,
+    producer: CanonicalSemanticProducerV1,
+    velocity_relation: Vec<u8>,
+    grounded_relation: Vec<u8>,
+    jump_speed_subject: Vec<u8>,
+    jump_speed_relation: Vec<u8>,
+    required_grounded: bool,
+    result_velocity: [CanonicalJumpScalarV1; 3],
+    result_grounded: bool,
+    includes: [HandlerIncludeCst; 2],
+}
+
+#[derive(Clone, Copy)]
+struct JumpHandlerParts<'a> {
+    handler: &'a JumpHandlerCst,
+    velocity: &'a VectorAssertionCst,
+    grounded: &'a BooleanAssertionCst,
+    jump_speed: &'a NumberAssertionCst,
 }
 
 #[derive(Clone, Debug)]
@@ -735,6 +819,7 @@ fn allocation_requests(
 ) -> Result<Vec<AllocationRequest>, CanonicalSourceErrorV1> {
     let mut requested = Vec::new();
     let input = input_handler_parts(cst)?;
+    let jump = jump_handler_parts(cst)?;
     for item in &cst.items {
         match &item.kind {
             CstKind::Referent { designation } => {
@@ -818,13 +903,49 @@ fn allocation_requests(
                     },
                 ]);
             }
+            CstKind::JumpHandler(handler) => {
+                requested.push(AllocationRequest {
+                    producer: handler.producer.clone(),
+                    slot: head_slot(CanonicalSourceProductionV1::Handler),
+                    domain: AllocationDomain::Formation,
+                });
+                for include in &handler.includes {
+                    requested.push(AllocationRequest {
+                        producer: handler.producer.clone(),
+                        slot: child_slot(
+                            CanonicalSourceProductionV1::HandlerInclude,
+                            &include.local,
+                        ),
+                        domain: AllocationDomain::Formation,
+                    });
+                }
+            }
             CstKind::VectorAssertion(assertion) => {
                 if input
                     .as_ref()
                     .is_some_and(|(_, selected)| selected.origin == assertion.origin)
+                    || jump.is_some_and(|parts| parts.velocity.origin == assertion.origin)
                 {
                     requested.push(AllocationRequest {
-                        producer: assertion_producer(assertion),
+                        producer: assertion_producer(&assertion.subject, &assertion.relation),
+                        slot: head_slot(CanonicalSourceProductionV1::Assertion),
+                        domain: AllocationDomain::Formation,
+                    });
+                }
+            }
+            CstKind::BooleanAssertion(assertion) => {
+                if jump.is_some_and(|parts| parts.grounded.origin == assertion.origin) {
+                    requested.push(AllocationRequest {
+                        producer: assertion_producer(&assertion.subject, &assertion.relation),
+                        slot: head_slot(CanonicalSourceProductionV1::Assertion),
+                        domain: AllocationDomain::Formation,
+                    });
+                }
+            }
+            CstKind::NumberAssertion(assertion) => {
+                if jump.is_some_and(|parts| parts.jump_speed.origin == assertion.origin) {
+                    requested.push(AllocationRequest {
+                        producer: assertion_producer(&assertion.subject, &assertion.relation),
                         slot: head_slot(CanonicalSourceProductionV1::Assertion),
                         domain: AllocationDomain::Formation,
                     });
@@ -875,6 +996,20 @@ pub fn elaborate_canonical_source_package_v1(
             result_x: handler.result_x,
             result_z: handler.result_z,
         });
+    let jump_parts = jump_handler_parts(cst)?;
+    let jump_handler = jump_parts.map(|parts| CanonicalJumpHandlerV1 {
+        artifact: cst.artifact,
+        handler_origin: parts.handler.origin,
+        velocity_assertion_origin: parts.velocity.origin,
+        grounded_assertion_origin: parts.grounded.origin,
+        jump_speed_assertion_origin: parts.jump_speed.origin,
+        initial_velocity: [parts.velocity.x, parts.velocity.y, parts.velocity.z],
+        initial_grounded: parts.grounded.value,
+        jump_speed: parts.jump_speed.value,
+        required_grounded: parts.handler.required_grounded,
+        result_velocity: parts.handler.result_velocity,
+        result_grounded: parts.handler.result_grounded,
+    });
 
     for item in &cst.items {
         match &item.kind {
@@ -1075,12 +1210,50 @@ pub fn elaborate_canonical_source_package_v1(
                     handler.include_origin,
                 ));
             }
+            CstKind::JumpHandler(handler) => {
+                let head = head_slot(CanonicalSourceProductionV1::Handler);
+                let head_id = formation_id(plan, &handler.producer, &head)?;
+                formations.push(source_formation(
+                    scope,
+                    head_id,
+                    cst.source_slice(handler.origin)
+                        .expect("owned jump handler origin"),
+                    handler.origin,
+                    "jump-handler",
+                )?);
+                emissions.push(emission(
+                    plan,
+                    handler.producer.clone(),
+                    head,
+                    handler.origin,
+                ));
+                for include in &handler.includes {
+                    let slot =
+                        child_slot(CanonicalSourceProductionV1::HandlerInclude, &include.local);
+                    let id = formation_id(plan, &handler.producer, &slot)?;
+                    formations.push(source_formation(
+                        scope,
+                        id,
+                        cst.source_slice(include.origin)
+                            .expect("owned jump include origin"),
+                        include.origin,
+                        "handler-include",
+                    )?);
+                    emissions.push(emission(
+                        plan,
+                        handler.producer.clone(),
+                        slot,
+                        include.origin,
+                    ));
+                }
+            }
             CstKind::VectorAssertion(assertion) => {
                 if input_parts
                     .as_ref()
                     .is_some_and(|(_, selected)| selected.origin == assertion.origin)
+                    || jump_parts.is_some_and(|parts| parts.velocity.origin == assertion.origin)
                 {
-                    let producer = assertion_producer(assertion);
+                    let producer = assertion_producer(&assertion.subject, &assertion.relation);
                     let slot = head_slot(CanonicalSourceProductionV1::Assertion);
                     let id = formation_id(plan, &producer, &slot)?;
                     formations.push(source_formation(
@@ -1088,6 +1261,50 @@ pub fn elaborate_canonical_source_package_v1(
                         id,
                         cst.source_slice(assertion.origin)
                             .expect("owned initial assertion origin"),
+                        assertion.origin,
+                        "initial-assertion",
+                    )?);
+                    emissions.push(emission(plan, producer, slot, assertion.origin));
+                } else {
+                    unsupported.push(CanonicalUnsupportedProductionV1 {
+                        production: CanonicalSourceProductionV1::Assertion,
+                        origin: assertion.origin,
+                        emissions: vec![],
+                    });
+                }
+            }
+            CstKind::BooleanAssertion(assertion) => {
+                if jump_parts.is_some_and(|parts| parts.grounded.origin == assertion.origin) {
+                    let producer = assertion_producer(&assertion.subject, &assertion.relation);
+                    let slot = head_slot(CanonicalSourceProductionV1::Assertion);
+                    let id = formation_id(plan, &producer, &slot)?;
+                    formations.push(source_formation(
+                        scope,
+                        id,
+                        cst.source_slice(assertion.origin)
+                            .expect("owned grounded assertion origin"),
+                        assertion.origin,
+                        "initial-assertion",
+                    )?);
+                    emissions.push(emission(plan, producer, slot, assertion.origin));
+                } else {
+                    unsupported.push(CanonicalUnsupportedProductionV1 {
+                        production: CanonicalSourceProductionV1::Assertion,
+                        origin: assertion.origin,
+                        emissions: vec![],
+                    });
+                }
+            }
+            CstKind::NumberAssertion(assertion) => {
+                if jump_parts.is_some_and(|parts| parts.jump_speed.origin == assertion.origin) {
+                    let producer = assertion_producer(&assertion.subject, &assertion.relation);
+                    let slot = head_slot(CanonicalSourceProductionV1::Assertion);
+                    let id = formation_id(plan, &producer, &slot)?;
+                    formations.push(source_formation(
+                        scope,
+                        id,
+                        cst.source_slice(assertion.origin)
+                            .expect("owned jump-speed assertion origin"),
                         assertion.origin,
                         "initial-assertion",
                     )?);
@@ -1137,6 +1354,7 @@ pub fn elaborate_canonical_source_package_v1(
         emissions,
         unsupported,
         input_handler,
+        jump_handler,
     })
 }
 
@@ -1287,6 +1505,12 @@ fn parse_item(
                 kind: CstKind::InputHandler(handler),
             });
         }
+        if let Some(handler) = parse_jump_handler(artifact, block, origin)? {
+            return Ok(CstItem {
+                origin,
+                kind: CstKind::JumpHandler(handler),
+            });
+        }
         let emissions = handler_include_emissions(artifact, block)?;
         return Ok(unsupported_item(
             artifact,
@@ -1301,6 +1525,18 @@ fn parse_item(
         return Ok(CstItem {
             origin,
             kind: CstKind::VectorAssertion(assertion),
+        });
+    }
+    if let Some(assertion) = parse_boolean_assertion(head, origin) {
+        return Ok(CstItem {
+            origin,
+            kind: CstKind::BooleanAssertion(assertion),
+        });
+    }
+    if let Some(assertion) = parse_number_assertion(head, origin) {
+        return Ok(CstItem {
+            origin,
+            kind: CstKind::NumberAssertion(assertion),
         });
     }
     Ok(unsupported_item(
@@ -1422,6 +1658,165 @@ fn parse_input_handler(
     }))
 }
 
+fn parse_jump_handler(
+    artifact: CanonicalSourceArtifactIdV1,
+    block: &[SourceLine<'_>],
+    origin: CanonicalSourceOriginV1,
+) -> Result<Option<JumpHandlerCst>, CanonicalSourceErrorV1> {
+    let Some(subject) = block[0].text.strip_prefix("on jump ") else {
+        return Ok(None);
+    };
+    if !subject.starts_with('?') || subject.split_whitespace().count() != 1 {
+        return Err(CanonicalSourceErrorV1::InvalidJumpHandler { origin });
+    }
+
+    let mut section = "";
+    let mut when = Vec::new();
+    let mut withdraw = Vec::new();
+    let mut include = Vec::new();
+    let mut seen_sections = BTreeSet::new();
+    for line in block
+        .iter()
+        .skip(1)
+        .filter(|line| !line.text.trim().is_empty())
+    {
+        let trimmed = line.text.trim();
+        if line.indent == 2 {
+            if trimmed == "admit" {
+                return Err(CanonicalSourceErrorV1::NonCanonicalKeyword {
+                    origin: line_origin(artifact, *line),
+                    keyword: b"admit".to_vec(),
+                });
+            }
+            if !matches!(trimmed, "when" | "withdraw" | "include") || !seen_sections.insert(trimmed)
+            {
+                return Err(CanonicalSourceErrorV1::InvalidJumpHandler {
+                    origin: line_origin(artifact, *line),
+                });
+            }
+            section = trimmed;
+            continue;
+        }
+        if line.indent != 4 {
+            return Err(CanonicalSourceErrorV1::InvalidJumpHandler {
+                origin: line_origin(artifact, *line),
+            });
+        }
+        let entry = (trimmed, line_origin(artifact, *line));
+        match section {
+            "when" => when.push(entry),
+            "withdraw" => withdraw.push(entry),
+            "include" => include.push(entry),
+            _ => {
+                return Err(CanonicalSourceErrorV1::InvalidJumpHandler {
+                    origin: line_origin(artifact, *line),
+                });
+            }
+        }
+    }
+    if when.len() != 3 || withdraw.len() != 2 || include.len() != 2 {
+        return Err(CanonicalSourceErrorV1::InvalidJumpHandler { origin });
+    }
+    if withdraw[0].0 != when[0].0 || withdraw[1].0 != when[1].0 {
+        return Err(CanonicalSourceErrorV1::InvalidJumpHandler { origin });
+    }
+
+    let (velocity_prefix, velocity_vector) = split_vector_subject(when[0].0)
+        .ok_or(CanonicalSourceErrorV1::InvalidJumpHandler { origin })?;
+    let velocity_relation = velocity_prefix
+        .strip_prefix(subject)
+        .and_then(|rest| rest.strip_prefix(' '))
+        .filter(|rest| !rest.is_empty())
+        .ok_or(CanonicalSourceErrorV1::InvalidJumpHandler { origin })?
+        .as_bytes()
+        .to_vec();
+    let velocity_parameters = parse_vec3_components(velocity_vector)
+        .filter(|components| {
+            components.iter().all(|value| value.starts_with('?'))
+                && components.iter().collect::<BTreeSet<_>>().len() == 3
+        })
+        .ok_or(CanonicalSourceErrorV1::InvalidJumpHandler { origin })?;
+
+    let (grounded_subject, grounded_relation, required_grounded) = parse_boolean_clause(when[1].0)
+        .ok_or(CanonicalSourceErrorV1::InvalidJumpHandler { origin })?;
+    if grounded_subject != subject {
+        return Err(CanonicalSourceErrorV1::InvalidJumpHandler { origin });
+    }
+
+    let jump_parts = when[2].0.split_whitespace().collect::<Vec<_>>();
+    if jump_parts.len() < 3
+        || !jump_parts
+            .last()
+            .is_some_and(|value| value.starts_with('?'))
+    {
+        return Err(CanonicalSourceErrorV1::InvalidJumpHandler { origin });
+    }
+    let jump_speed_subject = jump_parts[0].as_bytes().to_vec();
+    let jump_speed_relation = jump_parts[1..jump_parts.len() - 1].join(" ").into_bytes();
+    let jump_speed_parameter = jump_parts[jump_parts.len() - 1];
+
+    let (result_prefix, result_vector) = split_vector_subject(include[0].0)
+        .ok_or(CanonicalSourceErrorV1::InvalidJumpHandler { origin })?;
+    let expected_result_prefix =
+        format!("{subject} {}", String::from_utf8_lossy(&velocity_relation));
+    if result_prefix != expected_result_prefix {
+        return Err(CanonicalSourceErrorV1::InvalidJumpHandler { origin });
+    }
+    let result_components = parse_vec3_components(result_vector)
+        .ok_or(CanonicalSourceErrorV1::InvalidJumpHandler { origin })?;
+    let result_velocity = result_components
+        .map(|value| parse_jump_scalar(value, velocity_parameters, jump_speed_parameter))
+        .into_iter()
+        .collect::<Option<Vec<_>>>()
+        .and_then(|values| values.try_into().ok())
+        .ok_or(CanonicalSourceErrorV1::InvalidJumpHandler { origin })?;
+
+    let (result_subject, result_relation, result_grounded) = parse_boolean_clause(include[1].0)
+        .ok_or(CanonicalSourceErrorV1::InvalidJumpHandler { origin })?;
+    if result_subject != subject || result_relation.as_bytes() != grounded_relation.as_bytes() {
+        return Err(CanonicalSourceErrorV1::InvalidJumpHandler { origin });
+    }
+
+    Ok(Some(JumpHandlerCst {
+        origin,
+        producer: semantic_producer(
+            CanonicalSourceProductionV1::Handler,
+            &handler_semantic_producer(block),
+        ),
+        velocity_relation,
+        grounded_relation: grounded_relation.into_bytes(),
+        jump_speed_subject,
+        jump_speed_relation,
+        required_grounded,
+        result_velocity,
+        result_grounded,
+        includes: [
+            HandlerIncludeCst {
+                origin: include[0].1,
+                local: include[0].0.as_bytes().to_vec(),
+            },
+            HandlerIncludeCst {
+                origin: include[1].1,
+                local: include[1].0.as_bytes().to_vec(),
+            },
+        ],
+    }))
+}
+
+fn parse_jump_scalar(
+    source: &str,
+    velocity_parameters: [&str; 3],
+    jump_speed_parameter: &str,
+) -> Option<CanonicalJumpScalarV1> {
+    velocity_parameters
+        .iter()
+        .position(|parameter| *parameter == source)
+        .and_then(|index| u8::try_from(index).ok())
+        .map(CanonicalJumpScalarV1::VelocityComponent)
+        .or_else(|| (source == jump_speed_parameter).then_some(CanonicalJumpScalarV1::JumpSpeed))
+        .or_else(|| parse_source_number(source).map(CanonicalJumpScalarV1::Number))
+}
+
 fn parse_vector_assertion(
     line: &str,
     origin: CanonicalSourceOriginV1,
@@ -1444,16 +1839,57 @@ fn parse_vector_assertion(
     let Some(z) = parse_source_number(components[2]) else {
         return Ok(None);
     };
-    if y != 0.0_f64.to_bits() {
-        return Ok(None);
-    }
     Ok(Some(VectorAssertionCst {
         origin,
         subject: prefix[0].as_bytes().to_vec(),
         relation: prefix[1..].join(" ").into_bytes(),
         x,
+        y,
         z,
     }))
+}
+
+fn parse_boolean_clause(source: &str) -> Option<(&str, String, bool)> {
+    let parts = source.split_whitespace().collect::<Vec<_>>();
+    if parts.len() < 3 {
+        return None;
+    }
+    let value = match *parts.last()? {
+        "true" => true,
+        "false" => false,
+        _ => return None,
+    };
+    Some((parts[0], parts[1..parts.len() - 1].join(" "), value))
+}
+
+fn parse_boolean_assertion(
+    source: &str,
+    origin: CanonicalSourceOriginV1,
+) -> Option<BooleanAssertionCst> {
+    let (subject, relation, value) = parse_boolean_clause(source)?;
+    Some(BooleanAssertionCst {
+        origin,
+        subject: subject.as_bytes().to_vec(),
+        relation: relation.into_bytes(),
+        value,
+    })
+}
+
+fn parse_number_assertion(
+    source: &str,
+    origin: CanonicalSourceOriginV1,
+) -> Option<NumberAssertionCst> {
+    let parts = source.split_whitespace().collect::<Vec<_>>();
+    if parts.len() < 3 {
+        return None;
+    }
+    let value = parse_source_number(parts.last()?)?;
+    Some(NumberAssertionCst {
+        origin,
+        subject: parts[0].as_bytes().to_vec(),
+        relation: parts[1..parts.len() - 1].join(" ").into_bytes(),
+        value,
+    })
 }
 
 fn split_vector_subject(source: &str) -> Option<(&str, &str)> {
@@ -1747,10 +2183,95 @@ fn input_handler_parts(
     }
 }
 
-fn assertion_producer(assertion: &VectorAssertionCst) -> CanonicalSemanticProducerV1 {
+fn jump_handler_parts(
+    cst: &CanonicalSourceCstV1,
+) -> Result<Option<JumpHandlerParts<'_>>, CanonicalSourceErrorV1> {
+    let handlers = cst
+        .items
+        .iter()
+        .filter_map(|item| match &item.kind {
+            CstKind::JumpHandler(handler) => Some(handler),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let Some(handler) = handlers.first().copied() else {
+        return Ok(None);
+    };
+    if handlers.len() != 1 {
+        return Err(CanonicalSourceErrorV1::InvalidJumpHandler {
+            origin: handler.origin,
+        });
+    }
+    let velocities = cst
+        .items
+        .iter()
+        .filter_map(|item| match &item.kind {
+            CstKind::VectorAssertion(assertion)
+                if assertion.relation == handler.velocity_relation =>
+            {
+                Some(assertion)
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let grounded = cst
+        .items
+        .iter()
+        .filter_map(|item| match &item.kind {
+            CstKind::BooleanAssertion(assertion)
+                if assertion.relation == handler.grounded_relation =>
+            {
+                Some(assertion)
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let jump_speeds = cst
+        .items
+        .iter()
+        .filter_map(|item| match &item.kind {
+            CstKind::NumberAssertion(assertion)
+                if assertion.subject == handler.jump_speed_subject
+                    && assertion.relation == handler.jump_speed_relation =>
+            {
+                Some(assertion)
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let ([velocity], [grounded], [jump_speed]) = (
+        velocities.as_slice(),
+        grounded.as_slice(),
+        jump_speeds.as_slice(),
+    ) else {
+        let missing = velocities.is_empty() || grounded.is_empty() || jump_speeds.is_empty();
+        return Err(if missing {
+            CanonicalSourceErrorV1::MissingJumpInitialAssertion {
+                origin: handler.origin,
+            }
+        } else {
+            CanonicalSourceErrorV1::AmbiguousJumpInitialAssertion {
+                origin: handler.origin,
+            }
+        });
+    };
+    if velocity.subject != grounded.subject {
+        return Err(CanonicalSourceErrorV1::InvalidJumpHandler {
+            origin: handler.origin,
+        });
+    }
+    Ok(Some(JumpHandlerParts {
+        handler,
+        velocity,
+        grounded,
+        jump_speed,
+    }))
+}
+
+fn assertion_producer(subject: &[u8], relation: &[u8]) -> CanonicalSemanticProducerV1 {
     let mut key = Vec::new();
-    frame_bytes(&mut key, &assertion.subject);
-    frame_bytes(&mut key, &assertion.relation);
+    frame_bytes(&mut key, subject);
+    frame_bytes(&mut key, relation);
     semantic_producer(CanonicalSourceProductionV1::Assertion, &key)
 }
 
@@ -1798,7 +2319,12 @@ fn validate_unique_designations(items: &[CstItem]) -> Result<(), CanonicalSource
     for designation in items.iter().filter_map(|item| match &item.kind {
         CstKind::Referent { designation } | CstKind::Shape { designation, .. } => Some(designation),
         CstKind::Relation(relation) => Some(&relation.designation),
-        CstKind::InputHandler(_) | CstKind::VectorAssertion(_) | CstKind::Unsupported(_) => None,
+        CstKind::InputHandler(_)
+        | CstKind::JumpHandler(_)
+        | CstKind::VectorAssertion(_)
+        | CstKind::BooleanAssertion(_)
+        | CstKind::NumberAssertion(_)
+        | CstKind::Unsupported(_) => None,
     }) {
         if !seen.insert(designation.clone()) {
             return Err(CanonicalSourceErrorV1::DuplicateDesignation {

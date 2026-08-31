@@ -139,7 +139,7 @@ fn canonical_world_declarations_reach_the_checked_package_with_exact_remainder()
     assert_eq!(compiled_again.emissions, compiled.emissions);
 
     let constitution = compiled.checked_package.constitution().preimage();
-    assert_eq!(constitution.formations.len(), 24);
+    assert_eq!(constitution.formations.len(), 30);
     assert_eq!(constitution.schemas.len(), 13);
     assert_eq!(constitution.operators.len(), 13);
     assert!(constitution.applications.is_empty());
@@ -160,7 +160,7 @@ fn canonical_world_declarations_reach_the_checked_package_with_exact_remainder()
         1,
         "the four-role clamped-between declaration remains structurally distinct"
     );
-    assert_eq!(compiled.emissions.len(), 65);
+    assert_eq!(compiled.emissions.len(), 71);
     assert!(compiled.emissions.iter().all(|emission| {
         cst.source_slice(emission.origin)
             .is_some_and(|source| !source.is_empty())
@@ -181,13 +181,13 @@ fn canonical_world_declarations_reach_the_checked_package_with_exact_remainder()
                 counts[index] += 1;
                 counts
             });
-    assert_eq!(unsupported_counts, [3, 3, 13, 4]);
+    assert_eq!(unsupported_counts, [3, 3, 10, 3]);
     let include_emissions = compiled
         .unsupported
         .iter()
         .flat_map(|unsupported| &unsupported.emissions)
         .collect::<Vec<_>>();
-    assert_eq!(include_emissions.len(), 9);
+    assert_eq!(include_emissions.len(), 7);
     assert!(include_emissions.iter().all(|emission| {
         emission.slot.production == CanonicalSourceProductionV1::HandlerInclude
             && emission.allocations.is_empty()
@@ -215,6 +215,31 @@ fn canonical_world_declarations_reach_the_checked_package_with_exact_remainder()
     assert_eq!(input.result_z, CanonicalInputScalarV1::Parameter(1));
     assert!(cst.source_slice(input.handler_origin).is_some());
     assert!(cst.source_slice(input.initial_assertion_origin).is_some());
+
+    let jump = compiled
+        .jump_handler
+        .expect("the bounded source profile lowers the actual on-jump handler");
+    assert_eq!(jump.initial_velocity, [0.0_f64.to_bits(); 3]);
+    assert!(jump.initial_grounded);
+    assert_eq!(jump.jump_speed, 8.0_f64.to_bits());
+    assert!(jump.required_grounded);
+    assert_eq!(
+        jump.result_velocity,
+        [
+            CanonicalJumpScalarV1::VelocityComponent(0),
+            CanonicalJumpScalarV1::JumpSpeed,
+            CanonicalJumpScalarV1::VelocityComponent(2),
+        ]
+    );
+    assert!(!jump.result_grounded);
+    for origin in [
+        jump.handler_origin,
+        jump.velocity_assertion_origin,
+        jump.grounded_assertion_origin,
+        jump.jump_speed_assertion_origin,
+    ] {
+        assert!(cst.source_slice(origin).is_some());
+    }
 
     let carrier = ProcessCarrier::replay(&compiled.checked_package, &AuthorityStore::new())
         .expect("the existing package carrier consumes the checked declaration package");
