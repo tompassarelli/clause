@@ -10,8 +10,8 @@ use clause_package::{
 use super::executable::{persistent_candidate_id_from_seed_v1, persistent_candidate_id_v1};
 use super::{
     ExecutableAuthorityFactsV1, ExecutableCandidateV1, ExecutableCarrierErrorV1, ExecutableErrorV1,
-    ExecutableProcessRuntimeV1, ExecutableStateRevisionV1, ExecutableStepV1, ExecutableValueV1,
-    decode_executable_occurrence_v1,
+    ExecutableProcessRuntimeV1, ExecutableProjectedObservationV1, ExecutableStateRevisionV1,
+    ExecutableStepV1, ExecutableValueV1, decode_executable_occurrence_v1,
 };
 
 /// One native, long-lived execution binding for an exact package, Program
@@ -123,12 +123,28 @@ impl PersistentProcessSessionV1 {
         &mut self,
         authorization: AdmissionAuthorizationEvidence,
     ) -> Result<ExecutableStateRevisionV1, PersistentProcessSessionErrorV1> {
-        let admitted = self
+        self.admit_candidate_with_projection(authorization)
+            .map(|(admitted, _)| admitted)
+    }
+
+    /// Atomically admit the candidate, enter its package-declared derived
+    /// Observation when present, and install the successor execution epoch.
+    pub fn admit_candidate_with_projection(
+        &mut self,
+        authorization: AdmissionAuthorizationEvidence,
+    ) -> Result<
+        (
+            ExecutableStateRevisionV1,
+            Option<ExecutableProjectedObservationV1>,
+        ),
+        PersistentProcessSessionErrorV1,
+    > {
+        let (admitted, projection) = self
             .runtime_mut()?
-            .settle_carrier_process_and_start_epoch(authorization)?;
+            .settle_carrier_process_project_and_start_epoch(authorization)?;
         self.world_base = admitted.id;
         self.last_admitted = Some(admitted.clone());
-        Ok(admitted)
+        Ok((admitted, projection))
     }
 
     /// Establish one caller-supplied root policy on the runtime-owned

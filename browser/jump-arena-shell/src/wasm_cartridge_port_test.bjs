@@ -6,8 +6,6 @@
 
 (require '["bun:test" :as test])
 
-(declare-extern [test/test test/expect] Any)
-
 (defn policy [] workbench/WorkbenchPolicy
   (let [maximum Int (.-MAX_SAFE_INTEGER Number)]
     (workbench/->WorkbenchPolicy
@@ -44,27 +42,130 @@
               (.push flat octet)))))
       flat)))
 
-(defn module-for
-  [response Any
-   calls Any] Any
-  {:clause_process_v1_reset (fn [] Any (.push calls "reset"))
-   :clause_process_v1_request_push (fn [byte Int] Int
-                                     (do (.push calls byte) 0))
-   :clause_process_v1_dispatch (fn [] Int (do (.push calls "dispatch") 0))
-   :clause_process_v1_response_len (fn [] Int (.-length response))
-   :clause_process_v1_response_byte (fn [index Int] Int (nth response index))})
+(defn module-for!
+  [events Any
+   requests Any] Any
+  (let [request Any (atom [])
+        current Any (atom [])
+        next-event! Any (fn [] Any
+                          (do
+                            (.push requests (.slice @request))
+                            (reset! current (.shift events))
+                            0))]
+    {:clause_session_v1_io_reset (fn [] Any (reset! request []))
+     :clause_session_v1_request_push (fn [byte Int] Int
+                                       (do (.push @request byte) 0))
+     :clause_session_v1_open next-event!
+     :clause_session_v1_command next-event!
+     :clause_session_v1_event_len (fn [] Int (.-length @current))
+     :clause_session_v1_event_byte (fn [index Int] Int (nth @current index))}))
+
+(defn append-u32!
+  [bytes Any
+   value Int] Any
+  (doseq [divisor Int [1 256 65536 16777216]]
+    (.push bytes (rem (quot value divisor) 256))))
+
+(defn append-u64!
+  [bytes Any
+   value Int] Any
+  (do (append-u32! bytes value) (append-u32! bytes 0)))
+
+(defn append-blob!
+  [bytes Any
+   value Any] Any
+  (do
+    (append-u32! bytes (.-length value))
+    (doseq [byte Int value] (.push bytes byte))))
+
+(defn minimal-cwr1! [] Any
+  (let [bytes Any [67 87 82 49]]
+    (append-blob! bytes [1])
+    (append-u32! bytes 1)
+    (doseq [tag Int [1 2 3 4 5 6 7 8 9]]
+      (doseq [byte Int (identity tag)] (.push bytes byte)))
+    (append-blob! bytes [9])
+    (doseq [byte Int (identity 10)] (.push bytes byte))
+    (append-blob! bytes [10])
+    (doseq [byte Int (identity 11)] (.push bytes byte))
+    (append-blob! bytes [11])
+    (append-u64! bytes 100)
+    (.push bytes 2 0)
+    (append-blob! bytes [1])
+    (append-blob! bytes [2])
+    (.push bytes 0 0)
+    bytes))
+
+(defn cse-header!
+  [sequence Int
+   tag Int] Any
+  (let [bytes Any [67 83 69 49]]
+    (append-u32! bytes 0)
+    (append-u32! bytes 1)
+    (append-u64! bytes sequence)
+    (.push bytes tag)
+    bytes))
+
+(defn put-identities!
+  [bytes Any
+   tags Any] Any
+  (doseq [tag Int tags]
+    (doseq [byte Int (identity tag)] (.push bytes byte))))
+
+(defn opened-event! [] Any
+  (let [bytes Any (cse-header! 0 1)]
+    (put-identities! bytes [21 3 22 23 24])
+    (append-u32! bytes 1)
+    bytes))
+
+(defn input-event! [] Any
+  (let [bytes Any (cse-header! 1 2)]
+    (put-identities! bytes [31 23 24 32 33])
+    (append-u32! bytes 1)
+    bytes))
+
+(defn candidate-event! [] Any
+  (let [bytes Any (cse-header! 2 3)]
+    (put-identities! bytes [34 35 22 23 24])
+    (append-u32! bytes 1)
+    bytes))
+
+(defn admission-event! [] Any
+  (let [bytes Any (cse-header! 3 4)]
+    (put-identities! bytes [22 36 37 38 3])
+    (append-u32! bytes 2)
+    (.push bytes 1)
+    (put-identities! bytes [39])
+    (append-blob! bytes [40 41 42])
+    bytes))
+
+(defn disposed-event! [] Any (cse-header! 4 5))
+
+(defn throws?! [action (Fn [] Any)] Bool
+  (try
+    (do (action) false)
+    (catch Error _error true)))
+
+(defn json-string [value Any] String
+  (let [encoded Any (.stringify JSON value)]
+    (if (= (js/typeof encoded) "string")
+      encoded
+      (throw (new Error "test value is not JSON-encodable")))))
 
 (test/test
- "candidate stays opaque and Wasm dispatch occurs only at admission"
- (fn [] Any
-   (let [response Any (cwo1 [{:kind "number" :value 2.5}
-                              {:kind "boolean" :value true}])
-         calls Any []
+ "one persistent session sequences input candidate Admission and disposal"
+ (fn [] Nil
+   (let [requests Any []
          port workbench/CartridgePort (wasm/create-wasm-cartridge-port
-                                       (module-for response calls)
+                                       (module-for! [(opened-event!)
+                                                     (input-event!)
+                                                     (candidate-event!)
+                                                     (admission-event!)
+                                                     (disposed-event!)]
+                                                   requests)
                                        (policy))
          request wasm/ExactProcessRequest (wasm/->ExactProcessRequest
-                                           [67 87 82 49 0])
+                                           (minimal-cwr1!))
          accepted Any (atom nil)
          started Any (atom nil)
          candidate Any (atom nil)
@@ -77,46 +178,72 @@
       (workbench/->FixedTick 16)
       (workbench/->InputConfiguration 0 [])
       (fn [result Any] Any (reset! candidate result)))
-     (.toEqual (test/expect calls) [])
-     (.toEqual (test/expect (.-bytes (.-request (.-candidate @candidate))))
-               (.-bytes request))
-     (.toBe (test/expect (.isFrozen Object
-                                    (.-bytes (.-request (.-candidate @candidate)))))
-            true)
-     (.toBe (test/expect (.-revision @started)) nil)
-     (.toEqual (test/expect (.-frame @started)) [])
+     (.toBe (test/expect (str (.-length requests))) "3")
+     (.toBe (test/expect (json-string (.slice (nth requests 0) 0 4)))
+            "[67,87,83,49]")
+     (.toBe (test/expect (json-string [(nth (nth requests 1) 20)
+                                       (nth (nth requests 2) 20)]))
+            "[1,2]")
+     (.toBe (test/expect (json-string (.-frame @started))) "[]")
      ((.-requestAdmission port)
       (.-session @started)
       (.-candidate @candidate)
       (fn [result Any] Any (reset! admitted result)))
-     (.toBe (test/expect (nth calls 0)) "reset")
-     (.toBe (test/expect (nth calls 6)) "dispatch")
-     (.toEqual (test/expect (.-revision @admitted)) (identity 22))
-     (.toEqual (test/expect (.-frame @admitted)) [2.5 true]))))
+     (.toBe (test/expect (str (.-length requests))) "4")
+     (.toBe (test/expect (str (nth (nth requests 3) 20))) "3")
+     (.toBe (test/expect (json-string (.-revision @admitted)))
+            (json-string (identity 36)))
+     (.toBe (test/expect (json-string (.-frame @admitted))) "[40,41,42]")
+     ((.-disposeSession port) (.-session @started))
+     (.toBe (test/expect (str (nth (nth requests 4) 20))) "4")
+     (let [after-dispose Any (atom nil)]
+       ((.-runCandidate port)
+        (.-session @started)
+        (workbench/->FixedTick 16)
+        (workbench/->InputConfiguration 0 [])
+        (fn [result Any] Any (reset! after-dispose result)))
+       (.toBe (test/expect (str (.-reason @after-dispose)))
+              "Wasm session is disposed"))
+     nil)))
 
 (test/test
  "strict CWO1 decoding rejects malformed and trailing bytes"
- (fn [] Any
+ (fn [] Nil
    (let [valid Any (cwo1 [{:kind "boolean" :value false}])]
-     (.toThrow
+     (.toBe
       (test/expect
-       (fn [] Any
-         (wasm/decode-cwo1-observation (.concat valid [0])))))
+       (if (throws?!
+            (fn [] Any
+              (wasm/decode-cwo1-observation (.concat valid [0]))))
+         "true"
+         "false"))
+      "true")
      (let [bad Any (.slice valid)]
        (.splice bad 0 1 88)
-       (.toThrow
+       (.toBe
         (test/expect
-         (fn [] Any (wasm/decode-cwo1-observation bad))))))))
+         (if (throws?!
+              (fn [] Any (wasm/decode-cwo1-observation bad)))
+           "true"
+           "false"))
+        "true"))
+     nil)))
 
 (test/test
  "CWR1 hex transport is exact and bounded"
- (fn [] Any
-   (.toEqual (test/expect (wasm/decode-cwr1-hex "43 57\n52\t31"))
-             [67 87 82 49])
+ (fn [] Nil
+   (.toBe (test/expect (json-string
+                        (wasm/decode-cwr1-hex "43 57\n52\t31")))
+          "[67,87,82,49]")
    (doseq [source Any [""
                        "0"
                        "0g"
                        "0A"]]
-     (.toThrow
+     (.toBe
       (test/expect
-       (fn [] Any (wasm/decode-cwr1-hex source)))))))
+       (if (throws?!
+            (fn [] Any (wasm/decode-cwr1-hex source)))
+         "true"
+         "false"))
+      "true"))
+   nil))

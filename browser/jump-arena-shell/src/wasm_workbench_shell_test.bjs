@@ -6,14 +6,12 @@
             [jump-arena-shell.workbench :as workbench]))
 
 (require '["bun:test" :as test])
-(require '["#clause-runtime-wasm" :refer [initSync]])
-
-(declare-extern [test/test test/expect Bun] Any)
 
 (defn policy [] workbench/WorkbenchPolicy
   (let [maximum Int (.-MAX_SAFE_INTEGER Number)]
     (workbench/->WorkbenchPolicy
-     8 8 32 128 512
+     8 8 64 wasm/cse1-projected-term-max-properties
+     wasm/cse1-projected-term-json-max-source-units
      (workbench/->WorkbenchSequenceLimits
       maximum maximum maximum maximum maximum))))
 
@@ -24,184 +22,274 @@
     (.splice bytes 31 1 tag)
     bytes))
 
-(defn cwo1 [values Any] Any
-  (let [bytes Any (.concat [67 87 79 49] (identity 11) (identity 22))
-        count Int (.-length values)]
-    (.push bytes (rem count 256))
-    (.push bytes (quot count 256))
-    (doseq [value Any values]
-      (if (= (js/typeof value) "boolean")
-        (do
-          (.push bytes 1)
-          (.push bytes (if value 1 0)))
-        (let [packed Any (new ArrayBuffer 8)
-              view Any (new DataView packed)]
-          (.setFloat64 view 0 value true)
-          (.push bytes 0)
-          (doseq [octet Int (new Uint8Array packed)]
-            (.push bytes octet)))))
+(defn append-little-u32!
+  [bytes Any
+   value Int] Any
+  (doseq [divisor Int [1 256 65536 16777216]]
+    (.push bytes (rem (quot value divisor) 256))))
+
+(defn append-little-u64!
+  [bytes Any
+   value Int] Any
+  (do (append-little-u32! bytes value) (append-little-u32! bytes 0)))
+
+(defn append-big-u32!
+  [bytes Any
+   value Int] Any
+  (doseq [divisor Int [16777216 65536 256 1]]
+    (.push bytes (rem (quot value divisor) 256))))
+
+(defn append-little-blob!
+  [bytes Any
+   value Any] Any
+  (do
+    (append-little-u32! bytes (.-length value))
+    (doseq [byte Int value] (.push bytes byte))))
+
+(defn ascii [source String] Any
+  (loop [index Int 0
+         bytes (Vec Int) []]
+    (if (= index (.-length source))
+      bytes
+      (recur (inc index) (conj bytes (.charCodeAt source index))))))
+
+(defn atom-node!
+  [kind String
+   payload Any] Any
+  (let [bytes Any [0]
+        kind-bytes Any (ascii kind)]
+    (append-big-u32! bytes (.-length kind-bytes))
+    (doseq [byte Int kind-bytes] (.push bytes byte))
+    (append-big-u32! bytes (.-length payload))
+    (doseq [byte Int payload] (.push bytes byte))
+    (.push bytes 0)
     bytes))
 
+(defn triple-node!
+  [left Any
+   operator Any
+   right Any] Any
+  (let [bytes Any [1]]
+    (doseq [node Any [left operator right]]
+      (doseq [byte Int node] (.push bytes byte)))
+    bytes))
+
+(defn number-node! [value Float] Any
+  (let [buffer Any (new ArrayBuffer 8)
+        view Any (new DataView buffer)]
+    (.setFloat64 view 0 value true)
+    (atom-node! "clause/process-projected-f64-v1" (new Uint8Array buffer))))
+
+(defn boolean-node! [value Bool] Any
+  (atom-node! "clause/process-projected-bool-v1" [(if value 1 0)]))
+
+(defn object-node! [fields Any] Any
+  (if (= (.-length fields) 0)
+    (atom-node! "clause/js-object-end-v1" [])
+    (let [field Any (nth fields 0)]
+      (triple-node!
+       (atom-node! "clause/js-field-v1" (ascii (nth field 0)))
+       (nth field 1)
+       (object-node! (.slice fields 1))))))
+
+(defn array-node! [values Any] Any
+  (if (= (.-length values) 0)
+    (atom-node! "clause/js-array-end-v1" [])
+    (triple-node!
+     (atom-node! "clause/js-item-v1" [])
+     (nth values 0)
+     (array-node! (.slice values 1)))))
+
+(defn vec3-node!
+  [x Float
+   y Float
+   z Float] Any
+  (object-node! [["x" (number-node! x)]
+                 ["y" (number-node! y)]
+                 ["z" (number-node! z)]]))
+
+(defn arena-term-bytes! [] Any
+  (let [platform Any (object-node! [["position" (vec3-node! 0.0 -0.25 0.0)]
+                                    ["size" (vec3-node! 12.0 0.5 12.0)]])
+        player Any (object-node! [["position" (vec3-node! 1.0 2.0 3.0)]
+                                  ["velocity" (vec3-node! 4.0 5.0 6.0)]
+                                  ["yaw" (number-node! 0.25)]
+                                  ["grounded" (boolean-node! true)]])
+        root Any (object-node! [["player" player]
+                                ["world" (object-node!
+                                          [["platforms" (array-node! [platform])]])]])
+        bytes Any []]
+    (doseq [tag Int [91 92]]
+      (doseq [byte Int (identity tag)] (.push bytes byte)))
+    (doseq [byte Int root] (.push bytes byte))
+    bytes))
+
+(defn minimal-cwr1! [] Any
+  (let [bytes Any [67 87 82 49]]
+    (append-little-blob! bytes [1])
+    (append-little-u32! bytes 1)
+    (doseq [tag Int [1 2 3 4 5 6 7 8 9]]
+      (doseq [byte Int (identity tag)] (.push bytes byte)))
+    (append-little-blob! bytes [9])
+    (doseq [byte Int (identity 10)] (.push bytes byte))
+    (append-little-blob! bytes [10])
+    (doseq [byte Int (identity 11)] (.push bytes byte))
+    (append-little-blob! bytes [11])
+    (append-little-u64! bytes 100)
+    (.push bytes 2 0)
+    (append-little-blob! bytes [1])
+    (append-little-blob! bytes [2])
+    (.push bytes 0 0)
+    bytes))
+
+(defn cse-header!
+  [sequence Int
+   tag Int] Any
+  (let [bytes Any [67 83 69 49]]
+    (append-little-u32! bytes 0)
+    (append-little-u32! bytes 1)
+    (append-little-u64! bytes sequence)
+    (.push bytes tag)
+    bytes))
+
+(defn put-identities!
+  [bytes Any
+   tags Any] Any
+  (doseq [tag Int tags]
+    (doseq [byte Int (identity tag)] (.push bytes byte))))
+
+(defn opened-event! [] Any
+  (let [bytes Any (cse-header! 0 1)]
+    (put-identities! bytes [21 3 22 23 24])
+    (append-little-u32! bytes 1)
+    bytes))
+
+(defn input-event! [] Any
+  (let [bytes Any (cse-header! 1 2)]
+    (put-identities! bytes [31 23 24 32 33])
+    (append-little-u32! bytes 1)
+    bytes))
+
+(defn candidate-event! [] Any
+  (let [bytes Any (cse-header! 2 3)]
+    (put-identities! bytes [34 35 22 23 24])
+    (append-little-u32! bytes 1)
+    bytes))
+
+(defn admission-event! [term-bytes Any] Any
+  (let [bytes Any (cse-header! 3 4)]
+    (put-identities! bytes [22 36 37 38 3])
+    (append-little-u32! bytes 2)
+    (.push bytes 1)
+    (put-identities! bytes [39])
+    (append-little-blob! bytes term-bytes)
+    bytes))
+
+(defn disposed-event! [] Any (cse-header! 4 5))
+
 (defn module-for!
-  [response Any
-   dispatches Any] Any
-  {:clause_process_v1_reset (fn [] Any nil)
-   :clause_process_v1_request_push (fn [_byte Int] Int 0)
-   :clause_process_v1_dispatch (fn [] Int
-                                 (do (swap! dispatches inc) 0))
-   :clause_process_v1_response_len (fn [] Int (.-length response))
-   :clause_process_v1_response_byte (fn [index Int] Int (nth response index))})
+  [events Any
+   requests Any] Any
+  (let [request Any (atom [])
+        current Any (atom [])
+        next-event! Any (fn [] Any
+                          (do
+                            (.push requests (.slice @request))
+                            (reset! current (.shift events))
+                            0))]
+    {:clause_session_v1_io_reset (fn [] Any (reset! request []))
+     :clause_session_v1_request_push (fn [byte Int] Int
+                                       (do (.push @request byte) 0))
+     :clause_session_v1_open next-event!
+     :clause_session_v1_command next-event!
+     :clause_session_v1_event_len (fn [] Int (.-length @current))
+     :clause_session_v1_event_byte (fn [index Int] Int (nth @current index))}))
 
-(defn read-fixture-text! [path String] (Promise String)
-  (.text (.file Bun path)))
+(defn throws?! [action (Fn [] Any)] Bool
+  (try
+    (do (action) false)
+    (catch Error _error true)))
 
-(defn read-fixture-bytes! [path String] (Promise Any)
-  (.arrayBuffer (.file Bun path)))
+(defn json-string [value Any] String
+  (let [encoded Any (.stringify JSON value)]
+    (if (= (js/typeof encoded) "string")
+      encoded
+      (throw (new Error "test value is not JSON-encodable")))))
 
 (test/test
- "passive shell renders only the admitted CWO1 successor frame"
- (fn [] Any
-   (let [rendered Any []
+ "persistent composition renders only the Admission-projected Term frame"
+ (fn [] Nil
+   (let [term-bytes Any (arena-term-bytes!)
+         requests Any []
+         rendered Any []
          disposed Any (atom 0)
-         emitted-input Any (atom nil)
          scheduled Any (atom nil)
-         cancelled Any (atom 0)
-         dispatches Any (atom 0)
-         receipts Any []
+         cancellations Any (atom 0)
+         module Any (module-for! [(opened-event!)
+                                  (input-event!)
+                                  (candidate-event!)
+                                  (admission-event! term-bytes)
+                                  (disposed-event!)]
+                                 requests)
          browser Any {:setTimeout (fn
                                     [tick Any
                                      _delay Int] Int
                                     (do (reset! scheduled tick) 41))
-                      :clearTimeout (fn [_token Any] Any (swap! cancelled inc))}
-         values Any [1.0 2.0 3.0 4.0 5.0 6.0 0.25 true
-                     0.0 -0.25 0.0 12.0 0.5 12.0]
+                      :clearTimeout (fn [_token Any] Any (swap! cancellations inc))}
          composition Any (integration/create-passive-wasm-workbench-with-shell-factory
-                          (fn [emit-input Any] Any
-                            (do
-                              (reset! emitted-input emit-input)
-                              {:renderFrame (fn [frame Any] Any (.push rendered frame))
-                               :dispose (fn [] Any (swap! disposed inc))}))
-                          integration/project-cwo1-arena-frame
-                          browser
-                          (module-for! (cwo1 values) dispatches)
-                          [67 87 82 49 1]
-                          (workbench/->FixedTick 16)
-                          (policy)
-                          (fn [receipt Any] Any (.push receipts receipt)))]
-     (.toEqual (test/expect rendered) [])
-     (.toBe (test/expect @dispatches) 0)
-     (.toBe (test/expect (.-phase ((.-snapshot (.-controller composition)))))
-            "ready")
-     (@emitted-input {:kind "keyboard" :phase "down" :code "Space" :repeat false})
-     (.toBe (test/expect @dispatches) 0)
-     (@scheduled)
-     (.toBe (test/expect @dispatches) 1)
-     (.toBe (test/expect (.-length rendered)) 1)
-     (let [frame Any (nth rendered 0)]
-       (.toEqual (test/expect [(.-x (.-position (.-player frame)))
-                              (.-y (.-position (.-player frame)))
-                              (.-z (.-position (.-player frame)))])
-                 [1 2 3])
-       (.toBe (test/expect (.-grounded (.-player frame))) true)
-       (.toBe (test/expect (.-length (.-platforms (.-world frame)))) 1))
-     ((.-dispose composition))
-     ((.-dispose composition))
-     (.toBe (test/expect @disposed) 1)
-     (.toBe (test/expect @cancelled) 1)
-     (@scheduled)
-     (.toBe (test/expect (.-length rendered)) 1))))
-
-(test/test
- "browser loader injects bounded module bytes before composition"
- (fn [] Any
-   (let [received Any (atom nil)
-         initializer Any (fn [input Any] Any
-                           (do
-                             (reset! received input)
-                             (.reject Promise (new Error "bounded loader probe"))))
-         module-bytes Any (new Uint8Array [0 97 115 109])]
-     (.catch
-     (integration/load-passive-wasm-workbench-shell!
-       initializer
-       module-bytes
-       (fn [_emit-input Any] Any
-         {:renderFrame (fn [_frame Any] Any nil)
-          :dispose (fn [] Any nil)})
-       integration/project-nonempty-cwo1-result-frame
-       {:setTimeout (fn
-                      [_tick Any
-                       _delay Int] Int
-                      1)
-        :clearTimeout (fn [_token Any] Any nil)}
-       [67 87 82 49 1]
-       (workbench/->FixedTick 16)
-       (policy)
-       (fn [_receipt Any] Any nil))
-      (fn [_error Any] Any
-        (.toBe (test/expect (.-module_or_path @received)) module-bytes))))))
-
-(defn ^:async exact-fixture-replay! [] (Promise Any)
-  (let [request-source String (await
-                               (read-fixture-text!
-                                "./fixtures/wasm-jump-v1/jump-v1.cwr1.hex"))
-        expected-source String (await
-                                (read-fixture-text!
-                                 "./fixtures/wasm-jump-v1/jump-v1.cwo1.hex"))
-        module-bytes Any (await
-                          (read-fixture-bytes!
-                           "./generated/wasm/clause_runtime_bg.wasm"))
-        request Any (wasm/decode-cwr1-hex request-source)
-        expected wasm/Cwo1Observation (wasm/decode-cwo1-observation
-                                       (wasm/decode-cwr1-hex expected-source))
-        rendered Any []
-        scheduled Any (atom nil)
-        cancelled Any (atom 0)
-        receipts Any []
-        browser Any {:setTimeout (fn
-                                   [tick Any
-                                    _delay Int] Int
-                                   (do (reset! scheduled tick) 73))
-                     :clearTimeout (fn [_token Any] Any (swap! cancelled inc))}
-        composition Any (await
-                         (integration/load-passive-wasm-workbench-shell!
-                          (integration/create-sync-wasm-initializer initSync)
-                          module-bytes
                           (fn [_emit-input Any] Any
                             {:renderFrame (fn [frame Any] Any (.push rendered frame))
-                             :dispose (fn [] Any nil)})
-                          integration/project-nonempty-cwo1-result-frame
+                             :dispose (fn [] Any (swap! disposed inc))})
+                          integration/project-persistent-term-frame
                           browser
-                          request
+                          module
+                          (minimal-cwr1!)
                           (workbench/->FixedTick 16)
                           (policy)
-                          (fn [receipt Any] Any (.push receipts receipt))))
-        before-events Any (.map receipts (fn [receipt Any] Any (.-event receipt)))]
-    (.toBe (test/expect (.-length request)) 5385)
-    (.toEqual (test/expect (.slice request 0 4)) [67 87 82 49])
-    (.toEqual (test/expect rendered) [])
-    (.toBe (test/expect (.includes before-events "admission-accepted")) false)
-    (@scheduled)
-    (let [events Any (.map receipts (fn [receipt Any] Any (.-event receipt)))
-          candidate-index Int (.indexOf events "candidate-produced")
-          request-index Int (.indexOf events "admission-requested")
-          accepted-index Int (.indexOf events "admission-accepted")
-          rendered-index Int (.indexOf events "frame-rendered")
-          snapshot Any ((.-snapshot (.-controller composition)))]
-      (.toBe (test/expect (.-length rendered)) 1)
-      (.toEqual (test/expect (nth rendered 0)) (.-values expected))
-      (.toEqual (test/expect (.-frame snapshot)) (.-values expected))
-      (.toEqual (test/expect (.-revision snapshot)) (.-stateRevisionId expected))
-      (.toBe (test/expect (and (< -1 candidate-index)
-                               (< candidate-index request-index)
-                               (< request-index accepted-index)
-                               (< accepted-index rendered-index)))
-             true))
-    ((.-dispose composition))
-    ((.-dispose composition))
-    (@scheduled)
-    (.toBe (test/expect @cancelled) 1)
-    (.toBe (test/expect (.-length rendered)) 1)))
+                          (fn [_receipt Any] Any nil))]
+     (let [direct Any (integration/project-persistent-term-frame term-bytes)]
+       (.toBe (test/expect (str (.-x (.-position (.-player direct))))) "1"))
+     (.toBe (test/expect (json-string rendered)) "[]")
+     (.toBe (test/expect (str (.-length requests))) "1")
+     (@scheduled)
+     (.toBe (test/expect (str (.-length requests))) "4")
+     (.toBe (test/expect (str (.-length rendered))) "1")
+     (let [frame Any (nth rendered 0)]
+       (.toBe (test/expect (json-string [(.-x (.-position (.-player frame)))
+                                         (.-y (.-position (.-player frame)))
+                                         (.-z (.-position (.-player frame)))]))
+              "[1,2,3]")
+       (.toBe (test/expect (if (.-grounded (.-player frame)) "true" "false"))
+              "true")
+       (.toBe (test/expect (str (.-length (.-platforms (.-world frame))))) "1"))
+     ((.-dispose composition))
+     ((.-dispose composition))
+     (.toBe (test/expect (str (.-length requests))) "5")
+     (.toBe (test/expect (str @disposed)) "1")
+     (.toBe (test/expect (str @cancellations)) "1")
+     (@scheduled)
+     (.toBe (test/expect (str (.-length rendered))) "1")
+     nil)))
 
 (test/test
- "exact tracked CWR1 reaches one admitted neutral CWO1 replay through shipped Wasm"
- exact-fixture-replay!)
+ "projected Term realization rejects malformed and trailing bytes"
+ (fn [] Nil
+   (let [valid Any (arena-term-bytes!)]
+     (.toBe
+      (test/expect
+       (if (throws?!
+            (fn [] Any
+              (integration/project-persistent-term-frame (.concat valid [0]))))
+         "true"
+         "false"))
+      "true")
+     (let [bad Any (.slice valid)]
+       (.splice bad 64 1 9)
+       (.toBe
+        (test/expect
+         (if (throws?!
+              (fn [] Any (integration/project-persistent-term-frame bad)))
+           "true"
+           "false"))
+        "true"))
+     nil)))

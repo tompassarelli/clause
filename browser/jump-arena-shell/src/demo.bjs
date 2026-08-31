@@ -14,7 +14,8 @@
 
 (defn demo-policy [] workbench/WorkbenchPolicy
   (workbench/->WorkbenchPolicy
-   8 8 32 128 4096
+   8 8 32 wasm/cse1-projected-term-max-properties
+   wasm/cse1-projected-term-json-max-source-units
    (workbench/->WorkbenchSequenceLimits
     64 16 8 8 16)))
 
@@ -60,10 +61,11 @@
                     (fetch-text! request-path)])
      (fn [assets Any] Any
        (integration/load-passive-wasm-workbench-shell!
-        (integration/create-sync-wasm-initializer initSync)
+        (integration/create-sync-wasm-initializer
+         (fn [module ArrayBuffer] Any (initSync module)))
         (nth assets 0)
         create-result-shell!
-        integration/project-nonempty-cwo1-result-frame
+        integration/project-persistent-term-frame
         window
         (wasm/decode-cwr1-hex (nth assets 1))
         (workbench/->FixedTick 16)

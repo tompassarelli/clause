@@ -58,6 +58,7 @@ fn executable_program() -> ExecutableProgramV1 {
                 )],
             },
         ],
+        projection: None,
     }
 }
 

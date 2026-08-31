@@ -21,7 +21,8 @@ pub use canonical::{
     ProgramSnapshotPreimageV2, RevisionJudgmentAuthorityGrantPreimageV2,
     RevisionStateAdmissionGrantPreimageV2, RevisionStaticExecutionGrantPreimageV2,
     RevisionSuccessorGrantPreimageV2, canonical_term_bytes, check_process_package,
-    decode_process_package, derive_program_snapshot_id, encode_process_package,
+    decode_canonical_term_bytes, decode_process_package, derive_program_snapshot_id,
+    encode_process_package,
 };
 pub use formation::*;
 pub use identity::*;

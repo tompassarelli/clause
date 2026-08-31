@@ -1,3 +1,4 @@
+use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::fmt;
 
@@ -6,11 +7,15 @@ use sha2::{Digest, Sha256};
 
 use super::ProcessRuntime;
 
-const MAGIC: &[u8; 4] = b"CXP1";
+const MAGIC_V1: &[u8; 4] = b"CXP1";
+const MAGIC_V2: &[u8; 4] = b"CXP2";
 const PROGRAM_KIND: &[u8] = b"clause/process-executable-v1";
 const CONFIGURATION_KIND: &[u8] = b"clause/process-configuration-v1";
 const OCCURRENCE_KIND: &[u8] = b"clause/process-occurrence-v1";
 const OCCURRENCE_MAGIC: &[u8; 4] = b"CXO1";
+const PROJECTION_ROLE_KIND: &[u8] = b"clause/process-projection-role-v1";
+const PROJECTED_NUMBER_KIND: &[u8] = b"clause/process-projected-f64-v1";
+const PROJECTED_BOOLEAN_KIND: &[u8] = b"clause/process-projected-bool-v1";
 const MAX_PROGRAM_ITEMS: usize = 65_536;
 const MAX_EXPRESSION_DEPTH: usize = 64;
 
@@ -73,6 +78,62 @@ impl RuntimeIdentityOrdinalsV1 {
 pub enum ExecutableValueV1 {
     Number(u64),
     Boolean(bool),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(u8)]
+pub enum ExecutableValueKindV1 {
+    Number = 0,
+    Boolean = 1,
+}
+
+impl ExecutableValueV1 {
+    #[must_use]
+    pub const fn kind(self) -> ExecutableValueKindV1 {
+        match self {
+            Self::Number(_) => ExecutableValueKindV1::Number,
+            Self::Boolean(_) => ExecutableValueKindV1::Boolean,
+        }
+    }
+}
+
+/// One checked semantic-role to physical-configuration refinement.
+///
+/// The slot is package-owned materialization data. Consumers select projected
+/// values by Role identity; neither the Wasm boundary nor browser may infer
+/// meaning from this physical index.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ExecutableProjectionBindingV1 {
+    pub role: LocalRoleRefV2,
+    pub slot: u16,
+    pub value_kind: ExecutableValueKindV1,
+}
+
+/// One package-declared derived-Observation shape. Role placeholder Atoms in
+/// `template` are replaced by exact typed values only after Admission.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExecutableProjectionV1 {
+    pub bindings: Vec<ExecutableProjectionBindingV1>,
+    pub template: Term,
+}
+
+/// Construct a typed role leaf for an executable projection template.
+pub fn executable_projection_role_term_v1(
+    scope: TermScope,
+    role: LocalRoleRefV2,
+    value_kind: ExecutableValueKindV1,
+) -> Result<Term, ExecutableErrorV1> {
+    let mut payload = Vec::with_capacity(9);
+    payload.extend_from_slice(&role.schema.get().to_le_bytes());
+    payload.extend_from_slice(&role.role.get().to_le_bytes());
+    payload.push(value_kind as u8);
+    Term::atom(
+        scope,
+        PROJECTION_ROLE_KIND.to_vec(),
+        payload,
+        EqualityContract::ExactOctetsV1,
+    )
+    .map_err(|_| ExecutableErrorV1::MalformedProgram)
 }
 
 impl ExecutableValueV1 {
@@ -194,13 +255,14 @@ pub struct ExecutableRuleV1 {
 pub struct ExecutableProgramV1 {
     pub initial_configuration: Vec<ExecutableValueV1>,
     pub rules: Vec<ExecutableRuleV1>,
+    pub projection: Option<ExecutableProjectionV1>,
 }
 
 impl ExecutableProgramV1 {
     pub fn encode_term(&self, scope: clause_package::TermScope) -> Result<Term, ExecutableErrorV1> {
         validate_program(self)?;
         let mut bytes = Vec::new();
-        bytes.extend_from_slice(MAGIC);
+        bytes.extend_from_slice(MAGIC_V2);
         encode_values(&mut bytes, &self.initial_configuration)?;
         encode_count(&mut bytes, self.rules.len())?;
         for rule in &self.rules {
@@ -215,6 +277,7 @@ impl ExecutableProgramV1 {
                 encode_expression(&mut bytes, expression)?;
             }
         }
+        encode_projection(&mut bytes, self.projection.as_ref())?;
         Term::atom(
             scope,
             PROGRAM_KIND.to_vec(),
@@ -232,7 +295,8 @@ impl ExecutableProgramV1 {
             return Err(ExecutableErrorV1::MalformedProgram);
         }
         let mut decoder = Decoder::new(atom.canonical_payload());
-        if decoder.take(MAGIC.len())? != MAGIC {
+        let magic = decoder.take(MAGIC_V1.len())?;
+        if magic != MAGIC_V1 && magic != MAGIC_V2 {
             return Err(ExecutableErrorV1::MalformedProgram);
         }
         let initial_configuration = decoder.values()?;
@@ -256,12 +320,18 @@ impl ExecutableProgramV1 {
                 assignments,
             });
         }
+        let projection = if magic == MAGIC_V2 {
+            decode_projection(&mut decoder)?
+        } else {
+            None
+        };
         if !decoder.is_complete() {
             return Err(ExecutableErrorV1::MalformedProgram);
         }
         let program = Self {
             initial_configuration,
             rules,
+            projection,
         };
         validate_program(&program)?;
         Ok(program)
@@ -319,6 +389,13 @@ pub struct ExecutableObservationV1 {
     pub id: ObservationId,
     pub state: StateRevisionId,
     pub value: Vec<ExecutableValueV1>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExecutableProjectedObservationV1 {
+    pub id: ObservationId,
+    pub state: StateRevisionId,
+    pub term: Term,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -498,7 +575,34 @@ fn executable_program_v1(
     }
     let program =
         ExecutableProgramV1::decode_term(executable.ok_or(ExecutableErrorV1::MissingProgram)?)?;
+    validate_projection_roles(package.constitution(), &program)?;
     Ok(program)
+}
+
+fn validate_projection_roles(
+    constitution: &ResolvedProgramConstitutionV2,
+    program: &ExecutableProgramV1,
+) -> Result<(), ExecutableErrorV1> {
+    let Some(projection) = &program.projection else {
+        return Ok(());
+    };
+    for binding in &projection.bindings {
+        let schema = constitution
+            .preimage()
+            .schemas
+            .iter()
+            .find(|schema| schema.id == binding.role.schema)
+            .ok_or(ExecutableErrorV1::MalformedProgram)?;
+        let role = schema
+            .roles
+            .iter()
+            .find(|role| role.id == binding.role.role)
+            .ok_or(ExecutableErrorV1::MalformedProgram)?;
+        if !role.cardinality.is_exactly_one() {
+            return Err(ExecutableErrorV1::MalformedProgram);
+        }
+    }
+    Ok(())
 }
 
 impl ExecutableProcessRuntimeV1 {
@@ -1349,10 +1453,16 @@ impl ExecutableProcessRuntimeV1 {
         Ok(self.state.as_ref().expect("settled State is retained"))
     }
 
-    pub(super) fn settle_carrier_process_and_start_epoch(
+    pub(super) fn settle_carrier_process_project_and_start_epoch(
         &mut self,
         authorization: AdmissionAuthorizationEvidence,
-    ) -> Result<ExecutableStateRevisionV1, ExecutableCarrierErrorV1> {
+    ) -> Result<
+        (
+            ExecutableStateRevisionV1,
+            Option<ExecutableProjectedObservationV1>,
+        ),
+        ExecutableCarrierErrorV1,
+    > {
         if self.state.is_some() {
             return Err(ExecutableCarrierErrorV1::Executable(
                 ExecutableErrorV1::AlreadyAdmitted,
@@ -1461,10 +1571,15 @@ impl ExecutableProcessRuntimeV1 {
                 .map_err(ExecutableCarrierErrorV1::Executable)?,
             },
         });
+        let projected =
+            self.prepare_projected_observation(&prepared.executable_state, facts, scope)?;
         let mut ingress = vec![
             ProcessRecordV2::Judgment(prepared.judgment),
             ProcessRecordV2::AdmissionDecision(prepared.decision),
         ];
+        if let Some((record, _, _)) = &projected {
+            ingress.push(record.clone());
+        }
         ingress.extend(checker_records);
         ingress.push(next_epoch);
         self.carrier
@@ -1486,6 +1601,9 @@ impl ExecutableProcessRuntimeV1 {
         self.identity_ordinals.next_activation = next_activation_ordinal;
         self.identity_ordinals.next_configuration = next_configuration_ordinal;
         self.identity_ordinals.next_checker = next_checker_ordinal;
+        if let Some((_, _, next_observation_ordinal)) = &projected {
+            self.identity_ordinals.next_state_observation = *next_observation_ordinal;
+        }
         let execution = self
             .carrier_execution
             .as_mut()
@@ -1496,7 +1614,68 @@ impl ExecutableProcessRuntimeV1 {
         execution.state_started = true;
         execution.epoch_origin = CausalRef::Admission(admission);
         execution.state_base_support = SupportSource::Admission(admission);
-        Ok(admitted)
+        Ok((admitted, projected.map(|(_, observation, _)| observation)))
+    }
+
+    fn prepare_projected_observation(
+        &self,
+        state: &ExecutableStateRevisionV1,
+        facts: ExecutableAuthorityFactsV1,
+        scope: TermScope,
+    ) -> Result<
+        Option<(ProcessRecordV2, ExecutableProjectedObservationV1, u64)>,
+        ExecutableCarrierErrorV1,
+    > {
+        let Some(projection) = &self.program.projection else {
+            return Ok(None);
+        };
+        let bindings = projection
+            .bindings
+            .iter()
+            .copied()
+            .map(|binding| (binding.role, binding))
+            .collect::<BTreeMap<_, _>>();
+        let term = realize_projection_term(&projection.template, &bindings, &state.configuration)
+            .map_err(ExecutableCarrierErrorV1::Executable)?;
+        let (ordinal, next_ordinal) =
+            stage_runtime_ordinal(self.identity_ordinals.next_state_observation)
+                .map_err(ExecutableCarrierErrorV1::Executable)?;
+        let observation = ExecutableProjectedObservationV1 {
+            id: ObservationId::from_bytes(
+                runtime_identity_bytes(
+                    self.identity_seed,
+                    RuntimeIdentityDomainV1::StateObservation,
+                    ordinal,
+                )
+                .map_err(ExecutableCarrierErrorV1::Executable)?,
+            ),
+            state: state.id,
+            term,
+        };
+        let state_role = Term::atom(
+            scope,
+            b"clause/process-observed-state-v1".to_vec(),
+            observation.state.as_bytes().to_vec(),
+            EqualityContract::ExactOctetsV1,
+        )
+        .map_err(|_| ExecutableCarrierErrorV1::UnsupportedSurface)?;
+        let record = ProcessRecordV2::EnteredObservation(EnteredObservationV2 {
+            observation: ObservationProposalV2::Value {
+                id: observation.id,
+                value: observation.term.clone(),
+                supports: vec![SupportUse {
+                    slot: SupportSlotId::new(0),
+                    role: state_role,
+                    source: SupportSource::Admission(state.admission),
+                }],
+            },
+            provenance: EnteredThrough {
+                boundary: facts.occurrence_ingress.boundary,
+                evidence: facts.occurrence_ingress.evidence,
+                causes: vec![CausalRef::Admission(state.admission)],
+            },
+        });
+        Ok(Some((record, observation, next_ordinal)))
     }
 
     /// Project selected values and enter the projection as an Observation
@@ -1917,7 +2096,132 @@ fn validate_program(program: &ExecutableProgramV1) -> Result<(), ExecutableError
             return Err(ExecutableErrorV1::MalformedProgram);
         }
     }
+    if let Some(projection) = &program.projection {
+        if projection.bindings.is_empty() || projection.bindings.len() > MAX_PROGRAM_ITEMS {
+            return Err(ExecutableErrorV1::MalformedProgram);
+        }
+        let mut roles = BTreeSet::new();
+        let mut slots = BTreeSet::new();
+        let mut binding_map = BTreeMap::new();
+        for binding in &projection.bindings {
+            let value = program
+                .initial_configuration
+                .get(usize::from(binding.slot))
+                .ok_or(ExecutableErrorV1::MalformedProgram)?;
+            if value.kind() != binding.value_kind
+                || !roles.insert(binding.role)
+                || !slots.insert(binding.slot)
+            {
+                return Err(ExecutableErrorV1::MalformedProgram);
+            }
+            binding_map.insert(binding.role, binding.value_kind);
+        }
+        let mut used = BTreeSet::new();
+        validate_projection_template(&projection.template, &binding_map, &mut used)?;
+        if used.len() != projection.bindings.len() {
+            return Err(ExecutableErrorV1::MalformedProgram);
+        }
+    }
     Ok(())
+}
+
+fn projection_role(
+    atom: &Atom,
+) -> Result<Option<(LocalRoleRefV2, ExecutableValueKindV1)>, ExecutableErrorV1> {
+    if atom.kind() != PROJECTION_ROLE_KIND {
+        return Ok(None);
+    }
+    if atom.equality_contract() != EqualityContract::ExactOctetsV1
+        || atom.canonical_payload().len() != 9
+    {
+        return Err(ExecutableErrorV1::MalformedProgram);
+    }
+    let payload = atom.canonical_payload();
+    let schema = RelationSchemaLocalId::new(u32::from_le_bytes(
+        payload[0..4].try_into().expect("four bytes"),
+    ));
+    let role = RoleLocalId::new(u32::from_le_bytes(
+        payload[4..8].try_into().expect("four bytes"),
+    ));
+    let value_kind = match payload[8] {
+        0 => ExecutableValueKindV1::Number,
+        1 => ExecutableValueKindV1::Boolean,
+        _ => return Err(ExecutableErrorV1::MalformedProgram),
+    };
+    Ok(Some((LocalRoleRefV2 { schema, role }, value_kind)))
+}
+
+fn validate_projection_template(
+    term: &Term,
+    bindings: &BTreeMap<LocalRoleRefV2, ExecutableValueKindV1>,
+    used: &mut BTreeSet<LocalRoleRefV2>,
+) -> Result<(), ExecutableErrorV1> {
+    if let Some(atom) = term.as_atom() {
+        if let Some((role, kind)) = projection_role(atom)? {
+            if bindings.get(&role) != Some(&kind) {
+                return Err(ExecutableErrorV1::MalformedProgram);
+            }
+            used.insert(role);
+        }
+        return Ok(());
+    }
+    let triple = term
+        .as_raw_triple()
+        .ok_or(ExecutableErrorV1::MalformedProgram)?;
+    for slot in triple.slots() {
+        validate_projection_template(slot, bindings, used)?;
+    }
+    Ok(())
+}
+
+fn projected_value_term(
+    scope: TermScope,
+    value: ExecutableValueV1,
+) -> Result<Term, ExecutableErrorV1> {
+    let (kind, payload) = match value {
+        ExecutableValueV1::Number(bits) => (PROJECTED_NUMBER_KIND, bits.to_le_bytes().to_vec()),
+        ExecutableValueV1::Boolean(value) => (PROJECTED_BOOLEAN_KIND, vec![u8::from(value)]),
+    };
+    Term::atom(
+        scope,
+        kind.to_vec(),
+        payload,
+        EqualityContract::ExactOctetsV1,
+    )
+    .map_err(|_| ExecutableErrorV1::MalformedProgram)
+}
+
+fn realize_projection_term(
+    template: &Term,
+    bindings: &BTreeMap<LocalRoleRefV2, ExecutableProjectionBindingV1>,
+    configuration: &[ExecutableValueV1],
+) -> Result<Term, ExecutableErrorV1> {
+    if let Some(atom) = template.as_atom() {
+        let Some((role, kind)) = projection_role(atom)? else {
+            return Ok(template.clone());
+        };
+        let binding = bindings
+            .get(&role)
+            .ok_or(ExecutableErrorV1::MalformedProgram)?;
+        let value = configuration
+            .get(usize::from(binding.slot))
+            .copied()
+            .ok_or(ExecutableErrorV1::UnknownSlot(binding.slot))?;
+        if binding.value_kind != kind || value.kind() != kind {
+            return Err(ExecutableErrorV1::TypeMismatch);
+        }
+        return projected_value_term(template.scope(), value);
+    }
+    let triple = template
+        .as_raw_triple()
+        .ok_or(ExecutableErrorV1::MalformedProgram)?;
+    let [left, operator, right] = triple.slots();
+    Term::raw_triple([
+        realize_projection_term(left, bindings, configuration)?,
+        realize_projection_term(operator, bindings, configuration)?,
+        realize_projection_term(right, bindings, configuration)?,
+    ])
+    .map_err(|_| ExecutableErrorV1::MalformedProgram)
 }
 
 fn evaluate(
@@ -2101,6 +2405,63 @@ fn encode_values(
     Ok(())
 }
 
+fn encode_projection(
+    bytes: &mut Vec<u8>,
+    projection: Option<&ExecutableProjectionV1>,
+) -> Result<(), ExecutableErrorV1> {
+    let Some(projection) = projection else {
+        bytes.push(0);
+        return Ok(());
+    };
+    bytes.push(1);
+    encode_count(bytes, projection.bindings.len())?;
+    for binding in &projection.bindings {
+        bytes.extend_from_slice(&binding.role.schema.get().to_le_bytes());
+        bytes.extend_from_slice(&binding.role.role.get().to_le_bytes());
+        bytes.extend_from_slice(&binding.slot.to_le_bytes());
+        bytes.push(binding.value_kind as u8);
+    }
+    let template = canonical_term_bytes(&projection.template)
+        .map_err(|_| ExecutableErrorV1::MalformedProgram)?;
+    encode_count(bytes, template.len())?;
+    bytes.extend_from_slice(&template);
+    Ok(())
+}
+
+fn decode_projection(
+    decoder: &mut Decoder<'_>,
+) -> Result<Option<ExecutableProjectionV1>, ExecutableErrorV1> {
+    match decoder.byte()? {
+        0 => Ok(None),
+        1 => {
+            let count = decoder.count()?;
+            let mut bindings = Vec::with_capacity(count);
+            for _ in 0..count {
+                let role = LocalRoleRefV2 {
+                    schema: RelationSchemaLocalId::new(decoder.u32()?),
+                    role: RoleLocalId::new(decoder.u32()?),
+                };
+                let slot = decoder.u16()?;
+                let value_kind = match decoder.byte()? {
+                    0 => ExecutableValueKindV1::Number,
+                    1 => ExecutableValueKindV1::Boolean,
+                    _ => return Err(ExecutableErrorV1::MalformedProgram),
+                };
+                bindings.push(ExecutableProjectionBindingV1 {
+                    role,
+                    slot,
+                    value_kind,
+                });
+            }
+            let length = decoder.count()?;
+            let template = decode_canonical_term_bytes(decoder.take(length)?)
+                .map_err(|_| ExecutableErrorV1::MalformedProgram)?;
+            Ok(Some(ExecutableProjectionV1 { bindings, template }))
+        }
+        _ => Err(ExecutableErrorV1::MalformedProgram),
+    }
+}
+
 fn encode_value(bytes: &mut Vec<u8>, value: ExecutableValueV1) {
     match value {
         ExecutableValueV1::Number(bits) => {
@@ -2191,6 +2552,11 @@ impl<'a> Decoder<'a> {
     fn u16(&mut self) -> Result<u16, ExecutableErrorV1> {
         Ok(u16::from_le_bytes(
             self.take(2)?.try_into().expect("two bytes"),
+        ))
+    }
+    fn u32(&mut self) -> Result<u32, ExecutableErrorV1> {
+        Ok(u32::from_le_bytes(
+            self.take(4)?.try_into().expect("four bytes"),
         ))
     }
     fn u64(&mut self) -> Result<u64, ExecutableErrorV1> {

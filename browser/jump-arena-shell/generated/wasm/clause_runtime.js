@@ -39,6 +39,53 @@ export function clause_process_v1_response_len() {
     return ret >>> 0;
 }
 
+/**
+ * @returns {number}
+ */
+export function clause_session_v1_command() {
+    const ret = wasm.clause_session_v1_command();
+    return ret >>> 0;
+}
+
+/**
+ * Values 0..=255 are event bytes; 256 means an out-of-range index.
+ * @param {number} index
+ * @returns {number}
+ */
+export function clause_session_v1_event_byte(index) {
+    const ret = wasm.clause_session_v1_event_byte(index);
+    return ret >>> 0;
+}
+
+/**
+ * @returns {number}
+ */
+export function clause_session_v1_event_len() {
+    const ret = wasm.clause_session_v1_event_len();
+    return ret >>> 0;
+}
+
+export function clause_session_v1_io_reset() {
+    wasm.clause_session_v1_io_reset();
+}
+
+/**
+ * @returns {number}
+ */
+export function clause_session_v1_open() {
+    const ret = wasm.clause_session_v1_open();
+    return ret >>> 0;
+}
+
+/**
+ * @param {number} byte
+ * @returns {number}
+ */
+export function clause_session_v1_request_push(byte) {
+    const ret = wasm.clause_session_v1_request_push(byte);
+    return ret >>> 0;
+}
+
 function __wbg_get_imports() {
     const import0 = {
         __proto__: null,

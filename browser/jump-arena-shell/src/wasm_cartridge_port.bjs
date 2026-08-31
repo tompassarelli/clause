@@ -9,6 +9,17 @@
 (def cwo1-prefix-bytes Int (+ 4 32 32))
 (def cwo1-identity-bytes Int 32)
 (def cwo1-max-values Int 256)
+(def cse1-max-bytes Int (* 4 1024))
+
+(js/export
+  (def cse1-projected-term-max-properties Int cse1-max-bytes))
+
+(js/export
+  (def cse1-projected-term-json-max-source-units Int
+    (inc (* 4 cse1-max-bytes))))
+(def session-command-max-bytes Int (* 1024 1024))
+(def session-command-limit Int 4096)
+(def identity-bytes Int 32)
 
 (defn hex-whitespace-code? [code Int] Bool
   (or (= code 9)
@@ -69,11 +80,24 @@
 (js/export
   (defrecord ExactProcessObservation [bytes Any]))
 
-(defrecord WasmCandidate [request ExactProcessRequest])
+(defrecord WasmCandidate
+  [candidateId Any
+   base Any])
 
 (defrecord WasmSession
-  [initial ExactProcessRequest
+  [handle Any
+   packageId Any
+   sessionId Any
+   world Any
+   sequence Any
+   occurrences Any
+   rootPolicy Any
    disposed Any])
+
+(defrecord PersistentCartridge
+  [openBytes Any
+   occurrences Any
+   rootPolicy Any])
 
 (js/export
   (defrecord Cwo1Observation
@@ -87,16 +111,21 @@
   (and (.isArray Array bytes)
        (<= 1 (.-length bytes))
        (<= (.-length bytes) maximum)
-       (.every bytes
-               (fn [byte Any] Bool
-                 (and (.isInteger Number byte)
+       (loop [index Int 0]
+         (if (= index (.-length bytes))
+           true
+           (let [byte Any (nth bytes index)]
+             (if (and (.isInteger Number byte)
                       (<= 0 byte)
-                      (<= byte 255))))))
+                      (<= byte 255))
+               (recur (inc index))
+               false))))))
 
 (defn require-request [request ExactProcessRequest] ExactProcessRequest
   (if (and (not (nil? request))
            (exact-byte-array? (.-bytes request) cwr1-max-bytes))
-    (->ExactProcessRequest (.freeze Object (.slice (.-bytes request))))
+    (->ExactProcessRequest
+     (frozen-byte-range (.-bytes request) 0 (.-length (.-bytes request))))
     (throw (new Error "cartridge request must carry bounded exact bytes"))))
 
 (defn process-status [status Any] Int
@@ -115,16 +144,80 @@
   (+ (byte-at bytes offset)
      (* 256 (byte-at bytes (inc offset)))))
 
+(defn little-u32
+  [bytes Any
+   offset Int] Int
+  (+ (byte-at bytes offset)
+     (* 256 (byte-at bytes (+ offset 1)))
+     (* 65536 (byte-at bytes (+ offset 2)))
+     (* 16777216 (byte-at bytes (+ offset 3)))))
+
+(defn big-u32
+  [bytes Any
+   offset Int] Int
+  (+ (* 16777216 (byte-at bytes offset))
+     (* 65536 (byte-at bytes (+ offset 1)))
+     (* 256 (byte-at bytes (+ offset 2)))
+     (byte-at bytes (+ offset 3))))
+
+(defn little-safe-u64
+  [bytes Any
+   offset Int] Int
+  (let [low Int (little-u32 bytes offset)
+        high Int (little-u32 bytes (+ offset 4))]
+    (if (> high 2097151)
+      (throw (new Error "64-bit transport value exceeds exact JavaScript range"))
+      (+ low (* high 4294967296)))))
+
+(defn append-u32!
+  [bytes Any
+   value Int] Any
+  (do
+    (.push bytes (rem value 256))
+    (.push bytes (rem (quot value 256) 256))
+    (.push bytes (rem (quot value 65536) 256))
+    (.push bytes (rem (quot value 16777216) 256))))
+
+(defn append-u64!
+  [bytes Any
+   value Int] Any
+  (do
+    (append-u32! bytes (rem value 4294967296))
+    (append-u32! bytes (quot value 4294967296))))
+
+(defn append-blob!
+  [bytes Any
+   value Any] Any
+  (do
+    (append-u32! bytes (.-length value))
+    (doseq [byte Int value]
+      (.push bytes byte))))
+
+(defn require-range
+  [bytes Any
+   offset Int
+   length Int
+   label String] Int
+  (let [end Int (+ offset length)]
+    (if (or (< offset 0) (< length 0) (> end (.-length bytes)))
+      (throw (new Error (str label " is truncated")))
+      end)))
+
 (defn frozen-byte-range
   [bytes Any
    start Int
    end Int] Any
-  (.freeze Object (.slice bytes start end)))
+  (loop [index Int start
+         result (Vec Int) []]
+    (if (= index end)
+      (.freeze Object result)
+      (recur (inc index) (conj result (byte-at bytes index))))))
 
 (defn finite-f64
   [bytes Any
    offset Int] Float
-  (let [packed Any (new Uint8Array (.slice bytes offset (+ offset 8)))
+  (let [packed Any (new Uint8Array
+                    (frozen-byte-range bytes offset (+ offset 8)))
         view Any (new DataView (.-buffer packed))
         value Float (.getFloat64 view 0 true)]
     (if (and (.isFinite Number value)
@@ -228,9 +321,384 @@
               (throw (new Error "CWO1 response byte is out of bounds"))
               (recur (inc index) (conj bytes byte)))))))))
 
+(defn parse-blob
+  [bytes Any
+   offset Int
+   maximum Int
+   label String] Any
+  (let [header-end Int (require-range bytes offset 4 label)
+        length Int (little-u32 bytes offset)
+        _bound Any (when (> length maximum)
+                     (throw (new Error (str label " exceeds its bound"))))
+        end Int (require-range bytes header-end length label)]
+    {:bytes (frozen-byte-range bytes header-end end)
+     :next end}))
+
+(defn parse-persistent-cartridge! [request ExactProcessRequest] PersistentCartridge
+  (let [checked ExactProcessRequest (require-request request)
+        bytes Any (.-bytes checked)]
+    (when (or (< (.-length bytes) 4)
+              (not= (byte-at bytes 0) 67)
+              (not= (byte-at bytes 1) 87)
+              (not= (byte-at bytes 2) 82)
+              (not= (byte-at bytes 3) 49))
+      (throw (new Error "persistent cartridge must carry exact CWR1 bytes")))
+    (let [package-record Any (parse-blob bytes 4 cwr1-max-bytes "CWR1 package")
+          package-end Int (.-next package-record)
+          application-end Int (require-range bytes package-end 4 "CWR1 application")
+          authority-start Int application-end
+          identities-end Int (require-range bytes authority-start (* 9 identity-bytes)
+                                            "CWR1 authority identities")
+          occurrence-evidence Any (parse-blob bytes identities-end cwr1-max-bytes
+                                              "CWR1 occurrence evidence")
+          judgment-id-end Int (require-range bytes (.-next occurrence-evidence)
+                                             identity-bytes "CWR1 Judgment evidence identity")
+          judgment-evidence Any (parse-blob bytes judgment-id-end cwr1-max-bytes
+                                            "CWR1 Judgment evidence")
+          admission-id-end Int (require-range bytes (.-next judgment-evidence)
+                                              identity-bytes "CWR1 Admission evidence identity")
+          admission-evidence Any (parse-blob bytes admission-id-end cwr1-max-bytes
+                                             "CWR1 Admission evidence")
+          budget-end Int (require-range bytes (.-next admission-evidence) 8 "CWR1 budget")
+          count-end Int (require-range bytes budget-end 2 "CWR1 occurrence count")
+          occurrence-count Int (little-u16 bytes budget-end)
+          occurrences-result Any (loop [index Int 0
+                                        offset Int count-end
+                                        occurrences (Vec Any) []]
+                                   (if (= index occurrence-count)
+              {:next offset :values occurrences}
+              (let [occurrence Any (parse-blob bytes offset cwr1-max-bytes
+                                               "CWR1 occurrence")]
+                (recur (inc index)
+                       (.-next occurrence)
+                       (conj occurrences (.-bytes occurrence))))))
+          slot-count-end Int (require-range bytes (.-next occurrences-result) 2
+                                            "CWR1 projection count")
+          slot-count Int (little-u16 bytes (.-next occurrences-result))
+          final-offset Int (require-range bytes slot-count-end (* slot-count 2)
+                                          "CWR1 legacy projection")]
+      (when (or (= occurrence-count 0)
+                (not= final-offset (.-length bytes)))
+        (throw (new Error "CWR1 cartridge shape is incomplete")))
+      (let [session-id Any (frozen-byte-range bytes (+ authority-start (* 2 identity-bytes))
+                                               (+ authority-start (* 3 identity-bytes)))
+            root-policy Any (frozen-byte-range bytes (+ authority-start (* 5 identity-bytes))
+                                                (+ authority-start (* 6 identity-bytes)))
+            open-bytes Any [67 87 83 49]]
+        (doseq [byte Int (.slice bytes 4 budget-end)]
+          (.push open-bytes byte))
+        (doseq [byte Int session-id]
+          (.push open-bytes byte))
+        (append-u64! open-bytes session-command-limit)
+        (append-u32! open-bytes session-command-max-bytes)
+        (append-u32! open-bytes cse1-max-bytes)
+        (->PersistentCartridge
+         (.freeze Object open-bytes)
+         (.freeze Object (.-values occurrences-result))
+         root-policy)))))
+
+(defn session-module-functions [module Any] Any
+  (let [reset Any (.-clause_session_v1_io_reset module)
+        push Any (.-clause_session_v1_request_push module)
+        open Any (.-clause_session_v1_open module)
+        command Any (.-clause_session_v1_command module)
+        event-length Any (.-clause_session_v1_event_len module)
+        event-byte Any (.-clause_session_v1_event_byte module)]
+    (when (or (nil? reset) (nil? push) (nil? open) (nil? command)
+              (nil? event-length) (nil? event-byte))
+      (throw (new Error "Wasm module lacks the persistent Clause session ABI")))
+    {:reset reset
+     :push push
+     :open open
+     :command command
+     :eventLength event-length
+     :eventByte event-byte}))
+
+(defn dispatch-session-request
+  [module Any
+   request Any
+   operation String] Any
+  (if-not (exact-byte-array? request session-command-max-bytes)
+    (throw (new Error "persistent session request must carry bounded exact bytes"))
+    (let [api Any (session-module-functions module)]
+      ((.-reset api))
+      (doseq [byte Int request]
+        (let [status Int (process-status ((.-push api) byte))]
+          (when (not= status 0)
+            (throw (new Error (str "persistent byte transfer rejected with status " status))))))
+      (let [status Int (process-status (if (= operation "open")
+                                        ((.-open api))
+                                        ((.-command api))))]
+        (when (not= status 0)
+          (throw (new Error (str "persistent session " operation
+                                 " rejected with status " status)))))
+      (let [length Int (process-status ((.-eventLength api)))]
+        (when (or (< length 21) (> length cse1-max-bytes))
+          (throw (new Error "CSE1 event length is out of bounds")))
+        (loop [index Int 0
+               event (Vec Int) []]
+          (if (= index length)
+            (.freeze Object event)
+            (let [byte Int (process-status ((.-eventByte api) index))]
+              (if (or (< byte 0) (> byte 255))
+                (throw (new Error "CSE1 event byte is out of bounds"))
+                (recur (inc index) (conj event byte))))))))))
+
+(defn decode-cse1-event [bytes Any] Any
+  (if-not (exact-byte-array? bytes cse1-max-bytes)
+    (throw (new Error "CSE1 event must carry bounded exact bytes"))
+    (do
+      (when (or (< (.-length bytes) 21)
+                (not= (frozen-byte-range bytes 0 4) [67 83 69 49]))
+        (throw (new Error "CSE1 event magic is invalid")))
+      (let [slot Int (little-u32 bytes 4)
+            generation Int (little-u32 bytes 8)
+            sequence Int (little-safe-u64 bytes 12)
+            tag Int (byte-at bytes 20)
+            identity-at Any (fn [offset Int] Any
+                              (frozen-byte-range bytes offset (+ offset identity-bytes)))]
+        (cond
+          (= tag 1)
+          (do
+            (when (not= (.-length bytes) (+ 21 (* 5 identity-bytes) 4))
+              (throw (new Error "CSE1 Opened event has an invalid shape")))
+            {:kind "opened" :slot slot :generation generation :sequence sequence
+             :packageId (identity-at 21)
+             :sessionId (identity-at 53)
+             :world (identity-at 85)})
+
+          (= tag 3)
+          (do
+            (when (not= (.-length bytes) (+ 21 (* 5 identity-bytes) 4))
+              (throw (new Error "CSE1 Candidate event has an invalid shape")))
+            {:kind "candidate" :slot slot :generation generation :sequence sequence
+             :candidateId (identity-at 53)
+             :base (identity-at 85)})
+
+          (= tag 4)
+          (let [prefix-end Int (+ 21 (* 5 identity-bytes) 4)
+                projection-tag Int (byte-at bytes prefix-end)
+                successor Any (identity-at 53)]
+            (cond
+              (= projection-tag 0)
+              (do
+                (when (not= (.-length bytes) (inc prefix-end))
+                  (throw (new Error "CSE1 Admission event has trailing bytes")))
+                {:kind "admission" :slot slot :generation generation :sequence sequence
+                 :successor successor :projection nil})
+
+              (= projection-tag 1)
+              (let [observation-offset Int (inc prefix-end)
+                    term-record Any (parse-blob bytes (+ observation-offset identity-bytes)
+                                                cse1-max-bytes "CSE1 projected Term")]
+                (when (not= (.-next term-record) (.-length bytes))
+                  (throw (new Error "CSE1 Admission projection has trailing bytes")))
+                {:kind "admission" :slot slot :generation generation :sequence sequence
+                 :successor successor
+                 :projection {:observationId (identity-at observation-offset)
+                              :termBytes (.-bytes term-record)}})
+
+              :else (throw (new Error "CSE1 Admission projection tag is invalid"))))
+
+          (= tag 5)
+          (do
+            (when (not= (.-length bytes) 21)
+              (throw (new Error "CSE1 Disposed event has trailing bytes")))
+            {:kind "disposed" :slot slot :generation generation :sequence sequence})
+
+          (= tag 6)
+          (do
+            (when (not= (.-length bytes) 25)
+              (throw (new Error "CSE1 rejection has an invalid shape")))
+            {:kind "rejected" :slot slot :generation generation :sequence sequence
+             :reason (little-u32 bytes 21)})
+
+          :else
+          {:kind "input" :slot slot :generation generation :sequence sequence})))))
+
+(defn encode-session-command!
+  [session WasmSession
+   tag Int
+   payload Any] Any
+  (let [bytes Any [67 87 73 49]]
+    (append-u32! bytes (.-slot (.-handle session)))
+    (append-u32! bytes (.-generation (.-handle session)))
+    (append-u64! bytes @(.-sequence session))
+    (.push bytes tag)
+    (when (not (nil? payload))
+      (doseq [byte Int payload]
+        (.push bytes byte)))
+    (.freeze Object bytes)))
+
+(defn blob-command!
+  [session WasmSession
+   tag Int
+   payload Any] Any
+  (let [blob Any []]
+    (append-blob! blob payload)
+    (encode-session-command! session tag blob)))
+
+(defn apply-session-command!
+  [module Any
+   session WasmSession
+   command Any] Any
+  (let [event Any (decode-cse1-event (dispatch-session-request module command "command"))
+        current-sequence Int @(.-sequence session)]
+    (when (or (not= (.-slot event) (.-slot (.-handle session)))
+              (not= (.-generation event) (.-generation (.-handle session)))
+              (not= (.-sequence event) (inc current-sequence)))
+      (throw (new Error "CSE1 event does not advance the exact live session")))
+    (reset! (.-sequence session) (.-sequence event))
+    (when (= (.-kind event) "rejected")
+      (throw (new Error (str "persistent Clause operation rejected with reason "
+                             (.-reason event)))))
+    event))
+
+(defn parse-canonical-blob
+  [bytes Any
+   offset Int
+   label String] Any
+  (let [header-end Int (require-range bytes offset 4 label)
+        length Int (big-u32 bytes offset)
+        end Int (require-range bytes header-end length label)]
+    {:bytes (frozen-byte-range bytes header-end end)
+     :next end}))
+
+(defn ascii-text
+  [bytes Any
+   label String] String
+  (do
+    (when (or (= (.-length bytes) 0) (> (.-length bytes) 128))
+      (throw (new Error (str label " is outside its text bound"))))
+    (loop [index Int 0
+           result String ""]
+      (if (= index (.-length bytes))
+        result
+        (let [byte Int (nth bytes index)]
+          (if (or (< byte 32) (> byte 126))
+            (throw (new Error (str label " is not canonical ASCII")))
+            (recur (inc index) (str result (.fromCharCode String byte)))))))))
+
+(defn decode-term-node
+  [bytes Any
+   offset Int
+   depth Int] Any
+  (do
+    (when (> depth 64)
+      (throw (new Error "projected Term exceeds its depth bound")))
+    (let [tag-end Int (require-range bytes offset 1 "projected Term node")
+          tag Int (byte-at bytes offset)]
+      (cond
+        (= tag 0)
+        (let [kind Any (parse-canonical-blob bytes tag-end "projected Atom kind")
+              payload Any (parse-canonical-blob bytes (.-next kind) "projected Atom payload")
+              equality-end Int (require-range bytes (.-next payload) 1
+                                                "projected Atom equality")]
+          (when (not= (byte-at bytes (.-next payload)) 0)
+            (throw (new Error "projected Atom equality contract is invalid")))
+          {:node {:kind "atom" :atomKind (.-bytes kind) :payload (.-bytes payload)}
+           :next equality-end})
+
+        (= tag 1)
+        (let [left Any (decode-term-node bytes tag-end (inc depth))
+              operator Any (decode-term-node bytes (.-next left) (inc depth))
+              right Any (decode-term-node bytes (.-next operator) (inc depth))]
+          {:node {:kind "triple"
+                  :slots [(.-node left) (.-node operator) (.-node right)]}
+           :next (.-next right)})
+
+        :else
+        (throw (new Error "projected Term node tag is invalid"))))))
+
+(defn decode-canonical-term [bytes Any] Any
+  (if-not (exact-byte-array? bytes cse1-max-bytes)
+    (throw (new Error "projected Term bytes are outside the CSE1 bound"))
+    (let [node-start Int (require-range bytes 0 (* 2 identity-bytes)
+                                        "projected Term scope")
+          result Any (decode-term-node bytes node-start 0)]
+      (when (not= (.-next result) (.-length bytes))
+        (throw (new Error "projected Term has trailing bytes")))
+      (.-node result))))
+
+(defn atom-kind-text [node Any] String
+  (if (= (.-kind node) "atom")
+    (ascii-text (.-atomKind node) "projected Atom kind")
+    (throw (new Error "projected realization expected an Atom"))))
+
+(defn projected-number [payload Any] Float
+  (if (= (.-length payload) 8)
+    (finite-f64 payload 0)
+    (throw (new Error "projected F64 payload is invalid"))))
+
+(defn realize-object
+  [realize-node (Fn [Any] Any)
+   first Any] Any
+  (loop [node Any first
+         fields (Vec Any) []
+         keys Any (new Set)]
+    (if (= (.-kind node) "atom")
+      (if (= (atom-kind-text node) "clause/js-object-end-v1")
+        (.freeze Object (.fromEntries Object fields))
+        (throw (new Error "projected object has an invalid terminator")))
+      (let [slots Any (.-slots node)
+            field Any (nth slots 0)
+            value Any (nth slots 1)
+            rest Any (nth slots 2)]
+        (when (not= (atom-kind-text field) "clause/js-field-v1")
+          (throw (new Error "projected object entry lacks a field Atom")))
+        (let [key String (ascii-text (.-payload field) "projected field")]
+          (when (or (= key "__proto__") (= key "prototype") (= key "constructor")
+                    (.has keys key))
+            (throw (new Error "projected object field is unsafe or duplicated")))
+          (.add keys key)
+          (recur rest
+                 (conj fields [key (realize-node value)])
+                 keys))))))
+
+(defn realize-array
+  [realize-node (Fn [Any] Any)
+   first Any] Any
+  (loop [node Any first
+         values (Vec Any) []]
+    (if (= (.-kind node) "atom")
+      (if (= (atom-kind-text node) "clause/js-array-end-v1")
+        (.freeze Object values)
+        (throw (new Error "projected array has an invalid terminator")))
+      (let [slots Any (.-slots node)
+            item Any (nth slots 0)]
+        (when (not= (atom-kind-text item) "clause/js-item-v1")
+          (throw (new Error "projected array entry lacks an item Atom")))
+        (recur (nth slots 2)
+               (conj values (realize-node (nth slots 1))))))))
+
+(defn realize-projection-node [node Any] Any
+  (if (= (.-kind node) "atom")
+    (let [kind String (atom-kind-text node)
+          payload Any (.-payload node)]
+      (cond
+        (= kind "clause/process-projected-f64-v1") (projected-number payload)
+        (= kind "clause/process-projected-bool-v1")
+        (if (and (= (.-length payload) 1) (<= (nth payload 0) 1))
+          (= (nth payload 0) 1)
+          (throw (new Error "projected Boolean payload is invalid")))
+        :else (throw (new Error "projected scalar Atom is not realizable"))))
+    (let [head Any (nth (.-slots node) 0)
+          kind String (atom-kind-text head)]
+      (cond
+        (= kind "clause/js-field-v1")
+        (realize-object realize-projection-node node)
+        (= kind "clause/js-item-v1")
+        (realize-array realize-projection-node node)
+        :else (throw (new Error "projected Term lacks a realizable shape"))))))
+
+(js/export
+  (defn decode-projected-term-frame [bytes Any] Any
+    (realize-projection-node (decode-canonical-term bytes))))
+
 (defn require-session [value Any] WasmSession
   (if (and (not (nil? value))
-           (not (nil? (.-initial value)))
+           (not (nil? (.-handle value)))
+           (not (nil? (.-sequence value)))
            (not (nil? (.-disposed value))))
     value
     (throw (new Error "Wasm session is invalid"))))
@@ -243,7 +711,8 @@
 
 (defn require-candidate [value Any] WasmCandidate
   (if (and (not (nil? value))
-           (not (nil? (.-request value))))
+           (not (nil? (.-candidateId value)))
+           (not (nil? (.-base value))))
     value
     (throw (new Error "Wasm candidate is invalid"))))
 
@@ -263,7 +732,7 @@
        (try
          (complete
           (workbench/->PackageAccepted
-           (require-request package-candidate)))
+           (parse-persistent-cartridge! package-candidate)))
          (catch Error error
            (complete (workbench/->PackageRejected (reject-reason error))))))
      (fn
@@ -271,14 +740,28 @@
         _generation Int
         complete Any] Any
        (try
-         (let [request ExactProcessRequest (require-request accepted-package)
-               session WasmSession (->WasmSession request (atom false))
+         (let [cartridge PersistentCartridge accepted-package
+               event Any (decode-cse1-event
+                          (dispatch-session-request module (.-openBytes cartridge) "open"))
+               _opened Any (when (or (not= (.-kind event) "opened")
+                                     (not= (.-sequence event) 0))
+                             (throw (new Error "persistent session did not open exactly once")))
+               session WasmSession (->WasmSession
+                                    (.freeze Object {:slot (.-slot event)
+                                                     :generation (.-generation event)})
+                                    (.-packageId event)
+                                    (.-sessionId event)
+                                    (atom (.-world event))
+                                    (atom 0)
+                                    (.-occurrences cartridge)
+                                    (.-rootPolicy cartridge)
+                                    (atom false))
                bootstrap-frame Any (workbench/create-workbench-envelope
                                     policy
                                     "[]")]
            (complete (workbench/->SessionStarted
                       session
-                      nil
+                      (.-world event)
                       bootstrap-frame)))
          (catch Error error
            (complete (workbench/->SessionFailed (reject-reason error))))))
@@ -288,10 +771,27 @@
         _configuration workbench/InputConfiguration
         complete Any] Any
        (try
-         (let [session WasmSession (require-live-session incoming-session)]
+         (let [session WasmSession (require-live-session incoming-session)
+               occurrences Any (.-occurrences session)
+               count Int (.-length occurrences)]
+           (loop [index Int 0]
+             (when (< index (dec count))
+               (let [event Any (apply-session-command!
+                                module
+                                session
+                                (blob-command! session 1 (nth occurrences index)))]
+                 (when (not= (.-kind event) "input")
+                   (throw (new Error "CWI1 input did not produce InputAccepted")))
+                 (recur (inc index)))))
+           (let [event Any (apply-session-command!
+                            module
+                            session
+                            (blob-command! session 2 (nth occurrences (dec count))))]
+             (when (not= (.-kind event) "candidate")
+               (throw (new Error "CWI1 candidate did not produce CandidateAccepted")))
            (complete
-            (workbench/->CandidateProduced
-             (->WasmCandidate (.-initial session)))))
+             (workbench/->CandidateProduced
+             (->WasmCandidate (.-candidateId event) (.-base event))))))
          (catch Error error
            (complete (workbench/->CandidateFailed (reject-reason error))))))
      (fn
@@ -301,22 +801,42 @@
        (try
          (let [session WasmSession (require-live-session incoming-session)
                candidate WasmCandidate (require-candidate incoming-candidate)
-               response ExactProcessObservation (dispatch-exact-request
-                                                  module
-                                                  (.-request candidate))
-               observation Cwo1Observation (decode-cwo1-observation
-                                            (.-bytes response))
-               frame Any (project-frame policy observation)]
+               payload Any []]
+           (doseq [identity Any [(.-packageId session)
+                                 (.-sessionId session)
+                                 @(.-world session)
+                                 (.-candidateId candidate)
+                                 (.-rootPolicy session)]]
+             (doseq [byte Int identity]
+               (.push payload byte)))
+           (append-u32! payload 1)
+           (let [event Any (apply-session-command!
+                            module
+                            session
+                            (encode-session-command! session 3 payload))
+                 projection Any (.-projection event)]
+             (when (or (not= (.-kind event) "admission")
+                       (nil? projection))
+               (throw (new Error "Admission produced no package-declared frame Observation")))
+             (reset! (.-world session) (.-successor event))
+             (let [frame Any (workbench/create-workbench-envelope
+                              policy
+                              (.stringify JSON (.-termBytes projection)))]
            (complete
             (workbench/->AdmissionAccepted
              session
-             (.-stateRevisionId observation)
-             frame)))
+             (.-successor event)
+             frame)))))
          (catch Error error
            (complete (workbench/->AdmissionRejected (reject-reason error))))))
      (fn [incoming-session Any] Any
        (let [session WasmSession (require-session incoming-session)]
-         (reset! (.-disposed session) true)))))
+         (when (not @(.-disposed session))
+           (let [event Any (apply-session-command!
+                            module session (encode-session-command! session 4 nil))]
+             (when (not= (.-kind event) "disposed")
+               (throw (new Error "CWI1 disposal did not produce Disposed")))
+             (reset! (.-disposed session) true)))))))
 
 (js/export
   (def create-wasm-cartridge-port Any create-wasm-cartridge-port!))

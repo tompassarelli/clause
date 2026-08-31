@@ -2482,6 +2482,34 @@ pub fn canonical_term_bytes(term: &Term) -> Result<Vec<u8>, CanonicalEncodeError
     encode_wire(term)
 }
 
+/// Decode one exact canonical scoped Term with no surrounding package.
+///
+/// This is the inverse of [`canonical_term_bytes`]. The resulting Term is
+/// inert; decoding it grants no authority and creates no Observation.
+pub fn decode_canonical_term_bytes(bytes: &[u8]) -> Result<Term, CanonicalDecodeError> {
+    if bytes.len() > MAX_CANONICAL_BYTES {
+        return Err(CanonicalDecodeError::InputTooLong {
+            length: bytes.len(),
+            maximum: MAX_CANONICAL_BYTES,
+        });
+    }
+    let mut cursor = Cursor::new(bytes);
+    let term = Term::decode(&mut cursor)?;
+    if cursor.remaining() != 0 {
+        return Err(CanonicalDecodeError::TrailingBytes {
+            offset: cursor.offset(),
+            remaining: cursor.remaining(),
+        });
+    }
+    let canonical = canonical_term_bytes(&term).map_err(CanonicalDecodeError::NonCanonical)?;
+    if canonical.as_slice() != bytes {
+        return Err(CanonicalDecodeError::NonCanonical(
+            CanonicalEncodeError::NonCanonicalOrder("Term spelling"),
+        ));
+    }
+    Ok(term)
+}
+
 /// Canonical list payload used only to price cumulative live ingress. It is
 /// not a restart format and carries no identity or authority.
 pub(crate) fn canonical_process_record_bytes(
@@ -2496,12 +2524,11 @@ pub(crate) fn canonical_process_record_bytes(
     for record in records {
         validate_record_order_v2(record)?;
     }
-    let count = u32::try_from(records.len()).map_err(|_| {
-        CanonicalEncodeError::LengthExceedsU32 {
+    let count =
+        u32::try_from(records.len()).map_err(|_| CanonicalEncodeError::LengthExceedsU32 {
             field: "process record batch",
             length: records.len(),
-        }
-    })?;
+        })?;
     let mut encoder = Encoder::new();
     encoder.u32(count);
     for record in records {

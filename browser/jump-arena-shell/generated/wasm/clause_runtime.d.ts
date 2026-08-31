@@ -14,10 +14,31 @@ export function clause_process_v1_response_byte(index: number): number;
 
 export function clause_process_v1_response_len(): number;
 
+export function clause_session_v1_command(): number;
+
+/**
+ * Values 0..=255 are event bytes; 256 means an out-of-range index.
+ */
+export function clause_session_v1_event_byte(index: number): number;
+
+export function clause_session_v1_event_len(): number;
+
+export function clause_session_v1_io_reset(): void;
+
+export function clause_session_v1_open(): number;
+
+export function clause_session_v1_request_push(byte: number): number;
+
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
+    readonly clause_session_v1_command: () => number;
+    readonly clause_session_v1_event_byte: (a: number) => number;
+    readonly clause_session_v1_event_len: () => number;
+    readonly clause_session_v1_io_reset: () => void;
+    readonly clause_session_v1_open: () => number;
+    readonly clause_session_v1_request_push: (a: number) => number;
     readonly clause_process_v1_dispatch: () => number;
     readonly clause_process_v1_request_push: (a: number) => number;
     readonly clause_process_v1_reset: () => void;

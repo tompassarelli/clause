@@ -101,7 +101,7 @@ fn next_y() -> ExecutableExpressionV1 {
     add(s(1), mul(next_vertical_velocity(), a(0)))
 }
 
-fn headless_program() -> ExecutableProgramV1 {
+fn headless_program(scope: TermScope) -> ExecutableProgramV1 {
     let horizontal_assignments = || vec![(0, next_x()), (2, div(sub(next_x(), s(0)), a(0)))];
     let mut grounded_tick = horizontal_assignments();
     grounded_tick.extend([(1, s(9)), (3, n(0.0))]);
@@ -109,6 +109,30 @@ fn headless_program() -> ExecutableProgramV1 {
     airborne_tick.extend([(1, next_y()), (3, next_vertical_velocity())]);
     let mut landing_tick = horizontal_assignments();
     landing_tick.extend([(1, s(9)), (3, n(0.0)), (5, b(true))]);
+
+    let number_role = LocalRoleRefV2 {
+        schema: RelationSchemaLocalId::new(2),
+        role: RoleLocalId::new(1),
+    };
+    let boolean_role = LocalRoleRefV2 {
+        schema: RelationSchemaLocalId::new(2),
+        role: RoleLocalId::new(2),
+    };
+    let separator = Term::atom(
+        scope,
+        b"clause.test/projected-pair".to_vec(),
+        Vec::new(),
+        EqualityContract::ExactOctetsV1,
+    )
+    .expect("projection separator Atom is valid");
+    let template = Term::raw_triple([
+        executable_projection_role_term_v1(scope, number_role, ExecutableValueKindV1::Number)
+            .expect("numeric projection role is valid"),
+        separator,
+        executable_projection_role_term_v1(scope, boolean_role, ExecutableValueKindV1::Boolean)
+            .expect("boolean projection role is valid"),
+    ])
+    .expect("projection template has one scope");
 
     ExecutableProgramV1 {
         // x, y, vx, vy, horizontal intent, grounded, and six package constants.
@@ -153,6 +177,21 @@ fn headless_program() -> ExecutableProgramV1 {
                 assignments: landing_tick,
             },
         ],
+        projection: Some(ExecutableProjectionV1 {
+            bindings: vec![
+                ExecutableProjectionBindingV1 {
+                    role: number_role,
+                    slot: 0,
+                    value_kind: ExecutableValueKindV1::Number,
+                },
+                ExecutableProjectionBindingV1 {
+                    role: boolean_role,
+                    slot: 5,
+                    value_kind: ExecutableValueKindV1::Boolean,
+                },
+            ],
+            template,
+        }),
     }
 }
 
@@ -165,12 +204,30 @@ fn checked_program_package(checker_count: usize) -> CheckedProcessPackage {
     let mut candidate = decoded.candidate().clone();
     candidate.records.clear();
 
+    let mut projection_schema = candidate.snapshot.constitution.schemas[0].clone();
+    projection_schema.id = RelationSchemaLocalId::new(2);
+    let mut boolean_role = projection_schema.roles[0].clone();
+    boolean_role.id = RoleLocalId::new(2);
+    projection_schema.roles.push(boolean_role);
+    projection_schema.roles.sort_by_key(|role| role.id);
+    candidate
+        .snapshot
+        .constitution
+        .schemas
+        .push(projection_schema);
+    candidate
+        .snapshot
+        .constitution
+        .schemas
+        .sort_by_key(|schema| schema.id);
+
     let scope = candidate.snapshot.constitution.semantics;
-    let term = headless_program()
-        .encode_term(TermScope {
-            universe: candidate.snapshot.constitution.universe,
-            semantics: scope,
-        })
+    let term_scope = TermScope {
+        universe: candidate.snapshot.constitution.universe,
+        semantics: scope,
+    };
+    let term = headless_program(term_scope)
+        .encode_term(term_scope)
         .expect("closed program encodes as a Term");
     let dependency = LocalSemanticDependencyV2::ExternalReference(term);
     candidate.snapshot.constitution.formations[0]
@@ -182,6 +239,7 @@ fn checked_program_package(checker_count: usize) -> CheckedProcessPackage {
     for application in &mut candidate.snapshot.constitution.applications {
         application.form.dependency_closure.push(dependency.clone());
         application.form.dependency_closure.sort();
+        application.form.dependency_closure.dedup();
     }
     match checker_count {
         0 => candidate.snapshot.constitution.operators[0].modes[0]
@@ -665,7 +723,7 @@ fn persistent_wasm_session_keeps_generation_sequence_and_admission_custody() {
         limits: WasmSessionLimitsV1 {
             max_commands: 16,
             command_bytes: 4096,
-            event_bytes: 1024,
+            event_bytes: WASM_SESSION_EVENT_LIMIT_V1 as u32,
         },
     };
     let exact_open = encode_wasm_session_open_v1(&open).expect("bounded CWS1 open encodes");
@@ -674,16 +732,20 @@ fn persistent_wasm_session_keeps_generation_sequence_and_admission_custody() {
         open
     );
     let mut boundary = WasmPersistentSessionBoundaryV1::new();
-    let opened = boundary.open(&exact_open).expect("one persistent slot opens");
+    let opened = boundary
+        .open(&exact_open)
+        .expect("one persistent slot opens");
     let handle = opened.handle;
     let (initial_world, initial_run, initial_activation) = match opened.kind {
         WasmSessionEventKindV1::Opened {
+            package: opened_package,
             session: actual_session,
             world,
             run,
             activation,
             state_revision_count,
         } => {
+            assert_eq!(opened_package, package_id);
             assert_eq!(actual_session, session);
             assert_eq!(state_revision_count, 1);
             (world, run, activation)
@@ -696,8 +758,7 @@ fn persistent_wasm_session_keeps_generation_sequence_and_admission_custody() {
         expected_sequence,
         operation,
     };
-    let apply = |boundary: &mut WasmPersistentSessionBoundaryV1,
-                 command: WasmSessionCommandV1| {
+    let apply = |boundary: &mut WasmPersistentSessionBoundaryV1, command: WasmSessionCommandV1| {
         let bytes = encode_wasm_session_command_v1(&command).expect("bounded CWI1 command encodes");
         let decoded = decode_wasm_session_command_v1(&bytes).expect("exact CWI1 command decodes");
         assert_eq!(decoded, command);
@@ -804,6 +865,7 @@ fn persistent_wasm_session_keeps_generation_sequence_and_admission_custody() {
             activation,
             session: admitted_session,
             state_revision_count,
+            projection,
         } => {
             assert_eq!(predecessor, initial_world);
             assert_ne!(successor, initial_world);
@@ -811,20 +873,47 @@ fn persistent_wasm_session_keeps_generation_sequence_and_admission_custody() {
             assert_ne!(activation, initial_activation);
             assert_eq!(admitted_session, session);
             assert_eq!(state_revision_count, 2);
+            let projection = projection.expect("package projection is transported only now");
+            let term = decode_canonical_term_bytes(&projection.exact_term_bytes)
+                .expect("projected Term remains exact and canonical");
+            let [number, relation, grounded] = term
+                .as_raw_triple()
+                .expect("fixture projection retains its declared Triple")
+                .slots();
+            assert_eq!(
+                number.as_atom().expect("projected number Atom").kind(),
+                b"clause/process-projected-f64-v1"
+            );
+            assert_eq!(
+                f64::from_bits(u64::from_le_bytes(
+                    number
+                        .as_atom()
+                        .expect("projected number Atom")
+                        .canonical_payload()
+                        .try_into()
+                        .expect("projected F64 is exact"),
+                )),
+                10.0
+            );
+            assert_eq!(
+                relation.as_atom().expect("literal relation Atom").kind(),
+                b"clause.test/projected-pair"
+            );
+            assert_eq!(
+                grounded
+                    .as_atom()
+                    .expect("projected Boolean Atom")
+                    .canonical_payload(),
+                [1]
+            );
         }
         other => panic!("unexpected Admission event: {other:?}"),
     }
 
-    let disposed = apply(
-        &mut boundary,
-        command(4, WasmSessionOperationV1::Dispose),
-    );
+    let disposed = apply(&mut boundary, command(4, WasmSessionOperationV1::Dispose));
     assert!(matches!(disposed.kind, WasmSessionEventKindV1::Disposed));
-    let post_dispose = encode_wasm_session_command_v1(&command(
-        5,
-        WasmSessionOperationV1::Dispose,
-    ))
-    .unwrap();
+    let post_dispose =
+        encode_wasm_session_command_v1(&command(5, WasmSessionOperationV1::Dispose)).unwrap();
     assert_eq!(
         boundary.command(&post_dispose),
         Err(WasmProcessStatusV1::StaleSessionHandle)

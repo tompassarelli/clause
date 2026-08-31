@@ -1,7 +1,8 @@
-import * as wasm from './wasm-cartridge-port.js';
-import * as workbench from './workbench.js';
-import * as test from 'bun:test';
-import { equivV as $$bc$equiv, keyword as $$bc$keyword, property_key as $$bc$property_key } from 'beagle/core.js';
+import * as wasm from "./wasm-cartridge-port.js";
+import * as workbench from "./workbench.js";
+import * as test from "bun:test";
+import { equivV as $$bc$equiv, keyword as $$bc$keyword, property_key as $$bc$property_key, str as $$bc$str } from 'beagle/core.js';
+import { catch_dispatch as $$bd$catch_dispatch } from 'beagle/exception-dispatch.js';
 
 function policy() {
   const maximum = Number.MAX_SAFE_INTEGER;
@@ -42,16 +43,135 @@ function cwo1(values) {
   return flat;
 }
 
-function module_for(response, calls) {
-  return {[$$bc$property_key($$bc$keyword("clause_process_v1_reset"))]: () => calls.push("reset"), [$$bc$property_key($$bc$keyword("clause_process_v1_request_push"))]: (byte) => { calls.push(byte);
-return 0; }, [$$bc$property_key($$bc$keyword("clause_process_v1_dispatch"))]: () => { calls.push("dispatch");
-return 0; }, [$$bc$property_key($$bc$keyword("clause_process_v1_response_len"))]: () => response.length, [$$bc$property_key($$bc$keyword("clause_process_v1_response_byte"))]: (index) => response[index]};
+function module_for_bang(events, requests) {
+  const request = ({value: [], watches: {}});
+  const current = ({value: [], watches: {}});
+  const next_event_bang = () => { requests.push(request.value.slice());
+(() => { const _a = current, _v = events.shift(); const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })();
+return 0; };
+  return {[$$bc$property_key($$bc$keyword("clause_session_v1_io_reset"))]: () => (() => { const _a = request, _v = []; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })(), [$$bc$property_key($$bc$keyword("clause_session_v1_request_push"))]: (byte) => { request.value.push(byte);
+return 0; }, [$$bc$property_key($$bc$keyword("clause_session_v1_open"))]: next_event_bang, [$$bc$property_key($$bc$keyword("clause_session_v1_command"))]: next_event_bang, [$$bc$property_key($$bc$keyword("clause_session_v1_event_len"))]: () => current.value.length, [$$bc$property_key($$bc$keyword("clause_session_v1_event_byte"))]: (index) => current.value[index]};
 }
 
-test.test("candidate stays opaque and Wasm dispatch occurs only at admission", () => { const response = cwo1([{[$$bc$property_key($$bc$keyword("kind"))]: "number", [$$bc$property_key($$bc$keyword("value"))]: 2.5}, {[$$bc$property_key($$bc$keyword("kind"))]: "boolean", [$$bc$property_key($$bc$keyword("value"))]: true}]);
-const calls = [];
-const port = wasm["create-wasm-cartridge-port"](module_for(response, calls), policy());
-const request = wasm["->ExactProcessRequest"]([67, 87, 82, 49, 0]);
+function append_u32_bang(bytes, value) {
+  [1, 256, 65536, 16777216].forEach((divisor) => {
+  bytes.push((Math.trunc(value / divisor) % 256));
+});
+}
+
+function append_u64_bang(bytes, value) {
+  append_u32_bang(bytes, value);
+  return append_u32_bang(bytes, 0);
+}
+
+function append_blob_bang(bytes, value) {
+  append_u32_bang(bytes, value.length);
+  value.forEach((byte) => {
+  bytes.push(byte);
+});
+}
+
+function minimal_cwr1_bang() {
+  const bytes = [67, 87, 82, 49];
+  append_blob_bang(bytes, [1]);
+  append_u32_bang(bytes, 1);
+  [1, 2, 3, 4, 5, 6, 7, 8, 9].forEach((tag) => {
+  identity(tag).forEach((byte) => {
+  bytes.push(byte);
+});
+});
+  append_blob_bang(bytes, [9]);
+  identity(10).forEach((byte) => {
+  bytes.push(byte);
+});
+  append_blob_bang(bytes, [10]);
+  identity(11).forEach((byte) => {
+  bytes.push(byte);
+});
+  append_blob_bang(bytes, [11]);
+  append_u64_bang(bytes, 100);
+  bytes.push(2, 0);
+  append_blob_bang(bytes, [1]);
+  append_blob_bang(bytes, [2]);
+  bytes.push(0, 0);
+  return bytes;
+}
+
+function cse_header_bang(sequence, tag) {
+  const bytes = [67, 83, 69, 49];
+  append_u32_bang(bytes, 0);
+  append_u32_bang(bytes, 1);
+  append_u64_bang(bytes, sequence);
+  bytes.push(tag);
+  return bytes;
+}
+
+function put_identities_bang(bytes, tags) {
+  tags.forEach((tag) => {
+  identity(tag).forEach((byte) => {
+  bytes.push(byte);
+});
+});
+}
+
+function opened_event_bang() {
+  const bytes = cse_header_bang(0, 1);
+  put_identities_bang(bytes, [21, 3, 22, 23, 24]);
+  append_u32_bang(bytes, 1);
+  return bytes;
+}
+
+function input_event_bang() {
+  const bytes = cse_header_bang(1, 2);
+  put_identities_bang(bytes, [31, 23, 24, 32, 33]);
+  append_u32_bang(bytes, 1);
+  return bytes;
+}
+
+function candidate_event_bang() {
+  const bytes = cse_header_bang(2, 3);
+  put_identities_bang(bytes, [34, 35, 22, 23, 24]);
+  append_u32_bang(bytes, 1);
+  return bytes;
+}
+
+function admission_event_bang() {
+  const bytes = cse_header_bang(3, 4);
+  put_identities_bang(bytes, [22, 36, 37, 38, 3]);
+  append_u32_bang(bytes, 2);
+  bytes.push(1);
+  put_identities_bang(bytes, [39]);
+  append_blob_bang(bytes, [40, 41, 42]);
+  return bytes;
+}
+
+function disposed_event_bang() {
+  return cse_header_bang(4, 5);
+}
+
+function throws_p_bang(action) {
+  return (() => { try {
+    action();
+  return false;
+  } catch (_catch_0) {
+    switch ($$bd$catch_dispatch(_catch_0, [Error])) {
+      case 0: {
+        const __error = _catch_0;
+        return true;
+        break;
+      }
+    }
+  } })();
+}
+
+function json_string(value) {
+  const encoded = JSON.stringify(value);
+  return (($$bc$equiv(typeof encoded, "string")) ? encoded : (() => { throw new Error("test value is not JSON-encodable"); })());
+}
+
+test["test"]("one persistent session sequences input candidate Admission and disposal", () => { const requests = [];
+const port = wasm["create-wasm-cartridge-port"](module_for_bang([opened_event_bang(), input_event_bang(), candidate_event_bang(), admission_event_bang(), disposed_event_bang()], requests), policy());
+const request = wasm["->ExactProcessRequest"](minimal_cwr1_bang());
 const accepted = ({value: null, watches: {}});
 const started = ({value: null, watches: {}});
 const candidate = ({value: null, watches: {}});
@@ -59,25 +179,32 @@ const admitted = ({value: null, watches: {}});
 (port.acceptPackage)(request, (result) => (() => { const _a = accepted, _v = result; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })());
 (port.startSession)(accepted.value.acceptedPackage, 1, (result) => (() => { const _a = started, _v = result; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })());
 (port.runCandidate)(started.value.session, workbench["->FixedTick"](16), workbench["->InputConfiguration"](0, []), (result) => (() => { const _a = candidate, _v = result; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })());
-test.expect(calls).toEqual([]);
-test.expect(candidate.value.candidate.request.bytes).toEqual(request.bytes);
-test.expect(Object.isFrozen(candidate.value.candidate.request.bytes)).toBe(true);
-test.expect(started.value.revision).toBe(null);
-test.expect(started.value.frame).toEqual([]);
+test["expect"]($$bc$str(requests.length)).toBe("3");
+test["expect"](json_string(requests[0].slice(0, 4))).toBe("[67,87,83,49]");
+test["expect"](json_string([requests[1][20], requests[2][20]])).toBe("[1,2]");
+test["expect"](json_string(started.value.frame)).toBe("[]");
 (port.requestAdmission)(started.value.session, candidate.value.candidate, (result) => (() => { const _a = admitted, _v = result; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })());
-test.expect(calls[0]).toBe("reset");
-test.expect(calls[6]).toBe("dispatch");
-test.expect(admitted.value.revision).toEqual(identity(22));
-return test.expect(admitted.value.frame).toEqual([2.5, true]); });
+test["expect"]($$bc$str(requests.length)).toBe("4");
+test["expect"]($$bc$str(requests[3][20])).toBe("3");
+test["expect"](json_string(admitted.value.revision)).toBe(json_string(identity(36)));
+test["expect"](json_string(admitted.value.frame)).toBe("[40,41,42]");
+(port.disposeSession)(started.value.session);
+test["expect"]($$bc$str(requests[4][20])).toBe("4");
+const after_dispose = ({value: null, watches: {}});
+(port.runCandidate)(started.value.session, workbench["->FixedTick"](16), workbench["->InputConfiguration"](0, []), (result) => (() => { const _a = after_dispose, _v = result; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })());
+test["expect"]($$bc$str(after_dispose.value.reason)).toBe("Wasm session is disposed");
+return null; });
 
-test.test("strict CWO1 decoding rejects malformed and trailing bytes", () => { const valid = cwo1([{[$$bc$property_key($$bc$keyword("kind"))]: "boolean", [$$bc$property_key($$bc$keyword("value"))]: false}]);
-test.expect(() => wasm["decode-cwo1-observation"](valid.concat([0]))).toThrow();
+test["test"]("strict CWO1 decoding rejects malformed and trailing bytes", () => { const valid = cwo1([{[$$bc$property_key($$bc$keyword("kind"))]: "boolean", [$$bc$property_key($$bc$keyword("value"))]: false}]);
+test["expect"]((throws_p_bang(() => wasm["decode-cwo1-observation"](valid.concat([0]))) ? "true" : "false")).toBe("true");
 const bad = valid.slice();
 bad.splice(0, 1, 88);
-return test.expect(() => wasm["decode-cwo1-observation"](bad)).toThrow(); });
+test["expect"]((throws_p_bang(() => wasm["decode-cwo1-observation"](bad)) ? "true" : "false")).toBe("true");
+return null; });
 
-test.test("CWR1 hex transport is exact and bounded", () => { test.expect(wasm["decode-cwr1-hex"]("43 57\n52\t31")).toEqual([67, 87, 82, 49]);
-["", "0", "0g", "0A"].forEach((source) => {
-  test.expect(() => wasm["decode-cwr1-hex"](source)).toThrow();
-}); });
+test["test"]("CWR1 hex transport is exact and bounded", () => { test["expect"](json_string(wasm["decode-cwr1-hex"]("43 57\n52\t31"))).toBe("[67,87,82,49]");
+(() => { ["", "0", "0g", "0A"].forEach((source) => {
+  test["expect"]((throws_p_bang(() => wasm["decode-cwr1-hex"](source)) ? "true" : "false")).toBe("true");
+}); })();
+return null; });
 //# sourceMappingURL=wasm-cartridge-port-test.js.map
