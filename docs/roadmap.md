@@ -11,14 +11,16 @@
 
 Clause has accepted the process-first constitutional reset. The repository now
 contains experimental implementations of a process package, native execution,
-persistent native and Wasm sessions, materialization, a jump mechanic, and a
-passive browser shell. A bounded package-owned canonical reader now lowers the
-jump arena's referent, shape, and relation declarations into a checked process
-package with exact source origins and ProgramChange-rooted allocation; laws,
-assertions, and handlers remain typed unsupported source records. These
-artifacts are useful executable evidence, but no
-end-to-end process-first capability is accepted or supported as the Clause
-language. There is still no supported parser, compiler, CLI, persistence
+persistent native and Wasm sessions, materialization, and a playable browser
+shell. A bounded package-owned canonical reader lowers the jump arena's
+declarations and input, jump, tick, numeric-collect, and symbolic-collect
+handlers into a checked process package plus external CPP1 plans with exact
+source origins and ProgramChange-rooted allocation. Those plans execute through
+hidden candidates and separate Admission in focused native/Wasm/browser
+journeys. Laws, assertions, and the general source language remain typed
+unsupported outside that slice. These artifacts are useful executable evidence,
+but no end-to-end process-first capability is accepted or supported as the
+Clause language. There is still no supported parser, compiler, CLI, persistence
 format, runtime, Wasm boundary, renderer integration, or example application.
 
 The live `CLPV` v2 files supersede rejected process-v1 bytes as Rust experiment
@@ -55,10 +57,10 @@ checkpoint hash that becomes false on the next commit.
 | CLCP v1 and v3 compiler machine | Bounded compiler-machine mechanics; not universal process semantics | Ratified exact CLCP contracts | Lean reference/checker and historical Rust substrate | Lean vectors plus Rust parity/replay tests | Bootstrap evidence only | Earlier provisional compiler-machine carriers | Process-aware Compiler0, external genesis exercise, and accepted succession remain open |
 | Compiler Terms fixtures | Semantic candidate over neutral Terms | Exact JSON fixture transport, not a language package | Rust fixture/checking support | Positive and negative corpus checks | No | Earlier positional and slash-qualified specimens | Full formation, source-origin, static prerequisite, and physical-refinement bindings remain open |
 | Frozen v0 execution corpus | Historical observation oracle | Exact historical bytes and checksums | Lean/Rust historical consumers | Checksum and observation checks | No | Nothing; retained as a frozen oracle | No current syntax or process identity authority |
-| `CLPV` process-v2 corpus and `clause-package` | Experimental reduced admitted-stateful profile | Rust-owned experimental encoding | Encode, strict decode, package checks, identity carriers, partial `CausalRef`, and bounded arena declaration reader with rooted allocation | Focused canonical arena declaration/package test passes; prior aggregate result is stale | No | Rejected process-v1 bytes and decoder | Laws/assertions/handlers remain typed unsupported; `CausalRef` omits authorization/effect nodes and configuration-succession closure; AdmissionRequestKey/use contracts; StepBoundaryRef/schema; retention plans; independent wire specification; bounded Term construction |
-| `clause-runtime` native and Wasm sessions | Reversible physical experiment; successful execution creates no Clause authority | Rust-owned request/response encodings plus external CPP1 physical-plan bytes | Native process runtime, headless jump, persistent native/Wasm session ABI, `New` versus exact `Rematerialize` allocation epoch, external physical plan, and no magic executable-Term lookup | Prior aggregate result is stale and was not rerun for the documentation tranche | No | Earlier construct-blind and one-shot runtime experiments | CPP1 checks shape/Mode/roles/bytes only; `StepProposalV2` has no StepBoundaryRef; accepted semantic-transition refinement witness, linearization/progress/resource checks, generic AllocationJudgment, and full package contract remain open |
+| `CLPV` process-v2 corpus and `clause-package` | Experimental reduced admitted-stateful profile | Rust-owned experimental encoding | Encode, strict decode, package checks, identity carriers, partial `CausalRef`, and bounded arena declaration/handler reader with rooted allocation | Focused source/package and runtime journeys pass; the aggregate gate remains unreported | No | Rejected process-v1 bytes and decoder | Laws and assertions remain typed unsupported; handler lowering is a bounded arena subset; `CausalRef` omits authorization/effect nodes and configuration-succession closure; AdmissionRequestKey/use contracts; StepBoundaryRef/schema; retention plans; independent wire specification |
+| `clause-runtime` native and Wasm sessions | Reversible physical experiment; successful execution creates no Clause authority | Rust-owned request/response encodings plus external CPP1 physical-plan bytes | Source-derived input, jump, tick, numeric-collect, and symbolic-collect plans run through persistent native/Wasm sessions with `New` versus exact `Rematerialize`, hidden candidates, and separate Admission | Focused native and real Wasm/browser journeys pass; the aggregate gate remains unreported | No | Earlier construct-blind and one-shot runtime experiments | CPP1 checks shape/Mode/roles/bytes only; `StepProposalV2` has no StepBoundaryRef; accepted semantic-transition refinement witness, linearization/progress/resource checks, generic AllocationJudgment, and full package contract remain open |
 | `clause-materialization` | Experimental replaceable physical projection | JSON fixtures only | Cold scan, uniform grid, support, and work projection | Root gate reaches the crate; 32 tests pass | No | Historical substrate materialization probe | Exact admitted-delta input, occurrence-exact incremental contract, and accepted physical-plan binding |
-| Jump arena and browser shell | Experimental game/transport evidence | Bounded Rust/Wasm fixture bytes and generated JS declarations | Package-owned headless mechanic, Wasm adapters, persistent session boundary, passive shell, and canonical declaration-to-package slice | Focused Rust and BJS fixtures; browser generation is outside the root Rust gate | No | Static and host-owned gameplay demonstrations | Source lowering for laws, assertions, and handlers; source-derived physical plan/runtime behavior; native/Wasm semantic parity after carrier repair; typed browser generation; controlled frame-allocation proof; Clause-only mechanic evolution |
+| Jump arena and browser shell | Experimental game/transport evidence | Bounded Rust/Wasm fixture bytes and generated JS declarations | Playable persistent shell plus Clause-authored input, jump, tick, numeric collect, and symbolic `active → collected` paths through separate Admission | Focused Rust, generated Beagle, and real Wasm/Bun journeys pass; browser generation remains outside the root Rust gate | No | Static and host-owned gameplay demonstrations | General source lowering for laws/assertions/handlers; one unified arena package/session; accepted native/Wasm semantic parity; controlled frame-allocation proof |
 
 The root Rust gate remains the aggregate implementation gate, but its previously
 recorded red result predates the current runtime repairs and is stale. This

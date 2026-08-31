@@ -22,9 +22,11 @@ fallback. Generic reuse, deterministic lifetimes, and direct native/Wasm
 lowering are early falsifiers, not implemented capability.
 
 > **Current status:** Clause has an accepted semantic constitution and canonical
-> source design. Experimental Rust carriers, native and persistent Wasm process
-> sessions, materialization, and a passive browser shell are implemented and
-> have focused tests, but none is a supported language implementation yet. The
+> source design. An experimental canonical reader now lowers the jump arena's
+> input, jump, tick, and collect handlers into external CPP1 plans that execute
+> through persistent native and Wasm sessions, separate Admission, and the
+> playable browser shell. These paths have focused end-to-end tests, but none is
+> a supported language implementation yet. The
 > [roadmap](docs/roadmap.md) is the sole implementation-status authority and
 > records the stale prior aggregate result and exact open carrier/runtime gaps;
 > this constitutional tranche does not claim a current Rust-gate verdict.
@@ -45,7 +47,8 @@ on collect ?actor
     ?coin state collected
 ```
 
-The spelling is canonical but is not yet runnable by a supported toolchain.
+The spelling is canonical and runs through the bounded experimental
+source-to-CPP1 path, but not yet through a supported toolchain.
 `on` declares process constitution; it does not execute merely by being stored.
 A matching occurrence can activate one exact Application under a selected Mode
 and context. `when` observes one StateRevision, while `withdraw` and source
