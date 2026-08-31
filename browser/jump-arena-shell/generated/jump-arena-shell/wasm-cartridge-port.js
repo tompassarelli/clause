@@ -567,6 +567,7 @@ function reject_reason(error) {
 }
 
 function create_wasm_cartridge_port_bang(module, policy) {
+  const active_session = ({value: null, watches: {}});
   return workbench["->CartridgePort"]((package_candidate, complete) => (() => { try {
     return complete(workbench["->PackageAccepted"](parse_persistent_cartridge_bang(package_candidate)));
   } catch (_catch_0) {
@@ -583,6 +584,11 @@ function create_wasm_cartridge_port_bang(module, policy) {
   const __opened = (((!($$bc$equiv(event.kind, "opened"))) || (!($$bc$equiv(event.sequence, 0)))) ? (() => { return (() => { throw new Error("persistent session did not open exactly once"); })(); })() : null);
   const session = WasmSession(Object.freeze({[$$bc$property_key($$bc$keyword("slot"))]: event.slot, [$$bc$property_key($$bc$keyword("generation"))]: event.generation}), event.packageId, event.sessionId, event.allocation, ({value: event.world, watches: {}}), ({value: 0, watches: {}}), cartridge.occurrences, ({value: false, watches: {}}));
   const bootstrap_frame = workbench["create-workbench-envelope"](policy, "[]");
+  const prior = active_session.value;
+  if ((!(prior == null))) {
+    (() => { const _a = prior.disposed, _v = true; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })();
+  }
+  (() => { const _a = active_session, _v = session; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })();
   return complete(workbench["->SessionStarted"](session, event.world, bootstrap_frame));
   } catch (_catch_1) {
     switch ($$bd$catch_dispatch(_catch_1, [Error])) {
@@ -658,7 +664,10 @@ if ((!((_truthy) => _truthy !== false && _truthy != null)(session.disposed.value
   if ((!($$bc$equiv(event.kind, "disposed")))) {
     (() => { throw new Error("CWI1 disposal did not produce Disposed"); })();
   }
-  return (() => { const _a = session.disposed, _v = true; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })();
+  (() => { const _a = session.disposed, _v = true; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })();
+  if ((active_session.value === session)) {
+    return (() => { const _a = active_session, _v = null; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })();
+  }
 } });
 }
 

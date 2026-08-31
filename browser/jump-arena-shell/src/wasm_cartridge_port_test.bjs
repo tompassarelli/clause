@@ -256,6 +256,16 @@
                                   :phase "down"
                                   :repeat false})])))]))
 
+(defn key-envelope
+  [code String
+   phase String] Any
+  (workbench/create-workbench-envelope
+   (arena-policy)
+   (json-string [(json-string {:kind "keyboard"
+                               :code code
+                               :phase phase
+                               :repeat false})])))
+
 (defn admit-real-process!
   [port workbench/CartridgePort
    request-bytes Any] Any
@@ -593,3 +603,165 @@
             (.toBe (test/expect collected-collectible-state) "collected"))
           ((.-disposeSession port) (.-session @started))
           nil))))))
+
+(let [reload-test-runtime Any (require "bun:test")
+      register-reload-test Any (.-test reload-test-runtime)]
+  (register-reload-test
+   "real Wasm workbench hot-reloads Clause-only collect behavior with fenced prior generation"
+   (fn [] Any
+     (.then
+      (.all Promise [(.arrayBuffer (.file Bun "./generated/wasm/clause_runtime_bg.wasm"))
+                     (.text (.file Bun
+                                   "./fixtures/wasm-gameplay-v1/gameplay-v1.cwr1.hex"))
+                     (.text (.file Bun
+                                   "./fixtures/wasm-gameplay-v1/gameplay-spent-v1.cwr1.hex"))])
+      (fn [assets Any] Any
+        (let [raw-port workbench/CartridgePort (wasm/create-wasm-cartridge-port
+               (initialize-real-session-module (nth assets 0))
+               (arena-policy))
+              sessions Any (atom [])
+              disposals Any (atom [])
+              rendered Any (atom [])
+              receipts Any (atom [])
+              scheduled-tick Any (atom (fn [] Any nil))
+              delay-next-candidate (Atom Bool) (atom false)
+              delayed-candidate Any (atom nil)
+              changed-start-revision Any (atom nil)
+              tracked-port workbench/CartridgePort (workbench/->CartridgePort
+               (.-acceptPackage raw-port)
+               (fn
+                 [accepted-package Any
+                  generation Int
+                  complete Any] Any
+                 ((.-startSession raw-port)
+                  accepted-package
+                  generation
+                  (fn [result Any] Any
+                    (do
+                      (.push @sessions (.-session result))
+                      (complete result)))))
+               (fn
+                 [session Any
+                  fixed-tick workbench/FixedTick
+                  configuration workbench/InputConfiguration
+                  complete Any] Any
+                 ((.-runCandidate raw-port)
+                  session
+                  fixed-tick
+                  configuration
+                  (fn [result Any] Any
+                    (if @delay-next-candidate
+                      (do
+                        (reset! delay-next-candidate false)
+                        (reset! delayed-candidate
+                                (fn [] Any (complete result))))
+                      (complete result)))))
+               (.-requestAdmission raw-port)
+               (fn [session Any] Any
+                 (do
+                   (.push @disposals session)
+                   ((.-disposeSession raw-port) session))))
+              base-request wasm/ExactProcessRequest (wasm/->ExactProcessRequest
+               (wasm/decode-cwr1-hex (nth assets 1)))
+              changed-request wasm/ExactProcessRequest (wasm/->ExactProcessRequest
+               (wasm/decode-cwr1-hex (nth assets 2)))
+              controller Any (workbench/create-cartridge-workbench!
+               tracked-port
+               (workbench/->FixedTick 16)
+               (arena-policy)
+               (fn
+                 [_milliseconds Int
+                  callback Any] Any
+                 (do
+                   (reset! scheduled-tick callback)
+                   (fn [] Any nil)))
+               (fn [frame Any] Any (.push @rendered frame))
+               (fn [receipt Any] Any (.push @receipts receipt))
+               base-request)
+              base-start Any ((.-snapshot controller))]
+          (.toBe (test/expect (str (.-generation base-start))) "1")
+          (.toBe (test/expect (str (.-phase base-start))) "ready")
+          (.toBe (test/expect (json-string (.-frame base-start))) "[]")
+
+          ((.-observeInput controller) (key-envelope "KeyD" "down"))
+          (@scheduled-tick)
+          (let [contact Any (wasm/decode-projected-term-frame
+                             (.-frame ((.-snapshot controller))))
+                player-x Float (.-x (.-position (.-player contact)))
+                contact-collectible Any (nth (.-collectibles (.-world contact)) 0)]
+            (.toBe (test/expect (str (.-state contact-collectible))) "active")
+            (.toBe (test/expect (str player-x))
+                   (str (.-x (.-position contact-collectible)))))
+          ((.-observeInput controller) (key-envelope "KeyD" "up"))
+          ((.-observeInput controller) (key-envelope "KeyE" "down"))
+          (@scheduled-tick)
+          (let [base-admitted Any ((.-snapshot controller))
+                base-frame Any (wasm/decode-projected-term-frame (.-frame base-admitted))
+                base-collectible Any (nth (.-collectibles (.-world base-frame)) 0)]
+            (.toBe (test/expect (str (.-state base-collectible))) "collected")
+            (.toBe (test/expect (str (.-generation base-admitted))) "1"))
+
+          (let [old-session Any (nth @sessions 0)]
+            (reset! delay-next-candidate true)
+            (@scheduled-tick)
+            (.toBe (test/expect (str (.-phase ((.-snapshot controller))))) "candidate")
+            (.toBe (test/expect (str ((.-reloadPackage controller) changed-request))) "true")
+            (let [changed-start Any ((.-snapshot controller))
+                  changed-revision Any (.-revision changed-start)]
+              (reset! changed-start-revision changed-revision)
+              (.toBe (test/expect (str (.-phase changed-start))) "ready")
+              (.toBe (test/expect (str (.-generation changed-start))) "2")
+              (.toBe (test/expect (json-string (.-frame changed-start))) "[]")
+              (.toBe (test/expect (str (.-length @sessions))) "2")
+              (.toBe (test/expect (str (.-length @disposals))) "1")
+              (.toBe (test/expect (str (.is Object (nth @disposals 0) old-session))) "true")
+
+              (@delayed-candidate)
+              (let [after-stale Any ((.-snapshot controller))
+                    stale-events Any (.filter @receipts
+                                              (fn [receipt Any] Bool
+                                                (= (.-event receipt)
+                                                   "completion-stale")))]
+                (.toBe (test/expect (str (.-generation after-stale))) "2")
+                (.toBe (test/expect (str (.is Object
+                                               (.-revision after-stale)
+                                               changed-revision)))
+                       "true")
+                (.toBe (test/expect (json-string (.-frame after-stale))) "[]")
+                (.toBe (test/expect (str (.-length stale-events))) "1"))
+
+              (let [retired-result Any (atom nil)]
+                ((.-runCandidate raw-port)
+                 old-session
+                 (workbench/->FixedTick 16)
+                 (workbench/->InputConfiguration 0 [])
+                 (fn [result Any] Any (reset! retired-result result)))
+                (.toBe (test/expect (str (.-reason @retired-result)))
+                       "Wasm session is disposed")
+                (.toBe (test/expect (str (.is Object
+                                               (.-revision ((.-snapshot controller)))
+                                               changed-revision)))
+                       "true")))
+
+          ((.-observeInput controller) (key-envelope "KeyD" "down"))
+          (@scheduled-tick)
+          ((.-observeInput controller) (key-envelope "KeyD" "up"))
+          ((.-observeInput controller) (key-envelope "KeyE" "down"))
+          (@scheduled-tick)
+          (let [changed-admitted Any ((.-snapshot controller))
+                changed-frame Any (wasm/decode-projected-term-frame (.-frame changed-admitted))
+                changed-collectible Any (nth (.-collectibles (.-world changed-frame)) 0)
+                rendered-length Int (.-length @rendered)
+                visible-frame Any (wasm/decode-projected-term-frame
+                                   (nth @rendered (dec rendered-length)))
+                visible-collectible Any (nth (.-collectibles (.-world visible-frame)) 0)]
+            (.toBe (test/expect (str (.-state changed-collectible))) "spent")
+            (.toBe (test/expect (str (.-state visible-collectible))) "spent")
+            (.toBe (test/expect (str (.-generation changed-admitted))) "2")
+            (.toBe (test/expect
+                     (str (not= (json-string (.-revision changed-admitted))
+                                (json-string @changed-start-revision))))
+                   "true"))
+          (.toBe (test/expect (str ((.-dispose controller)))) "true")
+          (.toBe (test/expect (str (.-length @disposals))) "2")
+          nil)))))))

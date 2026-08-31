@@ -8,6 +8,7 @@ const BROWSER_COLLECT_CHANGED_ALLOCATION_ROOT_TAG: u8 = 235;
 const BROWSER_SYMBOLIC_COLLECT_ALLOCATION_ROOT_TAG: u8 = 240;
 const BROWSER_SYMBOLIC_COLLECT_CHANGED_ALLOCATION_ROOT_TAG: u8 = 241;
 const BROWSER_GAMEPLAY_ALLOCATION_ROOT_TAG: u8 = 242;
+const BROWSER_GAMEPLAY_CHANGED_ALLOCATION_ROOT_TAG: u8 = 243;
 const SOURCE_ALLOCATION_ROOT_TAG: u8 = 211;
 const WORLD: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
@@ -1692,20 +1693,20 @@ fn browser_fixture_request() -> WasmProcessRequestV1 {
     }
 }
 
-fn browser_gameplay_fixture_request(source: &[u8]) -> WasmProcessRequestV1 {
+fn browser_gameplay_fixture_request(
+    source: &[u8],
+    allocation_root_tag: u8,
+) -> WasmProcessRequestV1 {
     let package = checked_gameplay_program_package(source);
     let physical_plan = physical_plan_with_source(&package, source);
     let application = ApplicationId {
         snapshot: package.constitution().snapshot(),
         local: ApplicationLocalId::new(1),
     };
-    let (_, allocation_facts) = carrier_authority_for_plan(
-        &package,
-        &physical_plan,
-        BROWSER_GAMEPLAY_ALLOCATION_ROOT_TAG,
-    );
+    let (_, allocation_facts) =
+        carrier_authority_for_plan(&package, &physical_plan, allocation_root_tag);
     let allocation = RuntimeAllocationEpochV1::recorded_for(
-        raw_id(BROWSER_GAMEPLAY_ALLOCATION_ROOT_TAG),
+        raw_id(allocation_root_tag),
         &package,
         application,
         &physical_plan,
@@ -2606,6 +2607,61 @@ fn persistent_wasm_session_keeps_generation_sequence_and_admission_custody() {
 }
 
 #[test]
+fn persistent_wasm_open_replaces_only_after_the_replacement_is_checked() {
+    let request = browser_fixture_request();
+    let open = |request: &WasmProcessRequestV1| WasmSessionOpenV1 {
+        package_bytes: request.package_bytes.clone(),
+        application: request.application,
+        physical_plan_bytes: request.physical_plan_bytes.clone(),
+        authority: request.authority.clone(),
+        allocation: WasmSessionAllocationV1::Rematerialize(request.allocation),
+        limits: WasmSessionLimitsV1 {
+            max_commands: 16,
+            command_bytes: 4096,
+            event_bytes: WASM_SESSION_EVENT_LIMIT_V1 as u32,
+        },
+    };
+    let mut boundary = WasmPersistentSessionBoundaryV1::new();
+    let exact_open = encode_wasm_session_open_v1(&open(&request)).expect("CWS1 open encodes");
+    let first = boundary.open(&exact_open).expect("first session opens");
+
+    let mut rejected_request = request.clone();
+    rejected_request.physical_plan_bytes = vec![0];
+    let rejected_open =
+        encode_wasm_session_open_v1(&open(&rejected_request)).expect("rejected CWS1 open encodes");
+    assert_eq!(
+        boundary.open(&rejected_open),
+        Err(WasmProcessStatusV1::ProcessRejected)
+    );
+    let retained_command = encode_wasm_session_command_v1(&WasmSessionCommandV1 {
+        handle: first.handle,
+        expected_sequence: 1,
+        operation: WasmSessionOperationV1::Dispose,
+    })
+    .expect("retained-session probe encodes");
+    assert_eq!(
+        boundary.command(&retained_command),
+        Err(WasmProcessStatusV1::SequenceRejected)
+    );
+
+    let second = boundary
+        .open(&exact_open)
+        .expect("checked replacement opens atomically");
+    assert_eq!(second.handle.slot, first.handle.slot);
+    assert_eq!(second.handle.generation, first.handle.generation + 1);
+    let stale_command = encode_wasm_session_command_v1(&WasmSessionCommandV1 {
+        handle: first.handle,
+        expected_sequence: 0,
+        operation: WasmSessionOperationV1::Dispose,
+    })
+    .expect("stale-session probe encodes");
+    assert_eq!(
+        boundary.command(&stale_command),
+        Err(WasmProcessStatusV1::StaleSessionHandle)
+    );
+}
+
+#[test]
 fn shipped_cwr1_has_external_physical_plan_and_successive_issued_admission() {
     let request = browser_fixture_request();
     let checked = check_process_package(
@@ -2932,9 +2988,24 @@ fn shipped_symbolic_collect_cwr1_preserves_clause_owned_state() {
 #[test]
 fn shipped_unified_gameplay_cwr1_carries_arena_and_symbolic_collect() {
     let source = gameplay_source();
-    let request = browser_gameplay_fixture_request(&source);
+    let changed_source = std::str::from_utf8(&source)
+        .expect("gameplay source is UTF-8")
+        .replacen(
+            "?collectible state collected",
+            "?collectible state spent",
+            1,
+        )
+        .into_bytes();
+    assert_ne!(source, changed_source);
+    let request = browser_gameplay_fixture_request(&source, BROWSER_GAMEPLAY_ALLOCATION_ROOT_TAG);
+    let changed_request = browser_gameplay_fixture_request(
+        &changed_source,
+        BROWSER_GAMEPLAY_CHANGED_ALLOCATION_ROOT_TAG,
+    );
     let plan = decode_executable_physical_plan_v1(&request.physical_plan_bytes)
         .expect("unified gameplay CPP1 decodes");
+    let changed_plan = decode_executable_physical_plan_v1(&changed_request.physical_plan_bytes)
+        .expect("changed unified gameplay CPP1 decodes");
     assert!(plan.program.rules.iter().any(|rule| rule.entry == 0));
     assert!(plan.program.rules.iter().any(|rule| rule.entry == 1));
     assert!(plan.program.rules.iter().any(|rule| rule.entry == 2));
@@ -2951,27 +3022,54 @@ fn shipped_unified_gameplay_cwr1_carries_arena_and_symbolic_collect() {
         )
     );
     assert_eq!(
+        changed_plan
+            .program
+            .rules
+            .iter()
+            .find(|rule| rule.entry == 3)
+            .expect("changed unified gameplay carries the collect transition")
+            .assignments[0]
+            .1,
+        ExecutableExpressionV1::Constant(
+            ExecutableValueV1::symbol(b"spent").expect("symbol is bounded")
+        )
+    );
+    assert_ne!(plan.program, changed_plan.program);
+    assert_eq!(
         plan.program.initial_configuration[28],
         ExecutableValueV1::symbol(b"active").expect("symbol is bounded")
     );
+    assert_eq!(
+        changed_plan.program.initial_configuration[28],
+        ExecutableValueV1::symbol(b"active").expect("symbol is bounded")
+    );
 
-    let exact = encode_wasm_process_request_v1(&request)
-        .expect("unified gameplay browser CWR1 fixture encodes");
     let fixture_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../browser/jump-arena-shell/fixtures/wasm-gameplay-v1");
-    let fixture = fixture_root.join("gameplay-v1.cwr1.hex");
+    let fixtures = [
+        ("gameplay-v1.cwr1.hex", request),
+        ("gameplay-spent-v1.cwr1.hex", changed_request),
+    ];
     if std::env::var_os("CLAUSE_UPDATE_BROWSER_GAMEPLAY_CWR1").is_some() {
         std::fs::create_dir_all(&fixture_root)
             .expect("unified gameplay browser fixture directory is created");
-        std::fs::write(&fixture, lowercase_hex_lines(&exact))
-            .expect("unified gameplay browser CWR1 fixture update succeeds");
+        for (name, request) in fixtures {
+            let exact = encode_wasm_process_request_v1(&request)
+                .expect("unified gameplay browser CWR1 fixture encodes");
+            std::fs::write(fixture_root.join(name), lowercase_hex_lines(&exact))
+                .expect("unified gameplay browser CWR1 fixture update succeeds");
+        }
         return;
     }
-    let tracked = std::fs::read_to_string(&fixture)
-        .expect("tracked unified gameplay browser CWR1 fixture exists");
-    assert_eq!(decode_hex(&tracked), exact);
-    assert_eq!(
-        decode_wasm_process_request_v1(&exact).expect("tracked gameplay CWR1 decodes"),
-        request
-    );
+    for (name, request) in fixtures {
+        let exact = encode_wasm_process_request_v1(&request)
+            .expect("unified gameplay browser CWR1 fixture encodes");
+        let tracked = std::fs::read_to_string(fixture_root.join(name))
+            .expect("tracked unified gameplay browser CWR1 fixture exists");
+        assert_eq!(decode_hex(&tracked), exact);
+        assert_eq!(
+            decode_wasm_process_request_v1(&exact).expect("tracked gameplay CWR1 decodes"),
+            request
+        );
+    }
 }

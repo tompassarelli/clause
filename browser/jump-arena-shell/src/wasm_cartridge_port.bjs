@@ -847,7 +847,8 @@
 (defn create-wasm-cartridge-port!
   [module Any
    policy workbench/WorkbenchPolicy] workbench/CartridgePort
-  (workbench/->CartridgePort
+  (let [active-session Any (atom nil)]
+    (workbench/->CartridgePort
      (fn
        [package-candidate Any
         complete Any] Any
@@ -881,6 +882,10 @@
                bootstrap-frame Any (workbench/create-workbench-envelope
                                     policy
                                     "[]")]
+           (let [prior Any @active-session]
+             (when (not (nil? prior))
+               (reset! (.-disposed prior) true)))
+           (reset! active-session session)
            (complete (workbench/->SessionStarted
                       session
                       (.-world event)
@@ -950,7 +955,7 @@
                               session
                               (encode-session-command! session 6 payload))
                    projection Any (.-projection event)]
-             (when (or (not= (.-kind event) "admission")
+               (when (or (not= (.-kind event) "admission")
                        (nil? projection))
                (throw (new Error "Admission produced no package-declared frame Observation")))
              (reset! (.-world session) (.-successor event))
@@ -971,7 +976,9 @@
                             module session (encode-session-command! session 7 nil))]
              (when (not= (.-kind event) "disposed")
                (throw (new Error "CWI1 disposal did not produce Disposed")))
-             (reset! (.-disposed session) true)))))))
+             (reset! (.-disposed session) true)
+             (when (identical? @active-session session)
+               (reset! active-session nil)))))))))
 
 (js/export
   (def create-wasm-cartridge-port Any create-wasm-cartridge-port!))

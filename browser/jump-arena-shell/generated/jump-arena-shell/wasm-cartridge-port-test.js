@@ -210,6 +210,10 @@ function contact_configuration(input_sequence, revision) {
   return workbench["->InputConfiguration"](revision, [workbench["->InputObservation"](input_sequence, workbench["create-workbench-envelope"](policy(), json_string([json_string({[$$bc$property_key($$bc$keyword("kind"))]: "keyboard", [$$bc$property_key($$bc$keyword("code"))]: "KeyD", [$$bc$property_key($$bc$keyword("phase"))]: "up", [$$bc$property_key($$bc$keyword("repeat"))]: false})]))), workbench["->InputObservation"]((input_sequence + 1), workbench["create-workbench-envelope"](policy(), json_string([json_string({[$$bc$property_key($$bc$keyword("kind"))]: "keyboard", [$$bc$property_key($$bc$keyword("code"))]: "KeyE", [$$bc$property_key($$bc$keyword("phase"))]: "down", [$$bc$property_key($$bc$keyword("repeat"))]: false})])))]);
 }
 
+function key_envelope(code, phase) {
+  return workbench["create-workbench-envelope"](arena_policy(), json_string([json_string({[$$bc$property_key($$bc$keyword("kind"))]: "keyboard", [$$bc$property_key($$bc$keyword("code"))]: code, [$$bc$property_key($$bc$keyword("phase"))]: phase, [$$bc$property_key($$bc$keyword("repeat"))]: false})]));
+}
+
 function admit_real_process_bang(port, request_bytes) {
   const request = wasm["->ExactProcessRequest"](wasm["decode-cwr1-hex"](request_bytes));
   const accepted = ({value: null, watches: {}});
@@ -358,5 +362,91 @@ const collected_collectible = collected_frame.world.collectibles[0];
 const collected_collectible_state = collected_collectible.state;
 test["expect"](collected_collectible_state).toBe("collected");
 (port.disposeSession)(started.value.session);
+return null; }));
+
+const reload_test_runtime = require("bun:test");
+const register_reload_test = reload_test_runtime.test;
+register_reload_test("real Wasm workbench hot-reloads Clause-only collect behavior with fenced prior generation", () => Promise.all([Bun.file("./generated/wasm/clause_runtime_bg.wasm").arrayBuffer(), Bun.file("./fixtures/wasm-gameplay-v1/gameplay-v1.cwr1.hex").text(), Bun.file("./fixtures/wasm-gameplay-v1/gameplay-spent-v1.cwr1.hex").text()]).then((assets) => { const raw_port = wasm["create-wasm-cartridge-port"](initialize_real_session_module(assets[0]), arena_policy());
+const sessions = ({value: [], watches: {}});
+const disposals = ({value: [], watches: {}});
+const rendered = ({value: [], watches: {}});
+const receipts = ({value: [], watches: {}});
+const scheduled_tick = ({value: () => null, watches: {}});
+const delay_next_candidate = ({value: false, watches: {}});
+const delayed_candidate = ({value: null, watches: {}});
+const changed_start_revision = ({value: null, watches: {}});
+const tracked_port = workbench["->CartridgePort"](raw_port.acceptPackage, (accepted_package, generation, complete) => (raw_port.startSession)(accepted_package, generation, (result) => { sessions.value.push(result.session);
+return complete(result); }), (session, fixed_tick, configuration, complete) => (raw_port.runCandidate)(session, fixed_tick, configuration, (result) => { if (delay_next_candidate.value) {
+  (() => { const _a = delay_next_candidate, _v = false; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })();
+  return (() => { const _a = delayed_candidate, _v = () => complete(result); const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })();
+} else {
+  return complete(result);
+} }), raw_port.requestAdmission, (session) => { disposals.value.push(session);
+return (raw_port.disposeSession)(session); });
+const base_request = wasm["->ExactProcessRequest"](wasm["decode-cwr1-hex"](assets[1]));
+const changed_request = wasm["->ExactProcessRequest"](wasm["decode-cwr1-hex"](assets[2]));
+const controller = workbench["create-cartridge-workbench!"](tracked_port, workbench["->FixedTick"](16), arena_policy(), (__milliseconds, callback) => { (() => { const _a = scheduled_tick, _v = callback; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })();
+return () => null; }, (frame) => rendered.value.push(frame), (receipt) => receipts.value.push(receipt), base_request);
+const base_start = (controller.snapshot)();
+test["expect"]($$bc$str(base_start.generation)).toBe("1");
+test["expect"]($$bc$str(base_start.phase)).toBe("ready");
+test["expect"](json_string(base_start.frame)).toBe("[]");
+(controller.observeInput)(key_envelope("KeyD", "down"));
+(scheduled_tick.value)();
+const contact = wasm["decode-projected-term-frame"]((controller.snapshot)().frame);
+const player_x = contact.player.position.x;
+const contact_collectible = contact.world.collectibles[0];
+test["expect"]($$bc$str(contact_collectible.state)).toBe("active");
+test["expect"]($$bc$str(player_x)).toBe($$bc$str(contact_collectible.position.x));
+(controller.observeInput)(key_envelope("KeyD", "up"));
+(controller.observeInput)(key_envelope("KeyE", "down"));
+(scheduled_tick.value)();
+const base_admitted = (controller.snapshot)();
+const base_frame = wasm["decode-projected-term-frame"](base_admitted.frame);
+const base_collectible = base_frame.world.collectibles[0];
+test["expect"]($$bc$str(base_collectible.state)).toBe("collected");
+test["expect"]($$bc$str(base_admitted.generation)).toBe("1");
+const old_session = sessions.value[0];
+(() => { const _a = delay_next_candidate, _v = true; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })();
+(scheduled_tick.value)();
+test["expect"]($$bc$str((controller.snapshot)().phase)).toBe("candidate");
+test["expect"]($$bc$str((controller.reloadPackage)(changed_request))).toBe("true");
+const changed_start = (controller.snapshot)();
+const changed_revision = changed_start.revision;
+(() => { const _a = changed_start_revision, _v = changed_revision; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })();
+test["expect"]($$bc$str(changed_start.phase)).toBe("ready");
+test["expect"]($$bc$str(changed_start.generation)).toBe("2");
+test["expect"](json_string(changed_start.frame)).toBe("[]");
+test["expect"]($$bc$str(sessions.value.length)).toBe("2");
+test["expect"]($$bc$str(disposals.value.length)).toBe("1");
+test["expect"]($$bc$str(Object.is(disposals.value[0], old_session))).toBe("true");
+(delayed_candidate.value)();
+const after_stale = (controller.snapshot)();
+const stale_events = receipts.value.filter((receipt) => ($$bc$equiv(receipt.event, "completion-stale")));
+test["expect"]($$bc$str(after_stale.generation)).toBe("2");
+test["expect"]($$bc$str(Object.is(after_stale.revision, changed_revision))).toBe("true");
+test["expect"](json_string(after_stale.frame)).toBe("[]");
+test["expect"]($$bc$str(stale_events.length)).toBe("1");
+const retired_result = ({value: null, watches: {}});
+(raw_port.runCandidate)(old_session, workbench["->FixedTick"](16), workbench["->InputConfiguration"](0, []), (result) => (() => { const _a = retired_result, _v = result; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })());
+test["expect"]($$bc$str(retired_result.value.reason)).toBe("Wasm session is disposed");
+test["expect"]($$bc$str(Object.is((controller.snapshot)().revision, changed_revision))).toBe("true");
+(controller.observeInput)(key_envelope("KeyD", "down"));
+(scheduled_tick.value)();
+(controller.observeInput)(key_envelope("KeyD", "up"));
+(controller.observeInput)(key_envelope("KeyE", "down"));
+(scheduled_tick.value)();
+const changed_admitted = (controller.snapshot)();
+const changed_frame = wasm["decode-projected-term-frame"](changed_admitted.frame);
+const changed_collectible = changed_frame.world.collectibles[0];
+const rendered_length = rendered.value.length;
+const visible_frame = wasm["decode-projected-term-frame"](rendered.value[(rendered_length - 1)]);
+const visible_collectible = visible_frame.world.collectibles[0];
+test["expect"]($$bc$str(changed_collectible.state)).toBe("spent");
+test["expect"]($$bc$str(visible_collectible.state)).toBe("spent");
+test["expect"]($$bc$str(changed_admitted.generation)).toBe("2");
+test["expect"]($$bc$str((!(json_string(changed_admitted.revision) === json_string(changed_start_revision.value))))).toBe("true");
+test["expect"]($$bc$str((controller.dispose)())).toBe("true");
+test["expect"]($$bc$str(disposals.value.length)).toBe("2");
 return null; }));
 //# sourceMappingURL=wasm-cartridge-port-test.js.map

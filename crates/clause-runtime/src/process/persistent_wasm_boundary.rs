@@ -180,8 +180,9 @@ struct LiveSessionV1 {
     last_configuration_revision: u64,
 }
 
-/// A bounded physical table with one live slot. Its handle never substitutes
-/// for a Clause identity; generation exists only to reject stale host custody.
+/// A bounded physical boundary with one transactionally replaceable live slot.
+/// Its handle never substitutes for a Clause identity; generation exists only
+/// to reject stale host custody.
 pub struct WasmPersistentSessionBoundaryV1 {
     generation: Option<u32>,
     exhausted: bool,
@@ -260,9 +261,6 @@ impl WasmPersistentSessionBoundaryV1 {
     pub fn open(&mut self, bytes: &[u8]) -> Result<WasmSessionEventV1, WasmProcessStatusV1> {
         let request = decode_wasm_session_open_v1(bytes)?;
         validate_limits(request.limits)?;
-        if self.live.is_some() {
-            return self.fail(WasmProcessStatusV1::SessionOccupied);
-        }
         if self.exhausted {
             return self.fail(WasmProcessStatusV1::SessionExhausted);
         }
@@ -333,14 +331,17 @@ impl WasmPersistentSessionBoundaryV1 {
                 state_revision_count: state_revision_count(&session)?,
             },
         };
-        self.generation = Some(generation);
-        self.live = Some(LiveSessionV1 {
+        let replacement = LiveSessionV1 {
             session,
             sequence: 0,
             limits: request.limits,
             last_input_sequence: 0,
             last_configuration_revision: 0,
-        });
+        };
+        if let Some(mut prior) = self.live.replace(replacement) {
+            prior.session.dispose();
+        }
+        self.generation = Some(generation);
         self.status = WasmProcessStatusV1::Ready;
         Ok(event)
     }
