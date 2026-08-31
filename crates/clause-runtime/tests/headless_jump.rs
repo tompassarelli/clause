@@ -15,6 +15,10 @@ const WORLD: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../test-vectors/jump-arena/world.clause"
 ));
+const DASH_WORLD: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../test-vectors/jump-arena/world-dash-jump.clause"
+));
 const COLLECT: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../test-vectors/jump-arena/collect.clause"
@@ -29,22 +33,19 @@ const LEDGER: &[u8] = include_bytes!(concat!(
 ));
 
 fn gameplay_source() -> Vec<u8> {
-    let mut source = Vec::with_capacity(WORLD.len() + COLLECT_STATE.len() + 1);
-    source.extend_from_slice(WORLD);
+    gameplay_source_with_world(WORLD)
+}
+
+fn gameplay_source_with_world(world: &[u8]) -> Vec<u8> {
+    let mut source = Vec::with_capacity(world.len() + COLLECT_STATE.len() + 1);
+    source.extend_from_slice(world);
     source.push(b'\n');
     source.extend_from_slice(COLLECT_STATE);
     source
 }
 
 fn dash_gameplay_source() -> Vec<u8> {
-    std::str::from_utf8(&gameplay_source())
-        .expect("gameplay source is UTF-8")
-        .replacen(
-            "?player velocity Vec3 { x: ?velocity-x, y: ?jump-speed, z: ?velocity-z }",
-            "?player velocity Vec3 { x: ?jump-speed, y: ?jump-speed, z: ?velocity-z }",
-            1,
-        )
-        .into_bytes()
+    gameplay_source_with_world(DASH_WORLD)
 }
 
 macro_rules! id {
