@@ -463,7 +463,8 @@ Rust owns bounded framing, exact pins, cache storage, transactions, and
 scheduling only. A Rust parser, type/constraint checker, semantic query engine,
 diagnostic switch, or alternate evaluator fails the gate.
 
-The first proof uses one arithmetic definition and one RelationSchema with one
+The first proof uses one arithmetic singleton-field constraint and one
+RelationSchema with one
 request. A transactional source edit must produce stable typed diagnostics,
 exact semantic dependencies, `why`, `prevent`, `achieve`, and `diff` answers,
 then a pure `run` result with no StateRevision. `propose` returns a candidate
@@ -785,14 +786,14 @@ instrumented warm-up and lazy-cache evidence.
 ### 13. Frozen ordinary-source ergonomics
 
 The process machinery must remain absent from ordinary authored source unless
-the source is actually specifying a process boundary. The ratified process
-companion copies these UTF-8/LF specimens byte-for-byte and preserves them
-through canonical parse/print/parse.
+the source is actually specifying a process boundary. The executable source
+acceptance corpus must copy these UTF-8/LF specimens byte-for-byte and preserve
+them through canonical parse/print/parse.
 
-Pure definition:
+Pure singleton field constraint:
 
 ```clause
-answer := 20 + 22
+answer: 20 + 22
 ```
 
 Relational request:
@@ -812,7 +813,7 @@ on collect ?actor
     ?coin owner ?actor
   withdraw
     ?coin state active
-  admit
+  include
     ?coin state collected
 ```
 
@@ -832,14 +833,14 @@ function map
     mapped: Sequence of Result
   run
     region output
-      mutable builder := empty Sequence of Result
+      mutable builder: empty Sequence of Result
       borrow read items as source
         lease write builder as sink
           for item in source
             append mapping(item) to sink
       return freeze move builder
 
-upper-names := map(player-names) with
+upper-names: map(player-names) with
   Item = Text
   Result = Text
   mapping = uppercase
@@ -848,14 +849,14 @@ upper-names := map(player-names) with
 This fourth block is the exact syntax-authority specimen. Its dependency
 context supplies the accepted meanings of `Type`, `Maps`, `Sequence`, `empty`,
 `append`, `freeze`, and `uppercase`; none is a host intrinsic selected by
-spelling. The companion freezes the UTF-8/LF bytes and the exact pre- and post-
-edit semantic/cache sets.
+spelling. The acceptance corpus must freeze the UTF-8/LF bytes and the exact
+pre- and post-edit semantic/cache sets.
 
 The first two blocks contain no authored ApplicationId, ActivationId, StepId,
 RunId, ContinuationId, revision pin, authority token, scheduler, budget, trace,
 or materialization plan. Their checked crosswalk still exposes every required
 semantic identity and pin. The third exposes only the already canonical
-process-relevant `on`/`when`/`withdraw`/`admit` vocabulary; actual activation,
+process-relevant `on`/`when`/`withdraw`/`include` vocabulary; actual activation,
 event occurrence, Step identity, and constitutional Admission remain governed
 boundaries rather than user bookkeeping. The fourth exposes ownership/lifetime
 words only where they change alias, escape, or reclamation meaning. Until

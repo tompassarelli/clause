@@ -29,15 +29,18 @@ shape Vec2
   x: F32
   y: F32
 
-gravity := 9.81
-origin := Vec2 { x: 0.0, y: 0.0 }
+gravity: 9.81
+origin: Vec2 { x: 0.0, y: 0.0 }
 ```
 
 `referent` introduces or resolves a designation. `∈` expresses ordinary
-membership, `:=` defines one denotation, and `:` remains structural. Source
-forms elaborate into neutral recursive Terms plus contextual
-`ClauseJudgment`s and candidate formations. Lower-case clause means one such
-contextual judgment over a Term, not an Application or governed Judgment.
+membership, `:` constrains a binder or role to one field, and `=` remains
+equality. Cardinality belongs to the field or schema; a singleton field yields
+the derived one-denotation case often called definition, but definition is not
+a primitive syntax category. Source forms elaborate into neutral recursive
+Terms plus contextual `ClauseJudgment`s and candidate formations. Lower-case
+clause means one such contextual judgment over a Term, not an Application or
+governed Judgment.
 Checked formation still does not assert, authorize, or execute a Term.
 
 Indentation supplies containment and an explicitly declared omitted role. It
@@ -148,15 +151,15 @@ on collect ?actor
     ?coin owner ?actor
   withdraw
     ?coin state active
-  admit
+  include
     ?coin state collected
 ```
 
-`when` observes one exact base StateRevision. `withdraw` and source `admit`
+`when` observes one exact base StateRevision. `withdraw` and source `include`
 stage one grounded, conflict-checked candidate delta during a valid Activation
 after only the prerequisites declared by its selected Mode have closed. The
-lower-case source word does not perform constitutional
-Admission. Only a separate governance operation can admit the candidate and
+source addition word does not perform constitutional Admission. Only a
+separate governance operation can admit the candidate and
 allocate a successor StateRevision.
 
 Pure running needs no revision at all. It may return values and evidence while
@@ -231,14 +234,14 @@ function map
     mapped: Sequence of Result
   run
     region output
-      mutable builder := empty Sequence of Result
+      mutable builder: empty Sequence of Result
       borrow read items as source
         lease write builder as sink
           for item in source
             append mapping(item) to sink
       return freeze move builder
 
-upper-names := map(player-names) with
+upper-names: map(player-names) with
   Item = Text
   Result = Text
   mapping = uppercase

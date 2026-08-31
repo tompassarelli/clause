@@ -2032,11 +2032,12 @@ remains unratified.
 ## Source projection
 
 Human-readable source is a canonical bidirectional projection, not the
-program's identity. Parsing may use a transient lossless CST. Every source line
-elaborates to a Term, candidate formations, and a designated focus; every
-indented child receives the parent's focus as its omitted left operand. The
-parent Reading chooses focus. The child never guesses a relation from
-indentation.
+program's identity. Parsing may use a transient lossless CST. Every source
+construct elaborates to a nonempty collection of independently identified
+semantic emissions and a designated focus. Every block head selects one
+declared child grammar before inspecting child semantics; a child receives the
+parent focus only when its selected production says how. The child never
+guesses a relation from indentation.
 
 The reader chooses a CST production deterministically from explicit head shape
 and declared grammar. Elaboration resolves every local designation through the
@@ -2051,14 +2052,34 @@ relations, never successful whole-program inference or raw-spelling dispatch.
 Conceptually:
 
 ```text
-elaborate(line) -> (term, candidate formations, focus)
+ElaborationResult {
+  emissions: NonEmpty<Emission>
+  focus: Focus
+}
+
+Focus {
+  term: Term
+  origin: SourceSlice
+}
+
+Emission {
+  term: Term
+  candidateFormations: FiniteCollection<FormationCandidate>
+  stance: Stance
+  origin: SourceSlice
+}
+
+elaborate(sourceConstruct, ElaborationContext) -> ElaborationResult | Error
 ```
 
-For a bare subject, term and focus are that subject. For a completed relation,
-the relation Term may become focus. A header with a declared open slot may
-allocate a structural or nominal focus. Indentation itself never means
-membership, body, containment, application, ownership, sequencing, or
-authority.
+Each emission is checked and diagnosed independently and retains its own exact
+source origin, provenance, and later occurrence identity. Equal emitted Terms
+do not deduplicate emissions. One source construct may emit several clauses;
+one semantic clause never secretly becomes a list of clauses. For a bare
+subject, focus is that subject. For a completed relation, the relation Term may
+become focus. A header with a declared open slot may allocate a structural or
+nominal focus. Indentation itself never means membership, body, containment,
+application, ownership, sequencing, or authority.
 
 For every closed printable source context:
 

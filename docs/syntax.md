@@ -13,25 +13,60 @@ language. Executable acceptance never makes another spelling canonical.
 
 ## Governing rule
 
-> Every line elaborates to a Term, candidate formations, and a designated
-> focus. Every indented child receives the parent focus as its omitted left
-> operand under the parent's declared Reading. Indentation determines
-> containment and supplies no domain relation of its own.
+> Every source construct elaborates to one or more independently identified
+> semantic emissions and one designated focus. Every block head selects one
+> declared child grammar before child semantics are inspected. A child receives
+> the parent focus only when its selected production says how. Indentation
+> determines containment and supplies no domain relation of its own.
 
 Conceptually:
 
 ```text
-elaborate(line) -> (term, candidate formations, focus)
+ElaborationResult {
+  emissions: NonEmpty<Emission>
+  focus: Focus
+}
+
+Focus {
+  term: Term
+  origin: SourceSlice
+}
+
+Emission {
+  term: Term
+  candidateFormations: FiniteCollection<FormationCandidate>
+  stance: Stance
+  origin: SourceSlice
+}
+
+elaborate(sourceConstruct, ElaborationContext) -> ElaborationResult | Error
 ```
 
+`SourceSlice` is the exact lossless subspan responsible for that emission, not
+merely the enclosing line. `Stance` is the exact contextual stance selected by
+the source production; it is not inferred from the resulting Term. Every
+emission is checked separately and retains its own formation diagnostics,
+source-origin record, provenance, and later occurrence identity. Structural
+equality among emitted Terms never deduplicates emissions.
+
+One source construct may therefore emit several clauses. One semantic clause
+never secretly becomes a list of clauses. This is the common contract for
+membership groups, `enum` children, grouped declarations, and any later
+ratified macro or destructuring form.
+
+Canonical printing followed by elaboration preserves the focus and the ordered
+emission multiplicity, Terms, candidate-formation obligations, and stances.
+Printing may replace physical source slices with their canonical printed
+slices, but the source map must retain the item correspondence; it may not
+merge equal emissions or transfer an origin between them.
+
 A subject-focus reading designates the subject Term directly. A construct head
-may instead designate a structural declaration Term as focus and one explicit
-child relation. For example, `enum Game` can elaborate a bare `Chess` child as
+may instead designate a structural declaration Term as focus and an exact child
+grammar. For example, `enum Game` can elaborate a bare `Chess` child as
 `[enum-declaration, has-member-entry, Chess]`; checked elaboration then produces
-the ordinary membership formation and assertion candidate. The parent Reading
-selects focus and child
-relation before inspecting the child's domain meaning. The child never guesses
-them from indentation.
+an ordinary membership emission under an assertive stance. The parent Reading
+selects focus and the child's contribution before inspecting the child's domain
+meaning. The child never guesses them from indentation.
 
 The reader selects a CST production deterministically from explicit head shape
 and declared grammar. Elaboration then resolves each local designation through
@@ -43,9 +78,12 @@ regroup the CST, reinterpret a sibling, or select a different parent Reading.
 This keeps incremental parsing and recovery independent of successful whole-
 program inference without permitting raw spelling to select behavior.
 
-A parent can license children in exactly two ways.
+A block head selects exactly one declared child grammar from its own CST
+production. That grammar fixes the accepted child productions, their order and
+multiplicity, and whether each child receives the parent focus. It cannot be
+changed by a child's successful designation, Reading, formation, or type.
 
-An explicit construct head can give every child one homogeneous role:
+An explicit construct head may select a homogeneous child grammar:
 
 ```clause
 enum Game
@@ -53,7 +91,8 @@ enum Game
   Soccer
 ```
 
-Or a subject-focus header can require every child to name its own edge:
+A subject-focus header selects a focused-edge child grammar in which every
+child names its own edge:
 
 ```clause
 iron-door
@@ -63,9 +102,14 @@ iron-door
   state locked
 ```
 
-An unkeyworded block header containing one designation has exactly one
-canonical CST production: `SubjectFocus`. The parser selects that production
-from the header form; it does not inspect the mix of children to classify the block.
+Constructs such as `relation`, `function`, `law`, `on`, and requests instead
+select their own heterogeneous child grammars. Each accepted child head has one
+declared production and one declared focus rule. Heterogeneity never licenses
+child-driven block reclassification.
+
+An unkeyworded block header containing one designation has exactly one CST
+production: `SubjectFocus`. The parser selects that production from the header
+form; it does not inspect the mix of children to classify the block.
 The header must own at least one explicit edge child. Removing every child
 makes it an invalid empty focus, never a bare Referent declaration; use
 `referent iron-door` for that declaration.
@@ -97,8 +141,8 @@ shape Vec2
   x: F32
   y: F32
 
-gravity := 9.81
-origin := Vec2 { x: 0.0, y: 0.0 }
+gravity: 9.81
+origin: Vec2 { x: 0.0, y: 0.0 }
 
 relation connects
   reads {door: Door} connects {origin: Space} to {destination: Space}
@@ -127,7 +171,7 @@ on collect ?actor
     ?coin owner ?actor
   withdraw
     ?coin state active
-  admit
+  include
     ?coin state collected
 
 select all ?destination in egress
@@ -176,18 +220,27 @@ enters at the proposal boundary; Admission authority enters only at the
 separate Admission boundary. Neither comes from a source grouping keyword or
 the candidate snapshot itself.
 
-## Membership, definition, equality, and focus
+## Membership, field constraints, equality, and focus
 
-Each operator has one conceptual job:
+Each surface form has one conceptual job:
 
 | Form | Meaning |
 | --- | --- |
 | `x ∈ C` | assert ordinary membership relational content |
-| `name := term` | define a name as one denotation |
-| `role: Domain` | annotate a structural role or field |
+| `x: F` | constrain binder or role `x` to field `F` |
 | `x = y` | assert equality relational content |
 | `?name` | use one correlated logical variable |
 | `?_` | use one fresh anonymous query hole |
+
+An ordinary top-level relational line selects an assertive source production.
+Reading and elaboration produce proposition content, an assertive stance
+candidate, and an independent source-origin record; neither operation asserts
+the Term. Checked candidate-snapshot construction may then allocate one fresh
+nominal `AssertionOccurrence` for each accepted emission. Authority comes from
+that occurrence's admitted context, never from punctuation, parsing, or Term
+construction. Relation patterns inside `where`, `when`, `if`, and other
+declared child grammars select their grammar-owned non-assertive stances and do
+not become assertions merely because their Terms equal top-level content.
 
 Membership is repeatable and independently provenanced:
 
@@ -196,8 +249,41 @@ iron-door ∈ Door
 iron-door ∈ Lockable
 ```
 
+A statement-level membership group is source grouping sugar:
+
+```clause
+iron-door ∈ Door, Lockable
+```
+
+Its CST is `MembershipGroup(iron-door, [Door, Lockable])`. It elaborates
+exactly to two ordered, independent emissions:
+
+```text
+elaborate(s ∈ t₁, …, tₙ)
+  = NonEmpty[
+      elaborateMembership(s, t₁, origin(t₁)),
+      …,
+      elaborateMembership(s, tₙ, origin(tₙ))
+    ]
+```
+
+Each emission has the ordinary membership Term and candidate formation, an
+assertive stance, and the exact source slice of its own target. The focus
+retains the shared subject slice separately. Each accepted emission may
+allocate its own `AssertionOccurrence`; equal targets or equal resulting
+proposition Terms are not deduplicated.
+
 Inside a focus block, leading `∈` supplies the membership edge while the block
-supplies only its subject:
+supplies only its subject. The child may use the same target grouping:
+
+```clause
+iron-door
+  ∈ Door, Lockable
+  connects Cellar to Armory
+  state locked
+```
+
+It emits the same two independent membership candidates as:
 
 ```clause
 iron-door
@@ -205,35 +291,107 @@ iron-door
   ∈ Lockable
 ```
 
+The reader also accepts an explicit `MembershipFocusHeader`:
+
+```clause
+iron-door ∈ Door, Lockable
+  connects Cellar to Armory
+  state locked
+```
+
+The left operand is always the block focus. Every listed target emits one
+independent membership candidate, and the indented children are ordinary
+focused-edge children. Adding, removing, or changing a child cannot alter the
+header memberships, focus, or CST production. Header targets cannot donate
+tokens to a child Reading.
+
+The initial canonical formatter expands every compact membership group. It
+prints a standalone group as one assertion line per target and either focused
+compact form as:
+
+```clause
+iron-door
+  ∈ Door
+  ∈ Lockable
+  connects Cellar to Armory
+  state locked
+```
+
+The formatter never combines memberships across comments, documentation
+attachments, stances, scopes, authorities, or independently retained source
+origins. Compact printing remains unratified until item-level origin identity
+survives the source-map edit and parse–print–parse laws.
+
 Every non-membership child must resolve as a declared relation phrase whose
 contract explicitly names the omitted subject role. A child cannot donate
 tokens back into the focus designation, and changing one child cannot
 reclassify its siblings or header.
 
+The comma is grouping syntax only. It is neither a Term constructor nor a
+semantic connective. For compact input `iron-door ∈ Door, Lockable`, these
+competing CST/elaboration results are required negatives:
+
+```text
+Membership(iron-door, Sequence(Door, Lockable))
+Membership(iron-door, Intersection(Door, Lockable))
+Comma(Membership(iron-door, Door), Lockable)
+```
+
+An explicitly bracketed `iron-door ∈ [Door, Lockable]`, if its sequence Term
+forms, is a different single-target assertion and is never the elaboration of
+the compact group.
+
+An unparenthesized statement-level comma is accepted only by
+`MembershipTargetList`; it cannot express a tuple, sequence, conjunction,
+intersection, argument list, or cardinality rule. `iron-door ∈ Door,` and an
+empty target are reader errors. `iron-door ∈ Door, Door` is valid and emits
+two independently provenanced clauses. A bare child under a
+`MembershipFocusHeader` remains invalid:
+
+```clause
+iron-door ∈ Door, Lockable
+  Armory
+```
+
 Canonical membership uses only `∈`. Raw `::` and `member_of` are invalid.
 An editor may replace the input chord `\in` with `∈` before parsing; the
 formatter and agents emit the glyph directly.
 
-Definitions use `:=`:
+Colon is the sole canonical binder/role field constraint:
 
 ```clause
-gravity := 9.81
-origin := Vec2 { x: 0.0, y: 0.0 }
+gravity: 9.81
+origin: Vec2 { x: 0.0, y: 0.0 }
 ```
 
-Colon remains structural:
+`x: F` emits the declared formation constraining binder or role `x` to field
+`F`. Cardinality belongs to that field or its governing schema, never to the
+colon token. When `F` has exactly one admissible denotation, the constraint has
+the derived one-denotation case often called a definition; definition is not a
+primitive syntax category or a second semantic relation.
+
+Colon has no freely spaced infix form. There is no whitespace before `:` and
+exactly one ASCII space follows it. `x : F`, `x:F`, and `x  :  F` reject; the
+formatter emits `x: F`. `:=` is a reader error, not definition sugar or a
+deprecated alias.
+
+The same constraint form is structural inside declarations and values:
 
 ```clause
 shape Vec2
   x: F32
   y: F32
 
-origin := Vec2 { x: 0.0, y: 0.0 }
+origin: Vec2 { x: 0.0, y: 0.0 }
 ```
+
+The braces do not turn `x` and `y` into host-object labels. Each entry is a
+role-field constraint whose Reading maps that surface role to one exact
+`RoleId`; record order never becomes role identity.
 
 Focused `state locked` is an ordinary declared relation with the focused
 Referent in its declared subject role. It is not object-field mutation or a
-scoped definition. Cardinality belongs to the relation contract.
+colon constraint. Cardinality belongs to the relation contract.
 
 ## Relation, operator, mode, and Reading declarations
 
@@ -315,6 +473,24 @@ mode given thing yields value: some
 mode given thing yields value: many
 ```
 
+Their bounds are exact:
+
+```text
+one  = [1, 1]
+maybe = [0, 1]
+some  = [1, ∞)
+many  = [0, ∞)
+```
+
+The lower bound is inclusive; a finite upper bound is inclusive; `∞` has no
+finite member and denotes no upper bound. These words constrain result
+multiplicity only through the selected Mode and never classify the result
+value as a collection.
+
+In `yields destination: many`, `many` is the Mode's declared cardinality field
+for the `destination` role. Its schema supplies `[0, ∞)`; the colon token
+supplies no cardinality or singleton default.
+
 Omitting cardinality is invalid; absence never defaults to `one`. `0..1`, `+`,
 and `*` are not canonical cardinality punctuation.
 
@@ -387,8 +563,8 @@ ontology. A closed form may be quoted or inspected without becoming a nominal
 Application. Every Application receives `ApplicationId`; every Activation then
 receives a distinct `ActivationId`.
 
-`:=` is definition and `=` is equality. Canonical relation modes use `given`
-and `yields`; `->` is not generic directional punctuation.
+`:` is a binder/role field constraint and `=` is equality. Canonical relation
+modes use `given` and `yields`; `->` is not generic directional punctuation.
 
 ## Functions, static reuse, and local ownership
 
@@ -414,14 +590,14 @@ function map
     mapped: Sequence of Result
   run
     region output
-      mutable builder := empty Sequence of Result
+      mutable builder: empty Sequence of Result
       borrow read items as source
         lease write builder as sink
           for item in source
             append mapping(item) to sink
       return freeze move builder
 
-upper-names := map(player-names) with
+upper-names: map(player-names) with
   Item = Text
   Result = Text
   mapping = uppercase
@@ -432,12 +608,21 @@ The declaration has these exact surface rules:
 - parameter and constraint children introduce stable named static slots;
   dependency determines their checked telescope order, while source traversal
   order does not become identity;
-- `with` closes every uninferred static parameter and constraint by name.
-  Omission, addition, ambiguity, or a wrong-domain value rejects before an
-  ApplicationForm exists; ambient instance lookup and positional evidence are
-  not canonical;
-- a `function` call uses the exact Reading derived from its named `given` roles
-  and the selected single-result Mode. The elaborated ApplicationForm stores
+- every `with` child is an equality constraint of the form
+  `StaticSlotName = Term`. It is not assignment or keyword-argument binding.
+  The use is accepted only when the named equations have one exact normalized
+  solution that closes every uninferred static parameter and constraint.
+  Missing, extra, duplicate, ambiguous, or wrong-domain equations reject
+  before an ApplicationForm exists; equation order is immaterial, and ambient
+  instance lookup and positional evidence are not canonical;
+- every function-call Reading owns an explicit mapping from each surface phrase
+  slot to one exact `RoleId`. The compact `map(player-names)` form is ratified
+  because its Reading has exactly one positional phrase slot and maps that slot
+  to the `items` RoleId. Declaration order, role-table order, tuple position,
+  and matching value shape are never fallback mappings. A function with more
+  than one `given` role requires a separately declared Reading that fixes every
+  surface-slot-to-RoleId mapping; no implicit multi-argument positional
+  function Reading is ratified yet. The elaborated ApplicationForm stores
   RoleIds and static use records rather than argument positions;
 - `region name` opens a lexical DeterministicRegion. `mutable` introduces an
   Activation-local slot; neither operation creates a StateRevision or
@@ -498,19 +683,19 @@ on collect ?actor
     ?coin owner ?actor
   withdraw
     ?coin state active
-  admit
+  include
     ?coin state collected
 ```
 
 `when` constrains one exact observed/base StateRevision. All `withdraw` and
-`admit` content is grounded, conflict-checked, and staged as one candidate delta
+`include` content is grounded, conflict-checked, and staged as one candidate delta
 by a valid transition Activation and its Steps after the selected Mode's exact
-declared prerequisites have been satisfied. The source word `admit`
-names candidate additions in this established delta vocabulary; it does not
-perform constitutional Admission. Only the separate governance operation
-commits the successor StateRevision. Source order never resolves competing
-declarative writes, and a trace of the transition is not the Activation, Step,
-or transition occurrence itself.
+declared prerequisites have been satisfied. `include` names candidate
+additions only. Constitutional `admit` is reserved for the separate governed
+operation that commits the successor StateRevision. An `admit` child in a
+candidate-delta block is a reader error, not an alias for `include`. Source
+order never resolves competing declarative writes, and a trace of the
+transition is not the Activation, Step, or transition occurrence itself.
 
 The `on` block declares process constitution. Merely representing it or an
 event does not run it. An actual trigger remains an independently identified
@@ -537,7 +722,7 @@ A reusable change set is explicit:
 delta import-change
   withdraw
     North imports West
-  admit
+  include
     South imports North
 ```
 
@@ -547,7 +732,7 @@ A program-history candidate names exact ancestry:
 revision adopt-impact from impact
   withdraw
     North imports West
-  admit
+  include
     South imports North
 ```
 
@@ -598,7 +783,15 @@ select one ?person in World
 ```
 
 `select one` requires exactly one deduplicated projected row and fails on zero
-or many.
+or many. A projected row is the ordered sequence of closed projected Terms in
+the request head's explicit projection-slot order. Within this initial query
+profile, row equality is exact structural Term equality after checked
+elaboration; no type-directed coercion or observational equivalence is
+inferred. Provenance, supports, derivations, and Observation identities do not
+participate in row equality. Equal rows reached through distinct witnesses
+deduplicate to one value row while retaining all independently identified
+support alternatives for explanation. Deduplication never merges the
+underlying assertions, observations, or evidence.
 
 Ordered at-most-one selection:
 
@@ -610,7 +803,13 @@ select first ?person in World
 ```
 
 `select first` may return no row, but it always requires explicit `order by`.
-Complete canonical row order breaks remaining ties. Storage or insertion order
+Each order key must select an exact declared total-order Mode for its value
+domain. Keys compare in source order under those Modes; canonical Term bytes of
+the complete projected row, length-delimited in projection-slot order, break
+remaining ties lexicographically. A request whose projected Term lacks the
+ratified canonical encoding or whose order key lacks one exact total-order Mode
+is rejected during checking. Clause does not invent a universal semantic order
+for such a value. Storage, insertion, derivation, support, or observation order
 never becomes language semantics.
 
 Existence uses an explicit request head:
@@ -668,19 +867,122 @@ for n in 101..104
 Ranges are inclusive, ascending integer ranges. Brackets remain structural
 sequence terms; they are not also range or focus-template delimiters.
 
-## Layout, comments, and names
+## Normative reader boundary
 
-- Indentation is any depth in exact increments of two ASCII spaces.
-- Tabs are invalid indentation.
+Lexing and CST selection are complete before designation resolution,
+formation, type checking, or child semantics. The reader applies these rules
+in order:
+
+1. Normalize CRLF to LF for layout while preserving original byte spans in the
+   lossless CST. Split physical lines; Clause has no backslash or implicit
+   expression-line continuation.
+2. Establish `INDENT` and `DEDENT` tokens from exact multiples of two ASCII
+   spaces. Blank and comment-only lines do not alter indentation.
+3. Scan strings and quoted designations, then longest fixed punctuation, then
+   numbers and unquoted designations. Tokens are maximal; semantic lookup can
+   never split or join them.
+4. Select the line production from its explicit head tokens. A literal keyword
+   is a keyword only in the declared grammatical position; successful semantic
+   resolution cannot turn an identifier into a construct head.
+5. Wrap an already selected line head in its declared block production when an
+   `INDENT` follows. The head itself is not reparsed after children are known.
+
+The relevant layout grammar is:
+
+```text
+SourceFile       ::= Trivia* TopLevelConstruct* EOF
+TopLevelConstruct ::= SimpleConstruct NEWLINE
+                    | BlockHead NEWLINE INDENT ChildConstruct+ DEDENT
+MembershipHead  ::= TermNoTopComma HSPACE+ "∈" HSPACE+
+                    MembershipTargetList
+MembershipTargetList ::= TermNoTopComma
+                         (HSPACE* "," HSPACE* TermNoTopComma)*
+FocusedMembershipChild ::= "∈" HSPACE+ MembershipTargetList
+FieldConstraint ::= BinderOrRole ":" HSPACE Field
+MembershipConstruct ::= MembershipHead
+                      | MembershipHead NEWLINE
+                        INDENT FocusedEdgeChild+ DEDENT
+SubjectFocus    ::= Designation NEWLINE INDENT FocusedEdgeChild+ DEDENT
+```
+
+`MembershipHead` is one line production whether or not it owns children. In a
+standalone construct it supplies assertion emissions and subject focus; in a
+block it additionally selects the focused-edge child grammar. `TermNoTopComma`
+may contain commas only inside its own balanced `()`, `[]`, or `{}` delimiters.
+`SubjectFocus` contains exactly one Designation and cannot be selected for an
+empty block. Keyworded heads select their own declared child grammars as
+specified above.
+
+`HSPACE` is exactly one U+0020 ASCII space. `HSPACE+` means one or more such
+spaces where flexible separation is declared; `FieldConstraint` requires
+exactly one. Tabs and other Unicode space characters never satisfy it. Around
+a membership-group comma, the reader permits the declared `HSPACE*`; the
+formatter emits no space before the comma and one after it.
+
+Familiar mathematical notation is a usability prior, never semantic
+authority. A notation is ratified only when its tokenization, arity,
+precedence, associativity, and binding scope are fixed; elaboration is exact and
+total for every accepted CST; no hidden coercion, quantification, conjunction,
+or cardinality rule is inferred; siblings and children cannot reinterpret it;
+nominal identity, multiplicity, provenance, authority, and item origins survive
+elaboration; and one canonical formatter plus explicit competing-
+interpretation negatives are specified.
+
+### Tokens, operators, and delimiters
+
+- Longest fixed punctuation wins: `<=`, `>=`, `!=`, and `..` are scanned
+  before their one-character prefixes. `∈`, `=`, `:`, `,`, parentheses,
+  brackets, and braces are distinct tokens. `:=`, `::`, `->`, and `~>` are
+  reader errors in canonical source, not alternate spellings.
+- Unquoted semantic identifiers match
+  `[A-Za-z_][A-Za-z0-9_-]*` maximally. Consequently `a-b`, `Door-101`, and
+  `x--y` are each one Designation token. A symbolic infix operator must have at
+  least one ASCII space on both sides: subtraction is `a - b`; `a- b` and
+  `a -b` reject instead of being guessed. The same spacing rule applies to
+  `+`, `*`, `/`, `<`, `<=`, `>`, `>=`, `=`, `!=`, and `∈`.
+- At a position where a term may begin, `-` immediately followed by a digit is
+  part of a signed numeric literal. Initial canonical integer syntax is `0` or
+  an optional `-` followed by a nonzero digit and zero or more digits. Initial
+  canonical decimal syntax adds `.` and one or more fractional digits. Leading
+  `+`, leading zeroes, omitted integer or fractional digits, digit separators,
+  and exponent notation are unratified. Canonical printing removes integer
+  leading zeroes and otherwise preserves the exact checked numeric value,
+  including a semantically distinct floating negative zero.
+- Postfix calls and delimited structural terms bind first; `*` and `/` bind
+  next; `+` and `-` next; `<`, `<=`, `>`, and `>=` next; and `=` and `!=` next.
+  Arithmetic operators associate left. Comparison and equality operators do
+  not chain. Membership is a statement/focused-edge production, not another
+  expression-precedence level. `:`, `..`, and statement-level comma have
+  only their declared construct roles. Parentheses are required whenever these
+  rules do not select one CST.
+- `()`, `[]`, and `{}` must balance on one physical line in the initial reader.
+  A mismatched or unclosed delimiter rejects that construct; recovery begins at
+  the next eligible sibling boundary. Comma separates fields or elements only
+  inside the selected delimited production, except for
+  `MembershipTargetList`. There is no general comma expression.
+
+Double-quoted Text literals contain UTF-8 scalar values and accept exactly
+`\"`, `\\`, `\n`, `\r`, `\t`, and `\u{H}` through `\u{HHHHHH}` where the
+hexadecimal value is a Unicode scalar. Unknown escapes, surrogate values, raw
+newlines, and unescaped control characters reject. Text is not NFC-normalized
+by the reader. Canonical printing emits printable scalars directly, escapes
+`"` and `\`, uses the named escapes above for newline, carriage return, and
+tab, and uses lowercase `\u{...}` for other controls.
+
+### Layout, comments, and names
+
+- Indentation is any depth in exact increments of two ASCII spaces. Tabs are
+  invalid anywhere in indentation.
 - Input accepts LF or CRLF, whitespace-only blank lines, and trailing spaces.
   Parsing normalizes trivia without changing lossless source evidence.
 - Canonical formatting emits LF, removes trailing spaces, and uses two spaces
   per level.
-- `#` starts a nonsemantic line comment.
-- A contiguous `##` documentation comment attaches to the next declaration,
-  request, event, or `for` head.
-- Unquoted semantic identifiers are ASCII atoms beginning with a letter or `_`
-  and continuing with letters, digits, `_`, or `-`.
+- Outside a Text literal or quoted designation, `#` starts a nonsemantic line
+  comment and consumes through the line ending.
+- A contiguous run of `##` documentation-comment lines at the indentation of
+  the following construct attaches to that next declaration, request, event,
+  or `for` head. An intervening blank line or non-documentation comment breaks
+  attachment.
 - U+002F `/` is forbidden in every Designation spelling. In designation
   position, `x/y` rejects during reading rather than becoming one name; `/`
   remains a separate infix operator where the expression grammar permits it.

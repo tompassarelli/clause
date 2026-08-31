@@ -119,7 +119,7 @@ on input ?player Vec3 { x: ?intent-x, y: 0.0, z: ?intent-z }
     ?player horizontal intent ?old-intent
   withdraw
     ?player horizontal intent ?old-intent
-  admit
+  include
     ?player horizontal intent Vec3 { x: ?intent-x, y: 0.0, z: ?intent-z }
 
 on jump ?player
@@ -130,7 +130,7 @@ on jump ?player
   withdraw
     ?player velocity Vec3 { x: ?velocity-x, y: ?velocity-y, z: ?velocity-z }
     ?player grounded true
-  admit
+  include
     ?player velocity Vec3 { x: ?velocity-x, y: ?jump-speed, z: ?velocity-z }
     ?player grounded false
 
@@ -152,7 +152,7 @@ on tick ?player ?dt
   withdraw
     ?player position Vec3 { x: ?position-x, y: ?floor, z: ?position-z }
     ?player velocity Vec3 { x: ?velocity-x, y: 0.0, z: ?velocity-z }
-  admit
+  include
     ?player position Vec3 { x: ?next-x, y: ?floor, z: ?next-z }
     ?player velocity Vec3 { x: (?next-x - ?position-x) / ?dt, y: 0.0, z: (?next-z - ?position-z) / ?dt }
 
@@ -176,7 +176,7 @@ on tick ?player ?dt
   withdraw
     ?player position Vec3 { x: ?position-x, y: ?position-y, z: ?position-z }
     ?player velocity Vec3 { x: ?velocity-x, y: ?velocity-y, z: ?velocity-z }
-  admit
+  include
     ?player position Vec3 { x: ?next-x, y: ?position-y + (?velocity-y + ?gravity * ?dt) * ?dt, z: ?next-z }
     ?player velocity Vec3 { x: (?next-x - ?position-x) / ?dt, y: ?velocity-y + ?gravity * ?dt, z: (?next-z - ?position-z) / ?dt }
 
@@ -201,7 +201,7 @@ on tick ?player ?dt
     ?player position Vec3 { x: ?position-x, y: ?position-y, z: ?position-z }
     ?player velocity Vec3 { x: ?velocity-x, y: ?velocity-y, z: ?velocity-z }
     ?player grounded false
-  admit
+  include
     ?player position Vec3 { x: ?next-x, y: ?floor, z: ?next-z }
     ?player velocity Vec3 { x: (?next-x - ?position-x) / ?dt, y: 0.0, z: (?next-z - ?position-z) / ?dt }
     ?player grounded true

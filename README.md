@@ -40,7 +40,7 @@ on collect ?actor
     ?coin owner ?actor
   withdraw
     ?coin state active
-  admit
+  include
     ?coin state collected
 ```
 
@@ -48,7 +48,7 @@ The spelling is canonical but is not yet runnable by a supported toolchain.
 `on` declares process constitution; it does not execute merely by being stored.
 A matching occurrence can activate one exact Application under a selected Mode
 and context. `when` observes one StateRevision, while `withdraw` and source
-`admit` stage a candidate delta. Only a separate governed Admission can create
+`include` stage a candidate delta. Only a separate governed Admission can create
 the successor StateRevision.
 
 The semantic path is:
