@@ -9,6 +9,7 @@
 #![forbid(unsafe_code)]
 
 mod carrier;
+mod source_session;
 
 use std::error::Error;
 use std::fmt;
@@ -24,6 +25,10 @@ use clause_substrate::evaluator::{EvalError, Evaluator, StaticError};
 
 use carrier::{CarrierActionV1, WorkbenchCarrier};
 pub use carrier::{WorkbenchCarrierError, WorkbenchCarrierSnapshot};
+pub use source_session::{
+    ResidentSourceAdmissionV1, ResidentSourceCandidateV1, ResidentSourceGenerationV1,
+    ResidentSourceWorkbenchErrorV1, ResidentSourceWorkbenchV1,
+};
 
 pub const BASE_SOURCE: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
