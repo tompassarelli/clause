@@ -202,6 +202,10 @@ function key_configuration(input_sequence, revision, code) {
   return workbench["->InputConfiguration"](revision, [workbench["->InputObservation"](input_sequence, workbench["create-workbench-envelope"](policy(), json_string([json_string({[$$bc$property_key($$bc$keyword("kind"))]: "keyboard", [$$bc$property_key($$bc$keyword("code"))]: code, [$$bc$property_key($$bc$keyword("phase"))]: "down", [$$bc$property_key($$bc$keyword("repeat"))]: false})])))]);
 }
 
+function two_key_configuration(first_input_sequence, revision, first_code, second_code) {
+  return workbench["->InputConfiguration"](revision, [workbench["->InputObservation"](first_input_sequence, workbench["create-workbench-envelope"](policy(), json_string([json_string({[$$bc$property_key($$bc$keyword("kind"))]: "keyboard", [$$bc$property_key($$bc$keyword("code"))]: first_code, [$$bc$property_key($$bc$keyword("phase"))]: "down", [$$bc$property_key($$bc$keyword("repeat"))]: false})]))), workbench["->InputObservation"]((first_input_sequence + 1), workbench["create-workbench-envelope"](policy(), json_string([json_string({[$$bc$property_key($$bc$keyword("kind"))]: "keyboard", [$$bc$property_key($$bc$keyword("code"))]: second_code, [$$bc$property_key($$bc$keyword("phase"))]: "down", [$$bc$property_key($$bc$keyword("repeat"))]: false})])))]);
+}
+
 function process_configuration(input_sequence, revision, ordinal) {
   return workbench["->InputConfiguration"](revision, [workbench["->InputObservation"](input_sequence, workbench["create-workbench-envelope"](policy(), json_string([json_string({[$$bc$property_key($$bc$keyword("kind"))]: "process-occurrence", [$$bc$property_key($$bc$keyword("ordinal"))]: ordinal})])))]);
 }
@@ -360,6 +364,49 @@ test["expect"]($$bc$str(launch_player.grounded)).toBe("false");
 (port.requestAdmission)(started.value.session, airborne_candidate.value.candidate, (result) => (() => { const _a = airborne_admitted, _v = result; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })());
 const airborne_frame = wasm["decode-projected-term-frame"](airborne_admitted.value.frame);
 test["expect"](((airborne_frame.player.position.y > 0.0) ? "true" : "false")).toBe("true");
+(port.disposeSession)(started.value.session);
+return null; }));
+
+const coherent_test_runtime = require("bun:test");
+const register_coherent_test = coherent_test_runtime.test;
+register_coherent_test("one real Wasm session fails resets completes and launches from Clause source", () => Promise.all([Bun.file("./generated/wasm/clause_runtime_bg.wasm").arrayBuffer(), Bun.file("./fixtures/wasm-coherent-game-v1/coherent-game-v1.cwr1.hex").text()]).then((assets) => { const port = wasm["create-wasm-cartridge-port"](initialize_real_session_module(assets[0]), arena_policy());
+const request = wasm["->ExactProcessRequest"](wasm["decode-cwr1-hex"](assets[1]));
+const accepted = ({value: null, watches: {}});
+const started = ({value: null, watches: {}});
+const failure_candidate = ({value: null, watches: {}});
+const failure_admitted = ({value: null, watches: {}});
+const reset_candidate = ({value: null, watches: {}});
+const reset_admitted = ({value: null, watches: {}});
+const completion_candidate = ({value: null, watches: {}});
+const completion_admitted = ({value: null, watches: {}});
+const launch_candidate = ({value: null, watches: {}});
+const launch_admitted = ({value: null, watches: {}});
+(port.acceptPackage)(request, (result) => (() => { const _a = accepted, _v = result; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })());
+(port.startSession)(accepted.value.acceptedPackage, 1, (result) => (() => { const _a = started, _v = result; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })());
+(port.runCandidate)(started.value.session, workbench["->FixedTick"](16), key_configuration(1, 1, "KeyS"), (result) => (() => { const _a = failure_candidate, _v = result; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })());
+test["expect"](json_string(started.value.frame)).toBe("[]");
+(port.requestAdmission)(started.value.session, failure_candidate.value.candidate, (result) => (() => { const _a = failure_admitted, _v = result; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })());
+const failure_frame = wasm["decode-projected-term-frame"](failure_admitted.value.frame);
+test["expect"]($$bc$str(failure_frame.world.objective.state)).toBe("failed");
+(port.runCandidate)(started.value.session, workbench["->FixedTick"](16), two_key_configuration(2, 2, "KeyW", "KeyR"), (result) => (() => { const _a = reset_candidate, _v = result; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })());
+(port.requestAdmission)(started.value.session, reset_candidate.value.candidate, (result) => (() => { const _a = reset_admitted, _v = result; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })());
+const reset_frame = wasm["decode-projected-term-frame"](reset_admitted.value.frame);
+test["expect"]($$bc$str(reset_frame.world.objective.state)).toBe("playing");
+test["expect"]($$bc$str(reset_frame.player.position.z)).toBe("0");
+(port.runCandidate)(started.value.session, workbench["->FixedTick"](16), key_configuration(4, 3, "KeyD"), (result) => (() => { const _a = completion_candidate, _v = result; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })());
+(port.requestAdmission)(started.value.session, completion_candidate.value.candidate, (result) => (() => { const _a = completion_admitted, _v = result; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })());
+const completion_frame = wasm["decode-projected-term-frame"](completion_admitted.value.frame);
+const completed_world = completion_frame.world;
+const completed_collectible = completed_world.collectibles[0];
+test["expect"]($$bc$str(completed_world.objective.state)).toBe("completed");
+test["expect"]($$bc$str(completed_collectible.state)).toBe("collected");
+(port.runCandidate)(started.value.session, workbench["->FixedTick"](16), workbench["->InputConfiguration"](4, []), (result) => (() => { const _a = launch_candidate, _v = result; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })());
+(port.requestAdmission)(started.value.session, launch_candidate.value.candidate, (result) => (() => { const _a = launch_admitted, _v = result; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })());
+const launch_frame = wasm["decode-projected-term-frame"](launch_admitted.value.frame);
+const launch_player = launch_frame.player;
+test["expect"]($$bc$str(launch_player.velocity.y)).toBe("12");
+test["expect"]($$bc$str(launch_player.grounded)).toBe("false");
+test["expect"]($$bc$str(launch_frame.world.objective.state)).toBe("completed");
 (port.disposeSession)(started.value.session);
 return null; }));
 

@@ -1,0 +1,59 @@
+referent Objective
+referent ObjectiveState
+referent playing
+referent completed
+referent failed
+referent resetting
+
+relation objective-state
+  reads {objective: Objective} objective state {value: ObjectiveState}
+  subject objective
+  mode given objective yields value: one
+
+game-objective ∈ Objective
+game-objective objective state playing
+
+on complete-objective ?objective
+  when
+    ?objective objective state ?state
+    player-1 position Vec3 { x: ?player-x, y: ?player-y, z: ?player-z }
+    ?state = playing
+    ?player-x = 0.08
+    ?player-z = 0.0
+  withdraw
+    ?objective objective state ?state
+  include
+    ?objective objective state completed
+
+on fail-objective ?objective
+  when
+    ?objective objective state ?state
+    player-1 position Vec3 { x: ?player-x, y: ?player-y, z: ?player-z }
+    ?state = playing
+    ?player-x = 0.0
+    ?player-z = -0.08
+  withdraw
+    ?objective objective state ?state
+  include
+    ?objective objective state failed
+
+on reset-objective ?objective
+  when
+    ?objective objective state ?state
+    ?state = failed
+  withdraw
+    ?objective objective state ?state
+  include
+    ?objective objective state resetting
+
+on finish-reset ?objective
+  when
+    ?objective objective state ?state
+    player-1 position Vec3 { x: ?player-x, y: ?player-y, z: ?player-z }
+    ?state = resetting
+    ?player-x = 0.0
+    ?player-z = 0.0
+  withdraw
+    ?objective objective state ?state
+  include
+    ?objective objective state playing

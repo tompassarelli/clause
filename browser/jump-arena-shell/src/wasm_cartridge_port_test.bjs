@@ -221,6 +221,30 @@
                                   :phase "down"
                                   :repeat false})])))]))
 
+(defn two-key-configuration
+  [first-input-sequence Int
+   revision Int
+   first-code String
+   second-code String] workbench/InputConfiguration
+  (workbench/->InputConfiguration
+   revision
+   [(workbench/->InputObservation
+     first-input-sequence
+     (workbench/create-workbench-envelope
+      (policy)
+      (json-string [(json-string {:kind "keyboard"
+                                  :code first-code
+                                  :phase "down"
+                                  :repeat false})])))
+    (workbench/->InputObservation
+     (inc first-input-sequence)
+     (workbench/create-workbench-envelope
+      (policy)
+      (json-string [(json-string {:kind "keyboard"
+                                  :code second-code
+                                  :phase "down"
+                                  :repeat false})])))]))
+
 (defn process-configuration
   [input-sequence Int
    revision Int
@@ -596,6 +620,106 @@
                 "true"
                 "false"))
              "true"))
+          ((.-disposeSession port) (.-session @started))
+          nil))))))
+
+(let [coherent-test-runtime Any (require "bun:test")
+      register-coherent-test Any (.-test coherent-test-runtime)]
+  (register-coherent-test
+   "one real Wasm session fails resets completes and launches from Clause source"
+   (fn [] Any
+     (.then
+      (.all Promise [(.arrayBuffer (.file Bun "./generated/wasm/clause_runtime_bg.wasm"))
+                     (.text (.file Bun
+                                   "./fixtures/wasm-coherent-game-v1/coherent-game-v1.cwr1.hex"))])
+      (fn [assets Any] Any
+        (let [port workbench/CartridgePort (wasm/create-wasm-cartridge-port
+               (initialize-real-session-module (nth assets 0))
+               (arena-policy))
+              request wasm/ExactProcessRequest (wasm/->ExactProcessRequest
+               (wasm/decode-cwr1-hex (nth assets 1)))
+              accepted Any (atom nil)
+              started Any (atom nil)
+              failure-candidate Any (atom nil)
+              failure-admitted Any (atom nil)
+              reset-candidate Any (atom nil)
+              reset-admitted Any (atom nil)
+              completion-candidate Any (atom nil)
+              completion-admitted Any (atom nil)
+              launch-candidate Any (atom nil)
+              launch-admitted Any (atom nil)]
+          ((.-acceptPackage port) request
+           (fn [result Any] Any (reset! accepted result)))
+          ((.-startSession port) (.-acceptedPackage @accepted) 1
+           (fn [result Any] Any (reset! started result)))
+
+          ((.-runCandidate port)
+           (.-session @started)
+           (workbench/->FixedTick 16)
+           (key-configuration 1 1 "KeyS")
+           (fn [result Any] Any (reset! failure-candidate result)))
+          (.toBe (test/expect (json-string (.-frame @started))) "[]")
+          ((.-requestAdmission port)
+           (.-session @started)
+           (.-candidate @failure-candidate)
+           (fn [result Any] Any (reset! failure-admitted result)))
+          (let [failure-frame Any (wasm/decode-projected-term-frame
+                                   (.-frame @failure-admitted))]
+            (.toBe
+             (test/expect (str (.-state (.-objective (.-world failure-frame)))))
+             "failed"))
+
+          ((.-runCandidate port)
+           (.-session @started)
+           (workbench/->FixedTick 16)
+           (two-key-configuration 2 2 "KeyW" "KeyR")
+           (fn [result Any] Any (reset! reset-candidate result)))
+          ((.-requestAdmission port)
+           (.-session @started)
+           (.-candidate @reset-candidate)
+           (fn [result Any] Any (reset! reset-admitted result)))
+          (let [reset-frame Any (wasm/decode-projected-term-frame
+                                 (.-frame @reset-admitted))]
+            (.toBe
+             (test/expect (str (.-state (.-objective (.-world reset-frame)))))
+             "playing")
+            (.toBe (test/expect (str (.-z (.-position (.-player reset-frame))))) "0"))
+
+          ((.-runCandidate port)
+           (.-session @started)
+           (workbench/->FixedTick 16)
+           (key-configuration 4 3 "KeyD")
+           (fn [result Any] Any (reset! completion-candidate result)))
+          ((.-requestAdmission port)
+           (.-session @started)
+           (.-candidate @completion-candidate)
+           (fn [result Any] Any (reset! completion-admitted result)))
+          (let [completion-frame Any (wasm/decode-projected-term-frame
+                                      (.-frame @completion-admitted))
+                completed-world Any (.-world completion-frame)
+                completed-collectible Any (nth (.-collectibles completed-world) 0)]
+            (.toBe
+             (test/expect (str (.-state (.-objective completed-world))))
+             "completed")
+            (.toBe (test/expect (str (.-state completed-collectible))) "collected"))
+
+          ((.-runCandidate port)
+           (.-session @started)
+           (workbench/->FixedTick 16)
+           (workbench/->InputConfiguration 4 [])
+           (fn [result Any] Any (reset! launch-candidate result)))
+          ((.-requestAdmission port)
+           (.-session @started)
+           (.-candidate @launch-candidate)
+           (fn [result Any] Any (reset! launch-admitted result)))
+          (let [launch-frame Any (wasm/decode-projected-term-frame
+                                  (.-frame @launch-admitted))
+                launch-player Any (.-player launch-frame)]
+            (.toBe (test/expect (str (.-y (.-velocity launch-player)))) "12")
+            (.toBe (test/expect (str (.-grounded launch-player))) "false")
+            (.toBe
+             (test/expect (str (.-state (.-objective (.-world launch-frame)))))
+             "completed"))
           ((.-disposeSession port) (.-session @started))
           nil))))))
 

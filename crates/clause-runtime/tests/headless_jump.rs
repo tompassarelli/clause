@@ -10,6 +10,7 @@ const BROWSER_SYMBOLIC_COLLECT_CHANGED_ALLOCATION_ROOT_TAG: u8 = 241;
 const BROWSER_GAMEPLAY_ALLOCATION_ROOT_TAG: u8 = 242;
 const BROWSER_GAMEPLAY_CHANGED_ALLOCATION_ROOT_TAG: u8 = 243;
 const BROWSER_GAMEPLAY_DASH_ALLOCATION_ROOT_TAG: u8 = 245;
+const BROWSER_COHERENT_GAME_ALLOCATION_ROOT_TAG: u8 = 252;
 const SOURCE_ALLOCATION_ROOT_TAG: u8 = 211;
 const WORLD: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
@@ -35,6 +36,10 @@ const SPRING_PAD: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../test-vectors/jump-arena/spring-pad.clause"
 ));
+const OBJECTIVE: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../test-vectors/jump-arena/objective.clause"
+));
 const LEDGER: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../test-vectors/ledger/ledger.clause"
@@ -56,6 +61,17 @@ fn gameplay_source_with_world(world: &[u8]) -> Vec<u8> {
 
 fn dash_gameplay_source() -> Vec<u8> {
     gameplay_source_with_world(DASH_WORLD)
+}
+
+fn coherent_gameplay_source() -> Vec<u8> {
+    coherent_gameplay_source_with_objective(OBJECTIVE)
+}
+
+fn coherent_gameplay_source_with_objective(objective: &[u8]) -> Vec<u8> {
+    let mut source = gameplay_source_with_world(DASH_WORLD);
+    source.push(b'\n');
+    source.extend_from_slice(objective);
+    source
 }
 
 macro_rules! id {
@@ -269,6 +285,7 @@ fn headless_program(
     scalar_handlers: &[CanonicalScalarHandlerV1],
 ) -> ExecutableProgramV1 {
     let collectible = scalar_handlers.first();
+    let objective = scalar_handlers.get(3);
     let role = |id| LocalRoleRefV2 {
         schema: RelationSchemaLocalId::new(2),
         role: RoleLocalId::new(id),
@@ -330,6 +347,18 @@ fn headless_program(
             projection_array(scope, vec![collectible]),
         ));
     }
+    if objective.is_some() {
+        world_fields.push((
+            b"objective".as_slice(),
+            projection_object(
+                scope,
+                vec![(
+                    b"state",
+                    projection_role(scope, role(25), ExecutableValueKindV1::Symbol),
+                )],
+            ),
+        ));
+    }
     let template = projection_object(
         scope,
         vec![
@@ -378,6 +407,14 @@ fn headless_program(
             },
         ]);
     }
+    if let Some(objective) = objective {
+        initial_configuration.push(match &objective.initial_value {
+            CanonicalScalarValueV1::Symbol(value) => {
+                ExecutableValueV1::symbol(value).expect("source-owned objective state is bounded")
+            }
+            _ => panic!("coherent objective state must be symbolic"),
+        });
+    }
     let mut projection_bindings = [
         (1, 0, ExecutableValueKindV1::Number),
         (2, 1, ExecutableValueKindV1::Number),
@@ -420,6 +457,13 @@ fn headless_program(
                 },
             ),
         );
+    }
+    if objective.is_some() {
+        projection_bindings.push(ExecutableProjectionBindingV1 {
+            role: role(25),
+            slot: 29,
+            value_kind: ExecutableValueKindV1::Symbol,
+        });
     }
     let mut program = ExecutableProgramV1 {
         // Gameplay coordinates are placeholders populated only by source-owned
@@ -473,12 +517,12 @@ fn headless_program(
         },
     )
     .expect("source-owned tick program lowers to physical slots");
-    let scalar_state_slots = [28, 3, 5];
+    let scalar_state_slots = [28, 3, 5, 29, 29, 29, 29];
     for (index, handler) in scalar_handlers.iter().enumerate() {
         let state_slot = *scalar_state_slots
             .get(index)
             .expect("bounded gameplay profile has collect plus two spring cells");
-        assert_eq!(handler.parameters.len(), 2);
+        assert_eq!(handler.parameters.len(), if index == 5 { 0 } else { 2 });
         lower_canonical_scalar_handler_v1(
             &mut program,
             handler,
@@ -614,7 +658,7 @@ fn physical_plan_with_source(
     };
     let (input_handler, jump_handler, tick_program, scalar_handlers) =
         source_handlers(source, scope);
-    let input_events = vec![
+    let mut input_events = vec![
         ExecutableInputBindingV1 {
             role: role(15),
             source: ExecutableInputSourceV1::Keyboard {
@@ -656,6 +700,50 @@ fn physical_plan_with_source(
             occurrence: occurrence(1, &[]),
         },
     ];
+    if scalar_handlers.len() > 5 {
+        input_events.extend([
+            ExecutableInputBindingV1 {
+                role: role(21),
+                source: ExecutableInputSourceV1::Keyboard {
+                    code: b"KeyW".to_vec(),
+                    phase: ExecutableKeyPhaseV1::Down,
+                },
+                occurrence: occurrence(0, &[0.0, 1.0]),
+            },
+            ExecutableInputBindingV1 {
+                role: role(22),
+                source: ExecutableInputSourceV1::Keyboard {
+                    code: b"KeyW".to_vec(),
+                    phase: ExecutableKeyPhaseV1::Up,
+                },
+                occurrence: occurrence(0, &[0.0, 0.0]),
+            },
+            ExecutableInputBindingV1 {
+                role: role(23),
+                source: ExecutableInputSourceV1::Keyboard {
+                    code: b"KeyS".to_vec(),
+                    phase: ExecutableKeyPhaseV1::Down,
+                },
+                occurrence: occurrence(0, &[0.0, -1.0]),
+            },
+            ExecutableInputBindingV1 {
+                role: role(24),
+                source: ExecutableInputSourceV1::Keyboard {
+                    code: b"KeyS".to_vec(),
+                    phase: ExecutableKeyPhaseV1::Up,
+                },
+                occurrence: occurrence(0, &[0.0, 0.0]),
+            },
+            ExecutableInputBindingV1 {
+                role: role(25),
+                source: ExecutableInputSourceV1::Keyboard {
+                    code: b"KeyR".to_vec(),
+                    phase: ExecutableKeyPhaseV1::Down,
+                },
+                occurrence: occurrence(8, &[]),
+            },
+        ]);
+    }
     ExecutablePhysicalPlanV1 {
         application_shape: constitution
             .application_shape(application)
@@ -674,9 +762,13 @@ fn physical_plan_with_source(
             tick: ExecutableTickBindingV1 {
                 role: role(20),
                 entries: std::iter::once(2)
-                    .chain((0..scalar_handlers.len()).map(|index| {
-                        3 + u16::try_from(index).expect("bounded handler index fits u16")
-                    }))
+                    .chain(
+                        (0..scalar_handlers.len())
+                            .filter(|index| *index != 5)
+                            .map(|index| {
+                                3 + u16::try_from(index).expect("bounded handler index fits u16")
+                            }),
+                    )
                     .collect(),
             },
         }),
@@ -1331,6 +1423,12 @@ fn projected_number(term: &Term) -> f64 {
             .try_into()
             .expect("projected F64 is exact"),
     ))
+}
+
+fn projected_symbol(term: &Term) -> &[u8] {
+    let atom = term.as_atom().expect("projected symbol is an Atom");
+    assert_eq!(atom.kind(), b"clause/process-projected-symbol-v1");
+    atom.canonical_payload()
 }
 
 fn assert_arena_projection(term: &Term, expected_x: f64, expected_velocity_x: f64) {
@@ -2450,6 +2548,203 @@ fn automatic_spring_contact_launches_and_source_only_strength_changes_the_visibl
     ))
     .expect("changed spring CWR1 encodes");
     assert_ne!(base_cwr1, changed_cwr1);
+}
+
+#[test]
+fn coherent_game_fails_resets_completes_and_launches_in_one_persistent_session() {
+    let source = coherent_gameplay_source();
+    let package = checked_program_package_with_scopes_and_roles(1, Vec::new(), 25);
+    let package_id = package.id();
+    let application = ApplicationId {
+        snapshot: package.constitution().snapshot(),
+        local: ApplicationLocalId::new(1),
+    };
+    let plan = physical_plan_with_source(&package, &source);
+    let input = plan
+        .input
+        .as_ref()
+        .expect("coherent game has physical input");
+    assert_eq!(input.tick.entries, [2, 3, 4, 5, 6, 7, 9]);
+    assert!(input.events.iter().any(|binding| {
+        binding.source
+            == (ExecutableInputSourceV1::Keyboard {
+                code: b"KeyR".to_vec(),
+                phase: ExecutableKeyPhaseV1::Down,
+            })
+            && binding.occurrence.entry == 8
+    }));
+    let dash = plan
+        .program
+        .rules
+        .iter()
+        .find(|rule| rule.entry == 1)
+        .expect("coherent source retains the dash-jump transition");
+    assert_eq!(dash.assignments[0].1, ExecutableExpressionV1::Slot(7));
+    assert_eq!(dash.assignments[1].1, ExecutableExpressionV1::Slot(7));
+
+    let changed_objective = std::str::from_utf8(OBJECTIVE)
+        .expect("objective source is UTF-8")
+        .replacen("?player-x = 0.08", "?player-x = 0.16", 1);
+    let changed_source = coherent_gameplay_source_with_objective(changed_objective.as_bytes());
+    let changed_plan = physical_plan_with_source(&package, &changed_source);
+    assert_ne!(
+        encode_executable_physical_plan_v1(&plan).expect("base coherent CPP1 encodes"),
+        encode_executable_physical_plan_v1(&changed_plan).expect("edited coherent CPP1 encodes"),
+        "one Clause-only objective threshold edit changes the physical plan"
+    );
+
+    let (authority, facts) =
+        carrier_authority_for_plan(&package, &plan, BROWSER_COHERENT_GAME_ALLOCATION_ROOT_TAG);
+    let allocation = RuntimeAllocationEpochV1::recorded_for(
+        raw_id(BROWSER_COHERENT_GAME_ALLOCATION_ROOT_TAG),
+        &package,
+        application,
+        &plan,
+        facts.executable(),
+    )
+    .expect("coherent game allocation binds source-owned CPP1");
+    let mut session = PersistentProcessSessionV1::rematerialize(
+        package,
+        authority,
+        application,
+        plan,
+        facts.executable(),
+        allocation,
+    )
+    .expect("coherent game opens one persistent native session");
+    let objective_state = |term: &Term| {
+        let world = projected_object_field(term, b"world");
+        let objective = projected_object_field(world, b"objective");
+        projected_symbol(projected_object_field(objective, b"state")).to_vec()
+    };
+
+    session
+        .apply_physical_input(&ExecutableInputSourceV1::Keyboard {
+            code: b"KeyS".to_vec(),
+            phase: ExecutableKeyPhaseV1::Down,
+        })
+        .expect("southward movement input is generic physical ingress");
+    let initial_world = session.world_base();
+    session
+        .apply_fixed_tick_and_emit_candidate(16)
+        .expect("hazard tick produces one hidden failure candidate");
+    let failed = session
+        .candidate()
+        .expect("failure candidate lookup succeeds")
+        .expect("failure candidate remains hidden")
+        .clone();
+    assert_eq!(
+        failed.configuration[29],
+        ExecutableValueV1::symbol(b"failed").expect("failed is bounded")
+    );
+    assert_eq!(session.world_base(), initial_world);
+    assert!(session.last_admitted().is_none());
+    let (failure_policy, failure_authorization) =
+        exact_root_admission_policy(package_id, facts.session, failed.base, failed.id, 140);
+    session
+        .establish_root_policy(failure_policy)
+        .expect("failure receives separate Admission authority");
+    let (_, failed_projection) = session
+        .admit_candidate_with_projection(failure_authorization)
+        .expect("Admission alone exposes the failed frame");
+    let failed_projection = failed_projection.expect("failed frame projects");
+    assert_eq!(objective_state(&failed_projection.term), b"failed");
+
+    session
+        .apply_physical_input(&ExecutableInputSourceV1::Keyboard {
+            code: b"KeyW".to_vec(),
+            phase: ExecutableKeyPhaseV1::Down,
+        })
+        .expect("northward intent can leave the hazard");
+    session
+        .apply_physical_input(&ExecutableInputSourceV1::Keyboard {
+            code: b"KeyR".to_vec(),
+            phase: ExecutableKeyPhaseV1::Down,
+        })
+        .expect("reset input invokes the source-owned reset transition");
+    assert_eq!(
+        session
+            .configuration()
+            .expect("reset is locally configured")[29],
+        ExecutableValueV1::symbol(b"resetting").expect("resetting is bounded")
+    );
+    let failed_world = session.world_base();
+    session
+        .apply_fixed_tick_and_emit_candidate(16)
+        .expect("reset tick returns to the safe origin");
+    let reset = session
+        .candidate()
+        .expect("reset candidate lookup succeeds")
+        .expect("reset remains hidden before Admission")
+        .clone();
+    assert_eq!(reset.configuration[12].as_number(), Some(0.0));
+    assert_eq!(
+        reset.configuration[29],
+        ExecutableValueV1::symbol(b"playing").expect("playing is bounded")
+    );
+    assert_eq!(session.world_base(), failed_world);
+    let (reset_policy, reset_authorization) =
+        exact_root_admission_policy(package_id, facts.session, reset.base, reset.id, 141);
+    session
+        .establish_root_policy(reset_policy)
+        .expect("reset receives separate Admission authority");
+    let (_, reset_projection) = session
+        .admit_candidate_with_projection(reset_authorization)
+        .expect("Admission alone exposes the reset frame");
+    let reset_projection = reset_projection.expect("reset frame projects");
+    assert_eq!(objective_state(&reset_projection.term), b"playing");
+
+    session
+        .apply_physical_input(&ExecutableInputSourceV1::Keyboard {
+            code: b"KeyD".to_vec(),
+            phase: ExecutableKeyPhaseV1::Down,
+        })
+        .expect("eastward movement approaches the objective");
+    session
+        .apply_fixed_tick_and_emit_candidate(16)
+        .expect("objective tick composes movement and collection");
+    let completed = session
+        .candidate()
+        .expect("completion candidate lookup succeeds")
+        .expect("completion remains hidden before Admission")
+        .clone();
+    assert_eq!(
+        completed.configuration[29],
+        ExecutableValueV1::symbol(b"completed").expect("completed is bounded")
+    );
+    let completed_world = session.world_base();
+    let (completion_policy, completion_authorization) =
+        exact_root_admission_policy(package_id, facts.session, completed.base, completed.id, 142);
+    session
+        .establish_root_policy(completion_policy)
+        .expect("completion receives separate Admission authority");
+    let (_, completion_projection) = session
+        .admit_candidate_with_projection(completion_authorization)
+        .expect("Admission alone exposes the completed frame");
+    let completion_projection = completion_projection.expect("completed frame projects");
+    assert_ne!(session.world_base(), completed_world);
+    assert_eq!(objective_state(&completion_projection.term), b"completed");
+    let world = projected_object_field(&completion_projection.term, b"world");
+    let collectible = projected_array_first(projected_object_field(world, b"collectibles"));
+    assert_eq!(
+        projected_symbol(projected_object_field(collectible, b"state")),
+        b"collected"
+    );
+
+    session
+        .apply_fixed_tick_and_emit_candidate(16)
+        .expect("next tick composes completed objective with spring launch");
+    let launch = session
+        .candidate()
+        .expect("launch candidate lookup succeeds")
+        .expect("launch remains hidden before Admission")
+        .clone();
+    assert_eq!(launch.configuration[3].as_number(), Some(12.0));
+    assert_eq!(launch.configuration[5].as_boolean(), Some(false));
+    assert_eq!(
+        launch.configuration[29],
+        ExecutableValueV1::symbol(b"completed").expect("completed is bounded")
+    );
 }
 
 #[test]
@@ -3800,4 +4095,59 @@ fn shipped_unified_gameplay_cwr1_carries_arena_and_symbolic_collect() {
             request
         );
     }
+}
+
+#[test]
+fn shipped_coherent_game_cwr1_carries_objective_hazard_reset_and_spring() {
+    let source = coherent_gameplay_source();
+    let request =
+        browser_gameplay_fixture_request(&source, BROWSER_COHERENT_GAME_ALLOCATION_ROOT_TAG);
+    let plan = decode_executable_physical_plan_v1(&request.physical_plan_bytes)
+        .expect("coherent game CPP1 decodes");
+    assert_eq!(
+        plan.input
+            .as_ref()
+            .expect("coherent game CPP1 has input")
+            .tick
+            .entries,
+        [2, 3, 4, 5, 6, 7, 9]
+    );
+    assert_eq!(
+        plan.program.initial_configuration[29],
+        ExecutableValueV1::symbol(b"playing").expect("playing is bounded")
+    );
+    assert!(plan.program.rules.iter().any(|rule| rule.entry == 8));
+
+    let changed_objective = std::str::from_utf8(OBJECTIVE)
+        .expect("objective source is UTF-8")
+        .replacen("?player-x = 0.08", "?player-x = 0.16", 1);
+    let changed_source = coherent_gameplay_source_with_objective(changed_objective.as_bytes());
+    let changed_request = browser_gameplay_fixture_request(
+        &changed_source,
+        BROWSER_COHERENT_GAME_ALLOCATION_ROOT_TAG,
+    );
+    assert_ne!(
+        request.physical_plan_bytes,
+        changed_request.physical_plan_bytes
+    );
+
+    let fixture_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../browser/jump-arena-shell/fixtures/wasm-coherent-game-v1");
+    let fixture_path = fixture_root.join("coherent-game-v1.cwr1.hex");
+    let exact =
+        encode_wasm_process_request_v1(&request).expect("coherent game CWR1 fixture encodes");
+    if std::env::var_os("CLAUSE_UPDATE_BROWSER_COHERENT_GAME_CWR1").is_some() {
+        std::fs::create_dir_all(&fixture_root)
+            .expect("coherent game browser fixture directory is created");
+        std::fs::write(&fixture_path, lowercase_hex_lines(&exact))
+            .expect("coherent game browser fixture update succeeds");
+        return;
+    }
+    let tracked = std::fs::read_to_string(&fixture_path)
+        .expect("tracked coherent game browser CWR1 fixture exists");
+    assert_eq!(decode_hex(&tracked), exact);
+    assert_eq!(
+        decode_wasm_process_request_v1(&exact).expect("tracked coherent game CWR1 decodes"),
+        request
+    );
 }

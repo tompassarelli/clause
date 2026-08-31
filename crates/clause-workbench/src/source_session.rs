@@ -9,19 +9,27 @@ use clause_package::{
 };
 use clause_runtime::{
     ExecutableCanonicalInputBindingV1, ExecutableCanonicalJumpBindingV1,
-    ExecutableCanonicalTickBindingV1, WASM_SESSION_EVENT_LIMIT_V1, WasmPersistentSessionBoundaryV1,
-    WasmProcessRequestV1, WasmProcessStatusV1, WasmSessionAdmissionScopeV1, WasmSessionAdmissionV1,
-    WasmSessionAllocationV1, WasmSessionCommandV1, WasmSessionEventKindV1, WasmSessionHandleV1,
-    WasmSessionLimitsV1, WasmSessionOpenV1, WasmSessionOperationV1, WasmSessionProjectionV1,
-    decode_executable_physical_plan_v1, decode_wasm_process_request_v1,
+    ExecutableCanonicalScalarBindingV1, ExecutableCanonicalScalarParameterBindingV1,
+    ExecutableCanonicalTickBindingV1, ExecutableOccurrenceV1, WASM_SESSION_EVENT_LIMIT_V1,
+    WasmPersistentSessionBoundaryV1, WasmProcessRequestV1, WasmProcessStatusV1,
+    WasmSessionAdmissionScopeV1, WasmSessionAdmissionV1, WasmSessionAllocationV1,
+    WasmSessionCommandV1, WasmSessionEventKindV1, WasmSessionHandleV1, WasmSessionLimitsV1,
+    WasmSessionOpenV1, WasmSessionOperationV1, WasmSessionProjectionV1,
+    decode_executable_occurrence_v1, decode_executable_physical_plan_v1,
+    decode_wasm_process_request_v1, encode_executable_occurrence_v1,
     encode_executable_physical_plan_v1, encode_wasm_process_request_v1,
     encode_wasm_session_command_v1, encode_wasm_session_open_v1, lower_canonical_input_handler_v1,
-    lower_canonical_jump_handler_v1, lower_canonical_tick_program_v1,
+    lower_canonical_jump_handler_v1, lower_canonical_scalar_handler_v1,
+    lower_canonical_tick_program_v1,
 };
 
-const TEMPLATE_CWR1_HEX: &str = include_str!(concat!(
+const BASE_TEMPLATE_CWR1_HEX: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../browser/jump-arena-shell/fixtures/wasm-jump-v1/jump-v1.cwr1.hex"
+));
+const COHERENT_TEMPLATE_CWR1_HEX: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../browser/jump-arena-shell/fixtures/wasm-coherent-game-v1/coherent-game-v1.cwr1.hex"
 ));
 const MAX_COMMANDS: u64 = 64;
 
@@ -75,6 +83,8 @@ pub struct ResidentSourceAdmissionV1 {
 pub struct ResidentSourceWorkbenchV1 {
     boundary: WasmPersistentSessionBoundaryV1,
     template: WasmProcessRequestV1,
+    base_template: WasmProcessRequestV1,
+    coherent_template: WasmProcessRequestV1,
     generation: ResidentSourceGenerationV1,
     package: ProcessPackageId,
     session: clause_package::RuntimeSessionId,
@@ -82,11 +92,15 @@ pub struct ResidentSourceWorkbenchV1 {
     pending: Option<ResidentSourceCandidateV1>,
     last_projection: Option<WasmSessionProjectionV1>,
     next_change: u64,
+    default_occurrences: Vec<Vec<u8>>,
 }
 
 impl ResidentSourceWorkbenchV1 {
     pub fn open(exact_source: &[u8]) -> Result<Self, ResidentSourceWorkbenchErrorV1> {
-        let template = decode_wasm_process_request_v1(&decode_hex(TEMPLATE_CWR1_HEX)?)?;
+        let base_template = decode_wasm_process_request_v1(&decode_hex(BASE_TEMPLATE_CWR1_HEX)?)?;
+        let coherent_template =
+            decode_wasm_process_request_v1(&decode_hex(COHERENT_TEMPLATE_CWR1_HEX)?)?;
+        let template = base_template.clone();
         let mut workbench = Self {
             boundary: WasmPersistentSessionBoundaryV1::new(),
             generation: ResidentSourceGenerationV1 {
@@ -101,10 +115,13 @@ impl ResidentSourceWorkbenchV1 {
             package: ProcessPackageId::from_bytes([0; clause_package::IDENTITY_BYTES]),
             session: template.authority.session,
             template,
+            base_template,
+            coherent_template,
             sequence: 0,
             pending: None,
             last_projection: None,
             next_change: 0,
+            default_occurrences: Vec::new(),
         };
         workbench.install_source(exact_source)?;
         Ok(workbench)
@@ -141,14 +158,24 @@ impl ResidentSourceWorkbenchV1 {
     pub fn run_to_candidate(
         &mut self,
     ) -> Result<ResidentSourceCandidateV1, ResidentSourceWorkbenchErrorV1> {
+        let occurrences = self.default_occurrences.clone();
+        self.run_occurrences_to_candidate(&occurrences)
+    }
+
+    /// Run one caller-selected exact occurrence chain in the resident
+    /// generation. Every prefix occurrence remains local; only the final
+    /// occurrence emits the hidden CandidateDelta.
+    pub fn run_occurrences_to_candidate(
+        &mut self,
+        occurrences: &[Vec<u8>],
+    ) -> Result<ResidentSourceCandidateV1, ResidentSourceWorkbenchErrorV1> {
         if self.pending.is_some() {
             return Err(ResidentSourceWorkbenchErrorV1(
                 "resident source generation already has a hidden candidate".into(),
             ));
         }
-        let occurrences = self.template.occurrences.clone();
         let (last, prefix) = occurrences.split_last().ok_or_else(|| {
-            ResidentSourceWorkbenchErrorV1("CWR1 template has no occurrence sequence".into())
+            ResidentSourceWorkbenchErrorV1("resident run has no occurrence sequence".into())
         })?;
         for occurrence in prefix {
             let event = self.command(WasmSessionOperationV1::Input(occurrence.clone()))?;
@@ -245,12 +272,8 @@ impl ResidentSourceWorkbenchV1 {
     ) -> Result<(), ResidentSourceWorkbenchErrorV1> {
         let decoded = decode_process_package(&self.template.package_bytes)
             .map_err(|error| boxed_error("template package decode", error))?;
-        let package = check_process_package(decoded)
+        let template_package = check_process_package(decoded)
             .map_err(|error| boxed_error("template package check", error))?;
-        let mut physical_plan =
-            decode_executable_physical_plan_v1(&self.template.physical_plan_bytes)
-                .map_err(|error| boxed_error("CPP1 template decode", error))?;
-        physical_plan.program.rules.clear();
         self.next_change = self.next_change.checked_add(1).ok_or_else(|| {
             ResidentSourceWorkbenchErrorV1("source change sequence exhausted".into())
         })?;
@@ -262,8 +285,8 @@ impl ResidentSourceWorkbenchV1 {
         )
         .map_err(|error| debug_error("canonical source allocation", error))?;
         let scope = TermScope {
-            universe: package.constitution().universe(),
-            semantics: package.constitution().semantics(),
+            universe: template_package.constitution().universe(),
+            semantics: template_package.constitution().semantics(),
         };
         let compiled = elaborate_canonical_source_package_v1(
             &cst,
@@ -274,6 +297,23 @@ impl ResidentSourceWorkbenchV1 {
             &allocation_plan,
         )
         .map_err(|error| debug_error("canonical source elaboration", error))?;
+        self.template = match compiled.scalar_handlers.len() {
+            0 => self.base_template.clone(),
+            7 => self.coherent_template.clone(),
+            count => {
+                return Err(ResidentSourceWorkbenchErrorV1(format!(
+                    "resident physical profile does not bind {count} scalar handlers"
+                )));
+            }
+        };
+        let decoded = decode_process_package(&self.template.package_bytes)
+            .map_err(|error| boxed_error("selected template package decode", error))?;
+        let _package = check_process_package(decoded)
+            .map_err(|error| boxed_error("selected template package check", error))?;
+        let mut physical_plan =
+            decode_executable_physical_plan_v1(&self.template.physical_plan_bytes)
+                .map_err(|error| boxed_error("CPP1 template decode", error))?;
+        physical_plan.program.rules.clear();
         let input = compiled.input_handler.as_ref().ok_or_else(|| {
             ResidentSourceWorkbenchErrorV1("canonical source has no input handler".into())
         })?;
@@ -324,6 +364,78 @@ impl ResidentSourceWorkbenchV1 {
             },
         )
         .map_err(|error| boxed_error("canonical tick lowering", error))?;
+        for (index, handler) in compiled.scalar_handlers.iter().enumerate() {
+            let (entry, state_slot, parameter_slots): (u16, u16, &[u16]) = match index {
+                0 => (3, 28, &[0, 12]),
+                1 => (4, 3, &[0, 12]),
+                2 => (5, 5, &[0, 12]),
+                3 => (6, 29, &[0, 12]),
+                4 => (7, 29, &[0, 12]),
+                5 => (8, 29, &[]),
+                6 => (9, 29, &[0, 12]),
+                _ => unreachable!("resident scalar profile was checked above"),
+            };
+            if handler.parameters.len() != parameter_slots.len() {
+                return Err(ResidentSourceWorkbenchErrorV1(format!(
+                    "resident scalar handler {index} has {} parameters; profile requires {}",
+                    handler.parameters.len(),
+                    parameter_slots.len()
+                )));
+            }
+            lower_canonical_scalar_handler_v1(
+                &mut physical_plan.program,
+                handler,
+                ExecutableCanonicalScalarBindingV1 {
+                    entry,
+                    state_slot,
+                    parameters: handler
+                        .parameters
+                        .iter()
+                        .zip(parameter_slots.iter().copied())
+                        .map(
+                            |(parameter, slot)| ExecutableCanonicalScalarParameterBindingV1 {
+                                parameter: parameter.clone(),
+                                slot,
+                            },
+                        )
+                        .collect(),
+                },
+            )
+            .map_err(|error| boxed_error("canonical scalar lowering", error))?;
+        }
+        let template_input = self.template.occurrences.first().cloned().ok_or_else(|| {
+            ResidentSourceWorkbenchErrorV1("CWR1 template has no input occurrence".into())
+        })?;
+        let template_tick = self.template.occurrences.last().ok_or_else(|| {
+            ResidentSourceWorkbenchErrorV1("CWR1 template has no tick occurrence".into())
+        })?;
+        let template_tick = decode_executable_occurrence_v1(template_tick)
+            .map_err(|error| boxed_error("template tick decode", error))?;
+        let tick_entries = physical_plan
+            .input
+            .as_ref()
+            .ok_or_else(|| {
+                ResidentSourceWorkbenchErrorV1("CPP1 template has no input plan".into())
+            })?
+            .tick
+            .entries
+            .clone();
+        let mut default_occurrences = Vec::with_capacity(tick_entries.len() + 1);
+        default_occurrences.push(template_input);
+        for (ordinal, entry) in tick_entries.into_iter().enumerate() {
+            default_occurrences.push(
+                encode_executable_occurrence_v1(&ExecutableOccurrenceV1 {
+                    entry,
+                    arguments: if ordinal == 0 {
+                        template_tick.arguments.clone()
+                    } else {
+                        Vec::new()
+                    },
+                })
+                .map_err(|error| boxed_error("resident occurrence encode", error))?,
+            );
+        }
+        self.default_occurrences = default_occurrences;
         let cpp1 = encode_executable_physical_plan_v1(&physical_plan)
             .map_err(|error| boxed_error("CPP1 encode", error))?;
         let open = WasmSessionOpenV1 {
@@ -354,6 +466,7 @@ impl ResidentSourceWorkbenchV1 {
         let mut cwr1 = self.template.clone();
         cwr1.physical_plan_bytes = cpp1.clone();
         cwr1.allocation = allocation;
+        cwr1.occurrences = self.default_occurrences.clone();
         let exact_cwr1 = encode_wasm_process_request_v1(&cwr1)?;
         self.generation = ResidentSourceGenerationV1 {
             handle: opened.handle,
