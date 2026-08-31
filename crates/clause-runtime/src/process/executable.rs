@@ -313,6 +313,62 @@ pub struct ExecutableProgramV1 {
     pub projection: Option<ExecutableProjectionV1>,
 }
 
+/// Physical slot realization for the source-owned X/Z input result. Event
+/// arguments remain ordered by the source handler's declared Vec3 fields;
+/// this record supplies only the target-specific configuration coordinates.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ExecutableCanonicalInputBindingV1 {
+    pub entry: u16,
+    pub x_slot: u16,
+    pub z_slot: u16,
+}
+
+/// Refine the package-owned bounded `on input` meaning into CPP1. The source
+/// owns both initial values and result expressions; Rust supplies only the
+/// physical entry and slots. Existing rules at that entry are rejected so a
+/// host-authored semantic implementation cannot silently remain in force.
+pub fn lower_canonical_input_handler_v1(
+    program: &mut ExecutableProgramV1,
+    source: &CanonicalInputHandlerV1,
+    binding: ExecutableCanonicalInputBindingV1,
+) -> Result<(), ExecutableErrorV1> {
+    if program.rules.iter().any(|rule| rule.entry == binding.entry) {
+        return Err(ExecutableErrorV1::MalformedProgram);
+    }
+    let x = usize::from(binding.x_slot);
+    let z = usize::from(binding.z_slot);
+    let Some(initial_x) = program.initial_configuration.get_mut(x) else {
+        return Err(ExecutableErrorV1::MalformedProgram);
+    };
+    *initial_x = ExecutableValueV1::Number(source.initial_x);
+    let Some(initial_z) = program.initial_configuration.get_mut(z) else {
+        return Err(ExecutableErrorV1::MalformedProgram);
+    };
+    *initial_z = ExecutableValueV1::Number(source.initial_z);
+
+    let expression = |value| match value {
+        CanonicalInputScalarV1::Parameter(index) => ExecutableExpressionV1::Argument(index),
+        CanonicalInputScalarV1::Number(bits) => {
+            ExecutableExpressionV1::Constant(ExecutableValueV1::Number(bits))
+        }
+    };
+    let rule = ExecutableRuleV1 {
+        entry: binding.entry,
+        predicates: vec![],
+        assignments: vec![
+            (binding.x_slot, expression(source.result_x)),
+            (binding.z_slot, expression(source.result_z)),
+        ],
+    };
+    let insertion = program
+        .rules
+        .iter()
+        .position(|existing| existing.entry > rule.entry)
+        .unwrap_or(program.rules.len());
+    program.rules.insert(insertion, rule);
+    Ok(())
+}
+
 /// The exact accepted lowering/refinement contract implemented by the plan.
 /// This prototype recognizes only its closed rule-machine realization.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

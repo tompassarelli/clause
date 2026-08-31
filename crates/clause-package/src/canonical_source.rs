@@ -178,6 +178,36 @@ pub struct CanonicalUnsupportedProductionV1 {
     pub emissions: Vec<CanonicalSourceEmissionV1>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CanonicalInputScalarV1 {
+    Parameter(u16),
+    Number(u64),
+}
+
+impl CanonicalInputScalarV1 {
+    #[must_use]
+    pub const fn as_number(self) -> Option<f64> {
+        match self {
+            Self::Number(bits) => Some(f64::from_bits(bits)),
+            Self::Parameter(_) => None,
+        }
+    }
+}
+
+/// Checked source-owned meaning for the bounded `on input` slice. The source
+/// artifact and exact origins remain attached; physical slots and event codes
+/// are deliberately absent and are supplied only by a later refinement.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CanonicalInputHandlerV1 {
+    pub artifact: CanonicalSourceArtifactIdV1,
+    pub handler_origin: CanonicalSourceOriginV1,
+    pub initial_assertion_origin: CanonicalSourceOriginV1,
+    pub initial_x: u64,
+    pub initial_z: u64,
+    pub result_x: CanonicalInputScalarV1,
+    pub result_z: CanonicalInputScalarV1,
+}
+
 #[derive(Clone, Debug)]
 pub struct CanonicalSourceCstV1 {
     artifact: CanonicalSourceArtifactIdV1,
@@ -212,6 +242,7 @@ pub struct CanonicalSourcePackageSliceV1 {
     pub checked_package: CheckedProcessPackage,
     pub emissions: Vec<CanonicalSourceEmissionV1>,
     pub unsupported: Vec<CanonicalUnsupportedProductionV1>,
+    pub input_handler: Option<CanonicalInputHandlerV1>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -256,6 +287,15 @@ pub enum CanonicalSourceErrorV1 {
         role: Vec<u8>,
     },
     InvalidMode {
+        origin: CanonicalSourceOriginV1,
+    },
+    InvalidInputHandler {
+        origin: CanonicalSourceOriginV1,
+    },
+    MissingInputInitialAssertion {
+        origin: CanonicalSourceOriginV1,
+    },
+    AmbiguousInputInitialAssertion {
         origin: CanonicalSourceOriginV1,
     },
     UnknownModeRole {
@@ -329,7 +369,29 @@ enum CstKind {
         fields: Vec<ShapeField>,
     },
     Relation(RelationCst),
+    InputHandler(InputHandlerCst),
+    VectorAssertion(VectorAssertionCst),
     Unsupported(CanonicalUnsupportedProductionV1),
+}
+
+#[derive(Clone, Debug)]
+struct InputHandlerCst {
+    origin: CanonicalSourceOriginV1,
+    producer: CanonicalSemanticProducerV1,
+    relation: Vec<u8>,
+    result_x: CanonicalInputScalarV1,
+    result_z: CanonicalInputScalarV1,
+    include_origin: CanonicalSourceOriginV1,
+    include_local: Vec<u8>,
+}
+
+#[derive(Clone, Debug)]
+struct VectorAssertionCst {
+    origin: CanonicalSourceOriginV1,
+    subject: Vec<u8>,
+    relation: Vec<u8>,
+    x: u64,
+    z: u64,
 }
 
 #[derive(Clone, Debug)]
@@ -672,6 +734,7 @@ fn allocation_requests(
     cst: &CanonicalSourceCstV1,
 ) -> Result<Vec<AllocationRequest>, CanonicalSourceErrorV1> {
     let mut requested = Vec::new();
+    let input = input_handler_parts(cst)?;
     for item in &cst.items {
         match &item.kind {
             CstKind::Referent { designation } => {
@@ -738,6 +801,35 @@ fn allocation_requests(
                     });
                 }
             }
+            CstKind::InputHandler(handler) => {
+                requested.extend([
+                    AllocationRequest {
+                        producer: handler.producer.clone(),
+                        slot: head_slot(CanonicalSourceProductionV1::Handler),
+                        domain: AllocationDomain::Formation,
+                    },
+                    AllocationRequest {
+                        producer: handler.producer.clone(),
+                        slot: child_slot(
+                            CanonicalSourceProductionV1::HandlerInclude,
+                            &handler.include_local,
+                        ),
+                        domain: AllocationDomain::Formation,
+                    },
+                ]);
+            }
+            CstKind::VectorAssertion(assertion) => {
+                if input
+                    .as_ref()
+                    .is_some_and(|(_, selected)| selected.origin == assertion.origin)
+                {
+                    requested.push(AllocationRequest {
+                        producer: assertion_producer(assertion),
+                        slot: head_slot(CanonicalSourceProductionV1::Assertion),
+                        domain: AllocationDomain::Formation,
+                    });
+                }
+            }
             CstKind::Unsupported(_) => {}
         }
     }
@@ -771,6 +863,18 @@ pub fn elaborate_canonical_source_package_v1(
     let mut operators = Vec::new();
     let mut emissions = Vec::new();
     let mut unsupported = Vec::new();
+    let input_parts = input_handler_parts(cst)?;
+    let input_handler = input_parts
+        .as_ref()
+        .map(|(handler, assertion)| CanonicalInputHandlerV1 {
+            artifact: cst.artifact,
+            handler_origin: handler.origin,
+            initial_assertion_origin: assertion.origin,
+            initial_x: assertion.x,
+            initial_z: assertion.z,
+            result_x: handler.result_x,
+            result_z: handler.result_z,
+        });
 
     for item in &cst.items {
         match &item.kind {
@@ -933,6 +1037,69 @@ pub fn elaborate_canonical_source_package_v1(
                     direct_dependencies: vec![],
                 });
             }
+            CstKind::InputHandler(handler) => {
+                let head = head_slot(CanonicalSourceProductionV1::Handler);
+                let head_id = formation_id(plan, &handler.producer, &head)?;
+                formations.push(source_formation(
+                    scope,
+                    head_id,
+                    cst.source_slice(handler.origin)
+                        .expect("owned handler origin"),
+                    handler.origin,
+                    "input-handler",
+                )?);
+                emissions.push(emission(
+                    plan,
+                    handler.producer.clone(),
+                    head,
+                    handler.origin,
+                ));
+
+                let include = child_slot(
+                    CanonicalSourceProductionV1::HandlerInclude,
+                    &handler.include_local,
+                );
+                let include_id = formation_id(plan, &handler.producer, &include)?;
+                formations.push(source_formation(
+                    scope,
+                    include_id,
+                    cst.source_slice(handler.include_origin)
+                        .expect("owned handler include origin"),
+                    handler.include_origin,
+                    "handler-include",
+                )?);
+                emissions.push(emission(
+                    plan,
+                    handler.producer.clone(),
+                    include,
+                    handler.include_origin,
+                ));
+            }
+            CstKind::VectorAssertion(assertion) => {
+                if input_parts
+                    .as_ref()
+                    .is_some_and(|(_, selected)| selected.origin == assertion.origin)
+                {
+                    let producer = assertion_producer(assertion);
+                    let slot = head_slot(CanonicalSourceProductionV1::Assertion);
+                    let id = formation_id(plan, &producer, &slot)?;
+                    formations.push(source_formation(
+                        scope,
+                        id,
+                        cst.source_slice(assertion.origin)
+                            .expect("owned initial assertion origin"),
+                        assertion.origin,
+                        "initial-assertion",
+                    )?);
+                    emissions.push(emission(plan, producer, slot, assertion.origin));
+                } else {
+                    unsupported.push(CanonicalUnsupportedProductionV1 {
+                        production: CanonicalSourceProductionV1::Assertion,
+                        origin: assertion.origin,
+                        emissions: vec![],
+                    });
+                }
+            }
             CstKind::Unsupported(value) => unsupported.push(value.clone()),
         }
     }
@@ -969,6 +1136,7 @@ pub fn elaborate_canonical_source_package_v1(
         checked_package,
         emissions,
         unsupported,
+        input_handler,
     })
 }
 
@@ -1113,6 +1281,12 @@ fn parse_item(
         )?);
     }
     if head.starts_with("on ") {
+        if let Some(handler) = parse_input_handler(artifact, block, origin)? {
+            return Ok(CstItem {
+                origin,
+                kind: CstKind::InputHandler(handler),
+            });
+        }
         let emissions = handler_include_emissions(artifact, block)?;
         return Ok(unsupported_item(
             artifact,
@@ -1123,6 +1297,12 @@ fn parse_item(
         )?);
     }
     require_leaf(block, artifact)?;
+    if let Some(assertion) = parse_vector_assertion(head, origin)? {
+        return Ok(CstItem {
+            origin,
+            kind: CstKind::VectorAssertion(assertion),
+        });
+    }
     Ok(unsupported_item(
         artifact,
         block,
@@ -1130,6 +1310,182 @@ fn parse_item(
         CanonicalSourceProductionV1::Assertion,
         vec![],
     )?)
+}
+
+fn parse_input_handler(
+    artifact: CanonicalSourceArtifactIdV1,
+    block: &[SourceLine<'_>],
+    origin: CanonicalSourceOriginV1,
+) -> Result<Option<InputHandlerCst>, CanonicalSourceErrorV1> {
+    let Some(header) = block[0].text.strip_prefix("on input ") else {
+        return Ok(None);
+    };
+    let Some((subject, header_vector)) = split_vector_subject(header) else {
+        return Err(CanonicalSourceErrorV1::InvalidInputHandler { origin });
+    };
+    if !subject.starts_with('?') {
+        return Err(CanonicalSourceErrorV1::InvalidInputHandler { origin });
+    }
+    let header_components = parse_vec3_components(header_vector)
+        .ok_or(CanonicalSourceErrorV1::InvalidInputHandler { origin })?;
+    if !header_components[0].starts_with('?')
+        || header_components[1] != "0.0"
+        || !header_components[2].starts_with('?')
+        || header_components[0] == header_components[2]
+    {
+        return Err(CanonicalSourceErrorV1::InvalidInputHandler { origin });
+    }
+    let parameters = [header_components[0], header_components[2]];
+
+    let mut section = "";
+    let mut when_line = None;
+    let mut withdraw_line = None;
+    let mut include = None;
+    for line in block
+        .iter()
+        .skip(1)
+        .filter(|line| !line.text.trim().is_empty())
+    {
+        let trimmed = line.text.trim();
+        if line.indent == 2 {
+            if trimmed == "admit" {
+                return Err(CanonicalSourceErrorV1::NonCanonicalKeyword {
+                    origin: line_origin(artifact, *line),
+                    keyword: b"admit".to_vec(),
+                });
+            }
+            section = trimmed;
+            continue;
+        }
+        if line.indent != 4 {
+            return Err(CanonicalSourceErrorV1::InvalidInputHandler {
+                origin: line_origin(artifact, *line),
+            });
+        }
+        match section {
+            "when" if when_line.replace(trimmed).is_none() => {}
+            "withdraw" if withdraw_line.replace(trimmed).is_none() => {}
+            "include"
+                if include
+                    .replace((trimmed, line_origin(artifact, *line)))
+                    .is_none() => {}
+            _ => {
+                return Err(CanonicalSourceErrorV1::InvalidInputHandler {
+                    origin: line_origin(artifact, *line),
+                });
+            }
+        }
+    }
+    let when_line = when_line.ok_or(CanonicalSourceErrorV1::InvalidInputHandler { origin })?;
+    if withdraw_line != Some(when_line) {
+        return Err(CanonicalSourceErrorV1::InvalidInputHandler { origin });
+    }
+    let when_parts = when_line.split_whitespace().collect::<Vec<_>>();
+    if when_parts.len() < 3
+        || when_parts[0] != subject
+        || !when_parts
+            .last()
+            .is_some_and(|value| value.starts_with('?'))
+    {
+        return Err(CanonicalSourceErrorV1::InvalidInputHandler { origin });
+    }
+    let relation = when_parts[1..when_parts.len() - 1].join(" ").into_bytes();
+    let (include_line, include_origin) =
+        include.ok_or(CanonicalSourceErrorV1::InvalidInputHandler { origin })?;
+    let Some((include_prefix, include_vector)) = split_vector_subject(include_line) else {
+        return Err(CanonicalSourceErrorV1::InvalidInputHandler { origin });
+    };
+    let expected_prefix = format!("{subject} {}", String::from_utf8_lossy(&relation));
+    if include_prefix != expected_prefix {
+        return Err(CanonicalSourceErrorV1::InvalidInputHandler { origin });
+    }
+    let result = parse_vec3_components(include_vector)
+        .ok_or(CanonicalSourceErrorV1::InvalidInputHandler { origin })?;
+    if parse_source_number(result[1]) != Some(0.0_f64.to_bits()) {
+        return Err(CanonicalSourceErrorV1::InvalidInputHandler { origin });
+    }
+    let result_x = parse_input_scalar(result[0], parameters)
+        .ok_or(CanonicalSourceErrorV1::InvalidInputHandler { origin })?;
+    let result_z = parse_input_scalar(result[2], parameters)
+        .ok_or(CanonicalSourceErrorV1::InvalidInputHandler { origin })?;
+    Ok(Some(InputHandlerCst {
+        origin,
+        producer: semantic_producer(
+            CanonicalSourceProductionV1::Handler,
+            &handler_semantic_producer(block),
+        ),
+        relation,
+        result_x,
+        result_z,
+        include_origin,
+        include_local: include_line.as_bytes().to_vec(),
+    }))
+}
+
+fn parse_vector_assertion(
+    line: &str,
+    origin: CanonicalSourceOriginV1,
+) -> Result<Option<VectorAssertionCst>, CanonicalSourceErrorV1> {
+    let Some((prefix, vector)) = split_vector_subject(line) else {
+        return Ok(None);
+    };
+    let prefix = prefix.split_whitespace().collect::<Vec<_>>();
+    if prefix.len() < 2 {
+        return Ok(None);
+    }
+    let components = parse_vec3_components(vector)
+        .ok_or(CanonicalSourceErrorV1::InvalidInputHandler { origin })?;
+    let Some(x) = parse_source_number(components[0]) else {
+        return Ok(None);
+    };
+    let Some(y) = parse_source_number(components[1]) else {
+        return Ok(None);
+    };
+    let Some(z) = parse_source_number(components[2]) else {
+        return Ok(None);
+    };
+    if y != 0.0_f64.to_bits() {
+        return Ok(None);
+    }
+    Ok(Some(VectorAssertionCst {
+        origin,
+        subject: prefix[0].as_bytes().to_vec(),
+        relation: prefix[1..].join(" ").into_bytes(),
+        x,
+        z,
+    }))
+}
+
+fn split_vector_subject(source: &str) -> Option<(&str, &str)> {
+    let (prefix, vector) = source.split_once(" Vec3 { ")?;
+    Some((prefix, vector))
+}
+
+fn parse_vec3_components(vector: &str) -> Option<[&str; 3]> {
+    let vector = vector.strip_suffix(" }")?;
+    let mut fields = vector.split(", ");
+    let x = fields.next()?.strip_prefix("x: ")?;
+    let y = fields.next()?.strip_prefix("y: ")?;
+    let z = fields.next()?.strip_prefix("z: ")?;
+    fields.next().is_none().then_some([x, y, z])
+}
+
+fn parse_source_number(source: &str) -> Option<u64> {
+    let value = source.parse::<f64>().ok()?;
+    value.is_finite().then_some(if value == 0.0 {
+        0.0_f64.to_bits()
+    } else {
+        value.to_bits()
+    })
+}
+
+fn parse_input_scalar(source: &str, parameters: [&str; 2]) -> Option<CanonicalInputScalarV1> {
+    parameters
+        .iter()
+        .position(|parameter| *parameter == source)
+        .and_then(|index| u16::try_from(index).ok())
+        .map(CanonicalInputScalarV1::Parameter)
+        .or_else(|| parse_source_number(source).map(CanonicalInputScalarV1::Number))
 }
 
 fn parse_relation(
@@ -1355,6 +1711,53 @@ fn handler_semantic_producer(block: &[SourceLine<'_>]) -> Vec<u8> {
     producer
 }
 
+fn input_handler_parts(
+    cst: &CanonicalSourceCstV1,
+) -> Result<Option<(&InputHandlerCst, &VectorAssertionCst)>, CanonicalSourceErrorV1> {
+    let handlers = cst
+        .items
+        .iter()
+        .filter_map(|item| match &item.kind {
+            CstKind::InputHandler(handler) => Some(handler),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let Some(handler) = handlers.first().copied() else {
+        return Ok(None);
+    };
+    if handlers.len() != 1 {
+        return Err(CanonicalSourceErrorV1::InvalidInputHandler {
+            origin: handler.origin,
+        });
+    }
+    let assertions = cst
+        .items
+        .iter()
+        .filter_map(|item| match &item.kind {
+            CstKind::VectorAssertion(assertion) if assertion.relation == handler.relation => {
+                Some(assertion)
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    match assertions.as_slice() {
+        [assertion] => Ok(Some((handler, *assertion))),
+        [] => Err(CanonicalSourceErrorV1::MissingInputInitialAssertion {
+            origin: handler.origin,
+        }),
+        _ => Err(CanonicalSourceErrorV1::AmbiguousInputInitialAssertion {
+            origin: handler.origin,
+        }),
+    }
+}
+
+fn assertion_producer(assertion: &VectorAssertionCst) -> CanonicalSemanticProducerV1 {
+    let mut key = Vec::new();
+    frame_bytes(&mut key, &assertion.subject);
+    frame_bytes(&mut key, &assertion.relation);
+    semantic_producer(CanonicalSourceProductionV1::Assertion, &key)
+}
+
 fn frame_bytes(target: &mut Vec<u8>, value: &[u8]) {
     let length = u32::try_from(value.len()).expect("one source line length fits u32");
     target.extend_from_slice(&length.to_be_bytes());
@@ -1399,7 +1802,7 @@ fn validate_unique_designations(items: &[CstItem]) -> Result<(), CanonicalSource
     for designation in items.iter().filter_map(|item| match &item.kind {
         CstKind::Referent { designation } | CstKind::Shape { designation, .. } => Some(designation),
         CstKind::Relation(relation) => Some(&relation.designation),
-        CstKind::Unsupported(_) => None,
+        CstKind::InputHandler(_) | CstKind::VectorAssertion(_) | CstKind::Unsupported(_) => None,
     }) {
         if !seen.insert(designation.clone()) {
             return Err(CanonicalSourceErrorV1::DuplicateDesignation {

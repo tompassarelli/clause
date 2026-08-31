@@ -3,6 +3,11 @@ use clause_runtime::*;
 
 const BROWSER_ADMISSION_COUNT: usize = 8;
 const BROWSER_RECORDED_ALLOCATION_ROOT_TAG: u8 = 210;
+const SOURCE_ALLOCATION_ROOT_TAG: u8 = 211;
+const WORLD: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../test-vectors/jump-arena/world.clause"
+));
 
 macro_rules! id {
     ($kind:ident, $tag:expr) => {
@@ -167,7 +172,27 @@ fn projected_vec3(scope: TermScope, roles: [LocalRoleRefV2; 3]) -> Term {
     )
 }
 
-fn headless_program(scope: TermScope) -> ExecutableProgramV1 {
+fn source_input_handler(source: &[u8], scope: TermScope) -> CanonicalInputHandlerV1 {
+    let cst = read_canonical_source_v1(source).expect("canonical arena source reads");
+    let plan = plan_independent_canonical_source_allocations_v1(
+        &cst,
+        ProgramChangeOccurrenceId::from_bytes(raw_id(SOURCE_ALLOCATION_ROOT_TAG)),
+    )
+    .expect("canonical arena source receives rooted allocations");
+    elaborate_canonical_source_package_v1(
+        &cst,
+        CanonicalSourceContextV1 {
+            universe: scope.universe,
+            semantics: scope.semantics,
+        },
+        &plan,
+    )
+    .expect("canonical arena source reaches the checked package boundary")
+    .input_handler
+    .expect("the bounded source profile owns one on-input handler")
+}
+
+fn headless_program(scope: TermScope, input: &CanonicalInputHandlerV1) -> ExecutableProgramV1 {
     let horizontal_assignments = || vec![(0, next_x()), (2, div(sub(next_x(), s(0)), a(0)))];
     let mut grounded_tick = horizontal_assignments();
     grounded_tick.extend([(1, s(9)), (3, n(0.0))]);
@@ -228,7 +253,7 @@ fn headless_program(scope: TermScope) -> ExecutableProgramV1 {
         ],
     );
 
-    ExecutableProgramV1 {
+    let mut program = ExecutableProgramV1 {
         // x, y, vx, vy, horizontal intent, grounded, and six package constants.
         initial_configuration: vec![
             number(9.5),
@@ -252,13 +277,9 @@ fn headless_program(scope: TermScope) -> ExecutableProgramV1 {
             number(12.0),
             number(0.5),
             number(12.0),
+            number(0.0),
         ],
         rules: vec![
-            ExecutableRuleV1 {
-                entry: 0,
-                predicates: vec![],
-                assignments: vec![(4, a(0))],
-            },
             ExecutableRuleV1 {
                 entry: 1,
                 predicates: vec![eq(s(5), b(true))],
@@ -308,7 +329,18 @@ fn headless_program(scope: TermScope) -> ExecutableProgramV1 {
             .collect(),
             template,
         }),
-    }
+    };
+    lower_canonical_input_handler_v1(
+        &mut program,
+        input,
+        ExecutableCanonicalInputBindingV1 {
+            entry: 0,
+            x_slot: 4,
+            z_slot: 21,
+        },
+    )
+    .expect("source-owned input handler lowers to its physical slots");
+    program
 }
 
 fn checked_program_package_with_scopes(
@@ -394,6 +426,13 @@ fn checked_program_package_with_scopes(
 }
 
 fn physical_plan(package: &CheckedProcessPackage) -> ExecutablePhysicalPlanV1 {
+    physical_plan_with_source(package, WORLD)
+}
+
+fn physical_plan_with_source(
+    package: &CheckedProcessPackage,
+    source: &[u8],
+) -> ExecutablePhysicalPlanV1 {
     let constitution = package.constitution();
     let snapshot = constitution.snapshot();
     let application = ApplicationLocalId::new(1);
@@ -401,6 +440,11 @@ fn physical_plan(package: &CheckedProcessPackage) -> ExecutablePhysicalPlanV1 {
         schema: RelationSchemaLocalId::new(2),
         role: RoleLocalId::new(id),
     };
+    let scope = TermScope {
+        universe: constitution.universe(),
+        semantics: constitution.semantics(),
+    };
+    let input_handler = source_input_handler(source, scope);
     ExecutablePhysicalPlanV1 {
         application_shape: constitution
             .application_shape(application)
@@ -422,7 +466,7 @@ fn physical_plan(package: &CheckedProcessPackage) -> ExecutablePhysicalPlanV1 {
                         code: b"KeyA".to_vec(),
                         phase: ExecutableKeyPhaseV1::Down,
                     },
-                    occurrence: occurrence(0, &[-1.0]),
+                    occurrence: occurrence(0, &[-1.0, 0.0]),
                 },
                 ExecutableInputBindingV1 {
                     role: role(16),
@@ -430,7 +474,7 @@ fn physical_plan(package: &CheckedProcessPackage) -> ExecutablePhysicalPlanV1 {
                         code: b"KeyA".to_vec(),
                         phase: ExecutableKeyPhaseV1::Up,
                     },
-                    occurrence: occurrence(0, &[0.0]),
+                    occurrence: occurrence(0, &[0.0, 0.0]),
                 },
                 ExecutableInputBindingV1 {
                     role: role(17),
@@ -438,7 +482,7 @@ fn physical_plan(package: &CheckedProcessPackage) -> ExecutablePhysicalPlanV1 {
                         code: b"KeyD".to_vec(),
                         phase: ExecutableKeyPhaseV1::Down,
                     },
-                    occurrence: occurrence(0, &[1.0]),
+                    occurrence: occurrence(0, &[1.0, 0.0]),
                 },
                 ExecutableInputBindingV1 {
                     role: role(18),
@@ -446,7 +490,7 @@ fn physical_plan(package: &CheckedProcessPackage) -> ExecutablePhysicalPlanV1 {
                         code: b"KeyD".to_vec(),
                         phase: ExecutableKeyPhaseV1::Up,
                     },
-                    occurrence: occurrence(0, &[0.0]),
+                    occurrence: occurrence(0, &[0.0, 0.0]),
                 },
                 ExecutableInputBindingV1 {
                     role: role(19),
@@ -462,10 +506,7 @@ fn physical_plan(package: &CheckedProcessPackage) -> ExecutablePhysicalPlanV1 {
                 entry: 2,
             },
         }),
-        program: headless_program(TermScope {
-            universe: constitution.universe(),
-            semantics: constitution.semantics(),
-        }),
+        program: headless_program(scope, &input_handler),
     }
 }
 
@@ -501,7 +542,9 @@ fn browser_state_admission_scopes(checker_count: usize) -> Vec<StateAdmissionSco
     let mut scopes = Vec::with_capacity(BROWSER_ADMISSION_COUNT);
     for ordinal in 0..BROWSER_ADMISSION_COUNT {
         session
-            .apply_opaque_input(&encode_executable_occurrence_v1(&occurrence(0, &[1.0])).unwrap())
+            .apply_opaque_input(
+                &encode_executable_occurrence_v1(&occurrence(0, &[1.0, 0.0])).unwrap(),
+            )
             .expect("fixture horizontal input advances");
         session
             .apply_opaque_input_and_emit_candidate(
@@ -967,7 +1010,7 @@ fn browser_fixture_request() -> WasmProcessRequestV1 {
             budget_units: 100,
         },
         occurrences: vec![
-            encode_executable_occurrence_v1(&occurrence(0, &[1.0]))
+            encode_executable_occurrence_v1(&occurrence(0, &[1.0, 0.0]))
                 .expect("fixture input occurrence encodes"),
             encode_executable_occurrence_v1(&occurrence(2, &[0.25]))
                 .expect("fixture tick occurrence encodes"),
@@ -994,6 +1037,62 @@ fn raw_id(tag: u8) -> [u8; IDENTITY_BYTES] {
     bytes[0] = tag;
     bytes[IDENTITY_BYTES - 1] = tag;
     bytes
+}
+
+#[test]
+fn canonical_source_input_reaches_persistent_admission_and_projection() {
+    let package = checked_program_package_with_scopes(1, vec![]);
+    let package_id = package.id();
+    let application = ApplicationId {
+        snapshot: package.constitution().snapshot(),
+        local: ApplicationLocalId::new(1),
+    };
+    let plan = physical_plan(&package);
+    let (authority, facts) = carrier_authority(&package);
+    let allocation = RuntimeAllocationEpochV1::recorded_for(
+        raw_id(BROWSER_RECORDED_ALLOCATION_ROOT_TAG),
+        &package,
+        application,
+        &plan,
+        facts.executable(),
+    )
+    .expect("source-input session receives one recorded allocation root");
+    let mut session = PersistentProcessSessionV1::rematerialize(
+        package,
+        authority,
+        application,
+        plan,
+        facts.executable(),
+        allocation,
+    )
+    .expect("source-input session starts through the persistent runtime");
+
+    session
+        .apply_opaque_input_and_emit_candidate(
+            &encode_executable_occurrence_v1(&occurrence(0, &[1.0, 0.0]))
+                .expect("source input occurrence encodes"),
+        )
+        .expect("source-owned input meaning produces one hidden candidate");
+    let candidate = session
+        .candidate()
+        .expect("candidate lookup succeeds")
+        .expect("input Step retains one candidate")
+        .clone();
+    assert!(session.last_admitted().is_none());
+    let (policy, authorization) =
+        exact_root_admission_policy(package_id, facts.session, candidate.base, candidate.id, 212);
+    session
+        .establish_root_policy(policy)
+        .expect("separate external authority is established");
+    let (successor, projection) = session
+        .admit_candidate_with_projection(authorization)
+        .expect("separate Admission creates the successor and projection");
+    assert_eq!(successor.predecessor, facts.initial_state);
+    assert_eq!(successor.configuration[4].as_number(), Some(1.0));
+    assert_eq!(successor.configuration[21].as_number(), Some(0.0));
+    let projection = projection.expect("admitted source input emits the renderer projection");
+    assert_eq!(projection.state, successor.id);
+    assert_arena_projection(&projection.term, 9.5, 0.0);
 }
 
 #[test]
@@ -1059,7 +1158,7 @@ fn package_owned_headless_api_reaches_one_admitted_render_state() {
         .expect("production bridge synthesizes the Activation");
 
     runtime
-        .advance_carrier_occurrence(occurrence(0, &[1.0]))
+        .advance_carrier_occurrence(occurrence(0, &[1.0, 0.0]))
         .expect("opaque input enters with its computed Step");
     runtime
         .advance_carrier_occurrence(occurrence(2, &[0.25]))
@@ -1184,7 +1283,7 @@ fn bounded_wasm_bytes_return_only_the_admitted_observation() {
             budget_units: 100,
         },
         occurrences: vec![
-            encode_executable_occurrence_v1(&occurrence(0, &[1.0]))
+            encode_executable_occurrence_v1(&occurrence(0, &[1.0, 0.0]))
                 .expect("opaque occurrence encodes"),
         ],
         render_slots: vec![4],
@@ -1330,7 +1429,7 @@ fn persistent_wasm_session_keeps_generation_sequence_and_admission_custody() {
         command(
             0,
             WasmSessionOperationV1::Input(
-                encode_executable_occurrence_v1(&occurrence(0, &[1.0])).unwrap(),
+                encode_executable_occurrence_v1(&occurrence(0, &[1.0, 0.0])).unwrap(),
             ),
         ),
     );
@@ -1571,6 +1670,28 @@ fn persistent_wasm_session_keeps_generation_sequence_and_admission_custody() {
 #[test]
 fn shipped_cwr1_has_external_physical_plan_and_successive_issued_admission() {
     let request = browser_fixture_request();
+    let checked = check_process_package(
+        decode_process_package(&request.package_bytes).expect("fixture package decodes"),
+    )
+    .expect("fixture package checks");
+    let changed_source = std::str::from_utf8(WORLD)
+        .expect("arena source is UTF-8")
+        .replacen(
+            "include\n    ?player horizontal intent Vec3 { x: ?intent-x, y: 0.0, z: ?intent-z }",
+            "include\n    ?player horizontal intent Vec3 { x: 0.5, y: 0.0, z: ?intent-z }",
+            1,
+        );
+    let changed_plan = physical_plan_with_source(&checked, changed_source.as_bytes());
+    assert_ne!(
+        encode_executable_physical_plan_v1(&changed_plan)
+            .expect("changed source plan remains physical"),
+        request.physical_plan_bytes,
+        "a source-only handler change changes CPP1 without a Rust semantic edit"
+    );
+    assert_eq!(
+        changed_plan.program.rules[0].assignments[0],
+        (4, ExecutableExpressionV1::Constant(number(0.5)),)
+    );
     let exact = encode_wasm_process_request_v1(&request).expect("browser CWR1 fixture encodes");
     let fixture_path = concat!(
         env!("CARGO_MANIFEST_DIR"),
@@ -1591,10 +1712,7 @@ fn shipped_cwr1_has_external_physical_plan_and_successive_issued_admission() {
         request
     );
 
-    let package = check_process_package(
-        decode_process_package(&request.package_bytes).expect("fixture package decodes"),
-    )
-    .expect("fixture package checks");
+    let package = checked;
     let application = ApplicationId {
         snapshot: package.constitution().snapshot(),
         local: request.application,
