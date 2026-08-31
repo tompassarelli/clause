@@ -41,11 +41,11 @@ Clause retains one structurally neutral recursive carrier:
 
 ```text
 Atomᵤ      := opaque(kind, canonical-payload, equality-contract)
-RawTripleᵤ := [Termᵤ, Termᵤ, Termᵤ]
-Termᵤ      := Atomᵤ | RawTripleᵤ
+Tripleᵤ := [Termᵤ, Termᵤ, Termᵤ]
+Termᵤ   := Atomᵤ | Tripleᵤ
 ```
 
-The three positions of `RawTriple` have no inherent subject, operator, object,
+The three positions of `Triple` have no inherent subject, operator, object,
 argument, control, or truth meaning. Not every Triple is nominal. Checked
 formation may interpret a Term as an application without adding another
 universal data constructor:
@@ -246,7 +246,7 @@ form that can hold two Terms and their relating Term. Greater kernel arity is
 unnecessary because higher-arity meaning can be represented by checked
 neighborhoods or recursively complete structural Terms.
 
-The positions of a `RawTriple` are structurally neutral. A checked relational
+The positions of a `Triple` are structurally neutral. A checked relational
 Reading may interpret one as:
 
 ```text
@@ -292,7 +292,7 @@ t₁ ≡ᵤ,sem t₂
 ```
 
 Within that index, Atom equality is equality of kind plus canonical payload
-under the declared contract, and `RawTriple` equality is recursive equality of
+under the declared contract, and `Triple` equality is recursive equality of
 its three Terms. Terms from different universes or semantics epochs are not
 structurally identical without an explicit migration or refinement Run.
 Context-relative notions of sameness are value-equality or equivalence
@@ -321,7 +321,7 @@ revision identity
 artifact identity
 ```
 
-There is no mandatory nominal identity for every `RawTriple`. Clause allocates
+There is no mandatory nominal identity for every `Triple`. Clause allocates
 an explicit nominal or coordinate Term only when continuity or occurrence
 matters, including for:
 
@@ -582,7 +582,7 @@ operator-f-local = fresh OperatorLocalId
 ```
 
 The semantic graph may be cyclic through identity references without assigning
-nominal identity to every `RawTriple` or hashing a structure through itself.
+nominal identity to every `Triple` or hashing a structure through itself.
 Canonical serialization writes finite Terms and opaque identity references; it
 does not recursively inline the neighborhoods those identities name. The local
 operator identifier is resolved to an exact `OperatorRef` once the containing
@@ -614,7 +614,7 @@ nor current world membership. The prior equation of Clause with a
 FormationJudgment is retired; capitalized Clause is the language, not this
 relation.
 
-`RawTriple`, Term, FormationJudgment, ApplicationForm, Application, and governed
+`Triple`, Term, FormationJudgment, ApplicationForm, Application, and governed
 Judgment are therefore distinct: structural compound, holdable value,
 contextual formation, configured application possibility, nominal application
 node, and authority-bearing assessment. Structure grants none of the later
@@ -1919,7 +1919,7 @@ Neither graph presence nor row presence makes an Application activate, an
 observation true, or a candidate authoritative.
 
 Clause meaning has three explicit seams. The typed graph distinguishes neutral
-`RawTriple`/`Term` structure, checked ApplicationForms, nominal Applications,
+`Triple`/`Term` structure, checked ApplicationForms, nominal Applications,
 RelationSchemas, revision-indexed RelationExtensions, OperatorRefs, Modes,
 identities, contracts, and authority interfaces; a checked process constitution
 fixes their exact governing declarations and relations. Transition semantics

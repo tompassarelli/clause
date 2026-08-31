@@ -879,7 +879,7 @@ fn encode_term(
             encoder.blob("atom canonical payload", atom.canonical_payload())?;
             atom.equality_contract().encode(encoder)?;
         }
-        TermValueRef::RawTriple(triple) => {
+        TermValueRef::Triple(triple) => {
             encoder.u8(1);
             for slot in triple.slots() {
                 encode_term_value(slot, encoder, depth + 1)?;
@@ -906,7 +906,7 @@ fn encode_term_value(
             encoder.blob("atom canonical payload", atom.canonical_payload())?;
             atom.equality_contract().encode(encoder)?;
         }
-        TermValueRef::RawTriple(triple) => {
+        TermValueRef::Triple(triple) => {
             encoder.u8(1);
             for slot in triple.slots() {
                 encode_term_value(slot, encoder, depth + 1)?;
@@ -947,7 +947,7 @@ fn decode_term_value(
         }
         1 => {
             cursor.charge_allocation(3 * std::mem::size_of::<Term>())?;
-            Term::raw_triple([
+            Term::triple([
                 decode_term_value(cursor, scope, depth + 1)?,
                 decode_term_value(cursor, scope, depth + 1)?,
                 decode_term_value(cursor, scope, depth + 1)?,

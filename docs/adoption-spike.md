@@ -91,8 +91,8 @@ Before surface implementation, define the generic core required by every gate:
 
 ```text
 Atom(kind, canonical payload, declared equality contract)
-RawTriple = [Term, Term, Term]
-Term = Atom | RawTriple
+Triple = [Term, Term, Term]
+Term = Atom | Triple
 
 Γ ⊢ t : T @ interpretation
 

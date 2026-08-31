@@ -3533,7 +3533,7 @@ fn validate_projection_template(
         return Ok(());
     }
     let triple = term
-        .as_raw_triple()
+        .as_triple()
         .ok_or(ExecutableErrorV1::MalformedProgram)?;
     for slot in triple.slots() {
         validate_projection_template(slot, bindings, used)?;
@@ -3581,10 +3581,10 @@ fn realize_projection_term(
         return projected_value_term(template.scope(), value);
     }
     let triple = template
-        .as_raw_triple()
+        .as_triple()
         .ok_or(ExecutableErrorV1::MalformedProgram)?;
     let [left, operator, right] = triple.slots();
-    Term::raw_triple([
+    Term::triple([
         realize_projection_term(left, bindings, configuration)?,
         realize_projection_term(operator, bindings, configuration)?,
         realize_projection_term(right, bindings, configuration)?,

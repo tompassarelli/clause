@@ -476,7 +476,7 @@ fn term_equality_is_scoped_and_mixed_scope_compounds_reject() {
     assert_ne!(baseline, other_universe);
     assert_ne!(baseline, other_semantics);
     assert_eq!(
-        Term::raw_triple([baseline, other_universe, other_semantics]),
+        Term::triple([baseline, other_universe, other_semantics]),
         Err(TermError::MixedScopeTriple)
     );
 }

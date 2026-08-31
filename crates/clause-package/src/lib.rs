@@ -30,4 +30,4 @@ pub use formation::*;
 pub use identity::*;
 pub use process::*;
 pub use provenance::*;
-pub use term::{Atom, EqualityContract, RawTriple, Term, TermError, TermScope};
+pub use term::{Atom, EqualityContract, Term, TermError, TermScope, Triple};

@@ -1,5 +1,5 @@
 referent Term
-referent RawTriple
+referent Triple
 referent FormationJudgment
 referent RelationSchemaId
 referent RoleId
@@ -37,7 +37,7 @@ referent Ordinal
 referent Cardinality
 referent Binding
 
-shape RawTripleRecord
+shape TripleRecord
   slot-zero: Term
   slot-one: Term
   slot-two: Term
@@ -58,15 +58,15 @@ shape PremiseSlot
   binding: Binding
 
 relation triple-slot-zero
-  reads {term: RawTriple} has exact triple slot zero {value: Term}
+  reads {term: Triple} has exact triple slot zero {value: Term}
   subject term
 
 relation triple-slot-one
-  reads {term: RawTriple} has exact triple slot one {value: Term}
+  reads {term: Triple} has exact triple slot one {value: Term}
   subject term
 
 relation triple-slot-two
-  reads {term: RawTriple} has exact triple slot two {value: Term}
+  reads {term: Triple} has exact triple slot two {value: Term}
   subject term
 
 relation schema-role

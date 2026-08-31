@@ -95,7 +95,7 @@ fn projection_object(scope: TermScope, fields: Vec<(&'static [u8], Term)>) -> Te
     fields.into_iter().rev().fold(
         projection_atom(scope, b"clause/js-object-end-v1", &[]),
         |rest, (field, value)| {
-            Term::raw_triple([
+            Term::triple([
                 projection_atom(scope, b"clause/js-field-v1", field),
                 value,
                 rest,
@@ -109,7 +109,7 @@ fn projection_array(scope: TermScope, values: Vec<Term>) -> Term {
     values.into_iter().rev().fold(
         projection_atom(scope, b"clause/js-array-end-v1", &[]),
         |rest, value| {
-            Term::raw_triple([
+            Term::triple([
                 projection_atom(scope, b"clause/js-item-v1", &[]),
                 value,
                 rest,
@@ -1302,7 +1302,7 @@ fn projected_object_field<'a>(term: &'a Term, expected: &[u8]) -> &'a Term {
             panic!("projected object lacks field {:?}", expected);
         }
         let [field, value, rest] = current
-            .as_raw_triple()
+            .as_triple()
             .expect("projected object is an entry chain")
             .slots();
         let field = field.as_atom().expect("projected object field is an Atom");
@@ -1316,7 +1316,7 @@ fn projected_object_field<'a>(term: &'a Term, expected: &[u8]) -> &'a Term {
 
 fn projected_array_first(term: &Term) -> &Term {
     let [item, value, _rest] = term
-        .as_raw_triple()
+        .as_triple()
         .expect("projected array has at least one item")
         .slots();
     assert_eq!(

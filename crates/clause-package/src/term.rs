@@ -87,9 +87,9 @@ impl Atom {
 
 /// The neutral three-slot recursive carrier. No slot has an intrinsic role.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct RawTriple([Box<Term>; 3]);
+pub struct Triple([Box<Term>; 3]);
 
-impl RawTriple {
+impl Triple {
     fn new(slots: [Term; 3]) -> Result<(Self, TermComplexity), TermError> {
         let scope = slots[0].scope;
         if slots.iter().any(|slot| slot.scope != scope) {
@@ -113,7 +113,7 @@ impl RawTriple {
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 enum TermValue {
     Atom(Atom),
-    RawTriple(RawTriple),
+    Triple(Triple),
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -130,7 +130,7 @@ impl TermComplexity {
             .iter()
             .map(|slot| slot.complexity.depth)
             .max()
-            .expect("a RawTriple always has three slots")
+            .expect("a Triple always has three slots")
             .checked_add(1)
             .ok_or(TermError::DepthExceeded {
                 maximum: MAX_TERM_DEPTH,
@@ -176,12 +176,12 @@ impl Term {
         })
     }
 
-    pub fn raw_triple(slots: [Term; 3]) -> Result<Self, TermError> {
-        let (triple, complexity) = RawTriple::new(slots)?;
+    pub fn triple(slots: [Term; 3]) -> Result<Self, TermError> {
+        let (triple, complexity) = Triple::new(slots)?;
         let scope = triple.scope();
         Ok(Self {
             scope,
-            value: TermValue::RawTriple(triple),
+            value: TermValue::Triple(triple),
             complexity,
         })
     }
@@ -197,7 +197,7 @@ impl Term {
     pub(crate) fn value(&self) -> TermValueRef<'_> {
         match &self.value {
             TermValue::Atom(atom) => TermValueRef::Atom(atom),
-            TermValue::RawTriple(triple) => TermValueRef::RawTriple(triple),
+            TermValue::Triple(triple) => TermValueRef::Triple(triple),
         }
     }
 
@@ -210,15 +210,15 @@ impl Term {
     pub fn as_atom(&self) -> Option<&Atom> {
         match &self.value {
             TermValue::Atom(atom) => Some(atom),
-            TermValue::RawTriple(_) => None,
+            TermValue::Triple(_) => None,
         }
     }
 
     #[must_use]
-    pub fn as_raw_triple(&self) -> Option<&RawTriple> {
+    pub fn as_triple(&self) -> Option<&Triple> {
         match &self.value {
             TermValue::Atom(_) => None,
-            TermValue::RawTriple(triple) => Some(triple),
+            TermValue::Triple(triple) => Some(triple),
         }
     }
 }
@@ -226,7 +226,7 @@ impl Term {
 #[derive(Clone, Copy)]
 pub(crate) enum TermValueRef<'a> {
     Atom(&'a Atom),
-    RawTriple(&'a RawTriple),
+    Triple(&'a Triple),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -278,7 +278,7 @@ mod tests {
 
     #[test]
     fn mixed_scope_triples_reject() {
-        let result = Term::raw_triple([
+        let result = Term::triple([
             atom(scope(1, 2), b"left"),
             atom(scope(1, 2), b"relation"),
             atom(scope(1, 3), b"right"),
@@ -290,7 +290,7 @@ mod tests {
     #[test]
     fn triple_construction_preserves_one_scope_and_neutral_slots() {
         let expected_scope = scope(1, 2);
-        let triple = Term::raw_triple([
+        let triple = Term::triple([
             atom(expected_scope, b"left"),
             atom(expected_scope, b"middle"),
             atom(expected_scope, b"right"),
@@ -300,7 +300,7 @@ mod tests {
         assert_eq!(triple.scope(), expected_scope);
         assert!(triple.as_atom().is_none());
         let slots = triple
-            .as_raw_triple()
+            .as_triple()
             .expect("constructed Triple remains inspectable")
             .slots();
         assert_eq!(
@@ -322,7 +322,7 @@ mod tests {
         let term_scope = scope(1, 2);
         let mut nested = atom(term_scope, b"leaf");
         for depth in 1..=MAX_TERM_DEPTH {
-            nested = Term::raw_triple([
+            nested = Term::triple([
                 nested,
                 atom(term_scope, b"middle"),
                 atom(term_scope, b"right"),
@@ -330,7 +330,7 @@ mod tests {
             .unwrap_or_else(|error| panic!("depth {depth} must remain constructible: {error}"));
         }
 
-        let result = Term::raw_triple([
+        let result = Term::triple([
             nested,
             atom(term_scope, b"middle"),
             atom(term_scope, b"right"),

@@ -87,8 +87,9 @@ Term =
   | Triple(first:Term, second:Term, third:Term)
 ```
 
-The frozen wire name `Triple` denotes the foundation's structurally neutral
-`RawTriple`; its three slots have no inherent operator or process meaning.
+The wire name `Triple` and the foundation's `Triple` denote the same
+structurally neutral carrier; its three slots have no inherent operator or
+process meaning.
 Triples have structural identity only. Nominal and occurrence identities are
 explicit Atom values or explicit package fields; host pointers, table indexes,
 source positions, and spellings never become identity.

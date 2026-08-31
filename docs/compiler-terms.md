@@ -33,11 +33,11 @@ binding.
 The representational kernel remains:
 
 ~~~text
-RawTriple := [Term, Term, Term]
-Term      := Atom | RawTriple
+Triple := [Term, Term, Term]
+Term   := Atom | Triple
 ~~~
 
-All three RawTriple positions are structurally neutral. In particular, the
+All three Triple positions are structurally neutral. In particular, the
 middle position is not inherently an operator, predicate, relation, mode, call,
 or control edge. Parsing, constructing, nesting, interning, or transporting a
 Term does not form an ApplicationForm, allocate an Application, activate it,
@@ -609,7 +609,7 @@ The decisive errors are:
 | --- | --- |
 | slash in an unquoted or quoted authored Designation | SOURCE_QUALIFIED_DESIGNATION_FORBIDDEN |
 | slash in a forged structured Designation spelling | DESIGNATION_SPELLING_NOT_LOCAL |
-| RawTriple middle slot treated as an operator without formation | FORMATION_REQUIRED |
+| Triple middle slot treated as an operator without formation | FORMATION_REQUIRED |
 | missing, extra, duplicate, or wrong-cardinality role | FORMATION_ROLE_CLOSURE_MISMATCH |
 | selected or eligible mode does not exactly close schema and context | FORMATION_ELIGIBLE_MODE_MISMATCH |
 | equal nominal Applications or actual activations share an occurrence identity | PROCESS_IDENTITY_COLLAPSE |

@@ -171,8 +171,8 @@ carry semantic meaning. CLCP v3 separately carries compiler-machine execution
 through a frozen construct-blind evaluator:
 
 ```text
-RawTriple = [Term, Term, Term]
-Term      = Atom | RawTriple
+Triple = [Term, Term, Term]
+Term   = Atom | Triple
 
 KSort = Bytes | Term
 
