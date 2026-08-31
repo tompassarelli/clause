@@ -83,24 +83,19 @@
       "input": "an infinite physical tau run is used to satisfy a Mode with a declared progress or fairness obligation"
     },
     {
-      "expected_rejection": "SemanticReleaseManifestSelfReference",
-      "id": "release-self-reference",
+      "expected_rejection": "ClauseSemanticsManifestSelfReference",
+      "id": "semantics-manifest-self-reference",
       "input": "manifest commits to its own digest, ClauseSemanticsId, path, Git object, or publication tag"
     },
     {
-      "expected_rejection": "SemanticReleaseCommitmentMismatch",
-      "id": "release-content-drift",
+      "expected_rejection": "ClauseSemanticsCommitmentMismatch",
+      "id": "semantics-content-drift",
       "input": "foundation, syntax, architecture, compiler genesis, selected carrier/checker contract, or corpus root differs from the canonical semantic manifest"
     },
     {
-      "expected_rejection": "SemanticReleaseArtifactCommitmentMismatch",
-      "id": "release-artifact-content-drift",
-      "input": "checker/runtime implementation bytes, bounded claim label, or cited ClauseSemanticsId differs from the canonical artifact manifest"
-    },
-    {
       "expected_rejection": "SemanticIdentityIncludesImplementation",
-      "id": "release-implementation-in-semantic-preimage",
-      "input": "a mutable checker/runtime implementation hash or bounded capability label is included in SemanticReleaseManifestV1 or ClauseSemanticsId derivation"
+      "id": "implementation-in-semantic-preimage",
+      "input": "a mutable checker/runtime implementation hash or bounded capability label is included in ClauseSemanticsManifestV1 or ClauseSemanticsId derivation"
     }
   ],
   "claim": "normative discriminating inputs only; no carrier or runtime checker executes these cases yet",

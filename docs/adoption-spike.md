@@ -1012,12 +1012,12 @@ The cross-phase program passes only when all of these are executable and exact:
   all four canonical process source specimens rather than a prose
   readability claim; and
 - two isolated materializations of the canonical non-self-referential
-  `SemanticReleaseManifestV1` produce identical bytes and ClauseSemanticsId,
+  `ClauseSemanticsManifestV1` produce identical bytes and ClauseSemanticsId,
   bind the exact identity-relevant authority/carrier/checker-contract/corpus
   commitments, remain independent of the supplied Git object, and reject a
-  digest/preimage collision; a separate `SemanticReleaseArtifactManifestV1`
-  binds mutable checker/runtime hashes and bounded claims while citing, but not
-  changing, that ClauseSemanticsId.
+  digest/preimage collision; mutable implementation hashes, bounded capability
+  labels, release claims, and distribution evidence remain outside semantic
+  identity and create no separate artifact identity.
 
 ## Required negative evidence
 

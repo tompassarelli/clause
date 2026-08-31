@@ -67,14 +67,14 @@
       "right": "Compiler1 package-only evolution plus the same frozen hosts"
     },
     {
-      "expected": "byte-identical SemanticReleaseManifestV1 and ClauseSemanticsId; separately byte-identical SemanticReleaseArtifactManifestV1 and SemanticReleaseArtifactId for equal implementations/claims; supplied Git objects are external and may differ",
-      "id": "semantic-release-reproducibility",
+      "expected": "byte-identical ClauseSemanticsManifestV1 and ClauseSemanticsId; Git objects and implementation state are outside the preimage",
+      "id": "semantics-identity-reproducibility",
       "left": "isolated producer A over the exact committed inputs",
       "right": "isolated producer B over the same exact committed inputs"
     },
     {
-      "expected": "identical SemanticReleaseManifestV1 bytes and ClauseSemanticsId; different SemanticReleaseArtifactManifestV1 bytes and SemanticReleaseArtifactId",
-      "id": "semantic-release-implementation-independence",
+      "expected": "identical ClauseSemanticsManifestV1 bytes and ClauseSemanticsId; no additional artifact identity is manufactured for the implementation change",
+      "id": "semantics-identity-implementation-independence",
       "left": "one implementation commitment and bounded capability label",
       "right": "a behavior-preserving implementation edit or changed bounded label under the same semantic authority/contracts/corpora"
     }

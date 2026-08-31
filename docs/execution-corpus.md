@@ -594,12 +594,11 @@ they do not pretend to extend constitutional package authority.
 
 ## Replay boundary
 
-The corpus depends on exact bootstrap release
-`2ea651db7c525249c465dceb0f8c5474d635fae6`. The final release manifest must
-separately supply one exact published Git object that contains this corpus with
-the tracked checksums; embedding that future object here would create a hash
-self-reference. Two isolated replays must start from that same supplied release
-object, use the repository-pinned Lean and Rust toolchains, and share no
+The corpus depends on exact bootstrap revision
+`2ea651db7c525249c465dceb0f8c5474d635fae6`. A replay uses the current tracked
+corpus and its checksums; no publication object or release manifest is part of
+its semantics. Two isolated replays use the repository-pinned Lean and Rust
+toolchains and share no
 checkout, build cache, package cache, output directory, runtime state, or
 ambient configuration. They must independently observe identical:
 

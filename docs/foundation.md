@@ -2896,17 +2896,17 @@ accidental structure never defines Clause meaning:
 | thrown string | never an untyped substitute for rejection, cancellation, timeout, exhaustion, or absent evidence |
 | missing relation row | never false without an explicit closed-world contract |
 
-## Reproducible semantic release
+## Canonical semantics identity
 
-One canonical `SemanticReleaseManifestV1` is the complete preimage of a
-released `ClauseSemanticsId`:
+One canonical `ClauseSemanticsManifestV1` is the complete preimage of a
+`ClauseSemanticsId`:
 
 ```text
 ClauseSemanticsId = SHA256(
-  UTF8("clause/semantic-release-manifest/v1\n")
-  || exact SemanticReleaseManifestV1 bytes)
+  UTF8("clause/semantics-manifest/v1\n")
+  || exact ClauseSemanticsManifestV1 bytes)
 
-SemanticReleaseManifestV1 :=
+ClauseSemanticsManifestV1 :=
     exact manifest format/version and canonical-byte contract
   + exact content commitment for this foundation
   + exact content commitment for canonical syntax
@@ -2922,37 +2922,21 @@ The manifest is canonical UTF-8 JSON: no BOM; LF newlines; one final newline;
 two-space indentation; lexicographically ordered object keys; arrays in their
 declared semantic order; lowercase 64-nybble SHA-256 commitments. The manifest
 does not contain its own digest, `ClauseSemanticsId`, path, Git commit, tag, or
-publication object. A published Git commit or annotated tag is supplied
-externally and must contain the exact manifest and committed content; it cannot
-change the semantic preimage or create authority. Signatures, SBOMs, deployment
-facts, packaging ceremony, and provider metadata are outside this semantic
+publication object. Git objects cannot change the semantic preimage or create
+authority, and no publication object is required. Signatures, SBOMs, deployment
+facts, packaging ceremony, and provider metadata are outside this semantics
 manifest.
 
-`clause:semantic-release/manifest-v1.json` materializes this smallest manifest,
-and `clause:semantic-release/CLAUSE_SEMANTICS_ID` records the reproducible
+`clause:semantics/manifest-v1.json` materializes this smallest manifest,
+and `clause:semantics/CLAUSE_SEMANTICS_ID` records the reproducible
 derived identifier. Mutable checker/runtime implementation hashes and bounded
 capability labels never enter those bytes: a behavior-preserving implementation
 edit cannot change Clause semantics.
 
-One separate non-semantic artifact manifest records those exact release facts:
-
-```text
-SemanticReleaseArtifactId = SHA256(
-  UTF8("clause/semantic-release-artifact/v1\n")
-  || exact SemanticReleaseArtifactManifestV1 bytes)
-
-SemanticReleaseArtifactManifestV1 :=
-    exact ClauseSemanticsId
-  + exact checker/runtime implementation content commitments
-  + exact bounded capability and incompleteness labels
-```
-
-`clause:semantic-release/artifact-v1.json` and
-`clause:semantic-release/SEMANTIC_RELEASE_ARTIFACT_ID` materialize that binding.
-The artifact manifest contains neither its own ID nor a Git publication object;
-the latter remains externally supplied. It certifies no carrier/runtime
-conformance beyond its exact bounded labels, and changing only an implementation
-hash or label changes `SemanticReleaseArtifactId` without changing
+No implementation-artifact or release manifest is implied. Mutable
+checker/runtime inventories, capability attestations, Git publication objects,
+signatures, distribution facts, and supported-release claims remain ordinary
+project state unless one actual consumer requires them; they never enter
 `ClauseSemanticsId`.
 
 Universally, every hash-derived Clause identifier or reuse key has exactly one
@@ -2962,7 +2946,7 @@ different bytes is typed `HashPreimageCollision` rejection, never equality,
 deduplication, overwrite, cache hit, or authority. This law applies to
 `ClauseSemanticsId`, `AdmissionRequestKey`, snapshots, shapes, instantiation and
 specialization keys, accepted refinement witnesses, physical reuse keys,
-semantic-release artifacts, and every later declared hash-derived identity.
+semantics manifests, and every later declared hash-derived identity.
 
 ## Causal-affine lifetime and reclamation
 
@@ -3145,9 +3129,9 @@ The adoption spike and any migration must prove at least these cases:
 | Reactive/effectful physical plan validates | Weak simulation plus Mode liveness/fairness and exact Step/effect/Admission linearization hold; infinite tau stutter cannot satisfy declared progress |
 | CPP1 plan carries `ClosedApplicationRuleMachineV1` and passes current shape/Mode/role/byte checks | It remains an unproved physical candidate until an `OpenSystemRefinementV1` witness is accepted; the tag grants no reuse identity |
 | Compiler0/Compiler1 host-freeze evolution changes only package-declared meaning under unchanged hosts | The exact checked refinement and host-mechanics evidence must still pass; a host semantic edit or unproved refinement rejects the freeze claim |
-| Two isolated producers use identical committed files and canonical manifest bytes | Identical `SemanticReleaseManifestV1` bytes and `ClauseSemanticsId`; externally supplied Git objects may differ without entering the preimage |
-| Identity-relevant authority, carrier/checker contract, or required corpus root changes | Different SemanticReleaseManifestV1 bytes and `ClauseSemanticsId`; same digest with different bytes is typed collision rejection |
-| Only a checker/runtime implementation hash or bounded capability label changes | Same `ClauseSemanticsId`; different SemanticReleaseArtifactManifestV1 bytes and `SemanticReleaseArtifactId` |
+| Two isolated producers use identical committed files and canonical manifest bytes | Identical `ClauseSemanticsManifestV1` bytes and `ClauseSemanticsId`; Git objects are outside the preimage |
+| Identity-relevant authority, carrier/checker contract, or required corpus root changes | Different `ClauseSemanticsManifestV1` bytes and `ClauseSemanticsId`; same digest with different bytes is typed collision rejection |
+| Only a checker/runtime implementation or bounded capability label changes | Same `ClauseSemanticsId`; no additional artifact identity is manufactured |
 | Same structural Triple constructed twice | Same Term; no Application, assertion, or execution implied |
 | Equal Terms used by independent source or assertion occurrences | Equal content; distinct occurrences |
 | Closed form compared as one exact resolved form | `ApplicationShapeId` binds `ClauseSemanticsId`, exact RelationSchemaId, OperatorRef, eligible ModeIds, roles, context requirements, exact InstantiationUseRefs with InstantiationKeys and SpecializationKeys, and the exact resolved semantic-dependency/declaration closure; PhysicalReuseKey is excluded and an open form has no shape ID |

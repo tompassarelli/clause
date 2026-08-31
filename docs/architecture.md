@@ -582,16 +582,14 @@ are already-correct implementation facts, but its current
 `ClosedApplicationRuleMachineV1` tag and shape/Mode/role/byte checks are not a
 refinement certificate.
 
-Semantic publication uses only the foundation's canonical
-`SemanticReleaseManifestV1`: exact manifest bytes derive `ClauseSemanticsId`
+Semantic identity uses only the foundation's canonical
+`ClauseSemanticsManifestV1`: exact manifest bytes derive `ClauseSemanticsId`
 and bind the foundation, syntax, architecture, compiler genesis, selected
 carrier/checker contracts, and required corpus roots. Mutable checker/runtime
-implementation hashes and bounded capability labels live instead in one
-`SemanticReleaseArtifactManifestV1` whose `SemanticReleaseArtifactId` cites the
-exact `ClauseSemanticsId`; they cannot change semantic identity. The Git commit
-or tag containing either manifest is supplied externally and is not in either
-preimage. Release packaging, signing, deployment, and inventory metadata never
-enter the semantic manifest.
+implementation hashes, bounded capability labels, Git commits/tags, release
+packaging, signing, deployment, and inventory metadata remain outside the
+preimage. No non-semantic artifact manifest is created without one actual
+consumer whose next action depends on it.
 
 Generic Triple interpretation is permitted as a bounded reference path, not an
 ordinary production hot path.

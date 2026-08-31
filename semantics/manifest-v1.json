@@ -3,7 +3,7 @@
   "content_commitments": {
     "architecture": {
       "path": "docs/architecture.md",
-      "sha256": "3f3c66937e5e42c6fe064c9f5c6482a69086939cff22e3da2b887a2e65742ab7"
+      "sha256": "cac3da926faed9570d6fab2326277b6eee68c5289eca7f886fd30abc43518c9a"
     },
     "compiler_genesis": {
       "path": "docs/compiler-genesis.md",
@@ -11,7 +11,7 @@
     },
     "foundation": {
       "path": "docs/foundation.md",
-      "sha256": "e2857ed5a698d1d39f4f735978443c878fbf4c151e202f55c72297e9590d0a17"
+      "sha256": "08dd26555e57ea4147ce4763cb8e77ae3799199186bac79fddbc5dd3de013f66"
     },
     "selected_carrier_contract": [
       {
@@ -31,12 +31,12 @@
   "corpus_roots": {
     "metamorphic": {
       "path": "test-vectors/semantic-closure-v1/metamorphic.json",
-      "sha256": "a5c8a55f5e13943256d1829cc0c12a9c79b6ba0a4d36a77b04aba4a4a5ea6e35"
+      "sha256": "521054b91f70fa0fd4922e4a3b2c0ab244998881fd46fccf50d9f50e07b649ba"
     },
     "negative": {
       "path": "test-vectors/semantic-closure-v1/negative.json",
-      "sha256": "a188ebc2ff9fe25eb1768aa10bd56d255418fc3d8e2c596013ab26de2cbc883c"
+      "sha256": "b9abced87a357301fc8a6628a11ef703f77801d07056cbf2dfae8f57ae75b08c"
     }
   },
-  "schema": "clause/semantic-release-manifest/v1"
+  "schema": "clause/semantics-manifest/v1"
 }
