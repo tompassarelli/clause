@@ -2,7 +2,7 @@ use clause_package::*;
 use clause_runtime::*;
 
 const BROWSER_ADMISSION_COUNT: usize = 8;
-const BROWSER_IDENTITY_SEED_TAG: u8 = 210;
+const BROWSER_RECORDED_ALLOCATION_ROOT_TAG: u8 = 210;
 
 macro_rules! id {
     ($kind:ident, $tag:expr) => {
@@ -345,26 +345,6 @@ fn checked_program_package_with_scopes(
         .schemas
         .sort_by_key(|schema| schema.id);
 
-    let scope = candidate.snapshot.constitution.semantics;
-    let term_scope = TermScope {
-        universe: candidate.snapshot.constitution.universe,
-        semantics: scope,
-    };
-    let term = headless_program(term_scope)
-        .encode_term(term_scope)
-        .expect("closed program encodes as a Term");
-    let dependency = LocalSemanticDependencyV2::ExternalReference(term);
-    candidate.snapshot.constitution.formations[0]
-        .direct_dependencies
-        .push(dependency.clone());
-    candidate.snapshot.constitution.formations[0]
-        .direct_dependencies
-        .sort();
-    for application in &mut candidate.snapshot.constitution.applications {
-        application.form.dependency_closure.push(dependency.clone());
-        application.form.dependency_closure.sort();
-        application.form.dependency_closure.dedup();
-    }
     match checker_count {
         0 => candidate.snapshot.constitution.operators[0].modes[0]
             .contract
@@ -413,6 +393,30 @@ fn checked_program_package_with_scopes(
         .expect("program package checks")
 }
 
+fn physical_plan(package: &CheckedProcessPackage) -> ExecutablePhysicalPlanV1 {
+    let constitution = package.constitution();
+    let snapshot = constitution.snapshot();
+    let application = ApplicationLocalId::new(1);
+    ExecutablePhysicalPlanV1 {
+        application_shape: constitution
+            .application_shape(application)
+            .expect("fixture Application has one exact semantic shape"),
+        mode: ModeId {
+            operator: OperatorRef {
+                snapshot,
+                local: OperatorLocalId::new(1),
+            },
+            local: ModeLocalId::new(2),
+        },
+        refinement: ExecutableRefinementV1::ClosedApplicationRuleMachineV1,
+        target: ExecutablePhysicalTargetV1::PortableScalarInterpreterV1,
+        program: headless_program(TermScope {
+            universe: constitution.universe(),
+            semantics: constitution.semantics(),
+        }),
+    }
+}
+
 fn browser_state_admission_scopes(checker_count: usize) -> Vec<StateAdmissionScope> {
     if checker_count != 1 {
         return Vec::new();
@@ -423,13 +427,23 @@ fn browser_state_admission_scopes(checker_count: usize) -> Vec<StateAdmissionSco
         snapshot: package.constitution().snapshot(),
         local: ApplicationLocalId::new(1),
     };
+    let physical_plan = physical_plan(&package);
     let (authority, facts) = carrier_authority(&package);
-    let mut session = PersistentProcessSessionV1::open_with_identity_seed(
+    let allocation = RuntimeAllocationEpochV1::recorded_for(
+        raw_id(BROWSER_RECORDED_ALLOCATION_ROOT_TAG),
+        &package,
+        application,
+        &physical_plan,
+        facts.executable(),
+    )
+    .expect("fixture allocation evidence binds the provisional package");
+    let mut session = PersistentProcessSessionV1::rematerialize(
         package,
         authority,
         application,
+        physical_plan,
         facts.executable(),
-        raw_id(BROWSER_IDENTITY_SEED_TAG),
+        allocation,
     )
     .expect("fixture scope derivation opens one exact session");
     let mut scopes = Vec::with_capacity(BROWSER_ADMISSION_COUNT);
@@ -588,6 +602,31 @@ fn carrier_authority(checked: &CheckedProcessPackage) -> (AuthorityStore, Carrie
     );
     let initial_state = session_anchor.initial_state_id();
     let root_policy = id!(RootPolicyId, 125);
+    let pure_boundary = id!(BoundaryRef, 126);
+    let state_boundary = id!(BoundaryRef, 127);
+    let facts = CarrierFacts {
+        revision: revision.id,
+        initial_state,
+        session,
+        policy,
+        session_start,
+        root_policy,
+        pure_boundary,
+        state_boundary,
+    };
+    let application = ApplicationId {
+        snapshot,
+        local: ApplicationLocalId::new(1),
+    };
+    let physical_plan = physical_plan(checked);
+    let allocation = RuntimeAllocationEpochV1::recorded_for(
+        raw_id(BROWSER_RECORDED_ALLOCATION_ROOT_TAG),
+        checked,
+        application,
+        &physical_plan,
+        facts.executable(),
+    )
+    .expect("fixture authority scopes one recorded allocation epoch");
     let root_genesis = RootAdmissionAuthorizationRef {
         policy: root_policy,
         local: AdmissionAuthorizationLocalId::new(0),
@@ -616,7 +655,7 @@ fn carrier_authority(checked: &CheckedProcessPackage) -> (AuthorityStore, Carrie
                         package: checked.id(),
                         session,
                         base: initial_state,
-                        delta: id!(CandidateDeltaId, 80),
+                        delta: allocation.candidate_id(0),
                     },
                 }],
                 vec![RootJudgmentAuthorityGrant {
@@ -645,8 +684,6 @@ fn carrier_authority(checked: &CheckedProcessPackage) -> (AuthorityStore, Carrie
     authority
         .establish_runtime_session(session_anchor)
         .expect("runtime session is established once");
-    let pure_boundary = id!(BoundaryRef, 126);
-    let state_boundary = id!(BoundaryRef, 127);
     authority
         .establish_boundary(BoundaryAnchor {
             boundary: pure_boundary,
@@ -690,19 +727,7 @@ fn carrier_authority(checked: &CheckedProcessPackage) -> (AuthorityStore, Carrie
             })
             .expect("external evidence is established once");
     }
-    (
-        authority,
-        CarrierFacts {
-            revision: revision.id,
-            initial_state,
-            session,
-            policy,
-            session_start,
-            root_policy,
-            pure_boundary,
-            state_boundary,
-        },
-    )
+    (authority, facts)
 }
 
 fn occurrence(entry: u16, arguments: &[f64]) -> ExecutableOccurrenceV1 {
@@ -811,9 +836,26 @@ fn assert_arena_projection(term: &Term, expected_x: f64, expected_velocity_x: f6
 
 fn browser_fixture_request() -> WasmProcessRequestV1 {
     let package = checked_program_package(1);
+    let physical_plan = physical_plan(&package);
+    let application = ApplicationId {
+        snapshot: package.constitution().snapshot(),
+        local: ApplicationLocalId::new(1),
+    };
+    let (_, allocation_facts) = carrier_authority(&package);
+    let allocation = RuntimeAllocationEpochV1::recorded_for(
+        raw_id(BROWSER_RECORDED_ALLOCATION_ROOT_TAG),
+        &package,
+        application,
+        &physical_plan,
+        allocation_facts.executable(),
+    )
+    .expect("fixture allocation evidence binds the final package and plan");
     WasmProcessRequestV1 {
         package_bytes: package.exact_bytes().to_vec(),
         application: ApplicationLocalId::new(1),
+        physical_plan_bytes: encode_executable_physical_plan_v1(&physical_plan)
+            .expect("fixture physical plan encodes beside the package"),
+        allocation,
         authority: WasmAuthorityInputV1 {
             program: id!(ProgramId, 123),
             change: id!(ProgramChangeOccurrenceId, 124),
@@ -869,11 +911,14 @@ fn package_owned_headless_api_reaches_one_admitted_render_state() {
             snapshot: rejected_package.constitution().snapshot(),
             local: ApplicationLocalId::new(1),
         };
+        let rejected_plan = physical_plan(&rejected_package);
         let (rejected_authority, rejected_facts) = carrier_authority(&rejected_package);
-        let mut rejected_runtime = ExecutableProcessRuntimeV1::instantiate(
+        let mut rejected_runtime = ExecutableProcessRuntimeV1::instantiate_new(
             rejected_package,
             rejected_authority,
             rejected_application,
+            rejected_plan,
+            rejected_facts.executable(),
         )
         .expect("negative package still has a checked executable program");
         let error = rejected_runtime
@@ -897,9 +942,25 @@ fn package_owned_headless_api_reaches_one_admitted_render_state() {
         snapshot: package.constitution().snapshot(),
         local: ApplicationLocalId::new(1),
     };
+    let physical_plan = physical_plan(&package);
     let (authority, facts) = carrier_authority(&package);
-    let mut runtime = ExecutableProcessRuntimeV1::instantiate(package, authority, application)
-        .expect("checked package executable instantiates");
+    let allocation = RuntimeAllocationEpochV1::recorded_for(
+        raw_id(BROWSER_RECORDED_ALLOCATION_ROOT_TAG),
+        &package,
+        application,
+        &physical_plan,
+        facts.executable(),
+    )
+    .expect("fixture native run rematerializes one recorded occurrence");
+    let mut runtime = ExecutableProcessRuntimeV1::instantiate_rematerialized(
+        package,
+        authority,
+        application,
+        physical_plan,
+        facts.executable(),
+        allocation,
+    )
+    .expect("checked package executable instantiates");
     runtime
         .start_carrier_process(facts.executable())
         .expect("production bridge synthesizes the Activation");
@@ -992,9 +1053,26 @@ fn package_owned_headless_api_reaches_one_admitted_render_state() {
 #[test]
 fn bounded_wasm_bytes_return_only_the_admitted_observation() {
     let package = checked_program_package(1);
+    let physical_plan = physical_plan(&package);
+    let application = ApplicationId {
+        snapshot: package.constitution().snapshot(),
+        local: ApplicationLocalId::new(1),
+    };
+    let (_, allocation_facts) = carrier_authority(&package);
+    let allocation = RuntimeAllocationEpochV1::recorded_for(
+        raw_id(BROWSER_RECORDED_ALLOCATION_ROOT_TAG),
+        &package,
+        application,
+        &physical_plan,
+        allocation_facts.executable(),
+    )
+    .expect("bounded request records one exact allocation epoch");
     let request = WasmProcessRequestV1 {
         package_bytes: package.exact_bytes().to_vec(),
         application: ApplicationLocalId::new(1),
+        physical_plan_bytes: encode_executable_physical_plan_v1(&physical_plan)
+            .expect("physical plan encodes outside the semantic package"),
+        allocation,
         authority: WasmAuthorityInputV1 {
             program: id!(ProgramId, 123),
             change: id!(ProgramChangeOccurrenceId, 124),
@@ -1036,7 +1114,7 @@ fn bounded_wasm_bytes_return_only_the_admitted_observation() {
     assert_eq!(boundary.status(), WasmProcessStatusV1::Ready);
     let output = decode_wasm_process_observation_v1(boundary.response())
         .expect("boundary returns one exact admitted Observation");
-    assert_eq!(output.observation, id!(ObservationId, 100));
+    assert!(output.observation.as_bytes().iter().any(|byte| *byte != 0));
     assert_ne!(output.state, id!(StateRevisionId, 120));
     assert_eq!(
         output.exact_value_bytes,
@@ -1063,10 +1141,26 @@ fn bounded_wasm_bytes_return_only_the_admitted_observation() {
 fn persistent_wasm_session_keeps_generation_sequence_and_admission_custody() {
     let package = checked_program_package(1);
     let package_id = package.id();
+    let physical_plan = physical_plan(&package);
+    let application = ApplicationId {
+        snapshot: package.constitution().snapshot(),
+        local: ApplicationLocalId::new(1),
+    };
+    let (_, allocation_facts) = carrier_authority(&package);
+    let allocation = RuntimeAllocationEpochV1::recorded_for(
+        raw_id(BROWSER_RECORDED_ALLOCATION_ROOT_TAG),
+        &package,
+        application,
+        &physical_plan,
+        allocation_facts.executable(),
+    )
+    .expect("tracked fixture allocation binds the final package and plan");
     let session = id!(RuntimeSessionId, 120);
     let open = WasmSessionOpenV1 {
         package_bytes: package.exact_bytes().to_vec(),
         application: ApplicationLocalId::new(1),
+        physical_plan_bytes: encode_executable_physical_plan_v1(&physical_plan)
+            .expect("physical plan encodes beside the package"),
         authority: WasmAuthorityInputV1 {
             program: id!(ProgramId, 123),
             change: id!(ProgramChangeOccurrenceId, 124),
@@ -1084,7 +1178,7 @@ fn persistent_wasm_session_keeps_generation_sequence_and_admission_custody() {
             admission_evidence_bytes: vec![190],
             budget_units: 100,
         },
-        identity_seed: raw_id(210),
+        allocation: WasmSessionAllocationV1::Rematerialize(allocation),
         limits: WasmSessionLimitsV1 {
             max_commands: 16,
             command_bytes: 4096,
@@ -1108,10 +1202,12 @@ fn persistent_wasm_session_keeps_generation_sequence_and_admission_custody() {
             world,
             run,
             activation,
+            allocation: opened_allocation,
             state_revision_count,
         } => {
             assert_eq!(opened_package, package_id);
             assert_eq!(actual_session, session);
+            assert_eq!(opened_allocation, allocation);
             assert_eq!(state_revision_count, 1);
             (world, run, activation)
         }
@@ -1265,7 +1361,7 @@ fn persistent_wasm_session_keeps_generation_sequence_and_admission_custody() {
 }
 
 #[test]
-fn shipped_cwr1_has_cxp2_arena_projection_and_successive_constitutive_admission() {
+fn shipped_cwr1_has_external_physical_plan_and_successive_constitutive_admission() {
     let request = browser_fixture_request();
     let exact = encode_wasm_process_request_v1(&request).expect("browser CWR1 fixture encodes");
     let fixture_path = concat!(
@@ -1287,11 +1383,31 @@ fn shipped_cwr1_has_cxp2_arena_projection_and_successive_constitutive_admission(
         request
     );
 
+    let package = check_process_package(
+        decode_process_package(&request.package_bytes).expect("fixture package decodes"),
+    )
+    .expect("fixture package checks");
+    let application = ApplicationId {
+        snapshot: package.constitution().snapshot(),
+        local: request.application,
+    };
+    let physical_plan = decode_executable_physical_plan_v1(&request.physical_plan_bytes)
+        .expect("fixture physical plan decodes independently");
+    let (_, allocation_facts) = carrier_authority(&package);
+    let allocation = RuntimeAllocationEpochV1::recorded_for(
+        raw_id(BROWSER_RECORDED_ALLOCATION_ROOT_TAG),
+        &package,
+        application,
+        &physical_plan,
+        allocation_facts.executable(),
+    )
+    .expect("tracked fixture allocation binds the final package and plan");
     let open = WasmSessionOpenV1 {
         package_bytes: request.package_bytes.clone(),
         application: request.application,
+        physical_plan_bytes: request.physical_plan_bytes.clone(),
         authority: request.authority.clone(),
-        identity_seed: raw_id(BROWSER_IDENTITY_SEED_TAG),
+        allocation: WasmSessionAllocationV1::Rematerialize(allocation),
         limits: WasmSessionLimitsV1 {
             max_commands: 16,
             command_bytes: 4096,

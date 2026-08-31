@@ -11,6 +11,7 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 clause-package = { path = "../clause-package" }
+getrandom = { version = "=0.3.4", features = ["wasm_js"] }
 sha2 = "=0.10.9"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]

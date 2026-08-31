@@ -8,8 +8,9 @@ use super::wasm_boundary::{
 };
 use super::{
     ExecutableCarrierErrorV1, PersistentProcessSessionErrorV1, PersistentProcessSessionV1,
-    WASM_PROCESS_REQUEST_LIMIT_V1, WASM_PROCESS_RESPONSE_LIMIT_V1, WasmAuthorityInputV1,
-    WasmProcessStatusV1,
+    RuntimeAllocationEpochV1, WASM_PROCESS_REQUEST_LIMIT_V1, WASM_PROCESS_RESPONSE_LIMIT_V1,
+    WasmAuthorityInputV1, WasmProcessStatusV1, decode_executable_physical_plan_v1,
+    decode_runtime_allocation_epoch_v1, encode_runtime_allocation_epoch_v1,
 };
 
 const OPEN_MAGIC: &[u8; 4] = b"CWS1";
@@ -17,6 +18,7 @@ const COMMAND_MAGIC: &[u8; 4] = b"CWI1";
 const EVENT_MAGIC: &[u8; 4] = b"CSE1";
 const SLOT: u32 = 0;
 const EVENT_HEADER_BYTES: usize = 4 + 4 + 4 + 8 + 1;
+const ALLOCATION_EPOCH_BYTES_V1: usize = 304;
 
 pub const WASM_SESSION_COMMAND_LIMIT_V1: usize = 1024 * 1024;
 pub const WASM_SESSION_EVENT_LIMIT_V1: usize = 4 * 1024;
@@ -38,9 +40,16 @@ pub struct WasmSessionLimitsV1 {
 pub struct WasmSessionOpenV1 {
     pub package_bytes: Vec<u8>,
     pub application: ApplicationLocalId,
+    pub physical_plan_bytes: Vec<u8>,
     pub authority: WasmAuthorityInputV1,
-    pub identity_seed: [u8; IDENTITY_BYTES],
+    pub allocation: WasmSessionAllocationV1,
     pub limits: WasmSessionLimitsV1,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum WasmSessionAllocationV1 {
+    New,
+    Rematerialize(RuntimeAllocationEpochV1),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -84,6 +93,7 @@ pub enum WasmSessionEventKindV1 {
         world: StateRevisionId,
         run: RunId,
         activation: ActivationId,
+        allocation: RuntimeAllocationEpochV1,
         state_revision_count: u32,
     },
     InputAccepted {
@@ -241,14 +251,28 @@ impl WasmPersistentSessionBoundaryV1 {
             snapshot: package.constitution().snapshot(),
             local: request.application,
         };
+        let physical_plan = decode_executable_physical_plan_v1(&request.physical_plan_bytes)
+            .map_err(|_| WasmProcessStatusV1::ProcessRejected)?;
         let (authority, facts) = establish_persistent_authority(&package, &request.authority)?;
-        let session = PersistentProcessSessionV1::open_with_identity_seed(
-            package,
-            authority,
-            application,
-            facts,
-            request.identity_seed,
-        )
+        let session = match request.allocation {
+            WasmSessionAllocationV1::New => PersistentProcessSessionV1::open(
+                package,
+                authority,
+                application,
+                physical_plan,
+                facts,
+            ),
+            WasmSessionAllocationV1::Rematerialize(allocation) => {
+                PersistentProcessSessionV1::rematerialize(
+                    package,
+                    authority,
+                    application,
+                    physical_plan,
+                    facts,
+                    allocation,
+                )
+            }
+        }
         .map_err(|_| WasmProcessStatusV1::ProcessRejected)?;
         let handle = WasmSessionHandleV1 {
             slot: SLOT,
@@ -269,6 +293,7 @@ impl WasmPersistentSessionBoundaryV1 {
                 activation: session
                     .activation()
                     .map_err(|_| WasmProcessStatusV1::ProcessRejected)?,
+                allocation: session.allocation(),
                 state_revision_count: state_revision_count(&session)?,
             },
         };
@@ -479,7 +504,7 @@ fn validate_limits(limits: WasmSessionLimitsV1) -> Result<(), WasmProcessStatusV
 }
 
 const fn open_event_size() -> usize {
-    EVENT_HEADER_BYTES + 5 * IDENTITY_BYTES + 4
+    EVENT_HEADER_BYTES + 5 * IDENTITY_BYTES + 4 + 4 + ALLOCATION_EPOCH_BYTES_V1
 }
 
 fn command_event_size(operation: &WasmSessionOperationV1) -> usize {
@@ -506,9 +531,16 @@ pub fn encode_wasm_session_open_v1(
     bytes.extend_from_slice(OPEN_MAGIC);
     put_blob(&mut bytes, &request.package_bytes)?;
     bytes.extend_from_slice(&request.application.get().to_le_bytes());
+    put_blob(&mut bytes, &request.physical_plan_bytes)?;
     encode_wasm_authority_input_v1(&mut bytes, &request.authority)?;
     bytes.extend_from_slice(&request.authority.budget_units.to_le_bytes());
-    bytes.extend_from_slice(&request.identity_seed);
+    match request.allocation {
+        WasmSessionAllocationV1::New => bytes.push(0),
+        WasmSessionAllocationV1::Rematerialize(allocation) => {
+            bytes.push(1);
+            put_blob(&mut bytes, &encode_runtime_allocation_epoch_v1(allocation))?;
+        }
+    }
     bytes.extend_from_slice(&request.limits.max_commands.to_le_bytes());
     bytes.extend_from_slice(&request.limits.command_bytes.to_le_bytes());
     bytes.extend_from_slice(&request.limits.event_bytes.to_le_bytes());
@@ -528,9 +560,17 @@ pub fn decode_wasm_session_open_v1(bytes: &[u8]) -> Result<WasmSessionOpenV1, Wa
     }
     let package_bytes = d.blob(WASM_PROCESS_REQUEST_LIMIT_V1)?.to_vec();
     let application = ApplicationLocalId::new(d.u32()?);
+    let physical_plan_bytes = d.blob(WASM_PROCESS_REQUEST_LIMIT_V1)?.to_vec();
     let mut authority = decode_wasm_authority_input_v1(&mut d)?;
     authority.budget_units = d.u64()?;
-    let identity_seed = d.identity()?;
+    let allocation = match d.take(1)?[0] {
+        0 => WasmSessionAllocationV1::New,
+        1 => WasmSessionAllocationV1::Rematerialize(
+            decode_runtime_allocation_epoch_v1(d.blob(ALLOCATION_EPOCH_BYTES_V1)?)
+                .map_err(|_| WasmProcessStatusV1::MalformedRequest)?,
+        ),
+        _ => return Err(WasmProcessStatusV1::MalformedRequest),
+    };
     let limits = WasmSessionLimitsV1 {
         max_commands: d.u64()?,
         command_bytes: d.u32()?,
@@ -543,8 +583,9 @@ pub fn decode_wasm_session_open_v1(bytes: &[u8]) -> Result<WasmSessionOpenV1, Wa
     Ok(WasmSessionOpenV1 {
         package_bytes,
         application,
+        physical_plan_bytes,
         authority,
-        identity_seed,
+        allocation,
         limits,
     })
 }
@@ -635,6 +676,7 @@ pub fn encode_wasm_session_event_v1(event: &WasmSessionEventV1) -> Vec<u8> {
             world,
             run,
             activation,
+            allocation,
             state_revision_count,
         } => {
             bytes.push(1);
@@ -649,6 +691,8 @@ pub fn encode_wasm_session_event_v1(event: &WasmSessionEventV1) -> Vec<u8> {
                 ],
             );
             bytes.extend_from_slice(&state_revision_count.to_le_bytes());
+            put_blob(&mut bytes, &encode_runtime_allocation_epoch_v1(*allocation))
+                .expect("a runtime allocation record has one fixed bounded encoding");
         }
         WasmSessionEventKindV1::InputAccepted {
             step,
@@ -754,6 +798,8 @@ pub fn decode_wasm_session_event_v1(
             run: RunId::from_bytes(d.identity()?),
             activation: ActivationId::from_bytes(d.identity()?),
             state_revision_count: d.u32()?,
+            allocation: decode_runtime_allocation_epoch_v1(d.blob(ALLOCATION_EPOCH_BYTES_V1)?)
+                .map_err(|_| WasmProcessStatusV1::MalformedRequest)?,
         },
         2 => WasmSessionEventKindV1::InputAccepted {
             step: StepId::from_bytes(d.identity()?),

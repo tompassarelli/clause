@@ -1,15 +1,15 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::fmt;
+use std::sync::{Mutex, OnceLock};
 
 use clause_package::*;
 use sha2::{Digest, Sha256};
 
 use super::ProcessRuntime;
 
-const MAGIC_V1: &[u8; 4] = b"CXP1";
-const MAGIC_V2: &[u8; 4] = b"CXP2";
-const PROGRAM_KIND: &[u8] = b"clause/process-executable-v1";
+const PHYSICAL_PLAN_MAGIC_V1: &[u8; 4] = b"CPP1";
+const ALLOCATION_EPOCH_MAGIC_V1: &[u8; 4] = b"RAE1";
 const CONFIGURATION_KIND: &[u8] = b"clause/process-configuration-v1";
 const OCCURRENCE_KIND: &[u8] = b"clause/process-occurrence-v1";
 const OCCURRENCE_MAGIC: &[u8; 4] = b"CXO1";
@@ -19,11 +19,8 @@ const PROJECTED_BOOLEAN_KIND: &[u8] = b"clause/process-projected-bool-v1";
 const MAX_PROGRAM_ITEMS: usize = 65_536;
 const MAX_EXPRESSION_DEPTH: usize = 64;
 
-#[derive(Clone, Copy, Debug)]
-enum RuntimeIdentitySeedV1 {
-    Legacy,
-    Exact([u8; IDENTITY_BYTES]),
-}
+static ALLOCATED_RUNTIME_ROOTS_V1: OnceLock<Mutex<BTreeSet<[u8; IDENTITY_BYTES]>>> =
+    OnceLock::new();
 
 #[derive(Clone, Copy, Debug)]
 #[repr(u64)]
@@ -258,84 +255,164 @@ pub struct ExecutableProgramV1 {
     pub projection: Option<ExecutableProjectionV1>,
 }
 
-impl ExecutableProgramV1 {
-    pub fn encode_term(&self, scope: clause_package::TermScope) -> Result<Term, ExecutableErrorV1> {
-        validate_program(self)?;
-        let mut bytes = Vec::new();
-        bytes.extend_from_slice(MAGIC_V2);
-        encode_values(&mut bytes, &self.initial_configuration)?;
-        encode_count(&mut bytes, self.rules.len())?;
-        for rule in &self.rules {
-            bytes.extend_from_slice(&rule.entry.to_le_bytes());
-            encode_count(&mut bytes, rule.predicates.len())?;
-            for predicate in &rule.predicates {
-                encode_expression(&mut bytes, predicate)?;
-            }
-            encode_count(&mut bytes, rule.assignments.len())?;
-            for (slot, expression) in &rule.assignments {
-                bytes.extend_from_slice(&slot.to_le_bytes());
-                encode_expression(&mut bytes, expression)?;
-            }
-        }
-        encode_projection(&mut bytes, self.projection.as_ref())?;
-        Term::atom(
-            scope,
-            PROGRAM_KIND.to_vec(),
-            bytes,
-            EqualityContract::ExactOctetsV1,
-        )
-        .map_err(|_| ExecutableErrorV1::MalformedProgram)
-    }
+/// The exact accepted lowering/refinement contract implemented by the plan.
+/// This prototype recognizes only its closed rule-machine realization.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(u8)]
+pub enum ExecutableRefinementV1 {
+    ClosedApplicationRuleMachineV1 = 1,
+}
 
-    fn decode_term(term: &Term) -> Result<Self, ExecutableErrorV1> {
-        let atom = term.as_atom().ok_or(ExecutableErrorV1::MalformedProgram)?;
-        if atom.kind() != PROGRAM_KIND
-            || atom.equality_contract() != EqualityContract::ExactOctetsV1
-        {
-            return Err(ExecutableErrorV1::MalformedProgram);
-        }
-        let mut decoder = Decoder::new(atom.canonical_payload());
-        let magic = decoder.take(MAGIC_V1.len())?;
-        if magic != MAGIC_V1 && magic != MAGIC_V2 {
-            return Err(ExecutableErrorV1::MalformedProgram);
-        }
-        let initial_configuration = decoder.values()?;
-        let rule_count = decoder.count()?;
-        let mut rules = Vec::with_capacity(rule_count);
-        for _ in 0..rule_count {
-            let entry = decoder.u16()?;
-            let predicate_count = decoder.count()?;
-            let mut predicates = Vec::with_capacity(predicate_count);
-            for _ in 0..predicate_count {
-                predicates.push(decoder.expression(0)?);
-            }
-            let assignment_count = decoder.count()?;
-            let mut assignments = Vec::with_capacity(assignment_count);
-            for _ in 0..assignment_count {
-                assignments.push((decoder.u16()?, decoder.expression(0)?));
-            }
-            rules.push(ExecutableRuleV1 {
-                entry,
-                predicates,
-                assignments,
-            });
-        }
-        let projection = if magic == MAGIC_V2 {
-            decode_projection(&mut decoder)?
-        } else {
-            None
-        };
-        if !decoder.is_complete() {
-            return Err(ExecutableErrorV1::MalformedProgram);
-        }
-        let program = Self {
-            initial_configuration,
-            rules,
-            projection,
-        };
-        validate_program(&program)?;
-        Ok(program)
+/// The complete target/profile/ABI/strategy understood by this reversible
+/// physical experiment. Adding another realization requires another explicit
+/// variant; runtime selection never falls back to a host name or Term kind.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(u8)]
+pub enum ExecutablePhysicalTargetV1 {
+    PortableScalarInterpreterV1 = 1,
+}
+
+/// One physical plan outside ProgramSnapshot identity. The exact semantic
+/// shape and Mode are retained as its refinement obligation; `program` is a
+/// physical realization and is never inserted into semantic dependency
+/// closure.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ExecutablePhysicalPlanV1 {
+    pub application_shape: ApplicationShapeId,
+    pub mode: ModeId,
+    pub refinement: ExecutableRefinementV1,
+    pub target: ExecutablePhysicalTargetV1,
+    pub program: ExecutableProgramV1,
+}
+
+/// Exact byte identity of one physical plan artifact. It is not Application,
+/// Activation, semantic shape, revision, or authority identity.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct ExecutablePhysicalPlanIdV1([u8; IDENTITY_BYTES]);
+
+impl ExecutablePhysicalPlanIdV1 {
+    #[must_use]
+    pub const fn as_bytes(&self) -> &[u8; IDENTITY_BYTES] {
+        &self.0
     }
+}
+
+#[derive(Clone, Debug)]
+struct CheckedExecutablePhysicalPlanV1 {
+    id: ExecutablePhysicalPlanIdV1,
+    plan: ExecutablePhysicalPlanV1,
+}
+
+/// Encode one exact physical plan. These bytes are transported beside the
+/// checked process package and never participate in ProgramSnapshot identity.
+pub fn encode_executable_physical_plan_v1(
+    plan: &ExecutablePhysicalPlanV1,
+) -> Result<Vec<u8>, ExecutableErrorV1> {
+    validate_program(&plan.program)?;
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(PHYSICAL_PLAN_MAGIC_V1);
+    bytes.extend_from_slice(plan.application_shape.as_bytes());
+    bytes.extend_from_slice(plan.mode.operator.snapshot.as_bytes());
+    bytes.extend_from_slice(&plan.mode.operator.local.get().to_le_bytes());
+    bytes.extend_from_slice(&plan.mode.local.get().to_le_bytes());
+    bytes.push(plan.refinement as u8);
+    bytes.push(plan.target as u8);
+    encode_program_body(&mut bytes, &plan.program)?;
+    Ok(bytes)
+}
+
+/// Decode one exact physical plan without granting it semantic standing. The
+/// runtime separately checks its shape/Mode refinement against the package.
+pub fn decode_executable_physical_plan_v1(
+    bytes: &[u8],
+) -> Result<ExecutablePhysicalPlanV1, ExecutableErrorV1> {
+    let mut decoder = Decoder::new(bytes);
+    if decoder.take(PHYSICAL_PLAN_MAGIC_V1.len())? != PHYSICAL_PLAN_MAGIC_V1 {
+        return Err(ExecutableErrorV1::MalformedPhysicalPlan);
+    }
+    let application_shape = ApplicationShapeId::from_bytes(decoder.identity()?);
+    let snapshot = ProgramSnapshotId::from_bytes(decoder.identity()?);
+    let operator = OperatorLocalId::new(decoder.u32()?);
+    let mode = ModeLocalId::new(decoder.u32()?);
+    let refinement = match decoder.byte()? {
+        1 => ExecutableRefinementV1::ClosedApplicationRuleMachineV1,
+        _ => return Err(ExecutableErrorV1::UnsupportedPhysicalRefinement),
+    };
+    let target = match decoder.byte()? {
+        1 => ExecutablePhysicalTargetV1::PortableScalarInterpreterV1,
+        _ => return Err(ExecutableErrorV1::UnsupportedPhysicalTarget),
+    };
+    let program = decode_program_body(&mut decoder)?;
+    if !decoder.is_complete() {
+        return Err(ExecutableErrorV1::MalformedPhysicalPlan);
+    }
+    let plan = ExecutablePhysicalPlanV1 {
+        application_shape,
+        mode: ModeId {
+            operator: OperatorRef {
+                snapshot,
+                local: operator,
+            },
+            local: mode,
+        },
+        refinement,
+        target,
+        program,
+    };
+    validate_program(&plan.program)?;
+    Ok(plan)
+}
+
+fn encode_program_body(
+    bytes: &mut Vec<u8>,
+    program: &ExecutableProgramV1,
+) -> Result<(), ExecutableErrorV1> {
+    encode_values(bytes, &program.initial_configuration)?;
+    encode_count(bytes, program.rules.len())?;
+    for rule in &program.rules {
+        bytes.extend_from_slice(&rule.entry.to_le_bytes());
+        encode_count(bytes, rule.predicates.len())?;
+        for predicate in &rule.predicates {
+            encode_expression(bytes, predicate)?;
+        }
+        encode_count(bytes, rule.assignments.len())?;
+        for (slot, expression) in &rule.assignments {
+            bytes.extend_from_slice(&slot.to_le_bytes());
+            encode_expression(bytes, expression)?;
+        }
+    }
+    encode_projection(bytes, program.projection.as_ref())
+}
+
+fn decode_program_body(
+    decoder: &mut Decoder<'_>,
+) -> Result<ExecutableProgramV1, ExecutableErrorV1> {
+    let initial_configuration = decoder.values()?;
+    let rule_count = decoder.count()?;
+    let mut rules = Vec::with_capacity(rule_count);
+    for _ in 0..rule_count {
+        let entry = decoder.u16()?;
+        let predicate_count = decoder.count()?;
+        let mut predicates = Vec::with_capacity(predicate_count);
+        for _ in 0..predicate_count {
+            predicates.push(decoder.expression(0)?);
+        }
+        let assignment_count = decoder.count()?;
+        let mut assignments = Vec::with_capacity(assignment_count);
+        for _ in 0..assignment_count {
+            assignments.push((decoder.u16()?, decoder.expression(0)?));
+        }
+        rules.push(ExecutableRuleV1 {
+            entry,
+            predicates,
+            assignments,
+        });
+    }
+    Ok(ExecutableProgramV1 {
+        initial_configuration,
+        rules,
+        projection: decode_projection(decoder)?,
+    })
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -419,6 +496,241 @@ pub struct ExecutableAuthorityFactsV1 {
     pub budget_units: u64,
 }
 
+/// Provenance-bearing allocation root for one recorded runtime occurrence
+/// family. `fresh` is minted only by the runtime; the exact record may later
+/// be supplied only to rematerialize that same occurrence family.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RuntimeAllocationEpochV1 {
+    root: [u8; IDENTITY_BYTES],
+    occurrence: SessionStartOccurrenceId,
+    session: RuntimeSessionId,
+    constitution: ProgramRevisionId,
+    package: ProcessPackageId,
+    application: ApplicationId,
+    application_shape: ApplicationShapeId,
+    mode: ModeId,
+    physical_plan: ExecutablePhysicalPlanIdV1,
+}
+
+impl RuntimeAllocationEpochV1 {
+    /// Reconstitute the exact allocation evidence for an occurrence already
+    /// recorded outside this process. `root` is never accepted by the new-run
+    /// path; this constructor exists only for explicit rematerialization.
+    pub fn recorded_for(
+        root: [u8; IDENTITY_BYTES],
+        package: &CheckedProcessPackage,
+        application: ApplicationId,
+        physical_plan: &ExecutablePhysicalPlanV1,
+        facts: ExecutableAuthorityFactsV1,
+    ) -> Result<Self, ExecutableErrorV1> {
+        let plan = check_executable_physical_plan_v1(
+            package.constitution(),
+            application,
+            physical_plan.clone(),
+        )?;
+        Ok(Self {
+            root,
+            occurrence: facts.session_start,
+            session: facts.session,
+            constitution: facts.program_revision,
+            package: package.id(),
+            application,
+            application_shape: plan.plan.application_shape,
+            mode: plan.plan.mode,
+            physical_plan: plan.id,
+        })
+    }
+
+    #[must_use]
+    pub const fn root(&self) -> &[u8; IDENTITY_BYTES] {
+        &self.root
+    }
+
+    #[must_use]
+    pub const fn occurrence(&self) -> SessionStartOccurrenceId {
+        self.occurrence
+    }
+
+    #[must_use]
+    pub const fn session(&self) -> RuntimeSessionId {
+        self.session
+    }
+
+    #[must_use]
+    pub const fn constitution(&self) -> ProgramRevisionId {
+        self.constitution
+    }
+
+    #[must_use]
+    pub const fn package(&self) -> ProcessPackageId {
+        self.package
+    }
+
+    #[must_use]
+    pub const fn application(&self) -> ApplicationId {
+        self.application
+    }
+
+    #[must_use]
+    pub const fn physical_plan(&self) -> ExecutablePhysicalPlanIdV1 {
+        self.physical_plan
+    }
+
+    /// Derive an exact subordinate candidate identity from this fully typed
+    /// recorded allocation root. This is used only to scope authority before
+    /// rematerializing the recorded occurrence.
+    #[must_use]
+    pub fn candidate_id(&self, ordinal: u64) -> CandidateDeltaId {
+        CandidateDeltaId::from_bytes(
+            runtime_identity_bytes(self.root, RuntimeIdentityDomainV1::Candidate, ordinal)
+                .expect("a recorded allocation accepts every u64 candidate ordinal"),
+        )
+    }
+
+    #[must_use]
+    pub const fn application_shape(&self) -> ApplicationShapeId {
+        self.application_shape
+    }
+
+    #[must_use]
+    pub const fn mode(&self) -> ModeId {
+        self.mode
+    }
+
+    fn allocate_fresh(
+        package: ProcessPackageId,
+        application: ApplicationId,
+        plan: &CheckedExecutablePhysicalPlanV1,
+        facts: ExecutableAuthorityFactsV1,
+    ) -> Result<Self, ExecutableErrorV1> {
+        let mode_operator = plan.plan.mode.operator.local.get().to_be_bytes();
+        let mode = plan.plan.mode.local.get().to_be_bytes();
+        let application_local = application.local.get().to_be_bytes();
+        let roots = ALLOCATED_RUNTIME_ROOTS_V1.get_or_init(|| Mutex::new(BTreeSet::new()));
+        let root = loop {
+            let mut fresh = [0_u8; IDENTITY_BYTES];
+            getrandom::fill(&mut fresh).map_err(|_| ExecutableErrorV1::AllocationUnavailable)?;
+            let candidate = runtime_domain_hash(
+                "clause/runtime-allocation-epoch/v1",
+                &[
+                    &fresh,
+                    facts.session_start.as_bytes(),
+                    facts.session.as_bytes(),
+                    facts.program_revision.as_bytes(),
+                    package.as_bytes(),
+                    application.snapshot.as_bytes(),
+                    &application_local,
+                    plan.plan.application_shape.as_bytes(),
+                    plan.plan.mode.operator.snapshot.as_bytes(),
+                    &mode_operator,
+                    &mode,
+                    plan.id.as_bytes(),
+                ],
+            );
+            let mut allocated = roots
+                .lock()
+                .map_err(|_| ExecutableErrorV1::AllocationUnavailable)?;
+            if allocated.insert(candidate) {
+                break candidate;
+            }
+        };
+        Ok(Self {
+            root,
+            occurrence: facts.session_start,
+            session: facts.session,
+            constitution: facts.program_revision,
+            package,
+            application,
+            application_shape: plan.plan.application_shape,
+            mode: plan.plan.mode,
+            physical_plan: plan.id,
+        })
+    }
+
+    fn validate_rematerialization(
+        self,
+        package: ProcessPackageId,
+        application: ApplicationId,
+        plan: &CheckedExecutablePhysicalPlanV1,
+        facts: ExecutableAuthorityFactsV1,
+    ) -> Result<Self, ExecutableErrorV1> {
+        if self.occurrence != facts.session_start
+            || self.session != facts.session
+            || self.constitution != facts.program_revision
+            || self.package != package
+            || self.application != application
+            || self.application_shape != plan.plan.application_shape
+            || self.mode != plan.plan.mode
+            || self.physical_plan != plan.id
+        {
+            return Err(ExecutableErrorV1::AllocationBindingMismatch);
+        }
+        ALLOCATED_RUNTIME_ROOTS_V1
+            .get_or_init(|| Mutex::new(BTreeSet::new()))
+            .lock()
+            .map_err(|_| ExecutableErrorV1::AllocationUnavailable)?
+            .insert(self.root);
+        Ok(self)
+    }
+}
+
+/// Encode the exact provenance record required to rematerialize one recorded
+/// occurrence family. Possessing these bytes does not license a new run.
+#[must_use]
+pub fn encode_runtime_allocation_epoch_v1(epoch: RuntimeAllocationEpochV1) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(ALLOCATION_EPOCH_MAGIC_V1);
+    bytes.extend_from_slice(&epoch.root);
+    bytes.extend_from_slice(epoch.occurrence.as_bytes());
+    bytes.extend_from_slice(epoch.session.as_bytes());
+    bytes.extend_from_slice(epoch.constitution.as_bytes());
+    bytes.extend_from_slice(epoch.package.as_bytes());
+    bytes.extend_from_slice(epoch.application.snapshot.as_bytes());
+    bytes.extend_from_slice(&epoch.application.local.get().to_le_bytes());
+    bytes.extend_from_slice(epoch.application_shape.as_bytes());
+    bytes.extend_from_slice(epoch.mode.operator.snapshot.as_bytes());
+    bytes.extend_from_slice(&epoch.mode.operator.local.get().to_le_bytes());
+    bytes.extend_from_slice(&epoch.mode.local.get().to_le_bytes());
+    bytes.extend_from_slice(epoch.physical_plan.as_bytes());
+    bytes
+}
+
+/// Decode an allocation record for the explicit rematerialization path. Every
+/// binding is rechecked against the package, authority facts, and physical
+/// plan before any runtime identity is derived from it.
+pub fn decode_runtime_allocation_epoch_v1(
+    bytes: &[u8],
+) -> Result<RuntimeAllocationEpochV1, ExecutableErrorV1> {
+    let mut decoder = Decoder::new(bytes);
+    if decoder.take(ALLOCATION_EPOCH_MAGIC_V1.len())? != ALLOCATION_EPOCH_MAGIC_V1 {
+        return Err(ExecutableErrorV1::MalformedAllocationEpoch);
+    }
+    let epoch = RuntimeAllocationEpochV1 {
+        root: decoder.identity()?,
+        occurrence: SessionStartOccurrenceId::from_bytes(decoder.identity()?),
+        session: RuntimeSessionId::from_bytes(decoder.identity()?),
+        constitution: ProgramRevisionId::from_bytes(decoder.identity()?),
+        package: ProcessPackageId::from_bytes(decoder.identity()?),
+        application: ApplicationId {
+            snapshot: ProgramSnapshotId::from_bytes(decoder.identity()?),
+            local: ApplicationLocalId::new(decoder.u32()?),
+        },
+        application_shape: ApplicationShapeId::from_bytes(decoder.identity()?),
+        mode: ModeId {
+            operator: OperatorRef {
+                snapshot: ProgramSnapshotId::from_bytes(decoder.identity()?),
+                local: OperatorLocalId::new(decoder.u32()?),
+            },
+            local: ModeLocalId::new(decoder.u32()?),
+        },
+        physical_plan: ExecutablePhysicalPlanIdV1(decoder.identity()?),
+    };
+    if !decoder.is_complete() {
+        return Err(ExecutableErrorV1::MalformedAllocationEpoch);
+    }
+    Ok(epoch)
+}
+
 #[derive(Clone, Debug)]
 struct CarrierExecutionV1 {
     facts: ExecutableAuthorityFactsV1,
@@ -455,80 +767,97 @@ pub struct ExecutableProcessRuntimeV1 {
     configuration_id: ConfigurationId,
     configuration: Vec<ExecutableValueV1>,
     program: ExecutableProgramV1,
+    physical_plan: ExecutablePhysicalPlanIdV1,
+    physical_mode: ModeId,
+    allocation: RuntimeAllocationEpochV1,
     last_step: Option<ExecutableStepV1>,
     candidate: Option<ExecutableCandidateV1>,
     judgment: Option<ExecutableJudgmentV1>,
     admission: Option<ExecutableAdmissionV1>,
     state: Option<ExecutableStateRevisionV1>,
     carrier_execution: Option<CarrierExecutionV1>,
-    identity_seed: RuntimeIdentitySeedV1,
     identity_ordinals: RuntimeIdentityOrdinalsV1,
     active_candidate_ordinal: Option<u64>,
 }
 
 impl ExecutableProcessRuntimeV1 {
-    pub fn instantiate(
+    /// Instantiate a new occurrence family from one exact physical plan. The
+    /// runtime mints a fresh allocation epoch after checking the plan's exact
+    /// ApplicationShape/Mode refinement against the package.
+    pub fn instantiate_new(
         package: CheckedProcessPackage,
         authority: clause_package::AuthorityStore,
         application: ApplicationId,
+        physical_plan: ExecutablePhysicalPlanV1,
+        facts: ExecutableAuthorityFactsV1,
     ) -> Result<Self, ExecutableErrorV1> {
-        let program = executable_program_v1(&package, application)?;
+        let physical_plan =
+            check_executable_physical_plan_v1(package.constitution(), application, physical_plan)?;
         let package_id = package.id();
-        let carrier = ProcessRuntime::instantiate(package, authority)
-            .map_err(|_| ExecutableErrorV1::CarrierRejected)?;
-        Self::from_parts(
-            carrier,
+        let allocation = RuntimeAllocationEpochV1::allocate_fresh(
             package_id,
             application,
-            program,
-            RuntimeIdentitySeedV1::Legacy,
-        )
+            &physical_plan,
+            facts,
+        )?;
+        let carrier = ProcessRuntime::instantiate(package, authority)
+            .map_err(|_| ExecutableErrorV1::CarrierRejected)?;
+        Self::from_parts(carrier, package_id, application, physical_plan, allocation)
     }
 
-    pub(super) fn instantiate_session(
+    /// Rematerialize an already-recorded occurrence family. The exact
+    /// allocation root is preserved only after all typed provenance, semantic
+    /// shape, Mode, and physical-plan bindings match.
+    pub fn instantiate_rematerialized(
         package: CheckedProcessPackage,
         authority: clause_package::AuthorityStore,
         application: ApplicationId,
-        identity_seed: [u8; IDENTITY_BYTES],
+        physical_plan: ExecutablePhysicalPlanV1,
+        facts: ExecutableAuthorityFactsV1,
+        allocation: RuntimeAllocationEpochV1,
     ) -> Result<Self, ExecutableErrorV1> {
-        let program = executable_program_v1(&package, application)?;
+        let physical_plan =
+            check_executable_physical_plan_v1(package.constitution(), application, physical_plan)?;
         let package_id = package.id();
-        let carrier = ProcessRuntime::instantiate(package, authority)
-            .map_err(|_| ExecutableErrorV1::CarrierRejected)?;
-        Self::from_parts(
-            carrier,
+        let allocation = allocation.validate_rematerialization(
             package_id,
             application,
-            program,
-            RuntimeIdentitySeedV1::Exact(identity_seed),
-        )
+            &physical_plan,
+            facts,
+        )?;
+        let carrier = ProcessRuntime::instantiate(package, authority)
+            .map_err(|_| ExecutableErrorV1::CarrierRejected)?;
+        Self::from_parts(carrier, package_id, application, physical_plan, allocation)
     }
 
     fn from_parts(
         carrier: ProcessRuntime,
         package: ProcessPackageId,
         application: ApplicationId,
-        program: ExecutableProgramV1,
-        identity_seed: RuntimeIdentitySeedV1,
+        physical_plan: CheckedExecutablePhysicalPlanV1,
+        allocation: RuntimeAllocationEpochV1,
     ) -> Result<Self, ExecutableErrorV1> {
         if carrier.carrier().application(application).is_none() {
             return Err(ExecutableErrorV1::UnknownApplication);
         }
+        let identity_root = allocation.root;
         let run = RunId::from_bytes(runtime_identity_bytes(
-            identity_seed,
+            identity_root,
             RuntimeIdentityDomainV1::Run,
             0,
         )?);
         let activation = ActivationId::from_bytes(runtime_identity_bytes(
-            identity_seed,
+            identity_root,
             RuntimeIdentityDomainV1::Activation,
             0,
         )?);
         let configuration_id = ConfigurationId::from_bytes(runtime_identity_bytes(
-            identity_seed,
+            identity_root,
             RuntimeIdentityDomainV1::Configuration,
             0,
         )?);
+        let physical_mode = physical_plan.plan.mode;
+        let program = physical_plan.plan.program;
         Ok(Self {
             carrier,
             package,
@@ -538,45 +867,47 @@ impl ExecutableProcessRuntimeV1 {
             configuration_id,
             configuration: program.initial_configuration.clone(),
             program,
+            physical_plan: physical_plan.id,
+            physical_mode,
+            allocation,
             last_step: None,
             candidate: None,
             judgment: None,
             admission: None,
             state: None,
             carrier_execution: None,
-            identity_seed,
             identity_ordinals: RuntimeIdentityOrdinalsV1::initial(),
             active_candidate_ordinal: None,
         })
     }
 }
 
-fn executable_program_v1(
-    package: &CheckedProcessPackage,
+fn check_executable_physical_plan_v1(
+    constitution: &ResolvedProgramConstitutionV2,
     application: ApplicationId,
-) -> Result<ExecutableProgramV1, ExecutableErrorV1> {
-    let declaration = package
-        .constitution()
-        .application_by_id(application)
+    plan: ExecutablePhysicalPlanV1,
+) -> Result<CheckedExecutablePhysicalPlanV1, ExecutableErrorV1> {
+    let shape = constitution
+        .application_shape(application.local)
+        .filter(|_| application.snapshot == constitution.snapshot())
         .ok_or(ExecutableErrorV1::UnknownApplication)?;
-    let mut executable = None;
-    for dependency in &declaration.form.dependency_closure {
-        let LocalSemanticDependencyV2::ExternalReference(term) = dependency else {
-            continue;
-        };
-        if term
-            .as_atom()
-            .is_some_and(|atom| atom.kind() == PROGRAM_KIND)
-        {
-            if executable.replace(term).is_some() {
-                return Err(ExecutableErrorV1::AmbiguousProgram);
-            }
-        }
+    if shape != plan.application_shape {
+        return Err(ExecutableErrorV1::PhysicalShapeMismatch);
     }
-    let program =
-        ExecutableProgramV1::decode_term(executable.ok_or(ExecutableErrorV1::MissingProgram)?)?;
-    validate_projection_roles(package.constitution(), &program)?;
-    Ok(program)
+    if constitution
+        .executable_contract(application, plan.mode)
+        .is_none()
+    {
+        return Err(ExecutableErrorV1::PhysicalModeMismatch);
+    }
+    validate_program(&plan.program)?;
+    validate_projection_roles(constitution, &plan.program)?;
+    let exact = encode_executable_physical_plan_v1(&plan)?;
+    let id = ExecutablePhysicalPlanIdV1(runtime_domain_hash(
+        "clause/executable-physical-plan/v1",
+        &[&exact],
+    ));
+    Ok(CheckedExecutablePhysicalPlanV1 { id, plan })
 }
 
 fn validate_projection_roles(
@@ -642,6 +973,11 @@ impl ExecutableProcessRuntimeV1 {
             }
         }
         let mode = selected.ok_or(ExecutableCarrierErrorV1::MissingStatefulMode)?;
+        if mode != self.physical_mode {
+            return Err(ExecutableCarrierErrorV1::Executable(
+                ExecutableErrorV1::PhysicalModeMismatch,
+            ));
+        }
         let mode_record = constitution
             .mode_by_id(mode)
             .ok_or(ExecutableCarrierErrorV1::UnsupportedSurface)?;
@@ -744,7 +1080,7 @@ impl ExecutableProcessRuntimeV1 {
                 .map_err(ExecutableCarrierErrorV1::Executable)?;
         let occurrence_id = ObservationId::from_bytes(
             runtime_identity_bytes(
-                self.identity_seed,
+                self.allocation.root,
                 RuntimeIdentityDomainV1::InputObservation,
                 observation_ordinal,
             )
@@ -793,7 +1129,7 @@ impl ExecutableProcessRuntimeV1 {
         if !execution.state_started {
             let trigger = ExternalTriggerOccurrenceId::from_bytes(
                 runtime_identity_bytes(
-                    self.identity_seed,
+                    self.allocation.root,
                     RuntimeIdentityDomainV1::ExternalTrigger,
                     0,
                 )
@@ -846,7 +1182,7 @@ impl ExecutableProcessRuntimeV1 {
                     .map_err(ExecutableCarrierErrorV1::Executable)?;
             let id = CandidateDeltaId::from_bytes(
                 runtime_identity_bytes(
-                    self.identity_seed,
+                    self.allocation.root,
                     RuntimeIdentityDomainV1::Candidate,
                     candidate_ordinal,
                 )
@@ -1073,13 +1409,13 @@ impl ExecutableProcessRuntimeV1 {
         }
         let before = self.configuration_id;
         let after = ConfigurationId::from_bytes(runtime_identity_bytes(
-            self.identity_seed,
+            self.allocation.root,
             RuntimeIdentityDomainV1::Configuration,
             configuration_ordinal,
         )?);
         let step = ExecutableStepV1 {
             id: StepId::from_bytes(runtime_identity_bytes(
-                self.identity_seed,
+                self.allocation.root,
                 RuntimeIdentityDomainV1::Step,
                 step_ordinal,
             )?),
@@ -1133,7 +1469,7 @@ impl ExecutableProcessRuntimeV1 {
         };
         let checker_activation = ActivationId::from_bytes(
             runtime_identity_bytes(
-                self.identity_seed,
+                self.allocation.root,
                 RuntimeIdentityDomainV1::CheckerActivation,
                 ordinal,
             )
@@ -1141,7 +1477,7 @@ impl ExecutableProcessRuntimeV1 {
         );
         let checker_run = RunId::from_bytes(
             runtime_identity_bytes(
-                self.identity_seed,
+                self.allocation.root,
                 RuntimeIdentityDomainV1::CheckerRun,
                 ordinal,
             )
@@ -1149,7 +1485,7 @@ impl ExecutableProcessRuntimeV1 {
         );
         let checker_before = ConfigurationId::from_bytes(
             runtime_identity_bytes(
-                self.identity_seed,
+                self.allocation.root,
                 RuntimeIdentityDomainV1::CheckerConfigurationBefore,
                 ordinal,
             )
@@ -1157,7 +1493,7 @@ impl ExecutableProcessRuntimeV1 {
         );
         let checker_after = ConfigurationId::from_bytes(
             runtime_identity_bytes(
-                self.identity_seed,
+                self.allocation.root,
                 RuntimeIdentityDomainV1::CheckerConfigurationAfter,
                 ordinal,
             )
@@ -1165,7 +1501,7 @@ impl ExecutableProcessRuntimeV1 {
         );
         let formation = ObservationId::from_bytes(
             runtime_identity_bytes(
-                self.identity_seed,
+                self.allocation.root,
                 RuntimeIdentityDomainV1::FormationObservation,
                 ordinal,
             )
@@ -1195,7 +1531,7 @@ impl ExecutableProcessRuntimeV1 {
             activation: checker_activation,
             step: StepId::from_bytes(
                 runtime_identity_bytes(
-                    self.identity_seed,
+                    self.allocation.root,
                     RuntimeIdentityDomainV1::CheckerStep,
                     ordinal,
                 )
@@ -1318,7 +1654,7 @@ impl ExecutableProcessRuntimeV1 {
         };
         let judgment_id = JudgmentOccurrenceId::from_bytes(
             runtime_identity_bytes(
-                self.identity_seed,
+                self.allocation.root,
                 RuntimeIdentityDomainV1::Judgment,
                 candidate_ordinal,
             )
@@ -1351,7 +1687,7 @@ impl ExecutableProcessRuntimeV1 {
         };
         let admission_id = AdmissionOccurrenceId::from_bytes(
             runtime_identity_bytes(
-                self.identity_seed,
+                self.allocation.root,
                 RuntimeIdentityDomainV1::Admission,
                 candidate_ordinal,
             )
@@ -1362,7 +1698,7 @@ impl ExecutableProcessRuntimeV1 {
         let mut successor = StateRevision {
             id: StateRevisionId::from_bytes(
                 runtime_identity_bytes(
-                    self.identity_seed,
+                    self.allocation.root,
                     RuntimeIdentityDomainV1::SyntheticState,
                     candidate_ordinal,
                 )
@@ -1492,7 +1828,7 @@ impl ExecutableProcessRuntimeV1 {
                 .map_err(ExecutableCarrierErrorV1::Executable)?;
         let next_run = RunId::from_bytes(
             runtime_identity_bytes(
-                self.identity_seed,
+                self.allocation.root,
                 RuntimeIdentityDomainV1::Run,
                 run_ordinal,
             )
@@ -1500,7 +1836,7 @@ impl ExecutableProcessRuntimeV1 {
         );
         let next_activation = ActivationId::from_bytes(
             runtime_identity_bytes(
-                self.identity_seed,
+                self.allocation.root,
                 RuntimeIdentityDomainV1::Activation,
                 activation_ordinal,
             )
@@ -1508,7 +1844,7 @@ impl ExecutableProcessRuntimeV1 {
         );
         let next_configuration = ConfigurationId::from_bytes(
             runtime_identity_bytes(
-                self.identity_seed,
+                self.allocation.root,
                 RuntimeIdentityDomainV1::Configuration,
                 configuration_ordinal,
             )
@@ -1643,7 +1979,7 @@ impl ExecutableProcessRuntimeV1 {
         let observation = ExecutableProjectedObservationV1 {
             id: ObservationId::from_bytes(
                 runtime_identity_bytes(
-                    self.identity_seed,
+                    self.allocation.root,
                     RuntimeIdentityDomainV1::StateObservation,
                     ordinal,
                 )
@@ -1744,7 +2080,7 @@ impl ExecutableProcessRuntimeV1 {
             stage_runtime_ordinal(self.identity_ordinals.next_candidate)?;
         self.candidate = Some(ExecutableCandidateV1 {
             id: CandidateDeltaId::from_bytes(runtime_identity_bytes(
-                self.identity_seed,
+                self.allocation.root,
                 RuntimeIdentityDomainV1::Candidate,
                 candidate_ordinal,
             )?),
@@ -1773,7 +2109,7 @@ impl ExecutableProcessRuntimeV1 {
             .ok_or(ExecutableErrorV1::NoCandidate)?;
         self.judgment = Some(ExecutableJudgmentV1 {
             id: JudgmentOccurrenceId::from_bytes(runtime_identity_bytes(
-                self.identity_seed,
+                self.allocation.root,
                 RuntimeIdentityDomainV1::Judgment,
                 candidate_ordinal,
             )?),
@@ -1788,7 +2124,7 @@ impl ExecutableProcessRuntimeV1 {
             .active_candidate_ordinal
             .ok_or(ExecutableErrorV1::NoCandidate)?;
         self.admit_with_state_id(StateRevisionId::from_bytes(runtime_identity_bytes(
-            self.identity_seed,
+            self.allocation.root,
             RuntimeIdentityDomainV1::SyntheticState,
             candidate_ordinal,
         )?))
@@ -1817,7 +2153,7 @@ impl ExecutableProcessRuntimeV1 {
             .ok_or(ExecutableErrorV1::NoCandidate)?;
         let admission = ExecutableAdmissionV1 {
             id: AdmissionOccurrenceId::from_bytes(runtime_identity_bytes(
-                self.identity_seed,
+                self.allocation.root,
                 RuntimeIdentityDomainV1::Admission,
                 candidate_ordinal,
             )?),
@@ -1850,7 +2186,7 @@ impl ExecutableProcessRuntimeV1 {
             stage_runtime_ordinal(self.identity_ordinals.next_state_observation)?;
         let observation = ExecutableObservationV1 {
             id: ObservationId::from_bytes(runtime_identity_bytes(
-                self.identity_seed,
+                self.allocation.root,
                 RuntimeIdentityDomainV1::StateObservation,
                 ordinal,
             )?),
@@ -1874,6 +2210,16 @@ impl ExecutableProcessRuntimeV1 {
     #[must_use]
     pub const fn application(&self) -> ApplicationId {
         self.application
+    }
+
+    #[must_use]
+    pub const fn physical_plan(&self) -> ExecutablePhysicalPlanIdV1 {
+        self.physical_plan
+    }
+
+    #[must_use]
+    pub const fn allocation(&self) -> RuntimeAllocationEpochV1 {
+        self.allocation
     }
 
     #[must_use]
@@ -1919,8 +2265,14 @@ impl ExecutableProcessRuntimeV1 {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ExecutableErrorV1 {
-    MissingProgram,
-    AmbiguousProgram,
+    MalformedPhysicalPlan,
+    UnsupportedPhysicalTarget,
+    UnsupportedPhysicalRefinement,
+    PhysicalShapeMismatch,
+    PhysicalModeMismatch,
+    AllocationUnavailable,
+    AllocationBindingMismatch,
+    MalformedAllocationEpoch,
     MalformedProgram,
     MalformedOccurrence,
     UnknownApplication,
@@ -2325,30 +2677,16 @@ fn stage_runtime_ordinal(ordinal: u64) -> Result<(u64, u64), ExecutableErrorV1> 
 }
 
 fn runtime_identity_bytes(
-    seed: RuntimeIdentitySeedV1,
+    allocation_root: [u8; IDENTITY_BYTES],
     domain: RuntimeIdentityDomainV1,
     ordinal: u64,
 ) -> Result<[u8; clause_package::IDENTITY_BYTES], ExecutableErrorV1> {
-    match seed {
-        RuntimeIdentitySeedV1::Legacy => {
-            let tag = (domain as u64)
-                .checked_add(ordinal)
-                .and_then(|value| u8::try_from(value).ok())
-                .ok_or(ExecutableErrorV1::ResourceLimit)?;
-            let mut bytes = [0; clause_package::IDENTITY_BYTES];
-            bytes[0] = tag;
-            bytes[clause_package::IDENTITY_BYTES - 1] = tag;
-            Ok(bytes)
-        }
-        RuntimeIdentitySeedV1::Exact(identity_seed) => {
-            let domain = (domain as u64).to_be_bytes();
-            let ordinal = ordinal.to_be_bytes();
-            Ok(runtime_domain_hash(
-                "clause/runtime-identity/v1",
-                &[&identity_seed, &domain, &ordinal],
-            ))
-        }
-    }
+    let domain = (domain as u64).to_be_bytes();
+    let ordinal = ordinal.to_be_bytes();
+    Ok(runtime_domain_hash(
+        "clause/runtime-identity/v1",
+        &[&allocation_root, &domain, &ordinal],
+    ))
 }
 
 fn runtime_domain_hash(domain: &str, components: &[&[u8]]) -> [u8; clause_package::IDENTITY_BYTES] {
@@ -2366,27 +2704,6 @@ fn runtime_domain_hash(domain: &str, components: &[&[u8]]) -> [u8; clause_packag
         hasher.update(component);
     }
     hasher.finalize().into()
-}
-
-pub(super) fn persistent_candidate_id_v1(
-    session: RuntimeSessionId,
-    ordinal: u64,
-) -> CandidateDeltaId {
-    persistent_candidate_id_from_seed_v1(*session.as_bytes(), ordinal)
-}
-
-pub(super) fn persistent_candidate_id_from_seed_v1(
-    identity_seed: [u8; IDENTITY_BYTES],
-    ordinal: u64,
-) -> CandidateDeltaId {
-    CandidateDeltaId::from_bytes(
-        runtime_identity_bytes(
-            RuntimeIdentitySeedV1::Exact(identity_seed),
-            RuntimeIdentityDomainV1::Candidate,
-            ordinal,
-        )
-        .expect("session identity derivation accepts every u64 ordinal"),
-    )
 }
 
 fn encode_count(bytes: &mut Vec<u8>, count: usize) -> Result<(), ExecutableErrorV1> {
@@ -2564,6 +2881,11 @@ impl<'a> Decoder<'a> {
         Ok(u64::from_le_bytes(
             self.take(8)?.try_into().expect("eight bytes"),
         ))
+    }
+    fn identity(&mut self) -> Result<[u8; IDENTITY_BYTES], ExecutableErrorV1> {
+        self.take(IDENTITY_BYTES)?
+            .try_into()
+            .map_err(|_| ExecutableErrorV1::MalformedPhysicalPlan)
     }
     fn count(&mut self) -> Result<usize, ExecutableErrorV1> {
         Ok(usize::from(self.u16()?))

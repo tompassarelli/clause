@@ -70,29 +70,30 @@ fn checked_program_package() -> CheckedProcessPackage {
     let decoded = decode_process_package(&decode_hex(source)).expect("base package decodes");
     let mut candidate = decoded.candidate().clone();
     candidate.records.clear();
-
-    let term = executable_program()
-        .encode_term(TermScope {
-            universe: candidate.snapshot.constitution.universe,
-            semantics: candidate.snapshot.constitution.semantics,
-        })
-        .expect("program encodes as an exact Term");
-    let dependency = LocalSemanticDependencyV2::ExternalReference(term);
-    candidate.snapshot.constitution.formations[0]
-        .direct_dependencies
-        .push(dependency.clone());
-    candidate.snapshot.constitution.formations[0]
-        .direct_dependencies
-        .sort();
-    for application in &mut candidate.snapshot.constitution.applications {
-        application.form.dependency_closure.push(dependency.clone());
-        application.form.dependency_closure.sort();
-    }
-    candidate.claimed_snapshot =
-        derive_program_snapshot_id(&candidate.snapshot).expect("snapshot is canonical");
     let bytes = encode_process_package(&candidate).expect("program package encodes");
     check_process_package(decode_process_package(&bytes).expect("program package decodes"))
         .expect("program package checks")
+}
+
+fn physical_plan(package: &CheckedProcessPackage) -> ExecutablePhysicalPlanV1 {
+    let snapshot = package.constitution().snapshot();
+    let application = ApplicationLocalId::new(1);
+    ExecutablePhysicalPlanV1 {
+        application_shape: package
+            .constitution()
+            .application_shape(application)
+            .expect("fixture Application has one exact semantic shape"),
+        mode: ModeId {
+            operator: OperatorRef {
+                snapshot,
+                local: OperatorLocalId::new(1),
+            },
+            local: ModeLocalId::new(2),
+        },
+        refinement: ExecutableRefinementV1::ClosedApplicationRuleMachineV1,
+        target: ExecutablePhysicalTargetV1::PortableScalarInterpreterV1,
+        program: executable_program(),
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -304,16 +305,99 @@ fn application(package: &CheckedProcessPackage) -> ApplicationId {
 }
 
 #[test]
+fn new_sessions_are_nominally_fresh_and_recorded_occurrences_rematerialize_exactly() {
+    let first_package = checked_program_package();
+    let first_application = application(&first_package);
+    let first_plan = physical_plan(&first_package);
+    let exact_plan = encode_executable_physical_plan_v1(&first_plan)
+        .expect("physical plan has one exact external encoding");
+    assert_eq!(
+        decode_executable_physical_plan_v1(&exact_plan)
+            .expect("exact physical plan decodes independently"),
+        first_plan
+    );
+    let (first_authority, first_facts) = carrier_authority(&first_package);
+    let mut first = PersistentProcessSessionV1::open(
+        first_package,
+        first_authority,
+        first_application,
+        first_plan,
+        first_facts.executable,
+    )
+    .expect("first new session receives one fresh allocation root");
+    let recorded = first.allocation();
+
+    let second_package = checked_program_package();
+    let second_application = application(&second_package);
+    let second_plan = physical_plan(&second_package);
+    let (second_authority, second_facts) = carrier_authority(&second_package);
+    let second = PersistentProcessSessionV1::open(
+        second_package,
+        second_authority,
+        second_application,
+        second_plan,
+        second_facts.executable,
+    )
+    .expect("same semantic inputs still allocate a new occurrence family");
+
+    assert_ne!(first.allocation(), second.allocation());
+    assert_ne!(first.run().unwrap(), second.run().unwrap());
+    assert_ne!(first.activation().unwrap(), second.activation().unwrap());
+    assert_ne!(
+        first.configuration_id().unwrap(),
+        second.configuration_id().unwrap()
+    );
+
+    let recorded_bytes = encode_runtime_allocation_epoch_v1(recorded);
+    let decoded_record = decode_runtime_allocation_epoch_v1(&recorded_bytes)
+        .expect("recorded allocation has one exact encoding");
+    assert_eq!(decoded_record, recorded);
+    let replay_package = checked_program_package();
+    let replay_application = application(&replay_package);
+    let replay_plan = physical_plan(&replay_package);
+    let (replay_authority, replay_facts) = carrier_authority(&replay_package);
+    let mut replay = PersistentProcessSessionV1::rematerialize(
+        replay_package,
+        replay_authority,
+        replay_application,
+        replay_plan,
+        replay_facts.executable,
+        decoded_record,
+    )
+    .expect("explicit rematerialization preserves the recorded occurrence");
+
+    assert_eq!(replay.allocation(), recorded);
+    assert_eq!(replay.run().unwrap(), first.run().unwrap());
+    assert_eq!(replay.activation().unwrap(), first.activation().unwrap());
+    assert_eq!(
+        replay.configuration_id().unwrap(),
+        first.configuration_id().unwrap()
+    );
+    let first_step = first
+        .apply_opaque_input(&opaque(0, 7.0))
+        .expect("recorded occurrence advances once");
+    let replay_step = replay
+        .apply_opaque_input(&opaque(0, 7.0))
+        .expect("rematerialized occurrence advances identically");
+    assert_eq!(replay_step, first_step);
+}
+
+#[test]
 fn persistent_session_keeps_local_steps_and_advances_only_at_atomic_admission() {
     let package = checked_program_package();
     let package_id = package.id();
     let application = application(&package);
+    let physical_plan = physical_plan(&package);
     let session_id = id!(RuntimeSessionId, 120);
-    let candidate_id = PersistentProcessSessionV1::candidate_id_for(session_id, 0);
     let (authority, facts) = carrier_authority(&package);
-    let mut session =
-        PersistentProcessSessionV1::open(package, authority, application, facts.executable)
-            .expect("persistent session opens once");
+    let mut session = PersistentProcessSessionV1::open(
+        package,
+        authority,
+        application,
+        physical_plan,
+        facts.executable,
+    )
+    .expect("persistent session opens once");
 
     let initial_run = session.run().unwrap();
     let initial_activation = session.activation().unwrap();
@@ -366,7 +450,7 @@ fn persistent_session_keeps_local_steps_and_advances_only_at_atomic_admission() 
         .unwrap()
         .expect("candidate is retained before Admission")
         .clone();
-    assert_eq!(candidate.id, candidate_id);
+    let candidate_id = candidate.id;
     assert_eq!(candidate.base, facts.initial_state);
     let carrier_candidate = &session
         .carrier()
@@ -482,10 +566,7 @@ fn persistent_session_keeps_local_steps_and_advances_only_at_atomic_admission() 
         .apply_opaque_input_and_emit_candidate(&opaque(1, 1.0))
         .expect("second epoch emits a distinct candidate");
     let second_candidate = session.candidate().unwrap().unwrap().clone();
-    assert_eq!(
-        second_candidate.id,
-        PersistentProcessSessionV1::candidate_id_for(session_id, 1)
-    );
+    assert_ne!(second_candidate.id, candidate_id);
     let second_carrier_candidate = &session
         .carrier()
         .unwrap()
@@ -534,19 +615,24 @@ fn persistent_session_keeps_local_steps_and_advances_only_at_atomic_admission() 
 fn failed_admission_rolls_back_its_prepared_judgment_and_epoch() {
     let package = checked_program_package();
     let application = application(&package);
+    let physical_plan = physical_plan(&package);
     let session_id = id!(RuntimeSessionId, 120);
-    let actual_candidate = PersistentProcessSessionV1::candidate_id_for(session_id, 0);
-    let unauthorized_candidate = PersistentProcessSessionV1::candidate_id_for(session_id, 1);
-    assert_ne!(actual_candidate, unauthorized_candidate);
     let package_id = package.id();
     let (authority, facts) = carrier_authority(&package);
-    let mut session =
-        PersistentProcessSessionV1::open(package, authority, application, facts.executable)
-            .expect("session opens before the separately checked Admission boundary");
+    let mut session = PersistentProcessSessionV1::open(
+        package,
+        authority,
+        application,
+        physical_plan,
+        facts.executable,
+    )
+    .expect("session opens before the separately checked Admission boundary");
     session
         .apply_opaque_input_and_emit_candidate(&opaque(1, 1.0))
         .expect("candidate remains non-authoritative");
-    assert_eq!(session.candidate().unwrap().unwrap().id, actual_candidate);
+    let actual_candidate = session.candidate().unwrap().unwrap().id;
+    let unauthorized_candidate = id!(CandidateDeltaId, 250);
+    assert_ne!(actual_candidate, unauthorized_candidate);
     let run = session.run().unwrap();
     let activation = session.activation().unwrap();
     let records = session.carrier().unwrap().accepted_ingress_record_count();

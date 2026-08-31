@@ -7,7 +7,9 @@ use clause_package::*;
 
 use super::{
     ExecutableAuthorityFactsV1, ExecutableBoundaryFactV1, ExecutableProcessRuntimeV1,
-    ExecutableValueV1, decode_executable_occurrence_v1,
+    ExecutableValueV1, RuntimeAllocationEpochV1, decode_executable_occurrence_v1,
+    decode_executable_physical_plan_v1, decode_runtime_allocation_epoch_v1,
+    encode_runtime_allocation_epoch_v1,
 };
 
 const REQUEST_MAGIC: &[u8; 4] = b"CWR1";
@@ -70,6 +72,8 @@ pub struct WasmAuthorityInputV1 {
 pub struct WasmProcessRequestV1 {
     pub package_bytes: Vec<u8>,
     pub application: ApplicationLocalId,
+    pub physical_plan_bytes: Vec<u8>,
+    pub allocation: RuntimeAllocationEpochV1,
     pub authority: WasmAuthorityInputV1,
     pub occurrences: Vec<Vec<u8>>,
     pub render_slots: Vec<u16>,
@@ -223,6 +227,11 @@ pub fn encode_wasm_process_request_v1(
     bytes.extend_from_slice(REQUEST_MAGIC);
     put_blob(&mut bytes, &request.package_bytes)?;
     bytes.extend_from_slice(&request.application.get().to_le_bytes());
+    put_blob(&mut bytes, &request.physical_plan_bytes)?;
+    put_blob(
+        &mut bytes,
+        &encode_runtime_allocation_epoch_v1(request.allocation),
+    )?;
     encode_wasm_authority_input_v1(&mut bytes, &request.authority)?;
     let a = &request.authority;
     bytes.extend_from_slice(&a.budget_units.to_le_bytes());
@@ -277,6 +286,9 @@ pub fn decode_wasm_process_request_v1(
     }
     let package_bytes = d.blob(WASM_PROCESS_REQUEST_LIMIT_V1)?.to_vec();
     let application = ApplicationLocalId::new(d.u32()?);
+    let physical_plan_bytes = d.blob(WASM_PROCESS_REQUEST_LIMIT_V1)?.to_vec();
+    let allocation = decode_runtime_allocation_epoch_v1(d.blob(WASM_PROCESS_REQUEST_LIMIT_V1)?)
+        .map_err(|_| WasmProcessStatusV1::MalformedRequest)?;
     let mut authority = decode_wasm_authority_input_v1(&mut d)?;
     authority.budget_units = d.u64()?;
     let occurrence_count = d.count(MAX_OCCURRENCES)?;
@@ -293,6 +305,8 @@ pub fn decode_wasm_process_request_v1(
     let request = WasmProcessRequestV1 {
         package_bytes,
         application,
+        physical_plan_bytes,
+        allocation,
         authority,
         occurrences,
         render_slots,
@@ -331,14 +345,26 @@ pub fn run_wasm_process_request_v1(
         .map_err(|_| WasmProcessStatusV1::PackageRejected)?;
     let package =
         check_process_package(decoded).map_err(|_| WasmProcessStatusV1::PackageRejected)?;
-    let (authority, facts, admission_authorization) =
-        establish_authority(&package, &request.authority)?;
     let application = ApplicationId {
         snapshot: package.constitution().snapshot(),
         local: request.application,
     };
-    let mut runtime = ExecutableProcessRuntimeV1::instantiate(package, authority, application)
+    let physical_plan = decode_executable_physical_plan_v1(&request.physical_plan_bytes)
         .map_err(|_| WasmProcessStatusV1::ProcessRejected)?;
+    let (authority, facts, admission_authorization) = establish_authority(
+        &package,
+        &request.authority,
+        request.allocation.candidate_id(0),
+    )?;
+    let mut runtime = ExecutableProcessRuntimeV1::instantiate_rematerialized(
+        package,
+        authority,
+        application,
+        physical_plan,
+        facts,
+        request.allocation,
+    )
+    .map_err(|_| WasmProcessStatusV1::ProcessRejected)?;
     runtime
         .start_carrier_process(facts)
         .map_err(|_| WasmProcessStatusV1::ProcessRejected)?;
@@ -404,6 +430,7 @@ pub fn decode_wasm_process_observation_v1(
 
 fn validate_shape(request: &WasmProcessRequestV1) -> Result<(), WasmProcessStatusV1> {
     if request.package_bytes.len() > WASM_PROCESS_REQUEST_LIMIT_V1
+        || request.physical_plan_bytes.len() > WASM_PROCESS_REQUEST_LIMIT_V1
         || request.occurrences.is_empty()
         || request.occurrences.len() > MAX_OCCURRENCES
         || request.render_slots.len() > MAX_RENDER_SLOTS
@@ -423,6 +450,7 @@ fn validate_shape(request: &WasmProcessRequestV1) -> Result<(), WasmProcessStatu
 fn establish_authority(
     package: &CheckedProcessPackage,
     input: &WasmAuthorityInputV1,
+    candidate: CandidateDeltaId,
 ) -> Result<
     (
         AuthorityStore,
@@ -431,21 +459,21 @@ fn establish_authority(
     ),
     WasmProcessStatusV1,
 > {
-    establish_authority_inner(package, input, true)
+    establish_authority_inner(package, input, Some(candidate))
 }
 
 pub(super) fn establish_persistent_authority(
     package: &CheckedProcessPackage,
     input: &WasmAuthorityInputV1,
 ) -> Result<(AuthorityStore, ExecutableAuthorityFactsV1), WasmProcessStatusV1> {
-    let (authority, facts, _) = establish_authority_inner(package, input, false)?;
+    let (authority, facts, _) = establish_authority_inner(package, input, None)?;
     Ok((authority, facts))
 }
 
 fn establish_authority_inner(
     package: &CheckedProcessPackage,
     input: &WasmAuthorityInputV1,
-    include_initial_admission: bool,
+    initial_admission_candidate: Option<CandidateDeltaId>,
 ) -> Result<
     (
         AuthorityStore,
@@ -489,15 +517,16 @@ fn establish_authority_inner(
         policy: input.root_policy,
         local: JudgmentAuthorityLocalId::new(0),
     };
-    let state_admission_grants = include_initial_admission.then(|| RootStateAdmissionGrant {
-        authorization: admission_authorization,
-        scope: CheckedStateAdmissionScope {
-            package: package.id(),
-            session: input.session,
-            base: initial_state,
-            delta: CandidateDeltaId::from_bytes(reserved_identity(80)),
-        },
-    });
+    let state_admission_grants =
+        initial_admission_candidate.map(|candidate| RootStateAdmissionGrant {
+            authorization: admission_authorization,
+            scope: CheckedStateAdmissionScope {
+                package: package.id(),
+                session: input.session,
+                base: initial_state,
+                delta: candidate,
+            },
+        });
     let root = RootPolicyAnchor::establish_with_governance(
         input.root_policy,
         vec![RootGenesisGrant {
@@ -644,13 +673,6 @@ pub(super) fn put_blob(bytes: &mut Vec<u8>, blob: &[u8]) -> Result<(), WasmProce
     bytes.extend_from_slice(&count.to_le_bytes());
     bytes.extend_from_slice(blob);
     Ok(())
-}
-
-fn reserved_identity(tag: u8) -> [u8; IDENTITY_BYTES] {
-    let mut bytes = [0; IDENTITY_BYTES];
-    bytes[0] = tag;
-    bytes[IDENTITY_BYTES - 1] = tag;
-    bytes
 }
 
 pub(super) struct Decoder<'a> {
