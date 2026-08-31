@@ -1,0 +1,2 @@
+[alias]
+gameplay-source = "test -p clause-runtime --test headless_jump shipped_unified_gameplay_cwr1_carries_arena_and_symbolic_collect -- --exact"
