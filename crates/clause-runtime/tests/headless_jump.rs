@@ -2169,6 +2169,226 @@ fn clause_only_air_momentum_reaches_admission_without_host_semantic_changes() {
 }
 
 #[test]
+fn clause_authored_dash_keeps_local_configuration_custody_until_admission() {
+    let source = dash_gameplay_source();
+    let package = checked_dash_gameplay_program_package(&source);
+    let package_id = package.id();
+    let application = ApplicationId {
+        snapshot: package.constitution().snapshot(),
+        local: ApplicationLocalId::new(1),
+    };
+    let physical_plan = physical_plan_with_source(&package, &source);
+    let (authority, facts) = carrier_authority_for_plan(
+        &package,
+        &physical_plan,
+        BROWSER_GAMEPLAY_DASH_ALLOCATION_ROOT_TAG,
+    );
+    let allocation = RuntimeAllocationEpochV1::recorded_for(
+        raw_id(BROWSER_GAMEPLAY_DASH_ALLOCATION_ROOT_TAG),
+        &package,
+        application,
+        &physical_plan,
+        facts.executable(),
+    )
+    .expect("Clause dash allocation is bound to the checked package and CPP1 plan");
+    let mut session = PersistentProcessSessionV1::rematerialize(
+        package,
+        authority,
+        application,
+        physical_plan,
+        facts.executable(),
+        allocation,
+    )
+    .expect("one persistent Clause-authored dash session opens");
+
+    let initial_world = session.world_base();
+    let initial_run = session.run().expect("the session owns one Run");
+    let initial_activation = session
+        .activation()
+        .expect("the session owns one Activation");
+    let initial_configuration = session
+        .configuration_id()
+        .expect("the Activation owns one initial Configuration");
+    assert_eq!(
+        session
+            .carrier()
+            .expect("the runtime carrier remains live")
+            .state_revision_count(),
+        1
+    );
+
+    let dash_step = session
+        .apply_opaque_input(
+            &encode_executable_occurrence_v1(&occurrence(1, &[])).expect("dash occurrence encodes"),
+        )
+        .expect("Clause-authored dash advances local configuration");
+    assert_eq!(dash_step.before, initial_configuration);
+    assert_ne!(dash_step.after, dash_step.before);
+    assert_eq!(session.run().expect("Run remains live"), initial_run);
+    assert_eq!(
+        session.activation().expect("Activation remains live"),
+        initial_activation
+    );
+    assert_eq!(session.world_base(), initial_world);
+    assert_eq!(
+        session.configuration().expect("dash configuration is live")[2].as_number(),
+        Some(8.0)
+    );
+    assert_eq!(
+        session.configuration().expect("dash configuration is live")[3].as_number(),
+        Some(8.0)
+    );
+    {
+        let carrier = session.carrier().expect("the runtime carrier remains live");
+        let start = carrier
+            .configuration(dash_step.before)
+            .expect("the Activation start configuration is constituted");
+        assert_eq!(start.activation, initial_activation);
+        assert_eq!(
+            start.predecessor,
+            ConfigurationPredecessorV2::ActivationStart(initial_activation)
+        );
+        let after = carrier
+            .configuration(dash_step.after)
+            .expect("the dash successor configuration is constituted");
+        assert_eq!(after.activation, initial_activation);
+        assert_eq!(
+            after.predecessor,
+            ConfigurationPredecessorV2::ConfigurationAfter(StepRef {
+                run: initial_run,
+                activation: initial_activation,
+                step: dash_step.id,
+            })
+        );
+        assert_eq!(
+            carrier
+                .activation(initial_activation)
+                .expect("the dash Activation is constituted")
+                .latest_configuration(),
+            dash_step.after
+        );
+        assert_eq!(carrier.state_revision_count(), 1);
+        assert_eq!(carrier.decision_count(), 0);
+    }
+
+    let candidate_step = session
+        .apply_opaque_input_and_emit_candidate(
+            &encode_executable_occurrence_v1(&occurrence(2, &[0.016]))
+                .expect("fixed dash tick encodes"),
+        )
+        .expect("the local dash tick emits one hidden candidate");
+    let candidate = session
+        .candidate()
+        .expect("candidate lookup succeeds")
+        .expect("the dash candidate remains retained")
+        .clone();
+    let candidate_configuration = session
+        .configuration_id()
+        .expect("the candidate retains its exact local Configuration");
+    assert_eq!(candidate.produced_by, candidate_step.id);
+    assert_eq!(candidate.base, initial_world);
+    assert_eq!(candidate.configuration, session.configuration().unwrap());
+    assert_eq!(session.run().unwrap(), initial_run);
+    assert_eq!(session.activation().unwrap(), initial_activation);
+    assert_eq!(session.world_base(), initial_world);
+    {
+        let carrier = session.carrier().expect("the runtime carrier remains live");
+        let configuration = carrier
+            .configuration(candidate_configuration)
+            .expect("candidate configuration is constituted");
+        assert_eq!(configuration.activation, initial_activation);
+        assert_eq!(carrier.state_revision_count(), 1);
+        assert_eq!(carrier.decision_count(), 0);
+    }
+
+    let held_configuration = session.configuration().unwrap().to_vec();
+    let held_step_count = session.carrier().unwrap().step_count();
+    let blocked = session
+        .apply_opaque_input(
+            &encode_executable_occurrence_v1(&occurrence(0, &[1.0, 0.0]))
+                .expect("post-candidate input encodes"),
+        )
+        .expect_err("candidate custody blocks further local mutation");
+    assert!(matches!(
+        blocked,
+        PersistentProcessSessionErrorV1::Carrier(ExecutableCarrierErrorV1::Executable(
+            ExecutableErrorV1::CandidateAlreadyEmitted
+        ))
+    ));
+    assert_eq!(session.configuration_id().unwrap(), candidate_configuration);
+    assert_eq!(session.configuration().unwrap(), held_configuration);
+    assert_eq!(session.carrier().unwrap().step_count(), held_step_count);
+    assert_eq!(session.world_base(), initial_world);
+
+    assert_eq!(session.carrier().unwrap().state_revision_count(), 1);
+    assert_eq!(session.carrier().unwrap().decision_count(), 0);
+    let (successor, projection) = session
+        .admit_constituted_candidate_with_projection()
+        .expect("the admitted package's exact grant alone installs the dash successor");
+    assert_eq!(successor.predecessor, initial_world);
+    assert_eq!(successor.configuration, held_configuration);
+    assert_eq!(session.world_base(), successor.id);
+    assert_eq!(session.carrier().unwrap().state_revision_count(), 2);
+    assert_eq!(session.carrier().unwrap().decision_count(), 1);
+    let projection = projection.expect("Admission exposes the passive renderer projection");
+    assert_eq!(projection.state, successor.id);
+    let projected_player = projected_object_field(&projection.term, b"player");
+    let projected_position = projected_object_field(projected_player, b"position");
+    assert!(projected_number(projected_object_field(projected_position, b"x")) > 0.0);
+    assert!(projected_number(projected_object_field(projected_position, b"y")) > 0.0);
+
+    let successor_run = session.run().expect("Admission installs a successor Run");
+    let successor_activation = session
+        .activation()
+        .expect("Admission installs a successor Activation identity");
+    let successor_start_configuration = session
+        .configuration_id()
+        .expect("the successor Activation owns an initial Configuration identity");
+    assert_ne!(successor_run, initial_run);
+    assert_ne!(successor_activation, initial_activation);
+    assert_ne!(successor_start_configuration, candidate_configuration);
+
+    let local_input = session
+        .apply_opaque_input(
+            &encode_executable_occurrence_v1(&occurrence(0, &[1.0, 0.0]))
+                .expect("successor input encodes"),
+        )
+        .expect("successor Activation advances local intent");
+    assert_eq!(local_input.before, successor_start_configuration);
+    assert_eq!(session.run().unwrap(), successor_run);
+    assert_eq!(session.activation().unwrap(), successor_activation);
+    assert_eq!(session.world_base(), successor.id);
+    assert_eq!(session.configuration().unwrap()[4].as_number(), Some(1.0));
+    assert_eq!(successor.configuration[4].as_number(), Some(0.0));
+    assert_eq!(session.carrier().unwrap().state_revision_count(), 2);
+    assert!(session.candidate().unwrap().is_none());
+    {
+        let carrier = session.carrier().expect("the runtime carrier remains live");
+        let start = carrier
+            .configuration(local_input.before)
+            .expect("the successor start Configuration is constituted on first use");
+        assert_eq!(start.activation, successor_activation);
+        assert_eq!(
+            start.predecessor,
+            ConfigurationPredecessorV2::ActivationStart(successor_activation)
+        );
+        let after = carrier
+            .configuration(local_input.after)
+            .expect("the successor local Configuration is constituted");
+        assert_eq!(after.activation, successor_activation);
+        assert_eq!(
+            after.predecessor,
+            ConfigurationPredecessorV2::ConfigurationAfter(StepRef {
+                run: successor_run,
+                activation: successor_activation,
+                step: local_input.id,
+            })
+        );
+    }
+    assert_eq!(package_id, session.package().unwrap());
+}
+
+#[test]
 fn package_owned_headless_api_reaches_one_admitted_render_state() {
     for checker_count in [0, 2] {
         let rejected_package = checked_program_package(checker_count);
