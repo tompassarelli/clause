@@ -1,0 +1,20 @@
+referent State
+referent Collectible
+referent active
+referent collected
+referent spent
+
+relation state
+  reads {collectible: Collectible} state {value: State}
+  subject collectible
+  mode given collectible yields value: one
+
+coin-1 state active
+
+on collect ?collectible
+  when
+    ?collectible state ?state
+  withdraw
+    ?collectible state ?state
+  include
+    ?collectible state collected

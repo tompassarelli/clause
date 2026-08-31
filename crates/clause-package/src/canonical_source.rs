@@ -234,19 +234,27 @@ pub struct CanonicalJumpHandlerV1 {
     pub result_grounded: bool,
 }
 
+/// One construct-blind scalar value owned by canonical source.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum CanonicalScalarValueV1 {
+    Number(u64),
+    Symbol(Vec<u8>),
+}
+
 /// Construct-blind scalar expression owned by one canonical source handler.
 /// Physical state coordinates are deliberately supplied only by refinement.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CanonicalScalarExpressionV1 {
     Current,
     Number(u64),
+    Symbol(Vec<u8>),
     Add(Box<Self>, Box<Self>),
     Subtract(Box<Self>, Box<Self>),
     Multiply(Box<Self>, Box<Self>),
     Divide(Box<Self>, Box<Self>),
 }
 
-/// Checked source-owned meaning for the bounded one-cell numeric transition
+/// Checked source-owned meaning for the bounded one-cell scalar transition
 /// profile. The event designation and relation phrase select no host behavior;
 /// a later refinement supplies only one entry and one physical state slot.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -255,7 +263,7 @@ pub struct CanonicalScalarHandlerV1 {
     pub handler_origin: CanonicalSourceOriginV1,
     pub initial_assertion_origin: CanonicalSourceOriginV1,
     pub include_origin: CanonicalSourceOriginV1,
-    pub initial_value: u64,
+    pub initial_value: CanonicalScalarValueV1,
     pub result: CanonicalScalarExpressionV1,
 }
 
@@ -547,6 +555,7 @@ enum CstKind {
     VectorAssertion(VectorAssertionCst),
     BooleanAssertion(BooleanAssertionCst),
     NumberAssertion(NumberAssertionCst),
+    SymbolAssertion(SymbolAssertionCst),
     Unsupported(CanonicalUnsupportedProductionV1),
 }
 
@@ -588,6 +597,14 @@ struct NumberAssertionCst {
 }
 
 #[derive(Clone, Debug)]
+struct SymbolAssertionCst {
+    origin: CanonicalSourceOriginV1,
+    subject: Vec<u8>,
+    relation: Vec<u8>,
+    value: Vec<u8>,
+}
+
+#[derive(Clone, Debug)]
 struct HandlerIncludeCst {
     origin: CanonicalSourceOriginV1,
     local: Vec<u8>,
@@ -616,10 +633,11 @@ struct ScalarHandlerCst {
     include: HandlerIncludeCst,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 struct ScalarHandlerParts<'a> {
     handler: &'a ScalarHandlerCst,
-    initial: &'a NumberAssertionCst,
+    initial_origin: CanonicalSourceOriginV1,
+    initial_value: CanonicalScalarValueV1,
 }
 
 #[derive(Clone, Copy)]
@@ -1203,7 +1221,9 @@ fn allocation_requests(
             }
             CstKind::NumberAssertion(assertion) => {
                 if jump.is_some_and(|parts| parts.jump_speed.origin == assertion.origin)
-                    || scalar.is_some_and(|parts| parts.initial.origin == assertion.origin)
+                    || scalar
+                        .as_ref()
+                        .is_some_and(|parts| parts.initial_origin == assertion.origin)
                     || tick.is_some_and(|parts| {
                         [
                             parts.gravity.origin,
@@ -1216,6 +1236,18 @@ fn allocation_requests(
                         ]
                         .contains(&assertion.origin)
                     })
+                {
+                    requested.push(AllocationRequest {
+                        producer: assertion_producer(&assertion.subject, &assertion.relation),
+                        slot: head_slot(CanonicalSourceProductionV1::Assertion),
+                        domain: AllocationDomain::Formation,
+                    });
+                }
+            }
+            CstKind::SymbolAssertion(assertion) => {
+                if scalar
+                    .as_ref()
+                    .is_some_and(|parts| parts.initial_origin == assertion.origin)
                 {
                     requested.push(AllocationRequest {
                         producer: assertion_producer(&assertion.subject, &assertion.relation),
@@ -1284,12 +1316,12 @@ pub fn elaborate_canonical_source_package_v1(
         result_grounded: parts.handler.result_grounded,
     });
     let scalar_parts = scalar_handler_parts(cst)?;
-    let scalar_handler = scalar_parts.map(|parts| CanonicalScalarHandlerV1 {
+    let scalar_handler = scalar_parts.as_ref().map(|parts| CanonicalScalarHandlerV1 {
         artifact: cst.artifact,
         handler_origin: parts.handler.origin,
-        initial_assertion_origin: parts.initial.origin,
+        initial_assertion_origin: parts.initial_origin,
         include_origin: parts.handler.include.origin,
-        initial_value: parts.initial.value,
+        initial_value: parts.initial_value.clone(),
         result: parts.handler.result.clone(),
     });
     let tick_parts = tick_program_parts(cst)?;
@@ -1736,7 +1768,9 @@ pub fn elaborate_canonical_source_package_v1(
             }
             CstKind::NumberAssertion(assertion) => {
                 if jump_parts.is_some_and(|parts| parts.jump_speed.origin == assertion.origin)
-                    || scalar_parts.is_some_and(|parts| parts.initial.origin == assertion.origin)
+                    || scalar_parts
+                        .as_ref()
+                        .is_some_and(|parts| parts.initial_origin == assertion.origin)
                     || tick_parts.is_some_and(|parts| {
                         [
                             parts.gravity.origin,
@@ -1758,6 +1792,31 @@ pub fn elaborate_canonical_source_package_v1(
                         id,
                         cst.source_slice(assertion.origin)
                             .expect("owned jump-speed assertion origin"),
+                        assertion.origin,
+                        "initial-assertion",
+                    )?);
+                    emissions.push(emission(plan, producer, slot, assertion.origin));
+                } else {
+                    unsupported.push(CanonicalUnsupportedProductionV1 {
+                        production: CanonicalSourceProductionV1::Assertion,
+                        origin: assertion.origin,
+                        emissions: vec![],
+                    });
+                }
+            }
+            CstKind::SymbolAssertion(assertion) => {
+                if scalar_parts
+                    .as_ref()
+                    .is_some_and(|parts| parts.initial_origin == assertion.origin)
+                {
+                    let producer = assertion_producer(&assertion.subject, &assertion.relation);
+                    let slot = head_slot(CanonicalSourceProductionV1::Assertion);
+                    let id = formation_id(plan, &producer, &slot)?;
+                    formations.push(source_formation(
+                        scope,
+                        id,
+                        cst.source_slice(assertion.origin)
+                            .expect("owned scalar assertion origin"),
                         assertion.origin,
                         "initial-assertion",
                     )?);
@@ -2026,6 +2085,12 @@ fn parse_item(
         return Ok(CstItem {
             origin,
             kind: CstKind::NumberAssertion(assertion),
+        });
+    }
+    if let Some(assertion) = parse_symbol_assertion(head, origin) {
+        return Ok(CstItem {
+            origin,
+            kind: CstKind::SymbolAssertion(assertion),
         });
     }
     Ok(unsupported_item(
@@ -2408,7 +2473,12 @@ fn parse_scalar_expression(source: &str, current: &str) -> Option<CanonicalScala
         if value == current {
             Some(CanonicalScalarExpressionV1::Current)
         } else {
-            parse_source_number(value).map(CanonicalScalarExpressionV1::Number)
+            parse_source_number(value)
+                .map(CanonicalScalarExpressionV1::Number)
+                .or_else(|| {
+                    (!value.starts_with('?'))
+                        .then(|| CanonicalScalarExpressionV1::Symbol(value.as_bytes().to_vec()))
+                })
         }
     };
     match tokens.as_slice() {
@@ -2947,6 +3017,28 @@ fn parse_number_assertion(
     })
 }
 
+fn parse_symbol_assertion(
+    source: &str,
+    origin: CanonicalSourceOriginV1,
+) -> Option<SymbolAssertionCst> {
+    let parts = source.split_whitespace().collect::<Vec<_>>();
+    if parts.len() < 3 {
+        return None;
+    }
+    let value = *parts.last()?;
+    if value.starts_with('?') || parse_source_number(value).is_some() {
+        return None;
+    }
+    designation_bytes(value, origin)
+        .ok()
+        .map(|value| SymbolAssertionCst {
+            origin,
+            subject: parts[0].as_bytes().to_vec(),
+            relation: parts[1..parts.len() - 1].join(" ").into_bytes(),
+            value,
+        })
+}
+
 fn split_vector_subject(source: &str) -> Option<(&str, &str)> {
     let (prefix, vector) = source.split_once(" Vec3 { ")?;
     Some((prefix, vector))
@@ -3438,19 +3530,59 @@ fn scalar_handler_parts(
         .iter()
         .filter_map(|item| match &item.kind {
             CstKind::NumberAssertion(assertion) if assertion.relation == handler.relation => {
-                Some(assertion)
+                Some((
+                    assertion.origin,
+                    CanonicalScalarValueV1::Number(assertion.value),
+                ))
+            }
+            CstKind::SymbolAssertion(assertion) if assertion.relation == handler.relation => {
+                Some((
+                    assertion.origin,
+                    CanonicalScalarValueV1::Symbol(assertion.value.clone()),
+                ))
             }
             _ => None,
         })
         .collect::<Vec<_>>();
     match assertions.as_slice() {
-        [initial] => Ok(Some(ScalarHandlerParts { handler, initial })),
+        [(initial_origin, initial_value)]
+            if scalar_expression_matches_value(&handler.result, initial_value) =>
+        {
+            Ok(Some(ScalarHandlerParts {
+                handler,
+                initial_origin: *initial_origin,
+                initial_value: initial_value.clone(),
+            }))
+        }
+        [_] => Err(CanonicalSourceErrorV1::InvalidScalarHandler {
+            origin: handler.origin,
+        }),
         [] => Err(CanonicalSourceErrorV1::MissingScalarInitialAssertion {
             origin: handler.origin,
         }),
         _ => Err(CanonicalSourceErrorV1::AmbiguousScalarInitialAssertion {
             origin: handler.origin,
         }),
+    }
+}
+
+fn scalar_expression_matches_value(
+    expression: &CanonicalScalarExpressionV1,
+    initial: &CanonicalScalarValueV1,
+) -> bool {
+    let numeric = matches!(initial, CanonicalScalarValueV1::Number(_));
+    match expression {
+        CanonicalScalarExpressionV1::Current => true,
+        CanonicalScalarExpressionV1::Number(_) => numeric,
+        CanonicalScalarExpressionV1::Symbol(_) => !numeric,
+        CanonicalScalarExpressionV1::Add(left, right)
+        | CanonicalScalarExpressionV1::Subtract(left, right)
+        | CanonicalScalarExpressionV1::Multiply(left, right)
+        | CanonicalScalarExpressionV1::Divide(left, right) => {
+            numeric
+                && scalar_expression_matches_value(left, initial)
+                && scalar_expression_matches_value(right, initial)
+        }
     }
 }
 
@@ -3729,6 +3861,7 @@ fn validate_unique_designations(items: &[CstItem]) -> Result<(), CanonicalSource
         | CstKind::VectorAssertion(_)
         | CstKind::BooleanAssertion(_)
         | CstKind::NumberAssertion(_)
+        | CstKind::SymbolAssertion(_)
         | CstKind::Unsupported(_) => None,
     }) {
         if !seen.insert(designation.clone()) {

@@ -799,6 +799,14 @@ fn encode_values(values: &[ExecutableValueV1]) -> Result<Vec<u8>, WasmProcessSta
                 bytes.extend_from_slice(&bits.to_le_bytes());
             }
             ExecutableValueV1::Boolean(value) => bytes.extend_from_slice(&[1, u8::from(*value)]),
+            ExecutableValueV1::Symbol(value) => {
+                bytes.push(2);
+                bytes.push(
+                    u8::try_from(value.as_bytes().len())
+                        .map_err(|_| WasmProcessStatusV1::RequestOutOfBounds)?,
+                );
+                bytes.extend_from_slice(value.as_bytes());
+            }
         }
     }
     Ok(bytes)

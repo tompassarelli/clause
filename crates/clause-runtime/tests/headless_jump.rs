@@ -14,6 +14,10 @@ const COLLECT: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../test-vectors/jump-arena/collect.clause"
 ));
+const COLLECT_STATE: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../test-vectors/jump-arena/collect-state.clause"
+));
 
 macro_rules! id {
     ($kind:ident, $tag:expr) => {
@@ -162,10 +166,19 @@ fn source_scalar_handler(source: &[u8], scope: TermScope) -> CanonicalScalarHand
     .expect("the bounded source profile owns one scalar transition")
 }
 
-fn scalar_program(scope: TermScope, source: &CanonicalScalarHandlerV1) -> ExecutableProgramV1 {
+fn scalar_program(
+    scope: TermScope,
+    source: &CanonicalScalarHandlerV1,
+    object_field: &'static [u8],
+    value_field: &'static [u8],
+) -> ExecutableProgramV1 {
     let role = LocalRoleRefV2 {
         schema: RelationSchemaLocalId::new(2),
         role: RoleLocalId::new(1),
+    };
+    let value_kind = match &source.initial_value {
+        CanonicalScalarValueV1::Number(_) => ExecutableValueKindV1::Number,
+        CanonicalScalarValueV1::Symbol(_) => ExecutableValueKindV1::Symbol,
     };
     let mut program = ExecutableProgramV1 {
         initial_configuration: vec![number(0.0)],
@@ -174,18 +187,15 @@ fn scalar_program(scope: TermScope, source: &CanonicalScalarHandlerV1) -> Execut
             bindings: vec![ExecutableProjectionBindingV1 {
                 role,
                 slot: 0,
-                value_kind: ExecutableValueKindV1::Number,
+                value_kind,
             }],
             template: projection_object(
                 scope,
                 vec![(
-                    b"player",
+                    object_field,
                     projection_object(
                         scope,
-                        vec![(
-                            b"score",
-                            projection_role(scope, role, ExecutableValueKindV1::Number),
-                        )],
+                        vec![(value_field, projection_role(scope, role, value_kind))],
                     ),
                 )],
             ),
@@ -537,6 +547,15 @@ fn scalar_plan_with_source(
     package: &CheckedProcessPackage,
     source: &[u8],
 ) -> ExecutablePhysicalPlanV1 {
+    scalar_plan_with_source_and_projection(package, source, b"player", b"score")
+}
+
+fn scalar_plan_with_source_and_projection(
+    package: &CheckedProcessPackage,
+    source: &[u8],
+    object_field: &'static [u8],
+    value_field: &'static [u8],
+) -> ExecutablePhysicalPlanV1 {
     let constitution = package.constitution();
     let snapshot = constitution.snapshot();
     let application = ApplicationLocalId::new(1);
@@ -559,7 +578,7 @@ fn scalar_plan_with_source(
         refinement: ExecutableRefinementV1::ClosedApplicationRuleMachineV1,
         target: ExecutablePhysicalTargetV1::PortableScalarInterpreterV1,
         input: None,
-        program: scalar_program(scope, &handler),
+        program: scalar_program(scope, &handler, object_field, value_field),
     }
 }
 
@@ -1149,13 +1168,23 @@ fn admit_source_jump(source: &[u8], allocation_tag: u8, policy_tag: u8) -> (Vec<
 }
 
 fn admit_source_scalar(source: &[u8], allocation_tag: u8, policy_tag: u8) -> (Vec<u8>, Term) {
+    admit_source_scalar_with_projection(source, allocation_tag, policy_tag, b"player", b"score")
+}
+
+fn admit_source_scalar_with_projection(
+    source: &[u8],
+    allocation_tag: u8,
+    policy_tag: u8,
+    object_field: &'static [u8],
+    value_field: &'static [u8],
+) -> (Vec<u8>, Term) {
     let package = checked_program_package_with_scopes(1, vec![]);
     let package_id = package.id();
     let application = ApplicationId {
         snapshot: package.constitution().snapshot(),
         local: ApplicationLocalId::new(1),
     };
-    let plan = scalar_plan_with_source(&package, source);
+    let plan = scalar_plan_with_source_and_projection(&package, source, object_field, value_field);
     let plan_bytes = encode_executable_physical_plan_v1(&plan)
         .expect("source-owned scalar transition produces one exact CPP1 plan");
     let (authority, facts) = carrier_authority(&package);
@@ -1631,6 +1660,44 @@ fn canonical_source_collect_reaches_admission_without_a_host_semantic_switch() {
         projected_number(projected_object_field(changed_player, b"score")),
         4.0
     );
+}
+
+#[test]
+fn canonical_source_collect_changes_symbolic_state_only_after_admission() {
+    let (base_plan, base_projection) =
+        admit_source_scalar_with_projection(COLLECT_STATE, 236, 238, b"collectible", b"state");
+    let base_state = projected_object_field(
+        projected_object_field(&base_projection, b"collectible"),
+        b"state",
+    )
+    .as_atom()
+    .expect("projected symbolic state is an Atom");
+    assert_eq!(base_state.kind(), b"clause/process-projected-symbol-v1");
+    assert_eq!(base_state.canonical_payload(), b"collected");
+
+    let changed_source = std::str::from_utf8(COLLECT_STATE)
+        .expect("collect-state source is UTF-8")
+        .replacen(
+            "?collectible state collected",
+            "?collectible state spent",
+            1,
+        );
+    let (changed_plan, changed_projection) = admit_source_scalar_with_projection(
+        changed_source.as_bytes(),
+        237,
+        239,
+        b"collectible",
+        b"state",
+    );
+    assert_ne!(changed_plan, base_plan);
+    let changed_state = projected_object_field(
+        projected_object_field(&changed_projection, b"collectible"),
+        b"state",
+    )
+    .as_atom()
+    .expect("changed projected symbolic state is an Atom");
+    assert_eq!(changed_state.kind(), b"clause/process-projected-symbol-v1");
+    assert_eq!(changed_state.canonical_payload(), b"spent");
 }
 
 #[test]

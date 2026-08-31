@@ -16,6 +16,8 @@ const OCCURRENCE_MAGIC: &[u8; 4] = b"CXO1";
 const PROJECTION_ROLE_KIND: &[u8] = b"clause/process-projection-role-v1";
 const PROJECTED_NUMBER_KIND: &[u8] = b"clause/process-projected-f64-v1";
 const PROJECTED_BOOLEAN_KIND: &[u8] = b"clause/process-projected-bool-v1";
+const PROJECTED_SYMBOL_KIND: &[u8] = b"clause/process-projected-symbol-v1";
+const MAX_EXECUTABLE_SYMBOL_BYTES: usize = 64;
 const MAX_PROGRAM_ITEMS: usize = 65_536;
 const MAX_EXPRESSION_DEPTH: usize = 64;
 const MAX_INPUT_CODE_BYTES: usize = 64;
@@ -79,6 +81,33 @@ impl RuntimeIdentityOrdinalsV1 {
 pub enum ExecutableValueV1 {
     Number(u64),
     Boolean(bool),
+    Symbol(ExecutableSymbolV1),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ExecutableSymbolV1 {
+    length: u8,
+    bytes: [u8; MAX_EXECUTABLE_SYMBOL_BYTES],
+}
+
+impl ExecutableSymbolV1 {
+    pub fn new(value: &[u8]) -> Result<Self, ExecutableErrorV1> {
+        let length = u8::try_from(value.len()).map_err(|_| ExecutableErrorV1::ResourceLimit)?;
+        if value.is_empty()
+            || value.len() > MAX_EXECUTABLE_SYMBOL_BYTES
+            || !value.iter().all(u8::is_ascii_graphic)
+        {
+            return Err(ExecutableErrorV1::MalformedProgram);
+        }
+        let mut bytes = [0; MAX_EXECUTABLE_SYMBOL_BYTES];
+        bytes[..value.len()].copy_from_slice(value);
+        Ok(Self { length, bytes })
+    }
+
+    #[must_use]
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.bytes[..usize::from(self.length)]
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -86,6 +115,7 @@ pub enum ExecutableValueV1 {
 pub enum ExecutableValueKindV1 {
     Number = 0,
     Boolean = 1,
+    Symbol = 2,
 }
 
 impl ExecutableValueV1 {
@@ -94,6 +124,7 @@ impl ExecutableValueV1 {
         match self {
             Self::Number(_) => ExecutableValueKindV1::Number,
             Self::Boolean(_) => ExecutableValueKindV1::Boolean,
+            Self::Symbol(_) => ExecutableValueKindV1::Symbol,
         }
     }
 }
@@ -203,7 +234,7 @@ impl ExecutableValueV1 {
     pub fn as_number(self) -> Option<f64> {
         match self {
             Self::Number(bits) => Some(f64::from_bits(bits)),
-            Self::Boolean(_) => None,
+            Self::Boolean(_) | Self::Symbol(_) => None,
         }
     }
 
@@ -211,7 +242,19 @@ impl ExecutableValueV1 {
     pub const fn as_boolean(self) -> Option<bool> {
         match self {
             Self::Boolean(value) => Some(value),
-            Self::Number(_) => None,
+            Self::Number(_) | Self::Symbol(_) => None,
+        }
+    }
+
+    pub fn symbol(value: &[u8]) -> Result<Self, ExecutableErrorV1> {
+        ExecutableSymbolV1::new(value).map(Self::Symbol)
+    }
+
+    #[must_use]
+    pub fn as_symbol(&self) -> Option<&[u8]> {
+        match self {
+            Self::Symbol(value) => Some(value.as_bytes()),
+            Self::Number(_) | Self::Boolean(_) => None,
         }
     }
 }
@@ -494,7 +537,7 @@ pub fn lower_canonical_scalar_handler_v1(
     else {
         return Err(ExecutableErrorV1::MalformedProgram);
     };
-    *initial = ExecutableValueV1::Number(source.initial_value);
+    *initial = lower_scalar_value(&source.initial_value)?;
     let assignment = lower_scalar_expression(&source.result, binding.state_slot, 0)?;
     let rule = ExecutableRuleV1 {
         entry: binding.entry,
@@ -531,6 +574,9 @@ fn lower_scalar_expression(
         CanonicalScalarExpressionV1::Number(bits) => {
             ExecutableExpressionV1::Constant(ExecutableValueV1::Number(*bits))
         }
+        CanonicalScalarExpressionV1::Symbol(value) => {
+            ExecutableExpressionV1::Constant(ExecutableValueV1::symbol(value)?)
+        }
         CanonicalScalarExpressionV1::Add(left, right) => {
             let (left, right) = pair(left, right)?;
             ExecutableExpressionV1::Add(left, right)
@@ -548,6 +594,15 @@ fn lower_scalar_expression(
             ExecutableExpressionV1::Divide(left, right)
         }
     })
+}
+
+fn lower_scalar_value(
+    value: &CanonicalScalarValueV1,
+) -> Result<ExecutableValueV1, ExecutableErrorV1> {
+    match value {
+        CanonicalScalarValueV1::Number(bits) => Ok(ExecutableValueV1::Number(*bits)),
+        CanonicalScalarValueV1::Symbol(value) => ExecutableValueV1::symbol(value),
+    }
 }
 
 /// Physical coordinates for the source-owned three-branch `on tick` program.
@@ -3457,6 +3512,7 @@ fn projection_role(
     let value_kind = match payload[8] {
         0 => ExecutableValueKindV1::Number,
         1 => ExecutableValueKindV1::Boolean,
+        2 => ExecutableValueKindV1::Symbol,
         _ => return Err(ExecutableErrorV1::MalformedProgram),
     };
     Ok(Some((LocalRoleRefV2 { schema, role }, value_kind)))
@@ -3492,6 +3548,7 @@ fn projected_value_term(
     let (kind, payload) = match value {
         ExecutableValueV1::Number(bits) => (PROJECTED_NUMBER_KIND, bits.to_le_bytes().to_vec()),
         ExecutableValueV1::Boolean(value) => (PROJECTED_BOOLEAN_KIND, vec![u8::from(value)]),
+        ExecutableValueV1::Symbol(value) => (PROJECTED_SYMBOL_KIND, value.as_bytes().to_vec()),
     };
     Term::atom(
         scope,
@@ -3721,6 +3778,7 @@ fn decode_projection(
                 let value_kind = match decoder.byte()? {
                     0 => ExecutableValueKindV1::Number,
                     1 => ExecutableValueKindV1::Boolean,
+                    2 => ExecutableValueKindV1::Symbol,
                     _ => return Err(ExecutableErrorV1::MalformedProgram),
                 };
                 bindings.push(ExecutableProjectionBindingV1 {
@@ -3746,6 +3804,11 @@ fn encode_value(bytes: &mut Vec<u8>, value: ExecutableValueV1) {
         }
         ExecutableValueV1::Boolean(value) => {
             bytes.extend_from_slice(&[1, u8::from(value)]);
+        }
+        ExecutableValueV1::Symbol(value) => {
+            bytes.push(2);
+            bytes.push(value.length);
+            bytes.extend_from_slice(value.as_bytes());
         }
     }
 }
@@ -3863,6 +3926,10 @@ impl<'a> Decoder<'a> {
                 1 => Ok(ExecutableValueV1::Boolean(true)),
                 _ => Err(ExecutableErrorV1::MalformedProgram),
             },
+            2 => {
+                let length = usize::from(self.byte()?);
+                ExecutableValueV1::symbol(self.take(length)?)
+            }
             _ => Err(ExecutableErrorV1::MalformedProgram),
         }
     }
