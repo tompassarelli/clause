@@ -247,7 +247,7 @@ fn core_authority(checked: &CheckedProcessPackage) -> AuthorityStore {
 fn checked_package_advances_serial_process_and_governed_state_end_to_end() {
     let checked = checked_fixture("core");
     let authority = core_authority(&checked);
-    let mut runtime = ProcessRuntime::instantiate(&checked, &authority)
+    let mut runtime = ProcessRuntime::instantiate(checked, authority)
         .expect("supported checked package instantiates");
     assert_eq!(runtime.carrier().state_revision_count(), 1);
     assert_eq!(runtime.carrier().applied_package_record_count(), 0);
@@ -346,7 +346,7 @@ fn checked_package_advances_serial_process_and_governed_state_end_to_end() {
     let unsupported = checked_fixture("handoff");
     let no_authority = AuthorityStore::new();
     assert_eq!(
-        ProcessRuntime::instantiate(&unsupported, &no_authority).err(),
+        ProcessRuntime::instantiate(unsupported, no_authority).err(),
         Some(RuntimeInitError::Carrier(ProcessError::HandoffUnsupported))
     );
 }

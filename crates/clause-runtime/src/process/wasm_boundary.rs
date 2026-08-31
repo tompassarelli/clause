@@ -311,12 +311,13 @@ pub fn run_wasm_process_request_v1(
         .map_err(|_| WasmProcessStatusV1::PackageRejected)?;
     let package =
         check_process_package(decoded).map_err(|_| WasmProcessStatusV1::PackageRejected)?;
-    let (authority, facts) = establish_authority(&package, &request.authority)?;
+    let (authority, facts, admission_authorization) =
+        establish_authority(&package, &request.authority)?;
     let application = ApplicationId {
         snapshot: package.constitution().snapshot(),
         local: request.application,
     };
-    let mut runtime = ExecutableProcessRuntimeV1::instantiate(&package, &authority, application)
+    let mut runtime = ExecutableProcessRuntimeV1::instantiate(package, authority, application)
         .map_err(|_| WasmProcessStatusV1::ProcessRejected)?;
     runtime
         .start_carrier_process(facts)
@@ -338,7 +339,7 @@ pub fn run_wasm_process_request_v1(
         .advance_carrier_occurrence_and_emit_candidate(occurrence)
         .map_err(|_| WasmProcessStatusV1::ProcessRejected)?;
     runtime
-        .settle_carrier_process()
+        .settle_carrier_process(admission_authorization)
         .map_err(|_| WasmProcessStatusV1::ProcessRejected)?;
     let observation = runtime
         .observe_carrier_state(&request.render_slots)
@@ -402,7 +403,14 @@ fn validate_shape(request: &WasmProcessRequestV1) -> Result<(), WasmProcessStatu
 fn establish_authority(
     package: &CheckedProcessPackage,
     input: &WasmAuthorityInputV1,
-) -> Result<(AuthorityStore, ExecutableAuthorityFactsV1), WasmProcessStatusV1> {
+) -> Result<
+    (
+        AuthorityStore,
+        ExecutableAuthorityFactsV1,
+        AdmissionAuthorizationEvidence,
+    ),
+    WasmProcessStatusV1,
+> {
     let semantics = package.constitution().semantics();
     let snapshot = package.constitution().snapshot();
     let revision = ProgramRevisionPreimage {
@@ -544,7 +552,6 @@ fn establish_authority(
             policy: input.policy,
             session_start: input.session_start,
             root_policy: input.root_policy,
-            admission_authorization,
             judgment_authority,
             occurrence_ingress: ExecutableBoundaryFactV1 {
                 boundary: input.occurrence_boundary,
@@ -559,6 +566,10 @@ fn establish_authority(
                 evidence: input.admission_evidence,
             },
             budget_units: input.budget_units,
+        },
+        AdmissionAuthorizationEvidence::IrreducibleRoot {
+            policy: input.root_policy,
+            authorization: admission_authorization,
         },
     ))
 }
