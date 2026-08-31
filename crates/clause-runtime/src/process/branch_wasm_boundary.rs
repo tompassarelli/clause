@@ -8,9 +8,9 @@ use super::{
     CheckedReconnectAdmissionPlanV1, ExecutablePhysicalPlanIdV1, ExecutableProjectedObservationV1,
     ExecutableResumptionV1, ExecutableSuspensionV1, ForkedProcessBranchV1, ProcessBranchAncestryV1,
     ProcessBranchErrorV1, ProcessBranchExplanationV1, ProcessBranchPinV1, ProcessBranchPinsV1,
-    ProcessCausalRecordV1, ProcessReconnectAdmissionV1, ProcessReconnectEvidenceV1,
-    WASM_PROCESS_REQUEST_LIMIT_V1, WASM_PROCESS_RESPONSE_LIMIT_V1, WasmProcessStatusV1,
-    open_fresh_persistent_process_session_v1,
+    ProcessCausalRecordV1, ProcessCommandEvidenceV1, ProcessReconnectAdmissionV1,
+    ProcessReconnectEvidenceV1, WASM_PROCESS_REQUEST_LIMIT_V1, WASM_PROCESS_RESPONSE_LIMIT_V1,
+    WasmProcessStatusV1, open_fresh_persistent_process_session_v1,
 };
 
 const OPEN_MAGIC: &[u8; 4] = b"CBR1";
@@ -497,6 +497,9 @@ fn map_branch_error(error: &ProcessBranchErrorV1) -> WasmBranchRejectionV1 {
         ProcessBranchErrorV1::MissingProposal => WasmBranchRejectionV1::MissingProposal,
         ProcessBranchErrorV1::AlreadyAdjudicated => WasmBranchRejectionV1::AlreadyAdjudicated,
         ProcessBranchErrorV1::UnexpectedCandidate => WasmBranchRejectionV1::UnexpectedCandidate,
+        ProcessBranchErrorV1::MissingInputObservation(_) => {
+            WasmBranchRejectionV1::UnexpectedCandidate
+        }
         ProcessBranchErrorV1::MissingCausalRecord(_) => WasmBranchRejectionV1::MissingCausalRecord,
         ProcessBranchErrorV1::Session(_) => WasmBranchRejectionV1::AuthoritativeAdmissionRejected,
     }
@@ -1017,12 +1020,14 @@ fn put_evidence(
     put_pins(bytes, evidence.pins);
     put_ancestry(bytes, evidence.ancestry);
     put_resumption(bytes, evidence.resumption);
-    put_occurrences(bytes, &evidence.commands)?;
-    put_identity_list(bytes, evidence.steps.iter().map(StepId::as_bytes))?;
-    put_identity_list(
-        bytes,
-        evidence.observations.iter().map(ObservationId::as_bytes),
-    )?;
+    put_command_evidence(bytes, &evidence.command_evidence)?;
+    if evidence
+        .command_evidence
+        .last()
+        .is_none_or(|command| command.step != evidence.candidate_step)
+    {
+        return Err(WasmProcessStatusV1::MalformedRequest);
+    }
     bytes.extend_from_slice(evidence.candidate.as_bytes());
     bytes.extend_from_slice(evidence.candidate_step.as_bytes());
     Ok(())
@@ -1031,15 +1036,25 @@ fn put_evidence(
 fn get_evidence(
     decoder: &mut Decoder<'_>,
 ) -> Result<ProcessReconnectEvidenceV1, WasmProcessStatusV1> {
+    let pins = get_pins(decoder)?;
+    let ancestry = get_ancestry(decoder)?;
+    let resumption = get_resumption(decoder)?;
+    let command_evidence = get_command_evidence(decoder)?;
+    let candidate = CandidateDeltaId::from_bytes(decoder.identity()?);
+    let candidate_step = StepId::from_bytes(decoder.identity()?);
+    if command_evidence
+        .last()
+        .is_none_or(|command| command.step != candidate_step)
+    {
+        return Err(WasmProcessStatusV1::MalformedRequest);
+    }
     Ok(ProcessReconnectEvidenceV1 {
-        pins: get_pins(decoder)?,
-        ancestry: get_ancestry(decoder)?,
-        resumption: get_resumption(decoder)?,
-        commands: get_occurrences(decoder)?,
-        steps: get_identity_list(decoder, StepId::from_bytes)?,
-        observations: get_identity_list(decoder, ObservationId::from_bytes)?,
-        candidate: CandidateDeltaId::from_bytes(decoder.identity()?),
-        candidate_step: StepId::from_bytes(decoder.identity()?),
+        pins,
+        ancestry,
+        resumption,
+        command_evidence,
+        candidate,
+        candidate_step,
     })
 }
 
@@ -1050,14 +1065,7 @@ fn put_explanation(
     put_pins(bytes, explanation.pins);
     put_ancestry(bytes, explanation.ancestry);
     put_resumption(bytes, explanation.resumption);
-    put_identity_list(bytes, explanation.branch_steps.iter().map(StepId::as_bytes))?;
-    put_identity_list(
-        bytes,
-        explanation
-            .branch_observations
-            .iter()
-            .map(ObservationId::as_bytes),
-    )?;
+    put_command_evidence(bytes, &explanation.branch_command_evidence)?;
     put_ids(
         bytes,
         &[
@@ -1067,17 +1075,7 @@ fn put_explanation(
             explanation.authoritative_activation.as_bytes(),
         ],
     );
-    put_identity_list(
-        bytes,
-        explanation.authoritative_steps.iter().map(StepId::as_bytes),
-    )?;
-    put_identity_list(
-        bytes,
-        explanation
-            .authoritative_observations
-            .iter()
-            .map(ObservationId::as_bytes),
-    )?;
+    put_command_evidence(bytes, &explanation.authoritative_command_evidence)?;
     put_ids(
         bytes,
         &[
@@ -1111,14 +1109,12 @@ fn get_explanation(
     let pins = get_pins(decoder)?;
     let ancestry = get_ancestry(decoder)?;
     let resumption = get_resumption(decoder)?;
-    let branch_steps = get_identity_list(decoder, StepId::from_bytes)?;
-    let branch_observations = get_identity_list(decoder, ObservationId::from_bytes)?;
+    let branch_command_evidence = get_command_evidence(decoder)?;
     let branch_candidate = CandidateDeltaId::from_bytes(decoder.identity()?);
     let authoritative_base = StateRevisionId::from_bytes(decoder.identity()?);
     let authoritative_run = RunId::from_bytes(decoder.identity()?);
     let authoritative_activation = ActivationId::from_bytes(decoder.identity()?);
-    let authoritative_steps = get_identity_list(decoder, StepId::from_bytes)?;
-    let authoritative_observations = get_identity_list(decoder, ObservationId::from_bytes)?;
+    let authoritative_command_evidence = get_command_evidence(decoder)?;
     let authoritative_candidate = CandidateDeltaId::from_bytes(decoder.identity()?);
     let authorization = IssuedAdmissionAuthorizationOccurrenceId::from_bytes(decoder.identity()?);
     let judgment = JudgmentOccurrenceId::from_bytes(decoder.identity()?);
@@ -1147,14 +1143,12 @@ fn get_explanation(
         pins,
         ancestry,
         resumption,
-        branch_steps,
-        branch_observations,
+        branch_command_evidence,
         branch_candidate,
         authoritative_base,
         authoritative_run,
         authoritative_activation,
-        authoritative_steps,
-        authoritative_observations,
+        authoritative_command_evidence,
         authoritative_candidate,
         authorization,
         judgment,
@@ -1192,29 +1186,46 @@ fn get_projection(
     }
 }
 
-fn put_identity_list<'a>(
+fn put_command_evidence(
     bytes: &mut Vec<u8>,
-    identities: impl Iterator<Item = &'a [u8; IDENTITY_BYTES]>,
+    commands: &[ProcessCommandEvidenceV1],
 ) -> Result<(), WasmProcessStatusV1> {
-    let identities = identities.collect::<Vec<_>>();
-    if identities.len() > MAX_CAUSAL_RECORDS {
+    if commands.is_empty() || commands.len() > MAX_OCCURRENCES {
         return Err(WasmProcessStatusV1::ResponseOutOfBounds);
     }
-    put_count(bytes, identities.len())?;
-    put_ids(bytes, &identities);
+    put_count(bytes, commands.len())?;
+    for command in commands {
+        if command.occurrence.is_empty() {
+            return Err(WasmProcessStatusV1::MalformedRequest);
+        }
+        put_blob(bytes, &command.occurrence)?;
+        put_ids(
+            bytes,
+            &[command.step.as_bytes(), command.observation.as_bytes()],
+        );
+    }
     Ok(())
 }
 
-fn get_identity_list<T>(
+fn get_command_evidence(
     decoder: &mut Decoder<'_>,
-    construct: impl Fn([u8; IDENTITY_BYTES]) -> T,
-) -> Result<Vec<T>, WasmProcessStatusV1> {
+) -> Result<Vec<ProcessCommandEvidenceV1>, WasmProcessStatusV1> {
     let count = usize::from(decoder.u16()?);
-    if count > MAX_CAUSAL_RECORDS {
-        return Err(WasmProcessStatusV1::ResponseOutOfBounds);
+    if count == 0 || count > MAX_OCCURRENCES {
+        return Err(WasmProcessStatusV1::MalformedRequest);
     }
     (0..count)
-        .map(|_| decoder.identity().map(&construct))
+        .map(|_| {
+            let occurrence = decoder.blob(WASM_BRANCH_COMMAND_LIMIT_V1)?.to_vec();
+            if occurrence.is_empty() {
+                return Err(WasmProcessStatusV1::MalformedRequest);
+            }
+            Ok(ProcessCommandEvidenceV1 {
+                occurrence,
+                step: StepId::from_bytes(decoder.identity()?),
+                observation: ObservationId::from_bytes(decoder.identity()?),
+            })
+        })
         .collect()
 }
 

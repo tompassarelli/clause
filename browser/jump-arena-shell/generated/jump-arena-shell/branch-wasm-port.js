@@ -21,6 +21,16 @@ function wasmprocessbranch_disposed(r) { return r.disposed; }
 
 function wasmprocessbranch_opened(r) { return r.opened; }
 
+function ProcessCommandEvidenceV1(occurrence, step, observation) {
+  return $$bc$record_value("jump-arena-shell.branch-wasm-port/ProcessCommandEvidenceV1", {_tag: "ProcessCommandEvidenceV1", occurrence, step, observation});
+}
+
+function processcommandevidencev1_occurrence(r) { return r.occurrence; }
+
+function processcommandevidencev1_step(r) { return r.step; }
+
+function processcommandevidencev1_observation(r) { return r.observation; }
+
 function identity_at(bytes, offset) {
   return wire["frozen-byte-range"](bytes, offset, (offset + identity_bytes));
 }
@@ -44,23 +54,14 @@ function append_occurrences_bang(bytes, occurrences) {
 });
 }
 
-function parse_identity_list(bytes, offset, label) {
-  const count = wire["little-u16"](bytes, offset);
-  const start = wire["require-range"](bytes, offset, 2, label);
-  const end = wire["require-range"](bytes, start, (count * identity_bytes), label);
-  return {[$$bc$property_key($$bc$keyword("values"))]: (() => { let index = 0; let values = []; while (true) {
-    if ((index === count)) { return Object.freeze(values); } else { const _recur_0 = (index + 1); const _recur_1 = $$bc$conj_value(values, identity_at(bytes, (start + (index * identity_bytes)))); index = _recur_0; values = _recur_1; continue; }
-  } })(), [$$bc$property_key($$bc$keyword("next"))]: end};
-}
-
-function parse_occurrences(bytes, offset, label) {
+function parse_command_evidence(bytes, offset, label) {
   const count = wire["little-u16"](bytes, offset);
   const start = wire["require-range"](bytes, offset, 2, label);
   if ((($$bc$equiv(count, 0)) || (count > 256))) {
     (() => { throw new Error($$bc$str(label, " count is outside its bound")); })();
   }
   return (() => { let index = 0; let cursor = start; let values = []; while (true) {
-    if ((index === count)) { return {[$$bc$property_key($$bc$keyword("values"))]: Object.freeze(values), [$$bc$property_key($$bc$keyword("next"))]: cursor}; } else { const record = wire["parse-blob"](bytes, cursor, branch_command_max_bytes, label); const _recur_0 = (index + 1); const _recur_1 = record.next; const _recur_2 = $$bc$conj_value(values, record.bytes); index = _recur_0; cursor = _recur_1; values = _recur_2; continue; }
+    if ((index === count)) { return {[$$bc$property_key($$bc$keyword("values"))]: Object.freeze(values), [$$bc$property_key($$bc$keyword("next"))]: cursor}; } else { const record = wire["parse-blob"](bytes, cursor, branch_command_max_bytes, label); (($$bc$equiv(record.bytes.length, 0)) ? (() => { return (() => { throw new Error($$bc$str(label, " occurrence is empty")); })(); })() : null); const identity_start = record.next; const identity_end = wire["require-range"](bytes, identity_start, (2 * identity_bytes), label); const _recur_0 = (index + 1); const _recur_1 = identity_end; const _recur_2 = $$bc$conj_value(values, ProcessCommandEvidenceV1(record.bytes, identity_at(bytes, identity_start), identity_at(bytes, (identity_start + identity_bytes)))); index = _recur_0; cursor = _recur_1; values = _recur_2; continue; }
   } })();
 }
 
@@ -92,15 +93,20 @@ function decode_reconnect_evidence(bytes) {
     const pins = parse_pins(bytes, 4);
     const ancestry = parse_ancestry(bytes, pins.next);
     const resumption = parse_resumption(bytes, ancestry.next);
-    const commands = parse_occurrences(bytes, resumption.next, "reconnect commands");
-    const steps = parse_identity_list(bytes, commands.next, "branch steps");
-    const observations = parse_identity_list(bytes, steps.next, "branch observations");
-    const candidate_offset = observations.next;
+    const commands = parse_command_evidence(bytes, resumption.next, "reconnect command evidence");
+    const candidate_offset = commands.next;
     const final_end = wire["require-range"](bytes, candidate_offset, (2 * identity_bytes), "reconnect candidate");
+    const candidate_step = identity_at(bytes, (candidate_offset + identity_bytes));
+    const command_values = commands.values;
+    const command_count = command_values.length;
+    const last_command = command_values[(command_count - 1)];
     if ((!($$bc$equiv(final_end, bytes.length)))) {
       (() => { throw new Error("reconnect evidence has trailing bytes"); })();
     }
-    return {[$$bc$property_key($$bc$keyword("pins"))]: pins.value, [$$bc$property_key($$bc$keyword("ancestry"))]: ancestry.value, [$$bc$property_key($$bc$keyword("resumption"))]: resumption.value, [$$bc$property_key($$bc$keyword("commands"))]: commands.values, [$$bc$property_key($$bc$keyword("steps"))]: steps.values, [$$bc$property_key($$bc$keyword("observations"))]: observations.values, [$$bc$property_key($$bc$keyword("candidate"))]: identity_at(bytes, candidate_offset), [$$bc$property_key($$bc$keyword("candidateStep"))]: identity_at(bytes, (candidate_offset + identity_bytes)), [$$bc$property_key($$bc$keyword("exactBytes"))]: bytes};
+    if ((!($$bc$equiv(last_command.step, candidate_step)))) {
+      (() => { throw new Error("reconnect candidate Step does not match final command evidence"); })();
+    }
+    return {[$$bc$property_key($$bc$keyword("pins"))]: pins.value, [$$bc$property_key($$bc$keyword("ancestry"))]: ancestry.value, [$$bc$property_key($$bc$keyword("resumption"))]: resumption.value, [$$bc$property_key($$bc$keyword("commandEvidence"))]: commands.values, [$$bc$property_key($$bc$keyword("candidate"))]: identity_at(bytes, candidate_offset), [$$bc$property_key($$bc$keyword("candidateStep"))]: candidate_step, [$$bc$property_key($$bc$keyword("exactBytes"))]: bytes};
   } else {
     return (() => { throw new Error("reconnect evidence must carry bounded exact bytes"); })();
   }
@@ -148,19 +154,17 @@ function decode_branch_explanation(bytes) {
     const pins = parse_pins(bytes, 4);
     const ancestry = parse_ancestry(bytes, pins.next);
     const resumption = parse_resumption(bytes, ancestry.next);
-    const branch_steps = parse_identity_list(bytes, resumption.next, "explanation branch steps");
-    const branch_observations = parse_identity_list(bytes, branch_steps.next, "explanation branch observations");
-    const branch_observations_end = branch_observations.next;
-    const authority_prefix = wire["require-range"](bytes, branch_observations_end, (4 * identity_bytes), "explanation authority prefix");
-    const authoritative_steps = parse_identity_list(bytes, authority_prefix, "explanation authority steps");
-    const authoritative_observations = parse_identity_list(bytes, authoritative_steps.next, "explanation authority observations");
-    const authoritative_observations_end = authoritative_observations.next;
-    const authority_suffix = wire["require-range"](bytes, authoritative_observations_end, (5 * identity_bytes), "explanation authority suffix");
+    const branch_commands = parse_command_evidence(bytes, resumption.next, "explanation branch command evidence");
+    const branch_commands_end = branch_commands.next;
+    const authority_prefix = wire["require-range"](bytes, branch_commands_end, (4 * identity_bytes), "explanation authority prefix");
+    const authoritative_commands = parse_command_evidence(bytes, authority_prefix, "explanation authoritative command evidence");
+    const authoritative_commands_end = authoritative_commands.next;
+    const authority_suffix = wire["require-range"](bytes, authoritative_commands_end, (5 * identity_bytes), "explanation authority suffix");
     const causal = parse_causal_records(bytes, authority_suffix);
     if ((!($$bc$equiv(causal.next, bytes.length)))) {
       (() => { throw new Error("branch explanation has trailing bytes"); })();
     }
-    return {[$$bc$property_key($$bc$keyword("pins"))]: pins.value, [$$bc$property_key($$bc$keyword("ancestry"))]: ancestry.value, [$$bc$property_key($$bc$keyword("resumption"))]: resumption.value, [$$bc$property_key($$bc$keyword("branchSteps"))]: branch_steps.values, [$$bc$property_key($$bc$keyword("branchObservations"))]: branch_observations.values, [$$bc$property_key($$bc$keyword("branchCandidate"))]: identity_at(bytes, branch_observations_end), [$$bc$property_key($$bc$keyword("authoritativeBase"))]: identity_at(bytes, (branch_observations_end + 32)), [$$bc$property_key($$bc$keyword("authoritativeRun"))]: identity_at(bytes, (branch_observations_end + 64)), [$$bc$property_key($$bc$keyword("authoritativeActivation"))]: identity_at(bytes, (branch_observations_end + 96)), [$$bc$property_key($$bc$keyword("authoritativeSteps"))]: authoritative_steps.values, [$$bc$property_key($$bc$keyword("authoritativeObservations"))]: authoritative_observations.values, [$$bc$property_key($$bc$keyword("authoritativeCandidate"))]: identity_at(bytes, authoritative_observations_end), [$$bc$property_key($$bc$keyword("authorization"))]: identity_at(bytes, (authoritative_observations_end + 32)), [$$bc$property_key($$bc$keyword("judgment"))]: identity_at(bytes, (authoritative_observations_end + 64)), [$$bc$property_key($$bc$keyword("admission"))]: identity_at(bytes, (authoritative_observations_end + 96)), [$$bc$property_key($$bc$keyword("successor"))]: identity_at(bytes, (authoritative_observations_end + 128)), [$$bc$property_key($$bc$keyword("causalRecords"))]: causal.values, [$$bc$property_key($$bc$keyword("exactBytes"))]: bytes};
+    return {[$$bc$property_key($$bc$keyword("pins"))]: pins.value, [$$bc$property_key($$bc$keyword("ancestry"))]: ancestry.value, [$$bc$property_key($$bc$keyword("resumption"))]: resumption.value, [$$bc$property_key($$bc$keyword("branchCommandEvidence"))]: branch_commands.values, [$$bc$property_key($$bc$keyword("branchCandidate"))]: identity_at(bytes, branch_commands_end), [$$bc$property_key($$bc$keyword("authoritativeBase"))]: identity_at(bytes, (branch_commands_end + 32)), [$$bc$property_key($$bc$keyword("authoritativeRun"))]: identity_at(bytes, (branch_commands_end + 64)), [$$bc$property_key($$bc$keyword("authoritativeActivation"))]: identity_at(bytes, (branch_commands_end + 96)), [$$bc$property_key($$bc$keyword("authoritativeCommandEvidence"))]: authoritative_commands.values, [$$bc$property_key($$bc$keyword("authoritativeCandidate"))]: identity_at(bytes, authoritative_commands_end), [$$bc$property_key($$bc$keyword("authorization"))]: identity_at(bytes, (authoritative_commands_end + 32)), [$$bc$property_key($$bc$keyword("judgment"))]: identity_at(bytes, (authoritative_commands_end + 64)), [$$bc$property_key($$bc$keyword("admission"))]: identity_at(bytes, (authoritative_commands_end + 96)), [$$bc$property_key($$bc$keyword("successor"))]: identity_at(bytes, (authoritative_commands_end + 128)), [$$bc$property_key($$bc$keyword("causalRecords"))]: causal.values, [$$bc$property_key($$bc$keyword("exactBytes"))]: bytes};
   } else {
     return (() => { throw new Error("branch explanation must carry bounded exact bytes"); })();
   }
@@ -366,7 +370,9 @@ function dispose_process_branch_bang(module, incoming_branch) {
   return true;
 }
 
+export { ProcessCommandEvidenceV1 as "->ProcessCommandEvidenceV1" };
 export { WasmProcessBranch as "->WasmProcessBranch" };
+export { ProcessCommandEvidenceV1 as "ProcessCommandEvidenceV1" };
 export { WasmProcessBranch as "WasmProcessBranch" };
 export { adjudicate_branch_reconnect_bang as "adjudicate-branch-reconnect!" };
 export { admit_authoritative_occurrences_bang as "admit-authoritative-occurrences!" };
@@ -375,6 +381,9 @@ export { decode_reconnect_evidence as "decode-reconnect-evidence" };
 export { dispose_process_branch_bang as "dispose-process-branch!" };
 export { explain_process_branch_bang as "explain-process-branch!" };
 export { open_process_branch_bang as "open-process-branch!" };
+export { processcommandevidencev1_observation as "processcommandevidencev1-observation" };
+export { processcommandevidencev1_occurrence as "processcommandevidencev1-occurrence" };
+export { processcommandevidencev1_step as "processcommandevidencev1-step" };
 export { propose_branch_reconnect_bang as "propose-branch-reconnect!" };
 export { wasmprocessbranch_disposed as "wasmprocessbranch-disposed" };
 export { wasmprocessbranch_handle as "wasmprocessbranch-handle" };

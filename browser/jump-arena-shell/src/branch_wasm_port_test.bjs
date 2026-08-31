@@ -68,7 +68,10 @@
                             module process-branch proposal r1 occurrences)
               explanation Any (.-explanation admitted)
               queried Any (.-explanation
-                           (branch/explain-process-branch! module process-branch))]
+                           (branch/explain-process-branch! module process-branch))
+              branch-command Any (nth (.-commandEvidence evidence) 0)
+              explained-branch-command Any (nth (.-branchCommandEvidence explanation) 0)
+              authoritative-command Any (nth (.-authoritativeCommandEvidence explanation) 0)]
           (.toBe (test/expect (str (.-disconnectTick (.-pins opened)))) "41")
           (.toBe (test/expect (json-string (.-predecessor authoritative)))
                  (json-string parent))
@@ -85,7 +88,11 @@
                  (json-string parent))
           (.toBe (test/expect (json-string (.-run (.-ancestry evidence))))
                  (json-string branch-run))
-          (.toBe (test/expect (str (.-length (.-observations evidence)))) "2")
+          (.toBe (test/expect (str (.-length (.-commandEvidence evidence)))) "2")
+          (.toBe (test/expect (json-string (.-occurrence branch-command)))
+                 (json-string (nth occurrences 0)))
+          (.toBe (test/expect (str (.-length (.-step branch-command)))) "32")
+          (.toBe (test/expect (str (.-length (.-observation branch-command)))) "32")
           (.toBe (test/expect (json-string (.-predecessor admitted)))
                  (json-string r1))
           (.toBe (test/expect
@@ -97,6 +104,22 @@
                  (json-string (.-candidate evidence)))
           (.toBe (test/expect (json-string (.-successor explanation)))
                  (json-string (.-successor admitted)))
+          (.toBe (test/expect (json-string explained-branch-command))
+                 (json-string branch-command))
+          (.toBe (test/expect (json-string (.-occurrence authoritative-command)))
+                 (json-string (nth occurrences 0)))
+          (.toBe (test/expect
+                   (if (not= (json-string (.-step authoritative-command))
+                             (json-string (.-step branch-command)))
+                     "true"
+                     "false"))
+                 "true")
+          (.toBe (test/expect
+                   (if (not= (json-string (.-observation authoritative-command))
+                             (json-string (.-observation branch-command)))
+                     "true"
+                     "false"))
+                 "true")
           (.toBe (test/expect (json-string queried)) (json-string explanation))
           (.toBe (test/expect
                    (if (> (.-length (.-causalRecords explanation)) 0) "true" "false"))

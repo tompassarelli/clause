@@ -41,14 +41,22 @@ pub struct ProcessBranchAncestryV1 {
     pub continuation: clause_package::ContinuationId,
 }
 
+/// Construct-blind projection that keeps one entered occurrence attached to
+/// the Observation and Step created by its actual execution. It introduces no
+/// identity, ordering, or authority beyond those retained records.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProcessCommandEvidenceV1 {
+    pub occurrence: Vec<u8>,
+    pub step: StepId,
+    pub observation: ObservationId,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProcessReconnectEvidenceV1 {
     pub pins: ProcessBranchPinsV1,
     pub ancestry: ProcessBranchAncestryV1,
     pub resumption: ExecutableResumptionV1,
-    pub commands: Vec<Vec<u8>>,
-    pub steps: Vec<StepId>,
-    pub observations: Vec<ObservationId>,
+    pub command_evidence: Vec<ProcessCommandEvidenceV1>,
     pub candidate: CandidateDeltaId,
     pub candidate_step: StepId,
 }
@@ -78,14 +86,12 @@ pub struct ProcessBranchExplanationV1 {
     pub pins: ProcessBranchPinsV1,
     pub ancestry: ProcessBranchAncestryV1,
     pub resumption: ExecutableResumptionV1,
-    pub branch_steps: Vec<StepId>,
-    pub branch_observations: Vec<ObservationId>,
+    pub branch_command_evidence: Vec<ProcessCommandEvidenceV1>,
     pub branch_candidate: CandidateDeltaId,
     pub authoritative_base: StateRevisionId,
     pub authoritative_run: RunId,
     pub authoritative_activation: ActivationId,
-    pub authoritative_steps: Vec<StepId>,
-    pub authoritative_observations: Vec<ObservationId>,
+    pub authoritative_command_evidence: Vec<ProcessCommandEvidenceV1>,
     pub authoritative_candidate: CandidateDeltaId,
     pub authorization: clause_package::IssuedAdmissionAuthorizationOccurrenceId,
     pub judgment: JudgmentOccurrenceId,
@@ -127,6 +133,7 @@ pub enum ProcessBranchErrorV1 {
     MissingProposal,
     AlreadyAdjudicated,
     UnexpectedCandidate,
+    MissingInputObservation(StepId),
     MissingCausalRecord(CausalRef),
 }
 
@@ -149,6 +156,12 @@ impl fmt::Display for ProcessBranchErrorV1 {
             }
             Self::UnexpectedCandidate => {
                 formatter.write_str("process branch candidate does not match its retained evidence")
+            }
+            Self::MissingInputObservation(step) => {
+                write!(
+                    formatter,
+                    "process branch Step {step:?} lacks its entered input Observation"
+                )
             }
             Self::MissingCausalRecord(occurrence) => {
                 write!(
@@ -313,17 +326,16 @@ impl ForkedProcessBranchV1 {
             .split_last()
             .ok_or(ProcessBranchErrorV1::MissingOccurrence)?;
         let resumption = self.session.resume()?;
-        let mut steps = Vec::with_capacity(occurrences.len());
-        let mut observations = Vec::with_capacity(occurrences.len());
+        let mut command_evidence = Vec::with_capacity(occurrences.len());
         for occurrence in prefix {
             let step = self.session.apply_opaque_input(occurrence)?.clone();
-            retain_step(&step, &mut steps, &mut observations);
+            retain_command_evidence(occurrence, &step, &mut command_evidence)?;
         }
         let step = self
             .session
             .apply_opaque_input_and_emit_candidate(last)?
             .clone();
-        retain_step(&step, &mut steps, &mut observations);
+        retain_command_evidence(last, &step, &mut command_evidence)?;
         let candidate = self
             .session
             .candidate()?
@@ -336,9 +348,7 @@ impl ForkedProcessBranchV1 {
             pins: self.pins,
             ancestry: self.ancestry,
             resumption,
-            commands: occurrences.to_vec(),
-            steps,
-            observations,
+            command_evidence,
             candidate: candidate.id,
             candidate_step: candidate.produced_by,
         };
@@ -375,16 +385,15 @@ impl ForkedProcessBranchV1 {
             .ok_or(ProcessBranchErrorV1::MissingOccurrence)?;
         let authoritative_run = authoritative.run()?;
         let authoritative_activation = authoritative.activation()?;
-        let mut steps = Vec::with_capacity(plan.occurrences.len());
-        let mut observations = Vec::with_capacity(plan.occurrences.len());
+        let mut command_evidence = Vec::with_capacity(plan.occurrences.len());
         for occurrence in prefix {
             let step = authoritative.apply_opaque_input(occurrence)?.clone();
-            retain_step(&step, &mut steps, &mut observations);
+            retain_command_evidence(occurrence, &step, &mut command_evidence)?;
         }
         let candidate_step = authoritative
             .apply_opaque_input_and_emit_candidate(last)?
             .clone();
-        retain_step(&candidate_step, &mut steps, &mut observations);
+        retain_command_evidence(last, &candidate_step, &mut command_evidence)?;
         let candidate = authoritative
             .candidate()?
             .cloned()
@@ -417,13 +426,13 @@ impl ForkedProcessBranchV1 {
             CausalRef::Resumption(retained.resumption.occurrence),
             &mut causal_records,
         )?;
-        for step in &retained.steps {
+        for evidence in &retained.command_evidence {
             retain_causal(
                 self.session.carrier()?,
                 CausalRef::Step(StepRef {
                     run: self.ancestry.run,
                     activation: self.ancestry.activation,
-                    step: *step,
+                    step: evidence.step,
                 }),
                 &mut causal_records,
             )?;
@@ -433,13 +442,13 @@ impl ForkedProcessBranchV1 {
             CausalRef::CandidateDelta(retained.candidate),
             &mut causal_records,
         )?;
-        for step in &steps {
+        for evidence in &command_evidence {
             retain_causal(
                 authoritative.carrier()?,
                 CausalRef::Step(StepRef {
                     run: authoritative_run,
                     activation: authoritative_activation,
-                    step: *step,
+                    step: evidence.step,
                 }),
                 &mut causal_records,
             )?;
@@ -463,14 +472,12 @@ impl ForkedProcessBranchV1 {
             pins: self.pins,
             ancestry: self.ancestry,
             resumption: retained.resumption,
-            branch_steps: retained.steps.clone(),
-            branch_observations: retained.observations.clone(),
+            branch_command_evidence: retained.command_evidence.clone(),
             branch_candidate: retained.candidate,
             authoritative_base: plan.authoritative_base,
             authoritative_run,
             authoritative_activation,
-            authoritative_steps: steps,
-            authoritative_observations: observations,
+            authoritative_command_evidence: command_evidence,
             authoritative_candidate: candidate.id,
             authorization,
             judgment: decision.verdict,
@@ -500,15 +507,20 @@ fn require_same(value: bool, pin: ProcessBranchPinV1) -> Result<(), ProcessBranc
     }
 }
 
-fn retain_step(
+fn retain_command_evidence(
+    occurrence: &[u8],
     step: &ExecutableStepV1,
-    steps: &mut Vec<StepId>,
-    observations: &mut Vec<ObservationId>,
-) {
-    steps.push(step.id);
-    if let Some(observation) = step.input_observation {
-        observations.push(observation);
-    }
+    evidence: &mut Vec<ProcessCommandEvidenceV1>,
+) -> Result<(), ProcessBranchErrorV1> {
+    let observation = step
+        .input_observation
+        .ok_or(ProcessBranchErrorV1::MissingInputObservation(step.id))?;
+    evidence.push(ProcessCommandEvidenceV1 {
+        occurrence: occurrence.to_vec(),
+        step: step.id,
+        observation,
+    });
+    Ok(())
 }
 
 fn validate_submission(

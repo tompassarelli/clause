@@ -519,6 +519,21 @@ fn forked_process_branch_reconnects_through_separate_admission_and_retains_exact
     assert_eq!(retained.base, parent);
     assert_eq!(authoritative.world_base(), first_state.id);
     assert_ne!(reconnect.ancestry.run, authoritative.run().unwrap());
+    assert_eq!(reconnect.command_evidence.len(), branch_commands.len());
+    for (expected, evidence) in branch_commands.iter().zip(&reconnect.command_evidence) {
+        assert_eq!(&evidence.occurrence, expected);
+    }
+    assert_eq!(
+        reconnect.candidate_step,
+        reconnect
+            .command_evidence
+            .last()
+            .expect("candidate command evidence is retained")
+            .step
+    );
+    assert!(reconnect.command_evidence.windows(2).all(|commands| {
+        commands[0].step != commands[1].step && commands[0].observation != commands[1].observation
+    }));
 
     for (tampered, expected) in [
         (
@@ -575,6 +590,20 @@ fn forked_process_branch_reconnects_through_separate_admission_and_retains_exact
         assert!(branch.explanation().is_none());
     }
 
+    let mut reordered = reconnect.clone();
+    reordered.command_evidence.swap(0, 1);
+    let exact_order_plan = CheckedReconnectAdmissionPlanV1 {
+        branch_candidate: reconnect.candidate,
+        authoritative_base: first_state.id,
+        occurrences: branch_commands.clone(),
+    };
+    assert!(matches!(
+        branch.adjudicate(&mut authoritative, &reordered, &exact_order_plan),
+        Err(ProcessBranchErrorV1::UnexpectedCandidate)
+    ));
+    assert_eq!(authoritative.world_base(), first_state.id);
+    assert!(branch.explanation().is_none());
+
     let stale_plan = CheckedReconnectAdmissionPlanV1 {
         branch_candidate: reconnect.candidate,
         authoritative_base: parent,
@@ -588,6 +617,7 @@ fn forked_process_branch_reconnects_through_separate_admission_and_retains_exact
     ));
     assert_eq!(authoritative.world_base(), first_state.id);
 
+    let adjudication_occurrences = branch_commands.clone();
     let plan = CheckedReconnectAdmissionPlanV1 {
         branch_candidate: reconnect.candidate,
         authoritative_base: first_state.id,
@@ -600,6 +630,19 @@ fn forked_process_branch_reconnects_through_separate_admission_and_retains_exact
     assert_eq!(admitted.state.id, authoritative.world_base());
     assert_ne!(admitted.state.id, retained.base);
     assert_eq!(admitted.explanation.branch_candidate, retained.id);
+    assert_eq!(
+        admitted.explanation.branch_command_evidence,
+        reconnect.command_evidence
+    );
+    assert_eq!(
+        admitted
+            .explanation
+            .authoritative_command_evidence
+            .iter()
+            .map(|evidence| &evidence.occurrence)
+            .collect::<Vec<_>>(),
+        adjudication_occurrences.iter().collect::<Vec<_>>()
+    );
     let decision = authoritative
         .carrier()
         .unwrap()
@@ -740,8 +783,18 @@ fn public_wasm_branch_boundary_retains_exact_evidence_and_admission_only_success
         } => {
             assert_eq!(evidence.pins.parent_state, parent);
             assert_eq!(evidence.ancestry.run, branch_run);
-            assert_eq!(evidence.commands, branch_occurrences);
-            assert!(!evidence.observations.is_empty());
+            assert_eq!(evidence.command_evidence.len(), branch_occurrences.len());
+            for (expected, command) in branch_occurrences.iter().zip(&evidence.command_evidence) {
+                assert_eq!(&command.occurrence, expected);
+            }
+            assert_eq!(
+                evidence.candidate_step,
+                evidence
+                    .command_evidence
+                    .last()
+                    .expect("candidate command evidence is retained")
+                    .step
+            );
             assert_eq!(
                 exact_evidence,
                 encode_process_reconnect_evidence_v1(&evidence)
@@ -756,6 +809,11 @@ fn public_wasm_branch_boundary_retains_exact_evidence_and_admission_only_success
     *mismatched_evidence
         .last_mut()
         .expect("evidence has one candidate-step byte") ^= 1;
+    assert_eq!(
+        decode_process_reconnect_evidence_v1(&mismatched_evidence),
+        Err(WasmProcessStatusV1::MalformedRequest),
+        "CRE1 rejects a candidate Step that no longer matches the final ordered command record"
+    );
     let rejected = boundary
         .command(
             &encode_wasm_branch_command_v1(&WasmBranchCommandV1 {
@@ -785,7 +843,7 @@ fn public_wasm_branch_boundary_retains_exact_evidence_and_admission_only_success
                     reconnect_evidence: exact_evidence,
                     branch_candidate,
                     authoritative_base: r1,
-                    occurrences: branch_occurrences,
+                    occurrences: branch_occurrences.clone(),
                 },
             })
             .expect("adjudication command encodes"),
@@ -807,6 +865,22 @@ fn public_wasm_branch_boundary_retains_exact_evidence_and_admission_only_success
             assert_eq!(explanation.authoritative_base, r1);
             assert_eq!(explanation.authoritative_run, authoritative_run);
             assert_eq!(explanation.successor, successor);
+            assert_eq!(
+                explanation
+                    .branch_command_evidence
+                    .iter()
+                    .map(|evidence| &evidence.occurrence)
+                    .collect::<Vec<_>>(),
+                branch_occurrences.iter().collect::<Vec<_>>()
+            );
+            assert_eq!(
+                explanation
+                    .authoritative_command_evidence
+                    .iter()
+                    .map(|evidence| &evidence.occurrence)
+                    .collect::<Vec<_>>(),
+                branch_occurrences.iter().collect::<Vec<_>>()
+            );
             assert!(explanation.causal_records.iter().all(|record| {
                 if matches!(
                     record.occurrence,

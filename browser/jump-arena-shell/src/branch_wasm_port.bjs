@@ -15,6 +15,12 @@
      disposed Any
      opened Any]))
 
+(js/export
+  (defrecord ProcessCommandEvidenceV1
+    [occurrence Any
+     step Any
+     observation Any]))
+
 (defn identity-at
   [bytes Any
    offset Int] Any
@@ -39,22 +45,7 @@
         (throw (new Error "branch occurrence must carry bounded exact bytes")))
       (wire/append-blob! bytes occurrence))))
 
-(defn parse-identity-list
-  [bytes Any
-   offset Int
-   label String] Any
-  (let [count Int (wire/little-u16 bytes offset)
-        start Int (wire/require-range bytes offset 2 label)
-        end Int (wire/require-range bytes start (* count identity-bytes) label)]
-    {:values (loop [index Int 0
-                    values (Vec Any) []]
-               (if (= index count)
-                 (.freeze Object values)
-                 (recur (inc index)
-                        (conj values (identity-at bytes (+ start (* index identity-bytes)))))))
-     :next end}))
-
-(defn parse-occurrences
+(defn parse-command-evidence
   [bytes Any
    offset Int
    label String] Any
@@ -68,9 +59,18 @@
       (if (= index count)
         {:values (.freeze Object values) :next cursor}
         (let [record Any (wire/parse-blob bytes cursor branch-command-max-bytes label)]
-          (recur (inc index)
-                 (.-next record)
-                 (conj values (.-bytes record))))))))
+          (when (= (.-length (.-bytes record)) 0)
+            (throw (new Error (str label " occurrence is empty"))))
+          (let [identity-start Int (.-next record)
+                identity-end Int (wire/require-range bytes identity-start
+                                                     (* 2 identity-bytes) label)]
+            (recur (inc index)
+                   identity-end
+                   (conj values
+                         (->ProcessCommandEvidenceV1
+                          (.-bytes record)
+                          (identity-at bytes identity-start)
+                          (identity-at bytes (+ identity-start identity-bytes)))))))))))
 
 (defn parse-pins
   [bytes Any
@@ -147,25 +147,27 @@
         (let [pins Any (parse-pins bytes 4)
               ancestry Any (parse-ancestry bytes (.-next pins))
               resumption Any (parse-resumption bytes (.-next ancestry))
-              commands Any (parse-occurrences bytes (.-next resumption)
-                                               "reconnect commands")
-              steps Any (parse-identity-list bytes (.-next commands) "branch steps")
-              observations Any (parse-identity-list bytes (.-next steps)
-                                                     "branch observations")
-              candidate-offset Int (.-next observations)
+              commands Any (parse-command-evidence bytes (.-next resumption)
+                                                   "reconnect command evidence")
+              candidate-offset Int (.-next commands)
               final-end Int (wire/require-range bytes candidate-offset
                                                 (* 2 identity-bytes)
-                                                "reconnect candidate")]
+                                                "reconnect candidate")
+              candidate-step Any (identity-at bytes (+ candidate-offset identity-bytes))
+              command-values Any (.-values commands)
+              command-count Int (.-length command-values)
+              last-command Any (nth command-values (dec command-count))]
           (when (not= final-end (.-length bytes))
             (throw (new Error "reconnect evidence has trailing bytes")))
+          (when (not= (.-step last-command) candidate-step)
+            (throw (new Error
+                    "reconnect candidate Step does not match final command evidence")))
           {:pins (.-value pins)
            :ancestry (.-value ancestry)
            :resumption (.-value resumption)
-           :commands (.-values commands)
-           :steps (.-values steps)
-           :observations (.-values observations)
+           :commandEvidence (.-values commands)
            :candidate (identity-at bytes candidate-offset)
-           :candidateStep (identity-at bytes (+ candidate-offset identity-bytes))
+           :candidateStep candidate-step
            :exactBytes bytes})))))
 
 (defn parse-causal-ref
@@ -234,22 +236,19 @@
         (let [pins Any (parse-pins bytes 4)
               ancestry Any (parse-ancestry bytes (.-next pins))
               resumption Any (parse-resumption bytes (.-next ancestry))
-              branch-steps Any (parse-identity-list bytes (.-next resumption)
-                                                    "explanation branch steps")
-              branch-observations Any (parse-identity-list bytes (.-next branch-steps)
-                                                           "explanation branch observations")
-              branch-observations-end Int (.-next branch-observations)
-              authority-prefix Int (wire/require-range bytes branch-observations-end
+              branch-commands Any (parse-command-evidence
+                                   bytes (.-next resumption)
+                                   "explanation branch command evidence")
+              branch-commands-end Int (.-next branch-commands)
+              authority-prefix Int (wire/require-range bytes branch-commands-end
                                                        (* 4 identity-bytes)
                                                        "explanation authority prefix")
-              authoritative-steps Any (parse-identity-list bytes authority-prefix
-                                                           "explanation authority steps")
-              authoritative-observations Any (parse-identity-list
-                                               bytes (.-next authoritative-steps)
-                                               "explanation authority observations")
-              authoritative-observations-end Int (.-next authoritative-observations)
+              authoritative-commands Any (parse-command-evidence
+                                          bytes authority-prefix
+                                          "explanation authoritative command evidence")
+              authoritative-commands-end Int (.-next authoritative-commands)
               authority-suffix Int (wire/require-range bytes
-                                                        authoritative-observations-end
+                                                        authoritative-commands-end
                                                         (* 5 identity-bytes)
                                                         "explanation authority suffix")
               causal Any (parse-causal-records bytes authority-suffix)]
@@ -258,19 +257,17 @@
           {:pins (.-value pins)
            :ancestry (.-value ancestry)
            :resumption (.-value resumption)
-           :branchSteps (.-values branch-steps)
-           :branchObservations (.-values branch-observations)
-           :branchCandidate (identity-at bytes branch-observations-end)
-           :authoritativeBase (identity-at bytes (+ branch-observations-end 32))
-           :authoritativeRun (identity-at bytes (+ branch-observations-end 64))
-           :authoritativeActivation (identity-at bytes (+ branch-observations-end 96))
-           :authoritativeSteps (.-values authoritative-steps)
-           :authoritativeObservations (.-values authoritative-observations)
-           :authoritativeCandidate (identity-at bytes authoritative-observations-end)
-           :authorization (identity-at bytes (+ authoritative-observations-end 32))
-           :judgment (identity-at bytes (+ authoritative-observations-end 64))
-           :admission (identity-at bytes (+ authoritative-observations-end 96))
-           :successor (identity-at bytes (+ authoritative-observations-end 128))
+           :branchCommandEvidence (.-values branch-commands)
+           :branchCandidate (identity-at bytes branch-commands-end)
+           :authoritativeBase (identity-at bytes (+ branch-commands-end 32))
+           :authoritativeRun (identity-at bytes (+ branch-commands-end 64))
+           :authoritativeActivation (identity-at bytes (+ branch-commands-end 96))
+           :authoritativeCommandEvidence (.-values authoritative-commands)
+           :authoritativeCandidate (identity-at bytes authoritative-commands-end)
+           :authorization (identity-at bytes (+ authoritative-commands-end 32))
+           :judgment (identity-at bytes (+ authoritative-commands-end 64))
+           :admission (identity-at bytes (+ authoritative-commands-end 96))
+           :successor (identity-at bytes (+ authoritative-commands-end 128))
            :causalRecords (.-values causal)
            :exactBytes bytes})))))
 
