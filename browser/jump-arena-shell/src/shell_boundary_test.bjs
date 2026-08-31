@@ -5,7 +5,35 @@
 
 (require '["bun:test" :as test])
 
-(declare-extern [test/test test/expect JSON] Any)
+(defn fail-expectation! [message String] Nil
+  (throw (new Error message)))
+
+(defn expect-same!
+  [actual Any
+   expected Any] Nil
+  (if (identical? actual expected)
+    nil
+    (fail-expectation! "expected values to be identical")))
+
+(defn expect-equal!
+  [actual Any
+   expected Any] Nil
+  (if (identical? (.stringify JSON actual) (.stringify JSON expected))
+    nil
+    (fail-expectation! "expected values to be structurally equal")))
+
+(defn expect-throws-message!
+  [thunk (Fn [] Any)
+   expected String] Nil
+  (let [matched Bool (try
+          (do
+            (thunk)
+            false)
+          (catch Error error
+            (identical? (.-message error) expected)))]
+    (if matched
+      nil
+      (fail-expectation! "expected function to throw the exact message"))))
 
 (defn empty-listener-map [] (JsMap String Any)
   (new Map))
@@ -169,7 +197,7 @@
 
 (test/test
  "production shell emits input without advancing player state and tears down"
- (fn [] Any
+ (fn [] Nil
    (reset-fixture!)
    (let [three Any {:Scene fakeScene
                     :Color fakeColor
@@ -199,30 +227,30 @@
          pointer-cancel Any (.get @canvas-listeners "pointercancel")]
      ((.-renderFrame arena) frame)
      (key-down {:code "Space" :repeat false})
-     (.toBe (test/expect (.-length @emitted-inputs)) 0)
+     (expect-same! (.-length @emitted-inputs) 0)
      (focus-handler {})
      (key-down {:code "Space" :repeat false})
-     (.toBe (test/expect (.-length @emitted-inputs)) 1)
+     (expect-same! (.-length @emitted-inputs) 1)
      (blur-handler {})
      (key-down {:code "Space" :repeat false})
-     (.toBe (test/expect (.-length @emitted-inputs)) 1)
+     (expect-same! (.-length @emitted-inputs) 1)
      (pointer-down {:clientX 110.0
                     :clientY 70.0
                     :pointerId 9
                     :button 0
                     :buttons 1})
-     (.toBe (test/expect (.stringify JSON frame)) before)
-     (.toEqual (test/expect (.-position (.-player frame)))
-               {:x 2.0 :y 3.0 :z 4.0})
-     (.toEqual (test/expect (.-velocity (.-player frame)))
-               {:x 5.0 :y 6.0 :z 7.0})
-     (.toBe (test/expect (.-grounded (.-player frame))) false)
-     (.toBe (test/expect @render-count) 1)
-     (.toBe (test/expect (.-length @emitted-inputs)) 2)
-     (.toBe (test/expect @pixel-ratio) 2.0)
-     (.toBe (test/expect (.has @browser-listeners "keydown")) false)
-     (.toBe (test/expect (.has @browser-listeners "keyup")) false)
-     (.toBe (test/expect @focus-requests) 1)
+     (expect-same! (.stringify JSON frame) before)
+     (expect-equal! (.-position (.-player frame))
+                   {:x 2.0 :y 3.0 :z 4.0})
+     (expect-equal! (.-velocity (.-player frame))
+                   {:x 5.0 :y 6.0 :z 7.0})
+     (expect-same! (.-grounded (.-player frame)) false)
+     (expect-same! @render-count 1)
+     (expect-same! (.-length @emitted-inputs) 2)
+     (expect-same! @pixel-ratio 2.0)
+     (expect-same! (.has @browser-listeners "keydown") false)
+     (expect-same! (.has @browser-listeners "keyup") false)
+     (expect-same! @focus-requests 1)
      ((.-dispose arena))
      ((.-dispose arena))
      (key-down {:code "KeyW" :repeat false})
@@ -251,16 +279,17 @@
                       :button 0
                       :buttons 0})
      (resize-handler)
-     (.toThrow (test/expect (fn [] Any ((.-renderFrame arena) frame)))
-               "jump arena shell is disposed")
-     (.toBe (test/expect (.-size @browser-listeners)) 0)
-     (.toBe (test/expect (.-size @canvas-listeners)) 0)
-     (.toBe (test/expect (.-size @pointer-captures)) 0)
-     (.toBe (test/expect (.-length @emitted-inputs)) 2)
-     (.toBe (test/expect @focus-requests) 1)
-     (.toBe (test/expect @render-count) 1)
-     (.toBe (test/expect @released-pointers) 1)
-     (.toBe (test/expect @resource-disposals) 4)
-     (.toBe (test/expect @renderer-disposals) 1)
-     (.toBe (test/expect @context-losses) 1)
-     (.toBe (test/expect @canvas-removals) 1))))
+     (expect-throws-message!
+      (fn [] Any ((.-renderFrame arena) frame))
+      "jump arena shell is disposed")
+     (expect-same! (.-size @browser-listeners) 0)
+     (expect-same! (.-size @canvas-listeners) 0)
+     (expect-same! (.-size @pointer-captures) 0)
+     (expect-same! (.-length @emitted-inputs) 2)
+     (expect-same! @focus-requests 1)
+     (expect-same! @render-count 1)
+     (expect-same! @released-pointers 1)
+     (expect-same! @resource-disposals 4)
+     (expect-same! @renderer-disposals 1)
+     (expect-same! @context-losses 1)
+     (expect-same! @canvas-removals 1))))

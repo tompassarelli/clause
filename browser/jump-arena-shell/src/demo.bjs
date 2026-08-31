@@ -5,7 +5,17 @@
             [jump-arena-shell.wasm-workbench-shell :as integration]
             [jump-arena-shell.workbench :as workbench]))
 
-(require '["#clause-runtime-wasm" :refer [initSync SyncInitInput]])
+(require
+ '["#clause-runtime-wasm"
+   :refer [clause_session_v1_command
+           clause_session_v1_event_byte
+           clause_session_v1_event_len
+           clause_session_v1_io_reset
+           clause_session_v1_open
+           clause_session_v1_request_push
+           initSync
+           InitOutput
+           SyncInitInput]])
 
 (declare-extern [document window fetch] Any)
 
@@ -32,6 +42,24 @@
            (if (.-ok response)
              (.arrayBuffer response)
              (.reject Promise (new Error (str "Unable to load " path)))))))
+
+(defn initialize-session-module [module ArrayBuffer] Any
+  (let [input SyncInitInput module
+        _initialized InitOutput (initSync input)]
+    (.freeze
+     Object
+     {:clause_session_v1_io_reset
+      (fn [] Nil (clause_session_v1_io_reset))
+      :clause_session_v1_request_push
+      (fn [byte Int] Float (clause_session_v1_request_push byte))
+      :clause_session_v1_open
+      (fn [] Float (clause_session_v1_open))
+      :clause_session_v1_command
+      (fn [] Float (clause_session_v1_command))
+      :clause_session_v1_event_len
+      (fn [] Float (clause_session_v1_event_len))
+      :clause_session_v1_event_byte
+      (fn [index Int] Float (clause_session_v1_event_byte index))})))
 
 (def status Any (.querySelector document "#replay-status"))
 (def result Any (.querySelector document "#replay-result"))
@@ -62,7 +90,7 @@
      (fn [assets Any] Any
         (integration/load-passive-wasm-workbench-shell!
          (integration/create-sync-wasm-initializer
-         (fn [module SyncInitInput] Any (initSync module)))
+          initialize-session-module)
         (nth assets 0)
         create-result-shell!
         integration/project-persistent-term-frame
