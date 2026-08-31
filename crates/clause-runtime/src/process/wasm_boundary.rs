@@ -517,6 +517,10 @@ fn establish_authority_inner(
         policy: input.root_policy,
         local: JudgmentAuthorityLocalId::new(0),
     };
+    let admission_authorization_issuer = RootAdmissionAuthorizationIssuerRef {
+        policy: input.root_policy,
+        local: AdmissionAuthorizationIssuerLocalId::new(0),
+    };
     let state_admission_grants =
         initial_admission_candidate.map(|candidate| RootStateAdmissionGrant {
             authorization: admission_authorization,
@@ -544,6 +548,15 @@ fn establish_authority_inner(
             authority: judgment_authority,
             scope: JudgmentAuthorityScope {
                 semantics,
+                session: input.session,
+                policy: input.policy,
+            },
+        }],
+        vec![RootStateAdmissionIssuerGrant {
+            issuer: admission_authorization_issuer,
+            scope: StateAdmissionIssuerScope {
+                revision: revision.id,
+                package: package.id(),
                 session: input.session,
                 policy: input.policy,
             },
@@ -678,6 +691,20 @@ fn establish_authority_inner(
                             maximum_occurrences: None,
                         },
                     },
+                    BoundaryOccurrencePermissionV2 {
+                        id: BoundaryPermissionLocalId::new(4),
+                        kind: EnteredOccurrenceKind::AdmissionAuthorization,
+                        payload: boundary_target.clone(),
+                        pins: state_pins,
+                        cause_schema: vec![BoundaryCauseRequirementV2 {
+                            kind: EnteredCauseKindV2::CandidateDelta,
+                            cardinality: exactly_one,
+                        }],
+                        support_schema: vec![],
+                        replay: BoundaryReplayPolicyV2::Repeatable {
+                            maximum_occurrences: None,
+                        },
+                    },
                 ],
             })
         })
@@ -701,7 +728,10 @@ fn establish_authority_inner(
         (
             input.admission_evidence,
             input.state_boundary,
-            vec![BoundaryPermissionLocalId::new(3)],
+            vec![
+                BoundaryPermissionLocalId::new(3),
+                BoundaryPermissionLocalId::new(4),
+            ],
             &input.admission_evidence_bytes,
         ),
     ] {
@@ -724,6 +754,7 @@ fn establish_authority_inner(
             session_start: input.session_start,
             root_policy: input.root_policy,
             judgment_authority,
+            admission_authorization_issuer,
             trigger_ingress: ExecutableBoundaryFactV1 {
                 boundary: input.occurrence_boundary,
                 evidence: input.occurrence_evidence,
@@ -738,6 +769,11 @@ fn establish_authority_inner(
                 boundary: input.state_boundary,
                 evidence: input.judgment_evidence,
                 permission: BoundaryPermissionLocalId::new(2),
+            },
+            admission_issuance_ingress: ExecutableBoundaryFactV1 {
+                boundary: input.state_boundary,
+                evidence: input.admission_evidence,
+                permission: BoundaryPermissionLocalId::new(4),
             },
             admission_ingress: ExecutableBoundaryFactV1 {
                 boundary: input.state_boundary,

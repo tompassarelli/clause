@@ -7,10 +7,11 @@ use super::wasm_boundary::{
     establish_persistent_authority, put_blob,
 };
 use super::{
-    ExecutableCarrierErrorV1, PersistentProcessSessionErrorV1, PersistentProcessSessionV1,
-    RuntimeAllocationEpochV1, WASM_PROCESS_REQUEST_LIMIT_V1, WASM_PROCESS_RESPONSE_LIMIT_V1,
-    WasmAuthorityInputV1, WasmProcessStatusV1, decode_executable_physical_plan_v1,
-    decode_runtime_allocation_epoch_v1, encode_runtime_allocation_epoch_v1,
+    ExecutableCarrierErrorV1, ExecutableInputSourceV1, ExecutableKeyPhaseV1,
+    PersistentProcessSessionErrorV1, PersistentProcessSessionV1, RuntimeAllocationEpochV1,
+    WASM_PROCESS_REQUEST_LIMIT_V1, WASM_PROCESS_RESPONSE_LIMIT_V1, WasmAuthorityInputV1,
+    WasmProcessStatusV1, decode_executable_physical_plan_v1, decode_runtime_allocation_epoch_v1,
+    encode_runtime_allocation_epoch_v1,
 };
 
 const OPEN_MAGIC: &[u8; 4] = b"CWS1";
@@ -21,7 +22,7 @@ const EVENT_HEADER_BYTES: usize = 4 + 4 + 4 + 8 + 1;
 const ALLOCATION_EPOCH_BYTES_V1: usize = 304;
 
 pub const WASM_SESSION_COMMAND_LIMIT_V1: usize = 1024 * 1024;
-pub const WASM_SESSION_EVENT_LIMIT_V1: usize = 4 * 1024;
+pub const WASM_SESSION_EVENT_LIMIT_V1: usize = 64 * 1024;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct WasmSessionHandleV1 {
@@ -58,12 +59,36 @@ pub struct WasmSessionAdmissionV1 {
     pub session: RuntimeSessionId,
     pub base: StateRevisionId,
     pub candidate: CandidateDeltaId,
+    pub authorization: IssuedAdmissionAuthorizationOccurrenceId,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct WasmSessionAdmissionScopeV1 {
+    pub package: ProcessPackageId,
+    pub session: RuntimeSessionId,
+    pub base: StateRevisionId,
+    pub candidate: CandidateDeltaId,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WasmSessionPhysicalInputV1 {
+    pub input_sequence: u64,
+    pub source: ExecutableInputSourceV1,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct WasmSessionTickV1 {
+    pub configuration_revision: u64,
+    pub fixed_tick_milliseconds: u32,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum WasmSessionOperationV1 {
     Input(Vec<u8>),
     Candidate(Vec<u8>),
+    PhysicalInput(WasmSessionPhysicalInputV1),
+    TickCandidate(WasmSessionTickV1),
+    IssueAdmission(WasmSessionAdmissionScopeV1),
     Admit(WasmSessionAdmissionV1),
     Dispose,
 }
@@ -80,9 +105,10 @@ pub struct WasmSessionCommandV1 {
 pub enum WasmSessionRejectionV1 {
     InputRejected = 1,
     CandidateRejected = 2,
-    AdmissionScopeRejected = 3,
-    AuthorityRejected = 4,
-    AdmissionRejected = 5,
+    InputConfigurationRejected = 3,
+    AdmissionScopeRejected = 4,
+    AuthorityRejected = 5,
+    AdmissionRejected = 6,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -110,6 +136,14 @@ pub enum WasmSessionEventKindV1 {
         base: StateRevisionId,
         run: RunId,
         activation: ActivationId,
+        state_revision_count: u32,
+    },
+    AdmissionAuthorizationIssued {
+        occurrence: IssuedAdmissionAuthorizationOccurrenceId,
+        package: ProcessPackageId,
+        session: RuntimeSessionId,
+        base: StateRevisionId,
+        candidate: CandidateDeltaId,
         state_revision_count: u32,
     },
     AdmissionAccepted {
@@ -142,6 +176,8 @@ struct LiveSessionV1 {
     session: PersistentProcessSessionV1,
     sequence: u64,
     limits: WasmSessionLimitsV1,
+    last_input_sequence: u64,
+    last_configuration_revision: u64,
 }
 
 /// A bounded physical table with one live slot. Its handle never substitutes
@@ -302,6 +338,8 @@ impl WasmPersistentSessionBoundaryV1 {
             session,
             sequence: 0,
             limits: request.limits,
+            last_input_sequence: 0,
+            last_configuration_revision: 0,
         });
         self.status = WasmProcessStatusV1::Ready;
         Ok(event)
@@ -334,7 +372,37 @@ impl WasmPersistentSessionBoundaryV1 {
             return self.fail(WasmProcessStatusV1::ResponseOutOfBounds);
         }
 
-        let kind = execute_operation(&mut live.session, command.operation);
+        let operation = command.operation;
+        match &operation {
+            WasmSessionOperationV1::PhysicalInput(input)
+                if input.input_sequence <= live.last_input_sequence =>
+            {
+                return self.fail(WasmProcessStatusV1::SequenceRejected);
+            }
+            WasmSessionOperationV1::TickCandidate(tick)
+                if tick.configuration_revision <= live.last_configuration_revision
+                    || tick.fixed_tick_milliseconds == 0 =>
+            {
+                return self.fail(WasmProcessStatusV1::SequenceRejected);
+            }
+            _ => {}
+        }
+        let progress = match &operation {
+            WasmSessionOperationV1::PhysicalInput(input) => Some((input.input_sequence, None)),
+            WasmSessionOperationV1::TickCandidate(tick) => {
+                Some((live.last_input_sequence, Some(tick.configuration_revision)))
+            }
+            _ => None,
+        };
+        let kind = execute_operation(&mut live.session, operation);
+        if !matches!(kind, WasmSessionEventKindV1::Rejected(_))
+            && let Some((input_sequence, configuration_revision)) = progress
+        {
+            live.last_input_sequence = input_sequence;
+            if let Some(revision) = configuration_revision {
+                live.last_configuration_revision = revision;
+            }
+        }
         let accepted_sequence = live
             .sequence
             .checked_add(1)
@@ -354,7 +422,8 @@ impl WasmPersistentSessionBoundaryV1 {
 
     fn install_event(&mut self, event: WasmSessionEventV1) -> Result<(), WasmProcessStatusV1> {
         let bytes = encode_wasm_session_event_v1(&event);
-        if bytes.len() > WASM_PROCESS_RESPONSE_LIMIT_V1 {
+        if bytes.len() > WASM_SESSION_EVENT_LIMIT_V1 || bytes.len() > WASM_PROCESS_RESPONSE_LIMIT_V1
+        {
             return self.fail(WasmProcessStatusV1::ResponseOutOfBounds);
         }
         self.event = bytes;
@@ -421,6 +490,49 @@ fn execute_operation(
                 }
             }
         }
+        WasmSessionOperationV1::PhysicalInput(input) => {
+            match session.apply_physical_input(&input.source) {
+                Ok(step) => WasmSessionEventKindV1::InputAccepted {
+                    step: step.id,
+                    run: session.run().expect("accepted input retains its Run"),
+                    activation: session
+                        .activation()
+                        .expect("accepted input retains its Activation"),
+                    before: step.before,
+                    after: step.after,
+                    state_revision_count: state_revision_count(session)
+                        .expect("accepted input retains its carrier"),
+                },
+                Err(_) => WasmSessionEventKindV1::Rejected(
+                    WasmSessionRejectionV1::InputConfigurationRejected,
+                ),
+            }
+        }
+        WasmSessionOperationV1::TickCandidate(tick) => {
+            match session.apply_fixed_tick_and_emit_candidate(tick.fixed_tick_milliseconds) {
+                Ok(step) => {
+                    let candidate = session
+                        .candidate()
+                        .expect("accepted candidate retains its runtime")
+                        .expect("tick candidate installs a candidate");
+                    WasmSessionEventKindV1::CandidateAccepted {
+                        step: step.id,
+                        candidate: candidate.id,
+                        base: candidate.base,
+                        run: session.run().expect("accepted candidate retains its Run"),
+                        activation: session
+                            .activation()
+                            .expect("accepted candidate retains its Activation"),
+                        state_revision_count: state_revision_count(session)
+                            .expect("accepted candidate retains its carrier"),
+                    }
+                }
+                Err(_) => {
+                    WasmSessionEventKindV1::Rejected(WasmSessionRejectionV1::CandidateRejected)
+                }
+            }
+        }
+        WasmSessionOperationV1::IssueAdmission(input) => issue_admission(session, input),
         WasmSessionOperationV1::Admit(input) => admit(session, input),
         WasmSessionOperationV1::Dispose => {
             session.dispose();
@@ -429,11 +541,11 @@ fn execute_operation(
     }
 }
 
-fn admit(
-    session: &mut PersistentProcessSessionV1,
-    input: WasmSessionAdmissionV1,
-) -> WasmSessionEventKindV1 {
-    let exact = session
+fn exact_admission_scope(
+    session: &PersistentProcessSessionV1,
+    input: WasmSessionAdmissionScopeV1,
+) -> bool {
+    session
         .package()
         .ok()
         .zip(session.candidate().ok().flatten())
@@ -443,7 +555,43 @@ fn admit(
                 && session.world_base() == input.base
                 && candidate.id == input.candidate
                 && candidate.base == input.base
-        });
+        })
+}
+
+fn issue_admission(
+    session: &mut PersistentProcessSessionV1,
+    input: WasmSessionAdmissionScopeV1,
+) -> WasmSessionEventKindV1 {
+    if !exact_admission_scope(session, input) {
+        return WasmSessionEventKindV1::Rejected(WasmSessionRejectionV1::AdmissionScopeRejected);
+    }
+    match session.issue_candidate_admission_authorization() {
+        Ok(occurrence) => WasmSessionEventKindV1::AdmissionAuthorizationIssued {
+            occurrence,
+            package: input.package,
+            session: input.session,
+            base: input.base,
+            candidate: input.candidate,
+            state_revision_count: state_revision_count(session)
+                .expect("issued authorization retains its carrier"),
+        },
+        Err(_) => WasmSessionEventKindV1::Rejected(WasmSessionRejectionV1::AuthorityRejected),
+    }
+}
+
+fn admit(
+    session: &mut PersistentProcessSessionV1,
+    input: WasmSessionAdmissionV1,
+) -> WasmSessionEventKindV1 {
+    let exact = exact_admission_scope(
+        session,
+        WasmSessionAdmissionScopeV1 {
+            package: input.package,
+            session: input.session,
+            base: input.base,
+            candidate: input.candidate,
+        },
+    );
     if !exact {
         return WasmSessionEventKindV1::Rejected(WasmSessionRejectionV1::AdmissionScopeRejected);
     }
@@ -451,7 +599,7 @@ fn admit(
     let prior_activation = session
         .activation()
         .expect("live Admission retains its prior Activation");
-    match session.admit_constituted_candidate_with_projection() {
+    match session.admit_issued_candidate_with_projection(input.authorization) {
         Ok((successor, projection)) => {
             let run = session.run().expect("Admission installs a fresh Run");
             let activation = session
@@ -510,10 +658,46 @@ const fn open_event_size() -> usize {
 fn command_event_size(operation: &WasmSessionOperationV1) -> usize {
     match operation {
         WasmSessionOperationV1::Dispose => EVENT_HEADER_BYTES,
-        WasmSessionOperationV1::Input(_) | WasmSessionOperationV1::Candidate(_) => {
-            EVENT_HEADER_BYTES + 5 * IDENTITY_BYTES + 4
-        }
+        WasmSessionOperationV1::Input(_)
+        | WasmSessionOperationV1::Candidate(_)
+        | WasmSessionOperationV1::PhysicalInput(_)
+        | WasmSessionOperationV1::TickCandidate(_) => EVENT_HEADER_BYTES + 5 * IDENTITY_BYTES + 4,
+        WasmSessionOperationV1::IssueAdmission(_) => EVENT_HEADER_BYTES + 5 * IDENTITY_BYTES + 4,
         WasmSessionOperationV1::Admit(_) => WASM_SESSION_EVENT_LIMIT_V1,
+    }
+}
+
+fn put_input_source(
+    bytes: &mut Vec<u8>,
+    source: &ExecutableInputSourceV1,
+) -> Result<(), WasmProcessStatusV1> {
+    match source {
+        ExecutableInputSourceV1::Keyboard { code, phase } => {
+            bytes.push(0);
+            put_blob(bytes, code)?;
+            bytes.push(*phase as u8);
+        }
+    }
+    Ok(())
+}
+
+fn decode_input_source(
+    decoder: &mut Decoder<'_>,
+) -> Result<ExecutableInputSourceV1, WasmProcessStatusV1> {
+    match decoder.take(1)?[0] {
+        0 => {
+            let code = decoder.blob(64)?.to_vec();
+            if code.is_empty() || !code.iter().all(u8::is_ascii_graphic) {
+                return Err(WasmProcessStatusV1::MalformedRequest);
+            }
+            let phase = match decoder.take(1)?[0] {
+                0 => ExecutableKeyPhaseV1::Down,
+                1 => ExecutableKeyPhaseV1::Up,
+                _ => return Err(WasmProcessStatusV1::MalformedRequest),
+            };
+            Ok(ExecutableInputSourceV1::Keyboard { code, phase })
+        }
+        _ => Err(WasmProcessStatusV1::MalformedRequest),
     }
 }
 
@@ -607,8 +791,18 @@ pub fn encode_wasm_session_command_v1(
             bytes.push(2);
             put_blob(&mut bytes, input)?;
         }
-        WasmSessionOperationV1::Admit(input) => {
+        WasmSessionOperationV1::PhysicalInput(input) => {
             bytes.push(3);
+            bytes.extend_from_slice(&input.input_sequence.to_le_bytes());
+            put_input_source(&mut bytes, &input.source)?;
+        }
+        WasmSessionOperationV1::TickCandidate(tick) => {
+            bytes.push(4);
+            bytes.extend_from_slice(&tick.configuration_revision.to_le_bytes());
+            bytes.extend_from_slice(&tick.fixed_tick_milliseconds.to_le_bytes());
+        }
+        WasmSessionOperationV1::IssueAdmission(input) => {
+            bytes.push(5);
             for id in [
                 input.package.as_bytes(),
                 input.session.as_bytes(),
@@ -618,7 +812,19 @@ pub fn encode_wasm_session_command_v1(
                 bytes.extend_from_slice(id);
             }
         }
-        WasmSessionOperationV1::Dispose => bytes.push(4),
+        WasmSessionOperationV1::Admit(input) => {
+            bytes.push(6);
+            for id in [
+                input.package.as_bytes(),
+                input.session.as_bytes(),
+                input.base.as_bytes(),
+                input.candidate.as_bytes(),
+                input.authorization.as_bytes(),
+            ] {
+                bytes.extend_from_slice(id);
+            }
+        }
+        WasmSessionOperationV1::Dispose => bytes.push(7),
     }
     if bytes.len() > WASM_SESSION_COMMAND_LIMIT_V1 {
         return Err(WasmProcessStatusV1::RequestOutOfBounds);
@@ -644,13 +850,28 @@ pub fn decode_wasm_session_command_v1(
     let operation = match d.take(1)?[0] {
         1 => WasmSessionOperationV1::Input(d.blob(WASM_SESSION_COMMAND_LIMIT_V1)?.to_vec()),
         2 => WasmSessionOperationV1::Candidate(d.blob(WASM_SESSION_COMMAND_LIMIT_V1)?.to_vec()),
-        3 => WasmSessionOperationV1::Admit(WasmSessionAdmissionV1 {
+        3 => WasmSessionOperationV1::PhysicalInput(WasmSessionPhysicalInputV1 {
+            input_sequence: d.u64()?,
+            source: decode_input_source(&mut d)?,
+        }),
+        4 => WasmSessionOperationV1::TickCandidate(WasmSessionTickV1 {
+            configuration_revision: d.u64()?,
+            fixed_tick_milliseconds: d.u32()?,
+        }),
+        5 => WasmSessionOperationV1::IssueAdmission(WasmSessionAdmissionScopeV1 {
             package: ProcessPackageId::from_bytes(d.identity()?),
             session: RuntimeSessionId::from_bytes(d.identity()?),
             base: StateRevisionId::from_bytes(d.identity()?),
             candidate: CandidateDeltaId::from_bytes(d.identity()?),
         }),
-        4 => WasmSessionOperationV1::Dispose,
+        6 => WasmSessionOperationV1::Admit(WasmSessionAdmissionV1 {
+            package: ProcessPackageId::from_bytes(d.identity()?),
+            session: RuntimeSessionId::from_bytes(d.identity()?),
+            base: StateRevisionId::from_bytes(d.identity()?),
+            candidate: CandidateDeltaId::from_bytes(d.identity()?),
+            authorization: IssuedAdmissionAuthorizationOccurrenceId::from_bytes(d.identity()?),
+        }),
+        7 => WasmSessionOperationV1::Dispose,
         _ => return Err(WasmProcessStatusV1::MalformedRequest),
     };
     if !d.is_complete() {
@@ -736,6 +957,27 @@ pub fn encode_wasm_session_event_v1(event: &WasmSessionEventV1) -> Vec<u8> {
             );
             bytes.extend_from_slice(&state_revision_count.to_le_bytes());
         }
+        WasmSessionEventKindV1::AdmissionAuthorizationIssued {
+            occurrence,
+            package,
+            session,
+            base,
+            candidate,
+            state_revision_count,
+        } => {
+            bytes.push(4);
+            put_ids(
+                &mut bytes,
+                &[
+                    occurrence.as_bytes(),
+                    package.as_bytes(),
+                    session.as_bytes(),
+                    base.as_bytes(),
+                    candidate.as_bytes(),
+                ],
+            );
+            bytes.extend_from_slice(&state_revision_count.to_le_bytes());
+        }
         WasmSessionEventKindV1::AdmissionAccepted {
             predecessor,
             successor,
@@ -745,7 +987,7 @@ pub fn encode_wasm_session_event_v1(event: &WasmSessionEventV1) -> Vec<u8> {
             state_revision_count,
             projection,
         } => {
-            bytes.push(4);
+            bytes.push(5);
             put_ids(
                 &mut bytes,
                 &[
@@ -766,9 +1008,9 @@ pub fn encode_wasm_session_event_v1(event: &WasmSessionEventV1) -> Vec<u8> {
                 bytes.push(0);
             }
         }
-        WasmSessionEventKindV1::Disposed => bytes.push(5),
+        WasmSessionEventKindV1::Disposed => bytes.push(6),
         WasmSessionEventKindV1::Rejected(rejection) => {
-            bytes.push(6);
+            bytes.push(7);
             bytes.extend_from_slice(&(*rejection as u32).to_le_bytes());
         }
     }
@@ -817,7 +1059,15 @@ pub fn decode_wasm_session_event_v1(
             activation: ActivationId::from_bytes(d.identity()?),
             state_revision_count: d.u32()?,
         },
-        4 => WasmSessionEventKindV1::AdmissionAccepted {
+        4 => WasmSessionEventKindV1::AdmissionAuthorizationIssued {
+            occurrence: IssuedAdmissionAuthorizationOccurrenceId::from_bytes(d.identity()?),
+            package: ProcessPackageId::from_bytes(d.identity()?),
+            session: RuntimeSessionId::from_bytes(d.identity()?),
+            base: StateRevisionId::from_bytes(d.identity()?),
+            candidate: CandidateDeltaId::from_bytes(d.identity()?),
+            state_revision_count: d.u32()?,
+        },
+        5 => WasmSessionEventKindV1::AdmissionAccepted {
             predecessor: StateRevisionId::from_bytes(d.identity()?),
             successor: StateRevisionId::from_bytes(d.identity()?),
             run: RunId::from_bytes(d.identity()?),
@@ -833,13 +1083,14 @@ pub fn decode_wasm_session_event_v1(
                 _ => return Err(WasmProcessStatusV1::MalformedRequest),
             },
         },
-        5 => WasmSessionEventKindV1::Disposed,
-        6 => WasmSessionEventKindV1::Rejected(match d.u32()? {
+        6 => WasmSessionEventKindV1::Disposed,
+        7 => WasmSessionEventKindV1::Rejected(match d.u32()? {
             1 => WasmSessionRejectionV1::InputRejected,
             2 => WasmSessionRejectionV1::CandidateRejected,
-            3 => WasmSessionRejectionV1::AdmissionScopeRejected,
-            4 => WasmSessionRejectionV1::AuthorityRejected,
-            5 => WasmSessionRejectionV1::AdmissionRejected,
+            3 => WasmSessionRejectionV1::InputConfigurationRejected,
+            4 => WasmSessionRejectionV1::AdmissionScopeRejected,
+            5 => WasmSessionRejectionV1::AuthorityRejected,
+            6 => WasmSessionRejectionV1::AdmissionRejected,
             _ => return Err(WasmProcessStatusV1::MalformedRequest),
         }),
         _ => return Err(WasmProcessStatusV1::MalformedRequest),

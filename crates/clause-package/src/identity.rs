@@ -79,6 +79,7 @@ opaque_id!(RootPolicyId);
 opaque_id!(BoundaryRef);
 opaque_id!(ExternalEvidenceRef);
 opaque_id!(JudgmentOccurrenceId);
+opaque_id!(IssuedAdmissionAuthorizationOccurrenceId);
 
 local_id!(RelationSchemaLocalId);
 local_id!(RoleLocalId);
@@ -91,6 +92,7 @@ local_id!(JudgmentLocalId);
 local_id!(JudgmentAuthorityLocalId);
 local_id!(ExecutionAuthorizationLocalId);
 local_id!(AdmissionAuthorizationLocalId);
+local_id!(AdmissionAuthorizationIssuerLocalId);
 local_id!(PrerequisiteLocalId);
 local_id!(CauseComponentLocalId);
 local_id!(SupportSlotId);
@@ -203,6 +205,14 @@ pub struct RootExecutionAuthorizationRef {
 pub struct RootAdmissionAuthorizationRef {
     pub policy: RootPolicyId,
     pub local: AdmissionAuthorizationLocalId,
+}
+
+/// One authority permitted by an irreducible root policy to issue exact,
+/// single-use State-Admission authorization occurrences.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct RootAdmissionAuthorizationIssuerRef {
+    pub policy: RootPolicyId,
+    pub local: AdmissionAuthorizationIssuerLocalId,
 }
 
 /// One exact obligation within one candidate delta.

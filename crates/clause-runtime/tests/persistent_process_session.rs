@@ -92,6 +92,7 @@ fn physical_plan(package: &CheckedProcessPackage) -> ExecutablePhysicalPlanV1 {
         },
         refinement: ExecutableRefinementV1::ClosedApplicationRuleMachineV1,
         target: ExecutablePhysicalTargetV1::PortableScalarInterpreterV1,
+        input: None,
         program: executable_program(),
     }
 }
@@ -158,6 +159,18 @@ fn carrier_authority(checked: &CheckedProcessPackage) -> (AuthorityStore, Sessio
                     authority: judgment_authority,
                     scope: JudgmentAuthorityScope {
                         semantics,
+                        session,
+                        policy,
+                    },
+                }],
+                vec![RootStateAdmissionIssuerGrant {
+                    issuer: RootAdmissionAuthorizationIssuerRef {
+                        policy: root_policy,
+                        local: AdmissionAuthorizationIssuerLocalId::new(0),
+                    },
+                    scope: StateAdmissionIssuerScope {
+                        revision: revision.id,
+                        package: checked.id(),
                         session,
                         policy,
                     },
@@ -235,7 +248,10 @@ fn carrier_authority(checked: &CheckedProcessPackage) -> (AuthorityStore, Sessio
         (
             admission_evidence,
             state_boundary,
-            vec![EXECUTABLE_ADMISSION_PERMISSION_V1],
+            vec![
+                EXECUTABLE_ADMISSION_PERMISSION_V1,
+                EXECUTABLE_ADMISSION_ISSUANCE_PERMISSION_V1,
+            ],
             vec![190],
         ),
     ] {
@@ -259,6 +275,10 @@ fn carrier_authority(checked: &CheckedProcessPackage) -> (AuthorityStore, Sessio
                 session_start,
                 root_policy,
                 judgment_authority,
+                admission_authorization_issuer: RootAdmissionAuthorizationIssuerRef {
+                    policy: root_policy,
+                    local: AdmissionAuthorizationIssuerLocalId::new(0),
+                },
                 trigger_ingress: ExecutableBoundaryFactV1 {
                     boundary: occurrence_boundary,
                     evidence: occurrence_evidence,
@@ -273,6 +293,11 @@ fn carrier_authority(checked: &CheckedProcessPackage) -> (AuthorityStore, Sessio
                     boundary: state_boundary,
                     evidence: judgment_evidence,
                     permission: EXECUTABLE_JUDGMENT_PERMISSION_V1,
+                },
+                admission_issuance_ingress: ExecutableBoundaryFactV1 {
+                    boundary: state_boundary,
+                    evidence: admission_evidence,
+                    permission: EXECUTABLE_ADMISSION_ISSUANCE_PERMISSION_V1,
                 },
                 admission_ingress: ExecutableBoundaryFactV1 {
                     boundary: state_boundary,
@@ -312,6 +337,7 @@ fn admission_policy(
                     delta: candidate,
                 },
             }],
+            vec![],
             vec![],
         )
         .expect("per-candidate root policy is coherent"),
@@ -523,22 +549,36 @@ fn persistent_session_keeps_local_steps_and_advances_only_at_atomic_admission() 
     );
 
     let records_before_admission = session.carrier().unwrap().accepted_ingress_record_count();
-    let (first_policy, first_authorization) = admission_policy(
-        package_id,
-        session_id,
-        facts.initial_state,
-        candidate.id,
-        130,
-    );
-    session
-        .establish_root_policy(first_policy)
-        .expect("first exact candidate authority is established");
+    let unknown_issuance = id!(IssuedAdmissionAuthorizationOccurrenceId, 240);
+    let missing_issuance = session
+        .admit_issued_candidate_with_projection(unknown_issuance)
+        .expect_err("an unissued occurrence cannot authorize Admission");
+    assert!(matches!(
+        missing_issuance,
+        PersistentProcessSessionErrorV1::Carrier(ExecutableCarrierErrorV1::Ingress(
+            ProcessIngressError::Record { cause, .. }
+        )) if matches!(
+            *cause,
+            ProcessError::UnknownIssuedAdmissionAuthorization(actual)
+                if actual == unknown_issuance
+        )
+    ));
+    let issued_authorization = session
+        .issue_candidate_admission_authorization()
+        .expect("the constituted issuer emits one exact candidate-scoped occurrence");
+    assert!(matches!(
+        session.issue_candidate_admission_authorization(),
+        Err(PersistentProcessSessionErrorV1::Carrier(
+            ExecutableCarrierErrorV1::AdmissionAuthorizationAlreadyIssued
+        ))
+    ));
     let successor = session
-        .admit_candidate(first_authorization)
+        .admit_issued_candidate_with_projection(issued_authorization)
+        .map(|(successor, _)| successor)
         .expect("Judgment, Admission, and successor epoch enter atomically");
     assert_eq!(
         session.carrier().unwrap().accepted_ingress_record_count(),
-        records_before_admission + 5
+        records_before_admission + 6
     );
     assert_eq!(successor.predecessor, facts.initial_state);
     assert_ne!(successor.id, facts.initial_state);
@@ -613,6 +653,28 @@ fn persistent_session_keeps_local_steps_and_advances_only_at_atomic_admission() 
     assert_ne!(
         second_carrier_candidate.delta.evidence,
         first_candidate_formation
+    );
+    let records_before_replay = session.carrier().unwrap().accepted_ingress_record_count();
+    let replayed_authorization = session
+        .admit_issued_candidate_with_projection(issued_authorization)
+        .expect_err("an issued occurrence is single-use across successor epochs");
+    assert!(matches!(
+        replayed_authorization,
+        PersistentProcessSessionErrorV1::Carrier(ExecutableCarrierErrorV1::Ingress(
+            ProcessIngressError::Record { cause, .. }
+        )) if matches!(
+            *cause,
+            ProcessError::AdmissionAuthorizationAlreadyConsumed(actual)
+                if actual == issued_authorization
+        )
+    ));
+    assert_eq!(
+        session.carrier().unwrap().accepted_ingress_record_count(),
+        records_before_replay
+    );
+    assert_eq!(
+        session.candidate().unwrap().unwrap().id,
+        second_candidate.id
     );
     let (second_policy, second_authorization) = admission_policy(
         package_id,

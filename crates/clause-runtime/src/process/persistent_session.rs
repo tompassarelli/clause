@@ -3,15 +3,16 @@ use std::fmt;
 
 use clause_package::{
     ActivationId, AdmissionAuthorizationEvidence, ApplicationId, AuthorityError, AuthorityStore,
-    CheckedProcessPackage, ConfigurationId, ProcessCarrier, ProcessPackageId, ProgramRevisionId,
-    RootPolicyAnchor, RunId, RuntimeSessionId, StateRevisionId,
+    CheckedProcessPackage, ConfigurationId, IssuedAdmissionAuthorizationOccurrenceId,
+    ProcessCarrier, ProcessPackageId, ProgramRevisionId, RootPolicyAnchor, RunId, RuntimeSessionId,
+    StateRevisionId,
 };
 
 use super::{
     ExecutableAuthorityFactsV1, ExecutableCandidateV1, ExecutableCarrierErrorV1, ExecutableErrorV1,
-    ExecutablePhysicalPlanV1, ExecutableProcessRuntimeV1, ExecutableProjectedObservationV1,
-    ExecutableStateRevisionV1, ExecutableStepV1, ExecutableValueV1, RuntimeAllocationEpochV1,
-    decode_executable_occurrence_v1,
+    ExecutableInputSourceV1, ExecutablePhysicalPlanV1, ExecutableProcessRuntimeV1,
+    ExecutableProjectedObservationV1, ExecutableStateRevisionV1, ExecutableStepV1,
+    ExecutableValueV1, RuntimeAllocationEpochV1, decode_executable_occurrence_v1,
 };
 
 /// One native, long-lived execution binding for an exact package, Program
@@ -115,6 +116,26 @@ impl PersistentProcessSessionV1 {
             .clone())
     }
 
+    /// Lower one checked, construct-blind physical observation through the
+    /// session's package-Role-indexed physical plan.
+    pub fn apply_physical_input(
+        &mut self,
+        source: &ExecutableInputSourceV1,
+    ) -> Result<ExecutableStepV1, PersistentProcessSessionErrorV1> {
+        Ok(self.runtime_mut()?.advance_carrier_input(source)?.clone())
+    }
+
+    /// Lower the exact fixed tick and emit one candidate without Admission.
+    pub fn apply_fixed_tick_and_emit_candidate(
+        &mut self,
+        fixed_tick_milliseconds: u32,
+    ) -> Result<ExecutableStepV1, PersistentProcessSessionErrorV1> {
+        Ok(self
+            .runtime_mut()?
+            .advance_carrier_tick_and_emit_candidate(fixed_tick_milliseconds)?
+            .clone())
+    }
+
     /// Atomically enter the prepared Judgment, AdmissionDecision, and the
     /// successor-pinned admitted-root Activation. Only after that carrier batch
     /// succeeds does the live session install the new Run/Activation epoch.
@@ -124,6 +145,27 @@ impl PersistentProcessSessionV1 {
     ) -> Result<ExecutableStateRevisionV1, PersistentProcessSessionErrorV1> {
         self.admit_candidate_with_projection(authorization)
             .map(|(admitted, _)| admitted)
+    }
+
+    pub fn issue_candidate_admission_authorization(
+        &mut self,
+    ) -> Result<IssuedAdmissionAuthorizationOccurrenceId, PersistentProcessSessionErrorV1> {
+        Ok(self
+            .runtime_mut()?
+            .issue_candidate_admission_authorization()?)
+    }
+
+    pub fn admit_issued_candidate_with_projection(
+        &mut self,
+        occurrence: IssuedAdmissionAuthorizationOccurrenceId,
+    ) -> Result<
+        (
+            ExecutableStateRevisionV1,
+            Option<ExecutableProjectedObservationV1>,
+        ),
+        PersistentProcessSessionErrorV1,
+    > {
+        self.admit_candidate_with_projection(AdmissionAuthorizationEvidence::Issued { occurrence })
     }
 
     /// Atomically admit the candidate, enter its package-declared derived

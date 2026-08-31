@@ -185,8 +185,14 @@
     (append-little-u32! bytes 1)
     bytes))
 
-(defn admission-event! [term-bytes Any] Any
+(defn issuance-event! [] Any
   (let [bytes Any (cse-header! 3 4)]
+    (put-identities! bytes [40 21 3 22 35])
+    (append-little-u32! bytes 1)
+    bytes))
+
+(defn admission-event! [term-bytes Any] Any
+  (let [bytes Any (cse-header! 4 5)]
     (put-identities! bytes [22 36 37 38 3])
     (append-little-u32! bytes 2)
     (.push bytes 1)
@@ -194,7 +200,7 @@
     (append-little-blob! bytes term-bytes)
     bytes))
 
-(defn disposed-event! [] Any (cse-header! 4 5))
+(defn disposed-event! [] Any (cse-header! 5 6))
 
 (defn module-for!
   [events Any
@@ -233,10 +239,12 @@
          rendered Any []
          disposed Any (atom 0)
          scheduled Any (atom nil)
+         shell-input Any (atom nil)
          cancellations Any (atom 0)
          module Any (module-for! [(opened-event!)
                                   (input-event!)
                                   (candidate-event!)
+                                  (issuance-event!)
                                   (admission-event! term-bytes)
                                   (disposed-event!)]
                                  requests)
@@ -247,8 +255,10 @@
                       :clearTimeout (fn [_token Any] Any (swap! cancellations inc))}
          composition Any (integration/create-passive-wasm-workbench-with-shell-factory
                           (fn [_emit-input Any] Any
-                            {:renderFrame (fn [frame Any] Any (.push rendered frame))
-                             :dispose (fn [] Any (swap! disposed inc))})
+                            (do
+                              (reset! shell-input _emit-input)
+                              {:renderFrame (fn [frame Any] Any (.push rendered frame))
+                               :dispose (fn [] Any (swap! disposed inc))}))
                           integration/project-persistent-term-frame
                           browser
                           module
@@ -260,8 +270,12 @@
        (.toBe (test/expect (str (.-x (.-position (.-player direct))))) "1"))
      (.toBe (test/expect (json-string rendered)) "[]")
      (.toBe (test/expect (str (.-length requests))) "1")
+     (@shell-input {:kind "keyboard"
+                    :code "KeyD"
+                    :phase "down"
+                    :repeat false})
      (@scheduled)
-     (.toBe (test/expect (str (.-length requests))) "4")
+     (.toBe (test/expect (str (.-length requests))) "5")
      (.toBe (test/expect (str (.-length rendered))) "1")
      (let [frame Any (nth rendered 0)]
        (.toBe (test/expect (json-string [(.-x (.-position (.-player frame)))
@@ -273,7 +287,7 @@
        (.toBe (test/expect (str (.-length (.-platforms (.-world frame))))) "1"))
      ((.-dispose composition))
      ((.-dispose composition))
-     (.toBe (test/expect (str (.-length requests))) "5")
+     (.toBe (test/expect (str (.-length requests))) "6")
      (.toBe (test/expect (str @disposed)) "1")
      (.toBe (test/expect (str @cancellations)) "1")
      (@scheduled)

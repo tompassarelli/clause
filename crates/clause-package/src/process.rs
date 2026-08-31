@@ -8,8 +8,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 use crate::authority::{
-    AuthorityStore, CheckedSnapshotAuthorityInput, RevisionJudgmentAuthorityGrant,
-    RevisionStateAdmissionGrant, RevisionStaticExecutionGrant, RevisionSuccessorGrant,
+    AuthorityStore, CheckedSnapshotAuthorityInput, CheckedStateAdmissionScope,
+    RevisionJudgmentAuthorityGrant, RevisionStateAdmissionGrant, RevisionStaticExecutionGrant,
+    RevisionSuccessorGrant,
 };
 use crate::canonical::ProgramSnapshotPreimageV2;
 use crate::formation::{
@@ -20,10 +21,10 @@ use crate::provenance::{
     ActivationOccurrenceCauseV2, ActivationPrerequisite, ActivationPrerequisiteKind,
     ActivationStaticBasis, BoundaryOccurrencePermissionV2, BoundaryReplayPolicyV2,
     CancellationOccurrenceV2, CausalRef, DynamicPrerequisiteBindingV2, EnteredOccurrenceKind,
-    EnteredThrough, ExternalTriggerOccurrenceV2, HandoffOccurrenceV2, JudgmentAuthorityEvidence,
-    JudgmentOccurrenceV2, OccurrenceProvenance, PrerequisiteOccurrencePathV2, PrerequisiteScope,
-    ResumptionOccurrenceV2, StateAdmissionDecisionV2, StateAdmissionOutcomeV2, StepRef,
-    SupportSource, SupportUse,
+    EnteredThrough, ExternalTriggerOccurrenceV2, HandoffOccurrenceV2,
+    IssuedStateAdmissionAuthorizationV2, JudgmentAuthorityEvidence, JudgmentOccurrenceV2,
+    OccurrenceProvenance, PrerequisiteOccurrencePathV2, PrerequisiteScope, ResumptionOccurrenceV2,
+    StateAdmissionDecisionV2, StateAdmissionOutcomeV2, StepRef, SupportSource, SupportUse,
 };
 use crate::term::Term;
 
@@ -172,6 +173,9 @@ pub enum AdmissionAuthorizationEvidence {
     IrreducibleRoot {
         policy: RootPolicyId,
         authorization: RootAdmissionAuthorizationRef,
+    },
+    Issued {
+        occurrence: IssuedAdmissionAuthorizationOccurrenceId,
     },
 }
 
@@ -690,6 +694,7 @@ pub enum ProcessRecordV2 {
     Cancellation(CancellationOccurrenceV2),
     Steps(Vec<StepProposalV2>),
     Judgment(JudgmentOccurrenceV2),
+    IssuedAdmissionAuthorization(IssuedStateAdmissionAuthorizationV2),
     AdmissionDecision(StateAdmissionDecisionV2),
 }
 
@@ -720,6 +725,9 @@ pub struct ProcessCarrier {
     continuations: BTreeMap<ContinuationId, Continuation>,
     candidate_deltas: BTreeMap<CandidateDeltaId, CandidateDelta>,
     judgments: BTreeMap<JudgmentOccurrenceId, JudgmentOccurrenceV2>,
+    issued_admission_authorizations:
+        BTreeMap<IssuedAdmissionAuthorizationOccurrenceId, IssuedStateAdmissionAuthorizationV2>,
+    consumed_admission_authorizations: BTreeSet<IssuedAdmissionAuthorizationOccurrenceId>,
     decisions: BTreeMap<CandidateDeltaId, StateAdmissionDecisionV2>,
     decisions_by_occurrence: BTreeMap<AdmissionOccurrenceId, CandidateDeltaId>,
     states: BTreeMap<StateRevisionId, StateRevision>,
@@ -777,10 +785,12 @@ enum RecordUndo {
     Cancellation(CancellationOccurrenceId),
     Steps(Vec<StepUndo>),
     Judgment(JudgmentOccurrenceId),
+    IssuedAdmissionAuthorization(IssuedAdmissionAuthorizationOccurrenceId),
     Admission {
         delta: CandidateDeltaId,
         occurrence: AdmissionOccurrenceId,
         state: Option<StateRevisionId>,
+        issued_authorization: Option<IssuedAdmissionAuthorizationOccurrenceId>,
     },
 }
 
@@ -886,6 +896,8 @@ impl ProcessCarrier {
             continuations: BTreeMap::new(),
             candidate_deltas: BTreeMap::new(),
             judgments: BTreeMap::new(),
+            issued_admission_authorizations: BTreeMap::new(),
+            consumed_admission_authorizations: BTreeSet::new(),
             decisions: BTreeMap::new(),
             decisions_by_occurrence: BTreeMap::new(),
             states: BTreeMap::new(),
@@ -1081,6 +1093,7 @@ impl ProcessCarrier {
                 | ProcessRecordV2::Resumption(_)
                 | ProcessRecordV2::Cancellation(_)
                 | ProcessRecordV2::Judgment(_)
+                | ProcessRecordV2::IssuedAdmissionAuthorization(_)
                 | ProcessRecordV2::AdmissionDecision(_) => {}
             }
         }
@@ -1198,6 +1211,11 @@ impl ProcessCarrier {
                 self.add_judgment(judgment, authority)?;
                 Ok(RecordUndo::Judgment(id))
             }
+            ProcessRecordV2::IssuedAdmissionAuthorization(issuance) => {
+                let id = issuance.occurrence;
+                self.add_issued_admission_authorization(issuance, authority)?;
+                Ok(RecordUndo::IssuedAdmissionAuthorization(id))
+            }
             ProcessRecordV2::AdmissionDecision(decision) => {
                 let delta = decision.delta;
                 let occurrence = decision.occurrence;
@@ -1205,11 +1223,16 @@ impl ProcessCarrier {
                     StateAdmissionOutcomeV2::Admit(successor) => Some(successor.id),
                     StateAdmissionOutcomeV2::Reject(_) => None,
                 };
+                let issued_authorization = match decision.authorization {
+                    AdmissionAuthorizationEvidence::Issued { occurrence } => Some(occurrence),
+                    _ => None,
+                };
                 self.decide_state(decision, authority)?;
                 Ok(RecordUndo::Admission {
                     delta,
                     occurrence,
                     state,
+                    issued_authorization,
                 })
             }
         }
@@ -1279,10 +1302,16 @@ impl ProcessCarrier {
                 }
                 self.remove_causal(CausalRef::Judgment(id));
             }
+            RecordUndo::IssuedAdmissionAuthorization(id) => {
+                if let Some(issuance) = self.issued_admission_authorizations.remove(&id) {
+                    self.rollback_entered_use(&issuance.provenance);
+                }
+            }
             RecordUndo::Admission {
                 delta,
                 occurrence,
                 state,
+                issued_authorization,
             } => {
                 if let Some(state) = state {
                     self.states.remove(&state);
@@ -1291,6 +1320,9 @@ impl ProcessCarrier {
                     self.rollback_entered_use(&decision.provenance);
                 }
                 self.decisions_by_occurrence.remove(&occurrence);
+                if let Some(issued) = issued_authorization {
+                    self.consumed_admission_authorizations.remove(&issued);
+                }
                 self.remove_causal(CausalRef::Admission(occurrence));
             }
         }
@@ -3424,7 +3456,72 @@ impl ProcessCarrier {
         }
         self.decisions_by_occurrence
             .insert(decision.occurrence, decision.delta);
+        if let AdmissionAuthorizationEvidence::Issued { occurrence } = decision.authorization {
+            self.consumed_admission_authorizations.insert(occurrence);
+        }
         self.decisions.insert(decision.delta, decision);
+        Ok(())
+    }
+
+    fn add_issued_admission_authorization(
+        &mut self,
+        issuance: IssuedStateAdmissionAuthorizationV2,
+        authority: &AuthorityStore,
+    ) -> Result<(), ProcessError> {
+        if self
+            .issued_admission_authorizations
+            .contains_key(&issuance.occurrence)
+        {
+            return Err(ProcessError::DuplicateIssuedAdmissionAuthorization(
+                issuance.occurrence,
+            ));
+        }
+        let candidate = self
+            .candidate_deltas
+            .get(&issuance.delta)
+            .ok_or(ProcessError::UnknownCandidateDelta(issuance.delta))?;
+        let base = self
+            .states
+            .get(&issuance.base)
+            .ok_or(ProcessError::UnknownStateRevision(issuance.base))?;
+        let issuer_scope = authority
+            .root_state_admission_issuer_scope(issuance.issuer)
+            .ok_or(ProcessError::UnauthorizedAdmissionIssuer)?;
+        if candidate.package != self.package
+            || candidate.proposal.base != issuance.base
+            || issuance.package != self.package
+            || issuance.session != base.session
+            || issuance.policy != base.policy
+            || issuer_scope.revision != issuance.revision
+            || issuer_scope.package != issuance.package
+            || issuer_scope.session != issuance.session
+            || issuer_scope.policy != issuance.policy
+        {
+            return Err(ProcessError::UnauthorizedAdmissionIssuer);
+        }
+        let producer = self
+            .activations
+            .get(&candidate.produced_by.activation)
+            .ok_or(ProcessError::UnknownActivation(
+                candidate.produced_by.activation,
+            ))?;
+        if producer.pins().constitution.admitted_revision() != Some(issuance.revision) {
+            return Err(ProcessError::UnauthorizedAdmissionIssuer);
+        }
+        self.validate_entered(
+            &issuance.provenance,
+            EnteredOccurrenceKind::AdmissionAuthorization,
+            authority,
+        )?;
+        self.validate_governance_boundary(&issuance.provenance, base, authority)?;
+        if issuance.provenance.causes != vec![CausalRef::CandidateDelta(issuance.delta)] {
+            return Err(ProcessError::MissingIssuedAuthorizationCandidateCause(
+                issuance.occurrence,
+            ));
+        }
+        self.commit_entered_use(&issuance.provenance);
+        self.issued_admission_authorizations
+            .insert(issuance.occurrence, issuance);
         Ok(())
     }
 
@@ -3456,6 +3553,33 @@ impl ProcessCarrier {
                 policy,
                 authorization,
             } => authority.root_state_admission_scope(policy, authorization),
+            AdmissionAuthorizationEvidence::Issued { occurrence } => {
+                if self.consumed_admission_authorizations.contains(&occurrence) {
+                    return Err(ProcessError::AdmissionAuthorizationAlreadyConsumed(
+                        occurrence,
+                    ));
+                }
+                let issued = self
+                    .issued_admission_authorizations
+                    .get(&occurrence)
+                    .ok_or(ProcessError::UnknownIssuedAdmissionAuthorization(
+                        occurrence,
+                    ))?;
+                if issued.revision
+                    != authority
+                        .runtime_session(base.session)
+                        .ok_or(ProcessError::UnknownRuntimeSession(base.session))?
+                        .program_revision
+                {
+                    return Err(ProcessError::UnauthorizedAdmission);
+                }
+                Some(CheckedStateAdmissionScope {
+                    package: issued.package,
+                    session: issued.session,
+                    base: issued.base,
+                    delta: issued.delta,
+                })
+            }
         }
         .ok_or(ProcessError::UnauthorizedAdmission)?;
         if scope.package != self.package
@@ -4022,6 +4146,7 @@ fn validate_record_batch_bounds(
             | ProcessRecordV2::Handoff(_)
             | ProcessRecordV2::Cancellation(_)
             | ProcessRecordV2::Judgment(_)
+            | ProcessRecordV2::IssuedAdmissionAuthorization(_)
             | ProcessRecordV2::AdmissionDecision(_) => {}
         }
     }
@@ -4124,6 +4249,7 @@ pub enum ProcessError {
     DuplicateContinuationTakeup(ContinuationId),
     DuplicateCandidateDelta(CandidateDeltaId),
     DuplicateJudgment(JudgmentOccurrenceId),
+    DuplicateIssuedAdmissionAuthorization(IssuedAdmissionAuthorizationOccurrenceId),
     DuplicateAdmissionDecision(AdmissionOccurrenceId),
     DuplicateStateRevision(StateRevisionId),
     UnknownBoundary(BoundaryRef),
@@ -4144,6 +4270,7 @@ pub enum ProcessError {
     UnknownCancellation(CancellationOccurrenceId),
     UnknownCandidateDelta(CandidateDeltaId),
     UnknownJudgment(JudgmentOccurrenceId),
+    UnknownIssuedAdmissionAuthorization(IssuedAdmissionAuthorizationOccurrenceId),
     UnknownAdmission(AdmissionOccurrenceId),
     UnanchoredExternalProvenance {
         boundary: BoundaryRef,
@@ -4190,6 +4317,9 @@ pub enum ProcessError {
     AuthoritativeOperationRequiresAdmittedConstitution,
     UnauthorizedJudgment,
     UnauthorizedAdmission,
+    UnauthorizedAdmissionIssuer,
+    AdmissionAuthorizationAlreadyConsumed(IssuedAdmissionAuthorizationOccurrenceId),
+    MissingIssuedAuthorizationCandidateCause(IssuedAdmissionAuthorizationOccurrenceId),
     JudgmentAuthorityNotInProducerBasis {
         judgment: JudgmentOccurrenceId,
         activation: ActivationId,

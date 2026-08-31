@@ -3,30 +3,29 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Clause — Deterministic Wasm Replay</title>
+  <title>Clause — Playable Wasm Arena</title>
   <style>
     :root { color-scheme: dark; font-family: ui-sans-serif, system-ui, sans-serif; }
     * { box-sizing: border-box; }
-    body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #090d17; color: #eef3ff; }
-    main { width: min(1100px, 100vw); padding: 24px; }
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: radial-gradient(circle at 50% 0%, #19294b, #090d17 58%); color: #eef3ff; }
+    main { width: min(1180px, 100vw); padding: 24px; }
     h1 { margin: 0 0 12px; font-size: clamp(2rem, 5vw, 4rem); letter-spacing: -.05em; }
     p { margin: 0 0 18px; color: #9dafd2; }
-    #arena { width: 100%; min-height: 280px; display: grid; align-content: center; gap: 18px; padding: clamp(24px, 7vw, 72px); overflow: hidden; border: 1px solid #354467; border-radius: 20px; background: #111a2c; }
-    #replay-status { margin: 0; color: #b7c8eb; }
-    #replay-result { min-height: 3.5rem; margin: 0; padding: 18px; overflow-wrap: anywhere; border: 1px solid #2b3b5e; border-radius: 12px; background: #090d17; color: #f7d794; font: 600 1.1rem/1.6 ui-monospace, SFMono-Regular, Consolas, monospace; }
+    #arena { width: 100%; min-height: min(68vh, 720px); overflow: hidden; border: 1px solid #354467; border-radius: 20px; background: #111a2c; box-shadow: 0 28px 80px #02040a99; }
+    #arena canvas { display: block; width: 100%; height: min(68vh, 720px); outline: none; cursor: crosshair; }
+    #arena canvas:focus-visible { box-shadow: inset 0 0 0 3px #79a7ff; }
+    #arena-status { margin: 14px 2px 0; color: #b7c8eb; }
   </style>
   <script type="importmap">
-    {"imports":{"beagle/core.js":"./generated/node_modules/beagle/core.js","#clause-runtime-wasm":"./generated/wasm/clause_runtime.js"}}
+    {"imports":{"beagle/core.js":"./generated/node_modules/beagle/core.js","#clause-runtime-wasm":"./generated/wasm/clause_runtime.js","three":"./node_modules/three/build/three.module.js"}}
   </script>
 </head>
 <body>
   <main>
-    <h1>Admitted Wasm Replay</h1>
-    <p>Deterministic, replay-backed, and non-interactive. The exact tracked CWR1 fixture runs once through the shipped Wasm runtime; a separate Admission gates the neutral CWO1 scalar result. This is not persistent gameplay.</p>
-    <section id="arena" aria-label="Deterministic admitted replay result">
-      <p id="replay-status" role="status">Loading exact replay…</p>
-      <pre id="replay-result" aria-live="polite" aria-label="Admitted scalar projection"></pre>
-    </section>
+    <h1>Clause Jump Arena</h1>
+    <p>Click the arena to focus it. Hold <strong>A</strong> or <strong>D</strong> to move and press <strong>Space</strong> to jump. Physical input becomes package-role-indexed Clause occurrences; only separately admitted state reaches this passive renderer.</p>
+    <section id="arena" aria-label="Playable Clause jump arena"></section>
+    <p id="arena-status" role="status">Loading the Clause runtime…</p>
   </main>
   <script type="module" src="./generated/jump-arena-shell/demo.js"></script>
 </body>

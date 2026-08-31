@@ -1,12 +1,18 @@
 import * as wasm from "./wasm-cartridge-port.js";
 import * as workbench from "./workbench.js";
 import * as test from "bun:test";
+import { "clause_session_v1_command" as clause__session__v1__command, "clause_session_v1_event_byte" as clause__session__v1__event__byte, "clause_session_v1_event_len" as clause__session__v1__event__len, "clause_session_v1_io_reset" as clause__session__v1__io__reset, "clause_session_v1_open" as clause__session__v1__open, "clause_session_v1_request_push" as clause__session__v1__request__push, "initSync" as initSync } from "#clause-runtime-wasm";
 import { equivV as $$bc$equiv, keyword as $$bc$keyword, property_key as $$bc$property_key, str as $$bc$str } from 'beagle/core.js';
 import { catch_dispatch as $$bd$catch_dispatch } from 'beagle/exception-dispatch.js';
 
 function policy() {
   const maximum = Number.MAX_SAFE_INTEGER;
   return workbench["->WorkbenchPolicy"](8, 8, 32, 128, 512, workbench["->WorkbenchSequenceLimits"](maximum, maximum, maximum, maximum, maximum));
+}
+
+function arena_policy() {
+  const maximum = Number.MAX_SAFE_INTEGER;
+  return workbench["->WorkbenchPolicy"](8, 8, 32, wasm["cse1-projected-term-max-properties"], wasm["cse1-projected-term-json-max-source-units"], workbench["->WorkbenchSequenceLimits"](maximum, maximum, maximum, maximum, maximum));
 }
 
 function identity(tag) {
@@ -145,8 +151,15 @@ function candidate_event_bang() {
   return bytes;
 }
 
-function admission_event_bang() {
+function issuance_event_bang() {
   const bytes = cse_header_bang(3, 4);
+  put_identities_bang(bytes, [40, 21, 3, 22, 35]);
+  append_u32_bang(bytes, 1);
+  return bytes;
+}
+
+function admission_event_bang() {
+  const bytes = cse_header_bang(4, 5);
   put_identities_bang(bytes, [22, 36, 37, 38, 3]);
   append_u32_bang(bytes, 2);
   bytes.push(1);
@@ -156,7 +169,7 @@ function admission_event_bang() {
 }
 
 function disposed_event_bang() {
-  return cse_header_bang(4, 5);
+  return cse_header_bang(5, 6);
 }
 
 function throws_p_bang(action) {
@@ -179,8 +192,18 @@ function json_string(value) {
   return (($$bc$equiv(typeof encoded, "string")) ? encoded : (() => { throw new Error("test value is not JSON-encodable"); })());
 }
 
-test["test"]("one persistent session sequences input candidate Admission and disposal", () => { const requests = [];
-const port = wasm["create-wasm-cartridge-port"](module_for_bang([opened_event_bang(), input_event_bang(), candidate_event_bang(), admission_event_bang(), disposed_event_bang()], requests), policy());
+function initialize_real_session_module(module) {
+  const input = module;
+  const __initialized = initSync(input);
+  return Object.freeze({[$$bc$property_key($$bc$keyword("clause_session_v1_io_reset"))]: () => clause__session__v1__io__reset(), [$$bc$property_key($$bc$keyword("clause_session_v1_request_push"))]: (byte) => clause__session__v1__request__push(byte), [$$bc$property_key($$bc$keyword("clause_session_v1_open"))]: () => clause__session__v1__open(), [$$bc$property_key($$bc$keyword("clause_session_v1_command"))]: () => clause__session__v1__command(), [$$bc$property_key($$bc$keyword("clause_session_v1_event_len"))]: () => clause__session__v1__event__len(), [$$bc$property_key($$bc$keyword("clause_session_v1_event_byte"))]: (index) => clause__session__v1__event__byte(index)});
+}
+
+function key_configuration(input_sequence, revision, code) {
+  return workbench["->InputConfiguration"](revision, [workbench["->InputObservation"](input_sequence, workbench["create-workbench-envelope"](policy(), json_string([json_string({[$$bc$property_key($$bc$keyword("kind"))]: "keyboard", [$$bc$property_key($$bc$keyword("code"))]: code, [$$bc$property_key($$bc$keyword("phase"))]: "down", [$$bc$property_key($$bc$keyword("repeat"))]: false})])))]);
+}
+
+test["test"]("one persistent session sequences physical input candidate issuance Admission and disposal", () => { const requests = [];
+const port = wasm["create-wasm-cartridge-port"](module_for_bang([opened_event_bang(), input_event_bang(), candidate_event_bang(), issuance_event_bang(), admission_event_bang(), disposed_event_bang()], requests), policy());
 const request = wasm["->ExactProcessRequest"](minimal_cwr1_bang());
 const accepted = ({value: null, watches: {}});
 const started = ({value: null, watches: {}});
@@ -188,24 +211,24 @@ const candidate = ({value: null, watches: {}});
 const admitted = ({value: null, watches: {}});
 (port.acceptPackage)(request, (result) => (() => { const _a = accepted, _v = result; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })());
 (port.startSession)(accepted.value.acceptedPackage, 1, (result) => (() => { const _a = started, _v = result; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })());
-(port.runCandidate)(started.value.session, workbench["->FixedTick"](16), workbench["->InputConfiguration"](0, []), (result) => (() => { const _a = candidate, _v = result; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })());
+(port.runCandidate)(started.value.session, workbench["->FixedTick"](16), workbench["->InputConfiguration"](1, [workbench["->InputObservation"](1, workbench["create-workbench-envelope"](policy(), json_string([json_string({[$$bc$property_key($$bc$keyword("kind"))]: "keyboard", [$$bc$property_key($$bc$keyword("code"))]: "KeyD", [$$bc$property_key($$bc$keyword("phase"))]: "down", [$$bc$property_key($$bc$keyword("repeat"))]: false})])))]), (result) => (() => { const _a = candidate, _v = result; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })());
 test["expect"]($$bc$str(requests.length)).toBe("3");
 const open_request = requests[0];
 const open_length = open_request.length;
-const allocation_tag = (open_length - 325);
+const allocation_tag = (open_length - 17);
 test["expect"](json_string(open_request.slice(0, 4))).toBe("[67,87,83,49]");
 test["expect"](json_string(open_request.slice(13, 18))).toBe("[1,0,0,0,8]");
-test["expect"]($$bc$str(open_request[allocation_tag])).toBe("1");
-test["expect"](json_string(open_request.slice((allocation_tag + 1), (allocation_tag + 9)))).toBe("[48,1,0,0,82,65,69,49]");
-test["expect"](json_string([requests[1][20], requests[2][20]])).toBe("[1,2]");
+test["expect"]($$bc$str(open_request[allocation_tag])).toBe("0");
+test["expect"](json_string(open_request.slice((allocation_tag + 1), (allocation_tag + 9)))).toBe("[0,16,0,0,0,0,0,0]");
+test["expect"](json_string([requests[1][20], requests[2][20]])).toBe("[3,4]");
 test["expect"](json_string(started.value.frame)).toBe("[]");
 (port.requestAdmission)(started.value.session, candidate.value.candidate, (result) => (() => { const _a = admitted, _v = result; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })());
-test["expect"]($$bc$str(requests.length)).toBe("4");
-test["expect"]($$bc$str(requests[3][20])).toBe("3");
+test["expect"]($$bc$str(requests.length)).toBe("5");
+test["expect"](json_string([requests[3][20], requests[4][20]])).toBe("[5,6]");
 test["expect"](json_string(admitted.value.revision)).toBe(json_string(identity(36)));
 test["expect"](json_string(admitted.value.frame)).toBe("[40,41,42]");
 (port.disposeSession)(started.value.session);
-test["expect"]($$bc$str(requests[4][20])).toBe("4");
+test["expect"]($$bc$str(requests[5][20])).toBe("7");
 const after_dispose = ({value: null, watches: {}});
 (port.runCandidate)(started.value.session, workbench["->FixedTick"](16), workbench["->InputConfiguration"](0, []), (result) => (() => { const _a = after_dispose, _v = result; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })());
 test["expect"]($$bc$str(after_dispose.value.reason)).toBe("Wasm session is disposed");
@@ -223,4 +246,22 @@ test["test"]("CWR1 hex transport is exact and bounded", () => { test["expect"](j
   test["expect"]((throws_p_bang(() => wasm["decode-cwr1-hex"](source)) ? "true" : "false")).toBe("true");
 }); })();
 return null; });
+
+const test_runtime = require("bun:test");
+const register_async_test = test_runtime.test;
+register_async_test("real Wasm lowers physical input and exposes only the admitted arena frame", () => Promise.all([Bun.file("./generated/wasm/clause_runtime_bg.wasm").arrayBuffer(), Bun.file("./fixtures/wasm-jump-v1/jump-v1.cwr1.hex").text()]).then((assets) => { const port = wasm["create-wasm-cartridge-port"](initialize_real_session_module(assets[0]), arena_policy());
+const request = wasm["->ExactProcessRequest"](wasm["decode-cwr1-hex"](assets[1]));
+const accepted = ({value: null, watches: {}});
+const started = ({value: null, watches: {}});
+const candidate = ({value: null, watches: {}});
+const admitted = ({value: null, watches: {}});
+(port.acceptPackage)(request, (result) => (() => { const _a = accepted, _v = result; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })());
+(port.startSession)(accepted.value.acceptedPackage, 1, (result) => (() => { const _a = started, _v = result; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })());
+(port.runCandidate)(started.value.session, workbench["->FixedTick"](16), key_configuration(1, 1, "KeyD"), (result) => (() => { const _a = candidate, _v = result; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })());
+test["expect"](json_string(started.value.frame)).toBe("[]");
+(port.requestAdmission)(started.value.session, candidate.value.candidate, (result) => (() => { const _a = admitted, _v = result; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })());
+const frame = wasm["decode-projected-term-frame"](admitted.value.frame);
+test["expect"](((frame.player.position.x > 0.0) ? "true" : "false")).toBe("true");
+(port.disposeSession)(started.value.session);
+return null; }));
 //# sourceMappingURL=wasm-cartridge-port-test.js.map

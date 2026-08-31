@@ -9,7 +9,7 @@
 (def cwo1-prefix-bytes Int (+ 4 32 32))
 (def cwo1-identity-bytes Int 32)
 (def cwo1-max-values Int 256)
-(def cse1-max-bytes Int (* 4 1024))
+(def cse1-max-bytes Int (* 64 1024))
 
 (js/export
   (def cse1-projected-term-max-properties Int cse1-max-bytes))
@@ -397,8 +397,9 @@
           (.push open-bytes byte))
         (doseq [byte Int (.slice bytes authority-start budget-end)]
           (.push open-bytes byte))
-        (.push open-bytes 1)
-        (append-blob! open-bytes allocation-bytes)
+        ;; Interactive play is a new occurrence family. The recorded CWR1
+        ;; allocation remains validated above for exact replay tooling only.
+        (.push open-bytes 0)
         (append-u64! open-bytes session-command-limit)
         (append-u32! open-bytes session-command-max-bytes)
         (append-u32! open-bytes cse1-max-bytes)
@@ -489,6 +490,17 @@
              :base (identity-at 85)})
 
           (= tag 4)
+          (do
+            (when (not= (.-length bytes) (+ 21 (* 5 identity-bytes) 4))
+              (throw (new Error "CSE1 issued authority event has an invalid shape")))
+            {:kind "issued" :slot slot :generation generation :sequence sequence
+             :authorization (identity-at 21)
+             :packageId (identity-at 53)
+             :sessionId (identity-at 85)
+             :base (identity-at 117)
+             :candidateId (identity-at 149)})
+
+          (= tag 5)
           (let [prefix-end Int (+ 21 (* 5 identity-bytes) 4)
                 projection-tag Int (byte-at bytes prefix-end)
                 successor Any (identity-at 53)]
@@ -513,13 +525,13 @@
 
               :else (throw (new Error "CSE1 Admission projection tag is invalid"))))
 
-          (= tag 5)
+          (= tag 6)
           (do
             (when (not= (.-length bytes) 21)
               (throw (new Error "CSE1 Disposed event has trailing bytes")))
             {:kind "disposed" :slot slot :generation generation :sequence sequence})
 
-          (= tag 6)
+          (= tag 7)
           (do
             (when (not= (.-length bytes) 25)
               (throw (new Error "CSE1 rejection has an invalid shape")))
@@ -550,6 +562,82 @@
   (let [blob Any []]
     (append-blob! blob payload)
     (encode-session-command! session tag blob)))
+
+(defn ascii-bytes
+  [value Any
+   label String] Any
+  (if-not (= (js/typeof value) "string")
+    (throw (new Error (str label " must be text")))
+    (let [length Int (.-length value)]
+      (when (or (= length 0) (> length 64))
+        (throw (new Error (str label " is outside its byte bound"))))
+      (loop [index Int 0
+             bytes (Vec Int) []]
+        (if (= index length)
+          (.freeze Object bytes)
+          (let [code Int (.charCodeAt value index)]
+            (if (or (< code 33) (> code 126))
+              (throw (new Error (str label " must be printable ASCII")))
+              (recur (inc index) (conj bytes code)))))))))
+
+(defn decode-physical-input
+  [observation workbench/InputObservation] Any
+  (let [envelope Any (.-value observation)]
+    (if-not (and (.isArray Array envelope)
+                 (= (.-length envelope) 1)
+                 (= (js/typeof (nth envelope 0)) "string"))
+      (throw (new Error "input observation lacks its exact physical envelope"))
+      (let [value Any (.parse JSON (nth envelope 0))]
+        (if (not= (.-kind value) "keyboard")
+          nil
+          (let [phase Any (.-phase value)
+                phase-tag Int (cond
+                                (= phase "down") 0
+                                (= phase "up") 1
+                                :else -1)
+                repeat Any (.-repeat value)]
+            (when (or (< phase-tag 0)
+                      (not (or (= repeat true) (= repeat false))))
+              (throw (new Error "keyboard observation has an invalid phase")))
+            {:sequence (.-sequence observation)
+             :code (ascii-bytes (.-code value) "keyboard code")
+             :phase phase-tag}))))))
+
+(defn physical-input-command!
+  [session WasmSession
+   input Any] Any
+  (let [payload Any []]
+    (append-u64! payload (.-sequence input))
+    (.push payload 0)
+    (append-blob! payload (.-code input))
+    (.push payload (.-phase input))
+    (encode-session-command! session 3 payload)))
+
+(defn tick-candidate-command!
+  [session WasmSession
+   fixed-tick workbench/FixedTick
+   configuration workbench/InputConfiguration] Any
+  (let [milliseconds Int (.-milliseconds fixed-tick)
+        payload Any []]
+    (when (or (not (.isSafeInteger Number milliseconds))
+              (<= milliseconds 0)
+              (> milliseconds 4294967295))
+      (throw (new Error "fixed tick is outside the CWI1 bound")))
+    (append-u64! payload (.-revision configuration))
+    (append-u32! payload milliseconds)
+    (encode-session-command! session 4 payload)))
+
+(defn admission-scope-bytes!
+  [session WasmSession
+   candidate WasmCandidate] Any
+  (let [payload Any []]
+    (doseq [identity Any [(.-packageId session)
+                          (.-sessionId session)
+                          (.-base candidate)
+                          (.-candidateId candidate)]]
+      (doseq [byte Int identity]
+        (.push payload byte)))
+    payload))
 
 (defn apply-session-command!
   [module Any
@@ -780,31 +868,32 @@
            (complete (workbench/->SessionFailed (reject-reason error))))))
      (fn
        [incoming-session Any
-        _fixed-tick workbench/FixedTick
-        _configuration workbench/InputConfiguration
+        fixed-tick workbench/FixedTick
+        configuration workbench/InputConfiguration
         complete Any] Any
        (try
-         (let [session WasmSession (require-live-session incoming-session)
-               occurrences Any (.-occurrences session)
-               count Int (.-length occurrences)]
-           (loop [index Int 0]
-             (when (< index (dec count))
-               (let [event Any (apply-session-command!
-                                module
-                                session
-                                (blob-command! session 1 (nth occurrences index)))]
-                 (when (not= (.-kind event) "input")
-                   (throw (new Error "CWI1 input did not produce InputAccepted")))
-                 (recur (inc index)))))
+         (let [session WasmSession (require-live-session incoming-session)]
+           (doseq [observation workbench/InputObservation (.-observations configuration)]
+             (let [input Any (decode-physical-input observation)]
+               (when (not (nil? input))
+                 (let [event Any (apply-session-command!
+                                  module
+                                  session
+                                  (physical-input-command! session input))]
+                   (when (not= (.-kind event) "input")
+                     (throw (new Error
+                             "CWI1 physical input did not produce InputAccepted")))))))
            (let [event Any (apply-session-command!
                             module
                             session
-                            (blob-command! session 2 (nth occurrences (dec count))))]
+                            (tick-candidate-command!
+                             session fixed-tick configuration))]
              (when (not= (.-kind event) "candidate")
-               (throw (new Error "CWI1 candidate did not produce CandidateAccepted")))
-           (complete
-             (workbench/->CandidateProduced
-             (->WasmCandidate (.-candidateId event) (.-base event))))))
+               (throw (new Error
+                       "CWI1 fixed tick did not produce CandidateAccepted")))
+             (complete
+              (workbench/->CandidateProduced
+               (->WasmCandidate (.-candidateId event) (.-base event))))))
          (catch Error error
            (complete (workbench/->CandidateFailed (reject-reason error))))))
      (fn
@@ -814,18 +903,22 @@
        (try
          (let [session WasmSession (require-live-session incoming-session)
                candidate WasmCandidate (require-candidate incoming-candidate)
-               payload Any []]
-           (doseq [identity Any [(.-packageId session)
-                                 (.-sessionId session)
-                                 @(.-world session)
-                                 (.-candidateId candidate)]]
-             (doseq [byte Int identity]
-               (.push payload byte)))
-           (let [event Any (apply-session-command!
+               scope Any (admission-scope-bytes! session candidate)
+               issued Any (apply-session-command!
                             module
                             session
-                            (encode-session-command! session 3 payload))
-                 projection Any (.-projection event)]
+                            (encode-session-command! session 5 scope))]
+           (when (not= (.-kind issued) "issued")
+             (throw (new Error
+                     "CWI1 issuance did not produce exact Admission authority")))
+           (let [payload Any (admission-scope-bytes! session candidate)]
+             (doseq [byte Int (.-authorization issued)]
+               (.push payload byte))
+             (let [event Any (apply-session-command!
+                              module
+                              session
+                              (encode-session-command! session 6 payload))
+                   projection Any (.-projection event)]
              (when (or (not= (.-kind event) "admission")
                        (nil? projection))
                (throw (new Error "Admission produced no package-declared frame Observation")))
@@ -837,14 +930,14 @@
             (workbench/->AdmissionAccepted
              session
              (.-successor event)
-             frame)))))
+             frame))))))
          (catch Error error
            (complete (workbench/->AdmissionRejected (reject-reason error))))))
      (fn [incoming-session Any] Any
        (let [session WasmSession (require-session incoming-session)]
          (when (not @(.-disposed session))
            (let [event Any (apply-session-command!
-                            module session (encode-session-command! session 4 nil))]
+                            module session (encode-session-command! session 7 nil))]
              (when (not= (.-kind event) "disposed")
                (throw (new Error "CWI1 disposal did not produce Disposed")))
              (reset! (.-disposed session) true)))))))

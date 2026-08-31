@@ -2045,6 +2045,7 @@ fn establish_core_authority(
                         policy: context.policy,
                     },
                 }],
+                vec![],
             )
             .expect("root policy is coherent"),
         )

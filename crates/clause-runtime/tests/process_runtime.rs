@@ -141,6 +141,7 @@ fn core_authority(checked: &CheckedProcessPackage) -> AuthorityStore {
                         policy,
                     },
                 }],
+                vec![],
             )
             .expect("root policy is coherent"),
         )

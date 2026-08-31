@@ -18,9 +18,9 @@ use crate::identity::{
     AdmissionAuthorizationRef, ApplicationId, BoundaryPermissionLocalId, BoundaryRef,
     CandidateDeltaId, ClauseSemanticsId, ExecutionAuthorizationRef, ExternalEvidenceRef,
     FormationRefV2, JudgmentAuthorityRef, ModeId, ProcessPackageId, ProgramChangeOccurrenceId,
-    ProgramId, ProgramRevisionId, ProgramSnapshotId, RootAdmissionAuthorizationRef,
-    RootExecutionAuthorizationRef, RootJudgmentAuthorityRef, RootPolicyId, RuntimePolicyId,
-    RuntimeSessionId, SessionStartOccurrenceId, StateRevisionId,
+    ProgramId, ProgramRevisionId, ProgramSnapshotId, RootAdmissionAuthorizationIssuerRef,
+    RootAdmissionAuthorizationRef, RootExecutionAuthorizationRef, RootJudgmentAuthorityRef,
+    RootPolicyId, RuntimePolicyId, RuntimeSessionId, SessionStartOccurrenceId, StateRevisionId,
 };
 use crate::process::CheckedConstitutionBinding;
 use crate::provenance::{
@@ -357,6 +357,22 @@ pub struct RootStateAdmissionGrant {
     pub scope: CheckedStateAdmissionScope,
 }
 
+/// Exact constitutional/runtime boundary within which a root-governed issuer
+/// may create candidate-specific Admission authorization occurrences.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct StateAdmissionIssuerScope {
+    pub revision: ProgramRevisionId,
+    pub package: ProcessPackageId,
+    pub session: RuntimeSessionId,
+    pub policy: RuntimePolicyId,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct RootStateAdmissionIssuerGrant {
+    pub issuer: RootAdmissionAuthorizationIssuerRef,
+    pub scope: StateAdmissionIssuerScope,
+}
+
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct RootJudgmentAuthorityGrant {
     pub authority: RootJudgmentAuthorityRef,
@@ -375,6 +391,7 @@ pub struct RootPolicyAnchor {
     static_execution_grants: Box<[RootStaticExecutionGrant]>,
     state_admission_grants: Box<[RootStateAdmissionGrant]>,
     judgment_authority_grants: Box<[RootJudgmentAuthorityGrant]>,
+    state_admission_issuer_grants: Box<[RootStateAdmissionIssuerGrant]>,
 }
 
 impl RootPolicyAnchor {
@@ -389,6 +406,7 @@ impl RootPolicyAnchor {
             static_execution_grants,
             Vec::new(),
             Vec::new(),
+            Vec::new(),
         )
     }
 
@@ -398,6 +416,7 @@ impl RootPolicyAnchor {
         static_execution_grants: Vec<RootStaticExecutionGrant>,
         state_admission_grants: Vec<RootStateAdmissionGrant>,
         judgment_authority_grants: Vec<RootJudgmentAuthorityGrant>,
+        state_admission_issuer_grants: Vec<RootStateAdmissionIssuerGrant>,
     ) -> Result<Self, AuthorityError> {
         let mut genesis_refs = BTreeSet::new();
         for grant in &genesis_grants {
@@ -465,12 +484,28 @@ impl RootPolicyAnchor {
             }
         }
 
+        let mut issuer_refs = BTreeSet::new();
+        for grant in &state_admission_issuer_grants {
+            if grant.issuer.policy != id {
+                return Err(AuthorityError::RootPolicyReferenceMismatch {
+                    policy: id,
+                    referenced_policy: grant.issuer.policy,
+                });
+            }
+            if !issuer_refs.insert(grant.issuer) {
+                return Err(AuthorityError::DuplicateRootStateAdmissionIssuerGrant(
+                    grant.issuer,
+                ));
+            }
+        }
+
         Ok(Self {
             id,
             genesis_grants: genesis_grants.into_boxed_slice(),
             static_execution_grants: static_execution_grants.into_boxed_slice(),
             state_admission_grants: state_admission_grants.into_boxed_slice(),
             judgment_authority_grants: judgment_authority_grants.into_boxed_slice(),
+            state_admission_issuer_grants: state_admission_issuer_grants.into_boxed_slice(),
         })
     }
 
@@ -492,6 +527,11 @@ impl RootPolicyAnchor {
     #[must_use]
     pub fn state_admission_grants(&self) -> &[RootStateAdmissionGrant] {
         &self.state_admission_grants
+    }
+
+    #[must_use]
+    pub fn state_admission_issuer_grants(&self) -> &[RootStateAdmissionIssuerGrant] {
+        &self.state_admission_issuer_grants
     }
 
     #[must_use]
@@ -908,6 +948,19 @@ impl AuthorityStore {
     }
 
     #[must_use]
+    pub fn root_state_admission_issuer_scope(
+        &self,
+        issuer: RootAdmissionAuthorizationIssuerRef,
+    ) -> Option<StateAdmissionIssuerScope> {
+        self.root_policies
+            .get(&issuer.policy)?
+            .state_admission_issuer_grants
+            .iter()
+            .find(|grant| grant.issuer == issuer)
+            .map(|grant| grant.scope)
+    }
+
+    #[must_use]
     pub fn revision_static_execution_scope(
         &self,
         revision: ProgramRevisionId,
@@ -1300,6 +1353,7 @@ pub enum AuthorityError {
     DuplicateRootAdmissionGrant(RootAdmissionAuthorizationRef),
     DuplicateRootExecutionGrant(RootExecutionAuthorizationRef),
     DuplicateRootStateAdmissionGrant(RootAdmissionAuthorizationRef),
+    DuplicateRootStateAdmissionIssuerGrant(RootAdmissionAuthorizationIssuerRef),
     DuplicateRootJudgmentAuthorityGrant(RootJudgmentAuthorityRef),
     RootAdmissionGrantDomainCollision(RootAdmissionAuthorizationRef),
     RootPolicyAlreadyEstablished(RootPolicyId),

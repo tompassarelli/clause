@@ -583,6 +583,7 @@ wire_opaque_id!(
     BoundaryRef,
     ExternalEvidenceRef,
     JudgmentOccurrenceId,
+    IssuedAdmissionAuthorizationOccurrenceId,
     RootPolicyId,
 );
 
@@ -615,6 +616,7 @@ wire_local_id!(
     JudgmentAuthorityLocalId,
     ExecutionAuthorizationLocalId,
     AdmissionAuthorizationLocalId,
+    AdmissionAuthorizationIssuerLocalId,
     PrerequisiteLocalId,
     CauseComponentLocalId,
     SupportSlotId,
@@ -828,6 +830,20 @@ impl Wire for RootAdmissionAuthorizationRef {
         Ok(Self {
             policy: RootPolicyId::decode(cursor)?,
             local: AdmissionAuthorizationLocalId::decode(cursor)?,
+        })
+    }
+}
+
+impl Wire for RootAdmissionAuthorizationIssuerRef {
+    fn encode(&self, encoder: &mut Encoder) -> Result<(), CanonicalEncodeError> {
+        self.policy.encode(encoder)?;
+        self.local.encode(encoder)
+    }
+
+    fn decode(cursor: &mut Cursor<'_>) -> Result<Self, CanonicalDecodeError> {
+        Ok(Self {
+            policy: RootPolicyId::decode(cursor)?,
+            local: AdmissionAuthorizationIssuerLocalId::decode(cursor)?,
         })
     }
 }
@@ -1781,6 +1797,17 @@ wire_struct!(StateAdmissionDecisionV2 {
     provenance,
     outcome,
 });
+wire_struct!(IssuedStateAdmissionAuthorizationV2 {
+    occurrence,
+    issuer,
+    revision,
+    package,
+    session,
+    policy,
+    base,
+    delta,
+    provenance,
+});
 
 impl Wire for ExecutionAuthorizationEvidence {
     fn encode(&self, encoder: &mut Encoder) -> Result<(), CanonicalEncodeError> {
@@ -1840,6 +1867,10 @@ impl Wire for AdmissionAuthorizationEvidence {
                 policy.encode(encoder)?;
                 authorization.encode(encoder)?;
             }
+            Self::Issued { occurrence } => {
+                encoder.u8(2);
+                occurrence.encode(encoder)?;
+            }
         }
         Ok(())
     }
@@ -1854,6 +1885,9 @@ impl Wire for AdmissionAuthorizationEvidence {
             1 => Ok(Self::IrreducibleRoot {
                 policy: RootPolicyId::decode(cursor)?,
                 authorization: RootAdmissionAuthorizationRef::decode(cursor)?,
+            }),
+            2 => Ok(Self::Issued {
+                occurrence: IssuedAdmissionAuthorizationOccurrenceId::decode(cursor)?,
             }),
             found => Err(unknown_tag(offset, "AdmissionAuthorizationEvidence", found)),
         }
@@ -2359,7 +2393,8 @@ impl Wire for ProcessRecordV2 {
             Self::Cancellation(value) => tagged(encoder, 5, value),
             Self::Steps(value) => tagged(encoder, 6, value),
             Self::Judgment(value) => tagged(encoder, 7, value),
-            Self::AdmissionDecision(value) => tagged(encoder, 8, value),
+            Self::IssuedAdmissionAuthorization(value) => tagged(encoder, 8, value),
+            Self::AdmissionDecision(value) => tagged(encoder, 9, value),
         }
     }
 
@@ -2374,7 +2409,10 @@ impl Wire for ProcessRecordV2 {
             5 => Self::Cancellation(CancellationOccurrenceV2::decode(cursor)?),
             6 => Self::Steps(Vec::<StepProposalV2>::decode(cursor)?),
             7 => Self::Judgment(JudgmentOccurrenceV2::decode(cursor)?),
-            8 => Self::AdmissionDecision(StateAdmissionDecisionV2::decode(cursor)?),
+            8 => Self::IssuedAdmissionAuthorization(IssuedStateAdmissionAuthorizationV2::decode(
+                cursor,
+            )?),
+            9 => Self::AdmissionDecision(StateAdmissionDecisionV2::decode(cursor)?),
             found => return Err(unknown_tag(offset, "ProcessRecordV2", found)),
         })
     }
@@ -2853,6 +2891,7 @@ fn validate_record_order_v2(record: &ProcessRecordV2) -> Result<(), CanonicalEnc
             validate_supports(&value.body.supports)?;
             validate_occurrence(&value.provenance)
         }
+        ProcessRecordV2::IssuedAdmissionAuthorization(value) => validate_entered(&value.provenance),
         ProcessRecordV2::AdmissionDecision(value) => {
             validate_supports(&value.evidence)?;
             ensure_by_key(

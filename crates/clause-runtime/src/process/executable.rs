@@ -18,6 +18,7 @@ const PROJECTED_NUMBER_KIND: &[u8] = b"clause/process-projected-f64-v1";
 const PROJECTED_BOOLEAN_KIND: &[u8] = b"clause/process-projected-bool-v1";
 const MAX_PROGRAM_ITEMS: usize = 65_536;
 const MAX_EXPRESSION_DEPTH: usize = 64;
+const MAX_INPUT_CODE_BYTES: usize = 64;
 
 static ALLOCATED_RUNTIME_ROOTS_V1: OnceLock<Mutex<BTreeSet<[u8; IDENTITY_BYTES]>>> =
     OnceLock::new();
@@ -42,6 +43,7 @@ enum RuntimeIdentityDomainV1 {
     SyntheticState = 99,
     StateObservation = 100,
     InputObservation = 130,
+    IssuedAdmissionAuthorization = 140,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -54,6 +56,7 @@ struct RuntimeIdentityOrdinalsV1 {
     next_state_observation: u64,
     next_checker: u64,
     next_candidate: u64,
+    next_admission_authorization: u64,
 }
 
 impl RuntimeIdentityOrdinalsV1 {
@@ -67,6 +70,7 @@ impl RuntimeIdentityOrdinalsV1 {
             next_state_observation: 0,
             next_checker: 0,
             next_candidate: 0,
+            next_admission_authorization: 0,
         }
     }
 }
@@ -112,6 +116,60 @@ pub struct ExecutableProjectionBindingV1 {
 pub struct ExecutableProjectionV1 {
     pub bindings: Vec<ExecutableProjectionBindingV1>,
     pub template: Term,
+}
+
+/// One construct-blind physical input distinction. The browser reports this
+/// shape; only the checked physical plan relates it to a Clause Role and an
+/// executable occurrence.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum ExecutableInputSourceV1 {
+    Keyboard {
+        code: Vec<u8>,
+        phase: ExecutableKeyPhaseV1,
+    },
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[repr(u8)]
+pub enum ExecutableKeyPhaseV1 {
+    Down = 0,
+    Up = 1,
+}
+
+/// A package-role-indexed realization of one physical input distinction.
+/// `occurrence` is a generic rule-machine occurrence, not a host callback.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExecutableInputBindingV1 {
+    pub role: LocalRoleRefV2,
+    pub source: ExecutableInputSourceV1,
+    pub occurrence: ExecutableOccurrenceV1,
+}
+
+/// The fixed tick is a separate package Role and executable entry. Its sole
+/// argument is the exact tick duration in seconds.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ExecutableTickBindingV1 {
+    pub role: LocalRoleRefV2,
+    pub entry: u16,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExecutableInputPlanV1 {
+    pub events: Vec<ExecutableInputBindingV1>,
+    pub tick: ExecutableTickBindingV1,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExecutableInputObservationV1 {
+    pub sequence: u64,
+    pub source: ExecutableInputSourceV1,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExecutableInputConfigurationV1 {
+    pub revision: u64,
+    pub fixed_tick_milliseconds: u32,
+    pub observations: Vec<ExecutableInputObservationV1>,
 }
 
 /// Construct a typed role leaf for an executable projection template.
@@ -282,6 +340,7 @@ pub struct ExecutablePhysicalPlanV1 {
     pub mode: ModeId,
     pub refinement: ExecutableRefinementV1,
     pub target: ExecutablePhysicalTargetV1,
+    pub input: Option<ExecutableInputPlanV1>,
     pub program: ExecutableProgramV1,
 }
 
@@ -309,6 +368,7 @@ pub fn encode_executable_physical_plan_v1(
     plan: &ExecutablePhysicalPlanV1,
 ) -> Result<Vec<u8>, ExecutableErrorV1> {
     validate_program(&plan.program)?;
+    validate_input_plan_shape(plan.input.as_ref(), &plan.program)?;
     let mut bytes = Vec::new();
     bytes.extend_from_slice(PHYSICAL_PLAN_MAGIC_V1);
     bytes.extend_from_slice(plan.application_shape.as_bytes());
@@ -317,6 +377,7 @@ pub fn encode_executable_physical_plan_v1(
     bytes.extend_from_slice(&plan.mode.local.get().to_le_bytes());
     bytes.push(plan.refinement as u8);
     bytes.push(plan.target as u8);
+    encode_input_plan(&mut bytes, plan.input.as_ref())?;
     encode_program_body(&mut bytes, &plan.program)?;
     Ok(bytes)
 }
@@ -342,6 +403,7 @@ pub fn decode_executable_physical_plan_v1(
         1 => ExecutablePhysicalTargetV1::PortableScalarInterpreterV1,
         _ => return Err(ExecutableErrorV1::UnsupportedPhysicalTarget),
     };
+    let input = decode_input_plan(&mut decoder)?;
     let program = decode_program_body(&mut decoder)?;
     if !decoder.is_complete() {
         return Err(ExecutableErrorV1::MalformedPhysicalPlan);
@@ -357,10 +419,107 @@ pub fn decode_executable_physical_plan_v1(
         },
         refinement,
         target,
+        input,
         program,
     };
     validate_program(&plan.program)?;
+    validate_input_plan_shape(plan.input.as_ref(), &plan.program)?;
     Ok(plan)
+}
+
+fn encode_input_source(
+    bytes: &mut Vec<u8>,
+    source: &ExecutableInputSourceV1,
+) -> Result<(), ExecutableErrorV1> {
+    match source {
+        ExecutableInputSourceV1::Keyboard { code, phase } => {
+            bytes.push(0);
+            encode_count(bytes, code.len())?;
+            bytes.extend_from_slice(code);
+            bytes.push(*phase as u8);
+        }
+    }
+    Ok(())
+}
+
+fn decode_input_source(
+    decoder: &mut Decoder<'_>,
+) -> Result<ExecutableInputSourceV1, ExecutableErrorV1> {
+    match decoder.byte()? {
+        0 => {
+            let length = decoder.count()?;
+            if length == 0 || length > MAX_INPUT_CODE_BYTES {
+                return Err(ExecutableErrorV1::MalformedProgram);
+            }
+            let code = decoder.take(length)?.to_vec();
+            let phase = match decoder.byte()? {
+                0 => ExecutableKeyPhaseV1::Down,
+                1 => ExecutableKeyPhaseV1::Up,
+                _ => return Err(ExecutableErrorV1::MalformedProgram),
+            };
+            Ok(ExecutableInputSourceV1::Keyboard { code, phase })
+        }
+        _ => Err(ExecutableErrorV1::MalformedProgram),
+    }
+}
+
+fn encode_input_plan(
+    bytes: &mut Vec<u8>,
+    input: Option<&ExecutableInputPlanV1>,
+) -> Result<(), ExecutableErrorV1> {
+    let Some(input) = input else {
+        bytes.push(0);
+        return Ok(());
+    };
+    bytes.push(1);
+    encode_count(bytes, input.events.len())?;
+    for binding in &input.events {
+        bytes.extend_from_slice(&binding.role.schema.get().to_le_bytes());
+        bytes.extend_from_slice(&binding.role.role.get().to_le_bytes());
+        encode_input_source(bytes, &binding.source)?;
+        bytes.extend_from_slice(&binding.occurrence.entry.to_le_bytes());
+        encode_values(bytes, &binding.occurrence.arguments)?;
+    }
+    bytes.extend_from_slice(&input.tick.role.schema.get().to_le_bytes());
+    bytes.extend_from_slice(&input.tick.role.role.get().to_le_bytes());
+    bytes.extend_from_slice(&input.tick.entry.to_le_bytes());
+    Ok(())
+}
+
+fn decode_input_plan(
+    decoder: &mut Decoder<'_>,
+) -> Result<Option<ExecutableInputPlanV1>, ExecutableErrorV1> {
+    match decoder.byte()? {
+        0 => Ok(None),
+        1 => {
+            let count = decoder.count()?;
+            let mut events = Vec::with_capacity(count);
+            for _ in 0..count {
+                events.push(ExecutableInputBindingV1 {
+                    role: LocalRoleRefV2 {
+                        schema: RelationSchemaLocalId::new(decoder.u32()?),
+                        role: RoleLocalId::new(decoder.u32()?),
+                    },
+                    source: decode_input_source(decoder)?,
+                    occurrence: ExecutableOccurrenceV1 {
+                        entry: decoder.u16()?,
+                        arguments: decoder.values()?,
+                    },
+                });
+            }
+            Ok(Some(ExecutableInputPlanV1 {
+                events,
+                tick: ExecutableTickBindingV1 {
+                    role: LocalRoleRefV2 {
+                        schema: RelationSchemaLocalId::new(decoder.u32()?),
+                        role: RoleLocalId::new(decoder.u32()?),
+                    },
+                    entry: decoder.u16()?,
+                },
+            }))
+        }
+        _ => Err(ExecutableErrorV1::MalformedProgram),
+    }
 }
 
 fn encode_program_body(
@@ -490,6 +649,8 @@ pub const EXECUTABLE_JUDGMENT_PERMISSION_V1: BoundaryPermissionLocalId =
     BoundaryPermissionLocalId::new(2);
 pub const EXECUTABLE_ADMISSION_PERMISSION_V1: BoundaryPermissionLocalId =
     BoundaryPermissionLocalId::new(3);
+pub const EXECUTABLE_ADMISSION_ISSUANCE_PERMISSION_V1: BoundaryPermissionLocalId =
+    BoundaryPermissionLocalId::new(4);
 
 #[must_use]
 pub fn executable_occurrence_boundary_anchor_v1(
@@ -571,7 +732,7 @@ pub fn executable_state_boundary_anchor_v1(
             BoundaryOccurrencePermissionV2 {
                 id: EXECUTABLE_ADMISSION_PERMISSION_V1,
                 kind: EnteredOccurrenceKind::AdmissionDecision,
-                payload,
+                payload: payload.clone(),
                 pins,
                 cause_schema: vec![
                     BoundaryCauseRequirementV2 {
@@ -591,6 +752,20 @@ pub fn executable_state_boundary_anchor_v1(
                     maximum_occurrences: None,
                 },
             },
+            BoundaryOccurrencePermissionV2 {
+                id: EXECUTABLE_ADMISSION_ISSUANCE_PERMISSION_V1,
+                kind: EnteredOccurrenceKind::AdmissionAuthorization,
+                payload,
+                pins,
+                cause_schema: vec![BoundaryCauseRequirementV2 {
+                    kind: EnteredCauseKindV2::CandidateDelta,
+                    cardinality: exactly_one,
+                }],
+                support_schema: vec![],
+                replay: BoundaryReplayPolicyV2::Repeatable {
+                    maximum_occurrences: None,
+                },
+            },
         ],
     }
 }
@@ -604,9 +779,11 @@ pub struct ExecutableAuthorityFactsV1 {
     pub session_start: SessionStartOccurrenceId,
     pub root_policy: RootPolicyId,
     pub judgment_authority: RootJudgmentAuthorityRef,
+    pub admission_authorization_issuer: RootAdmissionAuthorizationIssuerRef,
     pub trigger_ingress: ExecutableBoundaryFactV1,
     pub occurrence_ingress: ExecutableBoundaryFactV1,
     pub judgment_ingress: ExecutableBoundaryFactV1,
+    pub admission_issuance_ingress: ExecutableBoundaryFactV1,
     pub admission_ingress: ExecutableBoundaryFactV1,
     pub budget_units: u64,
 }
@@ -881,6 +1058,7 @@ pub struct ExecutableProcessRuntimeV1 {
     activation: clause_package::ActivationId,
     configuration_id: ConfigurationId,
     configuration: Vec<ExecutableValueV1>,
+    input: Option<ExecutableInputPlanV1>,
     program: ExecutableProgramV1,
     physical_plan: ExecutablePhysicalPlanIdV1,
     physical_mode: ModeId,
@@ -893,6 +1071,7 @@ pub struct ExecutableProcessRuntimeV1 {
     carrier_execution: Option<CarrierExecutionV1>,
     identity_ordinals: RuntimeIdentityOrdinalsV1,
     active_candidate_ordinal: Option<u64>,
+    issued_admission_authorization: Option<IssuedAdmissionAuthorizationOccurrenceId>,
 }
 
 impl ExecutableProcessRuntimeV1 {
@@ -972,6 +1151,7 @@ impl ExecutableProcessRuntimeV1 {
             0,
         )?);
         let physical_mode = physical_plan.plan.mode;
+        let input = physical_plan.plan.input;
         let program = physical_plan.plan.program;
         Ok(Self {
             carrier,
@@ -981,6 +1161,7 @@ impl ExecutableProcessRuntimeV1 {
             activation,
             configuration_id,
             configuration: program.initial_configuration.clone(),
+            input,
             program,
             physical_plan: physical_plan.id,
             physical_mode,
@@ -993,6 +1174,7 @@ impl ExecutableProcessRuntimeV1 {
             carrier_execution: None,
             identity_ordinals: RuntimeIdentityOrdinalsV1::initial(),
             active_candidate_ordinal: None,
+            issued_admission_authorization: None,
         })
     }
 }
@@ -1017,12 +1199,46 @@ fn check_executable_physical_plan_v1(
     }
     validate_program(&plan.program)?;
     validate_projection_roles(constitution, &plan.program)?;
+    validate_input_roles(constitution, plan.input.as_ref())?;
     let exact = encode_executable_physical_plan_v1(&plan)?;
     let id = ExecutablePhysicalPlanIdV1(runtime_domain_hash(
         "clause/executable-physical-plan/v1",
         &[&exact],
     ));
     Ok(CheckedExecutablePhysicalPlanV1 { id, plan })
+}
+
+fn exact_role_exists(constitution: &ResolvedProgramConstitutionV2, role: LocalRoleRefV2) -> bool {
+    constitution
+        .preimage()
+        .schemas
+        .iter()
+        .find(|schema| schema.id == role.schema)
+        .and_then(|schema| {
+            schema
+                .roles
+                .iter()
+                .find(|declared| declared.id == role.role)
+        })
+        .is_some_and(|declared| declared.cardinality.is_exactly_one())
+}
+
+fn validate_input_roles(
+    constitution: &ResolvedProgramConstitutionV2,
+    input: Option<&ExecutableInputPlanV1>,
+) -> Result<(), ExecutableErrorV1> {
+    let Some(input) = input else {
+        return Ok(());
+    };
+    if !exact_role_exists(constitution, input.tick.role)
+        || input
+            .events
+            .iter()
+            .any(|binding| !exact_role_exists(constitution, binding.role))
+    {
+        return Err(ExecutableErrorV1::MalformedProgram);
+    }
+    Ok(())
 }
 
 fn validate_projection_roles(
@@ -1165,6 +1381,115 @@ impl ExecutableProcessRuntimeV1 {
         occurrence: ExecutableOccurrenceV1,
     ) -> Result<&ExecutableStepV1, ExecutableCarrierErrorV1> {
         self.advance_carrier_occurrence_inner(occurrence, true)
+    }
+
+    /// Lower one construct-blind physical observation through the exact
+    /// package-Role-indexed plan, then enter the resulting occurrence.
+    pub fn advance_carrier_input(
+        &mut self,
+        source: &ExecutableInputSourceV1,
+    ) -> Result<&ExecutableStepV1, ExecutableCarrierErrorV1> {
+        let occurrence = self
+            .input
+            .as_ref()
+            .and_then(|input| {
+                input
+                    .events
+                    .iter()
+                    .find(|binding| &binding.source == source)
+            })
+            .map(|binding| binding.occurrence.clone())
+            .ok_or(ExecutableCarrierErrorV1::Executable(
+                ExecutableErrorV1::UnknownPhysicalInput,
+            ))?;
+        self.advance_carrier_occurrence(occurrence)
+    }
+
+    /// Lower one fixed tick through the plan's exact tick Role and emit the
+    /// candidate rooted in that Step. Milliseconds are physical timing data;
+    /// only the package rule gives the resulting occurrence game meaning.
+    pub fn advance_carrier_tick_and_emit_candidate(
+        &mut self,
+        fixed_tick_milliseconds: u32,
+    ) -> Result<&ExecutableStepV1, ExecutableCarrierErrorV1> {
+        if fixed_tick_milliseconds == 0 {
+            return Err(ExecutableCarrierErrorV1::Executable(
+                ExecutableErrorV1::MalformedInputConfiguration,
+            ));
+        }
+        let entry = self.input.as_ref().map(|input| input.tick.entry).ok_or(
+            ExecutableCarrierErrorV1::Executable(ExecutableErrorV1::MissingInputPlan),
+        )?;
+        let seconds = f64::from(fixed_tick_milliseconds) / 1_000.0;
+        let occurrence = ExecutableOccurrenceV1 {
+            entry,
+            arguments: vec![
+                ExecutableValueV1::number(seconds).map_err(ExecutableCarrierErrorV1::Executable)?,
+            ],
+        };
+        self.advance_carrier_occurrence_and_emit_candidate(occurrence)
+    }
+
+    /// Issue one exact, single-use Admission authorization occurrence under
+    /// the pre-established root-governed issuer capability.
+    pub fn issue_candidate_admission_authorization(
+        &mut self,
+    ) -> Result<IssuedAdmissionAuthorizationOccurrenceId, ExecutableCarrierErrorV1> {
+        if self.issued_admission_authorization.is_some() {
+            return Err(ExecutableCarrierErrorV1::AdmissionAuthorizationAlreadyIssued);
+        }
+        let candidate = self
+            .candidate
+            .as_ref()
+            .ok_or(ExecutableCarrierErrorV1::Executable(
+                ExecutableErrorV1::NoCandidate,
+            ))?;
+        let execution = self
+            .carrier_execution
+            .as_ref()
+            .ok_or(ExecutableCarrierErrorV1::NotStarted)?;
+        let (ordinal, next_ordinal) =
+            stage_runtime_ordinal(self.identity_ordinals.next_admission_authorization)
+                .map_err(ExecutableCarrierErrorV1::Executable)?;
+        let occurrence = IssuedAdmissionAuthorizationOccurrenceId::from_bytes(
+            runtime_identity_bytes(
+                self.allocation.root,
+                RuntimeIdentityDomainV1::IssuedAdmissionAuthorization,
+                ordinal,
+            )
+            .map_err(ExecutableCarrierErrorV1::Executable)?,
+        );
+        let scope = TermScope {
+            universe: self.carrier.carrier().constitution().universe(),
+            semantics: self.carrier.carrier().constitution().semantics(),
+        };
+        let issuance = IssuedStateAdmissionAuthorizationV2 {
+            occurrence,
+            issuer: execution.facts.admission_authorization_issuer,
+            revision: execution.facts.program_revision,
+            package: self.package,
+            session: execution.facts.session,
+            policy: execution.facts.policy,
+            base: candidate.base,
+            delta: candidate.id,
+            provenance: EnteredThrough {
+                boundary: execution.facts.admission_issuance_ingress.boundary,
+                evidence: execution.facts.admission_issuance_ingress.evidence,
+                permission: execution.facts.admission_issuance_ingress.permission,
+                payload: runtime_role_term(
+                    scope,
+                    b"clause/process-issued-admission-authorization-v1",
+                )?,
+                supports: vec![],
+                causes: vec![CausalRef::CandidateDelta(candidate.id)],
+            },
+        };
+        self.carrier
+            .apply_ingress(&[ProcessRecordV2::IssuedAdmissionAuthorization(issuance)])
+            .map_err(ExecutableCarrierErrorV1::Ingress)?;
+        self.identity_ordinals.next_admission_authorization = next_ordinal;
+        self.issued_admission_authorization = Some(occurrence);
+        Ok(occurrence)
     }
 
     fn advance_carrier_occurrence_inner(
@@ -2069,6 +2394,7 @@ impl ExecutableProcessRuntimeV1 {
         self.admission = None;
         self.state = None;
         self.active_candidate_ordinal = None;
+        self.issued_admission_authorization = None;
         self.identity_ordinals.next_run = next_run_ordinal;
         self.identity_ordinals.next_activation = next_activation_ordinal;
         self.identity_ordinals.next_configuration = next_configuration_ordinal;
@@ -2417,6 +2743,9 @@ pub enum ExecutableErrorV1 {
     MalformedAllocationEpoch,
     MalformedProgram,
     MalformedOccurrence,
+    MissingInputPlan,
+    UnknownPhysicalInput,
+    MalformedInputConfiguration,
     UnknownApplication,
     CarrierRejected,
     ResourceLimit,
@@ -2452,6 +2781,7 @@ pub enum ExecutableCarrierErrorV1 {
     AmbiguousStatefulMode,
     MissingCheckerMode,
     AmbiguousCheckerMode,
+    AdmissionAuthorizationAlreadyIssued,
     MissingCheckerPrerequisite,
     MissingFormationEvidence,
     ConstitutiveAdmissionAuthorityUnavailable,
@@ -2637,6 +2967,46 @@ fn validate_program(program: &ExecutableProgramV1) -> Result<(), ExecutableError
         if used.len() != projection.bindings.len() {
             return Err(ExecutableErrorV1::MalformedProgram);
         }
+    }
+    Ok(())
+}
+
+fn validate_input_plan_shape(
+    input: Option<&ExecutableInputPlanV1>,
+    program: &ExecutableProgramV1,
+) -> Result<(), ExecutableErrorV1> {
+    let Some(input) = input else {
+        return Ok(());
+    };
+    if input.events.is_empty() || input.events.len() > MAX_PROGRAM_ITEMS {
+        return Err(ExecutableErrorV1::MalformedProgram);
+    }
+    let mut roles = BTreeSet::new();
+    let mut sources = BTreeSet::new();
+    for binding in &input.events {
+        let code = match &binding.source {
+            ExecutableInputSourceV1::Keyboard { code, .. } => code,
+        };
+        if code.is_empty()
+            || code.len() > MAX_INPUT_CODE_BYTES
+            || !code.iter().all(u8::is_ascii_graphic)
+            || !roles.insert(binding.role)
+            || !sources.insert(binding.source.clone())
+            || !program
+                .rules
+                .iter()
+                .any(|rule| rule.entry == binding.occurrence.entry)
+        {
+            return Err(ExecutableErrorV1::MalformedProgram);
+        }
+    }
+    if !roles.insert(input.tick.role)
+        || !program
+            .rules
+            .iter()
+            .any(|rule| rule.entry == input.tick.entry)
+    {
+        return Err(ExecutableErrorV1::MalformedProgram);
     }
     Ok(())
 }

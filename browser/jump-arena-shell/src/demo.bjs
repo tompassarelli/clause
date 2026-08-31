@@ -6,6 +6,17 @@
             [jump-arena-shell.workbench :as workbench]))
 
 (require
+ '["three"
+   :refer [BoxGeometry
+           Color
+           DirectionalLight
+           Group
+           HemisphereLight
+           Mesh
+           MeshStandardMaterial
+           PerspectiveCamera
+           Scene
+           WebGLRenderer]]
  '["#clause-runtime-wasm"
    :refer [clause_session_v1_command
            clause_session_v1_event_byte
@@ -61,54 +72,46 @@
       :clause_session_v1_event_byte
       (fn [index Int] Float (clause_session_v1_event_byte index))})))
 
-(def status Any (.querySelector document "#replay-status"))
-(def result Any (.querySelector document "#replay-result"))
+(def arena Any (.querySelector document "#arena"))
+(def status Any (.querySelector document "#arena-status"))
 (def active-composition Any (atom nil))
 
-(defn create-result-shell! [_emit-input (Fn [Any] Any)] Any
-  (let [disposed Any (atom false)]
-    (.freeze Object
-             {:renderFrame (fn [values Any] Any
-                             (if @disposed
-                               (throw (new Error "replay result shell is disposed"))
-                               (do
-                                 (set! (.-textContent status)
-                                       "Separate Admission accepted; exact scalar result:")
-                                 (set! (.-textContent result)
-                                       (.stringify JSON values))
-                                 values)))
-              :dispose (fn [] Any
-                         (when (not @disposed)
-                           (reset! disposed true)))})))
+(def three-module Any
+  (.freeze Object
+           {:BoxGeometry BoxGeometry
+            :Color Color
+            :DirectionalLight DirectionalLight
+            :Group Group
+            :HemisphereLight HemisphereLight
+            :Mesh Mesh
+            :MeshStandardMaterial MeshStandardMaterial
+            :PerspectiveCamera PerspectiveCamera
+            :Scene Scene
+            :WebGLRenderer WebGLRenderer}))
 
 (def load-demo Any
   (.catch
    (.then
-    (.then
-     (.all Promise [(fetch-bytes! module-path)
-                    (fetch-text! request-path)])
-     (fn [assets Any] Any
-        (integration/load-passive-wasm-workbench-shell!
-         (integration/create-sync-wasm-initializer
-          initialize-session-module)
-        (nth assets 0)
-        create-result-shell!
-        integration/project-persistent-term-frame
-        window
-        (wasm/decode-cwr1-hex (nth assets 1))
-        (workbench/->FixedTick 16)
-        (demo-policy)
-        (fn [_receipt Any] Any nil))))
-    (fn [composition Any] Any
-      (do
+    (.all Promise [(fetch-bytes! module-path)
+                   (fetch-text! request-path)])
+    (fn [assets Any] Any
+      (let [module Any (initialize-session-module (nth assets 0))
+            composition Any (integration/create-passive-wasm-workbench-shell!
+                             arena
+                             window
+                             three-module
+                             module
+                             (wasm/decode-cwr1-hex (nth assets 1))
+                             (workbench/->FixedTick 16)
+                             (demo-policy)
+                             (fn [_receipt Any] Any nil))]
         (reset! active-composition composition)
         (set! (.-textContent status)
-              "Exact replay loaded; awaiting separate Admission.")
+              "Ready — click the arena, move with A/D, and jump with Space.")
         composition)))
    (fn [_error Any] Any
      (do
-       (set! (.-textContent status) "Replay load failed safely.")
-       (set! (.-textContent result) "")
+       (set! (.-textContent status) "Arena load failed safely.")
        nil))))
 
 (.addEventListener

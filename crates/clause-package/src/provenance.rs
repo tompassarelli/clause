@@ -43,6 +43,7 @@ pub enum EnteredOccurrenceKind {
     Cancellation,
     Observation,
     Judgment,
+    AdmissionAuthorization,
     AdmissionDecision,
 }
 
@@ -466,6 +467,22 @@ pub struct StateAdmissionDecisionV2 {
     pub obligation_judgments: Vec<ObligationJudgmentUse>,
     pub provenance: EnteredThrough,
     pub outcome: StateAdmissionOutcomeV2,
+}
+
+/// One separately identified, exact, single-use authorization issued under a
+/// pre-established governance capability. Its scope is candidate-specific;
+/// execution success and candidate existence do not themselves authorize it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct IssuedStateAdmissionAuthorizationV2 {
+    pub occurrence: IssuedAdmissionAuthorizationOccurrenceId,
+    pub issuer: RootAdmissionAuthorizationIssuerRef,
+    pub revision: ProgramRevisionId,
+    pub package: ProcessPackageId,
+    pub session: RuntimeSessionId,
+    pub policy: RuntimePolicyId,
+    pub base: StateRevisionId,
+    pub delta: CandidateDeltaId,
+    pub provenance: EnteredThrough,
 }
 
 /// Resolved carrier facts supplied to the pure decision-input validator.

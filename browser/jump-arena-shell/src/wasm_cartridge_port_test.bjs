@@ -5,11 +5,32 @@
             [jump-arena-shell.workbench :as workbench]))
 
 (require '["bun:test" :as test])
+(require
+ '["#clause-runtime-wasm"
+   :refer [clause_session_v1_command
+           clause_session_v1_event_byte
+           clause_session_v1_event_len
+           clause_session_v1_io_reset
+           clause_session_v1_open
+           clause_session_v1_request_push
+           initSync
+           InitOutput
+           SyncInitInput]])
+
+(declare-extern [Bun require] Any)
 
 (defn policy [] workbench/WorkbenchPolicy
   (let [maximum Int (.-MAX_SAFE_INTEGER Number)]
     (workbench/->WorkbenchPolicy
      8 8 32 128 512
+     (workbench/->WorkbenchSequenceLimits
+     maximum maximum maximum maximum maximum))))
+
+(defn arena-policy [] workbench/WorkbenchPolicy
+  (let [maximum Int (.-MAX_SAFE_INTEGER Number)]
+    (workbench/->WorkbenchPolicy
+     8 8 32 wasm/cse1-projected-term-max-properties
+     wasm/cse1-projected-term-json-max-source-units
      (workbench/->WorkbenchSequenceLimits
       maximum maximum maximum maximum maximum))))
 
@@ -139,8 +160,14 @@
     (append-u32! bytes 1)
     bytes))
 
-(defn admission-event! [] Any
+(defn issuance-event! [] Any
   (let [bytes Any (cse-header! 3 4)]
+    (put-identities! bytes [40 21 3 22 35])
+    (append-u32! bytes 1)
+    bytes))
+
+(defn admission-event! [] Any
+  (let [bytes Any (cse-header! 4 5)]
     (put-identities! bytes [22 36 37 38 3])
     (append-u32! bytes 2)
     (.push bytes 1)
@@ -148,7 +175,7 @@
     (append-blob! bytes [40 41 42])
     bytes))
 
-(defn disposed-event! [] Any (cse-header! 4 5))
+(defn disposed-event! [] Any (cse-header! 5 6))
 
 (defn throws?! [action (Fn [] Any)] Bool
   (try
@@ -161,14 +188,48 @@
       encoded
       (throw (new Error "test value is not JSON-encodable")))))
 
+(defn initialize-real-session-module [module ArrayBuffer] Any
+  (let [input SyncInitInput module
+        _initialized InitOutput (initSync input)]
+    (.freeze
+     Object
+     {:clause_session_v1_io_reset
+      (fn [] Nil (clause_session_v1_io_reset))
+      :clause_session_v1_request_push
+      (fn [byte Int] Float (clause_session_v1_request_push byte))
+      :clause_session_v1_open
+      (fn [] Float (clause_session_v1_open))
+      :clause_session_v1_command
+      (fn [] Float (clause_session_v1_command))
+      :clause_session_v1_event_len
+      (fn [] Float (clause_session_v1_event_len))
+      :clause_session_v1_event_byte
+      (fn [index Int] Float (clause_session_v1_event_byte index))})))
+
+(defn key-configuration
+  [input-sequence Int
+   revision Int
+   code String] workbench/InputConfiguration
+  (workbench/->InputConfiguration
+   revision
+   [(workbench/->InputObservation
+     input-sequence
+     (workbench/create-workbench-envelope
+      (policy)
+      (json-string [(json-string {:kind "keyboard"
+                                  :code code
+                                  :phase "down"
+                                  :repeat false})])))]))
+
 (test/test
- "one persistent session sequences input candidate Admission and disposal"
+ "one persistent session sequences physical input candidate issuance Admission and disposal"
  (fn [] Nil
    (let [requests Any []
          port workbench/CartridgePort (wasm/create-wasm-cartridge-port
                                        (module-for! [(opened-event!)
                                                      (input-event!)
                                                      (candidate-event!)
+                                                     (issuance-event!)
                                                      (admission-event!)
                                                      (disposed-event!)]
                                                    requests)
@@ -185,37 +246,48 @@
      ((.-runCandidate port)
       (.-session @started)
       (workbench/->FixedTick 16)
-      (workbench/->InputConfiguration 0 [])
+      (workbench/->InputConfiguration
+       1
+       [(workbench/->InputObservation
+         1
+         (workbench/create-workbench-envelope
+          (policy)
+          (json-string [(json-string {:kind "keyboard"
+                                      :code "KeyD"
+                                      :phase "down"
+                                      :repeat false})])))])
       (fn [result Any] Any (reset! candidate result)))
      (.toBe (test/expect (str (.-length requests))) "3")
      (let [open-request Any (nth requests 0)
            open-length Int (.-length open-request)
-           allocation-tag Int (- open-length 325)]
+           allocation-tag Int (- open-length 17)]
        (.toBe (test/expect (json-string (.slice open-request 0 4)))
               "[67,87,83,49]")
        (.toBe (test/expect (json-string (.slice open-request 13 18)))
               "[1,0,0,0,8]")
-       (.toBe (test/expect (str (nth open-request allocation-tag))) "1")
+       (.toBe (test/expect (str (nth open-request allocation-tag))) "0")
        (.toBe (test/expect
                (json-string (.slice open-request
                                     (inc allocation-tag)
                                     (+ allocation-tag 9))))
-              "[48,1,0,0,82,65,69,49]"))
+              "[0,16,0,0,0,0,0,0]"))
      (.toBe (test/expect (json-string [(nth (nth requests 1) 20)
                                        (nth (nth requests 2) 20)]))
-            "[1,2]")
+            "[3,4]")
      (.toBe (test/expect (json-string (.-frame @started))) "[]")
      ((.-requestAdmission port)
       (.-session @started)
       (.-candidate @candidate)
       (fn [result Any] Any (reset! admitted result)))
-     (.toBe (test/expect (str (.-length requests))) "4")
-     (.toBe (test/expect (str (nth (nth requests 3) 20))) "3")
+     (.toBe (test/expect (str (.-length requests))) "5")
+     (.toBe (test/expect (json-string [(nth (nth requests 3) 20)
+                                       (nth (nth requests 4) 20)]))
+            "[5,6]")
      (.toBe (test/expect (json-string (.-revision @admitted)))
             (json-string (identity 36)))
      (.toBe (test/expect (json-string (.-frame @admitted))) "[40,41,42]")
      ((.-disposeSession port) (.-session @started))
-     (.toBe (test/expect (str (nth (nth requests 4) 20))) "4")
+     (.toBe (test/expect (str (nth (nth requests 5) 20))) "7")
      (let [after-dispose Any (atom nil)]
        ((.-runCandidate port)
         (.-session @started)
@@ -265,5 +337,46 @@
             (fn [] Any (wasm/decode-cwr1-hex source)))
          "true"
          "false"))
-      "true"))
+     "true"))
    nil))
+
+(let [test-runtime Any (require "bun:test")
+      register-async-test Any (.-test test-runtime)]
+  (register-async-test
+   "real Wasm lowers physical input and exposes only the admitted arena frame"
+   (fn [] Any
+     (.then
+      (.all Promise [(.arrayBuffer (.file Bun "./generated/wasm/clause_runtime_bg.wasm"))
+                     (.text (.file Bun "./fixtures/wasm-jump-v1/jump-v1.cwr1.hex"))])
+      (fn [assets Any] Any
+        (let [port workbench/CartridgePort
+            (wasm/create-wasm-cartridge-port
+             (initialize-real-session-module (nth assets 0))
+             (arena-policy))
+              request wasm/ExactProcessRequest
+              (wasm/->ExactProcessRequest (wasm/decode-cwr1-hex (nth assets 1)))
+              accepted Any (atom nil)
+              started Any (atom nil)
+              candidate Any (atom nil)
+              admitted Any (atom nil)]
+          ((.-acceptPackage port) request
+           (fn [result Any] Any (reset! accepted result)))
+          ((.-startSession port) (.-acceptedPackage @accepted) 1
+           (fn [result Any] Any (reset! started result)))
+          ((.-runCandidate port)
+           (.-session @started)
+           (workbench/->FixedTick 16)
+           (key-configuration 1 1 "KeyD")
+           (fn [result Any] Any (reset! candidate result)))
+          (.toBe (test/expect (json-string (.-frame @started))) "[]")
+          ((.-requestAdmission port)
+           (.-session @started)
+           (.-candidate @candidate)
+           (fn [result Any] Any (reset! admitted result)))
+          (let [frame Any (wasm/decode-projected-term-frame (.-frame @admitted))]
+            (.toBe
+             (test/expect
+              (if (> (.-x (.-position (.-player frame))) 0.0) "true" "false"))
+             "true"))
+          ((.-disposeSession port) (.-session @started))
+          nil))))))

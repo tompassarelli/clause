@@ -191,8 +191,15 @@ function candidate_event_bang() {
   return bytes;
 }
 
-function admission_event_bang(term_bytes) {
+function issuance_event_bang() {
   const bytes = cse_header_bang(3, 4);
+  put_identities_bang(bytes, [40, 21, 3, 22, 35]);
+  append_little_u32_bang(bytes, 1);
+  return bytes;
+}
+
+function admission_event_bang(term_bytes) {
+  const bytes = cse_header_bang(4, 5);
   put_identities_bang(bytes, [22, 36, 37, 38, 3]);
   append_little_u32_bang(bytes, 2);
   bytes.push(1);
@@ -202,7 +209,7 @@ function admission_event_bang(term_bytes) {
 }
 
 function disposed_event_bang() {
-  return cse_header_bang(4, 5);
+  return cse_header_bang(5, 6);
 }
 
 function module_for_bang(events, requests) {
@@ -240,17 +247,20 @@ const requests = [];
 const rendered = [];
 const disposed = ({value: 0, watches: {}});
 const scheduled = ({value: null, watches: {}});
+const shell_input = ({value: null, watches: {}});
 const cancellations = ({value: 0, watches: {}});
-const module = module_for_bang([opened_event_bang(), input_event_bang(), candidate_event_bang(), admission_event_bang(term_bytes), disposed_event_bang()], requests);
+const module = module_for_bang([opened_event_bang(), input_event_bang(), candidate_event_bang(), issuance_event_bang(), admission_event_bang(term_bytes), disposed_event_bang()], requests);
 const browser = {[$$bc$property_key($$bc$keyword("setTimeout"))]: (tick, __delay) => { (() => { const _a = scheduled, _v = tick; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })();
 return 41; }, [$$bc$property_key($$bc$keyword("clearTimeout"))]: (__token) => (() => { const _a = cancellations; const _old = _a.value; _a.value = (((_x) => (_x + 1)))(_old); for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _a.value); return _a.value; })()};
-const composition = integration["create-passive-wasm-workbench-with-shell-factory"]((__emit_input) => ({[$$bc$property_key($$bc$keyword("renderFrame"))]: (frame) => rendered.push(frame), [$$bc$property_key($$bc$keyword("dispose"))]: () => (() => { const _a = disposed; const _old = _a.value; _a.value = (((_x) => (_x + 1)))(_old); for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _a.value); return _a.value; })()}), integration["project-persistent-term-frame"], browser, module, minimal_cwr1_bang(), workbench["->FixedTick"](16), policy(), (__receipt) => null);
+const composition = integration["create-passive-wasm-workbench-with-shell-factory"]((__emit_input) => { (() => { const _a = shell_input, _v = __emit_input; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })();
+return {[$$bc$property_key($$bc$keyword("renderFrame"))]: (frame) => rendered.push(frame), [$$bc$property_key($$bc$keyword("dispose"))]: () => (() => { const _a = disposed; const _old = _a.value; _a.value = (((_x) => (_x + 1)))(_old); for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _a.value); return _a.value; })()}; }, integration["project-persistent-term-frame"], browser, module, minimal_cwr1_bang(), workbench["->FixedTick"](16), policy(), (__receipt) => null);
 const direct = integration["project-persistent-term-frame"](term_bytes);
 test["expect"]($$bc$str(direct.player.position.x)).toBe("1");
 test["expect"](json_string(rendered)).toBe("[]");
 test["expect"]($$bc$str(requests.length)).toBe("1");
+(shell_input.value)({[$$bc$property_key($$bc$keyword("kind"))]: "keyboard", [$$bc$property_key($$bc$keyword("code"))]: "KeyD", [$$bc$property_key($$bc$keyword("phase"))]: "down", [$$bc$property_key($$bc$keyword("repeat"))]: false});
 (scheduled.value)();
-test["expect"]($$bc$str(requests.length)).toBe("4");
+test["expect"]($$bc$str(requests.length)).toBe("5");
 test["expect"]($$bc$str(rendered.length)).toBe("1");
 const frame = rendered[0];
 test["expect"](json_string([frame.player.position.x, frame.player.position.y, frame.player.position.z])).toBe("[1,2,3]");
@@ -258,7 +268,7 @@ test["expect"]((((_truthy) => _truthy !== false && _truthy != null)(frame.player
 test["expect"]($$bc$str(frame.world.platforms.length)).toBe("1");
 (composition.dispose)();
 (composition.dispose)();
-test["expect"]($$bc$str(requests.length)).toBe("5");
+test["expect"]($$bc$str(requests.length)).toBe("6");
 test["expect"]($$bc$str(disposed.value)).toBe("1");
 test["expect"]($$bc$str(cancellations.value)).toBe("1");
 (scheduled.value)();

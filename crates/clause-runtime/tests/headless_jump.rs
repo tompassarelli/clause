@@ -326,7 +326,7 @@ fn checked_program_package_with_scopes(
     let mut projection_schema = candidate.snapshot.constitution.schemas[0].clone();
     projection_schema.id = RelationSchemaLocalId::new(2);
     let base_role = projection_schema.roles[0].clone();
-    projection_schema.roles = (1..=14)
+    projection_schema.roles = (1..=20)
         .map(|role_id| {
             let mut role = base_role.clone();
             role.id = RoleLocalId::new(role_id);
@@ -397,6 +397,10 @@ fn physical_plan(package: &CheckedProcessPackage) -> ExecutablePhysicalPlanV1 {
     let constitution = package.constitution();
     let snapshot = constitution.snapshot();
     let application = ApplicationLocalId::new(1);
+    let role = |id| LocalRoleRefV2 {
+        schema: RelationSchemaLocalId::new(2),
+        role: RoleLocalId::new(id),
+    };
     ExecutablePhysicalPlanV1 {
         application_shape: constitution
             .application_shape(application)
@@ -410,6 +414,54 @@ fn physical_plan(package: &CheckedProcessPackage) -> ExecutablePhysicalPlanV1 {
         },
         refinement: ExecutableRefinementV1::ClosedApplicationRuleMachineV1,
         target: ExecutablePhysicalTargetV1::PortableScalarInterpreterV1,
+        input: Some(ExecutableInputPlanV1 {
+            events: vec![
+                ExecutableInputBindingV1 {
+                    role: role(15),
+                    source: ExecutableInputSourceV1::Keyboard {
+                        code: b"KeyA".to_vec(),
+                        phase: ExecutableKeyPhaseV1::Down,
+                    },
+                    occurrence: occurrence(0, &[-1.0]),
+                },
+                ExecutableInputBindingV1 {
+                    role: role(16),
+                    source: ExecutableInputSourceV1::Keyboard {
+                        code: b"KeyA".to_vec(),
+                        phase: ExecutableKeyPhaseV1::Up,
+                    },
+                    occurrence: occurrence(0, &[0.0]),
+                },
+                ExecutableInputBindingV1 {
+                    role: role(17),
+                    source: ExecutableInputSourceV1::Keyboard {
+                        code: b"KeyD".to_vec(),
+                        phase: ExecutableKeyPhaseV1::Down,
+                    },
+                    occurrence: occurrence(0, &[1.0]),
+                },
+                ExecutableInputBindingV1 {
+                    role: role(18),
+                    source: ExecutableInputSourceV1::Keyboard {
+                        code: b"KeyD".to_vec(),
+                        phase: ExecutableKeyPhaseV1::Up,
+                    },
+                    occurrence: occurrence(0, &[0.0]),
+                },
+                ExecutableInputBindingV1 {
+                    role: role(19),
+                    source: ExecutableInputSourceV1::Keyboard {
+                        code: b"Space".to_vec(),
+                        phase: ExecutableKeyPhaseV1::Down,
+                    },
+                    occurrence: occurrence(1, &[]),
+                },
+            ],
+            tick: ExecutableTickBindingV1 {
+                role: role(20),
+                entry: 2,
+            },
+        }),
         program: headless_program(TermScope {
             universe: constitution.universe(),
             semantics: constitution.semantics(),
@@ -513,6 +565,7 @@ fn exact_root_admission_policy(
                 },
             }],
             vec![],
+            vec![],
         )
         .expect("scope derivation root policy is coherent"),
         AdmissionAuthorizationEvidence::IrreducibleRoot {
@@ -547,6 +600,10 @@ impl CarrierFacts {
                 policy: self.root_policy,
                 local: JudgmentAuthorityLocalId::new(0),
             },
+            admission_authorization_issuer: RootAdmissionAuthorizationIssuerRef {
+                policy: self.root_policy,
+                local: AdmissionAuthorizationIssuerLocalId::new(0),
+            },
             trigger_ingress: ExecutableBoundaryFactV1 {
                 boundary: self.pure_boundary,
                 evidence: id!(ExternalEvidenceRef, 181),
@@ -561,6 +618,11 @@ impl CarrierFacts {
                 boundary: self.state_boundary,
                 evidence: id!(ExternalEvidenceRef, 186),
                 permission: EXECUTABLE_JUDGMENT_PERMISSION_V1,
+            },
+            admission_issuance_ingress: ExecutableBoundaryFactV1 {
+                boundary: self.state_boundary,
+                evidence: id!(ExternalEvidenceRef, 190),
+                permission: EXECUTABLE_ADMISSION_ISSUANCE_PERMISSION_V1,
             },
             admission_ingress: ExecutableBoundaryFactV1 {
                 boundary: self.state_boundary,
@@ -677,6 +739,7 @@ fn carrier_authority(checked: &CheckedProcessPackage) -> (AuthorityStore, Carrie
                         policy,
                     },
                 }],
+                vec![],
             )
             .expect("root policy is coherent"),
         )
@@ -1334,7 +1397,7 @@ fn persistent_wasm_session_keeps_generation_sequence_and_admission_custody() {
         Err(WasmProcessStatusV1::StaleSessionHandle)
     );
 
-    let admitted = apply(
+    let missing_issuance = apply(
         &mut boundary,
         command(
             3,
@@ -1343,6 +1406,121 @@ fn persistent_wasm_session_keeps_generation_sequence_and_admission_custody() {
                 session,
                 base: initial_world,
                 candidate,
+                authorization: id!(IssuedAdmissionAuthorizationOccurrenceId, 240),
+            }),
+        ),
+    );
+    assert!(matches!(
+        missing_issuance.kind,
+        WasmSessionEventKindV1::Rejected(WasmSessionRejectionV1::AdmissionRejected)
+    ));
+    for (expected_sequence, scope) in [
+        (
+            4,
+            WasmSessionAdmissionScopeV1 {
+                package: id!(ProcessPackageId, 241),
+                session,
+                base: initial_world,
+                candidate,
+            },
+        ),
+        (
+            5,
+            WasmSessionAdmissionScopeV1 {
+                package: package_id,
+                session: id!(RuntimeSessionId, 242),
+                base: initial_world,
+                candidate,
+            },
+        ),
+        (
+            6,
+            WasmSessionAdmissionScopeV1 {
+                package: package_id,
+                session,
+                base: id!(StateRevisionId, 243),
+                candidate,
+            },
+        ),
+        (
+            7,
+            WasmSessionAdmissionScopeV1 {
+                package: package_id,
+                session,
+                base: initial_world,
+                candidate: id!(CandidateDeltaId, 244),
+            },
+        ),
+    ] {
+        let rejected = apply(
+            &mut boundary,
+            command(
+                expected_sequence,
+                WasmSessionOperationV1::IssueAdmission(scope),
+            ),
+        );
+        assert!(matches!(
+            rejected.kind,
+            WasmSessionEventKindV1::Rejected(WasmSessionRejectionV1::AdmissionScopeRejected)
+        ));
+    }
+
+    let issued = apply(
+        &mut boundary,
+        command(
+            8,
+            WasmSessionOperationV1::IssueAdmission(WasmSessionAdmissionScopeV1 {
+                package: package_id,
+                session,
+                base: initial_world,
+                candidate,
+            }),
+        ),
+    );
+    let authorization = match issued.kind {
+        WasmSessionEventKindV1::AdmissionAuthorizationIssued {
+            occurrence,
+            package,
+            session: issued_session,
+            base,
+            candidate: issued_candidate,
+            state_revision_count,
+        } => {
+            assert_eq!(package, package_id);
+            assert_eq!(issued_session, session);
+            assert_eq!(base, initial_world);
+            assert_eq!(issued_candidate, candidate);
+            assert_eq!(state_revision_count, 1);
+            occurrence
+        }
+        other => panic!("unexpected Admission authorization event: {other:?}"),
+    };
+    let duplicate_issuance = apply(
+        &mut boundary,
+        command(
+            9,
+            WasmSessionOperationV1::IssueAdmission(WasmSessionAdmissionScopeV1 {
+                package: package_id,
+                session,
+                base: initial_world,
+                candidate,
+            }),
+        ),
+    );
+    assert!(matches!(
+        duplicate_issuance.kind,
+        WasmSessionEventKindV1::Rejected(WasmSessionRejectionV1::AuthorityRejected)
+    ));
+    let admitted = apply(
+        &mut boundary,
+        command(
+            10,
+            WasmSessionOperationV1::Admit(WasmSessionAdmissionV1 {
+                package: package_id,
+                session,
+                base: initial_world,
+                candidate,
+                authorization,
             }),
         ),
     );
@@ -1370,10 +1548,10 @@ fn persistent_wasm_session_keeps_generation_sequence_and_admission_custody() {
         other => panic!("unexpected Admission event: {other:?}"),
     }
 
-    let disposed = apply(&mut boundary, command(4, WasmSessionOperationV1::Dispose));
+    let disposed = apply(&mut boundary, command(11, WasmSessionOperationV1::Dispose));
     assert!(matches!(disposed.kind, WasmSessionEventKindV1::Disposed));
     let post_dispose =
-        encode_wasm_session_command_v1(&command(5, WasmSessionOperationV1::Dispose)).unwrap();
+        encode_wasm_session_command_v1(&command(12, WasmSessionOperationV1::Dispose)).unwrap();
     assert_eq!(
         boundary.command(&post_dispose),
         Err(WasmProcessStatusV1::StaleSessionHandle)
@@ -1391,7 +1569,7 @@ fn persistent_wasm_session_keeps_generation_sequence_and_admission_custody() {
 }
 
 #[test]
-fn shipped_cwr1_has_external_physical_plan_and_successive_constitutive_admission() {
+fn shipped_cwr1_has_external_physical_plan_and_successive_issued_admission() {
     let request = browser_fixture_request();
     let exact = encode_wasm_process_request_v1(&request).expect("browser CWR1 fixture encodes");
     let fixture_path = concat!(
@@ -1484,6 +1662,42 @@ fn shipped_cwr1_has_external_physical_plan_and_successive_constitutive_admission
             }
         }
         let (candidate, base) = candidate_scope.expect("fixture tick emits one candidate");
+        let issued = boundary
+            .command(
+                &encode_wasm_session_command_v1(&WasmSessionCommandV1 {
+                    handle,
+                    expected_sequence: sequence,
+                    operation: WasmSessionOperationV1::IssueAdmission(
+                        WasmSessionAdmissionScopeV1 {
+                            package,
+                            session: request.authority.session,
+                            base,
+                            candidate,
+                        },
+                    ),
+                })
+                .expect("fixture Admission issuance command encodes"),
+            )
+            .expect("fixture Admission issuance command transports");
+        sequence += 1;
+        assert_eq!(issued.accepted_sequence, sequence);
+        let authorization = match issued.kind {
+            WasmSessionEventKindV1::AdmissionAuthorizationIssued {
+                occurrence,
+                package: issued_package,
+                session,
+                base: issued_base,
+                candidate: issued_candidate,
+                ..
+            } => {
+                assert_eq!(issued_package, package);
+                assert_eq!(session, request.authority.session);
+                assert_eq!(issued_base, base);
+                assert_eq!(issued_candidate, candidate);
+                occurrence
+            }
+            other => panic!("unexpected fixture Admission issuance event: {other:?}"),
+        };
         let event = boundary
             .command(
                 &encode_wasm_session_command_v1(&WasmSessionCommandV1 {
@@ -1494,11 +1708,18 @@ fn shipped_cwr1_has_external_physical_plan_and_successive_constitutive_admission
                         session: request.authority.session,
                         base,
                         candidate,
+                        authorization,
                     }),
                 })
                 .expect("fixture Admission command encodes"),
             )
             .expect("fixture Admission command transports");
+        let exact_event = encode_wasm_session_event_v1(&event);
+        assert!(exact_event.len() <= WASM_SESSION_EVENT_LIMIT_V1);
+        assert_eq!(
+            decode_wasm_session_event_v1(&exact_event).expect("fixture Admission CSE1 decodes"),
+            event
+        );
         sequence += 1;
         assert_eq!(event.accepted_sequence, sequence);
         let (successor, projection) = match event.kind {
