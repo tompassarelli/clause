@@ -8,10 +8,12 @@ use clause_package::{
 
 mod executable;
 mod persistent_session;
+mod persistent_wasm_boundary;
 mod wasm_boundary;
 
 pub use executable::*;
 pub use persistent_session::*;
+pub use persistent_wasm_boundary::*;
 pub use wasm_boundary::*;
 
 #[derive(Clone, Debug, Eq, PartialEq)]

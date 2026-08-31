@@ -17,7 +17,7 @@ const MAX_EXPRESSION_DEPTH: usize = 64;
 #[derive(Clone, Copy, Debug)]
 enum RuntimeIdentitySeedV1 {
     Legacy,
-    Session(RuntimeSessionId),
+    Exact([u8; IDENTITY_BYTES]),
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -412,7 +412,7 @@ impl ExecutableProcessRuntimeV1 {
         package: CheckedProcessPackage,
         authority: clause_package::AuthorityStore,
         application: ApplicationId,
-        session: RuntimeSessionId,
+        identity_seed: [u8; IDENTITY_BYTES],
     ) -> Result<Self, ExecutableErrorV1> {
         let program = executable_program_v1(&package, application)?;
         let package_id = package.id();
@@ -423,7 +423,7 @@ impl ExecutableProcessRuntimeV1 {
             package_id,
             application,
             program,
-            RuntimeIdentitySeedV1::Session(session),
+            RuntimeIdentitySeedV1::Exact(identity_seed),
         )
     }
 
@@ -2035,12 +2035,12 @@ fn runtime_identity_bytes(
             bytes[clause_package::IDENTITY_BYTES - 1] = tag;
             Ok(bytes)
         }
-        RuntimeIdentitySeedV1::Session(session) => {
+        RuntimeIdentitySeedV1::Exact(identity_seed) => {
             let domain = (domain as u64).to_be_bytes();
             let ordinal = ordinal.to_be_bytes();
             Ok(runtime_domain_hash(
                 "clause/runtime-identity/v1",
-                &[session.as_bytes(), &domain, &ordinal],
+                &[&identity_seed, &domain, &ordinal],
             ))
         }
     }
@@ -2067,9 +2067,16 @@ pub(super) fn persistent_candidate_id_v1(
     session: RuntimeSessionId,
     ordinal: u64,
 ) -> CandidateDeltaId {
+    persistent_candidate_id_from_seed_v1(*session.as_bytes(), ordinal)
+}
+
+pub(super) fn persistent_candidate_id_from_seed_v1(
+    identity_seed: [u8; IDENTITY_BYTES],
+    ordinal: u64,
+) -> CandidateDeltaId {
     CandidateDeltaId::from_bytes(
         runtime_identity_bytes(
-            RuntimeIdentitySeedV1::Session(session),
+            RuntimeIdentitySeedV1::Exact(identity_seed),
             RuntimeIdentityDomainV1::Candidate,
             ordinal,
         )

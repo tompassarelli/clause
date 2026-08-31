@@ -7,7 +7,7 @@ use clause_package::{
     ProgramRevisionId, RootPolicyAnchor, RunId, RuntimeSessionId, StateRevisionId,
 };
 
-use super::executable::persistent_candidate_id_v1;
+use super::executable::{persistent_candidate_id_from_seed_v1, persistent_candidate_id_v1};
 use super::{
     ExecutableAuthorityFactsV1, ExecutableCandidateV1, ExecutableCarrierErrorV1, ExecutableErrorV1,
     ExecutableProcessRuntimeV1, ExecutableStateRevisionV1, ExecutableStepV1, ExecutableValueV1,
@@ -36,11 +36,30 @@ impl PersistentProcessSessionV1 {
         application: ApplicationId,
         facts: ExecutableAuthorityFactsV1,
     ) -> Result<Self, PersistentProcessSessionErrorV1> {
+        Self::open_with_identity_seed(
+            package,
+            authority,
+            application,
+            facts,
+            *facts.session.as_bytes(),
+        )
+    }
+
+    /// Open one native session with an explicit nominal allocation seed.
+    /// The seed affects runtime occurrence identities only; the separately
+    /// typed RuntimeSession remains the continuity and authority pin.
+    pub fn open_with_identity_seed(
+        package: CheckedProcessPackage,
+        authority: AuthorityStore,
+        application: ApplicationId,
+        facts: ExecutableAuthorityFactsV1,
+        identity_seed: [u8; clause_package::IDENTITY_BYTES],
+    ) -> Result<Self, PersistentProcessSessionErrorV1> {
         let mut runtime = ExecutableProcessRuntimeV1::instantiate_session(
             package,
             authority,
             application,
-            facts.session,
+            identity_seed,
         )?;
         runtime.start_carrier_process(facts)?;
         Ok(Self {
@@ -57,6 +76,16 @@ impl PersistentProcessSessionV1 {
     #[must_use]
     pub fn candidate_id_for(session: RuntimeSessionId, candidate_ordinal: u64) -> CandidateDeltaId {
         persistent_candidate_id_v1(session, candidate_ordinal)
+    }
+
+    /// Derive a candidate identity for a session opened with an explicit
+    /// nominal allocation seed.
+    #[must_use]
+    pub fn candidate_id_for_seed(
+        identity_seed: [u8; clause_package::IDENTITY_BYTES],
+        candidate_ordinal: u64,
+    ) -> CandidateDeltaId {
+        persistent_candidate_id_from_seed_v1(identity_seed, candidate_ordinal)
     }
 
     /// Decode and execute one construct-blind occurrence without requesting

@@ -635,3 +635,208 @@ fn bounded_wasm_bytes_return_only_the_admitted_observation() {
     );
     assert_eq!(boundary.response(), &[]);
 }
+
+#[test]
+fn persistent_wasm_session_keeps_generation_sequence_and_admission_custody() {
+    let package = checked_program_package(1);
+    let package_id = package.id();
+    let session = id!(RuntimeSessionId, 120);
+    let open = WasmSessionOpenV1 {
+        package_bytes: package.exact_bytes().to_vec(),
+        application: ApplicationLocalId::new(1),
+        authority: WasmAuthorityInputV1 {
+            program: id!(ProgramId, 123),
+            change: id!(ProgramChangeOccurrenceId, 124),
+            session,
+            policy: id!(RuntimePolicyId, 121),
+            session_start: id!(SessionStartOccurrenceId, 122),
+            root_policy: id!(RootPolicyId, 125),
+            occurrence_boundary: id!(BoundaryRef, 126),
+            state_boundary: id!(BoundaryRef, 127),
+            occurrence_evidence: id!(ExternalEvidenceRef, 181),
+            occurrence_evidence_bytes: vec![181],
+            judgment_evidence: id!(ExternalEvidenceRef, 186),
+            judgment_evidence_bytes: vec![186],
+            admission_evidence: id!(ExternalEvidenceRef, 190),
+            admission_evidence_bytes: vec![190],
+            budget_units: 100,
+        },
+        identity_seed: raw_id(210),
+        limits: WasmSessionLimitsV1 {
+            max_commands: 16,
+            command_bytes: 4096,
+            event_bytes: 1024,
+        },
+    };
+    let exact_open = encode_wasm_session_open_v1(&open).expect("bounded CWS1 open encodes");
+    assert_eq!(
+        decode_wasm_session_open_v1(&exact_open).expect("exact CWS1 open decodes"),
+        open
+    );
+    let mut boundary = WasmPersistentSessionBoundaryV1::new();
+    let opened = boundary.open(&exact_open).expect("one persistent slot opens");
+    let handle = opened.handle;
+    let (initial_world, initial_run, initial_activation) = match opened.kind {
+        WasmSessionEventKindV1::Opened {
+            session: actual_session,
+            world,
+            run,
+            activation,
+            state_revision_count,
+        } => {
+            assert_eq!(actual_session, session);
+            assert_eq!(state_revision_count, 1);
+            (world, run, activation)
+        }
+        other => panic!("unexpected open event: {other:?}"),
+    };
+
+    let command = |expected_sequence, operation| WasmSessionCommandV1 {
+        handle,
+        expected_sequence,
+        operation,
+    };
+    let apply = |boundary: &mut WasmPersistentSessionBoundaryV1,
+                 command: WasmSessionCommandV1| {
+        let bytes = encode_wasm_session_command_v1(&command).expect("bounded CWI1 command encodes");
+        let decoded = decode_wasm_session_command_v1(&bytes).expect("exact CWI1 command decodes");
+        assert_eq!(decoded, command);
+        let event = boundary.command(&bytes).expect("valid command transports");
+        let event_bytes = encode_wasm_session_event_v1(&event);
+        assert_eq!(
+            decode_wasm_session_event_v1(&event_bytes).expect("exact CSE1 event decodes"),
+            event
+        );
+        event
+    };
+
+    let input_one = apply(
+        &mut boundary,
+        command(
+            0,
+            WasmSessionOperationV1::Input(
+                encode_executable_occurrence_v1(&occurrence(0, &[1.0])).unwrap(),
+            ),
+        ),
+    );
+    assert_eq!(input_one.accepted_sequence, 1);
+    let input_two = apply(
+        &mut boundary,
+        command(
+            1,
+            WasmSessionOperationV1::Input(
+                encode_executable_occurrence_v1(&occurrence(2, &[0.25])).unwrap(),
+            ),
+        ),
+    );
+    assert_eq!(input_two.accepted_sequence, 2);
+    let candidate_event = apply(
+        &mut boundary,
+        command(
+            2,
+            WasmSessionOperationV1::Candidate(
+                encode_executable_occurrence_v1(&occurrence(2, &[0.25])).unwrap(),
+            ),
+        ),
+    );
+    let candidate = match candidate_event.kind {
+        WasmSessionEventKindV1::CandidateAccepted {
+            candidate,
+            base,
+            run,
+            activation,
+            state_revision_count,
+            ..
+        } => {
+            assert_eq!(base, initial_world);
+            assert_eq!(run, initial_run);
+            assert_eq!(activation, initial_activation);
+            assert_eq!(state_revision_count, 1);
+            candidate
+        }
+        other => panic!("unexpected candidate event: {other:?}"),
+    };
+
+    let duplicate = encode_wasm_session_command_v1(&command(
+        2,
+        WasmSessionOperationV1::Input(
+            encode_executable_occurrence_v1(&occurrence(2, &[0.25])).unwrap(),
+        ),
+    ))
+    .unwrap();
+    assert_eq!(
+        boundary.command(&duplicate),
+        Err(WasmProcessStatusV1::SequenceRejected)
+    );
+    let stale = encode_wasm_session_command_v1(&WasmSessionCommandV1 {
+        handle: WasmSessionHandleV1 {
+            slot: handle.slot,
+            generation: handle.generation + 1,
+        },
+        expected_sequence: 3,
+        operation: WasmSessionOperationV1::Dispose,
+    })
+    .unwrap();
+    assert_eq!(
+        boundary.command(&stale),
+        Err(WasmProcessStatusV1::StaleSessionHandle)
+    );
+
+    let admitted = apply(
+        &mut boundary,
+        command(
+            3,
+            WasmSessionOperationV1::Admit(WasmSessionAdmissionV1 {
+                package: package_id,
+                session,
+                base: initial_world,
+                candidate,
+                root_policy: id!(RootPolicyId, 130),
+                authorization: AdmissionAuthorizationLocalId::new(0),
+            }),
+        ),
+    );
+    match admitted.kind {
+        WasmSessionEventKindV1::AdmissionAccepted {
+            predecessor,
+            successor,
+            run,
+            activation,
+            session: admitted_session,
+            state_revision_count,
+        } => {
+            assert_eq!(predecessor, initial_world);
+            assert_ne!(successor, initial_world);
+            assert_ne!(run, initial_run);
+            assert_ne!(activation, initial_activation);
+            assert_eq!(admitted_session, session);
+            assert_eq!(state_revision_count, 2);
+        }
+        other => panic!("unexpected Admission event: {other:?}"),
+    }
+
+    let disposed = apply(
+        &mut boundary,
+        command(4, WasmSessionOperationV1::Dispose),
+    );
+    assert!(matches!(disposed.kind, WasmSessionEventKindV1::Disposed));
+    let post_dispose = encode_wasm_session_command_v1(&command(
+        5,
+        WasmSessionOperationV1::Dispose,
+    ))
+    .unwrap();
+    assert_eq!(
+        boundary.command(&post_dispose),
+        Err(WasmProcessStatusV1::StaleSessionHandle)
+    );
+
+    let reopened = boundary
+        .open(&exact_open)
+        .expect("slot reuse publishes a fresh generation");
+    assert_eq!(reopened.handle.slot, handle.slot);
+    assert_eq!(reopened.handle.generation, handle.generation + 1);
+    assert_eq!(
+        boundary.command(&post_dispose),
+        Err(WasmProcessStatusV1::StaleSessionHandle)
+    );
+}

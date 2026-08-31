@@ -14,7 +14,7 @@ const REQUEST_MAGIC: &[u8; 4] = b"CWR1";
 const RESPONSE_MAGIC: &[u8; 4] = b"CWO1";
 const MAX_OCCURRENCES: usize = 256;
 const MAX_RENDER_SLOTS: usize = 256;
-const MAX_EVIDENCE_BYTES: usize = 64 * 1024;
+pub(super) const MAX_EVIDENCE_BYTES: usize = 64 * 1024;
 
 pub const WASM_PROCESS_REQUEST_LIMIT_V1: usize = 4 * 1024 * 1024;
 pub const WASM_PROCESS_RESPONSE_LIMIT_V1: usize = 64 * 1024;
@@ -29,6 +29,11 @@ pub enum WasmProcessStatusV1 {
     PackageRejected = 4,
     AuthorityRejected = 5,
     ProcessRejected = 6,
+    SessionOccupied = 7,
+    StaleSessionHandle = 8,
+    SequenceRejected = 9,
+    SessionExhausted = 10,
+    SessionLimitReached = 11,
 }
 
 impl fmt::Display for WasmProcessStatusV1 {
@@ -218,25 +223,8 @@ pub fn encode_wasm_process_request_v1(
     bytes.extend_from_slice(REQUEST_MAGIC);
     put_blob(&mut bytes, &request.package_bytes)?;
     bytes.extend_from_slice(&request.application.get().to_le_bytes());
+    encode_wasm_authority_input_v1(&mut bytes, &request.authority)?;
     let a = &request.authority;
-    for id in [
-        a.program.as_bytes(),
-        a.change.as_bytes(),
-        a.session.as_bytes(),
-        a.policy.as_bytes(),
-        a.session_start.as_bytes(),
-        a.root_policy.as_bytes(),
-        a.occurrence_boundary.as_bytes(),
-        a.state_boundary.as_bytes(),
-        a.occurrence_evidence.as_bytes(),
-    ] {
-        bytes.extend_from_slice(id);
-    }
-    put_blob(&mut bytes, &a.occurrence_evidence_bytes)?;
-    bytes.extend_from_slice(a.judgment_evidence.as_bytes());
-    put_blob(&mut bytes, &a.judgment_evidence_bytes)?;
-    bytes.extend_from_slice(a.admission_evidence.as_bytes());
-    put_blob(&mut bytes, &a.admission_evidence_bytes)?;
     bytes.extend_from_slice(&a.budget_units.to_le_bytes());
     put_count(&mut bytes, request.occurrences.len())?;
     for occurrence in &request.occurrences {
@@ -252,6 +240,31 @@ pub fn encode_wasm_process_request_v1(
     Ok(bytes)
 }
 
+pub(super) fn encode_wasm_authority_input_v1(
+    bytes: &mut Vec<u8>,
+    a: &WasmAuthorityInputV1,
+) -> Result<(), WasmProcessStatusV1> {
+    for id in [
+        a.program.as_bytes(),
+        a.change.as_bytes(),
+        a.session.as_bytes(),
+        a.policy.as_bytes(),
+        a.session_start.as_bytes(),
+        a.root_policy.as_bytes(),
+        a.occurrence_boundary.as_bytes(),
+        a.state_boundary.as_bytes(),
+        a.occurrence_evidence.as_bytes(),
+    ] {
+        bytes.extend_from_slice(id);
+    }
+    put_blob(bytes, &a.occurrence_evidence_bytes)?;
+    bytes.extend_from_slice(a.judgment_evidence.as_bytes());
+    put_blob(bytes, &a.judgment_evidence_bytes)?;
+    bytes.extend_from_slice(a.admission_evidence.as_bytes());
+    put_blob(bytes, &a.admission_evidence_bytes)?;
+    Ok(())
+}
+
 pub fn decode_wasm_process_request_v1(
     bytes: &[u8],
 ) -> Result<WasmProcessRequestV1, WasmProcessStatusV1> {
@@ -264,23 +277,8 @@ pub fn decode_wasm_process_request_v1(
     }
     let package_bytes = d.blob(WASM_PROCESS_REQUEST_LIMIT_V1)?.to_vec();
     let application = ApplicationLocalId::new(d.u32()?);
-    let authority = WasmAuthorityInputV1 {
-        program: ProgramId::from_bytes(d.identity()?),
-        change: ProgramChangeOccurrenceId::from_bytes(d.identity()?),
-        session: RuntimeSessionId::from_bytes(d.identity()?),
-        policy: RuntimePolicyId::from_bytes(d.identity()?),
-        session_start: SessionStartOccurrenceId::from_bytes(d.identity()?),
-        root_policy: RootPolicyId::from_bytes(d.identity()?),
-        occurrence_boundary: BoundaryRef::from_bytes(d.identity()?),
-        state_boundary: BoundaryRef::from_bytes(d.identity()?),
-        occurrence_evidence: ExternalEvidenceRef::from_bytes(d.identity()?),
-        occurrence_evidence_bytes: d.blob(MAX_EVIDENCE_BYTES)?.to_vec(),
-        judgment_evidence: ExternalEvidenceRef::from_bytes(d.identity()?),
-        judgment_evidence_bytes: d.blob(MAX_EVIDENCE_BYTES)?.to_vec(),
-        admission_evidence: ExternalEvidenceRef::from_bytes(d.identity()?),
-        admission_evidence_bytes: d.blob(MAX_EVIDENCE_BYTES)?.to_vec(),
-        budget_units: d.u64()?,
-    };
+    let mut authority = decode_wasm_authority_input_v1(&mut d)?;
+    authority.budget_units = d.u64()?;
     let occurrence_count = d.count(MAX_OCCURRENCES)?;
     let occurrences = (0..occurrence_count)
         .map(|_| d.blob(WASM_PROCESS_REQUEST_LIMIT_V1).map(<[u8]>::to_vec))
@@ -301,6 +299,28 @@ pub fn decode_wasm_process_request_v1(
     };
     validate_shape(&request)?;
     Ok(request)
+}
+
+pub(super) fn decode_wasm_authority_input_v1(
+    d: &mut Decoder<'_>,
+) -> Result<WasmAuthorityInputV1, WasmProcessStatusV1> {
+    Ok(WasmAuthorityInputV1 {
+        program: ProgramId::from_bytes(d.identity()?),
+        change: ProgramChangeOccurrenceId::from_bytes(d.identity()?),
+        session: RuntimeSessionId::from_bytes(d.identity()?),
+        policy: RuntimePolicyId::from_bytes(d.identity()?),
+        session_start: SessionStartOccurrenceId::from_bytes(d.identity()?),
+        root_policy: RootPolicyId::from_bytes(d.identity()?),
+        occurrence_boundary: BoundaryRef::from_bytes(d.identity()?),
+        state_boundary: BoundaryRef::from_bytes(d.identity()?),
+        occurrence_evidence: ExternalEvidenceRef::from_bytes(d.identity()?),
+        occurrence_evidence_bytes: d.blob(MAX_EVIDENCE_BYTES)?.to_vec(),
+        judgment_evidence: ExternalEvidenceRef::from_bytes(d.identity()?),
+        judgment_evidence_bytes: d.blob(MAX_EVIDENCE_BYTES)?.to_vec(),
+        admission_evidence: ExternalEvidenceRef::from_bytes(d.identity()?),
+        admission_evidence_bytes: d.blob(MAX_EVIDENCE_BYTES)?.to_vec(),
+        budget_units: 0,
+    })
 }
 
 pub fn run_wasm_process_request_v1(
@@ -411,6 +431,29 @@ fn establish_authority(
     ),
     WasmProcessStatusV1,
 > {
+    establish_authority_inner(package, input, true)
+}
+
+pub(super) fn establish_persistent_authority(
+    package: &CheckedProcessPackage,
+    input: &WasmAuthorityInputV1,
+) -> Result<(AuthorityStore, ExecutableAuthorityFactsV1), WasmProcessStatusV1> {
+    let (authority, facts, _) = establish_authority_inner(package, input, false)?;
+    Ok((authority, facts))
+}
+
+fn establish_authority_inner(
+    package: &CheckedProcessPackage,
+    input: &WasmAuthorityInputV1,
+    include_initial_admission: bool,
+) -> Result<
+    (
+        AuthorityStore,
+        ExecutableAuthorityFactsV1,
+        AdmissionAuthorizationEvidence,
+    ),
+    WasmProcessStatusV1,
+> {
     let semantics = package.constitution().semantics();
     let snapshot = package.constitution().snapshot();
     let revision = ProgramRevisionPreimage {
@@ -446,6 +489,15 @@ fn establish_authority(
         policy: input.root_policy,
         local: JudgmentAuthorityLocalId::new(0),
     };
+    let state_admission_grants = include_initial_admission.then(|| RootStateAdmissionGrant {
+        authorization: admission_authorization,
+        scope: CheckedStateAdmissionScope {
+            package: package.id(),
+            session: input.session,
+            base: initial_state,
+            delta: CandidateDeltaId::from_bytes(reserved_identity(80)),
+        },
+    });
     let root = RootPolicyAnchor::establish_with_governance(
         input.root_policy,
         vec![RootGenesisGrant {
@@ -458,15 +510,7 @@ fn establish_authority(
             },
         }],
         vec![],
-        vec![RootStateAdmissionGrant {
-            authorization: admission_authorization,
-            scope: CheckedStateAdmissionScope {
-                package: package.id(),
-                session: input.session,
-                base: initial_state,
-                delta: CandidateDeltaId::from_bytes(reserved_identity(80)),
-            },
-        }],
+        state_admission_grants.into_iter().collect(),
         vec![RootJudgmentAuthorityGrant {
             authority: judgment_authority,
             scope: JudgmentAuthorityScope {
@@ -589,13 +633,13 @@ fn encode_values(values: &[ExecutableValueV1]) -> Result<Vec<u8>, WasmProcessSta
     Ok(bytes)
 }
 
-fn put_count(bytes: &mut Vec<u8>, count: usize) -> Result<(), WasmProcessStatusV1> {
+pub(super) fn put_count(bytes: &mut Vec<u8>, count: usize) -> Result<(), WasmProcessStatusV1> {
     let count = u16::try_from(count).map_err(|_| WasmProcessStatusV1::RequestOutOfBounds)?;
     bytes.extend_from_slice(&count.to_le_bytes());
     Ok(())
 }
 
-fn put_blob(bytes: &mut Vec<u8>, blob: &[u8]) -> Result<(), WasmProcessStatusV1> {
+pub(super) fn put_blob(bytes: &mut Vec<u8>, blob: &[u8]) -> Result<(), WasmProcessStatusV1> {
     let count = u32::try_from(blob.len()).map_err(|_| WasmProcessStatusV1::RequestOutOfBounds)?;
     bytes.extend_from_slice(&count.to_le_bytes());
     bytes.extend_from_slice(blob);
@@ -609,17 +653,17 @@ fn reserved_identity(tag: u8) -> [u8; IDENTITY_BYTES] {
     bytes
 }
 
-struct Decoder<'a> {
+pub(super) struct Decoder<'a> {
     bytes: &'a [u8],
     offset: usize,
 }
 
 impl<'a> Decoder<'a> {
-    const fn new(bytes: &'a [u8]) -> Self {
+    pub(super) const fn new(bytes: &'a [u8]) -> Self {
         Self { bytes, offset: 0 }
     }
 
-    fn take(&mut self, count: usize) -> Result<&'a [u8], WasmProcessStatusV1> {
+    pub(super) fn take(&mut self, count: usize) -> Result<&'a [u8], WasmProcessStatusV1> {
         let end = self
             .offset
             .checked_add(count)
@@ -632,7 +676,7 @@ impl<'a> Decoder<'a> {
         Ok(value)
     }
 
-    fn u16(&mut self) -> Result<u16, WasmProcessStatusV1> {
+    pub(super) fn u16(&mut self) -> Result<u16, WasmProcessStatusV1> {
         Ok(u16::from_le_bytes(
             self.take(2)?
                 .try_into()
@@ -640,7 +684,7 @@ impl<'a> Decoder<'a> {
         ))
     }
 
-    fn u32(&mut self) -> Result<u32, WasmProcessStatusV1> {
+    pub(super) fn u32(&mut self) -> Result<u32, WasmProcessStatusV1> {
         Ok(u32::from_le_bytes(
             self.take(4)?
                 .try_into()
@@ -648,7 +692,7 @@ impl<'a> Decoder<'a> {
         ))
     }
 
-    fn u64(&mut self) -> Result<u64, WasmProcessStatusV1> {
+    pub(super) fn u64(&mut self) -> Result<u64, WasmProcessStatusV1> {
         Ok(u64::from_le_bytes(
             self.take(8)?
                 .try_into()
@@ -656,7 +700,7 @@ impl<'a> Decoder<'a> {
         ))
     }
 
-    fn identity(&mut self) -> Result<[u8; IDENTITY_BYTES], WasmProcessStatusV1> {
+    pub(super) fn identity(&mut self) -> Result<[u8; IDENTITY_BYTES], WasmProcessStatusV1> {
         self.take(IDENTITY_BYTES)?
             .try_into()
             .map_err(|_| WasmProcessStatusV1::MalformedRequest)
@@ -670,7 +714,7 @@ impl<'a> Decoder<'a> {
         Ok(count)
     }
 
-    fn blob(&mut self, maximum: usize) -> Result<&'a [u8], WasmProcessStatusV1> {
+    pub(super) fn blob(&mut self, maximum: usize) -> Result<&'a [u8], WasmProcessStatusV1> {
         let count =
             usize::try_from(self.u32()?).map_err(|_| WasmProcessStatusV1::RequestOutOfBounds)?;
         if count > maximum {
@@ -693,7 +737,7 @@ impl<'a> Decoder<'a> {
         Ok(())
     }
 
-    fn is_complete(&self) -> bool {
+    pub(super) fn is_complete(&self) -> bool {
         self.offset == self.bytes.len()
     }
 }
