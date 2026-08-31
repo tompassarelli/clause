@@ -596,6 +596,118 @@
              :remainingBudget (little-safe-u64 bytes 245)
              :stateRevisionCount (little-u32 bytes 253)})
 
+          (= tag 10)
+          (let [action Any (parse-blob bytes 369 cse1-max-bytes "CSE1 effect action")
+                resource Any (parse-blob bytes (.-next action) cse1-max-bytes
+                                         "CSE1 effect resource")
+                payload Any (parse-blob bytes (.-next resource) cse1-max-bytes
+                                        "CSE1 effect payload")
+                count-end Int (require-range bytes (.-next payload) 4
+                                             "CSE1 effect StateRevision count")]
+            (when (not= count-end (.-length bytes))
+              (throw (new Error "CSE1 effect intent has trailing bytes")))
+            {:kind "effect-intent" :slot slot :generation generation :sequence sequence
+             :intentId (identity-at 21)
+             :run (identity-at 53)
+             :activation (identity-at 85)
+             :step (identity-at 117)
+             :contractIndex (little-u32 bytes 149)
+             :capability {:snapshot (identity-at 153)
+                          :local (little-u32 bytes 185)}
+             :scope {:application {:snapshot (identity-at 189)
+                                   :local (little-u32 bytes 221)}
+                     :mode {:snapshot (identity-at 225)
+                            :operator (little-u32 bytes 257)
+                            :local (little-u32 bytes 261)}
+                     :programRevision (identity-at 265)
+                     :world (identity-at 297)
+                     :sessionId (identity-at 329)
+                     :remainingBudget (little-safe-u64 bytes 361)}
+             :actionBytes (.-bytes action)
+             :resourceBytes (.-bytes resource)
+             :payloadBytes (.-bytes payload)
+             :stateRevisionCount (little-u32 bytes (.-next payload))})
+
+          (= tag 11)
+          (do
+            (when (not= (.-length bytes) 25)
+              (throw (new Error "CSE1 absent effect intent has an invalid shape")))
+            {:kind "effect-intent-absent" :slot slot :generation generation :sequence sequence
+             :stateRevisionCount (little-u32 bytes 21)})
+
+          (= tag 12)
+          (do
+            (when (not= (.-length bytes) 89)
+              (throw (new Error "CSE1 effect authorization has an invalid shape")))
+            {:kind "effect-authorization" :slot slot :generation generation :sequence sequence
+             :authorizationId (identity-at 21)
+             :intentId (identity-at 53)
+             :stateRevisionCount (little-u32 bytes 85)})
+
+          (= tag 13)
+          (let [action Any (parse-blob bytes 117 cse1-max-bytes "CSE1 attempted action")
+                resource Any (parse-blob bytes (.-next action) cse1-max-bytes
+                                         "CSE1 attempted resource")
+                payload Any (parse-blob bytes (.-next resource) cse1-max-bytes
+                                        "CSE1 attempted payload")
+                count-end Int (require-range bytes (.-next payload) 4
+                                             "CSE1 attempt StateRevision count")]
+            (when (not= count-end (.-length bytes))
+              (throw (new Error "CSE1 effect attempt has trailing bytes")))
+            {:kind "effect-attempt" :slot slot :generation generation :sequence sequence
+             :attemptId (identity-at 21)
+             :intentId (identity-at 53)
+             :authorizationId (identity-at 85)
+             :actionBytes (.-bytes action)
+             :resourceBytes (.-bytes resource)
+             :payloadBytes (.-bytes payload)
+             :stateRevisionCount (little-u32 bytes (.-next payload))})
+
+          (= tag 14)
+          (let [receipt-tag Int (byte-at bytes 85)
+                receipt-offset Int 86
+                receipt-end Int (cond
+                                  (= receipt-tag 0) receipt-offset
+                                  (= receipt-tag 1)
+                                  (require-range bytes receipt-offset identity-bytes
+                                                 "CSE1 effect receipt identity")
+                                  :else
+                                  (throw (new Error "CSE1 effect receipt tag is invalid")))
+                observation-tag Int (byte-at bytes receipt-end)
+                observation-offset Int (inc receipt-end)
+                observation-end Int (cond
+                                      (= observation-tag 0) observation-offset
+                                      (= observation-tag 1)
+                                      (require-range bytes observation-offset identity-bytes
+                                                     "CSE1 effect Observation identity")
+                                      :else
+                                      (throw (new Error
+                                              "CSE1 effect Observation tag is invalid")))
+                judgment-offset Int observation-end
+                judgment-end Int (require-range bytes judgment-offset identity-bytes
+                                                "CSE1 effect Judgment identity")
+                disposition-offset Int judgment-end
+                count-offset Int (require-range bytes disposition-offset 1
+                                                "CSE1 effect disposition")
+                end Int (require-range bytes count-offset 4
+                                       "CSE1 effect StateRevision count")
+                disposition Int (byte-at bytes disposition-offset)]
+            (when (or (not= end (.-length bytes))
+                      (and (not= disposition 0) (not= disposition 1)))
+              (throw (new Error "CSE1 effect settlement has an invalid shape")))
+            {:kind "effect-settlement" :slot slot :generation generation :sequence sequence
+             :intentId (identity-at 21)
+             :attemptId (identity-at 53)
+             :receiptId (if (= receipt-tag 1)
+                          (identity-at receipt-offset)
+                          nil)
+             :observationId (if (= observation-tag 1)
+                              (identity-at observation-offset)
+                              nil)
+             :judgmentId (identity-at judgment-offset)
+             :disposition (if (= disposition 0) "receipt-observed" "no-receipt")
+             :stateRevisionCount (little-u32 bytes count-offset)})
+
           :else
           {:kind "input" :slot slot :generation generation :sequence sequence})))))
 
@@ -910,6 +1022,14 @@
     value
     (throw (new Error "Wasm candidate is invalid"))))
 
+(defn require-identity
+  [value Any
+   label String] Any
+  (if (and (exact-byte-array? value identity-bytes)
+           (= (.-length value) identity-bytes))
+    value
+    (throw (new Error (str label " must carry one exact Clause identity")))))
+
 (js/export
   (defn advance-session-occurrence!
     [module Any
@@ -941,6 +1061,88 @@
       (when (not= (.-kind event) "resumed")
         (throw (new Error "CWI1 resumption did not produce Resumed")))
       event)))
+
+(js/export
+  (defn query-pending-effect-intent!
+    [module Any
+     incoming-session Any] Any
+    (let [session WasmSession (require-live-session incoming-session)
+          event Any (apply-session-command!
+                     module session (encode-session-command! session 10 nil))]
+      (when (and (not= (.-kind event) "effect-intent")
+                 (not= (.-kind event) "effect-intent-absent"))
+        (throw (new Error "CWI1 effect query produced an invalid event")))
+      event)))
+
+(js/export
+  (defn emit-effect-intent!
+    [module Any
+     incoming-session Any] Any
+    (let [session WasmSession (require-live-session incoming-session)
+          event Any (apply-session-command!
+                     module session (encode-session-command! session 11 nil))]
+      (when (not= (.-kind event) "effect-intent")
+        (throw (new Error "CWI1 effect emission did not produce an exact intent")))
+      event)))
+
+(js/export
+  (defn issue-effect-authorization!
+    [module Any
+     incoming-session Any
+     intent-id Any] Any
+    (let [session WasmSession (require-live-session incoming-session)
+          intent Any (require-identity intent-id "effect intent")
+          event Any (apply-session-command!
+                     module session (encode-session-command! session 12 intent))]
+      (when (not= (.-kind event) "effect-authorization")
+        (throw (new Error "CWI1 effect issuance did not produce exact authority")))
+      event)))
+
+(js/export
+  (defn begin-effect-attempt!
+    [module Any
+     incoming-session Any
+     authorization-id Any] Any
+    (let [session WasmSession (require-live-session incoming-session)
+          authorization Any (require-identity authorization-id "effect authorization")
+          event Any (apply-session-command!
+                     module session (encode-session-command! session 13 authorization))]
+      (when (not= (.-kind event) "effect-attempt")
+        (throw (new Error "CWI1 effect attempt did not reach its boundary")))
+      event)))
+
+(js/export
+  (defn settle-effect-attempt!
+    [module Any
+     incoming-session Any
+     attempt-id Any
+     status Any
+     exact-receipt Any] Any
+    (let [session WasmSession (require-live-session incoming-session)
+          attempt Any (require-identity attempt-id "effect attempt")
+          payload Any []]
+      (doseq [byte Int attempt]
+        (.push payload byte))
+      (cond
+        (and (nil? status) (nil? exact-receipt))
+        (.push payload 0)
+
+        (or (nil? status) (nil? exact-receipt)
+            (not (.isSafeInteger Number status))
+            (< status 0) (> status 4294967295)
+            (not (exact-byte-array? exact-receipt session-command-max-bytes)))
+        (throw (new Error "effect receipt must be absent or exact bounded status and bytes"))
+
+        :else
+        (do
+          (.push payload 1)
+          (append-u32! payload status)
+          (append-blob! payload exact-receipt)))
+      (let [event Any (apply-session-command!
+                       module session (encode-session-command! session 14 payload))]
+        (when (not= (.-kind event) "effect-settlement")
+          (throw (new Error "CWI1 effect settlement did not produce a Judgment")))
+        event))))
 
 (js/export
   (defn admit-session-candidate!

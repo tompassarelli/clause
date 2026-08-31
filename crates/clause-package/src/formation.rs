@@ -192,6 +192,9 @@ impl ContinuationContractV2 {
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct EffectIntentContractPreimageV2 {
     pub intent_domain: FormationTargetV2,
+    pub action_role: RoleLocalId,
+    pub resource_role: RoleLocalId,
+    pub payload_role: RoleLocalId,
     pub required_capability: CapabilityLocalId,
 }
 
@@ -869,6 +872,20 @@ fn validate_mode(
             "prerequisite cause projection",
             |entry| entry.component,
         )?;
+    }
+    for effect in &mode.contract.effect_intents {
+        for role in [
+            effect.action_role,
+            effect.resource_role,
+            effect.payload_role,
+        ] {
+            if !declared.contains(&role) {
+                return Err(FormationErrorV2::UnknownRole(LocalRoleRefV2 {
+                    schema: mode.schema,
+                    role,
+                }));
+            }
+        }
     }
     validate_mode_contract(scope, indexes, mode)?;
     validate_dependencies(scope, indexes, &mode.direct_dependencies)

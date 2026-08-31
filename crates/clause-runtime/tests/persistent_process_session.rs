@@ -3,6 +3,10 @@ use clause_runtime::*;
 use std::fmt::Write;
 
 const BROWSER_PROCESS_CONTINUATION_ALLOCATION_ROOT_TAG: u8 = 220;
+const ONGOING_EFFECT_SOURCE: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../test-vectors/process-v2/ongoing-effect.clause"
+));
 
 macro_rules! id {
     ($kind:ident, $tag:expr) => {
@@ -87,6 +91,193 @@ fn checked_program_package() -> CheckedProcessPackage {
         .expect("program package checks")
 }
 
+fn checked_ongoing_effect_package() -> (CheckedProcessPackage, ApplicationLocalId, ModeLocalId) {
+    let scope = TermScope {
+        universe: id!(UniverseId, 151),
+        semantics: id!(ClauseSemanticsId, 152),
+    };
+    let cst = read_canonical_source_v1(ONGOING_EFFECT_SOURCE)
+        .expect("ongoing effect source reads losslessly");
+    let allocation =
+        plan_independent_canonical_source_allocations_v1(&cst, id!(ProgramChangeOccurrenceId, 153))
+            .expect("ongoing effect source receives rooted semantic allocations");
+    let compiled = elaborate_canonical_source_package_v1(
+        &cst,
+        CanonicalSourceContextV1 {
+            universe: scope.universe,
+            semantics: scope.semantics,
+        },
+        &allocation,
+    )
+    .expect("ongoing effect source reaches the checked package boundary");
+    assert!(compiled.unsupported.is_empty());
+
+    let decoded = decode_process_package(compiled.checked_package.exact_bytes())
+        .expect("source-produced effect package decodes");
+    let mut candidate = decoded.candidate().clone();
+    let constitution = &mut candidate.snapshot.constitution;
+    let schema = constitution.schemas[0].clone();
+    let operator = constitution.operators[0].clone();
+    let mode = operator.modes[0].clone();
+    assert_eq!(
+        mode.contract.productivity.kind,
+        ProductivityKindV2::Reactive
+    );
+    assert!(matches!(
+        mode.contract.continuation,
+        ContinuationContractV2::Suspensible {
+            use_policy: ContinuationUseV2::Linear,
+            ..
+        }
+    ));
+    assert_eq!(mode.contract.effect_intents.len(), 1);
+
+    let mut next_formation = constitution
+        .formations
+        .iter()
+        .map(|formation| formation.id.get())
+        .max()
+        .unwrap_or(0)
+        .checked_add(1)
+        .expect("fixture Formation space remains available");
+    let mut bindings = Vec::with_capacity(schema.roles.len());
+    let mut binding_formations = Vec::new();
+    for role in &schema.roles {
+        let value = if mode.known_roles.binary_search(&role.id).is_ok() {
+            let id = FormationLocalId::new(next_formation);
+            next_formation = next_formation
+                .checked_add(1)
+                .expect("fixture Formation space remains available");
+            let payload = role
+                .target
+                .type_term
+                .as_atom()
+                .expect("source role domain is one exact Atom")
+                .canonical_payload()
+                .to_vec();
+            constitution.formations.push(FormationJudgmentPreimageV2 {
+                id,
+                context: vec![],
+                term: Term::atom(
+                    scope,
+                    b"clause/test-effect-role-value-v1".to_vec(),
+                    payload,
+                    EqualityContract::ExactOctetsV1,
+                )
+                .expect("fixture role value is one exact Atom"),
+                target: role.target.clone(),
+                direct_dependencies: vec![],
+            });
+            binding_formations.push(id);
+            RoleBindingValuePreimageV2::Known(id)
+        } else {
+            RoleBindingValuePreimageV2::Produced
+        };
+        bindings.push(RoleBindingPreimageV2 {
+            role: role.id,
+            occurrence: 0,
+            value,
+        });
+    }
+
+    let application_formation = FormationLocalId::new(next_formation);
+    let mut dependencies = vec![
+        LocalSemanticDependencyV2::RelationSchema(schema.id),
+        LocalSemanticDependencyV2::Operator(operator.id),
+        LocalSemanticDependencyV2::Mode(LocalModeRefV2 {
+            operator: operator.id,
+            mode: mode.id,
+        }),
+    ];
+    dependencies.extend(schema.roles.iter().map(|role| {
+        LocalSemanticDependencyV2::Role(LocalRoleRefV2 {
+            schema: schema.id,
+            role: role.id,
+        })
+    }));
+    dependencies.extend(
+        binding_formations
+            .iter()
+            .copied()
+            .map(LocalSemanticDependencyV2::Formation),
+    );
+    dependencies.extend(
+        mode.contract
+            .productivity
+            .obligations
+            .iter()
+            .copied()
+            .map(LocalSemanticDependencyV2::Formation),
+    );
+    for capability in &constitution.capabilities {
+        dependencies.push(LocalSemanticDependencyV2::Capability(capability.id));
+        dependencies.push(LocalSemanticDependencyV2::Formation(capability.formation));
+    }
+    dependencies.sort();
+    dependencies.dedup();
+    constitution.formations.push(FormationJudgmentPreimageV2 {
+        id: application_formation,
+        context: vec![],
+        term: Term::atom(
+            scope,
+            b"clause/test-effect-application-v1".to_vec(),
+            b"dispatch".to_vec(),
+            EqualityContract::ExactOctetsV1,
+        )
+        .expect("fixture Application term is one exact Atom"),
+        target: schema.result_domain.clone(),
+        direct_dependencies: dependencies.clone(),
+    });
+    constitution
+        .formations
+        .sort_by_key(|formation| formation.id);
+
+    let application = ApplicationLocalId::new(1);
+    let mut dependency_closure = dependencies;
+    dependency_closure.push(LocalSemanticDependencyV2::Formation(application_formation));
+    dependency_closure.sort();
+    constitution
+        .applications
+        .push(ApplicationDeclarationPreimageV2 {
+            id: application,
+            form: ApplicationFormPreimageV2 {
+                formation: application_formation,
+                schema: schema.id,
+                operator: operator.id,
+                eligible_modes: vec![mode.id],
+                bindings,
+                context_requirements: vec![],
+                constraint_discharges: vec![],
+                result_domain: schema.result_domain,
+                direct_dependencies: vec![],
+                dependency_closure,
+            },
+        });
+
+    let initial_payload = Term::atom(
+        scope,
+        b"clause/test-effect-world-v1".to_vec(),
+        b"initial".to_vec(),
+        EqualityContract::ExactOctetsV1,
+    )
+    .expect("fixture initial world is one exact Atom");
+    candidate.initial_state_views = vec![InitialStateViewV2 {
+        session: id!(RuntimeSessionId, 120),
+        payload: initial_payload.clone(),
+        canonical_state_snapshot: canonical_term_bytes(&initial_payload)
+            .expect("fixture initial world has canonical bytes")
+            .into_boxed_slice(),
+    }];
+    candidate.claimed_snapshot =
+        derive_program_snapshot_id(&candidate.snapshot).expect("effect snapshot is canonical");
+    let bytes = encode_process_package(&candidate).expect("effect package encodes");
+    let checked = check_process_package(
+        decode_process_package(&bytes).expect("encoded effect package decodes"),
+    )
+    .expect("source-owned ongoing effect package checks");
+    (checked, application, mode.id)
+}
+
 fn open_fresh_session() -> PersistentProcessSessionV1 {
     let package = checked_program_package();
     let application = application(&package);
@@ -154,6 +345,40 @@ fn physical_plan(package: &CheckedProcessPackage) -> ExecutablePhysicalPlanV1 {
     }
 }
 
+fn ongoing_effect_physical_plan(
+    package: &CheckedProcessPackage,
+    application: ApplicationLocalId,
+    mode: ModeLocalId,
+) -> ExecutablePhysicalPlanV1 {
+    let constitution = package.constitution();
+    let declaration = constitution
+        .preimage()
+        .applications
+        .iter()
+        .find(|candidate| candidate.id == application)
+        .expect("effect fixture retains its exact Application");
+    ExecutablePhysicalPlanV1 {
+        application_shape: constitution
+            .application_shape(application)
+            .expect("effect fixture Application has one exact semantic shape"),
+        mode: ModeId {
+            operator: OperatorRef {
+                snapshot: constitution.snapshot(),
+                local: declaration.form.operator,
+            },
+            local: mode,
+        },
+        refinement: ExecutableRefinementV1::ClosedApplicationRuleMachineV1,
+        target: ExecutablePhysicalTargetV1::PortableScalarInterpreterV1,
+        input: None,
+        program: ExecutableProgramV1 {
+            initial_configuration: vec![number(0.0)],
+            rules: vec![],
+            projection: None,
+        },
+    }
+}
+
 fn browser_process_continuation_fixture_request() -> WasmProcessRequestV1 {
     let package = checked_program_package();
     let plan = physical_plan(&package);
@@ -191,6 +416,34 @@ fn browser_process_continuation_fixture_request() -> WasmProcessRequestV1 {
             budget_units: 100,
         },
         occurrences: vec![opaque(0, 2.0), opaque(1, 3.0)],
+        render_slots: vec![],
+    }
+}
+
+fn browser_ongoing_effect_fixture_request() -> WasmProcessRequestV1 {
+    let (package, application_local, mode_local) = checked_ongoing_effect_package();
+    let plan = ongoing_effect_physical_plan(&package, application_local, mode_local);
+    let application = ApplicationId {
+        snapshot: package.constitution().snapshot(),
+        local: application_local,
+    };
+    let (_, facts) = carrier_authority(&package);
+    let allocation = RuntimeAllocationEpochV1::recorded_for(
+        raw_id(222),
+        &package,
+        application,
+        &plan,
+        facts.executable,
+    )
+    .expect("browser effect fixture records one exact allocation epoch");
+    WasmProcessRequestV1 {
+        package_bytes: package.exact_bytes().to_vec(),
+        application: application_local,
+        physical_plan_bytes: encode_executable_physical_plan_v1(&plan)
+            .expect("browser effect physical plan encodes"),
+        allocation,
+        authority: wasm_authority_input(),
+        occurrences: vec![opaque(0, 1.0)],
         render_slots: vec![],
     }
 }
@@ -474,6 +727,458 @@ fn application(package: &CheckedProcessPackage) -> ApplicationId {
         snapshot: package.constitution().snapshot(),
         local: ApplicationLocalId::new(1),
     }
+}
+
+fn wasm_authority_input() -> WasmAuthorityInputV1 {
+    WasmAuthorityInputV1 {
+        program: id!(ProgramId, 123),
+        change: id!(ProgramChangeOccurrenceId, 124),
+        session: id!(RuntimeSessionId, 120),
+        policy: id!(RuntimePolicyId, 121),
+        session_start: id!(SessionStartOccurrenceId, 122),
+        root_policy: id!(RootPolicyId, 125),
+        occurrence_boundary: id!(BoundaryRef, 126),
+        state_boundary: id!(BoundaryRef, 127),
+        occurrence_evidence: id!(ExternalEvidenceRef, 181),
+        occurrence_evidence_bytes: vec![181],
+        judgment_evidence: id!(ExternalEvidenceRef, 186),
+        judgment_evidence_bytes: vec![186],
+        admission_evidence: id!(ExternalEvidenceRef, 190),
+        admission_evidence_bytes: vec![190],
+        budget_units: 100,
+    }
+}
+
+#[test]
+fn source_owned_ongoing_effect_lifecycle_remains_non_authoritative() {
+    let (package, application_local, mode_local) = checked_ongoing_effect_package();
+    let application = ApplicationId {
+        snapshot: package.constitution().snapshot(),
+        local: application_local,
+    };
+    let plan = ongoing_effect_physical_plan(&package, application_local, mode_local);
+    let physical_mode = plan.mode;
+    let mode = package
+        .constitution()
+        .mode_by_id(plan.mode)
+        .expect("effect Mode is retained by its source-produced constitution");
+    assert_eq!(
+        mode.contract.productivity.kind,
+        ProductivityKindV2::Reactive
+    );
+    assert!(matches!(
+        mode.contract.continuation,
+        ContinuationContractV2::Suspensible {
+            use_policy: ContinuationUseV2::Linear,
+            ..
+        }
+    ));
+    assert_eq!(mode.contract.effect_intents.len(), 1);
+
+    let (authority, facts) = carrier_authority(&package);
+    let mut session =
+        PersistentProcessSessionV1::open(package, authority, application, plan, facts.executable)
+            .expect("source-owned effect session opens without a fake state checker");
+    let initial_state_count = session
+        .carrier()
+        .expect("effect session retains one carrier")
+        .state_revision_count();
+    let activation = session.activation().expect("effect Activation is live");
+
+    let first = session
+        .apply_opaque_input(&opaque(0, 1.0))
+        .expect("ongoing effect Activation advances once");
+    let suspension = session
+        .suspend()
+        .expect("source-declared linear continuation suspends");
+    assert_eq!(suspension.activation, activation);
+    session
+        .resume()
+        .expect("source-declared linear continuation resumes once");
+    let second = session
+        .apply_opaque_input(&opaque(0, 2.0))
+        .expect("same ongoing Activation advances again");
+    assert_ne!(first.id, second.id);
+    assert_eq!(
+        session.activation().expect("Activation remains live"),
+        activation
+    );
+
+    let intent = session
+        .emit_effect_intent()
+        .expect("the Mode emits its exact external-effect intent");
+    assert_eq!(
+        session
+            .pending_effect_intent()
+            .expect("pending intent query succeeds")
+            .map(|pending| pending.id),
+        Some(intent.id)
+    );
+    assert_eq!(intent.scope.application, application);
+    assert_eq!(intent.scope.mode, physical_mode);
+    assert_eq!(intent.scope.world, facts.initial_state);
+    let authorization = session
+        .issue_effect_authorization(intent.id)
+        .expect("Clause issues exact at-most-once capability use");
+    let attempt = session
+        .begin_effect_attempt(authorization.id)
+        .expect("the issued capability authorizes one attempt");
+    let duplicate = session
+        .begin_effect_attempt(authorization.id)
+        .expect_err("the same capability occurrence cannot authorize twice");
+    assert!(matches!(
+        duplicate,
+        PersistentProcessSessionErrorV1::Carrier(ExecutableCarrierErrorV1::Ingress(
+            ProcessIngressError::Record { cause, .. }
+        )) if matches!(
+            cause.as_ref(),
+            ProcessError::EffectAuthorizationAlreadyConsumed(id) if *id == authorization.id
+        )
+    ));
+
+    let settlement = session
+        .settle_effect_attempt(attempt.id, Some((202, b"accepted".to_vec())))
+        .expect("the exact foreign receipt is retained and judged");
+    assert_eq!(
+        settlement.disposition,
+        EffectJudgmentDispositionV1::ReceiptObserved
+    );
+    let receipt = settlement
+        .receipt
+        .expect("receipt settlement retains receipt identity");
+    let observation = settlement
+        .observation
+        .expect("receipt settlement retains ordinary Observation identity");
+    assert!(
+        session
+            .pending_effect_intent()
+            .expect("settled pending-intent query succeeds")
+            .is_none()
+    );
+
+    let carrier = session
+        .carrier()
+        .expect("settled lifecycle remains queryable");
+    assert_eq!(carrier.effect_intent(intent.id), Some(&intent));
+    assert_eq!(
+        carrier.issued_effect_authorization(authorization.id),
+        Some(&authorization)
+    );
+    assert_eq!(carrier.effect_attempt(attempt.id), Some(&attempt));
+    assert_eq!(
+        carrier
+            .effect_receipt(receipt)
+            .expect("receipt is retained")
+            .exact_bytes,
+        b"accepted"
+    );
+    assert!(matches!(
+        carrier
+            .observation(observation)
+            .expect("receipt-backed Observation is retained")
+            .provenance,
+        OccurrenceProvenance::ReportedByEffectReceipt(id) if id == receipt
+    ));
+    assert!(
+        carrier
+            .causal_predecessors(CausalRef::EffectIntent(intent.id))
+            .expect("intent has one exact causal frontier")
+            .contains(&CausalRef::Step(intent.emitted_by))
+    );
+    assert!(
+        carrier
+            .causal_predecessors(CausalRef::EffectAuthorization(authorization.id))
+            .expect("authorization cites its intent")
+            .contains(&CausalRef::EffectIntent(intent.id))
+    );
+    assert!(
+        carrier
+            .causal_predecessors(CausalRef::EffectAttempt(attempt.id))
+            .expect("attempt cites its authorization")
+            .contains(&CausalRef::EffectAuthorization(authorization.id))
+    );
+    assert!(
+        carrier
+            .causal_predecessors(CausalRef::Observation(observation))
+            .expect("Observation cites its receipt")
+            .contains(&CausalRef::EffectReceipt(receipt))
+    );
+    assert!(
+        carrier
+            .causal_predecessors(CausalRef::EffectJudgment(settlement.judgment))
+            .expect("Judgment cites its evidence")
+            .contains(&CausalRef::Observation(observation))
+    );
+
+    let no_receipt_intent = session
+        .emit_effect_intent()
+        .expect("the ongoing Mode can emit a later independent intent");
+    let no_receipt_authorization = session
+        .issue_effect_authorization(no_receipt_intent.id)
+        .expect("later intent receives its own exact capability use");
+    let no_receipt_attempt = session
+        .begin_effect_attempt(no_receipt_authorization.id)
+        .expect("later capability use begins one attempt");
+    let no_receipt = session
+        .settle_effect_attempt(no_receipt_attempt.id, None)
+        .expect("absence of a receipt is an explicit distinct Judgment");
+    assert_eq!(
+        no_receipt.disposition,
+        EffectJudgmentDispositionV1::NoReceipt
+    );
+    assert!(no_receipt.receipt.is_none());
+    assert!(no_receipt.observation.is_none());
+
+    let carrier = session
+        .carrier()
+        .expect("complete effect history remains queryable");
+    assert_eq!(carrier.state_revision_count(), initial_state_count);
+    assert_eq!(carrier.candidate_delta_count(), 0);
+    assert!(session.last_admitted().is_none());
+}
+
+#[test]
+fn persistent_wasm_boundary_transports_the_exact_effect_lifecycle() {
+    let (package, application_local, mode_local) = checked_ongoing_effect_package();
+    let application = ApplicationId {
+        snapshot: package.constitution().snapshot(),
+        local: application_local,
+    };
+    let plan = ongoing_effect_physical_plan(&package, application_local, mode_local);
+    let (_, facts) = carrier_authority(&package);
+    let allocation = RuntimeAllocationEpochV1::recorded_for(
+        raw_id(221),
+        &package,
+        application,
+        &plan,
+        facts.executable,
+    )
+    .expect("effect Wasm fixture records one exact allocation epoch");
+    let open = WasmSessionOpenV1 {
+        package_bytes: package.exact_bytes().to_vec(),
+        application: application_local,
+        physical_plan_bytes: encode_executable_physical_plan_v1(&plan)
+            .expect("effect physical plan encodes"),
+        authority: wasm_authority_input(),
+        allocation: WasmSessionAllocationV1::Rematerialize(allocation),
+        limits: WasmSessionLimitsV1 {
+            max_commands: 16,
+            command_bytes: 4096,
+            event_bytes: WASM_SESSION_EVENT_LIMIT_V1 as u32,
+        },
+    };
+    let open_bytes = encode_wasm_session_open_v1(&open).expect("effect CWS1 open encodes");
+    assert_eq!(
+        decode_wasm_session_open_v1(&open_bytes).expect("effect CWS1 open decodes"),
+        open
+    );
+    let mut boundary = WasmPersistentSessionBoundaryV1::new();
+    let opened = boundary
+        .open(&open_bytes)
+        .expect("effect Wasm session opens");
+    let handle = opened.handle;
+    let initial_state_count = match opened.kind {
+        WasmSessionEventKindV1::Opened {
+            state_revision_count,
+            ..
+        } => state_revision_count,
+        other => panic!("unexpected effect open event: {other:?}"),
+    };
+    let command = |expected_sequence, operation| WasmSessionCommandV1 {
+        handle,
+        expected_sequence,
+        operation,
+    };
+    let apply = |boundary: &mut WasmPersistentSessionBoundaryV1, command: WasmSessionCommandV1| {
+        let bytes =
+            encode_wasm_session_command_v1(&command).expect("bounded effect command encodes");
+        assert_eq!(
+            decode_wasm_session_command_v1(&bytes).expect("effect command decodes"),
+            command
+        );
+        let event = boundary.command(&bytes).expect("effect command transports");
+        let event_bytes = encode_wasm_session_event_v1(&event);
+        assert_eq!(
+            decode_wasm_session_event_v1(&event_bytes).expect("effect event decodes"),
+            event
+        );
+        event
+    };
+
+    assert!(matches!(
+        apply(
+            &mut boundary,
+            command(0, WasmSessionOperationV1::QueryPendingEffectIntent)
+        )
+        .kind,
+        WasmSessionEventKindV1::EffectIntentAbsent { state_revision_count }
+            if state_revision_count == initial_state_count
+    ));
+    assert!(matches!(
+        apply(
+            &mut boundary,
+            command(1, WasmSessionOperationV1::Input(opaque(0, 1.0)))
+        )
+        .kind,
+        WasmSessionEventKindV1::InputAccepted { state_revision_count, .. }
+            if state_revision_count == initial_state_count
+    ));
+    let emitted = apply(
+        &mut boundary,
+        command(2, WasmSessionOperationV1::EmitEffectIntent),
+    );
+    let (intent, action_bytes, resource_bytes, payload_bytes) = match emitted.kind {
+        WasmSessionEventKindV1::EffectIntentAvailable {
+            intent,
+            action_bytes,
+            resource_bytes,
+            payload_bytes,
+            state_revision_count,
+            ..
+        } => {
+            assert_eq!(state_revision_count, initial_state_count);
+            (intent, action_bytes, resource_bytes, payload_bytes)
+        }
+        other => panic!("unexpected effect intent event: {other:?}"),
+    };
+    let queried = apply(
+        &mut boundary,
+        command(3, WasmSessionOperationV1::QueryPendingEffectIntent),
+    );
+    assert!(matches!(
+        queried.kind,
+        WasmSessionEventKindV1::EffectIntentAvailable {
+            intent: queried_intent,
+            action_bytes: ref queried_action,
+            resource_bytes: ref queried_resource,
+            payload_bytes: ref queried_payload,
+            ..
+        } if queried_intent == intent
+            && queried_action == &action_bytes
+            && queried_resource == &resource_bytes
+            && queried_payload == &payload_bytes
+    ));
+    let issued = apply(
+        &mut boundary,
+        command(4, WasmSessionOperationV1::IssueEffectAuthorization(intent)),
+    );
+    let authorization = match issued.kind {
+        WasmSessionEventKindV1::EffectAuthorizationIssued {
+            authorization,
+            intent: authorized_intent,
+            state_revision_count,
+        } => {
+            assert_eq!(authorized_intent, intent);
+            assert_eq!(state_revision_count, initial_state_count);
+            authorization
+        }
+        other => panic!("unexpected effect authorization event: {other:?}"),
+    };
+    let begun = apply(
+        &mut boundary,
+        command(5, WasmSessionOperationV1::BeginEffectAttempt(authorization)),
+    );
+    let attempt = match begun.kind {
+        WasmSessionEventKindV1::EffectAttemptBegun {
+            attempt,
+            intent: attempted_intent,
+            authorization: used_authorization,
+            action_bytes: attempted_action,
+            resource_bytes: attempted_resource,
+            payload_bytes: attempted_payload,
+            state_revision_count,
+        } => {
+            assert_eq!(attempted_intent, intent);
+            assert_eq!(used_authorization, authorization);
+            assert_eq!(attempted_action, action_bytes);
+            assert_eq!(attempted_resource, resource_bytes);
+            assert_eq!(attempted_payload, payload_bytes);
+            assert_eq!(state_revision_count, initial_state_count);
+            attempt
+        }
+        other => panic!("unexpected effect attempt event: {other:?}"),
+    };
+    let settled = apply(
+        &mut boundary,
+        command(
+            6,
+            WasmSessionOperationV1::SettleEffectAttempt {
+                attempt,
+                receipt: Some(WasmSessionEffectReceiptV1 {
+                    status: 202,
+                    exact_bytes: b"accepted".to_vec(),
+                }),
+            },
+        ),
+    );
+    assert!(matches!(
+        settled.kind,
+        WasmSessionEventKindV1::EffectSettled {
+            intent: settled_intent,
+            attempt: settled_attempt,
+            receipt: Some(_),
+            observation: Some(_),
+            disposition: EffectJudgmentDispositionV1::ReceiptObserved,
+            state_revision_count,
+            ..
+        } if settled_intent == intent
+            && settled_attempt == attempt
+            && state_revision_count == initial_state_count
+    ));
+
+    let second_intent = match apply(
+        &mut boundary,
+        command(7, WasmSessionOperationV1::EmitEffectIntent),
+    )
+    .kind
+    {
+        WasmSessionEventKindV1::EffectIntentAvailable { intent, .. } => intent,
+        other => panic!("unexpected second effect intent event: {other:?}"),
+    };
+    let second_authorization = match apply(
+        &mut boundary,
+        command(
+            8,
+            WasmSessionOperationV1::IssueEffectAuthorization(second_intent),
+        ),
+    )
+    .kind
+    {
+        WasmSessionEventKindV1::EffectAuthorizationIssued { authorization, .. } => authorization,
+        other => panic!("unexpected second effect authorization event: {other:?}"),
+    };
+    let second_attempt = match apply(
+        &mut boundary,
+        command(
+            9,
+            WasmSessionOperationV1::BeginEffectAttempt(second_authorization),
+        ),
+    )
+    .kind
+    {
+        WasmSessionEventKindV1::EffectAttemptBegun { attempt, .. } => attempt,
+        other => panic!("unexpected second effect attempt event: {other:?}"),
+    };
+    assert!(matches!(
+        apply(
+            &mut boundary,
+            command(
+                10,
+                WasmSessionOperationV1::SettleEffectAttempt {
+                    attempt: second_attempt,
+                    receipt: None,
+                }
+            )
+        )
+        .kind,
+        WasmSessionEventKindV1::EffectSettled {
+            receipt: None,
+            observation: None,
+            disposition: EffectJudgmentDispositionV1::NoReceipt,
+            state_revision_count,
+            ..
+        } if state_revision_count == initial_state_count
+    ));
 }
 
 #[test]
@@ -953,6 +1658,33 @@ fn shipped_process_continuation_cwr1_is_exact() {
     assert_eq!(
         decode_wasm_process_request_v1(&tracked)
             .expect("tracked generic continuation CWR1 decodes"),
+        request
+    );
+}
+
+#[test]
+fn shipped_ongoing_effect_cwr1_is_exact() {
+    let request = browser_ongoing_effect_fixture_request();
+    let exact = encode_wasm_process_request_v1(&request)
+        .expect("ongoing effect browser CWR1 fixture encodes");
+    let fixture_path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../browser/jump-arena-shell/fixtures/wasm-ongoing-effect-v1/",
+        "ongoing-effect-v1.cwr1.hex"
+    );
+    if std::env::var_os("CLAUSE_UPDATE_BROWSER_ONGOING_EFFECT_CWR1").is_some() {
+        std::fs::write(fixture_path, lowercase_hex_lines(&exact))
+            .expect("ongoing effect browser CWR1 fixture update succeeds");
+        return;
+    }
+    let tracked = decode_hex(
+        &std::fs::read_to_string(fixture_path)
+            .expect("tracked ongoing effect browser CWR1 fixture reads"),
+    );
+    assert_eq!(tracked, exact);
+    assert_eq!(
+        decode_wasm_process_request_v1(&tracked)
+            .expect("tracked ongoing effect browser CWR1 decodes"),
         request
     );
 }

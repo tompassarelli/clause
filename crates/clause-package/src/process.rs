@@ -14,7 +14,8 @@ use crate::authority::{
 };
 use crate::canonical::ProgramSnapshotPreimageV2;
 use crate::formation::{
-    ContinuationUseV2, FormationTargetV2, ResolvedProgramConstitutionV2, SemanticDependencyV2,
+    ContinuationUseV2, FormationTargetV2, ResolvedProgramConstitutionV2,
+    RoleBindingValuePreimageV2, SemanticDependencyV2,
 };
 use crate::identity::*;
 use crate::provenance::{
@@ -38,6 +39,7 @@ const MAX_STEP_FRONTIER_ITEMS: usize = 1_000_000;
 const MAX_STEP_OBSERVATIONS: usize = 1_000_000;
 const MAX_CAUSAL_OCCURRENCES: usize = 4_000_000;
 const MAX_CAUSAL_EDGES: usize = 4_000_000;
+const MAX_EFFECT_RECEIPT_BYTES: usize = 1024 * 1024;
 
 /// Candidate package. Its claimed snapshot and records remain inert.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -630,6 +632,87 @@ pub struct Step {
     proposal: StepProposalV2,
 }
 
+/// Exact authoritative context in which one Mode emitted an external-effect
+/// intent. These pins scope capability use; they do not assert that an effect
+/// occurred or authorize a world revision.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct EffectScopeV1 {
+    pub application: ApplicationId,
+    pub mode: ModeId,
+    pub program_revision: ProgramRevisionId,
+    pub world: StateRevisionId,
+    pub session: RuntimeSessionId,
+    pub budget: Budget,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EffectIntentOccurrenceV1 {
+    pub id: EffectIntentId,
+    pub emitted_by: StepRef,
+    pub contract_index: u32,
+    pub required_capability: CapabilityRef,
+    pub scope: EffectScopeV1,
+    pub action: Term,
+    pub resource: Term,
+    pub payload: Term,
+}
+
+/// A Clause-issued, exact, at-most-once authorization for one intent.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct IssuedEffectAuthorizationV1 {
+    pub id: IssuedEffectAuthorizationOccurrenceId,
+    pub intent: EffectIntentId,
+    pub capability: CapabilityRef,
+    pub scope: EffectScopeV1,
+    pub action: Term,
+    pub resource: Term,
+    pub payload: Term,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EffectAttemptOccurrenceV1 {
+    pub id: EffectAttemptId,
+    pub intent: EffectIntentId,
+    pub authorization: IssuedEffectAuthorizationOccurrenceId,
+    pub scope: EffectScopeV1,
+    pub action: Term,
+    pub resource: Term,
+    pub payload: Term,
+}
+
+/// A foreign-boundary report that the exact attempt occurred. Status and
+/// bytes remain reported evidence; the receipt never asserts world truth.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EffectReceiptOccurrenceV1 {
+    pub id: EffectReceiptId,
+    pub attempt: EffectAttemptId,
+    pub status: u32,
+    pub exact_bytes: Vec<u8>,
+}
+
+/// An ordinary Observation whose exact evidence is one effect receipt.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EffectObservationV1 {
+    pub receipt: EffectReceiptId,
+    pub observation: ObservationProposalV2,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum EffectJudgmentDispositionV1 {
+    ReceiptObserved,
+    NoReceipt,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EffectJudgmentOccurrenceV1 {
+    pub id: EffectJudgmentOccurrenceId,
+    pub intent: EffectIntentId,
+    pub attempt: EffectAttemptId,
+    pub receipt: Option<EffectReceiptId>,
+    pub observation: Option<ObservationId>,
+    pub disposition: EffectJudgmentDispositionV1,
+}
+
 impl Step {
     #[must_use]
     pub fn proposal(&self) -> &StepProposalV2 {
@@ -696,6 +779,12 @@ pub enum ProcessRecordV2 {
     Judgment(JudgmentOccurrenceV2),
     IssuedAdmissionAuthorization(IssuedStateAdmissionAuthorizationV2),
     AdmissionDecision(StateAdmissionDecisionV2),
+    EffectIntent(EffectIntentOccurrenceV1),
+    IssuedEffectAuthorization(IssuedEffectAuthorizationV1),
+    EffectAttempt(EffectAttemptOccurrenceV1),
+    EffectReceipt(EffectReceiptOccurrenceV1),
+    EffectObservation(EffectObservationV1),
+    EffectJudgment(EffectJudgmentOccurrenceV1),
 }
 
 /// Current cumulative carrier usage at the constitutional live limits.
@@ -735,6 +824,13 @@ pub struct ProcessCarrier {
     resumptions: BTreeMap<ResumptionOccurrenceId, ResumptionOccurrenceV2>,
     handoffs: BTreeMap<HandoffOccurrenceId, HandoffOccurrenceV2>,
     cancellations: BTreeMap<CancellationOccurrenceId, CancellationOccurrenceV2>,
+    effect_intents: BTreeMap<EffectIntentId, EffectIntentOccurrenceV1>,
+    issued_effect_authorizations:
+        BTreeMap<IssuedEffectAuthorizationOccurrenceId, IssuedEffectAuthorizationV1>,
+    consumed_effect_authorizations: BTreeSet<IssuedEffectAuthorizationOccurrenceId>,
+    effect_attempts: BTreeMap<EffectAttemptId, EffectAttemptOccurrenceV1>,
+    effect_receipts: BTreeMap<EffectReceiptId, EffectReceiptOccurrenceV1>,
+    effect_judgments: BTreeMap<EffectJudgmentOccurrenceId, EffectJudgmentOccurrenceV1>,
     boundary_permission_uses: BTreeMap<(BoundaryRef, BoundaryPermissionLocalId), u32>,
     causal_predecessors: BTreeMap<CausalRef, BTreeSet<CausalRef>>,
     causal_edge_count: usize,
@@ -786,6 +882,15 @@ enum RecordUndo {
     Steps(Vec<StepUndo>),
     Judgment(JudgmentOccurrenceId),
     IssuedAdmissionAuthorization(IssuedAdmissionAuthorizationOccurrenceId),
+    EffectIntent(EffectIntentId),
+    IssuedEffectAuthorization(IssuedEffectAuthorizationOccurrenceId),
+    EffectAttempt {
+        attempt: EffectAttemptId,
+        authorization: IssuedEffectAuthorizationOccurrenceId,
+    },
+    EffectReceipt(EffectReceiptId),
+    EffectObservation(ObservationId),
+    EffectJudgment(EffectJudgmentOccurrenceId),
     Admission {
         delta: CandidateDeltaId,
         occurrence: AdmissionOccurrenceId,
@@ -905,6 +1010,12 @@ impl ProcessCarrier {
             resumptions: BTreeMap::new(),
             handoffs: BTreeMap::new(),
             cancellations: BTreeMap::new(),
+            effect_intents: BTreeMap::new(),
+            issued_effect_authorizations: BTreeMap::new(),
+            consumed_effect_authorizations: BTreeSet::new(),
+            effect_attempts: BTreeMap::new(),
+            effect_receipts: BTreeMap::new(),
+            effect_judgments: BTreeMap::new(),
             boundary_permission_uses: BTreeMap::new(),
             causal_predecessors: BTreeMap::new(),
             causal_edge_count: 0,
@@ -1068,33 +1179,24 @@ impl ProcessCarrier {
                     if !supported_membership {
                         return Err(ProcessError::ChildActivationUnsupported);
                     }
-                    let mode = self.mode_contract(proposal.mode)?;
-                    if !mode.contract.effect_intents.is_empty() {
-                        return Err(ProcessError::EffectfulModeUnsupported(proposal.mode));
-                    }
                 }
                 ProcessRecordV2::Handoff(_) => {
                     return Err(ProcessError::HandoffUnsupported);
                 }
-                ProcessRecordV2::Steps(steps) => {
-                    for step in steps {
-                        if let Some(activation) = self.activations.get(&step.activation) {
-                            let mode = self.mode_contract(activation.mode())?;
-                            if !mode.contract.effect_intents.is_empty() {
-                                return Err(ProcessError::EffectfulModeUnsupported(
-                                    activation.mode(),
-                                ));
-                            }
-                        }
-                    }
-                }
+                ProcessRecordV2::Steps(_) => {}
                 ProcessRecordV2::ExternalTrigger(_)
                 | ProcessRecordV2::EnteredObservation(_)
                 | ProcessRecordV2::Resumption(_)
                 | ProcessRecordV2::Cancellation(_)
                 | ProcessRecordV2::Judgment(_)
                 | ProcessRecordV2::IssuedAdmissionAuthorization(_)
-                | ProcessRecordV2::AdmissionDecision(_) => {}
+                | ProcessRecordV2::AdmissionDecision(_)
+                | ProcessRecordV2::EffectIntent(_)
+                | ProcessRecordV2::IssuedEffectAuthorization(_)
+                | ProcessRecordV2::EffectAttempt(_)
+                | ProcessRecordV2::EffectReceipt(_)
+                | ProcessRecordV2::EffectObservation(_)
+                | ProcessRecordV2::EffectJudgment(_) => {}
             }
         }
         Ok(())
@@ -1235,6 +1337,40 @@ impl ProcessCarrier {
                     issued_authorization,
                 })
             }
+            ProcessRecordV2::EffectIntent(intent) => {
+                let id = intent.id;
+                self.add_effect_intent(intent)?;
+                Ok(RecordUndo::EffectIntent(id))
+            }
+            ProcessRecordV2::IssuedEffectAuthorization(authorization) => {
+                let id = authorization.id;
+                self.add_issued_effect_authorization(authorization)?;
+                Ok(RecordUndo::IssuedEffectAuthorization(id))
+            }
+            ProcessRecordV2::EffectAttempt(attempt) => {
+                let id = attempt.id;
+                let authorization = attempt.authorization;
+                self.add_effect_attempt(attempt)?;
+                Ok(RecordUndo::EffectAttempt {
+                    attempt: id,
+                    authorization,
+                })
+            }
+            ProcessRecordV2::EffectReceipt(receipt) => {
+                let id = receipt.id;
+                self.add_effect_receipt(receipt)?;
+                Ok(RecordUndo::EffectReceipt(id))
+            }
+            ProcessRecordV2::EffectObservation(observation) => {
+                let id = observation.observation.occurrence_id();
+                self.add_effect_observation(observation)?;
+                Ok(RecordUndo::EffectObservation(id))
+            }
+            ProcessRecordV2::EffectJudgment(judgment) => {
+                let id = judgment.id;
+                self.add_effect_judgment(judgment)?;
+                Ok(RecordUndo::EffectJudgment(id))
+            }
         }
     }
 
@@ -1325,6 +1461,34 @@ impl ProcessCarrier {
                 }
                 self.remove_causal(CausalRef::Admission(occurrence));
             }
+            RecordUndo::EffectIntent(id) => {
+                self.effect_intents.remove(&id);
+                self.remove_causal(CausalRef::EffectIntent(id));
+            }
+            RecordUndo::IssuedEffectAuthorization(id) => {
+                self.issued_effect_authorizations.remove(&id);
+                self.remove_causal(CausalRef::EffectAuthorization(id));
+            }
+            RecordUndo::EffectAttempt {
+                attempt,
+                authorization,
+            } => {
+                self.effect_attempts.remove(&attempt);
+                self.consumed_effect_authorizations.remove(&authorization);
+                self.remove_causal(CausalRef::EffectAttempt(attempt));
+            }
+            RecordUndo::EffectReceipt(id) => {
+                self.effect_receipts.remove(&id);
+                self.remove_causal(CausalRef::EffectReceipt(id));
+            }
+            RecordUndo::EffectObservation(id) => {
+                self.observations.remove(&id);
+                self.remove_causal(CausalRef::Observation(id));
+            }
+            RecordUndo::EffectJudgment(id) => {
+                self.effect_judgments.remove(&id);
+                self.remove_causal(CausalRef::EffectJudgment(id));
+            }
         }
     }
 
@@ -1382,6 +1546,288 @@ impl ProcessCarrier {
                 provenance: OccurrenceProvenance::EnteredThrough(entered.provenance),
             },
         );
+        Ok(())
+    }
+
+    fn add_effect_intent(&mut self, intent: EffectIntentOccurrenceV1) -> Result<(), ProcessError> {
+        if self.effect_intents.contains_key(&intent.id) {
+            return Err(ProcessError::DuplicateEffectIntent(intent.id));
+        }
+        self.validate_runtime_term(&intent.action)?;
+        self.validate_runtime_term(&intent.resource)?;
+        self.validate_runtime_term(&intent.payload)?;
+        let step = self
+            .steps
+            .get(&intent.emitted_by.step)
+            .filter(|step| step.reference() == intent.emitted_by)
+            .ok_or(ProcessError::UnknownStep(intent.emitted_by.step))?;
+        let activation = self.activations.get(&intent.emitted_by.activation).ok_or(
+            ProcessError::UnknownActivation(intent.emitted_by.activation),
+        )?;
+        if activation.membership().run() != intent.emitted_by.run
+            || activation.application() != intent.scope.application
+            || activation.mode() != intent.scope.mode
+            || activation.pins().runtime_session != Some(intent.scope.session)
+            || activation.pins().observed_state != Some(intent.scope.world)
+            || activation.pins().constitution.admitted_revision()
+                != Some(intent.scope.program_revision)
+            || step.proposal().budget.after != intent.scope.budget
+        {
+            return Err(ProcessError::EffectScopeMismatch);
+        }
+        let mode = self.mode_contract(intent.scope.mode)?;
+        let index = usize::try_from(intent.contract_index)
+            .map_err(|_| ProcessError::UnknownEffectContract(intent.contract_index))?;
+        let contract = mode
+            .contract
+            .effect_intents
+            .get(index)
+            .ok_or(ProcessError::UnknownEffectContract(intent.contract_index))?;
+        let expected_capability = CapabilityRef {
+            snapshot: intent.scope.mode.operator.snapshot,
+            local: contract.required_capability,
+        };
+        if intent.required_capability != expected_capability
+            || self.effect_role_term(intent.scope.application, contract.action_role)?
+                != intent.action
+            || self.effect_role_term(intent.scope.application, contract.resource_role)?
+                != intent.resource
+            || self.effect_role_term(intent.scope.application, contract.payload_role)?
+                != intent.payload
+        {
+            return Err(ProcessError::EffectContractMismatch);
+        }
+        self.register_causal(
+            CausalRef::EffectIntent(intent.id),
+            vec![CausalRef::Step(intent.emitted_by)],
+        )?;
+        self.effect_intents.insert(intent.id, intent);
+        Ok(())
+    }
+
+    fn effect_role_term(
+        &self,
+        application: ApplicationId,
+        role: RoleLocalId,
+    ) -> Result<Term, ProcessError> {
+        let declaration = self
+            .constitution
+            .application_by_id(application)
+            .ok_or(ProcessError::UnknownApplication(application))?;
+        let binding = declaration
+            .form
+            .bindings
+            .iter()
+            .find(|binding| binding.role == role && binding.occurrence == 0)
+            .ok_or(ProcessError::EffectRoleBindingMissing(role))?;
+        let RoleBindingValuePreimageV2::Known(formation) = binding.value else {
+            return Err(ProcessError::EffectRoleBindingMissing(role));
+        };
+        self.constitution
+            .preimage()
+            .formations
+            .iter()
+            .find(|candidate| candidate.id == formation)
+            .map(|candidate| candidate.term.clone())
+            .ok_or(ProcessError::EffectRoleBindingMissing(role))
+    }
+
+    fn add_issued_effect_authorization(
+        &mut self,
+        authorization: IssuedEffectAuthorizationV1,
+    ) -> Result<(), ProcessError> {
+        if self
+            .issued_effect_authorizations
+            .contains_key(&authorization.id)
+        {
+            return Err(ProcessError::DuplicateIssuedEffectAuthorization(
+                authorization.id,
+            ));
+        }
+        let intent = self
+            .effect_intents
+            .get(&authorization.intent)
+            .ok_or(ProcessError::UnknownEffectIntent(authorization.intent))?;
+        if self
+            .issued_effect_authorizations
+            .values()
+            .any(|existing| existing.intent == authorization.intent)
+            || authorization.capability != intent.required_capability
+            || authorization.scope != intent.scope
+            || authorization.action != intent.action
+            || authorization.resource != intent.resource
+            || authorization.payload != intent.payload
+        {
+            return Err(ProcessError::EffectAuthorizationScopeMismatch);
+        }
+        self.register_causal(
+            CausalRef::EffectAuthorization(authorization.id),
+            vec![CausalRef::EffectIntent(authorization.intent)],
+        )?;
+        self.issued_effect_authorizations
+            .insert(authorization.id, authorization);
+        Ok(())
+    }
+
+    fn add_effect_attempt(
+        &mut self,
+        attempt: EffectAttemptOccurrenceV1,
+    ) -> Result<(), ProcessError> {
+        if self.effect_attempts.contains_key(&attempt.id) {
+            return Err(ProcessError::DuplicateEffectAttempt(attempt.id));
+        }
+        if self
+            .consumed_effect_authorizations
+            .contains(&attempt.authorization)
+        {
+            return Err(ProcessError::EffectAuthorizationAlreadyConsumed(
+                attempt.authorization,
+            ));
+        }
+        let authorization = self
+            .issued_effect_authorizations
+            .get(&attempt.authorization)
+            .ok_or(ProcessError::UnknownIssuedEffectAuthorization(
+                attempt.authorization,
+            ))?;
+        if attempt.intent != authorization.intent
+            || attempt.scope != authorization.scope
+            || attempt.action != authorization.action
+            || attempt.resource != authorization.resource
+            || attempt.payload != authorization.payload
+        {
+            return Err(ProcessError::EffectAuthorizationScopeMismatch);
+        }
+        self.register_causal(
+            CausalRef::EffectAttempt(attempt.id),
+            vec![
+                CausalRef::EffectIntent(attempt.intent),
+                CausalRef::EffectAuthorization(attempt.authorization),
+            ],
+        )?;
+        self.consumed_effect_authorizations
+            .insert(attempt.authorization);
+        self.effect_attempts.insert(attempt.id, attempt);
+        Ok(())
+    }
+
+    fn add_effect_receipt(
+        &mut self,
+        receipt: EffectReceiptOccurrenceV1,
+    ) -> Result<(), ProcessError> {
+        if self.effect_receipts.contains_key(&receipt.id) {
+            return Err(ProcessError::DuplicateEffectReceipt(receipt.id));
+        }
+        if receipt.exact_bytes.len() > MAX_EFFECT_RECEIPT_BYTES {
+            return Err(ProcessError::EffectReceiptTooLarge(
+                receipt.exact_bytes.len(),
+            ));
+        }
+        if !self.effect_attempts.contains_key(&receipt.attempt) {
+            return Err(ProcessError::UnknownEffectAttempt(receipt.attempt));
+        }
+        if self
+            .effect_receipts
+            .values()
+            .any(|existing| existing.attempt == receipt.attempt)
+        {
+            return Err(ProcessError::EffectAttemptAlreadyReceipted(receipt.attempt));
+        }
+        self.register_causal(
+            CausalRef::EffectReceipt(receipt.id),
+            vec![CausalRef::EffectAttempt(receipt.attempt)],
+        )?;
+        self.effect_receipts.insert(receipt.id, receipt);
+        Ok(())
+    }
+
+    fn add_effect_observation(
+        &mut self,
+        observation: EffectObservationV1,
+    ) -> Result<(), ProcessError> {
+        if !self.effect_receipts.contains_key(&observation.receipt) {
+            return Err(ProcessError::UnknownEffectReceipt(observation.receipt));
+        }
+        let id = observation.observation.occurrence_id();
+        if self.observations.contains_key(&id) {
+            return Err(ProcessError::DuplicateObservation(id));
+        }
+        if !matches!(observation.observation, ObservationProposalV2::Value { .. }) {
+            return Err(ProcessError::EffectObservationMustBeValue);
+        }
+        let content = self.validate_observation_proposal(&observation.observation)?;
+        self.register_causal(
+            CausalRef::Observation(id),
+            vec![CausalRef::EffectReceipt(observation.receipt)],
+        )?;
+        self.observations.insert(
+            id,
+            Observation {
+                id,
+                content,
+                provenance: OccurrenceProvenance::ReportedByEffectReceipt(observation.receipt),
+            },
+        );
+        Ok(())
+    }
+
+    fn add_effect_judgment(
+        &mut self,
+        judgment: EffectJudgmentOccurrenceV1,
+    ) -> Result<(), ProcessError> {
+        if self.effect_judgments.contains_key(&judgment.id) {
+            return Err(ProcessError::DuplicateEffectJudgment(judgment.id));
+        }
+        let attempt = self
+            .effect_attempts
+            .get(&judgment.attempt)
+            .ok_or(ProcessError::UnknownEffectAttempt(judgment.attempt))?;
+        if attempt.intent != judgment.intent {
+            return Err(ProcessError::EffectJudgmentEvidenceMismatch);
+        }
+        let mut causes = vec![CausalRef::EffectAttempt(judgment.attempt)];
+        match judgment.disposition {
+            EffectJudgmentDispositionV1::NoReceipt => {
+                if judgment.receipt.is_some()
+                    || judgment.observation.is_some()
+                    || self
+                        .effect_receipts
+                        .values()
+                        .any(|receipt| receipt.attempt == judgment.attempt)
+                {
+                    return Err(ProcessError::EffectJudgmentEvidenceMismatch);
+                }
+            }
+            EffectJudgmentDispositionV1::ReceiptObserved => {
+                let receipt = judgment
+                    .receipt
+                    .ok_or(ProcessError::EffectJudgmentEvidenceMismatch)?;
+                let observation = judgment
+                    .observation
+                    .ok_or(ProcessError::EffectJudgmentEvidenceMismatch)?;
+                if self
+                    .effect_receipts
+                    .get(&receipt)
+                    .map(|value| value.attempt)
+                    != Some(judgment.attempt)
+                    || self
+                        .causal_predecessors
+                        .get(&CausalRef::Observation(observation))
+                        .is_none_or(|predecessors| {
+                            !predecessors.contains(&CausalRef::EffectReceipt(receipt))
+                        })
+                {
+                    return Err(ProcessError::EffectJudgmentEvidenceMismatch);
+                }
+                causes.extend([
+                    CausalRef::EffectReceipt(receipt),
+                    CausalRef::Observation(observation),
+                ]);
+            }
+        }
+        causes.sort_unstable();
+        self.register_causal(CausalRef::EffectJudgment(judgment.id), causes)?;
+        self.effect_judgments.insert(judgment.id, judgment);
         Ok(())
     }
 
@@ -1691,7 +2137,24 @@ impl ProcessCarrier {
             OccurrenceProvenance::EnteredThrough(entered) => {
                 self.validate_entered_consumer_pins(entered, pins, authority)
             }
+            OccurrenceProvenance::ReportedByEffectReceipt(receipt) => {
+                let scope = self
+                    .effect_scope_for_receipt(*receipt)
+                    .ok_or(ProcessError::UnknownEffectReceipt(*receipt))?;
+                if pins.constitution.admitted_revision() != Some(scope.program_revision)
+                    || pins.runtime_session != Some(scope.session)
+                    || pins.observed_state != Some(scope.world)
+                {
+                    return Err(ProcessError::OccurrenceConsumerPinMismatch);
+                }
+                Ok(())
+            }
         }
+    }
+
+    fn effect_scope_for_receipt(&self, receipt: EffectReceiptId) -> Option<&EffectScopeV1> {
+        let attempt = self.effect_receipts.get(&receipt)?.attempt;
+        Some(&self.effect_attempts.get(&attempt)?.scope)
     }
 
     fn validate_occurrence_provenance(
@@ -1709,6 +2172,11 @@ impl ProcessCarrier {
             OccurrenceProvenance::EnteredThrough(entered) => {
                 self.validate_entered(entered, entered_kind, authority)
             }
+            OccurrenceProvenance::ReportedByEffectReceipt(receipt) => {
+                self.effect_scope_for_receipt(*receipt)
+                    .ok_or(ProcessError::UnknownEffectReceipt(*receipt))?;
+                Ok(())
+            }
         }
     }
 
@@ -1722,6 +2190,11 @@ impl ProcessCarrier {
                 Ok(vec![CausalRef::Step(*step)])
             }
             OccurrenceProvenance::EnteredThrough(entered) => Ok(entered.causes.clone()),
+            OccurrenceProvenance::ReportedByEffectReceipt(receipt) => {
+                self.effect_scope_for_receipt(*receipt)
+                    .ok_or(ProcessError::UnknownEffectReceipt(*receipt))?;
+                Ok(vec![CausalRef::EffectReceipt(*receipt)])
+            }
         }
     }
 
@@ -1776,14 +2249,6 @@ impl ProcessCarrier {
             .constitution
             .executable_contract(proposal.application, proposal.mode)
             .ok_or(ProcessError::ModeNotEligible(proposal.mode))?;
-        if !self
-            .mode_contract(proposal.mode)?
-            .contract
-            .effect_intents
-            .is_empty()
-        {
-            return Err(ProcessError::EffectfulModeUnsupported(proposal.mode));
-        }
         if application.id.snapshot != proposal.pins.snapshot
             || proposal.pins.snapshot != self.constitution.snapshot()
             || proposal.pins.semantics != self.constitution.semantics()
@@ -2271,6 +2736,31 @@ impl ProcessCarrier {
             OccurrenceProvenance::EnteredThrough(entered) => {
                 self.validate_entered_consumer_pins(entered, pins, authority)?;
                 if scope == PrerequisiteScope::SameObservedState {
+                    return Err(ProcessError::PrerequisiteScopeMismatch);
+                }
+            }
+            OccurrenceProvenance::ReportedByEffectReceipt(receipt) => {
+                let producer = self
+                    .effect_scope_for_receipt(*receipt)
+                    .ok_or(ProcessError::UnknownEffectReceipt(*receipt))?;
+                let matches = match scope {
+                    PrerequisiteScope::SameSemantics => {
+                        pins.semantics == self.constitution.semantics()
+                    }
+                    PrerequisiteScope::SameProgramRevision => {
+                        pins.constitution.admitted_revision() == Some(producer.program_revision)
+                    }
+                    PrerequisiteScope::SameRuntimeSession => {
+                        pins.constitution.admitted_revision() == Some(producer.program_revision)
+                            && pins.runtime_session == Some(producer.session)
+                    }
+                    PrerequisiteScope::SameObservedState => {
+                        pins.constitution.admitted_revision() == Some(producer.program_revision)
+                            && pins.runtime_session == Some(producer.session)
+                            && pins.observed_state == Some(producer.world)
+                    }
+                };
+                if !matches {
                     return Err(ProcessError::PrerequisiteScopeMismatch);
                 }
             }
@@ -3260,6 +3750,9 @@ impl ProcessCarrier {
                 self.validate_governance_boundary(entered, base, authority)?;
                 session.program_revision
             }
+            OccurrenceProvenance::ReportedByEffectReceipt(_) => {
+                return Err(ProcessError::UnauthorizedJudgment);
+            }
         };
         let scope = match occurrence.body.authority {
             JudgmentAuthorityEvidence::ProgramConstitution {
@@ -3303,6 +3796,9 @@ impl ProcessCarrier {
                     });
                 }
                 entered.causes.clone()
+            }
+            OccurrenceProvenance::ReportedByEffectReceipt(_) => {
+                return Err(ProcessError::UnauthorizedJudgment);
             }
         };
         self.register_causal(CausalRef::Judgment(id), causes)?;
@@ -3913,6 +4409,37 @@ impl ProcessCarrier {
     }
 
     #[must_use]
+    pub fn effect_intent(&self, id: EffectIntentId) -> Option<&EffectIntentOccurrenceV1> {
+        self.effect_intents.get(&id)
+    }
+
+    #[must_use]
+    pub fn issued_effect_authorization(
+        &self,
+        id: IssuedEffectAuthorizationOccurrenceId,
+    ) -> Option<&IssuedEffectAuthorizationV1> {
+        self.issued_effect_authorizations.get(&id)
+    }
+
+    #[must_use]
+    pub fn effect_attempt(&self, id: EffectAttemptId) -> Option<&EffectAttemptOccurrenceV1> {
+        self.effect_attempts.get(&id)
+    }
+
+    #[must_use]
+    pub fn effect_receipt(&self, id: EffectReceiptId) -> Option<&EffectReceiptOccurrenceV1> {
+        self.effect_receipts.get(&id)
+    }
+
+    #[must_use]
+    pub fn effect_judgment(
+        &self,
+        id: EffectJudgmentOccurrenceId,
+    ) -> Option<&EffectJudgmentOccurrenceV1> {
+        self.effect_judgments.get(&id)
+    }
+
+    #[must_use]
     pub fn causal_predecessors(&self, id: CausalRef) -> Option<&BTreeSet<CausalRef>> {
         self.causal_predecessors.get(&id)
     }
@@ -4147,7 +4674,13 @@ fn validate_record_batch_bounds(
             | ProcessRecordV2::Cancellation(_)
             | ProcessRecordV2::Judgment(_)
             | ProcessRecordV2::IssuedAdmissionAuthorization(_)
-            | ProcessRecordV2::AdmissionDecision(_) => {}
+            | ProcessRecordV2::AdmissionDecision(_)
+            | ProcessRecordV2::EffectIntent(_)
+            | ProcessRecordV2::IssuedEffectAuthorization(_)
+            | ProcessRecordV2::EffectAttempt(_)
+            | ProcessRecordV2::EffectReceipt(_)
+            | ProcessRecordV2::EffectObservation(_)
+            | ProcessRecordV2::EffectJudgment(_) => {}
         }
     }
     Ok(cardinality)
@@ -4272,6 +4805,25 @@ pub enum ProcessError {
     UnknownJudgment(JudgmentOccurrenceId),
     UnknownIssuedAdmissionAuthorization(IssuedAdmissionAuthorizationOccurrenceId),
     UnknownAdmission(AdmissionOccurrenceId),
+    DuplicateEffectIntent(EffectIntentId),
+    DuplicateIssuedEffectAuthorization(IssuedEffectAuthorizationOccurrenceId),
+    DuplicateEffectAttempt(EffectAttemptId),
+    DuplicateEffectReceipt(EffectReceiptId),
+    DuplicateEffectJudgment(EffectJudgmentOccurrenceId),
+    UnknownEffectIntent(EffectIntentId),
+    UnknownIssuedEffectAuthorization(IssuedEffectAuthorizationOccurrenceId),
+    UnknownEffectAttempt(EffectAttemptId),
+    UnknownEffectReceipt(EffectReceiptId),
+    UnknownEffectContract(u32),
+    EffectRoleBindingMissing(RoleLocalId),
+    EffectScopeMismatch,
+    EffectContractMismatch,
+    EffectAuthorizationScopeMismatch,
+    EffectAuthorizationAlreadyConsumed(IssuedEffectAuthorizationOccurrenceId),
+    EffectAttemptAlreadyReceipted(EffectAttemptId),
+    EffectReceiptTooLarge(usize),
+    EffectObservationMustBeValue,
+    EffectJudgmentEvidenceMismatch,
     UnanchoredExternalProvenance {
         boundary: BoundaryRef,
         evidence: ExternalEvidenceRef,

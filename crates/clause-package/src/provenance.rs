@@ -69,6 +69,11 @@ pub enum EnteredCauseKindV2 {
     CandidateDelta,
     Judgment,
     Admission,
+    EffectIntent,
+    EffectAuthorization,
+    EffectAttempt,
+    EffectReceipt,
+    EffectJudgment,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -158,6 +163,11 @@ pub enum CausalRef {
     CandidateDelta(CandidateDeltaId),
     Judgment(JudgmentOccurrenceId),
     Admission(AdmissionOccurrenceId),
+    EffectIntent(EffectIntentId),
+    EffectAuthorization(IssuedEffectAuthorizationOccurrenceId),
+    EffectAttempt(EffectAttemptId),
+    EffectReceipt(EffectReceiptId),
+    EffectJudgment(EffectJudgmentOccurrenceId),
 }
 
 impl CausalRef {
@@ -174,6 +184,11 @@ impl CausalRef {
             Self::CandidateDelta(_) => EnteredCauseKindV2::CandidateDelta,
             Self::Judgment(_) => EnteredCauseKindV2::Judgment,
             Self::Admission(_) => EnteredCauseKindV2::Admission,
+            Self::EffectIntent(_) => EnteredCauseKindV2::EffectIntent,
+            Self::EffectAuthorization(_) => EnteredCauseKindV2::EffectAuthorization,
+            Self::EffectAttempt(_) => EnteredCauseKindV2::EffectAttempt,
+            Self::EffectReceipt(_) => EnteredCauseKindV2::EffectReceipt,
+            Self::EffectJudgment(_) => EnteredCauseKindV2::EffectJudgment,
         }
     }
 }
@@ -192,6 +207,7 @@ pub struct EnteredThrough {
 pub enum OccurrenceProvenance {
     ProducedBy(StepRef),
     EnteredThrough(EnteredThrough),
+    ReportedByEffectReceipt(EffectReceiptId),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -607,6 +623,7 @@ pub fn validate_occurrence_provenance(
     match provenance {
         OccurrenceProvenance::ProducedBy(_) => Ok(()),
         OccurrenceProvenance::EnteredThrough(entered) => validate_entered_through(entered),
+        OccurrenceProvenance::ReportedByEffectReceipt(_) => Ok(()),
     }
 }
 

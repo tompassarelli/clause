@@ -3,17 +3,19 @@ use std::fmt;
 
 use clause_package::{
     ActivationId, AdmissionAuthorizationEvidence, ApplicationId, AuthorityError, AuthorityStore,
-    CheckedProcessPackage, ConfigurationId, IssuedAdmissionAuthorizationOccurrenceId,
-    ProcessCarrier, ProcessPackageId, ProgramRevisionId, RootPolicyAnchor, RunId, RuntimeSessionId,
+    CheckedProcessPackage, ConfigurationId, EffectAttemptId, EffectAttemptOccurrenceV1,
+    EffectIntentId, EffectIntentOccurrenceV1, IssuedAdmissionAuthorizationOccurrenceId,
+    IssuedEffectAuthorizationOccurrenceId, IssuedEffectAuthorizationV1, ProcessCarrier,
+    ProcessPackageId, ProgramRevisionId, RootPolicyAnchor, RunId, RuntimeSessionId,
     StateRevisionId,
 };
 
 use super::{
-    ExecutableAuthorityFactsV1, ExecutableCandidateV1, ExecutableCarrierErrorV1, ExecutableErrorV1,
-    ExecutableInputSourceV1, ExecutablePhysicalPlanV1, ExecutableProcessRuntimeV1,
-    ExecutableProjectedObservationV1, ExecutableResumptionV1, ExecutableStateRevisionV1,
-    ExecutableStepV1, ExecutableSuspensionV1, ExecutableValueV1, RuntimeAllocationEpochV1,
-    decode_executable_occurrence_v1,
+    ExecutableAuthorityFactsV1, ExecutableCandidateV1, ExecutableCarrierErrorV1,
+    ExecutableEffectSettlementV1, ExecutableErrorV1, ExecutableInputSourceV1,
+    ExecutablePhysicalPlanV1, ExecutableProcessRuntimeV1, ExecutableProjectedObservationV1,
+    ExecutableResumptionV1, ExecutableStateRevisionV1, ExecutableStepV1, ExecutableSuspensionV1,
+    ExecutableValueV1, RuntimeAllocationEpochV1, decode_executable_occurrence_v1,
 };
 
 /// One native, long-lived execution binding for an exact package, Program
@@ -123,6 +125,49 @@ impl PersistentProcessSessionV1 {
 
     pub fn resume(&mut self) -> Result<ExecutableResumptionV1, PersistentProcessSessionErrorV1> {
         Ok(self.runtime_mut()?.resume_carrier_process()?)
+    }
+
+    pub fn emit_effect_intent(
+        &mut self,
+    ) -> Result<EffectIntentOccurrenceV1, PersistentProcessSessionErrorV1> {
+        Ok(self.runtime_mut()?.emit_carrier_effect_intent()?)
+    }
+
+    pub fn pending_effect_intent(
+        &self,
+    ) -> Result<Option<&EffectIntentOccurrenceV1>, PersistentProcessSessionErrorV1> {
+        let Some(intent) = self.runtime()?.pending_carrier_effect_intent() else {
+            return Ok(None);
+        };
+        Ok(self.runtime()?.carrier().carrier().effect_intent(intent))
+    }
+
+    pub fn issue_effect_authorization(
+        &mut self,
+        intent: EffectIntentId,
+    ) -> Result<IssuedEffectAuthorizationV1, PersistentProcessSessionErrorV1> {
+        Ok(self
+            .runtime_mut()?
+            .issue_carrier_effect_authorization(intent)?)
+    }
+
+    pub fn begin_effect_attempt(
+        &mut self,
+        authorization: IssuedEffectAuthorizationOccurrenceId,
+    ) -> Result<EffectAttemptOccurrenceV1, PersistentProcessSessionErrorV1> {
+        Ok(self
+            .runtime_mut()?
+            .begin_carrier_effect_attempt(authorization)?)
+    }
+
+    pub fn settle_effect_attempt(
+        &mut self,
+        attempt: EffectAttemptId,
+        receipt: Option<(u32, Vec<u8>)>,
+    ) -> Result<ExecutableEffectSettlementV1, PersistentProcessSessionErrorV1> {
+        Ok(self
+            .runtime_mut()?
+            .settle_carrier_effect_attempt(attempt, receipt)?)
     }
 
     /// Lower one checked, construct-blind physical observation through the

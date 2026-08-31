@@ -83,6 +83,12 @@ pub struct WasmSessionTickV1 {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WasmSessionEffectReceiptV1 {
+    pub status: u32,
+    pub exact_bytes: Vec<u8>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum WasmSessionOperationV1 {
     Input(Vec<u8>),
     Candidate(Vec<u8>),
@@ -92,6 +98,14 @@ pub enum WasmSessionOperationV1 {
     Admit(WasmSessionAdmissionV1),
     Suspend,
     Resume,
+    QueryPendingEffectIntent,
+    EmitEffectIntent,
+    IssueEffectAuthorization(EffectIntentId),
+    BeginEffectAttempt(IssuedEffectAuthorizationOccurrenceId),
+    SettleEffectAttempt {
+        attempt: EffectAttemptId,
+        receipt: Option<WasmSessionEffectReceiptV1>,
+    },
     Dispose,
 }
 
@@ -112,6 +126,7 @@ pub enum WasmSessionRejectionV1 {
     AuthorityRejected = 5,
     AdmissionRejected = 6,
     ContinuationRejected = 7,
+    EffectRejected = 8,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -179,6 +194,43 @@ pub enum WasmSessionEventKindV1 {
         before: ConfigurationId,
         after: ConfigurationId,
         remaining_budget: u64,
+        state_revision_count: u32,
+    },
+    EffectIntentAvailable {
+        intent: EffectIntentId,
+        emitted_by: StepRef,
+        contract_index: u32,
+        required_capability: CapabilityRef,
+        scope: EffectScopeV1,
+        action_bytes: Vec<u8>,
+        resource_bytes: Vec<u8>,
+        payload_bytes: Vec<u8>,
+        state_revision_count: u32,
+    },
+    EffectIntentAbsent {
+        state_revision_count: u32,
+    },
+    EffectAuthorizationIssued {
+        authorization: IssuedEffectAuthorizationOccurrenceId,
+        intent: EffectIntentId,
+        state_revision_count: u32,
+    },
+    EffectAttemptBegun {
+        attempt: EffectAttemptId,
+        intent: EffectIntentId,
+        authorization: IssuedEffectAuthorizationOccurrenceId,
+        action_bytes: Vec<u8>,
+        resource_bytes: Vec<u8>,
+        payload_bytes: Vec<u8>,
+        state_revision_count: u32,
+    },
+    EffectSettled {
+        intent: EffectIntentId,
+        attempt: EffectAttemptId,
+        receipt: Option<EffectReceiptId>,
+        observation: Option<ObservationId>,
+        judgment: EffectJudgmentOccurrenceId,
+        disposition: EffectJudgmentDispositionV1,
         state_revision_count: u32,
     },
     Disposed,
@@ -624,10 +676,88 @@ fn execute_operation(
                 WasmSessionEventKindV1::Rejected(WasmSessionRejectionV1::ContinuationRejected)
             }
         },
+        WasmSessionOperationV1::QueryPendingEffectIntent => match session.pending_effect_intent() {
+            Ok(Some(intent)) => effect_intent_event(session, intent.clone()),
+            Ok(None) => WasmSessionEventKindV1::EffectIntentAbsent {
+                state_revision_count: state_revision_count(session)
+                    .expect("effect query retains its carrier"),
+            },
+            Err(_) => WasmSessionEventKindV1::Rejected(WasmSessionRejectionV1::EffectRejected),
+        },
+        WasmSessionOperationV1::EmitEffectIntent => match session.emit_effect_intent() {
+            Ok(intent) => effect_intent_event(session, intent),
+            Err(_) => WasmSessionEventKindV1::Rejected(WasmSessionRejectionV1::EffectRejected),
+        },
+        WasmSessionOperationV1::IssueEffectAuthorization(intent) => {
+            match session.issue_effect_authorization(intent) {
+                Ok(authorization) => WasmSessionEventKindV1::EffectAuthorizationIssued {
+                    authorization: authorization.id,
+                    intent: authorization.intent,
+                    state_revision_count: state_revision_count(session)
+                        .expect("effect authorization retains its carrier"),
+                },
+                Err(_) => WasmSessionEventKindV1::Rejected(WasmSessionRejectionV1::EffectRejected),
+            }
+        }
+        WasmSessionOperationV1::BeginEffectAttempt(authorization) => {
+            match session.begin_effect_attempt(authorization) {
+                Ok(attempt) => WasmSessionEventKindV1::EffectAttemptBegun {
+                    attempt: attempt.id,
+                    intent: attempt.intent,
+                    authorization: attempt.authorization,
+                    action_bytes: canonical_term_bytes(&attempt.action)
+                        .expect("checked effect action remains canonical"),
+                    resource_bytes: canonical_term_bytes(&attempt.resource)
+                        .expect("checked effect resource remains canonical"),
+                    payload_bytes: canonical_term_bytes(&attempt.payload)
+                        .expect("checked effect payload remains canonical"),
+                    state_revision_count: state_revision_count(session)
+                        .expect("effect attempt retains its carrier"),
+                },
+                Err(_) => WasmSessionEventKindV1::Rejected(WasmSessionRejectionV1::EffectRejected),
+            }
+        }
+        WasmSessionOperationV1::SettleEffectAttempt { attempt, receipt } => {
+            let receipt = receipt.map(|receipt| (receipt.status, receipt.exact_bytes));
+            match session.settle_effect_attempt(attempt, receipt) {
+                Ok(settlement) => WasmSessionEventKindV1::EffectSettled {
+                    intent: settlement.intent,
+                    attempt: settlement.attempt,
+                    receipt: settlement.receipt,
+                    observation: settlement.observation,
+                    judgment: settlement.judgment,
+                    disposition: settlement.disposition,
+                    state_revision_count: state_revision_count(session)
+                        .expect("effect settlement retains its carrier"),
+                },
+                Err(_) => WasmSessionEventKindV1::Rejected(WasmSessionRejectionV1::EffectRejected),
+            }
+        }
         WasmSessionOperationV1::Dispose => {
             session.dispose();
             WasmSessionEventKindV1::Disposed
         }
+    }
+}
+
+fn effect_intent_event(
+    session: &PersistentProcessSessionV1,
+    intent: EffectIntentOccurrenceV1,
+) -> WasmSessionEventKindV1 {
+    WasmSessionEventKindV1::EffectIntentAvailable {
+        intent: intent.id,
+        emitted_by: intent.emitted_by,
+        contract_index: intent.contract_index,
+        required_capability: intent.required_capability,
+        scope: intent.scope,
+        action_bytes: canonical_term_bytes(&intent.action)
+            .expect("checked effect action remains canonical"),
+        resource_bytes: canonical_term_bytes(&intent.resource)
+            .expect("checked effect resource remains canonical"),
+        payload_bytes: canonical_term_bytes(&intent.payload)
+            .expect("checked effect payload remains canonical"),
+        state_revision_count: state_revision_count(session)
+            .expect("effect intent retains its carrier"),
     }
 }
 
@@ -765,6 +895,11 @@ fn command_event_size(operation: &WasmSessionOperationV1) -> usize {
         WasmSessionOperationV1::Admit(_) => WASM_SESSION_EVENT_LIMIT_V1,
         WasmSessionOperationV1::Suspend => EVENT_HEADER_BYTES + 6 * IDENTITY_BYTES + 8 + 4,
         WasmSessionOperationV1::Resume => EVENT_HEADER_BYTES + 7 * IDENTITY_BYTES + 8 + 4,
+        WasmSessionOperationV1::QueryPendingEffectIntent
+        | WasmSessionOperationV1::EmitEffectIntent
+        | WasmSessionOperationV1::IssueEffectAuthorization(_)
+        | WasmSessionOperationV1::BeginEffectAttempt(_)
+        | WasmSessionOperationV1::SettleEffectAttempt { .. } => WASM_SESSION_EVENT_LIMIT_V1,
     }
 }
 
@@ -928,6 +1063,27 @@ pub fn encode_wasm_session_command_v1(
         WasmSessionOperationV1::Dispose => bytes.push(7),
         WasmSessionOperationV1::Suspend => bytes.push(8),
         WasmSessionOperationV1::Resume => bytes.push(9),
+        WasmSessionOperationV1::QueryPendingEffectIntent => bytes.push(10),
+        WasmSessionOperationV1::EmitEffectIntent => bytes.push(11),
+        WasmSessionOperationV1::IssueEffectAuthorization(intent) => {
+            bytes.push(12);
+            bytes.extend_from_slice(intent.as_bytes());
+        }
+        WasmSessionOperationV1::BeginEffectAttempt(authorization) => {
+            bytes.push(13);
+            bytes.extend_from_slice(authorization.as_bytes());
+        }
+        WasmSessionOperationV1::SettleEffectAttempt { attempt, receipt } => {
+            bytes.push(14);
+            bytes.extend_from_slice(attempt.as_bytes());
+            if let Some(receipt) = receipt {
+                bytes.push(1);
+                bytes.extend_from_slice(&receipt.status.to_le_bytes());
+                put_blob(&mut bytes, &receipt.exact_bytes)?;
+            } else {
+                bytes.push(0);
+            }
+        }
     }
     if bytes.len() > WASM_SESSION_COMMAND_LIMIT_V1 {
         return Err(WasmProcessStatusV1::RequestOutOfBounds);
@@ -977,6 +1133,25 @@ pub fn decode_wasm_session_command_v1(
         7 => WasmSessionOperationV1::Dispose,
         8 => WasmSessionOperationV1::Suspend,
         9 => WasmSessionOperationV1::Resume,
+        10 => WasmSessionOperationV1::QueryPendingEffectIntent,
+        11 => WasmSessionOperationV1::EmitEffectIntent,
+        12 => WasmSessionOperationV1::IssueEffectAuthorization(EffectIntentId::from_bytes(
+            d.identity()?,
+        )),
+        13 => WasmSessionOperationV1::BeginEffectAttempt(
+            IssuedEffectAuthorizationOccurrenceId::from_bytes(d.identity()?),
+        ),
+        14 => WasmSessionOperationV1::SettleEffectAttempt {
+            attempt: EffectAttemptId::from_bytes(d.identity()?),
+            receipt: match d.take(1)?[0] {
+                0 => None,
+                1 => Some(WasmSessionEffectReceiptV1 {
+                    status: d.u32()?,
+                    exact_bytes: d.blob(WASM_SESSION_COMMAND_LIMIT_V1)?.to_vec(),
+                }),
+                _ => return Err(WasmProcessStatusV1::MalformedRequest),
+            },
+        },
         _ => return Err(WasmProcessStatusV1::MalformedRequest),
     };
     if !d.is_complete() {
@@ -1174,6 +1349,102 @@ pub fn encode_wasm_session_event_v1(event: &WasmSessionEventV1) -> Vec<u8> {
             bytes.extend_from_slice(&remaining_budget.to_le_bytes());
             bytes.extend_from_slice(&state_revision_count.to_le_bytes());
         }
+        WasmSessionEventKindV1::EffectIntentAvailable {
+            intent,
+            emitted_by,
+            contract_index,
+            required_capability,
+            scope,
+            action_bytes,
+            resource_bytes,
+            payload_bytes,
+            state_revision_count,
+        } => {
+            bytes.push(10);
+            put_ids(
+                &mut bytes,
+                &[
+                    intent.as_bytes(),
+                    emitted_by.run.as_bytes(),
+                    emitted_by.activation.as_bytes(),
+                    emitted_by.step.as_bytes(),
+                ],
+            );
+            bytes.extend_from_slice(&contract_index.to_le_bytes());
+            put_capability_ref(&mut bytes, *required_capability);
+            put_effect_scope(&mut bytes, *scope);
+            put_blob(&mut bytes, action_bytes)
+                .expect("checked effect action fits the CSE1 event bound");
+            put_blob(&mut bytes, resource_bytes)
+                .expect("checked effect resource fits the CSE1 event bound");
+            put_blob(&mut bytes, payload_bytes)
+                .expect("checked effect payload fits the CSE1 event bound");
+            bytes.extend_from_slice(&state_revision_count.to_le_bytes());
+        }
+        WasmSessionEventKindV1::EffectIntentAbsent {
+            state_revision_count,
+        } => {
+            bytes.push(11);
+            bytes.extend_from_slice(&state_revision_count.to_le_bytes());
+        }
+        WasmSessionEventKindV1::EffectAuthorizationIssued {
+            authorization,
+            intent,
+            state_revision_count,
+        } => {
+            bytes.push(12);
+            put_ids(&mut bytes, &[authorization.as_bytes(), intent.as_bytes()]);
+            bytes.extend_from_slice(&state_revision_count.to_le_bytes());
+        }
+        WasmSessionEventKindV1::EffectAttemptBegun {
+            attempt,
+            intent,
+            authorization,
+            action_bytes,
+            resource_bytes,
+            payload_bytes,
+            state_revision_count,
+        } => {
+            bytes.push(13);
+            put_ids(
+                &mut bytes,
+                &[
+                    attempt.as_bytes(),
+                    intent.as_bytes(),
+                    authorization.as_bytes(),
+                ],
+            );
+            put_blob(&mut bytes, action_bytes)
+                .expect("checked effect action fits the CSE1 event bound");
+            put_blob(&mut bytes, resource_bytes)
+                .expect("checked effect resource fits the CSE1 event bound");
+            put_blob(&mut bytes, payload_bytes)
+                .expect("checked effect payload fits the CSE1 event bound");
+            bytes.extend_from_slice(&state_revision_count.to_le_bytes());
+        }
+        WasmSessionEventKindV1::EffectSettled {
+            intent,
+            attempt,
+            receipt,
+            observation,
+            judgment,
+            disposition,
+            state_revision_count,
+        } => {
+            bytes.push(14);
+            put_ids(&mut bytes, &[intent.as_bytes(), attempt.as_bytes()]);
+            put_optional_id(&mut bytes, receipt.as_ref().map(EffectReceiptId::as_bytes));
+            put_optional_id(
+                &mut bytes,
+                observation.as_ref().map(ObservationId::as_bytes),
+            );
+            bytes.extend_from_slice(judgment.as_bytes());
+            bytes.push(match disposition {
+                EffectJudgmentDispositionV1::ReceiptObserved => 0,
+                EffectJudgmentDispositionV1::NoReceipt => 1,
+            });
+            bytes.extend_from_slice(&state_revision_count.to_le_bytes());
+        }
     }
     bytes
 }
@@ -1255,6 +1526,7 @@ pub fn decode_wasm_session_event_v1(
             5 => WasmSessionRejectionV1::AuthorityRejected,
             6 => WasmSessionRejectionV1::AdmissionRejected,
             7 => WasmSessionRejectionV1::ContinuationRejected,
+            8 => WasmSessionRejectionV1::EffectRejected,
             _ => return Err(WasmProcessStatusV1::MalformedRequest),
         }),
         8 => WasmSessionEventKindV1::Suspended {
@@ -1278,6 +1550,59 @@ pub fn decode_wasm_session_event_v1(
             remaining_budget: d.u64()?,
             state_revision_count: d.u32()?,
         },
+        10 => WasmSessionEventKindV1::EffectIntentAvailable {
+            intent: EffectIntentId::from_bytes(d.identity()?),
+            emitted_by: StepRef {
+                run: RunId::from_bytes(d.identity()?),
+                activation: ActivationId::from_bytes(d.identity()?),
+                step: StepId::from_bytes(d.identity()?),
+            },
+            contract_index: d.u32()?,
+            required_capability: get_capability_ref(&mut d)?,
+            scope: get_effect_scope(&mut d)?,
+            action_bytes: d.blob(WASM_SESSION_EVENT_LIMIT_V1)?.to_vec(),
+            resource_bytes: d.blob(WASM_SESSION_EVENT_LIMIT_V1)?.to_vec(),
+            payload_bytes: d.blob(WASM_SESSION_EVENT_LIMIT_V1)?.to_vec(),
+            state_revision_count: d.u32()?,
+        },
+        11 => WasmSessionEventKindV1::EffectIntentAbsent {
+            state_revision_count: d.u32()?,
+        },
+        12 => WasmSessionEventKindV1::EffectAuthorizationIssued {
+            authorization: IssuedEffectAuthorizationOccurrenceId::from_bytes(d.identity()?),
+            intent: EffectIntentId::from_bytes(d.identity()?),
+            state_revision_count: d.u32()?,
+        },
+        13 => WasmSessionEventKindV1::EffectAttemptBegun {
+            attempt: EffectAttemptId::from_bytes(d.identity()?),
+            intent: EffectIntentId::from_bytes(d.identity()?),
+            authorization: IssuedEffectAuthorizationOccurrenceId::from_bytes(d.identity()?),
+            action_bytes: d.blob(WASM_SESSION_EVENT_LIMIT_V1)?.to_vec(),
+            resource_bytes: d.blob(WASM_SESSION_EVENT_LIMIT_V1)?.to_vec(),
+            payload_bytes: d.blob(WASM_SESSION_EVENT_LIMIT_V1)?.to_vec(),
+            state_revision_count: d.u32()?,
+        },
+        14 => WasmSessionEventKindV1::EffectSettled {
+            intent: EffectIntentId::from_bytes(d.identity()?),
+            attempt: EffectAttemptId::from_bytes(d.identity()?),
+            receipt: match d.take(1)?[0] {
+                0 => None,
+                1 => Some(EffectReceiptId::from_bytes(d.identity()?)),
+                _ => return Err(WasmProcessStatusV1::MalformedRequest),
+            },
+            observation: match d.take(1)?[0] {
+                0 => None,
+                1 => Some(ObservationId::from_bytes(d.identity()?)),
+                _ => return Err(WasmProcessStatusV1::MalformedRequest),
+            },
+            judgment: EffectJudgmentOccurrenceId::from_bytes(d.identity()?),
+            disposition: match d.take(1)?[0] {
+                0 => EffectJudgmentDispositionV1::ReceiptObserved,
+                1 => EffectJudgmentDispositionV1::NoReceipt,
+                _ => return Err(WasmProcessStatusV1::MalformedRequest),
+            },
+            state_revision_count: d.u32()?,
+        },
         _ => return Err(WasmProcessStatusV1::MalformedRequest),
     };
     if !d.is_complete() {
@@ -1294,6 +1619,66 @@ fn put_ids(bytes: &mut Vec<u8>, identities: &[&[u8; IDENTITY_BYTES]]) {
     for identity in identities {
         bytes.extend_from_slice(*identity);
     }
+}
+
+fn put_optional_id(bytes: &mut Vec<u8>, identity: Option<&[u8; IDENTITY_BYTES]>) {
+    if let Some(identity) = identity {
+        bytes.push(1);
+        bytes.extend_from_slice(identity);
+    } else {
+        bytes.push(0);
+    }
+}
+
+fn put_capability_ref(bytes: &mut Vec<u8>, capability: CapabilityRef) {
+    bytes.extend_from_slice(capability.snapshot.as_bytes());
+    bytes.extend_from_slice(&capability.local.get().to_le_bytes());
+}
+
+fn get_capability_ref(decoder: &mut Decoder<'_>) -> Result<CapabilityRef, WasmProcessStatusV1> {
+    Ok(CapabilityRef {
+        snapshot: ProgramSnapshotId::from_bytes(decoder.identity()?),
+        local: CapabilityLocalId::new(decoder.u32()?),
+    })
+}
+
+fn put_effect_scope(bytes: &mut Vec<u8>, scope: EffectScopeV1) {
+    bytes.extend_from_slice(scope.application.snapshot.as_bytes());
+    bytes.extend_from_slice(&scope.application.local.get().to_le_bytes());
+    bytes.extend_from_slice(scope.mode.operator.snapshot.as_bytes());
+    bytes.extend_from_slice(&scope.mode.operator.local.get().to_le_bytes());
+    bytes.extend_from_slice(&scope.mode.local.get().to_le_bytes());
+    put_ids(
+        bytes,
+        &[
+            scope.program_revision.as_bytes(),
+            scope.world.as_bytes(),
+            scope.session.as_bytes(),
+        ],
+    );
+    bytes.extend_from_slice(&scope.budget.remaining_units.to_le_bytes());
+}
+
+fn get_effect_scope(decoder: &mut Decoder<'_>) -> Result<EffectScopeV1, WasmProcessStatusV1> {
+    Ok(EffectScopeV1 {
+        application: ApplicationId {
+            snapshot: ProgramSnapshotId::from_bytes(decoder.identity()?),
+            local: ApplicationLocalId::new(decoder.u32()?),
+        },
+        mode: ModeId {
+            operator: OperatorRef {
+                snapshot: ProgramSnapshotId::from_bytes(decoder.identity()?),
+                local: OperatorLocalId::new(decoder.u32()?),
+            },
+            local: ModeLocalId::new(decoder.u32()?),
+        },
+        program_revision: ProgramRevisionId::from_bytes(decoder.identity()?),
+        world: StateRevisionId::from_bytes(decoder.identity()?),
+        session: RuntimeSessionId::from_bytes(decoder.identity()?),
+        budget: Budget {
+            remaining_units: decoder.u64()?,
+        },
+    })
 }
 
 #[cfg(target_arch = "wasm32")]

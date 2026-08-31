@@ -48,6 +48,12 @@ enum RuntimeIdentityDomainV1 {
     IssuedAdmissionAuthorization = 140,
     Continuation = 150,
     Resumption = 151,
+    EffectIntent = 160,
+    EffectAuthorization = 161,
+    EffectAttempt = 162,
+    EffectReceipt = 163,
+    EffectJudgment = 164,
+    EffectObservation = 165,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -63,6 +69,12 @@ struct RuntimeIdentityOrdinalsV1 {
     next_admission_authorization: u64,
     next_continuation: u64,
     next_resumption: u64,
+    next_effect_intent: u64,
+    next_effect_authorization: u64,
+    next_effect_attempt: u64,
+    next_effect_receipt: u64,
+    next_effect_judgment: u64,
+    next_effect_observation: u64,
 }
 
 impl RuntimeIdentityOrdinalsV1 {
@@ -79,6 +91,12 @@ impl RuntimeIdentityOrdinalsV1 {
             next_admission_authorization: 0,
             next_continuation: 0,
             next_resumption: 0,
+            next_effect_intent: 0,
+            next_effect_authorization: 0,
+            next_effect_attempt: 0,
+            next_effect_receipt: 0,
+            next_effect_judgment: 0,
+            next_effect_observation: 0,
         }
     }
 }
@@ -1568,6 +1586,16 @@ pub struct ExecutableResumptionV1 {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExecutableEffectSettlementV1 {
+    pub intent: EffectIntentId,
+    pub attempt: EffectAttemptId,
+    pub receipt: Option<EffectReceiptId>,
+    pub observation: Option<ObservationId>,
+    pub judgment: EffectJudgmentOccurrenceId,
+    pub disposition: EffectJudgmentDispositionV1,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ExecutableJudgmentV1 {
     pub id: JudgmentOccurrenceId,
     pub candidate: CandidateDeltaId,
@@ -2013,7 +2041,7 @@ pub fn decode_runtime_allocation_epoch_v1(
 struct CarrierExecutionV1 {
     facts: ExecutableAuthorityFactsV1,
     mode: ModeId,
-    checker_mode: ModeId,
+    checker_mode: Option<ModeId>,
     state_started: bool,
     remaining_budget: u64,
     prior_step: Option<StepRef>,
@@ -2059,6 +2087,8 @@ pub struct ExecutableProcessRuntimeV1 {
     active_candidate_ordinal: Option<u64>,
     issued_admission_authorization: Option<IssuedAdmissionAuthorizationOccurrenceId>,
     suspended_continuation: Option<ContinuationId>,
+    pending_effect_intent: Option<EffectIntentId>,
+    active_effect_attempt: Option<EffectAttemptId>,
 }
 
 impl ExecutableProcessRuntimeV1 {
@@ -2163,6 +2193,8 @@ impl ExecutableProcessRuntimeV1 {
             active_candidate_ordinal: None,
             issued_admission_authorization: None,
             suspended_continuation: None,
+            pending_effect_intent: None,
+            active_effect_attempt: None,
         })
     }
 }
@@ -2256,7 +2288,7 @@ fn validate_projection_roles(
 }
 
 impl ExecutableProcessRuntimeV1 {
-    /// Start the unique stateful, effect-free Mode constituted for this
+    /// Start the unique stateful or effectful Mode constituted for this
     /// Application. The caller supplies operational authority facts only;
     /// package structure supplies the executable Mode and all semantic pins.
     pub fn start_carrier_process(
@@ -2284,7 +2316,7 @@ impl ExecutableProcessRuntimeV1 {
                 .mode_by_id(mode)
                 .ok_or(ExecutableCarrierErrorV1::UnsupportedSurface)?;
             if record.contract.state_delta_domain.is_some()
-                && record.contract.effect_intents.is_empty()
+                || !record.contract.effect_intents.is_empty()
             {
                 if selected.replace(mode).is_some() {
                     return Err(ExecutableCarrierErrorV1::AmbiguousStatefulMode);
@@ -2304,46 +2336,44 @@ impl ExecutableProcessRuntimeV1 {
             .executable_contract(self.application, mode)
             .ok_or(ExecutableCarrierErrorV1::UnsupportedSurface)?;
         if !executable.authorization_requirements.is_empty()
-            || !mode_record.contract.capability_requirements.is_empty()
             || !mode_record.contract.scheduling_requirements.is_empty()
             || !mode_record.contract.resource_requirements.is_empty()
         {
             return Err(ExecutableCarrierErrorV1::UnsupportedSurface);
         }
-        let target = mode_record
-            .contract
-            .state_delta_domain
-            .as_ref()
-            .expect("selected stateful Mode has a delta domain");
         let mut checker_mode = None;
-        for local in &declaration.form.eligible_modes {
-            let candidate = ModeId {
-                operator: OperatorRef {
-                    snapshot,
-                    local: declaration.form.operator,
-                },
-                local: *local,
-            };
-            if candidate == mode {
-                continue;
-            }
-            let record = constitution
-                .mode_by_id(candidate)
-                .ok_or(ExecutableCarrierErrorV1::UnsupportedSurface)?;
-            if record.contract.state_delta_domain.is_none()
-                && record.contract.effect_intents.is_empty()
-                && record
-                    .contract
-                    .formation_checks
-                    .binary_search(target)
-                    .is_ok()
-            {
-                if checker_mode.replace(candidate).is_some() {
-                    return Err(ExecutableCarrierErrorV1::AmbiguousCheckerMode);
+        if let Some(target) = mode_record.contract.state_delta_domain.as_ref() {
+            for local in &declaration.form.eligible_modes {
+                let candidate = ModeId {
+                    operator: OperatorRef {
+                        snapshot,
+                        local: declaration.form.operator,
+                    },
+                    local: *local,
+                };
+                if candidate == mode {
+                    continue;
+                }
+                let record = constitution
+                    .mode_by_id(candidate)
+                    .ok_or(ExecutableCarrierErrorV1::UnsupportedSurface)?;
+                if record.contract.state_delta_domain.is_none()
+                    && record.contract.effect_intents.is_empty()
+                    && record
+                        .contract
+                        .formation_checks
+                        .binary_search(target)
+                        .is_ok()
+                {
+                    if checker_mode.replace(candidate).is_some() {
+                        return Err(ExecutableCarrierErrorV1::AmbiguousCheckerMode);
+                    }
                 }
             }
+            if checker_mode.is_none() {
+                return Err(ExecutableCarrierErrorV1::MissingCheckerMode);
+            }
         }
-        let checker_mode = checker_mode.ok_or(ExecutableCarrierErrorV1::MissingCheckerMode)?;
         self.carrier_execution = Some(CarrierExecutionV1 {
             facts,
             mode,
@@ -2369,6 +2399,403 @@ impl ExecutableProcessRuntimeV1 {
         occurrence: ExecutableOccurrenceV1,
     ) -> Result<&ExecutableStepV1, ExecutableCarrierErrorV1> {
         self.advance_carrier_occurrence_inner(occurrence, true)
+    }
+
+    /// Emit the one Mode-declared external-effect intent at a semantic Step.
+    /// Action, resource, and payload are resolved from exact Application role
+    /// bindings; the host supplies no semantic selector or payload value.
+    pub fn emit_carrier_effect_intent(
+        &mut self,
+    ) -> Result<EffectIntentOccurrenceV1, ExecutableCarrierErrorV1> {
+        if self.pending_effect_intent.is_some() {
+            return Err(ExecutableCarrierErrorV1::EffectLifecycleAlreadyActive);
+        }
+        if self.suspended_continuation.is_some() {
+            return Err(ExecutableCarrierErrorV1::AlreadySuspended);
+        }
+        let (facts, mode, remaining_budget, prior_step) = {
+            let execution = self
+                .carrier_execution
+                .as_ref()
+                .ok_or(ExecutableCarrierErrorV1::NotStarted)?;
+            (
+                execution.facts,
+                execution.mode,
+                execution.remaining_budget,
+                execution
+                    .prior_step
+                    .ok_or(ExecutableCarrierErrorV1::NotStarted)?,
+            )
+        };
+        if remaining_budget == 0 {
+            return Err(ExecutableCarrierErrorV1::BudgetExhausted);
+        }
+        let contract = {
+            let mode_record = self
+                .carrier
+                .carrier()
+                .constitution()
+                .mode_by_id(mode)
+                .ok_or(ExecutableCarrierErrorV1::UnsupportedSurface)?;
+            let [contract] = mode_record.contract.effect_intents.as_slice() else {
+                return Err(ExecutableCarrierErrorV1::UnsupportedEffectContract);
+            };
+            contract.clone()
+        };
+        let action = self.application_role_term(contract.action_role)?;
+        let resource = self.application_role_term(contract.resource_role)?;
+        let payload = self.application_role_term(contract.payload_role)?;
+        let (step_ordinal, next_step_ordinal) =
+            stage_runtime_ordinal(self.identity_ordinals.next_step)
+                .map_err(ExecutableCarrierErrorV1::Executable)?;
+        let (configuration_ordinal, next_configuration_ordinal) =
+            stage_runtime_ordinal(self.identity_ordinals.next_configuration)
+                .map_err(ExecutableCarrierErrorV1::Executable)?;
+        let (intent_ordinal, next_intent_ordinal) =
+            stage_runtime_ordinal(self.identity_ordinals.next_effect_intent)
+                .map_err(ExecutableCarrierErrorV1::Executable)?;
+        let step = StepId::from_bytes(
+            runtime_identity_bytes(
+                self.allocation.root,
+                RuntimeIdentityDomainV1::Step,
+                step_ordinal,
+            )
+            .map_err(ExecutableCarrierErrorV1::Executable)?,
+        );
+        let after = ConfigurationId::from_bytes(
+            runtime_identity_bytes(
+                self.allocation.root,
+                RuntimeIdentityDomainV1::Configuration,
+                configuration_ordinal,
+            )
+            .map_err(ExecutableCarrierErrorV1::Executable)?,
+        );
+        let intent_id = EffectIntentId::from_bytes(
+            runtime_identity_bytes(
+                self.allocation.root,
+                RuntimeIdentityDomainV1::EffectIntent,
+                intent_ordinal,
+            )
+            .map_err(ExecutableCarrierErrorV1::Executable)?,
+        );
+        let scope = TermScope {
+            universe: self.carrier.carrier().constitution().universe(),
+            semantics: self.carrier.carrier().constitution().semantics(),
+        };
+        let configuration = executable_configuration_term_v1(scope, &self.configuration)
+            .map_err(ExecutableCarrierErrorV1::Executable)?;
+        let after_budget = remaining_budget - 1;
+        let reference = StepRef {
+            run: self.run,
+            activation: self.activation,
+            step,
+        };
+        let step_record = StepProposalV2 {
+            id: step,
+            run: self.run,
+            activation: self.activation,
+            before: self.configuration_id,
+            after: ConfigurationProposal {
+                id: after,
+                value: configuration,
+            },
+            observed_state: Some(facts.initial_state),
+            budget: StepBudgetTransitionV2 {
+                before: Budget {
+                    remaining_units: remaining_budget,
+                },
+                consumed_units: 1,
+                after: Budget {
+                    remaining_units: after_budget,
+                },
+            },
+            causes: vec![StepCause::PriorStep(prior_step)],
+            observation_outcomes: vec![],
+            candidate_delta: None,
+            outcome: StepOutcomeProposalV2::Progress,
+        };
+        let intent = EffectIntentOccurrenceV1 {
+            id: intent_id,
+            emitted_by: reference,
+            contract_index: 0,
+            required_capability: CapabilityRef {
+                snapshot: self.carrier.carrier().constitution().snapshot(),
+                local: contract.required_capability,
+            },
+            scope: EffectScopeV1 {
+                application: self.application,
+                mode,
+                program_revision: facts.program_revision,
+                world: facts.initial_state,
+                session: facts.session,
+                budget: Budget {
+                    remaining_units: after_budget,
+                },
+            },
+            action,
+            resource,
+            payload,
+        };
+        self.carrier
+            .apply_ingress(&[
+                ProcessRecordV2::Steps(vec![step_record]),
+                ProcessRecordV2::EffectIntent(intent.clone()),
+            ])
+            .map_err(ExecutableCarrierErrorV1::Ingress)?;
+        self.configuration_id = after;
+        self.identity_ordinals.next_step = next_step_ordinal;
+        self.identity_ordinals.next_configuration = next_configuration_ordinal;
+        self.identity_ordinals.next_effect_intent = next_intent_ordinal;
+        self.pending_effect_intent = Some(intent_id);
+        let execution = self
+            .carrier_execution
+            .as_mut()
+            .expect("effect intent retains its execution");
+        execution.remaining_budget = after_budget;
+        execution.prior_step = Some(reference);
+        Ok(intent)
+    }
+
+    #[must_use]
+    pub const fn pending_carrier_effect_intent(&self) -> Option<EffectIntentId> {
+        self.pending_effect_intent
+    }
+
+    pub fn issue_carrier_effect_authorization(
+        &mut self,
+        intent: EffectIntentId,
+    ) -> Result<IssuedEffectAuthorizationV1, ExecutableCarrierErrorV1> {
+        if self.pending_effect_intent != Some(intent) {
+            return Err(ExecutableCarrierErrorV1::UnknownPendingEffectIntent);
+        }
+        let intent_record = self
+            .carrier
+            .carrier()
+            .effect_intent(intent)
+            .cloned()
+            .ok_or(ExecutableCarrierErrorV1::UnknownPendingEffectIntent)?;
+        let (ordinal, next_ordinal) =
+            stage_runtime_ordinal(self.identity_ordinals.next_effect_authorization)
+                .map_err(ExecutableCarrierErrorV1::Executable)?;
+        let authorization = IssuedEffectAuthorizationV1 {
+            id: IssuedEffectAuthorizationOccurrenceId::from_bytes(
+                runtime_identity_bytes(
+                    self.allocation.root,
+                    RuntimeIdentityDomainV1::EffectAuthorization,
+                    ordinal,
+                )
+                .map_err(ExecutableCarrierErrorV1::Executable)?,
+            ),
+            intent,
+            capability: intent_record.required_capability,
+            scope: intent_record.scope,
+            action: intent_record.action,
+            resource: intent_record.resource,
+            payload: intent_record.payload,
+        };
+        self.carrier
+            .apply_ingress(&[ProcessRecordV2::IssuedEffectAuthorization(
+                authorization.clone(),
+            )])
+            .map_err(ExecutableCarrierErrorV1::Ingress)?;
+        self.identity_ordinals.next_effect_authorization = next_ordinal;
+        Ok(authorization)
+    }
+
+    pub fn begin_carrier_effect_attempt(
+        &mut self,
+        authorization: IssuedEffectAuthorizationOccurrenceId,
+    ) -> Result<EffectAttemptOccurrenceV1, ExecutableCarrierErrorV1> {
+        let issued = self
+            .carrier
+            .carrier()
+            .issued_effect_authorization(authorization)
+            .cloned()
+            .ok_or(ExecutableCarrierErrorV1::UnknownEffectAuthorization)?;
+        if self.pending_effect_intent != Some(issued.intent) {
+            return Err(ExecutableCarrierErrorV1::UnknownPendingEffectIntent);
+        }
+        let (ordinal, next_ordinal) =
+            stage_runtime_ordinal(self.identity_ordinals.next_effect_attempt)
+                .map_err(ExecutableCarrierErrorV1::Executable)?;
+        let attempt = EffectAttemptOccurrenceV1 {
+            id: EffectAttemptId::from_bytes(
+                runtime_identity_bytes(
+                    self.allocation.root,
+                    RuntimeIdentityDomainV1::EffectAttempt,
+                    ordinal,
+                )
+                .map_err(ExecutableCarrierErrorV1::Executable)?,
+            ),
+            intent: issued.intent,
+            authorization,
+            scope: issued.scope,
+            action: issued.action,
+            resource: issued.resource,
+            payload: issued.payload,
+        };
+        self.carrier
+            .apply_ingress(&[ProcessRecordV2::EffectAttempt(attempt.clone())])
+            .map_err(ExecutableCarrierErrorV1::Ingress)?;
+        self.identity_ordinals.next_effect_attempt = next_ordinal;
+        self.active_effect_attempt = Some(attempt.id);
+        Ok(attempt)
+    }
+
+    pub fn settle_carrier_effect_attempt(
+        &mut self,
+        attempt: EffectAttemptId,
+        receipt: Option<(u32, Vec<u8>)>,
+    ) -> Result<ExecutableEffectSettlementV1, ExecutableCarrierErrorV1> {
+        if self.active_effect_attempt != Some(attempt) {
+            return Err(ExecutableCarrierErrorV1::UnknownActiveEffectAttempt);
+        }
+        let attempt_record = self
+            .carrier
+            .carrier()
+            .effect_attempt(attempt)
+            .cloned()
+            .ok_or(ExecutableCarrierErrorV1::UnknownActiveEffectAttempt)?;
+        let (judgment_ordinal, next_judgment_ordinal) =
+            stage_runtime_ordinal(self.identity_ordinals.next_effect_judgment)
+                .map_err(ExecutableCarrierErrorV1::Executable)?;
+        let judgment_id = EffectJudgmentOccurrenceId::from_bytes(
+            runtime_identity_bytes(
+                self.allocation.root,
+                RuntimeIdentityDomainV1::EffectJudgment,
+                judgment_ordinal,
+            )
+            .map_err(ExecutableCarrierErrorV1::Executable)?,
+        );
+        let mut records = Vec::new();
+        let (receipt_id, observation_id, disposition, next_receipt, next_observation) =
+            if let Some((status, exact_bytes)) = receipt {
+                let (receipt_ordinal, next_receipt) =
+                    stage_runtime_ordinal(self.identity_ordinals.next_effect_receipt)
+                        .map_err(ExecutableCarrierErrorV1::Executable)?;
+                let (observation_ordinal, next_observation) =
+                    stage_runtime_ordinal(self.identity_ordinals.next_effect_observation)
+                        .map_err(ExecutableCarrierErrorV1::Executable)?;
+                let receipt_id = EffectReceiptId::from_bytes(
+                    runtime_identity_bytes(
+                        self.allocation.root,
+                        RuntimeIdentityDomainV1::EffectReceipt,
+                        receipt_ordinal,
+                    )
+                    .map_err(ExecutableCarrierErrorV1::Executable)?,
+                );
+                let observation_id = ObservationId::from_bytes(
+                    runtime_identity_bytes(
+                        self.allocation.root,
+                        RuntimeIdentityDomainV1::EffectObservation,
+                        observation_ordinal,
+                    )
+                    .map_err(ExecutableCarrierErrorV1::Executable)?,
+                );
+                let scope = TermScope {
+                    universe: self.carrier.carrier().constitution().universe(),
+                    semantics: self.carrier.carrier().constitution().semantics(),
+                };
+                let mut payload = Vec::with_capacity(8 + exact_bytes.len());
+                payload.extend_from_slice(&status.to_le_bytes());
+                payload.extend_from_slice(
+                    &u32::try_from(exact_bytes.len())
+                        .map_err(|_| ExecutableCarrierErrorV1::UnsupportedSurface)?
+                        .to_le_bytes(),
+                );
+                payload.extend_from_slice(&exact_bytes);
+                let value = Term::atom(
+                    scope,
+                    b"clause/effect-observation-v1".to_vec(),
+                    payload,
+                    EqualityContract::ExactOctetsV1,
+                )
+                .map_err(|_| ExecutableCarrierErrorV1::UnsupportedSurface)?;
+                records.extend([
+                    ProcessRecordV2::EffectReceipt(EffectReceiptOccurrenceV1 {
+                        id: receipt_id,
+                        attempt,
+                        status,
+                        exact_bytes,
+                    }),
+                    ProcessRecordV2::EffectObservation(EffectObservationV1 {
+                        receipt: receipt_id,
+                        observation: ObservationProposalV2::Value {
+                            id: observation_id,
+                            value,
+                            supports: vec![],
+                        },
+                    }),
+                ]);
+                (
+                    Some(receipt_id),
+                    Some(observation_id),
+                    EffectJudgmentDispositionV1::ReceiptObserved,
+                    Some(next_receipt),
+                    Some(next_observation),
+                )
+            } else {
+                (
+                    None,
+                    None,
+                    EffectJudgmentDispositionV1::NoReceipt,
+                    None,
+                    None,
+                )
+            };
+        records.push(ProcessRecordV2::EffectJudgment(
+            EffectJudgmentOccurrenceV1 {
+                id: judgment_id,
+                intent: attempt_record.intent,
+                attempt,
+                receipt: receipt_id,
+                observation: observation_id,
+                disposition,
+            },
+        ));
+        self.carrier
+            .apply_ingress(&records)
+            .map_err(ExecutableCarrierErrorV1::Ingress)?;
+        self.identity_ordinals.next_effect_judgment = next_judgment_ordinal;
+        if let Some(next) = next_receipt {
+            self.identity_ordinals.next_effect_receipt = next;
+        }
+        if let Some(next) = next_observation {
+            self.identity_ordinals.next_effect_observation = next;
+        }
+        self.active_effect_attempt = None;
+        self.pending_effect_intent = None;
+        Ok(ExecutableEffectSettlementV1 {
+            intent: attempt_record.intent,
+            attempt,
+            receipt: receipt_id,
+            observation: observation_id,
+            judgment: judgment_id,
+            disposition,
+        })
+    }
+
+    fn application_role_term(&self, role: RoleLocalId) -> Result<Term, ExecutableCarrierErrorV1> {
+        let constitution = self.carrier.carrier().constitution();
+        let application = constitution
+            .application_by_id(self.application)
+            .ok_or(ExecutableCarrierErrorV1::UnsupportedEffectContract)?;
+        let binding = application
+            .form
+            .bindings
+            .iter()
+            .find(|binding| binding.role == role && binding.occurrence == 0)
+            .ok_or(ExecutableCarrierErrorV1::UnsupportedEffectContract)?;
+        let RoleBindingValuePreimageV2::Known(formation) = binding.value else {
+            return Err(ExecutableCarrierErrorV1::UnsupportedEffectContract);
+        };
+        constitution
+            .preimage()
+            .formations
+            .iter()
+            .find(|candidate| candidate.id == formation)
+            .map(|candidate| candidate.term.clone())
+            .ok_or(ExecutableCarrierErrorV1::UnsupportedEffectContract)
     }
 
     /// Suspend the live Activation at one exact semantic Step and retain a
@@ -2839,6 +3266,7 @@ impl ExecutableProcessRuntimeV1 {
         let facts = execution.facts;
         let prior_step = execution.prior_step;
         let mode = execution.mode;
+        let checker_mode = execution.checker_mode;
         let remaining_budget = execution.remaining_budget;
         let scope = TermScope {
             universe: self.carrier.carrier().constitution().universe(),
@@ -2903,13 +3331,13 @@ impl ExecutableProcessRuntimeV1 {
             ingress.push(ProcessRecordV2::EnteredObservation(
                 entered_occurrence.clone(),
             ));
-            if !emit_candidate {
+            if !emit_candidate && let Some(checker_mode) = checker_mode {
                 let (checker_ordinal, after_checker_ordinal) =
                     stage_runtime_ordinal(next_checker_ordinal)
                         .map_err(ExecutableCarrierErrorV1::Executable)?;
                 next_checker_ordinal = after_checker_ordinal;
                 let (checker_records, formation, _) = self.prepare_formation_checker(
-                    execution.checker_mode,
+                    checker_mode,
                     facts,
                     &self.configuration,
                     &self.configuration,
@@ -2931,6 +3359,7 @@ impl ExecutableProcessRuntimeV1 {
         }
         let mut candidate_checker_step = None;
         let staged_candidate = if emit_candidate {
+            let checker_mode = checker_mode.ok_or(ExecutableCarrierErrorV1::MissingStatefulMode)?;
             let (candidate_ordinal, next_candidate_ordinal) =
                 stage_runtime_ordinal(self.identity_ordinals.next_candidate)
                     .map_err(ExecutableCarrierErrorV1::Executable)?;
@@ -2962,7 +3391,7 @@ impl ExecutableProcessRuntimeV1 {
                 CheckerOriginV1::Root(runtime_root_trigger(execution.epoch_origin)?)
             };
             let (checker_records, formation, checker_step) = self.prepare_formation_checker(
-                execution.checker_mode,
+                checker_mode,
                 facts,
                 &self.configuration,
                 &next_configuration,
@@ -3007,8 +3436,11 @@ impl ExecutableProcessRuntimeV1 {
             None
         };
         if !execution.state_started {
-            let prerequisite = activation_prerequisite
-                .ok_or(ExecutableCarrierErrorV1::MissingCheckerPrerequisite)?;
+            let (prerequisite_bindings, prerequisite_occurrences) = activation_prerequisite
+                .map_or_else(
+                    || (Vec::new(), Vec::new()),
+                    |prerequisite| (vec![prerequisite.binding], prerequisite.causes),
+                );
             ingress.push(ProcessRecordV2::Activation(ActivationProposalV2 {
                 id: self.activation,
                 application: self.application,
@@ -3024,12 +3456,12 @@ impl ExecutableProcessRuntimeV1 {
                     execution_authorizations: vec![],
                     judgment_authorities: vec![],
                 },
-                prerequisite_bindings: vec![prerequisite.binding],
+                prerequisite_bindings,
                 causes: ActivationCauseFrontierV2 {
                     origin: ActivationOrigin::RootedBy(runtime_root_trigger(
                         execution.epoch_origin,
                     )?),
-                    prerequisite_occurrences: prerequisite.causes,
+                    prerequisite_occurrences,
                 },
                 membership: RunMembership::RootOf(self.run),
                 initial_configuration: ConfigurationProposal {
@@ -4044,6 +4476,11 @@ pub enum ExecutableCarrierErrorV1 {
     MissingFormationEvidence,
     ConstitutiveAdmissionAuthorityUnavailable,
     BudgetExhausted,
+    EffectLifecycleAlreadyActive,
+    UnsupportedEffectContract,
+    UnknownPendingEffectIntent,
+    UnknownEffectAuthorization,
+    UnknownActiveEffectAttempt,
     UnsupportedSurface,
 }
 
@@ -4141,7 +4578,6 @@ fn activation_pins_v1(
         .mode_by_id(mode)
         .ok_or(ExecutableCarrierErrorV1::UnsupportedSurface)?;
     if !executable.authorization_requirements.is_empty()
-        || !mode_record.contract.capability_requirements.is_empty()
         || !mode_record.contract.scheduling_requirements.is_empty()
         || !mode_record.contract.resource_requirements.is_empty()
     {
@@ -4166,7 +4602,15 @@ fn activation_pins_v1(
         runtime_policy: stateful.then_some(facts.policy),
         context_requirements,
         constitutive_dependencies,
-        capabilities: vec![],
+        capabilities: mode_record
+            .contract
+            .capability_requirements
+            .iter()
+            .map(|local| CapabilityRef {
+                snapshot: constitution.snapshot(),
+                local: *local,
+            })
+            .collect(),
         scheduling_requirements: vec![],
         resource_requirements: vec![],
         cancellation_scope: CancellationScope::Activation,

@@ -584,6 +584,11 @@ wire_opaque_id!(
     ExternalEvidenceRef,
     JudgmentOccurrenceId,
     IssuedAdmissionAuthorizationOccurrenceId,
+    EffectIntentId,
+    IssuedEffectAuthorizationOccurrenceId,
+    EffectAttemptId,
+    EffectReceiptId,
+    EffectJudgmentOccurrenceId,
     RootPolicyId,
 );
 
@@ -1223,6 +1228,9 @@ impl Wire for ContinuationContractV2 {
 
 wire_struct!(EffectIntentContractPreimageV2 {
     intent_domain,
+    action_role,
+    resource_role,
+    payload_role,
     required_capability,
 });
 wire_struct!(StaticActivationBasisPreimageV2 {
@@ -1479,6 +1487,11 @@ impl Wire for CausalRef {
             Self::CandidateDelta(value) => tagged(encoder, 7, value),
             Self::Judgment(value) => tagged(encoder, 8, value),
             Self::Admission(value) => tagged(encoder, 9, value),
+            Self::EffectIntent(value) => tagged(encoder, 10, value),
+            Self::EffectAuthorization(value) => tagged(encoder, 11, value),
+            Self::EffectAttempt(value) => tagged(encoder, 12, value),
+            Self::EffectReceipt(value) => tagged(encoder, 13, value),
+            Self::EffectJudgment(value) => tagged(encoder, 14, value),
         }
     }
 
@@ -1495,6 +1508,11 @@ impl Wire for CausalRef {
             7 => Self::CandidateDelta(CandidateDeltaId::decode(cursor)?),
             8 => Self::Judgment(JudgmentOccurrenceId::decode(cursor)?),
             9 => Self::Admission(AdmissionOccurrenceId::decode(cursor)?),
+            10 => Self::EffectIntent(EffectIntentId::decode(cursor)?),
+            11 => Self::EffectAuthorization(IssuedEffectAuthorizationOccurrenceId::decode(cursor)?),
+            12 => Self::EffectAttempt(EffectAttemptId::decode(cursor)?),
+            13 => Self::EffectReceipt(EffectReceiptId::decode(cursor)?),
+            14 => Self::EffectJudgment(EffectJudgmentOccurrenceId::decode(cursor)?),
             found => return Err(unknown_tag(offset, "CausalRef", found)),
         })
     }
@@ -1514,6 +1532,7 @@ impl Wire for OccurrenceProvenance {
         match self {
             Self::ProducedBy(value) => tagged(encoder, 0, value),
             Self::EnteredThrough(value) => tagged(encoder, 1, value),
+            Self::ReportedByEffectReceipt(value) => tagged(encoder, 2, value),
         }
     }
 
@@ -1522,6 +1541,9 @@ impl Wire for OccurrenceProvenance {
         match cursor.u8()? {
             0 => Ok(Self::ProducedBy(StepRef::decode(cursor)?)),
             1 => Ok(Self::EnteredThrough(EnteredThrough::decode(cursor)?)),
+            2 => Ok(Self::ReportedByEffectReceipt(EffectReceiptId::decode(
+                cursor,
+            )?)),
             found => Err(unknown_tag(offset, "OccurrenceProvenance", found)),
         }
     }
@@ -2334,6 +2356,81 @@ wire_struct!(StepProposalV2 {
     outcome,
 });
 
+wire_struct!(EffectScopeV1 {
+    application,
+    mode,
+    program_revision,
+    world,
+    session,
+    budget,
+});
+wire_struct!(EffectIntentOccurrenceV1 {
+    id,
+    emitted_by,
+    contract_index,
+    required_capability,
+    scope,
+    action,
+    resource,
+    payload,
+});
+wire_struct!(IssuedEffectAuthorizationV1 {
+    id,
+    intent,
+    capability,
+    scope,
+    action,
+    resource,
+    payload,
+});
+wire_struct!(EffectAttemptOccurrenceV1 {
+    id,
+    intent,
+    authorization,
+    scope,
+    action,
+    resource,
+    payload,
+});
+wire_struct!(EffectReceiptOccurrenceV1 {
+    id,
+    attempt,
+    status,
+    exact_bytes,
+});
+wire_struct!(EffectObservationV1 {
+    receipt,
+    observation,
+});
+
+impl Wire for EffectJudgmentDispositionV1 {
+    fn encode(&self, encoder: &mut Encoder) -> Result<(), CanonicalEncodeError> {
+        encoder.u8(match self {
+            Self::ReceiptObserved => 0,
+            Self::NoReceipt => 1,
+        });
+        Ok(())
+    }
+
+    fn decode(cursor: &mut Cursor<'_>) -> Result<Self, CanonicalDecodeError> {
+        let offset = cursor.offset();
+        match cursor.u8()? {
+            0 => Ok(Self::ReceiptObserved),
+            1 => Ok(Self::NoReceipt),
+            found => Err(unknown_tag(offset, "EffectJudgmentDispositionV1", found)),
+        }
+    }
+}
+
+wire_struct!(EffectJudgmentOccurrenceV1 {
+    id,
+    intent,
+    attempt,
+    receipt,
+    observation,
+    disposition,
+});
+
 impl Wire for StateRevisionCause {
     fn encode(&self, encoder: &mut Encoder) -> Result<(), CanonicalEncodeError> {
         match self {
@@ -2395,6 +2492,12 @@ impl Wire for ProcessRecordV2 {
             Self::Judgment(value) => tagged(encoder, 7, value),
             Self::IssuedAdmissionAuthorization(value) => tagged(encoder, 8, value),
             Self::AdmissionDecision(value) => tagged(encoder, 9, value),
+            Self::EffectIntent(value) => tagged(encoder, 10, value),
+            Self::IssuedEffectAuthorization(value) => tagged(encoder, 11, value),
+            Self::EffectAttempt(value) => tagged(encoder, 12, value),
+            Self::EffectReceipt(value) => tagged(encoder, 13, value),
+            Self::EffectObservation(value) => tagged(encoder, 14, value),
+            Self::EffectJudgment(value) => tagged(encoder, 15, value),
         }
     }
 
@@ -2413,6 +2516,12 @@ impl Wire for ProcessRecordV2 {
                 cursor,
             )?),
             9 => Self::AdmissionDecision(StateAdmissionDecisionV2::decode(cursor)?),
+            10 => Self::EffectIntent(EffectIntentOccurrenceV1::decode(cursor)?),
+            11 => Self::IssuedEffectAuthorization(IssuedEffectAuthorizationV1::decode(cursor)?),
+            12 => Self::EffectAttempt(EffectAttemptOccurrenceV1::decode(cursor)?),
+            13 => Self::EffectReceipt(EffectReceiptOccurrenceV1::decode(cursor)?),
+            14 => Self::EffectObservation(EffectObservationV1::decode(cursor)?),
+            15 => Self::EffectJudgment(EffectJudgmentOccurrenceV1::decode(cursor)?),
             found => return Err(unknown_tag(offset, "ProcessRecordV2", found)),
         })
     }
@@ -2901,6 +3010,12 @@ fn validate_record_order_v2(record: &ProcessRecordV2) -> Result<(), CanonicalEnc
             )?;
             validate_entered(&value.provenance)
         }
+        ProcessRecordV2::EffectIntent(_)
+        | ProcessRecordV2::IssuedEffectAuthorization(_)
+        | ProcessRecordV2::EffectAttempt(_)
+        | ProcessRecordV2::EffectReceipt(_)
+        | ProcessRecordV2::EffectJudgment(_) => Ok(()),
+        ProcessRecordV2::EffectObservation(value) => validate_observation_order(&value.observation),
     }
 }
 
@@ -2949,6 +3064,7 @@ fn validate_occurrence(provenance: &OccurrenceProvenance) -> Result<(), Canonica
     match provenance {
         OccurrenceProvenance::ProducedBy(_) => Ok(()),
         OccurrenceProvenance::EnteredThrough(value) => validate_entered(value),
+        OccurrenceProvenance::ReportedByEffectReceipt(_) => Ok(()),
     }
 }
 

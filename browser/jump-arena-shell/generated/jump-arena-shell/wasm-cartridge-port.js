@@ -373,7 +373,22 @@ return {[$$bc$property_key($$bc$keyword("kind"))]: "rejected", [$$bc$property_ke
 return {[$$bc$property_key($$bc$keyword("kind"))]: "suspended", [$$bc$property_key($$bc$keyword("slot"))]: slot, [$$bc$property_key($$bc$keyword("generation"))]: generation, [$$bc$property_key($$bc$keyword("sequence"))]: sequence, [$$bc$property_key($$bc$keyword("step"))]: identity_at(21), [$$bc$property_key($$bc$keyword("continuation"))]: identity_at(53), [$$bc$property_key($$bc$keyword("run"))]: identity_at(85), [$$bc$property_key($$bc$keyword("activation"))]: identity_at(117), [$$bc$property_key($$bc$keyword("before"))]: identity_at(149), [$$bc$property_key($$bc$keyword("after"))]: identity_at(181), [$$bc$property_key($$bc$keyword("remainingBudget"))]: little_safe_u64(bytes, 213), [$$bc$property_key($$bc$keyword("stateRevisionCount"))]: little_u32(bytes, 221)}; })() : (($$bc$equiv(tag, 9))) ? (() => { if ((!($$bc$equiv(bytes.length, (21 + (7 * identity_bytes) + 8 + 4))))) {
   (() => { throw new Error("CSE1 Resumed event has an invalid shape"); })();
 }
-return {[$$bc$property_key($$bc$keyword("kind"))]: "resumed", [$$bc$property_key($$bc$keyword("slot"))]: slot, [$$bc$property_key($$bc$keyword("generation"))]: generation, [$$bc$property_key($$bc$keyword("sequence"))]: sequence, [$$bc$property_key($$bc$keyword("occurrence"))]: identity_at(21), [$$bc$property_key($$bc$keyword("step"))]: identity_at(53), [$$bc$property_key($$bc$keyword("continuation"))]: identity_at(85), [$$bc$property_key($$bc$keyword("run"))]: identity_at(117), [$$bc$property_key($$bc$keyword("activation"))]: identity_at(149), [$$bc$property_key($$bc$keyword("before"))]: identity_at(181), [$$bc$property_key($$bc$keyword("after"))]: identity_at(213), [$$bc$property_key($$bc$keyword("remainingBudget"))]: little_safe_u64(bytes, 245), [$$bc$property_key($$bc$keyword("stateRevisionCount"))]: little_u32(bytes, 253)}; })() : {[$$bc$property_key($$bc$keyword("kind"))]: "input", [$$bc$property_key($$bc$keyword("slot"))]: slot, [$$bc$property_key($$bc$keyword("generation"))]: generation, [$$bc$property_key($$bc$keyword("sequence"))]: sequence});
+return {[$$bc$property_key($$bc$keyword("kind"))]: "resumed", [$$bc$property_key($$bc$keyword("slot"))]: slot, [$$bc$property_key($$bc$keyword("generation"))]: generation, [$$bc$property_key($$bc$keyword("sequence"))]: sequence, [$$bc$property_key($$bc$keyword("occurrence"))]: identity_at(21), [$$bc$property_key($$bc$keyword("step"))]: identity_at(53), [$$bc$property_key($$bc$keyword("continuation"))]: identity_at(85), [$$bc$property_key($$bc$keyword("run"))]: identity_at(117), [$$bc$property_key($$bc$keyword("activation"))]: identity_at(149), [$$bc$property_key($$bc$keyword("before"))]: identity_at(181), [$$bc$property_key($$bc$keyword("after"))]: identity_at(213), [$$bc$property_key($$bc$keyword("remainingBudget"))]: little_safe_u64(bytes, 245), [$$bc$property_key($$bc$keyword("stateRevisionCount"))]: little_u32(bytes, 253)}; })() : (($$bc$equiv(tag, 10))) ? (() => { const action = parse_blob(bytes, 369, cse1_max_bytes, "CSE1 effect action"); const resource = parse_blob(bytes, action.next, cse1_max_bytes, "CSE1 effect resource"); const payload = parse_blob(bytes, resource.next, cse1_max_bytes, "CSE1 effect payload"); const count_end = require_range(bytes, payload.next, 4, "CSE1 effect StateRevision count"); if ((!($$bc$equiv(count_end, bytes.length)))) {
+  (() => { throw new Error("CSE1 effect intent has trailing bytes"); })();
+}
+return {[$$bc$property_key($$bc$keyword("kind"))]: "effect-intent", [$$bc$property_key($$bc$keyword("slot"))]: slot, [$$bc$property_key($$bc$keyword("generation"))]: generation, [$$bc$property_key($$bc$keyword("sequence"))]: sequence, [$$bc$property_key($$bc$keyword("intentId"))]: identity_at(21), [$$bc$property_key($$bc$keyword("run"))]: identity_at(53), [$$bc$property_key($$bc$keyword("activation"))]: identity_at(85), [$$bc$property_key($$bc$keyword("step"))]: identity_at(117), [$$bc$property_key($$bc$keyword("contractIndex"))]: little_u32(bytes, 149), [$$bc$property_key($$bc$keyword("capability"))]: {[$$bc$property_key($$bc$keyword("snapshot"))]: identity_at(153), [$$bc$property_key($$bc$keyword("local"))]: little_u32(bytes, 185)}, [$$bc$property_key($$bc$keyword("scope"))]: {[$$bc$property_key($$bc$keyword("application"))]: {[$$bc$property_key($$bc$keyword("snapshot"))]: identity_at(189), [$$bc$property_key($$bc$keyword("local"))]: little_u32(bytes, 221)}, [$$bc$property_key($$bc$keyword("mode"))]: {[$$bc$property_key($$bc$keyword("snapshot"))]: identity_at(225), [$$bc$property_key($$bc$keyword("operator"))]: little_u32(bytes, 257), [$$bc$property_key($$bc$keyword("local"))]: little_u32(bytes, 261)}, [$$bc$property_key($$bc$keyword("programRevision"))]: identity_at(265), [$$bc$property_key($$bc$keyword("world"))]: identity_at(297), [$$bc$property_key($$bc$keyword("sessionId"))]: identity_at(329), [$$bc$property_key($$bc$keyword("remainingBudget"))]: little_safe_u64(bytes, 361)}, [$$bc$property_key($$bc$keyword("actionBytes"))]: action.bytes, [$$bc$property_key($$bc$keyword("resourceBytes"))]: resource.bytes, [$$bc$property_key($$bc$keyword("payloadBytes"))]: payload.bytes, [$$bc$property_key($$bc$keyword("stateRevisionCount"))]: little_u32(bytes, payload.next)}; })() : (($$bc$equiv(tag, 11))) ? (() => { if ((!($$bc$equiv(bytes.length, 25)))) {
+  (() => { throw new Error("CSE1 absent effect intent has an invalid shape"); })();
+}
+return {[$$bc$property_key($$bc$keyword("kind"))]: "effect-intent-absent", [$$bc$property_key($$bc$keyword("slot"))]: slot, [$$bc$property_key($$bc$keyword("generation"))]: generation, [$$bc$property_key($$bc$keyword("sequence"))]: sequence, [$$bc$property_key($$bc$keyword("stateRevisionCount"))]: little_u32(bytes, 21)}; })() : (($$bc$equiv(tag, 12))) ? (() => { if ((!($$bc$equiv(bytes.length, 89)))) {
+  (() => { throw new Error("CSE1 effect authorization has an invalid shape"); })();
+}
+return {[$$bc$property_key($$bc$keyword("kind"))]: "effect-authorization", [$$bc$property_key($$bc$keyword("slot"))]: slot, [$$bc$property_key($$bc$keyword("generation"))]: generation, [$$bc$property_key($$bc$keyword("sequence"))]: sequence, [$$bc$property_key($$bc$keyword("authorizationId"))]: identity_at(21), [$$bc$property_key($$bc$keyword("intentId"))]: identity_at(53), [$$bc$property_key($$bc$keyword("stateRevisionCount"))]: little_u32(bytes, 85)}; })() : (($$bc$equiv(tag, 13))) ? (() => { const action = parse_blob(bytes, 117, cse1_max_bytes, "CSE1 attempted action"); const resource = parse_blob(bytes, action.next, cse1_max_bytes, "CSE1 attempted resource"); const payload = parse_blob(bytes, resource.next, cse1_max_bytes, "CSE1 attempted payload"); const count_end = require_range(bytes, payload.next, 4, "CSE1 attempt StateRevision count"); if ((!($$bc$equiv(count_end, bytes.length)))) {
+  (() => { throw new Error("CSE1 effect attempt has trailing bytes"); })();
+}
+return {[$$bc$property_key($$bc$keyword("kind"))]: "effect-attempt", [$$bc$property_key($$bc$keyword("slot"))]: slot, [$$bc$property_key($$bc$keyword("generation"))]: generation, [$$bc$property_key($$bc$keyword("sequence"))]: sequence, [$$bc$property_key($$bc$keyword("attemptId"))]: identity_at(21), [$$bc$property_key($$bc$keyword("intentId"))]: identity_at(53), [$$bc$property_key($$bc$keyword("authorizationId"))]: identity_at(85), [$$bc$property_key($$bc$keyword("actionBytes"))]: action.bytes, [$$bc$property_key($$bc$keyword("resourceBytes"))]: resource.bytes, [$$bc$property_key($$bc$keyword("payloadBytes"))]: payload.bytes, [$$bc$property_key($$bc$keyword("stateRevisionCount"))]: little_u32(bytes, payload.next)}; })() : (($$bc$equiv(tag, 14))) ? (() => { const receipt_tag = byte_at(bytes, 85); const receipt_offset = 86; const receipt_end = ((($$bc$equiv(receipt_tag, 0))) ? receipt_offset : (($$bc$equiv(receipt_tag, 1))) ? require_range(bytes, receipt_offset, identity_bytes, "CSE1 effect receipt identity") : (() => { throw new Error("CSE1 effect receipt tag is invalid"); })()); const observation_tag = byte_at(bytes, receipt_end); const observation_offset = (receipt_end + 1); const observation_end = ((($$bc$equiv(observation_tag, 0))) ? observation_offset : (($$bc$equiv(observation_tag, 1))) ? require_range(bytes, observation_offset, identity_bytes, "CSE1 effect Observation identity") : (() => { throw new Error("CSE1 effect Observation tag is invalid"); })()); const judgment_offset = observation_end; const judgment_end = require_range(bytes, judgment_offset, identity_bytes, "CSE1 effect Judgment identity"); const disposition_offset = judgment_end; const count_offset = require_range(bytes, disposition_offset, 1, "CSE1 effect disposition"); const end = require_range(bytes, count_offset, 4, "CSE1 effect StateRevision count"); const disposition = byte_at(bytes, disposition_offset); if (((!($$bc$equiv(end, bytes.length))) || ((!($$bc$equiv(disposition, 0))) && (!($$bc$equiv(disposition, 1)))))) {
+  (() => { throw new Error("CSE1 effect settlement has an invalid shape"); })();
+}
+return {[$$bc$property_key($$bc$keyword("kind"))]: "effect-settlement", [$$bc$property_key($$bc$keyword("slot"))]: slot, [$$bc$property_key($$bc$keyword("generation"))]: generation, [$$bc$property_key($$bc$keyword("sequence"))]: sequence, [$$bc$property_key($$bc$keyword("intentId"))]: identity_at(21), [$$bc$property_key($$bc$keyword("attemptId"))]: identity_at(53), [$$bc$property_key($$bc$keyword("receiptId"))]: (($$bc$equiv(receipt_tag, 1)) ? identity_at(receipt_offset) : null), [$$bc$property_key($$bc$keyword("observationId"))]: (($$bc$equiv(observation_tag, 1)) ? identity_at(observation_offset) : null), [$$bc$property_key($$bc$keyword("judgmentId"))]: identity_at(judgment_offset), [$$bc$property_key($$bc$keyword("disposition"))]: (($$bc$equiv(disposition, 0)) ? "receipt-observed" : "no-receipt"), [$$bc$property_key($$bc$keyword("stateRevisionCount"))]: little_u32(bytes, count_offset)}; })() : {[$$bc$property_key($$bc$keyword("kind"))]: "input", [$$bc$property_key($$bc$keyword("slot"))]: slot, [$$bc$property_key($$bc$keyword("generation"))]: generation, [$$bc$property_key($$bc$keyword("sequence"))]: sequence});
   } else {
     return (() => { throw new Error("CSE1 event must carry bounded exact bytes"); })();
   }
@@ -587,6 +602,10 @@ function require_candidate(value) {
   return (((!(value == null)) && ((!(value.candidateId == null)) && (!(value.base == null)))) ? value : (() => { throw new Error("Wasm candidate is invalid"); })());
 }
 
+function require_identity(value, label) {
+  return ((exact_byte_array_p(value, identity_bytes) && ($$bc$equiv(value.length, identity_bytes))) ? value : (() => { throw new Error($$bc$str(label, " must carry one exact Clause identity")); })());
+}
+
 function advance_session_occurrence_bang(module, incoming_session, ordinal) {
   const session = require_live_session(incoming_session);
   const event = apply_session_command_bang(module, session, occurrence_input_command_bang(session, ordinal));
@@ -610,6 +629,67 @@ function resume_session_bang(module, incoming_session) {
   const event = apply_session_command_bang(module, session, resume_command_bang(session));
   if ((!($$bc$equiv(event.kind, "resumed")))) {
     (() => { throw new Error("CWI1 resumption did not produce Resumed"); })();
+  }
+  return event;
+}
+
+function query_pending_effect_intent_bang(module, incoming_session) {
+  const session = require_live_session(incoming_session);
+  const event = apply_session_command_bang(module, session, encode_session_command_bang(session, 10, null));
+  if (((!($$bc$equiv(event.kind, "effect-intent"))) && (!($$bc$equiv(event.kind, "effect-intent-absent"))))) {
+    (() => { throw new Error("CWI1 effect query produced an invalid event"); })();
+  }
+  return event;
+}
+
+function emit_effect_intent_bang(module, incoming_session) {
+  const session = require_live_session(incoming_session);
+  const event = apply_session_command_bang(module, session, encode_session_command_bang(session, 11, null));
+  if ((!($$bc$equiv(event.kind, "effect-intent")))) {
+    (() => { throw new Error("CWI1 effect emission did not produce an exact intent"); })();
+  }
+  return event;
+}
+
+function issue_effect_authorization_bang(module, incoming_session, intent_id) {
+  const session = require_live_session(incoming_session);
+  const intent = require_identity(intent_id, "effect intent");
+  const event = apply_session_command_bang(module, session, encode_session_command_bang(session, 12, intent));
+  if ((!($$bc$equiv(event.kind, "effect-authorization")))) {
+    (() => { throw new Error("CWI1 effect issuance did not produce exact authority"); })();
+  }
+  return event;
+}
+
+function begin_effect_attempt_bang(module, incoming_session, authorization_id) {
+  const session = require_live_session(incoming_session);
+  const authorization = require_identity(authorization_id, "effect authorization");
+  const event = apply_session_command_bang(module, session, encode_session_command_bang(session, 13, authorization));
+  if ((!($$bc$equiv(event.kind, "effect-attempt")))) {
+    (() => { throw new Error("CWI1 effect attempt did not reach its boundary"); })();
+  }
+  return event;
+}
+
+function settle_effect_attempt_bang(module, incoming_session, attempt_id, status, exact_receipt) {
+  const session = require_live_session(incoming_session);
+  const attempt = require_identity(attempt_id, "effect attempt");
+  const payload = [];
+  attempt.forEach((byte) => {
+  payload.push(byte);
+});
+  if (((status == null) && (exact_receipt == null))) {
+    payload.push(0);
+  } else if (((status == null) || ((exact_receipt == null) || ((!((_truthy) => _truthy !== false && _truthy != null)(Number.isSafeInteger(status))) || ((status < 0) || ((status > 4294967295) || (!exact_byte_array_p(exact_receipt, session_command_max_bytes)))))))) {
+    (() => { throw new Error("effect receipt must be absent or exact bounded status and bytes"); })();
+  } else {
+    payload.push(1);
+    append_u32_bang(payload, status);
+    append_blob_bang(payload, exact_receipt);
+  }
+  const event = apply_session_command_bang(module, session, encode_session_command_bang(session, 14, payload));
+  if ((!($$bc$equiv(event.kind, "effect-settlement")))) {
+    (() => { throw new Error("CWI1 effect settlement did not produce a Judgment"); })();
   }
   return event;
 }
@@ -747,6 +827,7 @@ export { advance_session_occurrence_bang as "advance-session-occurrence!" };
 export { append_blob_bang as "append-blob!" };
 export { append_u32_bang as "append-u32!" };
 export { append_u64_bang as "append-u64!" };
+export { begin_effect_attempt_bang as "begin-effect-attempt!" };
 export { byte_at as "byte-at" };
 export { create_wasm_cartridge_port as "create-wasm-cartridge-port" };
 export { cse1_projected_term_json_max_source_units as "cse1-projected-term-json-max-source-units" };
@@ -757,17 +838,21 @@ export { cwo1observation_values as "cwo1observation-values" };
 export { decode_cwo1_observation as "decode-cwo1-observation" };
 export { decode_cwr1_hex as "decode-cwr1-hex" };
 export { decode_projected_term_frame as "decode-projected-term-frame" };
+export { emit_effect_intent_bang as "emit-effect-intent!" };
 export { exact_byte_array_p as "exact-byte-array?" };
 export { exactprocessobservation_bytes as "exactprocessobservation-bytes" };
 export { exactprocessrequest_bytes as "exactprocessrequest-bytes" };
 export { frozen_byte_range as "frozen-byte-range" };
+export { issue_effect_authorization_bang as "issue-effect-authorization!" };
 export { little_safe_u64 as "little-safe-u64" };
 export { little_u16 as "little-u16" };
 export { little_u32 as "little-u32" };
 export { parse_blob as "parse-blob" };
 export { process_request_occurrences_bang as "process-request-occurrences!" };
 export { process_status as "process-status" };
+export { query_pending_effect_intent_bang as "query-pending-effect-intent!" };
 export { require_range as "require-range" };
 export { resume_session_bang as "resume-session!" };
+export { settle_effect_attempt_bang as "settle-effect-attempt!" };
 export { suspend_session_bang as "suspend-session!" };
 //# sourceMappingURL=wasm-cartridge-port.js.map

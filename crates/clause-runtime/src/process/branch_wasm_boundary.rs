@@ -1251,6 +1251,11 @@ fn put_causal_ref(bytes: &mut Vec<u8>, occurrence: CausalRef) {
         CausalRef::CandidateDelta(id) => put_causal_id(bytes, 7, id.as_bytes()),
         CausalRef::Judgment(id) => put_causal_id(bytes, 8, id.as_bytes()),
         CausalRef::Admission(id) => put_causal_id(bytes, 9, id.as_bytes()),
+        CausalRef::EffectIntent(id) => put_causal_id(bytes, 10, id.as_bytes()),
+        CausalRef::EffectAuthorization(id) => put_causal_id(bytes, 11, id.as_bytes()),
+        CausalRef::EffectAttempt(id) => put_causal_id(bytes, 12, id.as_bytes()),
+        CausalRef::EffectReceipt(id) => put_causal_id(bytes, 13, id.as_bytes()),
+        CausalRef::EffectJudgment(id) => put_causal_id(bytes, 14, id.as_bytes()),
     }
 }
 
@@ -1277,6 +1282,15 @@ fn get_causal_ref(decoder: &mut Decoder<'_>) -> Result<CausalRef, WasmProcessSta
         7 => CausalRef::CandidateDelta(CandidateDeltaId::from_bytes(decoder.identity()?)),
         8 => CausalRef::Judgment(JudgmentOccurrenceId::from_bytes(decoder.identity()?)),
         9 => CausalRef::Admission(AdmissionOccurrenceId::from_bytes(decoder.identity()?)),
+        10 => CausalRef::EffectIntent(EffectIntentId::from_bytes(decoder.identity()?)),
+        11 => CausalRef::EffectAuthorization(IssuedEffectAuthorizationOccurrenceId::from_bytes(
+            decoder.identity()?,
+        )),
+        12 => CausalRef::EffectAttempt(EffectAttemptId::from_bytes(decoder.identity()?)),
+        13 => CausalRef::EffectReceipt(EffectReceiptId::from_bytes(decoder.identity()?)),
+        14 => {
+            CausalRef::EffectJudgment(EffectJudgmentOccurrenceId::from_bytes(decoder.identity()?))
+        }
         _ => return Err(WasmProcessStatusV1::MalformedRequest),
     })
 }

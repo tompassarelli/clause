@@ -1,0 +1,16 @@
+referent DispatchOpen
+referent Request
+referent Action
+referent Resource
+referent Payload
+referent Result
+
+capability dispatch-capability
+
+relation dispatch
+  reads {request: Request} dispatches {action: Action} to {resource: Resource} with {payload: Payload} yielding {result: Result}
+  subject request
+  mode given request action resource payload yields result: many
+    reactive while DispatchOpen
+    continues linearly
+    effect action resource resource payload payload requires dispatch-capability

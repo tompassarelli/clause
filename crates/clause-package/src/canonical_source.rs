@@ -54,6 +54,7 @@ pub enum CanonicalSourceProductionV1 {
     Assertion,
     Handler,
     HandlerInclude,
+    Capability,
 }
 
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -103,6 +104,7 @@ pub enum CanonicalAllocationJudgmentV1 {
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum CanonicalAllocatedIdentityV1 {
     Formation(FormationLocalId),
+    Capability(CapabilityLocalId),
     RelationSchema(RelationSchemaLocalId),
     Role(LocalRoleRefV2),
     Operator(OperatorLocalId),
@@ -533,6 +535,12 @@ pub enum CanonicalSourceErrorV1 {
     InvalidRelationChild {
         origin: CanonicalSourceOriginV1,
     },
+    UnknownModeFormation {
+        designation: Vec<u8>,
+    },
+    UnknownModeCapability {
+        designation: Vec<u8>,
+    },
     MissingRelationReads {
         designation: Vec<u8>,
     },
@@ -655,6 +663,9 @@ struct CstItem {
 #[derive(Clone, Debug)]
 enum CstKind {
     Referent {
+        designation: Vec<u8>,
+    },
+    Capability {
         designation: Vec<u8>,
     },
     Shape {
@@ -847,8 +858,19 @@ struct RelationModeCst {
     known: Vec<Vec<u8>>,
     produced: Vec<Vec<u8>>,
     cardinality: SourceCardinality,
+    reactive_obligation: Option<Vec<u8>>,
+    continues_linearly: bool,
+    effect: Option<RelationEffectCst>,
     canonical: Vec<u8>,
     origin: CanonicalSourceOriginV1,
+}
+
+#[derive(Clone, Debug)]
+struct RelationEffectCst {
+    action_role: Vec<u8>,
+    resource_role: Vec<u8>,
+    payload_role: Vec<u8>,
+    capability: Vec<u8>,
 }
 
 #[derive(Clone, Debug)]
@@ -872,6 +894,7 @@ enum SourceCardinality {
 #[repr(u8)]
 enum AllocationDomain {
     Formation,
+    Capability,
     RelationSchema,
     Role,
     Operator,
@@ -882,6 +905,7 @@ impl AllocationDomain {
     const fn of(identity: CanonicalAllocatedIdentityV1) -> Self {
         match identity {
             CanonicalAllocatedIdentityV1::Formation(_) => Self::Formation,
+            CanonicalAllocatedIdentityV1::Capability(_) => Self::Capability,
             CanonicalAllocatedIdentityV1::RelationSchema(_) => Self::RelationSchema,
             CanonicalAllocatedIdentityV1::Role(_) => Self::Role,
             CanonicalAllocatedIdentityV1::Operator(_) => Self::Operator,
@@ -892,6 +916,7 @@ impl AllocationDomain {
     const fn label(self) -> &'static str {
         match self {
             Self::Formation => "FormationLocalId",
+            Self::Capability => "CapabilityLocalId",
             Self::RelationSchema => "RelationSchemaLocalId",
             Self::Role => "RoleLocalId",
             Self::Operator => "OperatorLocalId",
@@ -1145,6 +1170,9 @@ fn allocated_identity(
         AllocationDomain::Formation => {
             CanonicalAllocatedIdentityV1::Formation(FormationLocalId::new(coordinate))
         }
+        AllocationDomain::Capability => {
+            CanonicalAllocatedIdentityV1::Capability(CapabilityLocalId::new(coordinate))
+        }
         AllocationDomain::RelationSchema => {
             CanonicalAllocatedIdentityV1::RelationSchema(RelationSchemaLocalId::new(coordinate))
         }
@@ -1182,6 +1210,23 @@ fn allocation_requests(
                     slot: head_slot(CanonicalSourceProductionV1::Referent),
                     domain: AllocationDomain::Formation,
                 });
+            }
+            CstKind::Capability { designation } => {
+                let producer =
+                    semantic_producer(CanonicalSourceProductionV1::Capability, designation);
+                let slot = head_slot(CanonicalSourceProductionV1::Capability);
+                requested.extend([
+                    AllocationRequest {
+                        producer: producer.clone(),
+                        slot: slot.clone(),
+                        domain: AllocationDomain::Formation,
+                    },
+                    AllocationRequest {
+                        producer,
+                        slot,
+                        domain: AllocationDomain::Capability,
+                    },
+                ]);
             }
             CstKind::Shape {
                 designation,
@@ -2142,9 +2187,31 @@ pub fn elaborate_canonical_source_package_v1(
     };
     let mut formations = Vec::new();
     let mut schemas = Vec::new();
+    let mut capabilities = Vec::new();
     let mut operators = Vec::new();
     let mut emissions = Vec::new();
     let mut unsupported = Vec::new();
+    let mut named_formations = BTreeMap::new();
+    let mut named_capabilities = BTreeMap::new();
+    for item in &cst.items {
+        match &item.kind {
+            CstKind::Referent { designation } => {
+                let producer =
+                    semantic_producer(CanonicalSourceProductionV1::Referent, designation);
+                let slot = head_slot(CanonicalSourceProductionV1::Referent);
+                named_formations.insert(designation.clone(), formation_id(plan, &producer, &slot)?);
+            }
+            CstKind::Capability { designation } => {
+                let producer =
+                    semantic_producer(CanonicalSourceProductionV1::Capability, designation);
+                let slot = head_slot(CanonicalSourceProductionV1::Capability);
+                named_formations.insert(designation.clone(), formation_id(plan, &producer, &slot)?);
+                named_capabilities
+                    .insert(designation.clone(), capability_id(plan, &producer, &slot)?);
+            }
+            _ => {}
+        }
+    }
     let input_parts = input_handler_parts(cst)?;
     let input_handler = input_parts
         .as_ref()
@@ -2254,6 +2321,26 @@ pub fn elaborate_canonical_source_package_v1(
                 )?);
                 emissions.push(emission(plan, producer, slot, item.origin));
             }
+            CstKind::Capability { designation } => {
+                let producer =
+                    semantic_producer(CanonicalSourceProductionV1::Capability, designation);
+                let slot = head_slot(CanonicalSourceProductionV1::Capability);
+                let formation = formation_id(plan, &producer, &slot)?;
+                let capability = capability_id(plan, &producer, &slot)?;
+                formations.push(source_formation(
+                    scope,
+                    formation,
+                    cst.source_slice(item.origin).expect("owned origin"),
+                    item.origin,
+                    "capability",
+                )?);
+                capabilities.push(CapabilityDeclarationPreimageV2 {
+                    id: capability,
+                    formation,
+                    direct_dependencies: vec![],
+                });
+                emissions.push(emission(plan, producer, slot, item.origin));
+            }
             CstKind::Shape {
                 designation,
                 fields,
@@ -2357,6 +2444,44 @@ pub fn elaborate_canonical_source_package_v1(
                         .collect::<Vec<_>>();
                     known_roles.sort();
                     produced_roles.sort();
+                    let productivity = match &mode.reactive_obligation {
+                        Some(designation) => ProductivityContractV2 {
+                            kind: ProductivityKindV2::Reactive,
+                            obligations: vec![*named_formations.get(designation).ok_or_else(
+                                || CanonicalSourceErrorV1::UnknownModeFormation {
+                                    designation: designation.clone(),
+                                },
+                            )?],
+                        },
+                        None => ProductivityContractV2 {
+                            kind: ProductivityKindV2::Partial,
+                            obligations: vec![],
+                        },
+                    };
+                    let (effect_intents, capability_requirements) = match &mode.effect {
+                        Some(effect) => {
+                            let capability = *named_capabilities
+                                .get(&effect.capability)
+                                .ok_or_else(|| CanonicalSourceErrorV1::UnknownModeCapability {
+                                    designation: effect.capability.clone(),
+                                })?;
+                            (
+                                vec![EffectIntentContractPreimageV2 {
+                                    intent_domain: target(
+                                        scope,
+                                        b"clause/source-effect-intent-v1",
+                                        &relation.designation,
+                                    )?,
+                                    action_role: role_ids[&effect.action_role],
+                                    resource_role: role_ids[&effect.resource_role],
+                                    payload_role: role_ids[&effect.payload_role],
+                                    required_capability: capability,
+                                }],
+                                vec![capability],
+                            )
+                        }
+                        None => (vec![], vec![]),
+                    };
                     modes.push(ModePreimageV2 {
                         id: mode_ref.mode,
                         schema,
@@ -2375,17 +2500,20 @@ pub fn elaborate_canonical_source_package_v1(
                             failure_domain: None,
                             state_delta_domain: None,
                             budget_exhaustion_domain: None,
-                            effect_intents: vec![],
+                            effect_intents,
                             formation_checks: vec![],
-                            productivity: ProductivityContractV2 {
-                                kind: ProductivityKindV2::Partial,
-                                obligations: vec![],
-                            },
+                            productivity,
                             scheduling_requirements: vec![],
                             resource_requirements: vec![],
-                            capability_requirements: vec![],
-                            continuation: ContinuationContractV2::TerminalOnly {
-                                may_cancel: false,
+                            capability_requirements,
+                            continuation: if mode.continues_linearly {
+                                ContinuationContractV2::Suspensible {
+                                    use_policy: ContinuationUseV2::Linear,
+                                    may_handoff: false,
+                                    may_cancel: false,
+                                }
+                            } else {
+                                ContinuationContractV2::TerminalOnly { may_cancel: false }
                             },
                         },
                         direct_dependencies: vec![],
@@ -2713,6 +2841,7 @@ pub fn elaborate_canonical_source_package_v1(
     }
     formations.sort_by_key(|formation| formation.id);
     schemas.sort_by_key(|schema| schema.id);
+    capabilities.sort_by_key(|capability| capability.id);
     operators.sort_by_key(|operator| operator.id);
     let snapshot = ProgramSnapshotPreimageV2 {
         constitution: ProgramConstitutionPreimageV2 {
@@ -2720,7 +2849,7 @@ pub fn elaborate_canonical_source_package_v1(
             universe: context.universe,
             formations,
             schemas,
-            capabilities: vec![],
+            capabilities,
             operators,
             applications: vec![],
         },
@@ -2818,6 +2947,15 @@ fn parse_item(
         return Ok(CstItem {
             origin,
             kind: CstKind::Referent {
+                designation: designation_bytes(designation, origin)?,
+            },
+        });
+    }
+    if let Some(designation) = head.strip_prefix("capability ") {
+        require_leaf(block, artifact)?;
+        return Ok(CstItem {
+            origin,
+            kind: CstKind::Capability {
                 designation: designation_bytes(designation, origin)?,
             },
         });
@@ -4122,7 +4260,7 @@ fn parse_relation(
 ) -> Result<RelationCst, CanonicalSourceErrorV1> {
     let mut roles = None;
     let mut surface = None;
-    let mut modes = Vec::new();
+    let mut modes: Vec<RelationModeCst> = Vec::new();
     let mut subject = None;
     for line in block
         .iter()
@@ -4130,6 +4268,13 @@ fn parse_relation(
         .filter(|line| !line.text.trim().is_empty())
     {
         let origin = line_origin(artifact, *line);
+        if line.indent == 4 {
+            let mode = modes
+                .last_mut()
+                .ok_or(CanonicalSourceErrorV1::InvalidRelationChild { origin })?;
+            parse_mode_contract_child(&line.text[4..], origin, mode)?;
+            continue;
+        }
         if line.indent != 2 {
             return Err(CanonicalSourceErrorV1::InvalidRelationChild { origin });
         }
@@ -4194,6 +4339,32 @@ fn parse_relation(
             return Err(CanonicalSourceErrorV1::InvalidMode {
                 origin: mode.origin,
             });
+        }
+        if mode.reactive_obligation.is_some() != mode.continues_linearly
+            || (mode.effect.is_some() && !mode.continues_linearly)
+        {
+            return Err(CanonicalSourceErrorV1::InvalidMode {
+                origin: mode.origin,
+            });
+        }
+        if let Some(effect) = &mode.effect {
+            let known = mode
+                .known
+                .iter()
+                .map(Vec::as_slice)
+                .collect::<BTreeSet<_>>();
+            if [
+                effect.action_role.as_slice(),
+                effect.resource_role.as_slice(),
+                effect.payload_role.as_slice(),
+            ]
+            .into_iter()
+            .any(|role| !known.contains(role))
+            {
+                return Err(CanonicalSourceErrorV1::InvalidMode {
+                    origin: mode.origin,
+                });
+            }
         }
     }
     ensure_unique_children(
@@ -4296,9 +4467,50 @@ fn parse_mode(
         known,
         produced,
         cardinality,
+        reactive_obligation: None,
+        continues_linearly: false,
+        effect: None,
         canonical: source.as_bytes().to_vec(),
         origin,
     })
+}
+
+fn parse_mode_contract_child(
+    source: &str,
+    origin: CanonicalSourceOriginV1,
+    mode: &mut RelationModeCst,
+) -> Result<(), CanonicalSourceErrorV1> {
+    if let Some(obligation) = source.strip_prefix("reactive while ") {
+        if mode.reactive_obligation.is_some() {
+            return Err(CanonicalSourceErrorV1::InvalidMode { origin });
+        }
+        mode.reactive_obligation = Some(designation_bytes(obligation, origin)?);
+    } else if source == "continues linearly" {
+        if mode.continues_linearly {
+            return Err(CanonicalSourceErrorV1::InvalidMode { origin });
+        }
+        mode.continues_linearly = true;
+    } else {
+        let parts = source.split_whitespace().collect::<Vec<_>>();
+        if parts.len() != 8
+            || parts[0] != "effect"
+            || parts[2] != "resource"
+            || parts[4] != "payload"
+            || parts[6] != "requires"
+            || mode.effect.is_some()
+        {
+            return Err(CanonicalSourceErrorV1::InvalidMode { origin });
+        }
+        mode.effect = Some(RelationEffectCst {
+            action_role: designation_bytes(parts[1], origin)?,
+            resource_role: designation_bytes(parts[3], origin)?,
+            payload_role: designation_bytes(parts[5], origin)?,
+            capability: designation_bytes(parts[7], origin)?,
+        });
+    }
+    mode.canonical.push(b'\n');
+    mode.canonical.extend_from_slice(source.as_bytes());
+    Ok(())
 }
 
 fn handler_include_emissions(
@@ -4948,7 +5160,9 @@ fn require_leaf(
 fn validate_unique_designations(items: &[CstItem]) -> Result<(), CanonicalSourceErrorV1> {
     let mut seen = BTreeSet::new();
     for designation in items.iter().filter_map(|item| match &item.kind {
-        CstKind::Referent { designation } | CstKind::Shape { designation, .. } => Some(designation),
+        CstKind::Referent { designation }
+        | CstKind::Capability { designation }
+        | CstKind::Shape { designation, .. } => Some(designation),
         CstKind::Relation(relation) => Some(&relation.designation),
         CstKind::InputHandler(_)
         | CstKind::JumpHandler(_)
@@ -5075,6 +5289,17 @@ fn formation_id(
 ) -> Result<FormationLocalId, CanonicalSourceErrorV1> {
     match allocation(plan, producer, slot, AllocationDomain::Formation)? {
         CanonicalAllocatedIdentityV1::Formation(id) => Ok(id),
+        _ => unreachable!(),
+    }
+}
+
+fn capability_id(
+    plan: &CanonicalSourceAllocationPlanV1,
+    producer: &CanonicalSemanticProducerV1,
+    slot: &CanonicalEmissionSlotV1,
+) -> Result<CapabilityLocalId, CanonicalSourceErrorV1> {
+    match allocation(plan, producer, slot, AllocationDomain::Capability)? {
+        CanonicalAllocatedIdentityV1::Capability(id) => Ok(id),
         _ => unreachable!(),
     }
 }

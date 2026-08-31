@@ -1124,3 +1124,62 @@
                      (str (.-y admitted-position))))
           (.toBe (test/expect (str ((.-dispose controller)))) "true")
           nil)))))))
+
+(let [effect-test-runtime Any (require "bun:test")
+      register-effect-test Any (.-test effect-test-runtime)]
+  (register-effect-test
+   "real Wasm transports one source-owned ongoing effect lifecycle"
+   (fn [] Any
+     (.then
+      (.all Promise [(.arrayBuffer (.file Bun "./generated/wasm/clause_runtime_bg.wasm"))
+                     (.text (.file Bun
+                                   "./fixtures/wasm-ongoing-effect-v1/ongoing-effect-v1.cwr1.hex"))])
+      (fn [assets Any] Any
+        (let [module Any (initialize-real-session-module (nth assets 0))
+              port workbench/CartridgePort (wasm/create-wasm-cartridge-port module (policy))
+              request wasm/ExactProcessRequest (wasm/->ExactProcessRequest
+               (wasm/decode-cwr1-hex (nth assets 1)))
+              accepted Any (atom nil)
+              started Any (atom nil)]
+          ((.-acceptPackage port) request
+           (fn [result Any] Any (reset! accepted result)))
+          ((.-startSession port) (.-acceptedPackage @accepted) 1
+           (fn [result Any] Any (reset! started result)))
+          (let [session Any (.-session @started)
+                absent Any (wasm/query-pending-effect-intent! module session)
+                _input Any (wasm/advance-session-occurrence! module session 0)
+                intent Any (wasm/emit-effect-intent! module session)
+                queried Any (wasm/query-pending-effect-intent! module session)
+                issued Any (wasm/issue-effect-authorization!
+                            module session (.-intentId intent))
+                attempt Any (wasm/begin-effect-attempt!
+                             module session (.-authorizationId issued))
+                settled Any (wasm/settle-effect-attempt!
+                             module session (.-attemptId attempt) 202 [97 99 99 101 112 116 101 100])
+                state-count String (str (.-stateRevisionCount absent))]
+            (.toBe (test/expect (str (.-kind absent))) "effect-intent-absent")
+            (.toBe (test/expect (json-string (.-intentId queried)))
+                   (json-string (.-intentId intent)))
+            (.toBe (test/expect (json-string (.-actionBytes attempt)))
+                   (json-string (.-actionBytes intent)))
+            (.toBe (test/expect (json-string (.-resourceBytes attempt)))
+                   (json-string (.-resourceBytes intent)))
+            (.toBe (test/expect (json-string (.-payloadBytes attempt)))
+                   (json-string (.-payloadBytes intent)))
+            (.toBe (test/expect (str (.-disposition settled))) "receipt-observed")
+            (.toBe (test/expect (if (nil? (.-receiptId settled)) "false" "true")) "true")
+            (.toBe (test/expect (if (nil? (.-observationId settled)) "false" "true")) "true")
+            (.toBe (test/expect (str (.-stateRevisionCount settled))) state-count)
+            (let [second-intent Any (wasm/emit-effect-intent! module session)
+                  second-issued Any (wasm/issue-effect-authorization!
+                                     module session (.-intentId second-intent))
+                  second-attempt Any (wasm/begin-effect-attempt!
+                                      module session (.-authorizationId second-issued))
+                  no-receipt Any (wasm/settle-effect-attempt!
+                                  module session (.-attemptId second-attempt) nil nil)]
+              (.toBe (test/expect (str (.-disposition no-receipt))) "no-receipt")
+              (.toBe (test/expect (if (nil? (.-receiptId no-receipt)) "true" "false")) "true")
+              (.toBe (test/expect (if (nil? (.-observationId no-receipt)) "true" "false")) "true")
+              (.toBe (test/expect (str (.-stateRevisionCount no-receipt))) state-count))
+            ((.-disposeSession port) session)
+            nil)))))))

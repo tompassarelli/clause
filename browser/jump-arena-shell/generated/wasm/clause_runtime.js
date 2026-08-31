@@ -1,7 +1,5 @@
 /* @ts-self-types="./clause_runtime.d.ts" */
 
-//#region exports
-
 /**
  * @returns {number}
  */
@@ -16,7 +14,6 @@ export function clause_branch_v1_command() {
  * @returns {number}
  */
 export function clause_branch_v1_event_byte(index) {
-    _assertNum(index);
     const ret = wasm.clause_branch_v1_event_byte(index);
     return ret >>> 0;
 }
@@ -46,7 +43,6 @@ export function clause_branch_v1_open() {
  * @returns {number}
  */
 export function clause_branch_v1_request_push(byte) {
-    _assertNum(byte);
     const ret = wasm.clause_branch_v1_request_push(byte);
     return ret >>> 0;
 }
@@ -64,7 +60,6 @@ export function clause_process_v1_dispatch() {
  * @returns {number}
  */
 export function clause_process_v1_request_push(byte) {
-    _assertNum(byte);
     const ret = wasm.clause_process_v1_request_push(byte);
     return ret >>> 0;
 }
@@ -79,7 +74,6 @@ export function clause_process_v1_reset() {
  * @returns {number}
  */
 export function clause_process_v1_response_byte(index) {
-    _assertNum(index);
     const ret = wasm.clause_process_v1_response_byte(index);
     return ret >>> 0;
 }
@@ -106,7 +100,6 @@ export function clause_session_v1_command() {
  * @returns {number}
  */
 export function clause_session_v1_event_byte(index) {
-    _assertNum(index);
     const ret = wasm.clause_session_v1_event_byte(index);
     return ret >>> 0;
 }
@@ -136,21 +129,13 @@ export function clause_session_v1_open() {
  * @returns {number}
  */
 export function clause_session_v1_request_push(byte) {
-    _assertNum(byte);
     const ret = wasm.clause_session_v1_request_push(byte);
     return ret >>> 0;
 }
 
-//#endregion
-
-//#region wasm imports
-
 function __wbg_get_imports() {
     const import0 = {
         __proto__: null,
-        __wbg___wbindgen_throw_be289d5034ed271b: function(arg0, arg1) {
-            throw new Error(getStringFromWasm0(arg0, arg1));
-        },
         __wbg_getRandomValues_1c61fac11405ffdc: function() { return handleError(function (arg0, arg1) {
             globalThis.crypto.getRandomValues(getArrayU8FromWasm0(arg0, arg1));
         }, arguments); },
@@ -170,28 +155,15 @@ function __wbg_get_imports() {
     };
 }
 
-
-//#endregion
-
-//#region intrinsics
 function addToExternrefTable0(obj) {
     const idx = wasm.__externref_table_alloc();
     wasm.__wbindgen_externrefs.set(idx, obj);
     return idx;
 }
 
-function _assertNum(n) {
-    if (typeof(n) !== 'number') throw new Error(`expected a number argument, found ${typeof(n)}`);
-}
-
 function getArrayU8FromWasm0(ptr, len) {
     ptr = ptr >>> 0;
     return getUint8ArrayMemory0().subarray(ptr / 1, ptr / 1 + len);
-}
-
-function getStringFromWasm0(ptr, len) {
-    ptr = ptr >>> 0;
-    return decodeText(ptr, len);
 }
 
 let cachedUint8ArrayMemory0 = null;
@@ -211,40 +183,6 @@ function handleError(f, args) {
     }
 }
 
-function logError(f, args) {
-    try {
-        return f.apply(this, args);
-    } catch (e) {
-        let error = (function () {
-            try {
-                return e instanceof Error ? `${e.message}\n\nStack:\n${e.stack}` : e.toString();
-            } catch(_) {
-                return "<failed to stringify thrown value>";
-            }
-        }());
-        console.error("wasm-bindgen: imported JS function that was not marked as `catch` threw an error:", error);
-        throw e;
-    }
-}
-
-let cachedTextDecoder = new TextDecoder('utf-8', { ignoreBOM: true, fatal: true });
-cachedTextDecoder.decode();
-const MAX_SAFARI_DECODE_BYTES = 2146435072;
-let numBytesDecoded = 0;
-function decodeText(ptr, len) {
-    numBytesDecoded += len;
-    if (numBytesDecoded >= MAX_SAFARI_DECODE_BYTES) {
-        cachedTextDecoder = new TextDecoder('utf-8', { ignoreBOM: true, fatal: true });
-        cachedTextDecoder.decode();
-        numBytesDecoded = len;
-    }
-    return cachedTextDecoder.decode(getUint8ArrayMemory0().subarray(ptr, ptr + len));
-}
-
-
-//#endregion
-
-//#region wasm loading
 let wasmModule, wasm;
 function __wbg_finalize_init(instance, module) {
     wasm = instance.exports;
@@ -336,5 +274,3 @@ async function __wbg_init(module_or_path) {
 }
 
 export { initSync, __wbg_init as default };
-//#endregion
-export { wasm as __wasm }

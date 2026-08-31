@@ -80,6 +80,11 @@ opaque_id!(BoundaryRef);
 opaque_id!(ExternalEvidenceRef);
 opaque_id!(JudgmentOccurrenceId);
 opaque_id!(IssuedAdmissionAuthorizationOccurrenceId);
+opaque_id!(EffectIntentId);
+opaque_id!(IssuedEffectAuthorizationOccurrenceId);
+opaque_id!(EffectAttemptId);
+opaque_id!(EffectReceiptId);
+opaque_id!(EffectJudgmentOccurrenceId);
 
 local_id!(RelationSchemaLocalId);
 local_id!(RoleLocalId);
