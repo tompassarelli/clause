@@ -1,7 +1,13 @@
 use std::time::Instant;
 
-use clause_package::{Term, decode_canonical_term_bytes};
-use clause_runtime::{ExecutableValueV1, decode_wasm_process_request_v1};
+use clause_package::{
+    ApplicationId, ProgramRevisionPreimage, Term, check_process_package,
+    decode_canonical_term_bytes, decode_process_package,
+};
+use clause_runtime::{
+    ExecutableValueV1, ForkedProcessBranchV1, decode_wasm_process_request_v1,
+    open_fresh_persistent_process_session_v1,
+};
 use clause_workbench::ResidentSourceWorkbenchV1;
 
 const WORLD: &[u8] = include_bytes!(concat!(
@@ -239,6 +245,62 @@ fn source_edit_hot_reloads_in_one_workbench_without_admission_custody_leak() {
         changed_admission.projection.exact_term_bytes, base_admission.projection.exact_term_bytes,
         "the source edit changes the admitted rendered frame"
     );
+}
+
+#[test]
+fn resident_generation_opens_exact_fresh_branch_sessions() {
+    let workbench =
+        ResidentSourceWorkbenchV1::open(WORLD).expect("source opens one resident generation");
+    let generation = workbench.generation();
+    let request = decode_wasm_process_request_v1(&generation.cwr1)
+        .expect("resident generation retains one exact CWR1");
+    let package = check_process_package(
+        decode_process_package(&request.package_bytes).expect("CWR1 package decodes"),
+    )
+    .expect("CWR1 package remains checked");
+    let expected_application = ApplicationId {
+        snapshot: package.constitution().snapshot(),
+        local: request.application,
+    };
+    let expected_revision = ProgramRevisionPreimage {
+        semantics: package.constitution().semantics(),
+        program: request.authority.program,
+        predecessor: None,
+        snapshot: package.constitution().snapshot(),
+        change: request.authority.change,
+    }
+    .derived_claim()
+    .id;
+
+    let authoritative = open_fresh_persistent_process_session_v1(&generation.cwr1)
+        .expect("resident CWR1 opens one fresh authoritative session");
+    let branch_session = open_fresh_persistent_process_session_v1(&generation.cwr1)
+        .expect("the same resident CWR1 opens one distinct fresh branch session");
+    assert_eq!(authoritative.package().unwrap(), package.id());
+    assert_eq!(authoritative.application().unwrap(), expected_application);
+    assert_eq!(authoritative.program_revision(), expected_revision);
+    assert_eq!(branch_session.package().unwrap(), package.id());
+    assert_eq!(branch_session.application().unwrap(), expected_application);
+    assert_eq!(branch_session.program_revision(), expected_revision);
+    assert_eq!(
+        branch_session.runtime_session(),
+        authoritative.runtime_session()
+    );
+    assert_ne!(
+        branch_session.allocation().root(),
+        authoritative.allocation().root(),
+        "each fresh session owns a distinct runtime allocation root"
+    );
+
+    let disconnect = request
+        .occurrences
+        .first()
+        .expect("resident CWR1 retains one construct-blind occurrence");
+    let branch = ForkedProcessBranchV1::fork(&authoritative, branch_session, 1, disconnect)
+        .expect("fresh CWR1 sessions enter the exact branch path");
+    assert_eq!(branch.pins().package, package.id());
+    assert_eq!(branch.pins().application, expected_application);
+    assert_eq!(branch.pins().program_revision, expected_revision);
 }
 
 #[test]

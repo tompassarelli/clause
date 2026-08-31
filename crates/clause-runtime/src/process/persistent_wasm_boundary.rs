@@ -11,7 +11,7 @@ use super::{
     PersistentProcessSessionErrorV1, PersistentProcessSessionV1, RuntimeAllocationEpochV1,
     WASM_PROCESS_REQUEST_LIMIT_V1, WASM_PROCESS_RESPONSE_LIMIT_V1, WasmAuthorityInputV1,
     WasmProcessStatusV1, decode_executable_physical_plan_v1, decode_runtime_allocation_epoch_v1,
-    encode_runtime_allocation_epoch_v1,
+    decode_wasm_process_request_v1, encode_runtime_allocation_epoch_v1,
 };
 
 const OPEN_MAGIC: &[u8; 4] = b"CWS1";
@@ -303,37 +303,13 @@ impl WasmPersistentSessionBoundaryV1 {
                 }
             },
         };
-        let decoded = decode_process_package(&request.package_bytes)
-            .map_err(|_| WasmProcessStatusV1::PackageRejected)?;
-        let package =
-            check_process_package(decoded).map_err(|_| WasmProcessStatusV1::PackageRejected)?;
-        let application = ApplicationId {
-            snapshot: package.constitution().snapshot(),
-            local: request.application,
-        };
-        let physical_plan = decode_executable_physical_plan_v1(&request.physical_plan_bytes)
-            .map_err(|_| WasmProcessStatusV1::ProcessRejected)?;
-        let (authority, facts) = establish_persistent_authority(&package, &request.authority)?;
-        let session = match request.allocation {
-            WasmSessionAllocationV1::New => PersistentProcessSessionV1::open(
-                package,
-                authority,
-                application,
-                physical_plan,
-                facts,
-            ),
-            WasmSessionAllocationV1::Rematerialize(allocation) => {
-                PersistentProcessSessionV1::rematerialize(
-                    package,
-                    authority,
-                    application,
-                    physical_plan,
-                    facts,
-                    allocation,
-                )
-            }
-        }
-        .map_err(|_| WasmProcessStatusV1::ProcessRejected)?;
+        let session = instantiate_persistent_process_session_v1(
+            request.package_bytes,
+            request.application,
+            request.physical_plan_bytes,
+            request.authority,
+            request.allocation,
+        )?;
         let handle = WasmSessionHandleV1 {
             slot: SLOT,
             generation,
@@ -472,6 +448,60 @@ impl WasmPersistentSessionBoundaryV1 {
     pub const fn status(&self) -> WasmProcessStatusV1 {
         self.status
     }
+}
+
+/// Open a fresh native persistent session from one exact checked CWR1
+/// generation. The recorded CWR1 allocation describes its rematerialized
+/// one-shot occurrence family; this boundary deliberately mints a distinct
+/// allocation root while preserving the package, Application, Program
+/// revision, RuntimeSession, world base, authority, and physical plan pins.
+pub fn open_fresh_persistent_process_session_v1(
+    exact_cwr1: &[u8],
+) -> Result<PersistentProcessSessionV1, WasmProcessStatusV1> {
+    let request = decode_wasm_process_request_v1(exact_cwr1)?;
+    instantiate_persistent_process_session_v1(
+        request.package_bytes,
+        request.application,
+        request.physical_plan_bytes,
+        request.authority,
+        WasmSessionAllocationV1::New,
+    )
+}
+
+fn instantiate_persistent_process_session_v1(
+    package_bytes: Vec<u8>,
+    application: ApplicationLocalId,
+    physical_plan_bytes: Vec<u8>,
+    authority_input: WasmAuthorityInputV1,
+    allocation: WasmSessionAllocationV1,
+) -> Result<PersistentProcessSessionV1, WasmProcessStatusV1> {
+    let decoded =
+        decode_process_package(&package_bytes).map_err(|_| WasmProcessStatusV1::PackageRejected)?;
+    let package =
+        check_process_package(decoded).map_err(|_| WasmProcessStatusV1::PackageRejected)?;
+    let application = ApplicationId {
+        snapshot: package.constitution().snapshot(),
+        local: application,
+    };
+    let physical_plan = decode_executable_physical_plan_v1(&physical_plan_bytes)
+        .map_err(|_| WasmProcessStatusV1::ProcessRejected)?;
+    let (authority, facts) = establish_persistent_authority(&package, &authority_input)?;
+    match allocation {
+        WasmSessionAllocationV1::New => {
+            PersistentProcessSessionV1::open(package, authority, application, physical_plan, facts)
+        }
+        WasmSessionAllocationV1::Rematerialize(allocation) => {
+            PersistentProcessSessionV1::rematerialize(
+                package,
+                authority,
+                application,
+                physical_plan,
+                facts,
+                allocation,
+            )
+        }
+    }
+    .map_err(|_| WasmProcessStatusV1::ProcessRejected)
 }
 
 fn execute_operation(

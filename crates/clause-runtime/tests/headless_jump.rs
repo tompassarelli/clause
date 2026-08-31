@@ -559,6 +559,20 @@ fn checked_program_package_with_scopes_and_roles(
     state_admission_scopes: Vec<StateAdmissionScope>,
     projection_role_count: u32,
 ) -> CheckedProcessPackage {
+    checked_program_package_with_scopes_roles_and_continuation(
+        checker_count,
+        state_admission_scopes,
+        projection_role_count,
+        false,
+    )
+}
+
+fn checked_program_package_with_scopes_roles_and_continuation(
+    checker_count: usize,
+    state_admission_scopes: Vec<StateAdmissionScope>,
+    projection_role_count: u32,
+    branchable: bool,
+) -> CheckedProcessPackage {
     let source = include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../../test-vectors/process-v2/positive/process-v2-core.hex"
@@ -619,6 +633,15 @@ fn checked_program_package_with_scopes_and_roles(
             }
         }
         _ => panic!("fixture supports zero, one, or two eligible checker Modes"),
+    }
+    if branchable {
+        candidate.snapshot.constitution.operators[0].modes[1]
+            .contract
+            .continuation = ContinuationContractV2::Suspensible {
+            use_policy: ContinuationUseV2::Linear,
+            may_handoff: false,
+            may_cancel: false,
+        };
     }
     candidate.snapshot.state_admission_grants = state_admission_scopes
         .into_iter()
@@ -886,7 +909,19 @@ fn checked_program_package(checker_count: usize) -> CheckedProcessPackage {
 }
 
 fn browser_gameplay_state_admission_scopes(source: &[u8]) -> Vec<StateAdmissionScope> {
-    let package = checked_program_package_with_scopes_and_roles(1, Vec::new(), 25);
+    browser_gameplay_state_admission_scopes_with_continuation(source, false)
+}
+
+fn browser_branchable_gameplay_state_admission_scopes(source: &[u8]) -> Vec<StateAdmissionScope> {
+    browser_gameplay_state_admission_scopes_with_continuation(source, true)
+}
+
+fn browser_gameplay_state_admission_scopes_with_continuation(
+    source: &[u8],
+    branchable: bool,
+) -> Vec<StateAdmissionScope> {
+    let package =
+        checked_program_package_with_scopes_roles_and_continuation(1, Vec::new(), 25, branchable);
     let package_id = package.id();
     let application = ApplicationId {
         snapshot: package.constitution().snapshot(),
@@ -948,6 +983,15 @@ fn checked_gameplay_program_package(source: &[u8]) -> CheckedProcessPackage {
         1,
         browser_gameplay_state_admission_scopes(source),
         25,
+    )
+}
+
+fn checked_branchable_gameplay_program_package(source: &[u8]) -> CheckedProcessPackage {
+    checked_program_package_with_scopes_roles_and_continuation(
+        1,
+        browser_branchable_gameplay_state_admission_scopes(source),
+        25,
+        true,
     )
 }
 
@@ -1875,6 +1919,14 @@ fn browser_gameplay_fixture_request(
     allocation_root_tag: u8,
 ) -> WasmProcessRequestV1 {
     let package = checked_gameplay_program_package(source);
+    browser_gameplay_fixture_request_for_package(package, source, allocation_root_tag, false)
+}
+
+fn browser_branchable_gameplay_fixture_request(
+    source: &[u8],
+    allocation_root_tag: u8,
+) -> WasmProcessRequestV1 {
+    let package = checked_branchable_gameplay_program_package(source);
     browser_gameplay_fixture_request_for_package(package, source, allocation_root_tag, false)
 }
 
@@ -4109,8 +4161,10 @@ fn shipped_unified_gameplay_cwr1_carries_arena_and_symbolic_collect() {
 #[test]
 fn shipped_coherent_game_cwr1_carries_objective_hazard_reset_and_spring() {
     let source = coherent_gameplay_source();
-    let request =
-        browser_gameplay_fixture_request(&source, BROWSER_COHERENT_GAME_ALLOCATION_ROOT_TAG);
+    let request = browser_branchable_gameplay_fixture_request(
+        &source,
+        BROWSER_COHERENT_GAME_ALLOCATION_ROOT_TAG,
+    );
     let plan = decode_executable_physical_plan_v1(&request.physical_plan_bytes)
         .expect("coherent game CPP1 decodes");
     assert_eq!(
@@ -4131,7 +4185,7 @@ fn shipped_coherent_game_cwr1_carries_objective_hazard_reset_and_spring() {
         .expect("objective source is UTF-8")
         .replacen("?player-x = 0.08", "?player-x = 0.16", 1);
     let changed_source = coherent_gameplay_source_with_objective(changed_objective.as_bytes());
-    let changed_request = browser_gameplay_fixture_request(
+    let changed_request = browser_branchable_gameplay_fixture_request(
         &changed_source,
         BROWSER_COHERENT_GAME_ALLOCATION_ROOT_TAG,
     );
