@@ -765,3 +765,68 @@
           (.toBe (test/expect (str ((.-dispose controller)))) "true")
           (.toBe (test/expect (str (.-length @disposals))) "2")
           nil)))))))
+
+(let [dash-test-runtime Any (require "bun:test")
+      register-dash-test Any (.-test dash-test-runtime)]
+  (register-dash-test
+   "real Wasm hot-reloads Clause dash jump through Admission and passive rendering"
+   (fn [] Any
+     (.then
+      (.all Promise [(.arrayBuffer (.file Bun "./generated/wasm/clause_runtime_bg.wasm"))
+                     (.text (.file Bun
+                                   "./fixtures/wasm-gameplay-v1/gameplay-v1.cwr1.hex"))
+                     (.text (.file Bun
+                                   "./fixtures/wasm-gameplay-v1/gameplay-dash-jump-v1.cwr1.hex"))])
+      (fn [assets Any] Any
+        (let [port workbench/CartridgePort (wasm/create-wasm-cartridge-port
+               (initialize-real-session-module (nth assets 0))
+               (arena-policy))
+              rendered Any (atom [])
+              scheduled-tick Any (atom (fn [] Any nil))
+              base-request wasm/ExactProcessRequest (wasm/->ExactProcessRequest
+               (wasm/decode-cwr1-hex (nth assets 1)))
+              dash-request wasm/ExactProcessRequest (wasm/->ExactProcessRequest
+               (wasm/decode-cwr1-hex (nth assets 2)))
+              controller Any (workbench/create-cartridge-workbench!
+               port
+               (workbench/->FixedTick 16)
+               (arena-policy)
+               (fn
+                 [_milliseconds Int
+                  callback Any] Any
+                 (do
+                   (reset! scheduled-tick callback)
+                   (fn [] Any nil)))
+               (fn [frame Any] Any (.push @rendered frame))
+               (fn [_receipt Any] Any nil)
+               base-request)]
+          (.toBe (test/expect (str (.-generation ((.-snapshot controller))))) "1")
+          (.toBe (test/expect (str ((.-reloadPackage controller) dash-request))) "true")
+          (let [dash-start Any ((.-snapshot controller))
+                dash-revision Any (.-revision dash-start)]
+            (.toBe (test/expect (str (.-generation dash-start))) "2")
+            ((.-observeInput controller) (key-envelope "Space" "down"))
+            (@scheduled-tick)
+            (let [admitted Any ((.-snapshot controller))
+                  admitted-frame Any (wasm/decode-projected-term-frame (.-frame admitted))
+                  admitted-position Any (.-position (.-player admitted-frame))
+                  rendered-length Int (.-length @rendered)
+                  visible-frame Any (wasm/decode-projected-term-frame
+                                     (nth @rendered (dec rendered-length)))
+                  visible-position Any (.-position (.-player visible-frame))]
+              (.toBe (test/expect (str (.-phase admitted))) "ready")
+              (.toBe (test/expect (str (.-generation admitted))) "2")
+              (.toBe (test/expect
+                       (str (not= (json-string (.-revision admitted))
+                                  (json-string dash-revision))))
+                     "true")
+              (.toBe (test/expect (if (> (.-x admitted-position) 0.0) "true" "false"))
+                     "true")
+              (.toBe (test/expect (if (> (.-y admitted-position) 0.0) "true" "false"))
+                     "true")
+              (.toBe (test/expect (str (.-x visible-position)))
+                     (str (.-x admitted-position)))
+              (.toBe (test/expect (str (.-y visible-position)))
+                     (str (.-y admitted-position))))
+          (.toBe (test/expect (str ((.-dispose controller)))) "true")
+          nil)))))))

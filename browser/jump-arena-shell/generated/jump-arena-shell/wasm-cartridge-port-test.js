@@ -449,4 +449,36 @@ test["expect"]($$bc$str((!(json_string(changed_admitted.revision) === json_strin
 test["expect"]($$bc$str((controller.dispose)())).toBe("true");
 test["expect"]($$bc$str(disposals.value.length)).toBe("2");
 return null; }));
+
+const dash_test_runtime = require("bun:test");
+const register_dash_test = dash_test_runtime.test;
+register_dash_test("real Wasm hot-reloads Clause dash jump through Admission and passive rendering", () => Promise.all([Bun.file("./generated/wasm/clause_runtime_bg.wasm").arrayBuffer(), Bun.file("./fixtures/wasm-gameplay-v1/gameplay-v1.cwr1.hex").text(), Bun.file("./fixtures/wasm-gameplay-v1/gameplay-dash-jump-v1.cwr1.hex").text()]).then((assets) => { const port = wasm["create-wasm-cartridge-port"](initialize_real_session_module(assets[0]), arena_policy());
+const rendered = ({value: [], watches: {}});
+const scheduled_tick = ({value: () => null, watches: {}});
+const base_request = wasm["->ExactProcessRequest"](wasm["decode-cwr1-hex"](assets[1]));
+const dash_request = wasm["->ExactProcessRequest"](wasm["decode-cwr1-hex"](assets[2]));
+const controller = workbench["create-cartridge-workbench!"](port, workbench["->FixedTick"](16), arena_policy(), (__milliseconds, callback) => { (() => { const _a = scheduled_tick, _v = callback; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })();
+return () => null; }, (frame) => rendered.value.push(frame), (__receipt) => null, base_request);
+test["expect"]($$bc$str((controller.snapshot)().generation)).toBe("1");
+test["expect"]($$bc$str((controller.reloadPackage)(dash_request))).toBe("true");
+const dash_start = (controller.snapshot)();
+const dash_revision = dash_start.revision;
+test["expect"]($$bc$str(dash_start.generation)).toBe("2");
+(controller.observeInput)(key_envelope("Space", "down"));
+(scheduled_tick.value)();
+const admitted = (controller.snapshot)();
+const admitted_frame = wasm["decode-projected-term-frame"](admitted.frame);
+const admitted_position = admitted_frame.player.position;
+const rendered_length = rendered.value.length;
+const visible_frame = wasm["decode-projected-term-frame"](rendered.value[(rendered_length - 1)]);
+const visible_position = visible_frame.player.position;
+test["expect"]($$bc$str(admitted.phase)).toBe("ready");
+test["expect"]($$bc$str(admitted.generation)).toBe("2");
+test["expect"]($$bc$str((!(json_string(admitted.revision) === json_string(dash_revision))))).toBe("true");
+test["expect"](((admitted_position.x > 0.0) ? "true" : "false")).toBe("true");
+test["expect"](((admitted_position.y > 0.0) ? "true" : "false")).toBe("true");
+test["expect"]($$bc$str(visible_position.x)).toBe($$bc$str(admitted_position.x));
+test["expect"]($$bc$str(visible_position.y)).toBe($$bc$str(admitted_position.y));
+test["expect"]($$bc$str((controller.dispose)())).toBe("true");
+return null; }));
 //# sourceMappingURL=wasm-cartridge-port-test.js.map

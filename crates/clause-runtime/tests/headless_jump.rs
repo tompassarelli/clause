@@ -9,6 +9,7 @@ const BROWSER_SYMBOLIC_COLLECT_ALLOCATION_ROOT_TAG: u8 = 240;
 const BROWSER_SYMBOLIC_COLLECT_CHANGED_ALLOCATION_ROOT_TAG: u8 = 241;
 const BROWSER_GAMEPLAY_ALLOCATION_ROOT_TAG: u8 = 242;
 const BROWSER_GAMEPLAY_CHANGED_ALLOCATION_ROOT_TAG: u8 = 243;
+const BROWSER_GAMEPLAY_DASH_ALLOCATION_ROOT_TAG: u8 = 245;
 const SOURCE_ALLOCATION_ROOT_TAG: u8 = 211;
 const WORLD: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
@@ -33,6 +34,17 @@ fn gameplay_source() -> Vec<u8> {
     source.push(b'\n');
     source.extend_from_slice(COLLECT_STATE);
     source
+}
+
+fn dash_gameplay_source() -> Vec<u8> {
+    std::str::from_utf8(&gameplay_source())
+        .expect("gameplay source is UTF-8")
+        .replacen(
+            "?player velocity Vec3 { x: ?velocity-x, y: ?jump-speed, z: ?velocity-z }",
+            "?player velocity Vec3 { x: ?jump-speed, y: ?jump-speed, z: ?velocity-z }",
+            1,
+        )
+        .into_bytes()
 }
 
 macro_rules! id {
@@ -845,6 +857,63 @@ fn checked_gameplay_program_package(source: &[u8]) -> CheckedProcessPackage {
     checked_program_package_with_scopes_and_roles(
         1,
         browser_gameplay_state_admission_scopes(source),
+        25,
+    )
+}
+
+fn browser_dash_gameplay_state_admission_scope(source: &[u8]) -> StateAdmissionScope {
+    let package = checked_program_package_with_scopes_and_roles(1, Vec::new(), 25);
+    let application = ApplicationId {
+        snapshot: package.constitution().snapshot(),
+        local: ApplicationLocalId::new(1),
+    };
+    let physical_plan = physical_plan_with_source(&package, source);
+    let (authority, facts) = carrier_authority_for_plan(
+        &package,
+        &physical_plan,
+        BROWSER_GAMEPLAY_DASH_ALLOCATION_ROOT_TAG,
+    );
+    let allocation = RuntimeAllocationEpochV1::recorded_for(
+        raw_id(BROWSER_GAMEPLAY_DASH_ALLOCATION_ROOT_TAG),
+        &package,
+        application,
+        &physical_plan,
+        facts.executable(),
+    )
+    .expect("dash-jump allocation evidence binds the provisional package");
+    let mut session = PersistentProcessSessionV1::rematerialize(
+        package,
+        authority,
+        application,
+        physical_plan,
+        facts.executable(),
+        allocation,
+    )
+    .expect("dash-jump scope derivation opens one exact session");
+
+    session
+        .apply_opaque_input(&encode_executable_occurrence_v1(&occurrence(1, &[])).unwrap())
+        .expect("dash-jump input advances locally");
+    session
+        .apply_opaque_input_and_emit_candidate(
+            &encode_executable_occurrence_v1(&occurrence(2, &[0.016])).unwrap(),
+        )
+        .expect("dash-jump tick emits one candidate");
+    let candidate = session
+        .candidate()
+        .expect("dash-jump candidate lookup succeeds")
+        .expect("dash-jump candidate exists");
+    StateAdmissionScope {
+        session: facts.session,
+        base: candidate.base,
+        delta: candidate.id,
+    }
+}
+
+fn checked_dash_gameplay_program_package(source: &[u8]) -> CheckedProcessPackage {
+    checked_program_package_with_scopes_and_roles(
+        1,
+        vec![browser_dash_gameplay_state_admission_scope(source)],
         25,
     )
 }
@@ -1702,6 +1771,25 @@ fn browser_gameplay_fixture_request(
     allocation_root_tag: u8,
 ) -> WasmProcessRequestV1 {
     let package = checked_gameplay_program_package(source);
+    browser_gameplay_fixture_request_for_package(package, source, allocation_root_tag, false)
+}
+
+fn browser_dash_gameplay_fixture_request(source: &[u8]) -> WasmProcessRequestV1 {
+    let package = checked_dash_gameplay_program_package(source);
+    browser_gameplay_fixture_request_for_package(
+        package,
+        source,
+        BROWSER_GAMEPLAY_DASH_ALLOCATION_ROOT_TAG,
+        true,
+    )
+}
+
+fn browser_gameplay_fixture_request_for_package(
+    package: CheckedProcessPackage,
+    source: &[u8],
+    allocation_root_tag: u8,
+    dash_jump: bool,
+) -> WasmProcessRequestV1 {
     let physical_plan = physical_plan_with_source(&package, source);
     let application = ApplicationId {
         snapshot: package.constitution().snapshot(),
@@ -1740,14 +1828,23 @@ fn browser_gameplay_fixture_request(
             admission_evidence_bytes: vec![190],
             budget_units: 100,
         },
-        occurrences: vec![
-            encode_executable_occurrence_v1(&occurrence(0, &[1.0, 0.0]))
-                .expect("gameplay input occurrence encodes"),
-            encode_executable_occurrence_v1(&occurrence(2, &[0.016]))
-                .expect("gameplay tick occurrence encodes"),
-            encode_executable_occurrence_v1(&occurrence(3, &[]))
-                .expect("gameplay collect occurrence encodes"),
-        ],
+        occurrences: if dash_jump {
+            vec![
+                encode_executable_occurrence_v1(&occurrence(1, &[]))
+                    .expect("dash-jump occurrence encodes"),
+                encode_executable_occurrence_v1(&occurrence(2, &[0.016]))
+                    .expect("dash-jump tick occurrence encodes"),
+            ]
+        } else {
+            vec![
+                encode_executable_occurrence_v1(&occurrence(0, &[1.0, 0.0]))
+                    .expect("gameplay input occurrence encodes"),
+                encode_executable_occurrence_v1(&occurrence(2, &[0.016]))
+                    .expect("gameplay tick occurrence encodes"),
+                encode_executable_occurrence_v1(&occurrence(3, &[]))
+                    .expect("gameplay collect occurrence encodes"),
+            ]
+        },
         render_slots: vec![],
     }
 }
@@ -3024,6 +3121,7 @@ fn shipped_symbolic_collect_cwr1_preserves_clause_owned_state() {
 #[test]
 fn shipped_unified_gameplay_cwr1_carries_arena_and_symbolic_collect() {
     let source = gameplay_source();
+    let dash_source = dash_gameplay_source();
     let changed_source = std::str::from_utf8(&source)
         .expect("gameplay source is UTF-8")
         .replacen(
@@ -3038,10 +3136,13 @@ fn shipped_unified_gameplay_cwr1_carries_arena_and_symbolic_collect() {
         &changed_source,
         BROWSER_GAMEPLAY_CHANGED_ALLOCATION_ROOT_TAG,
     );
+    let dash_request = browser_dash_gameplay_fixture_request(&dash_source);
     let plan = decode_executable_physical_plan_v1(&request.physical_plan_bytes)
         .expect("unified gameplay CPP1 decodes");
     let changed_plan = decode_executable_physical_plan_v1(&changed_request.physical_plan_bytes)
         .expect("changed unified gameplay CPP1 decodes");
+    let dash_plan = decode_executable_physical_plan_v1(&dash_request.physical_plan_bytes)
+        .expect("dash-jump unified gameplay CPP1 decodes");
     assert!(plan.program.rules.iter().any(|rule| rule.entry == 0));
     assert!(plan.program.rules.iter().any(|rule| rule.entry == 1));
     assert!(plan.program.rules.iter().any(|rule| rule.entry == 2));
@@ -3071,6 +3172,15 @@ fn shipped_unified_gameplay_cwr1_carries_arena_and_symbolic_collect() {
         )
     );
     assert_ne!(plan.program, changed_plan.program);
+    let dash_rule = dash_plan
+        .program
+        .rules
+        .iter()
+        .find(|rule| rule.entry == 1)
+        .expect("dash-jump gameplay carries the source-owned jump transition");
+    assert_eq!(dash_rule.assignments[0].1, ExecutableExpressionV1::Slot(7));
+    assert_eq!(dash_rule.assignments[1].1, ExecutableExpressionV1::Slot(7));
+    assert_ne!(plan.program, dash_plan.program);
     assert_eq!(
         plan.program.initial_configuration[28],
         ExecutableValueV1::symbol(b"active").expect("symbol is bounded")
@@ -3085,6 +3195,7 @@ fn shipped_unified_gameplay_cwr1_carries_arena_and_symbolic_collect() {
     let fixtures = [
         ("gameplay-v1.cwr1.hex", request),
         ("gameplay-spent-v1.cwr1.hex", changed_request),
+        ("gameplay-dash-jump-v1.cwr1.hex", dash_request),
     ];
     if std::env::var_os("CLAUSE_UPDATE_BROWSER_GAMEPLAY_CWR1").is_some() {
         std::fs::create_dir_all(&fixture_root)
