@@ -213,12 +213,15 @@ pub struct AuthorizationRequirementPreimageV2 {
 
 /// A causal prerequisite whose satisfying occurrence must remain visible in
 /// the Activation frontier and cannot be erased as a static fixed grant.
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct DynamicPrerequisiteRequirementPreimageV2 {
-    pub kind: FormationLocalId,
-    pub occurrence_kind: ActivationPrerequisiteKind,
+    pub slot: PrerequisiteLocalId,
+    pub role: Option<RoleLocalId>,
+    pub requirement: ActivationPrerequisiteKind,
+    pub expected: FormationLocalId,
     pub scope: PrerequisiteScope,
     pub cardinality: CardinalityV2,
+    pub cause_projection: Vec<crate::provenance::CauseProjectionEntryV2>,
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -376,12 +379,15 @@ pub struct ResolvedAuthorizationRequirementV2 {
     pub cardinality: CardinalityV2,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ResolvedDynamicPrerequisiteRequirementV2 {
-    pub kind: FormationRefV2,
-    pub occurrence_kind: ActivationPrerequisiteKind,
+    pub slot: PrerequisiteSlotId,
+    pub role: Option<RoleId>,
+    pub requirement: ActivationPrerequisiteKind,
+    pub expected: FormationRefV2,
     pub scope: PrerequisiteScope,
     pub cardinality: CardinalityV2,
+    pub cause_projection: Vec<crate::provenance::CauseProjectionEntryV2>,
 }
 
 /// Static result of checking `Executable(G, A, M, kappa)`. Authorization
@@ -558,10 +564,18 @@ impl ResolvedProgramConstitutionV2 {
                 .dynamic_prerequisites
                 .iter()
                 .map(|requirement| ResolvedDynamicPrerequisiteRequirementV2 {
-                    kind: resolve_formation(self.snapshot, requirement.kind),
-                    occurrence_kind: requirement.occurrence_kind,
+                    slot: PrerequisiteSlotId {
+                        mode: resolve_mode(self.snapshot, mode),
+                        local: requirement.slot,
+                    },
+                    role: requirement
+                        .role
+                        .map(|role| resolve_role(self.snapshot, mode_record.schema, role)),
+                    requirement: requirement.requirement,
+                    expected: resolve_formation(self.snapshot, requirement.expected),
                     scope: requirement.scope,
                     cardinality: requirement.cardinality,
+                    cause_projection: requirement.cause_projection.clone(),
                 })
                 .collect(),
         })
@@ -811,7 +825,7 @@ fn validate_mode(
     validate_set_by_key(
         &mode.dynamic_prerequisites,
         "dynamic prerequisites",
-        |requirement| requirement.kind,
+        |requirement| requirement.slot,
     )?;
     validate_set(&mode.direct_dependencies, "mode dependencies")?;
 
@@ -840,8 +854,21 @@ fn validate_mode(
         validate_cardinality(requirement.cardinality)?;
     }
     for requirement in &mode.dynamic_prerequisites {
-        require_formation(indexes, requirement.kind)?;
+        require_formation(indexes, requirement.expected)?;
+        if let Some(role) = requirement.role
+            && !declared.contains(&role)
+        {
+            return Err(FormationErrorV2::UnknownRole(LocalRoleRefV2 {
+                schema: mode.schema,
+                role,
+            }));
+        }
         validate_cardinality(requirement.cardinality)?;
+        validate_set_by_key(
+            &requirement.cause_projection,
+            "prerequisite cause projection",
+            |entry| entry.component,
+        )?;
     }
     validate_mode_contract(scope, indexes, mode)?;
     validate_dependencies(scope, indexes, &mode.direct_dependencies)
@@ -1232,7 +1259,7 @@ fn outgoing_dependencies(
                 dependencies.push(LocalSemanticDependencyV2::Formation(requirement.kind))?;
             }
             for requirement in &mode.dynamic_prerequisites {
-                dependencies.push(LocalSemanticDependencyV2::Formation(requirement.kind))?;
+                dependencies.push(LocalSemanticDependencyV2::Formation(requirement.expected))?;
             }
             if let ResultOrderContractV2::SelectedBy(formation) = mode.contract.result_order {
                 dependencies.push(LocalSemanticDependencyV2::Formation(formation))?;
@@ -2228,10 +2255,16 @@ mod tests {
             cardinality: ONE,
         }];
         mode.dynamic_prerequisites = vec![DynamicPrerequisiteRequirementPreimageV2 {
-            kind: FormationLocalId::new(2),
-            occurrence_kind: ActivationPrerequisiteKind::Observation,
+            slot: PrerequisiteLocalId::new(1),
+            role: None,
+            requirement: ActivationPrerequisiteKind::Observation,
+            expected: FormationLocalId::new(2),
             scope: PrerequisiteScope::SameProgramRevision,
             cardinality: ONE,
+            cause_projection: vec![crate::provenance::CauseProjectionEntryV2 {
+                component: CauseComponentLocalId::new(1),
+                path: crate::provenance::PrerequisiteOccurrencePathV2::BoundOccurrence,
+            }],
         }];
         preimage.applications[0].form.context_requirements = vec![FormationLocalId::new(2)];
         preimage.formations[0]

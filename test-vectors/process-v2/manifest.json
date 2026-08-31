@@ -15,17 +15,17 @@
         "replay": "accept"
       },
       "identities": {
-        "program_snapshot": "6f7485f9c46254038ed8050f830b9d94d65c370f838b57bf54b469b77f4068d3",
-        "shared_application_shape": "fab9848a438fdffb278b0a4165e33211d1edb878515bfa79bac1d64373e1fe3c",
-        "process_package": "3f2fdecf4a5f2d1ae3e6eb4113a2b80c6da3a0b34cfe01ffd04a79df6cfe6d8b",
-        "program_revision": "a38aa40406ecc50e352134eb3845502dfa5a9c3c64228e6a0fe68cc28ad240f2",
+        "program_snapshot": "2d0feb425fcdec0ddfb08faf1ab08450c7878f9b40315a8e6a5ca61d1b442b21",
+        "shared_application_shape": "c2cef46cc48d104b88d0786d87c31edc8ab95c82eb363568b43dbafd3aea7eee",
+        "process_package": "534077c029827581c98a4a02e6b64c0e300caf9efe6443d2f1dcd25e94e05d36",
+        "program_revision": "4f20cca03e3eba455da7fa546a839e3f95fd4b1151a55834c52918a6923a6964",
         "initial_state": "4406d21b7382c9d5de2be037062dc1b4e8eca3c9fd6fc8c0aecfadb909c95984",
         "successor_state": "d13415d940d1410e18da69cb4c0e8de620b3822608953df11cac7d3dfd803f76"
       },
       "observations": {
         "applications": 2,
         "activations": 7,
-        "runs": 5,
+        "runs": 7,
         "steps": 9,
         "identified_observations": 8,
         "continuations": 1,

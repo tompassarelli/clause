@@ -510,33 +510,26 @@ fn repeated_support_sources_survive_in_distinct_typed_slots() {
 
 #[test]
 fn dynamic_prerequisites_preserve_occurrence_multiplicity() {
-    let requirements = [ActivationPrerequisiteRequirement {
-        kind: ActivationPrerequisiteKind::Observation,
-        minimum: 2,
-        maximum: 2,
-        scope: PrerequisiteScope::SameProgramRevision,
-    }];
-    let exact = ActivationPrerequisiteFrontier {
-        items: vec![
-            ActivationPrerequisite::Observation(id!(ObservationId, 11)),
-            ActivationPrerequisite::Observation(id!(ObservationId, 12)),
-        ],
+    let mode = core_mode(id!(ProgramSnapshotId, 1), 1);
+    let occurrence = ActivationPrerequisite::Observation(id!(ObservationId, 11));
+    let left = DynamicPrerequisiteBindingV2 {
+        slot: PrerequisiteSlotId {
+            mode,
+            local: PrerequisiteLocalId::new(1),
+        },
+        ordinal: 0,
+        value: occurrence,
     };
-    validate_activation_prerequisite_frontier(&requirements, &exact)
-        .expect("two exact occurrences satisfy cardinality two");
-
-    let collapsed = ActivationPrerequisiteFrontier {
-        items: vec![ActivationPrerequisite::Observation(id!(ObservationId, 11))],
+    let right = DynamicPrerequisiteBindingV2 {
+        slot: PrerequisiteSlotId {
+            mode,
+            local: PrerequisiteLocalId::new(2),
+        },
+        ordinal: 0,
+        value: occurrence,
     };
-    assert!(matches!(
-        validate_activation_prerequisite_frontier(&requirements, &collapsed),
-        Err(ProvenanceError::PrerequisiteCardinalityMismatch {
-            kind: ActivationPrerequisiteKind::Observation,
-            minimum: 2,
-            maximum: 2,
-            actual: 1,
-        })
-    ));
+    assert_eq!(left.value, right.value);
+    assert_ne!(left.slot, right.slot);
 }
 
 #[test]
@@ -953,13 +946,19 @@ fn core_snapshot() -> ProgramSnapshotPreimageV2 {
         },
         authorization_requirements: vec![],
         dynamic_prerequisites: vec![DynamicPrerequisiteRequirementPreimageV2 {
-            kind: FormationLocalId::new(2),
-            occurrence_kind: ActivationPrerequisiteKind::Observation,
+            slot: PrerequisiteLocalId::new(1),
+            role: Some(RoleLocalId::new(1)),
+            requirement: ActivationPrerequisiteKind::Observation,
+            expected: FormationLocalId::new(2),
             scope: PrerequisiteScope::SameSemantics,
             cardinality: CardinalityV2 {
                 minimum: 0,
                 maximum: Some(1),
             },
+            cause_projection: vec![CauseProjectionEntryV2 {
+                component: CauseComponentLocalId::new(1),
+                path: PrerequisiteOccurrencePathV2::BoundOccurrence,
+            }],
         }],
         contract: ModeContractV2 {
             determinism: DeterminismContractV2::Deterministic,
@@ -1142,46 +1141,15 @@ fn root_activation(
             execution_authorizations: vec![],
             judgment_authorities: vec![],
         },
+        prerequisite_bindings: vec![],
         causes: ActivationCauseFrontierV2 {
             origin: ActivationOrigin::RootedBy(trigger),
-            prerequisites: vec![],
+            prerequisite_occurrences: vec![],
         },
         membership: RunMembership::RootOf(id!(RunId, run_tag)),
         initial_configuration: ConfigurationProposal {
             id: id!(ConfigurationId, configuration_tag),
             value: term("configuration/initial"),
-        },
-    }
-}
-
-fn child_activation(
-    context: CoreContext,
-    activation_tag: u8,
-    configuration_tag: u8,
-    run: RunId,
-    parent: StepRef,
-) -> ActivationProposalV2 {
-    ActivationProposalV2 {
-        id: id!(ActivationId, activation_tag),
-        application: core_application(context.snapshot, 1),
-        mode: core_mode(context.snapshot, 1),
-        pins: pure_pins(context),
-        static_basis: ActivationStaticBasis {
-            execution_authorizations: vec![],
-            judgment_authorities: vec![],
-        },
-        causes: ActivationCauseFrontierV2 {
-            origin: ActivationOrigin::ChildOf {
-                run,
-                parent_activation: parent.activation,
-                parent_step: parent.step,
-            },
-            prerequisites: vec![],
-        },
-        membership: RunMembership::ChildIn(run),
-        initial_configuration: ConfigurationProposal {
-            id: id!(ConfigurationId, configuration_tag),
-            value: term("configuration/child"),
         },
     }
 }
@@ -1225,18 +1193,29 @@ fn domain_bound(value: &str, evidence_tag: u8) -> DomainBoundTermV2 {
 
 fn require_formation_observation(
     activation: &mut ActivationProposalV2,
-    context: CoreContext,
+    _context: CoreContext,
     evidence_tag: u8,
 ) {
+    let slot = PrerequisiteSlotId {
+        mode: activation.mode,
+        local: PrerequisiteLocalId::new(1),
+    };
+    let value = ActivationPrerequisite::Observation(id!(ObservationId, evidence_tag));
+    activation
+        .prerequisite_bindings
+        .push(DynamicPrerequisiteBindingV2 {
+            slot,
+            ordinal: 0,
+            value,
+        });
     activation
         .causes
-        .prerequisites
-        .push(ActivationPrerequisiteUseV2 {
-            kind: FormationRefV2 {
-                snapshot: context.snapshot,
-                local: FormationLocalId::new(2),
-            },
-            prerequisite: ActivationPrerequisite::Observation(id!(ObservationId, evidence_tag)),
+        .prerequisite_occurrences
+        .push(ActivationOccurrenceCauseV2 {
+            slot,
+            ordinal: 0,
+            component: CauseComponentLocalId::new(1),
+            occurrence: value,
         });
 }
 
@@ -1284,7 +1263,7 @@ fn step(
         observed_state: None,
         budget,
         causes,
-        observations: vec![],
+        observation_outcomes: vec![],
         candidate_delta: None,
         outcome,
     }
@@ -1419,7 +1398,7 @@ fn build_core_package_from_snapshot(
         vec![StepCause::ActivationStart(id!(ActivationId, 22))],
         StepOutcomeProposalV2::Progress,
     );
-    checker_step.observations = [
+    checker_step.observation_outcomes = [
         (84, "delta/admit", target("state-delta")),
         (85, "delta/reject", target("state-delta")),
         (86, "child/left", target("result")),
@@ -1428,12 +1407,12 @@ fn build_core_package_from_snapshot(
     ]
     .into_iter()
     .map(|(id, subject, domain)| {
-        formation_observation(
+        StepObservationOutcomeV2::Observed(formation_observation(
             id,
             subject,
             domain,
             SupportSource::ExternalTrigger(id!(ExternalTriggerOccurrenceId, 12)),
-        )
+        ))
     })
     .collect();
 
@@ -1447,15 +1426,9 @@ fn build_core_package_from_snapshot(
         vec![StepCause::ActivationStart(id!(ActivationId, 20))],
         StepOutcomeProposalV2::Progress,
     );
-    first.observations = vec![
-        ObservationProposalV2::Truth {
-            id: None,
-            verdict: TruthVerdict::Absent,
-            proposition: term("proposition/absent"),
-            supports: vec![],
-        },
-        ObservationProposalV2::Truth {
-            id: Some(id!(ObservationId, 50)),
+    first.observation_outcomes = vec![
+        StepObservationOutcomeV2::Observed(ObservationProposalV2::Truth {
+            id: id!(ObservationId, 50),
             verdict: TruthVerdict::True,
             proposition: term("proposition/true"),
             supports: vec![
@@ -1470,9 +1443,9 @@ fn build_core_package_from_snapshot(
                     source: SupportSource::ExternalTrigger(id!(ExternalTriggerOccurrenceId, 10)),
                 },
             ],
-        },
-        ObservationProposalV2::Truth {
-            id: Some(id!(ObservationId, 51)),
+        }),
+        StepObservationOutcomeV2::Observed(ObservationProposalV2::Truth {
+            id: id!(ObservationId, 51),
             verdict: TruthVerdict::False,
             proposition: term("proposition/false"),
             supports: vec![SupportUse {
@@ -1480,7 +1453,16 @@ fn build_core_package_from_snapshot(
                 role: term("premise/negative"),
                 source: SupportSource::ExternalTrigger(id!(ExternalTriggerOccurrenceId, 10)),
             }],
-        },
+        }),
+        StepObservationOutcomeV2::Absent(TruthAbsenceV2 {
+            proposition: term("proposition/absent"),
+            search_scope: term("search-scope/closed"),
+            completion_evidence: vec![SupportUse {
+                slot: SupportSlotId::new(0x7788_99aa),
+                role: term("search/completed"),
+                source: SupportSource::ExternalTrigger(id!(ExternalTriggerOccurrenceId, 10)),
+            }],
+        }),
     ];
 
     let mut state_admit_step = step(
@@ -1640,16 +1622,10 @@ fn build_core_package_from_snapshot(
         61,
         68,
         budget(80, 10, 70),
-        vec![
-            StepCause::PriorStep(a1_suspend),
-            StepCause::ContinuationTakeup {
-                continuation: id!(ContinuationId, 70),
-                occurrence: ContinuationTakeupOccurrence::Resumption(id!(
-                    ResumptionOccurrenceId,
-                    83
-                )),
-            },
-        ],
+        vec![StepCause::ContinuationTakeup {
+            continuation: id!(ContinuationId, 70),
+            occurrence: ContinuationTakeupOccurrence::Resumption(id!(ResumptionOccurrenceId, 83)),
+        }],
         StepOutcomeProposalV2::Return(domain_bound("value/resumed", 88)),
     );
 
@@ -2038,10 +2014,16 @@ fn prerequisite_candidate(
         });
     snapshot.constitution.operators[0].modes[0].dynamic_prerequisites =
         vec![DynamicPrerequisiteRequirementPreimageV2 {
-            kind: FormationLocalId::new(2),
-            occurrence_kind,
+            slot: PrerequisiteLocalId::new(1),
+            role: Some(RoleLocalId::new(1)),
+            requirement: occurrence_kind,
+            expected: FormationLocalId::new(2),
             scope: prerequisite_scope,
             cardinality: one(),
+            cause_projection: vec![CauseProjectionEntryV2 {
+                component: CauseComponentLocalId::new(1),
+                path: PrerequisiteOccurrencePathV2::BoundOccurrence,
+            }],
         }];
     let claimed_snapshot =
         derive_program_snapshot_id(&snapshot).expect("prerequisite snapshot identity derives");
@@ -2054,12 +2036,20 @@ fn prerequisite_candidate(
         1,
         RootTrigger::External(id!(ExternalTriggerOccurrenceId, 10)),
     );
-    activation.causes.prerequisites = vec![ActivationPrerequisiteUseV2 {
-        kind: FormationRefV2 {
-            snapshot: claimed_snapshot,
-            local: FormationLocalId::new(2),
-        },
-        prerequisite,
+    let slot = PrerequisiteSlotId {
+        mode: activation.mode,
+        local: PrerequisiteLocalId::new(1),
+    };
+    activation.prerequisite_bindings = vec![DynamicPrerequisiteBindingV2 {
+        slot,
+        ordinal: 0,
+        value: prerequisite,
+    }];
+    activation.causes.prerequisite_occurrences = vec![ActivationOccurrenceCauseV2 {
+        slot,
+        ordinal: 0,
+        component: CauseComponentLocalId::new(1),
+        occurrence: prerequisite,
     }];
     let mut records = vec![ProcessRecordV2::ExternalTrigger(
         ExternalTriggerOccurrenceV2 {
@@ -2172,12 +2162,13 @@ fn bounded_exhaustion_candidate(remaining_units: u64) -> (ProcessPackageV2, Core
         vec![StepCause::ActivationStart(id!(ActivationId, 21))],
         StepOutcomeProposalV2::Progress,
     );
-    checker_step.observations = vec![formation_observation(
-        84,
-        "budget/exhausted",
-        target("budget-exhaustion"),
-        SupportSource::ExternalTrigger(id!(ExternalTriggerOccurrenceId, 10)),
-    )];
+    checker_step.observation_outcomes =
+        vec![StepObservationOutcomeV2::Observed(formation_observation(
+            84,
+            "budget/exhausted",
+            target("budget-exhaustion"),
+            SupportSource::ExternalTrigger(id!(ExternalTriggerOccurrenceId, 10)),
+        ))];
     let exhaustion = step(
         50,
         30,
@@ -2453,6 +2444,7 @@ fn handoff_child_activation(
             execution_authorizations: vec![],
             judgment_authorities: vec![],
         },
+        prerequisite_bindings: vec![],
         causes: ActivationCauseFrontierV2 {
             origin: ActivationOrigin::HandoffFrom {
                 run: id!(RunId, 30),
@@ -2461,7 +2453,7 @@ fn handoff_child_activation(
                 continuation: id!(ContinuationId, 70),
                 handoff: id!(HandoffOccurrenceId, handoff_tag),
             },
-            prerequisites: vec![],
+            prerequisite_occurrences: vec![],
         },
         membership: RunMembership::ChildIn(id!(RunId, 30)),
         initial_configuration: ConfigurationProposal {
@@ -3118,21 +3110,7 @@ fn process_v2_named_mutations_have_exact_stage_specific_verdicts() {
 fn runtime_configuration_custody_budget_and_cancellation_are_exact() {
     let (core, context) = finalized_core_package();
 
-    let mut missing_frontier = core.clone();
-    let resumed = missing_frontier
-        .records
-        .iter_mut()
-        .find_map(|record| match record {
-            ProcessRecordV2::Steps(steps) => {
-                steps.iter_mut().find(|step| step.id == id!(StepId, 58))
-            }
-            _ => None,
-        })
-        .expect("core has resumed Step 58");
-    resumed
-        .causes
-        .retain(|cause| !matches!(cause, StepCause::PriorStep(_)));
-    let carrier = replay_core_candidate(&missing_frontier, context)
+    let carrier = replay_core_candidate(&core, context)
         .expect("Configuration custody does not manufacture a semantic PriorStep cause");
     assert_eq!(
         carrier
@@ -3157,20 +3135,38 @@ fn runtime_configuration_custody_budget_and_cancellation_are_exact() {
             _ => None,
         })
         .expect("core has resumed Step 58");
-    let prior = resumed
-        .causes
-        .iter_mut()
-        .find(|cause| matches!(cause, StepCause::PriorStep(_)))
-        .expect("resumed Step has one semantic prior-Step cause");
-    *prior = StepCause::PriorStep(StepRef {
+    resumed.causes.push(StepCause::PriorStep(StepRef {
         run: id!(RunId, 31),
         activation: id!(ActivationId, 21),
         step: id!(StepId, 52),
-    });
+    }));
     resumed.causes.sort_unstable();
     assert_eq!(
         replay_core_candidate(&foreign_cause, context).unwrap_err(),
         ProcessError::StepCauseOwnerMismatch(id!(StepId, 52))
+    );
+
+    let mut duplicate_emitter = core.clone();
+    let resumed = duplicate_emitter
+        .records
+        .iter_mut()
+        .find_map(|record| match record {
+            ProcessRecordV2::Steps(steps) => {
+                steps.iter_mut().find(|step| step.id == id!(StepId, 58))
+            }
+            _ => None,
+        })
+        .expect("core has resumed Step 58");
+    let emitter = StepRef {
+        run: id!(RunId, 30),
+        activation: id!(ActivationId, 20),
+        step: id!(StepId, 51),
+    };
+    resumed.causes.push(StepCause::PriorStep(emitter));
+    resumed.causes.sort_unstable();
+    assert_eq!(
+        replay_core_candidate(&duplicate_emitter, context).unwrap_err(),
+        ProcessError::DuplicateContinuationEmitterCause(emitter)
     );
 
     let (mut wrong_handoff_application, context) = linear_double_takeup_package();
@@ -3392,9 +3388,9 @@ fn dynamic_prerequisites_enforce_declared_occurrence_kind_and_scope() {
     assert_eq!(
         replay_core_candidate(&wrong_kind, context).unwrap_err(),
         ProcessError::PrerequisiteOccurrenceKindMismatch {
-            requirement: FormationRefV2 {
-                snapshot: context.snapshot,
-                local: FormationLocalId::new(2),
+            slot: PrerequisiteSlotId {
+                mode: core_mode(context.snapshot, 1),
+                local: PrerequisiteLocalId::new(1),
             },
             expected: ActivationPrerequisiteKind::Observation,
             actual: ActivationPrerequisiteKind::Admission,
@@ -3411,6 +3407,52 @@ fn dynamic_prerequisites_enforce_declared_occurrence_kind_and_scope() {
         replay_core_candidate(&wrong_scope, context).unwrap_err(),
         ProcessError::PrerequisiteScopeMismatch
     );
+
+    let (mut wrong_ordinal, context) = prerequisite_candidate(
+        ActivationPrerequisiteKind::Observation,
+        PrerequisiteScope::SameSemantics,
+        ActivationPrerequisite::Observation(id!(ObservationId, 82)),
+        true,
+    );
+    let activation = wrong_ordinal
+        .records
+        .iter_mut()
+        .find_map(|record| match record {
+            ProcessRecordV2::Activation(activation) => Some(activation),
+            _ => None,
+        })
+        .expect("prerequisite fixture has one Activation");
+    activation.prerequisite_bindings[0].ordinal = 1;
+    activation.causes.prerequisite_occurrences[0].ordinal = 1;
+    let slot = activation.prerequisite_bindings[0].slot;
+    assert_eq!(
+        replay_core_candidate(&wrong_ordinal, context).unwrap_err(),
+        ProcessError::PrerequisiteOrdinalMismatch {
+            slot,
+            expected: 0,
+            actual: 1,
+        }
+    );
+
+    let (mut wrong_projection, context) = prerequisite_candidate(
+        ActivationPrerequisiteKind::Observation,
+        PrerequisiteScope::SameSemantics,
+        ActivationPrerequisite::Observation(id!(ObservationId, 82)),
+        true,
+    );
+    let activation = wrong_projection
+        .records
+        .iter_mut()
+        .find_map(|record| match record {
+            ProcessRecordV2::Activation(activation) => Some(activation),
+            _ => None,
+        })
+        .expect("prerequisite fixture has one Activation");
+    activation.causes.prerequisite_occurrences[0].component = CauseComponentLocalId::new(2);
+    assert_eq!(
+        replay_core_candidate(&wrong_projection, context).unwrap_err(),
+        ProcessError::ActivationCauseProjectionMismatch
+    );
 }
 
 #[test]
@@ -3423,11 +3465,14 @@ fn formation_evidence_must_be_prior_declared_distinct_and_causal() {
             ProcessRecordV2::Steps(steps) => steps
                 .iter_mut()
                 .find(|step| step.id == id!(StepId, 53))
-                .and_then(|step| step.observations.first_mut()),
+                .and_then(|step| step.observation_outcomes.first_mut()),
             _ => None,
         })
         .expect("checker Step has Formation observations");
-    let ObservationProposalV2::Formation { target: found, .. } = observation else {
+    let StepObservationOutcomeV2::Observed(ObservationProposalV2::Formation {
+        target: found, ..
+    }) = observation
+    else {
         panic!("checker Step emits Formation observations");
     };
     *found = target("undeclared-output");
@@ -3447,12 +3492,14 @@ fn formation_evidence_must_be_prior_declared_distinct_and_causal() {
             _ => None,
         })
         .expect("core has child return Step 54");
-    consumer.observations.push(formation_observation(
-        89,
-        "child/self",
-        target("result"),
-        SupportSource::ExternalTrigger(id!(ExternalTriggerOccurrenceId, 10)),
-    ));
+    consumer
+        .observation_outcomes
+        .push(StepObservationOutcomeV2::Observed(formation_observation(
+            89,
+            "child/self",
+            target("result"),
+            SupportSource::ExternalTrigger(id!(ExternalTriggerOccurrenceId, 10)),
+        )));
     consumer.outcome = StepOutcomeProposalV2::Return(domain_bound("child/self", 89));
     assert_eq!(
         replay_core_candidate(&same_step, context).unwrap_err(),
@@ -3499,7 +3546,8 @@ fn formation_evidence_must_be_prior_declared_distinct_and_causal() {
             _ => None,
         })
         .expect("core has Activation 20");
-    activation.causes.prerequisites.clear();
+    activation.prerequisite_bindings.clear();
+    activation.causes.prerequisite_occurrences.clear();
     assert_eq!(
         replay_core_candidate(&noncausal, context).unwrap_err(),
         ProcessError::FormationEvidenceNotCausal(id!(ObservationId, 88))
@@ -3514,11 +3562,6 @@ fn formation_evidence_must_be_prior_declared_distinct_and_causal() {
                 if steps.iter().any(|step| step.id == id!(StepId, 53)))
         })
         .expect("core has checker Step 53");
-    let checker = StepRef {
-        run: id!(RunId, 32),
-        activation: id!(ActivationId, 22),
-        step: id!(StepId, 53),
-    };
     let mut activation = root_activation(
         context,
         27,

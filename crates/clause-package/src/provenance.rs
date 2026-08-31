@@ -18,8 +18,6 @@ pub const MAX_BOUNDARY_PERMISSIONS: usize = 64;
 pub const MAX_OCCURRENCE_CAUSES: usize = 1_000_000;
 pub const MAX_EXECUTION_AUTHORIZATIONS: usize = 1_000_000;
 pub const MAX_JUDGMENT_AUTHORITIES: usize = 1_000_000;
-pub const MAX_ACTIVATION_REQUIREMENTS: usize = 64;
-pub const MAX_ACTIVATION_PREREQUISITES: usize = 1_000_000;
 pub const MAX_SUPPORT_USES: usize = 1_000_000;
 pub const MAX_CANDIDATE_OBLIGATIONS: usize = 1_000_000;
 
@@ -201,17 +199,38 @@ pub enum PrerequisiteScope {
     SameObservedState,
 }
 
+/// The typed path from one bound prerequisite value to one occurrence cause.
+/// The current admitted-stateful subset carries direct Observation and
+/// Admission occurrences, so it has exactly this one path form.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub struct ActivationPrerequisiteRequirement {
-    pub kind: ActivationPrerequisiteKind,
-    pub minimum: u32,
-    pub maximum: u32,
-    pub scope: PrerequisiteScope,
+pub enum PrerequisiteOccurrencePathV2 {
+    BoundOccurrence,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ActivationPrerequisiteFrontier {
-    pub items: Vec<ActivationPrerequisite>,
+/// One named component of a Mode-owned cause-projection schema.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct CauseProjectionEntryV2 {
+    pub component: CauseComponentLocalId,
+    pub path: PrerequisiteOccurrencePathV2,
+}
+
+/// One exact value closing one stable prerequisite slot and repeated-value
+/// ordinal. Equal values in different slots or ordinals remain distinct.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct DynamicPrerequisiteBindingV2 {
+    pub slot: PrerequisiteSlotId,
+    pub ordinal: u32,
+    pub value: ActivationPrerequisite,
+}
+
+/// One occurrence-only cause mechanically projected from a prerequisite
+/// binding according to the selected Mode's projection schema.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct ActivationOccurrenceCauseV2 {
+    pub slot: PrerequisiteSlotId,
+    pub ordinal: u32,
+    pub component: CauseComponentLocalId,
+    pub occurrence: ActivationPrerequisite,
 }
 
 /// Occurrence-exact evidence sources. Candidate deltas are excluded: a
@@ -406,92 +425,6 @@ pub fn validate_activation_static_basis(
         MAX_JUDGMENT_AUTHORITIES,
     )?;
     validate_sorted_unique(&basis.judgment_authorities, "judgment authorities")
-}
-
-pub fn validate_activation_prerequisite_contract(
-    requirements: &[ActivationPrerequisiteRequirement],
-) -> Result<(), ProvenanceError> {
-    validate_length(
-        "activation prerequisite requirements",
-        requirements.len(),
-        MAX_ACTIVATION_REQUIREMENTS,
-    )?;
-    validate_strict_key_order(
-        requirements,
-        "activation prerequisite requirements",
-        |requirement| requirement.kind,
-    )?;
-
-    let mut total_maximum = 0usize;
-    for requirement in requirements {
-        if requirement.minimum > requirement.maximum {
-            return Err(ProvenanceError::InvalidPrerequisiteCardinality {
-                kind: requirement.kind,
-                minimum: requirement.minimum,
-                maximum: requirement.maximum,
-            });
-        }
-        let maximum = usize::try_from(requirement.maximum).map_err(|_| {
-            ProvenanceError::InvalidPrerequisiteCardinality {
-                kind: requirement.kind,
-                minimum: requirement.minimum,
-                maximum: requirement.maximum,
-            }
-        })?;
-        total_maximum = total_maximum.checked_add(maximum).ok_or(
-            ProvenanceError::DeclaredPrerequisiteMaximumTooLarge {
-                maximum: MAX_ACTIVATION_PREREQUISITES,
-            },
-        )?;
-    }
-    if total_maximum > MAX_ACTIVATION_PREREQUISITES {
-        return Err(ProvenanceError::DeclaredPrerequisiteMaximumTooLarge {
-            maximum: MAX_ACTIVATION_PREREQUISITES,
-        });
-    }
-    Ok(())
-}
-
-pub fn validate_activation_prerequisite_frontier(
-    requirements: &[ActivationPrerequisiteRequirement],
-    frontier: &ActivationPrerequisiteFrontier,
-) -> Result<(), ProvenanceError> {
-    validate_activation_prerequisite_contract(requirements)?;
-    validate_length(
-        "activation prerequisite frontier",
-        frontier.items.len(),
-        MAX_ACTIVATION_PREREQUISITES,
-    )?;
-    validate_sorted_unique(&frontier.items, "activation prerequisite frontier")?;
-
-    for prerequisite in &frontier.items {
-        if !requirements
-            .iter()
-            .any(|requirement| requirement.kind == prerequisite.kind())
-        {
-            return Err(ProvenanceError::UnexpectedPrerequisiteKind(
-                prerequisite.kind(),
-            ));
-        }
-    }
-    for requirement in requirements {
-        let count = frontier
-            .items
-            .iter()
-            .filter(|prerequisite| prerequisite.kind() == requirement.kind)
-            .count();
-        let minimum = requirement.minimum as usize;
-        let maximum = requirement.maximum as usize;
-        if count < minimum || count > maximum {
-            return Err(ProvenanceError::PrerequisiteCardinalityMismatch {
-                kind: requirement.kind,
-                minimum: requirement.minimum,
-                maximum: requirement.maximum,
-                actual: count,
-            });
-        }
-    }
-    Ok(())
 }
 
 pub fn validate_support_uses(supports: &[SupportUse]) -> Result<(), ProvenanceError> {
@@ -758,21 +691,6 @@ pub enum ProvenanceError {
     NonCanonicalOrder(&'static str),
     IncompleteBoundaryRuntimePins,
     BoundaryEvidenceMismatch,
-    InvalidPrerequisiteCardinality {
-        kind: ActivationPrerequisiteKind,
-        minimum: u32,
-        maximum: u32,
-    },
-    DeclaredPrerequisiteMaximumTooLarge {
-        maximum: usize,
-    },
-    UnexpectedPrerequisiteKind(ActivationPrerequisiteKind),
-    PrerequisiteCardinalityMismatch {
-        kind: ActivationPrerequisiteKind,
-        minimum: u32,
-        maximum: u32,
-        actual: usize,
-    },
     DuplicateSupportSlot(SupportSlotId),
     DuplicateObligation(ObligationId),
     ObligationDeltaMismatch {

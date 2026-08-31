@@ -91,6 +91,8 @@ local_id!(JudgmentLocalId);
 local_id!(JudgmentAuthorityLocalId);
 local_id!(ExecutionAuthorizationLocalId);
 local_id!(AdmissionAuthorizationLocalId);
+local_id!(PrerequisiteLocalId);
+local_id!(CauseComponentLocalId);
 local_id!(SupportSlotId);
 local_id!(ObligationLocalId);
 
@@ -120,6 +122,13 @@ pub struct OperatorRef {
 pub struct ModeId {
     pub operator: OperatorRef,
     pub local: ModeLocalId,
+}
+
+/// One stable dynamic-prerequisite slot declared by one exact Mode.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct PrerequisiteSlotId {
+    pub mode: ModeId,
+    pub local: PrerequisiteLocalId,
 }
 
 /// One capability declaration in one exact Program snapshot.

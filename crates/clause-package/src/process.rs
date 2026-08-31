@@ -17,10 +17,11 @@ use crate::formation::{
 };
 use crate::identity::*;
 use crate::provenance::{
-    ActivationPrerequisite, ActivationPrerequisiteKind, ActivationStaticBasis,
-    CancellationOccurrenceV2, CausalRef, EnteredOccurrenceKind, EnteredThrough,
-    ExternalTriggerOccurrenceV2, HandoffOccurrenceV2, JudgmentAuthorityEvidence,
-    JudgmentOccurrenceV2, OccurrenceProvenance, PrerequisiteScope, ResumptionOccurrenceV2,
+    ActivationOccurrenceCauseV2, ActivationPrerequisite, ActivationPrerequisiteKind,
+    ActivationStaticBasis, CancellationOccurrenceV2, CausalRef, DynamicPrerequisiteBindingV2,
+    EnteredOccurrenceKind, EnteredThrough, ExternalTriggerOccurrenceV2, HandoffOccurrenceV2,
+    JudgmentAuthorityEvidence, JudgmentOccurrenceV2, OccurrenceProvenance,
+    PrerequisiteOccurrencePathV2, PrerequisiteScope, ResumptionOccurrenceV2,
     StateAdmissionDecisionV2, StateAdmissionOutcomeV2, StepRef, SupportSource, SupportUse,
 };
 use crate::term::Term;
@@ -240,16 +241,10 @@ impl RunMembership {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub struct ActivationPrerequisiteUseV2 {
-    pub kind: FormationRefV2,
-    pub prerequisite: ActivationPrerequisite,
-}
-
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ActivationCauseFrontierV2 {
     pub origin: ActivationOrigin,
-    pub prerequisites: Vec<ActivationPrerequisiteUseV2>,
+    pub prerequisite_occurrences: Vec<ActivationOccurrenceCauseV2>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -274,6 +269,7 @@ pub struct ActivationProposalV2 {
     pub mode: ModeId,
     pub pins: ActivationPins,
     pub static_basis: ActivationStaticBasis,
+    pub prerequisite_bindings: Vec<DynamicPrerequisiteBindingV2>,
     pub causes: ActivationCauseFrontierV2,
     pub membership: RunMembership,
     pub initial_configuration: ConfigurationProposal,
@@ -457,11 +453,9 @@ pub enum StepCause {
 pub enum TruthVerdict {
     True,
     False,
-    Absent,
 }
 
-/// `Absent` is explicit but has no ObservationId and creates no occurrence.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 #[expect(
     clippy::large_enum_variant,
     reason = "an Observation proposal owns its exact typed formation target without hidden allocation"
@@ -473,7 +467,7 @@ pub enum ObservationProposalV2 {
         supports: Vec<SupportUse>,
     },
     Truth {
-        id: Option<ObservationId>,
+        id: ObservationId,
         verdict: TruthVerdict,
         proposition: Term,
         supports: Vec<SupportUse>,
@@ -488,10 +482,9 @@ pub enum ObservationProposalV2 {
 
 impl ObservationProposalV2 {
     #[must_use]
-    pub const fn occurrence_id(&self) -> Option<ObservationId> {
+    pub const fn occurrence_id(&self) -> ObservationId {
         match self {
-            Self::Value { id, .. } | Self::Formation { id, .. } => Some(*id),
-            Self::Truth { id, .. } => *id,
+            Self::Value { id, .. } | Self::Truth { id, .. } | Self::Formation { id, .. } => *id,
         }
     }
 
@@ -503,6 +496,22 @@ impl ObservationProposalV2 {
             | Self::Formation { supports, .. } => supports,
         }
     }
+}
+
+/// A completed truth-seeking request that found no Observation occurrence.
+/// Its evidence proves search completion; it never manufactures an
+/// `ObservationId` or enters the Observation store.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct TruthAbsenceV2 {
+    pub proposition: Term,
+    pub search_scope: Term,
+    pub completion_evidence: Vec<SupportUse>,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum StepObservationOutcomeV2 {
+    Observed(ObservationProposalV2),
+    Absent(TruthAbsenceV2),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -573,7 +582,7 @@ pub struct StepProposalV2 {
     pub observed_state: Option<StateRevisionId>,
     pub budget: StepBudgetTransitionV2,
     pub causes: Vec<StepCause>,
-    pub observations: Vec<ObservationProposalV2>,
+    pub observation_outcomes: Vec<StepObservationOutcomeV2>,
     pub candidate_delta: Option<crate::provenance::CandidateDeltaV2>,
     pub outcome: StepOutcomeProposalV2,
 }
@@ -727,7 +736,6 @@ struct StepUndo {
 }
 
 enum RecordUndo {
-    None,
     ExternalTrigger(ExternalTriggerOccurrenceId),
     Observation(ObservationId),
     Activation {
@@ -1122,7 +1130,7 @@ impl ProcessCarrier {
             ProcessRecordV2::EnteredObservation(observation) => {
                 let id = observation.observation.occurrence_id();
                 self.add_entered_observation(observation, authority)?;
-                Ok(id.map_or(RecordUndo::None, RecordUndo::Observation))
+                Ok(RecordUndo::Observation(id))
             }
             ProcessRecordV2::Activation(proposal) => {
                 let activation = proposal.id;
@@ -1180,7 +1188,6 @@ impl ProcessCarrier {
 
     fn rollback_record(&mut self, undo: RecordUndo) {
         match undo {
-            RecordUndo::None => {}
             RecordUndo::ExternalTrigger(id) => {
                 self.external_triggers.remove(&id);
                 self.remove_causal(CausalRef::ExternalTrigger(id));
@@ -1275,10 +1282,7 @@ impl ProcessCarrier {
             EnteredOccurrenceKind::Observation,
             authority,
         )?;
-        let Some(id) = entered.observation.occurrence_id() else {
-            self.validate_observation_proposal(&entered.observation)?;
-            return Ok(());
-        };
+        let id = entered.observation.occurrence_id();
         if self.observations.contains_key(&id) {
             return Err(ProcessError::DuplicateObservation(id));
         }
@@ -1838,74 +1842,122 @@ impl ProcessCarrier {
         executable: &crate::formation::ExecutableContractV2,
         authority: &AuthorityStore,
     ) -> Result<(), ProcessError> {
-        if !is_strictly_sorted_unique(&proposal.causes.prerequisites) {
-            return Err(ProcessError::NonCanonicalSet("activation prerequisites"));
+        if !is_strictly_sorted_unique_by(&proposal.prerequisite_bindings, |binding| {
+            (binding.slot, binding.ordinal)
+        }) {
+            return Err(ProcessError::NonCanonicalSet(
+                "dynamic prerequisite bindings",
+            ));
         }
+        if !is_strictly_sorted_unique_by(&proposal.causes.prerequisite_occurrences, |cause| {
+            (cause.slot, cause.ordinal, cause.component)
+        }) {
+            return Err(ProcessError::NonCanonicalSet(
+                "activation prerequisite causes",
+            ));
+        }
+
+        let mut projected = Vec::new();
         for requirement in &executable.dynamic_prerequisites {
-            let actual = proposal
-                .causes
-                .prerequisites
+            let bindings = proposal
+                .prerequisite_bindings
                 .iter()
-                .filter(|use_| use_.kind == requirement.kind)
-                .count();
-            let actual = u32::try_from(actual)
-                .map_err(|_| ProcessError::PrerequisiteCardinalityMismatch(requirement.kind))?;
+                .filter(|binding| binding.slot == requirement.slot)
+                .collect::<Vec<_>>();
+            let actual = u32::try_from(bindings.len())
+                .map_err(|_| ProcessError::PrerequisiteCardinalityMismatch(requirement.slot))?;
             if !requirement.cardinality.contains(actual) {
                 return Err(ProcessError::PrerequisiteCardinalityMismatch(
-                    requirement.kind,
+                    requirement.slot,
                 ));
             }
+            for (expected_ordinal, binding) in bindings.into_iter().enumerate() {
+                let expected_ordinal = u32::try_from(expected_ordinal)
+                    .map_err(|_| ProcessError::PrerequisiteCardinalityMismatch(requirement.slot))?;
+                if binding.ordinal != expected_ordinal {
+                    return Err(ProcessError::PrerequisiteOrdinalMismatch {
+                        slot: requirement.slot,
+                        expected: expected_ordinal,
+                        actual: binding.ordinal,
+                    });
+                }
+                if binding.value.kind() != requirement.requirement {
+                    return Err(ProcessError::PrerequisiteOccurrenceKindMismatch {
+                        slot: requirement.slot,
+                        expected: requirement.requirement,
+                        actual: binding.value.kind(),
+                    });
+                }
+                self.validate_prerequisite_value(
+                    binding.value,
+                    &proposal.pins,
+                    requirement.scope,
+                    authority,
+                )?;
+                for projection in &requirement.cause_projection {
+                    match projection.path {
+                        PrerequisiteOccurrencePathV2::BoundOccurrence => {
+                            projected.push(ActivationOccurrenceCauseV2 {
+                                slot: binding.slot,
+                                ordinal: binding.ordinal,
+                                component: projection.component,
+                                occurrence: binding.value,
+                            });
+                        }
+                    }
+                }
+            }
         }
-        for use_ in &proposal.causes.prerequisites {
-            let requirement = executable
+        for binding in &proposal.prerequisite_bindings {
+            if !executable
                 .dynamic_prerequisites
                 .iter()
-                .find(|requirement| requirement.kind == use_.kind)
-                .ok_or(ProcessError::UnexpectedPrerequisite(use_.kind))?;
-            if use_.prerequisite.kind() != requirement.occurrence_kind {
-                return Err(ProcessError::PrerequisiteOccurrenceKindMismatch {
-                    requirement: use_.kind,
-                    expected: requirement.occurrence_kind,
-                    actual: use_.prerequisite.kind(),
-                });
+                .any(|requirement| requirement.slot == binding.slot)
+            {
+                return Err(ProcessError::UnexpectedPrerequisite(binding.slot));
             }
-            match use_.prerequisite {
-                ActivationPrerequisite::Observation(id) => {
-                    let observation = self
-                        .observations
-                        .get(&id)
-                        .ok_or(ProcessError::UnknownObservation(id))?;
-                    self.validate_prerequisite_scope(
-                        &observation.provenance,
-                        &proposal.pins,
-                        requirement.scope,
-                        authority,
-                    )?;
+        }
+        projected.sort_unstable();
+        if projected != proposal.causes.prerequisite_occurrences {
+            return Err(ProcessError::ActivationCauseProjectionMismatch);
+        }
+        Ok(())
+    }
+
+    fn validate_prerequisite_value(
+        &self,
+        value: ActivationPrerequisite,
+        pins: &ActivationPins,
+        scope: PrerequisiteScope,
+        authority: &AuthorityStore,
+    ) -> Result<(), ProcessError> {
+        match value {
+            ActivationPrerequisite::Observation(id) => {
+                let observation = self
+                    .observations
+                    .get(&id)
+                    .ok_or(ProcessError::UnknownObservation(id))?;
+                self.validate_prerequisite_scope(&observation.provenance, pins, scope, authority)?;
+            }
+            ActivationPrerequisite::Admission(id) => {
+                let delta = self
+                    .decisions_by_occurrence
+                    .get(&id)
+                    .ok_or(ProcessError::UnknownAdmission(id))?;
+                let decision = self
+                    .decisions
+                    .get(delta)
+                    .expect("admission occurrence index retains its decision");
+                if !matches!(decision.outcome, StateAdmissionOutcomeV2::Admit(_)) {
+                    return Err(ProcessError::RejectedDecisionIsNotAdmission(id));
                 }
-                ActivationPrerequisite::Admission(id) => {
-                    let delta = self
-                        .decisions_by_occurrence
-                        .get(&id)
-                        .ok_or(ProcessError::UnknownAdmission(id))?;
-                    let decision = self
-                        .decisions
-                        .get(delta)
-                        .expect("admission occurrence index retains its decision");
-                    if !matches!(decision.outcome, StateAdmissionOutcomeV2::Admit(_)) {
-                        return Err(ProcessError::RejectedDecisionIsNotAdmission(id));
-                    }
-                    self.validate_entered_consumer_pins(
-                        &decision.provenance,
-                        &proposal.pins,
-                        authority,
-                    )?;
-                    if requirement.scope == PrerequisiteScope::SameObservedState {
-                        let StateAdmissionOutcomeV2::Admit(successor) = &decision.outcome else {
-                            unreachable!("rejected decision was refused above")
-                        };
-                        if proposal.pins.observed_state != Some(successor.id) {
-                            return Err(ProcessError::PrerequisiteScopeMismatch);
-                        }
+                self.validate_entered_consumer_pins(&decision.provenance, pins, authority)?;
+                if scope == PrerequisiteScope::SameObservedState {
+                    let StateAdmissionOutcomeV2::Admit(successor) = &decision.outcome else {
+                        unreachable!("rejected decision was refused above")
+                    };
+                    if pins.observed_state != Some(successor.id) {
+                        return Err(ProcessError::PrerequisiteScopeMismatch);
                     }
                 }
             }
@@ -1966,7 +2018,7 @@ impl ProcessCarrier {
         proposal: &ActivationProposalV2,
         authority: &AuthorityStore,
     ) -> Result<PreparedActivationOrigin, ProcessError> {
-        let mut causes = Vec::with_capacity(proposal.causes.prerequisites.len() + 2);
+        let mut causes = Vec::with_capacity(proposal.causes.prerequisite_occurrences.len() + 2);
         match proposal.causes.origin {
             ActivationOrigin::RootedBy(RootTrigger::External(id)) => {
                 let trigger = self
@@ -2041,8 +2093,8 @@ impl ProcessCarrier {
                 return Err(ProcessError::HandoffUnsupported);
             }
         }
-        for prerequisite in &proposal.causes.prerequisites {
-            causes.push(match prerequisite.prerequisite {
+        for prerequisite in &proposal.causes.prerequisite_occurrences {
+            causes.push(match prerequisite.occurrence {
                 ActivationPrerequisite::Observation(id) => CausalRef::Observation(id),
                 ActivationPrerequisite::Admission(id) => CausalRef::Admission(id),
             });
@@ -2103,35 +2155,21 @@ impl ProcessCarrier {
                 })
             }
             ObservationProposalV2::Truth {
-                id,
                 verdict,
                 proposition,
                 supports,
+                ..
             } => {
                 self.validate_runtime_term(proposition)?;
-                match verdict {
-                    TruthVerdict::Absent => {
-                        if id.is_some() || !supports.is_empty() {
-                            return Err(ProcessError::MalformedAbsentObservation);
-                        }
-                        Ok(ObservationContentV2::Truth {
-                            verdict: *verdict,
-                            proposition: proposition.clone(),
-                            supports: Vec::new(),
-                        })
-                    }
-                    TruthVerdict::True | TruthVerdict::False => {
-                        if id.is_none() || supports.is_empty() {
-                            return Err(ProcessError::UnsupportedTruthVerdict);
-                        }
-                        self.validate_supports(supports)?;
-                        Ok(ObservationContentV2::Truth {
-                            verdict: *verdict,
-                            proposition: proposition.clone(),
-                            supports: supports.clone(),
-                        })
-                    }
+                if supports.is_empty() {
+                    return Err(ProcessError::UnsupportedTruthVerdict);
                 }
+                self.validate_supports(supports)?;
+                Ok(ObservationContentV2::Truth {
+                    verdict: *verdict,
+                    proposition: proposition.clone(),
+                    supports: supports.clone(),
+                })
             }
             ObservationProposalV2::Formation {
                 subject,
@@ -2150,6 +2188,16 @@ impl ProcessCarrier {
                 })
             }
         }
+    }
+
+    fn validate_truth_absence(&self, absence: &TruthAbsenceV2) -> Result<(), ProcessError> {
+        self.validate_runtime_term(&absence.proposition)?;
+        self.validate_runtime_term(&absence.search_scope)?;
+        if absence.completion_evidence.is_empty() {
+            return Err(ProcessError::MalformedTruthAbsence);
+        }
+        crate::provenance::validate_support_uses(&absence.completion_evidence)?;
+        self.validate_supports(&absence.completion_evidence)
     }
 
     fn validate_domain_bound_term(
@@ -2203,15 +2251,11 @@ impl ProcessCarrier {
                 value.evidence,
             ));
         }
-        let activation_has_evidence =
-            activation
-                .proposal
-                .causes
-                .prerequisites
-                .iter()
-                .any(|prerequisite| {
-                    prerequisite.prerequisite == ActivationPrerequisite::Observation(value.evidence)
-                });
+        let activation_has_evidence = activation
+            .proposal
+            .prerequisite_bindings
+            .iter()
+            .any(|binding| binding.value == ActivationPrerequisite::Observation(value.evidence));
         let step_has_evidence = proposal.causes.contains(&StepCause::PriorStep(producer));
         if !activation_has_evidence && !step_has_evidence {
             return Err(ProcessError::FormationEvidenceNotCausal(value.evidence));
@@ -2324,9 +2368,9 @@ impl ProcessCarrier {
         if proposal.causes.len() > MAX_STEP_FRONTIER_ITEMS {
             return Err(ProcessError::StepFrontierTooLarge(proposal.causes.len()));
         }
-        if proposal.observations.len() > MAX_STEP_OBSERVATIONS {
+        if proposal.observation_outcomes.len() > MAX_STEP_OBSERVATIONS {
             return Err(ProcessError::StepObservationFrontierTooLarge(
-                proposal.observations.len(),
+                proposal.observation_outcomes.len(),
             ));
         }
         if !proposal.causes.is_empty() && !is_strictly_sorted_unique(&proposal.causes) {
@@ -2368,20 +2412,28 @@ impl ProcessCarrier {
             .ok_or(ProcessError::ModeNotEligible(activation.mode()))?;
         self.validate_step_budget(&proposal, &activation, &mode)?;
         let continuation_takeup = self.validate_step_frontier(&proposal, &activation, &mode)?;
-        if !is_strictly_sorted_unique_by(&proposal.observations, |item| item.occurrence_id()) {
-            return Err(ProcessError::NonCanonicalSet("step observations"));
+        if !is_strictly_sorted_unique(&proposal.observation_outcomes) {
+            return Err(ProcessError::NonCanonicalSet("step observation outcomes"));
         }
-        let mut prepared_observations = Vec::with_capacity(proposal.observations.len());
-        for observation in &proposal.observations {
-            if let Some(id) = observation.occurrence_id()
-                && self.observations.contains_key(&id)
-            {
-                return Err(ProcessError::DuplicateObservation(id));
-            }
-            self.validate_produced_observation_contract(observation, &mode)?;
-            let content = self.validate_observation_proposal(observation)?;
-            if let Some(id) = observation.occurrence_id() {
-                prepared_observations.push((id, content));
+        let mut prepared_observations = Vec::with_capacity(proposal.observation_outcomes.len());
+        for outcome in &proposal.observation_outcomes {
+            match outcome {
+                StepObservationOutcomeV2::Observed(observation) => {
+                    let id = observation.occurrence_id();
+                    if self.observations.contains_key(&id)
+                        || prepared_observations
+                            .iter()
+                            .any(|(prepared, _)| *prepared == id)
+                    {
+                        return Err(ProcessError::DuplicateObservation(id));
+                    }
+                    self.validate_produced_observation_contract(observation, &mode)?;
+                    let content = self.validate_observation_proposal(observation)?;
+                    prepared_observations.push((id, content));
+                }
+                StepObservationOutcomeV2::Absent(absence) => {
+                    self.validate_truth_absence(absence)?;
+                }
             }
         }
         if let Some(delta) = &proposal.candidate_delta {
@@ -2690,6 +2742,20 @@ impl ProcessCarrier {
                 activation: proposal.activation,
                 continuation,
             });
+        }
+        if let Some((continuation, _)) = continuation_takeup {
+            let continuation_record = self
+                .continuations
+                .get(&continuation)
+                .ok_or(ProcessError::UnknownContinuation(continuation))?;
+            let emitter = StepRef {
+                run: continuation_record.proposal.pins.run,
+                activation: continuation_record.proposal.pins.activation,
+                step: continuation_record.proposal.emitted_by,
+            };
+            if proposal.causes.contains(&StepCause::PriorStep(emitter)) {
+                return Err(ProcessError::DuplicateContinuationEmitterCause(emitter));
+            }
         }
         Ok(continuation_takeup)
     }
@@ -3705,27 +3771,22 @@ fn checked_resource_add(
     maximum: usize,
     kind: ProcessResourceKindV2,
 ) -> Result<usize, ProcessError> {
-    let total = current.checked_add(growth).unwrap_or(usize::MAX);
+    let limit_error = |count| match kind {
+        ProcessResourceKindV2::Record => ProcessError::RecordLimitExceeded { count, maximum },
+        ProcessResourceKindV2::Run => ProcessError::RunLimitExceeded { count, maximum },
+        ProcessResourceKindV2::Activation => {
+            ProcessError::ActivationLimitExceeded { count, maximum }
+        }
+        ProcessResourceKindV2::Configuration => {
+            ProcessError::ConfigurationLimitExceeded { count, maximum }
+        }
+        ProcessResourceKindV2::Step => ProcessError::StepBatchTooLarge(count),
+    };
+    let total = current
+        .checked_add(growth)
+        .ok_or_else(|| limit_error(usize::MAX))?;
     if total > maximum {
-        return Err(match kind {
-            ProcessResourceKindV2::Record => ProcessError::RecordLimitExceeded {
-                count: total,
-                maximum,
-            },
-            ProcessResourceKindV2::Run => ProcessError::RunLimitExceeded {
-                count: total,
-                maximum,
-            },
-            ProcessResourceKindV2::Activation => ProcessError::ActivationLimitExceeded {
-                count: total,
-                maximum,
-            },
-            ProcessResourceKindV2::Configuration => ProcessError::ConfigurationLimitExceeded {
-                count: total,
-                maximum,
-            },
-            ProcessResourceKindV2::Step => ProcessError::StepBatchTooLarge(total),
-        });
+        return Err(limit_error(total));
     }
     Ok(total)
 }
@@ -3824,14 +3885,20 @@ pub enum ProcessError {
     AuthorityPinMismatch,
     StaticBasisMismatch,
     AuthorizationCardinalityMismatch(FormationRefV2),
-    PrerequisiteCardinalityMismatch(FormationRefV2),
+    PrerequisiteCardinalityMismatch(PrerequisiteSlotId),
+    PrerequisiteOrdinalMismatch {
+        slot: PrerequisiteSlotId,
+        expected: u32,
+        actual: u32,
+    },
     PrerequisiteOccurrenceKindMismatch {
-        requirement: FormationRefV2,
+        slot: PrerequisiteSlotId,
         expected: ActivationPrerequisiteKind,
         actual: ActivationPrerequisiteKind,
     },
     UnexpectedExecutionAuthorization(FormationRefV2),
-    UnexpectedPrerequisite(FormationRefV2),
+    UnexpectedPrerequisite(PrerequisiteSlotId),
+    ActivationCauseProjectionMismatch,
     UnauthorizedExecution,
     UnauthorizedJudgment,
     UnauthorizedAdmission,
@@ -3881,6 +3948,7 @@ pub enum ProcessError {
         continuation: ContinuationId,
     },
     UnexpectedContinuationTakeup,
+    DuplicateContinuationEmitterCause(StepRef),
     CancellationTargetMismatch,
     CancellationScopeMismatch,
     ContinuationTakeupMismatch,
@@ -3910,7 +3978,7 @@ pub enum ProcessError {
     },
     StatePayloadSnapshotMismatch(StateRevisionId),
     RuntimeTermScopeMismatch,
-    MalformedAbsentObservation,
+    MalformedTruthAbsence,
     UnsupportedTruthVerdict,
     MissingPriorFormationEvidence(ObservationId),
     FormationEvidenceNotCausal(ObservationId),

@@ -614,6 +614,8 @@ wire_local_id!(
     JudgmentAuthorityLocalId,
     ExecutionAuthorizationLocalId,
     AdmissionAuthorizationLocalId,
+    PrerequisiteLocalId,
+    CauseComponentLocalId,
     SupportSlotId,
     ObligationLocalId,
 );
@@ -670,6 +672,20 @@ impl Wire for ModeId {
         Ok(Self {
             operator: OperatorRef::decode(cursor)?,
             local: ModeLocalId::decode(cursor)?,
+        })
+    }
+}
+
+impl Wire for PrerequisiteSlotId {
+    fn encode(&self, encoder: &mut Encoder) -> Result<(), CanonicalEncodeError> {
+        self.mode.encode(encoder)?;
+        self.local.encode(encoder)
+    }
+
+    fn decode(cursor: &mut Cursor<'_>) -> Result<Self, CanonicalDecodeError> {
+        Ok(Self {
+            mode: ModeId::decode(cursor)?,
+            local: PrerequisiteLocalId::decode(cursor)?,
         })
     }
 }
@@ -1197,10 +1213,13 @@ wire_struct!(StaticActivationBasisPreimageV2 {
 });
 wire_struct!(AuthorizationRequirementPreimageV2 { kind, cardinality });
 wire_struct!(DynamicPrerequisiteRequirementPreimageV2 {
-    kind,
-    occurrence_kind,
+    slot,
+    role,
+    requirement,
+    expected,
     scope,
     cardinality,
+    cause_projection,
 });
 wire_struct!(ModeContractV2 {
     determinism,
@@ -1572,6 +1591,36 @@ impl Wire for PrerequisiteScope {
     }
 }
 
+impl Wire for PrerequisiteOccurrencePathV2 {
+    fn encode(&self, encoder: &mut Encoder) -> Result<(), CanonicalEncodeError> {
+        encoder.u8(match self {
+            Self::BoundOccurrence => 0,
+        });
+        Ok(())
+    }
+
+    fn decode(cursor: &mut Cursor<'_>) -> Result<Self, CanonicalDecodeError> {
+        let offset = cursor.offset();
+        match cursor.u8()? {
+            0 => Ok(Self::BoundOccurrence),
+            found => Err(unknown_tag(offset, "PrerequisiteOccurrencePathV2", found)),
+        }
+    }
+}
+
+wire_struct!(CauseProjectionEntryV2 { component, path });
+wire_struct!(DynamicPrerequisiteBindingV2 {
+    slot,
+    ordinal,
+    value,
+});
+wire_struct!(ActivationOccurrenceCauseV2 {
+    slot,
+    ordinal,
+    component,
+    occurrence,
+});
+
 impl Wire for SupportSource {
     fn encode(&self, encoder: &mut Encoder) -> Result<(), CanonicalEncodeError> {
         match self {
@@ -1942,10 +1991,9 @@ impl Wire for RunMembership {
     }
 }
 
-wire_struct!(ActivationPrerequisiteUseV2 { kind, prerequisite });
 wire_struct!(ActivationCauseFrontierV2 {
     origin,
-    prerequisites,
+    prerequisite_occurrences,
 });
 wire_struct!(ConfigurationProposal { id, value });
 wire_struct!(ActivationProposalV2 {
@@ -1954,6 +2002,7 @@ wire_struct!(ActivationProposalV2 {
     mode,
     pins,
     static_basis,
+    prerequisite_bindings,
     causes,
     membership,
     initial_configuration,
@@ -2049,7 +2098,6 @@ impl Wire for TruthVerdict {
         encoder.u8(match self {
             Self::True => 0,
             Self::False => 1,
-            Self::Absent => 2,
         });
         Ok(())
     }
@@ -2059,7 +2107,6 @@ impl Wire for TruthVerdict {
         match cursor.u8()? {
             0 => Ok(Self::True),
             1 => Ok(Self::False),
-            2 => Ok(Self::Absent),
             found => Err(unknown_tag(offset, "TruthVerdict", found)),
         }
     }
@@ -2115,7 +2162,7 @@ impl Wire for ObservationProposalV2 {
                 supports: Vec::<SupportUse>::decode(cursor)?,
             }),
             1 => Ok(Self::Truth {
-                id: Option::<ObservationId>::decode(cursor)?,
+                id: ObservationId::decode(cursor)?,
                 verdict: TruthVerdict::decode(cursor)?,
                 proposition: Term::decode(cursor)?,
                 supports: Vec::<SupportUse>::decode(cursor)?,
@@ -2127,6 +2174,30 @@ impl Wire for ObservationProposalV2 {
                 supports: Vec::<SupportUse>::decode(cursor)?,
             }),
             found => Err(unknown_tag(offset, "ObservationProposalV2", found)),
+        }
+    }
+}
+
+wire_struct!(TruthAbsenceV2 {
+    proposition,
+    search_scope,
+    completion_evidence,
+});
+
+impl Wire for StepObservationOutcomeV2 {
+    fn encode(&self, encoder: &mut Encoder) -> Result<(), CanonicalEncodeError> {
+        match self {
+            Self::Observed(observation) => tagged(encoder, 0, observation),
+            Self::Absent(absence) => tagged(encoder, 1, absence),
+        }
+    }
+
+    fn decode(cursor: &mut Cursor<'_>) -> Result<Self, CanonicalDecodeError> {
+        let offset = cursor.offset();
+        match cursor.u8()? {
+            0 => Ok(Self::Observed(ObservationProposalV2::decode(cursor)?)),
+            1 => Ok(Self::Absent(TruthAbsenceV2::decode(cursor)?)),
+            found => Err(unknown_tag(offset, "StepObservationOutcomeV2", found)),
         }
     }
 }
@@ -2188,7 +2259,7 @@ wire_struct!(StepProposalV2 {
     observed_state,
     budget,
     causes,
-    observations,
+    observation_outcomes,
     candidate_delta,
     outcome,
 });
@@ -2612,8 +2683,15 @@ fn validate_snapshot_order(
             ensure_by_key(
                 &mode.dynamic_prerequisites,
                 "dynamic prerequisites",
-                |value| value.kind,
+                |value| value.slot,
             )?;
+            for requirement in &mode.dynamic_prerequisites {
+                ensure_by_key(
+                    &requirement.cause_projection,
+                    "prerequisite cause projection",
+                    |entry| entry.component,
+                )?;
+            }
             ensure_sorted(&mode.contract.effect_intents, "effect intents")?;
             ensure_sorted(&mode.contract.formation_checks, "formation check targets")?;
             ensure_sorted(
@@ -2673,7 +2751,16 @@ fn validate_record_order_v2(record: &ProcessRecordV2) -> Result<(), CanonicalEnc
                 &value.static_basis.judgment_authorities,
                 "Judgment authority uses",
             )?;
-            ensure_sorted(&value.causes.prerequisites, "Activation prerequisites")
+            ensure_by_key(
+                &value.prerequisite_bindings,
+                "dynamic prerequisite bindings",
+                |binding| (binding.slot, binding.ordinal),
+            )?;
+            ensure_by_key(
+                &value.causes.prerequisite_occurrences,
+                "Activation prerequisite causes",
+                |cause| (cause.slot, cause.ordinal, cause.component),
+            )
         }
         ProcessRecordV2::Resumption(value) => {
             validate_continuation_pins_order(&value.body.pins)?;
@@ -2690,8 +2777,16 @@ fn validate_record_order_v2(record: &ProcessRecordV2) -> Result<(), CanonicalEnc
         ProcessRecordV2::Steps(steps) => {
             for step in steps {
                 ensure_sorted(&step.causes, "Step causes")?;
-                for observation in &step.observations {
-                    validate_observation_order(observation)?;
+                ensure_sorted(&step.observation_outcomes, "Step observation outcomes")?;
+                for outcome in &step.observation_outcomes {
+                    match outcome {
+                        StepObservationOutcomeV2::Observed(observation) => {
+                            validate_observation_order(observation)?;
+                        }
+                        StepObservationOutcomeV2::Absent(absence) => {
+                            validate_supports(&absence.completion_evidence)?;
+                        }
+                    }
                 }
                 if let Some(delta) = &step.candidate_delta {
                     validate_delta_order(delta)?;
