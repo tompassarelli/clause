@@ -479,6 +479,120 @@ pub struct ExecutableProjectedObservationV1 {
 pub struct ExecutableBoundaryFactV1 {
     pub boundary: BoundaryRef,
     pub evidence: ExternalEvidenceRef,
+    pub permission: BoundaryPermissionLocalId,
+}
+
+pub const EXECUTABLE_TRIGGER_PERMISSION_V1: BoundaryPermissionLocalId =
+    BoundaryPermissionLocalId::new(0);
+pub const EXECUTABLE_OBSERVATION_PERMISSION_V1: BoundaryPermissionLocalId =
+    BoundaryPermissionLocalId::new(1);
+pub const EXECUTABLE_JUDGMENT_PERMISSION_V1: BoundaryPermissionLocalId =
+    BoundaryPermissionLocalId::new(2);
+pub const EXECUTABLE_ADMISSION_PERMISSION_V1: BoundaryPermissionLocalId =
+    BoundaryPermissionLocalId::new(3);
+
+#[must_use]
+pub fn executable_occurrence_boundary_anchor_v1(
+    boundary: BoundaryRef,
+    payload: FormationTargetV2,
+    pins: BoundaryPins,
+) -> BoundaryAnchor {
+    let at_most_one = CardinalityV2 {
+        minimum: 0,
+        maximum: Some(1),
+    };
+    BoundaryAnchor {
+        boundary,
+        permissions: vec![
+            BoundaryOccurrencePermissionV2 {
+                id: EXECUTABLE_TRIGGER_PERMISSION_V1,
+                kind: EnteredOccurrenceKind::ExternalTrigger,
+                payload: payload.clone(),
+                pins,
+                cause_schema: vec![],
+                support_schema: vec![],
+                replay: BoundaryReplayPolicyV2::OneShot,
+            },
+            BoundaryOccurrencePermissionV2 {
+                id: EXECUTABLE_OBSERVATION_PERMISSION_V1,
+                kind: EnteredOccurrenceKind::Observation,
+                payload,
+                pins,
+                cause_schema: vec![
+                    BoundaryCauseRequirementV2 {
+                        kind: EnteredCauseKindV2::ExternalTrigger,
+                        cardinality: at_most_one,
+                    },
+                    BoundaryCauseRequirementV2 {
+                        kind: EnteredCauseKindV2::Step,
+                        cardinality: at_most_one,
+                    },
+                    BoundaryCauseRequirementV2 {
+                        kind: EnteredCauseKindV2::Admission,
+                        cardinality: at_most_one,
+                    },
+                ],
+                support_schema: vec![],
+                replay: BoundaryReplayPolicyV2::Repeatable {
+                    maximum_occurrences: None,
+                },
+            },
+        ],
+    }
+}
+
+#[must_use]
+pub fn executable_state_boundary_anchor_v1(
+    boundary: BoundaryRef,
+    payload: FormationTargetV2,
+    pins: BoundaryPins,
+) -> BoundaryAnchor {
+    let exactly_one = CardinalityV2 {
+        minimum: 1,
+        maximum: Some(1),
+    };
+    BoundaryAnchor {
+        boundary,
+        permissions: vec![
+            BoundaryOccurrencePermissionV2 {
+                id: EXECUTABLE_JUDGMENT_PERMISSION_V1,
+                kind: EnteredOccurrenceKind::Judgment,
+                payload: payload.clone(),
+                pins,
+                cause_schema: vec![BoundaryCauseRequirementV2 {
+                    kind: EnteredCauseKindV2::CandidateDelta,
+                    cardinality: exactly_one,
+                }],
+                support_schema: vec![],
+                replay: BoundaryReplayPolicyV2::Repeatable {
+                    maximum_occurrences: None,
+                },
+            },
+            BoundaryOccurrencePermissionV2 {
+                id: EXECUTABLE_ADMISSION_PERMISSION_V1,
+                kind: EnteredOccurrenceKind::AdmissionDecision,
+                payload,
+                pins,
+                cause_schema: vec![
+                    BoundaryCauseRequirementV2 {
+                        kind: EnteredCauseKindV2::CandidateDelta,
+                        cardinality: exactly_one,
+                    },
+                    BoundaryCauseRequirementV2 {
+                        kind: EnteredCauseKindV2::Judgment,
+                        cardinality: CardinalityV2 {
+                            minimum: 1,
+                            maximum: None,
+                        },
+                    },
+                ],
+                support_schema: vec![],
+                replay: BoundaryReplayPolicyV2::Repeatable {
+                    maximum_occurrences: None,
+                },
+            },
+        ],
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -490,6 +604,7 @@ pub struct ExecutableAuthorityFactsV1 {
     pub session_start: SessionStartOccurrenceId,
     pub root_policy: RootPolicyId,
     pub judgment_authority: RootJudgmentAuthorityRef,
+    pub trigger_ingress: ExecutableBoundaryFactV1,
     pub occurrence_ingress: ExecutableBoundaryFactV1,
     pub judgment_ingress: ExecutableBoundaryFactV1,
     pub admission_ingress: ExecutableBoundaryFactV1,
@@ -1102,16 +1217,20 @@ impl ExecutableProcessRuntimeV1 {
             universe: self.carrier.carrier().constitution().universe(),
             semantics: self.carrier.carrier().constitution().semantics(),
         };
+        let occurrence_payload = executable_occurrence_term_v1(scope, &bridge_step.occurrence)
+            .map_err(ExecutableCarrierErrorV1::Executable)?;
         let mut entered_occurrence = EnteredObservationV2 {
             observation: ObservationProposalV2::Value {
                 id: occurrence_id,
-                value: executable_occurrence_term_v1(scope, &bridge_step.occurrence)
-                    .map_err(ExecutableCarrierErrorV1::Executable)?,
+                value: occurrence_payload.clone(),
                 supports: vec![],
             },
             provenance: EnteredThrough {
                 boundary: facts.occurrence_ingress.boundary,
                 evidence: facts.occurrence_ingress.evidence,
+                permission: facts.occurrence_ingress.permission,
+                payload: occurrence_payload,
+                supports: vec![],
                 causes: prior_step.map_or_else(
                     || vec![execution.epoch_origin],
                     |step| vec![CausalRef::Step(step)],
@@ -1139,8 +1258,11 @@ impl ExecutableProcessRuntimeV1 {
                 ExternalTriggerOccurrenceV2 {
                     id: trigger,
                     provenance: EnteredThrough {
-                        boundary: facts.occurrence_ingress.boundary,
-                        evidence: facts.occurrence_ingress.evidence,
+                        boundary: facts.trigger_ingress.boundary,
+                        evidence: facts.trigger_ingress.evidence,
+                        permission: facts.trigger_ingress.permission,
+                        payload: runtime_role_term(scope, b"clause/process-external-trigger-v1")?,
+                        supports: vec![],
                         causes: vec![],
                     },
                 },
@@ -1270,11 +1392,12 @@ impl ExecutableProcessRuntimeV1 {
                     execution_authorizations: vec![],
                     judgment_authorities: vec![],
                 },
+                prerequisite_bindings: vec![prerequisite.binding],
                 causes: ActivationCauseFrontierV2 {
                     origin: ActivationOrigin::RootedBy(RootTrigger::SessionStart(
                         facts.session_start,
                     )),
-                    prerequisites: vec![prerequisite],
+                    prerequisite_occurrences: prerequisite.causes,
                 },
                 membership: RunMembership::RootOf(self.run),
                 initial_configuration: ConfigurationProposal {
@@ -1314,7 +1437,7 @@ impl ExecutableProcessRuntimeV1 {
                 },
             },
             causes,
-            observations: vec![],
+            observation_outcomes: vec![],
             candidate_delta: staged_candidate
                 .as_ref()
                 .map(|(_, _, _, candidate)| candidate.clone()),
@@ -1555,9 +1678,10 @@ impl ExecutableProcessRuntimeV1 {
                         execution_authorizations: vec![],
                         judgment_authorities: vec![],
                     },
+                    prerequisite_bindings: vec![],
                     causes: ActivationCauseFrontierV2 {
                         origin: activation_origin,
-                        prerequisites: vec![],
+                        prerequisite_occurrences: vec![],
                     },
                     membership,
                     initial_configuration: ConfigurationProposal {
@@ -1586,16 +1710,21 @@ impl ExecutableProcessRuntimeV1 {
                         },
                     },
                     causes: vec![StepCause::ActivationStart(checker_activation)],
-                    observations: vec![ObservationProposalV2::Formation {
-                        id: formation,
-                        subject,
-                        target,
-                        supports: vec![SupportUse {
-                            slot: SupportSlotId::new(0),
-                            role: runtime_role_term(scope, b"clause/process-formation-support-v1")?,
-                            source: support,
-                        }],
-                    }],
+                    observation_outcomes: vec![StepObservationOutcomeV2::Observed(
+                        ObservationProposalV2::Formation {
+                            id: formation,
+                            subject,
+                            target,
+                            supports: vec![SupportUse {
+                                slot: SupportSlotId::new(0),
+                                role: runtime_role_term(
+                                    scope,
+                                    b"clause/process-formation-support-v1",
+                                )?,
+                                source: support,
+                            }],
+                        },
+                    )],
                     candidate_delta: None,
                     outcome: StepOutcomeProposalV2::Progress,
                 }]),
@@ -1682,6 +1811,9 @@ impl ExecutableProcessRuntimeV1 {
             provenance: OccurrenceProvenance::EnteredThrough(EnteredThrough {
                 boundary: facts.judgment_ingress.boundary,
                 evidence: facts.judgment_ingress.evidence,
+                permission: facts.judgment_ingress.permission,
+                payload: runtime_role_term(scope, b"clause/process-admission-judgment-v1")?,
+                supports: vec![],
                 causes: vec![CausalRef::CandidateDelta(candidate.id)],
             }),
         };
@@ -1734,6 +1866,9 @@ impl ExecutableProcessRuntimeV1 {
             provenance: EnteredThrough {
                 boundary: facts.admission_ingress.boundary,
                 evidence: facts.admission_ingress.evidence,
+                permission: facts.admission_ingress.permission,
+                payload: successor.payload.clone(),
+                supports: vec![],
                 causes: vec![
                     CausalRef::CandidateDelta(candidate.id),
                     CausalRef::Judgment(judgment_id),
@@ -1891,11 +2026,12 @@ impl ExecutableProcessRuntimeV1 {
                 execution_authorizations: vec![],
                 judgment_authorities: vec![],
             },
+            prerequisite_bindings: vec![prerequisite.binding],
             causes: ActivationCauseFrontierV2 {
                 origin: ActivationOrigin::RootedBy(RootTrigger::Admitted(
                     prepared.executable_admission.id,
                 )),
-                prerequisites: vec![prerequisite],
+                prerequisite_occurrences: prerequisite.causes,
             },
             membership: RunMembership::RootOf(next_run),
             initial_configuration: ConfigurationProposal {
@@ -2008,6 +2144,9 @@ impl ExecutableProcessRuntimeV1 {
             provenance: EnteredThrough {
                 boundary: facts.occurrence_ingress.boundary,
                 evidence: facts.occurrence_ingress.evidence,
+                permission: facts.occurrence_ingress.permission,
+                payload: observation.term.clone(),
+                supports: vec![],
                 causes: vec![CausalRef::Admission(state.admission)],
             },
         });
@@ -2051,7 +2190,7 @@ impl ExecutableProcessRuntimeV1 {
             .apply_ingress(&[ProcessRecordV2::EnteredObservation(EnteredObservationV2 {
                 observation: ObservationProposalV2::Value {
                     id: observation.id,
-                    value,
+                    value: value.clone(),
                     supports: vec![SupportUse {
                         slot: SupportSlotId::new(0),
                         role: state_role,
@@ -2061,6 +2200,9 @@ impl ExecutableProcessRuntimeV1 {
                 provenance: EnteredThrough {
                     boundary: facts.occurrence_ingress.boundary,
                     evidence: facts.occurrence_ingress.evidence,
+                    permission: facts.occurrence_ingress.permission,
+                    payload: value.clone(),
+                    supports: vec![],
                     causes: vec![CausalRef::Admission(admission.id)],
                 },
             })])
@@ -2351,12 +2493,17 @@ fn runtime_root_trigger(cause: CausalRef) -> Result<RootTrigger, ExecutableCarri
     }
 }
 
+struct PreparedActivationPrerequisiteV1 {
+    binding: DynamicPrerequisiteBindingV2,
+    causes: Vec<ActivationOccurrenceCauseV2>,
+}
+
 fn activation_formation_prerequisite(
     constitution: &ResolvedProgramConstitutionV2,
     application: ApplicationId,
     mode: ModeId,
     observation: ObservationId,
-) -> Result<ActivationPrerequisiteUseV2, ExecutableCarrierErrorV1> {
+) -> Result<PreparedActivationPrerequisiteV1, ExecutableCarrierErrorV1> {
     let state_contract = constitution
         .executable_contract(application, mode)
         .ok_or(ExecutableCarrierErrorV1::UnsupportedSurface)?;
@@ -2364,7 +2511,7 @@ fn activation_formation_prerequisite(
         .dynamic_prerequisites
         .iter()
         .find(|requirement| {
-            requirement.occurrence_kind == ActivationPrerequisiteKind::Observation
+            requirement.requirement == ActivationPrerequisiteKind::Observation
                 && requirement.cardinality.contains(1)
                 && matches!(
                     requirement.scope,
@@ -2372,9 +2519,23 @@ fn activation_formation_prerequisite(
                 )
         })
         .ok_or(ExecutableCarrierErrorV1::MissingCheckerPrerequisite)?;
-    Ok(ActivationPrerequisiteUseV2 {
-        kind: prerequisite.kind,
-        prerequisite: ActivationPrerequisite::Observation(observation),
+    let value = ActivationPrerequisite::Observation(observation);
+    Ok(PreparedActivationPrerequisiteV1 {
+        binding: DynamicPrerequisiteBindingV2 {
+            slot: prerequisite.slot,
+            ordinal: 0,
+            value,
+        },
+        causes: prerequisite
+            .cause_projection
+            .iter()
+            .map(|projection| ActivationOccurrenceCauseV2 {
+                slot: prerequisite.slot,
+                ordinal: 0,
+                component: projection.component,
+                occurrence: value,
+            })
+            .collect(),
     })
 }
 
@@ -2409,7 +2570,9 @@ fn activation_pins_v1(
     Ok(ActivationPins {
         semantics: constitution.semantics(),
         snapshot: constitution.snapshot(),
-        program_revision: facts.program_revision,
+        constitution: CheckedConstitutionBinding::Admitted {
+            revision: facts.program_revision,
+        },
         runtime_session: stateful.then_some(facts.session),
         observed_state: stateful.then_some(facts.initial_state),
         runtime_policy: stateful.then_some(facts.policy),

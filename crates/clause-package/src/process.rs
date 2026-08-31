@@ -18,11 +18,12 @@ use crate::formation::{
 use crate::identity::*;
 use crate::provenance::{
     ActivationOccurrenceCauseV2, ActivationPrerequisite, ActivationPrerequisiteKind,
-    ActivationStaticBasis, CancellationOccurrenceV2, CausalRef, DynamicPrerequisiteBindingV2,
-    EnteredOccurrenceKind, EnteredThrough, ExternalTriggerOccurrenceV2, HandoffOccurrenceV2,
-    JudgmentAuthorityEvidence, JudgmentOccurrenceV2, OccurrenceProvenance,
-    PrerequisiteOccurrencePathV2, PrerequisiteScope, ResumptionOccurrenceV2,
-    StateAdmissionDecisionV2, StateAdmissionOutcomeV2, StepRef, SupportSource, SupportUse,
+    ActivationStaticBasis, BoundaryOccurrencePermissionV2, BoundaryReplayPolicyV2,
+    CancellationOccurrenceV2, CausalRef, DynamicPrerequisiteBindingV2, EnteredOccurrenceKind,
+    EnteredThrough, ExternalTriggerOccurrenceV2, HandoffOccurrenceV2, JudgmentAuthorityEvidence,
+    JudgmentOccurrenceV2, OccurrenceProvenance, PrerequisiteOccurrencePathV2, PrerequisiteScope,
+    ResumptionOccurrenceV2, StateAdmissionDecisionV2, StateAdmissionOutcomeV2, StepRef,
+    SupportSource, SupportUse,
 };
 use crate::term::Term;
 
@@ -179,6 +180,32 @@ pub struct Budget {
     pub remaining_units: u64,
 }
 
+/// The exact checked constitution under which one Activation may run.
+///
+/// A checked candidate fixes meaning without creating Program authority.  An
+/// admitted binding cites the independently admitted Program lineage edge
+/// that selects the same snapshot.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum CheckedConstitutionBinding {
+    Candidate {
+        package: ProcessPackageId,
+        snapshot: ProgramSnapshotId,
+    },
+    Admitted {
+        revision: ProgramRevisionId,
+    },
+}
+
+impl CheckedConstitutionBinding {
+    #[must_use]
+    pub const fn admitted_revision(self) -> Option<ProgramRevisionId> {
+        match self {
+            Self::Candidate { .. } => None,
+            Self::Admitted { revision } => Some(revision),
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum CancellationScope {
     Activation,
@@ -189,7 +216,7 @@ pub enum CancellationScope {
 pub struct ActivationPins {
     pub semantics: ClauseSemanticsId,
     pub snapshot: ProgramSnapshotId,
-    pub program_revision: ProgramRevisionId,
+    pub constitution: CheckedConstitutionBinding,
     pub runtime_session: Option<RuntimeSessionId>,
     pub observed_state: Option<StateRevisionId>,
     pub runtime_policy: Option<RuntimePolicyId>,
@@ -700,6 +727,7 @@ pub struct ProcessCarrier {
     resumptions: BTreeMap<ResumptionOccurrenceId, ResumptionOccurrenceV2>,
     handoffs: BTreeMap<HandoffOccurrenceId, HandoffOccurrenceV2>,
     cancellations: BTreeMap<CancellationOccurrenceId, CancellationOccurrenceV2>,
+    boundary_permission_uses: BTreeMap<(BoundaryRef, BoundaryPermissionLocalId), u32>,
     causal_predecessors: BTreeMap<CausalRef, BTreeSet<CausalRef>>,
     causal_edge_count: usize,
     base_record_count: usize,
@@ -865,6 +893,7 @@ impl ProcessCarrier {
             resumptions: BTreeMap::new(),
             handoffs: BTreeMap::new(),
             cancellations: BTreeMap::new(),
+            boundary_permission_uses: BTreeMap::new(),
             causal_predecessors: BTreeMap::new(),
             causal_edge_count: 0,
             base_record_count: package.records.len(),
@@ -1189,11 +1218,17 @@ impl ProcessCarrier {
     fn rollback_record(&mut self, undo: RecordUndo) {
         match undo {
             RecordUndo::ExternalTrigger(id) => {
-                self.external_triggers.remove(&id);
+                if let Some(occurrence) = self.external_triggers.remove(&id) {
+                    self.rollback_entered_use(&occurrence.provenance);
+                }
                 self.remove_causal(CausalRef::ExternalTrigger(id));
             }
             RecordUndo::Observation(id) => {
-                self.observations.remove(&id);
+                if let Some(observation) = self.observations.remove(&id)
+                    && let OccurrenceProvenance::EnteredThrough(entered) = observation.provenance
+                {
+                    self.rollback_entered_use(&entered);
+                }
                 self.remove_causal(CausalRef::Observation(id));
             }
             RecordUndo::Activation {
@@ -1212,7 +1247,11 @@ impl ProcessCarrier {
                 }
             }
             RecordUndo::Resumption(id) => {
-                self.resumptions.remove(&id);
+                if let Some(occurrence) = self.resumptions.remove(&id)
+                    && let OccurrenceProvenance::EnteredThrough(entered) = occurrence.provenance
+                {
+                    self.rollback_entered_use(&entered);
+                }
                 self.remove_causal(CausalRef::Resumption(id));
             }
             RecordUndo::Handoff(id) => {
@@ -1220,7 +1259,11 @@ impl ProcessCarrier {
                 self.remove_causal(CausalRef::Handoff(id));
             }
             RecordUndo::Cancellation(id) => {
-                self.cancellations.remove(&id);
+                if let Some(occurrence) = self.cancellations.remove(&id)
+                    && let OccurrenceProvenance::EnteredThrough(entered) = occurrence.provenance
+                {
+                    self.rollback_entered_use(&entered);
+                }
                 self.remove_causal(CausalRef::Cancellation(id));
             }
             RecordUndo::Steps(steps) => {
@@ -1229,7 +1272,11 @@ impl ProcessCarrier {
                 }
             }
             RecordUndo::Judgment(id) => {
-                self.judgments.remove(&id);
+                if let Some(occurrence) = self.judgments.remove(&id)
+                    && let OccurrenceProvenance::EnteredThrough(entered) = occurrence.provenance
+                {
+                    self.rollback_entered_use(&entered);
+                }
                 self.remove_causal(CausalRef::Judgment(id));
             }
             RecordUndo::Admission {
@@ -1240,7 +1287,9 @@ impl ProcessCarrier {
                 if let Some(state) = state {
                     self.states.remove(&state);
                 }
-                self.decisions.remove(&delta);
+                if let Some(decision) = self.decisions.remove(&delta) {
+                    self.rollback_entered_use(&decision.provenance);
+                }
                 self.decisions_by_occurrence.remove(&occurrence);
                 self.remove_causal(CausalRef::Admission(occurrence));
             }
@@ -1268,6 +1317,7 @@ impl ProcessCarrier {
         )?;
         let reference = CausalRef::ExternalTrigger(occurrence.id);
         self.register_causal(reference, occurrence.provenance.causes.clone())?;
+        self.commit_entered_use(&occurrence.provenance);
         self.external_triggers.insert(occurrence.id, occurrence);
         Ok(())
     }
@@ -1291,6 +1341,7 @@ impl ProcessCarrier {
             CausalRef::Observation(id),
             entered.provenance.causes.clone(),
         )?;
+        self.commit_entered_use(&entered.provenance);
         self.observations.insert(
             id,
             Observation {
@@ -1328,6 +1379,7 @@ impl ProcessCarrier {
         self.validate_entered_consumer_pins(entered, activation.pins(), authority)?;
         let causes = self.occurrence_causes(&occurrence.provenance)?;
         self.register_causal(CausalRef::Resumption(id), causes)?;
+        self.commit_entered_use(entered);
         self.resumptions.insert(id, occurrence);
         Ok(())
     }
@@ -1399,6 +1451,9 @@ impl ProcessCarrier {
         )?;
         let causes = self.occurrence_causes(&occurrence.provenance)?;
         self.register_causal(CausalRef::Cancellation(id), causes)?;
+        if let OccurrenceProvenance::EnteredThrough(entered) = &occurrence.provenance {
+            self.commit_entered_use(entered);
+        }
         self.cancellations.insert(id, occurrence);
         Ok(())
     }
@@ -1410,33 +1465,145 @@ impl ProcessCarrier {
         authority: &AuthorityStore,
     ) -> Result<(), ProcessError> {
         crate::provenance::validate_entered_through(entered)?;
-        if !authority.external_provenance_is_anchored(entered.boundary, entered.evidence) {
+        if !authority.external_provenance_is_anchored(
+            entered.boundary,
+            entered.evidence,
+            entered.permission,
+        ) {
             return Err(ProcessError::UnanchoredExternalProvenance {
                 boundary: entered.boundary,
                 evidence: entered.evidence,
             });
         }
-        let boundary = authority
-            .boundary(entered.boundary)
-            .ok_or(ProcessError::UnknownBoundary(entered.boundary))?;
-        let revision = authority.revision(boundary.program_revision).ok_or(
-            ProcessError::UnknownProgramRevision(boundary.program_revision),
-        )?;
-        if boundary.semantics != self.constitution.semantics()
-            || boundary.snapshot != self.constitution.snapshot()
-            || revision.package() != self.package
-            || revision.claim().preimage.semantics != boundary.semantics
-            || revision.claim().preimage.snapshot != boundary.snapshot
-        {
-            return Err(ProcessError::BoundaryPinMismatch(entered.boundary));
-        }
-        if boundary.permits.binary_search(&kind).is_err() {
+        let permission = authority
+            .boundary_permission(entered.boundary, entered.permission)
+            .ok_or(ProcessError::UnknownBoundaryPermission {
+                boundary: entered.boundary,
+                permission: entered.permission,
+            })?;
+        if permission.kind != kind {
             return Err(ProcessError::BoundaryDoesNotPermit {
                 boundary: entered.boundary,
                 kind,
             });
         }
+        self.validate_boundary_permission(entered, permission, authority)?;
         self.validate_causal_frontier(&entered.causes)
+    }
+
+    fn validate_boundary_permission(
+        &self,
+        entered: &EnteredThrough,
+        permission: &BoundaryOccurrencePermissionV2,
+        authority: &AuthorityStore,
+    ) -> Result<(), ProcessError> {
+        self.validate_constitution_binding(
+            permission.pins.constitution,
+            permission.pins.semantics,
+            permission.pins.snapshot,
+            authority,
+        )?;
+        if permission.pins.semantics != self.constitution.semantics()
+            || permission.pins.snapshot != self.constitution.snapshot()
+        {
+            return Err(ProcessError::BoundaryPinMismatch(entered.boundary));
+        }
+        self.validate_runtime_term(&entered.payload)?;
+        self.validate_runtime_term(&permission.payload.type_term)?;
+        self.validate_runtime_term(&permission.payload.interpretation)?;
+        self.validate_support_terms(&entered.supports)?;
+        self.validate_supports(&entered.supports)?;
+
+        for requirement in &permission.cause_schema {
+            let count = entered
+                .causes
+                .iter()
+                .filter(|cause| cause.entered_kind() == requirement.kind)
+                .count();
+            let count = u32::try_from(count)
+                .map_err(|_| ProcessError::BoundaryCauseSchemaMismatch(entered.boundary))?;
+            if !requirement.cardinality.contains(count) {
+                return Err(ProcessError::BoundaryCauseSchemaMismatch(entered.boundary));
+            }
+        }
+        if entered.causes.iter().any(|cause| {
+            !permission
+                .cause_schema
+                .iter()
+                .any(|requirement| requirement.kind == cause.entered_kind())
+        }) {
+            return Err(ProcessError::BoundaryCauseSchemaMismatch(entered.boundary));
+        }
+        for requirement in &permission.support_schema {
+            let matches = entered
+                .supports
+                .iter()
+                .filter(|support| support.slot == requirement.slot)
+                .collect::<Vec<_>>();
+            let count = u32::try_from(matches.len())
+                .map_err(|_| ProcessError::BoundarySupportSchemaMismatch(entered.boundary))?;
+            if !requirement.cardinality.contains(count)
+                || matches.iter().any(|support| {
+                    support.role != requirement.role
+                        || support.source.boundary_kind() != requirement.source
+                })
+            {
+                return Err(ProcessError::BoundarySupportSchemaMismatch(
+                    entered.boundary,
+                ));
+            }
+        }
+        if entered.supports.iter().any(|support| {
+            !permission
+                .support_schema
+                .iter()
+                .any(|requirement| requirement.slot == support.slot)
+        }) {
+            return Err(ProcessError::BoundarySupportSchemaMismatch(
+                entered.boundary,
+            ));
+        }
+        let used = self
+            .boundary_permission_uses
+            .get(&(entered.boundary, entered.permission))
+            .copied()
+            .unwrap_or(0);
+        let allowed = match permission.replay {
+            BoundaryReplayPolicyV2::OneShot => used == 0,
+            BoundaryReplayPolicyV2::Repeatable {
+                maximum_occurrences,
+            } => maximum_occurrences.is_none_or(|maximum| used < maximum),
+        };
+        if !allowed {
+            return Err(ProcessError::BoundaryReplayExceeded {
+                boundary: entered.boundary,
+                permission: entered.permission,
+            });
+        }
+        Ok(())
+    }
+
+    fn commit_entered_use(&mut self, entered: &EnteredThrough) {
+        let used = self
+            .boundary_permission_uses
+            .entry((entered.boundary, entered.permission))
+            .or_insert(0);
+        *used = used
+            .checked_add(1)
+            .expect("validated boundary replay count remains representable");
+    }
+
+    fn rollback_entered_use(&mut self, entered: &EnteredThrough) {
+        let key = (entered.boundary, entered.permission);
+        let Some(used) = self.boundary_permission_uses.get_mut(&key) else {
+            return;
+        };
+        *used = used
+            .checked_sub(1)
+            .expect("committed boundary permission use remains positive");
+        if *used == 0 {
+            self.boundary_permission_uses.remove(&key);
+        }
     }
 
     fn validate_entered_consumer_pins(
@@ -1446,13 +1613,20 @@ impl ProcessCarrier {
         authority: &AuthorityStore,
     ) -> Result<(), ProcessError> {
         let boundary = authority
-            .boundary(entered.boundary)
-            .ok_or(ProcessError::UnknownBoundary(entered.boundary))?;
-        if boundary.semantics != pins.semantics
-            || boundary.snapshot != pins.snapshot
-            || boundary.program_revision != pins.program_revision
-            || boundary.runtime_session != pins.runtime_session
-            || boundary.runtime_policy != pins.runtime_policy
+            .boundary_permission(entered.boundary, entered.permission)
+            .ok_or(ProcessError::UnknownBoundaryPermission {
+                boundary: entered.boundary,
+                permission: entered.permission,
+            })?;
+        if boundary.pins.semantics != pins.semantics
+            || boundary.pins.snapshot != pins.snapshot
+            || boundary.pins.constitution != pins.constitution
+            || boundary.pins.runtime_session != pins.runtime_session
+            || boundary
+                .pins
+                .observed_state
+                .is_some_and(|state| Some(state) != pins.observed_state)
+            || boundary.pins.runtime_policy != pins.runtime_policy
         {
             return Err(ProcessError::BoundaryConsumerPinMismatch(entered.boundary));
         }
@@ -1473,7 +1647,7 @@ impl ProcessCarrier {
                     .ok_or(ProcessError::UnknownActivation(step.activation))?;
                 if producer.pins().semantics != pins.semantics
                     || producer.pins().snapshot != pins.snapshot
-                    || producer.pins().program_revision != pins.program_revision
+                    || producer.pins().constitution != pins.constitution
                     || producer.pins().runtime_session != pins.runtime_session
                     || producer.pins().observed_state != pins.observed_state
                     || producer.pins().runtime_policy != pins.runtime_policy
@@ -1644,15 +1818,12 @@ impl ProcessCarrier {
         pins: &ActivationPins,
         authority: &AuthorityStore,
     ) -> Result<(), ProcessError> {
-        let revision = authority
-            .revision(pins.program_revision)
-            .ok_or(ProcessError::UnknownProgramRevision(pins.program_revision))?;
-        if revision.package() != self.package
-            || revision.claim().preimage.snapshot != pins.snapshot
-            || revision.claim().preimage.semantics != pins.semantics
-        {
-            return Err(ProcessError::ActivationPinMismatch);
-        }
+        let admitted_revision = self.validate_constitution_binding(
+            pins.constitution,
+            pins.semantics,
+            pins.snapshot,
+            authority,
+        )?;
         if !is_strictly_sorted_unique(&pins.context_requirements)
             || !is_strictly_sorted_unique(&pins.constitutive_dependencies)
             || !is_strictly_sorted_unique(&pins.capabilities)
@@ -1667,7 +1838,19 @@ impl ProcessCarrier {
             pins.runtime_policy,
         ) {
             (None, None, None) => Ok(()),
+            (None, Some(state_id), None) => {
+                let state = self
+                    .states
+                    .get(&state_id)
+                    .ok_or(ProcessError::UnknownStateRevision(state_id))?;
+                if state.semantics != pins.semantics {
+                    return Err(ProcessError::ActivationPinMismatch);
+                }
+                Ok(())
+            }
             (Some(session_id), Some(state_id), Some(policy)) => {
+                let revision = admitted_revision
+                    .ok_or(ProcessError::AuthoritativeOperationRequiresAdmittedConstitution)?;
                 let session = authority
                     .runtime_session(session_id)
                     .ok_or(ProcessError::UnknownRuntimeSession(session_id))?;
@@ -1675,7 +1858,7 @@ impl ProcessCarrier {
                     .states
                     .get(&state_id)
                     .ok_or(ProcessError::UnknownStateRevision(state_id))?;
-                if session.program_revision != pins.program_revision
+                if session.program_revision != revision
                     || session.semantics != pins.semantics
                     || session.policy != policy
                     || state.session != session_id
@@ -1687,6 +1870,42 @@ impl ProcessCarrier {
                 Ok(())
             }
             _ => Err(ProcessError::IncompleteRuntimePins),
+        }
+    }
+
+    fn validate_constitution_binding(
+        &self,
+        binding: CheckedConstitutionBinding,
+        semantics: ClauseSemanticsId,
+        snapshot: ProgramSnapshotId,
+        authority: &AuthorityStore,
+    ) -> Result<Option<ProgramRevisionId>, ProcessError> {
+        match binding {
+            CheckedConstitutionBinding::Candidate {
+                package,
+                snapshot: candidate_snapshot,
+            } => {
+                if package != self.package
+                    || candidate_snapshot != snapshot
+                    || snapshot != self.constitution.snapshot()
+                    || semantics != self.constitution.semantics()
+                {
+                    return Err(ProcessError::ActivationPinMismatch);
+                }
+                Ok(None)
+            }
+            CheckedConstitutionBinding::Admitted { revision } => {
+                let admitted = authority
+                    .revision(revision)
+                    .ok_or(ProcessError::UnknownProgramRevision(revision))?;
+                if admitted.package() != self.package
+                    || admitted.claim().preimage.snapshot != snapshot
+                    || admitted.claim().preimage.semantics != semantics
+                {
+                    return Err(ProcessError::ActivationPinMismatch);
+                }
+                Ok(Some(revision))
+            }
         }
     }
 
@@ -1779,12 +1998,17 @@ impl ProcessCarrier {
         proposal: &ActivationProposalV2,
         authority: &AuthorityStore,
     ) -> Result<(), ProcessError> {
+        let admitted_revision = proposal
+            .pins
+            .constitution
+            .admitted_revision()
+            .ok_or(ProcessError::ConstitutiveAuthorityRequiresAdmittedConstitution)?;
         let scope = match use_.evidence {
             ExecutionAuthorizationEvidence::ProgramConstitution {
                 revision,
                 authorization,
             } => {
-                if revision != proposal.pins.program_revision {
+                if revision != admitted_revision {
                     return Err(ProcessError::AuthorityPinMismatch);
                 }
                 authority.revision_static_execution_scope(revision, authorization)
@@ -1810,12 +2034,17 @@ impl ProcessCarrier {
         authority: &AuthorityStore,
     ) -> Result<(), ProcessError> {
         for evidence in &proposal.static_basis.judgment_authorities {
+            let admitted_revision = proposal
+                .pins
+                .constitution
+                .admitted_revision()
+                .ok_or(ProcessError::ConstitutiveAuthorityRequiresAdmittedConstitution)?;
             let scope = match *evidence {
                 JudgmentAuthorityEvidence::ProgramConstitution {
                     revision,
                     authority: reference,
                 } => {
-                    if revision != proposal.pins.program_revision {
+                    if revision != admitted_revision {
                         return Err(ProcessError::AuthorityPinMismatch);
                     }
                     authority.revision_judgment_authority_scope(revision, reference)
@@ -1983,17 +2212,21 @@ impl ProcessCarrier {
                     PrerequisiteScope::SameSemantics => producer.semantics == pins.semantics,
                     PrerequisiteScope::SameProgramRevision => {
                         producer.semantics == pins.semantics
-                            && producer.program_revision == pins.program_revision
+                            && producer.constitution.admitted_revision().is_some()
+                            && producer.constitution.admitted_revision()
+                                == pins.constitution.admitted_revision()
                     }
                     PrerequisiteScope::SameRuntimeSession => {
                         producer.semantics == pins.semantics
-                            && producer.program_revision == pins.program_revision
+                            && producer.constitution == pins.constitution
+                            && producer.constitution.admitted_revision().is_some()
                             && producer.runtime_session == pins.runtime_session
                             && producer.runtime_policy == pins.runtime_policy
                     }
                     PrerequisiteScope::SameObservedState => {
                         producer.semantics == pins.semantics
-                            && producer.program_revision == pins.program_revision
+                            && producer.constitution == pins.constitution
+                            && producer.constitution.admitted_revision().is_some()
                             && producer.runtime_session == pins.runtime_session
                             && producer.runtime_policy == pins.runtime_policy
                             && producer.observed_state == pins.observed_state
@@ -2437,6 +2670,9 @@ impl ProcessCarrier {
             }
         }
         if let Some(delta) = &proposal.candidate_delta {
+            if activation.pins().constitution.admitted_revision().is_none() {
+                return Err(ProcessError::AuthoritativeOperationRequiresAdmittedConstitution);
+            }
             crate::provenance::validate_candidate_delta(delta)?;
             self.validate_runtime_term(&delta.delta.term)?;
             self.validate_runtime_term(&delta.proposed_payload)?;
@@ -2982,7 +3218,11 @@ impl ProcessCarrier {
                         activation: step.activation,
                     });
                 }
-                producer.pins().program_revision
+                producer
+                    .pins()
+                    .constitution
+                    .admitted_revision()
+                    .ok_or(ProcessError::AuthoritativeOperationRequiresAdmittedConstitution)?
             }
             OccurrenceProvenance::EnteredThrough(entered) => {
                 self.validate_governance_boundary(entered, base, authority)?;
@@ -3034,6 +3274,9 @@ impl ProcessCarrier {
             }
         };
         self.register_causal(CausalRef::Judgment(id), causes)?;
+        if let OccurrenceProvenance::EnteredThrough(entered) = &occurrence.provenance {
+            self.commit_entered_use(entered);
+        }
         self.judgments.insert(id, occurrence);
         Ok(())
     }
@@ -3062,11 +3305,29 @@ impl ProcessCarrier {
         if candidate.package != self.package {
             return Err(ProcessError::PackageBindingMismatch);
         }
+        let producer = self
+            .activations
+            .get(&candidate.produced_by.activation)
+            .ok_or(ProcessError::UnknownActivation(
+                candidate.produced_by.activation,
+            ))?;
+        let producer_revision = producer
+            .pins()
+            .constitution
+            .admitted_revision()
+            .ok_or(ProcessError::AuthoritativeOperationRequiresAdmittedConstitution)?;
         let base = self
             .states
             .get(&candidate.proposal.base)
             .ok_or(ProcessError::UnknownStateRevision(candidate.proposal.base))?
             .clone();
+        let session_revision = authority
+            .runtime_session(base.session)
+            .ok_or(ProcessError::UnknownRuntimeSession(base.session))?
+            .program_revision;
+        if producer_revision != session_revision {
+            return Err(ProcessError::AuthorityPinMismatch);
+        }
         self.validate_entered(
             &decision.provenance,
             EnteredOccurrenceKind::AdmissionDecision,
@@ -3157,6 +3418,7 @@ impl ProcessCarrier {
         }
         let causes = decision.provenance.causes.clone();
         self.register_causal(CausalRef::Admission(decision.occurrence), causes)?;
+        self.commit_entered_use(&decision.provenance);
         if let StateAdmissionOutcomeV2::Admit(successor) = &decision.outcome {
             self.states.insert(successor.id, successor.clone());
         }
@@ -3215,14 +3477,24 @@ impl ProcessCarrier {
         let session = authority
             .runtime_session(base.session)
             .ok_or(ProcessError::UnknownRuntimeSession(base.session))?;
-        let boundary = authority
-            .boundary(entered.boundary)
-            .ok_or(ProcessError::UnknownBoundary(entered.boundary))?;
-        if boundary.semantics != base.semantics
-            || boundary.snapshot != self.constitution.snapshot()
-            || boundary.program_revision != session.program_revision
-            || boundary.runtime_session != Some(base.session)
-            || boundary.runtime_policy != Some(base.policy)
+        let permission = authority
+            .boundary_permission(entered.boundary, entered.permission)
+            .ok_or(ProcessError::UnknownBoundaryPermission {
+                boundary: entered.boundary,
+                permission: entered.permission,
+            })?;
+        if permission.pins.semantics != base.semantics
+            || permission.pins.snapshot != self.constitution.snapshot()
+            || permission.pins.constitution
+                != (CheckedConstitutionBinding::Admitted {
+                    revision: session.program_revision,
+                })
+            || permission.pins.runtime_session != Some(base.session)
+            || permission
+                .pins
+                .observed_state
+                .is_some_and(|state| state != base.id)
+            || permission.pins.runtime_policy != Some(base.policy)
         {
             return Err(ProcessError::BoundaryConsumerPinMismatch(entered.boundary));
         }
@@ -3855,6 +4127,10 @@ pub enum ProcessError {
     DuplicateAdmissionDecision(AdmissionOccurrenceId),
     DuplicateStateRevision(StateRevisionId),
     UnknownBoundary(BoundaryRef),
+    UnknownBoundaryPermission {
+        boundary: BoundaryRef,
+        permission: BoundaryPermissionLocalId,
+    },
     UnknownStateRevision(StateRevisionId),
     UnknownExternalTrigger(ExternalTriggerOccurrenceId),
     UnknownActivation(ActivationId),
@@ -3874,6 +4150,16 @@ pub enum ProcessError {
         evidence: ExternalEvidenceRef,
     },
     BoundaryPinMismatch(BoundaryRef),
+    BoundaryPayloadMismatch {
+        boundary: BoundaryRef,
+        permission: BoundaryPermissionLocalId,
+    },
+    BoundaryCauseSchemaMismatch(BoundaryRef),
+    BoundarySupportSchemaMismatch(BoundaryRef),
+    BoundaryReplayExceeded {
+        boundary: BoundaryRef,
+        permission: BoundaryPermissionLocalId,
+    },
     BoundaryConsumerPinMismatch(BoundaryRef),
     OccurrenceConsumerPinMismatch,
     BoundaryDoesNotPermit {
@@ -3900,6 +4186,8 @@ pub enum ProcessError {
     UnexpectedPrerequisite(PrerequisiteSlotId),
     ActivationCauseProjectionMismatch,
     UnauthorizedExecution,
+    ConstitutiveAuthorityRequiresAdmittedConstitution,
+    AuthoritativeOperationRequiresAdmittedConstitution,
     UnauthorizedJudgment,
     UnauthorizedAdmission,
     JudgmentAuthorityNotInProducerBasis {

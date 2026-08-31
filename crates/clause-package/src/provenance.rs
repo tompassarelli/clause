@@ -7,10 +7,12 @@
 
 use std::fmt;
 
+use crate::formation::{CardinalityV2, FormationTargetV2};
 use crate::identity::*;
 use crate::process::{
-    ActivationPins, AdmissionAuthorizationEvidence, CancellationTarget, ContinuationPins,
-    DomainBoundTermV2, ExecutionAuthorizationEvidence, StateRevision, StateRevisionCause,
+    ActivationPins, AdmissionAuthorizationEvidence, CancellationTarget, CheckedConstitutionBinding,
+    ContinuationPins, DomainBoundTermV2, ExecutionAuthorizationEvidence, StateRevision,
+    StateRevisionCause,
 };
 use crate::term::Term;
 
@@ -48,9 +50,74 @@ pub enum EnteredOccurrenceKind {
 pub struct BoundaryPins {
     pub semantics: ClauseSemanticsId,
     pub snapshot: ProgramSnapshotId,
-    pub program_revision: ProgramRevisionId,
+    pub constitution: CheckedConstitutionBinding,
     pub runtime_session: Option<RuntimeSessionId>,
+    pub observed_state: Option<StateRevisionId>,
     pub runtime_policy: Option<RuntimePolicyId>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum EnteredCauseKindV2 {
+    SessionStart,
+    ExternalTrigger,
+    Resumption,
+    Handoff,
+    Cancellation,
+    Step,
+    Observation,
+    CandidateDelta,
+    Judgment,
+    Admission,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct BoundaryCauseRequirementV2 {
+    pub kind: EnteredCauseKindV2,
+    pub cardinality: CardinalityV2,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum BoundarySupportSourceKindV2 {
+    SessionStart,
+    ExternalTrigger,
+    Resumption,
+    Handoff,
+    Cancellation,
+    Step,
+    Observation,
+    Judgment,
+    Admission,
+}
+
+/// One exact support slot allowed by an external occurrence contract.
+/// Boundary support slots are occurrence-level evidence and remain distinct
+/// from any supports carried by an Observation or Judgment payload.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct BoundarySupportRequirementV2 {
+    pub slot: SupportSlotId,
+    pub role: Term,
+    pub source: BoundarySupportSourceKindV2,
+    pub cardinality: CardinalityV2,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum BoundaryReplayPolicyV2 {
+    OneShot,
+    Repeatable { maximum_occurrences: Option<u32> },
+}
+
+/// One exact occurrence contract constituted at an external boundary.
+/// `payload` is the exact Formation target that the independently established
+/// boundary evidence must prove for each entered payload Term.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BoundaryOccurrencePermissionV2 {
+    pub id: BoundaryPermissionLocalId,
+    pub kind: EnteredOccurrenceKind,
+    pub payload: FormationTargetV2,
+    pub pins: BoundaryPins,
+    pub cause_schema: Vec<BoundaryCauseRequirementV2>,
+    pub support_schema: Vec<BoundarySupportRequirementV2>,
+    pub replay: BoundaryReplayPolicyV2,
 }
 
 /// An already-constituted ingress or governance boundary. Its presence is not
@@ -58,14 +125,15 @@ pub struct BoundaryPins {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ConstitutedBoundary {
     pub id: BoundaryRef,
-    pub pins: BoundaryPins,
-    pub permits: Vec<EnteredOccurrenceKind>,
+    pub permissions: Vec<BoundaryOccurrencePermissionV2>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BoundaryEvidence {
     pub id: ExternalEvidenceRef,
     pub boundary: BoundaryRef,
+    pub permission: BoundaryPermissionLocalId,
+    pub payload: Term,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -91,10 +159,31 @@ pub enum CausalRef {
     Admission(AdmissionOccurrenceId),
 }
 
+impl CausalRef {
+    #[must_use]
+    pub const fn entered_kind(self) -> EnteredCauseKindV2 {
+        match self {
+            Self::SessionStart(_) => EnteredCauseKindV2::SessionStart,
+            Self::ExternalTrigger(_) => EnteredCauseKindV2::ExternalTrigger,
+            Self::Resumption(_) => EnteredCauseKindV2::Resumption,
+            Self::Handoff(_) => EnteredCauseKindV2::Handoff,
+            Self::Cancellation(_) => EnteredCauseKindV2::Cancellation,
+            Self::Step(_) => EnteredCauseKindV2::Step,
+            Self::Observation(_) => EnteredCauseKindV2::Observation,
+            Self::CandidateDelta(_) => EnteredCauseKindV2::CandidateDelta,
+            Self::Judgment(_) => EnteredCauseKindV2::Judgment,
+            Self::Admission(_) => EnteredCauseKindV2::Admission,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct EnteredThrough {
     pub boundary: BoundaryRef,
     pub evidence: ExternalEvidenceRef,
+    pub permission: BoundaryPermissionLocalId,
+    pub payload: Term,
+    pub supports: Vec<SupportUse>,
     pub causes: Vec<CausalRef>,
 }
 
@@ -248,6 +337,23 @@ pub enum SupportSource {
     Admission(AdmissionOccurrenceId),
 }
 
+impl SupportSource {
+    #[must_use]
+    pub const fn boundary_kind(self) -> BoundarySupportSourceKindV2 {
+        match self {
+            Self::SessionStart(_) => BoundarySupportSourceKindV2::SessionStart,
+            Self::ExternalTrigger(_) => BoundarySupportSourceKindV2::ExternalTrigger,
+            Self::Resumption(_) => BoundarySupportSourceKindV2::Resumption,
+            Self::Handoff(_) => BoundarySupportSourceKindV2::Handoff,
+            Self::Cancellation(_) => BoundarySupportSourceKindV2::Cancellation,
+            Self::Step(_) => BoundarySupportSourceKindV2::Step,
+            Self::Observation(_) => BoundarySupportSourceKindV2::Observation,
+            Self::Judgment(_) => BoundarySupportSourceKindV2::Judgment,
+            Self::Admission(_) => BoundarySupportSourceKindV2::Admission,
+        }
+    }
+}
+
 /// Slots preserve dependency multiplicity: two slots may cite one source,
 /// while a slot itself may occur only once in one support frontier.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -372,12 +478,58 @@ pub struct AdmissionDecisionContext<'a> {
 pub fn validate_boundary(boundary: &ConstitutedBoundary) -> Result<(), ProvenanceError> {
     validate_length(
         "boundary permissions",
-        boundary.permits.len(),
+        boundary.permissions.len(),
         MAX_BOUNDARY_PERMISSIONS,
     )?;
-    validate_sorted_unique(&boundary.permits, "boundary permissions")?;
-    if boundary.pins.runtime_session.is_some() != boundary.pins.runtime_policy.is_some() {
-        return Err(ProvenanceError::IncompleteBoundaryRuntimePins);
+    if !boundary
+        .permissions
+        .windows(2)
+        .all(|pair| pair[0].id < pair[1].id)
+    {
+        return Err(ProvenanceError::NonCanonicalSet("boundary permissions"));
+    }
+    for permission in &boundary.permissions {
+        if permission.payload.type_term.scope().semantics != permission.pins.semantics
+            || permission.payload.interpretation.scope().semantics != permission.pins.semantics
+        {
+            return Err(ProvenanceError::BoundaryPayloadSnapshotMismatch);
+        }
+        if permission.pins.runtime_session.is_some() != permission.pins.runtime_policy.is_some() {
+            return Err(ProvenanceError::IncompleteBoundaryRuntimePins);
+        }
+        validate_sorted_unique_by(
+            &permission.cause_schema,
+            "boundary cause schema",
+            |requirement| requirement.kind,
+        )?;
+        validate_sorted_unique_by(
+            &permission.support_schema,
+            "boundary support schema",
+            |requirement| requirement.slot,
+        )?;
+        for requirement in &permission.cause_schema {
+            validate_cardinality(requirement.cardinality)?;
+        }
+        for requirement in &permission.support_schema {
+            validate_cardinality(requirement.cardinality)?;
+            if requirement
+                .cardinality
+                .maximum
+                .is_none_or(|maximum| maximum > 1)
+            {
+                return Err(ProvenanceError::BoundarySupportCardinalityTooLarge(
+                    requirement.slot,
+                ));
+            }
+        }
+        if matches!(
+            permission.replay,
+            BoundaryReplayPolicyV2::Repeatable {
+                maximum_occurrences: Some(0)
+            }
+        ) {
+            return Err(ProvenanceError::EmptyBoundaryReplayContract);
+        }
     }
     Ok(())
 }
@@ -389,6 +541,14 @@ pub fn validate_boundary_evidence(
     if evidence.boundary != boundary.id {
         return Err(ProvenanceError::BoundaryEvidenceMismatch);
     }
+    let permission = boundary
+        .permissions
+        .iter()
+        .find(|permission| permission.id == evidence.permission)
+        .ok_or(ProvenanceError::BoundaryEvidenceMismatch)?;
+    if evidence.payload.scope().semantics != permission.pins.semantics {
+        return Err(ProvenanceError::BoundaryEvidenceMismatch);
+    }
     Ok(())
 }
 
@@ -398,7 +558,30 @@ pub fn validate_entered_through(provenance: &EnteredThrough) -> Result<(), Prove
         provenance.causes.len(),
         MAX_OCCURRENCE_CAUSES,
     )?;
-    validate_sorted_unique(&provenance.causes, "occurrence cause frontier")
+    validate_sorted_unique(&provenance.causes, "occurrence cause frontier")?;
+    validate_support_uses(&provenance.supports)
+}
+
+fn validate_cardinality(cardinality: CardinalityV2) -> Result<(), ProvenanceError> {
+    if cardinality
+        .maximum
+        .is_some_and(|maximum| cardinality.minimum > maximum)
+    {
+        return Err(ProvenanceError::InvalidBoundaryCardinality);
+    }
+    Ok(())
+}
+
+fn validate_sorted_unique_by<T, K: Ord>(
+    values: &[T],
+    label: &'static str,
+    key: impl Fn(&T) -> K,
+) -> Result<(), ProvenanceError> {
+    if values.windows(2).all(|pair| key(&pair[0]) < key(&pair[1])) {
+        Ok(())
+    } else {
+        Err(ProvenanceError::NonCanonicalSet(label))
+    }
 }
 
 pub fn validate_occurrence_provenance(
@@ -689,7 +872,12 @@ pub enum ProvenanceError {
         maximum: usize,
     },
     NonCanonicalOrder(&'static str),
+    NonCanonicalSet(&'static str),
     IncompleteBoundaryRuntimePins,
+    BoundaryPayloadSnapshotMismatch,
+    InvalidBoundaryCardinality,
+    BoundarySupportCardinalityTooLarge(SupportSlotId),
+    EmptyBoundaryReplayContract,
     BoundaryEvidenceMismatch,
     DuplicateSupportSlot(SupportSlotId),
     DuplicateObligation(ObligationId),

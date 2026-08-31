@@ -619,6 +619,7 @@ wire_local_id!(
     CauseComponentLocalId,
     SupportSlotId,
     ObligationLocalId,
+    BoundaryPermissionLocalId,
 );
 
 impl Wire for RelationSchemaId {
@@ -1486,6 +1487,9 @@ impl Wire for CausalRef {
 wire_struct!(EnteredThrough {
     boundary,
     evidence,
+    permission,
+    payload,
+    supports,
     causes,
 });
 
@@ -1863,6 +1867,37 @@ wire_struct!(StepBudgetTransitionV2 {
     after,
 });
 
+impl Wire for CheckedConstitutionBinding {
+    fn encode(&self, encoder: &mut Encoder) -> Result<(), CanonicalEncodeError> {
+        match self {
+            Self::Candidate { package, snapshot } => {
+                encoder.u8(0);
+                package.encode(encoder)?;
+                snapshot.encode(encoder)?;
+            }
+            Self::Admitted { revision } => {
+                encoder.u8(1);
+                revision.encode(encoder)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn decode(cursor: &mut Cursor<'_>) -> Result<Self, CanonicalDecodeError> {
+        let offset = cursor.offset();
+        match cursor.u8()? {
+            0 => Ok(Self::Candidate {
+                package: ProcessPackageId::decode(cursor)?,
+                snapshot: ProgramSnapshotId::decode(cursor)?,
+            }),
+            1 => Ok(Self::Admitted {
+                revision: ProgramRevisionId::decode(cursor)?,
+            }),
+            found => Err(unknown_tag(offset, "CheckedConstitutionBinding", found)),
+        }
+    }
+}
+
 impl Wire for CancellationScope {
     fn encode(&self, encoder: &mut Encoder) -> Result<(), CanonicalEncodeError> {
         encoder.u8(match self {
@@ -1885,7 +1920,7 @@ impl Wire for CancellationScope {
 wire_struct!(ActivationPins {
     semantics,
     snapshot,
-    program_revision,
+    constitution,
     runtime_session,
     observed_state,
     runtime_policy,

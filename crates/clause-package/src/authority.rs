@@ -15,13 +15,17 @@ use crate::hash::{
     derive_state_revision_id,
 };
 use crate::identity::{
-    AdmissionAuthorizationRef, ApplicationId, BoundaryRef, CandidateDeltaId, ClauseSemanticsId,
-    ExecutionAuthorizationRef, ExternalEvidenceRef, FormationRefV2, JudgmentAuthorityRef, ModeId,
-    ProcessPackageId, ProgramChangeOccurrenceId, ProgramId, ProgramRevisionId, ProgramSnapshotId,
-    RootAdmissionAuthorizationRef, RootExecutionAuthorizationRef, RootJudgmentAuthorityRef,
-    RootPolicyId, RuntimePolicyId, RuntimeSessionId, SessionStartOccurrenceId, StateRevisionId,
+    AdmissionAuthorizationRef, ApplicationId, BoundaryPermissionLocalId, BoundaryRef,
+    CandidateDeltaId, ClauseSemanticsId, ExecutionAuthorizationRef, ExternalEvidenceRef,
+    FormationRefV2, JudgmentAuthorityRef, ModeId, ProcessPackageId, ProgramChangeOccurrenceId,
+    ProgramId, ProgramRevisionId, ProgramSnapshotId, RootAdmissionAuthorizationRef,
+    RootExecutionAuthorizationRef, RootJudgmentAuthorityRef, RootPolicyId, RuntimePolicyId,
+    RuntimeSessionId, SessionStartOccurrenceId, StateRevisionId,
 };
-use crate::provenance::{EnteredOccurrenceKind, MAX_BOUNDARY_PERMISSIONS};
+use crate::process::CheckedConstitutionBinding;
+use crate::provenance::{
+    BoundaryOccurrencePermissionV2, ConstitutedBoundary, MAX_BOUNDARY_PERMISSIONS,
+};
 
 /// The complete identity preimage for one candidate Program lineage edge.
 ///
@@ -650,12 +654,7 @@ impl RuntimeSessionAnchor {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BoundaryAnchor {
     pub boundary: BoundaryRef,
-    pub semantics: ClauseSemanticsId,
-    pub snapshot: ProgramSnapshotId,
-    pub program_revision: ProgramRevisionId,
-    pub runtime_session: Option<RuntimeSessionId>,
-    pub runtime_policy: Option<RuntimePolicyId>,
-    pub permits: Vec<EnteredOccurrenceKind>,
+    pub permissions: Vec<BoundaryOccurrencePermissionV2>,
 }
 
 /// Independently established evidence entering through one exact boundary.
@@ -664,6 +663,7 @@ pub struct BoundaryAnchor {
 pub struct EvidenceAnchor {
     pub evidence: ExternalEvidenceRef,
     pub boundary: BoundaryRef,
+    pub permissions: Vec<BoundaryPermissionLocalId>,
     pub exact_evidence: Box<[u8]>,
 }
 
@@ -991,43 +991,65 @@ impl AuthorityStore {
     }
 
     pub fn establish_boundary(&mut self, anchor: BoundaryAnchor) -> Result<(), AuthorityError> {
-        if anchor.permits.len() > MAX_BOUNDARY_PERMISSIONS {
+        if anchor.permissions.len() > MAX_BOUNDARY_PERMISSIONS {
             return Err(AuthorityError::BoundaryPermissionLimitExceeded(
                 anchor.boundary,
             ));
         }
-        if !anchor.permits.windows(2).all(|pair| pair[0] < pair[1]) {
-            return Err(AuthorityError::NonCanonicalBoundaryPermissions(
-                anchor.boundary,
-            ));
-        }
-        let admitted = self.revisions.get(&anchor.program_revision).ok_or(
-            AuthorityError::UnknownProgramRevision(anchor.program_revision),
-        )?;
-        if admitted.claim.preimage.semantics != anchor.semantics
-            || admitted.claim.preimage.snapshot != anchor.snapshot
-        {
-            return Err(AuthorityError::BoundaryRevisionPinMismatch(anchor.boundary));
-        }
-
-        match (anchor.runtime_session, anchor.runtime_policy) {
-            (None, None) => {}
-            (Some(session), Some(policy)) => {
-                let established = self
-                    .sessions
-                    .get(&session)
-                    .ok_or(AuthorityError::UnknownRuntimeSession(session))?;
-                if established.semantics != anchor.semantics
-                    || established.program_revision != anchor.program_revision
-                    || established.policy != policy
-                {
-                    return Err(AuthorityError::BoundarySessionPinMismatch(anchor.boundary));
+        crate::provenance::validate_boundary(&ConstitutedBoundary {
+            id: anchor.boundary,
+            permissions: anchor.permissions.clone(),
+        })
+        .map_err(|_| AuthorityError::InvalidBoundaryContract(anchor.boundary))?;
+        for permission in &anchor.permissions {
+            let admitted_revision = match permission.pins.constitution {
+                CheckedConstitutionBinding::Candidate { snapshot, .. } => {
+                    if snapshot != permission.pins.snapshot
+                        || permission.pins.runtime_session.is_some()
+                        || permission.pins.runtime_policy.is_some()
+                    {
+                        return Err(AuthorityError::BoundaryCandidateScopeMismatch(
+                            anchor.boundary,
+                        ));
+                    }
+                    None
                 }
-            }
-            _ => {
-                return Err(AuthorityError::IncompleteBoundaryRuntimePins(
-                    anchor.boundary,
-                ));
+                CheckedConstitutionBinding::Admitted { revision } => {
+                    let admitted = self
+                        .revisions
+                        .get(&revision)
+                        .ok_or(AuthorityError::UnknownProgramRevision(revision))?;
+                    if admitted.claim.preimage.semantics != permission.pins.semantics
+                        || admitted.claim.preimage.snapshot != permission.pins.snapshot
+                    {
+                        return Err(AuthorityError::BoundaryRevisionPinMismatch(anchor.boundary));
+                    }
+                    Some(revision)
+                }
+            };
+
+            match (
+                permission.pins.runtime_session,
+                permission.pins.runtime_policy,
+            ) {
+                (None, None) => {}
+                (Some(session), Some(policy)) => {
+                    let established = self
+                        .sessions
+                        .get(&session)
+                        .ok_or(AuthorityError::UnknownRuntimeSession(session))?;
+                    if established.semantics != permission.pins.semantics
+                        || Some(established.program_revision) != admitted_revision
+                        || established.policy != policy
+                    {
+                        return Err(AuthorityError::BoundarySessionPinMismatch(anchor.boundary));
+                    }
+                }
+                _ => {
+                    return Err(AuthorityError::IncompleteBoundaryRuntimePins(
+                        anchor.boundary,
+                    ));
+                }
             }
         }
         insert_exact(
@@ -1039,8 +1061,19 @@ impl AuthorityStore {
     }
 
     pub fn establish_evidence(&mut self, anchor: EvidenceAnchor) -> Result<(), AuthorityError> {
-        if !self.boundaries.contains_key(&anchor.boundary) {
-            return Err(AuthorityError::UnknownBoundary(anchor.boundary));
+        if anchor.permissions.is_empty()
+            || !anchor.permissions.windows(2).all(|pair| pair[0] < pair[1])
+        {
+            return Err(AuthorityError::NonCanonicalBoundaryEvidencePermissions(
+                anchor.evidence,
+            ));
+        }
+        for permission in &anchor.permissions {
+            self.boundary_permission(anchor.boundary, *permission)
+                .ok_or(AuthorityError::UnknownBoundaryPermission {
+                    boundary: anchor.boundary,
+                    permission: *permission,
+                })?;
         }
         insert_exact(
             &mut self.evidence,
@@ -1056,6 +1089,19 @@ impl AuthorityStore {
     }
 
     #[must_use]
+    pub fn boundary_permission(
+        &self,
+        boundary: BoundaryRef,
+        permission: BoundaryPermissionLocalId,
+    ) -> Option<&BoundaryOccurrencePermissionV2> {
+        self.boundaries
+            .get(&boundary)?
+            .permissions
+            .iter()
+            .find(|candidate| candidate.id == permission)
+    }
+
+    #[must_use]
     pub fn evidence(&self, id: ExternalEvidenceRef) -> Option<&EvidenceAnchor> {
         self.evidence.get(&id)
     }
@@ -1065,12 +1111,12 @@ impl AuthorityStore {
         &self,
         boundary: BoundaryRef,
         evidence: ExternalEvidenceRef,
+        permission: BoundaryPermissionLocalId,
     ) -> bool {
         self.boundaries.contains_key(&boundary)
-            && self
-                .evidence
-                .get(&evidence)
-                .is_some_and(|anchor| anchor.boundary == boundary)
+            && self.evidence.get(&evidence).is_some_and(|anchor| {
+                anchor.boundary == boundary && anchor.permissions.binary_search(&permission).is_ok()
+            })
     }
 }
 
@@ -1293,11 +1339,18 @@ pub enum AuthorityError {
     UnknownRuntimeSession(RuntimeSessionId),
     BoundaryRevisionPinMismatch(BoundaryRef),
     BoundarySessionPinMismatch(BoundaryRef),
+    BoundaryCandidateScopeMismatch(BoundaryRef),
     IncompleteBoundaryRuntimePins(BoundaryRef),
     BoundaryPermissionLimitExceeded(BoundaryRef),
     NonCanonicalBoundaryPermissions(BoundaryRef),
+    InvalidBoundaryContract(BoundaryRef),
     BoundaryAlreadyEstablished(BoundaryRef),
     UnknownBoundary(BoundaryRef),
+    UnknownBoundaryPermission {
+        boundary: BoundaryRef,
+        permission: BoundaryPermissionLocalId,
+    },
+    NonCanonicalBoundaryEvidencePermissions(ExternalEvidenceRef),
     EvidenceAlreadyEstablished(ExternalEvidenceRef),
 }
 
@@ -1465,7 +1518,11 @@ mod tests {
         let store = AuthorityStore::new();
         let boundary = id!(BoundaryRef, 1);
         let evidence = id!(ExternalEvidenceRef, 2);
-        assert!(!store.external_provenance_is_anchored(boundary, evidence));
+        assert!(!store.external_provenance_is_anchored(
+            boundary,
+            evidence,
+            BoundaryPermissionLocalId::new(0),
+        ));
 
         let _unused_static_grant = RootStaticExecutionGrant {
             authorization: RootExecutionAuthorizationRef {

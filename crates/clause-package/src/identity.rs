@@ -95,6 +95,7 @@ local_id!(PrerequisiteLocalId);
 local_id!(CauseComponentLocalId);
 local_id!(SupportSlotId);
 local_id!(ObligationLocalId);
+local_id!(BoundaryPermissionLocalId);
 
 /// One schema declaration in one exact Program snapshot.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]

@@ -547,17 +547,25 @@ impl CarrierFacts {
                 policy: self.root_policy,
                 local: JudgmentAuthorityLocalId::new(0),
             },
+            trigger_ingress: ExecutableBoundaryFactV1 {
+                boundary: self.pure_boundary,
+                evidence: id!(ExternalEvidenceRef, 181),
+                permission: EXECUTABLE_TRIGGER_PERMISSION_V1,
+            },
             occurrence_ingress: ExecutableBoundaryFactV1 {
                 boundary: self.pure_boundary,
                 evidence: id!(ExternalEvidenceRef, 181),
+                permission: EXECUTABLE_OBSERVATION_PERMISSION_V1,
             },
             judgment_ingress: ExecutableBoundaryFactV1 {
                 boundary: self.state_boundary,
                 evidence: id!(ExternalEvidenceRef, 186),
+                permission: EXECUTABLE_JUDGMENT_PERMISSION_V1,
             },
             admission_ingress: ExecutableBoundaryFactV1 {
                 boundary: self.state_boundary,
                 evidence: id!(ExternalEvidenceRef, 190),
+                permission: EXECUTABLE_ADMISSION_PERMISSION_V1,
             },
             budget_units: 100,
         }
@@ -684,45 +692,67 @@ fn carrier_authority(checked: &CheckedProcessPackage) -> (AuthorityStore, Carrie
     authority
         .establish_runtime_session(session_anchor)
         .expect("runtime session is established once");
+    let boundary_target = checked.constitution().preimage().formations[0]
+        .target
+        .clone();
+    let admitted = CheckedConstitutionBinding::Admitted {
+        revision: revision.id,
+    };
     authority
-        .establish_boundary(BoundaryAnchor {
-            boundary: pure_boundary,
-            semantics,
-            snapshot,
-            program_revision: revision.id,
-            runtime_session: None,
-            runtime_policy: None,
-            permits: vec![
-                EnteredOccurrenceKind::ExternalTrigger,
-                EnteredOccurrenceKind::Observation,
-            ],
-        })
+        .establish_boundary(executable_occurrence_boundary_anchor_v1(
+            pure_boundary,
+            boundary_target.clone(),
+            BoundaryPins {
+                semantics,
+                snapshot,
+                constitution: admitted,
+                runtime_session: None,
+                observed_state: None,
+                runtime_policy: None,
+            },
+        ))
         .expect("pure boundary is established once");
     authority
-        .establish_boundary(BoundaryAnchor {
-            boundary: state_boundary,
-            semantics,
-            snapshot,
-            program_revision: revision.id,
-            runtime_session: Some(session),
-            runtime_policy: Some(policy),
-            permits: vec![
-                EnteredOccurrenceKind::Judgment,
-                EnteredOccurrenceKind::AdmissionDecision,
-            ],
-        })
+        .establish_boundary(executable_state_boundary_anchor_v1(
+            state_boundary,
+            boundary_target,
+            BoundaryPins {
+                semantics,
+                snapshot,
+                constitution: admitted,
+                runtime_session: Some(session),
+                observed_state: None,
+                runtime_policy: Some(policy),
+            },
+        ))
         .expect("state boundary is established once");
-    for (tag, boundary) in [
-        (181, pure_boundary),
-        (183, pure_boundary),
-        (186, state_boundary),
-        (187, state_boundary),
-        (190, state_boundary),
+    for (tag, boundary, permissions) in [
+        (
+            181,
+            pure_boundary,
+            vec![
+                EXECUTABLE_TRIGGER_PERMISSION_V1,
+                EXECUTABLE_OBSERVATION_PERMISSION_V1,
+            ],
+        ),
+        (
+            183,
+            pure_boundary,
+            vec![EXECUTABLE_OBSERVATION_PERMISSION_V1],
+        ),
+        (186, state_boundary, vec![EXECUTABLE_JUDGMENT_PERMISSION_V1]),
+        (187, state_boundary, vec![EXECUTABLE_JUDGMENT_PERMISSION_V1]),
+        (
+            190,
+            state_boundary,
+            vec![EXECUTABLE_ADMISSION_PERMISSION_V1],
+        ),
     ] {
         authority
             .establish_evidence(EvidenceAnchor {
                 evidence: id!(ExternalEvidenceRef, tag),
                 boundary,
+                permissions,
                 exact_evidence: vec![tag].into_boxed_slice(),
             })
             .expect("external evidence is established once");

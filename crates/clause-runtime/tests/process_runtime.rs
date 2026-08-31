@@ -1,6 +1,5 @@
 use clause_package::*;
 use clause_runtime::{ProcessRuntime, RuntimeInitError};
-use std::collections::BTreeSet;
 
 fn raw_id(tag: u8) -> [u8; IDENTITY_BYTES] {
     let mut bytes = [0; IDENTITY_BYTES];
@@ -53,35 +52,7 @@ fn checked_fixture(path: &str) -> CheckedProcessPackage {
         return check_process_package(decoded).expect("fixture constitution checks");
     }
 
-    // The compact corpus also proves that the serial carrier rejects child
-    // execution. Derive the supported runtime slice solely from carrier
-    // structure, retaining the independent root processes and governance path.
-    let mut candidate = decoded.candidate().clone();
-    let child_activations = candidate
-        .records
-        .iter()
-        .filter_map(|record| match record {
-            ProcessRecordV2::Activation(proposal)
-                if !matches!(proposal.membership, RunMembership::RootOf(_)) =>
-            {
-                Some(proposal.id)
-            }
-            _ => None,
-        })
-        .collect::<BTreeSet<_>>();
-    candidate.records.retain_mut(|record| match record {
-        ProcessRecordV2::Activation(proposal) => !child_activations.contains(&proposal.id),
-        ProcessRecordV2::Steps(steps) => {
-            steps.retain(|step| !child_activations.contains(&step.activation));
-            !steps.is_empty()
-        }
-        _ => true,
-    });
-    let bytes = encode_process_package(&candidate).expect("supported slice is canonical");
-    check_process_package(
-        decode_process_package(&bytes).expect("supported slice decodes canonically"),
-    )
-    .expect("supported slice constitution checks")
+    check_process_package(decoded).expect("core fixture constitution checks")
 }
 
 fn core_authority(checked: &CheckedProcessPackage) -> AuthorityStore {
@@ -188,34 +159,154 @@ fn core_authority(checked: &CheckedProcessPackage) -> AuthorityStore {
 
     let pure_boundary = id!(BoundaryRef, 126);
     let state_boundary = id!(BoundaryRef, 127);
+    let boundary_target = checked.constitution().preimage().formations[0]
+        .target
+        .clone();
+    let admitted = CheckedConstitutionBinding::Admitted {
+        revision: revision.id,
+    };
+    let pure_pins = BoundaryPins {
+        semantics,
+        snapshot,
+        constitution: admitted,
+        runtime_session: None,
+        observed_state: None,
+        runtime_policy: None,
+    };
+    let state_pins = BoundaryPins {
+        runtime_session: Some(session),
+        observed_state: Some(initial_state),
+        runtime_policy: Some(policy),
+        ..pure_pins
+    };
+    let exactly_one = CardinalityV2 {
+        minimum: 1,
+        maximum: Some(1),
+    };
+    let at_most_one = CardinalityV2 {
+        minimum: 0,
+        maximum: Some(1),
+    };
+    let repeatable = BoundaryReplayPolicyV2::Repeatable {
+        maximum_occurrences: None,
+    };
     authority
         .establish_boundary(BoundaryAnchor {
             boundary: pure_boundary,
-            semantics,
-            snapshot,
-            program_revision: revision.id,
-            runtime_session: None,
-            runtime_policy: None,
-            permits: vec![
-                EnteredOccurrenceKind::ExternalTrigger,
-                EnteredOccurrenceKind::Resumption,
-                EnteredOccurrenceKind::Handoff,
-                EnteredOccurrenceKind::Cancellation,
-                EnteredOccurrenceKind::Observation,
+            permissions: vec![
+                BoundaryOccurrencePermissionV2 {
+                    id: BoundaryPermissionLocalId::new(0),
+                    kind: EnteredOccurrenceKind::ExternalTrigger,
+                    payload: boundary_target.clone(),
+                    pins: pure_pins,
+                    cause_schema: vec![],
+                    support_schema: vec![],
+                    replay: repeatable,
+                },
+                BoundaryOccurrencePermissionV2 {
+                    id: BoundaryPermissionLocalId::new(1),
+                    kind: EnteredOccurrenceKind::Observation,
+                    payload: boundary_target.clone(),
+                    pins: pure_pins,
+                    cause_schema: vec![
+                        BoundaryCauseRequirementV2 {
+                            kind: EnteredCauseKindV2::ExternalTrigger,
+                            cardinality: at_most_one,
+                        },
+                        BoundaryCauseRequirementV2 {
+                            kind: EnteredCauseKindV2::Step,
+                            cardinality: at_most_one,
+                        },
+                        BoundaryCauseRequirementV2 {
+                            kind: EnteredCauseKindV2::Admission,
+                            cardinality: at_most_one,
+                        },
+                    ],
+                    support_schema: vec![],
+                    replay: repeatable,
+                },
+                BoundaryOccurrencePermissionV2 {
+                    id: BoundaryPermissionLocalId::new(2),
+                    kind: EnteredOccurrenceKind::Resumption,
+                    payload: boundary_target.clone(),
+                    pins: pure_pins,
+                    cause_schema: vec![BoundaryCauseRequirementV2 {
+                        kind: EnteredCauseKindV2::Observation,
+                        cardinality: exactly_one,
+                    }],
+                    support_schema: vec![],
+                    replay: repeatable,
+                },
+                BoundaryOccurrencePermissionV2 {
+                    id: BoundaryPermissionLocalId::new(3),
+                    kind: EnteredOccurrenceKind::Handoff,
+                    payload: boundary_target.clone(),
+                    pins: pure_pins,
+                    cause_schema: vec![BoundaryCauseRequirementV2 {
+                        kind: EnteredCauseKindV2::Step,
+                        cardinality: exactly_one,
+                    }],
+                    support_schema: vec![],
+                    replay: repeatable,
+                },
+                BoundaryOccurrencePermissionV2 {
+                    id: BoundaryPermissionLocalId::new(4),
+                    kind: EnteredOccurrenceKind::Cancellation,
+                    payload: boundary_target.clone(),
+                    pins: pure_pins,
+                    cause_schema: vec![
+                        BoundaryCauseRequirementV2 {
+                            kind: EnteredCauseKindV2::ExternalTrigger,
+                            cardinality: at_most_one,
+                        },
+                        BoundaryCauseRequirementV2 {
+                            kind: EnteredCauseKindV2::Step,
+                            cardinality: at_most_one,
+                        },
+                    ],
+                    support_schema: vec![],
+                    replay: repeatable,
+                },
             ],
         })
         .expect("pure boundary is established once");
     authority
         .establish_boundary(BoundaryAnchor {
             boundary: state_boundary,
-            semantics,
-            snapshot,
-            program_revision: revision.id,
-            runtime_session: Some(session),
-            runtime_policy: Some(policy),
-            permits: vec![
-                EnteredOccurrenceKind::Judgment,
-                EnteredOccurrenceKind::AdmissionDecision,
+            permissions: vec![
+                BoundaryOccurrencePermissionV2 {
+                    id: BoundaryPermissionLocalId::new(5),
+                    kind: EnteredOccurrenceKind::Judgment,
+                    payload: boundary_target.clone(),
+                    pins: state_pins,
+                    cause_schema: vec![BoundaryCauseRequirementV2 {
+                        kind: EnteredCauseKindV2::CandidateDelta,
+                        cardinality: exactly_one,
+                    }],
+                    support_schema: vec![],
+                    replay: repeatable,
+                },
+                BoundaryOccurrencePermissionV2 {
+                    id: BoundaryPermissionLocalId::new(6),
+                    kind: EnteredOccurrenceKind::AdmissionDecision,
+                    payload: boundary_target,
+                    pins: state_pins,
+                    cause_schema: vec![
+                        BoundaryCauseRequirementV2 {
+                            kind: EnteredCauseKindV2::CandidateDelta,
+                            cardinality: exactly_one,
+                        },
+                        BoundaryCauseRequirementV2 {
+                            kind: EnteredCauseKindV2::Judgment,
+                            cardinality: CardinalityV2 {
+                                minimum: 1,
+                                maximum: None,
+                            },
+                        },
+                    ],
+                    support_schema: vec![],
+                    replay: repeatable,
+                },
             ],
         })
         .expect("state boundary is established once");
@@ -236,6 +327,14 @@ fn core_authority(checked: &CheckedProcessPackage) -> AuthorityStore {
             .establish_evidence(EvidenceAnchor {
                 evidence: id!(ExternalEvidenceRef, tag),
                 boundary,
+                permissions: vec![BoundaryPermissionLocalId::new(match tag {
+                    181..=183 => 0,
+                    184 => 1,
+                    185 => 2,
+                    186..=189 => 5,
+                    190..=191 => 6,
+                    _ => unreachable!("fixture evidence tag is closed"),
+                })],
                 exact_evidence: vec![tag].into_boxed_slice(),
             })
             .expect("external evidence is established once");
@@ -339,7 +438,7 @@ fn checked_package_advances_serial_process_and_governed_state_end_to_end() {
     assert!(saw_judgment_before_admission);
     assert!(saw_successor);
     assert!(runtime.is_complete());
-    assert_eq!(runtime.carrier().step_count(), 7);
+    assert_eq!(runtime.carrier().step_count(), 9);
     assert_eq!(runtime.carrier().decision_count(), 2);
     assert_eq!(runtime.carrier().state_revision_count(), 2);
 

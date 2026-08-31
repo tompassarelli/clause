@@ -179,46 +179,71 @@ fn carrier_authority(checked: &CheckedProcessPackage) -> (AuthorityStore, Sessio
         .expect("runtime session is established once");
     let occurrence_boundary = id!(BoundaryRef, 126);
     let state_boundary = id!(BoundaryRef, 127);
+    let boundary_target = checked.constitution().preimage().formations[0]
+        .target
+        .clone();
+    let admitted = CheckedConstitutionBinding::Admitted {
+        revision: revision.id,
+    };
     authority
-        .establish_boundary(BoundaryAnchor {
-            boundary: occurrence_boundary,
-            semantics,
-            snapshot,
-            program_revision: revision.id,
-            runtime_session: None,
-            runtime_policy: None,
-            permits: vec![
-                EnteredOccurrenceKind::ExternalTrigger,
-                EnteredOccurrenceKind::Observation,
-            ],
-        })
+        .establish_boundary(executable_occurrence_boundary_anchor_v1(
+            occurrence_boundary,
+            boundary_target.clone(),
+            BoundaryPins {
+                semantics,
+                snapshot,
+                constitution: admitted,
+                runtime_session: None,
+                observed_state: None,
+                runtime_policy: None,
+            },
+        ))
         .expect("occurrence boundary is established once");
     authority
-        .establish_boundary(BoundaryAnchor {
-            boundary: state_boundary,
-            semantics,
-            snapshot,
-            program_revision: revision.id,
-            runtime_session: Some(session),
-            runtime_policy: Some(policy),
-            permits: vec![
-                EnteredOccurrenceKind::Judgment,
-                EnteredOccurrenceKind::AdmissionDecision,
-            ],
-        })
+        .establish_boundary(executable_state_boundary_anchor_v1(
+            state_boundary,
+            boundary_target,
+            BoundaryPins {
+                semantics,
+                snapshot,
+                constitution: admitted,
+                runtime_session: Some(session),
+                observed_state: None,
+                runtime_policy: Some(policy),
+            },
+        ))
         .expect("state boundary is established once");
     let occurrence_evidence = id!(ExternalEvidenceRef, 181);
     let judgment_evidence = id!(ExternalEvidenceRef, 186);
     let admission_evidence = id!(ExternalEvidenceRef, 190);
-    for (evidence, boundary, bytes) in [
-        (occurrence_evidence, occurrence_boundary, vec![181]),
-        (judgment_evidence, state_boundary, vec![186]),
-        (admission_evidence, state_boundary, vec![190]),
+    for (evidence, boundary, permissions, bytes) in [
+        (
+            occurrence_evidence,
+            occurrence_boundary,
+            vec![
+                EXECUTABLE_TRIGGER_PERMISSION_V1,
+                EXECUTABLE_OBSERVATION_PERMISSION_V1,
+            ],
+            vec![181],
+        ),
+        (
+            judgment_evidence,
+            state_boundary,
+            vec![EXECUTABLE_JUDGMENT_PERMISSION_V1],
+            vec![186],
+        ),
+        (
+            admission_evidence,
+            state_boundary,
+            vec![EXECUTABLE_ADMISSION_PERMISSION_V1],
+            vec![190],
+        ),
     ] {
         authority
             .establish_evidence(EvidenceAnchor {
                 evidence,
                 boundary,
+                permissions,
                 exact_evidence: bytes.into_boxed_slice(),
             })
             .expect("external evidence is established once");
@@ -234,17 +259,25 @@ fn carrier_authority(checked: &CheckedProcessPackage) -> (AuthorityStore, Sessio
                 session_start,
                 root_policy,
                 judgment_authority,
+                trigger_ingress: ExecutableBoundaryFactV1 {
+                    boundary: occurrence_boundary,
+                    evidence: occurrence_evidence,
+                    permission: EXECUTABLE_TRIGGER_PERMISSION_V1,
+                },
                 occurrence_ingress: ExecutableBoundaryFactV1 {
                     boundary: occurrence_boundary,
                     evidence: occurrence_evidence,
+                    permission: EXECUTABLE_OBSERVATION_PERMISSION_V1,
                 },
                 judgment_ingress: ExecutableBoundaryFactV1 {
                     boundary: state_boundary,
                     evidence: judgment_evidence,
+                    permission: EXECUTABLE_JUDGMENT_PERMISSION_V1,
                 },
                 admission_ingress: ExecutableBoundaryFactV1 {
                     boundary: state_boundary,
                     evidence: admission_evidence,
+                    permission: EXECUTABLE_ADMISSION_PERMISSION_V1,
                 },
                 budget_units: 100,
             },

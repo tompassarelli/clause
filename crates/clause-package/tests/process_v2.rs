@@ -356,9 +356,10 @@ fn formation_check_targets_and_every_nested_pin_set_are_canonical() {
                 target: CancellationTarget::Activation(id!(ActivationId, 20)),
                 pins,
             },
-            provenance: OccurrenceProvenance::EnteredThrough(entered_through(
+            provenance: OccurrenceProvenance::EnteredThrough(entered_through_with_permission(
                 context.pure_boundary,
                 196,
+                BoundaryPermissionLocalId::new(4),
                 vec![],
             )),
         }));
@@ -597,6 +598,9 @@ fn entered() -> EnteredThrough {
     EnteredThrough {
         boundary: id!(BoundaryRef, 30),
         evidence: id!(ExternalEvidenceRef, 31),
+        permission: BoundaryPermissionLocalId::new(0),
+        payload: term("boundary/payload"),
+        supports: vec![],
         causes: vec![],
     }
 }
@@ -1083,7 +1087,9 @@ fn pure_pins(context: CoreContext) -> ActivationPins {
     ActivationPins {
         semantics: scope().semantics,
         snapshot: context.snapshot,
-        program_revision: context.revision.id,
+        constitution: CheckedConstitutionBinding::Admitted {
+            revision: context.revision.id,
+        },
         runtime_session: None,
         observed_state: None,
         runtime_policy: None,
@@ -1113,10 +1119,183 @@ fn entered_through(
     evidence_tag: u8,
     causes: Vec<CausalRef>,
 ) -> EnteredThrough {
+    entered_through_with_permission(
+        boundary,
+        evidence_tag,
+        boundary_permission_for_evidence(evidence_tag),
+        causes,
+    )
+}
+
+fn entered_through_with_permission(
+    boundary: BoundaryRef,
+    evidence_tag: u8,
+    permission: BoundaryPermissionLocalId,
+    causes: Vec<CausalRef>,
+) -> EnteredThrough {
     EnteredThrough {
         boundary,
         evidence: id!(ExternalEvidenceRef, evidence_tag),
+        permission,
+        payload: term("boundary/payload"),
+        supports: vec![],
         causes,
+    }
+}
+
+fn boundary_permission_for_evidence(tag: u8) -> BoundaryPermissionLocalId {
+    BoundaryPermissionLocalId::new(match tag {
+        181 | 182 | 183 => 0,
+        184 | 196 | 197 => 1,
+        185 => 2,
+        186..=189 => 5,
+        190..=192 => 6,
+        _ => 0,
+    })
+}
+
+fn boundary_permissions(
+    checked: &CheckedProcessPackage,
+    context: CoreContext,
+    stateful: bool,
+) -> Vec<BoundaryOccurrencePermissionV2> {
+    let target = checked.constitution().preimage().formations[0]
+        .target
+        .clone();
+    let admitted = CheckedConstitutionBinding::Admitted {
+        revision: context.revision.id,
+    };
+    let pins = BoundaryPins {
+        semantics: scope().semantics,
+        snapshot: context.snapshot,
+        constitution: admitted,
+        runtime_session: stateful.then_some(context.session),
+        observed_state: stateful.then_some(context.initial_state),
+        runtime_policy: stateful.then_some(context.policy),
+    };
+    let exactly_one = CardinalityV2 {
+        minimum: 1,
+        maximum: Some(1),
+    };
+    let at_most_one = CardinalityV2 {
+        minimum: 0,
+        maximum: Some(1),
+    };
+    let repeatable = BoundaryReplayPolicyV2::Repeatable {
+        maximum_occurrences: None,
+    };
+    if stateful {
+        vec![
+            BoundaryOccurrencePermissionV2 {
+                id: BoundaryPermissionLocalId::new(5),
+                kind: EnteredOccurrenceKind::Judgment,
+                payload: target.clone(),
+                pins,
+                cause_schema: vec![BoundaryCauseRequirementV2 {
+                    kind: EnteredCauseKindV2::CandidateDelta,
+                    cardinality: exactly_one,
+                }],
+                support_schema: vec![],
+                replay: repeatable,
+            },
+            BoundaryOccurrencePermissionV2 {
+                id: BoundaryPermissionLocalId::new(6),
+                kind: EnteredOccurrenceKind::AdmissionDecision,
+                payload: target,
+                pins,
+                cause_schema: vec![
+                    BoundaryCauseRequirementV2 {
+                        kind: EnteredCauseKindV2::CandidateDelta,
+                        cardinality: exactly_one,
+                    },
+                    BoundaryCauseRequirementV2 {
+                        kind: EnteredCauseKindV2::Judgment,
+                        cardinality: CardinalityV2 {
+                            minimum: 1,
+                            maximum: None,
+                        },
+                    },
+                ],
+                support_schema: vec![],
+                replay: repeatable,
+            },
+        ]
+    } else {
+        vec![
+            BoundaryOccurrencePermissionV2 {
+                id: BoundaryPermissionLocalId::new(0),
+                kind: EnteredOccurrenceKind::ExternalTrigger,
+                payload: target.clone(),
+                pins,
+                cause_schema: vec![],
+                support_schema: vec![],
+                replay: repeatable,
+            },
+            BoundaryOccurrencePermissionV2 {
+                id: BoundaryPermissionLocalId::new(1),
+                kind: EnteredOccurrenceKind::Observation,
+                payload: target.clone(),
+                pins,
+                cause_schema: vec![
+                    BoundaryCauseRequirementV2 {
+                        kind: EnteredCauseKindV2::ExternalTrigger,
+                        cardinality: at_most_one,
+                    },
+                    BoundaryCauseRequirementV2 {
+                        kind: EnteredCauseKindV2::Step,
+                        cardinality: at_most_one,
+                    },
+                    BoundaryCauseRequirementV2 {
+                        kind: EnteredCauseKindV2::Admission,
+                        cardinality: at_most_one,
+                    },
+                ],
+                support_schema: vec![],
+                replay: repeatable,
+            },
+            BoundaryOccurrencePermissionV2 {
+                id: BoundaryPermissionLocalId::new(2),
+                kind: EnteredOccurrenceKind::Resumption,
+                payload: target.clone(),
+                pins,
+                cause_schema: vec![BoundaryCauseRequirementV2 {
+                    kind: EnteredCauseKindV2::Observation,
+                    cardinality: exactly_one,
+                }],
+                support_schema: vec![],
+                replay: repeatable,
+            },
+            BoundaryOccurrencePermissionV2 {
+                id: BoundaryPermissionLocalId::new(3),
+                kind: EnteredOccurrenceKind::Handoff,
+                payload: target.clone(),
+                pins,
+                cause_schema: vec![BoundaryCauseRequirementV2 {
+                    kind: EnteredCauseKindV2::Step,
+                    cardinality: exactly_one,
+                }],
+                support_schema: vec![],
+                replay: repeatable,
+            },
+            BoundaryOccurrencePermissionV2 {
+                id: BoundaryPermissionLocalId::new(4),
+                kind: EnteredOccurrenceKind::Cancellation,
+                payload: target,
+                pins,
+                cause_schema: vec![
+                    BoundaryCauseRequirementV2 {
+                        kind: EnteredCauseKindV2::ExternalTrigger,
+                        cardinality: at_most_one,
+                    },
+                    BoundaryCauseRequirementV2 {
+                        kind: EnteredCauseKindV2::Step,
+                        cardinality: at_most_one,
+                    },
+                ],
+                support_schema: vec![],
+                replay: repeatable,
+            },
+        ]
     }
 }
 
@@ -1894,32 +2073,13 @@ fn establish_core_authority(
         authority
             .establish_boundary(BoundaryAnchor {
                 boundary: context.pure_boundary,
-                semantics: scope().semantics,
-                snapshot: context.snapshot,
-                program_revision: context.revision.id,
-                runtime_session: None,
-                runtime_policy: None,
-                permits: vec![
-                    EnteredOccurrenceKind::ExternalTrigger,
-                    EnteredOccurrenceKind::Resumption,
-                    EnteredOccurrenceKind::Handoff,
-                    EnteredOccurrenceKind::Cancellation,
-                    EnteredOccurrenceKind::Observation,
-                ],
+                permissions: boundary_permissions(checked, context, false),
             })
             .expect("pure boundary is externally established");
         authority
             .establish_boundary(BoundaryAnchor {
                 boundary: context.state_boundary,
-                semantics: scope().semantics,
-                snapshot: context.snapshot,
-                program_revision: context.revision.id,
-                runtime_session: Some(context.session),
-                runtime_policy: Some(context.policy),
-                permits: vec![
-                    EnteredOccurrenceKind::Judgment,
-                    EnteredOccurrenceKind::AdmissionDecision,
-                ],
+                permissions: boundary_permissions(checked, context, true),
             })
             .expect("state boundary is externally established");
         for (evidence_tag, boundary) in [
@@ -1942,6 +2102,18 @@ fn establish_core_authority(
                 .establish_evidence(EvidenceAnchor {
                     evidence: id!(ExternalEvidenceRef, evidence_tag),
                     boundary,
+                    permissions: match evidence_tag {
+                        196 => vec![
+                            BoundaryPermissionLocalId::new(1),
+                            BoundaryPermissionLocalId::new(3),
+                            BoundaryPermissionLocalId::new(4),
+                        ],
+                        197 => vec![
+                            BoundaryPermissionLocalId::new(1),
+                            BoundaryPermissionLocalId::new(3),
+                        ],
+                        _ => vec![boundary_permission_for_evidence(evidence_tag)],
+                    },
                     exact_evidence: vec![evidence_tag].into_boxed_slice(),
                 })
                 .expect("external evidence identity is established once");
@@ -2233,9 +2405,10 @@ fn ready_cancellation_candidate() -> (ProcessPackageV2, CoreContext) {
                 target: CancellationTarget::Activation(id!(ActivationId, 21)),
                 pins: pure_pins(context),
             },
-            provenance: OccurrenceProvenance::EnteredThrough(entered_through(
+            provenance: OccurrenceProvenance::EnteredThrough(entered_through_with_permission(
                 context.pure_boundary,
                 196,
+                BoundaryPermissionLocalId::new(4),
                 vec![CausalRef::ExternalTrigger(id!(
                     ExternalTriggerOccurrenceId,
                     11
@@ -2344,6 +2517,118 @@ fn process_v2_core_exercises_process_identity_lifecycle_truth_and_admission() {
     ));
 }
 
+#[test]
+fn checked_candidate_runs_pure_work_but_cannot_join_authoritative_state() {
+    let (package, context) = finalized_core_package();
+    let bytes = encode_process_package(&package).expect("core package encodes");
+    let checked = check_process_package(
+        decode_process_package(&bytes).expect("core package decodes canonically"),
+    )
+    .expect("core package checks");
+    let candidate = CheckedConstitutionBinding::Candidate {
+        package: checked.id(),
+        snapshot: context.snapshot,
+    };
+    let boundary = id!(BoundaryRef, 198);
+    let evidence = id!(ExternalEvidenceRef, 199);
+    let permission = BoundaryPermissionLocalId::new(0);
+    let mut authority = establish_core_authority(&checked, context, true);
+    authority
+        .establish_boundary(BoundaryAnchor {
+            boundary,
+            permissions: vec![BoundaryOccurrencePermissionV2 {
+                id: permission,
+                kind: EnteredOccurrenceKind::ExternalTrigger,
+                payload: checked.constitution().preimage().formations[0]
+                    .target
+                    .clone(),
+                pins: BoundaryPins {
+                    semantics: scope().semantics,
+                    snapshot: context.snapshot,
+                    constitution: candidate,
+                    runtime_session: None,
+                    observed_state: None,
+                    runtime_policy: None,
+                },
+                cause_schema: vec![],
+                support_schema: vec![],
+                replay: BoundaryReplayPolicyV2::Repeatable {
+                    maximum_occurrences: None,
+                },
+            }],
+        })
+        .expect("candidate boundary is exact and independently constituted");
+    authority
+        .establish_evidence(EvidenceAnchor {
+            evidence,
+            boundary,
+            permissions: vec![permission],
+            exact_evidence: b"candidate/pure-trigger".to_vec().into_boxed_slice(),
+        })
+        .expect("candidate ingress evidence is exact");
+
+    let mut carrier = ProcessCarrier::replay(&checked, &authority).expect("core replays");
+    let trigger = id!(ExternalTriggerOccurrenceId, 200);
+    let mut activation = root_activation(context, 204, 202, 203, 1, RootTrigger::External(trigger));
+    activation.pins.constitution = candidate;
+    carrier
+        .apply_ingress(
+            &[
+                ProcessRecordV2::ExternalTrigger(ExternalTriggerOccurrenceV2 {
+                    id: trigger,
+                    provenance: EnteredThrough {
+                        boundary,
+                        evidence,
+                        permission,
+                        payload: term("boundary/payload"),
+                        supports: vec![],
+                        causes: vec![],
+                    },
+                }),
+                ProcessRecordV2::Activation(activation),
+            ],
+            &authority,
+        )
+        .expect("checked candidate constitution runs pure work without Program authority");
+
+    let authoritative_trigger = id!(ExternalTriggerOccurrenceId, 205);
+    let mut authoritative = root_activation(
+        context,
+        208,
+        206,
+        207,
+        1,
+        RootTrigger::External(authoritative_trigger),
+    );
+    authoritative.pins.constitution = candidate;
+    authoritative.pins.runtime_session = Some(context.session);
+    authoritative.pins.observed_state = Some(context.initial_state);
+    authoritative.pins.runtime_policy = Some(context.policy);
+    assert_eq!(
+        carrier.apply_ingress(
+            &[
+                ProcessRecordV2::ExternalTrigger(ExternalTriggerOccurrenceV2 {
+                    id: authoritative_trigger,
+                    provenance: EnteredThrough {
+                        boundary,
+                        evidence,
+                        permission,
+                        payload: term("boundary/payload"),
+                        supports: vec![],
+                        causes: vec![],
+                    },
+                }),
+                ProcessRecordV2::Activation(authoritative),
+            ],
+            &authority,
+        ),
+        Err(ProcessIngressError::Record {
+            record_index: 1,
+            cause: Box::new(ProcessError::AuthoritativeOperationRequiresAdmittedConstitution),
+        })
+    );
+}
+
 fn self_authorizing_admission_package() -> ProcessPackageV2 {
     let mut snapshot = empty_snapshot();
     snapshot
@@ -2400,6 +2685,9 @@ fn unconstituted_external_trigger_package() -> ProcessPackageV2 {
             provenance: EnteredThrough {
                 boundary: id!(BoundaryRef, 11),
                 evidence: id!(ExternalEvidenceRef, 12),
+                permission: BoundaryPermissionLocalId::new(0),
+                payload: term("boundary/payload"),
+                supports: vec![],
                 causes: vec![],
             },
         },
@@ -2489,9 +2777,10 @@ fn linear_double_takeup_package() -> (ProcessPackageV2, CoreContext) {
                     activation: id!(ActivationId, 20),
                     pins: continuation(context).pins,
                 },
-                provenance: OccurrenceProvenance::EnteredThrough(entered_through(
+                provenance: OccurrenceProvenance::EnteredThrough(entered_through_with_permission(
                     context.pure_boundary,
                     evidence_tag,
+                    BoundaryPermissionLocalId::new(3),
                     vec![CausalRef::Step(StepRef {
                         run: id!(RunId, 30),
                         activation: id!(ActivationId, 20),
@@ -3206,9 +3495,10 @@ fn runtime_configuration_custody_budget_and_cancellation_are_exact() {
                 target: CancellationTarget::Run(id!(RunId, 30)),
                 pins: pure_pins(context),
             },
-            provenance: OccurrenceProvenance::EnteredThrough(entered_through(
+            provenance: OccurrenceProvenance::EnteredThrough(entered_through_with_permission(
                 context.pure_boundary,
                 196,
+                BoundaryPermissionLocalId::new(4),
                 vec![CausalRef::ExternalTrigger(id!(
                     ExternalTriggerOccurrenceId,
                     10
@@ -3344,9 +3634,10 @@ fn ready_and_run_cancellation_require_exact_occurrence_and_consumer_pins() {
                 target: CancellationTarget::Run(id!(RunId, 32)),
                 pins: cancellation_pins,
             },
-            provenance: OccurrenceProvenance::EnteredThrough(entered_through(
+            provenance: OccurrenceProvenance::EnteredThrough(entered_through_with_permission(
                 context.pure_boundary,
                 196,
+                BoundaryPermissionLocalId::new(4),
                 vec![CausalRef::Step(StepRef {
                     run: id!(RunId, 32),
                     activation: id!(ActivationId, 22),
@@ -3690,9 +3981,10 @@ fn handoff_occurrence_requires_mode_permission_before_admission() {
                 activation: id!(ActivationId, 20),
                 pins: continuation(context).pins,
             },
-            provenance: OccurrenceProvenance::EnteredThrough(entered_through(
+            provenance: OccurrenceProvenance::EnteredThrough(entered_through_with_permission(
                 context.pure_boundary,
                 196,
+                BoundaryPermissionLocalId::new(3),
                 vec![CausalRef::Step(StepRef {
                     run: id!(RunId, 30),
                     activation: id!(ActivationId, 20),
@@ -3817,10 +4109,7 @@ fn governed_occurrences_require_exact_authority_basis_and_direct_causes() {
     entered.causes.clear();
     assert_eq!(
         replay_core_candidate(&judgment_missing_candidate, context).unwrap_err(),
-        ProcessError::MissingJudgmentCandidateCause {
-            judgment: id!(JudgmentOccurrenceId, 90),
-            delta: id!(CandidateDeltaId, 80),
-        }
+        ProcessError::BoundaryCauseSchemaMismatch(context.state_boundary)
     );
 
     let wrong_revision = id!(ProgramRevisionId, 118);
@@ -3885,7 +4174,7 @@ fn governed_occurrences_require_exact_authority_basis_and_direct_causes() {
     for (missing, expected) in [
         (
             CausalRef::CandidateDelta(id!(CandidateDeltaId, 80)),
-            ProcessError::MissingAdmissionCandidateCause(id!(AdmissionOccurrenceId, 94)),
+            ProcessError::BoundaryCauseSchemaMismatch(context.state_boundary),
         ),
         (
             CausalRef::Judgment(id!(JudgmentOccurrenceId, 90)),

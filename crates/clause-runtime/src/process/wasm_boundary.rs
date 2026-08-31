@@ -563,48 +563,145 @@ fn establish_authority_inner(
         })
         .and_then(|()| authority.establish_runtime_session(session_anchor))
         .map_err(|_| WasmProcessStatusV1::AuthorityRejected)?;
+    let boundary_target = package
+        .constitution()
+        .preimage()
+        .formations
+        .first()
+        .ok_or(WasmProcessStatusV1::AuthorityRejected)?
+        .target
+        .clone();
+    let admitted = CheckedConstitutionBinding::Admitted {
+        revision: revision.id,
+    };
+    let occurrence_pins = BoundaryPins {
+        semantics,
+        snapshot,
+        constitution: admitted,
+        runtime_session: None,
+        observed_state: None,
+        runtime_policy: None,
+    };
+    let state_pins = BoundaryPins {
+        semantics,
+        snapshot,
+        constitution: admitted,
+        runtime_session: Some(input.session),
+        observed_state: None,
+        runtime_policy: Some(input.policy),
+    };
+    let at_most_one = CardinalityV2 {
+        minimum: 0,
+        maximum: Some(1),
+    };
+    let exactly_one = CardinalityV2 {
+        minimum: 1,
+        maximum: Some(1),
+    };
     authority
         .establish_boundary(BoundaryAnchor {
             boundary: input.occurrence_boundary,
-            semantics,
-            snapshot,
-            program_revision: revision.id,
-            runtime_session: None,
-            runtime_policy: None,
-            permits: vec![
-                EnteredOccurrenceKind::ExternalTrigger,
-                EnteredOccurrenceKind::Observation,
+            permissions: vec![
+                BoundaryOccurrencePermissionV2 {
+                    id: BoundaryPermissionLocalId::new(0),
+                    kind: EnteredOccurrenceKind::ExternalTrigger,
+                    payload: boundary_target.clone(),
+                    pins: occurrence_pins,
+                    cause_schema: vec![],
+                    support_schema: vec![],
+                    replay: BoundaryReplayPolicyV2::OneShot,
+                },
+                BoundaryOccurrencePermissionV2 {
+                    id: BoundaryPermissionLocalId::new(1),
+                    kind: EnteredOccurrenceKind::Observation,
+                    payload: boundary_target.clone(),
+                    pins: occurrence_pins,
+                    cause_schema: vec![
+                        BoundaryCauseRequirementV2 {
+                            kind: EnteredCauseKindV2::ExternalTrigger,
+                            cardinality: at_most_one,
+                        },
+                        BoundaryCauseRequirementV2 {
+                            kind: EnteredCauseKindV2::Step,
+                            cardinality: at_most_one,
+                        },
+                        BoundaryCauseRequirementV2 {
+                            kind: EnteredCauseKindV2::Admission,
+                            cardinality: at_most_one,
+                        },
+                    ],
+                    support_schema: vec![],
+                    replay: BoundaryReplayPolicyV2::Repeatable {
+                        maximum_occurrences: None,
+                    },
+                },
             ],
         })
         .and_then(|()| {
             authority.establish_boundary(BoundaryAnchor {
                 boundary: input.state_boundary,
-                semantics,
-                snapshot,
-                program_revision: revision.id,
-                runtime_session: Some(input.session),
-                runtime_policy: Some(input.policy),
-                permits: vec![
-                    EnteredOccurrenceKind::Judgment,
-                    EnteredOccurrenceKind::AdmissionDecision,
+                permissions: vec![
+                    BoundaryOccurrencePermissionV2 {
+                        id: BoundaryPermissionLocalId::new(2),
+                        kind: EnteredOccurrenceKind::Judgment,
+                        payload: boundary_target.clone(),
+                        pins: state_pins,
+                        cause_schema: vec![BoundaryCauseRequirementV2 {
+                            kind: EnteredCauseKindV2::CandidateDelta,
+                            cardinality: exactly_one,
+                        }],
+                        support_schema: vec![],
+                        replay: BoundaryReplayPolicyV2::Repeatable {
+                            maximum_occurrences: None,
+                        },
+                    },
+                    BoundaryOccurrencePermissionV2 {
+                        id: BoundaryPermissionLocalId::new(3),
+                        kind: EnteredOccurrenceKind::AdmissionDecision,
+                        payload: boundary_target.clone(),
+                        pins: state_pins,
+                        cause_schema: vec![
+                            BoundaryCauseRequirementV2 {
+                                kind: EnteredCauseKindV2::CandidateDelta,
+                                cardinality: exactly_one,
+                            },
+                            BoundaryCauseRequirementV2 {
+                                kind: EnteredCauseKindV2::Judgment,
+                                cardinality: CardinalityV2 {
+                                    minimum: 1,
+                                    maximum: None,
+                                },
+                            },
+                        ],
+                        support_schema: vec![],
+                        replay: BoundaryReplayPolicyV2::Repeatable {
+                            maximum_occurrences: None,
+                        },
+                    },
                 ],
             })
         })
         .map_err(|_| WasmProcessStatusV1::AuthorityRejected)?;
-    for (evidence, boundary, exact) in [
+    for (evidence, boundary, permissions, exact) in [
         (
             input.occurrence_evidence,
             input.occurrence_boundary,
+            vec![
+                BoundaryPermissionLocalId::new(0),
+                BoundaryPermissionLocalId::new(1),
+            ],
             &input.occurrence_evidence_bytes,
         ),
         (
             input.judgment_evidence,
             input.state_boundary,
+            vec![BoundaryPermissionLocalId::new(2)],
             &input.judgment_evidence_bytes,
         ),
         (
             input.admission_evidence,
             input.state_boundary,
+            vec![BoundaryPermissionLocalId::new(3)],
             &input.admission_evidence_bytes,
         ),
     ] {
@@ -612,6 +709,7 @@ fn establish_authority_inner(
             .establish_evidence(EvidenceAnchor {
                 evidence,
                 boundary,
+                permissions,
                 exact_evidence: exact.clone().into_boxed_slice(),
             })
             .map_err(|_| WasmProcessStatusV1::AuthorityRejected)?;
@@ -626,17 +724,25 @@ fn establish_authority_inner(
             session_start: input.session_start,
             root_policy: input.root_policy,
             judgment_authority,
+            trigger_ingress: ExecutableBoundaryFactV1 {
+                boundary: input.occurrence_boundary,
+                evidence: input.occurrence_evidence,
+                permission: BoundaryPermissionLocalId::new(0),
+            },
             occurrence_ingress: ExecutableBoundaryFactV1 {
                 boundary: input.occurrence_boundary,
                 evidence: input.occurrence_evidence,
+                permission: BoundaryPermissionLocalId::new(1),
             },
             judgment_ingress: ExecutableBoundaryFactV1 {
                 boundary: input.state_boundary,
                 evidence: input.judgment_evidence,
+                permission: BoundaryPermissionLocalId::new(2),
             },
             admission_ingress: ExecutableBoundaryFactV1 {
                 boundary: input.state_boundary,
                 evidence: input.admission_evidence,
+                permission: BoundaryPermissionLocalId::new(3),
             },
             budget_units: input.budget_units,
         },
