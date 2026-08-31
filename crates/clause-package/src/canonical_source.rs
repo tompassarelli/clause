@@ -20,6 +20,8 @@ use crate::process::{CheckedProcessPackage, ProcessPackageV2};
 use crate::term::{EqualityContract, Term, TermError, TermScope};
 
 const SOURCE_ARTIFACT_DOMAIN: &str = "clause/source-artifact/v1";
+const SOURCE_LOCAL_ALLOCATION_DOMAIN: &str = "clause/source-local-allocation/v1";
+const RESERVED_LOCAL_ID: u32 = 0;
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct CanonicalSourceArtifactIdV1([u8; IDENTITY_BYTES]);
@@ -39,6 +41,7 @@ pub struct CanonicalSourceOriginV1 {
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[repr(u8)]
 pub enum CanonicalSourceProductionV1 {
     Referent,
     Shape,
@@ -56,14 +59,45 @@ pub enum CanonicalSourceProductionV1 {
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct CanonicalEmissionSlotV1 {
     pub production: CanonicalSourceProductionV1,
-    pub producer: Vec<u8>,
     pub local: Vec<u8>,
     pub repetition: Option<u64>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum CanonicalFreshBasisV1 {
+    ConstitutedProgramChange(ProgramChangeOccurrenceId),
+}
+
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct CanonicalSemanticProducerV1 {
+    pub production: CanonicalSourceProductionV1,
+    pub semantic_key: Vec<u8>,
+}
+
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum CanonicalAllocationSlotV1 {
+    Emission(CanonicalEmissionSlotV1),
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum CanonicalAllocationCollisionDispositionV1 {
+    RejectTypedCollision,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum CanonicalAllocationCycleDispositionV1 {
+    RejectDependencyCycle,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CanonicalAllocationJudgmentV1 {
-    Fresh { basis: CanonicalEmissionSlotV1 },
+    Fresh {
+        basis: CanonicalFreshBasisV1,
+        producer: CanonicalSemanticProducerV1,
+        slot: CanonicalAllocationSlotV1,
+        collision: CanonicalAllocationCollisionDispositionV1,
+        cycle: CanonicalAllocationCycleDispositionV1,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -78,12 +112,16 @@ pub enum CanonicalAllocatedIdentityV1 {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CanonicalAllocationV1 {
     pub identity: CanonicalAllocatedIdentityV1,
+    /// Counter used only to skip the reserved zero coordinate. It is part of
+    /// the deterministic derivation record, never freshness evidence.
+    pub derivation_attempt: u32,
     pub judgment: CanonicalAllocationJudgmentV1,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CanonicalSourceAllocationPlanV1 {
     artifact: CanonicalSourceArtifactIdV1,
+    root: ProgramChangeOccurrenceId,
     allocations: Vec<CanonicalAllocationV1>,
 }
 
@@ -94,18 +132,30 @@ impl CanonicalSourceAllocationPlanV1 {
     }
 
     #[must_use]
+    pub const fn root(&self) -> ProgramChangeOccurrenceId {
+        self.root
+    }
+
+    #[must_use]
     pub fn allocations(&self) -> &[CanonicalAllocationV1] {
         &self.allocations
     }
 
     fn identity(
         &self,
+        producer: &CanonicalSemanticProducerV1,
         slot: &CanonicalEmissionSlotV1,
         domain: AllocationDomain,
     ) -> Option<CanonicalAllocatedIdentityV1> {
         self.allocations.iter().find_map(|allocation| {
-            let CanonicalAllocationJudgmentV1::Fresh { basis } = &allocation.judgment;
-            (basis == slot && AllocationDomain::of(allocation.identity) == domain)
+            let CanonicalAllocationJudgmentV1::Fresh {
+                producer: actual_producer,
+                slot: CanonicalAllocationSlotV1::Emission(actual_slot),
+                ..
+            } = &allocation.judgment;
+            (actual_producer == producer
+                && actual_slot == slot
+                && AllocationDomain::of(allocation.identity) == domain)
                 .then_some(allocation.identity)
         })
     }
@@ -113,6 +163,7 @@ impl CanonicalSourceAllocationPlanV1 {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CanonicalSourceEmissionV1 {
+    pub producer: CanonicalSemanticProducerV1,
     pub slot: CanonicalEmissionSlotV1,
     pub origin: CanonicalSourceOriginV1,
     pub allocations: Vec<CanonicalAllocationV1>,
@@ -219,12 +270,20 @@ pub enum CanonicalSourceErrorV1 {
         slot: CanonicalEmissionSlotV1,
     },
     AllocationArtifactMismatch,
+    RecordedPlanMismatch,
     MissingAllocation {
         slot: CanonicalEmissionSlotV1,
         domain: &'static str,
     },
-    DuplicateAllocation {
+    AllocationCollision {
         identity: CanonicalAllocatedIdentityV1,
+        first_producer: CanonicalSemanticProducerV1,
+        first_slot: CanonicalAllocationSlotV1,
+        second_producer: CanonicalSemanticProducerV1,
+        second_slot: CanonicalAllocationSlotV1,
+    },
+    AllocationDerivationExhausted {
+        domain: &'static str,
     },
     Term(TermError),
     Encode(CanonicalEncodeError),
@@ -312,6 +371,7 @@ enum SourceCardinality {
 }
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[repr(u8)]
 enum AllocationDomain {
     Formation,
     RelationSchema,
@@ -340,6 +400,52 @@ impl AllocationDomain {
             Self::Mode => "ModeLocalId",
         }
     }
+}
+
+fn derive_local_coordinate(
+    root: ProgramChangeOccurrenceId,
+    request: &AllocationRequest,
+) -> Result<(u32, u32), CanonicalSourceErrorV1> {
+    let producer = encode_semantic_producer(&request.producer);
+    let slot = encode_emission_slot(&request.slot);
+    let domain = [request.domain as u8];
+    for attempt in 0..=u32::MAX {
+        let attempt_bytes = attempt.to_be_bytes();
+        let digest = domain_hash(
+            SOURCE_LOCAL_ALLOCATION_DOMAIN,
+            &[root.as_bytes(), &domain, &producer, &slot, &attempt_bytes],
+        );
+        let coordinate = u32::from_be_bytes(
+            digest[..4]
+                .try_into()
+                .expect("a Clause identity digest contains four coordinate octets"),
+        );
+        if coordinate != RESERVED_LOCAL_ID {
+            return Ok((coordinate, attempt));
+        }
+    }
+    Err(CanonicalSourceErrorV1::AllocationDerivationExhausted {
+        domain: request.domain.label(),
+    })
+}
+
+fn encode_semantic_producer(producer: &CanonicalSemanticProducerV1) -> Vec<u8> {
+    let mut bytes = vec![producer.production as u8];
+    frame_bytes(&mut bytes, &producer.semantic_key);
+    bytes
+}
+
+fn encode_emission_slot(slot: &CanonicalEmissionSlotV1) -> Vec<u8> {
+    let mut bytes = vec![slot.production as u8];
+    frame_bytes(&mut bytes, &slot.local);
+    match slot.repetition {
+        None => bytes.push(0),
+        Some(repetition) => {
+            bytes.push(1);
+            bytes.extend_from_slice(&repetition.to_be_bytes());
+        }
+    }
+    bytes
 }
 
 /// Read exact UTF-8 bytes into the bounded canonical CST profile.
@@ -392,65 +498,244 @@ pub fn read_canonical_source_v1(
 }
 
 /// Project an explicit independent allocation plan. Every product is recorded
-/// as `Fresh` against its semantic emission slot. Sorting only makes this plan
-/// deterministic; it does not assert continuity with any other plan.
+/// as `Fresh` against the exact constituted root, semantic producer, and
+/// emission slot. Canonical sorting fixes record order only; it never supplies
+/// an identity coordinate or continuity evidence.
 pub fn plan_independent_canonical_source_allocations_v1(
     cst: &CanonicalSourceCstV1,
+    root: ProgramChangeOccurrenceId,
 ) -> Result<CanonicalSourceAllocationPlanV1, CanonicalSourceErrorV1> {
-    let mut requested = Vec::<(CanonicalEmissionSlotV1, AllocationDomain)>::new();
+    build_independent_plan(cst, root)
+}
+
+/// Validate and recover an already recorded plan for the same proposal act.
+/// This observes the original Fresh judgments and identities; it does not
+/// create a second allocation judgment or claim retention.
+pub fn rematerialize_canonical_source_allocation_plan_v1(
+    cst: &CanonicalSourceCstV1,
+    recorded: &CanonicalSourceAllocationPlanV1,
+) -> Result<CanonicalSourceAllocationPlanV1, CanonicalSourceErrorV1> {
+    if recorded.artifact != cst.artifact {
+        return Err(CanonicalSourceErrorV1::AllocationArtifactMismatch);
+    }
+    let requests = allocation_requests(cst)?;
+    if requests.len() != recorded.allocations.len() {
+        return Err(CanonicalSourceErrorV1::RecordedPlanMismatch);
+    }
+    let (schema_for_producer, operator_for_producer) =
+        derived_container_coordinates(recorded.root, &requests)?;
+    for request in &requests {
+        let matches = recorded
+            .allocations
+            .iter()
+            .filter(|allocation| {
+                let CanonicalAllocationJudgmentV1::Fresh {
+                    basis,
+                    producer,
+                    slot: CanonicalAllocationSlotV1::Emission(slot),
+                    collision,
+                    cycle,
+                } = &allocation.judgment;
+                *basis == CanonicalFreshBasisV1::ConstitutedProgramChange(recorded.root)
+                    && producer == &request.producer
+                    && slot == &request.slot
+                    && *collision == CanonicalAllocationCollisionDispositionV1::RejectTypedCollision
+                    && *cycle == CanonicalAllocationCycleDispositionV1::RejectDependencyCycle
+                    && AllocationDomain::of(allocation.identity) == request.domain
+            })
+            .collect::<Vec<_>>();
+        let [allocation] = matches.as_slice() else {
+            return Err(CanonicalSourceErrorV1::RecordedPlanMismatch);
+        };
+        let (coordinate, attempt) = derive_local_coordinate(recorded.root, request)?;
+        let expected_identity = allocated_identity(
+            request,
+            coordinate,
+            &schema_for_producer,
+            &operator_for_producer,
+        );
+        if allocation.identity != expected_identity || allocation.derivation_attempt != attempt {
+            return Err(CanonicalSourceErrorV1::RecordedPlanMismatch);
+        }
+    }
+    validate_unique_allocations(&recorded.allocations)?;
+    Ok(recorded.clone())
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+struct AllocationRequest {
+    producer: CanonicalSemanticProducerV1,
+    slot: CanonicalEmissionSlotV1,
+    domain: AllocationDomain,
+}
+
+fn build_independent_plan(
+    cst: &CanonicalSourceCstV1,
+    root: ProgramChangeOccurrenceId,
+) -> Result<CanonicalSourceAllocationPlanV1, CanonicalSourceErrorV1> {
+    let requested = allocation_requests(cst)?;
+    let (schema_for_producer, operator_for_producer) =
+        derived_container_coordinates(root, &requested)?;
+    let basis = CanonicalFreshBasisV1::ConstitutedProgramChange(root);
+    let mut allocations = Vec::with_capacity(requested.len());
+    for request in requested {
+        let (coordinate, derivation_attempt) = derive_local_coordinate(root, &request)?;
+        let identity = allocated_identity(
+            &request,
+            coordinate,
+            &schema_for_producer,
+            &operator_for_producer,
+        );
+        allocations.push(CanonicalAllocationV1 {
+            identity,
+            derivation_attempt,
+            judgment: CanonicalAllocationJudgmentV1::Fresh {
+                basis,
+                producer: request.producer,
+                slot: CanonicalAllocationSlotV1::Emission(request.slot),
+                collision: CanonicalAllocationCollisionDispositionV1::RejectTypedCollision,
+                cycle: CanonicalAllocationCycleDispositionV1::RejectDependencyCycle,
+            },
+        });
+    }
+    validate_unique_allocations(&allocations)?;
+    Ok(CanonicalSourceAllocationPlanV1 {
+        artifact: cst.artifact,
+        root,
+        allocations,
+    })
+}
+
+fn derived_container_coordinates(
+    root: ProgramChangeOccurrenceId,
+    requests: &[AllocationRequest],
+) -> Result<
+    (
+        BTreeMap<CanonicalSemanticProducerV1, RelationSchemaLocalId>,
+        BTreeMap<CanonicalSemanticProducerV1, OperatorLocalId>,
+    ),
+    CanonicalSourceErrorV1,
+> {
+    let mut schemas = BTreeMap::new();
+    let mut operators = BTreeMap::new();
+    for request in requests {
+        match request.domain {
+            AllocationDomain::RelationSchema => {
+                let (coordinate, _) = derive_local_coordinate(root, request)?;
+                schemas.insert(
+                    request.producer.clone(),
+                    RelationSchemaLocalId::new(coordinate),
+                );
+            }
+            AllocationDomain::Operator => {
+                let (coordinate, _) = derive_local_coordinate(root, request)?;
+                operators.insert(request.producer.clone(), OperatorLocalId::new(coordinate));
+            }
+            _ => {}
+        }
+    }
+    Ok((schemas, operators))
+}
+
+fn allocated_identity(
+    request: &AllocationRequest,
+    coordinate: u32,
+    schema_for_producer: &BTreeMap<CanonicalSemanticProducerV1, RelationSchemaLocalId>,
+    operator_for_producer: &BTreeMap<CanonicalSemanticProducerV1, OperatorLocalId>,
+) -> CanonicalAllocatedIdentityV1 {
+    match request.domain {
+        AllocationDomain::Formation => {
+            CanonicalAllocatedIdentityV1::Formation(FormationLocalId::new(coordinate))
+        }
+        AllocationDomain::RelationSchema => {
+            CanonicalAllocatedIdentityV1::RelationSchema(RelationSchemaLocalId::new(coordinate))
+        }
+        AllocationDomain::Role => CanonicalAllocatedIdentityV1::Role(LocalRoleRefV2 {
+            schema: *schema_for_producer
+                .get(&request.producer)
+                .expect("a relation producer has one derived schema"),
+            role: RoleLocalId::new(coordinate),
+        }),
+        AllocationDomain::Operator => {
+            CanonicalAllocatedIdentityV1::Operator(OperatorLocalId::new(coordinate))
+        }
+        AllocationDomain::Mode => CanonicalAllocatedIdentityV1::Mode(LocalModeRefV2 {
+            operator: *operator_for_producer
+                .get(&request.producer)
+                .expect("a relation producer has one derived operator"),
+            mode: ModeLocalId::new(coordinate),
+        }),
+    }
+}
+
+fn allocation_requests(
+    cst: &CanonicalSourceCstV1,
+) -> Result<Vec<AllocationRequest>, CanonicalSourceErrorV1> {
+    let mut requested = Vec::new();
     for item in &cst.items {
         match &item.kind {
             CstKind::Referent { designation } => {
-                requested.push((
-                    head_slot(CanonicalSourceProductionV1::Referent, designation),
-                    AllocationDomain::Formation,
-                ));
+                requested.push(AllocationRequest {
+                    producer: semantic_producer(CanonicalSourceProductionV1::Referent, designation),
+                    slot: head_slot(CanonicalSourceProductionV1::Referent),
+                    domain: AllocationDomain::Formation,
+                });
             }
             CstKind::Shape {
                 designation,
                 fields,
             } => {
-                requested.push((
-                    head_slot(CanonicalSourceProductionV1::Shape, designation),
-                    AllocationDomain::Formation,
-                ));
+                let producer = semantic_producer(CanonicalSourceProductionV1::Shape, designation);
+                requested.push(AllocationRequest {
+                    producer: producer.clone(),
+                    slot: head_slot(CanonicalSourceProductionV1::Shape),
+                    domain: AllocationDomain::Formation,
+                });
                 for field in fields {
-                    requested.push((
-                        child_slot(
-                            CanonicalSourceProductionV1::ShapeField,
-                            designation,
-                            &field.name,
-                        ),
-                        AllocationDomain::Formation,
-                    ));
+                    requested.push(AllocationRequest {
+                        producer: producer.clone(),
+                        slot: child_slot(CanonicalSourceProductionV1::ShapeField, &field.name),
+                        domain: AllocationDomain::Formation,
+                    });
                 }
             }
             CstKind::Relation(relation) => {
-                let head = head_slot(CanonicalSourceProductionV1::Relation, &relation.designation);
+                let producer =
+                    semantic_producer(CanonicalSourceProductionV1::Relation, &relation.designation);
+                let head = head_slot(CanonicalSourceProductionV1::Relation);
                 requested.extend([
-                    (head.clone(), AllocationDomain::Formation),
-                    (head.clone(), AllocationDomain::RelationSchema),
-                    (head, AllocationDomain::Operator),
+                    AllocationRequest {
+                        producer: producer.clone(),
+                        slot: head.clone(),
+                        domain: AllocationDomain::Formation,
+                    },
+                    AllocationRequest {
+                        producer: producer.clone(),
+                        slot: head.clone(),
+                        domain: AllocationDomain::RelationSchema,
+                    },
+                    AllocationRequest {
+                        producer: producer.clone(),
+                        slot: head,
+                        domain: AllocationDomain::Operator,
+                    },
                 ]);
                 for role in &relation.roles {
-                    requested.push((
-                        child_slot(
-                            CanonicalSourceProductionV1::RelationRole,
-                            &relation.designation,
-                            &role.name,
-                        ),
-                        AllocationDomain::Role,
-                    ));
+                    requested.push(AllocationRequest {
+                        producer: producer.clone(),
+                        slot: child_slot(CanonicalSourceProductionV1::RelationRole, &role.name),
+                        domain: AllocationDomain::Role,
+                    });
                 }
                 for mode in &relation.modes {
-                    requested.push((
-                        child_slot(
+                    requested.push(AllocationRequest {
+                        producer: producer.clone(),
+                        slot: child_slot(
                             CanonicalSourceProductionV1::RelationMode,
-                            &relation.designation,
                             &mode.canonical,
                         ),
-                        AllocationDomain::Mode,
-                    ));
+                        domain: AllocationDomain::Mode,
+                    });
                 }
             }
             CstKind::Unsupported(_) => {}
@@ -460,59 +745,11 @@ pub fn plan_independent_canonical_source_allocations_v1(
     for pair in requested.windows(2) {
         if pair[0] == pair[1] {
             return Err(CanonicalSourceErrorV1::RepeatedEmissionNeedsPlan {
-                slot: pair[0].0.clone(),
+                slot: pair[0].slot.clone(),
             });
         }
     }
-    let mut next = BTreeMap::<AllocationDomain, u32>::new();
-    let mut schema_for_relation = BTreeMap::<Vec<u8>, RelationSchemaLocalId>::new();
-    for (slot, domain) in &requested {
-        if *domain == AllocationDomain::RelationSchema {
-            let value = next.entry(*domain).or_insert(1);
-            schema_for_relation.insert(slot.producer.clone(), RelationSchemaLocalId::new(*value));
-            *value += 1;
-        }
-    }
-    next.clear();
-    let mut allocations = Vec::with_capacity(requested.len());
-    for (slot, domain) in requested {
-        let value = next.entry(domain).or_insert(1);
-        let identity = match domain {
-            AllocationDomain::Formation => {
-                CanonicalAllocatedIdentityV1::Formation(FormationLocalId::new(*value))
-            }
-            AllocationDomain::RelationSchema => {
-                CanonicalAllocatedIdentityV1::RelationSchema(RelationSchemaLocalId::new(*value))
-            }
-            AllocationDomain::Role => CanonicalAllocatedIdentityV1::Role(LocalRoleRefV2 {
-                schema: *schema_for_relation
-                    .get(&slot.producer)
-                    .expect("relation schema requested before its roles"),
-                role: RoleLocalId::new(*value),
-            }),
-            AllocationDomain::Operator => {
-                CanonicalAllocatedIdentityV1::Operator(OperatorLocalId::new(*value))
-            }
-            AllocationDomain::Mode => {
-                let operator = requested_operator_id(&allocations, &slot.producer)
-                    .unwrap_or_else(|| OperatorLocalId::new(*value));
-                CanonicalAllocatedIdentityV1::Mode(LocalModeRefV2 {
-                    operator,
-                    mode: ModeLocalId::new(*value),
-                })
-            }
-        };
-        *value += 1;
-        allocations.push(CanonicalAllocationV1 {
-            identity,
-            judgment: CanonicalAllocationJudgmentV1::Fresh { basis: slot },
-        });
-    }
-    validate_unique_allocations(&allocations)?;
-    Ok(CanonicalSourceAllocationPlanV1 {
-        artifact: cst.artifact,
-        allocations,
-    })
+    Ok(requested)
 }
 
 /// Lower the supported declaration slice, then pass it through the existing
@@ -538,8 +775,10 @@ pub fn elaborate_canonical_source_package_v1(
     for item in &cst.items {
         match &item.kind {
             CstKind::Referent { designation } => {
-                let slot = head_slot(CanonicalSourceProductionV1::Referent, designation);
-                let id = formation_id(plan, &slot)?;
+                let producer =
+                    semantic_producer(CanonicalSourceProductionV1::Referent, designation);
+                let slot = head_slot(CanonicalSourceProductionV1::Referent);
+                let id = formation_id(plan, &producer, &slot)?;
                 formations.push(source_formation(
                     scope,
                     id,
@@ -547,14 +786,15 @@ pub fn elaborate_canonical_source_package_v1(
                     item.origin,
                     "referent",
                 )?);
-                emissions.push(emission(plan, slot, item.origin));
+                emissions.push(emission(plan, producer, slot, item.origin));
             }
             CstKind::Shape {
                 designation,
                 fields,
             } => {
-                let slot = head_slot(CanonicalSourceProductionV1::Shape, designation);
-                let id = formation_id(plan, &slot)?;
+                let producer = semantic_producer(CanonicalSourceProductionV1::Shape, designation);
+                let slot = head_slot(CanonicalSourceProductionV1::Shape);
+                let id = formation_id(plan, &producer, &slot)?;
                 formations.push(source_formation(
                     scope,
                     id,
@@ -562,14 +802,10 @@ pub fn elaborate_canonical_source_package_v1(
                     item.origin,
                     "shape",
                 )?);
-                emissions.push(emission(plan, slot, item.origin));
+                emissions.push(emission(plan, producer.clone(), slot, item.origin));
                 for field in fields {
-                    let slot = child_slot(
-                        CanonicalSourceProductionV1::ShapeField,
-                        designation,
-                        &field.name,
-                    );
-                    let id = formation_id(plan, &slot)?;
+                    let slot = child_slot(CanonicalSourceProductionV1::ShapeField, &field.name);
+                    let id = formation_id(plan, &producer, &slot)?;
                     formations.push(FormationJudgmentPreimageV2 {
                         id,
                         context: vec![origin_term(scope, field.origin)?],
@@ -580,14 +816,16 @@ pub fn elaborate_canonical_source_package_v1(
                         target: target(scope, b"clause/source-shape-field-type-v1", &field.domain)?,
                         direct_dependencies: vec![],
                     });
-                    emissions.push(emission(plan, slot, field.origin));
+                    emissions.push(emission(plan, producer.clone(), slot, field.origin));
                 }
             }
             CstKind::Relation(relation) => {
-                let slot = head_slot(CanonicalSourceProductionV1::Relation, &relation.designation);
-                let formation = formation_id(plan, &slot)?;
-                let schema = schema_id(plan, &slot)?;
-                let operator = operator_id(plan, &slot)?;
+                let producer =
+                    semantic_producer(CanonicalSourceProductionV1::Relation, &relation.designation);
+                let slot = head_slot(CanonicalSourceProductionV1::Relation);
+                let formation = formation_id(plan, &producer, &slot)?;
+                let schema = schema_id(plan, &producer, &slot)?;
+                let operator = operator_id(plan, &producer, &slot)?;
                 formations.push(source_formation(
                     scope,
                     formation,
@@ -595,16 +833,13 @@ pub fn elaborate_canonical_source_package_v1(
                     item.origin,
                     "relation",
                 )?);
-                emissions.push(emission(plan, slot, item.origin));
+                emissions.push(emission(plan, producer.clone(), slot, item.origin));
                 let mut roles = Vec::new();
                 let mut role_ids = BTreeMap::new();
                 for role in &relation.roles {
-                    let role_slot = child_slot(
-                        CanonicalSourceProductionV1::RelationRole,
-                        &relation.designation,
-                        &role.name,
-                    );
-                    let role_ref = role_id(plan, &role_slot)?;
+                    let role_slot =
+                        child_slot(CanonicalSourceProductionV1::RelationRole, &role.name);
+                    let role_ref = role_id(plan, &producer, &role_slot)?;
                     if role_ref.schema != schema {
                         return Err(CanonicalSourceErrorV1::MissingAllocation {
                             slot: role_slot,
@@ -618,7 +853,7 @@ pub fn elaborate_canonical_source_package_v1(
                         cardinality: exactly_one(),
                         direct_dependencies: vec![],
                     });
-                    emissions.push(emission(plan, role_slot, role.origin));
+                    emissions.push(emission(plan, producer.clone(), role_slot, role.origin));
                 }
                 roles.sort_by_key(|role| role.id);
                 let result_domain = target(
@@ -635,12 +870,9 @@ pub fn elaborate_canonical_source_package_v1(
                 });
                 let mut modes = Vec::new();
                 for mode in &relation.modes {
-                    let mode_slot = child_slot(
-                        CanonicalSourceProductionV1::RelationMode,
-                        &relation.designation,
-                        &mode.canonical,
-                    );
-                    let mode_ref = mode_id(plan, &mode_slot)?;
+                    let mode_slot =
+                        child_slot(CanonicalSourceProductionV1::RelationMode, &mode.canonical);
+                    let mode_ref = mode_id(plan, &producer, &mode_slot)?;
                     if mode_ref.operator != operator {
                         return Err(CanonicalSourceErrorV1::MissingAllocation {
                             slot: mode_slot,
@@ -692,7 +924,7 @@ pub fn elaborate_canonical_source_package_v1(
                         },
                         direct_dependencies: vec![],
                     });
-                    emissions.push(emission(plan, mode_slot, mode.origin));
+                    emissions.push(emission(plan, producer.clone(), mode_slot, mode.origin));
                 }
                 modes.sort_by_key(|mode| mode.id);
                 operators.push(OperatorPreimageV2 {
@@ -1064,7 +1296,10 @@ fn handler_include_emissions(
     artifact: CanonicalSourceArtifactIdV1,
     block: &[SourceLine<'_>],
 ) -> Result<Vec<CanonicalSourceEmissionV1>, CanonicalSourceErrorV1> {
-    let producer = handler_semantic_producer(block);
+    let producer = semantic_producer(
+        CanonicalSourceProductionV1::Handler,
+        &handler_semantic_producer(block),
+    );
     let mut in_include = false;
     let mut seen = BTreeSet::new();
     let mut emissions = Vec::new();
@@ -1086,15 +1321,12 @@ fn handler_include_emissions(
         }
         if line.indent == 4 && in_include {
             let local = trimmed.as_bytes().to_vec();
-            let slot = child_slot(
-                CanonicalSourceProductionV1::HandlerInclude,
-                &producer,
-                &local,
-            );
+            let slot = child_slot(CanonicalSourceProductionV1::HandlerInclude, &local);
             if !seen.insert(slot.clone()) {
                 return Err(CanonicalSourceErrorV1::RepeatedEmissionNeedsPlan { slot });
             }
             emissions.push(CanonicalSourceEmissionV1 {
+                producer: producer.clone(),
                 slot,
                 origin: line_origin(artifact, *line),
                 allocations: vec![],
@@ -1181,11 +1413,18 @@ fn validate_unique_designations(items: &[CstItem]) -> Result<(), CanonicalSource
 fn validate_unique_allocations(
     allocations: &[CanonicalAllocationV1],
 ) -> Result<(), CanonicalSourceErrorV1> {
-    let mut seen = BTreeSet::new();
+    let mut seen = BTreeMap::new();
     for allocation in allocations {
-        if !seen.insert(allocation.identity) {
-            return Err(CanonicalSourceErrorV1::DuplicateAllocation {
+        let CanonicalAllocationJudgmentV1::Fresh { producer, slot, .. } = &allocation.judgment;
+        if let Some((first_producer, first_slot)) =
+            seen.insert(allocation.identity, (producer.clone(), slot.clone()))
+        {
+            return Err(CanonicalSourceErrorV1::AllocationCollision {
                 identity: allocation.identity,
+                first_producer,
+                first_slot,
+                second_producer: producer.clone(),
+                second_slot: slot.clone(),
             });
         }
     }
@@ -1229,52 +1468,39 @@ fn line_origin(
     }
 }
 
-fn head_slot(
+fn semantic_producer(
     production: CanonicalSourceProductionV1,
-    designation: &[u8],
-) -> CanonicalEmissionSlotV1 {
+    semantic_key: &[u8],
+) -> CanonicalSemanticProducerV1 {
+    CanonicalSemanticProducerV1 {
+        production,
+        semantic_key: semantic_key.to_vec(),
+    }
+}
+
+fn head_slot(production: CanonicalSourceProductionV1) -> CanonicalEmissionSlotV1 {
     CanonicalEmissionSlotV1 {
         production,
-        producer: designation.to_vec(),
         local: b"declaration".to_vec(),
         repetition: None,
     }
 }
 
-fn child_slot(
-    production: CanonicalSourceProductionV1,
-    producer: &[u8],
-    local: &[u8],
-) -> CanonicalEmissionSlotV1 {
+fn child_slot(production: CanonicalSourceProductionV1, local: &[u8]) -> CanonicalEmissionSlotV1 {
     CanonicalEmissionSlotV1 {
         production,
-        producer: producer.to_vec(),
         local: local.to_vec(),
         repetition: None,
     }
 }
 
-fn requested_operator_id(
-    allocations: &[CanonicalAllocationV1],
-    producer: &[u8],
-) -> Option<OperatorLocalId> {
-    allocations.iter().find_map(|allocation| {
-        let CanonicalAllocationJudgmentV1::Fresh { basis } = &allocation.judgment;
-        (basis.producer == producer)
-            .then_some(allocation.identity)
-            .and_then(|identity| match identity {
-                CanonicalAllocatedIdentityV1::Operator(id) => Some(id),
-                _ => None,
-            })
-    })
-}
-
 fn allocation(
     plan: &CanonicalSourceAllocationPlanV1,
+    producer: &CanonicalSemanticProducerV1,
     slot: &CanonicalEmissionSlotV1,
     domain: AllocationDomain,
 ) -> Result<CanonicalAllocatedIdentityV1, CanonicalSourceErrorV1> {
-    plan.identity(slot, domain)
+    plan.identity(producer, slot, domain)
         .ok_or_else(|| CanonicalSourceErrorV1::MissingAllocation {
             slot: slot.clone(),
             domain: domain.label(),
@@ -1283,9 +1509,10 @@ fn allocation(
 
 fn formation_id(
     plan: &CanonicalSourceAllocationPlanV1,
+    producer: &CanonicalSemanticProducerV1,
     slot: &CanonicalEmissionSlotV1,
 ) -> Result<FormationLocalId, CanonicalSourceErrorV1> {
-    match allocation(plan, slot, AllocationDomain::Formation)? {
+    match allocation(plan, producer, slot, AllocationDomain::Formation)? {
         CanonicalAllocatedIdentityV1::Formation(id) => Ok(id),
         _ => unreachable!(),
     }
@@ -1293,9 +1520,10 @@ fn formation_id(
 
 fn schema_id(
     plan: &CanonicalSourceAllocationPlanV1,
+    producer: &CanonicalSemanticProducerV1,
     slot: &CanonicalEmissionSlotV1,
 ) -> Result<RelationSchemaLocalId, CanonicalSourceErrorV1> {
-    match allocation(plan, slot, AllocationDomain::RelationSchema)? {
+    match allocation(plan, producer, slot, AllocationDomain::RelationSchema)? {
         CanonicalAllocatedIdentityV1::RelationSchema(id) => Ok(id),
         _ => unreachable!(),
     }
@@ -1303,9 +1531,10 @@ fn schema_id(
 
 fn operator_id(
     plan: &CanonicalSourceAllocationPlanV1,
+    producer: &CanonicalSemanticProducerV1,
     slot: &CanonicalEmissionSlotV1,
 ) -> Result<OperatorLocalId, CanonicalSourceErrorV1> {
-    match allocation(plan, slot, AllocationDomain::Operator)? {
+    match allocation(plan, producer, slot, AllocationDomain::Operator)? {
         CanonicalAllocatedIdentityV1::Operator(id) => Ok(id),
         _ => unreachable!(),
     }
@@ -1313,9 +1542,10 @@ fn operator_id(
 
 fn role_id(
     plan: &CanonicalSourceAllocationPlanV1,
+    producer: &CanonicalSemanticProducerV1,
     slot: &CanonicalEmissionSlotV1,
 ) -> Result<LocalRoleRefV2, CanonicalSourceErrorV1> {
-    match allocation(plan, slot, AllocationDomain::Role)? {
+    match allocation(plan, producer, slot, AllocationDomain::Role)? {
         CanonicalAllocatedIdentityV1::Role(id) => Ok(id),
         _ => unreachable!(),
     }
@@ -1323,9 +1553,10 @@ fn role_id(
 
 fn mode_id(
     plan: &CanonicalSourceAllocationPlanV1,
+    producer: &CanonicalSemanticProducerV1,
     slot: &CanonicalEmissionSlotV1,
 ) -> Result<LocalModeRefV2, CanonicalSourceErrorV1> {
-    match allocation(plan, slot, AllocationDomain::Mode)? {
+    match allocation(plan, producer, slot, AllocationDomain::Mode)? {
         CanonicalAllocatedIdentityV1::Mode(id) => Ok(id),
         _ => unreachable!(),
     }
@@ -1333,6 +1564,7 @@ fn mode_id(
 
 fn emission(
     plan: &CanonicalSourceAllocationPlanV1,
+    producer: CanonicalSemanticProducerV1,
     slot: CanonicalEmissionSlotV1,
     origin: CanonicalSourceOriginV1,
 ) -> CanonicalSourceEmissionV1 {
@@ -1340,12 +1572,17 @@ fn emission(
         .allocations
         .iter()
         .filter(|allocation| {
-            let CanonicalAllocationJudgmentV1::Fresh { basis } = &allocation.judgment;
-            basis == &slot
+            let CanonicalAllocationJudgmentV1::Fresh {
+                producer: actual_producer,
+                slot: CanonicalAllocationSlotV1::Emission(actual_slot),
+                ..
+            } = &allocation.judgment;
+            actual_producer == &producer && actual_slot == &slot
         })
         .cloned()
         .collect();
     CanonicalSourceEmissionV1 {
+        producer,
         slot,
         origin,
         allocations,

@@ -19,13 +19,34 @@ fn canonical_world_declarations_reach_the_checked_package_with_exact_remainder()
     let cst = read_canonical_source_v1(WORLD).expect("canonical world source reads losslessly");
     assert_eq!(cst.exact_source(), WORLD);
 
-    let plan = plan_independent_canonical_source_allocations_v1(&cst)
+    let root = ProgramChangeOccurrenceId::from_bytes(raw_id(3));
+    let plan = plan_independent_canonical_source_allocations_v1(&cst, root)
         .expect("the declaration slice has an explicit independent allocation plan");
     assert_eq!(plan.artifact(), cst.artifact());
-    assert!(plan.allocations().iter().all(|allocation| matches!(
-        allocation.judgment,
-        CanonicalAllocationJudgmentV1::Fresh { .. }
-    )));
+    assert_eq!(plan.root(), root);
+    assert!(plan.allocations().iter().all(|allocation| {
+        let nonzero = match allocation.identity {
+            CanonicalAllocatedIdentityV1::Formation(id) => id.get() != 0,
+            CanonicalAllocatedIdentityV1::RelationSchema(id) => id.get() != 0,
+            CanonicalAllocatedIdentityV1::Role(id) => id.role.get() != 0,
+            CanonicalAllocatedIdentityV1::Operator(id) => id.get() != 0,
+            CanonicalAllocatedIdentityV1::Mode(id) => id.mode.get() != 0,
+        };
+        nonzero
+            && matches!(
+                &allocation.judgment,
+                CanonicalAllocationJudgmentV1::Fresh {
+                    basis: CanonicalFreshBasisV1::ConstitutedProgramChange(actual_root),
+                    producer,
+                    slot: CanonicalAllocationSlotV1::Emission(slot),
+                    collision:
+                        CanonicalAllocationCollisionDispositionV1::RejectTypedCollision,
+                    cycle: CanonicalAllocationCycleDispositionV1::RejectDependencyCycle,
+                } if *actual_root == root
+                    && !producer.semantic_key.is_empty()
+                    && !slot.local.is_empty()
+            )
+    }));
     assert_eq!(
         plan.allocations()
             .iter()
@@ -34,6 +55,63 @@ fn canonical_world_declarations_reach_the_checked_package_with_exact_remainder()
             .len(),
         plan.allocations().len(),
         "every nominal product receives one distinct typed local identity"
+    );
+    let rematerialized = rematerialize_canonical_source_allocation_plan_v1(&cst, &plan)
+        .expect("the recorded plan rematerializes without allocating again");
+    assert_eq!(rematerialized, plan);
+
+    let other_root = ProgramChangeOccurrenceId::from_bytes(raw_id(4));
+    let other_plan = plan_independent_canonical_source_allocations_v1(&cst, other_root)
+        .expect("a distinct constituted change root has an independent plan");
+    assert_ne!(other_plan, plan);
+    assert_ne!(
+        other_plan
+            .allocations()
+            .iter()
+            .map(|allocation| allocation.identity)
+            .collect::<Vec<_>>(),
+        plan.allocations()
+            .iter()
+            .map(|allocation| allocation.identity)
+            .collect::<Vec<_>>(),
+        "equal source under a distinct constituted root has distinct nominal coordinates"
+    );
+    assert!(
+        other_plan
+            .allocations()
+            .iter()
+            .zip(plan.allocations())
+            .all(|(other, original)| other.identity != original.identity),
+        "every corresponding fixture allocation changes under a distinct root"
+    );
+
+    let reordered_source = std::str::from_utf8(WORLD)
+        .expect("fixture is UTF-8")
+        .replacen(
+            "referent F64\nreferent Bool",
+            "referent Bool\nreferent F64",
+            1,
+        );
+    let reordered = read_canonical_source_v1(reordered_source.as_bytes())
+        .expect("reordered unrelated declarations remain canonical source");
+    assert_eq!(
+        rematerialize_canonical_source_allocation_plan_v1(&reordered, &plan),
+        Err(CanonicalSourceErrorV1::AllocationArtifactMismatch),
+        "source reorder cannot masquerade as rematerialization or retention"
+    );
+    let reordered_plan = plan_independent_canonical_source_allocations_v1(
+        &reordered,
+        ProgramChangeOccurrenceId::from_bytes(raw_id(5)),
+    )
+    .expect("reordered source requires a fresh constituted plan");
+    assert!(
+        reordered_plan
+            .allocations()
+            .iter()
+            .all(|allocation| matches!(
+                allocation.judgment,
+                CanonicalAllocationJudgmentV1::Fresh { .. }
+            ))
     );
 
     let compiled = elaborate_canonical_source_package_v1(
@@ -45,6 +123,20 @@ fn canonical_world_declarations_reach_the_checked_package_with_exact_remainder()
         &plan,
     )
     .expect("the supported declaration slice encodes, decodes, and checks");
+    let compiled_again = elaborate_canonical_source_package_v1(
+        &cst,
+        CanonicalSourceContextV1 {
+            universe: UniverseId::from_bytes(raw_id(1)),
+            semantics: ClauseSemanticsId::from_bytes(raw_id(2)),
+        },
+        &rematerialized,
+    )
+    .expect("the exact recorded plan rematerializes the same checked package");
+    assert_eq!(
+        compiled_again.checked_package.exact_bytes(),
+        compiled.checked_package.exact_bytes()
+    );
+    assert_eq!(compiled_again.emissions, compiled.emissions);
 
     let constitution = compiled.checked_package.constitution().preimage();
     assert_eq!(constitution.formations.len(), 21);
@@ -106,7 +198,7 @@ fn canonical_world_declarations_reach_the_checked_package_with_exact_remainder()
     assert_eq!(
         include_emissions
             .iter()
-            .map(|emission| &emission.slot)
+            .map(|emission| (&emission.producer, &emission.slot))
             .collect::<BTreeSet<_>>()
             .len(),
         include_emissions.len(),
