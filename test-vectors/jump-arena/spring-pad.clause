@@ -1,0 +1,33 @@
+referent SpringPad
+
+relation launch-strength
+  reads {player: Player} launch strength {value: F64}
+  subject player
+  mode given player yields value: one
+
+spring-pad-1 ∈ SpringPad
+player-1 launch strength 0.0
+
+on spring-contact ?player
+  when
+    ?player launch strength ?velocity-y
+    player-1 position Vec3 { x: ?player-x, y: ?player-y, z: ?player-z }
+    ?velocity-y = 0.0
+    ?player-x = 0.16
+    ?player-z = 0.0
+  withdraw
+    ?player launch strength ?velocity-y
+  include
+    ?player launch strength 12.0
+
+on spring-airborne ?player
+  when
+    ?player grounded ?was-grounded
+    player-1 position Vec3 { x: ?player-x, y: ?player-y, z: ?player-z }
+    ?was-grounded = true
+    ?player-x = 0.16
+    ?player-z = 0.0
+  withdraw
+    ?player grounded ?was-grounded
+  include
+    ?player grounded false

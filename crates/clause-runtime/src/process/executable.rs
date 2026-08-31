@@ -641,6 +641,9 @@ fn lower_scalar_expression(
         CanonicalScalarExpressionV1::Number(bits) => {
             ExecutableExpressionV1::Constant(ExecutableValueV1::Number(*bits))
         }
+        CanonicalScalarExpressionV1::Boolean(value) => {
+            ExecutableExpressionV1::Constant(ExecutableValueV1::Boolean(*value))
+        }
         CanonicalScalarExpressionV1::Symbol(value) => {
             ExecutableExpressionV1::Constant(ExecutableValueV1::symbol(value)?)
         }
@@ -668,6 +671,7 @@ fn lower_scalar_value(
 ) -> Result<ExecutableValueV1, ExecutableErrorV1> {
     match value {
         CanonicalScalarValueV1::Number(bits) => Ok(ExecutableValueV1::Number(*bits)),
+        CanonicalScalarValueV1::Boolean(value) => Ok(ExecutableValueV1::Boolean(*value)),
         CanonicalScalarValueV1::Symbol(value) => ExecutableValueV1::symbol(value),
     }
 }

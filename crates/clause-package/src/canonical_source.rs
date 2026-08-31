@@ -238,6 +238,7 @@ pub struct CanonicalJumpHandlerV1 {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CanonicalScalarValueV1 {
     Number(u64),
+    Boolean(bool),
     Symbol(Vec<u8>),
 }
 
@@ -248,6 +249,7 @@ pub enum CanonicalScalarExpressionV1 {
     Current,
     Parameter(Vec<u8>),
     Number(u64),
+    Boolean(bool),
     Symbol(Vec<u8>),
     Add(Box<Self>, Box<Self>),
     Subtract(Box<Self>, Box<Self>),
@@ -398,7 +400,7 @@ pub struct CanonicalSourcePackageSliceV1 {
     pub unsupported: Vec<CanonicalUnsupportedProductionV1>,
     pub input_handler: Option<CanonicalInputHandlerV1>,
     pub jump_handler: Option<CanonicalJumpHandlerV1>,
-    pub scalar_handler: Option<CanonicalScalarHandlerV1>,
+    pub scalar_handlers: Vec<CanonicalScalarHandlerV1>,
     pub tick_program: Option<CanonicalTickProgramV1>,
 }
 
@@ -1223,6 +1225,9 @@ fn allocation_requests(
             CstKind::BooleanAssertion(assertion) => {
                 if jump.is_some_and(|parts| parts.grounded.origin == assertion.origin)
                     || tick.is_some_and(|parts| parts.grounded.origin == assertion.origin)
+                    || scalar
+                        .iter()
+                        .any(|parts| parts.initial_origin == assertion.origin)
                 {
                     requested.push(AllocationRequest {
                         producer: assertion_producer(&assertion.subject, &assertion.relation),
@@ -1234,8 +1239,8 @@ fn allocation_requests(
             CstKind::NumberAssertion(assertion) => {
                 if jump.is_some_and(|parts| parts.jump_speed.origin == assertion.origin)
                     || scalar
-                        .as_ref()
-                        .is_some_and(|parts| parts.initial_origin == assertion.origin)
+                        .iter()
+                        .any(|parts| parts.initial_origin == assertion.origin)
                     || tick.is_some_and(|parts| {
                         [
                             parts.gravity.origin,
@@ -1258,8 +1263,8 @@ fn allocation_requests(
             }
             CstKind::SymbolAssertion(assertion) => {
                 if scalar
-                    .as_ref()
-                    .is_some_and(|parts| parts.initial_origin == assertion.origin)
+                    .iter()
+                    .any(|parts| parts.initial_origin == assertion.origin)
                 {
                     requested.push(AllocationRequest {
                         producer: assertion_producer(&assertion.subject, &assertion.relation),
@@ -1328,16 +1333,19 @@ pub fn elaborate_canonical_source_package_v1(
         result_grounded: parts.handler.result_grounded,
     });
     let scalar_parts = scalar_handler_parts(cst)?;
-    let scalar_handler = scalar_parts.as_ref().map(|parts| CanonicalScalarHandlerV1 {
-        artifact: cst.artifact,
-        handler_origin: parts.handler.origin,
-        initial_assertion_origin: parts.initial_origin,
-        include_origin: parts.handler.include.origin,
-        initial_value: parts.initial_value.clone(),
-        parameters: parts.handler.parameters.clone(),
-        predicates: parts.handler.predicates.clone(),
-        result: parts.handler.result.clone(),
-    });
+    let scalar_handlers = scalar_parts
+        .iter()
+        .map(|parts| CanonicalScalarHandlerV1 {
+            artifact: cst.artifact,
+            handler_origin: parts.handler.origin,
+            initial_assertion_origin: parts.initial_origin,
+            include_origin: parts.handler.include.origin,
+            initial_value: parts.initial_value.clone(),
+            parameters: parts.handler.parameters.clone(),
+            predicates: parts.handler.predicates.clone(),
+            result: parts.handler.result.clone(),
+        })
+        .collect();
     let tick_parts = tick_program_parts(cst)?;
     let tick_program = tick_parts.map(|parts| CanonicalTickProgramV1 {
         artifact: cst.artifact,
@@ -1759,6 +1767,9 @@ pub fn elaborate_canonical_source_package_v1(
             CstKind::BooleanAssertion(assertion) => {
                 if jump_parts.is_some_and(|parts| parts.grounded.origin == assertion.origin)
                     || tick_parts.is_some_and(|parts| parts.grounded.origin == assertion.origin)
+                    || scalar_parts
+                        .iter()
+                        .any(|parts| parts.initial_origin == assertion.origin)
                 {
                     let producer = assertion_producer(&assertion.subject, &assertion.relation);
                     let slot = head_slot(CanonicalSourceProductionV1::Assertion);
@@ -1783,8 +1794,8 @@ pub fn elaborate_canonical_source_package_v1(
             CstKind::NumberAssertion(assertion) => {
                 if jump_parts.is_some_and(|parts| parts.jump_speed.origin == assertion.origin)
                     || scalar_parts
-                        .as_ref()
-                        .is_some_and(|parts| parts.initial_origin == assertion.origin)
+                        .iter()
+                        .any(|parts| parts.initial_origin == assertion.origin)
                     || tick_parts.is_some_and(|parts| {
                         [
                             parts.gravity.origin,
@@ -1820,8 +1831,8 @@ pub fn elaborate_canonical_source_package_v1(
             }
             CstKind::SymbolAssertion(assertion) => {
                 if scalar_parts
-                    .as_ref()
-                    .is_some_and(|parts| parts.initial_origin == assertion.origin)
+                    .iter()
+                    .any(|parts| parts.initial_origin == assertion.origin)
                 {
                     let producer = assertion_producer(&assertion.subject, &assertion.relation);
                     let slot = head_slot(CanonicalSourceProductionV1::Assertion);
@@ -1881,7 +1892,7 @@ pub fn elaborate_canonical_source_package_v1(
         unsupported,
         input_handler,
         jump_handler,
-        scalar_handler,
+        scalar_handlers,
         tick_program,
     })
 }
@@ -2546,6 +2557,10 @@ fn parse_scalar_atom(source: &str, current: &str) -> Option<CanonicalScalarExpre
         Some(CanonicalScalarExpressionV1::Parameter(
             source.as_bytes().to_vec(),
         ))
+    } else if source == "true" {
+        Some(CanonicalScalarExpressionV1::Boolean(true))
+    } else if source == "false" {
+        Some(CanonicalScalarExpressionV1::Boolean(false))
     } else {
         parse_source_number(source)
             .map(CanonicalScalarExpressionV1::Number)
@@ -2598,6 +2613,7 @@ fn collect_scalar_expression_parameters(
         }
         CanonicalScalarExpressionV1::Current
         | CanonicalScalarExpressionV1::Number(_)
+        | CanonicalScalarExpressionV1::Boolean(_)
         | CanonicalScalarExpressionV1::Symbol(_) => {}
     }
 }
@@ -3612,7 +3628,7 @@ fn jump_handler_parts(
 
 fn scalar_handler_parts(
     cst: &CanonicalSourceCstV1,
-) -> Result<Option<ScalarHandlerParts<'_>>, CanonicalSourceErrorV1> {
+) -> Result<Vec<ScalarHandlerParts<'_>>, CanonicalSourceErrorV1> {
     let handlers = cst
         .items
         .iter()
@@ -3621,70 +3637,84 @@ fn scalar_handler_parts(
             _ => None,
         })
         .collect::<Vec<_>>();
-    let Some(handler) = handlers.first().copied() else {
-        return Ok(None);
-    };
-    if handlers.len() != 1 {
-        return Err(CanonicalSourceErrorV1::InvalidScalarHandler {
-            origin: handler.origin,
-        });
-    }
-    let assertions = cst
-        .items
-        .iter()
-        .filter_map(|item| match &item.kind {
-            CstKind::NumberAssertion(assertion) if assertion.relation == handler.relation => {
-                Some((
-                    assertion.origin,
-                    CanonicalScalarValueV1::Number(assertion.value),
-                ))
+    let mut parts = Vec::with_capacity(handlers.len());
+    for handler in handlers {
+        let assertions = cst
+            .items
+            .iter()
+            .filter_map(|item| match &item.kind {
+                CstKind::NumberAssertion(assertion) if assertion.relation == handler.relation => {
+                    Some((
+                        assertion.origin,
+                        CanonicalScalarValueV1::Number(assertion.value),
+                    ))
+                }
+                CstKind::BooleanAssertion(assertion) if assertion.relation == handler.relation => {
+                    Some((
+                        assertion.origin,
+                        CanonicalScalarValueV1::Boolean(assertion.value),
+                    ))
+                }
+                CstKind::SymbolAssertion(assertion) if assertion.relation == handler.relation => {
+                    Some((
+                        assertion.origin,
+                        CanonicalScalarValueV1::Symbol(assertion.value.clone()),
+                    ))
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        match assertions.as_slice() {
+            [(initial_origin, initial_value)]
+                if scalar_expression_matches_value(&handler.result, initial_value) =>
+            {
+                parts.push(ScalarHandlerParts {
+                    handler,
+                    initial_origin: *initial_origin,
+                    initial_value: initial_value.clone(),
+                });
             }
-            CstKind::SymbolAssertion(assertion) if assertion.relation == handler.relation => {
-                Some((
-                    assertion.origin,
-                    CanonicalScalarValueV1::Symbol(assertion.value.clone()),
-                ))
+            [_] => {
+                return Err(CanonicalSourceErrorV1::InvalidScalarHandler {
+                    origin: handler.origin,
+                });
             }
-            _ => None,
-        })
-        .collect::<Vec<_>>();
-    match assertions.as_slice() {
-        [(initial_origin, initial_value)]
-            if scalar_expression_matches_value(&handler.result, initial_value) =>
-        {
-            Ok(Some(ScalarHandlerParts {
-                handler,
-                initial_origin: *initial_origin,
-                initial_value: initial_value.clone(),
-            }))
+            [] => {
+                return Err(CanonicalSourceErrorV1::MissingScalarInitialAssertion {
+                    origin: handler.origin,
+                });
+            }
+            _ => {
+                return Err(CanonicalSourceErrorV1::AmbiguousScalarInitialAssertion {
+                    origin: handler.origin,
+                });
+            }
         }
-        [_] => Err(CanonicalSourceErrorV1::InvalidScalarHandler {
-            origin: handler.origin,
-        }),
-        [] => Err(CanonicalSourceErrorV1::MissingScalarInitialAssertion {
-            origin: handler.origin,
-        }),
-        _ => Err(CanonicalSourceErrorV1::AmbiguousScalarInitialAssertion {
-            origin: handler.origin,
-        }),
     }
+    Ok(parts)
 }
 
 fn scalar_expression_matches_value(
     expression: &CanonicalScalarExpressionV1,
     initial: &CanonicalScalarValueV1,
 ) -> bool {
-    let numeric = matches!(initial, CanonicalScalarValueV1::Number(_));
     match expression {
         CanonicalScalarExpressionV1::Current => true,
         CanonicalScalarExpressionV1::Parameter(_) => true,
-        CanonicalScalarExpressionV1::Number(_) => numeric,
-        CanonicalScalarExpressionV1::Symbol(_) => !numeric,
+        CanonicalScalarExpressionV1::Number(_) => {
+            matches!(initial, CanonicalScalarValueV1::Number(_))
+        }
+        CanonicalScalarExpressionV1::Boolean(_) => {
+            matches!(initial, CanonicalScalarValueV1::Boolean(_))
+        }
+        CanonicalScalarExpressionV1::Symbol(_) => {
+            matches!(initial, CanonicalScalarValueV1::Symbol(_))
+        }
         CanonicalScalarExpressionV1::Add(left, right)
         | CanonicalScalarExpressionV1::Subtract(left, right)
         | CanonicalScalarExpressionV1::Multiply(left, right)
         | CanonicalScalarExpressionV1::Divide(left, right) => {
-            numeric
+            matches!(initial, CanonicalScalarValueV1::Number(_))
                 && scalar_expression_matches_value(left, initial)
                 && scalar_expression_matches_value(right, initial)
         }

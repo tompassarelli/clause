@@ -525,7 +525,7 @@
 (let [gameplay-test-runtime Any (require "bun:test")
       register-gameplay-test Any (.-test gameplay-test-runtime)]
   (register-gameplay-test
-   "one real Wasm gameplay session moves into contact then admits symbolic collect"
+   "one real Wasm gameplay session collects then automatically launches from Clause contact"
    (fn [] Any
      (.then
       (.all Promise [(.arrayBuffer (.file Bun "./generated/wasm/clause_runtime_bg.wasm"))
@@ -539,7 +539,11 @@
               accepted Any (atom nil)
               started Any (atom nil)
               collect-candidate Any (atom nil)
-              collect-admitted Any (atom nil)]
+              collect-admitted Any (atom nil)
+              launch-candidate Any (atom nil)
+              launch-admitted Any (atom nil)
+              airborne-candidate Any (atom nil)
+              airborne-admitted Any (atom nil)]
           ((.-acceptPackage port) request
            (fn [result Any] Any (reset! accepted result)))
           ((.-startSession port) (.-acceptedPackage @accepted) 1
@@ -561,6 +565,37 @@
                 collectible-x Float (.-x (.-position collected-collectible))]
             (.toBe (test/expect collected-collectible-state) "collected")
             (.toBe (test/expect (str player-x)) (str collectible-x)))
+          ((.-runCandidate port)
+           (.-session @started)
+           (workbench/->FixedTick 16)
+           (workbench/->InputConfiguration 2 [])
+           (fn [result Any] Any (reset! launch-candidate result)))
+          ((.-requestAdmission port)
+           (.-session @started)
+           (.-candidate @launch-candidate)
+           (fn [result Any] Any (reset! launch-admitted result)))
+          (let [launch-frame Any (wasm/decode-projected-term-frame
+                                  (.-frame @launch-admitted))
+                launch-player Any (.-player launch-frame)]
+            (.toBe (test/expect (str (.-y (.-velocity launch-player)))) "12")
+            (.toBe (test/expect (str (.-grounded launch-player))) "false"))
+          ((.-runCandidate port)
+           (.-session @started)
+           (workbench/->FixedTick 16)
+           (workbench/->InputConfiguration 3 [])
+           (fn [result Any] Any (reset! airborne-candidate result)))
+          ((.-requestAdmission port)
+           (.-session @started)
+           (.-candidate @airborne-candidate)
+           (fn [result Any] Any (reset! airborne-admitted result)))
+          (let [airborne-frame Any (wasm/decode-projected-term-frame
+                                    (.-frame @airborne-admitted))]
+            (.toBe
+             (test/expect
+              (if (> (.-y (.-position (.-player airborne-frame))) 0.0)
+                "true"
+                "false"))
+             "true"))
           ((.-disposeSession port) (.-session @started))
           nil))))))
 

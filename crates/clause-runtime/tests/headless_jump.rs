@@ -31,6 +31,10 @@ const COLLECT_CONTACT: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../test-vectors/jump-arena/collect-contact.clause"
 ));
+const SPRING_PAD: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../test-vectors/jump-arena/spring-pad.clause"
+));
 const LEDGER: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../test-vectors/ledger/ledger.clause"
@@ -41,10 +45,12 @@ fn gameplay_source() -> Vec<u8> {
 }
 
 fn gameplay_source_with_world(world: &[u8]) -> Vec<u8> {
-    let mut source = Vec::with_capacity(world.len() + COLLECT_CONTACT.len() + 1);
+    let mut source = Vec::with_capacity(world.len() + COLLECT_CONTACT.len() + SPRING_PAD.len() + 2);
     source.extend_from_slice(world);
     source.push(b'\n');
     source.extend_from_slice(COLLECT_CONTACT);
+    source.push(b'\n');
+    source.extend_from_slice(SPRING_PAD);
     source
 }
 
@@ -150,7 +156,7 @@ fn source_handlers(
     CanonicalInputHandlerV1,
     CanonicalJumpHandlerV1,
     CanonicalTickProgramV1,
-    Option<CanonicalScalarHandlerV1>,
+    Vec<CanonicalScalarHandlerV1>,
 ) {
     let cst = read_canonical_source_v1(source).expect("canonical arena source reads");
     let plan = plan_independent_canonical_source_allocations_v1(
@@ -180,7 +186,7 @@ fn source_handlers(
         input_handler,
         jump_handler,
         tick_program,
-        compiled.scalar_handler,
+        compiled.scalar_handlers,
     )
 }
 
@@ -200,7 +206,9 @@ fn source_scalar_handler(source: &[u8], scope: TermScope) -> CanonicalScalarHand
         &plan,
     )
     .expect("canonical scalar source reaches the checked package boundary")
-    .scalar_handler
+    .scalar_handlers
+    .into_iter()
+    .next()
     .expect("the bounded source profile owns one scalar transition")
 }
 
@@ -216,6 +224,7 @@ fn scalar_program(
     };
     let value_kind = match &source.initial_value {
         CanonicalScalarValueV1::Number(_) => ExecutableValueKindV1::Number,
+        CanonicalScalarValueV1::Boolean(_) => ExecutableValueKindV1::Boolean,
         CanonicalScalarValueV1::Symbol(_) => ExecutableValueKindV1::Symbol,
     };
     let mut program = ExecutableProgramV1 {
@@ -257,8 +266,9 @@ fn headless_program(
     input: &CanonicalInputHandlerV1,
     jump: &CanonicalJumpHandlerV1,
     tick: &CanonicalTickProgramV1,
-    collectible: Option<&CanonicalScalarHandlerV1>,
+    scalar_handlers: &[CanonicalScalarHandlerV1],
 ) -> ExecutableProgramV1 {
+    let collectible = scalar_handlers.first();
     let role = |id| LocalRoleRefV2 {
         schema: RelationSchemaLocalId::new(2),
         role: RoleLocalId::new(id),
@@ -362,6 +372,7 @@ fn headless_program(
             number(0.0),
             match &collectible.initial_value {
                 CanonicalScalarValueV1::Number(bits) => ExecutableValueV1::Number(*bits),
+                CanonicalScalarValueV1::Boolean(value) => ExecutableValueV1::Boolean(*value),
                 CanonicalScalarValueV1::Symbol(value) => ExecutableValueV1::symbol(value)
                     .expect("source-owned collectible state is bounded"),
             },
@@ -462,28 +473,32 @@ fn headless_program(
         },
     )
     .expect("source-owned tick program lowers to physical slots");
-    if let Some(collectible) = collectible {
+    let scalar_state_slots = [28, 3, 5];
+    for (index, handler) in scalar_handlers.iter().enumerate() {
+        let state_slot = *scalar_state_slots
+            .get(index)
+            .expect("bounded gameplay profile has collect plus two spring cells");
+        assert_eq!(handler.parameters.len(), 2);
         lower_canonical_scalar_handler_v1(
             &mut program,
-            collectible,
+            handler,
             ExecutableCanonicalScalarBindingV1 {
-                entry: 3,
-                state_slot: 28,
-                parameters: collectible
+                entry: 3 + u16::try_from(index).expect("bounded handler index fits u16"),
+                state_slot,
+                parameters: handler
                     .parameters
                     .iter()
-                    .map(|parameter| ExecutableCanonicalScalarParameterBindingV1 {
-                        slot: match parameter.as_slice() {
-                            b"?player-x" => 0,
-                            b"?player-z" => 12,
-                            _ => panic!("contact source requested an unknown physical parameter"),
+                    .zip([0, 12])
+                    .map(
+                        |(parameter, slot)| ExecutableCanonicalScalarParameterBindingV1 {
+                            slot,
+                            parameter: parameter.clone(),
                         },
-                        parameter: parameter.clone(),
-                    })
+                    )
                     .collect(),
             },
         )
-        .expect("source-owned collect handler lowers beside arena state");
+        .expect("source-owned automatic handler lowers beside arena state");
     }
     program
 }
@@ -597,7 +612,7 @@ fn physical_plan_with_source(
         universe: constitution.universe(),
         semantics: constitution.semantics(),
     };
-    let (input_handler, jump_handler, tick_program, scalar_handler) =
+    let (input_handler, jump_handler, tick_program, scalar_handlers) =
         source_handlers(source, scope);
     let input_events = vec![
         ExecutableInputBindingV1 {
@@ -658,11 +673,11 @@ fn physical_plan_with_source(
             events: input_events,
             tick: ExecutableTickBindingV1 {
                 role: role(20),
-                entries: if scalar_handler.is_some() {
-                    vec![2, 3]
-                } else {
-                    vec![2]
-                },
+                entries: std::iter::once(2)
+                    .chain((0..scalar_handlers.len()).map(|index| {
+                        3 + u16::try_from(index).expect("bounded handler index fits u16")
+                    }))
+                    .collect(),
             },
         }),
         program: headless_program(
@@ -670,7 +685,7 @@ fn physical_plan_with_source(
             &input_handler,
             &jump_handler,
             &tick_program,
-            scalar_handler.as_ref(),
+            &scalar_handlers,
         ),
     }
 }
@@ -1912,6 +1927,127 @@ fn raw_id(tag: u8) -> [u8; IDENTITY_BYTES] {
     bytes
 }
 
+fn admit_spring_journey(source: &[u8], allocation_tag: u8, policy_tag: u8) -> (Vec<u8>, Term) {
+    let package = checked_program_package_with_scopes_and_roles(1, Vec::new(), 25);
+    let package_id = package.id();
+    let application = ApplicationId {
+        snapshot: package.constitution().snapshot(),
+        local: ApplicationLocalId::new(1),
+    };
+    let plan = physical_plan_with_source(&package, source);
+    let plan_bytes = encode_executable_physical_plan_v1(&plan)
+        .expect("spring CPP1 encodes from canonical source");
+    let (authority, facts) = carrier_authority_for_plan(&package, &plan, allocation_tag);
+    let allocation = RuntimeAllocationEpochV1::recorded_for(
+        raw_id(allocation_tag),
+        &package,
+        application,
+        &plan,
+        facts.executable(),
+    )
+    .expect("spring allocation binds the source-owned CPP1");
+    let mut session = PersistentProcessSessionV1::rematerialize(
+        package,
+        authority,
+        application,
+        plan,
+        facts.executable(),
+        allocation,
+    )
+    .expect("spring journey opens one persistent native session");
+    session
+        .apply_physical_input(&ExecutableInputSourceV1::Keyboard {
+            code: b"KeyD".to_vec(),
+            phase: ExecutableKeyPhaseV1::Down,
+        })
+        .expect("ordinary movement input is the only external trigger");
+
+    session
+        .apply_fixed_tick_and_emit_candidate(16)
+        .expect("first tick moves through collection contact");
+    session
+        .admit_candidate(facts.admission_authorization())
+        .expect("first separate Admission installs the collected position");
+
+    let pre_launch_world = session.world_base();
+    let pre_launch_run = session.run().expect("launch run is live");
+    let pre_launch_activation = session.activation().expect("launch Activation is live");
+    let launch_step = session
+        .apply_fixed_tick_and_emit_candidate(16)
+        .expect("second tick reaches the spring contact");
+    let launch = session
+        .candidate()
+        .expect("launch candidate lookup succeeds")
+        .expect("spring contact retains one hidden candidate")
+        .clone();
+    assert_eq!(launch.produced_by, launch_step.id);
+    assert!(launch.configuration[3].as_number().unwrap() > 0.0);
+    assert_eq!(launch.configuration[5].as_boolean(), Some(false));
+    assert_eq!(
+        session
+            .configuration()
+            .expect("launch configuration is live"),
+        launch.configuration
+    );
+    assert_eq!(session.world_base(), pre_launch_world);
+    assert_eq!(
+        session.run().expect("launch Run remains live"),
+        pre_launch_run
+    );
+    assert_eq!(
+        session
+            .activation()
+            .expect("launch Activation remains live"),
+        pre_launch_activation
+    );
+    let (launch_policy, launch_authorization) = exact_root_admission_policy(
+        package_id,
+        facts.session,
+        launch.base,
+        launch.id,
+        policy_tag,
+    );
+    session
+        .establish_root_policy(launch_policy)
+        .expect("launch receives a separate exact Admission policy");
+    session
+        .admit_candidate(launch_authorization)
+        .expect("separate Admission installs launch velocity");
+
+    let launched_world = session.world_base();
+    let airborne_step = session
+        .apply_fixed_tick_and_emit_candidate(16)
+        .expect("third tick advances the airborne position");
+    let airborne = session
+        .candidate()
+        .expect("airborne candidate lookup succeeds")
+        .expect("airborne position remains hidden before Admission")
+        .clone();
+    assert_eq!(airborne.produced_by, airborne_step.id);
+    assert_eq!(session.world_base(), launched_world);
+    let (airborne_policy, airborne_authorization) = exact_root_admission_policy(
+        package_id,
+        facts.session,
+        airborne.base,
+        airborne.id,
+        policy_tag
+            .checked_add(1)
+            .expect("policy tag remains bounded"),
+    );
+    session
+        .establish_root_policy(airborne_policy)
+        .expect("airborne position receives separate exact authority");
+    let (_, projection) = session
+        .admit_candidate_with_projection(airborne_authorization)
+        .expect("Admission alone exposes the launched frame");
+    (
+        plan_bytes,
+        projection
+            .expect("admitted spring journey projects one passive frame")
+            .term,
+    )
+}
+
 #[test]
 fn canonical_source_input_reaches_persistent_admission_and_projection() {
     let package = checked_program_package_with_scopes(1, vec![]);
@@ -2086,7 +2222,7 @@ fn automatic_contact_tick_keeps_collection_hidden_until_admission_and_inactive_a
         .input
         .as_ref()
         .expect("gameplay CPP1 carries one physical input plan");
-    assert_eq!(input.tick.entries, [2, 3]);
+    assert_eq!(input.tick.entries, [2, 3, 4, 5]);
     assert!(input.events.iter().all(|binding| {
         !matches!(
             &binding.source,
@@ -2148,8 +2284,8 @@ fn automatic_contact_tick_keeps_collection_hidden_until_admission_and_inactive_a
     let contact_step = session
         .apply_fixed_tick_and_emit_candidate(16)
         .expect("one fixed tick executes movement then Clause-owned contact");
-    assert_eq!(contact_step.occurrence.entry, 3);
-    assert!(contact_step.rule_applied);
+    assert_eq!(contact_step.occurrence.entry, 5);
+    assert!(!contact_step.rule_applied);
     let candidate = session
         .candidate()
         .expect("contact candidate lookup succeeds")
@@ -2223,7 +2359,7 @@ fn automatic_contact_tick_keeps_collection_hidden_until_admission_and_inactive_a
     let away_step = away_session
         .apply_fixed_tick_and_emit_candidate(16)
         .expect("away tick still completes the ordered movement/contact chain");
-    assert_eq!(away_step.occurrence.entry, 3);
+    assert_eq!(away_step.occurrence.entry, 5);
     assert!(!away_step.rule_applied);
     let away_candidate = away_session
         .candidate()
@@ -2233,10 +2369,87 @@ fn automatic_contact_tick_keeps_collection_hidden_until_admission_and_inactive_a
         away_candidate.configuration[28],
         ExecutableValueV1::symbol(b"active").expect("active is a bounded symbol")
     );
+    assert_eq!(away_candidate.configuration[3].as_number(), Some(0.0));
+    assert_eq!(away_candidate.configuration[5].as_boolean(), Some(true));
     assert_eq!(away_session.carrier().unwrap().candidate_delta_count(), 1);
     assert_eq!(away_session.carrier().unwrap().decision_count(), 0);
     assert_eq!(away_session.carrier().unwrap().state_revision_count(), 1);
     assert_eq!(package_id, session.package().unwrap());
+}
+
+#[test]
+fn automatic_spring_contact_launches_and_source_only_strength_changes_the_visible_frame() {
+    let source = gameplay_source();
+    let package = checked_program_package_with_scopes_and_roles(1, Vec::new(), 25);
+    let plan = physical_plan_with_source(&package, &source);
+    assert_eq!(
+        plan.input
+            .as_ref()
+            .expect("spring CPP1 has input")
+            .tick
+            .entries,
+        [2, 3, 4, 5]
+    );
+    let launch = plan
+        .program
+        .rules
+        .iter()
+        .find(|rule| rule.entry == 4)
+        .expect("source-owned launch velocity is the third ordered tick stage");
+    assert_eq!(
+        launch.assignments,
+        [(3, ExecutableExpressionV1::Constant(number(12.0)))]
+    );
+    let airborne = plan
+        .program
+        .rules
+        .iter()
+        .find(|rule| rule.entry == 5)
+        .expect("source-owned airborne state is the final ordered tick stage");
+    assert_eq!(
+        airborne.assignments,
+        [(
+            5,
+            ExecutableExpressionV1::Constant(ExecutableValueV1::Boolean(false))
+        )]
+    );
+
+    let (base_cpp1, base_projection) = admit_spring_journey(&source, 247, 248);
+    let base_player = projected_object_field(&base_projection, b"player");
+    let base_y = projected_number(projected_object_field(
+        projected_object_field(base_player, b"position"),
+        b"y",
+    ));
+    assert!(base_y > 0.0);
+
+    let changed_source = std::str::from_utf8(&source)
+        .expect("spring source is UTF-8")
+        .replacen(
+            "?player launch strength 12.0",
+            "?player launch strength 16.0",
+            1,
+        );
+    let (changed_cpp1, changed_projection) =
+        admit_spring_journey(changed_source.as_bytes(), 250, 251);
+    let changed_player = projected_object_field(&changed_projection, b"player");
+    let changed_y = projected_number(projected_object_field(
+        projected_object_field(changed_player, b"position"),
+        b"y",
+    ));
+    assert_ne!(base_cpp1, changed_cpp1);
+    assert!(changed_y > base_y);
+
+    let base_cwr1 = encode_wasm_process_request_v1(&browser_gameplay_fixture_request(
+        &source,
+        BROWSER_GAMEPLAY_CHANGED_ALLOCATION_ROOT_TAG,
+    ))
+    .expect("base spring CWR1 encodes");
+    let changed_cwr1 = encode_wasm_process_request_v1(&browser_gameplay_fixture_request(
+        changed_source.as_bytes(),
+        BROWSER_GAMEPLAY_CHANGED_ALLOCATION_ROOT_TAG,
+    ))
+    .expect("changed spring CWR1 encodes");
+    assert_ne!(base_cwr1, changed_cwr1);
 }
 
 #[test]
