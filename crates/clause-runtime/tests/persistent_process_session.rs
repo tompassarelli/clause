@@ -100,10 +100,7 @@ struct SessionFacts {
     initial_state: StateRevisionId,
 }
 
-fn carrier_authority(
-    checked: &CheckedProcessPackage,
-    admitted_candidate: CandidateDeltaId,
-) -> (AuthorityStore, SessionFacts) {
+fn carrier_authority(checked: &CheckedProcessPackage) -> (AuthorityStore, SessionFacts) {
     let semantics = checked.constitution().semantics();
     let snapshot = checked.constitution().snapshot();
     let session = id!(RuntimeSessionId, 120);
@@ -135,10 +132,6 @@ fn carrier_authority(
         policy: root_policy,
         local: AdmissionAuthorizationLocalId::new(0),
     };
-    let admission_authorization = RootAdmissionAuthorizationRef {
-        policy: root_policy,
-        local: AdmissionAuthorizationLocalId::new(1),
-    };
     let judgment_authority = RootJudgmentAuthorityRef {
         policy: root_policy,
         local: JudgmentAuthorityLocalId::new(0),
@@ -158,15 +151,7 @@ fn carrier_authority(
                     },
                 }],
                 vec![],
-                vec![RootStateAdmissionGrant {
-                    authorization: admission_authorization,
-                    scope: CheckedStateAdmissionScope {
-                        package: checked.id(),
-                        session,
-                        base: initial_state,
-                        delta: admitted_candidate,
-                    },
-                }],
+                vec![],
                 vec![RootJudgmentAuthorityGrant {
                     authority: judgment_authority,
                     scope: JudgmentAuthorityScope {
@@ -246,7 +231,6 @@ fn carrier_authority(
                 policy,
                 session_start,
                 root_policy,
-                admission_authorization,
                 judgment_authority,
                 occurrence_ingress: ExecutableBoundaryFactV1 {
                     boundary: occurrence_boundary,
@@ -263,6 +247,42 @@ fn carrier_authority(
                 budget_units: 100,
             },
             initial_state,
+        },
+    )
+}
+
+fn admission_policy(
+    package: ProcessPackageId,
+    session: RuntimeSessionId,
+    base: StateRevisionId,
+    candidate: CandidateDeltaId,
+    tag: u8,
+) -> (RootPolicyAnchor, AdmissionAuthorizationEvidence) {
+    let policy = id!(RootPolicyId, tag);
+    let authorization = RootAdmissionAuthorizationRef {
+        policy,
+        local: AdmissionAuthorizationLocalId::new(0),
+    };
+    (
+        RootPolicyAnchor::establish_with_governance(
+            policy,
+            vec![],
+            vec![],
+            vec![RootStateAdmissionGrant {
+                authorization,
+                scope: CheckedStateAdmissionScope {
+                    package,
+                    session,
+                    base,
+                    delta: candidate,
+                },
+            }],
+            vec![],
+        )
+        .expect("per-candidate root policy is coherent"),
+        AdmissionAuthorizationEvidence::IrreducibleRoot {
+            policy,
+            authorization,
         },
     )
 }
@@ -289,7 +309,7 @@ fn persistent_session_keeps_local_steps_and_advances_only_at_atomic_admission() 
     let application = application(&package);
     let session_id = id!(RuntimeSessionId, 120);
     let candidate_id = PersistentProcessSessionV1::candidate_id_for(session_id, 0);
-    let (authority, facts) = carrier_authority(&package, candidate_id);
+    let (authority, facts) = carrier_authority(&package);
     let mut session =
         PersistentProcessSessionV1::open(package, authority, application, facts.executable)
             .expect("persistent session opens once");
@@ -347,6 +367,26 @@ fn persistent_session_keeps_local_steps_and_advances_only_at_atomic_admission() 
         .clone();
     assert_eq!(candidate.id, candidate_id);
     assert_eq!(candidate.base, facts.initial_state);
+    let carrier_candidate = &session
+        .carrier()
+        .unwrap()
+        .candidate_delta(candidate.id)
+        .expect("candidate is retained by the semantic carrier")
+        .proposal;
+    assert_eq!(
+        carrier_candidate.delta.term,
+        carrier_candidate.proposed_payload
+    );
+    let first_candidate_formation = carrier_candidate.delta.evidence;
+    let formation = session
+        .carrier()
+        .unwrap()
+        .observation(first_candidate_formation)
+        .expect("candidate cites its fresh Formation Observation");
+    let ObservationContentV2::Formation { subject, .. } = &formation.content else {
+        panic!("candidate evidence must be a Formation Observation");
+    };
+    assert_eq!(subject, &carrier_candidate.proposed_payload);
     assert_eq!(session.carrier().unwrap().candidate_delta_count(), 1);
     assert_eq!(session.carrier().unwrap().decision_count(), 0);
     assert_eq!(session.carrier().unwrap().state_revision_count(), 1);
@@ -365,12 +405,22 @@ fn persistent_session_keeps_local_steps_and_advances_only_at_atomic_admission() 
     );
 
     let records_before_admission = session.carrier().unwrap().accepted_ingress_record_count();
+    let (first_policy, first_authorization) = admission_policy(
+        package_id,
+        session_id,
+        facts.initial_state,
+        candidate.id,
+        130,
+    );
+    session
+        .establish_root_policy(first_policy)
+        .expect("first exact candidate authority is established");
     let successor = session
-        .admit_candidate()
+        .admit_candidate(first_authorization)
         .expect("Judgment, Admission, and successor epoch enter atomically");
     assert_eq!(
         session.carrier().unwrap().accepted_ingress_record_count(),
-        records_before_admission + 3
+        records_before_admission + 5
     );
     assert_eq!(successor.predecessor, facts.initial_state);
     assert_ne!(successor.id, facts.initial_state);
@@ -405,6 +455,15 @@ fn persistent_session_keeps_local_steps_and_advances_only_at_atomic_admission() 
             .iter()
             .any(|cause| matches!(cause, CausalRef::Admission(_)))
     );
+    let successor_formation = retained_activation
+        .start_causes()
+        .iter()
+        .find_map(|cause| match cause {
+            CausalRef::Observation(observation) => Some(*observation),
+            _ => None,
+        })
+        .expect("successor Activation is bound to fresh admitted-state Formation");
+    assert_ne!(successor_formation, first_candidate_formation);
 
     let next_tick = session
         .apply_opaque_input(&opaque(1, 1.0))
@@ -417,6 +476,45 @@ fn persistent_session_keeps_local_steps_and_advances_only_at_atomic_admission() 
     assert_eq!(retained_tick.reference().run, next_run);
     assert_eq!(retained_tick.reference().activation, next_activation);
     assert_eq!(session.configuration().unwrap()[0].as_number(), Some(6.0));
+
+    session
+        .apply_opaque_input_and_emit_candidate(&opaque(1, 1.0))
+        .expect("second epoch emits a distinct candidate");
+    let second_candidate = session.candidate().unwrap().unwrap().clone();
+    assert_eq!(
+        second_candidate.id,
+        PersistentProcessSessionV1::candidate_id_for(session_id, 1)
+    );
+    let second_carrier_candidate = &session
+        .carrier()
+        .unwrap()
+        .candidate_delta(second_candidate.id)
+        .expect("second candidate is retained")
+        .proposal;
+    assert_eq!(
+        second_carrier_candidate.delta.term,
+        second_carrier_candidate.proposed_payload
+    );
+    assert_ne!(
+        second_carrier_candidate.delta.evidence,
+        first_candidate_formation
+    );
+    let (second_policy, second_authorization) = admission_policy(
+        package_id,
+        session_id,
+        successor.id,
+        second_candidate.id,
+        131,
+    );
+    session
+        .establish_root_policy(second_policy)
+        .expect("second exact candidate authority is established separately");
+    let second_successor = session
+        .admit_candidate(second_authorization)
+        .expect("second epoch requires and accepts fresh exact authority");
+    assert_eq!(second_successor.predecessor, successor.id);
+    assert_eq!(session.world_base(), second_successor.id);
+    assert_eq!(session.carrier().unwrap().decision_count(), 2);
 
     assert!(session.dispose());
     assert!(!session.dispose());
@@ -439,7 +537,8 @@ fn failed_admission_rolls_back_its_prepared_judgment_and_epoch() {
     let actual_candidate = PersistentProcessSessionV1::candidate_id_for(session_id, 0);
     let unauthorized_candidate = PersistentProcessSessionV1::candidate_id_for(session_id, 1);
     assert_ne!(actual_candidate, unauthorized_candidate);
-    let (authority, facts) = carrier_authority(&package, unauthorized_candidate);
+    let package_id = package.id();
+    let (authority, facts) = carrier_authority(&package);
     let mut session =
         PersistentProcessSessionV1::open(package, authority, application, facts.executable)
             .expect("session opens before the separately checked Admission boundary");
@@ -451,9 +550,19 @@ fn failed_admission_rolls_back_its_prepared_judgment_and_epoch() {
     let activation = session.activation().unwrap();
     let records = session.carrier().unwrap().accepted_ingress_record_count();
     let runs = session.carrier().unwrap().run_count();
+    let (wrong_policy, wrong_authorization) = admission_policy(
+        package_id,
+        session_id,
+        facts.initial_state,
+        unauthorized_candidate,
+        132,
+    );
+    session
+        .establish_root_policy(wrong_policy)
+        .expect("wrong candidate grant is still a coherent root policy");
 
     assert!(matches!(
-        session.admit_candidate(),
+        session.admit_candidate(wrong_authorization),
         Err(PersistentProcessSessionErrorV1::Carrier(
             ExecutableCarrierErrorV1::Ingress(_)
         ))

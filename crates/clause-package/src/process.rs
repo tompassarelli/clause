@@ -1004,16 +1004,19 @@ impl ProcessCarrier {
         Ok(cardinality)
     }
 
-    fn preflight_supported_records(
-        &self,
-        records: &[ProcessRecordV2],
-    ) -> Result<(), ProcessError> {
+    fn preflight_supported_records(&self, records: &[ProcessRecordV2]) -> Result<(), ProcessError> {
         for record in records {
             match record {
                 ProcessRecordV2::Activation(proposal) => {
-                    if !matches!(proposal.causes.origin, ActivationOrigin::RootedBy(_))
-                        || !matches!(proposal.membership, RunMembership::RootOf(_))
-                    {
+                    let supported_membership = match (proposal.causes.origin, proposal.membership) {
+                        (ActivationOrigin::RootedBy(_), RunMembership::RootOf(_)) => true,
+                        (
+                            ActivationOrigin::ChildOf { run: origin, .. },
+                            RunMembership::ChildIn(member),
+                        ) => origin == member,
+                        _ => false,
+                    };
+                    if !supported_membership {
                         return Err(ProcessError::ChildActivationUnsupported);
                     }
                     let mode = self.mode_contract(proposal.mode)?;
@@ -1563,7 +1566,12 @@ impl ProcessCarrier {
             .constitution
             .executable_contract(proposal.application, proposal.mode)
             .ok_or(ProcessError::ModeNotEligible(proposal.mode))?;
-        if !self.mode_contract(proposal.mode)?.contract.effect_intents.is_empty() {
+        if !self
+            .mode_contract(proposal.mode)?
+            .contract
+            .effect_intents
+            .is_empty()
+        {
             return Err(ProcessError::EffectfulModeUnsupported(proposal.mode));
         }
         if application.id.snapshot != proposal.pins.snapshot
@@ -1588,7 +1596,15 @@ impl ProcessCarrier {
                     return Err(ProcessError::DuplicateRun(run_id));
                 }
             }
-            RunMembership::ChildIn(_) => return Err(ProcessError::ChildActivationUnsupported),
+            RunMembership::ChildIn(run_id) => {
+                if !matches!(
+                    proposal.causes.origin,
+                    ActivationOrigin::ChildOf { run, .. } if run == run_id
+                ) || !self.runs.contains_key(&run_id)
+                {
+                    return Err(ProcessError::RunMembershipMismatch);
+                }
+            }
         }
         if let RunMembership::RootOf(run_id) = proposal.membership {
             self.runs.insert(run_id, proposal.id);
@@ -2006,8 +2022,21 @@ impl ProcessCarrier {
                 causes.push(CausalRef::Admission(admission));
             }
             ActivationOrigin::ChildOf {
-                ..
-            } => return Err(ProcessError::ChildActivationUnsupported),
+                run,
+                parent_activation,
+                parent_step,
+            } => {
+                let parent = StepRef {
+                    run,
+                    activation: parent_activation,
+                    step: parent_step,
+                };
+                self.require_step_ref(parent)?;
+                if proposal.membership != RunMembership::ChildIn(run) {
+                    return Err(ProcessError::RunMembershipMismatch);
+                }
+                causes.push(CausalRef::Step(parent));
+            }
             ActivationOrigin::HandoffFrom { .. } => {
                 return Err(ProcessError::HandoffUnsupported);
             }
@@ -3708,12 +3737,7 @@ fn checked_aggregate_step_count(
 ) -> Result<usize, ProcessError> {
     let mut total = 0;
     for count in counts {
-        total = checked_resource_add(
-            total,
-            count,
-            maximum,
-            ProcessResourceKindV2::Step,
-        )?;
+        total = checked_resource_add(total, count, maximum, ProcessResourceKindV2::Step)?;
     }
     Ok(total)
 }

@@ -2,9 +2,9 @@ use std::error::Error;
 use std::fmt;
 
 use clause_package::{
-    ActivationId, ApplicationId, AuthorityStore, CandidateDeltaId, CheckedProcessPackage,
-    ConfigurationId, ProcessCarrier, ProcessPackageId, ProgramRevisionId, RunId, RuntimeSessionId,
-    StateRevisionId,
+    ActivationId, AdmissionAuthorizationEvidence, ApplicationId, AuthorityError, AuthorityStore,
+    CandidateDeltaId, CheckedProcessPackage, ConfigurationId, ProcessCarrier, ProcessPackageId,
+    ProgramRevisionId, RootPolicyAnchor, RunId, RuntimeSessionId, StateRevisionId,
 };
 
 use super::executable::persistent_candidate_id_v1;
@@ -36,7 +36,7 @@ impl PersistentProcessSessionV1 {
         application: ApplicationId,
         facts: ExecutableAuthorityFactsV1,
     ) -> Result<Self, PersistentProcessSessionErrorV1> {
-        let mut runtime = ExecutableProcessRuntimeV1::instantiate_owned(
+        let mut runtime = ExecutableProcessRuntimeV1::instantiate_session(
             package,
             authority,
             application,
@@ -92,13 +92,27 @@ impl PersistentProcessSessionV1 {
     /// succeeds does the live session install the new Run/Activation epoch.
     pub fn admit_candidate(
         &mut self,
+        authorization: AdmissionAuthorizationEvidence,
     ) -> Result<ExecutableStateRevisionV1, PersistentProcessSessionErrorV1> {
         let admitted = self
             .runtime_mut()?
-            .settle_carrier_process_and_start_epoch()?;
+            .settle_carrier_process_and_start_epoch(authorization)?;
         self.world_base = admitted.id;
         self.last_admitted = Some(admitted.clone());
         Ok(admitted)
+    }
+
+    /// Establish one caller-supplied root policy on the runtime-owned
+    /// authority store. This is the only authority mutation exposed by the
+    /// persistent session; each Admission still receives its exact typed
+    /// evidence separately.
+    pub fn establish_root_policy(
+        &mut self,
+        policy: RootPolicyAnchor,
+    ) -> Result<(), PersistentProcessSessionErrorV1> {
+        self.runtime_mut()?
+            .establish_root_policy(policy)
+            .map_err(PersistentProcessSessionErrorV1::Authority)
     }
 
     /// Deterministically retire the owned runtime. Disposal is idempotent, and
@@ -184,6 +198,7 @@ impl PersistentProcessSessionV1 {
 pub enum PersistentProcessSessionErrorV1 {
     Executable(ExecutableErrorV1),
     Carrier(ExecutableCarrierErrorV1),
+    Authority(AuthorityError),
     Disposed,
 }
 
@@ -192,6 +207,7 @@ impl fmt::Display for PersistentProcessSessionErrorV1 {
         match self {
             Self::Executable(error) => write!(formatter, "persistent executable error: {error}"),
             Self::Carrier(error) => write!(formatter, "persistent carrier error: {error}"),
+            Self::Authority(error) => write!(formatter, "persistent authority error: {error}"),
             Self::Disposed => formatter.write_str("persistent process session is disposed"),
         }
     }
@@ -202,6 +218,7 @@ impl Error for PersistentProcessSessionErrorV1 {
         match self {
             Self::Executable(error) => Some(error),
             Self::Carrier(error) => Some(error),
+            Self::Authority(error) => Some(error),
             Self::Disposed => None,
         }
     }

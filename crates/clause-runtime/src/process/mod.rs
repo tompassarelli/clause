@@ -68,16 +68,6 @@ impl ProcessRuntime {
     /// Instantiate after rejecting every unsupported package surface. This
     /// happens before any package record becomes visible in the carrier.
     pub fn instantiate(
-        package: &CheckedProcessPackage,
-        authority: &AuthorityStore,
-    ) -> Result<Self, RuntimeInitError> {
-        Self::instantiate_owned(package.clone(), authority.clone())
-    }
-
-    /// Instantiate while transferring the exact checked package and authority
-    /// store into the runtime. Persistent hosts use this path so neither input
-    /// is cloned for each command.
-    pub fn instantiate_owned(
         package: CheckedProcessPackage,
         authority: AuthorityStore,
     ) -> Result<Self, RuntimeInitError> {
@@ -97,6 +87,13 @@ impl ProcessRuntime {
             authority,
             carrier,
         })
+    }
+
+    pub(crate) fn establish_root_policy(
+        &mut self,
+        anchor: clause_package::RootPolicyAnchor,
+    ) -> Result<(), clause_package::AuthorityError> {
+        self.authority.establish_root_policy(anchor)
     }
 
     /// Apply exactly the next package-owned record. `None` means the checked

@@ -90,11 +90,7 @@ fn and(left: ExecutableExpressionV1, right: ExecutableExpressionV1) -> Executabl
 }
 
 fn next_x() -> ExecutableExpressionV1 {
-    clamp(
-        add(s(0), mul(mul(s(4), s(8)), a(0))),
-        s(10),
-        s(11),
-    )
+    clamp(add(s(0), mul(mul(s(4), s(8)), a(0))), s(10), s(11))
 }
 
 fn next_vertical_velocity() -> ExecutableExpressionV1 {
@@ -106,12 +102,7 @@ fn next_y() -> ExecutableExpressionV1 {
 }
 
 fn headless_program() -> ExecutableProgramV1 {
-    let horizontal_assignments = || {
-        vec![
-            (0, next_x()),
-            (2, div(sub(next_x(), s(0)), a(0))),
-        ]
-    };
+    let horizontal_assignments = || vec![(0, next_x()), (2, div(sub(next_x(), s(0)), a(0)))];
     let mut grounded_tick = horizontal_assignments();
     grounded_tick.extend([(1, s(9)), (3, n(0.0))]);
     let mut airborne_tick = horizontal_assignments();
@@ -226,10 +217,8 @@ fn checked_program_package(checker_count: usize) -> CheckedProcessPackage {
     candidate.claimed_snapshot =
         derive_program_snapshot_id(&candidate.snapshot).expect("program snapshot is canonical");
     let bytes = encode_process_package(&candidate).expect("program package encodes");
-    check_process_package(
-        decode_process_package(&bytes).expect("program package decodes"),
-    )
-    .expect("program package checks")
+    check_process_package(decode_process_package(&bytes).expect("program package decodes"))
+        .expect("program package checks")
 }
 
 #[derive(Clone, Copy)]
@@ -253,10 +242,6 @@ impl CarrierFacts {
             policy: self.policy,
             session_start: self.session_start,
             root_policy: self.root_policy,
-            admission_authorization: RootAdmissionAuthorizationRef {
-                policy: self.root_policy,
-                local: AdmissionAuthorizationLocalId::new(1),
-            },
             judgment_authority: RootJudgmentAuthorityRef {
                 policy: self.root_policy,
                 local: JudgmentAuthorityLocalId::new(0),
@@ -274,6 +259,16 @@ impl CarrierFacts {
                 evidence: id!(ExternalEvidenceRef, 190),
             },
             budget_units: 100,
+        }
+    }
+
+    fn admission_authorization(self) -> AdmissionAuthorizationEvidence {
+        AdmissionAuthorizationEvidence::IrreducibleRoot {
+            policy: self.root_policy,
+            authorization: RootAdmissionAuthorizationRef {
+                policy: self.root_policy,
+                local: AdmissionAuthorizationLocalId::new(1),
+            },
         }
     }
 }
@@ -453,8 +448,8 @@ fn package_owned_headless_api_reaches_one_admitted_render_state() {
         };
         let (rejected_authority, rejected_facts) = carrier_authority(&rejected_package);
         let mut rejected_runtime = ExecutableProcessRuntimeV1::instantiate(
-            &rejected_package,
-            &rejected_authority,
+            rejected_package,
+            rejected_authority,
             rejected_application,
         )
         .expect("negative package still has a checked executable program");
@@ -468,7 +463,10 @@ fn package_owned_headless_api_reaches_one_admitted_render_state() {
         });
         assert_eq!(rejected_runtime.carrier().carrier().activation_count(), 0);
         assert_eq!(rejected_runtime.carrier().carrier().observation_count(), 0);
-        assert_eq!(rejected_runtime.carrier().carrier().candidate_delta_count(), 0);
+        assert_eq!(
+            rejected_runtime.carrier().carrier().candidate_delta_count(),
+            0
+        );
     }
 
     let package = checked_program_package(1);
@@ -477,7 +475,7 @@ fn package_owned_headless_api_reaches_one_admitted_render_state() {
         local: ApplicationLocalId::new(1),
     };
     let (authority, facts) = carrier_authority(&package);
-    let mut runtime = ExecutableProcessRuntimeV1::instantiate(&package, &authority, application)
+    let mut runtime = ExecutableProcessRuntimeV1::instantiate(package, authority, application)
         .expect("checked package executable instantiates");
     runtime
         .start_carrier_process(facts.executable())
@@ -519,15 +517,17 @@ fn package_owned_headless_api_reaches_one_admitted_render_state() {
     assert_eq!(candidate.base, facts.initial_state);
     assert!(runtime.judgment().is_none());
     assert!(runtime.admission().is_none());
-    assert!(runtime
-        .carrier()
-        .carrier()
-        .candidate_delta(candidate.id)
-        .is_some());
+    assert!(
+        runtime
+            .carrier()
+            .carrier()
+            .candidate_delta(candidate.id)
+            .is_some()
+    );
     assert_eq!(runtime.carrier().carrier().state_revision_count(), 1);
 
     let successor = runtime
-        .settle_carrier_process()
+        .settle_carrier_process(facts.admission_authorization())
         .expect("production bridge synthesizes Judgment and Admission")
         .clone();
     assert_eq!(successor.predecessor, facts.initial_state);
@@ -540,15 +540,30 @@ fn package_owned_headless_api_reaches_one_admitted_render_state() {
     assert_eq!(observation.value[1].as_number(), Some(0.0));
     assert_eq!(observation.value[2].as_number(), Some(0.0));
     assert_eq!(observation.value[3].as_boolean(), Some(true));
+    let repeated_observation = runtime
+        .observe_carrier_state(&[0, 1, 3, 5])
+        .expect("repeated State projection receives a fresh occurrence identity");
+    assert_ne!(repeated_observation.id, observation.id);
+    assert_eq!(repeated_observation.state, observation.state);
+    assert_eq!(repeated_observation.value, observation.value);
 
     assert_eq!(runtime.carrier().carrier().candidate_delta_count(), 1);
     assert_eq!(runtime.carrier().carrier().decision_count(), 1);
     assert_eq!(runtime.carrier().carrier().state_revision_count(), 2);
-    assert!(runtime
-        .carrier()
-        .carrier()
-        .observation(observation.id)
-        .is_some());
+    assert!(
+        runtime
+            .carrier()
+            .carrier()
+            .observation(observation.id)
+            .is_some()
+    );
+    assert!(
+        runtime
+            .carrier()
+            .carrier()
+            .observation(repeated_observation.id)
+            .is_some()
+    );
 }
 
 #[test]
@@ -574,8 +589,10 @@ fn bounded_wasm_bytes_return_only_the_admitted_observation() {
             admission_evidence_bytes: vec![190],
             budget_units: 100,
         },
-        occurrences: vec![encode_executable_occurrence_v1(&occurrence(0, &[1.0]))
-            .expect("opaque occurrence encodes")],
+        occurrences: vec![
+            encode_executable_occurrence_v1(&occurrence(0, &[1.0]))
+                .expect("opaque occurrence encodes"),
+        ],
         render_slots: vec![4],
     };
     let exact_request = encode_wasm_process_request_v1(&request).expect("bounded request encodes");
@@ -590,7 +607,9 @@ fn bounded_wasm_bytes_return_only_the_admitted_observation() {
             .push_request_byte(byte)
             .expect("request remains in the fixed bound");
     }
-    boundary.dispatch().expect("production ProcessCarrier admits the run");
+    boundary
+        .dispatch()
+        .expect("production ProcessCarrier admits the run");
     assert_eq!(boundary.status(), WasmProcessStatusV1::Ready);
     let output = decode_wasm_process_observation_v1(boundary.response())
         .expect("boundary returns one exact admitted Observation");
@@ -610,6 +629,9 @@ fn bounded_wasm_bytes_return_only_the_admitted_observation() {
     for byte in b"bad!" {
         boundary.push_request_byte(*byte).unwrap();
     }
-    assert_eq!(boundary.dispatch(), Err(WasmProcessStatusV1::MalformedRequest));
+    assert_eq!(
+        boundary.dispatch(),
+        Err(WasmProcessStatusV1::MalformedRequest)
+    );
     assert_eq!(boundary.response(), &[]);
 }
