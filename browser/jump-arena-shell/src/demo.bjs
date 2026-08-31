@@ -5,7 +5,7 @@
             [jump-arena-shell.wasm-workbench-shell :as integration]
             [jump-arena-shell.workbench :as workbench]))
 
-(require '["#clause-runtime-wasm" :refer [initSync]])
+(require '["#clause-runtime-wasm" :refer [initSync SyncInitInput]])
 
 (declare-extern [document window fetch] Any)
 
@@ -60,9 +60,9 @@
      (.all Promise [(fetch-bytes! module-path)
                     (fetch-text! request-path)])
      (fn [assets Any] Any
-       (integration/load-passive-wasm-workbench-shell!
-        (integration/create-sync-wasm-initializer
-         (fn [module ArrayBuffer] Any (initSync module)))
+        (integration/load-passive-wasm-workbench-shell!
+         (integration/create-sync-wasm-initializer
+         (fn [module SyncInitInput] Any (initSync module)))
         (nth assets 0)
         create-result-shell!
         integration/project-persistent-term-frame

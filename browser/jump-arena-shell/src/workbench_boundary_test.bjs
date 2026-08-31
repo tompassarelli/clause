@@ -5,8 +5,6 @@
 
 (require '["bun:test" :as test])
 
-(declare-extern [test/test test/expect] Any)
-
 (defn frozen [value Any] Any
   (.freeze Object value))
 
