@@ -26,6 +26,8 @@ const session_command_limit = 4096;
 
 const identity_bytes = 32;
 
+const allocation_epoch_bytes = 304;
+
 function hex_whitespace_code_p(code) {
   return (($$bc$equiv(code, 9)) || (($$bc$equiv(code, 10)) || (($$bc$equiv(code, 13)) || ($$bc$equiv(code, 32)))));
 }
@@ -68,8 +70,8 @@ function wasmcandidate_candidateId(r) { return r.candidateId; }
 
 function wasmcandidate_base(r) { return r.base; }
 
-function WasmSession(handle, packageId, sessionId, world, sequence, occurrences, rootPolicy, disposed) {
-  return $$bc$record_value("jump-arena-shell.wasm-cartridge-port/WasmSession", {_tag: "WasmSession", handle, packageId, sessionId, world, sequence, occurrences, rootPolicy, disposed});
+function WasmSession(handle, packageId, sessionId, allocation, world, sequence, occurrences, disposed) {
+  return $$bc$record_value("jump-arena-shell.wasm-cartridge-port/WasmSession", {_tag: "WasmSession", handle, packageId, sessionId, allocation, world, sequence, occurrences, disposed});
 }
 
 function wasmsession_handle(r) { return r.handle; }
@@ -78,25 +80,23 @@ function wasmsession_packageId(r) { return r.packageId; }
 
 function wasmsession_sessionId(r) { return r.sessionId; }
 
+function wasmsession_allocation(r) { return r.allocation; }
+
 function wasmsession_world(r) { return r.world; }
 
 function wasmsession_sequence(r) { return r.sequence; }
 
 function wasmsession_occurrences(r) { return r.occurrences; }
 
-function wasmsession_rootPolicy(r) { return r.rootPolicy; }
-
 function wasmsession_disposed(r) { return r.disposed; }
 
-function PersistentCartridge(openBytes, occurrences, rootPolicy) {
-  return $$bc$record_value("jump-arena-shell.wasm-cartridge-port/PersistentCartridge", {_tag: "PersistentCartridge", openBytes, occurrences, rootPolicy});
+function PersistentCartridge(openBytes, occurrences) {
+  return $$bc$record_value("jump-arena-shell.wasm-cartridge-port/PersistentCartridge", {_tag: "PersistentCartridge", openBytes, occurrences});
 }
 
 function persistentcartridge_openBytes(r) { return r.openBytes; }
 
 function persistentcartridge_occurrences(r) { return r.occurrences; }
-
-function persistentcartridge_rootPolicy(r) { return r.rootPolicy; }
 
 function Cwo1Observation(observationId, stateRevisionId, values) {
   return $$bc$record_value("jump-arena-shell.wasm-cartridge-port/Cwo1Observation", {_tag: "Cwo1Observation", observationId, stateRevisionId, values});
@@ -243,6 +243,11 @@ function parse_blob(bytes, offset, maximum, label) {
   return {[$$bc$property_key($$bc$keyword("bytes"))]: frozen_byte_range(bytes, header_end, end), [$$bc$property_key($$bc$keyword("next"))]: end};
 }
 
+function require_allocation_epoch(record) {
+  const bytes = record.bytes;
+  return ((($$bc$equiv(bytes.length, allocation_epoch_bytes)) && ($$bc$equiv(frozen_byte_range(bytes, 0, 4), [82, 65, 69, 49]))) ? bytes : (() => { throw new Error("runtime allocation epoch has an invalid shape"); })());
+}
+
 function parse_persistent_cartridge_bang(request) {
   const checked = require_request(request);
   const bytes = checked.bytes;
@@ -252,7 +257,10 @@ function parse_persistent_cartridge_bang(request) {
   const package_record = parse_blob(bytes, 4, cwr1_max_bytes, "CWR1 package");
   const package_end = package_record.next;
   const application_end = require_range(bytes, package_end, 4, "CWR1 application");
-  const authority_start = application_end;
+  const physical_plan = parse_blob(bytes, application_end, cwr1_max_bytes, "CWR1 physical plan");
+  const allocation = parse_blob(bytes, physical_plan.next, allocation_epoch_bytes, "CWR1 allocation epoch");
+  const __allocation_bytes = require_allocation_epoch(allocation);
+  const authority_start = allocation.next;
   const identities_end = require_range(bytes, authority_start, (9 * identity_bytes), "CWR1 authority identities");
   const occurrence_evidence = parse_blob(bytes, identities_end, cwr1_max_bytes, "CWR1 occurrence evidence");
   const judgment_id_end = require_range(bytes, occurrence_evidence.next, identity_bytes, "CWR1 Judgment evidence identity");
@@ -271,19 +279,18 @@ function parse_persistent_cartridge_bang(request) {
   if ((($$bc$equiv(occurrence_count, 0)) || (!($$bc$equiv(final_offset, bytes.length))))) {
     (() => { throw new Error("CWR1 cartridge shape is incomplete"); })();
   }
-  const session_id = frozen_byte_range(bytes, (authority_start + (2 * identity_bytes)), (authority_start + (3 * identity_bytes)));
-  const root_policy = frozen_byte_range(bytes, (authority_start + (5 * identity_bytes)), (authority_start + (6 * identity_bytes)));
   const open_bytes = [67, 87, 83, 49];
-  bytes.slice(4, budget_end).forEach((byte) => {
+  bytes.slice(4, physical_plan.next).forEach((byte) => {
   open_bytes.push(byte);
 });
-  session_id.forEach((byte) => {
+  bytes.slice(authority_start, budget_end).forEach((byte) => {
   open_bytes.push(byte);
 });
+  open_bytes.push(0);
   append_u64_bang(open_bytes, session_command_limit);
   append_u32_bang(open_bytes, session_command_max_bytes);
   append_u32_bang(open_bytes, cse1_max_bytes);
-  return PersistentCartridge(Object.freeze(open_bytes), Object.freeze(occurrences_result.values), root_policy);
+  return PersistentCartridge(Object.freeze(open_bytes), Object.freeze(occurrences_result.values));
 }
 
 function session_module_functions(module) {
@@ -335,10 +342,10 @@ function decode_cse1_event(bytes) {
     const sequence = little_safe_u64(bytes, 12);
     const tag = byte_at(bytes, 20);
     const identity_at = (offset) => frozen_byte_range(bytes, offset, (offset + identity_bytes));
-    return ((($$bc$equiv(tag, 1))) ? (() => { if ((!($$bc$equiv(bytes.length, (21 + (5 * identity_bytes) + 4))))) {
+    return ((($$bc$equiv(tag, 1))) ? (() => { const allocation_offset = (21 + (5 * identity_bytes) + 4); const allocation = parse_blob(bytes, allocation_offset, allocation_epoch_bytes, "CSE1 allocation epoch"); const allocation_bytes = require_allocation_epoch(allocation); if ((!($$bc$equiv(allocation.next, bytes.length)))) {
   (() => { throw new Error("CSE1 Opened event has an invalid shape"); })();
 }
-return {[$$bc$property_key($$bc$keyword("kind"))]: "opened", [$$bc$property_key($$bc$keyword("slot"))]: slot, [$$bc$property_key($$bc$keyword("generation"))]: generation, [$$bc$property_key($$bc$keyword("sequence"))]: sequence, [$$bc$property_key($$bc$keyword("packageId"))]: identity_at(21), [$$bc$property_key($$bc$keyword("sessionId"))]: identity_at(53), [$$bc$property_key($$bc$keyword("world"))]: identity_at(85)}; })() : (($$bc$equiv(tag, 3))) ? (() => { if ((!($$bc$equiv(bytes.length, (21 + (5 * identity_bytes) + 4))))) {
+return {[$$bc$property_key($$bc$keyword("kind"))]: "opened", [$$bc$property_key($$bc$keyword("slot"))]: slot, [$$bc$property_key($$bc$keyword("generation"))]: generation, [$$bc$property_key($$bc$keyword("sequence"))]: sequence, [$$bc$property_key($$bc$keyword("packageId"))]: identity_at(21), [$$bc$property_key($$bc$keyword("sessionId"))]: identity_at(53), [$$bc$property_key($$bc$keyword("world"))]: identity_at(85), [$$bc$property_key($$bc$keyword("allocation"))]: allocation_bytes}; })() : (($$bc$equiv(tag, 3))) ? (() => { if ((!($$bc$equiv(bytes.length, (21 + (5 * identity_bytes) + 4))))) {
   (() => { throw new Error("CSE1 Candidate event has an invalid shape"); })();
 }
 return {[$$bc$property_key($$bc$keyword("kind"))]: "candidate", [$$bc$property_key($$bc$keyword("slot"))]: slot, [$$bc$property_key($$bc$keyword("generation"))]: generation, [$$bc$property_key($$bc$keyword("sequence"))]: sequence, [$$bc$property_key($$bc$keyword("candidateId"))]: identity_at(53), [$$bc$property_key($$bc$keyword("base"))]: identity_at(85)}; })() : (($$bc$equiv(tag, 4))) ? (() => { const prefix_end = (21 + (5 * identity_bytes) + 4); const projection_tag = byte_at(bytes, prefix_end); const successor = identity_at(53); return ((($$bc$equiv(projection_tag, 0))) ? (() => { if ((!($$bc$equiv(bytes.length, (prefix_end + 1))))) {
@@ -502,7 +509,7 @@ function create_wasm_cartridge_port_bang(module, policy) {
     const cartridge = accepted_package;
   const event = decode_cse1_event(dispatch_session_request(module, cartridge.openBytes, "open"));
   const __opened = (((!($$bc$equiv(event.kind, "opened"))) || (!($$bc$equiv(event.sequence, 0)))) ? (() => { return (() => { throw new Error("persistent session did not open exactly once"); })(); })() : null);
-  const session = WasmSession(Object.freeze({[$$bc$property_key($$bc$keyword("slot"))]: event.slot, [$$bc$property_key($$bc$keyword("generation"))]: event.generation}), event.packageId, event.sessionId, ({value: event.world, watches: {}}), ({value: 0, watches: {}}), cartridge.occurrences, cartridge.rootPolicy, ({value: false, watches: {}}));
+  const session = WasmSession(Object.freeze({[$$bc$property_key($$bc$keyword("slot"))]: event.slot, [$$bc$property_key($$bc$keyword("generation"))]: event.generation}), event.packageId, event.sessionId, event.allocation, ({value: event.world, watches: {}}), ({value: 0, watches: {}}), cartridge.occurrences, ({value: false, watches: {}}));
   const bootstrap_frame = workbench["create-workbench-envelope"](policy, "[]");
   return complete(workbench["->SessionStarted"](session, event.world, bootstrap_frame));
   } catch (_catch_1) {
@@ -537,12 +544,11 @@ function create_wasm_cartridge_port_bang(module, policy) {
     const session = require_live_session(incoming_session);
   const candidate = require_candidate(incoming_candidate);
   const payload = [];
-  (() => { [session.packageId, session.sessionId, session.world.value, candidate.candidateId, session.rootPolicy].forEach((identity) => {
+  (() => { [session.packageId, session.sessionId, session.world.value, candidate.candidateId].forEach((identity) => {
   (() => { identity.forEach((byte) => {
   payload.push(byte);
 }); })();
 }); })();
-  append_u32_bang(payload, 1);
   const event = apply_session_command_bang(module, session, encode_session_command_bang(session, 3, payload));
   const projection = event.projection;
   if (((!($$bc$equiv(event.kind, "admission"))) || (projection == null))) {

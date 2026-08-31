@@ -42,6 +42,13 @@ function append_little_blob_bang(bytes, value) {
 });
 }
 
+function allocation_epoch_bang() {
+  const bytes = new Array(304);
+  bytes.fill(0);
+  bytes.splice(0, 4, 82, 65, 69, 49);
+  return bytes;
+}
+
 function ascii(source) {
   return (() => { let index = 0; let bytes = []; while (true) {
     if (($$bc$equiv(index, source.length))) { return bytes; } else { const _recur_0 = (index + 1); const _recur_1 = $$bc$conj_value(bytes, source.charCodeAt(index)); index = _recur_0; bytes = _recur_1; continue; }
@@ -121,6 +128,8 @@ function minimal_cwr1_bang() {
   const bytes = [67, 87, 82, 49];
   append_little_blob_bang(bytes, [1]);
   append_little_u32_bang(bytes, 1);
+  append_little_blob_bang(bytes, [8]);
+  append_little_blob_bang(bytes, allocation_epoch_bang());
   [1, 2, 3, 4, 5, 6, 7, 8, 9].forEach((tag) => {
   identity(tag).forEach((byte) => {
   bytes.push(byte);
@@ -164,6 +173,7 @@ function opened_event_bang() {
   const bytes = cse_header_bang(0, 1);
   put_identities_bang(bytes, [21, 3, 22, 23, 24]);
   append_little_u32_bang(bytes, 1);
+  append_little_blob_bang(bytes, allocation_epoch_bang());
   return bytes;
 }
 

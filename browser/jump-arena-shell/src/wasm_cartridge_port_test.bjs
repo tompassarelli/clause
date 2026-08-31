@@ -78,10 +78,18 @@
     (append-u32! bytes (.-length value))
     (doseq [byte Int value] (.push bytes byte))))
 
+(defn allocation-epoch! [] Any
+  (let [bytes Any (new Array 304)]
+    (.fill bytes 0)
+    (.splice bytes 0 4 82 65 69 49)
+    bytes))
+
 (defn minimal-cwr1! [] Any
   (let [bytes Any [67 87 82 49]]
     (append-blob! bytes [1])
     (append-u32! bytes 1)
+    (append-blob! bytes [8])
+    (append-blob! bytes (allocation-epoch!))
     (doseq [tag Int [1 2 3 4 5 6 7 8 9]]
       (doseq [byte Int (identity tag)] (.push bytes byte)))
     (append-blob! bytes [9])
@@ -116,6 +124,7 @@
   (let [bytes Any (cse-header! 0 1)]
     (put-identities! bytes [21 3 22 23 24])
     (append-u32! bytes 1)
+    (append-blob! bytes (allocation-epoch!))
     bytes))
 
 (defn input-event! [] Any
@@ -179,8 +188,14 @@
       (workbench/->InputConfiguration 0 [])
       (fn [result Any] Any (reset! candidate result)))
      (.toBe (test/expect (str (.-length requests))) "3")
-     (.toBe (test/expect (json-string (.slice (nth requests 0) 0 4)))
-            "[67,87,83,49]")
+     (let [open-request Any (nth requests 0)
+           open-length Int (.-length open-request)]
+       (.toBe (test/expect (json-string (.slice open-request 0 4)))
+              "[67,87,83,49]")
+       (.toBe (test/expect (json-string (.slice open-request 13 18)))
+              "[1,0,0,0,8]")
+       (.toBe (test/expect (str (nth open-request (- open-length 17))))
+              "0"))
      (.toBe (test/expect (json-string [(nth (nth requests 1) 20)
                                        (nth (nth requests 2) 20)]))
             "[1,2]")

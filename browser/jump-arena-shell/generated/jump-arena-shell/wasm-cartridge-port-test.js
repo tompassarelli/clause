@@ -71,10 +71,19 @@ function append_blob_bang(bytes, value) {
 });
 }
 
+function allocation_epoch_bang() {
+  const bytes = new Array(304);
+  bytes.fill(0);
+  bytes.splice(0, 4, 82, 65, 69, 49);
+  return bytes;
+}
+
 function minimal_cwr1_bang() {
   const bytes = [67, 87, 82, 49];
   append_blob_bang(bytes, [1]);
   append_u32_bang(bytes, 1);
+  append_blob_bang(bytes, [8]);
+  append_blob_bang(bytes, allocation_epoch_bang());
   [1, 2, 3, 4, 5, 6, 7, 8, 9].forEach((tag) => {
   identity(tag).forEach((byte) => {
   bytes.push(byte);
@@ -118,6 +127,7 @@ function opened_event_bang() {
   const bytes = cse_header_bang(0, 1);
   put_identities_bang(bytes, [21, 3, 22, 23, 24]);
   append_u32_bang(bytes, 1);
+  append_blob_bang(bytes, allocation_epoch_bang());
   return bytes;
 }
 
@@ -180,7 +190,11 @@ const admitted = ({value: null, watches: {}});
 (port.startSession)(accepted.value.acceptedPackage, 1, (result) => (() => { const _a = started, _v = result; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })());
 (port.runCandidate)(started.value.session, workbench["->FixedTick"](16), workbench["->InputConfiguration"](0, []), (result) => (() => { const _a = candidate, _v = result; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })());
 test["expect"]($$bc$str(requests.length)).toBe("3");
-test["expect"](json_string(requests[0].slice(0, 4))).toBe("[67,87,83,49]");
+const open_request = requests[0];
+const open_length = open_request.length;
+test["expect"](json_string(open_request.slice(0, 4))).toBe("[67,87,83,49]");
+test["expect"](json_string(open_request.slice(13, 18))).toBe("[1,0,0,0,8]");
+test["expect"]($$bc$str(open_request[(open_length - 17)])).toBe("0");
 test["expect"](json_string([requests[1][20], requests[2][20]])).toBe("[1,2]");
 test["expect"](json_string(started.value.frame)).toBe("[]");
 (port.requestAdmission)(started.value.session, candidate.value.candidate, (result) => (() => { const _a = admitted, _v = result; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })());

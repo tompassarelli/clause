@@ -1,6 +1,35 @@
-import * as shell from './shell.js';
-import * as test from 'bun:test';
+import * as shell from "./shell.js";
+import * as test from "bun:test";
 import { keyword as $$bc$keyword, property_key as $$bc$property_key } from 'beagle/core.js';
+import { catch_dispatch as $$bd$catch_dispatch } from 'beagle/exception-dispatch.js';
+
+function fail_expectation_bang(message) {
+  return (() => { throw new Error(message); })();
+}
+
+function expect_same_bang(actual, expected) {
+  return ((actual === expected) ? null : fail_expectation_bang("expected values to be identical"));
+}
+
+function expect_equal_bang(actual, expected) {
+  return ((JSON.stringify(actual) === JSON.stringify(expected)) ? null : fail_expectation_bang("expected values to be structurally equal"));
+}
+
+function expect_throws_message_bang(thunk, expected) {
+  const matched = (() => { try {
+    thunk();
+  return false;
+  } catch (_catch_0) {
+    switch ($$bd$catch_dispatch(_catch_0, [Error])) {
+      case 0: {
+        const error = _catch_0;
+        return (error.message === expected);
+        break;
+      }
+    }
+  } })();
+  return (matched ? null : fail_expectation_bang("expected function to throw the exact message"));
+}
 
 function empty_listener_map() {
   return new Map();
@@ -111,7 +140,7 @@ function reset_fixture_bang() {
   return (() => { const _a = pixel_ratio, _v = 0.0; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })();
 }
 
-test.test("production shell emits input without advancing player state and tears down", () => { reset_fixture_bang();
+test["test"]("production shell emits input without advancing player state and tears down", () => { reset_fixture_bang();
 const three = {[$$bc$property_key($$bc$keyword("Scene"))]: fakeScene, [$$bc$property_key($$bc$keyword("Color"))]: fakeColor, [$$bc$property_key($$bc$keyword("PerspectiveCamera"))]: fakeCamera, [$$bc$property_key($$bc$keyword("WebGLRenderer"))]: fakeRenderer_bang, [$$bc$property_key($$bc$keyword("HemisphereLight"))]: fakeLight, [$$bc$property_key($$bc$keyword("DirectionalLight"))]: fakeLight, [$$bc$property_key($$bc$keyword("BoxGeometry"))]: fakeResource_bang, [$$bc$property_key($$bc$keyword("MeshStandardMaterial"))]: fakeResource_bang, [$$bc$property_key($$bc$keyword("Mesh"))]: fakeMesh, [$$bc$property_key($$bc$keyword("Group"))]: fakeGroup};
 const arena = shell["create-jump-arena-shell!"](fakeMount(), fakeBrowser_bang(), three, (input) => emitted_inputs.value.push(input));
 const frame = sample_frame();
@@ -127,24 +156,24 @@ const pointer_up = canvas_listeners.value.get("pointerup");
 const pointer_cancel = canvas_listeners.value.get("pointercancel");
 (arena.renderFrame)(frame);
 key_down({[$$bc$property_key($$bc$keyword("code"))]: "Space", [$$bc$property_key($$bc$keyword("repeat"))]: false});
-test.expect(emitted_inputs.value.length).toBe(0);
+expect_same_bang(emitted_inputs.value.length, 0);
 focus_handler({});
 key_down({[$$bc$property_key($$bc$keyword("code"))]: "Space", [$$bc$property_key($$bc$keyword("repeat"))]: false});
-test.expect(emitted_inputs.value.length).toBe(1);
+expect_same_bang(emitted_inputs.value.length, 1);
 blur_handler({});
 key_down({[$$bc$property_key($$bc$keyword("code"))]: "Space", [$$bc$property_key($$bc$keyword("repeat"))]: false});
-test.expect(emitted_inputs.value.length).toBe(1);
+expect_same_bang(emitted_inputs.value.length, 1);
 pointer_down({[$$bc$property_key($$bc$keyword("clientX"))]: 110.0, [$$bc$property_key($$bc$keyword("clientY"))]: 70.0, [$$bc$property_key($$bc$keyword("pointerId"))]: 9, [$$bc$property_key($$bc$keyword("button"))]: 0, [$$bc$property_key($$bc$keyword("buttons"))]: 1});
-test.expect(JSON.stringify(frame)).toBe(before);
-test.expect(frame.player.position).toEqual({[$$bc$property_key($$bc$keyword("x"))]: 2.0, [$$bc$property_key($$bc$keyword("y"))]: 3.0, [$$bc$property_key($$bc$keyword("z"))]: 4.0});
-test.expect(frame.player.velocity).toEqual({[$$bc$property_key($$bc$keyword("x"))]: 5.0, [$$bc$property_key($$bc$keyword("y"))]: 6.0, [$$bc$property_key($$bc$keyword("z"))]: 7.0});
-test.expect(frame.player.grounded).toBe(false);
-test.expect(render_count.value).toBe(1);
-test.expect(emitted_inputs.value.length).toBe(2);
-test.expect(pixel_ratio.value).toBe(2.0);
-test.expect(browser_listeners.value.has("keydown")).toBe(false);
-test.expect(browser_listeners.value.has("keyup")).toBe(false);
-test.expect(focus_requests.value).toBe(1);
+expect_same_bang(JSON.stringify(frame), before);
+expect_equal_bang(frame.player.position, {[$$bc$property_key($$bc$keyword("x"))]: 2.0, [$$bc$property_key($$bc$keyword("y"))]: 3.0, [$$bc$property_key($$bc$keyword("z"))]: 4.0});
+expect_equal_bang(frame.player.velocity, {[$$bc$property_key($$bc$keyword("x"))]: 5.0, [$$bc$property_key($$bc$keyword("y"))]: 6.0, [$$bc$property_key($$bc$keyword("z"))]: 7.0});
+expect_same_bang(frame.player.grounded, false);
+expect_same_bang(render_count.value, 1);
+expect_same_bang(emitted_inputs.value.length, 2);
+expect_same_bang(pixel_ratio.value, 2.0);
+expect_same_bang(browser_listeners.value.has("keydown"), false);
+expect_same_bang(browser_listeners.value.has("keyup"), false);
+expect_same_bang(focus_requests.value, 1);
 (arena.dispose)();
 (arena.dispose)();
 key_down({[$$bc$property_key($$bc$keyword("code"))]: "KeyW", [$$bc$property_key($$bc$keyword("repeat"))]: false});
@@ -157,16 +186,16 @@ pointer_move({[$$bc$property_key($$bc$keyword("clientX"))]: 111.0, [$$bc$propert
 pointer_up({[$$bc$property_key($$bc$keyword("clientX"))]: 111.0, [$$bc$property_key($$bc$keyword("clientY"))]: 71.0, [$$bc$property_key($$bc$keyword("pointerId"))]: 9, [$$bc$property_key($$bc$keyword("button"))]: 0, [$$bc$property_key($$bc$keyword("buttons"))]: 0});
 pointer_cancel({[$$bc$property_key($$bc$keyword("clientX"))]: 111.0, [$$bc$property_key($$bc$keyword("clientY"))]: 71.0, [$$bc$property_key($$bc$keyword("pointerId"))]: 9, [$$bc$property_key($$bc$keyword("button"))]: 0, [$$bc$property_key($$bc$keyword("buttons"))]: 0});
 resize_handler();
-test.expect(() => (arena.renderFrame)(frame)).toThrow("jump arena shell is disposed");
-test.expect(browser_listeners.value.size).toBe(0);
-test.expect(canvas_listeners.value.size).toBe(0);
-test.expect(pointer_captures.value.size).toBe(0);
-test.expect(emitted_inputs.value.length).toBe(2);
-test.expect(focus_requests.value).toBe(1);
-test.expect(render_count.value).toBe(1);
-test.expect(released_pointers.value).toBe(1);
-test.expect(resource_disposals.value).toBe(4);
-test.expect(renderer_disposals.value).toBe(1);
-test.expect(context_losses.value).toBe(1);
-return test.expect(canvas_removals.value).toBe(1); });
+expect_throws_message_bang(() => (arena.renderFrame)(frame), "jump arena shell is disposed");
+expect_same_bang(browser_listeners.value.size, 0);
+expect_same_bang(canvas_listeners.value.size, 0);
+expect_same_bang(pointer_captures.value.size, 0);
+expect_same_bang(emitted_inputs.value.length, 2);
+expect_same_bang(focus_requests.value, 1);
+expect_same_bang(render_count.value, 1);
+expect_same_bang(released_pointers.value, 1);
+expect_same_bang(resource_disposals.value, 4);
+expect_same_bang(renderer_disposals.value, 1);
+expect_same_bang(context_losses.value, 1);
+return expect_same_bang(canvas_removals.value, 1); });
 //# sourceMappingURL=shell-boundary-test.js.map

@@ -20,6 +20,7 @@
 (def session-command-max-bytes Int (* 1024 1024))
 (def session-command-limit Int 4096)
 (def identity-bytes Int 32)
+(def allocation-epoch-bytes Int 304)
 
 (defn hex-whitespace-code? [code Int] Bool
   (or (= code 9)
@@ -88,6 +89,7 @@
   [handle Any
    packageId Any
    sessionId Any
+   allocation Any
    world Any
    sequence Any
    occurrences Any
@@ -332,6 +334,13 @@
     {:bytes (frozen-byte-range bytes header-end end)
      :next end}))
 
+(defn require-allocation-epoch [record Any] Any
+  (let [bytes Any (.-bytes record)]
+    (if (and (= (.-length bytes) allocation-epoch-bytes)
+             (= (frozen-byte-range bytes 0 4) [82 65 69 49]))
+      bytes
+      (throw (new Error "runtime allocation epoch has an invalid shape")))))
+
 (defn parse-persistent-cartridge! [request ExactProcessRequest] PersistentCartridge
   (let [checked ExactProcessRequest (require-request request)
         bytes Any (.-bytes checked)]
@@ -344,7 +353,12 @@
     (let [package-record Any (parse-blob bytes 4 cwr1-max-bytes "CWR1 package")
           package-end Int (.-next package-record)
           application-end Int (require-range bytes package-end 4 "CWR1 application")
-          authority-start Int application-end
+          physical-plan Any (parse-blob bytes application-end cwr1-max-bytes
+                                        "CWR1 physical plan")
+          allocation Any (parse-blob bytes (.-next physical-plan) allocation-epoch-bytes
+                                     "CWR1 allocation epoch")
+          _allocation-bytes Any (require-allocation-epoch allocation)
+          authority-start Int (.-next allocation)
           identities-end Int (require-range bytes authority-start (* 9 identity-bytes)
                                             "CWR1 authority identities")
           occurrence-evidence Any (parse-blob bytes identities-end cwr1-max-bytes
@@ -378,13 +392,12 @@
       (when (or (= occurrence-count 0)
                 (not= final-offset (.-length bytes)))
         (throw (new Error "CWR1 cartridge shape is incomplete")))
-      (let [session-id Any (frozen-byte-range bytes (+ authority-start (* 2 identity-bytes))
-                                               (+ authority-start (* 3 identity-bytes)))
-            open-bytes Any [67 87 83 49]]
-        (doseq [byte Int (.slice bytes 4 budget-end)]
+      (let [open-bytes Any [67 87 83 49]]
+        (doseq [byte Int (.slice bytes 4 (.-next physical-plan))]
           (.push open-bytes byte))
-        (doseq [byte Int session-id]
+        (doseq [byte Int (.slice bytes authority-start budget-end)]
           (.push open-bytes byte))
+        (.push open-bytes 0)
         (append-u64! open-bytes session-command-limit)
         (append-u32! open-bytes session-command-max-bytes)
         (append-u32! open-bytes cse1-max-bytes)
@@ -454,13 +467,17 @@
                               (frozen-byte-range bytes offset (+ offset identity-bytes)))]
         (cond
           (= tag 1)
-          (do
-            (when (not= (.-length bytes) (+ 21 (* 5 identity-bytes) 4))
+          (let [allocation-offset Int (+ 21 (* 5 identity-bytes) 4)
+                allocation Any (parse-blob bytes allocation-offset allocation-epoch-bytes
+                                           "CSE1 allocation epoch")
+                allocation-bytes Any (require-allocation-epoch allocation)]
+            (when (not= (.-next allocation) (.-length bytes))
               (throw (new Error "CSE1 Opened event has an invalid shape")))
             {:kind "opened" :slot slot :generation generation :sequence sequence
              :packageId (identity-at 21)
              :sessionId (identity-at 53)
-             :world (identity-at 85)})
+             :world (identity-at 85)
+             :allocation allocation-bytes})
 
           (= tag 3)
           (do
@@ -746,6 +763,7 @@
                                                      :generation (.-generation event)})
                                     (.-packageId event)
                                     (.-sessionId event)
+                                    (.-allocation event)
                                     (atom (.-world event))
                                     (atom 0)
                                     (.-occurrences cartridge)
