@@ -182,12 +182,26 @@ fn canonical_world_declarations_reach_the_checked_package_with_exact_remainder()
                 counts
             });
     assert_eq!(unsupported_counts, [0, 0, 2, 0]);
-    let include_emissions = compiled
+    let membership_emissions = compiled
         .unsupported
         .iter()
         .flat_map(|unsupported| &unsupported.emissions)
         .collect::<Vec<_>>();
-    assert!(include_emissions.is_empty());
+    assert_eq!(membership_emissions.len(), 2);
+    assert_eq!(
+        membership_emissions
+            .iter()
+            .map(|emission| cst
+                .source_slice(emission.origin)
+                .expect("owned target origin"))
+            .collect::<Vec<_>>(),
+        [b"Arena".as_slice(), b"Player".as_slice()]
+    );
+    assert!(
+        membership_emissions
+            .iter()
+            .all(|emission| emission.slot.repetition.is_none())
+    );
 
     let input = compiled
         .input_handler
@@ -292,4 +306,98 @@ fn canonical_input_preserves_negative_zero_bits() {
         input.result_x,
         CanonicalInputScalarV1::Number((-0.0_f64).to_bits())
     );
+}
+
+#[test]
+fn standalone_membership_group_preserves_order_and_item_origins() {
+    let source = "referent Door\nreferent Lockable\niron-door ∈ Door, Lockable\n";
+    let cst = read_canonical_source_v1(source.as_bytes()).expect("grouped membership source reads");
+    let plan = plan_independent_canonical_source_allocations_v1(
+        &cst,
+        ProgramChangeOccurrenceId::from_bytes(raw_id(7)),
+    )
+    .expect("supported declarations retain one explicit allocation plan");
+    let compiled = elaborate_canonical_source_package_v1(
+        &cst,
+        CanonicalSourceContextV1 {
+            universe: UniverseId::from_bytes(raw_id(1)),
+            semantics: ClauseSemanticsId::from_bytes(raw_id(2)),
+        },
+        &plan,
+    )
+    .expect("the membership group reaches bounded elaboration");
+
+    let [group] = compiled.unsupported.as_slice() else {
+        panic!("one standalone membership group remains outside the bounded package profile")
+    };
+    assert_eq!(group.production, CanonicalSourceProductionV1::Assertion);
+    assert_eq!(group.emissions.len(), 2);
+    assert_eq!(group.emissions[0].producer, group.emissions[1].producer);
+    assert_eq!(group.emissions[0].slot.local, b"Door");
+    assert_eq!(group.emissions[1].slot.local, b"Lockable");
+    assert_eq!(group.emissions[0].slot.repetition, None);
+    assert_eq!(group.emissions[1].slot.repetition, None);
+    assert_eq!(
+        cst.source_slice(group.emissions[0].origin),
+        Some(b"Door".as_slice())
+    );
+    assert_eq!(
+        cst.source_slice(group.emissions[1].origin),
+        Some(b"Lockable".as_slice())
+    );
+    assert!(
+        group
+            .emissions
+            .iter()
+            .all(|emission| emission.allocations.is_empty())
+    );
+}
+
+#[test]
+fn repeated_membership_target_is_not_deduplicated() {
+    let source = "referent Door\niron-door ∈ Door, Door\n";
+    let cst = read_canonical_source_v1(source.as_bytes())
+        .expect("repeated targets are valid grouping sugar");
+    let plan = plan_independent_canonical_source_allocations_v1(
+        &cst,
+        ProgramChangeOccurrenceId::from_bytes(raw_id(8)),
+    )
+    .expect("the repeated unsupported group does not collapse allocation inputs");
+    let compiled = elaborate_canonical_source_package_v1(
+        &cst,
+        CanonicalSourceContextV1 {
+            universe: UniverseId::from_bytes(raw_id(1)),
+            semantics: ClauseSemanticsId::from_bytes(raw_id(2)),
+        },
+        &plan,
+    )
+    .expect("the repeated membership group reaches bounded elaboration");
+    let emissions = &compiled.unsupported[0].emissions;
+    assert_eq!(emissions.len(), 2);
+    assert_eq!(emissions[0].slot.local, emissions[1].slot.local);
+    assert_eq!(emissions[0].slot.repetition, None);
+    assert_eq!(emissions[1].slot.repetition, Some(1));
+    assert_ne!(emissions[0].origin, emissions[1].origin);
+    assert_eq!(
+        cst.source_slice(emissions[0].origin),
+        Some(b"Door".as_slice())
+    );
+    assert_eq!(
+        cst.source_slice(emissions[1].origin),
+        Some(b"Door".as_slice())
+    );
+}
+
+#[test]
+fn malformed_or_competing_membership_group_forms_reject() {
+    for source in [
+        "iron-door ∈ Door,\n",
+        "iron-door∈ Door\n",
+        "iron-door ∈ [Door, Lockable]\n",
+    ] {
+        assert!(matches!(
+            read_canonical_source_v1(source.as_bytes()),
+            Err(CanonicalSourceErrorV1::InvalidMembershipGroup { .. })
+        ));
+    }
 }

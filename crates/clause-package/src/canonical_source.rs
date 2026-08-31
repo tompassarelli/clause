@@ -402,6 +402,9 @@ pub enum CanonicalSourceErrorV1 {
     InvalidMode {
         origin: CanonicalSourceOriginV1,
     },
+    InvalidMembershipGroup {
+        origin: CanonicalSourceOriginV1,
+    },
     InvalidInputHandler {
         origin: CanonicalSourceOriginV1,
     },
@@ -1873,6 +1876,16 @@ fn parse_item(
         )?);
     }
     require_leaf(block, artifact)?;
+    if head.contains('∈') {
+        let emissions = membership_group_emissions(artifact, block[0], origin)?;
+        return unsupported_item(
+            artifact,
+            block,
+            origin,
+            CanonicalSourceProductionV1::Assertion,
+            emissions,
+        );
+    }
     if let Some(assertion) = parse_vector_assertion(head, origin)? {
         return Ok(CstItem {
             origin,
@@ -2918,6 +2931,97 @@ fn handler_include_emissions(
         }
     }
     Ok(emissions)
+}
+
+fn membership_group_emissions(
+    artifact: CanonicalSourceArtifactIdV1,
+    line: SourceLine<'_>,
+    origin: CanonicalSourceOriginV1,
+) -> Result<Vec<CanonicalSourceEmissionV1>, CanonicalSourceErrorV1> {
+    let source = line.text;
+    let mut membership_offsets = source.match_indices('∈');
+    let Some((operator_offset, _)) = membership_offsets.next() else {
+        return Err(CanonicalSourceErrorV1::InvalidMembershipGroup { origin });
+    };
+    if membership_offsets.next().is_some() {
+        return Err(CanonicalSourceErrorV1::InvalidMembershipGroup { origin });
+    }
+
+    let left = &source[..operator_offset];
+    let right_offset = operator_offset + '∈'.len_utf8();
+    let right = &source[right_offset..];
+    if !left.ends_with(' ') || !right.starts_with(' ') {
+        return Err(CanonicalSourceErrorV1::InvalidMembershipGroup { origin });
+    }
+    let subject = left.trim_end_matches(' ');
+    let subject_bytes = membership_designation_bytes(subject, origin)?;
+
+    let producer = assertion_producer(&subject_bytes, "∈".as_bytes());
+    let mut repetitions = BTreeMap::<Vec<u8>, u64>::new();
+    let mut emissions = Vec::new();
+    let mut segment_offset = 0;
+    for segment in right.split(',') {
+        let leading = segment.len() - segment.trim_start_matches(' ').len();
+        let target = segment.trim_matches(' ');
+        if target.is_empty() {
+            return Err(CanonicalSourceErrorV1::InvalidMembershipGroup { origin });
+        }
+        let target_bytes = membership_designation_bytes(target, origin)?;
+        let occurrence = repetitions.entry(target_bytes.clone()).or_default();
+        let repetition = (*occurrence > 0).then_some(*occurrence);
+        *occurrence = occurrence
+            .checked_add(1)
+            .ok_or(CanonicalSourceErrorV1::InvalidMembershipGroup { origin })?;
+        let target_start = line
+            .start
+            .checked_add(right_offset)
+            .and_then(|start| start.checked_add(segment_offset))
+            .and_then(|start| start.checked_add(leading))
+            .ok_or(CanonicalSourceErrorV1::InvalidMembershipGroup { origin })?;
+        let target_end = target_start
+            .checked_add(target.len())
+            .ok_or(CanonicalSourceErrorV1::InvalidMembershipGroup { origin })?;
+        emissions.push(CanonicalSourceEmissionV1 {
+            producer: producer.clone(),
+            slot: CanonicalEmissionSlotV1 {
+                production: CanonicalSourceProductionV1::Assertion,
+                local: target_bytes,
+                repetition,
+            },
+            origin: CanonicalSourceOriginV1 {
+                artifact,
+                start: target_start as u64,
+                end: target_end as u64,
+            },
+            allocations: vec![],
+        });
+        segment_offset = segment_offset
+            .checked_add(segment.len())
+            .and_then(|offset| offset.checked_add(1))
+            .ok_or(CanonicalSourceErrorV1::InvalidMembershipGroup { origin })?;
+    }
+    if emissions.is_empty() {
+        return Err(CanonicalSourceErrorV1::InvalidMembershipGroup { origin });
+    }
+    Ok(emissions)
+}
+
+fn membership_designation_bytes(
+    source: &str,
+    origin: CanonicalSourceOriginV1,
+) -> Result<Vec<u8>, CanonicalSourceErrorV1> {
+    let bytes = source.as_bytes();
+    let valid = bytes
+        .first()
+        .is_some_and(|byte| byte.is_ascii_alphabetic() || *byte == b'_')
+        && bytes
+            .iter()
+            .skip(1)
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(*byte, b'_' | b'-'));
+    if !valid {
+        return Err(CanonicalSourceErrorV1::InvalidMembershipGroup { origin });
+    }
+    Ok(bytes.to_vec())
 }
 
 fn handler_semantic_producer(block: &[SourceLine<'_>]) -> Vec<u8> {
