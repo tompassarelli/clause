@@ -22,9 +22,11 @@ fallback. Generic reuse, deterministic lifetimes, and direct native/Wasm
 lowering are early falsifiers, not implemented capability.
 
 > **Current status:** Clause has an accepted semantic constitution and canonical
-> source design, but no supported parser, compiler, runtime, CLI, Wasm boundary,
-> renderer integration, or example application yet. The
-> [roadmap](docs/roadmap.md) is the sole implementation-status authority.
+> source design. Experimental Rust carriers, native and persistent Wasm process
+> sessions, materialization, and a passive browser shell are implemented and
+> have focused tests, but none is a supported language implementation yet. The
+> [roadmap](docs/roadmap.md) is the sole implementation-status authority and
+> records the currently red aggregate Rust gate and open constitutional gaps.
 
 ## A Clause transition
 
@@ -83,9 +85,10 @@ defined by the [adoption spike](docs/adoption-spike.md).
 | [Roadmap](docs/roadmap.md) | Current implementation facts, dependency order, and exit evidence |
 
 The frozen [execution corpus](docs/execution-corpus.md) preserves narrower v0
-observations while the process-v1 companion is built. Historical experiments,
-including the game-leverage materialization probe, are evidence rather than
-supported language features.
+observations. The separate process-v2 corpus is an experimental Rust carrier,
+not a ratified canonical package or complete process constitution. Historical
+experiments, including the game-leverage materialization probe, are evidence
+rather than supported language features.
 
 ## Bootstrap evidence
 
@@ -98,11 +101,13 @@ shortest broad checks are:
 cargo test --workspace --locked --all-targets
 ```
 
-These commands check their bounded bootstrap contracts; they do not establish
-the still-missing language implementation. `ClauseCore` and
-`clause-substrate` are historical implementation names, not names for Clause
-semantics or the target package architecture. The target split is a user-facing
-`clause` facade over `clause-package`, `clause-runtime`,
+The Cargo workspace command reaches `clause-substrate`, `clause-package`,
+`clause-runtime`, and `clause-materialization`. These commands check their
+bounded contracts; they do not promote the experimental process carrier or
+runtime to supported Clause, and the roadmap records the current gate result.
+`ClauseCore` and `clause-substrate` are historical implementation names, not
+names for Clause semantics or the target package architecture. The target split
+is a user-facing `clause` facade over `clause-package`, `clause-runtime`,
 `clause-materialization`, and `clause-wasm`.
 
 Clause is available under the [MIT License](LICENSE-MIT) or the

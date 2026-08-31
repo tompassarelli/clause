@@ -68,14 +68,15 @@ observations and six v0 outcome tags remain exactly `returned`, `choices`,
 `yielded`, `suspended`, `failed`, and `exhausted`. They are compatibility
 evidence, not the complete process ontology.
 
-A separate versioned process-v1 companion must crosswalk those exact bytes into
-ApplicationForms, ApplicationIds, ActivationIds, StepIds, RunIds,
+A separately versioned ratified process companion must crosswalk those exact
+bytes into ApplicationForms, ApplicationIds, ActivationIds, StepIds, RunIds,
 ContinuationIds where a boundary is crossed, ObservationIds, exact program and
-world pins, and candidate/admission evidence. It must not rewrite or infer new
-identity from fixture-local v0 names. Source movement, duplicate equal
-occurrences, n-ary role closure, closure capture, pure arithmetic, an ongoing
-service, cancellation, budget exhaustion, and effect timeout require new
-process-v1 fixtures.
+world pins, and candidate/admission evidence. The current process-v2 Rust corpus
+is a reduced experimental input, not that ratified companion. The companion
+must not rewrite or infer new identity from fixture-local v0 names. Source
+movement, duplicate equal occurrences, n-ary role closure, closure capture,
+pure arithmetic, an ongoing service, cancellation, budget exhaustion, and
+effect timeout require new ratified process fixtures.
 
 The historical `game_leverage` position/radius law and later implementation
 attempts are experimental evidence only. Preserve the unchanged source law as
@@ -229,7 +230,7 @@ pointers, table indexes, paths, spans, or log positions cannot escape as
 semantic identity.
 
 Identity allocation itself is typed and checked; authoritative retention is
-governed only where the identity crosses such a boundary. The process-v1
+governed only where the identity crosses such a boundary. The ratified process
 carrier must record the exact allocation basis and, where declared, authority
 and predecessor evidence: one unique ApplicationLocalId plus its checked form
 inside an exact ProgramSnapshot allocates an ApplicationId, while Program
@@ -703,9 +704,10 @@ and host-mechanics manifest. Then perform one predecessor-authorized
 - one typed macro;
 - one diagnostic behavior.
 
-The accepted process-v1 outer envelope is already fixed in Compiler0 before
-this evolution. Compiler1 populates that unchanged envelope; changing its shape
-would be a fifth host-freeze variable and does not pass this falsifier.
+The host-freeze experiment requires the ratified process outer envelope to be
+fixed in Compiler0 before this evolution. Compiler1 populates that unchanged
+envelope; changing its shape would be a fifth host-freeze variable and does not
+pass this falsifier.
 
 The user-defined algebraic data and exhaustive-match case must also pass under
 the same frozen hosts, including exact missing-case and unreachable-case
@@ -718,9 +720,9 @@ refactor, analysis, dependency rule, or target semantic branch.
 ### 12. Bounded Wasm and passive-render boundary
 
 The Wasm adapter receives bounded canonical bytes and returns bounded canonical
-bytes plus replaceable physical handles. The process-v1 companion fixes the
-exact request bytes, input and output limits, expected typed status, and handle
-table before/after state for each of these cases:
+bytes plus replaceable physical handles. The ratified process companion fixes
+the exact request bytes, input and output limits, expected typed status, and
+handle table before/after state for each of these cases:
 
 - one valid pure activation round trip;
 - truncated and noncanonical package bytes;
@@ -783,9 +785,9 @@ instrumented warm-up and lazy-cache evidence.
 ### 13. Frozen ordinary-source ergonomics
 
 The process machinery must remain absent from ordinary authored source unless
-the source is actually specifying a process boundary. The process-v1 companion
-copies these UTF-8/LF specimens byte-for-byte and preserves them through
-canonical parse/print/parse.
+the source is actually specifying a process boundary. The ratified process
+companion copies these UTF-8/LF specimens byte-for-byte and preserves them
+through canonical parse/print/parse.
 
 Pure definition:
 
@@ -981,7 +983,7 @@ The cross-phase program passes only when all of these are executable and exact:
   payloads retain `/` without becoming Designations; and
 - ordinary source at least as readable as the accepted surface, with process
   and ownership machinery exposed only where semantically relevant, proven by
-  all four process-v1 canonical source specimens rather than a prose
+  all four canonical process source specimens rather than a prose
   readability claim.
 
 ## Required negative evidence

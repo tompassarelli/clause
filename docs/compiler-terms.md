@@ -1,6 +1,6 @@
 # Process-first compiler Terms
 
-> **Status:** candidate process-v1 Terms contract. It is not an admitted
+> **Status:** candidate process Terms contract. It is not an admitted
 > ProgramSnapshot, compiler package, materialization contract, physical plan,
 > or supported runtime.
 >

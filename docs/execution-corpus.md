@@ -1,4 +1,4 @@
-# Clause v0 execution corpus and process-v1 boundary
+# Clause v0 execution corpus and process-carrier boundary
 
 > **Authority:** The [foundation](foundation.md) alone defines Clause meaning,
 > the [syntax](syntax.md) alone defines canonical source, and the
@@ -58,9 +58,9 @@ The manifest's `ground_rules` are the finite generic expansion of the pure
 program's two authored laws for this exact input graph. Each three-string item
 is shorthand for the same neutral subject/relation/object Triple. This lets the
 Lean and Rust execution tranches consume one executable oracle before source
-elaboration exists. The process-v1 successor must express equivalent laws in
-separately accepted canonical source and reproduce the same expansion; a
-current parser must not reinterpret the historical v0 files.
+elaboration exists. A ratified process-carrier successor must express
+equivalent laws in separately accepted canonical source and reproduce the same
+expansion; a current parser must not reinterpret the historical v0 files.
 
 The corpus deliberately does not publish `ApplicationId`, `ActivationId`,
 `StepId`, `RunId`, `ContinuationId`, `ObservationId`, `ProgramSnapshotId`, or
@@ -105,11 +105,12 @@ The state/effect program has four distinct boundaries:
 Reasserting the recorded trace must not perform the effect again. A fabricated
 receipt and an attempt without the admitted capability both reject.
 
-## Required process-v1 companion
+## Required ratified process companion
 
-A new separately versioned companion must preserve every frozen v0 program
-payload and execution observation while making the process kernel explicit.
-Its crosswalk must show:
+A separately versioned companion must preserve every frozen v0 program payload
+and execution observation while making the process kernel explicit. The current
+process-v2 Rust corpus is a reduced experimental input to this work, not the
+ratified companion. The crosswalk must show:
 
 - each checked closed form and its ApplicationShapeId, committing to exact
   ClauseSemanticsId, exact RelationSchemaId, exact OperatorRef, the exact
@@ -201,9 +202,9 @@ silently migrate a live Activation to a new Program or world revision.
 
 ### Exact companion record
 
-Every process-v1 case must commit exact input bytes and checksums, the selected
-semantics and Program/world/session pins, identity-allocation basis and
-applicable authority,
+Every ratified process case must commit exact input bytes and checksums, the
+selected semantics and Program/world/session pins, identity-allocation basis
+and applicable authority,
 Application/Activation/Run identities, canonically encoded StepRecords with
 fresh nominal StepIds, explicit finite typed StepCauseFrontiers, separate exact
 StepConfigurationTransitions, IncomingRunEdges, observations and occurrence-
@@ -226,7 +227,7 @@ strategy. A local-only case must prove that no StateRevision, Admission, or
 mandatory retained trace was allocated.
 
 Names used while authoring the manifest are never semantic identity by
-spelling. Once the process-v1 identity encoding is accepted, the companion
+spelling. Once the process identity encoding is accepted, the companion
 must carry its canonical ID bytes and preimages; equality/inequality-only
 placeholders cannot satisfy an exact gate. Every identity record names its
 exact checked allocation basis. Authority, predecessor, or retention evidence

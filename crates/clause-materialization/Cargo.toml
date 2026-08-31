@@ -7,10 +7,6 @@ readme = "README.md"
 rust-version = "1.96"
 publish = false
 
-# This crate is intentionally manifest-local until the shared-workspace
-# integrator admits the package split.
-[workspace]
-
 [lints.rust]
 unsafe_code = "forbid"
 

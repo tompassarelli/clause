@@ -1,5 +1,10 @@
 [workspace]
-members = ["crates/clause-substrate"]
+members = [
+  "crates/clause-materialization",
+  "crates/clause-package",
+  "crates/clause-runtime",
+  "crates/clause-substrate",
+]
 resolver = "3"
 
 [workspace.package]

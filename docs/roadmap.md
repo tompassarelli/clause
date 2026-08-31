@@ -9,27 +9,19 @@
 
 ## Current position
 
-Clause has accepted the process-first constitutional reset, but no end-to-end
-process-first capability is accepted or supported. The public implementation
-evidence predating the reset remains valuable but narrower than the new
-semantic claim:
+Clause has accepted the process-first constitutional reset. The repository now
+contains experimental implementations of a process package, native execution,
+persistent native and Wasm sessions, materialization, a jump mechanic, and a
+passive browser shell. These artifacts are useful executable evidence, but no
+end-to-end process-first capability is accepted or supported as the Clause
+language. There is still no supported parser, compiler, CLI, persistence
+format, runtime, Wasm boundary, renderer integration, or example application.
 
-- one neutral recursive `Term = Atom | RawTriple` carrier with no mandatory
-  Triple identity;
-- provisional Lean Context/Judgment carriers and a relative finite ground-
-  certificate checker;
-- strict CLCP v1 Lean/Rust codec parity and literal predecessor authority;
-- the CLCP v3 Lean strict codec, carried manifest, evaluator/replay model, and
-  complete 73-byte-receipt replay checker;
-- the frozen v0 execution/admission/replay observation corpus; and
-- the bounded historical `game_leverage` cold-scan/indexed experiment.
-
-Those artifacts do not implement `FormationJudgment`, `RelationSchema`,
-`OperatorRef`, `ModeId`, `ApplicationForm`, `ApplicationId`, `ActivationId`,
-semantic `StepId`, `RunId`, typed Continuation, `ObservationId`, general
-Admission, or the process-v1 corpus. There is no supported parser, compiler,
-runtime, persistence format, CLI, Wasm boundary, renderer integration, or
-example application.
+The live `CLPV` v2 files supersede rejected process-v1 bytes as Rust experiment
+data only. There is no process-v1 compatibility decoder, and historical v1
+bytes have no semantic standing. `CLPV` is not a ratified canonical wire format:
+its current encoder and decoder are Rust-owned and lack a host-neutral byte
+specification and independent implementation.
 
 The exact CLCP v3 bytes, hashed manifest, 73-byte receipt, left-to-right KExpr
 evaluator, machine Continuation, evaluator step, fuel exhaustion,
@@ -38,20 +30,27 @@ mechanics. They are not silently reinterpreted as universal process semantics.
 Clause-owned outer Terms and envelopes must carry process identities, pins,
 authorizations, evidence, and governed deltas through that fixed machine.
 
-No implementation claim follows from a documentation specimen, local branch,
+No implementation claim follows from a documentation specimen, commit hash,
 test transcript, or host prototype. Git history is recovery, not semantic
-authority.
+authority. This status is classified by artifact below rather than bound to a
+checkpoint hash that becomes false on the next commit.
 
-Public main is `373feb16` and contains both the bounded passive-shell repair
-`5bcb46e` and accepted exact compiler Terms from reviewed source object
-`fe1de91`. Terms follow-up `e3cc667` was
-rejected by its adjacent-boundary review; `b70e3b8` is its unreviewed bounded
-successor at this checkpoint. The construct-blind runtime `3ecadab` remains a
-clean non-main candidate. Materialization repair is dirty atop `6765a12`, and
-jump-law repair is dirty atop `e1b24a7`; neither base is a current accepted
-artifact. The process carrier, Compiler0, and Rust-v3 lanes also remain active
-recovery inputs. No non-main object is authoritative, accepted, or integrated
-merely by existing.
+## Artifact status matrix
+
+| Artifact | Semantic status | Wire status | Implementation status | Test status | Supported status | Supersedes | Constitutional gaps |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Foundation and syntax | Accepted semantic and source authorities | Not a wire format | Documentation | Document examples only | Authority, not a toolchain | Process-first reset supersedes graph-first and clause-as-Application drafts | Normative lexer/CST/elaboration grammar and implemented reader remain open |
+| CLCP v1 and v3 compiler machine | Bounded compiler-machine mechanics; not universal process semantics | Ratified exact CLCP contracts | Lean reference/checker and historical Rust substrate | Lean vectors plus Rust parity/replay tests | Bootstrap evidence only | Earlier provisional compiler-machine carriers | Process-aware Compiler0, external genesis exercise, and accepted succession remain open |
+| Compiler Terms fixtures | Semantic candidate over neutral Terms | Exact JSON fixture transport, not a language package | Rust fixture/checking support | Positive and negative corpus checks | No | Earlier positional and slash-qualified specimens | Full formation, source-origin, static prerequisite, and physical-refinement bindings remain open |
+| Frozen v0 execution corpus | Historical observation oracle | Exact historical bytes and checksums | Lean/Rust historical consumers | Checksum and observation checks | No | Nothing; retained as a frozen oracle | No current syntax or process identity authority |
+| `CLPV` process-v2 corpus and `clause-package` | Experimental reduced admitted-stateful profile | Rust-owned experimental encoding | Encode, strict decode, package checks, and identity carriers | Root gate reaches the crate; `aggregate_step_count_is_checked_across_record_boundaries` currently fails on overflow | No | Rejected process-v1 bytes and decoder | Stable prerequisite slots/ordinals/cause projection; absence outside Observation; continuation-edge uniqueness; candidate/admitted constitution sum; exact boundary payload contracts; independent wire specification; bounded Term construction |
+| `clause-runtime` native and Wasm sessions | Reversible physical experiment; successful execution creates no Clause authority | Rust-owned request/response encodings | Native process runtime, headless jump, persistent native session, and persistent Wasm session ABI | Compiled by the root gate; aggregate execution currently stops at the package failure | No | Earlier construct-blind and one-shot runtime experiments | Fresh semantic allocation epoch; remove magic executable-Term lookup; checked semantic-to-physical plan binding; full package contract |
+| `clause-materialization` | Experimental replaceable physical projection | JSON fixtures only | Cold scan, uniform grid, support, and work projection | Root gate reaches the crate; 32 tests pass | No | Historical substrate materialization probe | Exact admitted-delta input, occurrence-exact incremental contract, and accepted physical-plan binding |
+| Jump arena and browser shell | Experimental game/transport evidence | Bounded Rust/Wasm fixture bytes and generated JS declarations | Package-owned headless mechanic, Wasm adapters, persistent session boundary, passive shell | Focused Rust and BJS fixtures; browser generation is outside the root Rust gate | No | Static and host-owned gameplay demonstrations | Canonical source-to-package path, native/Wasm semantic parity after carrier repair, typed browser generation, controlled frame-allocation proof, Clause-only mechanic evolution |
+
+The root Rust gate is therefore real and currently red. Its package failure is
+an implementation defect exposed by the widened workspace, not omitted test
+coverage; no current Rust crate is supported while that aggregate gate fails.
 
 ## Preserved oracles
 
@@ -75,7 +74,8 @@ The following evidence remains unchanged while the reset is implemented:
 - the unchanged position/radius source law remains the cold-semantics input for
   later scan/indexed materialization parity.
 
-New process-v1 fixtures extend these oracles; they do not rewrite them.
+Ratified process-carrier fixtures extend these oracles; they do not rewrite
+them.
 
 ## Lifecycle and sequencing
 
@@ -97,27 +97,6 @@ and semantic inputs are genuinely independent. No candidate may be integrated
 against superseded graph-first, proposition-first, clause-as-Application, or
 host-owned game semantics. A lower-case clause remains `ClauseJudgment`
 content over a neutral Term; it is neither every Term nor every Application.
-
-## Gap matrix
-
-| Boundary | Current evidence | Missing exit evidence |
-| --- | --- | --- |
-| Neutral representation | Term/Atom/RawTriple candidates exist | Accepted equality contracts and process-era checked formation |
-| Process constitution | Public documentation defines the candidate | Executable Formation/Application/Activation/Step/Run/Continuation rules |
-| Typed identity | Program/State identity design and occurrence evidence exist | Checked ApplicationShape/Application/Activation/Step/Run/Continuation/Observation domains and non-interchange proofs |
-| Relations and modes | Source design and historical relation experiments exist | Separate RelationSchema, revision-indexed extension, OperatorRef, Mode, Reading, and authorization contracts |
-| General-purpose values and reuse | Numeric/source specimens and ADT falsifier prose only | Rich values/collections, rank-1 generics, coherent constraints, separate compilation, and exact diagnostics |
-| Local state and memory | ActivationConfiguration and erasable internal-reduction semantics only | Affine local slots, Step cuts, exact allocation roots plus Borrow/Lease edges, bounded nonobservable mechanical reclaim after explicit observable close, optional bounded managed islands outside the game hot path, bounded trace retention, and no-mandatory-GC frame proof |
-| Physical competence | Generic Rust bootstrap and historical materialization experiments | Clause-owned physical IR, layout/ABI control, erasure, and direct native/Wasm specialization |
-| Agent workbench | No supported parser, CLI, or semantic service | One long-lived CLCP03-backed service with transactional source and exact semantic operations |
-| Compiler machine | CLCP v3 Lean replay is implemented | Rust v3 parity, literal process-aware Compiler0, external anchor, and accepted successor |
-| Compiler ownership | Genesis/host-freeze contract exists | Compiler0 migration away from provisional `JUDGMENT_ID`/check-decision payloads and one frozen-host evolution |
-| Execution oracle | v0 execution/admission/replay observation corpus is frozen | process-v1 crosswalk plus the accepted pure/local and process/effect slices |
-| Terms | Exact compiler Terms are integrated on public main at `373feb16`; follow-up `e3cc667` was rejected and bounded successor `b70e3b8` awaits review | Accept only a reviewed follow-up; preserve the public Terms object meanwhile |
-| Materialization | Active dirty repair is based on non-accepted `6765a12`; no current materialization candidate has passed independent review | Finish repair, independent acceptance, admitted-delta adapter, and occurrence-exact locality proof |
-| Transition/effects | Active jump-law repair is based on non-accepted `e1b24a7`; `3ecadab` remains a non-main construct-blind runtime candidate and no accepted integration exists | Clause-owned lowering, Mode-selected governed/preauthorized effect profiles, and accepted integration |
-| Wasm/browser | `5bcb46e` passive-shell repair is public; no Wasm adapter or process-frame integration exists | Bounded ABI, native/Wasm parity, process-identity frame envelope, preallocated controlled hot path, and integration |
-| Product proof | Historical game-leverage experiment exists | Clause-owned playable mechanic, second substantial Clause-only extension, and passive rendering |
 
 ## General-purpose replacement gates
 
@@ -160,8 +139,8 @@ edit with exact diagnostics plus affected and preserved dependency/cache sets.
 
 **Status:** The v0 execution/admission/replay observations and original source-
 payload hashes are frozen; the slash-bearing source projections are quarantined
-under the historical noncanonical fixture path, and the process-v1 companion
-is missing.
+under the historical noncanonical fixture path. An experimental process-v2
+Rust corpus exists, but it is a reduced profile and not the ratified companion.
 
 Freeze the three exact original v0 source-payload byte streams and their actual
 execution observations for:
@@ -173,7 +152,8 @@ execution observations for:
   and
 - two Program changes from exact predecessors, including stale-base rejection.
 
-Add new exact process-v1 cases for the current gaps:
+Repair and extend the experimental process-v2 cases into one ratified process
+carrier for the current gaps:
 
 - pure arithmetic;
 - closure capture and source movement;
@@ -187,8 +167,9 @@ Add new exact process-v1 cases for the current gaps:
   receipt, and budget exhaustion; and
 - generated Rust/JavaScript/Wasm observation parity when those artifacts exist.
 
-The companion maps the frozen v0 observations into the new identity and causal
-domains without changing v0 bytes or inferring IDs from fixture-local names.
+The eventual ratified companion maps the frozen v0 observations into the new
+identity and causal domains without changing v0 bytes or inferring IDs from
+fixture-local names.
 
 **Exit evidence:** exact v0 checksum preservation, explicit crosswalk rules,
 and negative vectors for wrong-mode, open form, ambiguous mode, stale revision,
@@ -397,11 +378,12 @@ ordinary values, static reuse, memory, or specialization from hiding behind a
 larger distributed-process demonstration.
 
 The semantic-model candidate remains scoped to
-`clause:lean/ClauseProcess.lean`, `clause:lean/ClauseProcess/**`, and
-`clause:test-vectors/process-v1/**`. The existing CLCP03 and Compiler0 recovery
-paths enumerated below remain inputs until the Phase 4 integrator applies their
-exact accepted deltas. One integrator owns shared manifests, target crate
-registration, the root corpus index, and the exact assembled package.
+`clause:lean/ClauseProcess.lean`, `clause:lean/ClauseProcess/**`, and the
+ratified successor to the experimental `clause:test-vectors/process-v2/**`
+corpus. The existing CLCP03 and Compiler0 recovery paths enumerated below remain
+inputs until the Phase 4 integrator applies their exact accepted deltas. One
+integrator owns shared manifests, target crate registration, the root corpus
+index, and the exact assembled package.
 
 **Exit evidence:** adoption-spike Phase B passes through the real accepted
 Compiler0/package/runtime/workbench, including all exact negatives; direct
@@ -411,12 +393,12 @@ Phase C program remains open.
 
 ## Phase 5 — Compiler host-freeze, Terms, and materialization
 
-**Status:** Exact compiler Terms from reviewed source object `fe1de91` are
-accepted and integrated on public main at `373feb16`. Follow-up `e3cc667` is
-rejected; bounded successor `b70e3b8` awaits
-independent review and does not diminish the accepted public object.
-Materialization remains a dirty repair atop non-accepted base `6765a12`.
-Compiler0 and Rust v3 remain dirty candidates.
+**Status:** Compiler Terms fixtures and the split `clause-package`,
+`clause-runtime`, and `clause-materialization` crates are integrated as
+experimental evidence. The Terms contract is still a semantic candidate;
+materialization is a replaceable physical experiment; neither establishes
+Admission or supported Clause behavior. Compiler0 and a complete independent
+process checker remain unimplemented.
 
 Bounded candidate work may proceed in parallel before this phase, but ordered
 integration begins only from the accepted Phase 4 process contract:
@@ -541,10 +523,12 @@ locality without hidden whole-state work.
 
 ## Phase 6 — Clause-owned transition, effects, Wasm, and passive rendering
 
-**Status:** No accepted integrated implementation. Public main contains passive
-shell repair `5bcb46e`; `3ecadab` remains a clean non-main construct-blind
-runtime candidate, while the active jump-law repair is dirty atop non-accepted
-base `e1b24a7`. No `clause-wasm` crate exists.
+**Status:** No accepted or supported integrated implementation. Experimental
+native execution, headless jump behavior, bounded Wasm request/response
+adapters, persistent native/Wasm sessions, and a passive browser shell are in
+the repository. They remain physical evidence while the process identity,
+prerequisite, executable-plan, and carrier-authority defects in the artifact
+matrix are open. No separate `clause-wasm` responsibility crate exists.
 
 Complete the adoption-spike Phase C breadth on the same Phase 4 implementation:
 recursive derivation; an ongoing service with real suspension/restart;
@@ -582,24 +566,27 @@ stronger browser-wide claims require instrumentation. Freshness follows exact
 declared process causality and optional admitted-revision ancestry, never host
 callback order.
 
-Bounded pre-ABI candidates already exist but remain non-integrable. After the
-process ABI is accepted, continue or reconcile them within these disjoint scopes:
+Bounded process-ABI experiments already exist but remain non-promotable. After
+the process ABI is accepted, continue or reconcile them within these disjoint
+scopes:
 
 - Clause-owned mechanic laws and semantic vectors:
   `clause:test-vectors/jump-arena/**`;
 - construct-blind native process runtime:
   `clause:crates/clause-runtime/src/process/**` and
   `clause:crates/clause-runtime/tests/process_runtime.rs`;
-- bounded canonical-byte Wasm adapter:
-  `clause:crates/clause-wasm/**`; and
+- bounded canonical-byte Wasm adapter, currently housed experimentally in
+  `clause:crates/clause-runtime/src/process/*wasm_boundary.rs` and eventually
+  separated into `clause:crates/clause-wasm/**`; and
 - passive typed shell: `clause:browser/jump-arena-shell/**`.
 
 The rejected Rust `clause:crates/clause-substrate/src/transition.rs` and the
 unreviewed/rejected jump-law bases are evidence only, not accepted artifacts or
 lane scopes.
-One integration owner adds shared crate exports, workspace/package manifests,
-the final browser entrypoint, and cross-lane parity fixtures after the four
-candidates are accepted.
+One integration owner reconciles shared crate exports, the final browser
+entrypoint, and cross-lane parity fixtures after the four candidates are
+accepted. The root Cargo workspace already includes all four current Rust
+crates; workspace membership is not semantic acceptance.
 
 Prove a playable 3D mechanic whose movement, jump, no-double-jump, gravity,
 landing, collision, and render projection are Clause-owned. Then add one second

@@ -1,10 +1,11 @@
-# Clause process-v2 canonical corpus
+# Clause process-v2 experimental Rust carrier corpus
 
-This directory freezes canonical `CLPV` version 2 packages. Valid bytes come
-only from `clause_package::encode_process_package`; the one deliberately
-noncanonical support-slot mutation starts from that exact encoder output.
-`SHA256SUMS` binds the transport files and `manifest.json` names each expected
-decode, check, authority, or replay verdict.
+This directory freezes `CLPV` version 2 experiment packages. The current Rust
+encoder produces every accepted fixture; the one deliberately noncanonical
+support-slot mutation starts from that exact encoder output. `SHA256SUMS` binds
+the transport files and `manifest.json` names each expected decode, check,
+authority, or replay verdict. This is not yet a canonical Clause wire format:
+its byte contract has no host-neutral ratification or independent decoder.
 
 `positive/process-v2-core.hex` is the compact proving package. It contains two
 nominal Applications with one structural shape, distinct Activations of one
