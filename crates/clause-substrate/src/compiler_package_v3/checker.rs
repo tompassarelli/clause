@@ -144,8 +144,10 @@ pub struct OwnerAnchorWitness<'a> {
 }
 
 impl<'a> OwnerAnchorWitness<'a> {
-    #[allow(dead_code)]
-    pub(crate) const fn from_external_selection(observation: OwnerAnchorObservation<'a>) -> Self {
+    /// Establish the irreducible owner observation supplied at the one genesis
+    /// boundary. This constructor records external selection; it does not
+    /// infer authority from package bytes or hashes.
+    pub const fn from_external_selection(observation: OwnerAnchorObservation<'a>) -> Self {
         Self { observation }
     }
 

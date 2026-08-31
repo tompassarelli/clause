@@ -617,6 +617,13 @@ impl DecodedCompilerPackage {
     pub const fn package(&self) -> &CompilerPackage {
         &self.package
     }
+
+    /// Consume the strict decoded carrier and transfer its inert package data
+    /// to a generic evaluator or artifact owner.
+    #[must_use]
+    pub fn into_package(self) -> CompilerPackage {
+        self.package
+    }
 }
 
 /// The ten canonical strict-decode rejection codes.

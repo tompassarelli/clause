@@ -15,7 +15,7 @@ pub use checker::{
     OwnerAnchorObservation, OwnerAnchorWitness, PredecessorInput, SuccessorAuthorizationRequest,
     authorize_genesis, authorize_successor,
 };
-pub use codec::{decode, encode};
+pub use codec::{decode, decode_canonical_term, encode, encode_canonical_term};
 pub use manifest::{
     compiler_package_hash, core_contract_id, domain_hash, eval_receipt_observations_hash,
     eval_receipt_value_hash, exact_core_manifest_bytes, exact_physical_profile_bytes,

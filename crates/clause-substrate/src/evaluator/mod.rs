@@ -271,7 +271,10 @@ impl<'a> Evaluator<'a> {
         })
     }
 
-    pub(crate) fn replay_entrypoint(
+    /// Invoke one definition selected by its opaque package-local `DefId`.
+    /// Selection performs only the fixed CLCP03 definition-table lookup; the
+    /// selected `KExpr` remains the sole owner of operation meaning.
+    pub fn invoke_entrypoint(
         &self,
         entrypoint: Id32,
         arguments: &[KValue],
@@ -295,6 +298,15 @@ impl<'a> Evaluator<'a> {
             arguments: argument_expressions,
         };
         self.evaluate(&expression, &[], fuel_limit)
+    }
+
+    pub(crate) fn replay_entrypoint(
+        &self,
+        entrypoint: Id32,
+        arguments: &[KValue],
+        fuel_limit: u64,
+    ) -> Result<Evaluation, EvalError> {
+        self.invoke_entrypoint(entrypoint, arguments, fuel_limit)
     }
 
     fn infer(

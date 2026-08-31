@@ -722,11 +722,31 @@ pub(crate) fn canonical_value_bytes(value: &KValue) -> Result<Vec<u8>, EncodeErr
     Ok(encoder.bytes)
 }
 
-pub(crate) fn canonical_term_bytes(value: &Term) -> Result<Vec<u8>, EncodeError> {
+/// Encode one neutral CLCP03 `Term` with the same canonical wire rules used
+/// inside compiler packages.
+pub fn encode_canonical_term(value: &Term) -> Result<Vec<u8>, EncodeError> {
     let mut budget = EncodeBudget::new();
     let mut encoder = Encoder::new(&mut budget)?;
     encode_term(&mut encoder, value, 0)?;
     Ok(encoder.bytes)
+}
+
+pub(crate) fn canonical_term_bytes(value: &Term) -> Result<Vec<u8>, EncodeError> {
+    encode_canonical_term(value)
+}
+
+/// Decode one exact neutral CLCP03 `Term`. Trailing bytes are rejected rather
+/// than treated as another framing layer.
+pub fn decode_canonical_term(input: &[u8]) -> Result<Term, DecodeFailure> {
+    if input.len() > MAX_WIRE_BYTES {
+        return Err(DecodeFailure::ResourceExhausted);
+    }
+    let mut cursor = Cursor::top(input);
+    let term = decode_term(&mut cursor, 0)?;
+    if cursor.offset != cursor.limit {
+        return Err(cursor.rejection(DecodeCode::TrailingBytes, cursor.offset));
+    }
+    Ok(term)
 }
 
 #[derive(Clone, Copy)]

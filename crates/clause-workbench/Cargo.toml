@@ -1,0 +1,15 @@
+[package]
+name = "clause-workbench"
+version = "0.0.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+rust-version = "1.96"
+publish = false
+
+[dependencies]
+clause-package = { path = "../clause-package" }
+clause-runtime = { path = "../clause-runtime" }
+clause-substrate = { path = "../clause-substrate" }
+
+[lints.rust]
+unsafe_code = "forbid"

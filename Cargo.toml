@@ -4,6 +4,7 @@ members = [
   "crates/clause-package",
   "crates/clause-runtime",
   "crates/clause-substrate",
+  "crates/clause-workbench",
 ]
 resolver = "3"
 

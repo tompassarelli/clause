@@ -1,0 +1,13 @@
+referent Number
+
+answer := 41 + 1
+
+relation successor
+  reads {before: Number} succeeds to {after: Number}
+  subject before
+
+41 succeeds to 42
+
+select one ?after in World
+  where
+    41 succeeds to ?after
