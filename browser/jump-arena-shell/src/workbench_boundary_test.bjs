@@ -5,6 +5,17 @@
 
 (require '["bun:test" :as test])
 
+(defn expectation-failed! [] Nil
+  (throw (new Error "typed expectation failed")))
+
+(defn expect-true! [condition Bool] Nil
+  (if condition nil (expectation-failed!)))
+
+(defn expect-throws? [action (Fn [] Any)] Bool
+  (try
+    (do (action) false)
+    (catch Error _error true)))
+
 (defn frozen [value Any] Any
   (.freeze Object value))
 
@@ -215,7 +226,7 @@
 
 (test/test
  "input changes only local configuration; candidate and rejection preserve authority"
- (fn [] Any
+ (fn [] Nil
    (let [package-candidate Any (frozen {:opaque "candidate-package"})
          accepted-package Any (frozen {:opaque "accepted-package"})
          session Any (frozen {:opaque "session-0"})
@@ -229,25 +240,25 @@
       session
       revision
       initial-frame)
-     (.toBe (test/expect @(.-scheduledDelay fixture)) 16)
-     (.toBe (test/expect (.-phase (snapshot fixture))) "ready")
-     (.toBe (test/expect (.-length @(.-rendered fixture))) 1)
+     (expect-true! (= true (.is Object @(.-scheduledDelay fixture) 16)))
+     (expect-true! (= true (.is Object (.-phase (snapshot fixture)) "ready")))
+     (expect-true! (= true (.is Object (.-length @(.-rendered fixture)) 1)))
 
      ((.-observeInput controller) (envelope "input-1"))
      (let [configured Any (snapshot fixture)]
-       (.toBe (test/expect (.-configurationRevision configured)) 2)
-       (.toBe (test/expect (.-pendingObservations configured)) 1)
-       (.toBe (test/expect (.-revision configured)) revision)
-       (.toBe (test/expect (.-length @(.-admissionRequests fixture))) 0)
-       (.toBe (test/expect (.-length @(.-rendered fixture))) 1))
+       (expect-true! (= true (.is Object (.-configurationRevision configured) 2)))
+       (expect-true! (= true (.is Object (.-pendingObservations configured) 1)))
+       (expect-true! (= true (.is Object (.-revision configured) revision)))
+       (expect-true! (= true (.is Object (.-length @(.-admissionRequests fixture)) 0)))
+       (expect-true! (= true (.is Object (.-length @(.-rendered fixture)) 1))))
 
      (tick! fixture)
      (let [candidate-request Any (request-at (.-candidateRequests fixture) 0)
            sent-configuration Any (.-configuration candidate-request)]
-       (.toBe (test/expect (.-session candidate-request)) session)
-       (.toBe (test/expect (.-milliseconds (.-fixedTick candidate-request))) 16)
-       (.toBe (test/expect (.-revision sent-configuration)) 2)
-       (.toBe (test/expect (count (.-observations sent-configuration))) 1))
+       (expect-true! (= true (.is Object (.-session candidate-request) session)))
+       (expect-true! (= true (.is Object (.-milliseconds (.-fixedTick candidate-request)) 16)))
+       (expect-true! (= true (.is Object (.-revision sent-configuration) 2)))
+       (expect-true! (= true (.is Object (count (.-observations sent-configuration)) 1))))
 
      (let [candidate Any (frozen {:opaque "unadmitted-candidate"
                     :frame (frozen {:opaque "candidate-frame-must-not-render"})})]
@@ -255,29 +266,27 @@
         (.-candidateRequests fixture)
         0
         (workbench/->CandidateProduced candidate))
-       (.toBe (test/expect (.-phase (snapshot fixture))) "admission")
-       (.toBe (test/expect (.-candidate
-                            (request-at (.-admissionRequests fixture) 0)))
-              candidate)
-       (.toBe (test/expect (.-revision (snapshot fixture))) revision)
-       (.toBe (test/expect (.-frame (snapshot fixture))) initial-frame)
-       (.toBe (test/expect (.-length @(.-rendered fixture))) 1))
+       (expect-true! (= true (.is Object (.-phase (snapshot fixture)) "admission")))
+       (expect-true! (= true (.is Object (.-candidate
+                            (request-at (.-admissionRequests fixture) 0)) candidate)))
+       (expect-true! (= true (.is Object (.-revision (snapshot fixture)) revision)))
+       (expect-true! (= true (.is Object (.-frame (snapshot fixture)) initial-frame)))
+       (expect-true! (= true (.is Object (.-length @(.-rendered fixture)) 1))))
 
      (complete-request!
       (.-admissionRequests fixture)
       0
       (workbench/->AdmissionRejected "not-admitted"))
      (let [rejected Any (snapshot fixture)]
-       (.toBe (test/expect (.-phase rejected)) "ready")
-       (.toBe (test/expect (.-revision rejected)) revision)
-       (.toBe (test/expect (.-frame rejected)) initial-frame)
-       (.toBe (test/expect (.-length @(.-rendered fixture))) 1)
-       (.toContain (test/expect (receipt-events fixture))
-                   "admission-rejected")))))
+       (expect-true! (= true (.is Object (.-phase rejected) "ready")))
+       (expect-true! (= true (.is Object (.-revision rejected) revision)))
+       (expect-true! (= true (.is Object (.-frame rejected) initial-frame)))
+       (expect-true! (= true (.is Object (.-length @(.-rendered fixture)) 1)))
+       (expect-true! (= true (.includes (receipt-events fixture) "admission-rejected")))))))
 
 (test/test
  "fixed ticks consume input into a fresh bounded configuration identity"
- (fn [] Any
+ (fn [] Nil
    (let [fixture Any (fake-fixture! (frozen {:opaque "package"}))
          controller Any (.-controller fixture)]
      (bootstrap!
@@ -287,22 +296,22 @@
       (frozen {:opaque "revision"})
       (envelope "frame"))
      ((.-observeInput controller) (envelope "input"))
-     (.toBe (test/expect (.-configurationRevision (snapshot fixture))) 2)
-     (.toBe (test/expect (.-pendingObservations (snapshot fixture))) 1)
+     (expect-true! (= true (.is Object (.-configurationRevision (snapshot fixture)) 2)))
+     (expect-true! (= true (.is Object (.-pendingObservations (snapshot fixture)) 1)))
      (tick! fixture)
      (let [consumed workbench/InputConfiguration (.-configuration
                                                    (request-at
                                                     (.-candidateRequests fixture)
                                                     0))
            current Any (snapshot fixture)]
-       (.toBe (test/expect (.-revision consumed)) 2)
-       (.toBe (test/expect (count (.-observations consumed))) 1)
-       (.toBe (test/expect (.-configurationRevision current)) 3)
-       (.toBe (test/expect (.-pendingObservations current)) 0)))))
+       (expect-true! (= true (.is Object (.-revision consumed) 2)))
+       (expect-true! (= true (.is Object (count (.-observations consumed)) 1)))
+       (expect-true! (= true (.is Object (.-configurationRevision current) 3)))
+       (expect-true! (= true (.is Object (.-pendingObservations current) 0)))))))
 
 (test/test
  "fixed tick configuration consumption fails before its declared ceiling"
- (fn [] Any
+ (fn [] Nil
    (let [maximum Int (.-MAX_SAFE_INTEGER Number)
          fixture Any (fake-fixture-with-policy!
                       (frozen {:opaque "package"})
@@ -318,18 +327,15 @@
      ((.-observeInput controller) (envelope "input"))
      (tick! fixture)
      (let [terminal Any (snapshot fixture)]
-       (.toBe (test/expect (.-phase terminal)) "disposed")
-       (.toBe (test/expect (.-configurationRevision terminal)) 2)
-       (.toBe (test/expect (.-pendingObservations terminal)) 1)
-       (.toBe (test/expect (.-length @(.-candidateRequests fixture))) 0)
-       (.toBe
-        (test/expect
-         (.-detail (nth (event-receipts fixture "counter-exhausted") 0)))
-        "configuration-revision")))))
+       (expect-true! (= true (.is Object (.-phase terminal) "disposed")))
+       (expect-true! (= true (.is Object (.-configurationRevision terminal) 2)))
+       (expect-true! (= true (.is Object (.-pendingObservations terminal) 1)))
+       (expect-true! (= true (.is Object (.-length @(.-candidateRequests fixture)) 0)))
+       (expect-true! (= true (.is Object (.-detail (nth (event-receipts fixture "counter-exhausted") 0)) "configuration-revision")))))))
 
 (test/test
  "each candidate and admission cycle has one exact operation identity"
- (fn [] Any
+ (fn [] Nil
    (let [fixture Any (fake-fixture! (frozen {:opaque "package-a"}))
          controller Any (.-controller fixture)
          session-0 Any (frozen {:opaque "session-0"})
@@ -348,7 +354,7 @@
       frame-0)
      (tick! fixture)
      (let [operation-1 Int (.-operationId (snapshot fixture))]
-       (.toBeGreaterThan (test/expect operation-1) 0)
+       (expect-true! (> operation-1 0))
        ((.-reloadPackage controller) (frozen {:opaque "interrupting-package"}))
        (complete-request!
         (.-packageRequests fixture)
@@ -356,21 +362,19 @@
         (workbench/->PackageRejected "interrupt-only"))
        (tick! fixture)
        (let [operation-2 Int (.-operationId (snapshot fixture))]
-         (.toBeGreaterThan (test/expect operation-2) operation-1)
-         (.toBe (test/expect
-                 (.-session (request-at (.-candidateRequests fixture) 1)))
-                session-0)
+         (expect-true! (> operation-2 operation-1))
+         (expect-true! (= true (.is Object (.-session (request-at (.-candidateRequests fixture) 1)) session-0)))
          (complete-request!
           (.-candidateRequests fixture)
           0
           (workbench/->CandidateProduced
            (frozen {:opaque "stale-candidate"})))
-         (.toBe (test/expect (.-operationId (snapshot fixture))) operation-2)
-         (.toBe (test/expect (.-phase (snapshot fixture))) "candidate")
-         (.toBe (test/expect (.-length @(.-admissionRequests fixture))) 0)
+         (expect-true! (= true (.is Object (.-operationId (snapshot fixture)) operation-2)))
+         (expect-true! (= true (.is Object (.-phase (snapshot fixture)) "candidate")))
+         (expect-true! (= true (.is Object (.-length @(.-admissionRequests fixture)) 0)))
          (let [stale Any (event-receipts fixture "completion-stale")]
-           (.toBe (test/expect (count stale)) 1)
-           (.toBe (test/expect (.-operationId (nth stale 0))) operation-1))
+           (expect-true! (= true (.is Object (count stale) 1)))
+           (expect-true! (= true (.is Object (.-operationId (nth stale 0)) operation-1))))
 
          (complete-request!
           (.-candidateRequests fixture)
@@ -381,7 +385,7 @@
           1
           (workbench/->CandidateProduced
            (frozen {:opaque "duplicate-candidate"})))
-         (.toBe (test/expect (.-length @(.-admissionRequests fixture))) 1)
+         (expect-true! (= true (.is Object (.-length @(.-admissionRequests fixture)) 1)))
          (complete-request!
           (.-admissionRequests fixture)
           0
@@ -394,30 +398,22 @@
            (frozen {:opaque "duplicate-revision"})
            (envelope "duplicate-frame")))
          (let [advanced Any (snapshot fixture)]
-           (.toBe (test/expect (.-operationId advanced)) 0)
-           (.toBe (test/expect (.-revision advanced)) revision-1)
-           (.toBe (test/expect (.-frame advanced)) frame-1)
-           (.toEqual (test/expect @(.-rendered fixture)) [frame-0 frame-1])
-           (.toBe
-            (test/expect (.includes @(.-rendered fixture) candidate-frame))
-            false))
-         (.toEqual (test/expect @(.-disposals fixture)) [])
+           (expect-true! (= true (.is Object (.-operationId advanced) 0)))
+           (expect-true! (= true (.is Object (.-revision advanced) revision-1)))
+           (expect-true! (= true (.is Object (.-frame advanced) frame-1)))
+           (expect-true! (= @(.-rendered fixture) [frame-0 frame-1]))
+           (expect-true! (= true (.is Object (.includes @(.-rendered fixture) candidate-frame) false))))
+         (expect-true! (= @(.-disposals fixture) []))
          (let [requested Any (event-receipts fixture "candidate-requested")]
-           (.toEqual
-            (test/expect
-             (mapv (fn [receipt Any] Any (.-operationId receipt)) requested))
-            [operation-1 operation-2]))
+           (expect-true! (= (mapv (fn [receipt Any] Any (.-operationId receipt)) requested) [operation-1 operation-2])))
          (let [rendered-receipts Any (event-receipts fixture "frame-rendered")]
-           (.toBe
-            (test/expect (.-operationId (nth rendered-receipts 1)))
-            operation-2))))
+           (expect-true! (= true (.is Object (.-operationId (nth rendered-receipts 1)) operation-2))))))
      (doseq [receipt Any @(.-receipts fixture)]
-       (.toBe (test/expect (.-schema receipt))
-              "clause-cartridge-workbench/v1")))))
+       (expect-true! (= true (.is Object (.-schema receipt) "clause-cartridge-workbench/v1")))))))
 
 (test/test
  "failed reload keeps the old session; accepted reload is fresh and generation-fenced"
- (fn [] Any
+ (fn [] Nil
    (let [fixture Any (fake-fixture! (frozen {:opaque "package-a"}))
          controller Any (.-controller fixture)
          session-0 Any (frozen {:opaque "session-0"})
@@ -435,9 +431,9 @@
       (.-packageRequests fixture)
       1
       (workbench/->PackageRejected "package-denied"))
-     (.toBe (test/expect (.-revision (snapshot fixture))) revision-0)
-     (.toBe (test/expect (.-frame (snapshot fixture))) frame-0)
-     (.toBe (test/expect (.-length @(.-disposals fixture))) 0)
+     (expect-true! (= true (.is Object (.-revision (snapshot fixture)) revision-0)))
+     (expect-true! (= true (.is Object (.-frame (snapshot fixture)) frame-0)))
+     (expect-true! (= true (.is Object (.-length @(.-disposals fixture)) 0)))
 
      ((.-reloadPackage controller) (frozen {:opaque "package-c"}))
      (let [accepted-c Any (frozen {:opaque "accepted-c"})]
@@ -445,23 +441,22 @@
         (.-packageRequests fixture)
         2
         (workbench/->PackageAccepted accepted-c))
-       (.toBe (test/expect (.-package
-                            (request-at (.-sessionRequests fixture) 1)))
-              accepted-c))
+       (expect-true! (= true (.is Object (.-package
+                            (request-at (.-sessionRequests fixture) 1)) accepted-c))))
      (complete-request!
       (.-sessionRequests fixture)
       1
       (workbench/->SessionFailed "runtime-start-failed"))
-     (.toBe (test/expect (.-revision (snapshot fixture))) revision-0)
-     (.toBe (test/expect (.-frame (snapshot fixture))) frame-0)
-     (.toBe (test/expect (.-length @(.-disposals fixture))) 0)
+     (expect-true! (= true (.is Object (.-revision (snapshot fixture)) revision-0)))
+     (expect-true! (= true (.is Object (.-frame (snapshot fixture)) frame-0)))
+     (expect-true! (= true (.is Object (.-length @(.-disposals fixture)) 0)))
 
      (tick! fixture)
      (complete-request!
       (.-candidateRequests fixture)
       0
       (workbench/->CandidateProduced (frozen {:opaque "old-candidate"})))
-     (.toBe (test/expect (.-length @(.-admissionRequests fixture))) 1)
+     (expect-true! (= true (.is Object (.-length @(.-admissionRequests fixture)) 1)))
 
      ((.-observeInput controller) (envelope "not-migrated"))
      ((.-reloadPackage controller) (frozen {:opaque "package-d"}))
@@ -474,19 +469,19 @@
         3
         (workbench/->PackageAccepted accepted-d))
        (let [fresh-request Any (request-at (.-sessionRequests fixture) 2)]
-         (.toBe (test/expect (.-package fresh-request)) accepted-d)
-         (.toBe (test/expect (.-generation fresh-request)) 4))
+         (expect-true! (= true (.is Object (.-package fresh-request) accepted-d)))
+         (expect-true! (= true (.is Object (.-generation fresh-request) 4))))
        (complete-request!
         (.-sessionRequests fixture)
         2
         (workbench/->SessionStarted session-1 revision-1 frame-1))
        (let [reloaded Any (snapshot fixture)]
-         (.toBe (test/expect (.-generation reloaded)) 4)
-         (.toBe (test/expect (.-revision reloaded)) revision-1)
-         (.toBe (test/expect (.-frame reloaded)) frame-1)
-         (.toBe (test/expect (.-pendingObservations reloaded)) 0)
-         (.toEqual (test/expect @(.-rendered fixture)) [frame-0 frame-1])
-         (.toEqual (test/expect @(.-disposals fixture)) [session-0]))
+         (expect-true! (= true (.is Object (.-generation reloaded) 4)))
+         (expect-true! (= true (.is Object (.-revision reloaded) revision-1)))
+         (expect-true! (= true (.is Object (.-frame reloaded) frame-1)))
+         (expect-true! (= true (.is Object (.-pendingObservations reloaded) 0)))
+         (expect-true! (= @(.-rendered fixture) [frame-0 frame-1]))
+         (expect-true! (= @(.-disposals fixture) [session-0])))
 
        (complete-request!
         (.-admissionRequests fixture)
@@ -495,14 +490,13 @@
          (frozen {:opaque "stale-successor"})
          (frozen {:opaque "stale-revision"})
          (frozen {:opaque "stale-frame"})))
-       (.toBe (test/expect (.-revision (snapshot fixture))) revision-1)
-       (.toEqual (test/expect @(.-rendered fixture)) [frame-0 frame-1])
-       (.toContain (test/expect (receipt-events fixture))
-                   "completion-stale")))))
+       (expect-true! (= true (.is Object (.-revision (snapshot fixture)) revision-1)))
+       (expect-true! (= @(.-rendered fixture) [frame-0 frame-1]))
+       (expect-true! (= true (.includes (receipt-events fixture) "completion-stale")))))))
 
 (test/test
  "reload rejects the currently live RuntimeSession without disposing it"
- (fn [] Any
+ (fn [] Nil
    (let [fixture Any (fake-fixture! (frozen {:opaque "package-a"}))
          controller Any (.-controller fixture)
          session Any (frozen {:opaque "session-0"})
@@ -527,18 +521,17 @@
        (frozen {:opaque "revision-reused"})
        (frozen {:opaque "frame-reused"})))
      (let [rejected Any (snapshot fixture)]
-       (.toBe (test/expect (.-phase rejected)) "ready")
-       (.toBe (test/expect (.-generation rejected)) 1)
-       (.toBe (test/expect (.-revision rejected)) revision)
-       (.toBe (test/expect (.-frame rejected)) frame)
-       (.toEqual (test/expect @(.-rendered fixture)) [frame])
-       (.toEqual (test/expect @(.-disposals fixture)) [])
-       (.toContain (test/expect (receipt-events fixture))
-                   "session-reused")))))
+       (expect-true! (= true (.is Object (.-phase rejected) "ready")))
+       (expect-true! (= true (.is Object (.-generation rejected) 1)))
+       (expect-true! (= true (.is Object (.-revision rejected) revision)))
+       (expect-true! (= true (.is Object (.-frame rejected) frame)))
+       (expect-true! (= @(.-rendered fixture) [frame]))
+       (expect-true! (= @(.-disposals fixture) []))
+       (expect-true! (= true (.includes (receipt-events fixture) "session-reused")))))))
 
 (test/test
  "reload rejects every retired RuntimeSession identity"
- (fn [] Any
+ (fn [] Nil
    (let [fixture Any (fake-fixture! (frozen {:opaque "package-a"}))
          controller Any (.-controller fixture)
          session-0 Any (frozen {:opaque "session-0"})
@@ -561,7 +554,7 @@
       (.-sessionRequests fixture)
       1
       (workbench/->SessionStarted session-1 revision-1 frame-1))
-     (.toEqual (test/expect @(.-disposals fixture)) [session-0])
+     (expect-true! (= @(.-disposals fixture) [session-0]))
 
      ((.-reloadPackage controller) (frozen {:opaque "package-c"}))
      (complete-request!
@@ -576,18 +569,17 @@
        (frozen {:opaque "retired-revision"})
        (frozen {:opaque "retired-frame"})))
      (let [rejected Any (snapshot fixture)]
-       (.toBe (test/expect (.-phase rejected)) "ready")
-       (.toBe (test/expect (.-generation rejected)) 2)
-       (.toBe (test/expect (.-revision rejected)) revision-1)
-       (.toBe (test/expect (.-frame rejected)) frame-1)
-       (.toEqual (test/expect @(.-rendered fixture)) [frame-0 frame-1])
-       (.toEqual (test/expect @(.-disposals fixture)) [session-0])
-       (.toContain (test/expect (receipt-events fixture))
-                   "session-retired")))))
+       (expect-true! (= true (.is Object (.-phase rejected) "ready")))
+       (expect-true! (= true (.is Object (.-generation rejected) 2)))
+       (expect-true! (= true (.is Object (.-revision rejected) revision-1)))
+       (expect-true! (= true (.is Object (.-frame rejected) frame-1)))
+       (expect-true! (= @(.-rendered fixture) [frame-0 frame-1]))
+       (expect-true! (= @(.-disposals fixture) [session-0]))
+       (expect-true! (= true (.includes (receipt-events fixture) "session-retired")))))))
 
 (test/test
  "a pending RuntimeSession start rejects an overlapping reload"
- (fn [] Any
+ (fn [] Nil
    (let [fixture Any (fake-fixture! (frozen {:opaque "package-a"}))
          controller Any (.-controller fixture)
          session-0 Any (frozen {:opaque "session-0"})
@@ -607,32 +599,27 @@
       1
       (workbench/->PackageAccepted (frozen {:opaque "accepted-b"})))
 
-     (.toBe
-      (test/expect
-       ((.-reloadPackage controller) (frozen {:opaque "package-c"})))
-      false)
-     (.toBe (test/expect (.-length @(.-packageRequests fixture))) 2)
-     (.toBe (test/expect (.-length @(.-sessionRequests fixture))) 2)
-     (.toBe (test/expect (.-phase (snapshot fixture))) "session-start")
-     (.toBe
-      (test/expect (count (event-receipts fixture "reload-rejected")))
-      1)
+     (expect-true! (= true (.is Object ((.-reloadPackage controller) (frozen {:opaque "package-c"})) false)))
+     (expect-true! (= true (.is Object (.-length @(.-packageRequests fixture)) 2)))
+     (expect-true! (= true (.is Object (.-length @(.-sessionRequests fixture)) 2)))
+     (expect-true! (= true (.is Object (.-phase (snapshot fixture)) "session-start")))
+     (expect-true! (= true (.is Object (count (event-receipts fixture "reload-rejected")) 1)))
 
      (complete-request!
       (.-sessionRequests fixture)
       1
       (workbench/->SessionStarted session-1 revision-1 frame-1))
-     (.toEqual (test/expect @(.-disposals fixture)) [session-0])
+     (expect-true! (= @(.-disposals fixture) [session-0]))
      (let [live Any (snapshot fixture)]
-       (.toBe (test/expect (.-phase live)) "ready")
-       (.toBe (test/expect (.-revision live)) revision-1)
-       (.toBe (test/expect (.-frame live)) frame-1)
-       (.toEqual (test/expect @(.-rendered fixture)) [frame-0 frame-1])
-       (.toEqual (test/expect @(.-disposals fixture)) [session-0])))))
+       (expect-true! (= true (.is Object (.-phase live) "ready")))
+       (expect-true! (= true (.is Object (.-revision live) revision-1)))
+       (expect-true! (= true (.is Object (.-frame live) frame-1)))
+       (expect-true! (= @(.-rendered fixture) [frame-0 frame-1]))
+       (expect-true! (= @(.-disposals fixture) [session-0]))))))
 
 (test/test
  "session settlement receipts can serialize the next reload"
- (fn [] Any
+ (fn [] Nil
    (let [fixture Any (fake-fixture! (frozen {:opaque "package-a"}))
          controller Any (.-controller fixture)
          session-0 Any (frozen {:opaque "session-0"})
@@ -664,14 +651,12 @@
       (.-sessionRequests fixture)
       1
       (workbench/->SessionStarted session-1 revision-1 frame-1))
-     (.toBe (test/expect @started-reload) true)
-     (.toBe (test/expect (.-phase (snapshot fixture))) "package-check")
-     (.toBe (test/expect (.-length @(.-packageRequests fixture))) 3)
-     (.toBe
-      (test/expect (.-package (request-at (.-packageRequests fixture) 2)))
-      package-c)
-     (.toBe (test/expect (.-revision (snapshot fixture))) revision-1)
-     (.toEqual (test/expect @(.-disposals fixture)) [session-0])
+     (expect-true! (= true (.is Object @started-reload true)))
+     (expect-true! (= true (.is Object (.-phase (snapshot fixture)) "package-check")))
+     (expect-true! (= true (.is Object (.-length @(.-packageRequests fixture)) 3)))
+     (expect-true! (= true (.is Object (.-package (request-at (.-packageRequests fixture) 2)) package-c)))
+     (expect-true! (= true (.is Object (.-revision (snapshot fixture)) revision-1)))
+     (expect-true! (= @(.-disposals fixture) [session-0]))
 
      (reset! (.-receiptHook fixture)
              (fn [receipt Any] Any
@@ -686,22 +671,20 @@
       (.-sessionRequests fixture)
       2
       (workbench/->SessionFailed "start-c-failed"))
-     (.toBe (test/expect @failed-reload) true)
-     (.toBe (test/expect (.-phase (snapshot fixture))) "package-check")
-     (.toBe (test/expect (.-length @(.-packageRequests fixture))) 4)
-     (.toBe
-      (test/expect (.-package (request-at (.-packageRequests fixture) 3)))
-      package-d)
+     (expect-true! (= true (.is Object @failed-reload true)))
+     (expect-true! (= true (.is Object (.-phase (snapshot fixture)) "package-check")))
+     (expect-true! (= true (.is Object (.-length @(.-packageRequests fixture)) 4)))
+     (expect-true! (= true (.is Object (.-package (request-at (.-packageRequests fixture) 3)) package-d)))
      (complete-request!
       (.-packageRequests fixture)
       3
       (workbench/->PackageRejected "stop"))
-     (.toBe (test/expect (.-phase (snapshot fixture))) "ready")
-     (.toBe (test/expect (.-revision (snapshot fixture))) revision-1))))
+     (expect-true! (= true (.is Object (.-phase (snapshot fixture)) "ready")))
+     (expect-true! (= true (.is Object (.-revision (snapshot fixture)) revision-1))))))
 
 (test/test
  "a nil RuntimeSession is rejected without displacing live authority"
- (fn [] Any
+ (fn [] Nil
    (let [fixture Any (fake-fixture! (frozen {:opaque "package-a"}))
          controller Any (.-controller fixture)
          session-0 Any (frozen {:opaque "session-0"})
@@ -726,20 +709,18 @@
        (frozen {:opaque "nil-revision"})
        (envelope "nil-frame")))
      (let [preserved Any (snapshot fixture)]
-       (.toBe (test/expect (.-phase preserved)) "ready")
-       (.toBe (test/expect (.-revision preserved)) revision-0)
-       (.toBe (test/expect (.-frame preserved)) frame-0)
-       (.toEqual (test/expect @(.-rendered fixture)) [frame-0])
-       (.toEqual (test/expect @(.-disposals fixture)) [])
-       (.toBe
-        (test/expect (count (event-receipts fixture "session-invalid")))
-        1))
+       (expect-true! (= true (.is Object (.-phase preserved) "ready")))
+       (expect-true! (= true (.is Object (.-revision preserved) revision-0)))
+       (expect-true! (= true (.is Object (.-frame preserved) frame-0)))
+       (expect-true! (= @(.-rendered fixture) [frame-0]))
+       (expect-true! (= @(.-disposals fixture) []))
+       (expect-true! (= true (.is Object (count (event-receipts fixture "session-invalid")) 1))))
      ((.-dispose controller))
-     (.toEqual (test/expect @(.-disposals fixture)) [session-0]))))
+     (expect-true! (= @(.-disposals fixture) [session-0])))))
 
 (test/test
  "RuntimeSession accepts only nominal reference tokens"
- (fn [] Any
+ (fn [] Nil
    (doseq [invalid-session Any [false
                                 0
                                 "session"
@@ -768,18 +749,16 @@
          (frozen {:opaque "invalid-revision"})
          (envelope "invalid-frame")))
        (let [preserved Any (snapshot fixture)]
-         (.toBe (test/expect (.-phase preserved)) "ready")
-         (.toBe (test/expect (.-revision preserved)) revision-0)
-         (.toBe (test/expect (.-frame preserved)) frame-0)
-         (.toEqual (test/expect @(.-rendered fixture)) [frame-0])
-         (.toEqual (test/expect @(.-disposals fixture)) [])
-         (.toBe
-          (test/expect (count (event-receipts fixture "session-invalid")))
-          1))))))
+         (expect-true! (= true (.is Object (.-phase preserved) "ready")))
+         (expect-true! (= true (.is Object (.-revision preserved) revision-0)))
+         (expect-true! (= true (.is Object (.-frame preserved) frame-0)))
+         (expect-true! (= @(.-rendered fixture) [frame-0]))
+         (expect-true! (= @(.-disposals fixture) []))
+         (expect-true! (= true (.is Object (count (event-receipts fixture "session-invalid")) 1))))))))
 
 (test/test
  "terminal disposal retains retired identities through queued start settlement"
- (fn [] Any
+ (fn [] Nil
    (let [fixture Any (fake-fixture! (frozen {:opaque "package-a"}))
          controller Any (.-controller fixture)
          session-0 Any (frozen {:opaque "session-0"})
@@ -802,7 +781,7 @@
        session-1
        (frozen {:opaque "revision-1"})
        (envelope "frame-1")))
-     (.toEqual (test/expect @(.-disposals fixture)) [session-0])
+     (expect-true! (= @(.-disposals fixture) [session-0]))
 
      (reset! (.-receiptHook fixture)
              (fn [receipt Any] Any
@@ -820,17 +799,15 @@
       (.-packageRequests fixture)
       2
       (workbench/->PackageAccepted (frozen {:opaque "accepted-c"})))
-     (.toBe (test/expect (.-phase (snapshot fixture))) "disposed")
-     (.toEqual (test/expect @(.-disposals fixture)) [session-0 session-1])
-     (.toBe (test/expect
-             (count (filter
+     (expect-true! (= true (.is Object (.-phase (snapshot fixture)) "disposed")))
+     (expect-true! (= @(.-disposals fixture) [session-0 session-1]))
+     (expect-true! (= true (.is Object (count (filter
                      (fn [session Any] Bool (identical? session session-0))
-                     @(.-disposals fixture))))
-            1))))
+                     @(.-disposals fixture))) 1))))))
 
 (test/test
  "session identity capacity counts live and retired RuntimeSessions"
- (fn [] Any
+ (fn [] Nil
    (let [fixture Any (fake-fixture-with-policy!
                       (frozen {:opaque "package-a"})
                       (workbench-policy 8 2))
@@ -852,32 +829,28 @@
       (.-packageRequests fixture)
       1
       (workbench/->PackageAccepted (frozen {:opaque "accepted-b"})))
-     (.toBe (test/expect (.-length @(.-sessionRequests fixture))) 2)
+     (expect-true! (= true (.is Object (.-length @(.-sessionRequests fixture)) 2)))
      (complete-request!
       (.-sessionRequests fixture)
       1
       (workbench/->SessionStarted session-1 revision-1 frame-1))
-     (.toEqual (test/expect @(.-disposals fixture)) [session-0])
+     (expect-true! (= @(.-disposals fixture) [session-0]))
 
-     (.toBe
-      (test/expect
-       ((.-reloadPackage controller) (frozen {:opaque "package-c"})))
-      true)
+     (expect-true! (= true (.is Object ((.-reloadPackage controller) (frozen {:opaque "package-c"})) true)))
      (complete-request!
       (.-packageRequests fixture)
       2
       (workbench/->PackageAccepted (frozen {:opaque "accepted-c"})))
-     (.toBe (test/expect (.-length @(.-sessionRequests fixture))) 2)
-     (.toContain (test/expect (receipt-events fixture))
-                 "session-identity-limit")
-     (.toBe (test/expect (.-revision (snapshot fixture))) revision-1)
-     (.toBe (test/expect (.-frame (snapshot fixture))) frame-1)
-     (.toEqual (test/expect @(.-rendered fixture)) [frame-0 frame-1])
-     (.toEqual (test/expect @(.-disposals fixture)) [session-0]))))
+     (expect-true! (= true (.is Object (.-length @(.-sessionRequests fixture)) 2)))
+     (expect-true! (= true (.includes (receipt-events fixture) "session-identity-limit")))
+     (expect-true! (= true (.is Object (.-revision (snapshot fixture)) revision-1)))
+     (expect-true! (= true (.is Object (.-frame (snapshot fixture)) frame-1)))
+     (expect-true! (= @(.-rendered fixture) [frame-0 frame-1]))
+     (expect-true! (= @(.-disposals fixture) [session-0])))))
 
 (test/test
  "pending input is rejected visibly at its declared finite bound"
- (fn [] Any
+ (fn [] Nil
    (let [fixture Any (fake-fixture-with-policy!
                       (frozen {:opaque "package"})
                       (workbench-policy 2 8))
@@ -896,14 +869,10 @@
      ((.-observeInput controller) input-2)
      ((.-observeInput controller) input-3)
      (let [bounded Any (snapshot fixture)]
-       (.toBe (test/expect (.-pendingObservations bounded)) 2)
-       (.toBe (test/expect
-               (count (event-receipts fixture "configuration-observed")))
-              2)
-       (.toBe (test/expect
-               (count (event-receipts fixture
-                                      "configuration-input-rejected")))
-              1))
+       (expect-true! (= true (.is Object (.-pendingObservations bounded) 2)))
+       (expect-true! (= true (.is Object (count (event-receipts fixture "configuration-observed")) 2)))
+       (expect-true! (= true (.is Object (count (event-receipts fixture
+                                      "configuration-input-rejected")) 1))))
      (complete-request!
       (.-candidateRequests fixture)
       0
@@ -912,13 +881,13 @@
      (let [configuration Any (.-configuration
                               (request-at (.-candidateRequests fixture) 1))
            observations Any (.-observations configuration)]
-       (.toBe (test/expect (count observations)) 2)
-       (.toBe (test/expect (.-value (nth observations 0))) input-1)
-       (.toBe (test/expect (.-value (nth observations 1))) input-2)))))
+       (expect-true! (= true (.is Object (count observations) 2)))
+       (expect-true! (= true (.is Object (.-value (nth observations 0)) input-1)))
+       (expect-true! (= true (.is Object (.-value (nth observations 1)) input-2)))))))
 
 (test/test
  "reentrant input reserves capacity before serialized transition admission"
- (fn [] Any
+ (fn [] Nil
    (let [fixture Any (fake-fixture-with-policy!
                       (frozen {:opaque "package"})
                       (workbench-policy 2 8))
@@ -936,28 +905,14 @@
                (when (and (= (.-event receipt) "configuration-observed")
                           (not @reentered))
                  (reset! reentered true)
-                 (.toBe
-                  (test/expect
-                   ((.-observeInput controller) (envelope "input-2")))
-                  true)
+                 (expect-true! (= true (.is Object ((.-observeInput controller) (envelope "input-2")) true)))
                  (doseq [index Int (range 8)]
-                   (.toBe
-                    (test/expect
-                     ((.-observeInput controller) (envelope index)))
-                    false)))))
-     (.toBe
-      (test/expect ((.-observeInput controller) (envelope "input-1")))
-      true)
+                   (expect-true! (= true (.is Object ((.-observeInput controller) (envelope index)) false)))))))
+     (expect-true! (= true (.is Object ((.-observeInput controller) (envelope "input-1")) true)))
      (let [bounded Any (snapshot fixture)]
-       (.toBe (test/expect (.-pendingObservations bounded)) 2)
-       (.toBe
-        (test/expect
-         (count (event-receipts fixture "configuration-observed")))
-        2)
-       (.toBe
-        (test/expect
-         (count (event-receipts fixture "configuration-input-rejected")))
-        1))
+       (expect-true! (= true (.is Object (.-pendingObservations bounded) 2)))
+       (expect-true! (= true (.is Object (count (event-receipts fixture "configuration-observed")) 2)))
+       (expect-true! (= true (.is Object (count (event-receipts fixture "configuration-input-rejected")) 1))))
      (complete-request!
       (.-candidateRequests fixture)
       0
@@ -965,11 +920,11 @@
      (tick! fixture)
      (let [configuration Any (.-configuration
                               (request-at (.-candidateRequests fixture) 1))]
-       (.toBe (test/expect (count (.-observations configuration))) 2)))))
+       (expect-true! (= true (.is Object (count (.-observations configuration)) 2)))))))
 
 (test/test
  "receipt-triggered disposal remains terminal after in-progress installation"
- (fn [] Any
+ (fn [] Nil
    (let [fixture Any (fake-fixture! (frozen {:opaque "package"}))
          controller Any (.-controller fixture)
          session Any (frozen {:opaque "session"})
@@ -989,23 +944,18 @@
       (frozen {:opaque "revision"})
       frame)
      (let [terminal Any (snapshot fixture)]
-       (.toBe (test/expect (.-phase terminal)) "disposed")
-       (.toBe (test/expect (.-disposed terminal)) true)
-       (.toEqual (test/expect @(.-rendered fixture)) [frame])
-       (.toEqual (test/expect @(.-disposals fixture)) [session])
-       (.toBe
-        (test/expect
-         (count (.filter @disposal-results
-                         (fn [accepted Any] Bool (= accepted true)))))
-        1)
-       (.toBe (test/expect @(.-cancellations fixture)) 1)
-       (.toBe (test/expect
-               (count (event-receipts fixture "disposed")))
-              1)))))
+       (expect-true! (= true (.is Object (.-phase terminal) "disposed")))
+       (expect-true! (= true (.is Object (.-disposed terminal) true)))
+       (expect-true! (= @(.-rendered fixture) [frame]))
+       (expect-true! (= @(.-disposals fixture) [session]))
+       (expect-true! (= true (.is Object (count (.filter @disposal-results
+                         (fn [accepted Any] Bool (= accepted true)))) 1)))
+       (expect-true! (= true (.is Object @(.-cancellations fixture) 1)))
+       (expect-true! (= true (.is Object (count (event-receipts fixture "disposed")) 1)))))))
 
 (test/test
  "render-triggered reload survives the in-progress render transition"
- (fn [] Any
+ (fn [] Nil
    (let [fixture Any (fake-fixture! (frozen {:opaque "package-a"}))
          controller Any (.-controller fixture)
          triggered (Atom Bool) (atom false)
@@ -1027,15 +977,10 @@
       session-0
       (frozen {:opaque "revision-0"})
       frame-0)
-     (.toBe
-      (test/expect
-       (count (.filter @reload-results
-                       (fn [accepted Any] Bool (= accepted true)))))
-      1)
-     (.toBe (test/expect (.-length @(.-packageRequests fixture))) 2)
-     (.toBe (test/expect
-             (.-package (request-at (.-packageRequests fixture) 1)))
-            package-1)
+     (expect-true! (= true (.is Object (count (.filter @reload-results
+                       (fn [accepted Any] Bool (= accepted true)))) 1)))
+     (expect-true! (= true (.is Object (.-length @(.-packageRequests fixture)) 2)))
+     (expect-true! (= true (.is Object (.-package (request-at (.-packageRequests fixture) 1)) package-1)))
      (complete-request!
       (.-packageRequests fixture)
       1
@@ -1048,15 +993,15 @@
         1
         (workbench/->SessionStarted session-1 revision-1 frame-1))
        (let [reloaded Any (snapshot fixture)]
-         (.toBe (test/expect (.-phase reloaded)) "ready")
-         (.toBe (test/expect (.-revision reloaded)) revision-1)
-         (.toBe (test/expect (.-frame reloaded)) frame-1)
-         (.toEqual (test/expect @(.-rendered fixture)) [frame-0 frame-1])
-         (.toEqual (test/expect @(.-disposals fixture)) [session-0]))))))
+         (expect-true! (= true (.is Object (.-phase reloaded) "ready")))
+         (expect-true! (= true (.is Object (.-revision reloaded) revision-1)))
+         (expect-true! (= true (.is Object (.-frame reloaded) frame-1)))
+         (expect-true! (= @(.-rendered fixture) [frame-0 frame-1]))
+         (expect-true! (= @(.-disposals fixture) [session-0])))))))
 
 (test/test
  "receipt-triggered fixed ticks retain only one pending transition"
- (fn [] Any
+ (fn [] Nil
    (let [fixture Any (fake-fixture! (frozen {:opaque "package"}))
          reentrant-results Any (atom [])
          reentered (Atom Bool) (atom false)]
@@ -1074,23 +1019,20 @@
                  (doseq [_index Int (range 32)]
                    (.push @reentrant-results
                           (tick! fixture))))))
-     (.toBe (test/expect (tick! fixture)) true)
-     (.toBe
-      (test/expect
-       (count (.filter @reentrant-results
-                       (fn [accepted Any] Bool (= accepted true)))))
-      1)
-     (.toBe (test/expect (.-length @(.-candidateRequests fixture))) 1)
+     (expect-true! (= true (.is Object (tick! fixture) true)))
+     (expect-true! (= true (.is Object (count (.filter @reentrant-results
+                       (fn [accepted Any] Bool (= accepted true)))) 1)))
+     (expect-true! (= true (.is Object (.-length @(.-candidateRequests fixture)) 1)))
      (complete-request!
       (.-candidateRequests fixture)
       0
       (workbench/->CandidateFailed "cycle-held"))
-     (.toBe (test/expect (tick! fixture)) true)
-     (.toBe (test/expect (.-length @(.-candidateRequests fixture))) 2))))
+     (expect-true! (= true (.is Object (tick! fixture) true)))
+     (expect-true! (= true (.is Object (.-length @(.-candidateRequests fixture)) 2))))))
 
 (test/test
  "renderer failure is visible without revoking installed authority"
- (fn [] Any
+ (fn [] Nil
    (let [fixture Any (fake-fixture! (frozen {:opaque "package-a"}))
          session-0 Any (frozen {:opaque "session-0"})
          revision-1 Any (frozen {:opaque "revision-1"})
@@ -1122,20 +1064,18 @@
        (let [installed Any (snapshot fixture)
              failed-receipts Any (event-receipts fixture
                                                   "frame-render-failed")]
-         (.toBe (test/expect (.-phase installed)) "ready")
-         (.toBe (test/expect (.-generation installed)) 1)
-         (.toBe (test/expect (.-revision installed)) revision-1)
-         (.toBe (test/expect (.-frame installed)) frame-1)
-         (.toEqual (test/expect @(.-rendered fixture)) [frame-0 frame-1])
-         (.toEqual (test/expect @(.-disposals fixture)) [])
-         (.toBe (test/expect (count failed-receipts)) 1)
-         (.toBe
-         (test/expect (.-operationId (nth failed-receipts 0)))
-          operation-id))))))
+         (expect-true! (= true (.is Object (.-phase installed) "ready")))
+         (expect-true! (= true (.is Object (.-generation installed) 1)))
+         (expect-true! (= true (.is Object (.-revision installed) revision-1)))
+         (expect-true! (= true (.is Object (.-frame installed) frame-1)))
+         (expect-true! (= @(.-rendered fixture) [frame-0 frame-1]))
+         (expect-true! (= @(.-disposals fixture) []))
+         (expect-true! (= true (.is Object (count failed-receipts) 1)))
+         (expect-true! (= true (.is Object (.-operationId (nth failed-receipts 0)) operation-id))))))))
 
 (test/test
  "synchronous completion wins when every port throws afterward"
- (fn [] Any
+ (fn [] Nil
    (let [fixture Any (fake-fixture! (frozen {:opaque "package-a"}))
          controller Any (.-controller fixture)
          session-0 Any (frozen {:opaque "session-0"})
@@ -1162,7 +1102,7 @@
                 (workbench/->SessionStarted session-1 revision-1 frame-1))
                (throw (new Error "session-threw-after-callback"))))
      ((.-reloadPackage controller) (frozen {:opaque "package-b"}))
-     (.toBe (test/expect (.-revision (snapshot fixture))) revision-1)
+     (expect-true! (= true (.is Object (.-revision (snapshot fixture)) revision-1)))
 
      (reset! (.-candidateHook fixture)
              (fn [request Any] Any
@@ -1180,19 +1120,19 @@
                (throw (new Error "admission-threw-after-callback"))))
      (tick! fixture)
      (let [settled Any (snapshot fixture)]
-       (.toBe (test/expect (.-phase settled)) "ready")
-       (.toBe (test/expect (.-revision settled)) revision-2)
-       (.toBe (test/expect (.-frame settled)) frame-2)
-       (.toEqual (test/expect @(.-disposals fixture)) [session-0])
+       (expect-true! (= true (.is Object (.-phase settled) "ready")))
+       (expect-true! (= true (.is Object (.-revision settled) revision-2)))
+       (expect-true! (= true (.is Object (.-frame settled) frame-2)))
+       (expect-true! (= @(.-disposals fixture) [session-0]))
        (doseq [event String ["package-boundary-failed"
                              "session-boundary-failed"
                              "candidate-boundary-failed"
                              "admission-boundary-failed"]]
-         (.toBe (test/expect (count (event-receipts fixture event))) 0))))))
+         (expect-true! (= true (.is Object (count (event-receipts fixture event)) 0))))))))
 
 (test/test
  "port throws before completion restore authority and contain late callbacks"
- (fn [] Any
+ (fn [] Nil
    (let [package-fixture Any (fake-fixture! (frozen {:opaque "package-a"}))
          package-session Any (frozen {:opaque "package-session"})
          package-revision Any (frozen {:opaque "package-revision"})
@@ -1219,16 +1159,13 @@
                (throw (new Error "package-boundary"))))
      ((.-reloadPackage (.-controller package-fixture))
       (frozen {:opaque "package-b"}))
-     (.toBe (test/expect (.-phase (snapshot package-fixture))) "ready")
-     (.toBe
-      (test/expect
-       (count (event-receipts package-fixture "package-boundary-failed")))
-      1)
+     (expect-true! (= true (.is Object (.-phase (snapshot package-fixture)) "ready")))
+     (expect-true! (= true (.is Object (count (event-receipts package-fixture "package-boundary-failed")) 1)))
      (complete-request!
       (.-packageRequests package-fixture)
       1
       (workbench/->PackageAccepted (frozen {:opaque "late-package"})))
-     (.toBe (test/expect (.-length @(.-sessionRequests package-fixture))) 1)
+     (expect-true! (= true (.is Object (.-length @(.-sessionRequests package-fixture)) 1)))
 
      (bootstrap!
       session-fixture
@@ -1245,11 +1182,8 @@
       (.-packageRequests session-fixture)
       1
       (workbench/->PackageAccepted (frozen {:opaque "session-accepted-b"})))
-     (.toBe (test/expect (.-phase (snapshot session-fixture))) "ready")
-     (.toBe
-      (test/expect
-       (count (event-receipts session-fixture "session-boundary-failed")))
-      1)
+     (expect-true! (= true (.is Object (.-phase (snapshot session-fixture)) "ready")))
+     (expect-true! (= true (.is Object (count (event-receipts session-fixture "session-boundary-failed")) 1)))
      (complete-request!
       (.-sessionRequests session-fixture)
       1
@@ -1257,8 +1191,8 @@
        late-session
        (frozen {:opaque "late-revision"})
        (envelope "late-frame")))
-     (.toBe (test/expect (.-revision (snapshot session-fixture))) session-revision)
-     (.toEqual (test/expect @(.-disposals session-fixture)) [late-session])
+     (expect-true! (= true (.is Object (.-revision (snapshot session-fixture)) session-revision)))
+     (expect-true! (= @(.-disposals session-fixture) [late-session]))
 
      (bootstrap!
       candidate-fixture
@@ -1270,16 +1204,13 @@
              (fn [_request Any] Any
                (throw (new Error "candidate-boundary"))))
      (tick! candidate-fixture)
-     (.toBe
-      (test/expect
-       (count (event-receipts candidate-fixture
-                              "candidate-boundary-failed")))
-      1)
+     (expect-true! (= true (.is Object (count (event-receipts candidate-fixture
+                              "candidate-boundary-failed")) 1)))
      (complete-request!
       (.-candidateRequests candidate-fixture)
       0
       (workbench/->CandidateProduced (frozen {:opaque "late-candidate"})))
-     (.toBe (test/expect (.-length @(.-admissionRequests candidate-fixture))) 0)
+     (expect-true! (= true (.is Object (.-length @(.-admissionRequests candidate-fixture)) 0)))
 
      (bootstrap!
       admission-fixture
@@ -1295,11 +1226,8 @@
       (.-candidateRequests admission-fixture)
       0
       (workbench/->CandidateProduced (frozen {:opaque "candidate"})))
-     (.toBe
-      (test/expect
-       (count (event-receipts admission-fixture
-                              "admission-boundary-failed")))
-      1)
+     (expect-true! (= true (.is Object (count (event-receipts admission-fixture
+                              "admission-boundary-failed")) 1)))
      (complete-request!
       (.-admissionRequests admission-fixture)
       0
@@ -1307,13 +1235,11 @@
        (frozen {:opaque "late-successor"})
        (frozen {:opaque "late-revision"})
        (envelope "late-frame")))
-     (.toBe
-     (test/expect (.-revision (snapshot admission-fixture)))
-      admission-revision))))
+     (expect-true! (= true (.is Object (.-revision (snapshot admission-fixture)) admission-revision))))))
 
 (test/test
  "throwing RuntimeSession starts retain bounded identity custody"
- (fn [] Any
+ (fn [] Nil
    (let [fixture Any (fake-fixture-with-policy!
                       (frozen {:opaque "package-a"})
                       (workbench-policy 8 3))
@@ -1347,14 +1273,9 @@
       (.-packageRequests fixture)
       3
       (workbench/->PackageAccepted (frozen {:opaque "accepted-d"})))
-     (.toBe (test/expect (.-length @(.-sessionRequests fixture))) 3)
-     (.toBe
-      (test/expect
-       (count (event-receipts fixture "session-boundary-failed")))
-      2)
-     (.toBe
-      (test/expect (count (event-receipts fixture "session-identity-limit")))
-      1)
+     (expect-true! (= true (.is Object (.-length @(.-sessionRequests fixture)) 3)))
+     (expect-true! (= true (.is Object (count (event-receipts fixture "session-boundary-failed")) 2)))
+     (expect-true! (= true (.is Object (count (event-receipts fixture "session-identity-limit")) 1)))
 
      (complete-request!
       (.-sessionRequests fixture)
@@ -1370,12 +1291,12 @@
        session-2
        (frozen {:opaque "late-revision-2"})
        (envelope "late-frame-2")))
-     (.toEqual (test/expect @(.-disposals fixture)) [session-1 session-2])
-     (.toBe (test/expect (.-generation (snapshot fixture))) 1))))
+     (expect-true! (= @(.-disposals fixture) [session-1 session-2]))
+     (expect-true! (= true (.is Object (.-generation (snapshot fixture)) 1))))))
 
 (test/test
  "cancellation and session-disposal throws cannot escape terminal disposal"
- (fn [] Any
+ (fn [] Nil
    (let [fixture Any (fake-fixture! (frozen {:opaque "package"}))
          controller Any (.-controller fixture)
          session Any (frozen {:opaque "session"})
@@ -1394,23 +1315,21 @@
              (fn [_session Any] Any
                (.push @tick-results (tick! fixture))
                (throw (new Error "dispose-failed"))))
-     (.toBe (test/expect ((.-dispose controller))) true)
+     (expect-true! (= true (.is Object ((.-dispose controller)) true)))
      (let [terminal Any (snapshot fixture)
            disposed-receipts Any (event-receipts fixture "disposed")]
-       (.toBe (test/expect (.-phase terminal)) "disposed")
-       (.toBe (test/expect (.-disposed terminal)) true)
-       (.toEqual (test/expect @tick-results) [false false])
-       (.toBe (test/expect @(.-cancellations fixture)) 1)
-       (.toEqual (test/expect @(.-disposals fixture)) [session])
-       (.toBe (test/expect (.-length @(.-candidateRequests fixture))) 0)
-       (.toBe (test/expect (count disposed-receipts)) 1)
-       (.toBe
-        (test/expect (.-detail (nth disposed-receipts 0)))
-        "terminal-cancel-and-disposal-uncertain")))))
+       (expect-true! (= true (.is Object (.-phase terminal) "disposed")))
+       (expect-true! (= true (.is Object (.-disposed terminal) true)))
+       (expect-true! (= @tick-results [false false]))
+       (expect-true! (= true (.is Object @(.-cancellations fixture) 1)))
+       (expect-true! (= @(.-disposals fixture) [session]))
+       (expect-true! (= true (.is Object (.-length @(.-candidateRequests fixture)) 0)))
+       (expect-true! (= true (.is Object (count disposed-receipts) 1)))
+       (expect-true! (= true (.is Object (.-detail (nth disposed-receipts 0)) "terminal-cancel-and-disposal-uncertain")))))))
 
 (test/test
  "a throwing fixed-tick scheduler yields an inert terminal controller"
- (fn [] Any
+ (fn [] Nil
    (let [package-calls (Atom Int) (atom 0)
          retained-tick Any (atom (fn [] Any false))
          receipts Any (atom [])
@@ -1451,18 +1370,16 @@
             (.push @receipts receipt))
           (frozen {:opaque "package"}))]
      (let [terminal Any ((.-snapshot controller))]
-       (.toBe (test/expect (.-phase terminal)) "disposed")
-       (.toBe (test/expect (.-disposed terminal)) true)
-       (.toBe (test/expect @package-calls) 0)
-       (.toBe (test/expect (@retained-tick)) false)
-       (.toBe (test/expect ((.-dispose controller))) false)
-       (.toBe
-        (test/expect (.-event (nth @receipts 0)))
-        "fixed-tick-schedule-uncertain")))))
+       (expect-true! (= true (.is Object (.-phase terminal) "disposed")))
+       (expect-true! (= true (.is Object (.-disposed terminal) true)))
+       (expect-true! (= true (.is Object @package-calls 0)))
+       (expect-true! (= true (.is Object (@retained-tick) false)))
+       (expect-true! (= true (.is Object ((.-dispose controller)) false)))
+       (expect-true! (= true (.is Object (.-event (nth @receipts 0)) "fixed-tick-schedule-uncertain")))))))
 
 (test/test
  "frames require bounded generic deep immutability"
- (fn [] Any
+ (fn [] Nil
    (let [fixture Any (fake-fixture! (frozen {:opaque "package"}))
          revision-0 Any (frozen {:opaque "revision-0"})
          frame-0 Any (envelope "frame-0")
@@ -1476,17 +1393,11 @@
                        :enumerable true
                        :value "source-mutated"
                        :writable true})
-     (.toBe
-      (test/expect (nth (nth (nth deep-frame 0) 1) 1))
-      "stable")
-     (.toBe (test/expect (.getPrototypeOf Object deep-frame)) nil)
-     (.toBe
-      (test/expect (.getPrototypeOf Object (nth deep-frame 0)))
-      nil)
-     (.toBe (test/expect (.isFrozen Object deep-frame)) true)
-     (.toThrow
-      (test/expect
-       (fn [] Any
+     (expect-true! (= true (.is Object (nth (nth (nth deep-frame 0) 1) 1) "stable")))
+     (expect-true! (= true (.is Object (.getPrototypeOf Object deep-frame) nil)))
+     (expect-true! (= true (.is Object (.getPrototypeOf Object (nth deep-frame 0)) nil)))
+     (expect-true! (= true (.is Object (.isFrozen Object deep-frame) true)))
+     (expect-true! (expect-throws? (fn [] Any
          (.defineProperty Object
                           deep-frame
                           0
@@ -1512,7 +1423,7 @@
        (frozen {:opaque "successor-1"})
        (frozen {:opaque "revision-1"})
        deep-frame))
-     (.toBe (test/expect (.-frame (snapshot fixture))) deep-frame)
+     (expect-true! (= true (.is Object (.-frame (snapshot fixture)) deep-frame)))
 
      (tick! fixture)
      (complete-request!
@@ -1526,11 +1437,10 @@
        (frozen {:opaque "successor-2"})
        (frozen {:opaque "revision-2"})
        shallow-frame))
-     (.toBe (test/expect (.-phase (snapshot fixture))) "ready")
-     (.toBe (test/expect (.-frame (snapshot fixture))) deep-frame)
-     (.toEqual (test/expect @(.-rendered fixture)) [frame-0 deep-frame])
-     (.toContain (test/expect (receipt-events fixture))
-                 "admission-frame-rejected")
+     (expect-true! (= true (.is Object (.-phase (snapshot fixture)) "ready")))
+     (expect-true! (= true (.is Object (.-frame (snapshot fixture)) deep-frame)))
+     (expect-true! (= @(.-rendered fixture) [frame-0 deep-frame]))
+     (expect-true! (= true (.includes (receipt-events fixture) "admission-frame-rejected")))
 
      (let [forged Any (new Array 1)
            _forged-value Any (.defineProperty Object
@@ -1567,10 +1477,9 @@
         (frozen {:opaque "bounded-session"})
         (frozen {:opaque "bounded-revision"})
         deep-frame)
-       (.toBe (test/expect (.-phase (snapshot bounded))) "idle")
-       (.toEqual (test/expect @(.-rendered bounded)) [])
-       (.toContain (test/expect (receipt-events bounded))
-                   "session-frame-rejected")
+       (expect-true! (= true (.is Object (.-phase (snapshot bounded)) "idle")))
+       (expect-true! (= @(.-rendered bounded) []))
+       (expect-true! (= true (.includes (receipt-events bounded) "session-frame-rejected")))
 
        (bootstrap!
         bounded-properties
@@ -1578,8 +1487,8 @@
         (frozen {:opaque "property-session"})
         (frozen {:opaque "property-revision"})
         deep-frame)
-       (.toBe (test/expect (.-phase (snapshot bounded-properties))) "idle")
-       (.toEqual (test/expect @(.-rendered bounded-properties)) [])
+       (expect-true! (= true (.is Object (.-phase (snapshot bounded-properties)) "idle")))
+       (expect-true! (= @(.-rendered bounded-properties) []))
 
        (bootstrap!
         bounded-source
@@ -1587,8 +1496,8 @@
         (frozen {:opaque "source-session"})
         (frozen {:opaque "source-revision"})
         deep-frame)
-       (.toBe (test/expect (.-phase (snapshot bounded-source))) "idle")
-       (.toEqual (test/expect @(.-rendered bounded-source)) [])
+       (expect-true! (= true (.is Object (.-phase (snapshot bounded-source)) "idle")))
+       (expect-true! (= @(.-rendered bounded-source) []))
 
        (bootstrap!
         forged-fixture
@@ -1596,11 +1505,9 @@
         (frozen {:opaque "forged-session"})
         (frozen {:opaque "forged-revision"})
         forged)
-       (.toBe (test/expect (.-phase (snapshot forged-fixture))) "idle")
-       (.toEqual (test/expect @(.-rendered forged-fixture)) [])
-       (.toThrow
-        (test/expect
-         (fn [] Any
+       (expect-true! (= true (.is Object (.-phase (snapshot forged-fixture)) "idle")))
+       (expect-true! (= @(.-rendered forged-fixture) []))
+       (expect-true! (expect-throws? (fn [] Any
            ((.-observeInput (.-controller forged-fixture)) forged))))
 
        (bootstrap!
@@ -1609,8 +1516,8 @@
         (frozen {:opaque "custom-prototype-session"})
         (frozen {:opaque "custom-prototype-revision"})
         custom-prototype-frame)
-       (.toBe (test/expect (.-phase (snapshot custom-prototype))) "idle")
-       (.toEqual (test/expect @(.-rendered custom-prototype)) [])
+       (expect-true! (= true (.is Object (.-phase (snapshot custom-prototype)) "idle")))
+       (expect-true! (= @(.-rendered custom-prototype) []))
 
        (bootstrap!
         holey
@@ -1618,19 +1525,15 @@
         (frozen {:opaque "holey-session"})
         (frozen {:opaque "holey-revision"})
         holey-frame)
-       (.toBe (test/expect (.-phase (snapshot holey))) "idle")
-       (.toEqual (test/expect @(.-rendered holey)) []))
+       (expect-true! (= true (.is Object (.-phase (snapshot holey)) "idle")))
+       (expect-true! (= @(.-rendered holey) [])))
 
-     (.toThrow
-      (test/expect
-       (fn [] Any
+     (expect-true! (expect-throws? (fn [] Any
          (workbench/create-workbench-envelope
           (workbench/->WorkbenchPolicy
            8 8 8 4 64 (default-sequence-limits))
           "[0,0,0,0,0]"))))
-     (.toThrow
-      (test/expect
-       (fn [] Any
+     (expect-true! (expect-throws? (fn [] Any
          (workbench/create-workbench-envelope
           (workbench/->WorkbenchPolicy
            8 8 1 8 64 (default-sequence-limits))
@@ -1648,10 +1551,8 @@
                        :value "array-poison"})
      (try
        (do
-         (.toBeUndefined
-          (test/expect (.-workbenchEnvelopePoison deep-frame)))
-         (.toBeUndefined
-          (test/expect (.-workbenchEnvelopePoison (nth deep-frame 0)))))
+         (expect-true! (= (js/typeof (.-workbenchEnvelopePoison deep-frame)) "undefined"))
+         (expect-true! (= (js/typeof (.-workbenchEnvelopePoison (nth deep-frame 0))) "undefined")))
        (finally
          (.deleteProperty Reflect
                           (.-prototype Object)
@@ -1662,7 +1563,7 @@
 
 (test/test
  "serialized envelope ingress excludes live objects and undeclared primitives"
- (fn [] Any
+ (fn [] Nil
    (let [policy workbench/WorkbenchPolicy (workbench-policy 8 8)
          primitives Any (workbench/create-workbench-envelope
                          policy
@@ -1684,36 +1585,29 @@
                                                        (throw
                                                         (new Error
                                                          "proxy descriptor invoked"))))})]
-     (.toBe (test/expect (count primitives)) 6)
-     (.toBe (test/expect (.getPrototypeOf Object primitives)) nil)
-     (.toBe (test/expect (.isFrozen Object primitives)) true)
+     (expect-true! (= true (.is Object (count primitives) 6)))
+     (expect-true! (= true (.is Object (.getPrototypeOf Object primitives) nil)))
+     (expect-true! (= true (.is Object (.isFrozen Object primitives) true)))
      (doseq [source Any ["{}"
                          "[{}]"
                          "[undefined]"
                          "[1e999]"]]
-       (.toThrow
-        (test/expect
-         (fn [] Any
+       (expect-true! (expect-throws? (fn [] Any
            (workbench/create-workbench-envelope policy source)))))
-     (.toThrow
-      (test/expect
-       (fn [] Any
+     (expect-true! (expect-throws? (fn [] Any
          (workbench/create-workbench-envelope policy array-proxy))))
-     (.toBe (test/expect @trap-reads) 0))))
+     (expect-true! (= true (.is Object @trap-reads 0))))))
 
 (test/test
  "workbench policy limits must be positive safe integers"
- (fn [] Any
+ (fn [] Nil
    (let [maximum Int (.-MAX_SAFE_INTEGER Number)
          infinity Any (.-POSITIVE_INFINITY Number)
          not-a-number Any (.-NaN Number)]
-     (.toEqual
-      (test/expect
-       (workbench/create-workbench-envelope
+     (expect-true! (= (workbench/create-workbench-envelope
         (workbench-policy-with-sequences
          (sequence-limits maximum maximum maximum maximum maximum))
-        "[]"))
-      [])
+        "[]") []))
      (doseq [invalid-limit Any [0
                                 -1
                                 1.5
@@ -1727,13 +1621,9 @@
                                  128
                                  512
                                  (default-sequence-limits))]
-         (.toThrow
-          (test/expect
-           (fn [] Any
+         (expect-true! (expect-throws? (fn [] Any
              (workbench/create-workbench-envelope invalid-policy "[]"))))))
-     (.toThrow
-      (test/expect
-       (fn [] Any
+     (expect-true! (expect-throws? (fn [] Any
          (workbench/create-workbench-envelope
           (workbench-policy-with-sequences
            (sequence-limits 1 maximum maximum maximum maximum))
@@ -1744,9 +1634,7 @@
                                 infinity
                                 not-a-number
                                 (+ maximum 1)]]
-       (.toThrow
-        (test/expect
-         (fn [] Any
+       (expect-true! (expect-throws? (fn [] Any
            (workbench/create-workbench-envelope
             (workbench-policy-with-sequences
              (sequence-limits
@@ -1759,7 +1647,7 @@
 
 (test/test
  "receipt exhaustion is one terminal occurrence under hostile reentrancy"
- (fn [] Any
+ (fn [] Nil
    (let [maximum Int (.-MAX_SAFE_INTEGER Number)
          fixture Any (fake-fixture-with-policy!
                       (frozen {:opaque "package"})
@@ -1786,27 +1674,23 @@
                           ((.-observeInput controller) (envelope "late-input")))
                    (.push @terminal-results ((.-dispose controller))))
                  (throw (new Error "terminal-receipt-failed")))))
-     (.toBe (test/expect (tick! fixture)) true)
+     (expect-true! (= true (.is Object (tick! fixture) true)))
      (let [terminal Any (snapshot fixture)
            exhausted Any (event-receipts fixture "counter-exhausted")]
-       (.toBe (test/expect (.-phase terminal)) "disposed")
-       (.toBe (test/expect (.-disposed terminal)) true)
-       (.toBe (test/expect (count exhausted)) 1)
-       (.toBe (test/expect (.-sequence (nth exhausted 0))) 6)
-       (.toBe
-        (test/expect (.-detail (nth exhausted 0)))
-        "receipt-sequence")
-       (.toBe
-        (test/expect (count (.filter @terminal-results
-                                    (fn [result Any] Bool (= result true)))))
-        0)
-       (.toBe (test/expect @(.-cancellations fixture)) 1)
-       (.toEqual (test/expect @(.-disposals fixture)) [session])
-       (.toBe (test/expect (.-length @(.-candidateRequests fixture))) 0)))))
+       (expect-true! (= true (.is Object (.-phase terminal) "disposed")))
+       (expect-true! (= true (.is Object (.-disposed terminal) true)))
+       (expect-true! (= true (.is Object (count exhausted) 1)))
+       (expect-true! (= true (.is Object (.-sequence (nth exhausted 0)) 6)))
+       (expect-true! (= true (.is Object (.-detail (nth exhausted 0)) "receipt-sequence")))
+       (expect-true! (= true (.is Object (count (.filter @terminal-results
+                                    (fn [result Any] Bool (= result true)))) 0)))
+       (expect-true! (= true (.is Object @(.-cancellations fixture) 1)))
+       (expect-true! (= @(.-disposals fixture) [session]))
+       (expect-true! (= true (.is Object (.-length @(.-candidateRequests fixture)) 0)))))))
 
 (test/test
  "receipt exhaustion retires a fresh RuntimeSession with a rejected frame"
- (fn [] Any
+ (fn [] Nil
    (let [maximum Int (.-MAX_SAFE_INTEGER Number)
          fixture Any (fake-fixture-with-policy!
                       (frozen {:opaque "package-a"})
@@ -1835,18 +1719,16 @@
        (frozen {:opaque "unbranded-frame"})))
      (let [terminal Any (snapshot fixture)
            exhausted Any (event-receipts fixture "counter-exhausted")]
-       (.toBe (test/expect (.-phase terminal)) "disposed")
-       (.toEqual (test/expect @(.-disposals fixture)) [session-0 session-1])
-       (.toBe (test/expect (count exhausted)) 1)
-       (.toBe (test/expect (.-sequence (nth exhausted 0))) 8)
-       (.toBe (test/expect (.-detail (nth exhausted 0))) "receipt-sequence")
-       (.toBe
-        (test/expect (count (event-receipts fixture "session-frame-rejected")))
-        0)))))
+       (expect-true! (= true (.is Object (.-phase terminal) "disposed")))
+       (expect-true! (= @(.-disposals fixture) [session-0 session-1]))
+       (expect-true! (= true (.is Object (count exhausted) 1)))
+       (expect-true! (= true (.is Object (.-sequence (nth exhausted 0)) 8)))
+       (expect-true! (= true (.is Object (.-detail (nth exhausted 0)) "receipt-sequence")))
+       (expect-true! (= true (.is Object (count (event-receipts fixture "session-frame-rejected")) 0)))))))
 
 (test/test
  "generation operation input and configuration counters fail closed"
- (fn [] Any
+ (fn [] Nil
    (let [maximum Int (.-MAX_SAFE_INTEGER Number)
          generation-fixture Any (fake-fixture-with-policy!
                                  (frozen {:opaque "generation-package"})
@@ -1876,14 +1758,12 @@
       (envelope "frame"))
      ((.-reloadPackage (.-controller generation-fixture))
       (frozen {:opaque "second-package"}))
-     (.toBe (test/expect (.-phase (snapshot generation-fixture))) "disposed")
-     (.toBe (test/expect (.-length @(.-packageRequests generation-fixture))) 1)
-     (.toBe
-      (test/expect (.-detail (nth (event-receipts
+     (expect-true! (= true (.is Object (.-phase (snapshot generation-fixture)) "disposed")))
+     (expect-true! (= true (.is Object (.-length @(.-packageRequests generation-fixture)) 1)))
+     (expect-true! (= true (.is Object (.-detail (nth (event-receipts
                                    generation-fixture
                                    "counter-exhausted")
-                                  0)))
-      "generation-sequence")
+                                  0)) "generation-sequence")))
 
      (bootstrap!
       operation-fixture
@@ -1897,14 +1777,12 @@
       0
       (workbench/->CandidateFailed "settled"))
      (tick! operation-fixture)
-     (.toBe (test/expect (.-phase (snapshot operation-fixture))) "disposed")
-     (.toBe (test/expect (.-length @(.-candidateRequests operation-fixture))) 1)
-     (.toBe
-      (test/expect (.-detail (nth (event-receipts
+     (expect-true! (= true (.is Object (.-phase (snapshot operation-fixture)) "disposed")))
+     (expect-true! (= true (.is Object (.-length @(.-candidateRequests operation-fixture)) 1)))
+     (expect-true! (= true (.is Object (.-detail (nth (event-receipts
                                    operation-fixture
                                    "counter-exhausted")
-                                  0)))
-      "operation-sequence")
+                                  0)) "operation-sequence")))
 
      (bootstrap!
       input-fixture
@@ -1914,14 +1792,12 @@
       (envelope "frame"))
      ((.-observeInput (.-controller input-fixture)) (envelope "input-1"))
      ((.-observeInput (.-controller input-fixture)) (envelope "input-2"))
-     (.toBe (test/expect (.-phase (snapshot input-fixture))) "disposed")
-     (.toBe (test/expect (.-pendingObservations (snapshot input-fixture))) 1)
-     (.toBe
-      (test/expect (.-detail (nth (event-receipts
+     (expect-true! (= true (.is Object (.-phase (snapshot input-fixture)) "disposed")))
+     (expect-true! (= true (.is Object (.-pendingObservations (snapshot input-fixture)) 1)))
+     (expect-true! (= true (.is Object (.-detail (nth (event-receipts
                                    input-fixture
                                    "counter-exhausted")
-                                  0)))
-      "input-sequence")
+                                  0)) "input-sequence")))
 
      (bootstrap!
       configuration-fixture
@@ -1933,25 +1809,17 @@
       (envelope "input-1"))
      ((.-observeInput (.-controller configuration-fixture))
       (envelope "input-2"))
-     (.toBe
-      (test/expect (.-phase (snapshot configuration-fixture)))
-      "disposed")
-     (.toBe
-      (test/expect (.-configurationRevision (snapshot configuration-fixture)))
-      2)
-     (.toBe
-      (test/expect (.-pendingObservations (snapshot configuration-fixture)))
-      1)
-     (.toBe
-      (test/expect (.-detail (nth (event-receipts
+     (expect-true! (= true (.is Object (.-phase (snapshot configuration-fixture)) "disposed")))
+     (expect-true! (= true (.is Object (.-configurationRevision (snapshot configuration-fixture)) 2)))
+     (expect-true! (= true (.is Object (.-pendingObservations (snapshot configuration-fixture)) 1)))
+     (expect-true! (= true (.is Object (.-detail (nth (event-receipts
                                    configuration-fixture
                                    "counter-exhausted")
-                                  0)))
-      "configuration-revision"))))
+                                  0)) "configuration-revision"))))))
 
 (test/test
  "counter exhaustion retires a returned session that cannot be installed"
- (fn [] Any
+ (fn [] Nil
    (let [maximum Int (.-MAX_SAFE_INTEGER Number)
          fixture Any (fake-fixture-with-policy!
                       (frozen {:opaque "package-a"})
@@ -1982,18 +1850,16 @@
        session-1
        (frozen {:opaque "revision-1"})
        (envelope "frame-1")))
-     (.toBe (test/expect (.-phase (snapshot fixture))) "disposed")
-     (.toEqual (test/expect @(.-disposals fixture)) [session-0 session-1])
-     (.toBe
-      (test/expect (.-detail (nth (event-receipts
+     (expect-true! (= true (.is Object (.-phase (snapshot fixture)) "disposed")))
+     (expect-true! (= @(.-disposals fixture) [session-0 session-1]))
+     (expect-true! (= true (.is Object (.-detail (nth (event-receipts
                                    fixture
                                    "counter-exhausted")
-                                  0)))
-      "configuration-revision:disposal-uncertain"))))
+                                  0)) "configuration-revision:disposal-uncertain"))))))
 
 (test/test
  "terminal disposal fences outstanding candidate and Admission completions"
- (fn [] Any
+ (fn [] Nil
    (let [candidate-fixture Any (fake-fixture! (frozen {:opaque "candidate-package"}))
          candidate-controller Any (.-controller candidate-fixture)
          candidate-session Any (frozen {:opaque "candidate-session"})
@@ -2014,10 +1880,10 @@
       (.-candidateRequests candidate-fixture)
       0
       (workbench/->CandidateProduced (frozen {:opaque "late-candidate"})))
-     (.toBe (test/expect (.-phase (snapshot candidate-fixture))) "disposed")
-     (.toBe (test/expect (.-length @(.-admissionRequests candidate-fixture))) 0)
-     (.toEqual (test/expect @(.-rendered candidate-fixture)) [candidate-frame])
-     (.toEqual (test/expect @(.-disposals candidate-fixture)) [candidate-session])
+     (expect-true! (= true (.is Object (.-phase (snapshot candidate-fixture)) "disposed")))
+     (expect-true! (= true (.is Object (.-length @(.-admissionRequests candidate-fixture)) 0)))
+     (expect-true! (= @(.-rendered candidate-fixture) [candidate-frame]))
+     (expect-true! (= @(.-disposals candidate-fixture) [candidate-session]))
 
      (bootstrap!
       admission-fixture
@@ -2038,13 +1904,13 @@
        (frozen {:opaque "late-successor"})
        (frozen {:opaque "late-revision"})
        (envelope "late-frame")))
-     (.toBe (test/expect (.-phase (snapshot admission-fixture))) "disposed")
-     (.toEqual (test/expect @(.-rendered admission-fixture)) [admission-frame])
-     (.toEqual (test/expect @(.-disposals admission-fixture)) [admission-session]))))
+     (expect-true! (= true (.is Object (.-phase (snapshot admission-fixture)) "disposed")))
+     (expect-true! (= @(.-rendered admission-fixture) [admission-frame]))
+     (expect-true! (= @(.-disposals admission-fixture) [admission-session])))))
 
 (test/test
  "disposal is terminal and idempotent"
- (fn [] Any
+ (fn [] Nil
    (let [fixture Any (fake-fixture! (frozen {:opaque "package"}))
          controller Any (.-controller fixture)
          session Any (frozen {:opaque "session"})
@@ -2062,23 +1928,21 @@
      ((.-reloadPackage controller) (frozen {:opaque "late-package"}))
      (let [terminal Any (snapshot fixture)
            events Any (receipt-events fixture)]
-       (.toBe (test/expect (.-phase terminal)) "disposed")
-       (.toBe (test/expect (.-disposed terminal)) true)
-       (.toBe (test/expect @(.-cancellations fixture)) 1)
-       (.toEqual (test/expect @(.-disposals fixture)) [session])
-       (.toBe (test/expect (.-length @(.-packageRequests fixture))) 1)
-       (.toBe (test/expect (.-length @(.-candidateRequests fixture))) 0)
-       (.toBe (test/expect (.-length events))
-              (.-length @(.-receipts fixture)))
-       (.toBe (test/expect (count (filter
+       (expect-true! (= true (.is Object (.-phase terminal) "disposed")))
+       (expect-true! (= true (.is Object (.-disposed terminal) true)))
+       (expect-true! (= true (.is Object @(.-cancellations fixture) 1)))
+       (expect-true! (= @(.-disposals fixture) [session]))
+       (expect-true! (= true (.is Object (.-length @(.-packageRequests fixture)) 1)))
+       (expect-true! (= true (.is Object (.-length @(.-candidateRequests fixture)) 0)))
+       (expect-true! (= true (.is Object (.-length events) (.-length @(.-receipts fixture)))))
+       (expect-true! (= true (.is Object (count (filter
                                   (fn [event Any] Bool
                                     (= event "disposed"))
-                                  events)))
-              1)))))
+                                  events)) 1)))))))
 
 (test/test
  "opaque port values are not interpreted and foreign objects cannot forge envelopes"
- (fn [] Any
+ (fn [] Nil
    (let [reads Any (atom 0)
          poison Any (new Proxy
               (frozen {})
@@ -2090,16 +1954,12 @@
                         (throw (new Error "opaque value was interpreted"))))})
          fixture Any (fake-fixture! poison)
          frame Any (envelope "frame")]
-     (.toThrow
-      (test/expect
-       (fn [] Any
+     (expect-true! (expect-throws? (fn [] Any
          (workbench/create-workbench-envelope
           (workbench-policy 8 8)
           poison))))
      (bootstrap! fixture poison poison poison frame)
-     (.toThrow
-      (test/expect
-       (fn [] Any ((.-observeInput (.-controller fixture)) poison))))
+     (expect-true! (expect-throws? (fn [] Any ((.-observeInput (.-controller fixture)) poison))))
      ((.-observeInput (.-controller fixture)) (envelope "input"))
      (tick! fixture)
      (complete-request!
@@ -2110,11 +1970,8 @@
       (.-admissionRequests fixture)
       0
       (workbench/->AdmissionRejected "opaque-rejection"))
-     (.toBe (test/expect @reads) 0)
-     (.toEqual
-      (test/expect
-       (mapv (fn [call Any] Any (.-kind call)) @(.-calls fixture)))
-      ["acceptPackage"
+     (expect-true! (= true (.is Object @reads 0)))
+     (expect-true! (= (mapv (fn [call Any] Any (.-kind call)) @(.-calls fixture)) ["acceptPackage"
        "startSession"
        "runCandidate"
-       "requestAdmission"]))))
+       "requestAdmission"])))))
