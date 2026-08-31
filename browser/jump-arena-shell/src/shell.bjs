@@ -17,7 +17,13 @@
   [position ArenaVec3
    size ArenaVec3])
 
-(defrecord ArenaWorldFrame [platforms (Vec ArenaPlatformFrame)])
+(defrecord ArenaCollectibleFrame
+  [position ArenaVec3
+   state String])
+
+(defrecord ArenaWorldFrame
+  [platforms (Vec ArenaPlatformFrame)
+   collectibles (Vec ArenaCollectibleFrame)])
 
 (defrecord ArenaFrame
   [player ArenaPlayerFrame
@@ -40,13 +46,28 @@
            (.isFrozen Object (.-velocity (.-player frame)))
            (.isFrozen Object (.-world frame))
            (.isFrozen Object (.-platforms (.-world frame)))
+           (.isFrozen Object (.-collectibles (.-world frame)))
            (.every (.-platforms (.-world frame))
                    (fn [platform Any] Bool
                      (and (.isFrozen Object platform)
                           (.isFrozen Object (.-position platform))
-                          (.isFrozen Object (.-size platform))))))
+                          (.isFrozen Object (.-size platform)))))
+           (.every (.-collectibles (.-world frame))
+                   (fn [collectible Any] Bool
+                     (and (.isFrozen Object collectible)
+                          (.isFrozen Object (.-position collectible))
+                          (= (js/typeof (.-state collectible)) "string")))))
     frame
     (throw (new Error "renderFrame requires a deeply frozen arena frame"))))
+
+(defn projected-symbol-color [value String] Int
+  (loop [index Int 0
+         hash Int 216613]
+    (if (= index (.-length value))
+      (+ 2105376 (rem hash 13619151))
+      (let [code Int (.charCodeAt value index)]
+        (recur (inc index)
+               (rem (+ (* hash 33) code) 13619151))))))
 
 (defn keyboard-input
   [phase String
@@ -99,12 +120,15 @@
           player-material Any (new material-ctor {:color 4697343 :roughness 0.42})
           platform-geometry Any (new box-geometry-ctor 1.0 1.0 1.0)
           platform-material Any (new material-ctor {:color 2967637 :roughness 0.78})
+          collectible-geometry Any (new box-geometry-ctor 0.45 0.45 0.45)
           player-mesh Any (new mesh-ctor player-geometry player-material)
           platform-group Any (new group-ctor)
+          collectible-group Any (new group-ctor)
           disposed Any (atom false)
           canvas-focused Any (atom false)
           has-frame Any (atom false)
           platform-meshes Any (atom [])
+          collectible-meshes Any (atom [])
           active-pointers Any (new Set)]
       (set! (.-background scene) (new color-ctor 1116716))
       (.add scene (new hemisphere-light-ctor 10144255 1250849 2.4))
@@ -112,6 +136,7 @@
         (.set (.-position sun) 6.0 12.0 8.0)
         (.add scene sun))
       (.add scene platform-group)
+      (.add scene collectible-group)
       (.add scene player-mesh)
       (.setAttribute canvas "tabindex" "0")
       (.appendChild mount canvas)
@@ -164,6 +189,11 @@
                                  (.releasePointerCapture canvas (.-pointerId event)))
                                (.delete active-pointers (.-pointerId event))
                                (pointer-event "cancel" event)))
+            clear-collectibles (fn [] Any
+                                 (doseq [mesh Any @collectible-meshes]
+                                   (.remove collectible-group mesh)
+                                   (.dispose (.-material mesh)))
+                                 (reset! collectible-meshes []))
             render-frame (fn [incoming ArenaFrame] ArenaFrame
                            (if @disposed
                              (throw (new Error "jump arena shell is disposed"))
@@ -189,6 +219,21 @@
                                          (.-x size) (.-y size) (.-z size))
                                    (.add platform-group mesh)
                                    (.push @platform-meshes mesh)))
+                               (clear-collectibles)
+                               (doseq [collectible ArenaCollectibleFrame
+                                        (.-collectibles (.-world frame))]
+                                 (let [material Any (new material-ctor
+                                            {:color (projected-symbol-color
+                                                     (.-state collectible))
+                                             :roughness 0.3})
+                                       mesh Any (new mesh-ctor collectible-geometry material)
+                                       collectible-position ArenaVec3 (.-position collectible)]
+                                   (.set (.-position mesh)
+                                         (.-x collectible-position)
+                                         (.-y collectible-position)
+                                         (.-z collectible-position))
+                                   (.add collectible-group mesh)
+                                   (.push @collectible-meshes mesh)))
                                (.set (.-position camera)
                                      (+ (.-x position) (* (.sin Math yaw) 7.5))
                                      (+ (.-y position) 4.8)
@@ -221,10 +266,13 @@
                         (.clear active-pointers)
                         (reset! platform-meshes [])
                         (.clear platform-group)
+                        (clear-collectibles)
+                        (.clear collectible-group)
                         (.dispose player-geometry)
                         (.dispose player-material)
                         (.dispose platform-geometry)
                         (.dispose platform-material)
+                        (.dispose collectible-geometry)
                         (.clear scene)
                         (.dispose renderer)
                         (.forceContextLoss renderer)

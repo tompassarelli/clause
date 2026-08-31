@@ -50,6 +50,7 @@
 (def released-pointers Any (atom 0))
 (def focus-requests Any (atom 0))
 (def pixel-ratio Any (atom 0.0))
+(def material-colors Any (atom []))
 
 (defn vector3 [] Any
   {:x 0.0
@@ -91,6 +92,11 @@
 
 (defn fakeResource! [& _arguments (List Any)] Any
   {:dispose (fn [] Any (swap! resource-disposals inc))})
+
+(defn fakeMaterial! [options Any] Any
+  (do
+    (.push @material-colors (.-color options))
+    (fakeResource! options)))
 
 (defn fakeMesh
   [geometry Any
@@ -170,7 +176,12 @@
            {:position (frozen-vec3 0.0 -0.25 0.0)
             :size (frozen-vec3 12.0 0.5 12.0)}))
 
-(defn sample-frame [] Any
+(defn frozen-collectible [state String] Any
+  (.freeze Object
+           {:position (frozen-vec3 2.0 3.0 4.0)
+            :state state}))
+
+(defn sample-frame [state String] Any
   (.freeze Object
            {:player (.freeze Object
                              {:position (frozen-vec3 2.0 3.0 4.0)
@@ -178,7 +189,9 @@
                               :yaw 0.5
                               :grounded false})
             :world (.freeze Object
-                            {:platforms (.freeze Object [(frozen-platform)])})}))
+                            {:platforms (.freeze Object [(frozen-platform)])
+                             :collectibles (.freeze Object
+                                                   [(frozen-collectible state)])})}))
 
 (defn reset-fixture! [] Any
   (do
@@ -193,7 +206,8 @@
     (reset! canvas-removals 0)
     (reset! released-pointers 0)
     (reset! focus-requests 0)
-    (reset! pixel-ratio 0.0)))
+    (reset! pixel-ratio 0.0)
+    (reset! material-colors [])))
 
 (test/test
  "production shell emits input without advancing player state and tears down"
@@ -206,7 +220,7 @@
                     :HemisphereLight fakeLight
                     :DirectionalLight fakeLight
                     :BoxGeometry fakeResource!
-                    :MeshStandardMaterial fakeResource!
+                    :MeshStandardMaterial fakeMaterial!
                     :Mesh fakeMesh
                     :Group fakeGroup}
          arena Any (shell/create-jump-arena-shell!
@@ -214,7 +228,8 @@
                     (fakeBrowser!)
                     three
                     (fn [input Any] Any (.push @emitted-inputs input)))
-         frame Any (sample-frame)
+         frame Any (sample-frame "active")
+         collected-frame Any (sample-frame "collected")
          before String (.stringify JSON frame)
          resize-handler Any (.get @browser-listeners "resize")
          focus-handler Any (.get @canvas-listeners "focus")
@@ -226,6 +241,9 @@
          pointer-up Any (.get @canvas-listeners "pointerup")
          pointer-cancel Any (.get @canvas-listeners "pointercancel")]
      ((.-renderFrame arena) frame)
+     (let [active-color Any (nth @material-colors 2)]
+       ((.-renderFrame arena) collected-frame)
+       (expect-same! (= active-color (nth @material-colors 3)) false))
      (key-down {:code "Space" :repeat false})
      (expect-same! (.-length @emitted-inputs) 0)
      (focus-handler {})
@@ -245,7 +263,7 @@
      (expect-equal! (.-velocity (.-player frame))
                    {:x 5.0 :y 6.0 :z 7.0})
      (expect-same! (.-grounded (.-player frame)) false)
-     (expect-same! @render-count 1)
+     (expect-same! @render-count 2)
      (expect-same! (.-length @emitted-inputs) 2)
      (expect-same! @pixel-ratio 2.0)
      (expect-same! (.has @browser-listeners "keydown") false)
@@ -287,9 +305,9 @@
      (expect-same! (.-size @pointer-captures) 0)
      (expect-same! (.-length @emitted-inputs) 2)
      (expect-same! @focus-requests 1)
-     (expect-same! @render-count 1)
+     (expect-same! @render-count 2)
      (expect-same! @released-pointers 1)
-     (expect-same! @resource-disposals 4)
+     (expect-same! @resource-disposals 7)
      (expect-same! @renderer-disposals 1)
      (expect-same! @context-losses 1)
      (expect-same! @canvas-removals 1))))

@@ -234,11 +234,32 @@
       (json-string [(json-string {:kind "process-occurrence"
                                   :ordinal ordinal})])))]))
 
+(defn contact-configuration
+  [input-sequence Int
+   revision Int] workbench/InputConfiguration
+  (workbench/->InputConfiguration
+   revision
+   [(workbench/->InputObservation
+     input-sequence
+     (workbench/create-workbench-envelope
+      (policy)
+      (json-string [(json-string {:kind "keyboard"
+                                  :code "KeyD"
+                                  :phase "up"
+                                  :repeat false})])))
+    (workbench/->InputObservation
+     (inc input-sequence)
+     (workbench/create-workbench-envelope
+      (policy)
+      (json-string [(json-string {:kind "keyboard"
+                                  :code "KeyE"
+                                  :phase "down"
+                                  :repeat false})])))]))
+
 (defn admit-real-process!
   [port workbench/CartridgePort
    request-bytes Any] Any
-  (let [request wasm/ExactProcessRequest
-        (wasm/->ExactProcessRequest (wasm/decode-cwr1-hex request-bytes))
+  (let [request wasm/ExactProcessRequest (wasm/->ExactProcessRequest (wasm/decode-cwr1-hex request-bytes))
         accepted Any (atom nil)
         started Any (atom nil)
         candidate Any (atom nil)
@@ -398,12 +419,10 @@
       (.all Promise [(.arrayBuffer (.file Bun "./generated/wasm/clause_runtime_bg.wasm"))
                      (.text (.file Bun "./fixtures/wasm-jump-v1/jump-v1.cwr1.hex"))])
       (fn [assets Any] Any
-        (let [port workbench/CartridgePort
-            (wasm/create-wasm-cartridge-port
+        (let [port workbench/CartridgePort (wasm/create-wasm-cartridge-port
              (initialize-real-session-module (nth assets 0))
              (arena-policy))
-              request wasm/ExactProcessRequest
-              (wasm/->ExactProcessRequest (wasm/decode-cwr1-hex (nth assets 1)))
+              request wasm/ExactProcessRequest (wasm/->ExactProcessRequest (wasm/decode-cwr1-hex (nth assets 1)))
               accepted Any (atom nil)
               started Any (atom nil)
               candidate Any (atom nil)
@@ -483,8 +502,7 @@
                      (.text (.file Bun "./fixtures/wasm-collect-v1/collect-plus-1.cwr1.hex"))
                      (.text (.file Bun "./fixtures/wasm-collect-v1/collect-plus-4.cwr1.hex"))])
       (fn [assets Any] Any
-        (let [port workbench/CartridgePort
-              (wasm/create-wasm-cartridge-port
+        (let [port workbench/CartridgePort (wasm/create-wasm-cartridge-port
                (initialize-real-session-module (nth assets 0))
                (arena-policy))
               base-frame Any (admit-real-process! port (nth assets 1))
@@ -505,8 +523,7 @@
                      (.text (.file Bun "./fixtures/wasm-collect-state-v1/collected.cwr1.hex"))
                      (.text (.file Bun "./fixtures/wasm-collect-state-v1/spent.cwr1.hex"))])
       (fn [assets Any] Any
-        (let [port workbench/CartridgePort
-              (wasm/create-wasm-cartridge-port
+        (let [port workbench/CartridgePort (wasm/create-wasm-cartridge-port
                (initialize-real-session-module (nth assets 0))
                (arena-policy))
               collected-frame Any (admit-real-process! port (nth assets 1))
@@ -515,4 +532,64 @@
               spent-state String (.-state (.-collectible spent-frame))]
           (.toBe (test/expect collected-state) "collected")
           (.toBe (test/expect spent-state) "spent")
+          nil))))))
+
+(let [gameplay-test-runtime Any (require "bun:test")
+      register-gameplay-test Any (.-test gameplay-test-runtime)]
+  (register-gameplay-test
+   "one real Wasm gameplay session moves into contact then admits symbolic collect"
+   (fn [] Any
+     (.then
+      (.all Promise [(.arrayBuffer (.file Bun "./generated/wasm/clause_runtime_bg.wasm"))
+                     (.text (.file Bun
+                                   "./fixtures/wasm-gameplay-v1/gameplay-v1.cwr1.hex"))])
+      (fn [assets Any] Any
+        (let [port workbench/CartridgePort (wasm/create-wasm-cartridge-port
+               (initialize-real-session-module (nth assets 0))
+               (arena-policy))
+              request wasm/ExactProcessRequest (wasm/->ExactProcessRequest (wasm/decode-cwr1-hex (nth assets 1)))
+              accepted Any (atom nil)
+              started Any (atom nil)
+              movement-candidate Any (atom nil)
+              movement-admitted Any (atom nil)
+              collect-candidate Any (atom nil)
+              collect-admitted Any (atom nil)]
+          ((.-acceptPackage port) request
+           (fn [result Any] Any (reset! accepted result)))
+          ((.-startSession port) (.-acceptedPackage @accepted) 1
+           (fn [result Any] Any (reset! started result)))
+          ((.-runCandidate port)
+           (.-session @started)
+           (workbench/->FixedTick 16)
+           (key-configuration 1 1 "KeyD")
+           (fn [result Any] Any (reset! movement-candidate result)))
+          (.toBe (test/expect (json-string (.-frame @started))) "[]")
+          ((.-requestAdmission port)
+           (.-session @started)
+           (.-candidate @movement-candidate)
+           (fn [result Any] Any (reset! movement-admitted result)))
+          (let [active-frame Any (wasm/decode-projected-term-frame (.-frame @movement-admitted))
+                player-x Float (.-x (.-position (.-player active-frame)))
+                active-collectible Any (nth (.-collectibles (.-world active-frame)) 0)
+                active-collectible-state String (.-state active-collectible)
+                collectible-x Float (.-x (.-position active-collectible))]
+            (.toBe (test/expect active-collectible-state) "active")
+            (.toBe (test/expect (str player-x)) (str collectible-x)))
+          ((.-runCandidate port)
+           (.-session @started)
+           (workbench/->FixedTick 16)
+           (contact-configuration 2 2)
+           (fn [result Any] Any (reset! collect-candidate result)))
+          (let [retained-frame Any (wasm/decode-projected-term-frame (.-frame @movement-admitted))
+                retained-state String (.-state (nth (.-collectibles (.-world retained-frame)) 0))]
+            (.toBe (test/expect retained-state) "active"))
+          ((.-requestAdmission port)
+           (.-session @started)
+           (.-candidate @collect-candidate)
+           (fn [result Any] Any (reset! collect-admitted result)))
+          (let [collected-frame Any (wasm/decode-projected-term-frame (.-frame @collect-admitted))
+                collected-collectible Any (nth (.-collectibles (.-world collected-frame)) 0)
+                collected-collectible-state String (.-state collected-collectible)]
+            (.toBe (test/expect collected-collectible-state) "collected"))
+          ((.-disposeSession port) (.-session @started))
           nil))))))

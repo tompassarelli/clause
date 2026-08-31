@@ -7,6 +7,7 @@ const BROWSER_COLLECT_ALLOCATION_ROOT_TAG: u8 = 234;
 const BROWSER_COLLECT_CHANGED_ALLOCATION_ROOT_TAG: u8 = 235;
 const BROWSER_SYMBOLIC_COLLECT_ALLOCATION_ROOT_TAG: u8 = 240;
 const BROWSER_SYMBOLIC_COLLECT_CHANGED_ALLOCATION_ROOT_TAG: u8 = 241;
+const BROWSER_GAMEPLAY_ALLOCATION_ROOT_TAG: u8 = 242;
 const SOURCE_ALLOCATION_ROOT_TAG: u8 = 211;
 const WORLD: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
@@ -20,6 +21,14 @@ const COLLECT_STATE: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../test-vectors/jump-arena/collect-state.clause"
 ));
+
+fn gameplay_source() -> Vec<u8> {
+    let mut source = Vec::with_capacity(WORLD.len() + COLLECT_STATE.len() + 1);
+    source.extend_from_slice(WORLD);
+    source.push(b'\n');
+    source.extend_from_slice(COLLECT_STATE);
+    source
+}
 
 macro_rules! id {
     ($kind:ident, $tag:expr) => {
@@ -119,6 +128,7 @@ fn source_handlers(
     CanonicalInputHandlerV1,
     CanonicalJumpHandlerV1,
     CanonicalTickProgramV1,
+    Option<CanonicalScalarHandlerV1>,
 ) {
     let cst = read_canonical_source_v1(source).expect("canonical arena source reads");
     let plan = plan_independent_canonical_source_allocations_v1(
@@ -135,16 +145,20 @@ fn source_handlers(
         &plan,
     )
     .expect("canonical arena source reaches the checked package boundary");
+    let input_handler = compiled
+        .input_handler
+        .expect("the bounded source profile owns one on-input handler");
+    let jump_handler = compiled
+        .jump_handler
+        .expect("the bounded source profile owns one on-jump handler");
+    let tick_program = compiled
+        .tick_program
+        .expect("the bounded source profile owns the three on-tick branches");
     (
-        compiled
-            .input_handler
-            .expect("the bounded source profile owns one on-input handler"),
-        compiled
-            .jump_handler
-            .expect("the bounded source profile owns one on-jump handler"),
-        compiled
-            .tick_program
-            .expect("the bounded source profile owns the three on-tick branches"),
+        input_handler,
+        jump_handler,
+        tick_program,
+        compiled.scalar_handler,
     )
 }
 
@@ -220,6 +234,7 @@ fn headless_program(
     input: &CanonicalInputHandlerV1,
     jump: &CanonicalJumpHandlerV1,
     tick: &CanonicalTickProgramV1,
+    collectible: Option<&CanonicalScalarHandlerV1>,
 ) -> ExecutableProgramV1 {
     let role = |id| LocalRoleRefV2 {
         schema: RelationSchemaLocalId::new(2),
@@ -259,68 +274,108 @@ fn headless_program(
             ),
         ],
     );
+    let mut world_fields = vec![(
+        b"platforms".as_slice(),
+        projection_array(scope, vec![platform]),
+    )];
+    if collectible.is_some() {
+        let collectible = projection_object(
+            scope,
+            vec![
+                (
+                    b"position",
+                    projected_vec3(scope, [role(21), role(22), role(23)]),
+                ),
+                (
+                    b"state",
+                    projection_role(scope, role(24), ExecutableValueKindV1::Symbol),
+                ),
+            ],
+        );
+        world_fields.push((
+            b"collectibles".as_slice(),
+            projection_array(scope, vec![collectible]),
+        ));
+    }
     let template = projection_object(
         scope,
         vec![
             (b"player", player),
-            (
-                b"world",
-                projection_object(
-                    scope,
-                    vec![(b"platforms", projection_array(scope, vec![platform]))],
-                ),
-            ),
+            (b"world", projection_object(scope, world_fields)),
         ],
     );
 
-    let mut program = ExecutableProgramV1 {
-        // Gameplay coordinates are placeholders populated only by source-owned
-        // input, jump, and tick lowering. The remaining values are passive
-        // renderer-only platform coordinates absent from canonical game source.
-        initial_configuration: vec![
+    let mut initial_configuration = vec![
+        number(0.0),
+        number(0.0),
+        number(0.0),
+        number(0.0),
+        number(0.0),
+        ExecutableValueV1::Boolean(false),
+        number(0.0),
+        number(0.0),
+        number(0.0),
+        number(0.0),
+        number(0.0),
+        number(0.0),
+        number(0.0),
+        number(0.0),
+        number(0.0),
+        number(0.0),
+        number(-0.25),
+        number(0.0),
+        number(12.0),
+        number(0.5),
+        number(12.0),
+        number(0.0),
+        number(0.0),
+        number(0.0),
+        number(0.0),
+    ];
+    if let Some(collectible) = collectible {
+        initial_configuration.extend([
+            number(0.08),
+            number(0.9),
             number(0.0),
-            number(0.0),
-            number(0.0),
-            number(0.0),
-            number(0.0),
-            ExecutableValueV1::Boolean(false),
-            number(0.0),
-            number(0.0),
-            number(0.0),
-            number(0.0),
-            number(0.0),
-            number(0.0),
-            number(0.0),
-            number(0.0),
-            number(0.0),
-            number(0.0),
-            number(-0.25),
-            number(0.0),
-            number(12.0),
-            number(0.5),
-            number(12.0),
-            number(0.0),
-            number(0.0),
-            number(0.0),
-            number(0.0),
-        ],
-        rules: vec![],
-        projection: Some(ExecutableProjectionV1 {
-            bindings: [
-                (1, 0, ExecutableValueKindV1::Number),
-                (2, 1, ExecutableValueKindV1::Number),
-                (3, 12, ExecutableValueKindV1::Number),
-                (4, 2, ExecutableValueKindV1::Number),
-                (5, 3, ExecutableValueKindV1::Number),
-                (6, 13, ExecutableValueKindV1::Number),
-                (7, 14, ExecutableValueKindV1::Number),
-                (8, 5, ExecutableValueKindV1::Boolean),
-                (9, 15, ExecutableValueKindV1::Number),
-                (10, 16, ExecutableValueKindV1::Number),
-                (11, 17, ExecutableValueKindV1::Number),
-                (12, 18, ExecutableValueKindV1::Number),
-                (13, 19, ExecutableValueKindV1::Number),
-                (14, 20, ExecutableValueKindV1::Number),
+            match &collectible.initial_value {
+                CanonicalScalarValueV1::Number(bits) => ExecutableValueV1::Number(*bits),
+                CanonicalScalarValueV1::Symbol(value) => ExecutableValueV1::symbol(value)
+                    .expect("source-owned collectible state is bounded"),
+            },
+        ]);
+    }
+    let mut projection_bindings = [
+        (1, 0, ExecutableValueKindV1::Number),
+        (2, 1, ExecutableValueKindV1::Number),
+        (3, 12, ExecutableValueKindV1::Number),
+        (4, 2, ExecutableValueKindV1::Number),
+        (5, 3, ExecutableValueKindV1::Number),
+        (6, 13, ExecutableValueKindV1::Number),
+        (7, 14, ExecutableValueKindV1::Number),
+        (8, 5, ExecutableValueKindV1::Boolean),
+        (9, 15, ExecutableValueKindV1::Number),
+        (10, 16, ExecutableValueKindV1::Number),
+        (11, 17, ExecutableValueKindV1::Number),
+        (12, 18, ExecutableValueKindV1::Number),
+        (13, 19, ExecutableValueKindV1::Number),
+        (14, 20, ExecutableValueKindV1::Number),
+    ]
+    .into_iter()
+    .map(
+        |(role_id, slot, value_kind)| ExecutableProjectionBindingV1 {
+            role: role(role_id),
+            slot,
+            value_kind,
+        },
+    )
+    .collect::<Vec<_>>();
+    if collectible.is_some() {
+        projection_bindings.extend(
+            [
+                (21, 25, ExecutableValueKindV1::Number),
+                (22, 26, ExecutableValueKindV1::Number),
+                (23, 27, ExecutableValueKindV1::Number),
+                (24, 28, ExecutableValueKindV1::Symbol),
             ]
             .into_iter()
             .map(
@@ -329,8 +384,17 @@ fn headless_program(
                     slot,
                     value_kind,
                 },
-            )
-            .collect(),
+            ),
+        );
+    }
+    let mut program = ExecutableProgramV1 {
+        // Gameplay coordinates are placeholders populated only by source-owned
+        // input, jump, and tick lowering. The remaining values are passive
+        // renderer-only platform coordinates absent from canonical game source.
+        initial_configuration,
+        rules: vec![],
+        projection: Some(ExecutableProjectionV1 {
+            bindings: projection_bindings,
             template,
         }),
     };
@@ -375,12 +439,31 @@ fn headless_program(
         },
     )
     .expect("source-owned tick program lowers to physical slots");
+    if let Some(collectible) = collectible {
+        lower_canonical_scalar_handler_v1(
+            &mut program,
+            collectible,
+            ExecutableCanonicalScalarBindingV1 {
+                entry: 3,
+                state_slot: 28,
+            },
+        )
+        .expect("source-owned collect handler lowers beside arena state");
+    }
     program
 }
 
 fn checked_program_package_with_scopes(
     checker_count: usize,
     state_admission_scopes: Vec<StateAdmissionScope>,
+) -> CheckedProcessPackage {
+    checked_program_package_with_scopes_and_roles(checker_count, state_admission_scopes, 20)
+}
+
+fn checked_program_package_with_scopes_and_roles(
+    checker_count: usize,
+    state_admission_scopes: Vec<StateAdmissionScope>,
+    projection_role_count: u32,
 ) -> CheckedProcessPackage {
     let source = include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
@@ -393,7 +476,7 @@ fn checked_program_package_with_scopes(
     let mut projection_schema = candidate.snapshot.constitution.schemas[0].clone();
     projection_schema.id = RelationSchemaLocalId::new(2);
     let base_role = projection_schema.roles[0].clone();
-    projection_schema.roles = (1..=20)
+    projection_schema.roles = (1..=projection_role_count)
         .map(|role_id| {
             let mut role = base_role.clone();
             role.id = RoleLocalId::new(role_id);
@@ -479,7 +562,60 @@ fn physical_plan_with_source(
         universe: constitution.universe(),
         semantics: constitution.semantics(),
     };
-    let (input_handler, jump_handler, tick_program) = source_handlers(source, scope);
+    let (input_handler, jump_handler, tick_program, scalar_handler) =
+        source_handlers(source, scope);
+    let mut input_events = vec![
+        ExecutableInputBindingV1 {
+            role: role(15),
+            source: ExecutableInputSourceV1::Keyboard {
+                code: b"KeyA".to_vec(),
+                phase: ExecutableKeyPhaseV1::Down,
+            },
+            occurrence: occurrence(0, &[-1.0, 0.0]),
+        },
+        ExecutableInputBindingV1 {
+            role: role(16),
+            source: ExecutableInputSourceV1::Keyboard {
+                code: b"KeyA".to_vec(),
+                phase: ExecutableKeyPhaseV1::Up,
+            },
+            occurrence: occurrence(0, &[0.0, 0.0]),
+        },
+        ExecutableInputBindingV1 {
+            role: role(17),
+            source: ExecutableInputSourceV1::Keyboard {
+                code: b"KeyD".to_vec(),
+                phase: ExecutableKeyPhaseV1::Down,
+            },
+            occurrence: occurrence(0, &[1.0, 0.0]),
+        },
+        ExecutableInputBindingV1 {
+            role: role(18),
+            source: ExecutableInputSourceV1::Keyboard {
+                code: b"KeyD".to_vec(),
+                phase: ExecutableKeyPhaseV1::Up,
+            },
+            occurrence: occurrence(0, &[0.0, 0.0]),
+        },
+        ExecutableInputBindingV1 {
+            role: role(19),
+            source: ExecutableInputSourceV1::Keyboard {
+                code: b"Space".to_vec(),
+                phase: ExecutableKeyPhaseV1::Down,
+            },
+            occurrence: occurrence(1, &[]),
+        },
+    ];
+    if scalar_handler.is_some() {
+        input_events.push(ExecutableInputBindingV1 {
+            role: role(25),
+            source: ExecutableInputSourceV1::Keyboard {
+                code: b"KeyE".to_vec(),
+                phase: ExecutableKeyPhaseV1::Down,
+            },
+            occurrence: occurrence(3, &[]),
+        });
+    }
     ExecutablePhysicalPlanV1 {
         application_shape: constitution
             .application_shape(application)
@@ -494,54 +630,19 @@ fn physical_plan_with_source(
         refinement: ExecutableRefinementV1::ClosedApplicationRuleMachineV1,
         target: ExecutablePhysicalTargetV1::PortableScalarInterpreterV1,
         input: Some(ExecutableInputPlanV1 {
-            events: vec![
-                ExecutableInputBindingV1 {
-                    role: role(15),
-                    source: ExecutableInputSourceV1::Keyboard {
-                        code: b"KeyA".to_vec(),
-                        phase: ExecutableKeyPhaseV1::Down,
-                    },
-                    occurrence: occurrence(0, &[-1.0, 0.0]),
-                },
-                ExecutableInputBindingV1 {
-                    role: role(16),
-                    source: ExecutableInputSourceV1::Keyboard {
-                        code: b"KeyA".to_vec(),
-                        phase: ExecutableKeyPhaseV1::Up,
-                    },
-                    occurrence: occurrence(0, &[0.0, 0.0]),
-                },
-                ExecutableInputBindingV1 {
-                    role: role(17),
-                    source: ExecutableInputSourceV1::Keyboard {
-                        code: b"KeyD".to_vec(),
-                        phase: ExecutableKeyPhaseV1::Down,
-                    },
-                    occurrence: occurrence(0, &[1.0, 0.0]),
-                },
-                ExecutableInputBindingV1 {
-                    role: role(18),
-                    source: ExecutableInputSourceV1::Keyboard {
-                        code: b"KeyD".to_vec(),
-                        phase: ExecutableKeyPhaseV1::Up,
-                    },
-                    occurrence: occurrence(0, &[0.0, 0.0]),
-                },
-                ExecutableInputBindingV1 {
-                    role: role(19),
-                    source: ExecutableInputSourceV1::Keyboard {
-                        code: b"Space".to_vec(),
-                        phase: ExecutableKeyPhaseV1::Down,
-                    },
-                    occurrence: occurrence(1, &[]),
-                },
-            ],
+            events: input_events,
             tick: ExecutableTickBindingV1 {
                 role: role(20),
                 entry: 2,
             },
         }),
-        program: headless_program(scope, &input_handler, &jump_handler, &tick_program),
+        program: headless_program(
+            scope,
+            &input_handler,
+            &jump_handler,
+            &tick_program,
+            scalar_handler.as_ref(),
+        ),
     }
 }
 
@@ -645,6 +746,101 @@ fn checked_program_package(checker_count: usize) -> CheckedProcessPackage {
     checked_program_package_with_scopes(
         checker_count,
         browser_state_admission_scopes(checker_count),
+    )
+}
+
+fn browser_gameplay_state_admission_scopes(source: &[u8]) -> Vec<StateAdmissionScope> {
+    let package = checked_program_package_with_scopes_and_roles(1, Vec::new(), 25);
+    let package_id = package.id();
+    let application = ApplicationId {
+        snapshot: package.constitution().snapshot(),
+        local: ApplicationLocalId::new(1),
+    };
+    let physical_plan = physical_plan_with_source(&package, source);
+    let (authority, facts) = carrier_authority_for_plan(
+        &package,
+        &physical_plan,
+        BROWSER_GAMEPLAY_ALLOCATION_ROOT_TAG,
+    );
+    let allocation = RuntimeAllocationEpochV1::recorded_for(
+        raw_id(BROWSER_GAMEPLAY_ALLOCATION_ROOT_TAG),
+        &package,
+        application,
+        &physical_plan,
+        facts.executable(),
+    )
+    .expect("gameplay allocation evidence binds the provisional package");
+    let mut session = PersistentProcessSessionV1::rematerialize(
+        package,
+        authority,
+        application,
+        physical_plan,
+        facts.executable(),
+        allocation,
+    )
+    .expect("gameplay scope derivation opens one exact session");
+
+    session
+        .apply_opaque_input(&encode_executable_occurrence_v1(&occurrence(0, &[1.0, 0.0])).unwrap())
+        .expect("gameplay horizontal input advances");
+    session
+        .apply_opaque_input_and_emit_candidate(
+            &encode_executable_occurrence_v1(&occurrence(2, &[0.016])).unwrap(),
+        )
+        .expect("gameplay tick emits one movement candidate");
+    let movement = session
+        .candidate()
+        .expect("movement candidate lookup succeeds")
+        .expect("movement candidate exists")
+        .clone();
+    let mut scopes = vec![StateAdmissionScope {
+        session: facts.session,
+        base: movement.base,
+        delta: movement.id,
+    }];
+    let (movement_policy, movement_authorization) =
+        exact_root_admission_policy(package_id, facts.session, movement.base, movement.id, 243);
+    session
+        .establish_root_policy(movement_policy)
+        .expect("gameplay movement receives separate external authority");
+    session
+        .admit_candidate(movement_authorization)
+        .expect("gameplay movement establishes the contact configuration");
+
+    session
+        .apply_opaque_input(&encode_executable_occurrence_v1(&occurrence(3, &[])).unwrap())
+        .expect("gameplay contact input advances locally");
+    session
+        .apply_opaque_input_and_emit_candidate(
+            &encode_executable_occurrence_v1(&occurrence(2, &[0.016])).unwrap(),
+        )
+        .expect("gameplay contact tick emits one collect candidate");
+    let collect = session
+        .candidate()
+        .expect("collect candidate lookup succeeds")
+        .expect("collect candidate exists")
+        .clone();
+    scopes.push(StateAdmissionScope {
+        session: facts.session,
+        base: collect.base,
+        delta: collect.id,
+    });
+    let (collect_policy, collect_authorization) =
+        exact_root_admission_policy(package_id, facts.session, collect.base, collect.id, 244);
+    session
+        .establish_root_policy(collect_policy)
+        .expect("gameplay collect receives separate external authority");
+    session
+        .admit_candidate(collect_authorization)
+        .expect("gameplay collect establishes the collected configuration");
+    scopes
+}
+
+fn checked_gameplay_program_package(source: &[u8]) -> CheckedProcessPackage {
+    checked_program_package_with_scopes_and_roles(
+        1,
+        browser_gameplay_state_admission_scopes(source),
+        25,
     )
 }
 
@@ -820,6 +1016,19 @@ impl CarrierFacts {
 }
 
 fn carrier_authority(checked: &CheckedProcessPackage) -> (AuthorityStore, CarrierFacts) {
+    let physical_plan = physical_plan(checked);
+    carrier_authority_for_plan(
+        checked,
+        &physical_plan,
+        BROWSER_RECORDED_ALLOCATION_ROOT_TAG,
+    )
+}
+
+fn carrier_authority_for_plan(
+    checked: &CheckedProcessPackage,
+    physical_plan: &ExecutablePhysicalPlanV1,
+    allocation_tag: u8,
+) -> (AuthorityStore, CarrierFacts) {
     let semantics = checked.constitution().semantics();
     let snapshot = checked.constitution().snapshot();
     let session = id!(RuntimeSessionId, 120);
@@ -863,12 +1072,11 @@ fn carrier_authority(checked: &CheckedProcessPackage) -> (AuthorityStore, Carrie
         snapshot,
         local: ApplicationLocalId::new(1),
     };
-    let physical_plan = physical_plan(checked);
     let allocation = RuntimeAllocationEpochV1::recorded_for(
-        raw_id(BROWSER_RECORDED_ALLOCATION_ROOT_TAG),
+        raw_id(allocation_tag),
         checked,
         application,
-        &physical_plan,
+        physical_plan,
         facts.executable(),
     )
     .expect("fixture authority scopes one recorded allocation epoch");
@@ -1479,6 +1687,61 @@ fn browser_fixture_request() -> WasmProcessRequestV1 {
                 .expect("fixture input occurrence encodes"),
             encode_executable_occurrence_v1(&occurrence(2, &[0.25]))
                 .expect("fixture tick occurrence encodes"),
+        ],
+        render_slots: vec![],
+    }
+}
+
+fn browser_gameplay_fixture_request(source: &[u8]) -> WasmProcessRequestV1 {
+    let package = checked_gameplay_program_package(source);
+    let physical_plan = physical_plan_with_source(&package, source);
+    let application = ApplicationId {
+        snapshot: package.constitution().snapshot(),
+        local: ApplicationLocalId::new(1),
+    };
+    let (_, allocation_facts) = carrier_authority_for_plan(
+        &package,
+        &physical_plan,
+        BROWSER_GAMEPLAY_ALLOCATION_ROOT_TAG,
+    );
+    let allocation = RuntimeAllocationEpochV1::recorded_for(
+        raw_id(BROWSER_GAMEPLAY_ALLOCATION_ROOT_TAG),
+        &package,
+        application,
+        &physical_plan,
+        allocation_facts.executable(),
+    )
+    .expect("gameplay browser allocation evidence binds the final package and plan");
+    WasmProcessRequestV1 {
+        package_bytes: package.exact_bytes().to_vec(),
+        application: ApplicationLocalId::new(1),
+        physical_plan_bytes: encode_executable_physical_plan_v1(&physical_plan)
+            .expect("gameplay browser physical plan encodes beside the package"),
+        allocation,
+        authority: WasmAuthorityInputV1 {
+            program: id!(ProgramId, 123),
+            change: id!(ProgramChangeOccurrenceId, 124),
+            session: id!(RuntimeSessionId, 120),
+            policy: id!(RuntimePolicyId, 121),
+            session_start: id!(SessionStartOccurrenceId, 122),
+            root_policy: id!(RootPolicyId, 125),
+            occurrence_boundary: id!(BoundaryRef, 126),
+            state_boundary: id!(BoundaryRef, 127),
+            occurrence_evidence: id!(ExternalEvidenceRef, 181),
+            occurrence_evidence_bytes: vec![181],
+            judgment_evidence: id!(ExternalEvidenceRef, 186),
+            judgment_evidence_bytes: vec![186],
+            admission_evidence: id!(ExternalEvidenceRef, 190),
+            admission_evidence_bytes: vec![190],
+            budget_units: 100,
+        },
+        occurrences: vec![
+            encode_executable_occurrence_v1(&occurrence(0, &[1.0, 0.0]))
+                .expect("gameplay input occurrence encodes"),
+            encode_executable_occurrence_v1(&occurrence(2, &[0.016]))
+                .expect("gameplay tick occurrence encodes"),
+            encode_executable_occurrence_v1(&occurrence(3, &[]))
+                .expect("gameplay collect occurrence encodes"),
         ],
         render_slots: vec![],
     }
@@ -2664,4 +2927,51 @@ fn shipped_symbolic_collect_cwr1_preserves_clause_owned_state() {
             request
         );
     }
+}
+
+#[test]
+fn shipped_unified_gameplay_cwr1_carries_arena_and_symbolic_collect() {
+    let source = gameplay_source();
+    let request = browser_gameplay_fixture_request(&source);
+    let plan = decode_executable_physical_plan_v1(&request.physical_plan_bytes)
+        .expect("unified gameplay CPP1 decodes");
+    assert!(plan.program.rules.iter().any(|rule| rule.entry == 0));
+    assert!(plan.program.rules.iter().any(|rule| rule.entry == 1));
+    assert!(plan.program.rules.iter().any(|rule| rule.entry == 2));
+    assert_eq!(
+        plan.program
+            .rules
+            .iter()
+            .find(|rule| rule.entry == 3)
+            .expect("unified gameplay carries the collect transition")
+            .assignments[0]
+            .1,
+        ExecutableExpressionV1::Constant(
+            ExecutableValueV1::symbol(b"collected").expect("symbol is bounded")
+        )
+    );
+    assert_eq!(
+        plan.program.initial_configuration[28],
+        ExecutableValueV1::symbol(b"active").expect("symbol is bounded")
+    );
+
+    let exact = encode_wasm_process_request_v1(&request)
+        .expect("unified gameplay browser CWR1 fixture encodes");
+    let fixture_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../browser/jump-arena-shell/fixtures/wasm-gameplay-v1");
+    let fixture = fixture_root.join("gameplay-v1.cwr1.hex");
+    if std::env::var_os("CLAUSE_UPDATE_BROWSER_GAMEPLAY_CWR1").is_some() {
+        std::fs::create_dir_all(&fixture_root)
+            .expect("unified gameplay browser fixture directory is created");
+        std::fs::write(&fixture, lowercase_hex_lines(&exact))
+            .expect("unified gameplay browser CWR1 fixture update succeeds");
+        return;
+    }
+    let tracked = std::fs::read_to_string(&fixture)
+        .expect("tracked unified gameplay browser CWR1 fixture exists");
+    assert_eq!(decode_hex(&tracked), exact);
+    assert_eq!(
+        decode_wasm_process_request_v1(&exact).expect("tracked gameplay CWR1 decodes"),
+        request
+    );
 }

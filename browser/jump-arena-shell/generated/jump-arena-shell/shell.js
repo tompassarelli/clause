@@ -1,4 +1,4 @@
-import { keyword as $$bc$keyword, property_key as $$bc$property_key, record_value as $$bc$record_value, str as $$bc$str } from 'beagle/core.js';
+import { equivV as $$bc$equiv, keyword as $$bc$keyword, property_key as $$bc$property_key, record_value as $$bc$record_value, str as $$bc$str } from 'beagle/core.js';
 
 function ArenaVec3(x, y, z) {
   return $$bc$record_value("jump-arena-shell.shell/ArenaVec3", {_tag: "ArenaVec3", x, y, z});
@@ -30,11 +30,21 @@ function arenaplatformframe_position(r) { return r.position; }
 
 function arenaplatformframe_size(r) { return r.size; }
 
-function ArenaWorldFrame(platforms) {
-  return $$bc$record_value("jump-arena-shell.shell/ArenaWorldFrame", {_tag: "ArenaWorldFrame", platforms});
+function ArenaCollectibleFrame(position, state) {
+  return $$bc$record_value("jump-arena-shell.shell/ArenaCollectibleFrame", {_tag: "ArenaCollectibleFrame", position, state});
+}
+
+function arenacollectibleframe_position(r) { return r.position; }
+
+function arenacollectibleframe_state(r) { return r.state; }
+
+function ArenaWorldFrame(platforms, collectibles) {
+  return $$bc$record_value("jump-arena-shell.shell/ArenaWorldFrame", {_tag: "ArenaWorldFrame", platforms, collectibles});
 }
 
 function arenaworldframe_platforms(r) { return r.platforms; }
+
+function arenaworldframe_collectibles(r) { return r.collectibles; }
 
 function ArenaFrame(player, world) {
   return $$bc$record_value("jump-arena-shell.shell/ArenaFrame", {_tag: "ArenaFrame", player, world});
@@ -63,7 +73,13 @@ function numeric_value(value) {
 }
 
 function require_frozen_frame(frame) {
-  return (((_truthy) => _truthy !== false && _truthy != null)(((_logical) => (_logical !== false && _logical != null ? ((_logical) => (_logical !== false && _logical != null ? ((_logical) => (_logical !== false && _logical != null ? ((_logical) => (_logical !== false && _logical != null ? ((_logical) => (_logical !== false && _logical != null ? ((_logical) => (_logical !== false && _logical != null ? frame.world.platforms.every((platform) => ((_logical) => (_logical !== false && _logical != null ? ((_logical) => (_logical !== false && _logical != null ? Object.isFrozen(platform.size) : _logical))(Object.isFrozen(platform.position)) : _logical))(Object.isFrozen(platform))) : _logical))(Object.isFrozen(frame.world.platforms)) : _logical))(Object.isFrozen(frame.world)) : _logical))(Object.isFrozen(frame.player.velocity)) : _logical))(Object.isFrozen(frame.player.position)) : _logical))(Object.isFrozen(frame.player)) : _logical))(Object.isFrozen(frame))) ? frame : (() => { throw new Error("renderFrame requires a deeply frozen arena frame"); })());
+  return (((_truthy) => _truthy !== false && _truthy != null)(((_logical) => (_logical !== false && _logical != null ? ((_logical) => (_logical !== false && _logical != null ? ((_logical) => (_logical !== false && _logical != null ? ((_logical) => (_logical !== false && _logical != null ? ((_logical) => (_logical !== false && _logical != null ? ((_logical) => (_logical !== false && _logical != null ? ((_logical) => (_logical !== false && _logical != null ? ((_logical) => (_logical !== false && _logical != null ? frame.world.collectibles.every((collectible) => ((_logical) => (_logical !== false && _logical != null ? ((_logical) => (_logical !== false && _logical != null ? ($$bc$equiv(typeof collectible.state, "string")) : _logical))(Object.isFrozen(collectible.position)) : _logical))(Object.isFrozen(collectible))) : _logical))(frame.world.platforms.every((platform) => ((_logical) => (_logical !== false && _logical != null ? ((_logical) => (_logical !== false && _logical != null ? Object.isFrozen(platform.size) : _logical))(Object.isFrozen(platform.position)) : _logical))(Object.isFrozen(platform)))) : _logical))(Object.isFrozen(frame.world.collectibles)) : _logical))(Object.isFrozen(frame.world.platforms)) : _logical))(Object.isFrozen(frame.world)) : _logical))(Object.isFrozen(frame.player.velocity)) : _logical))(Object.isFrozen(frame.player.position)) : _logical))(Object.isFrozen(frame.player)) : _logical))(Object.isFrozen(frame))) ? frame : (() => { throw new Error("renderFrame requires a deeply frozen arena frame"); })());
+}
+
+function projected_symbol_color(value) {
+  return (() => { let index = 0; let hash = 216613; while (true) {
+    if (($$bc$equiv(index, value.length))) { return (2105376 + (hash % 13619151)); } else { const code = value.charCodeAt(index); const _recur_0 = (index + 1); const _recur_1 = (((hash * 33) + code) % 13619151); index = _recur_0; hash = _recur_1; continue; }
+  } })();
 }
 
 function keyboard_input(phase, event) {
@@ -98,12 +114,15 @@ function create_jump_arena_shell_bang(mount, browser, three, emit_input) {
   const player_material = new material_ctor({[$$bc$property_key($$bc$keyword("color"))]: 4697343, [$$bc$property_key($$bc$keyword("roughness"))]: 0.42});
   const platform_geometry = new box_geometry_ctor(1.0, 1.0, 1.0);
   const platform_material = new material_ctor({[$$bc$property_key($$bc$keyword("color"))]: 2967637, [$$bc$property_key($$bc$keyword("roughness"))]: 0.78});
+  const collectible_geometry = new box_geometry_ctor(0.45, 0.45, 0.45);
   const player_mesh = new mesh_ctor(player_geometry, player_material);
   const platform_group = new group_ctor();
+  const collectible_group = new group_ctor();
   const disposed = ({value: false, watches: {}});
   const canvas_focused = ({value: false, watches: {}});
   const has_frame = ({value: false, watches: {}});
   const platform_meshes = ({value: [], watches: {}});
+  const collectible_meshes = ({value: [], watches: {}});
   const active_pointers = new Set();
   (scene.background = new color_ctor(1116716));
   scene.add(new hemisphere_light_ctor(10144255, 1250849, 2.4));
@@ -111,6 +130,7 @@ function create_jump_arena_shell_bang(mount, browser, three, emit_input) {
   sun.position.set(6.0, 12.0, 8.0);
   scene.add(sun);
   scene.add(platform_group);
+  scene.add(collectible_group);
   scene.add(player_mesh);
   canvas.setAttribute("tabindex", "0");
   mount.appendChild(canvas);
@@ -162,6 +182,11 @@ function create_jump_arena_shell_bang(mount, browser, three, emit_input) {
   active_pointers.delete(event.pointerId);
   return pointer_event("cancel", event);
 } };
+  const clear_collectibles = () => { (() => { collectible_meshes.value.forEach((mesh) => {
+  collectible_group.remove(mesh);
+  mesh.material.dispose();
+}); })();
+return (() => { const _a = collectible_meshes, _v = []; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })(); };
   const render_frame = (incoming) => { if (((_truthy) => _truthy !== false && _truthy != null)(disposed.value)) {
   return (() => { throw new Error("jump arena shell is disposed"); })();
 } else {
@@ -183,6 +208,15 @@ function create_jump_arena_shell_bang(mount, browser, three, emit_input) {
   mesh.scale.set(size.x, size.y, size.z);
   platform_group.add(mesh);
   platform_meshes.value.push(mesh);
+}); })();
+  clear_collectibles();
+  (() => { frame.world.collectibles.forEach((collectible) => {
+  const material = new material_ctor({[$$bc$property_key($$bc$keyword("color"))]: projected_symbol_color(collectible.state), [$$bc$property_key($$bc$keyword("roughness"))]: 0.3});
+  const mesh = new mesh_ctor(collectible_geometry, material);
+  const collectible_position = collectible.position;
+  mesh.position.set(collectible_position.x, collectible_position.y, collectible_position.z);
+  collectible_group.add(mesh);
+  collectible_meshes.value.push(mesh);
 }); })();
   camera.position.set((position.x + (Math.sin(yaw) * 7.5)), (position.y + 4.8), (position.z + (Math.cos(yaw) * 7.5)));
   camera.lookAt(position.x, (position.y + 1.0), position.z);
@@ -209,10 +243,13 @@ function create_jump_arena_shell_bang(mount, browser, three, emit_input) {
   active_pointers.clear();
   (() => { const _a = platform_meshes, _v = []; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })();
   platform_group.clear();
+  clear_collectibles();
+  collectible_group.clear();
   player_geometry.dispose();
   player_material.dispose();
   platform_geometry.dispose();
   platform_material.dispose();
+  collectible_geometry.dispose();
   scene.clear();
   renderer.dispose();
   renderer.forceContextLoss();

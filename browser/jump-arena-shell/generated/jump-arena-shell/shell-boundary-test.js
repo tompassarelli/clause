@@ -1,6 +1,6 @@
 import * as shell from "./shell.js";
 import * as test from "bun:test";
-import { keyword as $$bc$keyword, property_key as $$bc$property_key } from 'beagle/core.js';
+import { equivV as $$bc$equiv, keyword as $$bc$keyword, property_key as $$bc$property_key } from 'beagle/core.js';
 import { catch_dispatch as $$bd$catch_dispatch } from 'beagle/exception-dispatch.js';
 
 function fail_expectation_bang(message) {
@@ -59,6 +59,8 @@ const focus_requests = ({value: 0, watches: {}});
 
 const pixel_ratio = ({value: 0.0, watches: {}});
 
+const material_colors = ({value: [], watches: {}});
+
 function vector3() {
   return {[$$bc$property_key($$bc$keyword("x"))]: 0.0, [$$bc$property_key($$bc$keyword("y"))]: 0.0, [$$bc$property_key($$bc$keyword("z"))]: 0.0, [$$bc$property_key($$bc$keyword("set"))]: (__x, __y, __z) => null};
 }
@@ -85,6 +87,11 @@ function fakeLight(__color, __ground_or_intensity, ...__rest) {
 
 function fakeResource_bang(...__arguments) {
   return {[$$bc$property_key($$bc$keyword("dispose"))]: () => (() => { const _a = resource_disposals; const _old = _a.value; _a.value = (((_x) => (_x + 1)))(_old); for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _a.value); return _a.value; })()};
+}
+
+function fakeMaterial_bang(options) {
+  material_colors.value.push(options.color);
+  return fakeResource_bang(options);
 }
 
 function fakeMesh(geometry, material) {
@@ -121,8 +128,12 @@ function frozen_platform() {
   return Object.freeze({[$$bc$property_key($$bc$keyword("position"))]: frozen_vec3(0.0, -0.25, 0.0), [$$bc$property_key($$bc$keyword("size"))]: frozen_vec3(12.0, 0.5, 12.0)});
 }
 
-function sample_frame() {
-  return Object.freeze({[$$bc$property_key($$bc$keyword("player"))]: Object.freeze({[$$bc$property_key($$bc$keyword("position"))]: frozen_vec3(2.0, 3.0, 4.0), [$$bc$property_key($$bc$keyword("velocity"))]: frozen_vec3(5.0, 6.0, 7.0), [$$bc$property_key($$bc$keyword("yaw"))]: 0.5, [$$bc$property_key($$bc$keyword("grounded"))]: false}), [$$bc$property_key($$bc$keyword("world"))]: Object.freeze({[$$bc$property_key($$bc$keyword("platforms"))]: Object.freeze([frozen_platform()])})});
+function frozen_collectible(state) {
+  return Object.freeze({[$$bc$property_key($$bc$keyword("position"))]: frozen_vec3(2.0, 3.0, 4.0), [$$bc$property_key($$bc$keyword("state"))]: state});
+}
+
+function sample_frame(state) {
+  return Object.freeze({[$$bc$property_key($$bc$keyword("player"))]: Object.freeze({[$$bc$property_key($$bc$keyword("position"))]: frozen_vec3(2.0, 3.0, 4.0), [$$bc$property_key($$bc$keyword("velocity"))]: frozen_vec3(5.0, 6.0, 7.0), [$$bc$property_key($$bc$keyword("yaw"))]: 0.5, [$$bc$property_key($$bc$keyword("grounded"))]: false}), [$$bc$property_key($$bc$keyword("world"))]: Object.freeze({[$$bc$property_key($$bc$keyword("platforms"))]: Object.freeze([frozen_platform()]), [$$bc$property_key($$bc$keyword("collectibles"))]: Object.freeze([frozen_collectible(state)])})});
 }
 
 function reset_fixture_bang() {
@@ -137,13 +148,15 @@ function reset_fixture_bang() {
   (() => { const _a = canvas_removals, _v = 0; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })();
   (() => { const _a = released_pointers, _v = 0; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })();
   (() => { const _a = focus_requests, _v = 0; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })();
-  return (() => { const _a = pixel_ratio, _v = 0.0; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })();
+  (() => { const _a = pixel_ratio, _v = 0.0; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })();
+  return (() => { const _a = material_colors, _v = []; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })();
 }
 
 test["test"]("production shell emits input without advancing player state and tears down", () => { reset_fixture_bang();
-const three = {[$$bc$property_key($$bc$keyword("Scene"))]: fakeScene, [$$bc$property_key($$bc$keyword("Color"))]: fakeColor, [$$bc$property_key($$bc$keyword("PerspectiveCamera"))]: fakeCamera, [$$bc$property_key($$bc$keyword("WebGLRenderer"))]: fakeRenderer_bang, [$$bc$property_key($$bc$keyword("HemisphereLight"))]: fakeLight, [$$bc$property_key($$bc$keyword("DirectionalLight"))]: fakeLight, [$$bc$property_key($$bc$keyword("BoxGeometry"))]: fakeResource_bang, [$$bc$property_key($$bc$keyword("MeshStandardMaterial"))]: fakeResource_bang, [$$bc$property_key($$bc$keyword("Mesh"))]: fakeMesh, [$$bc$property_key($$bc$keyword("Group"))]: fakeGroup};
+const three = {[$$bc$property_key($$bc$keyword("Scene"))]: fakeScene, [$$bc$property_key($$bc$keyword("Color"))]: fakeColor, [$$bc$property_key($$bc$keyword("PerspectiveCamera"))]: fakeCamera, [$$bc$property_key($$bc$keyword("WebGLRenderer"))]: fakeRenderer_bang, [$$bc$property_key($$bc$keyword("HemisphereLight"))]: fakeLight, [$$bc$property_key($$bc$keyword("DirectionalLight"))]: fakeLight, [$$bc$property_key($$bc$keyword("BoxGeometry"))]: fakeResource_bang, [$$bc$property_key($$bc$keyword("MeshStandardMaterial"))]: fakeMaterial_bang, [$$bc$property_key($$bc$keyword("Mesh"))]: fakeMesh, [$$bc$property_key($$bc$keyword("Group"))]: fakeGroup};
 const arena = shell["create-jump-arena-shell!"](fakeMount(), fakeBrowser_bang(), three, (input) => emitted_inputs.value.push(input));
-const frame = sample_frame();
+const frame = sample_frame("active");
+const collected_frame = sample_frame("collected");
 const before = JSON.stringify(frame);
 const resize_handler = browser_listeners.value.get("resize");
 const focus_handler = canvas_listeners.value.get("focus");
@@ -155,6 +168,9 @@ const pointer_move = canvas_listeners.value.get("pointermove");
 const pointer_up = canvas_listeners.value.get("pointerup");
 const pointer_cancel = canvas_listeners.value.get("pointercancel");
 (arena.renderFrame)(frame);
+const active_color = material_colors.value[2];
+(arena.renderFrame)(collected_frame);
+expect_same_bang(($$bc$equiv(active_color, material_colors.value[3])), false);
 key_down({[$$bc$property_key($$bc$keyword("code"))]: "Space", [$$bc$property_key($$bc$keyword("repeat"))]: false});
 expect_same_bang(emitted_inputs.value.length, 0);
 focus_handler({});
@@ -168,7 +184,7 @@ expect_same_bang(JSON.stringify(frame), before);
 expect_equal_bang(frame.player.position, {[$$bc$property_key($$bc$keyword("x"))]: 2.0, [$$bc$property_key($$bc$keyword("y"))]: 3.0, [$$bc$property_key($$bc$keyword("z"))]: 4.0});
 expect_equal_bang(frame.player.velocity, {[$$bc$property_key($$bc$keyword("x"))]: 5.0, [$$bc$property_key($$bc$keyword("y"))]: 6.0, [$$bc$property_key($$bc$keyword("z"))]: 7.0});
 expect_same_bang(frame.player.grounded, false);
-expect_same_bang(render_count.value, 1);
+expect_same_bang(render_count.value, 2);
 expect_same_bang(emitted_inputs.value.length, 2);
 expect_same_bang(pixel_ratio.value, 2.0);
 expect_same_bang(browser_listeners.value.has("keydown"), false);
@@ -192,9 +208,9 @@ expect_same_bang(canvas_listeners.value.size, 0);
 expect_same_bang(pointer_captures.value.size, 0);
 expect_same_bang(emitted_inputs.value.length, 2);
 expect_same_bang(focus_requests.value, 1);
-expect_same_bang(render_count.value, 1);
+expect_same_bang(render_count.value, 2);
 expect_same_bang(released_pointers.value, 1);
-expect_same_bang(resource_disposals.value, 4);
+expect_same_bang(resource_disposals.value, 7);
 expect_same_bang(renderer_disposals.value, 1);
 expect_same_bang(context_losses.value, 1);
 return expect_same_bang(canvas_removals.value, 1); });
