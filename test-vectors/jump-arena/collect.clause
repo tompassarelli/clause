@@ -1,0 +1,17 @@
+referent F64
+referent Player
+
+relation score
+  reads {player: Player} score {value: F64}
+  subject player
+  mode given player yields value: one
+
+player-1 score 0.0
+
+on collect ?player
+  when
+    ?player score ?score
+  withdraw
+    ?player score ?score
+  include
+    ?player score ?score + 1.0

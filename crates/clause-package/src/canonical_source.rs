@@ -234,6 +234,31 @@ pub struct CanonicalJumpHandlerV1 {
     pub result_grounded: bool,
 }
 
+/// Construct-blind scalar expression owned by one canonical source handler.
+/// Physical state coordinates are deliberately supplied only by refinement.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum CanonicalScalarExpressionV1 {
+    Current,
+    Number(u64),
+    Add(Box<Self>, Box<Self>),
+    Subtract(Box<Self>, Box<Self>),
+    Multiply(Box<Self>, Box<Self>),
+    Divide(Box<Self>, Box<Self>),
+}
+
+/// Checked source-owned meaning for the bounded one-cell numeric transition
+/// profile. The event designation and relation phrase select no host behavior;
+/// a later refinement supplies only one entry and one physical state slot.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CanonicalScalarHandlerV1 {
+    pub artifact: CanonicalSourceArtifactIdV1,
+    pub handler_origin: CanonicalSourceOriginV1,
+    pub initial_assertion_origin: CanonicalSourceOriginV1,
+    pub include_origin: CanonicalSourceOriginV1,
+    pub initial_value: u64,
+    pub result: CanonicalScalarExpressionV1,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CanonicalTickValueV1 {
     DeltaTime,
@@ -355,6 +380,7 @@ pub struct CanonicalSourcePackageSliceV1 {
     pub unsupported: Vec<CanonicalUnsupportedProductionV1>,
     pub input_handler: Option<CanonicalInputHandlerV1>,
     pub jump_handler: Option<CanonicalJumpHandlerV1>,
+    pub scalar_handler: Option<CanonicalScalarHandlerV1>,
     pub tick_program: Option<CanonicalTickProgramV1>,
 }
 
@@ -421,6 +447,15 @@ pub enum CanonicalSourceErrorV1 {
         origin: CanonicalSourceOriginV1,
     },
     AmbiguousJumpInitialAssertion {
+        origin: CanonicalSourceOriginV1,
+    },
+    InvalidScalarHandler {
+        origin: CanonicalSourceOriginV1,
+    },
+    MissingScalarInitialAssertion {
+        origin: CanonicalSourceOriginV1,
+    },
+    AmbiguousScalarInitialAssertion {
         origin: CanonicalSourceOriginV1,
     },
     InvalidTickProfile {
@@ -505,6 +540,7 @@ enum CstKind {
     Relation(RelationCst),
     InputHandler(InputHandlerCst),
     JumpHandler(JumpHandlerCst),
+    ScalarHandler(ScalarHandlerCst),
     TickHandler(TickHandlerCst),
     ClampLaw(ClampLawCst),
     ClampDerive(ClampDeriveCst),
@@ -569,6 +605,21 @@ struct JumpHandlerCst {
     result_velocity: [CanonicalJumpScalarV1; 3],
     result_grounded: bool,
     includes: [HandlerIncludeCst; 2],
+}
+
+#[derive(Clone, Debug)]
+struct ScalarHandlerCst {
+    origin: CanonicalSourceOriginV1,
+    producer: CanonicalSemanticProducerV1,
+    relation: Vec<u8>,
+    result: CanonicalScalarExpressionV1,
+    include: HandlerIncludeCst,
+}
+
+#[derive(Clone, Copy)]
+struct ScalarHandlerParts<'a> {
+    handler: &'a ScalarHandlerCst,
+    initial: &'a NumberAssertionCst,
 }
 
 #[derive(Clone, Copy)]
@@ -969,6 +1020,7 @@ fn allocation_requests(
     let mut requested = Vec::new();
     let input = input_handler_parts(cst)?;
     let jump = jump_handler_parts(cst)?;
+    let scalar = scalar_handler_parts(cst)?;
     let tick = tick_program_parts(cst)?;
     for item in &cst.items {
         match &item.kind {
@@ -1070,6 +1122,23 @@ fn allocation_requests(
                     });
                 }
             }
+            CstKind::ScalarHandler(handler) => {
+                requested.extend([
+                    AllocationRequest {
+                        producer: handler.producer.clone(),
+                        slot: head_slot(CanonicalSourceProductionV1::Handler),
+                        domain: AllocationDomain::Formation,
+                    },
+                    AllocationRequest {
+                        producer: handler.producer.clone(),
+                        slot: child_slot(
+                            CanonicalSourceProductionV1::HandlerInclude,
+                            &handler.include.local,
+                        ),
+                        domain: AllocationDomain::Formation,
+                    },
+                ]);
+            }
             CstKind::TickHandler(handler) => {
                 requested.push(AllocationRequest {
                     producer: handler.producer.clone(),
@@ -1134,6 +1203,7 @@ fn allocation_requests(
             }
             CstKind::NumberAssertion(assertion) => {
                 if jump.is_some_and(|parts| parts.jump_speed.origin == assertion.origin)
+                    || scalar.is_some_and(|parts| parts.initial.origin == assertion.origin)
                     || tick.is_some_and(|parts| {
                         [
                             parts.gravity.origin,
@@ -1212,6 +1282,15 @@ pub fn elaborate_canonical_source_package_v1(
         required_grounded: parts.handler.required_grounded,
         result_velocity: parts.handler.result_velocity,
         result_grounded: parts.handler.result_grounded,
+    });
+    let scalar_parts = scalar_handler_parts(cst)?;
+    let scalar_handler = scalar_parts.map(|parts| CanonicalScalarHandlerV1 {
+        artifact: cst.artifact,
+        handler_origin: parts.handler.origin,
+        initial_assertion_origin: parts.initial.origin,
+        include_origin: parts.handler.include.origin,
+        initial_value: parts.initial.value,
+        result: parts.handler.result.clone(),
     });
     let tick_parts = tick_program_parts(cst)?;
     let tick_program = tick_parts.map(|parts| CanonicalTickProgramV1 {
@@ -1493,6 +1572,43 @@ pub fn elaborate_canonical_source_package_v1(
                     ));
                 }
             }
+            CstKind::ScalarHandler(handler) => {
+                let head = head_slot(CanonicalSourceProductionV1::Handler);
+                let head_id = formation_id(plan, &handler.producer, &head)?;
+                formations.push(source_formation(
+                    scope,
+                    head_id,
+                    cst.source_slice(handler.origin)
+                        .expect("owned scalar handler origin"),
+                    handler.origin,
+                    "scalar-handler",
+                )?);
+                emissions.push(emission(
+                    plan,
+                    handler.producer.clone(),
+                    head,
+                    handler.origin,
+                ));
+                let include = child_slot(
+                    CanonicalSourceProductionV1::HandlerInclude,
+                    &handler.include.local,
+                );
+                let include_id = formation_id(plan, &handler.producer, &include)?;
+                formations.push(source_formation(
+                    scope,
+                    include_id,
+                    cst.source_slice(handler.include.origin)
+                        .expect("owned scalar handler include origin"),
+                    handler.include.origin,
+                    "handler-include",
+                )?);
+                emissions.push(emission(
+                    plan,
+                    handler.producer.clone(),
+                    include,
+                    handler.include.origin,
+                ));
+            }
             CstKind::TickHandler(handler) => {
                 let head = head_slot(CanonicalSourceProductionV1::Handler);
                 let head_id = formation_id(plan, &handler.producer, &head)?;
@@ -1620,6 +1736,7 @@ pub fn elaborate_canonical_source_package_v1(
             }
             CstKind::NumberAssertion(assertion) => {
                 if jump_parts.is_some_and(|parts| parts.jump_speed.origin == assertion.origin)
+                    || scalar_parts.is_some_and(|parts| parts.initial.origin == assertion.origin)
                     || tick_parts.is_some_and(|parts| {
                         [
                             parts.gravity.origin,
@@ -1691,6 +1808,7 @@ pub fn elaborate_canonical_source_package_v1(
         unsupported,
         input_handler,
         jump_handler,
+        scalar_handler,
         tick_program,
     })
 }
@@ -1864,6 +1982,12 @@ fn parse_item(
             return Ok(CstItem {
                 origin,
                 kind: CstKind::TickHandler(handler),
+            });
+        }
+        if let Some(handler) = parse_scalar_handler(artifact, block, origin)? {
+            return Ok(CstItem {
+                origin,
+                kind: CstKind::ScalarHandler(handler),
             });
         }
         let emissions = handler_include_emissions(artifact, block)?;
@@ -2180,6 +2304,128 @@ fn parse_jump_scalar(
         .map(CanonicalJumpScalarV1::VelocityComponent)
         .or_else(|| (source == jump_speed_parameter).then_some(CanonicalJumpScalarV1::JumpSpeed))
         .or_else(|| parse_source_number(source).map(CanonicalJumpScalarV1::Number))
+}
+
+fn parse_scalar_handler(
+    artifact: CanonicalSourceArtifactIdV1,
+    block: &[SourceLine<'_>],
+    origin: CanonicalSourceOriginV1,
+) -> Result<Option<ScalarHandlerCst>, CanonicalSourceErrorV1> {
+    let Some(header) = block[0].text.strip_prefix("on ") else {
+        return Ok(None);
+    };
+    let header_parts = header.split_whitespace().collect::<Vec<_>>();
+    let [_, subject] = header_parts.as_slice() else {
+        return Ok(None);
+    };
+    if !subject.starts_with('?') {
+        return Ok(None);
+    }
+
+    let mut section = "";
+    let mut when = None;
+    let mut withdraw = None;
+    let mut include = None;
+    let mut seen_sections = BTreeSet::new();
+    for line in block
+        .iter()
+        .skip(1)
+        .filter(|line| !line.text.trim().is_empty())
+    {
+        let trimmed = line.text.trim();
+        if line.indent == 2 {
+            if trimmed == "admit" {
+                return Err(CanonicalSourceErrorV1::NonCanonicalKeyword {
+                    origin: line_origin(artifact, *line),
+                    keyword: b"admit".to_vec(),
+                });
+            }
+            if !matches!(trimmed, "when" | "withdraw" | "include") || !seen_sections.insert(trimmed)
+            {
+                return Ok(None);
+            }
+            section = trimmed;
+            continue;
+        }
+        if line.indent != 4 {
+            return Ok(None);
+        }
+        let entry = (trimmed, line_origin(artifact, *line));
+        let target = match section {
+            "when" => &mut when,
+            "withdraw" => &mut withdraw,
+            "include" => &mut include,
+            _ => return Ok(None),
+        };
+        if target.replace(entry).is_some() {
+            return Ok(None);
+        }
+    }
+    let (Some((when, _)), Some((withdraw, _)), Some((include, include_origin))) =
+        (when, withdraw, include)
+    else {
+        return Ok(None);
+    };
+    if when != withdraw {
+        return Ok(None);
+    }
+    let when_parts = when.split_whitespace().collect::<Vec<_>>();
+    if when_parts.len() < 3 || when_parts[0] != *subject {
+        return Ok(None);
+    }
+    let current = *when_parts
+        .last()
+        .expect("bounded scalar clause has a value");
+    if !current.starts_with('?') {
+        return Ok(None);
+    }
+    let relation = when_parts[1..when_parts.len() - 1].join(" ");
+    let include_prefix = format!("{subject} {relation} ");
+    let Some(result_source) = include.strip_prefix(&include_prefix) else {
+        return Ok(None);
+    };
+    let Some(result) = parse_scalar_expression(result_source, current) else {
+        return Ok(None);
+    };
+    Ok(Some(ScalarHandlerCst {
+        origin,
+        producer: semantic_producer(
+            CanonicalSourceProductionV1::Handler,
+            &handler_semantic_producer(block),
+        ),
+        relation: relation.into_bytes(),
+        result,
+        include: HandlerIncludeCst {
+            origin: include_origin,
+            local: include.as_bytes().to_vec(),
+        },
+    }))
+}
+
+fn parse_scalar_expression(source: &str, current: &str) -> Option<CanonicalScalarExpressionV1> {
+    let tokens = source.split_whitespace().collect::<Vec<_>>();
+    let atom = |value: &str| {
+        if value == current {
+            Some(CanonicalScalarExpressionV1::Current)
+        } else {
+            parse_source_number(value).map(CanonicalScalarExpressionV1::Number)
+        }
+    };
+    match tokens.as_slice() {
+        [value] => atom(value),
+        [left, operator, right] => {
+            let left = Box::new(atom(left)?);
+            let right = Box::new(atom(right)?);
+            Some(match *operator {
+                "+" => CanonicalScalarExpressionV1::Add(left, right),
+                "-" => CanonicalScalarExpressionV1::Subtract(left, right),
+                "*" => CanonicalScalarExpressionV1::Multiply(left, right),
+                "/" => CanonicalScalarExpressionV1::Divide(left, right),
+                _ => return None,
+            })
+        }
+        _ => None,
+    }
 }
 
 fn parse_clamp_law(
@@ -3168,6 +3414,46 @@ fn jump_handler_parts(
     }))
 }
 
+fn scalar_handler_parts(
+    cst: &CanonicalSourceCstV1,
+) -> Result<Option<ScalarHandlerParts<'_>>, CanonicalSourceErrorV1> {
+    let handlers = cst
+        .items
+        .iter()
+        .filter_map(|item| match &item.kind {
+            CstKind::ScalarHandler(handler) => Some(handler),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let Some(handler) = handlers.first().copied() else {
+        return Ok(None);
+    };
+    if handlers.len() != 1 {
+        return Err(CanonicalSourceErrorV1::InvalidScalarHandler {
+            origin: handler.origin,
+        });
+    }
+    let assertions = cst
+        .items
+        .iter()
+        .filter_map(|item| match &item.kind {
+            CstKind::NumberAssertion(assertion) if assertion.relation == handler.relation => {
+                Some(assertion)
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    match assertions.as_slice() {
+        [initial] => Ok(Some(ScalarHandlerParts { handler, initial })),
+        [] => Err(CanonicalSourceErrorV1::MissingScalarInitialAssertion {
+            origin: handler.origin,
+        }),
+        _ => Err(CanonicalSourceErrorV1::AmbiguousScalarInitialAssertion {
+            origin: handler.origin,
+        }),
+    }
+}
+
 fn tick_program_parts(
     cst: &CanonicalSourceCstV1,
 ) -> Result<Option<TickProgramParts<'_>>, CanonicalSourceErrorV1> {
@@ -3436,6 +3722,7 @@ fn validate_unique_designations(items: &[CstItem]) -> Result<(), CanonicalSource
         CstKind::Relation(relation) => Some(&relation.designation),
         CstKind::InputHandler(_)
         | CstKind::JumpHandler(_)
+        | CstKind::ScalarHandler(_)
         | CstKind::TickHandler(_)
         | CstKind::ClampLaw(_)
         | CstKind::ClampDerive(_)

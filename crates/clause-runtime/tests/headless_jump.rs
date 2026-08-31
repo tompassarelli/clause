@@ -8,6 +8,10 @@ const WORLD: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../test-vectors/jump-arena/world.clause"
 ));
+const COLLECT: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../test-vectors/jump-arena/collect.clause"
+));
 
 macro_rules! id {
     ($kind:ident, $tag:expr) => {
@@ -134,6 +138,67 @@ fn source_handlers(
             .tick_program
             .expect("the bounded source profile owns the three on-tick branches"),
     )
+}
+
+fn source_scalar_handler(source: &[u8], scope: TermScope) -> CanonicalScalarHandlerV1 {
+    let cst = read_canonical_source_v1(source).expect("canonical scalar source reads");
+    let plan = plan_independent_canonical_source_allocations_v1(
+        &cst,
+        ProgramChangeOccurrenceId::from_bytes(raw_id(SOURCE_ALLOCATION_ROOT_TAG)),
+    )
+    .expect("canonical scalar source receives rooted allocations");
+    elaborate_canonical_source_package_v1(
+        &cst,
+        CanonicalSourceContextV1 {
+            universe: scope.universe,
+            semantics: scope.semantics,
+        },
+        &plan,
+    )
+    .expect("canonical scalar source reaches the checked package boundary")
+    .scalar_handler
+    .expect("the bounded source profile owns one scalar transition")
+}
+
+fn scalar_program(scope: TermScope, source: &CanonicalScalarHandlerV1) -> ExecutableProgramV1 {
+    let role = LocalRoleRefV2 {
+        schema: RelationSchemaLocalId::new(2),
+        role: RoleLocalId::new(1),
+    };
+    let mut program = ExecutableProgramV1 {
+        initial_configuration: vec![number(0.0)],
+        rules: vec![],
+        projection: Some(ExecutableProjectionV1 {
+            bindings: vec![ExecutableProjectionBindingV1 {
+                role,
+                slot: 0,
+                value_kind: ExecutableValueKindV1::Number,
+            }],
+            template: projection_object(
+                scope,
+                vec![(
+                    b"player",
+                    projection_object(
+                        scope,
+                        vec![(
+                            b"score",
+                            projection_role(scope, role, ExecutableValueKindV1::Number),
+                        )],
+                    ),
+                )],
+            ),
+        }),
+    };
+    lower_canonical_scalar_handler_v1(
+        &mut program,
+        source,
+        ExecutableCanonicalScalarBindingV1 {
+            entry: 0,
+            state_slot: 0,
+        },
+    )
+    .expect("source-owned scalar transition lowers to one physical state slot");
+    program
 }
 
 fn headless_program(
@@ -463,6 +528,36 @@ fn physical_plan_with_source(
             },
         }),
         program: headless_program(scope, &input_handler, &jump_handler, &tick_program),
+    }
+}
+
+fn scalar_plan_with_source(
+    package: &CheckedProcessPackage,
+    source: &[u8],
+) -> ExecutablePhysicalPlanV1 {
+    let constitution = package.constitution();
+    let snapshot = constitution.snapshot();
+    let application = ApplicationLocalId::new(1);
+    let scope = TermScope {
+        universe: constitution.universe(),
+        semantics: constitution.semantics(),
+    };
+    let handler = source_scalar_handler(source, scope);
+    ExecutablePhysicalPlanV1 {
+        application_shape: constitution
+            .application_shape(application)
+            .expect("fixture Application has one exact semantic shape"),
+        mode: ModeId {
+            operator: OperatorRef {
+                snapshot,
+                local: OperatorLocalId::new(1),
+            },
+            local: ModeLocalId::new(2),
+        },
+        refinement: ExecutableRefinementV1::ClosedApplicationRuleMachineV1,
+        target: ExecutablePhysicalTargetV1::PortableScalarInterpreterV1,
+        input: None,
+        program: scalar_program(scope, &handler),
     }
 }
 
@@ -1002,6 +1097,67 @@ fn admit_source_jump(source: &[u8], allocation_tag: u8, policy_tag: u8) -> (Vec<
     (plan_bytes, projection.term)
 }
 
+fn admit_source_scalar(source: &[u8], allocation_tag: u8, policy_tag: u8) -> (Vec<u8>, Term) {
+    let package = checked_program_package_with_scopes(1, vec![]);
+    let package_id = package.id();
+    let application = ApplicationId {
+        snapshot: package.constitution().snapshot(),
+        local: ApplicationLocalId::new(1),
+    };
+    let plan = scalar_plan_with_source(&package, source);
+    let plan_bytes = encode_executable_physical_plan_v1(&plan)
+        .expect("source-owned scalar transition produces one exact CPP1 plan");
+    let (authority, facts) = carrier_authority(&package);
+    let allocation = RuntimeAllocationEpochV1::recorded_for(
+        raw_id(allocation_tag),
+        &package,
+        application,
+        &plan,
+        facts.executable(),
+    )
+    .expect("scalar transition session receives one recorded allocation root");
+    let mut session = PersistentProcessSessionV1::rematerialize(
+        package,
+        authority,
+        application,
+        plan,
+        facts.executable(),
+        allocation,
+    )
+    .expect("scalar transition session starts through the persistent runtime");
+    session
+        .apply_opaque_input_and_emit_candidate(
+            &encode_executable_occurrence_v1(&occurrence(0, &[]))
+                .expect("scalar occurrence encodes"),
+        )
+        .expect("source-owned scalar transition produces one hidden candidate");
+    let candidate = session
+        .candidate()
+        .expect("candidate lookup succeeds")
+        .expect("scalar Step retains one candidate")
+        .clone();
+    assert!(session.last_admitted().is_none());
+    assert_eq!(session.world_base(), facts.initial_state);
+    let (policy, authorization) = exact_root_admission_policy(
+        package_id,
+        facts.session,
+        candidate.base,
+        candidate.id,
+        policy_tag,
+    );
+    session
+        .establish_root_policy(policy)
+        .expect("separate external scalar authority is established");
+    let (successor, projection) = session
+        .admit_candidate_with_projection(authorization)
+        .expect("separate scalar Admission creates the successor and projection");
+    assert_eq!(successor.predecessor, facts.initial_state);
+    assert_eq!(session.world_base(), successor.id);
+    let projection = projection.expect("admitted scalar transition emits renderer projection");
+    assert_eq!(projection.state, successor.id);
+    (plan_bytes, projection.term)
+}
+
 fn admit_source_tick(source: &[u8], allocation_tag: u8, policy_tag: u8) -> (Vec<u8>, Term) {
     let package = checked_program_package_with_scopes(1, vec![]);
     let package_id = package.id();
@@ -1351,6 +1507,32 @@ fn canonical_source_tick_reaches_admission_and_source_only_clamp_change_alters_b
         admit_source_tick(changed_maximum.as_bytes(), 220, 223);
     assert_ne!(changed_plan, base_plan);
     assert_tick_projection(&changed_projection, 2.0);
+}
+
+#[test]
+fn canonical_source_collect_reaches_admission_without_a_host_semantic_switch() {
+    let (base_plan, base_projection) = admit_source_scalar(COLLECT, 230, 232);
+    let base_player = projected_object_field(&base_projection, b"player");
+    assert_eq!(
+        projected_number(projected_object_field(base_player, b"score")),
+        1.0
+    );
+
+    let changed_source = std::str::from_utf8(COLLECT)
+        .expect("collect source is UTF-8")
+        .replacen(
+            "?player score ?score + 1.0",
+            "?player score ?score + 4.0",
+            1,
+        );
+    let (changed_plan, changed_projection) =
+        admit_source_scalar(changed_source.as_bytes(), 231, 233);
+    assert_ne!(changed_plan, base_plan);
+    let changed_player = projected_object_field(&changed_projection, b"player");
+    assert_eq!(
+        projected_number(projected_object_field(changed_player, b"score")),
+        4.0
+    );
 }
 
 #[test]

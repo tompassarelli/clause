@@ -470,6 +470,86 @@ pub fn lower_canonical_jump_handler_v1(
     Ok(())
 }
 
+/// Physical coordinates for one construct-blind scalar source transition.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ExecutableCanonicalScalarBindingV1 {
+    pub entry: u16,
+    pub state_slot: u16,
+}
+
+/// Refine a checked one-cell numeric source transition into CPP1. Rust sees
+/// only a generic expression and physical coordinates; event and relation
+/// designations select no host branch.
+pub fn lower_canonical_scalar_handler_v1(
+    program: &mut ExecutableProgramV1,
+    source: &CanonicalScalarHandlerV1,
+    binding: ExecutableCanonicalScalarBindingV1,
+) -> Result<(), ExecutableErrorV1> {
+    if program.rules.iter().any(|rule| rule.entry == binding.entry) {
+        return Err(ExecutableErrorV1::MalformedProgram);
+    }
+    let Some(initial) = program
+        .initial_configuration
+        .get_mut(usize::from(binding.state_slot))
+    else {
+        return Err(ExecutableErrorV1::MalformedProgram);
+    };
+    *initial = ExecutableValueV1::Number(source.initial_value);
+    let assignment = lower_scalar_expression(&source.result, binding.state_slot, 0)?;
+    let rule = ExecutableRuleV1 {
+        entry: binding.entry,
+        predicates: vec![],
+        assignments: vec![(binding.state_slot, assignment)],
+    };
+    let insertion = program
+        .rules
+        .iter()
+        .position(|existing| existing.entry > rule.entry)
+        .unwrap_or(program.rules.len());
+    program.rules.insert(insertion, rule);
+    Ok(())
+}
+
+fn lower_scalar_expression(
+    expression: &CanonicalScalarExpressionV1,
+    state_slot: u16,
+    depth: usize,
+) -> Result<ExecutableExpressionV1, ExecutableErrorV1> {
+    if depth >= MAX_EXPRESSION_DEPTH {
+        return Err(ExecutableErrorV1::MalformedProgram);
+    }
+    let pair = |left: &CanonicalScalarExpressionV1,
+                right: &CanonicalScalarExpressionV1|
+     -> Result<_, ExecutableErrorV1> {
+        Ok((
+            Box::new(lower_scalar_expression(left, state_slot, depth + 1)?),
+            Box::new(lower_scalar_expression(right, state_slot, depth + 1)?),
+        ))
+    };
+    Ok(match expression {
+        CanonicalScalarExpressionV1::Current => ExecutableExpressionV1::Slot(state_slot),
+        CanonicalScalarExpressionV1::Number(bits) => {
+            ExecutableExpressionV1::Constant(ExecutableValueV1::Number(*bits))
+        }
+        CanonicalScalarExpressionV1::Add(left, right) => {
+            let (left, right) = pair(left, right)?;
+            ExecutableExpressionV1::Add(left, right)
+        }
+        CanonicalScalarExpressionV1::Subtract(left, right) => {
+            let (left, right) = pair(left, right)?;
+            ExecutableExpressionV1::Subtract(left, right)
+        }
+        CanonicalScalarExpressionV1::Multiply(left, right) => {
+            let (left, right) = pair(left, right)?;
+            ExecutableExpressionV1::Multiply(left, right)
+        }
+        CanonicalScalarExpressionV1::Divide(left, right) => {
+            let (left, right) = pair(left, right)?;
+            ExecutableExpressionV1::Divide(left, right)
+        }
+    })
+}
+
 /// Physical coordinates for the source-owned three-branch `on tick` program.
 /// The binding contains no gameplay constants or expressions.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
