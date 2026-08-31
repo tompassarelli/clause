@@ -863,6 +863,36 @@ impl AuthorityStore {
             .state_admission_scope(authorization)
     }
 
+    /// Resolve the sole constitutive authorization for one exact State
+    /// Admission action. Missing and ambiguous grants both fail closed.
+    ///
+    /// This lookup selects only by the complete checked scope. It never
+    /// derives authority from a candidate, invents a policy, or changes the
+    /// admitted Program revision.
+    #[must_use]
+    pub fn unique_revision_state_admission_authorization(
+        &self,
+        revision: ProgramRevisionId,
+        exact_scope: CheckedStateAdmissionScope,
+    ) -> Option<AdmissionAuthorizationRef> {
+        let admitted = self.revisions.get(&revision)?;
+        let mut matching =
+            admitted
+                .state_admission_grants
+                .iter()
+                .filter_map(|(authorization, scope)| {
+                    (CheckedStateAdmissionScope {
+                        package: admitted.package,
+                        session: scope.session,
+                        base: scope.base,
+                        delta: scope.delta,
+                    } == exact_scope)
+                        .then_some(*authorization)
+                });
+        let authorization = matching.next()?;
+        matching.next().is_none().then_some(authorization)
+    }
+
     #[must_use]
     pub fn root_state_admission_scope(
         &self,

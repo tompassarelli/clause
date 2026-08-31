@@ -98,6 +98,15 @@ impl ProcessRuntime {
         self.authority.establish_root_policy(anchor)
     }
 
+    pub(crate) fn unique_revision_state_admission_authorization(
+        &self,
+        revision: clause_package::ProgramRevisionId,
+        exact_scope: clause_package::CheckedStateAdmissionScope,
+    ) -> Option<clause_package::AdmissionAuthorizationRef> {
+        self.authority
+            .unique_revision_state_admission_authorization(revision, exact_scope)
+    }
+
     /// Apply exactly the next package-owned record. `None` means the checked
     /// package is complete; rejection preserves the current record cursor.
     pub fn advance(&mut self) -> Result<Option<ProcessRecordV2>, ProcessError> {

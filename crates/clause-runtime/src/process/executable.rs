@@ -1960,6 +1960,7 @@ pub enum ExecutableCarrierErrorV1 {
     AmbiguousCheckerMode,
     MissingCheckerPrerequisite,
     MissingFormationEvidence,
+    ConstitutiveAdmissionAuthorityUnavailable,
     BudgetExhausted,
     UnsupportedSurface,
 }

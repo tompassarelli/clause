@@ -1,6 +1,9 @@
 use clause_package::*;
 use clause_runtime::*;
 
+const BROWSER_ADMISSION_COUNT: usize = 8;
+const BROWSER_IDENTITY_SEED_TAG: u8 = 210;
+
 macro_rules! id {
     ($kind:ident, $tag:expr) => {
         $kind::from_bytes(raw_id($tag))
@@ -101,6 +104,69 @@ fn next_y() -> ExecutableExpressionV1 {
     add(s(1), mul(next_vertical_velocity(), a(0)))
 }
 
+fn projection_atom(scope: TermScope, kind: &[u8], payload: &[u8]) -> Term {
+    Term::atom(
+        scope,
+        kind.to_vec(),
+        payload.to_vec(),
+        EqualityContract::ExactOctetsV1,
+    )
+    .expect("projection literal Atom is valid")
+}
+
+fn projection_role(scope: TermScope, role: LocalRoleRefV2, kind: ExecutableValueKindV1) -> Term {
+    executable_projection_role_term_v1(scope, role, kind)
+        .expect("projection role placeholder is valid")
+}
+
+fn projection_object(scope: TermScope, fields: Vec<(&'static [u8], Term)>) -> Term {
+    fields.into_iter().rev().fold(
+        projection_atom(scope, b"clause/js-object-end-v1", &[]),
+        |rest, (field, value)| {
+            Term::raw_triple([
+                projection_atom(scope, b"clause/js-field-v1", field),
+                value,
+                rest,
+            ])
+            .expect("projection object entry has one scope")
+        },
+    )
+}
+
+fn projection_array(scope: TermScope, values: Vec<Term>) -> Term {
+    values.into_iter().rev().fold(
+        projection_atom(scope, b"clause/js-array-end-v1", &[]),
+        |rest, value| {
+            Term::raw_triple([
+                projection_atom(scope, b"clause/js-item-v1", &[]),
+                value,
+                rest,
+            ])
+            .expect("projection array entry has one scope")
+        },
+    )
+}
+
+fn projected_vec3(scope: TermScope, roles: [LocalRoleRefV2; 3]) -> Term {
+    projection_object(
+        scope,
+        vec![
+            (
+                b"x",
+                projection_role(scope, roles[0], ExecutableValueKindV1::Number),
+            ),
+            (
+                b"y",
+                projection_role(scope, roles[1], ExecutableValueKindV1::Number),
+            ),
+            (
+                b"z",
+                projection_role(scope, roles[2], ExecutableValueKindV1::Number),
+            ),
+        ],
+    )
+}
+
 fn headless_program(scope: TermScope) -> ExecutableProgramV1 {
     let horizontal_assignments = || vec![(0, next_x()), (2, div(sub(next_x(), s(0)), a(0)))];
     let mut grounded_tick = horizontal_assignments();
@@ -110,29 +176,57 @@ fn headless_program(scope: TermScope) -> ExecutableProgramV1 {
     let mut landing_tick = horizontal_assignments();
     landing_tick.extend([(1, s(9)), (3, n(0.0)), (5, b(true))]);
 
-    let number_role = LocalRoleRefV2 {
+    let role = |id| LocalRoleRefV2 {
         schema: RelationSchemaLocalId::new(2),
-        role: RoleLocalId::new(1),
+        role: RoleLocalId::new(id),
     };
-    let boolean_role = LocalRoleRefV2 {
-        schema: RelationSchemaLocalId::new(2),
-        role: RoleLocalId::new(2),
-    };
-    let separator = Term::atom(
+    let player = projection_object(
         scope,
-        b"clause.test/projected-pair".to_vec(),
-        Vec::new(),
-        EqualityContract::ExactOctetsV1,
-    )
-    .expect("projection separator Atom is valid");
-    let template = Term::raw_triple([
-        executable_projection_role_term_v1(scope, number_role, ExecutableValueKindV1::Number)
-            .expect("numeric projection role is valid"),
-        separator,
-        executable_projection_role_term_v1(scope, boolean_role, ExecutableValueKindV1::Boolean)
-            .expect("boolean projection role is valid"),
-    ])
-    .expect("projection template has one scope");
+        vec![
+            (
+                b"position",
+                projected_vec3(scope, [role(1), role(2), role(3)]),
+            ),
+            (
+                b"velocity",
+                projected_vec3(scope, [role(4), role(5), role(6)]),
+            ),
+            (
+                b"yaw",
+                projection_role(scope, role(7), ExecutableValueKindV1::Number),
+            ),
+            (
+                b"grounded",
+                projection_role(scope, role(8), ExecutableValueKindV1::Boolean),
+            ),
+        ],
+    );
+    let platform = projection_object(
+        scope,
+        vec![
+            (
+                b"position",
+                projected_vec3(scope, [role(9), role(10), role(11)]),
+            ),
+            (
+                b"size",
+                projected_vec3(scope, [role(12), role(13), role(14)]),
+            ),
+        ],
+    );
+    let template = projection_object(
+        scope,
+        vec![
+            (b"player", player),
+            (
+                b"world",
+                projection_object(
+                    scope,
+                    vec![(b"platforms", projection_array(scope, vec![platform]))],
+                ),
+            ),
+        ],
+    );
 
     ExecutableProgramV1 {
         // x, y, vx, vy, horizontal intent, grounded, and six package constants.
@@ -149,6 +243,15 @@ fn headless_program(scope: TermScope) -> ExecutableProgramV1 {
             number(0.0),
             number(-10.0),
             number(10.0),
+            number(0.0),
+            number(0.0),
+            number(0.0),
+            number(0.0),
+            number(-0.25),
+            number(0.0),
+            number(12.0),
+            number(0.5),
+            number(12.0),
         ],
         rules: vec![
             ExecutableRuleV1 {
@@ -178,24 +281,40 @@ fn headless_program(scope: TermScope) -> ExecutableProgramV1 {
             },
         ],
         projection: Some(ExecutableProjectionV1 {
-            bindings: vec![
-                ExecutableProjectionBindingV1 {
-                    role: number_role,
-                    slot: 0,
-                    value_kind: ExecutableValueKindV1::Number,
+            bindings: [
+                (1, 0, ExecutableValueKindV1::Number),
+                (2, 1, ExecutableValueKindV1::Number),
+                (3, 12, ExecutableValueKindV1::Number),
+                (4, 2, ExecutableValueKindV1::Number),
+                (5, 3, ExecutableValueKindV1::Number),
+                (6, 13, ExecutableValueKindV1::Number),
+                (7, 14, ExecutableValueKindV1::Number),
+                (8, 5, ExecutableValueKindV1::Boolean),
+                (9, 15, ExecutableValueKindV1::Number),
+                (10, 16, ExecutableValueKindV1::Number),
+                (11, 17, ExecutableValueKindV1::Number),
+                (12, 18, ExecutableValueKindV1::Number),
+                (13, 19, ExecutableValueKindV1::Number),
+                (14, 20, ExecutableValueKindV1::Number),
+            ]
+            .into_iter()
+            .map(
+                |(role_id, slot, value_kind)| ExecutableProjectionBindingV1 {
+                    role: role(role_id),
+                    slot,
+                    value_kind,
                 },
-                ExecutableProjectionBindingV1 {
-                    role: boolean_role,
-                    slot: 5,
-                    value_kind: ExecutableValueKindV1::Boolean,
-                },
-            ],
+            )
+            .collect(),
             template,
         }),
     }
 }
 
-fn checked_program_package(checker_count: usize) -> CheckedProcessPackage {
+fn checked_program_package_with_scopes(
+    checker_count: usize,
+    state_admission_scopes: Vec<StateAdmissionScope>,
+) -> CheckedProcessPackage {
     let source = include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../../test-vectors/process-v2/positive/process-v2-core.hex"
@@ -206,9 +325,14 @@ fn checked_program_package(checker_count: usize) -> CheckedProcessPackage {
 
     let mut projection_schema = candidate.snapshot.constitution.schemas[0].clone();
     projection_schema.id = RelationSchemaLocalId::new(2);
-    let mut boolean_role = projection_schema.roles[0].clone();
-    boolean_role.id = RoleLocalId::new(2);
-    projection_schema.roles.push(boolean_role);
+    let base_role = projection_schema.roles[0].clone();
+    projection_schema.roles = (1..=14)
+        .map(|role_id| {
+            let mut role = base_role.clone();
+            role.id = RoleLocalId::new(role_id);
+            role
+        })
+        .collect();
     projection_schema.roles.sort_by_key(|role| role.id);
     candidate
         .snapshot
@@ -272,11 +396,116 @@ fn checked_program_package(checker_count: usize) -> CheckedProcessPackage {
         }
         _ => panic!("fixture supports zero, one, or two eligible checker Modes"),
     }
+    candidate.snapshot.state_admission_grants = state_admission_scopes
+        .into_iter()
+        .enumerate()
+        .map(|(ordinal, scope)| RevisionStateAdmissionGrantPreimageV2 {
+            authorization: AdmissionAuthorizationLocalId::new(
+                u32::try_from(ordinal).expect("fixture grant count fits u32"),
+            ),
+            scope,
+        })
+        .collect();
     candidate.claimed_snapshot =
         derive_program_snapshot_id(&candidate.snapshot).expect("program snapshot is canonical");
     let bytes = encode_process_package(&candidate).expect("program package encodes");
     check_process_package(decode_process_package(&bytes).expect("program package decodes"))
         .expect("program package checks")
+}
+
+fn browser_state_admission_scopes(checker_count: usize) -> Vec<StateAdmissionScope> {
+    if checker_count != 1 {
+        return Vec::new();
+    }
+    let package = checked_program_package_with_scopes(checker_count, Vec::new());
+    let package_id = package.id();
+    let application = ApplicationId {
+        snapshot: package.constitution().snapshot(),
+        local: ApplicationLocalId::new(1),
+    };
+    let (authority, facts) = carrier_authority(&package);
+    let mut session = PersistentProcessSessionV1::open_with_identity_seed(
+        package,
+        authority,
+        application,
+        facts.executable(),
+        raw_id(BROWSER_IDENTITY_SEED_TAG),
+    )
+    .expect("fixture scope derivation opens one exact session");
+    let mut scopes = Vec::with_capacity(BROWSER_ADMISSION_COUNT);
+    for ordinal in 0..BROWSER_ADMISSION_COUNT {
+        session
+            .apply_opaque_input(&encode_executable_occurrence_v1(&occurrence(0, &[1.0])).unwrap())
+            .expect("fixture horizontal input advances");
+        session
+            .apply_opaque_input_and_emit_candidate(
+                &encode_executable_occurrence_v1(&occurrence(2, &[0.25])).unwrap(),
+            )
+            .expect("fixture tick emits one candidate");
+        let candidate = session.candidate().unwrap().unwrap().clone();
+        scopes.push(StateAdmissionScope {
+            session: facts.session,
+            base: candidate.base,
+            delta: candidate.id,
+        });
+        let (policy, authorization) = exact_root_admission_policy(
+            package_id,
+            facts.session,
+            candidate.base,
+            candidate.id,
+            130 + u8::try_from(ordinal).expect("fixture ordinal fits u8"),
+        );
+        session
+            .establish_root_policy(policy)
+            .expect("scope derivation receives fresh external authority");
+        session
+            .admit_candidate(authorization)
+            .expect("scope derivation reaches the next exact base");
+    }
+    scopes
+}
+
+fn checked_program_package(checker_count: usize) -> CheckedProcessPackage {
+    checked_program_package_with_scopes(
+        checker_count,
+        browser_state_admission_scopes(checker_count),
+    )
+}
+
+fn exact_root_admission_policy(
+    package: ProcessPackageId,
+    session: RuntimeSessionId,
+    base: StateRevisionId,
+    candidate: CandidateDeltaId,
+    tag: u8,
+) -> (RootPolicyAnchor, AdmissionAuthorizationEvidence) {
+    let policy = id!(RootPolicyId, tag);
+    let authorization = RootAdmissionAuthorizationRef {
+        policy,
+        local: AdmissionAuthorizationLocalId::new(0),
+    };
+    (
+        RootPolicyAnchor::establish_with_governance(
+            policy,
+            vec![],
+            vec![],
+            vec![RootStateAdmissionGrant {
+                authorization,
+                scope: CheckedStateAdmissionScope {
+                    package,
+                    session,
+                    base,
+                    delta: candidate,
+                },
+            }],
+            vec![],
+        )
+        .expect("scope derivation root policy is coherent"),
+        AdmissionAuthorizationEvidence::IrreducibleRoot {
+            policy,
+            authorization,
+        },
+    )
 }
 
 #[derive(Clone, Copy)]
@@ -487,6 +716,142 @@ fn value(configuration: &[ExecutableValueV1], slot: usize) -> f64 {
     configuration[slot]
         .as_number()
         .expect("selected slot is numeric")
+}
+
+fn projected_object_field<'a>(term: &'a Term, expected: &[u8]) -> &'a Term {
+    let mut current = term;
+    loop {
+        if let Some(end) = current.as_atom() {
+            assert_eq!(end.kind(), b"clause/js-object-end-v1");
+            panic!("projected object lacks field {:?}", expected);
+        }
+        let [field, value, rest] = current
+            .as_raw_triple()
+            .expect("projected object is an entry chain")
+            .slots();
+        let field = field.as_atom().expect("projected object field is an Atom");
+        assert_eq!(field.kind(), b"clause/js-field-v1");
+        if field.canonical_payload() == expected {
+            return value;
+        }
+        current = rest;
+    }
+}
+
+fn projected_array_first(term: &Term) -> &Term {
+    let [item, value, _rest] = term
+        .as_raw_triple()
+        .expect("projected array has at least one item")
+        .slots();
+    assert_eq!(
+        item.as_atom().expect("projected item is an Atom").kind(),
+        b"clause/js-item-v1"
+    );
+    value
+}
+
+fn projected_number(term: &Term) -> f64 {
+    let atom = term.as_atom().expect("projected number is an Atom");
+    assert_eq!(atom.kind(), b"clause/process-projected-f64-v1");
+    f64::from_bits(u64::from_le_bytes(
+        atom.canonical_payload()
+            .try_into()
+            .expect("projected F64 is exact"),
+    ))
+}
+
+fn assert_arena_projection(term: &Term, expected_x: f64, expected_velocity_x: f64) {
+    let player = projected_object_field(term, b"player");
+    let position = projected_object_field(player, b"position");
+    assert_eq!(
+        projected_number(projected_object_field(position, b"x")),
+        expected_x
+    );
+    assert_eq!(
+        [b"y".as_slice(), b"z".as_slice()]
+            .map(|field| projected_number(projected_object_field(position, field))),
+        [0.0, 0.0]
+    );
+    let velocity = projected_object_field(player, b"velocity");
+    assert_eq!(
+        projected_number(projected_object_field(velocity, b"x")),
+        expected_velocity_x
+    );
+    assert_eq!(
+        [b"y".as_slice(), b"z".as_slice()]
+            .map(|field| projected_number(projected_object_field(velocity, field))),
+        [0.0, 0.0]
+    );
+    assert_eq!(
+        projected_number(projected_object_field(player, b"yaw")),
+        0.0
+    );
+    assert_eq!(
+        projected_object_field(player, b"grounded")
+            .as_atom()
+            .expect("projected Boolean Atom")
+            .canonical_payload(),
+        [1]
+    );
+    let world = projected_object_field(term, b"world");
+    let platform = projected_array_first(projected_object_field(world, b"platforms"));
+    let platform_position = projected_object_field(platform, b"position");
+    assert_eq!(
+        [b"x".as_slice(), b"y".as_slice(), b"z".as_slice()]
+            .map(|field| { projected_number(projected_object_field(platform_position, field)) }),
+        [0.0, -0.25, 0.0]
+    );
+    let platform_size = projected_object_field(platform, b"size");
+    assert_eq!(
+        [b"x".as_slice(), b"y".as_slice(), b"z".as_slice()]
+            .map(|field| projected_number(projected_object_field(platform_size, field))),
+        [12.0, 0.5, 12.0]
+    );
+}
+
+fn browser_fixture_request() -> WasmProcessRequestV1 {
+    let package = checked_program_package(1);
+    WasmProcessRequestV1 {
+        package_bytes: package.exact_bytes().to_vec(),
+        application: ApplicationLocalId::new(1),
+        authority: WasmAuthorityInputV1 {
+            program: id!(ProgramId, 123),
+            change: id!(ProgramChangeOccurrenceId, 124),
+            session: id!(RuntimeSessionId, 120),
+            policy: id!(RuntimePolicyId, 121),
+            session_start: id!(SessionStartOccurrenceId, 122),
+            root_policy: id!(RootPolicyId, 125),
+            occurrence_boundary: id!(BoundaryRef, 126),
+            state_boundary: id!(BoundaryRef, 127),
+            occurrence_evidence: id!(ExternalEvidenceRef, 181),
+            occurrence_evidence_bytes: vec![181],
+            judgment_evidence: id!(ExternalEvidenceRef, 186),
+            judgment_evidence_bytes: vec![186],
+            admission_evidence: id!(ExternalEvidenceRef, 190),
+            admission_evidence_bytes: vec![190],
+            budget_units: 100,
+        },
+        occurrences: vec![
+            encode_executable_occurrence_v1(&occurrence(0, &[1.0]))
+                .expect("fixture input occurrence encodes"),
+            encode_executable_occurrence_v1(&occurrence(2, &[0.25]))
+                .expect("fixture tick occurrence encodes"),
+        ],
+        render_slots: vec![],
+    }
+}
+
+fn lowercase_hex_lines(bytes: &[u8]) -> String {
+    const DIGITS: &[u8; 16] = b"0123456789abcdef";
+    let mut text = String::with_capacity(bytes.len() * 2 + bytes.len() / 64 + 1);
+    for line in bytes.chunks(64) {
+        for byte in line {
+            text.push(char::from(DIGITS[usize::from(byte >> 4)]));
+            text.push(char::from(DIGITS[usize::from(byte & 0x0f)]));
+        }
+        text.push('\n');
+    }
+    text
 }
 
 fn raw_id(tag: u8) -> [u8; IDENTITY_BYTES] {
@@ -852,8 +1217,6 @@ fn persistent_wasm_session_keeps_generation_sequence_and_admission_custody() {
                 session,
                 base: initial_world,
                 candidate,
-                root_policy: id!(RootPolicyId, 130),
-                authorization: AdmissionAuthorizationLocalId::new(0),
             }),
         ),
     );
@@ -876,36 +1239,7 @@ fn persistent_wasm_session_keeps_generation_sequence_and_admission_custody() {
             let projection = projection.expect("package projection is transported only now");
             let term = decode_canonical_term_bytes(&projection.exact_term_bytes)
                 .expect("projected Term remains exact and canonical");
-            let [number, relation, grounded] = term
-                .as_raw_triple()
-                .expect("fixture projection retains its declared Triple")
-                .slots();
-            assert_eq!(
-                number.as_atom().expect("projected number Atom").kind(),
-                b"clause/process-projected-f64-v1"
-            );
-            assert_eq!(
-                f64::from_bits(u64::from_le_bytes(
-                    number
-                        .as_atom()
-                        .expect("projected number Atom")
-                        .canonical_payload()
-                        .try_into()
-                        .expect("projected F64 is exact"),
-                )),
-                10.0
-            );
-            assert_eq!(
-                relation.as_atom().expect("literal relation Atom").kind(),
-                b"clause.test/projected-pair"
-            );
-            assert_eq!(
-                grounded
-                    .as_atom()
-                    .expect("projected Boolean Atom")
-                    .canonical_payload(),
-                [1]
-            );
+            assert_arena_projection(&term, 10.0, 0.0);
         }
         other => panic!("unexpected Admission event: {other:?}"),
     }
@@ -928,4 +1262,116 @@ fn persistent_wasm_session_keeps_generation_sequence_and_admission_custody() {
         boundary.command(&post_dispose),
         Err(WasmProcessStatusV1::StaleSessionHandle)
     );
+}
+
+#[test]
+fn shipped_cwr1_has_cxp2_arena_projection_and_successive_constitutive_admission() {
+    let request = browser_fixture_request();
+    let exact = encode_wasm_process_request_v1(&request).expect("browser CWR1 fixture encodes");
+    let fixture_path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../browser/jump-arena-shell/fixtures/wasm-jump-v1/jump-v1.cwr1.hex"
+    );
+    if std::env::var_os("CLAUSE_UPDATE_BROWSER_CWR1").is_some() {
+        std::fs::write(fixture_path, lowercase_hex_lines(&exact))
+            .expect("browser CWR1 fixture update succeeds");
+        return;
+    }
+    let tracked = decode_hex(include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../browser/jump-arena-shell/fixtures/wasm-jump-v1/jump-v1.cwr1.hex"
+    )));
+    assert_eq!(tracked, exact);
+    assert_eq!(
+        decode_wasm_process_request_v1(&tracked).expect("tracked CWR1 decodes"),
+        request
+    );
+
+    let open = WasmSessionOpenV1 {
+        package_bytes: request.package_bytes.clone(),
+        application: request.application,
+        authority: request.authority.clone(),
+        identity_seed: raw_id(BROWSER_IDENTITY_SEED_TAG),
+        limits: WasmSessionLimitsV1 {
+            max_commands: 16,
+            command_bytes: 4096,
+            event_bytes: WASM_SESSION_EVENT_LIMIT_V1 as u32,
+        },
+    };
+    let mut boundary = WasmPersistentSessionBoundaryV1::new();
+    let opened = boundary
+        .open(&encode_wasm_session_open_v1(&open).expect("fixture CWS1 encodes"))
+        .expect("tracked fixture opens");
+    let handle = opened.handle;
+    let package = match opened.kind {
+        WasmSessionEventKindV1::Opened { package, .. } => package,
+        other => panic!("unexpected fixture open: {other:?}"),
+    };
+    let mut sequence = 0;
+    for ordinal in 0..2 {
+        let mut candidate_scope = None;
+        for (occurrence_index, occurrence) in request.occurrences.iter().enumerate() {
+            let candidate_command = occurrence_index + 1 == request.occurrences.len();
+            let operation = if candidate_command {
+                WasmSessionOperationV1::Candidate(occurrence.clone())
+            } else {
+                WasmSessionOperationV1::Input(occurrence.clone())
+            };
+            let event = boundary
+                .command(
+                    &encode_wasm_session_command_v1(&WasmSessionCommandV1 {
+                        handle,
+                        expected_sequence: sequence,
+                        operation,
+                    })
+                    .expect("fixture occurrence command encodes"),
+                )
+                .expect("fixture occurrence command transports");
+            sequence += 1;
+            assert_eq!(event.accepted_sequence, sequence);
+            match event.kind {
+                WasmSessionEventKindV1::InputAccepted { .. } if !candidate_command => {}
+                WasmSessionEventKindV1::CandidateAccepted {
+                    candidate, base, ..
+                } if candidate_command => candidate_scope = Some((candidate, base)),
+                other => panic!("unexpected fixture occurrence event: {other:?}"),
+            }
+        }
+        let (candidate, base) = candidate_scope.expect("fixture tick emits one candidate");
+        let event = boundary
+            .command(
+                &encode_wasm_session_command_v1(&WasmSessionCommandV1 {
+                    handle,
+                    expected_sequence: sequence,
+                    operation: WasmSessionOperationV1::Admit(WasmSessionAdmissionV1 {
+                        package,
+                        session: request.authority.session,
+                        base,
+                        candidate,
+                    }),
+                })
+                .expect("fixture Admission command encodes"),
+            )
+            .expect("fixture Admission command transports");
+        sequence += 1;
+        assert_eq!(event.accepted_sequence, sequence);
+        let (successor, projection) = match event.kind {
+            WasmSessionEventKindV1::AdmissionAccepted {
+                predecessor,
+                successor,
+                state_revision_count,
+                projection: Some(projection),
+                ..
+            } => {
+                assert_eq!(predecessor, base);
+                assert_eq!(state_revision_count, ordinal + 2);
+                (successor, projection)
+            }
+            other => panic!("unexpected fixture Admission event: {other:?}"),
+        };
+        assert_ne!(successor, base);
+        let term = decode_canonical_term_bytes(&projection.exact_term_bytes)
+            .expect("fixture projection remains canonical");
+        assert_arena_projection(&term, 10.0, if ordinal == 0 { 2.0 } else { 0.0 });
+    }
 }

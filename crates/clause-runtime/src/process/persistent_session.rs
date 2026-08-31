@@ -147,6 +147,46 @@ impl PersistentProcessSessionV1 {
         Ok((admitted, projection))
     }
 
+    /// Admit the current candidate through the sole exact grant already
+    /// constituted by this session's admitted Program revision.
+    ///
+    /// The candidate does not create authority, and this operation neither
+    /// establishes nor mutates a root policy. Missing or ambiguous exact
+    /// grants fail before Judgment or Admission becomes visible.
+    pub fn admit_constituted_candidate_with_projection(
+        &mut self,
+    ) -> Result<
+        (
+            ExecutableStateRevisionV1,
+            Option<ExecutableProjectedObservationV1>,
+        ),
+        PersistentProcessSessionErrorV1,
+    > {
+        let candidate = self
+            .candidate()?
+            .ok_or(ExecutableCarrierErrorV1::ConstitutiveAdmissionAuthorityUnavailable)?
+            .clone();
+        let package = self.package()?;
+        let exact_scope = clause_package::CheckedStateAdmissionScope {
+            package,
+            session: self.session,
+            base: self.world_base,
+            delta: candidate.id,
+        };
+        if candidate.base != self.world_base {
+            return Err(ExecutableCarrierErrorV1::ConstitutiveAdmissionAuthorityUnavailable.into());
+        }
+        let authorization = self
+            .runtime()?
+            .carrier()
+            .unique_revision_state_admission_authorization(self.program_revision, exact_scope)
+            .ok_or(ExecutableCarrierErrorV1::ConstitutiveAdmissionAuthorityUnavailable)?;
+        self.admit_candidate_with_projection(AdmissionAuthorizationEvidence::ProgramConstitution {
+            revision: self.program_revision,
+            authorization,
+        })
+    }
+
     /// Establish one caller-supplied root policy on the runtime-owned
     /// authority store. This is the only authority mutation exposed by the
     /// persistent session; each Admission still receives its exact typed

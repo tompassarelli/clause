@@ -91,13 +91,11 @@
    world Any
    sequence Any
    occurrences Any
-   rootPolicy Any
    disposed Any])
 
 (defrecord PersistentCartridge
   [openBytes Any
-   occurrences Any
-   rootPolicy Any])
+   occurrences Any])
 
 (js/export
   (defrecord Cwo1Observation
@@ -382,8 +380,6 @@
         (throw (new Error "CWR1 cartridge shape is incomplete")))
       (let [session-id Any (frozen-byte-range bytes (+ authority-start (* 2 identity-bytes))
                                                (+ authority-start (* 3 identity-bytes)))
-            root-policy Any (frozen-byte-range bytes (+ authority-start (* 5 identity-bytes))
-                                                (+ authority-start (* 6 identity-bytes)))
             open-bytes Any [67 87 83 49]]
         (doseq [byte Int (.slice bytes 4 budget-end)]
           (.push open-bytes byte))
@@ -394,8 +390,7 @@
         (append-u32! open-bytes cse1-max-bytes)
         (->PersistentCartridge
          (.freeze Object open-bytes)
-         (.freeze Object (.-values occurrences-result))
-         root-policy)))))
+         (.freeze Object (.-values occurrences-result)))))))
 
 (defn session-module-functions [module Any] Any
   (let [reset Any (.-clause_session_v1_io_reset module)
@@ -754,7 +749,6 @@
                                     (atom (.-world event))
                                     (atom 0)
                                     (.-occurrences cartridge)
-                                    (.-rootPolicy cartridge)
                                     (atom false))
                bootstrap-frame Any (workbench/create-workbench-envelope
                                     policy
@@ -805,11 +799,9 @@
            (doseq [identity Any [(.-packageId session)
                                  (.-sessionId session)
                                  @(.-world session)
-                                 (.-candidateId candidate)
-                                 (.-rootPolicy session)]]
+                                 (.-candidateId candidate)]]
              (doseq [byte Int identity]
                (.push payload byte)))
-           (append-u32! payload 1)
            (let [event Any (apply-session-command!
                             module
                             session

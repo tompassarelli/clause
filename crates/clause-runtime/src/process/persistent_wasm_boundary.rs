@@ -7,8 +7,9 @@ use super::wasm_boundary::{
     establish_persistent_authority, put_blob,
 };
 use super::{
-    PersistentProcessSessionV1, WASM_PROCESS_REQUEST_LIMIT_V1, WASM_PROCESS_RESPONSE_LIMIT_V1,
-    WasmAuthorityInputV1, WasmProcessStatusV1,
+    ExecutableCarrierErrorV1, PersistentProcessSessionErrorV1, PersistentProcessSessionV1,
+    WASM_PROCESS_REQUEST_LIMIT_V1, WASM_PROCESS_RESPONSE_LIMIT_V1, WasmAuthorityInputV1,
+    WasmProcessStatusV1,
 };
 
 const OPEN_MAGIC: &[u8; 4] = b"CWS1";
@@ -48,8 +49,6 @@ pub struct WasmSessionAdmissionV1 {
     pub session: RuntimeSessionId,
     pub base: StateRevisionId,
     pub candidate: CandidateDeltaId,
-    pub root_policy: RootPolicyId,
-    pub authorization: AdmissionAuthorizationLocalId,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -423,38 +422,11 @@ fn admit(
     if !exact {
         return WasmSessionEventKindV1::Rejected(WasmSessionRejectionV1::AdmissionScopeRejected);
     }
-    let authorization = RootAdmissionAuthorizationRef {
-        policy: input.root_policy,
-        local: input.authorization,
-    };
-    let Ok(policy) = RootPolicyAnchor::establish_with_governance(
-        input.root_policy,
-        vec![],
-        vec![],
-        vec![RootStateAdmissionGrant {
-            authorization,
-            scope: CheckedStateAdmissionScope {
-                package: input.package,
-                session: input.session,
-                base: input.base,
-                delta: input.candidate,
-            },
-        }],
-        vec![],
-    ) else {
-        return WasmSessionEventKindV1::Rejected(WasmSessionRejectionV1::AuthorityRejected);
-    };
-    if session.establish_root_policy(policy).is_err() {
-        return WasmSessionEventKindV1::Rejected(WasmSessionRejectionV1::AuthorityRejected);
-    }
     let prior_run = session.run().expect("live Admission retains its prior Run");
     let prior_activation = session
         .activation()
         .expect("live Admission retains its prior Activation");
-    match session.admit_candidate_with_projection(AdmissionAuthorizationEvidence::IrreducibleRoot {
-        policy: input.root_policy,
-        authorization,
-    }) {
+    match session.admit_constituted_candidate_with_projection() {
         Ok((successor, projection)) => {
             let run = session.run().expect("Admission installs a fresh Run");
             let activation = session
@@ -477,6 +449,9 @@ fn admit(
                 }),
             }
         }
+        Err(PersistentProcessSessionErrorV1::Carrier(
+            ExecutableCarrierErrorV1::ConstitutiveAdmissionAuthorityUnavailable,
+        )) => WasmSessionEventKindV1::Rejected(WasmSessionRejectionV1::AuthorityRejected),
         Err(_) => WasmSessionEventKindV1::Rejected(WasmSessionRejectionV1::AdmissionRejected),
     }
 }
@@ -598,11 +573,9 @@ pub fn encode_wasm_session_command_v1(
                 input.session.as_bytes(),
                 input.base.as_bytes(),
                 input.candidate.as_bytes(),
-                input.root_policy.as_bytes(),
             ] {
                 bytes.extend_from_slice(id);
             }
-            bytes.extend_from_slice(&input.authorization.get().to_le_bytes());
         }
         WasmSessionOperationV1::Dispose => bytes.push(4),
     }
@@ -635,8 +608,6 @@ pub fn decode_wasm_session_command_v1(
             session: RuntimeSessionId::from_bytes(d.identity()?),
             base: StateRevisionId::from_bytes(d.identity()?),
             candidate: CandidateDeltaId::from_bytes(d.identity()?),
-            root_policy: RootPolicyId::from_bytes(d.identity()?),
-            authorization: AdmissionAuthorizationLocalId::new(d.u32()?),
         }),
         4 => WasmSessionOperationV1::Dispose,
         _ => return Err(WasmProcessStatusV1::MalformedRequest),
