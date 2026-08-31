@@ -642,6 +642,220 @@ fn forked_process_branch_reconnects_through_separate_admission_and_retains_exact
 }
 
 #[test]
+fn public_wasm_branch_boundary_retains_exact_evidence_and_admission_only_successors() {
+    let exact_cwr1 =
+        encode_wasm_process_request_v1(&browser_process_continuation_fixture_request())
+            .expect("generic continuation CWR1 encodes");
+    let open = WasmBranchOpenV1 {
+        exact_cwr1,
+        disconnect_tick: 41,
+        disconnect_occurrence: opaque(1, 0.0),
+        max_commands: 8,
+    };
+    let open_bytes = encode_wasm_branch_open_v1(&open).expect("bounded CBR1 open encodes");
+    assert_eq!(
+        decode_wasm_branch_open_v1(&open_bytes).expect("exact CBR1 open decodes"),
+        open
+    );
+
+    let mut boundary = WasmProcessBranchBoundaryV1::new();
+    let opened = boundary.open(&open_bytes).expect("exact branch opens");
+    assert_eq!(
+        decode_wasm_branch_event_v1(
+            &encode_wasm_branch_event_v1(&opened).expect("opened event encodes")
+        )
+        .expect("opened event decodes"),
+        opened
+    );
+    let (handle, parent, branch_run) = match opened.kind {
+        WasmBranchEventKindV1::Opened { pins, ancestry, .. } => {
+            assert_eq!(pins.disconnect_tick, 41);
+            assert_eq!(pins.parent_state, ancestry.parent_state);
+            (opened.handle, pins.parent_state, ancestry.run)
+        }
+        other => panic!("unexpected open event: {other:?}"),
+    };
+
+    let stale = encode_wasm_branch_command_v1(&WasmBranchCommandV1 {
+        handle: WasmBranchHandleV1 {
+            slot: handle.slot,
+            generation: handle.generation + 1,
+        },
+        expected_sequence: 0,
+        operation: WasmBranchOperationV1::Explain,
+    })
+    .expect("stale command encodes");
+    assert_eq!(
+        boundary.command(&stale),
+        Err(WasmProcessStatusV1::StaleSessionHandle)
+    );
+
+    let authoritative_command = WasmBranchCommandV1 {
+        handle,
+        expected_sequence: 0,
+        operation: WasmBranchOperationV1::AdmitAuthoritativeOccurrences(vec![
+            opaque(0, 10.0),
+            opaque(1, 1.0),
+        ]),
+    };
+    let authoritative_bytes = encode_wasm_branch_command_v1(&authoritative_command)
+        .expect("authoritative command encodes");
+    assert_eq!(
+        decode_wasm_branch_command_v1(&authoritative_bytes).expect("authoritative command decodes"),
+        authoritative_command
+    );
+    let authoritative = boundary
+        .command(&authoritative_bytes)
+        .expect("authoritative plan admits");
+    let (r1, authoritative_run) = match authoritative.kind {
+        WasmBranchEventKindV1::AuthoritativeAdmissionAccepted {
+            predecessor,
+            successor,
+            run,
+            ..
+        } => {
+            assert_eq!(predecessor, parent);
+            assert_ne!(successor, parent);
+            assert_ne!(run, branch_run);
+            (successor, run)
+        }
+        other => panic!("unexpected authoritative event: {other:?}"),
+    };
+
+    let branch_occurrences = vec![opaque(0, 2.0), opaque(1, 3.0)];
+    let proposed = boundary
+        .command(
+            &encode_wasm_branch_command_v1(&WasmBranchCommandV1 {
+                handle,
+                expected_sequence: 1,
+                operation: WasmBranchOperationV1::ProposeReconnect(branch_occurrences.clone()),
+            })
+            .expect("branch proposal command encodes"),
+        )
+        .expect("branch proposal succeeds");
+    let (branch_candidate, exact_evidence) = match proposed.kind {
+        WasmBranchEventKindV1::ReconnectProposed {
+            evidence,
+            exact_evidence,
+        } => {
+            assert_eq!(evidence.pins.parent_state, parent);
+            assert_eq!(evidence.ancestry.run, branch_run);
+            assert_eq!(evidence.commands, branch_occurrences);
+            assert!(!evidence.observations.is_empty());
+            assert_eq!(
+                exact_evidence,
+                encode_process_reconnect_evidence_v1(&evidence)
+                    .expect("retained evidence re-encodes exactly")
+            );
+            (evidence.candidate, exact_evidence)
+        }
+        other => panic!("unexpected proposal event: {other:?}"),
+    };
+
+    let mut mismatched_evidence = exact_evidence.clone();
+    *mismatched_evidence
+        .last_mut()
+        .expect("evidence has one candidate-step byte") ^= 1;
+    let rejected = boundary
+        .command(
+            &encode_wasm_branch_command_v1(&WasmBranchCommandV1 {
+                handle,
+                expected_sequence: 2,
+                operation: WasmBranchOperationV1::Adjudicate {
+                    reconnect_evidence: mismatched_evidence,
+                    branch_candidate,
+                    authoritative_base: r1,
+                    occurrences: branch_occurrences.clone(),
+                },
+            })
+            .expect("tampered evidence command encodes"),
+        )
+        .expect("typed evidence rejection is one accepted physical command");
+    assert!(matches!(
+        rejected.kind,
+        WasmBranchEventKindV1::Rejected(WasmBranchRejectionV1::EvidenceMismatch)
+    ));
+
+    let admitted = boundary
+        .command(
+            &encode_wasm_branch_command_v1(&WasmBranchCommandV1 {
+                handle,
+                expected_sequence: 3,
+                operation: WasmBranchOperationV1::Adjudicate {
+                    reconnect_evidence: exact_evidence,
+                    branch_candidate,
+                    authoritative_base: r1,
+                    occurrences: branch_occurrences,
+                },
+            })
+            .expect("adjudication command encodes"),
+        )
+        .expect("checked reconnect plan admits");
+    let (r2, exact_explanation) = match admitted.kind {
+        WasmBranchEventKindV1::ReconnectAdmissionAccepted {
+            predecessor,
+            successor,
+            branch_candidate: admitted_branch_candidate,
+            explanation,
+            exact_explanation,
+            ..
+        } => {
+            assert_eq!(predecessor, r1);
+            assert_ne!(successor, r1);
+            assert_eq!(admitted_branch_candidate, branch_candidate);
+            assert_eq!(explanation.branch_candidate, branch_candidate);
+            assert_eq!(explanation.authoritative_base, r1);
+            assert_eq!(explanation.authoritative_run, authoritative_run);
+            assert_eq!(explanation.successor, successor);
+            assert!(explanation.causal_records.iter().all(|record| {
+                if matches!(
+                    record.occurrence,
+                    CausalRef::CandidateDelta(candidate)
+                        if candidate == explanation.authoritative_candidate
+                ) || matches!(
+                    record.occurrence,
+                    CausalRef::Judgment(_) | CausalRef::Admission(_)
+                ) {
+                    !record
+                        .predecessors
+                        .contains(&CausalRef::CandidateDelta(branch_candidate))
+                } else {
+                    true
+                }
+            }));
+            assert_eq!(
+                exact_explanation,
+                encode_process_branch_explanation_v1(&explanation)
+                    .expect("causal explanation re-encodes exactly")
+            );
+            (successor, exact_explanation)
+        }
+        other => panic!("unexpected adjudication event: {other:?}"),
+    };
+
+    let explained = boundary
+        .command(
+            &encode_wasm_branch_command_v1(&WasmBranchCommandV1 {
+                handle,
+                expected_sequence: 4,
+                operation: WasmBranchOperationV1::Explain,
+            })
+            .expect("explanation query encodes"),
+        )
+        .expect("retained explanation remains queryable");
+    match explained.kind {
+        WasmBranchEventKindV1::Explanation {
+            explanation,
+            exact_explanation: queried,
+        } => {
+            assert_eq!(explanation.successor, r2);
+            assert_eq!(queried, exact_explanation);
+        }
+        other => panic!("unexpected explanation event: {other:?}"),
+    }
+}
+
+#[test]
 fn shipped_process_continuation_cwr1_is_exact() {
     let request = browser_process_continuation_fixture_request();
     let exact = encode_wasm_process_request_v1(&request)

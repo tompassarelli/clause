@@ -293,6 +293,10 @@ function parse_persistent_cartridge_bang(request) {
   return PersistentCartridge(Object.freeze(open_bytes), Object.freeze(occurrences_result.values));
 }
 
+function process_request_occurrences_bang(request) {
+  return parse_persistent_cartridge_bang(request).occurrences;
+}
+
 function session_module_functions(module) {
   const reset = module.clause_session_v1_io_reset;
   const push = module.clause_session_v1_request_push;
@@ -740,6 +744,10 @@ export { ExactProcessObservation as "ExactProcessObservation" };
 export { ExactProcessRequest as "ExactProcessRequest" };
 export { admit_session_candidate_bang as "admit-session-candidate!" };
 export { advance_session_occurrence_bang as "advance-session-occurrence!" };
+export { append_blob_bang as "append-blob!" };
+export { append_u32_bang as "append-u32!" };
+export { append_u64_bang as "append-u64!" };
+export { byte_at as "byte-at" };
 export { create_wasm_cartridge_port as "create-wasm-cartridge-port" };
 export { cse1_projected_term_json_max_source_units as "cse1-projected-term-json-max-source-units" };
 export { cse1_projected_term_max_properties as "cse1-projected-term-max-properties" };
@@ -749,8 +757,17 @@ export { cwo1observation_values as "cwo1observation-values" };
 export { decode_cwo1_observation as "decode-cwo1-observation" };
 export { decode_cwr1_hex as "decode-cwr1-hex" };
 export { decode_projected_term_frame as "decode-projected-term-frame" };
+export { exact_byte_array_p as "exact-byte-array?" };
 export { exactprocessobservation_bytes as "exactprocessobservation-bytes" };
 export { exactprocessrequest_bytes as "exactprocessrequest-bytes" };
+export { frozen_byte_range as "frozen-byte-range" };
+export { little_safe_u64 as "little-safe-u64" };
+export { little_u16 as "little-u16" };
+export { little_u32 as "little-u32" };
+export { parse_blob as "parse-blob" };
+export { process_request_occurrences_bang as "process-request-occurrences!" };
+export { process_status as "process-status" };
+export { require_range as "require-range" };
 export { resume_session_bang as "resume-session!" };
 export { suspend_session_bang as "suspend-session!" };
 //# sourceMappingURL=wasm-cartridge-port.js.map

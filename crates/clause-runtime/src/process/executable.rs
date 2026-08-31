@@ -1282,6 +1282,11 @@ pub struct ExecutablePhysicalPlanIdV1([u8; IDENTITY_BYTES]);
 
 impl ExecutablePhysicalPlanIdV1 {
     #[must_use]
+    pub const fn from_bytes(bytes: [u8; IDENTITY_BYTES]) -> Self {
+        Self(bytes)
+    }
+
+    #[must_use]
     pub const fn as_bytes(&self) -> &[u8; IDENTITY_BYTES] {
         &self.0
     }

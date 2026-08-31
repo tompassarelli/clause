@@ -3,6 +3,53 @@
 /**
  * @returns {number}
  */
+export function clause_branch_v1_command() {
+    const ret = wasm.clause_branch_v1_command();
+    return ret >>> 0;
+}
+
+/**
+ * Values 0..=255 are event bytes; 256 means an out-of-range index.
+ * @param {number} index
+ * @returns {number}
+ */
+export function clause_branch_v1_event_byte(index) {
+    const ret = wasm.clause_branch_v1_event_byte(index);
+    return ret >>> 0;
+}
+
+/**
+ * @returns {number}
+ */
+export function clause_branch_v1_event_len() {
+    const ret = wasm.clause_branch_v1_event_len();
+    return ret >>> 0;
+}
+
+export function clause_branch_v1_io_reset() {
+    wasm.clause_branch_v1_io_reset();
+}
+
+/**
+ * @returns {number}
+ */
+export function clause_branch_v1_open() {
+    const ret = wasm.clause_branch_v1_open();
+    return ret >>> 0;
+}
+
+/**
+ * @param {number} byte
+ * @returns {number}
+ */
+export function clause_branch_v1_request_push(byte) {
+    const ret = wasm.clause_branch_v1_request_push(byte);
+    return ret >>> 0;
+}
+
+/**
+ * @returns {number}
+ */
 export function clause_process_v1_dispatch() {
     const ret = wasm.clause_process_v1_dispatch();
     return ret >>> 0;
@@ -89,6 +136,9 @@ export function clause_session_v1_request_push(byte) {
 function __wbg_get_imports() {
     const import0 = {
         __proto__: null,
+        __wbg___wbindgen_throw_be289d5034ed271b: function(arg0, arg1) {
+            throw new Error(getStringFromWasm0(arg0, arg1));
+        },
         __wbg_getRandomValues_1c61fac11405ffdc: function() { return handleError(function (arg0, arg1) {
             globalThis.crypto.getRandomValues(getArrayU8FromWasm0(arg0, arg1));
         }, arguments); },
@@ -119,6 +169,11 @@ function getArrayU8FromWasm0(ptr, len) {
     return getUint8ArrayMemory0().subarray(ptr / 1, ptr / 1 + len);
 }
 
+function getStringFromWasm0(ptr, len) {
+    ptr = ptr >>> 0;
+    return decodeText(ptr, len);
+}
+
 let cachedUint8ArrayMemory0 = null;
 function getUint8ArrayMemory0() {
     if (cachedUint8ArrayMemory0 === null || cachedUint8ArrayMemory0.byteLength === 0) {
@@ -134,6 +189,20 @@ function handleError(f, args) {
         const idx = addToExternrefTable0(e);
         wasm.__wbindgen_exn_store(idx);
     }
+}
+
+let cachedTextDecoder = new TextDecoder('utf-8', { ignoreBOM: true, fatal: true });
+cachedTextDecoder.decode();
+const MAX_SAFARI_DECODE_BYTES = 2146435072;
+let numBytesDecoded = 0;
+function decodeText(ptr, len) {
+    numBytesDecoded += len;
+    if (numBytesDecoded >= MAX_SAFARI_DECODE_BYTES) {
+        cachedTextDecoder = new TextDecoder('utf-8', { ignoreBOM: true, fatal: true });
+        cachedTextDecoder.decode();
+        numBytesDecoded = len;
+    }
+    return cachedTextDecoder.decode(getUint8ArrayMemory0().subarray(ptr, ptr + len));
 }
 
 let wasmModule, wasm;

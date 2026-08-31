@@ -105,21 +105,22 @@
      stateRevisionId Any
      values Any]))
 
-(defn exact-byte-array?
-  [bytes Any
-   maximum Int] Bool
-  (and (.isArray Array bytes)
-       (<= 1 (.-length bytes))
-       (<= (.-length bytes) maximum)
-       (loop [index Int 0]
-         (if (= index (.-length bytes))
-           true
-           (let [byte Any (nth bytes index)]
-             (if (and (.isInteger Number byte)
-                      (<= 0 byte)
-                      (<= byte 255))
-               (recur (inc index))
-               false))))))
+(js/export
+  (defn exact-byte-array?
+    [bytes Any
+     maximum Int] Bool
+    (and (.isArray Array bytes)
+         (<= 1 (.-length bytes))
+         (<= (.-length bytes) maximum)
+         (loop [index Int 0]
+           (if (= index (.-length bytes))
+             true
+             (let [byte Any (nth bytes index)]
+               (if (and (.isInteger Number byte)
+                        (<= 0 byte)
+                        (<= byte 255))
+                 (recur (inc index))
+                 false)))))))
 
 (defn require-request [request ExactProcessRequest] ExactProcessRequest
   (if (and (not (nil? request))
@@ -128,29 +129,33 @@
      (frozen-byte-range (.-bytes request) 0 (.-length (.-bytes request))))
     (throw (new Error "cartridge request must carry bounded exact bytes"))))
 
-(defn process-status [status Any] Int
-  (if (.isSafeInteger Number status)
-    status
-    -1))
+(js/export
+  (defn process-status [status Any] Int
+    (if (.isSafeInteger Number status)
+      status
+      -1)))
 
-(defn byte-at
-  [bytes Any
-   index Int] Int
-  (nth bytes index))
+(js/export
+  (defn byte-at
+    [bytes Any
+     index Int] Int
+    (nth bytes index)))
 
-(defn little-u16
-  [bytes Any
-   offset Int] Int
-  (+ (byte-at bytes offset)
-     (* 256 (byte-at bytes (inc offset)))))
+(js/export
+  (defn little-u16
+    [bytes Any
+     offset Int] Int
+    (+ (byte-at bytes offset)
+       (* 256 (byte-at bytes (inc offset))))))
 
-(defn little-u32
-  [bytes Any
-   offset Int] Int
-  (+ (byte-at bytes offset)
-     (* 256 (byte-at bytes (+ offset 1)))
-     (* 65536 (byte-at bytes (+ offset 2)))
-     (* 16777216 (byte-at bytes (+ offset 3)))))
+(js/export
+  (defn little-u32
+    [bytes Any
+     offset Int] Int
+    (+ (byte-at bytes offset)
+       (* 256 (byte-at bytes (+ offset 1)))
+       (* 65536 (byte-at bytes (+ offset 2)))
+       (* 16777216 (byte-at bytes (+ offset 3))))))
 
 (defn big-u32
   [bytes Any
@@ -160,58 +165,64 @@
      (* 256 (byte-at bytes (+ offset 2)))
      (byte-at bytes (+ offset 3))))
 
-(defn little-safe-u64
-  [bytes Any
-   offset Int] Int
-  (let [low Int (little-u32 bytes offset)
-        high Int (little-u32 bytes (+ offset 4))]
-    (if (> high 2097151)
-      (throw (new Error "64-bit transport value exceeds exact JavaScript range"))
-      (+ low (* high 4294967296)))))
+(js/export
+  (defn little-safe-u64
+    [bytes Any
+     offset Int] Int
+    (let [low Int (little-u32 bytes offset)
+          high Int (little-u32 bytes (+ offset 4))]
+      (if (> high 2097151)
+        (throw (new Error "64-bit transport value exceeds exact JavaScript range"))
+        (+ low (* high 4294967296))))))
 
-(defn append-u32!
-  [bytes Any
-   value Int] Any
-  (do
-    (.push bytes (rem value 256))
-    (.push bytes (rem (quot value 256) 256))
-    (.push bytes (rem (quot value 65536) 256))
-    (.push bytes (rem (quot value 16777216) 256))))
+(js/export
+  (defn append-u32!
+    [bytes Any
+     value Int] Any
+    (do
+      (.push bytes (rem value 256))
+      (.push bytes (rem (quot value 256) 256))
+      (.push bytes (rem (quot value 65536) 256))
+      (.push bytes (rem (quot value 16777216) 256)))))
 
-(defn append-u64!
-  [bytes Any
-   value Int] Any
-  (do
-    (append-u32! bytes (rem value 4294967296))
-    (append-u32! bytes (quot value 4294967296))))
+(js/export
+  (defn append-u64!
+    [bytes Any
+     value Int] Any
+    (do
+      (append-u32! bytes (rem value 4294967296))
+      (append-u32! bytes (quot value 4294967296)))))
 
-(defn append-blob!
-  [bytes Any
-   value Any] Any
-  (do
-    (append-u32! bytes (.-length value))
-    (doseq [byte Int value]
-      (.push bytes byte))))
+(js/export
+  (defn append-blob!
+    [bytes Any
+     value Any] Any
+    (do
+      (append-u32! bytes (.-length value))
+      (doseq [byte Int value]
+        (.push bytes byte)))))
 
-(defn require-range
-  [bytes Any
-   offset Int
-   length Int
-   label String] Int
-  (let [end Int (+ offset length)]
-    (if (or (< offset 0) (< length 0) (> end (.-length bytes)))
-      (throw (new Error (str label " is truncated")))
-      end)))
+(js/export
+  (defn require-range
+    [bytes Any
+     offset Int
+     length Int
+     label String] Int
+    (let [end Int (+ offset length)]
+      (if (or (< offset 0) (< length 0) (> end (.-length bytes)))
+        (throw (new Error (str label " is truncated")))
+        end))))
 
-(defn frozen-byte-range
-  [bytes Any
-   start Int
-   end Int] Any
-  (loop [index Int start
-         result (Vec Int) []]
-    (if (= index end)
-      (.freeze Object result)
-      (recur (inc index) (conj result (byte-at bytes index))))))
+(js/export
+  (defn frozen-byte-range
+    [bytes Any
+     start Int
+     end Int] Any
+    (loop [index Int start
+           result (Vec Int) []]
+      (if (= index end)
+        (.freeze Object result)
+        (recur (inc index) (conj result (byte-at bytes index)))))))
 
 (defn finite-f64
   [bytes Any
@@ -321,18 +332,19 @@
               (throw (new Error "CWO1 response byte is out of bounds"))
               (recur (inc index) (conj bytes byte)))))))))
 
-(defn parse-blob
-  [bytes Any
-   offset Int
-   maximum Int
-   label String] Any
-  (let [header-end Int (require-range bytes offset 4 label)
-        length Int (little-u32 bytes offset)
-        _bound Any (when (> length maximum)
-                     (throw (new Error (str label " exceeds its bound"))))
-        end Int (require-range bytes header-end length label)]
-    {:bytes (frozen-byte-range bytes header-end end)
-     :next end}))
+(js/export
+  (defn parse-blob
+    [bytes Any
+     offset Int
+     maximum Int
+     label String] Any
+    (let [header-end Int (require-range bytes offset 4 label)
+          length Int (little-u32 bytes offset)
+          _bound Any (when (> length maximum)
+                       (throw (new Error (str label " exceeds its bound"))))
+          end Int (require-range bytes header-end length label)]
+      {:bytes (frozen-byte-range bytes header-end end)
+       :next end})))
 
 (defn require-allocation-epoch [record Any] Any
   (let [bytes Any (.-bytes record)]
@@ -406,6 +418,10 @@
         (->PersistentCartridge
          (.freeze Object open-bytes)
          (.freeze Object (.-values occurrences-result)))))))
+
+(js/export
+  (defn process-request-occurrences! [request ExactProcessRequest] Any
+    (.-occurrences (parse-persistent-cartridge! request))))
 
 (defn session-module-functions [module Any] Any
   (let [reset Any (.-clause_session_v1_io_reset module)
