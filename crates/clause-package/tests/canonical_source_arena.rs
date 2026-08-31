@@ -220,3 +220,40 @@ fn canonical_world_declarations_reach_the_checked_package_with_exact_remainder()
         .expect("the existing package carrier consumes the checked declaration package");
     assert_eq!(carrier.application_count(), 0);
 }
+
+#[test]
+fn canonical_input_preserves_negative_zero_bits() {
+    let source = std::str::from_utf8(WORLD)
+        .expect("fixture is UTF-8")
+        .replacen(
+            "player-1 horizontal intent Vec3 { x: 0.0, y: 0.0, z: 0.0 }",
+            "player-1 horizontal intent Vec3 { x: -0.0, y: 0.0, z: 0.0 }",
+            1,
+        )
+        .replacen(
+            "include\n    ?player horizontal intent Vec3 { x: ?intent-x, y: 0.0, z: ?intent-z }",
+            "include\n    ?player horizontal intent Vec3 { x: -0.0, y: 0.0, z: ?intent-z }",
+            1,
+        );
+    let cst = read_canonical_source_v1(source.as_bytes()).expect("negative zero source reads");
+    let plan = plan_independent_canonical_source_allocations_v1(
+        &cst,
+        ProgramChangeOccurrenceId::from_bytes(raw_id(6)),
+    )
+    .expect("negative zero source receives rooted allocations");
+    let compiled = elaborate_canonical_source_package_v1(
+        &cst,
+        CanonicalSourceContextV1 {
+            universe: UniverseId::from_bytes(raw_id(1)),
+            semantics: ClauseSemanticsId::from_bytes(raw_id(2)),
+        },
+        &plan,
+    )
+    .expect("negative zero source reaches the checked package");
+    let input = compiled.input_handler.expect("input handler lowers");
+    assert_eq!(input.initial_x, (-0.0_f64).to_bits());
+    assert_eq!(
+        input.result_x,
+        CanonicalInputScalarV1::Number((-0.0_f64).to_bits())
+    );
+}

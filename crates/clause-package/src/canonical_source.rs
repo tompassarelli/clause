@@ -1472,11 +1472,7 @@ fn parse_vec3_components(vector: &str) -> Option<[&str; 3]> {
 
 fn parse_source_number(source: &str) -> Option<u64> {
     let value = source.parse::<f64>().ok()?;
-    value.is_finite().then_some(if value == 0.0 {
-        0.0_f64.to_bits()
-    } else {
-        value.to_bits()
-    })
+    value.is_finite().then_some(value.to_bits())
 }
 
 fn parse_input_scalar(source: &str, parameters: [&str; 2]) -> Option<CanonicalInputScalarV1> {
