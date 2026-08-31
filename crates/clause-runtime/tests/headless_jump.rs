@@ -5,6 +5,8 @@ const BROWSER_ADMISSION_COUNT: usize = 8;
 const BROWSER_RECORDED_ALLOCATION_ROOT_TAG: u8 = 210;
 const BROWSER_COLLECT_ALLOCATION_ROOT_TAG: u8 = 234;
 const BROWSER_COLLECT_CHANGED_ALLOCATION_ROOT_TAG: u8 = 235;
+const BROWSER_SYMBOLIC_COLLECT_ALLOCATION_ROOT_TAG: u8 = 240;
+const BROWSER_SYMBOLIC_COLLECT_CHANGED_ALLOCATION_ROOT_TAG: u8 = 241;
 const SOURCE_ALLOCATION_ROOT_TAG: u8 = 211;
 const WORLD: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
@@ -543,13 +545,6 @@ fn physical_plan_with_source(
     }
 }
 
-fn scalar_plan_with_source(
-    package: &CheckedProcessPackage,
-    source: &[u8],
-) -> ExecutablePhysicalPlanV1 {
-    scalar_plan_with_source_and_projection(package, source, b"player", b"score")
-}
-
 fn scalar_plan_with_source_and_projection(
     package: &CheckedProcessPackage,
     source: &[u8],
@@ -653,13 +648,19 @@ fn checked_program_package(checker_count: usize) -> CheckedProcessPackage {
     )
 }
 
-fn browser_scalar_state_admission_scope(source: &[u8], allocation_tag: u8) -> StateAdmissionScope {
+fn browser_scalar_state_admission_scope_with_projection(
+    source: &[u8],
+    allocation_tag: u8,
+    object_field: &'static [u8],
+    value_field: &'static [u8],
+) -> StateAdmissionScope {
     let package = checked_program_package_with_scopes(1, Vec::new());
     let application = ApplicationId {
         snapshot: package.constitution().snapshot(),
         local: ApplicationLocalId::new(1),
     };
-    let physical_plan = scalar_plan_with_source(&package, source);
+    let physical_plan =
+        scalar_plan_with_source_and_projection(&package, source, object_field, value_field);
     let (authority, facts) = carrier_authority(&package);
     let allocation = RuntimeAllocationEpochV1::recorded_for(
         raw_id(allocation_tag),
@@ -695,10 +696,20 @@ fn browser_scalar_state_admission_scope(source: &[u8], allocation_tag: u8) -> St
     }
 }
 
-fn checked_scalar_program_package(source: &[u8], allocation_tag: u8) -> CheckedProcessPackage {
+fn checked_scalar_program_package_with_projection(
+    source: &[u8],
+    allocation_tag: u8,
+    object_field: &'static [u8],
+    value_field: &'static [u8],
+) -> CheckedProcessPackage {
     checked_program_package_with_scopes(
         1,
-        vec![browser_scalar_state_admission_scope(source, allocation_tag)],
+        vec![browser_scalar_state_admission_scope_with_projection(
+            source,
+            allocation_tag,
+            object_field,
+            value_field,
+        )],
     )
 }
 
@@ -1474,8 +1485,23 @@ fn browser_fixture_request() -> WasmProcessRequestV1 {
 }
 
 fn browser_scalar_fixture_request(source: &[u8], allocation_tag: u8) -> WasmProcessRequestV1 {
-    let package = checked_scalar_program_package(source, allocation_tag);
-    let physical_plan = scalar_plan_with_source(&package, source);
+    browser_scalar_fixture_request_with_projection(source, allocation_tag, b"player", b"score")
+}
+
+fn browser_scalar_fixture_request_with_projection(
+    source: &[u8],
+    allocation_tag: u8,
+    object_field: &'static [u8],
+    value_field: &'static [u8],
+) -> WasmProcessRequestV1 {
+    let package = checked_scalar_program_package_with_projection(
+        source,
+        allocation_tag,
+        object_field,
+        value_field,
+    );
+    let physical_plan =
+        scalar_plan_with_source_and_projection(&package, source, object_field, value_field);
     let application = ApplicationId {
         snapshot: package.constitution().snapshot(),
         local: ApplicationLocalId::new(1),
@@ -2569,6 +2595,72 @@ fn shipped_collect_cwr1_preserves_clause_owned_scalar_behavior() {
         assert_eq!(decode_hex(&tracked), exact);
         assert_eq!(
             decode_wasm_process_request_v1(&exact).expect("tracked collect CWR1 decodes"),
+            request
+        );
+    }
+}
+
+#[test]
+fn shipped_symbolic_collect_cwr1_preserves_clause_owned_state() {
+    let changed_source = std::str::from_utf8(COLLECT_STATE)
+        .expect("collect-state source is UTF-8")
+        .replacen(
+            "?collectible state collected",
+            "?collectible state spent",
+            1,
+        );
+    let base = browser_scalar_fixture_request_with_projection(
+        COLLECT_STATE,
+        BROWSER_SYMBOLIC_COLLECT_ALLOCATION_ROOT_TAG,
+        b"collectible",
+        b"state",
+    );
+    let changed = browser_scalar_fixture_request_with_projection(
+        changed_source.as_bytes(),
+        BROWSER_SYMBOLIC_COLLECT_CHANGED_ALLOCATION_ROOT_TAG,
+        b"collectible",
+        b"state",
+    );
+    let base_plan = decode_executable_physical_plan_v1(&base.physical_plan_bytes)
+        .expect("base symbolic collect CPP1 decodes");
+    let changed_plan = decode_executable_physical_plan_v1(&changed.physical_plan_bytes)
+        .expect("changed symbolic collect CPP1 decodes");
+    assert_eq!(
+        base_plan.program.rules[0].assignments[0].1,
+        ExecutableExpressionV1::Constant(
+            ExecutableValueV1::symbol(b"collected").expect("symbol is bounded")
+        )
+    );
+    assert_eq!(
+        changed_plan.program.rules[0].assignments[0].1,
+        ExecutableExpressionV1::Constant(
+            ExecutableValueV1::symbol(b"spent").expect("symbol is bounded")
+        )
+    );
+    assert_ne!(base_plan.program, changed_plan.program);
+
+    let fixture_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../browser/jump-arena-shell/fixtures/wasm-collect-state-v1");
+    let fixtures = [("collected.cwr1.hex", base), ("spent.cwr1.hex", changed)];
+    if std::env::var_os("CLAUSE_UPDATE_BROWSER_SYMBOLIC_COLLECT_CWR1").is_some() {
+        std::fs::create_dir_all(&fixture_root)
+            .expect("symbolic collect browser fixture directory is created");
+        for (name, request) in fixtures {
+            let exact = encode_wasm_process_request_v1(&request)
+                .expect("symbolic collect browser CWR1 fixture encodes");
+            std::fs::write(fixture_root.join(name), lowercase_hex_lines(&exact))
+                .expect("symbolic collect browser CWR1 fixture update succeeds");
+        }
+        return;
+    }
+    for (name, request) in fixtures {
+        let exact = encode_wasm_process_request_v1(&request)
+            .expect("symbolic collect browser CWR1 fixture encodes");
+        let tracked = std::fs::read_to_string(fixture_root.join(name))
+            .expect("tracked symbolic collect browser CWR1 fixture exists");
+        assert_eq!(decode_hex(&tracked), exact);
+        assert_eq!(
+            decode_wasm_process_request_v1(&exact).expect("tracked symbolic collect CWR1 decodes"),
             request
         );
     }

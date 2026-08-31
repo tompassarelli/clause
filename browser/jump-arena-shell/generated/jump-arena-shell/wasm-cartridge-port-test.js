@@ -206,7 +206,7 @@ function process_configuration(input_sequence, revision, ordinal) {
   return workbench["->InputConfiguration"](revision, [workbench["->InputObservation"](input_sequence, workbench["create-workbench-envelope"](policy(), json_string([json_string({[$$bc$property_key($$bc$keyword("kind"))]: "process-occurrence", [$$bc$property_key($$bc$keyword("ordinal"))]: ordinal})])))]);
 }
 
-function admit_real_collect_bang(port, request_bytes, expected_score) {
+function admit_real_process_bang(port, request_bytes) {
   const request = wasm["->ExactProcessRequest"](wasm["decode-cwr1-hex"](request_bytes));
   const accepted = ({value: null, watches: {}});
   const started = ({value: null, watches: {}});
@@ -220,10 +220,8 @@ function admit_real_collect_bang(port, request_bytes, expected_score) {
   (port.requestAdmission)(started.value.session, candidate.value.candidate, (result) => (() => { const _a = admitted, _v = result; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })());
   test["expect"](((!(json_string(admitted.value.revision) === json_string(started.value.revision))) ? "true" : "false")).toBe("true");
   const frame = wasm["decode-projected-term-frame"](admitted.value.frame);
-  const score = frame.player.score;
-  test["expect"]($$bc$str(score)).toBe($$bc$str(expected_score));
   (port.disposeSession)(started.value.session);
-  return score;
+  return frame;
 }
 
 test["test"]("one persistent session sequences physical input candidate issuance Admission and disposal", () => { const requests = [];
@@ -305,9 +303,22 @@ return null; }));
 const test_runtime = require("bun:test");
 const register_async_test = test_runtime.test;
 register_async_test("real Wasm keeps collect hidden until Admission and projects Clause-owned score", () => Promise.all([Bun.file("./generated/wasm/clause_runtime_bg.wasm").arrayBuffer(), Bun.file("./fixtures/wasm-collect-v1/collect-plus-1.cwr1.hex").text(), Bun.file("./fixtures/wasm-collect-v1/collect-plus-4.cwr1.hex").text()]).then((assets) => { const port = wasm["create-wasm-cartridge-port"](initialize_real_session_module(assets[0]), arena_policy());
-const base_score = admit_real_collect_bang(port, assets[1], 1.0);
-const changed_score = admit_real_collect_bang(port, assets[2], 4.0);
+const base_frame = admit_real_process_bang(port, assets[1]);
+const changed_frame = admit_real_process_bang(port, assets[2]);
+const base_score = base_frame.player.score;
+const changed_score = changed_frame.player.score;
 test["expect"]($$bc$str(base_score)).toBe("1");
 test["expect"]($$bc$str(changed_score)).toBe("4");
+return null; }));
+
+const symbol_test_runtime = require("bun:test");
+const register_symbol_test = symbol_test_runtime.test;
+register_symbol_test("real Wasm admits Clause-owned active to collected symbolic state", () => Promise.all([Bun.file("./generated/wasm/clause_runtime_bg.wasm").arrayBuffer(), Bun.file("./fixtures/wasm-collect-state-v1/collected.cwr1.hex").text(), Bun.file("./fixtures/wasm-collect-state-v1/spent.cwr1.hex").text()]).then((assets) => { const port = wasm["create-wasm-cartridge-port"](initialize_real_session_module(assets[0]), arena_policy());
+const collected_frame = admit_real_process_bang(port, assets[1]);
+const spent_frame = admit_real_process_bang(port, assets[2]);
+const collected_state = collected_frame.collectible.state;
+const spent_state = spent_frame.collectible.state;
+test["expect"](collected_state).toBe("collected");
+test["expect"](spent_state).toBe("spent");
 return null; }));
 //# sourceMappingURL=wasm-cartridge-port-test.js.map

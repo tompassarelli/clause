@@ -536,7 +536,7 @@ function realize_projection_node(node) {
   if (($$bc$equiv(node.kind, "atom"))) {
     const kind = atom_kind_text(node);
     const payload = node.payload;
-    return ((($$bc$equiv(kind, "clause/process-projected-f64-v1"))) ? projected_number(payload) : (($$bc$equiv(kind, "clause/process-projected-bool-v1"))) ? ((($$bc$equiv(payload.length, 1)) && (payload[0] <= 1)) ? ($$bc$equiv(payload[0], 1)) : (() => { throw new Error("projected Boolean payload is invalid"); })()) : (() => { throw new Error("projected scalar Atom is not realizable"); })());
+    return ((($$bc$equiv(kind, "clause/process-projected-f64-v1"))) ? projected_number(payload) : (($$bc$equiv(kind, "clause/process-projected-bool-v1"))) ? ((($$bc$equiv(payload.length, 1)) && (payload[0] <= 1)) ? ($$bc$equiv(payload[0], 1)) : (() => { throw new Error("projected Boolean payload is invalid"); })()) : (($$bc$equiv(kind, "clause/process-projected-symbol-v1"))) ? ascii_text(payload, "projected symbol") : (() => { throw new Error("projected scalar Atom is not realizable"); })());
   } else {
     const head = node.slots[0];
     const kind = atom_kind_text(head);

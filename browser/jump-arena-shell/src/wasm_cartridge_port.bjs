@@ -801,6 +801,8 @@
         (if (and (= (.-length payload) 1) (<= (nth payload 0) 1))
           (= (nth payload 0) 1)
           (throw (new Error "projected Boolean payload is invalid")))
+        (= kind "clause/process-projected-symbol-v1")
+        (ascii-text payload "projected symbol")
         :else (throw (new Error "projected scalar Atom is not realizable"))))
     (let [head Any (nth (.-slots node) 0)
           kind String (atom-kind-text head)]

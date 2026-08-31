@@ -234,10 +234,9 @@
       (json-string [(json-string {:kind "process-occurrence"
                                   :ordinal ordinal})])))]))
 
-(defn admit-real-collect!
+(defn admit-real-process!
   [port workbench/CartridgePort
-   request-bytes Any
-   expected-score Float] Float
+   request-bytes Any] Any
   (let [request wasm/ExactProcessRequest
         (wasm/->ExactProcessRequest (wasm/decode-cwr1-hex request-bytes))
         accepted Any (atom nil)
@@ -267,11 +266,9 @@
         "true"
         "false"))
      "true")
-    (let [frame Any (wasm/decode-projected-term-frame (.-frame @admitted))
-          score Float (.-score (.-player frame))]
-      (.toBe (test/expect (str score)) (str expected-score))
+    (let [frame Any (wasm/decode-projected-term-frame (.-frame @admitted))]
       ((.-disposeSession port) (.-session @started))
-      score)))
+      frame)))
 
 (test/test
  "one persistent session sequences physical input candidate issuance Admission and disposal"
@@ -490,8 +487,32 @@
               (wasm/create-wasm-cartridge-port
                (initialize-real-session-module (nth assets 0))
                (arena-policy))
-              base-score Float (admit-real-collect! port (nth assets 1) 1.0)
-              changed-score Float (admit-real-collect! port (nth assets 2) 4.0)]
+              base-frame Any (admit-real-process! port (nth assets 1))
+              changed-frame Any (admit-real-process! port (nth assets 2))
+              base-score Float (.-score (.-player base-frame))
+              changed-score Float (.-score (.-player changed-frame))]
           (.toBe (test/expect (str base-score)) "1")
           (.toBe (test/expect (str changed-score)) "4")
+          nil))))))
+
+(let [symbol-test-runtime Any (require "bun:test")
+      register-symbol-test Any (.-test symbol-test-runtime)]
+  (register-symbol-test
+   "real Wasm admits Clause-owned active to collected symbolic state"
+   (fn [] Any
+     (.then
+      (.all Promise [(.arrayBuffer (.file Bun "./generated/wasm/clause_runtime_bg.wasm"))
+                     (.text (.file Bun "./fixtures/wasm-collect-state-v1/collected.cwr1.hex"))
+                     (.text (.file Bun "./fixtures/wasm-collect-state-v1/spent.cwr1.hex"))])
+      (fn [assets Any] Any
+        (let [port workbench/CartridgePort
+              (wasm/create-wasm-cartridge-port
+               (initialize-real-session-module (nth assets 0))
+               (arena-policy))
+              collected-frame Any (admit-real-process! port (nth assets 1))
+              spent-frame Any (admit-real-process! port (nth assets 2))
+              collected-state String (.-state (.-collectible collected-frame))
+              spent-state String (.-state (.-collectible spent-frame))]
+          (.toBe (test/expect collected-state) "collected")
+          (.toBe (test/expect spent-state) "spent")
           nil))))))
