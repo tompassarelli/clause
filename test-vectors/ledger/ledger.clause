@@ -1,0 +1,17 @@
+referent F64
+referent Account
+
+relation balance
+  reads {account: Account} balance {value: F64}
+  subject account
+  mode given account yields value: one
+
+operating-account balance 100.0
+
+on deposit ?account
+  when
+    ?account balance ?balance
+  withdraw
+    ?account balance ?balance
+  include
+    ?account balance ?balance + 25.0

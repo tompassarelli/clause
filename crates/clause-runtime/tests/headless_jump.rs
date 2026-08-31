@@ -22,6 +22,10 @@ const COLLECT_STATE: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../test-vectors/jump-arena/collect-state.clause"
 ));
+const LEDGER: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../test-vectors/ledger/ledger.clause"
+));
 
 fn gameplay_source() -> Vec<u8> {
     let mut source = Vec::with_capacity(WORLD.len() + COLLECT_STATE.len() + 1);
@@ -1988,6 +1992,38 @@ fn canonical_source_collect_changes_symbolic_state_only_after_admission() {
     .expect("changed projected symbolic state is an Atom");
     assert_eq!(changed_state.kind(), b"clause/process-projected-symbol-v1");
     assert_eq!(changed_state.canonical_payload(), b"spent");
+}
+
+#[test]
+fn canonical_source_ledger_deposit_reaches_persistent_admission_and_changes_balance() {
+    let (base_plan, base_projection) =
+        admit_source_scalar_with_projection(LEDGER, 244, 246, b"account", b"balance");
+    let base_account = projected_object_field(&base_projection, b"account");
+    assert_eq!(
+        projected_number(projected_object_field(base_account, b"balance")),
+        125.0
+    );
+
+    let changed_source = std::str::from_utf8(LEDGER)
+        .expect("ledger source is UTF-8")
+        .replacen(
+            "?account balance ?balance + 25.0",
+            "?account balance ?balance + 40.0",
+            1,
+        );
+    let (changed_plan, changed_projection) = admit_source_scalar_with_projection(
+        changed_source.as_bytes(),
+        245,
+        247,
+        b"account",
+        b"balance",
+    );
+    assert_ne!(changed_plan, base_plan);
+    let changed_account = projected_object_field(&changed_projection, b"account");
+    assert_eq!(
+        projected_number(projected_object_field(changed_account, b"balance")),
+        140.0
+    );
 }
 
 #[test]
