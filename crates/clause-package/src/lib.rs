@@ -8,6 +8,7 @@
 
 mod authority;
 mod canonical;
+mod canonical_source;
 mod formation;
 mod hash;
 mod identity;
@@ -24,6 +25,7 @@ pub use canonical::{
     decode_canonical_term_bytes, decode_process_package, derive_program_snapshot_id,
     encode_process_package,
 };
+pub use canonical_source::*;
 pub use formation::*;
 pub use identity::*;
 pub use process::*;
