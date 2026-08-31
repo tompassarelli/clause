@@ -580,16 +580,17 @@
               (throw (new Error (str label " must be printable ASCII")))
               (recur (inc index) (conj bytes code)))))))))
 
-(defn decode-physical-input
+(defn decode-physical-observation
   [observation workbench/InputObservation] Any
   (let [envelope Any (.-value observation)]
     (if-not (and (.isArray Array envelope)
                  (= (.-length envelope) 1)
                  (= (js/typeof (nth envelope 0)) "string"))
       (throw (new Error "input observation lacks its exact physical envelope"))
-      (let [value Any (.parse JSON (nth envelope 0))]
-        (if (not= (.-kind value) "keyboard")
-          nil
+      (let [value Any (.parse JSON (nth envelope 0))
+            kind Any (.-kind value)]
+        (cond
+          (= kind "keyboard")
           (let [phase Any (.-phase value)
                 phase-tag Int (cond
                                 (= phase "down") 0
@@ -599,9 +600,19 @@
             (when (or (< phase-tag 0)
                       (not (or (= repeat true) (= repeat false))))
               (throw (new Error "keyboard observation has an invalid phase")))
-            {:sequence (.-sequence observation)
-             :code (ascii-bytes (.-code value) "keyboard code")
-             :phase phase-tag}))))))
+            {:kind "input"
+             :source {:sequence (.-sequence observation)
+                      :code (ascii-bytes (.-code value) "keyboard code")
+                      :phase phase-tag}})
+
+          (= kind "process-occurrence")
+          (let [ordinal Any (.-ordinal value)]
+            (when (or (not (.isSafeInteger Number ordinal))
+                      (< ordinal 0))
+              (throw (new Error "process occurrence ordinal is invalid")))
+            {:kind "candidate" :ordinal ordinal})
+
+          :else nil)))))
 
 (defn physical-input-command!
   [session WasmSession
@@ -626,6 +637,14 @@
     (append-u64! payload (.-revision configuration))
     (append-u32! payload milliseconds)
     (encode-session-command! session 4 payload)))
+
+(defn occurrence-candidate-command!
+  [session WasmSession
+   ordinal Int] Any
+  (let [occurrences Any (.-occurrences session)]
+    (when (>= ordinal (.-length occurrences))
+      (throw (new Error "process occurrence ordinal is outside the cartridge")))
+    (blob-command! session 2 (nth occurrences ordinal))))
 
 (defn admission-scope-bytes!
   [session WasmSession
@@ -872,25 +891,35 @@
         configuration workbench/InputConfiguration
         complete Any] Any
        (try
-         (let [session WasmSession (require-live-session incoming-session)]
+         (let [session WasmSession (require-live-session incoming-session)
+               candidate-ordinal Any (atom nil)]
            (doseq [observation workbench/InputObservation (.-observations configuration)]
-             (let [input Any (decode-physical-input observation)]
-               (when (not (nil? input))
+             (let [decoded Any (decode-physical-observation observation)]
+               (when (not (nil? decoded))
+                 (if (= (.-kind decoded) "candidate")
+                   (do
+                     (when (not (nil? @candidate-ordinal))
+                       (throw (new Error
+                               "one configuration may select only one process occurrence")))
+                     (reset! candidate-ordinal (.-ordinal decoded)))
                  (let [event Any (apply-session-command!
                                   module
                                   session
-                                  (physical-input-command! session input))]
+                                  (physical-input-command! session (.-source decoded)))]
                    (when (not= (.-kind event) "input")
                      (throw (new Error
-                             "CWI1 physical input did not produce InputAccepted")))))))
+                             "CWI1 physical input did not produce InputAccepted"))))))))
            (let [event Any (apply-session-command!
                             module
                             session
-                            (tick-candidate-command!
-                             session fixed-tick configuration))]
+                            (if (nil? @candidate-ordinal)
+                              (tick-candidate-command!
+                               session fixed-tick configuration)
+                              (occurrence-candidate-command!
+                               session @candidate-ordinal)))]
              (when (not= (.-kind event) "candidate")
                (throw (new Error
-                       "CWI1 fixed tick did not produce CandidateAccepted")))
+                       "CWI1 process occurrence did not produce CandidateAccepted")))
              (complete
               (workbench/->CandidateProduced
                (->WasmCandidate (.-candidateId event) (.-base event))))))

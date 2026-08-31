@@ -3,6 +3,8 @@ use clause_runtime::*;
 
 const BROWSER_ADMISSION_COUNT: usize = 8;
 const BROWSER_RECORDED_ALLOCATION_ROOT_TAG: u8 = 210;
+const BROWSER_COLLECT_ALLOCATION_ROOT_TAG: u8 = 234;
+const BROWSER_COLLECT_CHANGED_ALLOCATION_ROOT_TAG: u8 = 235;
 const SOURCE_ALLOCATION_ROOT_TAG: u8 = 211;
 const WORLD: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
@@ -629,6 +631,55 @@ fn checked_program_package(checker_count: usize) -> CheckedProcessPackage {
     checked_program_package_with_scopes(
         checker_count,
         browser_state_admission_scopes(checker_count),
+    )
+}
+
+fn browser_scalar_state_admission_scope(source: &[u8], allocation_tag: u8) -> StateAdmissionScope {
+    let package = checked_program_package_with_scopes(1, Vec::new());
+    let application = ApplicationId {
+        snapshot: package.constitution().snapshot(),
+        local: ApplicationLocalId::new(1),
+    };
+    let physical_plan = scalar_plan_with_source(&package, source);
+    let (authority, facts) = carrier_authority(&package);
+    let allocation = RuntimeAllocationEpochV1::recorded_for(
+        raw_id(allocation_tag),
+        &package,
+        application,
+        &physical_plan,
+        facts.executable(),
+    )
+    .expect("scalar browser allocation evidence binds the provisional package");
+    let mut session = PersistentProcessSessionV1::rematerialize(
+        package,
+        authority,
+        application,
+        physical_plan,
+        facts.executable(),
+        allocation,
+    )
+    .expect("scalar browser scope derivation opens one exact session");
+    session
+        .apply_opaque_input_and_emit_candidate(
+            &encode_executable_occurrence_v1(&occurrence(0, &[]))
+                .expect("scalar browser occurrence encodes"),
+        )
+        .expect("scalar browser occurrence emits one candidate");
+    let candidate = session
+        .candidate()
+        .expect("scalar browser candidate lookup succeeds")
+        .expect("scalar browser Step retains one candidate");
+    StateAdmissionScope {
+        session: facts.session,
+        base: candidate.base,
+        delta: candidate.id,
+    }
+}
+
+fn checked_scalar_program_package(source: &[u8], allocation_tag: u8) -> CheckedProcessPackage {
+    checked_program_package_with_scopes(
+        1,
+        vec![browser_scalar_state_admission_scope(source, allocation_tag)],
     )
 }
 
@@ -1388,6 +1439,53 @@ fn browser_fixture_request() -> WasmProcessRequestV1 {
                 .expect("fixture input occurrence encodes"),
             encode_executable_occurrence_v1(&occurrence(2, &[0.25]))
                 .expect("fixture tick occurrence encodes"),
+        ],
+        render_slots: vec![],
+    }
+}
+
+fn browser_scalar_fixture_request(source: &[u8], allocation_tag: u8) -> WasmProcessRequestV1 {
+    let package = checked_scalar_program_package(source, allocation_tag);
+    let physical_plan = scalar_plan_with_source(&package, source);
+    let application = ApplicationId {
+        snapshot: package.constitution().snapshot(),
+        local: ApplicationLocalId::new(1),
+    };
+    let (_, allocation_facts) = carrier_authority(&package);
+    let allocation = RuntimeAllocationEpochV1::recorded_for(
+        raw_id(allocation_tag),
+        &package,
+        application,
+        &physical_plan,
+        allocation_facts.executable(),
+    )
+    .expect("scalar browser allocation evidence binds the final package and plan");
+    WasmProcessRequestV1 {
+        package_bytes: package.exact_bytes().to_vec(),
+        application: ApplicationLocalId::new(1),
+        physical_plan_bytes: encode_executable_physical_plan_v1(&physical_plan)
+            .expect("scalar browser physical plan encodes beside the package"),
+        allocation,
+        authority: WasmAuthorityInputV1 {
+            program: id!(ProgramId, 123),
+            change: id!(ProgramChangeOccurrenceId, 124),
+            session: id!(RuntimeSessionId, 120),
+            policy: id!(RuntimePolicyId, 121),
+            session_start: id!(SessionStartOccurrenceId, 122),
+            root_policy: id!(RootPolicyId, 125),
+            occurrence_boundary: id!(BoundaryRef, 126),
+            state_boundary: id!(BoundaryRef, 127),
+            occurrence_evidence: id!(ExternalEvidenceRef, 181),
+            occurrence_evidence_bytes: vec![181],
+            judgment_evidence: id!(ExternalEvidenceRef, 186),
+            judgment_evidence_bytes: vec![186],
+            admission_evidence: id!(ExternalEvidenceRef, 190),
+            admission_evidence_bytes: vec![190],
+            budget_units: 100,
+        },
+        occurrences: vec![
+            encode_executable_occurrence_v1(&occurrence(0, &[]))
+                .expect("scalar browser occurrence encodes"),
         ],
         render_slots: vec![],
     }
@@ -2342,5 +2440,69 @@ fn shipped_cwr1_has_external_physical_plan_and_successive_issued_admission() {
         let term = decode_canonical_term_bytes(&projection.exact_term_bytes)
             .expect("fixture projection remains canonical");
         assert_arena_projection(&term, 1.25 * (ordinal as f64 + 1.0), 5.0);
+    }
+}
+
+#[test]
+fn shipped_collect_cwr1_preserves_clause_owned_scalar_behavior() {
+    let changed_source = std::str::from_utf8(COLLECT)
+        .expect("collect source is UTF-8")
+        .replacen(
+            "?player score ?score + 1.0",
+            "?player score ?score + 4.0",
+            1,
+        );
+    let base = browser_scalar_fixture_request(COLLECT, BROWSER_COLLECT_ALLOCATION_ROOT_TAG);
+    let changed = browser_scalar_fixture_request(
+        changed_source.as_bytes(),
+        BROWSER_COLLECT_CHANGED_ALLOCATION_ROOT_TAG,
+    );
+    let base_plan = decode_executable_physical_plan_v1(&base.physical_plan_bytes)
+        .expect("base collect CPP1 decodes");
+    let changed_plan = decode_executable_physical_plan_v1(&changed.physical_plan_bytes)
+        .expect("changed collect CPP1 decodes");
+    assert_eq!(
+        base_plan.program.rules[0].assignments[0].1,
+        ExecutableExpressionV1::Add(
+            Box::new(ExecutableExpressionV1::Slot(0)),
+            Box::new(ExecutableExpressionV1::Constant(number(1.0))),
+        )
+    );
+    assert_eq!(
+        changed_plan.program.rules[0].assignments[0].1,
+        ExecutableExpressionV1::Add(
+            Box::new(ExecutableExpressionV1::Slot(0)),
+            Box::new(ExecutableExpressionV1::Constant(number(4.0))),
+        )
+    );
+    assert_ne!(base_plan.program, changed_plan.program);
+
+    let fixture_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../browser/jump-arena-shell/fixtures/wasm-collect-v1");
+    let fixtures = [
+        ("collect-plus-1.cwr1.hex", base),
+        ("collect-plus-4.cwr1.hex", changed),
+    ];
+    if std::env::var_os("CLAUSE_UPDATE_BROWSER_COLLECT_CWR1").is_some() {
+        std::fs::create_dir_all(&fixture_root)
+            .expect("collect browser fixture directory is created");
+        for (name, request) in fixtures {
+            let exact = encode_wasm_process_request_v1(&request)
+                .expect("collect browser CWR1 fixture encodes");
+            std::fs::write(fixture_root.join(name), lowercase_hex_lines(&exact))
+                .expect("collect browser CWR1 fixture update succeeds");
+        }
+        return;
+    }
+    for (name, request) in fixtures {
+        let exact =
+            encode_wasm_process_request_v1(&request).expect("collect browser CWR1 fixture encodes");
+        let tracked = std::fs::read_to_string(fixture_root.join(name))
+            .expect("tracked collect browser CWR1 fixture exists");
+        assert_eq!(decode_hex(&tracked), exact);
+        assert_eq!(
+            decode_wasm_process_request_v1(&exact).expect("tracked collect CWR1 decodes"),
+            request
+        );
     }
 }

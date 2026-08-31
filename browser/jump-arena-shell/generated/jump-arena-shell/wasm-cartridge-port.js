@@ -403,21 +403,18 @@ function ascii_bytes(value, label) {
   }
 }
 
-function decode_physical_input(observation) {
+function decode_physical_observation(observation) {
   const envelope = observation.value;
   if (((_truthy) => _truthy !== false && _truthy != null)(((_logical) => (_logical !== false && _logical != null ? (($$bc$equiv(envelope.length, 1)) && ($$bc$equiv(typeof envelope[0], "string"))) : _logical))(Array.isArray(envelope)))) {
     const value = JSON.parse(envelope[0]);
-    if ((!($$bc$equiv(value.kind, "keyboard")))) {
-      return null;
-    } else {
-      const phase = value.phase;
-      const phase_tag = ((($$bc$equiv(phase, "down"))) ? 0 : (($$bc$equiv(phase, "up"))) ? 1 : -1);
-      const repeat = value.repeat;
-      if (((phase_tag < 0) || (!(($$bc$equiv(repeat, true)) || ($$bc$equiv(repeat, false)))))) {
-        (() => { throw new Error("keyboard observation has an invalid phase"); })();
-      }
-      return {[$$bc$property_key($$bc$keyword("sequence"))]: observation.sequence, [$$bc$property_key($$bc$keyword("code"))]: ascii_bytes(value.code, "keyboard code"), [$$bc$property_key($$bc$keyword("phase"))]: phase_tag};
-    }
+    const kind = value.kind;
+    return ((($$bc$equiv(kind, "keyboard"))) ? (() => { const phase = value.phase; const phase_tag = ((($$bc$equiv(phase, "down"))) ? 0 : (($$bc$equiv(phase, "up"))) ? 1 : -1); const repeat = value.repeat; if (((phase_tag < 0) || (!(($$bc$equiv(repeat, true)) || ($$bc$equiv(repeat, false)))))) {
+  (() => { throw new Error("keyboard observation has an invalid phase"); })();
+}
+return {[$$bc$property_key($$bc$keyword("kind"))]: "input", [$$bc$property_key($$bc$keyword("source"))]: {[$$bc$property_key($$bc$keyword("sequence"))]: observation.sequence, [$$bc$property_key($$bc$keyword("code"))]: ascii_bytes(value.code, "keyboard code"), [$$bc$property_key($$bc$keyword("phase"))]: phase_tag}}; })() : (($$bc$equiv(kind, "process-occurrence"))) ? (() => { const ordinal = value.ordinal; if (((!((_truthy) => _truthy !== false && _truthy != null)(Number.isSafeInteger(ordinal))) || (ordinal < 0))) {
+  (() => { throw new Error("process occurrence ordinal is invalid"); })();
+}
+return {[$$bc$property_key($$bc$keyword("kind"))]: "candidate", [$$bc$property_key($$bc$keyword("ordinal"))]: ordinal}; })() : null);
   } else {
     return (() => { throw new Error("input observation lacks its exact physical envelope"); })();
   }
@@ -441,6 +438,14 @@ function tick_candidate_command_bang(session, fixed_tick, configuration) {
   append_u64_bang(payload, configuration.revision);
   append_u32_bang(payload, milliseconds);
   return encode_session_command_bang(session, 4, payload);
+}
+
+function occurrence_candidate_command_bang(session, ordinal) {
+  const occurrences = session.occurrences;
+  if ((ordinal >= occurrences.length)) {
+    (() => { throw new Error("process occurrence ordinal is outside the cartridge"); })();
+  }
+  return blob_command_bang(session, 2, occurrences[ordinal]);
 }
 
 function admission_scope_bytes_bang(session, candidate) {
@@ -589,18 +594,26 @@ function create_wasm_cartridge_port_bang(module, policy) {
     }
   } })(), (incoming_session, fixed_tick, configuration, complete) => (() => { try {
     const session = require_live_session(incoming_session);
+  const candidate_ordinal = ({value: null, watches: {}});
   (() => { configuration.observations.forEach((observation) => {
-  const input = decode_physical_input(observation);
-  if ((!(input == null))) {
-    const event = apply_session_command_bang(module, session, physical_input_command_bang(session, input));
-    if ((!($$bc$equiv(event.kind, "input")))) {
-      (() => { throw new Error("CWI1 physical input did not produce InputAccepted"); })();
+  const decoded = decode_physical_observation(observation);
+  if ((!(decoded == null))) {
+    if (($$bc$equiv(decoded.kind, "candidate"))) {
+      if ((!(candidate_ordinal.value == null))) {
+        (() => { throw new Error("one configuration may select only one process occurrence"); })();
+      }
+      (() => { const _a = candidate_ordinal, _v = decoded.ordinal; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })();
+    } else {
+      const event = apply_session_command_bang(module, session, physical_input_command_bang(session, decoded.source));
+      if ((!($$bc$equiv(event.kind, "input")))) {
+        (() => { throw new Error("CWI1 physical input did not produce InputAccepted"); })();
+      }
     }
   }
 }); })();
-  const event = apply_session_command_bang(module, session, tick_candidate_command_bang(session, fixed_tick, configuration));
+  const event = apply_session_command_bang(module, session, ((candidate_ordinal.value == null) ? tick_candidate_command_bang(session, fixed_tick, configuration) : occurrence_candidate_command_bang(session, candidate_ordinal.value)));
   if ((!($$bc$equiv(event.kind, "candidate")))) {
-    (() => { throw new Error("CWI1 fixed tick did not produce CandidateAccepted"); })();
+    (() => { throw new Error("CWI1 process occurrence did not produce CandidateAccepted"); })();
   }
   return complete(workbench["->CandidateProduced"](WasmCandidate(event.candidateId, event.base)));
   } catch (_catch_2) {

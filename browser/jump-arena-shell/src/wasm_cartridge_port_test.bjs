@@ -221,6 +221,58 @@
                                   :phase "down"
                                   :repeat false})])))]))
 
+(defn process-configuration
+  [input-sequence Int
+   revision Int
+   ordinal Int] workbench/InputConfiguration
+  (workbench/->InputConfiguration
+   revision
+   [(workbench/->InputObservation
+     input-sequence
+     (workbench/create-workbench-envelope
+      (policy)
+      (json-string [(json-string {:kind "process-occurrence"
+                                  :ordinal ordinal})])))]))
+
+(defn admit-real-collect!
+  [port workbench/CartridgePort
+   request-bytes Any
+   expected-score Float] Float
+  (let [request wasm/ExactProcessRequest
+        (wasm/->ExactProcessRequest (wasm/decode-cwr1-hex request-bytes))
+        accepted Any (atom nil)
+        started Any (atom nil)
+        candidate Any (atom nil)
+        admitted Any (atom nil)]
+    ((.-acceptPackage port) request
+     (fn [result Any] Any (reset! accepted result)))
+    ((.-startSession port) (.-acceptedPackage @accepted) 1
+     (fn [result Any] Any (reset! started result)))
+    ((.-runCandidate port)
+     (.-session @started)
+     (workbench/->FixedTick 16)
+     (process-configuration 1 1 0)
+     (fn [result Any] Any (reset! candidate result)))
+    (.toBe (test/expect (json-string (.-frame @started))) "[]")
+    (.toBe (test/expect (json-string (.-base (.-candidate @candidate))))
+           (json-string (.-revision @started)))
+    ((.-requestAdmission port)
+     (.-session @started)
+     (.-candidate @candidate)
+     (fn [result Any] Any (reset! admitted result)))
+    (.toBe
+     (test/expect
+      (if (not= (json-string (.-revision @admitted))
+                (json-string (.-revision @started)))
+        "true"
+        "false"))
+     "true")
+    (let [frame Any (wasm/decode-projected-term-frame (.-frame @admitted))
+          score Float (.-score (.-player frame))]
+      (.toBe (test/expect (str score)) (str expected-score))
+      ((.-disposeSession port) (.-session @started))
+      score)))
+
 (test/test
  "one persistent session sequences physical input candidate issuance Admission and disposal"
  (fn [] Nil
@@ -340,9 +392,9 @@
      "true"))
    nil))
 
-(let [test-runtime Any (require "bun:test")
-      register-async-test Any (.-test test-runtime)]
-  (register-async-test
+(let [collect-test-runtime Any (require "bun:test")
+      register-collect-test Any (.-test collect-test-runtime)]
+  (register-collect-test
    "real Wasm lowers physical input and exposes only the admitted arena frame"
    (fn [] Any
      (.then
@@ -422,4 +474,24 @@
                 "false"))
              "true"))
           ((.-disposeSession port) (.-session @started))
+          nil))))))
+
+(let [test-runtime Any (require "bun:test")
+      register-async-test Any (.-test test-runtime)]
+  (register-async-test
+   "real Wasm keeps collect hidden until Admission and projects Clause-owned score"
+   (fn [] Any
+     (.then
+      (.all Promise [(.arrayBuffer (.file Bun "./generated/wasm/clause_runtime_bg.wasm"))
+                     (.text (.file Bun "./fixtures/wasm-collect-v1/collect-plus-1.cwr1.hex"))
+                     (.text (.file Bun "./fixtures/wasm-collect-v1/collect-plus-4.cwr1.hex"))])
+      (fn [assets Any] Any
+        (let [port workbench/CartridgePort
+              (wasm/create-wasm-cartridge-port
+               (initialize-real-session-module (nth assets 0))
+               (arena-policy))
+              base-score Float (admit-real-collect! port (nth assets 1) 1.0)
+              changed-score Float (admit-real-collect! port (nth assets 2) 4.0)]
+          (.toBe (test/expect (str base-score)) "1")
+          (.toBe (test/expect (str changed-score)) "4")
           nil))))))

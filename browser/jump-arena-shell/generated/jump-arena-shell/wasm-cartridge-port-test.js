@@ -202,6 +202,30 @@ function key_configuration(input_sequence, revision, code) {
   return workbench["->InputConfiguration"](revision, [workbench["->InputObservation"](input_sequence, workbench["create-workbench-envelope"](policy(), json_string([json_string({[$$bc$property_key($$bc$keyword("kind"))]: "keyboard", [$$bc$property_key($$bc$keyword("code"))]: code, [$$bc$property_key($$bc$keyword("phase"))]: "down", [$$bc$property_key($$bc$keyword("repeat"))]: false})])))]);
 }
 
+function process_configuration(input_sequence, revision, ordinal) {
+  return workbench["->InputConfiguration"](revision, [workbench["->InputObservation"](input_sequence, workbench["create-workbench-envelope"](policy(), json_string([json_string({[$$bc$property_key($$bc$keyword("kind"))]: "process-occurrence", [$$bc$property_key($$bc$keyword("ordinal"))]: ordinal})])))]);
+}
+
+function admit_real_collect_bang(port, request_bytes, expected_score) {
+  const request = wasm["->ExactProcessRequest"](wasm["decode-cwr1-hex"](request_bytes));
+  const accepted = ({value: null, watches: {}});
+  const started = ({value: null, watches: {}});
+  const candidate = ({value: null, watches: {}});
+  const admitted = ({value: null, watches: {}});
+  (port.acceptPackage)(request, (result) => (() => { const _a = accepted, _v = result; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })());
+  (port.startSession)(accepted.value.acceptedPackage, 1, (result) => (() => { const _a = started, _v = result; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })());
+  (port.runCandidate)(started.value.session, workbench["->FixedTick"](16), process_configuration(1, 1, 0), (result) => (() => { const _a = candidate, _v = result; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })());
+  test["expect"](json_string(started.value.frame)).toBe("[]");
+  test["expect"](json_string(candidate.value.candidate.base)).toBe(json_string(started.value.revision));
+  (port.requestAdmission)(started.value.session, candidate.value.candidate, (result) => (() => { const _a = admitted, _v = result; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })());
+  test["expect"](((!(json_string(admitted.value.revision) === json_string(started.value.revision))) ? "true" : "false")).toBe("true");
+  const frame = wasm["decode-projected-term-frame"](admitted.value.frame);
+  const score = frame.player.score;
+  test["expect"]($$bc$str(score)).toBe($$bc$str(expected_score));
+  (port.disposeSession)(started.value.session);
+  return score;
+}
+
 test["test"]("one persistent session sequences physical input candidate issuance Admission and disposal", () => { const requests = [];
 const port = wasm["create-wasm-cartridge-port"](module_for_bang([opened_event_bang(), input_event_bang(), candidate_event_bang(), issuance_event_bang(), admission_event_bang(), disposed_event_bang()], requests), policy());
 const request = wasm["->ExactProcessRequest"](minimal_cwr1_bang());
@@ -247,9 +271,9 @@ test["test"]("CWR1 hex transport is exact and bounded", () => { test["expect"](j
 }); })();
 return null; });
 
-const test_runtime = require("bun:test");
-const register_async_test = test_runtime.test;
-register_async_test("real Wasm lowers physical input and exposes only the admitted arena frame", () => Promise.all([Bun.file("./generated/wasm/clause_runtime_bg.wasm").arrayBuffer(), Bun.file("./fixtures/wasm-jump-v1/jump-v1.cwr1.hex").text()]).then((assets) => { const port = wasm["create-wasm-cartridge-port"](initialize_real_session_module(assets[0]), arena_policy());
+const collect_test_runtime = require("bun:test");
+const register_collect_test = collect_test_runtime.test;
+register_collect_test("real Wasm lowers physical input and exposes only the admitted arena frame", () => Promise.all([Bun.file("./generated/wasm/clause_runtime_bg.wasm").arrayBuffer(), Bun.file("./fixtures/wasm-jump-v1/jump-v1.cwr1.hex").text()]).then((assets) => { const port = wasm["create-wasm-cartridge-port"](initialize_real_session_module(assets[0]), arena_policy());
 const request = wasm["->ExactProcessRequest"](wasm["decode-cwr1-hex"](assets[1]));
 const accepted = ({value: null, watches: {}});
 const started = ({value: null, watches: {}});
@@ -276,5 +300,14 @@ const airborne_frame = wasm["decode-projected-term-frame"](airborne_admitted.val
 const momentum_frame = wasm["decode-projected-term-frame"](momentum_admitted.value.frame);
 test["expect"](((momentum_frame.player.position.x > airborne_frame.player.position.x) ? "true" : "false")).toBe("true");
 (port.disposeSession)(started.value.session);
+return null; }));
+
+const test_runtime = require("bun:test");
+const register_async_test = test_runtime.test;
+register_async_test("real Wasm keeps collect hidden until Admission and projects Clause-owned score", () => Promise.all([Bun.file("./generated/wasm/clause_runtime_bg.wasm").arrayBuffer(), Bun.file("./fixtures/wasm-collect-v1/collect-plus-1.cwr1.hex").text(), Bun.file("./fixtures/wasm-collect-v1/collect-plus-4.cwr1.hex").text()]).then((assets) => { const port = wasm["create-wasm-cartridge-port"](initialize_real_session_module(assets[0]), arena_policy());
+const base_score = admit_real_collect_bang(port, assets[1], 1.0);
+const changed_score = admit_real_collect_bang(port, assets[2], 4.0);
+test["expect"]($$bc$str(base_score)).toBe("1");
+test["expect"]($$bc$str(changed_score)).toBe("4");
 return null; }));
 //# sourceMappingURL=wasm-cartridge-port-test.js.map
