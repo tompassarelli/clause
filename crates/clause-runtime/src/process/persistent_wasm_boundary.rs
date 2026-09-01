@@ -18,7 +18,7 @@ use super::{
 const OPEN_MAGIC: &[u8; 4] = b"CWS1";
 const COMMAND_MAGIC: &[u8; 4] = b"CWI1";
 const EVENT_MAGIC: &[u8; 4] = b"CSE1";
-const RETIRED_RECLAIM_ENTRIES_PER_TURN: usize = 128;
+const RETIRED_RECLAIM_ENTRIES_PER_TURN: usize = 1_024;
 const SLOT: u32 = 0;
 const EVENT_HEADER_BYTES: usize = 4 + 4 + 4 + 8 + 1;
 const ALLOCATION_EPOCH_BYTES_V1: usize = 304;
