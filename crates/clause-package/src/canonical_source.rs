@@ -217,10 +217,10 @@ pub enum CanonicalJumpScalarV1 {
     Number(u64),
 }
 
-/// Checked source-owned meaning for the bounded `on jump` slice. Source owns
-/// the three prerequisite assertions, the grounded predicate, and every
-/// included value; a later physical refinement supplies only entry and slot
-/// coordinates.
+/// Checked source-owned meaning for one bounded jump-shaped transition. Source
+/// owns its designation, the three prerequisite assertions, the grounded
+/// predicate, and every included value; a later physical refinement supplies
+/// only entry and slot coordinates.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CanonicalJumpHandlerV1 {
     pub artifact: CanonicalSourceArtifactIdV1,
@@ -3306,11 +3306,26 @@ fn parse_jump_handler(
     block: &[SourceLine<'_>],
     origin: CanonicalSourceOriginV1,
 ) -> Result<Option<JumpHandlerCst>, CanonicalSourceErrorV1> {
-    let Some(subject) = block[0].text.strip_prefix("on jump ") else {
+    let Some(header) = block[0].text.strip_prefix("on ") else {
         return Ok(None);
     };
-    if !subject.starts_with('?') || subject.split_whitespace().count() != 1 {
-        return Err(CanonicalSourceErrorV1::InvalidJumpHandler { origin });
+    let mut header = header.split_whitespace();
+    let Some(designation) = header.next() else {
+        return Ok(None);
+    };
+    let Some(subject) = header.next() else {
+        return if designation == "jump" {
+            Err(CanonicalSourceErrorV1::InvalidJumpHandler { origin })
+        } else {
+            Ok(None)
+        };
+    };
+    if header.next().is_some() || !subject.starts_with('?') {
+        return if designation == "jump" {
+            Err(CanonicalSourceErrorV1::InvalidJumpHandler { origin })
+        } else {
+            Ok(None)
+        };
     }
 
     let mut section = "";
@@ -3358,7 +3373,11 @@ fn parse_jump_handler(
         }
     }
     if when.len() != 3 || withdraw.len() != 2 || include.len() != 2 {
-        return Err(CanonicalSourceErrorV1::InvalidJumpHandler { origin });
+        return if designation == "jump" {
+            Err(CanonicalSourceErrorV1::InvalidJumpHandler { origin })
+        } else {
+            Ok(None)
+        };
     }
     if withdraw[0].0 != when[0].0 || withdraw[1].0 != when[1].0 {
         return Err(CanonicalSourceErrorV1::InvalidJumpHandler { origin });
@@ -3426,7 +3445,7 @@ fn parse_jump_handler(
             CanonicalSourceProductionV1::Handler,
             &handler_semantic_producer(block),
         ),
-        designation: b"jump".to_vec(),
+        designation: designation.as_bytes().to_vec(),
         velocity_relation,
         grounded_relation: grounded_relation.into_bytes(),
         jump_speed_subject,

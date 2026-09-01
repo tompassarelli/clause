@@ -115,6 +115,42 @@ fn scalar_handlers_bind_number_symbol_and_boolean_state_parameters() {
 }
 
 #[test]
+fn jump_shaped_handlers_retain_their_source_designation() {
+    let source = std::str::from_utf8(WORLD)
+        .expect("canonical arena source is UTF-8")
+        .replacen("on jump ?player", "on dash ?player", 1);
+    let cst = read_canonical_source_v1(source.as_bytes())
+        .expect("a source-named jump-shaped handler reads canonically");
+    let plan = plan_independent_canonical_source_allocations_v1(
+        &cst,
+        ProgramChangeOccurrenceId::from_bytes(raw_id(13)),
+    )
+    .expect("the source-named handler receives rooted allocation");
+    let compiled = elaborate_canonical_source_package_v1(
+        &cst,
+        CanonicalSourceContextV1 {
+            universe: UniverseId::from_bytes(raw_id(1)),
+            semantics: ClauseSemanticsId::from_bytes(raw_id(2)),
+        },
+        &plan,
+    )
+    .expect("the jump-shaped handler reaches executable lowering");
+
+    assert!(compiled.jump_handler.is_some());
+    assert!(compiled.executable_handlers.iter().any(|handler| {
+        handler.designation == b"dash"
+            && handler.trigger == CanonicalHandlerTriggerV1::External
+            && handler.argument_count == 0
+    }));
+    assert!(
+        !compiled
+            .executable_handlers
+            .iter()
+            .any(|handler| handler.designation == b"jump")
+    );
+}
+
+#[test]
 fn canonical_world_declarations_reach_the_checked_package_with_exact_remainder() {
     let cst = read_canonical_source_v1(WORLD).expect("canonical world source reads losslessly");
     assert_eq!(cst.exact_source(), WORLD);
