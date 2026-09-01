@@ -125,6 +125,15 @@ modules/packages, and agent-grade tooling. None is supported today. The
 following bounded ladder controls the claim; implementation may proceed in
 parallel, but only a contiguous passed prefix counts as evidence.
 
+North is the named non-game systems adoption product for this ladder. North is
+not a Rust application that happens to consult Clause. Its accepted operator
+journeys provide concrete counterexamples and development pressure for Clause:
+when the next journey needs a missing general capability, repair that capability
+in Clause, repin North, and resume the same journey. Do not satisfy the journey
+by moving North-specific semantics into its Rust host. The target is that North
+feature changes are Clause-only above explicit passive operating-system and
+foreign adapters.
+
 | Gate | Required proof | Decision-changing failure |
 | --- | --- | --- |
 | 0 — bootstrap tractability | Fixed CLCP03 evaluator executes Compiler0 genesis/succession under the strict published resource bound; accepted source reaches package output with no host parser or semantic interpreter. | The trusted evaluator cannot run the minimum compiler within a bounded profile, or a host semantic shortcut is required. |
@@ -133,8 +142,8 @@ parallel, but only a contiguous passed prefix counts as evidence.
 | 3 — local state and lifetime | Loops, builders, request-local caches, and a frame state machine use affine Activation-local configuration, one exact reclamation root plus Borrow/Lease edges, ownership-consuming split/join/suspension, explicit observable close, bounded nonobservable mechanical reclaim, an explicit bounded managed-island option outside the game hot path, and bounded trace retention. | Ordinary mutation requires Admission/StateRevision, hidden tracing/ARC/finalizers, observable destructor semantics at deallocation, or lifetime/history rules cannot determine a bounded runtime protocol. |
 | 4 — physical competence | Clause-owned physical IR validates direct calls, registers, packed layouts, declared ABI, checking/specialization/physical cache separation, and native/Wasm parity; the bounded frame performs no controlled allocation after initialization. | Generic graph execution remains the hot path, layout/resource control requires Rust semantics, specialization changes declared observations/diagnostics, or zero-allocation exceeds its measured accounting domain. |
 | 5 — systems competence | Checked concurrency, continuations, files, data transforms, networking, time, browser APIs, and explicit FFI preserve local/effect/Admission distinctions and bounded resources. | External work requires arbitrary host mutation, opaque scheduler semantics, or governance on ephemeral local state. |
-| 6 — product development | The Clause-owned jump arena and one non-game system/data application are built and evolved through revision-pinned hot reload, passive hosts, and Clause-only semantic changes. | A feature change requires Rust/JavaScript semantic edits, frame-loop GC/allocation, silent migration, or unqueryable causality. |
-| 7 — replacement evidence | Modules/packages, tooling, reproducible distribution, independent implementation, and measured agent development loops let the two products remain Clause-authored above named FFI boundaries with exact explanations and competitive target behavior. | Hidden host language, unbounded semantic tax, missing ordinary-program capability, or irreproducible package/runtime behavior remains load-bearing. |
+| 6 — product development | The Clause-owned jump arena and North are built and evolved through revision-pinned hot reload, passive hosts, and Clause-only semantic changes. | A feature change requires Rust/JavaScript semantic edits, frame-loop GC/allocation, silent migration, or unqueryable causality. |
+| 7 — replacement evidence | Modules/packages, tooling, reproducible distribution, independent implementation, and measured agent development loops let the jump arena and North remain Clause-authored above named FFI boundaries with exact explanations and competitive target behavior. | Hidden host language, unbounded semantic tax, missing ordinary-program capability, or irreproducible package/runtime behavior remains load-bearing. |
 
 Gate 1 is intentionally small. Rust owns stdio framing, exact pins, bounded
 caches, transactions, and scheduling. Semantic operations execute accepted
