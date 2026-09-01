@@ -1209,6 +1209,15 @@ fn tracked_browser_carrier_uses_the_generic_source_plan() {
 
 #[test]
 fn resident_source_opens_the_north_repeated_turn_machine() {
-    ResidentSourceWorkbenchV1::open(NORTH_REPEATED_TURN)
+    let mut workbench = ResidentSourceWorkbenchV1::open(NORTH_REPEATED_TURN)
         .expect("North's repeated-turn machine opens in the generic workbench");
+    let submit = workbench
+        .handler_occurrence(b"submit", &[])
+        .expect("the host can select North's checked submit handler");
+    workbench
+        .run_occurrences_to_candidate(&[submit])
+        .expect("submit reaches one hidden candidate");
+    workbench
+        .admit()
+        .expect("submit reaches one admitted successor");
 }

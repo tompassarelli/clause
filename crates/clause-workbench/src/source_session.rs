@@ -137,9 +137,10 @@ impl ResidentSourceWorkbenchV1 {
         self.last_projection.as_ref()
     }
 
-    /// Encode one exact externally triggered handler occurrence by its
-    /// checked source designation. The designation selects a source handler;
-    /// it never selects a Rust semantic implementation.
+    /// Encode one exact caller-selected handler occurrence by its checked
+    /// source designation. Trigger metadata controls scheduling; the
+    /// designation always selects source semantics, never a Rust
+    /// implementation.
     pub fn handler_occurrence(
         &self,
         designation: &[u8],
@@ -150,7 +151,6 @@ impl ResidentSourceWorkbenchV1 {
             .get(designation)
             .into_iter()
             .flatten()
-            .filter(|binding| binding.trigger == CanonicalHandlerTriggerV1::External)
             .collect::<Vec<_>>();
         let [binding] = matching.as_slice() else {
             return Err(ResidentSourceWorkbenchErrorV1(format!(
