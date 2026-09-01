@@ -6,7 +6,9 @@ function equivalent(left: unknown, right: unknown): boolean {
     (Array.isArray(left) &&
       Array.isArray(right) &&
       left.length === right.length &&
-      left.every((value, index) => equivalent(value, right[index])))
+      Array.prototype.every.call(left, (value, index) =>
+        equivalent(value, right[index]),
+      ))
   );
 }
 
@@ -58,6 +60,8 @@ const identity_bytes = 32;
 const allocation_epoch_bytes = 304;
 
 export type ExactBytes = readonly number[];
+
+type CanonicalBytes = ExactBytes | string;
 
 interface Cell<T> {
   value: T;
@@ -295,7 +299,7 @@ type PhysicalObservation =
   | null;
 
 type TermNode =
-  | Readonly<{ kind: "atom"; atomKind: ExactBytes; payload: ExactBytes }>
+  | Readonly<{ kind: "atom"; atomKind: CanonicalBytes; payload: CanonicalBytes }>
   | Readonly<{
       kind: "triple";
       slots: readonly [TermNode, TermNode, TermNode];
@@ -585,8 +589,9 @@ function process_status(status: unknown): number {
     : -1;
 }
 
-function byte_at(bytes: ExactBytes, index: number): number {
-  const byte = bytes[index];
+function byte_at(bytes: CanonicalBytes, index: number): number {
+  const byte =
+    typeof bytes === "string" ? bytes.charCodeAt(index) : bytes[index];
   if (byte === undefined) throw new Error("exact byte index is out of range");
   return byte;
 }
@@ -604,7 +609,7 @@ function little_u32(bytes: ExactBytes, offset: number): number {
   );
 }
 
-function big_u32(bytes: ExactBytes, offset: number): number {
+function big_u32(bytes: CanonicalBytes, offset: number): number {
   return (
     16777216 * byte_at(bytes, offset) +
     65536 * byte_at(bytes, offset + 1) +
@@ -645,7 +650,7 @@ function append_blob_bang(bytes: number[], value: ExactBytes): void {
 }
 
 function require_range(
-  bytes: ExactBytes,
+  bytes: CanonicalBytes,
   offset: number,
   length: number,
   label: string,
@@ -679,8 +684,35 @@ function frozen_byte_range(
   })();
 }
 
-function finite_f64(bytes: ExactBytes, offset: number): number {
-  const packed = new Uint8Array(frozen_byte_range(bytes, offset, offset + 8));
+function canonical_byte_range(
+  bytes: CanonicalBytes,
+  start: number,
+  end: number,
+): CanonicalBytes {
+  return typeof bytes === "string"
+    ? bytes.slice(start, end)
+    : frozen_byte_range(bytes, start, end);
+}
+
+function exact_bytes_to_binary_text(bytes: ExactBytes): string {
+  const chunks: string[] = [];
+  const chunk_size = 4096;
+  for (let start = 0; start < bytes.length; start += chunk_size) {
+    const end = Math.min(start + chunk_size, bytes.length);
+    let chunk = "";
+    for (let index = start; index < end; index += 1) {
+      chunk += String.fromCharCode(byte_at(bytes, index));
+    }
+    chunks.push(chunk);
+  }
+  return chunks.join("");
+}
+
+function finite_f64(bytes: CanonicalBytes, offset: number): number {
+  const packed = new Uint8Array(8);
+  for (let index = 0; index < 8; index += 1) {
+    packed[index] = byte_at(bytes, offset + index);
+  }
   const view = new DataView(packed.buffer);
   const value = view.getFloat64(0, true);
   return ((_truthy) => _truthy !== false && _truthy != null)(
@@ -1836,17 +1868,17 @@ function apply_session_command_bang(
 }
 
 function parse_canonical_blob(
-  bytes: ExactBytes,
+  bytes: CanonicalBytes,
   offset: number,
   label: string,
-): ParsedBlob {
+): Readonly<{ bytes: CanonicalBytes; next: number }> {
   const header_end = require_range(bytes, offset, 4, label);
   const length = big_u32(bytes, offset);
   const end = require_range(bytes, header_end, length, label);
-  return { bytes: frozen_byte_range(bytes, header_end, end), next: end };
+  return { bytes: canonical_byte_range(bytes, header_end, end), next: end };
 }
 
-function ascii_text(bytes: ExactBytes, label: string): string {
+function ascii_text(bytes: CanonicalBytes, label: string): string {
   if (equivalent(bytes.length, 0) || bytes.length > 128) {
     (() => {
       throw new Error(concatenate(label, " is outside its text bound"));
@@ -1863,7 +1895,7 @@ function ascii_text(bytes: ExactBytes, label: string): string {
 }
 
 function decode_term_node(
-  bytes: ExactBytes,
+  bytes: CanonicalBytes,
   offset: number,
   depth: number,
 ): DecodedTermNode {
@@ -1921,15 +1953,20 @@ function decode_term_node(
 }
 
 function decode_canonical_term(bytes: unknown): TermNode {
-  if (exact_byte_array_p(bytes, cse1_max_bytes)) {
+  const envelope_source = workbench["workbench-byte-envelope-source"](bytes);
+  const source = envelope_source === null ? bytes : envelope_source;
+  if (
+    typeof source === "string" ||
+    exact_byte_array_p(source, cse1_max_bytes)
+  ) {
     const node_start = require_range(
-      bytes,
+      source,
       0,
       2 * identity_bytes,
       "projected Term scope",
     );
-    const result = decode_term_node(bytes, node_start, 0);
-    if (!equivalent(result.next, bytes.length)) {
+    const result = decode_term_node(source, node_start, 0);
+    if (!equivalent(result.next, source.length)) {
       (() => {
         throw new Error("projected Term has trailing bytes");
       })();
@@ -1948,7 +1985,7 @@ function atom_kind_text(node: TermNode): string {
   return ascii_text(node.atomKind, "projected Atom kind");
 }
 
-function projected_number(payload: ExactBytes): number {
+function projected_number(payload: CanonicalBytes): number {
   return equivalent(payload.length, 8)
     ? finite_f64(payload, 0)
     : (() => {
@@ -2017,7 +2054,7 @@ function realize_projection_node(node: TermNode): ProjectedValue {
     if (kind === "clause/process-projected-f64-v1")
       return projected_number(payload);
     if (kind === "clause/process-projected-bool-v1") {
-      const value = payload[0];
+      const value = byte_at(payload, 0);
       if (payload.length !== 1 || value === undefined || value > 1) {
         throw new Error("projected Boolean payload is invalid");
       }
@@ -2523,9 +2560,9 @@ function create_wasm_cartridge_port_bang(
               );
             })();
           }
-          const frame = workbench["create-workbench-envelope"](
+          const frame = workbench["create-workbench-byte-envelope"](
             policy,
-            JSON.stringify(projection.termBytes),
+            exact_bytes_to_binary_text(projection.termBytes),
           );
           return complete(
             workbench["->AdmissionAccepted"](session, event.successor, frame),

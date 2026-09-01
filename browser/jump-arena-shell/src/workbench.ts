@@ -4,7 +4,9 @@ function equivalent(left: unknown, right: unknown): boolean {
     (Array.isArray(left) &&
       Array.isArray(right) &&
       left.length === right.length &&
-      left.every((value, index) => equivalent(value, right[index])))
+      Array.prototype.every.call(left, (value, index) =>
+        equivalent(value, right[index]),
+      ))
   );
 }
 
@@ -36,7 +38,14 @@ function classifyError(error: unknown): 0 {
 }
 
 export type EnvelopePrimitive = null | string | boolean | number;
-export type WorkbenchEnvelope = readonly unknown[];
+export interface WorkbenchByteEnvelope {
+  readonly _tag: "WorkbenchByteEnvelope";
+  readonly length: number;
+  readonly [index: number]: unknown;
+  readonly toJSON: () => readonly number[];
+}
+
+export type WorkbenchEnvelope = readonly unknown[] | WorkbenchByteEnvelope;
 
 export interface FixedTick {
   readonly _tag: "FixedTick";
@@ -1091,6 +1100,8 @@ const lifecycle_schema = "clause-cartridge-workbench/v1";
 
 const envelope_measures = new WeakMap<object, EnvelopeMeasure>();
 
+const byte_envelope_sources = new WeakMap<object, string>();
+
 function empty_configuration(revision: number): InputConfiguration {
   return InputConfiguration(revision, Object.freeze([]));
 }
@@ -1317,18 +1328,64 @@ function create_workbench_envelope(
   return root;
 }
 
+function create_workbench_byte_envelope(
+  incomingPolicy: WorkbenchPolicy,
+  sourceText: unknown,
+): WorkbenchByteEnvelope {
+  const policy = require_workbench_policy(incomingPolicy);
+  if (
+    typeof sourceText !== "string" ||
+    sourceText.length > policy.maxEnvelopeSourceUnits ||
+    sourceText.length > policy.maxImmutableProperties
+  ) {
+    throw new Error("workbench byte envelope source exceeds its policy");
+  }
+  for (let index = 0; index < sourceText.length; index += 1) {
+    if (sourceText.charCodeAt(index) > 255) {
+      throw new Error("workbench byte envelope source is not exact bytes");
+    }
+  }
+
+  const envelope: WorkbenchByteEnvelope = {
+    _tag: "WorkbenchByteEnvelope",
+    length: sourceText.length,
+    toJSON: () => {
+      const bytes = new Array<number>(sourceText.length);
+      for (let index = 0; index < sourceText.length; index += 1) {
+        bytes[index] = sourceText.charCodeAt(index);
+      }
+      return bytes;
+    },
+  };
+  Object.setPrototypeOf(envelope, null);
+  Object.freeze(envelope);
+  byte_envelope_sources.set(envelope, sourceText);
+  envelope_measures.set(
+    envelope,
+    EnvelopeMeasure(1, sourceText.length, sourceText.length),
+  );
+  return envelope;
+}
+
+function workbench_byte_envelope_source(value: unknown): string | null {
+  return typeof value === "object" && value !== null
+    ? (byte_envelope_sources.get(value) ?? null)
+    : null;
+}
+
 function immutable_envelope_p(
   policy: WorkbenchPolicy,
   value: unknown,
 ): value is WorkbenchEnvelope {
-  if (!Array.isArray(value)) return false;
+  if (typeof value !== "object" || value === null) return false;
   const measure = envelope_measures.get(value);
   return (
     measure !== undefined &&
     measure.objectCount <= policy.maxImmutableObjects &&
     measure.propertyCount <= policy.maxImmutableProperties &&
     measure.sourceUnitCount <= policy.maxEnvelopeSourceUnits &&
-    Object.getPrototypeOf(value) == null
+    Object.getPrototypeOf(value) == null &&
+    Object.isFrozen(value)
   );
 }
 
@@ -3073,6 +3130,7 @@ export { cartridgeport_requestAdmission as "cartridgeport-requestAdmission" };
 export { cartridgeport_runCandidate as "cartridgeport-runCandidate" };
 export { cartridgeport_startSession as "cartridgeport-startSession" };
 export { create_cartridge_workbench_bang as "create-cartridge-workbench!" };
+export { create_workbench_byte_envelope as "create-workbench-byte-envelope" };
 export { create_workbench_envelope as "create-workbench-envelope" };
 export { fixedtick_milliseconds as "fixedtick-milliseconds" };
 export { inputconfiguration_observations as "inputconfiguration-observations" };
@@ -3114,3 +3172,4 @@ export { workbenchsnapshot_operationId as "workbenchsnapshot-operationId" };
 export { workbenchsnapshot_pendingObservations as "workbenchsnapshot-pendingObservations" };
 export { workbenchsnapshot_phase as "workbenchsnapshot-phase" };
 export { workbenchsnapshot_revision as "workbenchsnapshot-revision" };
+export { workbench_byte_envelope_source as "workbench-byte-envelope-source" };

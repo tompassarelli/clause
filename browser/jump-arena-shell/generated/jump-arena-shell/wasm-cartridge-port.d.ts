@@ -2,6 +2,7 @@ import * as workbench from "./workbench.js";
 declare const cse1_projected_term_max_properties: number;
 declare const cse1_projected_term_json_max_source_units: number;
 export type ExactBytes = readonly number[];
+type CanonicalBytes = ExactBytes | string;
 export interface ExactProcessRequest {
     readonly _tag: "ExactProcessRequest";
     readonly bytes: ExactBytes;
@@ -157,14 +158,14 @@ declare function cwo1observation_stateRevisionId(r: Cwo1Observation): ExactBytes
 declare function cwo1observation_values(r: Cwo1Observation): readonly (number | boolean)[];
 declare function exact_byte_array_p(bytes: unknown, maximum: number): bytes is ExactBytes;
 declare function process_status(status: unknown): number;
-declare function byte_at(bytes: ExactBytes, index: number): number;
+declare function byte_at(bytes: CanonicalBytes, index: number): number;
 declare function little_u16(bytes: ExactBytes, offset: number): number;
 declare function little_u32(bytes: ExactBytes, offset: number): number;
 declare function little_safe_u64(bytes: ExactBytes, offset: number): number;
 declare function append_u32_bang(bytes: number[], value: number): number;
 declare function append_u64_bang(bytes: number[], value: number): number;
 declare function append_blob_bang(bytes: number[], value: ExactBytes): void;
-declare function require_range(bytes: ExactBytes, offset: number, length: number, label: string): number;
+declare function require_range(bytes: CanonicalBytes, offset: number, length: number, label: string): number;
 declare function frozen_byte_range(bytes: ExactBytes, start: number, end: number): ExactBytes;
 declare function decode_cwo1_observation(incoming: unknown): Cwo1Observation;
 declare function parse_blob(bytes: ExactBytes, offset: number, maximum: number, label: string): ParsedBlob;

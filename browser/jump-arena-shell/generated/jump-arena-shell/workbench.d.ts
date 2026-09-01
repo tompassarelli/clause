@@ -1,5 +1,11 @@
 export type EnvelopePrimitive = null | string | boolean | number;
-export type WorkbenchEnvelope = readonly unknown[];
+export interface WorkbenchByteEnvelope {
+    readonly _tag: "WorkbenchByteEnvelope";
+    readonly length: number;
+    readonly [index: number]: unknown;
+    readonly toJSON: () => readonly number[];
+}
+export type WorkbenchEnvelope = readonly unknown[] | WorkbenchByteEnvelope;
 export interface FixedTick {
     readonly _tag: "FixedTick";
     readonly milliseconds: number;
@@ -177,6 +183,8 @@ declare function cartridgeport_runCandidate(r: CartridgePort): CartridgePort["ru
 declare function cartridgeport_requestAdmission(r: CartridgePort): CartridgePort["requestAdmission"];
 declare function cartridgeport_disposeSession(r: CartridgePort): CartridgePort["disposeSession"];
 declare function create_workbench_envelope(incomingPolicy: WorkbenchPolicy, sourceText: unknown): WorkbenchEnvelope;
+declare function create_workbench_byte_envelope(incomingPolicy: WorkbenchPolicy, sourceText: unknown): WorkbenchByteEnvelope;
+declare function workbench_byte_envelope_source(value: unknown): string | null;
 declare function create_cartridge_workbench_bang(port: CartridgePort, fixedTick: FixedTick, incomingPolicy: WorkbenchPolicy, scheduleFixedTick: (milliseconds: number, tick: () => unknown) => () => unknown, renderFrame: (frame: WorkbenchEnvelope) => unknown, emitReceipt: (receipt: LifecycleReceipt) => unknown, initialPackageCandidate: unknown): CartridgeWorkbench;
 export { AdmissionAccepted as "->AdmissionAccepted" };
 export { AdmissionRejected as "->AdmissionRejected" };
@@ -222,6 +230,7 @@ export { cartridgeport_requestAdmission as "cartridgeport-requestAdmission" };
 export { cartridgeport_runCandidate as "cartridgeport-runCandidate" };
 export { cartridgeport_startSession as "cartridgeport-startSession" };
 export { create_cartridge_workbench_bang as "create-cartridge-workbench!" };
+export { create_workbench_byte_envelope as "create-workbench-byte-envelope" };
 export { create_workbench_envelope as "create-workbench-envelope" };
 export { fixedtick_milliseconds as "fixedtick-milliseconds" };
 export { inputconfiguration_observations as "inputconfiguration-observations" };
@@ -263,3 +272,4 @@ export { workbenchsnapshot_operationId as "workbenchsnapshot-operationId" };
 export { workbenchsnapshot_pendingObservations as "workbenchsnapshot-pendingObservations" };
 export { workbenchsnapshot_phase as "workbenchsnapshot-phase" };
 export { workbenchsnapshot_revision as "workbenchsnapshot-revision" };
+export { workbench_byte_envelope_source as "workbench-byte-envelope-source" };

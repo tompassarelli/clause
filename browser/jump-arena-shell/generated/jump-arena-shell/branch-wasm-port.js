@@ -4,7 +4,7 @@ function equivalent(left, right) {
         (Array.isArray(left) &&
             Array.isArray(right) &&
             left.length === right.length &&
-            left.every((value, index) => equivalent(value, right[index]))));
+            Array.prototype.every.call(left, (value, index) => equivalent(value, right[index]))));
 }
 function appendValue(values, value) {
     return [...values, value];

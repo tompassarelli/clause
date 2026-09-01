@@ -3,7 +3,7 @@ function equivalent(left, right) {
         (Array.isArray(left) &&
             Array.isArray(right) &&
             left.length === right.length &&
-            left.every((value, index) => equivalent(value, right[index]))));
+            Array.prototype.every.call(left, (value, index) => equivalent(value, right[index]))));
 }
 function appendValue(values, value) {
     return [...values, value];
@@ -532,6 +532,7 @@ function EnvelopeScanRejected() {
 }
 const lifecycle_schema = "clause-cartridge-workbench/v1";
 const envelope_measures = new WeakMap();
+const byte_envelope_sources = new WeakMap();
 function empty_configuration(revision) {
     return InputConfiguration(revision, Object.freeze([]));
 }
@@ -680,15 +681,50 @@ function create_workbench_envelope(incomingPolicy, sourceText) {
     envelope_measures.set(root, EnvelopeMeasure(object_count, property_count, sourceText.length));
     return root;
 }
+function create_workbench_byte_envelope(incomingPolicy, sourceText) {
+    const policy = require_workbench_policy(incomingPolicy);
+    if (typeof sourceText !== "string" ||
+        sourceText.length > policy.maxEnvelopeSourceUnits ||
+        sourceText.length > policy.maxImmutableProperties) {
+        throw new Error("workbench byte envelope source exceeds its policy");
+    }
+    for (let index = 0; index < sourceText.length; index += 1) {
+        if (sourceText.charCodeAt(index) > 255) {
+            throw new Error("workbench byte envelope source is not exact bytes");
+        }
+    }
+    const envelope = {
+        _tag: "WorkbenchByteEnvelope",
+        length: sourceText.length,
+        toJSON: () => {
+            const bytes = new Array(sourceText.length);
+            for (let index = 0; index < sourceText.length; index += 1) {
+                bytes[index] = sourceText.charCodeAt(index);
+            }
+            return bytes;
+        },
+    };
+    Object.setPrototypeOf(envelope, null);
+    Object.freeze(envelope);
+    byte_envelope_sources.set(envelope, sourceText);
+    envelope_measures.set(envelope, EnvelopeMeasure(1, sourceText.length, sourceText.length));
+    return envelope;
+}
+function workbench_byte_envelope_source(value) {
+    return typeof value === "object" && value !== null
+        ? (byte_envelope_sources.get(value) ?? null)
+        : null;
+}
 function immutable_envelope_p(policy, value) {
-    if (!Array.isArray(value))
+    if (typeof value !== "object" || value === null)
         return false;
     const measure = envelope_measures.get(value);
     return (measure !== undefined &&
         measure.objectCount <= policy.maxImmutableObjects &&
         measure.propertyCount <= policy.maxImmutableProperties &&
         measure.sourceUnitCount <= policy.maxEnvelopeSourceUnits &&
-        Object.getPrototypeOf(value) == null);
+        Object.getPrototypeOf(value) == null &&
+        Object.isFrozen(value));
 }
 function require_immutable_input(policy, value) {
     return immutable_envelope_p(policy, value)
@@ -1989,6 +2025,7 @@ export { cartridgeport_requestAdmission as "cartridgeport-requestAdmission" };
 export { cartridgeport_runCandidate as "cartridgeport-runCandidate" };
 export { cartridgeport_startSession as "cartridgeport-startSession" };
 export { create_cartridge_workbench_bang as "create-cartridge-workbench!" };
+export { create_workbench_byte_envelope as "create-workbench-byte-envelope" };
 export { create_workbench_envelope as "create-workbench-envelope" };
 export { fixedtick_milliseconds as "fixedtick-milliseconds" };
 export { inputconfiguration_observations as "inputconfiguration-observations" };
@@ -2030,4 +2067,5 @@ export { workbenchsnapshot_operationId as "workbenchsnapshot-operationId" };
 export { workbenchsnapshot_pendingObservations as "workbenchsnapshot-pendingObservations" };
 export { workbenchsnapshot_phase as "workbenchsnapshot-phase" };
 export { workbenchsnapshot_revision as "workbenchsnapshot-revision" };
+export { workbench_byte_envelope_source as "workbench-byte-envelope-source" };
 //# sourceMappingURL=workbench.js.map

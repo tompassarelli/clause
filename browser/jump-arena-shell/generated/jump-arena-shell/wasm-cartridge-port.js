@@ -4,7 +4,7 @@ function equivalent(left, right) {
         (Array.isArray(left) &&
             Array.isArray(right) &&
             left.length === right.length &&
-            left.every((value, index) => equivalent(value, right[index]))));
+            Array.prototype.every.call(left, (value, index) => equivalent(value, right[index]))));
 }
 function appendValue(values, value) {
     return [...values, value];
@@ -237,7 +237,7 @@ function process_status(status) {
         : -1;
 }
 function byte_at(bytes, index) {
-    const byte = bytes[index];
+    const byte = typeof bytes === "string" ? bytes.charCodeAt(index) : bytes[index];
     if (byte === undefined)
         throw new Error("exact byte index is out of range");
     return byte;
@@ -307,8 +307,29 @@ function frozen_byte_range(bytes, start, end) {
         }
     })();
 }
+function canonical_byte_range(bytes, start, end) {
+    return typeof bytes === "string"
+        ? bytes.slice(start, end)
+        : frozen_byte_range(bytes, start, end);
+}
+function exact_bytes_to_binary_text(bytes) {
+    const chunks = [];
+    const chunk_size = 4096;
+    for (let start = 0; start < bytes.length; start += chunk_size) {
+        const end = Math.min(start + chunk_size, bytes.length);
+        let chunk = "";
+        for (let index = start; index < end; index += 1) {
+            chunk += String.fromCharCode(byte_at(bytes, index));
+        }
+        chunks.push(chunk);
+    }
+    return chunks.join("");
+}
 function finite_f64(bytes, offset) {
-    const packed = new Uint8Array(frozen_byte_range(bytes, offset, offset + 8));
+    const packed = new Uint8Array(8);
+    for (let index = 0; index < 8; index += 1) {
+        packed[index] = byte_at(bytes, offset + index);
+    }
     const view = new DataView(packed.buffer);
     const value = view.getFloat64(0, true);
     return ((_truthy) => _truthy !== false && _truthy != null)(((_logical) => _logical !== false && _logical != null
@@ -1137,7 +1158,7 @@ function parse_canonical_blob(bytes, offset, label) {
     const header_end = require_range(bytes, offset, 4, label);
     const length = big_u32(bytes, offset);
     const end = require_range(bytes, header_end, length, label);
-    return { bytes: frozen_byte_range(bytes, header_end, end), next: end };
+    return { bytes: canonical_byte_range(bytes, header_end, end), next: end };
 }
 function ascii_text(bytes, label) {
     if (equivalent(bytes.length, 0) || bytes.length > 128) {
@@ -1195,10 +1216,13 @@ function decode_term_node(bytes, offset, depth) {
             })();
 }
 function decode_canonical_term(bytes) {
-    if (exact_byte_array_p(bytes, cse1_max_bytes)) {
-        const node_start = require_range(bytes, 0, 2 * identity_bytes, "projected Term scope");
-        const result = decode_term_node(bytes, node_start, 0);
-        if (!equivalent(result.next, bytes.length)) {
+    const envelope_source = workbench["workbench-byte-envelope-source"](bytes);
+    const source = envelope_source === null ? bytes : envelope_source;
+    if (typeof source === "string" ||
+        exact_byte_array_p(source, cse1_max_bytes)) {
+        const node_start = require_range(source, 0, 2 * identity_bytes, "projected Term scope");
+        const result = decode_term_node(source, node_start, 0);
+        if (!equivalent(result.next, source.length)) {
             (() => {
                 throw new Error("projected Term has trailing bytes");
             })();
@@ -1272,7 +1296,7 @@ function realize_projection_node(node) {
         if (kind === "clause/process-projected-f64-v1")
             return projected_number(payload);
         if (kind === "clause/process-projected-bool-v1") {
-            const value = payload[0];
+            const value = byte_at(payload, 0);
             if (payload.length !== 1 || value === undefined || value > 1) {
                 throw new Error("projected Boolean payload is invalid");
             }
@@ -1608,7 +1632,7 @@ function create_wasm_cartridge_port_bang(module, policy) {
                     throw new Error("Admission produced no package-declared frame Observation");
                 })();
             }
-            const frame = workbench["create-workbench-envelope"](policy, JSON.stringify(projection.termBytes));
+            const frame = workbench["create-workbench-byte-envelope"](policy, exact_bytes_to_binary_text(projection.termBytes));
             return complete(workbench["->AdmissionAccepted"](session, event.successor, frame));
         }
         catch (_catch_3) {
