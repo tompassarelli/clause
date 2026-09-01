@@ -1,0 +1,34 @@
+referent F64
+referent Bool
+referent Player
+
+shape Vec3
+  x: F64
+  y: F64
+  z: F64
+
+relation velocity
+  reads {player: Player} velocity {value: Vec3}
+  subject player
+  mode given player yields value: one
+
+relation empowered
+  reads {player: Player} empowered {value: Bool}
+  subject player
+  mode given player yields value: one
+
+player-1 ∈ Player
+player-1 velocity Vec3 { x: 0.0, y: 0.0, z: 0.0 }
+player-1 empowered true
+
+bind keyboard KeyQ down to planar-burst
+
+on planar-burst ?player
+  when
+    ?player velocity Vec3 { x: ?velocity-x, y: ?velocity-y, z: ?velocity-z }
+    ?player empowered ?was-empowered
+    ?was-empowered = true
+  withdraw
+    ?player velocity Vec3 { x: ?velocity-x, y: ?velocity-y, z: ?velocity-z }
+  include
+    ?player velocity Vec3 { x: ?velocity-x + 3.0, y: ?velocity-y, z: ?velocity-z - 2.0 }

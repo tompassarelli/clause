@@ -5,21 +5,54 @@ use std::process::ExitCode;
 use std::time::{Duration, Instant};
 
 use clause_substrate::compiler_package_v3::compiler_package_hash;
-use clause_workbench::{ResidentSourceGenerationV1, ResidentSourceWorkbenchV1, WorkbenchService};
+use clause_workbench::{
+    ResidentSourceGenerationV1, ResidentSourceWorkbenchV1, WorkbenchService,
+    render_authoring_card_v1,
+};
+
+const USAGE: &str = "usage:\n  clause-workbench\n  clause-workbench source-loop SOURCE.clause\n  clause-workbench authoring-card\n  clause-workbench check-source FILE.clause";
 
 fn main() -> ExitCode {
     let mut arguments = std::env::args_os().skip(1);
-    if arguments.next().as_deref() == Some(OsStr::new("source-loop")) {
-        let Some(source) = arguments.next() else {
-            eprintln!("usage: clause-workbench source-loop SOURCE.clause");
-            return ExitCode::FAILURE;
-        };
-        if arguments.next().is_some() {
-            eprintln!("usage: clause-workbench source-loop SOURCE.clause");
-            return ExitCode::FAILURE;
+    match arguments.next().as_deref() {
+        None => serve_binary_workbench(),
+        Some(command) if command == OsStr::new("source-loop") => {
+            let Some(source) = arguments.next() else {
+                eprintln!("{USAGE}");
+                return ExitCode::FAILURE;
+            };
+            if arguments.next().is_some() {
+                eprintln!("{USAGE}");
+                return ExitCode::FAILURE;
+            }
+            serve_source_loop(Path::new(&source))
         }
-        return serve_source_loop(Path::new(&source));
+        Some(command) if command == OsStr::new("authoring-card") => {
+            if arguments.next().is_some() {
+                eprintln!("{USAGE}");
+                return ExitCode::FAILURE;
+            }
+            print_authoring_card()
+        }
+        Some(command) if command == OsStr::new("check-source") => {
+            let Some(source) = arguments.next() else {
+                eprintln!("{USAGE}");
+                return ExitCode::FAILURE;
+            };
+            if arguments.next().is_some() {
+                eprintln!("{USAGE}");
+                return ExitCode::FAILURE;
+            }
+            check_source(Path::new(&source))
+        }
+        Some(_) => {
+            eprintln!("{USAGE}");
+            ExitCode::FAILURE
+        }
     }
+}
+
+fn serve_binary_workbench() -> ExitCode {
     let mut service = match WorkbenchService::open() {
         Ok(service) => service,
         Err(error) => {
@@ -31,6 +64,52 @@ fn main() -> ExitCode {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             eprintln!("{error}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+fn print_authoring_card() -> ExitCode {
+    let card = render_authoring_card_v1();
+    let mut output = std::io::stdout().lock();
+    match output
+        .write_all(card.as_bytes())
+        .and_then(|()| output.flush())
+    {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(error) => {
+            eprintln!("authoring card write failed: {error}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+fn check_source(source: &Path) -> ExitCode {
+    let startup = Instant::now();
+    let exact_source = match std::fs::read(source) {
+        Ok(source) => source,
+        Err(error) => {
+            eprintln!("source read failed: {error}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let workbench = match ResidentSourceWorkbenchV1::open(&exact_source) {
+        Ok(workbench) => workbench,
+        Err(error) => {
+            eprintln!("source check failed: {error}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let mut output = std::io::stdout().lock();
+    match write_generation(
+        &mut output,
+        "checked",
+        workbench.generation(),
+        startup.elapsed(),
+    ) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(error) => {
+            eprintln!("source check result write failed: {error}");
             ExitCode::FAILURE
         }
     }

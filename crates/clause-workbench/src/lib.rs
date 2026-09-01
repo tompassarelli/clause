@@ -8,6 +8,7 @@
 
 #![forbid(unsafe_code)]
 
+mod authoring;
 mod carrier;
 mod source_session;
 
@@ -23,6 +24,7 @@ use clause_substrate::compiler_package_v3::{
 };
 use clause_substrate::evaluator::{EvalError, Evaluator, StaticError};
 
+pub use authoring::{AUTHORING_EXAMPLES_V1, AuthoringExampleV1, render_authoring_card_v1};
 use carrier::{CarrierActionV1, WorkbenchCarrier};
 pub use carrier::{WorkbenchCarrierError, WorkbenchCarrierSnapshot};
 pub use source_session::{
