@@ -14,6 +14,95 @@ fn raw_id(tag: u8) -> [u8; IDENTITY_BYTES] {
     bytes
 }
 
+const SCALAR_PARAMETER_WORLD: &str = r#"referent F64
+referent Bool
+referent Player
+referent Enemy
+referent CombatState
+referent alive
+referent telegraph
+
+relation score
+  reads {player: Player} score {value: F64}
+  subject player
+  mode given player yields value: one
+
+relation pressure-clock
+  reads {enemy: Enemy} pressure clock {value: F64}
+  subject enemy
+  mode given enemy yields value: one
+
+relation pressure-state
+  reads {enemy: Enemy} pressure state {value: CombatState}
+  subject enemy
+  mode given enemy yields value: one
+
+relation grounded
+  reads {player: Player} grounded {value: Bool}
+  subject player
+  mode given player yields value: one
+
+player-1 ∈ Player
+cinder-wraith ∈ Enemy
+player-1 score 0.0
+cinder-wraith pressure clock 3.0
+cinder-wraith pressure state telegraph
+player-1 grounded true
+
+on advance ?player
+  when
+    ?player score ?score
+    cinder-wraith pressure clock ?clock
+    cinder-wraith pressure state ?pressure
+    player-1 grounded ?grounded
+    ?pressure = telegraph
+    ?grounded = true
+  withdraw
+    ?player score ?score
+  include
+    ?player score ?score + ?clock
+"#;
+
+#[test]
+fn scalar_handlers_bind_number_symbol_and_boolean_state_parameters() {
+    let cst = read_canonical_source_v1(SCALAR_PARAMETER_WORLD.as_bytes())
+        .expect("canonical scalar-parameter source reads losslessly");
+    let plan = plan_independent_canonical_source_allocations_v1(
+        &cst,
+        ProgramChangeOccurrenceId::from_bytes(raw_id(12)),
+    )
+    .expect("scalar state dependencies receive rooted allocations");
+    let compiled = elaborate_canonical_source_package_v1(
+        &cst,
+        CanonicalSourceContextV1 {
+            universe: UniverseId::from_bytes(raw_id(1)),
+            semantics: ClauseSemanticsId::from_bytes(raw_id(2)),
+        },
+        &plan,
+    )
+    .expect("number, symbol, and Boolean state parameters reach executable lowering");
+
+    assert_eq!(compiled.scalar_handlers.len(), 1);
+    assert_eq!(
+        compiled.scalar_handlers[0].parameters,
+        [
+            b"?clock".to_vec(),
+            b"?grounded".to_vec(),
+            b"?pressure".to_vec(),
+        ]
+    );
+    assert_eq!(compiled.state_cells.len(), 4);
+    let executable = compiled
+        .executable_handlers
+        .iter()
+        .find(|handler| handler.designation == b"advance")
+        .expect("the scalar handler is executable rather than unsupported");
+    assert_eq!(executable.trigger, CanonicalHandlerTriggerV1::FixedTick);
+    assert_eq!(executable.rules.len(), 1);
+    assert_eq!(executable.rules[0].predicates.len(), 2);
+    assert_eq!(executable.rules[0].assignments.len(), 1);
+}
+
 #[test]
 fn canonical_world_declarations_reach_the_checked_package_with_exact_remainder() {
     let cst = read_canonical_source_v1(WORLD).expect("canonical world source reads losslessly");
@@ -27,6 +116,7 @@ fn canonical_world_declarations_reach_the_checked_package_with_exact_remainder()
     assert!(plan.allocations().iter().all(|allocation| {
         let nonzero = match allocation.identity {
             CanonicalAllocatedIdentityV1::Formation(id) => id.get() != 0,
+            CanonicalAllocatedIdentityV1::Capability(id) => id.get() != 0,
             CanonicalAllocatedIdentityV1::RelationSchema(id) => id.get() != 0,
             CanonicalAllocatedIdentityV1::Role(id) => id.role.get() != 0,
             CanonicalAllocatedIdentityV1::Operator(id) => id.get() != 0,

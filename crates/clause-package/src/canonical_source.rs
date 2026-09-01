@@ -772,7 +772,7 @@ struct ScalarParameterSourceCst {
     parameter: Vec<u8>,
     subject: Vec<u8>,
     relation: Vec<u8>,
-    field: Vec<u8>,
+    field: Option<Vec<u8>>,
 }
 
 #[derive(Clone)]
@@ -1384,6 +1384,7 @@ fn allocation_requests(
                             || parts.handler.parameter_sources.iter().any(|source| {
                                 source.subject == assertion.subject
                                     && source.relation == assertion.relation
+                                    && source.field.is_some()
                             })
                     })
                 {
@@ -1397,9 +1398,14 @@ fn allocation_requests(
             CstKind::BooleanAssertion(assertion) => {
                 if jump.is_some_and(|parts| parts.grounded.origin == assertion.origin)
                     || tick.is_some_and(|parts| parts.grounded.origin == assertion.origin)
-                    || scalar
-                        .iter()
-                        .any(|parts| parts.initial_origin == assertion.origin)
+                    || scalar.iter().any(|parts| {
+                        parts.initial_origin == assertion.origin
+                            || parts.handler.parameter_sources.iter().any(|source| {
+                                source.subject == assertion.subject
+                                    && source.relation == assertion.relation
+                                    && source.field.is_none()
+                            })
+                    })
                 {
                     requested.push(AllocationRequest {
                         producer: assertion_producer(&assertion.subject, &assertion.relation),
@@ -1410,9 +1416,14 @@ fn allocation_requests(
             }
             CstKind::NumberAssertion(assertion) => {
                 if jump.is_some_and(|parts| parts.jump_speed.origin == assertion.origin)
-                    || scalar
-                        .iter()
-                        .any(|parts| parts.initial_origin == assertion.origin)
+                    || scalar.iter().any(|parts| {
+                        parts.initial_origin == assertion.origin
+                            || parts.handler.parameter_sources.iter().any(|source| {
+                                source.subject == assertion.subject
+                                    && source.relation == assertion.relation
+                                    && source.field.is_none()
+                            })
+                    })
                     || tick.is_some_and(|parts| {
                         [
                             parts.gravity.origin,
@@ -1434,10 +1445,14 @@ fn allocation_requests(
                 }
             }
             CstKind::SymbolAssertion(assertion) => {
-                if scalar
-                    .iter()
-                    .any(|parts| parts.initial_origin == assertion.origin)
-                {
+                if scalar.iter().any(|parts| {
+                    parts.initial_origin == assertion.origin
+                        || parts.handler.parameter_sources.iter().any(|source| {
+                            source.subject == assertion.subject
+                                && source.relation == assertion.relation
+                                && source.field.is_none()
+                        })
+                }) {
                     requested.push(AllocationRequest {
                         producer: assertion_producer(&assertion.subject, &assertion.relation),
                         slot: head_slot(CanonicalSourceProductionV1::Assertion),
@@ -1636,7 +1651,7 @@ fn state_ref_for_origin(
     }
 }
 
-fn vector_parameter_state_ref(
+fn scalar_parameter_state_ref(
     cst: &CanonicalSourceCstV1,
     plan: &CanonicalSourceAllocationPlanV1,
     source: &ScalarParameterSourceCst,
@@ -1645,13 +1660,20 @@ fn vector_parameter_state_ref(
     let assertions = cst
         .items
         .iter()
-        .filter_map(|item| match &item.kind {
-            CstKind::VectorAssertion(assertion)
-                if assertion.subject == source.subject && assertion.relation == source.relation =>
-            {
-                Some(assertion)
+        .filter(|item| match (&item.kind, source.field.as_deref()) {
+            (CstKind::VectorAssertion(assertion), Some(_)) => {
+                assertion.subject == source.subject && assertion.relation == source.relation
             }
-            _ => None,
+            (CstKind::BooleanAssertion(assertion), None) => {
+                assertion.subject == source.subject && assertion.relation == source.relation
+            }
+            (CstKind::NumberAssertion(assertion), None) => {
+                assertion.subject == source.subject && assertion.relation == source.relation
+            }
+            (CstKind::SymbolAssertion(assertion), None) => {
+                assertion.subject == source.subject && assertion.relation == source.relation
+            }
+            _ => false,
         })
         .collect::<Vec<_>>();
     let [assertion] = assertions.as_slice() else {
@@ -1661,14 +1683,7 @@ fn vector_parameter_state_ref(
             CanonicalSourceErrorV1::AmbiguousExecutableBinding { origin }
         });
     };
-    canonical_state_ref(
-        cst,
-        plan,
-        &assertion.subject,
-        &assertion.relation,
-        Some(&source.field),
-        assertion.origin,
-    )
+    state_ref_for_origin(cst, plan, assertion.origin, source.field.as_deref())
 }
 
 fn checked_source_state_cells(
@@ -2117,7 +2132,7 @@ fn checked_executable_handlers(
             .map(|source| {
                 Ok((
                     source.parameter.clone(),
-                    vector_parameter_state_ref(cst, plan, source, parts.handler.origin)?,
+                    scalar_parameter_state_ref(cst, plan, source, parts.handler.origin)?,
                 ))
             })
             .collect::<Result<BTreeMap<_, _>, CanonicalSourceErrorV1>>()?;
@@ -2723,6 +2738,7 @@ pub fn elaborate_canonical_source_package_v1(
                         parts.handler.parameter_sources.iter().any(|source| {
                             source.subject == assertion.subject
                                 && source.relation == assertion.relation
+                                && source.field.is_some()
                         })
                     })
                 {
@@ -2749,9 +2765,14 @@ pub fn elaborate_canonical_source_package_v1(
             CstKind::BooleanAssertion(assertion) => {
                 if jump_parts.is_some_and(|parts| parts.grounded.origin == assertion.origin)
                     || tick_parts.is_some_and(|parts| parts.grounded.origin == assertion.origin)
-                    || scalar_parts
-                        .iter()
-                        .any(|parts| parts.initial_origin == assertion.origin)
+                    || scalar_parts.iter().any(|parts| {
+                        parts.initial_origin == assertion.origin
+                            || parts.handler.parameter_sources.iter().any(|source| {
+                                source.subject == assertion.subject
+                                    && source.relation == assertion.relation
+                                    && source.field.is_none()
+                            })
+                    })
                 {
                     let producer = assertion_producer(&assertion.subject, &assertion.relation);
                     let slot = head_slot(CanonicalSourceProductionV1::Assertion);
@@ -2775,9 +2796,14 @@ pub fn elaborate_canonical_source_package_v1(
             }
             CstKind::NumberAssertion(assertion) => {
                 if jump_parts.is_some_and(|parts| parts.jump_speed.origin == assertion.origin)
-                    || scalar_parts
-                        .iter()
-                        .any(|parts| parts.initial_origin == assertion.origin)
+                    || scalar_parts.iter().any(|parts| {
+                        parts.initial_origin == assertion.origin
+                            || parts.handler.parameter_sources.iter().any(|source| {
+                                source.subject == assertion.subject
+                                    && source.relation == assertion.relation
+                                    && source.field.is_none()
+                            })
+                    })
                     || tick_parts.is_some_and(|parts| {
                         [
                             parts.gravity.origin,
@@ -2812,10 +2838,14 @@ pub fn elaborate_canonical_source_package_v1(
                 }
             }
             CstKind::SymbolAssertion(assertion) => {
-                if scalar_parts
-                    .iter()
-                    .any(|parts| parts.initial_origin == assertion.origin)
-                {
+                if scalar_parts.iter().any(|parts| {
+                    parts.initial_origin == assertion.origin
+                        || parts.handler.parameter_sources.iter().any(|source| {
+                            source.subject == assertion.subject
+                                && source.relation == assertion.relation
+                                && source.field.is_none()
+                        })
+                }) {
                     let producer = assertion_producer(&assertion.subject, &assertion.relation);
                     let slot = head_slot(CanonicalSourceProductionV1::Assertion);
                     let id = formation_id(plan, &producer, &slot)?;
@@ -3637,28 +3667,41 @@ fn parse_scalar_predicate(source: &str, current: &str) -> Option<CanonicalScalar
 }
 
 fn parse_scalar_parameter_declaration(source: &str) -> Option<Vec<ScalarParameterSourceCst>> {
-    let (prefix, vector) = split_vector_subject(source)?;
-    let prefix = prefix.split_whitespace().collect::<Vec<_>>();
-    if prefix.len() < 2 {
+    if let Some((prefix, vector)) = split_vector_subject(source) {
+        let prefix = prefix.split_whitespace().collect::<Vec<_>>();
+        if prefix.len() < 2 {
+            return None;
+        }
+        let subject = prefix[0].as_bytes().to_vec();
+        let relation = prefix[1..].join(" ").into_bytes();
+        let components = parse_vec3_components(vector)?;
+        return components
+            .into_iter()
+            .zip([b"x".as_slice(), b"y".as_slice(), b"z".as_slice()])
+            .map(|(component, field)| {
+                component
+                    .starts_with('?')
+                    .then(|| ScalarParameterSourceCst {
+                        parameter: component.as_bytes().to_vec(),
+                        subject: subject.clone(),
+                        relation: relation.clone(),
+                        field: Some(field.to_vec()),
+                    })
+            })
+            .collect();
+    }
+
+    let parts = source.split_whitespace().collect::<Vec<_>>();
+    let parameter = *parts.last()?;
+    if parts.len() < 3 || parts[0].starts_with('?') || !parameter.starts_with('?') {
         return None;
     }
-    let subject = prefix[0].as_bytes().to_vec();
-    let relation = prefix[1..].join(" ").into_bytes();
-    let components = parse_vec3_components(vector)?;
-    components
-        .into_iter()
-        .zip([b"x".as_slice(), b"y".as_slice(), b"z".as_slice()])
-        .map(|(component, field)| {
-            component
-                .starts_with('?')
-                .then(|| ScalarParameterSourceCst {
-                    parameter: component.as_bytes().to_vec(),
-                    subject: subject.clone(),
-                    relation: relation.clone(),
-                    field: field.to_vec(),
-                })
-        })
-        .collect()
+    Some(vec![ScalarParameterSourceCst {
+        parameter: parameter.as_bytes().to_vec(),
+        subject: parts[0].as_bytes().to_vec(),
+        relation: parts[1..parts.len() - 1].join(" ").into_bytes(),
+        field: None,
+    }])
 }
 
 fn collect_scalar_expression_parameters(
