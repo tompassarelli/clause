@@ -115,6 +115,86 @@ fn scalar_handlers_bind_number_symbol_and_boolean_state_parameters() {
 }
 
 #[test]
+fn source_keyboard_bindings_leave_unbound_actor_relative_scalar_handlers_on_fixed_tick() {
+    let mut source = WORLD.to_vec();
+    source.extend_from_slice(
+        br#"
+
+relation recovery-clock
+  reads {player: Player} recovery clock {value: F64}
+  subject player
+  mode given player yields value: one
+
+relation recovery-rate
+  reads {player: Player} recovery rate {value: F64}
+  subject player
+  mode given player yields value: one
+
+relation heat
+  reads {player: Player} heat {value: F64}
+  subject player
+  mode given player yields value: one
+
+player-1 recovery clock 8.0
+player-1 recovery rate 1.0
+player-1 heat 3.0
+
+bind keyboard Space down to jump
+
+on count-recovery ?player
+  when
+    ?player recovery clock ?clock
+    ?player recovery rate ?rate
+    ?clock > 0.0
+  withdraw
+    ?player recovery clock ?clock
+  include
+    ?player recovery clock ?clock - ?rate
+
+on cool-heat ?player
+  when
+    ?player heat ?heat
+    ?heat > 0.0
+  withdraw
+    ?player heat ?heat
+  include
+    ?player heat ?heat - 1.0
+"#,
+    );
+    let cst = read_canonical_source_v1(&source)
+        .expect("actor-relative scalar handlers read with source keyboard bindings");
+    let plan = plan_independent_canonical_source_allocations_v1(
+        &cst,
+        ProgramChangeOccurrenceId::from_bytes(raw_id(16)),
+    )
+    .expect("actor-relative scalar handlers receive rooted allocations");
+    let compiled = elaborate_canonical_source_package_v1(
+        &cst,
+        CanonicalSourceContextV1 {
+            universe: UniverseId::from_bytes(raw_id(1)),
+            semantics: ClauseSemanticsId::from_bytes(raw_id(2)),
+        },
+        &plan,
+    )
+    .expect("actor-relative scalar handlers reach executable lowering");
+
+    for designation in [b"count-recovery".as_slice(), b"cool-heat".as_slice()] {
+        let handler = compiled
+            .executable_handlers
+            .iter()
+            .find(|handler| handler.designation == designation)
+            .expect("the automatic scalar handler is executable");
+        assert_eq!(handler.trigger, CanonicalHandlerTriggerV1::FixedTick);
+    }
+    let jump = compiled
+        .executable_handlers
+        .iter()
+        .find(|handler| handler.designation == b"jump")
+        .expect("the source-bound jump handler is executable");
+    assert_eq!(jump.trigger, CanonicalHandlerTriggerV1::External);
+}
+
+#[test]
 fn jump_shaped_handlers_retain_their_source_designation() {
     let source = std::str::from_utf8(WORLD)
         .expect("canonical arena source is UTF-8")

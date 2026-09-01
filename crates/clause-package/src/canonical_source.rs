@@ -340,6 +340,22 @@ pub struct CanonicalExecutableHandlerV1 {
     pub rules: Vec<CanonicalExecutableRuleV1>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum CanonicalKeyPhaseV1 {
+    Down,
+    Up,
+}
+
+/// One source-owned physical key distinction and its checked handler target.
+/// The source names only the browser-standard keyboard code and phase; a
+/// physical refinement supplies package Roles and executable entries.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct CanonicalKeyboardBindingV1 {
+    pub code: Vec<u8>,
+    pub phase: CanonicalKeyPhaseV1,
+    pub handler_designation: Vec<u8>,
+}
+
 /// Construct-blind scalar expression owned by one canonical source handler.
 /// Physical state coordinates are deliberately supplied only by refinement.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -500,6 +516,7 @@ pub struct CanonicalSourcePackageSliceV1 {
     pub unsupported: Vec<CanonicalUnsupportedProductionV1>,
     pub state_cells: Vec<CanonicalStateCellV1>,
     pub executable_handlers: Vec<CanonicalExecutableHandlerV1>,
+    pub keyboard_bindings: Vec<CanonicalKeyboardBindingV1>,
     pub input_handler: Option<CanonicalInputHandlerV1>,
     pub jump_handler: Option<CanonicalJumpHandlerV1>,
     pub scalar_handlers: Vec<CanonicalScalarHandlerV1>,
@@ -579,6 +596,22 @@ pub enum CanonicalSourceErrorV1 {
     },
     InvalidScalarHandler {
         origin: CanonicalSourceOriginV1,
+    },
+    InvalidGeneralHandler {
+        origin: CanonicalSourceOriginV1,
+    },
+    InvalidKeyboardBinding {
+        origin: CanonicalSourceOriginV1,
+    },
+    DuplicateKeyboardBinding {
+        code: Vec<u8>,
+        phase: CanonicalKeyPhaseV1,
+    },
+    MissingKeyboardHandler {
+        designation: Vec<u8>,
+    },
+    AmbiguousKeyboardHandler {
+        designation: Vec<u8>,
     },
     MissingScalarInitialAssertion {
         origin: CanonicalSourceOriginV1,
@@ -678,7 +711,9 @@ enum CstKind {
     InputHandler(InputHandlerCst),
     JumpHandler(JumpHandlerCst),
     ScalarHandler(ScalarHandlerCst),
+    GeneralHandler(GeneralHandlerCst),
     TickHandler(TickHandlerCst),
+    KeyboardBinding(KeyboardBindingCst),
     ClampLaw(ClampLawCst),
     ClampDerive(ClampDeriveCst),
     VectorAssertion(VectorAssertionCst),
@@ -767,6 +802,31 @@ struct ScalarHandlerCst {
     predicates: Vec<CanonicalScalarPredicateV1>,
     result: CanonicalScalarExpressionV1,
     include: HandlerIncludeCst,
+}
+
+#[derive(Clone, Debug)]
+struct GeneralHandlerCst {
+    origin: CanonicalSourceOriginV1,
+    producer: CanonicalSemanticProducerV1,
+    designation: Vec<u8>,
+    parameter_sources: Vec<ScalarParameterSourceCst>,
+    predicates: Vec<CanonicalScalarPredicateV1>,
+    assignments: Vec<GeneralAssignmentCst>,
+    includes: Vec<HandlerIncludeCst>,
+}
+
+#[derive(Clone, Debug)]
+struct GeneralAssignmentCst {
+    target: ScalarParameterSourceCst,
+    value: CanonicalScalarExpressionV1,
+}
+
+#[derive(Clone, Debug)]
+struct KeyboardBindingCst {
+    origin: CanonicalSourceOriginV1,
+    code: Vec<u8>,
+    phase: CanonicalKeyPhaseV1,
+    handler_designation: Vec<u8>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1338,6 +1398,23 @@ fn allocation_requests(
                     },
                 ]);
             }
+            CstKind::GeneralHandler(handler) => {
+                requested.push(AllocationRequest {
+                    producer: handler.producer.clone(),
+                    slot: head_slot(CanonicalSourceProductionV1::Handler),
+                    domain: AllocationDomain::Formation,
+                });
+                for include in &handler.includes {
+                    requested.push(AllocationRequest {
+                        producer: handler.producer.clone(),
+                        slot: child_slot(
+                            CanonicalSourceProductionV1::HandlerInclude,
+                            &include.local,
+                        ),
+                        domain: AllocationDomain::Formation,
+                    });
+                }
+            }
             CstKind::TickHandler(handler) => {
                 requested.push(AllocationRequest {
                     producer: handler.producer.clone(),
@@ -1466,7 +1543,7 @@ fn allocation_requests(
                     });
                 }
             }
-            CstKind::Unsupported(_) => {}
+            CstKind::KeyboardBinding(_) | CstKind::Unsupported(_) => {}
         }
     }
     requested.sort();
@@ -1694,21 +1771,66 @@ fn scalar_parameter_state_ref(
     source: &ScalarParameterSourceCst,
     origin: CanonicalSourceOriginV1,
 ) -> Result<CanonicalStateRefV1, CanonicalSourceErrorV1> {
+    let variable_subject = source.subject.starts_with(b"?");
     let assertions = cst
         .items
         .iter()
         .filter(|item| match (&item.kind, source.field.as_deref()) {
             (CstKind::VectorAssertion(assertion), Some(_)) => {
-                assertion.subject == source.subject && assertion.relation == source.relation
+                assertion.relation == source.relation
+                    && (variable_subject || assertion.subject == source.subject)
             }
             (CstKind::BooleanAssertion(assertion), None) => {
-                assertion.subject == source.subject && assertion.relation == source.relation
+                assertion.relation == source.relation
+                    && (variable_subject || assertion.subject == source.subject)
             }
             (CstKind::NumberAssertion(assertion), None) => {
-                assertion.subject == source.subject && assertion.relation == source.relation
+                assertion.relation == source.relation
+                    && (variable_subject || assertion.subject == source.subject)
             }
             (CstKind::SymbolAssertion(assertion), None) => {
-                assertion.subject == source.subject && assertion.relation == source.relation
+                assertion.relation == source.relation
+                    && (variable_subject || assertion.subject == source.subject)
+            }
+            _ => false,
+        })
+        .collect::<Vec<_>>();
+    let [assertion] = assertions.as_slice() else {
+        return Err(if assertions.is_empty() {
+            CanonicalSourceErrorV1::MissingExecutableBinding { origin }
+        } else {
+            CanonicalSourceErrorV1::AmbiguousExecutableBinding { origin }
+        });
+    };
+    state_ref_for_origin(cst, plan, assertion.origin, source.field.as_deref())
+}
+
+fn general_parameter_state_ref(
+    cst: &CanonicalSourceCstV1,
+    plan: &CanonicalSourceAllocationPlanV1,
+    source: &ScalarParameterSourceCst,
+    origin: CanonicalSourceOriginV1,
+) -> Result<CanonicalStateRefV1, CanonicalSourceErrorV1> {
+    let variable_subject = source.subject.starts_with(b"?");
+    let assertions = cst
+        .items
+        .iter()
+        .filter(|item| match (&item.kind, source.field.as_deref()) {
+            (CstKind::VectorAssertion(assertion), Some(_)) => {
+                assertion.relation == source.relation
+                    && (variable_subject || assertion.subject == source.subject)
+            }
+            (CstKind::BooleanAssertion(assertion), None) => {
+                assertion.relation == source.relation
+                    && (variable_subject || assertion.subject == source.subject)
+            }
+            (CstKind::NumberAssertion(assertion), None) => {
+                assertion.relation == source.relation
+                    && (variable_subject || assertion.subject == source.subject)
+            }
+            (CstKind::SymbolAssertion(assertion), None) => {
+                assertion.relation == source.relation
+                    && (variable_subject || assertion.subject == source.subject)
             }
             _ => false,
         })
@@ -2011,6 +2133,7 @@ fn checked_executable_handlers(
     jump: Option<JumpHandlerParts<'_>>,
     scalar: &[ScalarHandlerParts<'_>],
     tick: Option<TickProgramParts<'_>>,
+    keyboard: &[CanonicalKeyboardBindingV1],
 ) -> Result<Vec<CanonicalExecutableHandlerV1>, CanonicalSourceErrorV1> {
     let mut handlers = Vec::new();
     let handler_id = |producer: &CanonicalSemanticProducerV1| {
@@ -2217,7 +2340,11 @@ fn checked_executable_handlers(
         handlers.push(CanonicalExecutableHandlerV1 {
             id: handler_id(&parts.handler.producer)?,
             designation: parts.handler.designation.clone(),
-            trigger: if parameters.is_empty() {
+            trigger: if keyboard
+                .iter()
+                .any(|binding| binding.handler_designation == parts.handler.designation)
+                || (keyboard.is_empty() && parameters.is_empty())
+            {
                 CanonicalHandlerTriggerV1::External
             } else {
                 CanonicalHandlerTriggerV1::FixedTick
@@ -2237,8 +2364,176 @@ fn checked_executable_handlers(
             }],
         });
     }
+    for source in cst.items.iter().filter_map(|item| match &item.kind {
+        CstKind::GeneralHandler(handler) => Some(handler),
+        _ => None,
+    }) {
+        let parameters = source
+            .parameter_sources
+            .iter()
+            .map(|parameter| {
+                Ok((
+                    parameter.parameter.clone(),
+                    general_parameter_state_ref(cst, plan, parameter, source.origin)?,
+                ))
+            })
+            .collect::<Result<BTreeMap<_, _>, CanonicalSourceErrorV1>>()?;
+        let current = source
+            .assignments
+            .first()
+            .ok_or(CanonicalSourceErrorV1::InvalidGeneralHandler {
+                origin: source.origin,
+            })?
+            .target
+            .clone();
+        let current = general_parameter_state_ref(cst, plan, &current, source.origin)?;
+        let predicates = source
+            .predicates
+            .iter()
+            .map(|predicate| {
+                let (left, right, constructor) = match predicate {
+                    CanonicalScalarPredicateV1::Equal(left, right) => (
+                        left,
+                        right,
+                        CanonicalExecutablePredicateV1::Equal
+                            as fn(_, _) -> CanonicalExecutablePredicateV1,
+                    ),
+                    CanonicalScalarPredicateV1::GreaterThan(left, right) => (
+                        left,
+                        right,
+                        CanonicalExecutablePredicateV1::GreaterThan
+                            as fn(_, _) -> CanonicalExecutablePredicateV1,
+                    ),
+                    CanonicalScalarPredicateV1::LessThanOrEqual(left, right) => (
+                        left,
+                        right,
+                        CanonicalExecutablePredicateV1::LessThanOrEqual
+                            as fn(_, _) -> CanonicalExecutablePredicateV1,
+                    ),
+                };
+                Ok(constructor(
+                    canonical_scalar_executable_expression(
+                        left,
+                        &current,
+                        &parameters,
+                        source.origin,
+                    )?,
+                    canonical_scalar_executable_expression(
+                        right,
+                        &current,
+                        &parameters,
+                        source.origin,
+                    )?,
+                ))
+            })
+            .collect::<Result<Vec<_>, CanonicalSourceErrorV1>>()?;
+        let assignments = source
+            .assignments
+            .iter()
+            .map(|assignment| {
+                Ok(CanonicalExecutableAssignmentV1 {
+                    target: general_parameter_state_ref(
+                        cst,
+                        plan,
+                        &assignment.target,
+                        source.origin,
+                    )?,
+                    value: canonical_scalar_executable_expression(
+                        &assignment.value,
+                        &current,
+                        &parameters,
+                        source.origin,
+                    )?,
+                })
+            })
+            .collect::<Result<Vec<_>, CanonicalSourceErrorV1>>()?;
+        handlers.push(CanonicalExecutableHandlerV1 {
+            id: handler_id(&source.producer)?,
+            designation: source.designation.clone(),
+            trigger: if keyboard
+                .iter()
+                .any(|binding| binding.handler_designation == source.designation)
+            {
+                CanonicalHandlerTriggerV1::External
+            } else {
+                CanonicalHandlerTriggerV1::FixedTick
+            },
+            argument_count: 0,
+            rules: vec![CanonicalExecutableRuleV1 {
+                predicates,
+                assignments,
+            }],
+        });
+    }
     handlers.sort_by_key(|handler| handler.id);
     Ok(handlers)
+}
+
+fn source_keyboard_bindings(
+    cst: &CanonicalSourceCstV1,
+) -> Result<Vec<CanonicalKeyboardBindingV1>, CanonicalSourceErrorV1> {
+    let mut seen = BTreeSet::new();
+    let mut bindings = Vec::new();
+    for source in cst.items.iter().filter_map(|item| match &item.kind {
+        CstKind::KeyboardBinding(binding) => Some(binding),
+        _ => None,
+    }) {
+        if !seen.insert((source.code.clone(), source.phase)) {
+            return Err(CanonicalSourceErrorV1::DuplicateKeyboardBinding {
+                code: source.code.clone(),
+                phase: source.phase,
+            });
+        }
+        bindings.push(CanonicalKeyboardBindingV1 {
+            code: source.code.clone(),
+            phase: source.phase,
+            handler_designation: source.handler_designation.clone(),
+        });
+    }
+    bindings.sort();
+    Ok(bindings)
+}
+
+fn validate_keyboard_handler_targets(
+    cst: &CanonicalSourceCstV1,
+    keyboard: &[CanonicalKeyboardBindingV1],
+    handlers: &[CanonicalExecutableHandlerV1],
+) -> Result<(), CanonicalSourceErrorV1> {
+    for binding in keyboard {
+        let matching = handlers
+            .iter()
+            .filter(|handler| handler.designation == binding.handler_designation)
+            .collect::<Vec<_>>();
+        let [handler] = matching.as_slice() else {
+            return Err(if matching.is_empty() {
+                CanonicalSourceErrorV1::MissingKeyboardHandler {
+                    designation: binding.handler_designation.clone(),
+                }
+            } else {
+                CanonicalSourceErrorV1::AmbiguousKeyboardHandler {
+                    designation: binding.handler_designation.clone(),
+                }
+            });
+        };
+        if handler.trigger != CanonicalHandlerTriggerV1::External || handler.argument_count != 0 {
+            let origin = cst
+                .items
+                .iter()
+                .find_map(|item| match &item.kind {
+                    CstKind::KeyboardBinding(source)
+                        if source.code == binding.code
+                            && source.phase == binding.phase
+                            && source.handler_designation == binding.handler_designation =>
+                    {
+                        Some(source.origin)
+                    }
+                    _ => None,
+                })
+                .expect("one checked keyboard binding retains its source origin");
+            return Err(CanonicalSourceErrorV1::InvalidKeyboardBinding { origin });
+        }
+    }
+    Ok(())
 }
 
 /// Lower the supported declaration slice, then pass it through the existing
@@ -2323,6 +2618,7 @@ pub fn elaborate_canonical_source_package_v1(
         })
         .collect();
     let tick_parts = tick_program_parts(cst)?;
+    let keyboard_bindings = source_keyboard_bindings(cst)?;
     let state_cells = checked_source_state_cells(cst, plan)?;
     let executable_handlers = checked_executable_handlers(
         cst,
@@ -2331,7 +2627,9 @@ pub fn elaborate_canonical_source_package_v1(
         jump_parts,
         &scalar_parts,
         tick_parts,
+        &keyboard_bindings,
     )?;
+    validate_keyboard_handler_targets(cst, &keyboard_bindings, &executable_handlers)?;
     let tick_program = tick_parts.map(|parts| CanonicalTickProgramV1 {
         artifact: cst.artifact,
         initial_position: [parts.position.x, parts.position.y, parts.position.z],
@@ -2709,6 +3007,43 @@ pub fn elaborate_canonical_source_package_v1(
                     handler.include.origin,
                 ));
             }
+            CstKind::GeneralHandler(handler) => {
+                let head = head_slot(CanonicalSourceProductionV1::Handler);
+                let head_id = formation_id(plan, &handler.producer, &head)?;
+                formations.push(source_formation(
+                    scope,
+                    head_id,
+                    cst.source_slice(handler.origin)
+                        .expect("owned general handler origin"),
+                    handler.origin,
+                    "general-handler",
+                )?);
+                emissions.push(emission(
+                    plan,
+                    handler.producer.clone(),
+                    head,
+                    handler.origin,
+                ));
+                for include in &handler.includes {
+                    let slot =
+                        child_slot(CanonicalSourceProductionV1::HandlerInclude, &include.local);
+                    let id = formation_id(plan, &handler.producer, &slot)?;
+                    formations.push(source_formation(
+                        scope,
+                        id,
+                        cst.source_slice(include.origin)
+                            .expect("owned general handler include origin"),
+                        include.origin,
+                        "handler-include",
+                    )?);
+                    emissions.push(emission(
+                        plan,
+                        handler.producer.clone(),
+                        slot,
+                        include.origin,
+                    ));
+                }
+            }
             CstKind::TickHandler(handler) => {
                 let head = head_slot(CanonicalSourceProductionV1::Handler);
                 let head_id = formation_id(plan, &handler.producer, &head)?;
@@ -2925,6 +3260,7 @@ pub fn elaborate_canonical_source_package_v1(
                     });
                 }
             }
+            CstKind::KeyboardBinding(_) => {}
             CstKind::Unsupported(value) => unsupported.push(value.clone()),
         }
     }
@@ -2964,6 +3300,7 @@ pub fn elaborate_canonical_source_package_v1(
         unsupported,
         state_cells,
         executable_handlers,
+        keyboard_bindings,
         input_handler,
         jump_handler,
         scalar_handlers,
@@ -3101,6 +3438,14 @@ fn parse_item(
             kind: CstKind::Relation(parse_relation(artifact, block, designation)?),
         });
     }
+    if head.starts_with("bind keyboard ") {
+        require_leaf(block, artifact)?;
+        let binding = parse_keyboard_binding(head, origin)?;
+        return Ok(CstItem {
+            origin,
+            kind: CstKind::KeyboardBinding(binding),
+        });
+    }
     if head.starts_with("law ") {
         if let Some(law) = parse_clamp_law(block, origin) {
             return Ok(CstItem {
@@ -3157,6 +3502,12 @@ fn parse_item(
                 kind: CstKind::ScalarHandler(handler),
             });
         }
+        if let Some(handler) = parse_general_handler(artifact, block, origin)? {
+            return Ok(CstItem {
+                origin,
+                kind: CstKind::GeneralHandler(handler),
+            });
+        }
         let emissions = handler_include_emissions(artifact, block)?;
         return Ok(unsupported_item(
             artifact,
@@ -3208,6 +3559,38 @@ fn parse_item(
         CanonicalSourceProductionV1::Assertion,
         vec![],
     )?)
+}
+
+fn parse_keyboard_binding(
+    source: &str,
+    origin: CanonicalSourceOriginV1,
+) -> Result<KeyboardBindingCst, CanonicalSourceErrorV1> {
+    let parts = source.split_whitespace().collect::<Vec<_>>();
+    let ["bind", "keyboard", code, phase, "to", handler] = parts.as_slice() else {
+        return Err(CanonicalSourceErrorV1::InvalidKeyboardBinding { origin });
+    };
+    if code.is_empty()
+        || code.len() > 64
+        || !code.as_bytes().iter().all(u8::is_ascii_graphic)
+        || handler.is_empty()
+        || !handler
+            .as_bytes()
+            .iter()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(*byte, b'_' | b'-'))
+    {
+        return Err(CanonicalSourceErrorV1::InvalidKeyboardBinding { origin });
+    }
+    let phase = match *phase {
+        "down" => CanonicalKeyPhaseV1::Down,
+        "up" => CanonicalKeyPhaseV1::Up,
+        _ => return Err(CanonicalSourceErrorV1::InvalidKeyboardBinding { origin }),
+    };
+    Ok(KeyboardBindingCst {
+        origin,
+        code: code.as_bytes().to_vec(),
+        phase,
+        handler_designation: handler.as_bytes().to_vec(),
+    })
 }
 
 fn parse_input_handler(
@@ -3639,7 +4022,7 @@ fn parse_scalar_handler(
             predicates.push(predicate);
             continue;
         }
-        if let Some(parameters) = parse_scalar_parameter_declaration(condition) {
+        if let Some(parameters) = parse_scalar_parameter_declaration(condition, subject) {
             for parameter in parameters {
                 declared_parameters.insert(parameter.parameter.clone());
                 if parameter_sources
@@ -3691,6 +4074,224 @@ fn parse_scalar_handler(
             local: include.as_bytes().to_vec(),
         },
     }))
+}
+
+fn parse_general_handler(
+    artifact: CanonicalSourceArtifactIdV1,
+    block: &[SourceLine<'_>],
+    origin: CanonicalSourceOriginV1,
+) -> Result<Option<GeneralHandlerCst>, CanonicalSourceErrorV1> {
+    let Some(header) = block[0].text.strip_prefix("on ") else {
+        return Ok(None);
+    };
+    let header = header.split_whitespace().collect::<Vec<_>>();
+    let [designation, subject] = header.as_slice() else {
+        return Ok(None);
+    };
+    if !subject.starts_with('?') || *designation == "tick" {
+        return Ok(None);
+    }
+
+    let mut section = "";
+    let mut when = Vec::new();
+    let mut withdraw = Vec::new();
+    let mut include = Vec::new();
+    let mut seen_sections = BTreeSet::new();
+    for line in block
+        .iter()
+        .skip(1)
+        .filter(|line| !line.text.trim().is_empty())
+    {
+        let trimmed = line.text.trim();
+        if line.indent == 2 {
+            if trimmed == "admit" {
+                return Err(CanonicalSourceErrorV1::NonCanonicalKeyword {
+                    origin: line_origin(artifact, *line),
+                    keyword: b"admit".to_vec(),
+                });
+            }
+            if !matches!(trimmed, "when" | "withdraw" | "include") || !seen_sections.insert(trimmed)
+            {
+                return Ok(None);
+            }
+            section = trimmed;
+            continue;
+        }
+        if line.indent != 4 {
+            return Ok(None);
+        }
+        let entry = (trimmed, line_origin(artifact, *line));
+        match section {
+            "when" => when.push(entry),
+            "withdraw" => withdraw.push(entry),
+            "include" => include.push(entry),
+            _ => return Ok(None),
+        }
+    }
+    if withdraw.is_empty() || withdraw.len() != include.len() {
+        return Ok(None);
+    }
+
+    let mut parameter_sources = BTreeMap::<Vec<u8>, ScalarParameterSourceCst>::new();
+    let mut predicates = Vec::new();
+    for (condition, _) in &when {
+        if let Some(predicate) = parse_scalar_predicate(condition, "") {
+            predicates.push(predicate);
+            continue;
+        }
+        let Some(sources) = parse_general_state_declaration(condition, subject) else {
+            return Ok(None);
+        };
+        for source in sources {
+            if parameter_sources
+                .insert(source.parameter.clone(), source)
+                .is_some()
+            {
+                return Ok(None);
+            }
+        }
+    }
+
+    let mut assignments = Vec::new();
+    let mut includes = Vec::new();
+    for ((withdraw, _), (include, include_origin)) in withdraw.iter().zip(&include) {
+        if !when.iter().any(|(condition, _)| condition == withdraw) {
+            return Ok(None);
+        }
+        let Some(mut paired) = parse_general_assignments(withdraw, include, subject) else {
+            return Ok(None);
+        };
+        assignments.append(&mut paired);
+        includes.push(HandlerIncludeCst {
+            origin: *include_origin,
+            local: include.as_bytes().to_vec(),
+        });
+    }
+    if assignments.len() < 2 {
+        return Ok(None);
+    }
+
+    let mut used_parameters = BTreeSet::new();
+    for predicate in &predicates {
+        let (left, right) = match predicate {
+            CanonicalScalarPredicateV1::Equal(left, right)
+            | CanonicalScalarPredicateV1::GreaterThan(left, right)
+            | CanonicalScalarPredicateV1::LessThanOrEqual(left, right) => (left, right),
+        };
+        collect_scalar_expression_parameters(left, &mut used_parameters);
+        collect_scalar_expression_parameters(right, &mut used_parameters);
+    }
+    for assignment in &assignments {
+        collect_scalar_expression_parameters(&assignment.value, &mut used_parameters);
+    }
+    if used_parameters
+        .iter()
+        .any(|parameter| !parameter_sources.contains_key(parameter))
+    {
+        return Err(CanonicalSourceErrorV1::InvalidGeneralHandler { origin });
+    }
+
+    Ok(Some(GeneralHandlerCst {
+        origin,
+        producer: semantic_producer(
+            CanonicalSourceProductionV1::Handler,
+            &handler_semantic_producer(block),
+        ),
+        designation: designation.as_bytes().to_vec(),
+        parameter_sources: parameter_sources.into_values().collect(),
+        predicates,
+        assignments,
+        includes,
+    }))
+}
+
+fn parse_general_state_declaration(
+    source: &str,
+    handler_subject: &str,
+) -> Option<Vec<ScalarParameterSourceCst>> {
+    if let Some((prefix, vector)) = split_vector_subject(source) {
+        let prefix = prefix.split_whitespace().collect::<Vec<_>>();
+        if prefix.len() < 2 || (prefix[0].starts_with('?') && prefix[0] != handler_subject) {
+            return None;
+        }
+        let subject = prefix[0].as_bytes().to_vec();
+        let relation = prefix[1..].join(" ").into_bytes();
+        let components = parse_vec3_components(vector)?;
+        if !components
+            .iter()
+            .all(|component| component.starts_with('?'))
+        {
+            return None;
+        }
+        return components
+            .into_iter()
+            .zip([b"x".as_slice(), b"y".as_slice(), b"z".as_slice()])
+            .map(|(component, field)| {
+                Some(ScalarParameterSourceCst {
+                    parameter: component.as_bytes().to_vec(),
+                    subject: subject.clone(),
+                    relation: relation.clone(),
+                    field: Some(field.to_vec()),
+                })
+            })
+            .collect();
+    }
+
+    let parts = source.split_whitespace().collect::<Vec<_>>();
+    let parameter = *parts.last()?;
+    if parts.len() < 3
+        || (parts[0].starts_with('?') && parts[0] != handler_subject)
+        || !parameter.starts_with('?')
+    {
+        return None;
+    }
+    Some(vec![ScalarParameterSourceCst {
+        parameter: parameter.as_bytes().to_vec(),
+        subject: parts[0].as_bytes().to_vec(),
+        relation: parts[1..parts.len() - 1].join(" ").into_bytes(),
+        field: None,
+    }])
+}
+
+fn parse_general_assignments(
+    withdraw: &str,
+    include: &str,
+    handler_subject: &str,
+) -> Option<Vec<GeneralAssignmentCst>> {
+    let targets = parse_general_state_declaration(withdraw, handler_subject)?;
+    if let Some((withdraw_prefix, withdraw_vector)) = split_vector_subject(withdraw) {
+        let (include_prefix, include_vector) = split_vector_subject(include)?;
+        if include_prefix != withdraw_prefix {
+            return None;
+        }
+        let current = parse_vec3_components(withdraw_vector)?;
+        let result = parse_vec3_components(include_vector)?;
+        return targets
+            .into_iter()
+            .zip(current)
+            .zip(result)
+            .filter_map(|((target, current), result)| {
+                (current != result).then(|| {
+                    Some(GeneralAssignmentCst {
+                        target,
+                        value: parse_scalar_expression(result, "")?,
+                    })
+                })
+            })
+            .collect();
+    }
+
+    let target = targets.into_iter().next()?;
+    let prefix = format!(
+        "{} {} ",
+        String::from_utf8_lossy(&target.subject),
+        String::from_utf8_lossy(&target.relation)
+    );
+    let value = include.strip_prefix(&prefix)?;
+    Some(vec![GeneralAssignmentCst {
+        target,
+        value: parse_scalar_expression(value, "")?,
+    }])
 }
 
 fn parse_scalar_expression(source: &str, current: &str) -> Option<CanonicalScalarExpressionV1> {
@@ -3835,10 +4436,13 @@ impl ScalarExpressionParser<'_> {
     }
 }
 
-fn parse_scalar_parameter_declaration(source: &str) -> Option<Vec<ScalarParameterSourceCst>> {
+fn parse_scalar_parameter_declaration(
+    source: &str,
+    handler_subject: &str,
+) -> Option<Vec<ScalarParameterSourceCst>> {
     if let Some((prefix, vector)) = split_vector_subject(source) {
         let prefix = prefix.split_whitespace().collect::<Vec<_>>();
-        if prefix.len() < 2 {
+        if prefix.len() < 2 || (prefix[0].starts_with('?') && prefix[0] != handler_subject) {
             return None;
         }
         let subject = prefix[0].as_bytes().to_vec();
@@ -3862,7 +4466,10 @@ fn parse_scalar_parameter_declaration(source: &str) -> Option<Vec<ScalarParamete
 
     let parts = source.split_whitespace().collect::<Vec<_>>();
     let parameter = *parts.last()?;
-    if parts.len() < 3 || parts[0].starts_with('?') || !parameter.starts_with('?') {
+    if parts.len() < 3
+        || (parts[0].starts_with('?') && parts[0] != handler_subject)
+        || !parameter.starts_with('?')
+    {
         return None;
     }
     Some(vec![ScalarParameterSourceCst {
@@ -4076,11 +4683,15 @@ fn parse_tick_handler(
             "jump-arena maximum z ?max-z",
         ]
     };
-    if constants
+    let constants_match = constants
         .iter()
-        .map(|entry| entry.0)
-        .ne(expected_constants.iter().copied())
-    {
+        .zip(expected_constants)
+        .all(|(actual, expected)| {
+            actual.0 == *expected
+                || (*expected == "jump-arena move speed ?move-speed"
+                    && actual.0 == "?player move speed ?move-speed")
+        });
+    if !constants_match || constants.len() != expected_constants.len() {
         return Err(CanonicalSourceErrorV1::InvalidTickProfile { origin });
     }
     let clamp_start = if grounded_branch { 11 } else { 12 };
@@ -5253,7 +5864,16 @@ fn tick_program_parts(
     let intent = vectors(b"horizontal intent");
     let grounded_assertions = booleans(b"grounded");
     let gravity = numbers(b"gravity");
-    let move_speed = numbers(b"move speed");
+    let move_speed = cst
+        .items
+        .iter()
+        .filter_map(|item| match &item.kind {
+            CstKind::NumberAssertion(assertion) if assertion.relation == b"move speed" => {
+                Some(assertion)
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
     let floor_height = numbers(b"floor height");
     let minimum_x = numbers(b"minimum x");
     let maximum_x = numbers(b"maximum x");
@@ -5379,7 +5999,9 @@ fn validate_unique_designations(items: &[CstItem]) -> Result<(), CanonicalSource
         CstKind::InputHandler(_)
         | CstKind::JumpHandler(_)
         | CstKind::ScalarHandler(_)
+        | CstKind::GeneralHandler(_)
         | CstKind::TickHandler(_)
+        | CstKind::KeyboardBinding(_)
         | CstKind::ClampLaw(_)
         | CstKind::ClampDerive(_)
         | CstKind::VectorAssertion(_)

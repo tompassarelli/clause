@@ -5,8 +5,9 @@ use clause_package::{
     decode_canonical_term_bytes, decode_process_package,
 };
 use clause_runtime::{
-    ExecutableValueV1, ForkedProcessBranchV1, decode_wasm_process_request_v1,
-    open_fresh_persistent_process_session_v1,
+    ExecutableInputSourceV1, ExecutableKeyPhaseV1, ExecutableValueV1, ForkedProcessBranchV1,
+    decode_executable_occurrence_v1, decode_executable_physical_plan_v1,
+    decode_wasm_process_request_v1, open_fresh_persistent_process_session_v1,
 };
 use clause_workbench::ResidentSourceWorkbenchV1;
 
@@ -58,6 +59,17 @@ on count-pulse ?objective
     ?objective pulse count ?count
   include
     ?objective pulse count ?count + 1.0
+"#;
+const SOURCE_KEYBOARD_BURST_EXTENSION: &[u8] = br#"
+bind keyboard KeyQ down to planar-burst
+
+on planar-burst ?player
+  when
+    ?player velocity Vec3 { x: ?velocity-x, y: ?velocity-y, z: ?velocity-z }
+  withdraw
+    ?player velocity Vec3 { x: ?velocity-x, y: ?velocity-y, z: ?velocity-z }
+  include
+    ?player velocity Vec3 { x: ?velocity-x + 3.0, y: ?velocity-y, z: ?velocity-z - 2.0 }
 "#;
 
 fn coherent_source(objective: &[u8]) -> Vec<u8> {
@@ -198,6 +210,16 @@ fn pulse_count(exact_term_bytes: &[u8]) -> f64 {
     let term = decode_canonical_term_bytes(exact_term_bytes).expect("projection term decodes");
     let objective = projected_object_field(&term, b"game-objective");
     projected_number(projected_object_field(objective, b"pulse-count"))
+}
+
+fn player_planar_velocity(exact_term_bytes: &[u8]) -> (f64, f64) {
+    let term = decode_canonical_term_bytes(exact_term_bytes).expect("projection term decodes");
+    let player = projected_object_field(&term, b"player-1");
+    let velocity = projected_object_field(player, b"velocity");
+    (
+        projected_number(projected_object_field(velocity, b"x")),
+        projected_number(projected_object_field(velocity, b"z")),
+    )
 }
 
 #[test]
@@ -492,6 +514,48 @@ fn source_only_state_and_bounded_automatic_handler_need_no_host_binding_edit() {
         .admit()
         .expect("separate Admission exposes the source-only state");
     assert_eq!(pulse_count(&admitted.projection.exact_term_bytes), 1.0);
+}
+
+#[test]
+fn source_keyboard_binding_reaches_one_atomic_multi_assignment_candidate() {
+    let mut source = WORLD.to_vec();
+    source.extend_from_slice(SOURCE_KEYBOARD_BURST_EXTENSION);
+    let mut workbench = ResidentSourceWorkbenchV1::open(&source)
+        .expect("source keyboard binding and general handler open");
+    let burst = workbench
+        .handler_occurrence(b"planar-burst", &[])
+        .expect("checked burst handler has one occurrence");
+    let burst_occurrence =
+        decode_executable_occurrence_v1(&burst).expect("burst occurrence decodes");
+    let plan = decode_executable_physical_plan_v1(&workbench.generation().cpp1)
+        .expect("generated physical plan decodes");
+    let input = plan
+        .input
+        .expect("source keyboard binding creates input plan");
+    let key = input
+        .events
+        .iter()
+        .find(|event| {
+            event.source
+                == ExecutableInputSourceV1::Keyboard {
+                    code: b"KeyQ".to_vec(),
+                    phase: ExecutableKeyPhaseV1::Down,
+                }
+        })
+        .expect("KeyQ down is present in the physical plan");
+    assert_eq!(key.occurrence, burst_occurrence);
+
+    workbench
+        .run_occurrences_to_candidate(&[burst])
+        .expect("burst produces one hidden candidate");
+    assert!(workbench.last_projection().is_none());
+    let admitted = workbench
+        .admit()
+        .expect("separate Admission exposes both burst assignments");
+    assert_eq!(
+        player_planar_velocity(&admitted.projection.exact_term_bytes),
+        (3.0, -2.0)
+    );
 }
 
 #[test]

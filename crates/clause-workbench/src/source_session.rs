@@ -3,16 +3,17 @@ use std::error::Error;
 use std::fmt;
 
 use clause_package::{
-    CandidateDeltaId, CanonicalHandlerTriggerV1, CanonicalSourceContextV1, ProcessPackageId,
-    ProgramChangeOccurrenceId, StateRevisionId, TermScope, check_process_package,
-    decode_process_package, elaborate_canonical_source_package_v1,
-    plan_independent_canonical_source_allocations_v1, read_canonical_source_v1,
+    CandidateDeltaId, CanonicalHandlerTriggerV1, CanonicalKeyPhaseV1, CanonicalKeyboardBindingV1,
+    CanonicalSourceContextV1, LocalRoleRefV2, ProcessPackageId, ProgramChangeOccurrenceId,
+    StateRevisionId, TermScope, check_process_package, decode_process_package,
+    elaborate_canonical_source_package_v1, plan_independent_canonical_source_allocations_v1,
+    read_canonical_source_v1,
 };
 use clause_runtime::{
     ExecutableCanonicalHandlerBindingV1, ExecutableInputBindingV1, ExecutableInputPlanV1,
-    ExecutableOccurrenceV1, ExecutableTickBindingV1, ExecutableValueV1,
-    WASM_SESSION_EVENT_LIMIT_V1, WasmPersistentSessionBoundaryV1, WasmProcessRequestV1,
-    WasmProcessStatusV1, WasmSessionAdmissionScopeV1, WasmSessionAdmissionV1,
+    ExecutableInputSourceV1, ExecutableKeyPhaseV1, ExecutableOccurrenceV1, ExecutableTickBindingV1,
+    ExecutableValueV1, WASM_SESSION_EVENT_LIMIT_V1, WasmPersistentSessionBoundaryV1,
+    WasmProcessRequestV1, WasmProcessStatusV1, WasmSessionAdmissionScopeV1, WasmSessionAdmissionV1,
     WasmSessionAllocationV1, WasmSessionCommandV1, WasmSessionEventKindV1, WasmSessionHandleV1,
     WasmSessionLimitsV1, WasmSessionOpenV1, WasmSessionOperationV1, WasmSessionProjectionV1,
     decode_executable_occurrence_v1, decode_executable_physical_plan_v1,
@@ -26,7 +27,7 @@ const COHERENT_TEMPLATE_CWR1_HEX: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../browser/jump-arena-shell/fixtures/wasm-coherent-game-v1/coherent-game-v1.cwr1.hex"
 ));
-const MAX_COMMANDS: u64 = 64;
+const MAX_COMMANDS: u64 = 4_096;
 
 #[derive(Debug)]
 pub struct ResidentSourceWorkbenchErrorV1(String);
@@ -249,10 +250,28 @@ impl ResidentSourceWorkbenchV1 {
         let (last, prefix) = occurrences.split_last().ok_or_else(|| {
             ResidentSourceWorkbenchErrorV1("resident run has no occurrence sequence".into())
         })?;
-        for occurrence in prefix {
+        for (index, occurrence) in prefix.iter().enumerate() {
             let event = self.command(WasmSessionOperationV1::Input(occurrence.clone()))?;
             if !matches!(event, WasmSessionEventKindV1::InputAccepted { .. }) {
-                return Err(unexpected_event("input", event));
+                let entry = decode_executable_occurrence_v1(occurrence)
+                    .map(|occurrence| occurrence.entry.to_string())
+                    .unwrap_or_else(|_| "undecodable".into());
+                let designation = entry
+                    .parse::<u16>()
+                    .ok()
+                    .and_then(|entry| {
+                        self.handlers.iter().find_map(|(designation, bindings)| {
+                            bindings
+                                .iter()
+                                .any(|binding| binding.entry == entry)
+                                .then_some(designation)
+                        })
+                    })
+                    .map(|designation| String::from_utf8_lossy(designation).into_owned())
+                    .unwrap_or_else(|| "unknown".into());
+                return Err(ResidentSourceWorkbenchErrorV1(format!(
+                    "unexpected input event at prefix {index}, entry {entry} ({designation}): {event:?}"
+                )));
             }
         }
         let event = self.command(WasmSessionOperationV1::Candidate(last.clone()))?;
@@ -377,7 +396,7 @@ impl ResidentSourceWorkbenchV1 {
         let mut physical_plan =
             decode_executable_physical_plan_v1(&self.template.physical_plan_bytes)
                 .map_err(|error| boxed_error("CPP1 template decode", error))?;
-        let projection_roles = selected_package
+        let mut projection_roles = selected_package
             .constitution()
             .preimage()
             .schemas
@@ -392,6 +411,14 @@ impl ResidentSourceWorkbenchV1 {
                     })
             })
             .collect::<Vec<_>>();
+        projection_roles.sort();
+        if projection_roles.len() < compiled.state_cells.len() {
+            return Err(ResidentSourceWorkbenchErrorV1(format!(
+                "selected package has {} projection Roles for {} source state cells",
+                projection_roles.len(),
+                compiled.state_cells.len()
+            )));
+        }
         let template_input = physical_plan.input.clone();
         let lowered = lower_canonical_executable_program_v1(
             scope,
@@ -435,11 +462,21 @@ impl ResidentSourceWorkbenchV1 {
             let template_input = template_input.ok_or_else(|| {
                 ResidentSourceWorkbenchErrorV1("CPP1 template has no physical input plan".into())
             })?;
-            let events = bind_physical_events(
-                &template_input.events,
-                &lowered.handlers,
-                &semantic_handlers,
-            )?;
+            let events = if compiled.keyboard_bindings.is_empty() {
+                bind_physical_events(
+                    &template_input.events,
+                    &lowered.handlers,
+                    &semantic_handlers,
+                )?
+            } else {
+                bind_source_keyboard_events(
+                    &compiled.keyboard_bindings,
+                    &lowered.handlers,
+                    &semantic_handlers,
+                    &projection_roles,
+                    template_input.tick.role,
+                )?
+            };
             if let Some(input) = events
                 .iter()
                 .find(|event| !event.occurrence.arguments.is_empty())
@@ -632,6 +669,77 @@ fn bind_physical_events(
         ));
     }
     Ok(events)
+}
+
+fn bind_source_keyboard_events(
+    source_bindings: &[CanonicalKeyboardBindingV1],
+    bindings: &[ExecutableCanonicalHandlerBindingV1],
+    semantic: &BTreeMap<
+        clause_package::FormationLocalId,
+        &clause_package::CanonicalExecutableHandlerV1,
+    >,
+    available_roles: &[LocalRoleRefV2],
+    tick_role: LocalRoleRefV2,
+) -> Result<Vec<ExecutableInputBindingV1>, ResidentSourceWorkbenchErrorV1> {
+    let roles = available_roles
+        .iter()
+        .copied()
+        .filter(|role| *role != tick_role)
+        .take(source_bindings.len())
+        .collect::<Vec<_>>();
+    if roles.len() != source_bindings.len() {
+        return Err(ResidentSourceWorkbenchErrorV1(format!(
+            "physical adapter has {} event Roles for {} source keyboard bindings",
+            roles.len(),
+            source_bindings.len()
+        )));
+    }
+
+    source_bindings
+        .iter()
+        .zip(roles)
+        .map(|(source, role)| {
+            let semantic_matches = semantic
+                .iter()
+                .filter(|(_, handler)| handler.designation == source.handler_designation)
+                .collect::<Vec<_>>();
+            let [(handler, meaning)] = semantic_matches.as_slice() else {
+                return Err(ResidentSourceWorkbenchErrorV1(format!(
+                    "source keyboard binding target is missing or ambiguous: {}",
+                    String::from_utf8_lossy(&source.handler_designation)
+                )));
+            };
+            if meaning.trigger != CanonicalHandlerTriggerV1::External || meaning.argument_count != 0
+            {
+                return Err(ResidentSourceWorkbenchErrorV1(format!(
+                    "source keyboard binding target is not a zero-argument external handler: {}",
+                    String::from_utf8_lossy(&source.handler_designation)
+                )));
+            }
+            let lowered = bindings
+                .iter()
+                .find(|binding| binding.handler == **handler)
+                .ok_or_else(|| {
+                    ResidentSourceWorkbenchErrorV1(
+                        "source keyboard binding target was not lowered".into(),
+                    )
+                })?;
+            Ok(ExecutableInputBindingV1 {
+                role,
+                source: ExecutableInputSourceV1::Keyboard {
+                    code: source.code.clone(),
+                    phase: match source.phase {
+                        CanonicalKeyPhaseV1::Down => ExecutableKeyPhaseV1::Down,
+                        CanonicalKeyPhaseV1::Up => ExecutableKeyPhaseV1::Up,
+                    },
+                },
+                occurrence: ExecutableOccurrenceV1 {
+                    entry: lowered.entry,
+                    arguments: Vec::new(),
+                },
+            })
+        })
+        .collect()
 }
 
 fn decode_hex(source: &str) -> Result<Vec<u8>, ResidentSourceWorkbenchErrorV1> {
