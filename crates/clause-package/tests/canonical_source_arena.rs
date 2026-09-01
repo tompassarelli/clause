@@ -74,6 +74,73 @@ on advance ?player
     ?player score ?score + ?clock
 "#;
 
+const GENERAL_HANDLER_ARGUMENT_WORLD: &str = r#"referent F64
+referent Player
+
+relation score
+  reads {player: Player} score {value: F64}
+  subject player
+  mode given player yields value: one
+
+relation reserve
+  reads {player: Player} reserve {value: F64}
+  subject player
+  mode given player yields value: one
+
+player-1 ∈ Player
+player-1 score 4.0
+player-1 reserve 6.0
+
+on adjust ?player ?amount
+  when
+    ?player score ?score
+    ?player reserve ?reserve
+  withdraw
+    ?player score ?score
+    ?player reserve ?reserve
+  include
+    ?player score ?score + ?amount
+    ?player reserve ?reserve - ?amount
+"#;
+
+#[test]
+fn general_handler_arguments_lower_by_declared_header_ordinal() {
+    let cst = read_canonical_source_v1(GENERAL_HANDLER_ARGUMENT_WORLD.as_bytes())
+        .expect("the argument-bearing general handler reads canonically");
+    let plan = plan_independent_canonical_source_allocations_v1(
+        &cst,
+        ProgramChangeOccurrenceId::from_bytes(raw_id(17)),
+    )
+    .expect("the argument-bearing general handler receives rooted allocations");
+    let compiled = elaborate_canonical_source_package_v1(
+        &cst,
+        CanonicalSourceContextV1 {
+            universe: UniverseId::from_bytes(raw_id(1)),
+            semantics: ClauseSemanticsId::from_bytes(raw_id(2)),
+        },
+        &plan,
+    )
+    .expect("the declared general-handler argument reaches executable lowering");
+
+    let handler = compiled
+        .executable_handlers
+        .iter()
+        .find(|handler| handler.designation == b"adjust")
+        .expect("the argument-bearing general handler is executable");
+    assert_eq!(handler.trigger, CanonicalHandlerTriggerV1::External);
+    assert_eq!(handler.argument_count, 1);
+    assert!(matches!(
+        &handler.rules[0].assignments[0].value,
+        CanonicalExecutableExpressionV1::Add(_, argument)
+            if argument.as_ref() == &CanonicalExecutableExpressionV1::Argument(0)
+    ));
+    assert!(matches!(
+        &handler.rules[0].assignments[1].value,
+        CanonicalExecutableExpressionV1::Subtract(_, argument)
+            if argument.as_ref() == &CanonicalExecutableExpressionV1::Argument(0)
+    ));
+}
+
 #[test]
 fn scalar_handlers_bind_number_symbol_and_boolean_state_parameters() {
     let cst = read_canonical_source_v1(SCALAR_PARAMETER_WORLD.as_bytes())

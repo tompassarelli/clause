@@ -829,6 +829,7 @@ struct GeneralHandlerCst {
     producer: CanonicalSemanticProducerV1,
     designation: Vec<u8>,
     subject: Vec<u8>,
+    arguments: Vec<GeneralHandlerArgumentCst>,
     parameter_sources: Vec<ScalarParameterSourceCst>,
     required_sources: Vec<ScalarParameterSourceCst>,
     scalar_bindings: Vec<ScalarLawBindingCst>,
@@ -838,6 +839,12 @@ struct GeneralHandlerCst {
     insertions: Vec<GeneralAssignmentCst>,
     removals: Vec<ScalarParameterSourceCst>,
     includes: Vec<HandlerIncludeCst>,
+}
+
+#[derive(Clone, Debug)]
+struct GeneralHandlerArgumentCst {
+    designation: Vec<u8>,
+    ordinal: u16,
 }
 
 #[derive(Clone, Debug)]
@@ -2579,18 +2586,63 @@ fn canonical_general_executable_expression(
     expression: &CanonicalScalarExpressionV1,
     current: &CanonicalStateRefV1,
     parameters: &BTreeMap<Vec<u8>, CanonicalStateRefV1>,
+    arguments: &BTreeMap<Vec<u8>, u16>,
     bindings: &BTreeMap<Vec<u8>, CanonicalScalarExpressionV1>,
     origin: CanonicalSourceOriginV1,
 ) -> Result<CanonicalExecutableExpressionV1, CanonicalSourceErrorV1> {
     let expression =
         expand_scalar_law_bindings(expression, bindings, &mut BTreeSet::new(), origin)?;
-    canonical_scalar_executable_expression(&expression, current, parameters, origin)
+    if let CanonicalScalarExpressionV1::Parameter(parameter) = &expression
+        && let Some(ordinal) = arguments.get(parameter)
+    {
+        return Ok(CanonicalExecutableExpressionV1::Argument(*ordinal));
+    }
+    let lower_expression = |expression: &CanonicalScalarExpressionV1| {
+        canonical_general_executable_expression(
+            expression, current, parameters, arguments, bindings, origin,
+        )
+    };
+    let pair = |left: &CanonicalScalarExpressionV1,
+                right: &CanonicalScalarExpressionV1|
+     -> Result<_, CanonicalSourceErrorV1> {
+        Ok((
+            Box::new(lower_expression(left)?),
+            Box::new(lower_expression(right)?),
+        ))
+    };
+    match &expression {
+        CanonicalScalarExpressionV1::Add(left, right) => {
+            let (left, right) = pair(left, right)?;
+            Ok(CanonicalExecutableExpressionV1::Add(left, right))
+        }
+        CanonicalScalarExpressionV1::Subtract(left, right) => {
+            let (left, right) = pair(left, right)?;
+            Ok(CanonicalExecutableExpressionV1::Subtract(left, right))
+        }
+        CanonicalScalarExpressionV1::Multiply(left, right) => {
+            let (left, right) = pair(left, right)?;
+            Ok(CanonicalExecutableExpressionV1::Multiply(left, right))
+        }
+        CanonicalScalarExpressionV1::Divide(left, right) => {
+            let (left, right) = pair(left, right)?;
+            Ok(CanonicalExecutableExpressionV1::Divide(left, right))
+        }
+        CanonicalScalarExpressionV1::Clamp(value, lower, upper) => {
+            Ok(CanonicalExecutableExpressionV1::Clamp(
+                Box::new(lower_expression(value)?),
+                Box::new(lower_expression(lower)?),
+                Box::new(lower_expression(upper)?),
+            ))
+        }
+        _ => canonical_scalar_executable_expression(&expression, current, parameters, origin),
+    }
 }
 
 fn canonical_general_executable_predicates(
     predicates: &[CanonicalScalarPredicateV1],
     current: &CanonicalStateRefV1,
     parameters: &BTreeMap<Vec<u8>, CanonicalStateRefV1>,
+    arguments: &BTreeMap<Vec<u8>, u16>,
     bindings: &BTreeMap<Vec<u8>, CanonicalScalarExpressionV1>,
     origin: CanonicalSourceOriginV1,
 ) -> Result<Vec<CanonicalExecutablePredicateV1>, CanonicalSourceErrorV1> {
@@ -2619,10 +2671,10 @@ fn canonical_general_executable_predicates(
             };
             Ok(constructor(
                 canonical_general_executable_expression(
-                    left, current, parameters, bindings, origin,
+                    left, current, parameters, arguments, bindings, origin,
                 )?,
                 canonical_general_executable_expression(
-                    right, current, parameters, bindings, origin,
+                    right, current, parameters, arguments, bindings, origin,
                 )?,
             ))
         })
@@ -3068,6 +3120,11 @@ fn checked_executable_handlers(
             .iter()
             .map(|binding| (binding.parameter.clone(), binding.value.clone()))
             .collect::<BTreeMap<_, _>>();
+        let arguments = source
+            .arguments
+            .iter()
+            .map(|argument| (argument.designation.clone(), argument.ordinal))
+            .collect::<BTreeMap<_, _>>();
         if let Some(binding) = source.scalar_bindings.first() {
             validate_clamp_derivation(cst, binding.origin)?;
         }
@@ -3114,6 +3171,7 @@ fn checked_executable_handlers(
                 &binding.value,
                 &current,
                 &parameters,
+                &arguments,
                 &scalar_bindings,
                 binding.origin,
             )?;
@@ -3122,6 +3180,7 @@ fn checked_executable_handlers(
             &source.predicates,
             &current,
             &parameters,
+            &arguments,
             &scalar_bindings,
             source.origin,
         )?;
@@ -3154,6 +3213,7 @@ fn checked_executable_handlers(
                         &assignment.value,
                         &current,
                         &parameters,
+                        &arguments,
                         &scalar_bindings,
                         source.origin,
                     )?,
@@ -3177,6 +3237,7 @@ fn checked_executable_handlers(
                             &assignment.value,
                             &current,
                             &parameters,
+                            &arguments,
                             &scalar_bindings,
                             source.origin,
                         )?,
@@ -3187,16 +3248,21 @@ fn checked_executable_handlers(
         handlers.push(CanonicalExecutableHandlerV1 {
             id: handler_id(&source.producer)?,
             designation: source.designation.clone(),
-            trigger: if keyboard
-                .iter()
-                .any(|binding| binding.handler_designation == source.designation)
+            trigger: if !source.arguments.is_empty()
+                || keyboard
+                    .iter()
+                    .any(|binding| binding.handler_designation == source.designation)
                 || (source.predicates.is_empty() && source.boolean_conditions.is_empty())
             {
                 CanonicalHandlerTriggerV1::External
             } else {
                 CanonicalHandlerTriggerV1::FixedTick
             },
-            argument_count: 0,
+            argument_count: u16::try_from(source.arguments.len()).map_err(|_| {
+                CanonicalSourceErrorV1::InvalidGeneralHandler {
+                    origin: source.origin,
+                }
+            })?,
             rules: vec![CanonicalExecutableRuleV1 {
                 predicates,
                 required_present,
@@ -4881,12 +4947,30 @@ fn parse_general_handler(
         return Ok(None);
     };
     let header = header.split_whitespace().collect::<Vec<_>>();
-    let [designation, subject] = header.as_slice() else {
+    let [designation, subject, argument_designations @ ..] = header.as_slice() else {
         return Ok(None);
     };
     if !subject.starts_with('?') || *designation == "tick" {
         return Ok(None);
     }
+    let mut seen_arguments = BTreeSet::new();
+    let arguments = argument_designations
+        .iter()
+        .enumerate()
+        .map(|(ordinal, designation)| {
+            if !designation.starts_with('?')
+                || *designation == *subject
+                || !seen_arguments.insert(designation.as_bytes().to_vec())
+            {
+                return Err(CanonicalSourceErrorV1::InvalidGeneralHandler { origin });
+            }
+            Ok(GeneralHandlerArgumentCst {
+                designation: designation.as_bytes().to_vec(),
+                ordinal: u16::try_from(ordinal)
+                    .map_err(|_| CanonicalSourceErrorV1::InvalidGeneralHandler { origin })?,
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
 
     let mut section = "";
     let mut when = Vec::new();
@@ -4942,7 +5026,8 @@ fn parse_general_handler(
             continue;
         }
         if let Some(binding) = parse_scalar_law_binding(condition, *condition_origin) {
-            if parameter_sources.contains_key(&binding.parameter)
+            if seen_arguments.contains(&binding.parameter)
+                || parameter_sources.contains_key(&binding.parameter)
                 || scalar_bindings
                     .insert(binding.parameter.clone(), binding)
                     .is_some()
@@ -4955,7 +5040,8 @@ fn parse_general_handler(
             return Ok(None);
         };
         for source in sources {
-            if scalar_bindings.contains_key(&source.parameter)
+            if seen_arguments.contains(&source.parameter)
+                || scalar_bindings.contains_key(&source.parameter)
                 || parameter_sources
                     .insert(source.parameter.clone(), source)
                     .is_some()
@@ -5040,7 +5126,9 @@ fn parse_general_handler(
         collect_scalar_expression_parameters(&binding.value, &mut used_parameters);
     }
     if used_parameters.iter().any(|parameter| {
-        !parameter_sources.contains_key(parameter) && !scalar_bindings.contains_key(parameter)
+        !parameter_sources.contains_key(parameter)
+            && !scalar_bindings.contains_key(parameter)
+            && !seen_arguments.contains(parameter)
     }) {
         return Err(CanonicalSourceErrorV1::InvalidGeneralHandler { origin });
     }
@@ -5053,6 +5141,7 @@ fn parse_general_handler(
         ),
         designation: designation.as_bytes().to_vec(),
         subject: subject.as_bytes().to_vec(),
+        arguments,
         parameter_sources: parameter_sources.into_values().collect(),
         required_sources,
         scalar_bindings: scalar_bindings.into_values().collect(),
