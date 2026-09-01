@@ -188,17 +188,14 @@ impl ResidentSourceWorkbenchV1 {
             .filter(|binding| {
                 matches!(
                     binding.trigger,
-                    CanonicalHandlerTriggerV1::FixedTickRoot | CanonicalHandlerTriggerV1::FixedTick
+                    CanonicalHandlerTriggerV1::FixedTickRoot
+                        | CanonicalHandlerTriggerV1::FixedTickDerived
+                        | CanonicalHandlerTriggerV1::FixedTick
                 )
             })
             .cloned()
             .collect::<Vec<_>>();
-        bindings.sort_by_key(|binding| {
-            (
-                u8::from(binding.trigger == CanonicalHandlerTriggerV1::FixedTick),
-                binding.handler,
-            )
-        });
+        bindings.sort_by_key(|binding| (fixed_tick_rank(binding.trigger), binding.handler));
         bindings
             .into_iter()
             .map(|binding| {
@@ -449,7 +446,9 @@ impl ResidentSourceWorkbenchV1 {
         let has_tick = lowered.handlers.iter().any(|binding| {
             matches!(
                 binding.trigger,
-                CanonicalHandlerTriggerV1::FixedTickRoot | CanonicalHandlerTriggerV1::FixedTick
+                CanonicalHandlerTriggerV1::FixedTickRoot
+                    | CanonicalHandlerTriggerV1::FixedTickDerived
+                    | CanonicalHandlerTriggerV1::FixedTick
             )
         });
         let template_tick = self.template.occurrences.last().ok_or_else(|| {
@@ -594,18 +593,24 @@ fn ordered_tick_bindings(
         .filter(|binding| {
             matches!(
                 binding.trigger,
-                CanonicalHandlerTriggerV1::FixedTickRoot | CanonicalHandlerTriggerV1::FixedTick
+                CanonicalHandlerTriggerV1::FixedTickRoot
+                    | CanonicalHandlerTriggerV1::FixedTickDerived
+                    | CanonicalHandlerTriggerV1::FixedTick
             )
         })
         .cloned()
         .collect::<Vec<_>>();
-    tick.sort_by_key(|binding| {
-        (
-            u8::from(binding.trigger == CanonicalHandlerTriggerV1::FixedTick),
-            binding.handler,
-        )
-    });
+    tick.sort_by_key(|binding| (fixed_tick_rank(binding.trigger), binding.handler));
     tick
+}
+
+const fn fixed_tick_rank(trigger: CanonicalHandlerTriggerV1) -> u8 {
+    match trigger {
+        CanonicalHandlerTriggerV1::FixedTickRoot => 0,
+        CanonicalHandlerTriggerV1::FixedTickDerived => 1,
+        CanonicalHandlerTriggerV1::FixedTick => 2,
+        CanonicalHandlerTriggerV1::External => 3,
+    }
 }
 
 fn bind_physical_events(

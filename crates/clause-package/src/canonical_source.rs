@@ -324,6 +324,9 @@ pub enum CanonicalHandlerTriggerV1 {
     /// A source `on tick` rule consumes the fixed-tick delta-time argument and
     /// precedes dependent automatic reactions in the same commanded chain.
     FixedTickRoot,
+    /// A source `derive` materializes one predicate after fixed-tick roots and
+    /// before every automatic reaction that may consume it.
+    FixedTickDerived,
     /// A source-owned automatic reaction follows fixed-tick roots.
     FixedTick,
 }
@@ -716,6 +719,8 @@ enum CstKind {
     KeyboardBinding(KeyboardBindingCst),
     ClampLaw(ClampLawCst),
     ClampDerive(ClampDeriveCst),
+    BooleanLaw(BooleanLawCst),
+    BooleanDerive(BooleanDeriveCst),
     VectorAssertion(VectorAssertionCst),
     BooleanAssertion(BooleanAssertionCst),
     NumberAssertion(NumberAssertionCst),
@@ -795,11 +800,13 @@ struct ScalarHandlerCst {
     origin: CanonicalSourceOriginV1,
     producer: CanonicalSemanticProducerV1,
     designation: Vec<u8>,
+    subject: Vec<u8>,
     relation: Vec<u8>,
     field: Option<Vec<u8>>,
     parameters: Vec<Vec<u8>>,
     parameter_sources: Vec<ScalarParameterSourceCst>,
     predicates: Vec<CanonicalScalarPredicateV1>,
+    boolean_conditions: Vec<BooleanRelationUseCst>,
     result: CanonicalScalarExpressionV1,
     include: HandlerIncludeCst,
 }
@@ -809,8 +816,10 @@ struct GeneralHandlerCst {
     origin: CanonicalSourceOriginV1,
     producer: CanonicalSemanticProducerV1,
     designation: Vec<u8>,
+    subject: Vec<u8>,
     parameter_sources: Vec<ScalarParameterSourceCst>,
     predicates: Vec<CanonicalScalarPredicateV1>,
+    boolean_conditions: Vec<BooleanRelationUseCst>,
     assignments: Vec<GeneralAssignmentCst>,
     includes: Vec<HandlerIncludeCst>,
 }
@@ -883,6 +892,27 @@ struct ClampDeriveCst {
     branch: ClampBranchV1,
 }
 
+#[derive(Clone, Debug)]
+struct BooleanRelationUseCst {
+    origin: CanonicalSourceOriginV1,
+    source: Vec<u8>,
+}
+
+#[derive(Clone, Debug)]
+struct BooleanLawCst {
+    origin: CanonicalSourceOriginV1,
+    designation: Vec<u8>,
+    parameter_sources: Vec<ScalarParameterSourceCst>,
+    predicates: Vec<CanonicalScalarPredicateV1>,
+    result: BooleanRelationUseCst,
+}
+
+#[derive(Clone, Debug)]
+struct BooleanDeriveCst {
+    origin: CanonicalSourceOriginV1,
+    designation: Vec<u8>,
+}
+
 #[derive(Clone, Copy)]
 struct TickProgramParts<'a> {
     handlers: [&'a TickHandlerCst; 3],
@@ -939,9 +969,16 @@ struct RelationEffectCst {
 struct RelationCst {
     designation: Vec<u8>,
     surface: Vec<u8>,
+    reading: Vec<RelationReadingPartCst>,
     subject: Option<Vec<u8>>,
     roles: Vec<RelationRoleCst>,
     modes: Vec<RelationModeCst>,
+}
+
+#[derive(Clone, Debug)]
+enum RelationReadingPartCst {
+    Literal(Vec<u8>),
+    Role(Vec<u8>),
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -1074,6 +1111,7 @@ pub fn read_canonical_source_v1(
         };
         items.push(parse_item(artifact, block, origin)?);
     }
+    retain_supported_boolean_derive_pairs(&mut items);
     validate_unique_designations(&items)?;
     Ok(CanonicalSourceCstV1 {
         artifact,
@@ -1445,6 +1483,19 @@ fn allocation_requests(
                 slot: head_slot(CanonicalSourceProductionV1::Derive),
                 domain: AllocationDomain::Formation,
             }),
+            CstKind::BooleanLaw(law) => requested.push(AllocationRequest {
+                producer: semantic_producer(CanonicalSourceProductionV1::Law, &law.designation),
+                slot: head_slot(CanonicalSourceProductionV1::Law),
+                domain: AllocationDomain::Formation,
+            }),
+            CstKind::BooleanDerive(derive) => requested.push(AllocationRequest {
+                producer: semantic_producer(
+                    CanonicalSourceProductionV1::Derive,
+                    &derive.designation,
+                ),
+                slot: head_slot(CanonicalSourceProductionV1::Derive),
+                domain: AllocationDomain::Formation,
+            }),
             CstKind::VectorAssertion(assertion) => {
                 if input
                     .as_ref()
@@ -1617,6 +1668,14 @@ fn resolved_state_relation<'a>(
             CanonicalSourceErrorV1::AmbiguousExecutableBinding { origin }
         });
     };
+    resolved_state_relation_for(plan, relation, origin)
+}
+
+fn resolved_state_relation_for<'a>(
+    plan: &CanonicalSourceAllocationPlanV1,
+    relation: &'a RelationCst,
+    origin: CanonicalSourceOriginV1,
+) -> Result<ResolvedStateRelation<'a>, CanonicalSourceErrorV1> {
     let subject = relation
         .subject
         .as_ref()
@@ -1676,6 +1735,18 @@ fn canonical_state_ref(
         &assertion_producer,
         &head_slot(CanonicalSourceProductionV1::Assertion),
     )?;
+    canonical_state_ref_with_identity(cst, plan, assertion, subject, &relation, field, origin)
+}
+
+fn canonical_state_ref_with_identity(
+    cst: &CanonicalSourceCstV1,
+    plan: &CanonicalSourceAllocationPlanV1,
+    assertion: FormationLocalId,
+    subject: &[u8],
+    relation: &ResolvedStateRelation<'_>,
+    field: Option<&[u8]>,
+    origin: CanonicalSourceOriginV1,
+) -> Result<CanonicalStateRefV1, CanonicalSourceErrorV1> {
     let path = if let Some(field) = field {
         let shape = cst
             .items
@@ -1765,7 +1836,7 @@ fn state_ref_for_origin(
     }
 }
 
-fn scalar_parameter_state_ref(
+fn general_parameter_state_ref(
     cst: &CanonicalSourceCstV1,
     plan: &CanonicalSourceAllocationPlanV1,
     source: &ScalarParameterSourceCst,
@@ -1805,44 +1876,241 @@ fn scalar_parameter_state_ref(
     state_ref_for_origin(cst, plan, assertion.origin, source.field.as_deref())
 }
 
-fn general_parameter_state_ref(
-    cst: &CanonicalSourceCstV1,
-    plan: &CanonicalSourceAllocationPlanV1,
-    source: &ScalarParameterSourceCst,
-    origin: CanonicalSourceOriginV1,
-) -> Result<CanonicalStateRefV1, CanonicalSourceErrorV1> {
-    let variable_subject = source.subject.starts_with(b"?");
-    let assertions = cst
+struct ResolvedBooleanRelationUse<'a> {
+    relation: &'a RelationCst,
+    bindings: BTreeMap<Vec<u8>, Vec<u8>>,
+    value: bool,
+}
+
+fn resolve_boolean_relation_use<'a>(
+    cst: &'a CanonicalSourceCstV1,
+    source: &BooleanRelationUseCst,
+) -> Result<ResolvedBooleanRelationUse<'a>, CanonicalSourceErrorV1> {
+    let text = std::str::from_utf8(&source.source).map_err(|_| {
+        CanonicalSourceErrorV1::MissingExecutableBinding {
+            origin: source.origin,
+        }
+    })?;
+    let tokens = text
+        .split_whitespace()
+        .map(str::as_bytes)
+        .collect::<Vec<_>>();
+    let matches = cst
         .items
         .iter()
-        .filter(|item| match (&item.kind, source.field.as_deref()) {
-            (CstKind::VectorAssertion(assertion), Some(_)) => {
-                assertion.relation == source.relation
-                    && (variable_subject || assertion.subject == source.subject)
+        .filter_map(|item| match &item.kind {
+            CstKind::Relation(relation) if relation.reading.len() == tokens.len() => {
+                let mut bindings = BTreeMap::new();
+                for (part, token) in relation.reading.iter().zip(&tokens) {
+                    match part {
+                        RelationReadingPartCst::Literal(literal) if literal == token => {}
+                        RelationReadingPartCst::Role(role) => {
+                            bindings.insert(role.clone(), token.to_vec());
+                        }
+                        _ => return None,
+                    }
+                }
+                let subject = relation.subject.as_ref()?;
+                let produced = relation
+                    .modes
+                    .iter()
+                    .filter(|mode| mode.known.iter().any(|role| role == subject))
+                    .flat_map(|mode| mode.produced.iter())
+                    .collect::<BTreeSet<_>>();
+                if produced.len() != 1 {
+                    return None;
+                }
+                let value_role = produced.into_iter().next()?;
+                let value = match bindings.get(value_role)?.as_slice() {
+                    b"true" => true,
+                    b"false" => false,
+                    _ => return None,
+                };
+                Some(ResolvedBooleanRelationUse {
+                    relation,
+                    bindings,
+                    value,
+                })
             }
-            (CstKind::BooleanAssertion(assertion), None) => {
-                assertion.relation == source.relation
-                    && (variable_subject || assertion.subject == source.subject)
-            }
-            (CstKind::NumberAssertion(assertion), None) => {
-                assertion.relation == source.relation
-                    && (variable_subject || assertion.subject == source.subject)
-            }
-            (CstKind::SymbolAssertion(assertion), None) => {
-                assertion.relation == source.relation
-                    && (variable_subject || assertion.subject == source.subject)
-            }
-            _ => false,
+            _ => None,
         })
         .collect::<Vec<_>>();
-    let [assertion] = assertions.as_slice() else {
-        return Err(if assertions.is_empty() {
-            CanonicalSourceErrorV1::MissingExecutableBinding { origin }
+    let [resolved] = matches.as_slice() else {
+        return Err(if matches.is_empty() {
+            CanonicalSourceErrorV1::MissingExecutableBinding {
+                origin: source.origin,
+            }
         } else {
-            CanonicalSourceErrorV1::AmbiguousExecutableBinding { origin }
+            CanonicalSourceErrorV1::AmbiguousExecutableBinding {
+                origin: source.origin,
+            }
         });
     };
-    state_ref_for_origin(cst, plan, assertion.origin, source.field.as_deref())
+    Ok(ResolvedBooleanRelationUse {
+        relation: resolved.relation,
+        bindings: resolved.bindings.clone(),
+        value: resolved.value,
+    })
+}
+
+fn resolve_parameter_states(
+    cst: &CanonicalSourceCstV1,
+    plan: &CanonicalSourceAllocationPlanV1,
+    sources: &[ScalarParameterSourceCst],
+    origin: CanonicalSourceOriginV1,
+) -> Result<
+    (
+        BTreeMap<Vec<u8>, CanonicalStateRefV1>,
+        BTreeMap<Vec<u8>, Vec<u8>>,
+    ),
+    CanonicalSourceErrorV1,
+> {
+    let mut parameters = BTreeMap::new();
+    let mut entities = BTreeMap::new();
+    for source in sources {
+        let state = general_parameter_state_ref(cst, plan, source, origin)?;
+        if source.subject.starts_with(b"?") {
+            if let Some(previous) = entities.insert(source.subject.clone(), state.subject.clone())
+                && previous != state.subject
+            {
+                return Err(CanonicalSourceErrorV1::AmbiguousExecutableBinding { origin });
+            }
+        }
+        parameters.insert(source.parameter.clone(), state);
+    }
+    Ok((parameters, entities))
+}
+
+fn concretize_relation_bindings(
+    bindings: &BTreeMap<Vec<u8>, Vec<u8>>,
+    entities: &BTreeMap<Vec<u8>, Vec<u8>>,
+    origin: CanonicalSourceOriginV1,
+) -> Result<BTreeMap<Vec<u8>, Vec<u8>>, CanonicalSourceErrorV1> {
+    bindings
+        .iter()
+        .map(|(role, value)| {
+            let concrete = if value.starts_with(b"?") {
+                entities
+                    .get(value)
+                    .cloned()
+                    .ok_or(CanonicalSourceErrorV1::MissingExecutableBinding { origin })?
+            } else {
+                value.clone()
+            };
+            Ok((role.clone(), concrete))
+        })
+        .collect()
+}
+
+struct ResolvedBooleanDerive<'a> {
+    law: &'a BooleanLawCst,
+    derive: &'a BooleanDeriveCst,
+    state: CanonicalStateRefV1,
+    parameters: BTreeMap<Vec<u8>, CanonicalStateRefV1>,
+    bindings: BTreeMap<Vec<u8>, Vec<u8>>,
+    value: bool,
+}
+
+fn resolved_boolean_derives<'a>(
+    cst: &'a CanonicalSourceCstV1,
+    plan: &CanonicalSourceAllocationPlanV1,
+) -> Result<Vec<ResolvedBooleanDerive<'a>>, CanonicalSourceErrorV1> {
+    let derives = cst
+        .items
+        .iter()
+        .filter_map(|item| match &item.kind {
+            CstKind::BooleanDerive(derive) => Some(derive),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let mut resolved = Vec::with_capacity(derives.len());
+    for derive in derives {
+        let laws = cst
+            .items
+            .iter()
+            .filter_map(|item| match &item.kind {
+                CstKind::BooleanLaw(law) if law.designation == derive.designation => Some(law),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        let [law] = laws.as_slice() else {
+            return Err(CanonicalSourceErrorV1::MissingExecutableBinding {
+                origin: derive.origin,
+            });
+        };
+        let (parameters, entities) =
+            resolve_parameter_states(cst, plan, &law.parameter_sources, law.origin)?;
+        let result = resolve_boolean_relation_use(cst, &law.result)?;
+        let bindings =
+            concretize_relation_bindings(&result.bindings, &entities, law.result.origin)?;
+        let subject_role = result.relation.subject.as_ref().ok_or(
+            CanonicalSourceErrorV1::MissingExecutableBinding {
+                origin: law.result.origin,
+            },
+        )?;
+        let subject =
+            bindings
+                .get(subject_role)
+                .ok_or(CanonicalSourceErrorV1::MissingExecutableBinding {
+                    origin: law.result.origin,
+                })?;
+        let producer = semantic_producer(CanonicalSourceProductionV1::Derive, &derive.designation);
+        let identity = formation_id(
+            plan,
+            &producer,
+            &head_slot(CanonicalSourceProductionV1::Derive),
+        )?;
+        let relation = resolved_state_relation_for(plan, result.relation, law.result.origin)?;
+        let state = canonical_state_ref_with_identity(
+            cst,
+            plan,
+            identity,
+            subject,
+            &relation,
+            None,
+            law.result.origin,
+        )?;
+        resolved.push(ResolvedBooleanDerive {
+            law,
+            derive,
+            state,
+            parameters,
+            bindings,
+            value: result.value,
+        });
+    }
+    Ok(resolved)
+}
+
+fn derived_condition_state_ref(
+    cst: &CanonicalSourceCstV1,
+    condition: &BooleanRelationUseCst,
+    entities: &BTreeMap<Vec<u8>, Vec<u8>>,
+    derives: &[ResolvedBooleanDerive<'_>],
+) -> Result<(CanonicalStateRefV1, bool), CanonicalSourceErrorV1> {
+    let condition_use = resolve_boolean_relation_use(cst, condition)?;
+    let bindings =
+        concretize_relation_bindings(&condition_use.bindings, entities, condition.origin)?;
+    let matching = derives
+        .iter()
+        .filter(|derive| {
+            derive.state.relation_designation == condition_use.relation.designation
+                && derive.bindings == bindings
+                && derive.value == condition_use.value
+        })
+        .collect::<Vec<_>>();
+    let [derive] = matching.as_slice() else {
+        return Err(if matching.is_empty() {
+            CanonicalSourceErrorV1::MissingExecutableBinding {
+                origin: condition.origin,
+            }
+        } else {
+            CanonicalSourceErrorV1::AmbiguousExecutableBinding {
+                origin: condition.origin,
+            }
+        });
+    };
+    Ok((derive.state.clone(), condition_use.value))
 }
 
 fn checked_source_state_cells(
@@ -1924,6 +2192,15 @@ fn checked_source_state_cells(
             _ => unreachable!("the producer filter selected an assertion"),
         }
     }
+    for derive in resolved_boolean_derives(cst, plan)? {
+        cells.insert(
+            derive.state.clone(),
+            CanonicalStateCellV1 {
+                state: derive.state,
+                initial_value: CanonicalScalarValueV1::Boolean(!derive.value),
+            },
+        );
+    }
     Ok(cells.into_values().collect())
 }
 
@@ -1998,6 +2275,43 @@ fn canonical_scalar_executable_expression(
             CanonicalExecutableExpressionV1::Divide(left, right)
         }
     })
+}
+
+fn canonical_scalar_executable_predicates(
+    predicates: &[CanonicalScalarPredicateV1],
+    current: &CanonicalStateRefV1,
+    parameters: &BTreeMap<Vec<u8>, CanonicalStateRefV1>,
+    origin: CanonicalSourceOriginV1,
+) -> Result<Vec<CanonicalExecutablePredicateV1>, CanonicalSourceErrorV1> {
+    predicates
+        .iter()
+        .map(|predicate| {
+            let (left, right, constructor) = match predicate {
+                CanonicalScalarPredicateV1::Equal(left, right) => (
+                    left,
+                    right,
+                    CanonicalExecutablePredicateV1::Equal
+                        as fn(_, _) -> CanonicalExecutablePredicateV1,
+                ),
+                CanonicalScalarPredicateV1::GreaterThan(left, right) => (
+                    left,
+                    right,
+                    CanonicalExecutablePredicateV1::GreaterThan
+                        as fn(_, _) -> CanonicalExecutablePredicateV1,
+                ),
+                CanonicalScalarPredicateV1::LessThanOrEqual(left, right) => (
+                    left,
+                    right,
+                    CanonicalExecutablePredicateV1::LessThanOrEqual
+                        as fn(_, _) -> CanonicalExecutablePredicateV1,
+                ),
+            };
+            Ok(constructor(
+                canonical_scalar_executable_expression(left, current, parameters, origin)?,
+                canonical_scalar_executable_expression(right, current, parameters, origin)?,
+            ))
+        })
+        .collect()
 }
 
 fn tick_state_ref(
@@ -2278,6 +2592,37 @@ fn checked_executable_handlers(
             });
         }
     }
+    let derives = resolved_boolean_derives(cst, plan)?;
+    for derive in &derives {
+        let predicates = canonical_scalar_executable_predicates(
+            &derive.law.predicates,
+            &derive.state,
+            &derive.parameters,
+            derive.law.origin,
+        )?;
+        handlers.push(CanonicalExecutableHandlerV1 {
+            id: derive.state.assertion,
+            designation: derive.derive.designation.clone(),
+            trigger: CanonicalHandlerTriggerV1::FixedTickDerived,
+            argument_count: 0,
+            rules: vec![
+                CanonicalExecutableRuleV1 {
+                    predicates,
+                    assignments: vec![CanonicalExecutableAssignmentV1 {
+                        target: derive.state.clone(),
+                        value: constant_expression(CanonicalScalarValueV1::Boolean(derive.value)),
+                    }],
+                },
+                CanonicalExecutableRuleV1 {
+                    predicates: vec![],
+                    assignments: vec![CanonicalExecutableAssignmentV1 {
+                        target: derive.state.clone(),
+                        value: constant_expression(CanonicalScalarValueV1::Boolean(!derive.value)),
+                    }],
+                },
+            ],
+        });
+    }
     for parts in scalar {
         let current = state_ref_for_origin(
             cst,
@@ -2285,65 +2630,43 @@ fn checked_executable_handlers(
             parts.initial_origin,
             parts.handler.field.as_deref(),
         )?;
-        let parameters = parts
-            .handler
-            .parameter_sources
-            .iter()
-            .map(|source| {
-                Ok((
-                    source.parameter.clone(),
-                    scalar_parameter_state_ref(cst, plan, source, parts.handler.origin)?,
-                ))
-            })
-            .collect::<Result<BTreeMap<_, _>, CanonicalSourceErrorV1>>()?;
-        let predicates = parts
-            .handler
-            .predicates
-            .iter()
-            .map(|predicate| {
-                let (left, right, constructor) = match predicate {
-                    CanonicalScalarPredicateV1::Equal(left, right) => (
-                        left,
-                        right,
-                        CanonicalExecutablePredicateV1::Equal
-                            as fn(_, _) -> CanonicalExecutablePredicateV1,
-                    ),
-                    CanonicalScalarPredicateV1::GreaterThan(left, right) => (
-                        left,
-                        right,
-                        CanonicalExecutablePredicateV1::GreaterThan
-                            as fn(_, _) -> CanonicalExecutablePredicateV1,
-                    ),
-                    CanonicalScalarPredicateV1::LessThanOrEqual(left, right) => (
-                        left,
-                        right,
-                        CanonicalExecutablePredicateV1::LessThanOrEqual
-                            as fn(_, _) -> CanonicalExecutablePredicateV1,
-                    ),
-                };
-                Ok(constructor(
-                    canonical_scalar_executable_expression(
-                        left,
-                        &current,
-                        &parameters,
-                        parts.handler.origin,
-                    )?,
-                    canonical_scalar_executable_expression(
-                        right,
-                        &current,
-                        &parameters,
-                        parts.handler.origin,
-                    )?,
-                ))
-            })
-            .collect::<Result<Vec<_>, CanonicalSourceErrorV1>>()?;
+        let (parameters, mut entities) = resolve_parameter_states(
+            cst,
+            plan,
+            &parts.handler.parameter_sources,
+            parts.handler.origin,
+        )?;
+        entities.insert(parts.handler.subject.clone(), current.subject.clone());
+        let mut predicates = canonical_scalar_executable_predicates(
+            &parts.handler.predicates,
+            &current,
+            &parameters,
+            parts.handler.origin,
+        )?;
+        predicates.extend(
+            parts
+                .handler
+                .boolean_conditions
+                .iter()
+                .map(|condition| {
+                    let (state, expected) =
+                        derived_condition_state_ref(cst, condition, &entities, &derives)?;
+                    Ok(CanonicalExecutablePredicateV1::Equal(
+                        CanonicalExecutableExpressionV1::State(state),
+                        constant_expression(CanonicalScalarValueV1::Boolean(expected)),
+                    ))
+                })
+                .collect::<Result<Vec<_>, CanonicalSourceErrorV1>>()?,
+        );
         handlers.push(CanonicalExecutableHandlerV1 {
             id: handler_id(&parts.handler.producer)?,
             designation: parts.handler.designation.clone(),
             trigger: if keyboard
                 .iter()
                 .any(|binding| binding.handler_designation == parts.handler.designation)
-                || (keyboard.is_empty() && parameters.is_empty())
+                || (keyboard.is_empty()
+                    && parameters.is_empty()
+                    && parts.handler.boolean_conditions.is_empty())
             {
                 CanonicalHandlerTriggerV1::External
             } else {
@@ -2368,16 +2691,8 @@ fn checked_executable_handlers(
         CstKind::GeneralHandler(handler) => Some(handler),
         _ => None,
     }) {
-        let parameters = source
-            .parameter_sources
-            .iter()
-            .map(|parameter| {
-                Ok((
-                    parameter.parameter.clone(),
-                    general_parameter_state_ref(cst, plan, parameter, source.origin)?,
-                ))
-            })
-            .collect::<Result<BTreeMap<_, _>, CanonicalSourceErrorV1>>()?;
+        let (parameters, mut entities) =
+            resolve_parameter_states(cst, plan, &source.parameter_sources, source.origin)?;
         let current = source
             .assignments
             .first()
@@ -2387,46 +2702,27 @@ fn checked_executable_handlers(
             .target
             .clone();
         let current = general_parameter_state_ref(cst, plan, &current, source.origin)?;
-        let predicates = source
-            .predicates
-            .iter()
-            .map(|predicate| {
-                let (left, right, constructor) = match predicate {
-                    CanonicalScalarPredicateV1::Equal(left, right) => (
-                        left,
-                        right,
-                        CanonicalExecutablePredicateV1::Equal
-                            as fn(_, _) -> CanonicalExecutablePredicateV1,
-                    ),
-                    CanonicalScalarPredicateV1::GreaterThan(left, right) => (
-                        left,
-                        right,
-                        CanonicalExecutablePredicateV1::GreaterThan
-                            as fn(_, _) -> CanonicalExecutablePredicateV1,
-                    ),
-                    CanonicalScalarPredicateV1::LessThanOrEqual(left, right) => (
-                        left,
-                        right,
-                        CanonicalExecutablePredicateV1::LessThanOrEqual
-                            as fn(_, _) -> CanonicalExecutablePredicateV1,
-                    ),
-                };
-                Ok(constructor(
-                    canonical_scalar_executable_expression(
-                        left,
-                        &current,
-                        &parameters,
-                        source.origin,
-                    )?,
-                    canonical_scalar_executable_expression(
-                        right,
-                        &current,
-                        &parameters,
-                        source.origin,
-                    )?,
-                ))
-            })
-            .collect::<Result<Vec<_>, CanonicalSourceErrorV1>>()?;
+        entities.insert(source.subject.clone(), current.subject.clone());
+        let mut predicates = canonical_scalar_executable_predicates(
+            &source.predicates,
+            &current,
+            &parameters,
+            source.origin,
+        )?;
+        predicates.extend(
+            source
+                .boolean_conditions
+                .iter()
+                .map(|condition| {
+                    let (state, expected) =
+                        derived_condition_state_ref(cst, condition, &entities, &derives)?;
+                    Ok(CanonicalExecutablePredicateV1::Equal(
+                        CanonicalExecutableExpressionV1::State(state),
+                        constant_expression(CanonicalScalarValueV1::Boolean(expected)),
+                    ))
+                })
+                .collect::<Result<Vec<_>, CanonicalSourceErrorV1>>()?,
+        );
         let assignments = source
             .assignments
             .iter()
@@ -3111,6 +3407,36 @@ pub fn elaborate_canonical_source_package_v1(
                 )?);
                 emissions.push(emission(plan, producer, slot, derive.origin));
             }
+            CstKind::BooleanLaw(law) => {
+                let producer =
+                    semantic_producer(CanonicalSourceProductionV1::Law, &law.designation);
+                let slot = head_slot(CanonicalSourceProductionV1::Law);
+                let id = formation_id(plan, &producer, &slot)?;
+                formations.push(source_formation(
+                    scope,
+                    id,
+                    cst.source_slice(law.origin)
+                        .expect("owned Boolean law origin"),
+                    law.origin,
+                    "boolean-law",
+                )?);
+                emissions.push(emission(plan, producer, slot, law.origin));
+            }
+            CstKind::BooleanDerive(derive) => {
+                let producer =
+                    semantic_producer(CanonicalSourceProductionV1::Derive, &derive.designation);
+                let slot = head_slot(CanonicalSourceProductionV1::Derive);
+                let id = formation_id(plan, &producer, &slot)?;
+                formations.push(source_formation(
+                    scope,
+                    id,
+                    cst.source_slice(derive.origin)
+                        .expect("owned Boolean derive origin"),
+                    derive.origin,
+                    "boolean-derive",
+                )?);
+                emissions.push(emission(plan, producer, slot, derive.origin));
+            }
             CstKind::VectorAssertion(assertion) => {
                 if input_parts
                     .as_ref()
@@ -3453,6 +3779,12 @@ fn parse_item(
                 kind: CstKind::ClampLaw(law),
             });
         }
+        if let Some(law) = parse_boolean_law(artifact, block, origin)? {
+            return Ok(CstItem {
+                origin,
+                kind: CstKind::BooleanLaw(law),
+            });
+        }
         return Ok(unsupported_item(
             artifact,
             block,
@@ -3467,6 +3799,15 @@ fn parse_item(
             return Ok(CstItem {
                 origin,
                 kind: CstKind::ClampDerive(derive),
+            });
+        }
+        if let Some(designation) = head.strip_prefix("derive ") {
+            return Ok(CstItem {
+                origin,
+                kind: CstKind::BooleanDerive(BooleanDeriveCst {
+                    origin,
+                    designation: designation_bytes(designation, origin)?,
+                }),
             });
         }
         return Ok(unsupported_item(
@@ -4013,7 +4354,8 @@ fn parse_scalar_handler(
     let mut declared_parameters = BTreeSet::new();
     let mut parameter_sources = BTreeMap::new();
     let mut predicates = Vec::new();
-    for (condition, _) in when
+    let mut boolean_conditions = Vec::new();
+    for (condition, condition_origin) in when
         .iter()
         .copied()
         .filter(|(condition, _)| *condition != withdraw)
@@ -4032,6 +4374,10 @@ fn parse_scalar_handler(
                     return Ok(None);
                 }
             }
+            continue;
+        }
+        if let Some(condition) = parse_boolean_relation_use(condition, condition_origin) {
+            boolean_conditions.push(condition);
             continue;
         }
         return Ok(None);
@@ -4063,11 +4409,13 @@ fn parse_scalar_handler(
             &handler_semantic_producer(block),
         ),
         designation: designation.as_bytes().to_vec(),
+        subject: subject.as_bytes().to_vec(),
         relation: relation.into_bytes(),
         field,
         parameters,
         parameter_sources,
         predicates,
+        boolean_conditions,
         result,
         include: HandlerIncludeCst {
             origin: include_origin,
@@ -4134,9 +4482,14 @@ fn parse_general_handler(
 
     let mut parameter_sources = BTreeMap::<Vec<u8>, ScalarParameterSourceCst>::new();
     let mut predicates = Vec::new();
-    for (condition, _) in &when {
+    let mut boolean_conditions = Vec::new();
+    for (condition, condition_origin) in &when {
         if let Some(predicate) = parse_scalar_predicate(condition, "") {
             predicates.push(predicate);
+            continue;
+        }
+        if let Some(condition) = parse_boolean_relation_use(condition, *condition_origin) {
+            boolean_conditions.push(condition);
             continue;
         }
         let Some(sources) = parse_general_state_declaration(condition, subject) else {
@@ -4198,8 +4551,10 @@ fn parse_general_handler(
             &handler_semantic_producer(block),
         ),
         designation: designation.as_bytes().to_vec(),
+        subject: subject.as_bytes().to_vec(),
         parameter_sources: parameter_sources.into_values().collect(),
         predicates,
+        boolean_conditions,
         assignments,
         includes,
     }))
@@ -4500,6 +4855,146 @@ fn collect_scalar_expression_parameters(
         | CanonicalScalarExpressionV1::Boolean(_)
         | CanonicalScalarExpressionV1::Symbol(_) => {}
     }
+}
+
+fn parse_boolean_relation_use(
+    source: &str,
+    origin: CanonicalSourceOriginV1,
+) -> Option<BooleanRelationUseCst> {
+    parse_boolean_clause(source)?;
+    Some(BooleanRelationUseCst {
+        origin,
+        source: source.as_bytes().to_vec(),
+    })
+}
+
+fn parse_boolean_law(
+    artifact: CanonicalSourceArtifactIdV1,
+    block: &[SourceLine<'_>],
+    origin: CanonicalSourceOriginV1,
+) -> Result<Option<BooleanLawCst>, CanonicalSourceErrorV1> {
+    let Some(designation) = block[0].text.strip_prefix("law ") else {
+        return Ok(None);
+    };
+    let designation = designation_bytes(designation, origin)?;
+    let mut section = "";
+    let mut conditions = Vec::new();
+    let mut result = None;
+    let mut seen_sections = BTreeSet::new();
+    for line in block
+        .iter()
+        .skip(1)
+        .filter(|line| !line.text.trim().is_empty())
+    {
+        let trimmed = line.text.trim();
+        if line.indent == 2 {
+            if !matches!(trimmed, "if" | "then") || !seen_sections.insert(trimmed) {
+                return Ok(None);
+            }
+            section = trimmed;
+            continue;
+        }
+        if line.indent != 4 {
+            return Ok(None);
+        }
+        let entry = (trimmed, line_origin(artifact, *line));
+        match section {
+            "if" => conditions.push(entry),
+            "then" if result.replace(entry).is_none() => {}
+            _ => return Ok(None),
+        }
+    }
+    let Some((result, result_origin)) = result else {
+        return Ok(None);
+    };
+    let Some(result) = parse_boolean_relation_use(result, result_origin) else {
+        return Ok(None);
+    };
+
+    let mut parameter_sources = BTreeMap::<Vec<u8>, ScalarParameterSourceCst>::new();
+    let mut predicates = Vec::new();
+    for (condition, _) in conditions {
+        if let Some(predicate) = parse_scalar_predicate(condition, "") {
+            predicates.push(predicate);
+            continue;
+        }
+        let Some(sources) = parse_law_state_declaration(condition) else {
+            return Ok(None);
+        };
+        for source in sources {
+            if parameter_sources
+                .insert(source.parameter.clone(), source)
+                .is_some()
+            {
+                return Ok(None);
+            }
+        }
+    }
+    let mut used_parameters = BTreeSet::new();
+    for predicate in &predicates {
+        let (left, right) = match predicate {
+            CanonicalScalarPredicateV1::Equal(left, right)
+            | CanonicalScalarPredicateV1::GreaterThan(left, right)
+            | CanonicalScalarPredicateV1::LessThanOrEqual(left, right) => (left, right),
+        };
+        collect_scalar_expression_parameters(left, &mut used_parameters);
+        collect_scalar_expression_parameters(right, &mut used_parameters);
+    }
+    if used_parameters
+        .iter()
+        .any(|parameter| !parameter_sources.contains_key(parameter))
+    {
+        return Ok(None);
+    }
+    Ok(Some(BooleanLawCst {
+        origin,
+        designation,
+        parameter_sources: parameter_sources.into_values().collect(),
+        predicates,
+        result,
+    }))
+}
+
+fn parse_law_state_declaration(source: &str) -> Option<Vec<ScalarParameterSourceCst>> {
+    if let Some((prefix, vector)) = split_vector_subject(source) {
+        let prefix = prefix.split_whitespace().collect::<Vec<_>>();
+        if prefix.len() < 2 {
+            return None;
+        }
+        let subject = prefix[0].as_bytes().to_vec();
+        let relation = prefix[1..].join(" ").into_bytes();
+        let components = parse_vec3_components(vector)?;
+        if !components
+            .iter()
+            .all(|component| component.starts_with('?'))
+        {
+            return None;
+        }
+        return components
+            .into_iter()
+            .zip([b"x".as_slice(), b"y".as_slice(), b"z".as_slice()])
+            .map(|(component, field)| {
+                Some(ScalarParameterSourceCst {
+                    parameter: component.as_bytes().to_vec(),
+                    subject: subject.clone(),
+                    relation: relation.clone(),
+                    field: Some(field.to_vec()),
+                })
+            })
+            .collect();
+    }
+
+    let parts = source.split_whitespace().collect::<Vec<_>>();
+    let parameter = *parts.last()?;
+    if parts.len() < 3 || !parameter.starts_with('?') {
+        return None;
+    }
+    Some(vec![ScalarParameterSourceCst {
+        parameter: parameter.as_bytes().to_vec(),
+        subject: parts[0].as_bytes().to_vec(),
+        relation: parts[1..parts.len() - 1].join(" ").into_bytes(),
+        field: None,
+    }])
 }
 
 fn parse_clamp_law(
@@ -5083,6 +5578,7 @@ fn parse_relation(
 ) -> Result<RelationCst, CanonicalSourceErrorV1> {
     let mut roles = None;
     let mut surface = None;
+    let mut reading_pattern = None;
     let mut modes: Vec<RelationModeCst> = Vec::new();
     let mut subject = None;
     for line in block
@@ -5111,6 +5607,7 @@ fn parse_relation(
             }
             roles = Some(parse_reads_roles(reading, origin)?);
             surface = Some(parse_reading_surface(reading, origin)?);
+            reading_pattern = Some(parse_relation_reading(reading, origin)?);
         } else if let Some(role) = child.strip_prefix("subject ") {
             if subject.replace(role.as_bytes().to_vec()).is_some() {
                 return Err(CanonicalSourceErrorV1::DuplicateChild {
@@ -5197,10 +5694,46 @@ fn parse_relation(
     Ok(RelationCst {
         designation,
         surface: surface.expect("a parsed Reading has one surface phrase"),
+        reading: reading_pattern.expect("a parsed Reading has one role pattern"),
         subject,
         roles,
         modes,
     })
+}
+
+fn parse_relation_reading(
+    source: &str,
+    origin: CanonicalSourceOriginV1,
+) -> Result<Vec<RelationReadingPartCst>, CanonicalSourceErrorV1> {
+    let mut rest = source;
+    let mut parts = Vec::new();
+    loop {
+        let Some(open) = rest.find('{') else {
+            parts.extend(
+                rest.split_whitespace()
+                    .map(|literal| RelationReadingPartCst::Literal(literal.as_bytes().to_vec())),
+            );
+            break;
+        };
+        parts.extend(
+            rest[..open]
+                .split_whitespace()
+                .map(|literal| RelationReadingPartCst::Literal(literal.as_bytes().to_vec())),
+        );
+        let after = &rest[open + 1..];
+        let Some(close) = after.find('}') else {
+            return Err(CanonicalSourceErrorV1::InvalidRelationChild { origin });
+        };
+        let Some((role, _)) = after[..close].split_once(": ") else {
+            return Err(CanonicalSourceErrorV1::InvalidRelationChild { origin });
+        };
+        parts.push(RelationReadingPartCst::Role(role.as_bytes().to_vec()));
+        rest = &after[close + 1..];
+    }
+    if parts.is_empty() {
+        return Err(CanonicalSourceErrorV1::InvalidRelationChild { origin });
+    }
+    Ok(parts)
 }
 
 fn parse_reading_surface(
@@ -5989,6 +6522,39 @@ fn require_leaf(
     Ok(())
 }
 
+fn retain_supported_boolean_derive_pairs(items: &mut [CstItem]) {
+    let mut counts = BTreeMap::<Vec<u8>, (usize, usize)>::new();
+    for item in items.iter() {
+        match &item.kind {
+            CstKind::BooleanLaw(law) => counts.entry(law.designation.clone()).or_default().0 += 1,
+            CstKind::BooleanDerive(derive) => {
+                counts.entry(derive.designation.clone()).or_default().1 += 1;
+            }
+            _ => {}
+        }
+    }
+    for item in items {
+        let unsupported = match &item.kind {
+            CstKind::BooleanLaw(law) if counts.get(&law.designation).copied() != Some((1, 1)) => {
+                Some(CanonicalSourceProductionV1::Law)
+            }
+            CstKind::BooleanDerive(derive)
+                if counts.get(&derive.designation).copied() != Some((1, 1)) =>
+            {
+                Some(CanonicalSourceProductionV1::Derive)
+            }
+            _ => None,
+        };
+        if let Some(production) = unsupported {
+            item.kind = CstKind::Unsupported(CanonicalUnsupportedProductionV1 {
+                production,
+                origin: item.origin,
+                emissions: vec![],
+            });
+        }
+    }
+}
+
 fn validate_unique_designations(items: &[CstItem]) -> Result<(), CanonicalSourceErrorV1> {
     let mut seen = BTreeSet::new();
     for designation in items.iter().filter_map(|item| match &item.kind {
@@ -6004,6 +6570,8 @@ fn validate_unique_designations(items: &[CstItem]) -> Result<(), CanonicalSource
         | CstKind::KeyboardBinding(_)
         | CstKind::ClampLaw(_)
         | CstKind::ClampDerive(_)
+        | CstKind::BooleanLaw(_)
+        | CstKind::BooleanDerive(_)
         | CstKind::VectorAssertion(_)
         | CstKind::BooleanAssertion(_)
         | CstKind::NumberAssertion(_)

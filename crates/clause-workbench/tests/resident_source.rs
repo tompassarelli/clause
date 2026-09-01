@@ -46,19 +46,47 @@ relation pulse-radius
   subject objective
   mode given objective yields value: one
 
+relation pulse-echo
+  reads {player: Player} pulse echo {value: F64}
+  subject player
+  mode given player yields value: one
+
+relation pulse-contact
+  reads {objective: Objective} has pulse contact with {player: Player} as {value: Bool}
+  subject objective
+  mode given objective player yields value: one
+
 game-objective pulse count 0.0
 game-objective pulse radius 0.6
+player-1 pulse echo 0.0
+
+law pulse-contact-within-radius
+  if
+    ?player position Vec3 { x: ?player-x, y: ?player-y, z: ?player-z }
+    game-objective pulse radius ?radius
+    ((?player-x - 0.5) * (?player-x - 0.5)) + ((?player-z - 0.0) * (?player-z - 0.0)) <= ?radius * ?radius
+  then
+    game-objective has pulse contact with ?player as true
+
+derive pulse-contact-within-radius
 
 on count-pulse ?objective
   when
     ?objective pulse count ?count
-    game-objective pulse radius ?radius
-    player-1 position Vec3 { x: ?player-x, y: ?player-y, z: ?player-z }
-    ((?player-x - 0.5) * (?player-x - 0.5)) + ((?player-z - 0.0) * (?player-z - 0.0)) <= ?radius * ?radius
+    game-objective has pulse contact with player-1 as true
   withdraw
     ?objective pulse count ?count
   include
     ?objective pulse count ?count + 1.0
+
+on echo-pulse ?player
+  when
+    ?player pulse echo ?echo
+    game-objective has pulse contact with ?player as true
+  withdraw
+    ?player pulse echo ?echo
+  include
+    ?player pulse echo ?echo + 1.0
 "#;
 const SOURCE_KEYBOARD_BURST_EXTENSION: &[u8] = br#"
 bind keyboard KeyQ down to planar-burst
@@ -210,6 +238,12 @@ fn pulse_count(exact_term_bytes: &[u8]) -> f64 {
     let term = decode_canonical_term_bytes(exact_term_bytes).expect("projection term decodes");
     let objective = projected_object_field(&term, b"game-objective");
     projected_number(projected_object_field(objective, b"pulse-count"))
+}
+
+fn pulse_echo(exact_term_bytes: &[u8]) -> f64 {
+    let term = decode_canonical_term_bytes(exact_term_bytes).expect("projection term decodes");
+    let player = projected_object_field(&term, b"player-1");
+    projected_number(projected_object_field(player, b"pulse-echo"))
 }
 
 fn player_planar_velocity(exact_term_bytes: &[u8]) -> (f64, f64) {
@@ -514,6 +548,7 @@ fn source_only_state_and_bounded_automatic_handler_need_no_host_binding_edit() {
         .admit()
         .expect("separate Admission exposes the source-only state");
     assert_eq!(pulse_count(&admitted.projection.exact_term_bytes), 1.0);
+    assert_eq!(pulse_echo(&admitted.projection.exact_term_bytes), 1.0);
 }
 
 #[test]
