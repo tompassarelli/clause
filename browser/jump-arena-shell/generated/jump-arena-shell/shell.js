@@ -1,272 +1,319 @@
-import { equivV as $$bc$equiv, keyword as $$bc$keyword, property_key as $$bc$property_key, record_value as $$bc$record_value, str as $$bc$str } from 'beagle/core.js';
-
-function ArenaVec3(x, y, z) {
-  return $$bc$record_value("jump-arena-shell.shell/ArenaVec3", {_tag: "ArenaVec3", x, y, z});
+function is_property_bag(value) {
+    return ((typeof value === "object" && value !== null) ||
+        typeof value === "function");
 }
-
-function arenavec3_x(r) { return r.x; }
-
-function arenavec3_y(r) { return r.y; }
-
-function arenavec3_z(r) { return r.z; }
-
-function ArenaPlayerFrame(position, velocity, yaw, grounded) {
-  return $$bc$record_value("jump-arena-shell.shell/ArenaPlayerFrame", {_tag: "ArenaPlayerFrame", position, velocity, yaw, grounded});
+function is_frozen_vec3(value) {
+    return (is_property_bag(value) &&
+        Object.isFrozen(value) &&
+        typeof value.x === "number" &&
+        typeof value.y === "number" &&
+        typeof value.z === "number");
 }
-
-function arenaplayerframe_position(r) { return r.position; }
-
-function arenaplayerframe_velocity(r) { return r.velocity; }
-
-function arenaplayerframe_yaw(r) { return r.yaw; }
-
-function arenaplayerframe_grounded(r) { return r.grounded; }
-
-function ArenaPlatformFrame(position, size) {
-  return $$bc$record_value("jump-arena-shell.shell/ArenaPlatformFrame", {_tag: "ArenaPlatformFrame", position, size});
+function is_frozen_player_frame(value) {
+    return (is_property_bag(value) &&
+        Object.isFrozen(value) &&
+        is_frozen_vec3(value.position) &&
+        is_frozen_vec3(value.velocity) &&
+        typeof value.yaw === "number" &&
+        typeof value.grounded === "boolean");
 }
-
-function arenaplatformframe_position(r) { return r.position; }
-
-function arenaplatformframe_size(r) { return r.size; }
-
-function ArenaCollectibleFrame(position, state) {
-  return $$bc$record_value("jump-arena-shell.shell/ArenaCollectibleFrame", {_tag: "ArenaCollectibleFrame", position, state});
+function is_frozen_platform_frame(value) {
+    return (is_property_bag(value) &&
+        Object.isFrozen(value) &&
+        is_frozen_vec3(value.position) &&
+        is_frozen_vec3(value.size));
 }
-
-function arenacollectibleframe_position(r) { return r.position; }
-
-function arenacollectibleframe_state(r) { return r.state; }
-
-function ArenaWorldFrame(platforms, collectibles) {
-  return $$bc$record_value("jump-arena-shell.shell/ArenaWorldFrame", {_tag: "ArenaWorldFrame", platforms, collectibles});
+function is_frozen_collectible_frame(value) {
+    return (is_property_bag(value) &&
+        Object.isFrozen(value) &&
+        is_frozen_vec3(value.position) &&
+        typeof value.state === "string");
 }
-
-function arenaworldframe_platforms(r) { return r.platforms; }
-
-function arenaworldframe_collectibles(r) { return r.collectibles; }
-
-function ArenaFrame(player, world) {
-  return $$bc$record_value("jump-arena-shell.shell/ArenaFrame", {_tag: "ArenaFrame", player, world});
+function is_frozen_world_frame(value) {
+    if (!is_property_bag(value) || !Object.isFrozen(value))
+        return false;
+    const { platforms, collectibles } = value;
+    return (Array.isArray(platforms) &&
+        Object.isFrozen(platforms) &&
+        platforms.every(is_frozen_platform_frame) &&
+        Array.isArray(collectibles) &&
+        Object.isFrozen(collectibles) &&
+        collectibles.every(is_frozen_collectible_frame));
 }
-
-function arenaframe_player(r) { return r.player; }
-
-function arenaframe_world(r) { return r.world; }
-
-function ArenaPointerEvent(clientX, clientY, pointerId, button, buttons) {
-  return $$bc$record_value("jump-arena-shell.shell/ArenaPointerEvent", {_tag: "ArenaPointerEvent", clientX, clientY, pointerId, button, buttons});
+function is_frozen_frame(value) {
+    return (is_property_bag(value) &&
+        Object.isFrozen(value) &&
+        is_frozen_player_frame(value.player) &&
+        is_frozen_world_frame(value.world));
 }
-
-function arenapointerevent_clientX(r) { return r.clientX; }
-
-function arenapointerevent_clientY(r) { return r.clientY; }
-
-function arenapointerevent_pointerId(r) { return r.pointerId; }
-
-function arenapointerevent_button(r) { return r.button; }
-
-function arenapointerevent_buttons(r) { return r.buttons; }
-
+function require_frozen_frame(value) {
+    if (is_frozen_frame(value))
+        return value;
+    throw new Error("renderFrame requires a deeply frozen arena frame");
+}
+function is_mount_like(value) {
+    return (is_property_bag(value) &&
+        "clientWidth" in value &&
+        "clientHeight" in value &&
+        typeof value.appendChild === "function");
+}
+function require_mount(value) {
+    if (is_mount_like(value))
+        return value;
+    throw new Error("jump arena shell requires a mount");
+}
+function is_browser_like(value) {
+    return (is_property_bag(value) &&
+        "devicePixelRatio" in value &&
+        typeof value.addEventListener === "function" &&
+        typeof value.removeEventListener === "function");
+}
+function require_browser(value) {
+    if (is_browser_like(value))
+        return value;
+    throw new Error("jump arena shell requires a browser host");
+}
+function is_three_like(value) {
+    return (is_property_bag(value) &&
+        typeof value.Scene === "function" &&
+        typeof value.Color === "function" &&
+        typeof value.PerspectiveCamera === "function" &&
+        typeof value.WebGLRenderer === "function" &&
+        typeof value.HemisphereLight === "function" &&
+        typeof value.DirectionalLight === "function" &&
+        typeof value.BoxGeometry === "function" &&
+        typeof value.MeshStandardMaterial === "function" &&
+        typeof value.Mesh === "function" &&
+        typeof value.Group === "function");
+}
+function require_three(value) {
+    if (is_three_like(value))
+        return value;
+    throw new Error("jump arena shell requires a Three.js host");
+}
 function numeric_value(value) {
-  return Number.parseFloat($$bc$str(value));
+    return Number.parseFloat(String(value));
 }
-
-function require_frozen_frame(frame) {
-  return (((_truthy) => _truthy !== false && _truthy != null)(((_logical) => (_logical !== false && _logical != null ? ((_logical) => (_logical !== false && _logical != null ? ((_logical) => (_logical !== false && _logical != null ? ((_logical) => (_logical !== false && _logical != null ? ((_logical) => (_logical !== false && _logical != null ? ((_logical) => (_logical !== false && _logical != null ? ((_logical) => (_logical !== false && _logical != null ? ((_logical) => (_logical !== false && _logical != null ? frame.world.collectibles.every((collectible) => ((_logical) => (_logical !== false && _logical != null ? ((_logical) => (_logical !== false && _logical != null ? ($$bc$equiv(typeof collectible.state, "string")) : _logical))(Object.isFrozen(collectible.position)) : _logical))(Object.isFrozen(collectible))) : _logical))(frame.world.platforms.every((platform) => ((_logical) => (_logical !== false && _logical != null ? ((_logical) => (_logical !== false && _logical != null ? Object.isFrozen(platform.size) : _logical))(Object.isFrozen(platform.position)) : _logical))(Object.isFrozen(platform)))) : _logical))(Object.isFrozen(frame.world.collectibles)) : _logical))(Object.isFrozen(frame.world.platforms)) : _logical))(Object.isFrozen(frame.world)) : _logical))(Object.isFrozen(frame.player.velocity)) : _logical))(Object.isFrozen(frame.player.position)) : _logical))(Object.isFrozen(frame.player)) : _logical))(Object.isFrozen(frame))) ? frame : (() => { throw new Error("renderFrame requires a deeply frozen arena frame"); })());
-}
-
 function projected_symbol_color(value) {
-  return (() => { let index = 0; let hash = 216613; while (true) {
-    if (($$bc$equiv(index, value.length))) { return (2105376 + (hash % 13619151)); } else { const code = value.charCodeAt(index); const _recur_0 = (index + 1); const _recur_1 = (((hash * 33) + code) % 13619151); index = _recur_0; hash = _recur_1; continue; }
-  } })();
+    let hash = 216613;
+    for (let index = 0; index < value.length; index += 1) {
+        hash = (hash * 33 + value.charCodeAt(index)) % 13619151;
+    }
+    return 2105376 + (hash % 13619151);
 }
-
 function keyboard_input(phase, event) {
-  return Object.freeze({[$$bc$property_key($$bc$keyword("kind"))]: "keyboard", [$$bc$property_key($$bc$keyword("phase"))]: phase, [$$bc$property_key($$bc$keyword("code"))]: event.code, [$$bc$property_key($$bc$keyword("repeat"))]: event.repeat});
+    return Object.freeze({
+        kind: "keyboard",
+        phase,
+        code: event.code,
+        repeat: event.repeat,
+    });
 }
-
 function pointer_input(phase, event, canvas) {
-  const rect = canvas.getBoundingClientRect();
-  const width = Math.max(1.0, rect.width);
-  const height = Math.max(1.0, rect.height);
-  const x = ((((event.clientX - rect.left) * 2.0) / width) - 1.0);
-  const y = (1.0 - (((event.clientY - rect.top) * 2.0) / height));
-  return Object.freeze({[$$bc$property_key($$bc$keyword("kind"))]: "pointer", [$$bc$property_key($$bc$keyword("phase"))]: phase, [$$bc$property_key($$bc$keyword("pointerId"))]: event.pointerId, [$$bc$property_key($$bc$keyword("button"))]: event.button, [$$bc$property_key($$bc$keyword("buttons"))]: event.buttons, [$$bc$property_key($$bc$keyword("x"))]: x, [$$bc$property_key($$bc$keyword("y"))]: y});
+    const rect = canvas.getBoundingClientRect();
+    const width = Math.max(1, rect.width);
+    const height = Math.max(1, rect.height);
+    return Object.freeze({
+        kind: "pointer",
+        phase,
+        pointerId: event.pointerId,
+        button: event.button,
+        buttons: event.buttons,
+        x: ((event.clientX - rect.left) * 2) / width - 1,
+        y: 1 - ((event.clientY - rect.top) * 2) / height,
+    });
 }
-
-function create_jump_arena_shell_bang(mount, browser, three, emit_input) {
-  const scene_ctor = three.Scene;
-  const color_ctor = three.Color;
-  const camera_ctor = three.PerspectiveCamera;
-  const renderer_ctor = three.WebGLRenderer;
-  const hemisphere_light_ctor = three.HemisphereLight;
-  const directional_light_ctor = three.DirectionalLight;
-  const box_geometry_ctor = three.BoxGeometry;
-  const material_ctor = three.MeshStandardMaterial;
-  const mesh_ctor = three.Mesh;
-  const group_ctor = three.Group;
-  const scene = new scene_ctor();
-  const camera = new camera_ctor(52.0, 1.0, 0.1, 160.0);
-  const renderer = new renderer_ctor({[$$bc$property_key($$bc$keyword("antialias"))]: true});
-  const canvas = renderer.domElement;
-  const player_geometry = new box_geometry_ctor(0.8, 1.8, 0.8);
-  const player_material = new material_ctor({[$$bc$property_key($$bc$keyword("color"))]: 4697343, [$$bc$property_key($$bc$keyword("roughness"))]: 0.42});
-  const platform_geometry = new box_geometry_ctor(1.0, 1.0, 1.0);
-  const platform_material = new material_ctor({[$$bc$property_key($$bc$keyword("color"))]: 2967637, [$$bc$property_key($$bc$keyword("roughness"))]: 0.78});
-  const collectible_geometry = new box_geometry_ctor(0.45, 0.45, 0.45);
-  const player_mesh = new mesh_ctor(player_geometry, player_material);
-  const platform_group = new group_ctor();
-  const collectible_group = new group_ctor();
-  const disposed = ({value: false, watches: {}});
-  const canvas_focused = ({value: false, watches: {}});
-  const has_frame = ({value: false, watches: {}});
-  const platform_meshes = ({value: [], watches: {}});
-  const collectible_meshes = ({value: [], watches: {}});
-  const active_pointers = new Set();
-  (scene.background = new color_ctor(1116716));
-  scene.add(new hemisphere_light_ctor(10144255, 1250849, 2.4));
-  const sun = new directional_light_ctor(16777215, 3.2);
-  sun.position.set(6.0, 12.0, 8.0);
-  scene.add(sun);
-  scene.add(platform_group);
-  scene.add(collectible_group);
-  scene.add(player_mesh);
-  canvas.setAttribute("tabindex", "0");
-  mount.appendChild(canvas);
-  const resize = () => { if ((!((_truthy) => _truthy !== false && _truthy != null)(disposed.value))) {
-  const width = Math.max(1.0, numeric_value(mount.clientWidth));
-  const height = Math.max(1.0, numeric_value(mount.clientHeight));
-  const ratio = Math.min(2.0, numeric_value(browser.devicePixelRatio));
-  renderer.setPixelRatio(ratio);
-  renderer.setSize(width, height, false);
-  (camera.aspect = (width / height));
-  camera.updateProjectionMatrix();
-  if (((_truthy) => _truthy !== false && _truthy != null)(has_frame.value)) {
-    return renderer.render(scene, camera);
-  }
-} };
-  const focus_canvas = () => { if ((!((_truthy) => _truthy !== false && _truthy != null)(disposed.value))) {
-  return (() => { const _a = canvas_focused, _v = true; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })();
-} };
-  const blur_canvas = () => { if ((!((_truthy) => _truthy !== false && _truthy != null)(disposed.value))) {
-  return (() => { const _a = canvas_focused, _v = false; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })();
-} };
-  const key_down = (event) => { if (((_truthy) => _truthy !== false && _truthy != null)(((!((_truthy) => _truthy !== false && _truthy != null)(disposed.value)) && canvas_focused.value))) {
-  return emit_input(keyboard_input("down", event));
-} };
-  const key_up = (event) => { if (((_truthy) => _truthy !== false && _truthy != null)(((!((_truthy) => _truthy !== false && _truthy != null)(disposed.value)) && canvas_focused.value))) {
-  return emit_input(keyboard_input("up", event));
-} };
-  const pointer_event = (phase, event) => emit_input(pointer_input(phase, event, canvas));
-  const pointer_down = (event) => { if ((!((_truthy) => _truthy !== false && _truthy != null)(disposed.value))) {
-  canvas.focus({[$$bc$property_key($$bc$keyword("preventScroll"))]: true});
-  active_pointers.add(event.pointerId);
-  canvas.setPointerCapture(event.pointerId);
-  return pointer_event("down", event);
-} };
-  const pointer_move = (event) => { if ((!((_truthy) => _truthy !== false && _truthy != null)(disposed.value))) {
-  return pointer_event("move", event);
-} };
-  const pointer_up = (event) => { if ((!((_truthy) => _truthy !== false && _truthy != null)(disposed.value))) {
-  if (((_truthy) => _truthy !== false && _truthy != null)(canvas.hasPointerCapture(event.pointerId))) {
-    canvas.releasePointerCapture(event.pointerId);
-  }
-  active_pointers.delete(event.pointerId);
-  return pointer_event("up", event);
-} };
-  const pointer_cancel = (event) => { if ((!((_truthy) => _truthy !== false && _truthy != null)(disposed.value))) {
-  if (((_truthy) => _truthy !== false && _truthy != null)(canvas.hasPointerCapture(event.pointerId))) {
-    canvas.releasePointerCapture(event.pointerId);
-  }
-  active_pointers.delete(event.pointerId);
-  return pointer_event("cancel", event);
-} };
-  const clear_collectibles = () => { (() => { collectible_meshes.value.forEach((mesh) => {
-  collectible_group.remove(mesh);
-  mesh.material.dispose();
-}); })();
-return (() => { const _a = collectible_meshes, _v = []; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })(); };
-  const render_frame = (incoming) => { if (((_truthy) => _truthy !== false && _truthy != null)(disposed.value)) {
-  return (() => { throw new Error("jump arena shell is disposed"); })();
-} else {
-  const frame = require_frozen_frame(incoming);
-  const player = frame.player;
-  const position = player.position;
-  const yaw = player.yaw;
-  player_mesh.position.set(position.x, position.y, position.z);
-  (player_mesh.rotation.y = yaw);
-  (() => { platform_meshes.value.forEach((mesh) => {
-  platform_group.remove(mesh);
-}); })();
-  (() => { const _a = platform_meshes, _v = []; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })();
-  (() => { frame.world.platforms.forEach((platform) => {
-  const mesh = new mesh_ctor(platform_geometry, platform_material);
-  const platform_position = platform.position;
-  const size = platform.size;
-  mesh.position.set(platform_position.x, platform_position.y, platform_position.z);
-  mesh.scale.set(size.x, size.y, size.z);
-  platform_group.add(mesh);
-  platform_meshes.value.push(mesh);
-}); })();
-  clear_collectibles();
-  (() => { frame.world.collectibles.forEach((collectible) => {
-  const material = new material_ctor({[$$bc$property_key($$bc$keyword("color"))]: projected_symbol_color(collectible.state), [$$bc$property_key($$bc$keyword("roughness"))]: 0.3});
-  const mesh = new mesh_ctor(collectible_geometry, material);
-  const collectible_position = collectible.position;
-  mesh.position.set(collectible_position.x, collectible_position.y, collectible_position.z);
-  collectible_group.add(mesh);
-  collectible_meshes.value.push(mesh);
-}); })();
-  camera.position.set((position.x + (Math.sin(yaw) * 7.5)), (position.y + 4.8), (position.z + (Math.cos(yaw) * 7.5)));
-  camera.lookAt(position.x, (position.y + 1.0), position.z);
-  renderer.render(scene, camera);
-  (() => { const _a = has_frame, _v = true; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })();
-  return frame;
-} };
-  const dispose = () => { if ((!((_truthy) => _truthy !== false && _truthy != null)(disposed.value))) {
-  (() => { const _a = disposed, _v = true; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })();
-  (() => { const _a = canvas_focused, _v = false; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })();
-  (() => { const _a = has_frame, _v = false; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })();
-  browser.removeEventListener("resize", resize);
-  canvas.removeEventListener("focus", focus_canvas);
-  canvas.removeEventListener("blur", blur_canvas);
-  canvas.removeEventListener("keydown", key_down);
-  canvas.removeEventListener("keyup", key_up);
-  canvas.removeEventListener("pointerdown", pointer_down);
-  canvas.removeEventListener("pointermove", pointer_move);
-  canvas.removeEventListener("pointerup", pointer_up);
-  canvas.removeEventListener("pointercancel", pointer_cancel);
-  active_pointers.forEach((pointer_id) => { if (((_truthy) => _truthy !== false && _truthy != null)(canvas.hasPointerCapture(pointer_id))) {
-  return canvas.releasePointerCapture(pointer_id);
-} });
-  active_pointers.clear();
-  (() => { const _a = platform_meshes, _v = []; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })();
-  platform_group.clear();
-  clear_collectibles();
-  collectible_group.clear();
-  player_geometry.dispose();
-  player_material.dispose();
-  platform_geometry.dispose();
-  platform_material.dispose();
-  collectible_geometry.dispose();
-  scene.clear();
-  renderer.dispose();
-  renderer.forceContextLoss();
-  return canvas.remove();
-} };
-  browser.addEventListener("resize", resize);
-  canvas.addEventListener("focus", focus_canvas);
-  canvas.addEventListener("blur", blur_canvas);
-  canvas.addEventListener("keydown", key_down);
-  canvas.addEventListener("keyup", key_up);
-  canvas.addEventListener("pointerdown", pointer_down);
-  canvas.addEventListener("pointermove", pointer_move);
-  canvas.addEventListener("pointerup", pointer_up);
-  canvas.addEventListener("pointercancel", pointer_cancel);
-  resize();
-  return Object.freeze({[$$bc$property_key($$bc$keyword("canvas"))]: canvas, [$$bc$property_key($$bc$keyword("renderFrame"))]: render_frame, [$$bc$property_key($$bc$keyword("dispose"))]: dispose});
+function create_jump_arena_shell_bang(mount_value, browser_value, three_value, emit_input) {
+    const mount = require_mount(mount_value);
+    const browser = require_browser(browser_value);
+    const three = require_three(three_value);
+    const scene = new three.Scene();
+    const camera = new three.PerspectiveCamera(52, 1, 0.1, 160);
+    const renderer = new three.WebGLRenderer({ antialias: true });
+    const canvas = renderer.domElement;
+    const player_geometry = new three.BoxGeometry(0.8, 1.8, 0.8);
+    const player_material = new three.MeshStandardMaterial({
+        color: 4697343,
+        roughness: 0.42,
+    });
+    const platform_geometry = new three.BoxGeometry(1, 1, 1);
+    const platform_material = new three.MeshStandardMaterial({
+        color: 2967637,
+        roughness: 0.78,
+    });
+    const collectible_geometry = new three.BoxGeometry(0.45, 0.45, 0.45);
+    const player_mesh = new three.Mesh(player_geometry, player_material);
+    const platform_group = new three.Group();
+    const collectible_group = new three.Group();
+    let disposed = false;
+    let canvas_focused = false;
+    let has_frame = false;
+    let platform_meshes = [];
+    let collectible_meshes = [];
+    const active_pointers = new Set();
+    scene.background = new three.Color(1116716);
+    scene.add(new three.HemisphereLight(10144255, 1250849, 2.4));
+    const sun = new three.DirectionalLight(16777215, 3.2);
+    sun.position.set(6, 12, 8);
+    scene.add(sun);
+    scene.add(platform_group);
+    scene.add(collectible_group);
+    scene.add(player_mesh);
+    canvas.setAttribute("tabindex", "0");
+    mount.appendChild(canvas);
+    const resize = () => {
+        if (disposed)
+            return;
+        const width = Math.max(1, numeric_value(mount.clientWidth));
+        const height = Math.max(1, numeric_value(mount.clientHeight));
+        const ratio = Math.min(2, numeric_value(browser.devicePixelRatio));
+        renderer.setPixelRatio(ratio);
+        renderer.setSize(width, height, false);
+        camera.aspect = width / height;
+        camera.updateProjectionMatrix();
+        if (has_frame)
+            renderer.render(scene, camera);
+    };
+    const focus_canvas = () => {
+        if (!disposed)
+            canvas_focused = true;
+    };
+    const blur_canvas = () => {
+        if (!disposed)
+            canvas_focused = false;
+    };
+    const key_down = (event) => {
+        if (!disposed && canvas_focused) {
+            return emit_input(keyboard_input("down", event));
+        }
+    };
+    const key_up = (event) => {
+        if (!disposed && canvas_focused) {
+            return emit_input(keyboard_input("up", event));
+        }
+    };
+    const pointer_event = (phase, event) => emit_input(pointer_input(phase, event, canvas));
+    const pointer_down = (event) => {
+        if (disposed)
+            return;
+        canvas.focus({ preventScroll: true });
+        active_pointers.add(event.pointerId);
+        canvas.setPointerCapture(event.pointerId);
+        return pointer_event("down", event);
+    };
+    const pointer_move = (event) => {
+        if (!disposed)
+            return pointer_event("move", event);
+    };
+    const release_pointer = (event) => {
+        if (canvas.hasPointerCapture(event.pointerId)) {
+            canvas.releasePointerCapture(event.pointerId);
+        }
+        active_pointers.delete(event.pointerId);
+    };
+    const pointer_up = (event) => {
+        if (disposed)
+            return;
+        release_pointer(event);
+        return pointer_event("up", event);
+    };
+    const pointer_cancel = (event) => {
+        if (disposed)
+            return;
+        release_pointer(event);
+        return pointer_event("cancel", event);
+    };
+    const clear_collectibles = () => {
+        for (const mesh of collectible_meshes) {
+            collectible_group.remove(mesh);
+            mesh.material.dispose();
+        }
+        collectible_meshes = [];
+    };
+    const render_frame = (incoming) => {
+        if (disposed)
+            throw new Error("jump arena shell is disposed");
+        const frame = require_frozen_frame(incoming);
+        const { position, yaw } = frame.player;
+        player_mesh.position.set(position.x, position.y, position.z);
+        player_mesh.rotation.y = yaw;
+        for (const mesh of platform_meshes)
+            platform_group.remove(mesh);
+        platform_meshes = [];
+        for (const platform of frame.world.platforms) {
+            const mesh = new three.Mesh(platform_geometry, platform_material);
+            mesh.position.set(platform.position.x, platform.position.y, platform.position.z);
+            mesh.scale.set(platform.size.x, platform.size.y, platform.size.z);
+            platform_group.add(mesh);
+            platform_meshes.push(mesh);
+        }
+        clear_collectibles();
+        for (const collectible of frame.world.collectibles) {
+            const material = new three.MeshStandardMaterial({
+                color: projected_symbol_color(collectible.state),
+                roughness: 0.3,
+            });
+            const mesh = new three.Mesh(collectible_geometry, material);
+            mesh.position.set(collectible.position.x, collectible.position.y, collectible.position.z);
+            collectible_group.add(mesh);
+            collectible_meshes.push(mesh);
+        }
+        camera.position.set(position.x + Math.sin(yaw) * 7.5, position.y + 4.8, position.z + Math.cos(yaw) * 7.5);
+        camera.lookAt(position.x, position.y + 1, position.z);
+        renderer.render(scene, camera);
+        has_frame = true;
+        return frame;
+    };
+    const dispose = () => {
+        if (disposed)
+            return;
+        disposed = true;
+        canvas_focused = false;
+        has_frame = false;
+        browser.removeEventListener("resize", resize);
+        canvas.removeEventListener("focus", focus_canvas);
+        canvas.removeEventListener("blur", blur_canvas);
+        canvas.removeEventListener("keydown", key_down);
+        canvas.removeEventListener("keyup", key_up);
+        canvas.removeEventListener("pointerdown", pointer_down);
+        canvas.removeEventListener("pointermove", pointer_move);
+        canvas.removeEventListener("pointerup", pointer_up);
+        canvas.removeEventListener("pointercancel", pointer_cancel);
+        for (const pointer_id of active_pointers) {
+            if (canvas.hasPointerCapture(pointer_id)) {
+                canvas.releasePointerCapture(pointer_id);
+            }
+        }
+        active_pointers.clear();
+        platform_meshes = [];
+        platform_group.clear();
+        clear_collectibles();
+        collectible_group.clear();
+        player_geometry.dispose();
+        player_material.dispose();
+        platform_geometry.dispose();
+        platform_material.dispose();
+        collectible_geometry.dispose();
+        scene.clear();
+        renderer.dispose();
+        renderer.forceContextLoss();
+        canvas.remove();
+    };
+    browser.addEventListener("resize", resize);
+    canvas.addEventListener("focus", focus_canvas);
+    canvas.addEventListener("blur", blur_canvas);
+    canvas.addEventListener("keydown", key_down);
+    canvas.addEventListener("keyup", key_up);
+    canvas.addEventListener("pointerdown", pointer_down);
+    canvas.addEventListener("pointermove", pointer_move);
+    canvas.addEventListener("pointerup", pointer_up);
+    canvas.addEventListener("pointercancel", pointer_cancel);
+    resize();
+    return Object.freeze({
+        canvas,
+        renderFrame: render_frame,
+        dispose,
+    });
 }
-
 export { create_jump_arena_shell_bang as "create-jump-arena-shell!" };
 //# sourceMappingURL=shell.js.map
