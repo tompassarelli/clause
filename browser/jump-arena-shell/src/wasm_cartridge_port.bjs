@@ -95,8 +95,7 @@
    world Any
    sequence Any
    occurrences Any
-   disposed Any
-   retirementPending Any])
+   disposed Any])
 
 (defrecord PersistentCartridge
   [openBytes Any
@@ -1197,21 +1196,26 @@
                                     (atom (.-world event))
                                     (atom 0)
                                     (.-occurrences cartridge)
-                                    (atom false)
                                     (atom false))
                bootstrap-frame Any (workbench/create-workbench-envelope
                                     policy
                                     "[]")]
            (let [prior Any @active-session]
              (when (not (nil? prior))
-               (do
-                 (reset! (.-disposed prior) true)
-                 (reset! (.-retirementPending prior) true))))
+               (reset! (.-disposed prior) true)))
            (reset! active-session session)
            (complete (workbench/->SessionStarted
                       session
                       (.-world event)
-                      bootstrap-frame)))
+                      bootstrap-frame))
+           ;; Completion installs and renders the successor before physical
+           ;; destruction of any runtime revoked by this open reaches the
+           ;; browser event loop.
+           (setTimeout
+            (fn [] Any
+              (let [api Any (session-module-functions module)]
+                ((.-reclaim api))))
+            0))
          (catch Error error
            (complete (workbench/->SessionFailed (reject-reason error))))))
      (fn
@@ -1278,16 +1282,6 @@
      (fn [incoming-session Any] Any
        (let [session WasmSession (require-session incoming-session)]
          (cond
-           @(.-retirementPending session)
-           (do
-             (reset! (.-retirementPending session) false)
-             (setTimeout
-              (fn [] Any
-                (let [api Any (session-module-functions module)]
-                  (when-not ((.-reclaim api))
-                    (throw (new Error "retired Clause runtime was already reclaimed")))))
-              0))
-
            (not @(.-disposed session))
            (let [event Any (apply-session-command!
                             module session (encode-session-command! session 7 nil))]

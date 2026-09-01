@@ -71,8 +71,8 @@ function wasmcandidate_candidateId(r) { return r.candidateId; }
 
 function wasmcandidate_base(r) { return r.base; }
 
-function WasmSession(handle, packageId, sessionId, allocation, world, sequence, occurrences, disposed, retirementPending) {
-  return $$bc$record_value("jump-arena-shell.wasm-cartridge-port/WasmSession", {_tag: "WasmSession", handle, packageId, sessionId, allocation, world, sequence, occurrences, disposed, retirementPending});
+function WasmSession(handle, packageId, sessionId, allocation, world, sequence, occurrences, disposed) {
+  return $$bc$record_value("jump-arena-shell.wasm-cartridge-port/WasmSession", {_tag: "WasmSession", handle, packageId, sessionId, allocation, world, sequence, occurrences, disposed});
 }
 
 function wasmsession_handle(r) { return r.handle; }
@@ -90,8 +90,6 @@ function wasmsession_sequence(r) { return r.sequence; }
 function wasmsession_occurrences(r) { return r.occurrences; }
 
 function wasmsession_disposed(r) { return r.disposed; }
-
-function wasmsession_retirementPending(r) { return r.retirementPending; }
 
 function PersistentCartridge(openBytes, occurrences) {
   return $$bc$record_value("jump-arena-shell.wasm-cartridge-port/PersistentCartridge", {_tag: "PersistentCartridge", openBytes, occurrences});
@@ -729,15 +727,16 @@ function create_wasm_cartridge_port_bang(module, policy) {
     const cartridge = accepted_package;
   const event = decode_cse1_event(dispatch_session_request(module, cartridge.openBytes, "open"));
   const __opened = (((!($$bc$equiv(event.kind, "opened"))) || (!($$bc$equiv(event.sequence, 0)))) ? (() => { return (() => { throw new Error("persistent session did not open exactly once"); })(); })() : null);
-  const session = WasmSession(Object.freeze({[$$bc$property_key($$bc$keyword("slot"))]: event.slot, [$$bc$property_key($$bc$keyword("generation"))]: event.generation}), event.packageId, event.sessionId, event.allocation, ({value: event.world, watches: {}}), ({value: 0, watches: {}}), cartridge.occurrences, ({value: false, watches: {}}), ({value: false, watches: {}}));
+  const session = WasmSession(Object.freeze({[$$bc$property_key($$bc$keyword("slot"))]: event.slot, [$$bc$property_key($$bc$keyword("generation"))]: event.generation}), event.packageId, event.sessionId, event.allocation, ({value: event.world, watches: {}}), ({value: 0, watches: {}}), cartridge.occurrences, ({value: false, watches: {}}));
   const bootstrap_frame = workbench["create-workbench-envelope"](policy, "[]");
   const prior = active_session.value;
   if ((!(prior == null))) {
     (() => { const _a = prior.disposed, _v = true; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })();
-    (() => { const _a = prior.retirementPending, _v = true; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })();
   }
   (() => { const _a = active_session, _v = session; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })();
-  return complete(workbench["->SessionStarted"](session, event.world, bootstrap_frame));
+  complete(workbench["->SessionStarted"](session, event.world, bootstrap_frame));
+  return setTimeout(() => { const api = session_module_functions(module);
+return (api.reclaim)(); }, 0);
   } catch (_catch_1) {
     switch ($$bd$catch_dispatch(_catch_1, [Error])) {
       case 0: {
@@ -797,11 +796,7 @@ function create_wasm_cartridge_port_bang(module, policy) {
       }
     }
   } })(), (incoming_session) => { const session = require_session(incoming_session);
-return ((((_truthy) => _truthy !== false && _truthy != null)(session.retirementPending.value)) ? (() => { (() => { const _a = session.retirementPending, _v = false; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })();
-return setTimeout(() => { const api = session_module_functions(module);
-if ((!((_truthy) => _truthy !== false && _truthy != null)((api.reclaim)()))) {
-  return (() => { throw new Error("retired Clause runtime was already reclaimed"); })();
-} }, 0); })() : ((!((_truthy) => _truthy !== false && _truthy != null)(session.disposed.value))) ? (() => { const event = apply_session_command_bang(module, session, encode_session_command_bang(session, 7, null)); if ((!($$bc$equiv(event.kind, "disposed")))) {
+return (((!((_truthy) => _truthy !== false && _truthy != null)(session.disposed.value))) ? (() => { const event = apply_session_command_bang(module, session, encode_session_command_bang(session, 7, null)); if ((!($$bc$equiv(event.kind, "disposed")))) {
   (() => { throw new Error("CWI1 disposal did not produce Disposed"); })();
 }
 (() => { const _a = session.disposed, _v = true; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })();
