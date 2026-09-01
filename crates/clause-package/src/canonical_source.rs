@@ -5166,6 +5166,9 @@ fn parse_scalar_handler(
             predicates.push(predicate);
             continue;
         }
+        if parse_scalar_law_binding(condition, condition_origin).is_some() {
+            return Ok(None);
+        }
         if let Some(parameters) = parse_scalar_parameter_declaration(condition, subject) {
             for parameter in parameters {
                 declared_parameters.insert(parameter.parameter.clone());

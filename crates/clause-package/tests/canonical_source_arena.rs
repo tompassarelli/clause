@@ -212,6 +212,113 @@ fn general_handler_joins_a_typed_referent_selected_by_prior_state() {
 }
 
 #[test]
+fn scalar_law_result_updates_a_vector_on_the_selected_handler_subject() {
+    let source = r#"referent F64
+referent Bool
+referent Player
+referent Enemy
+
+shape Vec3
+  x: F64
+  y: F64
+  z: F64
+
+relation clamped-between
+  reads {value: F64} clamped between {lower: F64} and {upper: F64} as {result: F64}
+  mode given value lower upper yields result: maybe
+
+relation combat-target
+  reads {player: Player} combat target {enemy: Enemy}
+  subject player
+  mode given player yields enemy: one
+
+relation target-active
+  reads {player: Player} target active {value: Bool}
+  subject player
+  mode given player yields value: one
+
+relation vitals
+  reads {enemy: Enemy} vitals {value: Vec3}
+  subject enemy
+  mode given enemy yields value: one
+
+law clamp-lower
+  if
+    ?lower <= ?upper
+    ?value < ?lower
+  then
+    ?value clamped between ?lower and ?upper as ?lower
+
+law clamp-interior
+  if
+    ?lower <= ?value
+    ?value <= ?upper
+  then
+    ?value clamped between ?lower and ?upper as ?value
+
+law clamp-upper
+  if
+    ?lower <= ?upper
+    ?value > ?upper
+  then
+    ?value clamped between ?lower and ?upper as ?upper
+
+derive clamp-lower
+derive clamp-interior
+derive clamp-upper
+
+player-1 ∈ Player
+enemy-1 ∈ Enemy
+player-1 combat target enemy-1
+player-1 target active true
+enemy-1 vitals Vec3 { x: 6.0, y: 6.0, z: 1.0 }
+
+on targeted-hit ?enemy
+  when
+    player-1 combat target ?enemy
+    player-1 target active ?active
+    ?enemy vitals Vec3 { x: ?vitality, y: ?maximum, z: ?alive }
+    (?vitality - 2.0) clamped between 0.0 and ?maximum as ?next
+    ?active = true
+  withdraw
+    ?enemy vitals Vec3 { x: ?vitality, y: ?maximum, z: ?alive }
+  include
+    ?enemy vitals Vec3 { x: ?next, y: ?maximum, z: ?alive }
+"#;
+    let cst = read_canonical_source_v1(source.as_bytes())
+        .expect("the selected-subject scalar-law source reads");
+    let plan = plan_independent_canonical_source_allocations_v1(
+        &cst,
+        ProgramChangeOccurrenceId::from_bytes(raw_id(24)),
+    )
+    .expect("the selected handler subject receives exact allocations");
+    let compiled = elaborate_canonical_source_package_v1(
+        &cst,
+        CanonicalSourceContextV1 {
+            universe: UniverseId::from_bytes(raw_id(1)),
+            semantics: ClauseSemanticsId::from_bytes(raw_id(2)),
+        },
+        &plan,
+    )
+    .expect("a derived scalar result updates the selected subject vector");
+    let handler = compiled
+        .executable_handlers
+        .iter()
+        .find(|handler| handler.designation == b"targeted-hit")
+        .expect("the selected-subject handler is executable");
+    let [rule] = handler.rules.as_slice() else {
+        panic!("one source transition remains one executable rule")
+    };
+    let [assignment] = rule.assignments.as_slice() else {
+        panic!("only the changed vitality field is assigned")
+    };
+    assert!(matches!(
+        assignment.value,
+        CanonicalExecutableExpressionV1::Clamp(_, _, _)
+    ));
+}
+
+#[test]
 fn transitive_referent_join_rejects_wrong_type_missing_cardinality_and_ambiguity() {
     let wrong_type = TRANSITIVE_REFERENT_WORLD.replacen(
         "reads {policy: Policy} policy adjustment",
