@@ -360,6 +360,8 @@ pub enum CanonicalScalarExpressionV1 {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CanonicalScalarPredicateV1 {
     Equal(CanonicalScalarExpressionV1, CanonicalScalarExpressionV1),
+    GreaterThan(CanonicalScalarExpressionV1, CanonicalScalarExpressionV1),
+    LessThanOrEqual(CanonicalScalarExpressionV1, CanonicalScalarExpressionV1),
 }
 
 /// Checked source-owned meaning for the bounded one-cell scalar transition
@@ -2175,23 +2177,41 @@ fn checked_executable_handlers(
             .handler
             .predicates
             .iter()
-            .map(|predicate| match predicate {
-                CanonicalScalarPredicateV1::Equal(left, right) => {
-                    Ok(CanonicalExecutablePredicateV1::Equal(
-                        canonical_scalar_executable_expression(
-                            left,
-                            &current,
-                            &parameters,
-                            parts.handler.origin,
-                        )?,
-                        canonical_scalar_executable_expression(
-                            right,
-                            &current,
-                            &parameters,
-                            parts.handler.origin,
-                        )?,
-                    ))
-                }
+            .map(|predicate| {
+                let (left, right, constructor) = match predicate {
+                    CanonicalScalarPredicateV1::Equal(left, right) => (
+                        left,
+                        right,
+                        CanonicalExecutablePredicateV1::Equal
+                            as fn(_, _) -> CanonicalExecutablePredicateV1,
+                    ),
+                    CanonicalScalarPredicateV1::GreaterThan(left, right) => (
+                        left,
+                        right,
+                        CanonicalExecutablePredicateV1::GreaterThan
+                            as fn(_, _) -> CanonicalExecutablePredicateV1,
+                    ),
+                    CanonicalScalarPredicateV1::LessThanOrEqual(left, right) => (
+                        left,
+                        right,
+                        CanonicalExecutablePredicateV1::LessThanOrEqual
+                            as fn(_, _) -> CanonicalExecutablePredicateV1,
+                    ),
+                };
+                Ok(constructor(
+                    canonical_scalar_executable_expression(
+                        left,
+                        &current,
+                        &parameters,
+                        parts.handler.origin,
+                    )?,
+                    canonical_scalar_executable_expression(
+                        right,
+                        &current,
+                        &parameters,
+                        parts.handler.origin,
+                    )?,
+                ))
             })
             .collect::<Result<Vec<_>, CanonicalSourceErrorV1>>()?;
         handlers.push(CanonicalExecutableHandlerV1 {
@@ -3615,6 +3635,10 @@ fn parse_scalar_handler(
         .copied()
         .filter(|(condition, _)| *condition != withdraw)
     {
+        if let Some(predicate) = parse_scalar_predicate(condition, current) {
+            predicates.push(predicate);
+            continue;
+        }
         if let Some(parameters) = parse_scalar_parameter_declaration(condition) {
             for parameter in parameters {
                 declared_parameters.insert(parameter.parameter.clone());
@@ -3627,20 +3651,18 @@ fn parse_scalar_handler(
             }
             continue;
         }
-        let Some(predicate) = parse_scalar_predicate(condition, current) else {
-            return Ok(None);
-        };
-        predicates.push(predicate);
+        return Ok(None);
     }
     let mut used_parameters = BTreeSet::new();
     collect_scalar_expression_parameters(&result, &mut used_parameters);
     for predicate in &predicates {
-        match predicate {
-            CanonicalScalarPredicateV1::Equal(left, right) => {
-                collect_scalar_expression_parameters(left, &mut used_parameters);
-                collect_scalar_expression_parameters(right, &mut used_parameters);
-            }
-        }
+        let (left, right) = match predicate {
+            CanonicalScalarPredicateV1::Equal(left, right)
+            | CanonicalScalarPredicateV1::GreaterThan(left, right)
+            | CanonicalScalarPredicateV1::LessThanOrEqual(left, right) => (left, right),
+        };
+        collect_scalar_expression_parameters(left, &mut used_parameters);
+        collect_scalar_expression_parameters(right, &mut used_parameters);
     }
     if !used_parameters.is_subset(&declared_parameters) {
         return Ok(None);
@@ -3672,23 +3694,14 @@ fn parse_scalar_handler(
 }
 
 fn parse_scalar_expression(source: &str, current: &str) -> Option<CanonicalScalarExpressionV1> {
-    let tokens = source.split_whitespace().collect::<Vec<_>>();
-    let atom = |value: &str| parse_scalar_atom(value, current);
-    match tokens.as_slice() {
-        [value] => atom(value),
-        [left, operator, right] => {
-            let left = Box::new(atom(left)?);
-            let right = Box::new(atom(right)?);
-            Some(match *operator {
-                "+" => CanonicalScalarExpressionV1::Add(left, right),
-                "-" => CanonicalScalarExpressionV1::Subtract(left, right),
-                "*" => CanonicalScalarExpressionV1::Multiply(left, right),
-                "/" => CanonicalScalarExpressionV1::Divide(left, right),
-                _ => return None,
-            })
-        }
-        _ => None,
-    }
+    let mut parser = ScalarExpressionParser {
+        source: source.as_bytes(),
+        cursor: 0,
+        current,
+    };
+    let expression = parser.additive()?;
+    parser.skip_spaces();
+    (parser.cursor == parser.source.len()).then_some(expression)
 }
 
 fn parse_scalar_atom(source: &str, current: &str) -> Option<CanonicalScalarExpressionV1> {
@@ -3714,14 +3727,112 @@ fn parse_scalar_atom(source: &str, current: &str) -> Option<CanonicalScalarExpre
 }
 
 fn parse_scalar_predicate(source: &str, current: &str) -> Option<CanonicalScalarPredicateV1> {
-    let tokens = source.split_whitespace().collect::<Vec<_>>();
-    let [left, "=", right] = tokens.as_slice() else {
-        return None;
+    let (left, right, constructor) = if let Some((left, right)) = source.split_once(" <= ") {
+        (
+            left,
+            right,
+            CanonicalScalarPredicateV1::LessThanOrEqual as fn(_, _) -> CanonicalScalarPredicateV1,
+        )
+    } else if let Some((left, right)) = source.split_once(" > ") {
+        (
+            left,
+            right,
+            CanonicalScalarPredicateV1::GreaterThan as fn(_, _) -> CanonicalScalarPredicateV1,
+        )
+    } else {
+        let (left, right) = source.split_once(" = ")?;
+        (
+            left,
+            right,
+            CanonicalScalarPredicateV1::Equal as fn(_, _) -> CanonicalScalarPredicateV1,
+        )
     };
-    Some(CanonicalScalarPredicateV1::Equal(
-        parse_scalar_atom(left, current)?,
-        parse_scalar_atom(right, current)?,
+    Some(constructor(
+        parse_scalar_expression(left, current)?,
+        parse_scalar_expression(right, current)?,
     ))
+}
+
+struct ScalarExpressionParser<'a> {
+    source: &'a [u8],
+    cursor: usize,
+    current: &'a str,
+}
+
+impl ScalarExpressionParser<'_> {
+    fn additive(&mut self) -> Option<CanonicalScalarExpressionV1> {
+        let mut value = self.multiplicative()?;
+        loop {
+            self.skip_spaces();
+            let operation = self.take_one(&[b'+', b'-']);
+            let Some(operation) = operation else { break };
+            let right = self.multiplicative()?;
+            value = match operation {
+                b'+' => CanonicalScalarExpressionV1::Add(Box::new(value), Box::new(right)),
+                b'-' => CanonicalScalarExpressionV1::Subtract(Box::new(value), Box::new(right)),
+                _ => unreachable!(),
+            };
+        }
+        Some(value)
+    }
+
+    fn multiplicative(&mut self) -> Option<CanonicalScalarExpressionV1> {
+        let mut value = self.primary()?;
+        loop {
+            self.skip_spaces();
+            let operation = self.take_one(&[b'*', b'/']);
+            let Some(operation) = operation else { break };
+            let right = self.primary()?;
+            value = match operation {
+                b'*' => CanonicalScalarExpressionV1::Multiply(Box::new(value), Box::new(right)),
+                b'/' => CanonicalScalarExpressionV1::Divide(Box::new(value), Box::new(right)),
+                _ => unreachable!(),
+            };
+        }
+        Some(value)
+    }
+
+    fn primary(&mut self) -> Option<CanonicalScalarExpressionV1> {
+        self.skip_spaces();
+        if self.source.get(self.cursor) == Some(&b'(') {
+            self.cursor += 1;
+            let value = self.additive()?;
+            self.skip_spaces();
+            (self.source.get(self.cursor) == Some(&b')')).then(|| self.cursor += 1)?;
+            return Some(value);
+        }
+        let start = self.cursor;
+        if self.source.get(self.cursor) == Some(&b'-') {
+            self.cursor += 1;
+        }
+        while let Some(byte) = self.source.get(self.cursor)
+            && !byte.is_ascii_whitespace()
+            && !matches!(*byte, b'+' | b'*' | b'/' | b'(' | b')')
+        {
+            self.cursor += 1;
+        }
+        (self.cursor > start).then_some(())?;
+        let atom = std::str::from_utf8(&self.source[start..self.cursor]).ok()?;
+        parse_scalar_atom(atom, self.current)
+    }
+
+    fn skip_spaces(&mut self) {
+        while self
+            .source
+            .get(self.cursor)
+            .is_some_and(u8::is_ascii_whitespace)
+        {
+            self.cursor += 1;
+        }
+    }
+
+    fn take_one(&mut self, accepted: &[u8]) -> Option<u8> {
+        let byte = *self.source.get(self.cursor)?;
+        accepted.contains(&byte).then(|| {
+            self.cursor += 1;
+            byte
+        })
+    }
 }
 
 fn parse_scalar_parameter_declaration(source: &str) -> Option<Vec<ScalarParameterSourceCst>> {

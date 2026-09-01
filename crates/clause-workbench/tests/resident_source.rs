@@ -40,13 +40,20 @@ relation pulse-count
   subject objective
   mode given objective yields value: one
 
+relation pulse-radius
+  reads {objective: Objective} pulse radius {value: F64}
+  subject objective
+  mode given objective yields value: one
+
 game-objective pulse count 0.0
+game-objective pulse radius 0.6
 
 on count-pulse ?objective
   when
     ?objective pulse count ?count
+    game-objective pulse radius ?radius
     player-1 position Vec3 { x: ?player-x, y: ?player-y, z: ?player-z }
-    ?player-y = 0.0
+    ((?player-x - 0.5) * (?player-x - 0.5)) + ((?player-z - 0.0) * (?player-z - 0.0)) <= ?radius * ?radius
   withdraw
     ?objective pulse count ?count
   include
@@ -473,7 +480,7 @@ fn ledger_uses_the_same_checked_resident_binding_path() {
 }
 
 #[test]
-fn source_only_state_and_automatic_handler_need_no_host_binding_edit() {
+fn source_only_state_and_bounded_automatic_handler_need_no_host_binding_edit() {
     let source = coherent_source_with_automatic_extension();
     let mut workbench = ResidentSourceWorkbenchV1::open(&source)
         .expect("source-only state and automatic handler allocate generically");

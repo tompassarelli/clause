@@ -917,8 +917,25 @@ pub fn lower_canonical_scalar_handler_v1(
     let predicates = source
         .predicates
         .iter()
-        .map(|predicate| match predicate {
-            CanonicalScalarPredicateV1::Equal(left, right) => Ok(ExecutableExpressionV1::Equal(
+        .map(|predicate| {
+            let (left, right, constructor) = match predicate {
+                CanonicalScalarPredicateV1::Equal(left, right) => (
+                    left,
+                    right,
+                    ExecutableExpressionV1::Equal as fn(_, _) -> ExecutableExpressionV1,
+                ),
+                CanonicalScalarPredicateV1::GreaterThan(left, right) => (
+                    left,
+                    right,
+                    ExecutableExpressionV1::GreaterThan as fn(_, _) -> ExecutableExpressionV1,
+                ),
+                CanonicalScalarPredicateV1::LessThanOrEqual(left, right) => (
+                    left,
+                    right,
+                    ExecutableExpressionV1::LessThanOrEqual as fn(_, _) -> ExecutableExpressionV1,
+                ),
+            };
+            Ok(constructor(
                 Box::new(lower_scalar_expression(
                     left,
                     binding.state_slot,
@@ -931,7 +948,7 @@ pub fn lower_canonical_scalar_handler_v1(
                     &parameter_slots,
                     0,
                 )?),
-            )),
+            ))
         })
         .collect::<Result<Vec<_>, ExecutableErrorV1>>()?;
     let rule = ExecutableRuleV1 {
