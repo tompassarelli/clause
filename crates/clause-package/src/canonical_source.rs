@@ -2749,6 +2749,7 @@ fn checked_executable_handlers(
             trigger: if keyboard
                 .iter()
                 .any(|binding| binding.handler_designation == source.designation)
+                || (source.predicates.is_empty() && source.boolean_conditions.is_empty())
             {
                 CanonicalHandlerTriggerV1::External
             } else {

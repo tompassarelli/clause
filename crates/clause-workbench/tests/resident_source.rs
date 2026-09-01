@@ -99,6 +99,59 @@ on planar-burst ?player
   include
     ?player velocity Vec3 { x: ?velocity-x + 3.0, y: ?velocity-y, z: ?velocity-z - 2.0 }
 "#;
+const ACTOR_NEUTRAL_HIT: &str = r#"referent F64
+referent Actor
+referent Move
+
+relation vitality
+  reads {actor: Actor} vitality {value: F64}
+  subject actor
+  mode given actor yields value: one
+
+relation destabilization
+  reads {actor: Actor} destabilization {value: F64}
+  subject actor
+  mode given actor yields value: one
+
+relation damage
+  reads {move: Move} damage {value: F64}
+  subject move
+  mode given move yields value: one
+
+relation move-destabilization
+  reads {move: Move} move destabilization {value: F64}
+  subject move
+  mode given move yields value: one
+
+magitek-boar ∈ Actor
+blade-one ∈ Move
+
+magitek-boar vitality 100.0
+magitek-boar destabilization 0.0
+blade-one damage 8.0
+blade-one move destabilization 25.0
+
+on probe ?defender
+  when
+    ?defender vitality ?vitality
+  withdraw
+    ?defender vitality ?vitality
+  include
+    ?defender vitality ?vitality + 0.0
+
+on admitted-hit ?defender
+  when
+    ?defender vitality ?vitality
+    ?defender destabilization ?destabilization
+    blade-one damage ?damage
+    blade-one move destabilization ?gain
+  withdraw
+    ?defender vitality ?vitality
+    ?defender destabilization ?destabilization
+  include
+    ?defender vitality ?vitality - ?damage
+    ?defender destabilization ?destabilization + ?gain
+"#;
 
 fn coherent_source(objective: &[u8]) -> Vec<u8> {
     let mut source = Vec::with_capacity(
@@ -253,6 +306,15 @@ fn player_planar_velocity(exact_term_bytes: &[u8]) -> (f64, f64) {
     (
         projected_number(projected_object_field(velocity, b"x")),
         projected_number(projected_object_field(velocity, b"z")),
+    )
+}
+
+fn boar_combat_state(exact_term_bytes: &[u8]) -> (f64, f64) {
+    let term = decode_canonical_term_bytes(exact_term_bytes).expect("projection term decodes");
+    let boar = projected_object_field(&term, b"magitek-boar");
+    (
+        projected_number(projected_object_field(boar, b"vitality")),
+        projected_number(projected_object_field(boar, b"destabilization")),
     )
 }
 
@@ -590,6 +652,44 @@ fn source_keyboard_binding_reaches_one_atomic_multi_assignment_candidate() {
     assert_eq!(
         player_planar_velocity(&admitted.projection.exact_term_bytes),
         (3.0, -2.0)
+    );
+}
+
+#[test]
+fn actor_neutral_hit_updates_two_state_cells_in_one_admitted_candidate() {
+    let mut workbench = ResidentSourceWorkbenchV1::open(ACTOR_NEUTRAL_HIT.as_bytes())
+        .expect("the actor-neutral combat source opens");
+    let probe = workbench
+        .handler_occurrence(b"probe", &[])
+        .expect("the supported scalar probe has one occurrence");
+    workbench
+        .run_occurrences_to_candidate(&[probe])
+        .expect("the scalar probe produces an initial hidden candidate");
+    let initial = workbench
+        .admit()
+        .expect("separate Admission exposes the initial combat state");
+    assert_eq!(
+        boar_combat_state(&initial.projection.exact_term_bytes),
+        (100.0, 0.0)
+    );
+
+    let admitted_hit = workbench
+        .handler_occurrence(b"admitted-hit", &[])
+        .expect("one source handler owns vitality and Destabilization");
+    workbench
+        .run_occurrences_to_candidate(&[admitted_hit])
+        .expect("the actor-neutral hit produces one hidden candidate");
+    assert_eq!(
+        boar_combat_state(&workbench.last_projection().unwrap().exact_term_bytes),
+        (100.0, 0.0),
+        "neither combat state cell is visible before Admission"
+    );
+    let admitted = workbench
+        .admit()
+        .expect("one Admission exposes both combat state changes");
+    assert_eq!(
+        boar_combat_state(&admitted.projection.exact_term_bytes),
+        (92.0, 25.0)
     );
 }
 
