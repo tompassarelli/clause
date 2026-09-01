@@ -245,6 +245,21 @@ fn source_edit_hot_reloads_in_one_workbench_without_admission_custody_leak() {
         changed_admission.projection.exact_term_bytes, base_admission.projection.exact_term_bytes,
         "the source edit changes the admitted rendered frame"
     );
+
+    let changed_again =
+        changed.replacen("jump-arena move speed 7.0", "jump-arena move speed 9.0", 1);
+    let changed_again_generation = workbench
+        .hot_reload(changed_again.as_bytes())
+        .expect("a second source-only edit reclaims the prior resident generation");
+    assert_eq!(
+        changed_again_generation.handle.generation,
+        changed_generation.handle.generation + 1
+    );
+    assert!(
+        workbench
+            .rejects_stale_handle(changed_generation.handle)
+            .expect("the second source edit keeps the prior handle stale")
+    );
 }
 
 #[test]

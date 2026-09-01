@@ -221,6 +221,7 @@ impl ResidentSourceWorkbenchV1 {
         exact_source: &[u8],
     ) -> Result<ResidentSourceGenerationV1, ResidentSourceWorkbenchErrorV1> {
         self.install_source(exact_source)?;
+        while self.boundary.reclaim_retired() {}
         Ok(self.generation.clone())
     }
 
