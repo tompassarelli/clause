@@ -1,0 +1,20 @@
+referent F64
+referent Player
+
+relation camera-heading
+  reads {player: Player} camera heading {value: F64}
+  subject player
+  mode given player yields value: one
+
+player-1 ∈ Player
+player-1 camera heading 0.0
+
+bind scalar-input CameraHeading to observe-camera-heading
+
+on observe-camera-heading ?player ?heading
+  when
+    ?player camera heading ?prior
+  withdraw
+    ?player camera heading ?prior
+  include
+    ?player camera heading ?heading

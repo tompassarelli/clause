@@ -240,6 +240,9 @@ pub enum ExecutableInputSourceV1 {
         code: Vec<u8>,
         phase: ExecutableKeyPhaseV1,
     },
+    Scalar {
+        channel: Vec<u8>,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -1547,6 +1550,11 @@ fn encode_input_source(
             bytes.extend_from_slice(code);
             bytes.push(*phase as u8);
         }
+        ExecutableInputSourceV1::Scalar { channel } => {
+            bytes.push(1);
+            encode_count(bytes, channel.len())?;
+            bytes.extend_from_slice(channel);
+        }
     }
     Ok(())
 }
@@ -1567,6 +1575,15 @@ fn decode_input_source(
                 _ => return Err(ExecutableErrorV1::MalformedProgram),
             };
             Ok(ExecutableInputSourceV1::Keyboard { code, phase })
+        }
+        1 => {
+            let length = decoder.count()?;
+            if length == 0 || length > MAX_INPUT_CODE_BYTES {
+                return Err(ExecutableErrorV1::MalformedProgram);
+            }
+            Ok(ExecutableInputSourceV1::Scalar {
+                channel: decoder.take(length)?.to_vec(),
+            })
         }
         _ => Err(ExecutableErrorV1::MalformedProgram),
     }
@@ -3280,8 +3297,9 @@ impl ExecutableProcessRuntimeV1 {
     pub fn advance_carrier_input(
         &mut self,
         source: &ExecutableInputSourceV1,
+        scalar_value: Option<f64>,
     ) -> Result<&ExecutableStepV1, ExecutableCarrierErrorV1> {
-        let occurrence = self
+        let mut occurrence = self
             .input
             .as_ref()
             .and_then(|input| {
@@ -3294,6 +3312,23 @@ impl ExecutableProcessRuntimeV1 {
             .ok_or(ExecutableCarrierErrorV1::Executable(
                 ExecutableErrorV1::UnknownPhysicalInput,
             ))?;
+        match source {
+            ExecutableInputSourceV1::Keyboard { .. } if scalar_value.is_none() => {}
+            ExecutableInputSourceV1::Scalar { .. } => {
+                let value = scalar_value.ok_or(ExecutableCarrierErrorV1::Executable(
+                    ExecutableErrorV1::MalformedInputConfiguration,
+                ))?;
+                occurrence.arguments = vec![
+                    ExecutableValueV1::number(value)
+                        .map_err(ExecutableCarrierErrorV1::Executable)?,
+                ];
+            }
+            _ => {
+                return Err(ExecutableCarrierErrorV1::Executable(
+                    ExecutableErrorV1::MalformedInputConfiguration,
+                ));
+            }
+        }
         self.advance_carrier_occurrence(occurrence)
     }
 
@@ -4952,12 +4987,20 @@ fn validate_input_plan_shape(
     let mut roles = BTreeSet::new();
     let mut sources = BTreeSet::new();
     for binding in &input.events {
-        let code = match &binding.source {
-            ExecutableInputSourceV1::Keyboard { code, .. } => code,
+        let (designation, arguments_valid) = match &binding.source {
+            ExecutableInputSourceV1::Keyboard { code, .. } => (code, true),
+            ExecutableInputSourceV1::Scalar { channel } => (
+                channel,
+                matches!(
+                    binding.occurrence.arguments.as_slice(),
+                    [ExecutableValueV1::Number(_)]
+                ),
+            ),
         };
-        if code.is_empty()
-            || code.len() > MAX_INPUT_CODE_BYTES
-            || !code.iter().all(u8::is_ascii_graphic)
+        if designation.is_empty()
+            || designation.len() > MAX_INPUT_CODE_BYTES
+            || !designation.iter().all(u8::is_ascii_graphic)
+            || !arguments_valid
             || !roles.insert(binding.role)
             || !sources.insert(binding.source.clone())
             || !program

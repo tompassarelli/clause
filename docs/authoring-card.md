@@ -76,6 +76,35 @@ on planar-burst ?player
     ?player velocity Vec3 { x: ?velocity-x + 3.0, y: ?velocity-y, z: ?velocity-z - 2.0 }
 ```
 
+## Scalar input transition
+
+Binds one named physical scalar channel to a typed one-argument handler and records its finite observed value.
+
+Catalog ID: `scalar-input-transition`
+
+```clause
+referent F64
+referent Player
+
+relation camera-heading
+  reads {player: Player} camera heading {value: F64}
+  subject player
+  mode given player yields value: one
+
+player-1 ∈ Player
+player-1 camera heading 0.0
+
+bind scalar-input CameraHeading to observe-camera-heading
+
+on observe-camera-heading ?player ?heading
+  when
+    ?player camera heading ?prior
+  withdraw
+    ?player camera heading ?prior
+  include
+    ?player camera heading ?heading
+```
+
 ## Derived combat transition
 
 Authorizes scalar laws, binds their result in a handler, and publishes one atomic multi-state combat change.

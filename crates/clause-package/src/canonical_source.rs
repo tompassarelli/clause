@@ -370,6 +370,15 @@ pub struct CanonicalKeyboardBindingV1 {
     pub handler_designation: Vec<u8>,
 }
 
+/// One source-owned scalar physical channel and its one-argument handler.
+/// The channel is a stable semantic name; each observation supplies one
+/// finite F64 value at execution time.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct CanonicalScalarInputBindingV1 {
+    pub channel: Vec<u8>,
+    pub handler_designation: Vec<u8>,
+}
+
 /// Construct-blind scalar expression owned by one canonical source handler.
 /// Physical state coordinates are deliberately supplied only by refinement.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -532,6 +541,7 @@ pub struct CanonicalSourcePackageSliceV1 {
     pub state_cells: Vec<CanonicalStateCellV1>,
     pub executable_handlers: Vec<CanonicalExecutableHandlerV1>,
     pub keyboard_bindings: Vec<CanonicalKeyboardBindingV1>,
+    pub scalar_input_bindings: Vec<CanonicalScalarInputBindingV1>,
     pub input_handler: Option<CanonicalInputHandlerV1>,
     pub jump_handler: Option<CanonicalJumpHandlerV1>,
     pub scalar_handlers: Vec<CanonicalScalarHandlerV1>,
@@ -621,6 +631,18 @@ pub enum CanonicalSourceErrorV1 {
     DuplicateKeyboardBinding {
         code: Vec<u8>,
         phase: CanonicalKeyPhaseV1,
+    },
+    InvalidScalarInputBinding {
+        origin: CanonicalSourceOriginV1,
+    },
+    DuplicateScalarInputBinding {
+        channel: Vec<u8>,
+    },
+    MissingScalarInputHandler {
+        designation: Vec<u8>,
+    },
+    AmbiguousScalarInputHandler {
+        designation: Vec<u8>,
     },
     MissingKeyboardHandler {
         designation: Vec<u8>,
@@ -729,6 +751,7 @@ enum CstKind {
     GeneralHandler(GeneralHandlerCst),
     TickHandler(TickHandlerCst),
     KeyboardBinding(KeyboardBindingCst),
+    ScalarInputBinding(ScalarInputBindingCst),
     ClampLaw(ClampLawCst),
     ClampDerive(ClampDeriveCst),
     BooleanLaw(BooleanLawCst),
@@ -871,6 +894,13 @@ struct KeyboardBindingCst {
     origin: CanonicalSourceOriginV1,
     code: Vec<u8>,
     phase: CanonicalKeyPhaseV1,
+    handler_designation: Vec<u8>,
+}
+
+#[derive(Clone, Debug)]
+struct ScalarInputBindingCst {
+    origin: CanonicalSourceOriginV1,
+    channel: Vec<u8>,
     handler_designation: Vec<u8>,
 }
 
@@ -1645,7 +1675,9 @@ fn allocation_requests(
                     });
                 }
             }
-            CstKind::KeyboardBinding(_) | CstKind::Unsupported(_) => {}
+            CstKind::KeyboardBinding(_)
+            | CstKind::ScalarInputBinding(_)
+            | CstKind::Unsupported(_) => {}
         }
     }
     requested.sort();
@@ -3589,6 +3621,29 @@ fn source_keyboard_bindings(
     Ok(bindings)
 }
 
+fn source_scalar_input_bindings(
+    cst: &CanonicalSourceCstV1,
+) -> Result<Vec<CanonicalScalarInputBindingV1>, CanonicalSourceErrorV1> {
+    let mut seen = BTreeSet::new();
+    let mut bindings = Vec::new();
+    for source in cst.items.iter().filter_map(|item| match &item.kind {
+        CstKind::ScalarInputBinding(binding) => Some(binding),
+        _ => None,
+    }) {
+        if !seen.insert(source.channel.clone()) {
+            return Err(CanonicalSourceErrorV1::DuplicateScalarInputBinding {
+                channel: source.channel.clone(),
+            });
+        }
+        bindings.push(CanonicalScalarInputBindingV1 {
+            channel: source.channel.clone(),
+            handler_designation: source.handler_designation.clone(),
+        });
+    }
+    bindings.sort();
+    Ok(bindings)
+}
+
 fn validate_keyboard_handler_targets(
     cst: &CanonicalSourceCstV1,
     keyboard: &[CanonicalKeyboardBindingV1],
@@ -3626,6 +3681,47 @@ fn validate_keyboard_handler_targets(
                 })
                 .expect("one checked keyboard binding retains its source origin");
             return Err(CanonicalSourceErrorV1::InvalidKeyboardBinding { origin });
+        }
+    }
+    Ok(())
+}
+
+fn validate_scalar_input_handler_targets(
+    cst: &CanonicalSourceCstV1,
+    scalar_inputs: &[CanonicalScalarInputBindingV1],
+    handlers: &[CanonicalExecutableHandlerV1],
+) -> Result<(), CanonicalSourceErrorV1> {
+    for binding in scalar_inputs {
+        let matching = handlers
+            .iter()
+            .filter(|handler| handler.designation == binding.handler_designation)
+            .collect::<Vec<_>>();
+        let [handler] = matching.as_slice() else {
+            return Err(if matching.is_empty() {
+                CanonicalSourceErrorV1::MissingScalarInputHandler {
+                    designation: binding.handler_designation.clone(),
+                }
+            } else {
+                CanonicalSourceErrorV1::AmbiguousScalarInputHandler {
+                    designation: binding.handler_designation.clone(),
+                }
+            });
+        };
+        if handler.trigger != CanonicalHandlerTriggerV1::External || handler.argument_count != 1 {
+            let origin = cst
+                .items
+                .iter()
+                .find_map(|item| match &item.kind {
+                    CstKind::ScalarInputBinding(source)
+                        if source.channel == binding.channel
+                            && source.handler_designation == binding.handler_designation =>
+                    {
+                        Some(source.origin)
+                    }
+                    _ => None,
+                })
+                .expect("one checked scalar input binding retains its source origin");
+            return Err(CanonicalSourceErrorV1::InvalidScalarInputBinding { origin });
         }
     }
     Ok(())
@@ -3714,6 +3810,7 @@ pub fn elaborate_canonical_source_package_v1(
         .collect();
     let tick_parts = tick_program_parts(cst)?;
     let keyboard_bindings = source_keyboard_bindings(cst)?;
+    let scalar_input_bindings = source_scalar_input_bindings(cst)?;
     let state_cells = checked_source_state_cells(cst, plan)?;
     let executable_handlers = checked_executable_handlers(
         cst,
@@ -3725,6 +3822,7 @@ pub fn elaborate_canonical_source_package_v1(
         &keyboard_bindings,
     )?;
     validate_keyboard_handler_targets(cst, &keyboard_bindings, &executable_handlers)?;
+    validate_scalar_input_handler_targets(cst, &scalar_input_bindings, &executable_handlers)?;
     let tick_program = tick_parts.map(|parts| CanonicalTickProgramV1 {
         artifact: cst.artifact,
         initial_position: [parts.position.x, parts.position.y, parts.position.z],
@@ -4385,7 +4483,7 @@ pub fn elaborate_canonical_source_package_v1(
                     });
                 }
             }
-            CstKind::KeyboardBinding(_) => {}
+            CstKind::KeyboardBinding(_) | CstKind::ScalarInputBinding(_) => {}
             CstKind::Unsupported(value) => unsupported.push(value.clone()),
         }
     }
@@ -4426,6 +4524,7 @@ pub fn elaborate_canonical_source_package_v1(
         state_cells,
         executable_handlers,
         keyboard_bindings,
+        scalar_input_bindings,
         input_handler,
         jump_handler,
         scalar_handlers,
@@ -4569,6 +4668,14 @@ fn parse_item(
         return Ok(CstItem {
             origin,
             kind: CstKind::KeyboardBinding(binding),
+        });
+    }
+    if head.starts_with("bind scalar-input ") {
+        require_leaf(block, artifact)?;
+        let binding = parse_scalar_input_binding(head, origin)?;
+        return Ok(CstItem {
+            origin,
+            kind: CstKind::ScalarInputBinding(binding),
         });
     }
     if head.starts_with("law ") {
@@ -4729,6 +4836,32 @@ fn parse_keyboard_binding(
         origin,
         code: code.as_bytes().to_vec(),
         phase,
+        handler_designation: handler.as_bytes().to_vec(),
+    })
+}
+
+fn parse_scalar_input_binding(
+    source: &str,
+    origin: CanonicalSourceOriginV1,
+) -> Result<ScalarInputBindingCst, CanonicalSourceErrorV1> {
+    let parts = source.split_whitespace().collect::<Vec<_>>();
+    let ["bind", "scalar-input", channel, "to", handler] = parts.as_slice() else {
+        return Err(CanonicalSourceErrorV1::InvalidScalarInputBinding { origin });
+    };
+    let valid_designation = |value: &str| {
+        !value.is_empty()
+            && value.len() <= 64
+            && value
+                .as_bytes()
+                .iter()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(*byte, b'_' | b'-'))
+    };
+    if !valid_designation(channel) || !valid_designation(handler) {
+        return Err(CanonicalSourceErrorV1::InvalidScalarInputBinding { origin });
+    }
+    Ok(ScalarInputBindingCst {
+        origin,
+        channel: channel.as_bytes().to_vec(),
         handler_designation: handler.as_bytes().to_vec(),
     })
 }
@@ -7592,6 +7725,7 @@ fn validate_unique_designations(items: &[CstItem]) -> Result<(), CanonicalSource
         | CstKind::GeneralHandler(_)
         | CstKind::TickHandler(_)
         | CstKind::KeyboardBinding(_)
+        | CstKind::ScalarInputBinding(_)
         | CstKind::ClampLaw(_)
         | CstKind::ClampDerive(_)
         | CstKind::BooleanLaw(_)

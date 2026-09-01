@@ -2114,10 +2114,13 @@ fn admit_spring_journey(source: &[u8], allocation_tag: u8, policy_tag: u8) -> (V
     )
     .expect("spring journey opens one persistent native session");
     session
-        .apply_physical_input(&ExecutableInputSourceV1::Keyboard {
-            code: b"KeyD".to_vec(),
-            phase: ExecutableKeyPhaseV1::Down,
-        })
+        .apply_physical_input(
+            &ExecutableInputSourceV1::Keyboard {
+                code: b"KeyD".to_vec(),
+                phase: ExecutableKeyPhaseV1::Down,
+            },
+            None,
+        )
         .expect("ordinary movement input is the only external trigger");
 
     session
@@ -2434,10 +2437,13 @@ fn automatic_contact_tick_keeps_collection_hidden_until_admission_and_inactive_a
     .expect("automatic-contact native session opens");
     let initial_world = session.world_base();
     session
-        .apply_physical_input(&ExecutableInputSourceV1::Keyboard {
-            code: b"KeyD".to_vec(),
-            phase: ExecutableKeyPhaseV1::Down,
-        })
+        .apply_physical_input(
+            &ExecutableInputSourceV1::Keyboard {
+                code: b"KeyD".to_vec(),
+                phase: ExecutableKeyPhaseV1::Down,
+            },
+            None,
+        )
         .expect("ordinary movement input advances without a contact trigger");
     let contact_step = session
         .apply_fixed_tick_and_emit_candidate(16)
@@ -2679,10 +2685,13 @@ fn coherent_game_fails_resets_completes_and_launches_in_one_persistent_session()
     };
 
     session
-        .apply_physical_input(&ExecutableInputSourceV1::Keyboard {
-            code: b"KeyS".to_vec(),
-            phase: ExecutableKeyPhaseV1::Down,
-        })
+        .apply_physical_input(
+            &ExecutableInputSourceV1::Keyboard {
+                code: b"KeyS".to_vec(),
+                phase: ExecutableKeyPhaseV1::Down,
+            },
+            None,
+        )
         .expect("southward movement input is generic physical ingress");
     let initial_world = session.world_base();
     session
@@ -2711,16 +2720,22 @@ fn coherent_game_fails_resets_completes_and_launches_in_one_persistent_session()
     assert_eq!(objective_state(&failed_projection.term), b"failed");
 
     session
-        .apply_physical_input(&ExecutableInputSourceV1::Keyboard {
-            code: b"KeyW".to_vec(),
-            phase: ExecutableKeyPhaseV1::Down,
-        })
+        .apply_physical_input(
+            &ExecutableInputSourceV1::Keyboard {
+                code: b"KeyW".to_vec(),
+                phase: ExecutableKeyPhaseV1::Down,
+            },
+            None,
+        )
         .expect("northward intent can leave the hazard");
     session
-        .apply_physical_input(&ExecutableInputSourceV1::Keyboard {
-            code: b"KeyR".to_vec(),
-            phase: ExecutableKeyPhaseV1::Down,
-        })
+        .apply_physical_input(
+            &ExecutableInputSourceV1::Keyboard {
+                code: b"KeyR".to_vec(),
+                phase: ExecutableKeyPhaseV1::Down,
+            },
+            None,
+        )
         .expect("reset input invokes the source-owned reset transition");
     assert_eq!(
         session
@@ -2755,10 +2770,13 @@ fn coherent_game_fails_resets_completes_and_launches_in_one_persistent_session()
     assert_eq!(objective_state(&reset_projection.term), b"playing");
 
     session
-        .apply_physical_input(&ExecutableInputSourceV1::Keyboard {
-            code: b"KeyD".to_vec(),
-            phase: ExecutableKeyPhaseV1::Down,
-        })
+        .apply_physical_input(
+            &ExecutableInputSourceV1::Keyboard {
+                code: b"KeyD".to_vec(),
+                phase: ExecutableKeyPhaseV1::Down,
+            },
+            None,
+        )
         .expect("eastward movement approaches the objective");
     session
         .apply_fixed_tick_and_emit_candidate(16)
@@ -3335,6 +3353,53 @@ fn bounded_wasm_bytes_return_only_the_admitted_observation() {
         Err(WasmProcessStatusV1::MalformedRequest)
     );
     assert_eq!(boundary.response(), &[]);
+}
+
+#[test]
+fn wasm_scalar_input_command_round_trips_and_rejects_non_finite_values() {
+    let command = WasmSessionCommandV1 {
+        handle: WasmSessionHandleV1 {
+            slot: 3,
+            generation: 5,
+        },
+        expected_sequence: 8,
+        operation: WasmSessionOperationV1::PhysicalInput(WasmSessionPhysicalInputV1 {
+            input_sequence: 13,
+            source: ExecutableInputSourceV1::Scalar {
+                channel: b"CameraHeading".to_vec(),
+            },
+            scalar_value_bits: Some(0.625_f64.to_bits()),
+        }),
+    };
+    let encoded =
+        encode_wasm_session_command_v1(&command).expect("finite scalar input command encodes");
+    assert_eq!(
+        decode_wasm_session_command_v1(&encoded).expect("finite scalar input command decodes"),
+        command
+    );
+
+    let mut non_finite_wire = encoded;
+    let value_offset = non_finite_wire.len() - 8;
+    non_finite_wire[value_offset..].copy_from_slice(&f64::NAN.to_bits().to_le_bytes());
+    assert_eq!(
+        decode_wasm_session_command_v1(&non_finite_wire),
+        Err(WasmProcessStatusV1::MalformedRequest)
+    );
+
+    let non_finite_command = WasmSessionCommandV1 {
+        operation: WasmSessionOperationV1::PhysicalInput(WasmSessionPhysicalInputV1 {
+            input_sequence: 13,
+            source: ExecutableInputSourceV1::Scalar {
+                channel: b"CameraHeading".to_vec(),
+            },
+            scalar_value_bits: Some(f64::INFINITY.to_bits()),
+        }),
+        ..command
+    };
+    assert_eq!(
+        encode_wasm_session_command_v1(&non_finite_command),
+        Err(WasmProcessStatusV1::MalformedRequest)
+    );
 }
 
 #[test]

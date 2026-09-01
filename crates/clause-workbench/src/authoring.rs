@@ -34,6 +34,15 @@ pub const AUTHORING_EXAMPLES_V1: &[AuthoringExampleV1] = &[
         )),
     },
     AuthoringExampleV1 {
+        slug: "scalar-input-transition",
+        title: "Scalar input transition",
+        summary: "Binds one named physical scalar channel to a typed one-argument handler and records its finite observed value.",
+        source: include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../test-vectors/authoring/scalar-input-transition.clause"
+        )),
+    },
+    AuthoringExampleV1 {
         slug: "derived-combat-transition",
         title: "Derived combat transition",
         summary: "Authorizes scalar laws, binds their result in a handler, and publishes one atomic multi-state combat change.",

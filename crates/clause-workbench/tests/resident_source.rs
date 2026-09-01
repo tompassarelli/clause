@@ -100,6 +100,24 @@ on planar-burst ?player
   include
     ?player velocity Vec3 { x: ?velocity-x + 3.0, y: ?velocity-y, z: ?velocity-z - 2.0 }
 "#;
+const SOURCE_SCALAR_CAMERA_EXTENSION: &[u8] = br#"
+relation camera-heading
+  reads {player: Player} camera heading {value: F64}
+  subject player
+  mode given player yields value: one
+
+player-1 camera heading 0.0
+
+bind scalar-input CameraHeading to observe-camera-heading
+
+on observe-camera-heading ?player ?heading
+  when
+    ?player camera heading ?prior
+  withdraw
+    ?player camera heading ?prior
+  include
+    ?player camera heading ?heading
+"#;
 const ACTOR_NEUTRAL_HIT: &str = r#"referent F64
 referent Actor
 referent Move
@@ -881,6 +899,50 @@ fn source_keyboard_binding_reaches_one_atomic_multi_assignment_candidate() {
     assert_eq!(
         player_planar_velocity(&admitted.projection.exact_term_bytes),
         (3.0, -2.0)
+    );
+}
+
+#[test]
+fn source_scalar_input_binding_carries_one_finite_runtime_value() {
+    let mut source = WORLD.to_vec();
+    source.extend_from_slice(SOURCE_SCALAR_CAMERA_EXTENSION);
+    let workbench = ResidentSourceWorkbenchV1::open(&source)
+        .expect("source scalar input binding and one-argument handler open");
+    let plan = decode_executable_physical_plan_v1(&workbench.generation().cpp1)
+        .expect("generated scalar input plan decodes");
+    let input = plan.input.expect("scalar input creates one physical plan");
+    let binding = input
+        .events
+        .iter()
+        .find(|event| {
+            event.source
+                == ExecutableInputSourceV1::Scalar {
+                    channel: b"CameraHeading".to_vec(),
+                }
+        })
+        .expect("camera heading channel is present in the plan");
+    assert_eq!(
+        binding.occurrence.arguments,
+        vec![ExecutableValueV1::number(0.0).unwrap()]
+    );
+
+    let mut session = open_fresh_persistent_process_session_v1(&workbench.generation().cwr1)
+        .expect("scalar-input CWR1 opens natively");
+    session
+        .apply_physical_input(
+            &ExecutableInputSourceV1::Scalar {
+                channel: b"CameraHeading".to_vec(),
+            },
+            Some(0.625),
+        )
+        .expect("the scalar observation enters the checked handler");
+    assert!(
+        session
+            .configuration()
+            .expect("scalar input retains local configuration")
+            .iter()
+            .any(|slot| *slot == ExecutableValueV1::number(0.625).unwrap()),
+        "the observed scalar replaces the declared state value"
     );
 }
 

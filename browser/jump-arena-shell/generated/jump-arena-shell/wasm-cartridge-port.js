@@ -1004,9 +1004,24 @@ function decode_physical_observation(observation) {
         return {
             kind: "input",
             source: {
+                kind: "keyboard",
                 sequence: observation.sequence,
                 code: ascii_bytes(value.code, "keyboard code"),
                 phase: phase_tag,
+            },
+        };
+    }
+    if (value.kind === "scalar-input") {
+        if (typeof value.value !== "number" || !Number.isFinite(value.value)) {
+            throw new Error("scalar input observation has a non-finite value");
+        }
+        return {
+            kind: "input",
+            source: {
+                kind: "scalar",
+                sequence: observation.sequence,
+                channel: ascii_bytes(value.channel, "scalar input channel"),
+                value: value.value,
             },
         };
     }
@@ -1023,9 +1038,22 @@ function decode_physical_observation(observation) {
 function physical_input_command_bang(session, input) {
     const payload = [];
     append_u64_bang(payload, input.sequence);
-    payload.push(0);
-    append_blob_bang(payload, input.code);
-    payload.push(input.phase);
+    if (input.kind === "keyboard") {
+        payload.push(0);
+        append_blob_bang(payload, input.code);
+        payload.push(input.phase);
+        payload.push(0);
+    }
+    else {
+        payload.push(1);
+        append_blob_bang(payload, input.channel);
+        payload.push(1);
+        const encoded = new DataView(new ArrayBuffer(8));
+        encoded.setFloat64(0, input.value, true);
+        for (let index = 0; index < 8; index += 1) {
+            payload.push(encoded.getUint8(index));
+        }
+    }
     return encode_session_command_bang(session, 3, payload);
 }
 function tick_candidate_command_bang(session, fixed_tick, configuration) {

@@ -191,8 +191,12 @@ impl PersistentProcessSessionV1 {
     pub fn apply_physical_input(
         &mut self,
         source: &ExecutableInputSourceV1,
+        scalar_value: Option<f64>,
     ) -> Result<ExecutableStepV1, PersistentProcessSessionErrorV1> {
-        Ok(self.runtime_mut()?.advance_carrier_input(source)?.clone())
+        Ok(self
+            .runtime_mut()?
+            .advance_carrier_input(source, scalar_value)?
+            .clone())
     }
 
     /// Lower the exact fixed tick and emit one candidate without Admission.

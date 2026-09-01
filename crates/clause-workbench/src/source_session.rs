@@ -4,10 +4,10 @@ use std::fmt;
 
 use clause_package::{
     CandidateDeltaId, CanonicalHandlerTriggerV1, CanonicalKeyPhaseV1, CanonicalKeyboardBindingV1,
-    CanonicalSourceContextV1, LocalRoleRefV2, ProcessPackageId, ProgramChangeOccurrenceId,
-    StateRevisionId, TermScope, check_process_package, decode_process_package,
-    elaborate_canonical_source_package_v1, plan_independent_canonical_source_allocations_v1,
-    read_canonical_source_v1,
+    CanonicalScalarInputBindingV1, CanonicalSourceContextV1, LocalRoleRefV2, ProcessPackageId,
+    ProgramChangeOccurrenceId, StateRevisionId, TermScope, check_process_package,
+    decode_process_package, elaborate_canonical_source_package_v1,
+    plan_independent_canonical_source_allocations_v1, read_canonical_source_v1,
 };
 use clause_runtime::{
     ExecutableCanonicalHandlerBindingV1, ExecutableInputBindingV1, ExecutableInputPlanV1,
@@ -461,20 +461,31 @@ impl ResidentSourceWorkbenchV1 {
             let template_input = template_input.ok_or_else(|| {
                 ResidentSourceWorkbenchErrorV1("CPP1 template has no physical input plan".into())
             })?;
-            let events = if compiled.keyboard_bindings.is_empty() {
+            let events = if compiled.keyboard_bindings.is_empty()
+                && compiled.scalar_input_bindings.is_empty()
+            {
                 bind_physical_events(
                     &template_input.events,
                     &lowered.handlers,
                     &semantic_handlers,
                 )?
             } else {
-                bind_source_keyboard_events(
+                let mut events = bind_source_keyboard_events(
                     &compiled.keyboard_bindings,
                     &lowered.handlers,
                     &semantic_handlers,
                     &projection_roles,
                     template_input.tick.role,
-                )?
+                )?;
+                events.extend(bind_source_scalar_input_events(
+                    &compiled.scalar_input_bindings,
+                    compiled.keyboard_bindings.len(),
+                    &lowered.handlers,
+                    &semantic_handlers,
+                    &projection_roles,
+                    template_input.tick.role,
+                )?);
+                events
             };
             if let Some(input) = events
                 .iter()
@@ -741,6 +752,79 @@ fn bind_source_keyboard_events(
                 occurrence: ExecutableOccurrenceV1 {
                     entry: lowered.entry,
                     arguments: Vec::new(),
+                },
+            })
+        })
+        .collect()
+}
+
+fn bind_source_scalar_input_events(
+    source_bindings: &[CanonicalScalarInputBindingV1],
+    role_offset: usize,
+    bindings: &[ExecutableCanonicalHandlerBindingV1],
+    semantic: &BTreeMap<
+        clause_package::FormationLocalId,
+        &clause_package::CanonicalExecutableHandlerV1,
+    >,
+    available_roles: &[LocalRoleRefV2],
+    tick_role: LocalRoleRefV2,
+) -> Result<Vec<ExecutableInputBindingV1>, ResidentSourceWorkbenchErrorV1> {
+    let roles = available_roles
+        .iter()
+        .copied()
+        .filter(|role| *role != tick_role)
+        .skip(role_offset)
+        .take(source_bindings.len())
+        .collect::<Vec<_>>();
+    if roles.len() != source_bindings.len() {
+        return Err(ResidentSourceWorkbenchErrorV1(format!(
+            "physical adapter has {} scalar event Roles after offset {} for {} source bindings",
+            roles.len(),
+            role_offset,
+            source_bindings.len()
+        )));
+    }
+
+    source_bindings
+        .iter()
+        .zip(roles)
+        .map(|(source, role)| {
+            let semantic_matches = semantic
+                .iter()
+                .filter(|(_, handler)| handler.designation == source.handler_designation)
+                .collect::<Vec<_>>();
+            let [(handler, meaning)] = semantic_matches.as_slice() else {
+                return Err(ResidentSourceWorkbenchErrorV1(format!(
+                    "source scalar input target is missing or ambiguous: {}",
+                    String::from_utf8_lossy(&source.handler_designation)
+                )));
+            };
+            if meaning.trigger != CanonicalHandlerTriggerV1::External || meaning.argument_count != 1
+            {
+                return Err(ResidentSourceWorkbenchErrorV1(format!(
+                    "source scalar input target is not a one-argument external handler: {}",
+                    String::from_utf8_lossy(&source.handler_designation)
+                )));
+            }
+            let lowered = bindings
+                .iter()
+                .find(|binding| binding.handler == **handler)
+                .ok_or_else(|| {
+                    ResidentSourceWorkbenchErrorV1(
+                        "source scalar input target was not lowered".into(),
+                    )
+                })?;
+            Ok(ExecutableInputBindingV1 {
+                role,
+                source: ExecutableInputSourceV1::Scalar {
+                    channel: source.channel.clone(),
+                },
+                occurrence: ExecutableOccurrenceV1 {
+                    entry: lowered.entry,
+                    arguments: vec![
+                        ExecutableValueV1::number(0.0)
+                            .map_err(|error| boxed_error("scalar input placeholder", error))?,
+                    ],
                 },
             })
         })
