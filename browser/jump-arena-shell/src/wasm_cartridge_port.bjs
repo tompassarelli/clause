@@ -42,38 +42,38 @@
         (when (or (= length 0)
                   (> length cwr1-hex-max-source-units))
           (throw (new Error "CWR1 hex transport is outside its source bound")))
-        (loop [index Int 0
-               high Int -1
-               bytes (Vec Int) []]
-          (if (= index length)
-            (cond
-              (not= high -1)
-              (throw (new Error "CWR1 hex transport has an incomplete byte"))
-
-              (= (count bytes) 0)
-              (throw (new Error "CWR1 hex transport is empty"))
-
-              :else
-              (.freeze Object bytes))
-            (let [code Int (.charCodeAt source index)
-                  nibble Int (lowercase-hex-nibble code)]
+        (let [bytes (Vec Int) []]
+          (loop [index Int 0
+                 high Int -1]
+            (if (= index length)
               (cond
-                (hex-whitespace-code? code)
-                (recur (inc index) high bytes)
+                (not= high -1)
+                (throw (new Error "CWR1 hex transport has an incomplete byte"))
 
-                (< nibble 0)
-                (throw (new Error "CWR1 hex transport contains a non-hex unit"))
-
-                (= high -1)
-                (recur (inc index) nibble bytes)
-
-                (>= (count bytes) cwr1-max-bytes)
-                (throw (new Error "CWR1 hex transport exceeds its byte bound"))
+                (= (count bytes) 0)
+                (throw (new Error "CWR1 hex transport is empty"))
 
                 :else
-                (recur (inc index)
-                       -1
-                       (conj bytes (+ (* high 16) nibble)))))))))))
+                (.freeze Object bytes))
+              (let [code Int (.charCodeAt source index)
+                    nibble Int (lowercase-hex-nibble code)]
+                (cond
+                  (hex-whitespace-code? code)
+                  (recur (inc index) high)
+
+                  (< nibble 0)
+                  (throw (new Error "CWR1 hex transport contains a non-hex unit"))
+
+                  (= high -1)
+                  (recur (inc index) nibble)
+
+                  (>= (count bytes) cwr1-max-bytes)
+                  (throw (new Error "CWR1 hex transport exceeds its byte bound"))
+
+                  :else
+                  (do
+                    (.push bytes (+ (* high 16) nibble))
+                    (recur (inc index) -1)))))))))))
 
 (js/export
   (defrecord ExactProcessRequest [bytes Any]))
@@ -218,11 +218,13 @@
     [bytes Any
      start Int
      end Int] Any
-    (loop [index Int start
-           result (Vec Int) []]
-      (if (= index end)
-        (.freeze Object result)
-        (recur (inc index) (conj result (byte-at bytes index)))))))
+    (let [result (Vec Int) []]
+      (loop [index Int start]
+        (if (= index end)
+          (.freeze Object result)
+          (do
+            (.push result (byte-at bytes index))
+            (recur (inc index))))))))
 
 (defn finite-f64
   [bytes Any
