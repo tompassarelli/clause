@@ -23,6 +23,14 @@ but no end-to-end process-first capability is accepted or supported as the
 Clause language. There is still no supported parser, compiler, CLI, persistence
 format, runtime, Wasm boundary, renderer integration, or example application.
 
+The jump arena is a transitional in-repository conformance harness, not a
+Clause product or conquest application. Greywrought, maintained separately in
+the `greywrought-clause` repository, is the named game conquest application.
+No Greywrought source or asset belongs in this repository. Clause retains only
+compiler, checker, runtime, wire, and focused semantic fixtures. The jump-arena
+browser shell leaves the live tree after Greywrought and focused headless
+fixtures cover every unique proof it still supplies.
+
 The live `CLPV` v2 files supersede rejected process-v1 bytes as Rust experiment
 data only. There is no process-v1 compatibility decoder, and historical v1
 bytes have no semantic standing. `CLPV` is not a ratified canonical wire format:
@@ -60,7 +68,7 @@ checkpoint hash that becomes false on the next commit.
 | `CLPV` process-v2 corpus and `clause-package` | Experimental reduced admitted-stateful profile | Rust-owned experimental encoding | Encode, strict decode, package checks, identity carriers, partial `CausalRef`, and bounded arena declaration/handler reader with rooted allocation | Focused source/package and runtime journeys pass; the aggregate gate remains unreported | No | Rejected process-v1 bytes and decoder | Laws and assertions remain typed unsupported; handler lowering is a bounded arena subset; `CausalRef` omits authorization/effect nodes and configuration-succession closure; AdmissionRequestKey/use contracts; StepBoundaryRef/schema; retention plans; independent wire specification |
 | `clause-runtime` native and Wasm sessions | Reversible physical experiment; successful execution creates no Clause authority | Rust-owned request/response encodings plus external CPP1 physical-plan bytes | Source-derived input, jump, tick, numeric-collect, and symbolic-collect plans run through persistent native/Wasm sessions with `New` versus exact `Rematerialize`, hidden candidates, and separate Admission | Focused native and real Wasm/browser journeys pass; the aggregate gate remains unreported | No | Earlier construct-blind and one-shot runtime experiments | CPP1 checks shape/Mode/roles/bytes only; `StepProposalV2` has no StepBoundaryRef; accepted semantic-transition refinement witness, linearization/progress/resource checks, generic AllocationJudgment, and full package contract remain open |
 | `clause-materialization` | Experimental replaceable physical projection | JSON fixtures only | Cold scan, uniform grid, support, and work projection | Root gate reaches the crate; 32 tests pass | No | Historical substrate materialization probe | Exact admitted-delta input, occurrence-exact incremental contract, and accepted physical-plan binding |
-| Jump arena and browser shell | Experimental game/transport evidence | Bounded Rust/Wasm fixture bytes and generated JS declarations | Playable persistent shell plus Clause-authored input, jump, tick, numeric collect, and symbolic `active → collected` paths through separate Admission | Focused Rust, generated Beagle, and real Wasm/Bun journeys pass; browser generation remains outside the root Rust gate | No | Static and host-owned gameplay demonstrations | General source lowering for laws/assertions/handlers; one unified arena package/session; accepted native/Wasm semantic parity; controlled frame-allocation proof |
+| Transitional jump-arena conformance harness and browser shell | Experimental game/transport evidence with no product standing | Bounded Rust/Wasm fixture bytes and generated JS declarations | Playable persistent shell plus Clause-authored input, jump, tick, numeric collect, and symbolic `active → collected` paths through separate Admission | Focused Rust, generated Beagle, and real Wasm/Bun journeys pass; browser generation remains outside the root Rust gate | No | Static and host-owned gameplay demonstrations; scheduled to be superseded by Greywrought plus focused headless fixtures | General source lowering for laws/assertions/handlers; one unified arena package/session; accepted native/Wasm semantic parity; controlled frame-allocation proof; enumerated successor coverage before shell removal |
 
 The root Rust gate remains the aggregate implementation gate, but its previously
 recorded red result predates the current runtime repairs and is stale. This
@@ -142,8 +150,8 @@ foreign adapters.
 | 3 — local state and lifetime | Loops, builders, request-local caches, and a frame state machine use affine Activation-local configuration, one exact reclamation root plus Borrow/Lease edges, ownership-consuming split/join/suspension, explicit observable close, bounded nonobservable mechanical reclaim, an explicit bounded managed-island option outside the game hot path, and bounded trace retention. | Ordinary mutation requires Admission/StateRevision, hidden tracing/ARC/finalizers, observable destructor semantics at deallocation, or lifetime/history rules cannot determine a bounded runtime protocol. |
 | 4 — physical competence | Clause-owned physical IR validates direct calls, registers, packed layouts, declared ABI, checking/specialization/physical cache separation, and native/Wasm parity; the bounded frame performs no controlled allocation after initialization. | Generic graph execution remains the hot path, layout/resource control requires Rust semantics, specialization changes declared observations/diagnostics, or zero-allocation exceeds its measured accounting domain. |
 | 5 — systems competence | Checked concurrency, continuations, files, data transforms, networking, time, browser APIs, and explicit FFI preserve local/effect/Admission distinctions and bounded resources. | External work requires arbitrary host mutation, opaque scheduler semantics, or governance on ephemeral local state. |
-| 6 — product development | The Clause-owned jump arena and North are built and evolved through revision-pinned hot reload, passive hosts, and Clause-only semantic changes. | A feature change requires Rust/JavaScript semantic edits, frame-loop GC/allocation, silent migration, or unqueryable causality. |
-| 7 — replacement evidence | Modules/packages, tooling, reproducible distribution, independent implementation, and measured agent development loops let the jump arena and North remain Clause-authored above named FFI boundaries with exact explanations and competitive target behavior. | Hidden host language, unbounded semantic tax, missing ordinary-program capability, or irreproducible package/runtime behavior remains load-bearing. |
+| 6 — product development | Greywrought and North are built and evolved through revision-pinned hot reload, passive hosts, and Clause-only semantic changes above their named foreign boundaries. | A feature change requires Rust/JavaScript/TypeScript semantic edits, frame-loop GC/allocation, silent migration, or unqueryable causality. |
+| 7 — replacement evidence | Modules/packages, tooling, reproducible distribution, independent implementation, and measured agent development loops let Greywrought and North remain Clause-authored above named FFI boundaries with exact explanations and competitive target behavior. | Hidden host language, unbounded semantic tax, missing ordinary-program capability, or irreproducible package/runtime behavior remains load-bearing. |
 
 Gate 1 is intentionally small. Rust owns stdio framing, exact pins, bounded
 caches, transactions, and scheduling. Semantic operations execute accepted
@@ -619,10 +627,70 @@ Prove a playable 3D mechanic whose movement, jump, no-double-jump, gravity,
 landing, collision, and render projection are Clause-owned. Then add one second
 substantial mechanic by changing Clause alone.
 
+The jump arena closes only this bounded predecessor proof. It receives no new
+gameplay, content, presentation, or product responsibility. Greywrought owns
+the real encounter and remains outside this repository. When Greywrought or a
+smaller headless Clause fixture covers one jump-arena proof, record that exact
+successor and remove the superseded browser-shell coverage. After every unique
+proof has a tested successor, remove `clause:browser/jump-arena-shell/**` and
+rename any retained `clause:test-vectors/jump-arena/**` cases by the semantic
+contract they actually test.
+
 **Exit evidence:** native/Wasm canonical boundary parity; exact process pins and
 optional revision pins where applicable; scan/indexed observation parity;
 candidate immutability before admission; effect-stage honesty; passive renderer
 boundary; and zero semantic-name switches in Rust or BJS.
+
+### Greywrought conquest proof
+
+Greywrought is the named external conquest application for Clause as an
+executable constitution of a persistent, branchable world. The application
+repository owns game source, assets, encounter design, and passive host code.
+Clause owns the language, checker, compiler, runtime, Admission, explanation,
+specialization, and exact cross-host contracts it consumes. No game source,
+asset bundle, renderer, input library, socket library, or deployment framework
+moves into this repository to satisfy the proof.
+
+The conquest passes only when one operator-visible journey demonstrates all of
+the following from authoritative records and exact pins:
+
+1. Change one consequential combat law in Clause source. The resident compiler
+   checks and installs a fresh generation without rebuilding the host,
+   restarting the server, or reloading the page; the named warm
+   source-save-to-first-admitted-browser-frame path remains below 250 ms on the
+   recorded reference machine.
+2. Replay the same exact Program, world, authority, context, observations, and
+   input branch through native and Wasm specialization. Their declared
+   semantic observations agree even when their physical schedules and layouts
+   differ.
+3. Submit one malformed or unauthorized law, behavior binding, or branch
+   outcome. It rejects before execution or authoritative mutation with a
+   stable typed reason and leaves no partial authority or successor revision.
+4. Query the admitted result end to end. The explanation names the selected
+   behavior and Mode, relevant laws and observations, exact causal supports,
+   hidden Candidate Delta, Admission decision, and resulting revision; it can
+   also answer the corresponding `prevent`, `achieve`, and semantic `diff`
+   questions.
+5. Play the decisive combat nucleus: projectile confirm, energy-spending burst
+   approach, buffered and directional-influence-sensitive melee, and
+   energy-aware disengagement against a readable Clause-authored enemy. A live
+   operator acceptance must find the encounter deliberately controllable and
+   meaningfully fun; component checks cannot substitute for this contact with
+   the game.
+6. Propose one action or law change from an untrusted agent or mod in a bounded
+   branch. It receives no ambient host-function or Admission authority and can
+   affect the authoritative world only through its Candidate Delta and the
+   separately authorized Admission decision.
+7. Make every consequential world-rule change for this journey in Clause alone.
+   TypeScript, Three.js, Rust, Wasm adapters, storage, and networking remain
+   passive hosts or explicit foreign boundaries and contain no duplicate game
+   semantics.
+
+Passing isolated native, Wasm, browser, hot-loop, rejection, explanation, or
+combat checks does not pass the conquest. One revision-pinned journey must tie
+them together. Failure identifies the smallest owning general Clause seam;
+Greywrought does not close it through host logic, precomputed domain facts,
+weakened laws, or a compatibility path.
 
 ## Phase 7 — Relational recovery and systems breadth
 
