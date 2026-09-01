@@ -1,7 +1,8 @@
 import * as wasm from "./wasm-cartridge-port.js";
 import * as workbench from "./workbench.js";
 import * as test from "bun:test";
-import { "clause_session_v1_command" as clause__session__v1__command, "clause_session_v1_event_byte" as clause__session__v1__event__byte, "clause_session_v1_event_len" as clause__session__v1__event__len, "clause_session_v1_io_reset" as clause__session__v1__io__reset, "clause_session_v1_open" as clause__session__v1__open, "clause_session_v1_request_push" as clause__session__v1__request__push, "initSync" as initSync } from "#clause-runtime-wasm";
+import { "file" as file } from "bun";
+import { "clause_session_v1_command_bulk" as clause__session__v1__command__bulk, "clause_session_v1_event_bulk" as clause__session__v1__event__bulk, "clause_session_v1_open_bulk" as clause__session__v1__open__bulk, "initSync" as initSync } from "#clause-runtime-wasm";
 import { equivV as $$bc$equiv, keyword as $$bc$keyword, property_key as $$bc$property_key, str as $$bc$str } from 'beagle/core.js';
 import { catch_dispatch as $$bd$catch_dispatch } from 'beagle/exception-dispatch.js';
 
@@ -50,13 +51,11 @@ function cwo1(values) {
 }
 
 function module_for_bang(events, requests) {
-  const request = ({value: [], watches: {}});
   const current = ({value: [], watches: {}});
-  const next_event_bang = () => { requests.push(request.value.slice());
+  const next_event_bang = (request) => { requests.push(request.slice());
 (() => { const _a = current, _v = events.shift(); const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })();
 return 0; };
-  return {[$$bc$property_key($$bc$keyword("clause_session_v1_io_reset"))]: () => (() => { const _a = request, _v = []; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })(), [$$bc$property_key($$bc$keyword("clause_session_v1_request_push"))]: (byte) => { request.value.push(byte);
-return 0; }, [$$bc$property_key($$bc$keyword("clause_session_v1_open"))]: next_event_bang, [$$bc$property_key($$bc$keyword("clause_session_v1_command"))]: next_event_bang, [$$bc$property_key($$bc$keyword("clause_session_v1_event_len"))]: () => current.value.length, [$$bc$property_key($$bc$keyword("clause_session_v1_event_byte"))]: (index) => current.value[index]};
+  return {[$$bc$property_key($$bc$keyword("clause_session_v1_open_bulk"))]: next_event_bang, [$$bc$property_key($$bc$keyword("clause_session_v1_command_bulk"))]: next_event_bang, [$$bc$property_key($$bc$keyword("clause_session_v1_event_bulk"))]: () => current.value};
 }
 
 function append_u32_bang(bytes, value) {
@@ -237,7 +236,7 @@ function json_string(value) {
 function initialize_real_session_module(module) {
   const input = module;
   const __initialized = initSync(input);
-  return Object.freeze({[$$bc$property_key($$bc$keyword("clause_session_v1_io_reset"))]: () => clause__session__v1__io__reset(), [$$bc$property_key($$bc$keyword("clause_session_v1_request_push"))]: (byte) => clause__session__v1__request__push(byte), [$$bc$property_key($$bc$keyword("clause_session_v1_open"))]: () => clause__session__v1__open(), [$$bc$property_key($$bc$keyword("clause_session_v1_command"))]: () => clause__session__v1__command(), [$$bc$property_key($$bc$keyword("clause_session_v1_event_len"))]: () => clause__session__v1__event__len(), [$$bc$property_key($$bc$keyword("clause_session_v1_event_byte"))]: (index) => clause__session__v1__event__byte(index)});
+  return Object.freeze({[$$bc$property_key($$bc$keyword("clause_session_v1_open_bulk"))]: (request) => clause__session__v1__open__bulk(new Uint8Array(request)), [$$bc$property_key($$bc$keyword("clause_session_v1_command_bulk"))]: (request) => clause__session__v1__command__bulk(new Uint8Array(request)), [$$bc$property_key($$bc$keyword("clause_session_v1_event_bulk"))]: () => clause__session__v1__event__bulk()});
 }
 
 function key_configuration(input_sequence, revision, code) {
@@ -348,7 +347,7 @@ return null; });
 
 const collect_test_runtime = require("bun:test");
 const register_collect_test = collect_test_runtime.test;
-register_collect_test("real Wasm lowers physical input and exposes only the admitted arena frame", () => Promise.all([Bun.file("./generated/wasm/clause_runtime_bg.wasm").arrayBuffer(), Bun.file("./fixtures/wasm-jump-v1/jump-v1.cwr1.hex").text()]).then((assets) => { const port = wasm["create-wasm-cartridge-port"](initialize_real_session_module(assets[0]), arena_policy());
+register_collect_test("real Wasm lowers physical input and exposes only the admitted arena frame", () => Promise.all([file("./generated/wasm/clause_runtime_bg.wasm").arrayBuffer(), file("./fixtures/wasm-jump-v1/jump-v1.cwr1.hex").text()]).then((assets) => { const port = wasm["create-wasm-cartridge-port"](initialize_real_session_module(assets[0]), arena_policy());
 const request = wasm["->ExactProcessRequest"](wasm["decode-cwr1-hex"](assets[1]));
 const accepted = ({value: null, watches: {}});
 const started = ({value: null, watches: {}});
@@ -379,7 +378,7 @@ return null; }));
 
 const test_runtime = require("bun:test");
 const register_async_test = test_runtime.test;
-register_async_test("real Wasm keeps collect hidden until Admission and projects Clause-owned score", () => Promise.all([Bun.file("./generated/wasm/clause_runtime_bg.wasm").arrayBuffer(), Bun.file("./fixtures/wasm-collect-v1/collect-plus-1.cwr1.hex").text(), Bun.file("./fixtures/wasm-collect-v1/collect-plus-4.cwr1.hex").text()]).then((assets) => { const port = wasm["create-wasm-cartridge-port"](initialize_real_session_module(assets[0]), arena_policy());
+register_async_test("real Wasm keeps collect hidden until Admission and projects Clause-owned score", () => Promise.all([file("./generated/wasm/clause_runtime_bg.wasm").arrayBuffer(), file("./fixtures/wasm-collect-v1/collect-plus-1.cwr1.hex").text(), file("./fixtures/wasm-collect-v1/collect-plus-4.cwr1.hex").text()]).then((assets) => { const port = wasm["create-wasm-cartridge-port"](initialize_real_session_module(assets[0]), arena_policy());
 const base_frame = admit_real_process_bang(port, assets[1]);
 const changed_frame = admit_real_process_bang(port, assets[2]);
 const base_score = base_frame.player.score;
@@ -390,7 +389,7 @@ return null; }));
 
 const continuation_test_runtime = require("bun:test");
 const register_continuation_test = continuation_test_runtime.test;
-register_continuation_test("real Wasm suspends resumes proposes and admits one domain-neutral process", () => Promise.all([Bun.file("./generated/wasm/clause_runtime_bg.wasm").arrayBuffer(), Bun.file("./fixtures/wasm-process-continuation-v1/process-continuation-v1.cwr1.hex").text()]).then((assets) => { const module = initialize_real_session_module(assets[0]);
+register_continuation_test("real Wasm suspends resumes proposes and admits one domain-neutral process", () => Promise.all([file("./generated/wasm/clause_runtime_bg.wasm").arrayBuffer(), file("./fixtures/wasm-process-continuation-v1/process-continuation-v1.cwr1.hex").text()]).then((assets) => { const module = initialize_real_session_module(assets[0]);
 const port = wasm["create-wasm-cartridge-port"](module, policy());
 const request = wasm["->ExactProcessRequest"](wasm["decode-cwr1-hex"](assets[1]));
 const accepted = ({value: null, watches: {}});
@@ -421,7 +420,7 @@ return null; }));
 
 const symbol_test_runtime = require("bun:test");
 const register_symbol_test = symbol_test_runtime.test;
-register_symbol_test("real Wasm admits Clause-owned active to collected symbolic state", () => Promise.all([Bun.file("./generated/wasm/clause_runtime_bg.wasm").arrayBuffer(), Bun.file("./fixtures/wasm-collect-state-v1/collected.cwr1.hex").text(), Bun.file("./fixtures/wasm-collect-state-v1/spent.cwr1.hex").text()]).then((assets) => { const port = wasm["create-wasm-cartridge-port"](initialize_real_session_module(assets[0]), arena_policy());
+register_symbol_test("real Wasm admits Clause-owned active to collected symbolic state", () => Promise.all([file("./generated/wasm/clause_runtime_bg.wasm").arrayBuffer(), file("./fixtures/wasm-collect-state-v1/collected.cwr1.hex").text(), file("./fixtures/wasm-collect-state-v1/spent.cwr1.hex").text()]).then((assets) => { const port = wasm["create-wasm-cartridge-port"](initialize_real_session_module(assets[0]), arena_policy());
 const collected_frame = admit_real_process_bang(port, assets[1]);
 const spent_frame = admit_real_process_bang(port, assets[2]);
 const collected_state = collected_frame.collectible.state;
@@ -432,7 +431,7 @@ return null; }));
 
 const gameplay_test_runtime = require("bun:test");
 const register_gameplay_test = gameplay_test_runtime.test;
-register_gameplay_test("one real Wasm gameplay session collects then automatically launches from Clause contact", () => Promise.all([Bun.file("./generated/wasm/clause_runtime_bg.wasm").arrayBuffer(), Bun.file("./fixtures/wasm-gameplay-v1/gameplay-v1.cwr1.hex").text()]).then((assets) => { const port = wasm["create-wasm-cartridge-port"](initialize_real_session_module(assets[0]), arena_policy());
+register_gameplay_test("one real Wasm gameplay session collects then automatically launches from Clause contact", () => Promise.all([file("./generated/wasm/clause_runtime_bg.wasm").arrayBuffer(), file("./fixtures/wasm-gameplay-v1/gameplay-v1.cwr1.hex").text()]).then((assets) => { const port = wasm["create-wasm-cartridge-port"](initialize_real_session_module(assets[0]), arena_policy());
 const request = wasm["->ExactProcessRequest"](wasm["decode-cwr1-hex"](assets[1]));
 const accepted = ({value: null, watches: {}});
 const started = ({value: null, watches: {}});
@@ -469,7 +468,7 @@ return null; }));
 
 const generic_source_test_runtime = require("bun:test");
 const register_generic_source_test = generic_source_test_runtime.test;
-register_generic_source_test("real Wasm executes a generically allocated Clause source plan", () => Promise.all([Bun.file("./generated/wasm/clause_runtime_bg.wasm").arrayBuffer(), Bun.file("./fixtures/wasm-generic-source-v1/generic-source-v1.cwr1.hex").text()]).then((assets) => { const port = wasm["create-wasm-cartridge-port"](initialize_real_session_module(assets[0]), arena_policy());
+register_generic_source_test("real Wasm executes a generically allocated Clause source plan", () => Promise.all([file("./generated/wasm/clause_runtime_bg.wasm").arrayBuffer(), file("./fixtures/wasm-generic-source-v1/generic-source-v1.cwr1.hex").text()]).then((assets) => { const port = wasm["create-wasm-cartridge-port"](initialize_real_session_module(assets[0]), arena_policy());
 const request = wasm["->ExactProcessRequest"](wasm["decode-cwr1-hex"](assets[1]));
 const accepted = ({value: null, watches: {}});
 const started = ({value: null, watches: {}});
@@ -488,7 +487,7 @@ return null; }));
 
 const coherent_test_runtime = require("bun:test");
 const register_coherent_test = coherent_test_runtime.test;
-register_coherent_test("one real Wasm session fails resets completes and launches from Clause source", () => Promise.all([Bun.file("./generated/wasm/clause_runtime_bg.wasm").arrayBuffer(), Bun.file("./fixtures/wasm-coherent-game-v1/coherent-game-v1.cwr1.hex").text()]).then((assets) => { const port = wasm["create-wasm-cartridge-port"](initialize_real_session_module(assets[0]), arena_policy());
+register_coherent_test("one real Wasm session fails resets completes and launches from Clause source", () => Promise.all([file("./generated/wasm/clause_runtime_bg.wasm").arrayBuffer(), file("./fixtures/wasm-coherent-game-v1/coherent-game-v1.cwr1.hex").text()]).then((assets) => { const port = wasm["create-wasm-cartridge-port"](initialize_real_session_module(assets[0]), arena_policy());
 const request = wasm["->ExactProcessRequest"](wasm["decode-cwr1-hex"](assets[1]));
 const accepted = ({value: null, watches: {}});
 const started = ({value: null, watches: {}});
@@ -531,7 +530,7 @@ return null; }));
 
 const reload_test_runtime = require("bun:test");
 const register_reload_test = reload_test_runtime.test;
-register_reload_test("real Wasm workbench hot-reloads Clause-only collect behavior with fenced prior generation", () => Promise.all([Bun.file("./generated/wasm/clause_runtime_bg.wasm").arrayBuffer(), Bun.file("./fixtures/wasm-gameplay-v1/gameplay-v1.cwr1.hex").text(), Bun.file("./fixtures/wasm-gameplay-v1/gameplay-spent-v1.cwr1.hex").text()]).then((assets) => { const raw_port = wasm["create-wasm-cartridge-port"](initialize_real_session_module(assets[0]), arena_policy());
+register_reload_test("real Wasm workbench hot-reloads Clause-only collect behavior with fenced prior generation", () => Promise.all([file("./generated/wasm/clause_runtime_bg.wasm").arrayBuffer(), file("./fixtures/wasm-gameplay-v1/gameplay-v1.cwr1.hex").text(), file("./fixtures/wasm-gameplay-v1/gameplay-spent-v1.cwr1.hex").text()]).then((assets) => { const raw_port = wasm["create-wasm-cartridge-port"](initialize_real_session_module(assets[0]), arena_policy());
 const sessions = ({value: [], watches: {}});
 const disposals = ({value: [], watches: {}});
 const rendered = ({value: [], watches: {}});
@@ -608,7 +607,7 @@ return null; }));
 
 const dash_test_runtime = require("bun:test");
 const register_dash_test = dash_test_runtime.test;
-register_dash_test("real Wasm hot-reloads Clause dash jump through Admission and passive rendering", () => Promise.all([Bun.file("./generated/wasm/clause_runtime_bg.wasm").arrayBuffer(), Bun.file("./fixtures/wasm-gameplay-v1/gameplay-v1.cwr1.hex").text(), Bun.file("./fixtures/wasm-gameplay-v1/gameplay-dash-jump-v1.cwr1.hex").text()]).then((assets) => { const port = wasm["create-wasm-cartridge-port"](initialize_real_session_module(assets[0]), arena_policy());
+register_dash_test("real Wasm hot-reloads Clause dash jump through Admission and passive rendering", () => Promise.all([file("./generated/wasm/clause_runtime_bg.wasm").arrayBuffer(), file("./fixtures/wasm-gameplay-v1/gameplay-v1.cwr1.hex").text(), file("./fixtures/wasm-gameplay-v1/gameplay-dash-jump-v1.cwr1.hex").text()]).then((assets) => { const port = wasm["create-wasm-cartridge-port"](initialize_real_session_module(assets[0]), arena_policy());
 const rendered = ({value: [], watches: {}});
 const scheduled_tick = ({value: () => null, watches: {}});
 const base_request = wasm["->ExactProcessRequest"](wasm["decode-cwr1-hex"](assets[1]));
@@ -640,7 +639,7 @@ return null; }));
 
 const effect_test_runtime = require("bun:test");
 const register_effect_test = effect_test_runtime.test;
-register_effect_test("real Wasm transports one source-owned ongoing effect lifecycle", () => Promise.all([Bun.file("./generated/wasm/clause_runtime_bg.wasm").arrayBuffer(), Bun.file("./fixtures/wasm-ongoing-effect-v1/ongoing-effect-v1.cwr1.hex").text()]).then((assets) => { const module = initialize_real_session_module(assets[0]);
+register_effect_test("real Wasm transports one source-owned ongoing effect lifecycle", () => Promise.all([file("./generated/wasm/clause_runtime_bg.wasm").arrayBuffer(), file("./fixtures/wasm-ongoing-effect-v1/ongoing-effect-v1.cwr1.hex").text()]).then((assets) => { const module = initialize_real_session_module(assets[0]);
 const port = wasm["create-wasm-cartridge-port"](module, policy());
 const request = wasm["->ExactProcessRequest"](wasm["decode-cwr1-hex"](assets[1]));
 const accepted = ({value: null, watches: {}});

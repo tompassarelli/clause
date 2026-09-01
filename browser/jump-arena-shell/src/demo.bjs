@@ -3,7 +3,9 @@
 (ns jump-arena-shell.demo
   (:require [jump-arena-shell.wasm-cartridge-port :as wasm]
             [jump-arena-shell.wasm-workbench-shell :as integration]
-            [jump-arena-shell.workbench :as workbench]))
+            [jump-arena-shell.workbench :as workbench])
+  (:require-global ["typescript:lib.dom" :refer [Response fetch]]
+                   ["typescript:lib.es5" :refer [Error]]))
 
 (require
  '["three"
@@ -18,17 +20,14 @@
            Scene
            WebGLRenderer]]
  '["#clause-runtime-wasm"
-   :refer [clause_session_v1_command
-           clause_session_v1_event_byte
-           clause_session_v1_event_len
-           clause_session_v1_io_reset
-           clause_session_v1_open
-           clause_session_v1_request_push
+   :refer [clause_session_v1_command_bulk
+           clause_session_v1_event_bulk
+           clause_session_v1_open_bulk
            initSync
            InitOutput
            SyncInitInput]])
 
-(declare-extern [document window fetch] Any)
+(declare-extern [document window] Any)
 
 (def module-path String "./generated/wasm/clause_runtime_bg.wasm")
 (def request-path String "./fixtures/wasm-jump-v1/jump-v1.cwr1.hex")
@@ -40,37 +39,31 @@
    (workbench/->WorkbenchSequenceLimits
     64 16 8 8 16)))
 
-(defn fetch-text! [path String] (Promise String)
-  (.then (fetch path)
-         (fn [response Any] Any
-           (if (.-ok response)
-             (.text response)
-             (.reject Promise (new Error (str "Unable to load " path)))))))
+(defn ^:async fetch-text! [path String] (Promise String)
+  (let [response Response (await (fetch path))]
+    (if (.-ok response)
+      (await (.text response))
+      (throw (new Error (str "Unable to load " path))))))
 
-(defn fetch-bytes! [path String] (Promise Any)
-  (.then (fetch path)
-         (fn [response Any] Any
-           (if (.-ok response)
-             (.arrayBuffer response)
-             (.reject Promise (new Error (str "Unable to load " path)))))))
+(defn ^:async fetch-bytes! [path String] (Promise ArrayBuffer)
+  (let [response Response (await (fetch path))]
+    (if (.-ok response)
+      (await (.arrayBuffer response))
+      (throw (new Error (str "Unable to load " path))))))
 
 (defn initialize-session-module [module ArrayBuffer] Any
   (let [input SyncInitInput module
         _initialized InitOutput (initSync input)]
     (.freeze
      Object
-     {:clause_session_v1_io_reset
-      (fn [] Nil (clause_session_v1_io_reset))
-      :clause_session_v1_request_push
-      (fn [byte Int] Float (clause_session_v1_request_push byte))
-      :clause_session_v1_open
-      (fn [] Float (clause_session_v1_open))
-      :clause_session_v1_command
-      (fn [] Float (clause_session_v1_command))
-      :clause_session_v1_event_len
-      (fn [] Float (clause_session_v1_event_len))
-      :clause_session_v1_event_byte
-      (fn [index Int] Float (clause_session_v1_event_byte index))})))
+     {:clause_session_v1_open_bulk
+      (fn [request (Vec Int)] Float
+        (clause_session_v1_open_bulk (new Uint8Array request)))
+      :clause_session_v1_command_bulk
+      (fn [request (Vec Int)] Float
+        (clause_session_v1_command_bulk (new Uint8Array request)))
+      :clause_session_v1_event_bulk
+      (fn [] Any (clause_session_v1_event_bulk))})))
 
 (def arena Any (.querySelector document "#arena"))
 (def status Any (.querySelector document "#arena-status"))
@@ -89,27 +82,30 @@
             :Scene Scene
             :WebGLRenderer WebGLRenderer}))
 
-(def load-demo Any
+(defn ^:async load-demo! [] (Promise Nil)
+  (let [module-request (Promise ArrayBuffer) (fetch-bytes! module-path)
+        fixture-request (Promise String) (fetch-text! request-path)
+        module-bytes ArrayBuffer (await module-request)
+        fixture-text String (await fixture-request)
+        module Any (initialize-session-module module-bytes)
+        composition Any (integration/create-passive-wasm-workbench-shell!
+                         arena
+                         window
+                         three-module
+                         module
+                         (wasm/decode-cwr1-hex fixture-text)
+                         (workbench/->FixedTick 16)
+                         (demo-policy)
+                         (fn [_receipt Any] Any nil))]
+    (reset! active-composition composition)
+    (set! (.-textContent status)
+          "Ready — click the arena, move with A/D, and jump with Space.")
+    nil))
+
+(def load-demo (Promise Nil)
   (.catch
-   (.then
-    (.all Promise [(fetch-bytes! module-path)
-                   (fetch-text! request-path)])
-    (fn [assets Any] Any
-      (let [module Any (initialize-session-module (nth assets 0))
-            composition Any (integration/create-passive-wasm-workbench-shell!
-                             arena
-                             window
-                             three-module
-                             module
-                             (wasm/decode-cwr1-hex (nth assets 1))
-                             (workbench/->FixedTick 16)
-                             (demo-policy)
-                             (fn [_receipt Any] Any nil))]
-        (reset! active-composition composition)
-        (set! (.-textContent status)
-              "Ready — click the arena, move with A/D, and jump with Space.")
-        composition)))
-   (fn [_error Any] Any
+   (load-demo!)
+   (fn [_error Any] Nil
      (do
        (set! (.-textContent status) "Arena load failed safely.")
        nil))))

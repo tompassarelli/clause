@@ -5,19 +5,17 @@
             [jump-arena-shell.workbench :as workbench]))
 
 (require '["bun:test" :as test])
+(require '["bun" :refer [file]])
 (require
  '["#clause-runtime-wasm"
-   :refer [clause_session_v1_command
-           clause_session_v1_event_byte
-           clause_session_v1_event_len
-           clause_session_v1_io_reset
-           clause_session_v1_open
-           clause_session_v1_request_push
+   :refer [clause_session_v1_command_bulk
+           clause_session_v1_event_bulk
+           clause_session_v1_open_bulk
            initSync
            InitOutput
            SyncInitInput]])
 
-(declare-extern [Bun require] Any)
+(declare-extern [require] Any)
 
 (defn policy [] workbench/WorkbenchPolicy
   (let [maximum Int (.-MAX_SAFE_INTEGER Number)]
@@ -54,7 +52,7 @@
           (do
             (.push flat 1)
             (.push flat (if (.-value value) 1 0)))
-          (let [packed Any (new ArrayBuffer 8)
+          (let [packed ArrayBuffer (new ArrayBuffer 8)
                 view Any (new DataView packed)
                 octets Any (new Uint8Array packed)]
             (.setFloat64 view 0 (.-value value) true)
@@ -66,20 +64,15 @@
 (defn module-for!
   [events Any
    requests Any] Any
-  (let [request Any (atom [])
-        current Any (atom [])
-        next-event! Any (fn [] Any
+  (let [current Any (atom [])
+        next-event! Any (fn [request Any] Any
                           (do
-                            (.push requests (.slice @request))
+                            (.push requests (.slice request))
                             (reset! current (.shift events))
                             0))]
-    {:clause_session_v1_io_reset (fn [] Any (reset! request []))
-     :clause_session_v1_request_push (fn [byte Int] Int
-                                       (do (.push @request byte) 0))
-     :clause_session_v1_open next-event!
-     :clause_session_v1_command next-event!
-     :clause_session_v1_event_len (fn [] Int (.-length @current))
-     :clause_session_v1_event_byte (fn [index Int] Int (nth @current index))}))
+    {:clause_session_v1_open_bulk next-event!
+     :clause_session_v1_command_bulk next-event!
+     :clause_session_v1_event_bulk (fn [] Any @current)}))
 
 (defn append-u32!
   [bytes Any
@@ -228,18 +221,14 @@
         _initialized InitOutput (initSync input)]
     (.freeze
      Object
-     {:clause_session_v1_io_reset
-      (fn [] Nil (clause_session_v1_io_reset))
-      :clause_session_v1_request_push
-      (fn [byte Int] Float (clause_session_v1_request_push byte))
-      :clause_session_v1_open
-      (fn [] Float (clause_session_v1_open))
-      :clause_session_v1_command
-      (fn [] Float (clause_session_v1_command))
-      :clause_session_v1_event_len
-      (fn [] Float (clause_session_v1_event_len))
-      :clause_session_v1_event_byte
-      (fn [index Int] Float (clause_session_v1_event_byte index))})))
+     {:clause_session_v1_open_bulk
+      (fn [request (Vec Int)] Float
+        (clause_session_v1_open_bulk (new Uint8Array request)))
+      :clause_session_v1_command_bulk
+      (fn [request (Vec Int)] Float
+        (clause_session_v1_command_bulk (new Uint8Array request)))
+      :clause_session_v1_event_bulk
+      (fn [] Any (clause_session_v1_event_bulk))})))
 
 (defn key-configuration
   [input-sequence Int
@@ -515,8 +504,8 @@
    "real Wasm lowers physical input and exposes only the admitted arena frame"
    (fn [] Any
      (.then
-      (.all Promise [(.arrayBuffer (.file Bun "./generated/wasm/clause_runtime_bg.wasm"))
-                     (.text (.file Bun "./fixtures/wasm-jump-v1/jump-v1.cwr1.hex"))])
+      (.all Promise [(.arrayBuffer (file "./generated/wasm/clause_runtime_bg.wasm"))
+                     (.text (file "./fixtures/wasm-jump-v1/jump-v1.cwr1.hex"))])
       (fn [assets Any] Any
         (let [port workbench/CartridgePort (wasm/create-wasm-cartridge-port
              (initialize-real-session-module (nth assets 0))
@@ -597,9 +586,9 @@
    "real Wasm keeps collect hidden until Admission and projects Clause-owned score"
    (fn [] Any
      (.then
-      (.all Promise [(.arrayBuffer (.file Bun "./generated/wasm/clause_runtime_bg.wasm"))
-                     (.text (.file Bun "./fixtures/wasm-collect-v1/collect-plus-1.cwr1.hex"))
-                     (.text (.file Bun "./fixtures/wasm-collect-v1/collect-plus-4.cwr1.hex"))])
+      (.all Promise [(.arrayBuffer (file "./generated/wasm/clause_runtime_bg.wasm"))
+                     (.text (file "./fixtures/wasm-collect-v1/collect-plus-1.cwr1.hex"))
+                     (.text (file "./fixtures/wasm-collect-v1/collect-plus-4.cwr1.hex"))])
       (fn [assets Any] Any
         (let [port workbench/CartridgePort (wasm/create-wasm-cartridge-port
                (initialize-real-session-module (nth assets 0))
@@ -618,8 +607,8 @@
    "real Wasm suspends resumes proposes and admits one domain-neutral process"
    (fn [] Any
      (.then
-      (.all Promise [(.arrayBuffer (.file Bun "./generated/wasm/clause_runtime_bg.wasm"))
-                     (.text (.file Bun
+      (.all Promise [(.arrayBuffer (file "./generated/wasm/clause_runtime_bg.wasm"))
+                     (.text (file
                                    "./fixtures/wasm-process-continuation-v1/process-continuation-v1.cwr1.hex"))])
       (fn [assets Any] Any
         (let [module Any (initialize-real-session-module (nth assets 0))
@@ -674,9 +663,9 @@
    "real Wasm admits Clause-owned active to collected symbolic state"
    (fn [] Any
      (.then
-      (.all Promise [(.arrayBuffer (.file Bun "./generated/wasm/clause_runtime_bg.wasm"))
-                     (.text (.file Bun "./fixtures/wasm-collect-state-v1/collected.cwr1.hex"))
-                     (.text (.file Bun "./fixtures/wasm-collect-state-v1/spent.cwr1.hex"))])
+      (.all Promise [(.arrayBuffer (file "./generated/wasm/clause_runtime_bg.wasm"))
+                     (.text (file "./fixtures/wasm-collect-state-v1/collected.cwr1.hex"))
+                     (.text (file "./fixtures/wasm-collect-state-v1/spent.cwr1.hex"))])
       (fn [assets Any] Any
         (let [port workbench/CartridgePort (wasm/create-wasm-cartridge-port
                (initialize-real-session-module (nth assets 0))
@@ -695,8 +684,8 @@
    "one real Wasm gameplay session collects then automatically launches from Clause contact"
    (fn [] Any
      (.then
-      (.all Promise [(.arrayBuffer (.file Bun "./generated/wasm/clause_runtime_bg.wasm"))
-                     (.text (.file Bun
+      (.all Promise [(.arrayBuffer (file "./generated/wasm/clause_runtime_bg.wasm"))
+                     (.text (file
                                    "./fixtures/wasm-gameplay-v1/gameplay-v1.cwr1.hex"))])
       (fn [assets Any] Any
         (let [port workbench/CartridgePort (wasm/create-wasm-cartridge-port
@@ -772,8 +761,8 @@
    "real Wasm executes a generically allocated Clause source plan"
    (fn [] Any
      (.then
-      (.all Promise [(.arrayBuffer (.file Bun "./generated/wasm/clause_runtime_bg.wasm"))
-                     (.text (.file Bun
+      (.all Promise [(.arrayBuffer (file "./generated/wasm/clause_runtime_bg.wasm"))
+                     (.text (file
                                    "./fixtures/wasm-generic-source-v1/generic-source-v1.cwr1.hex"))])
       (fn [assets Any] Any
         (let [port workbench/CartridgePort (wasm/create-wasm-cartridge-port
@@ -813,8 +802,8 @@
    "one real Wasm session fails resets completes and launches from Clause source"
    (fn [] Any
      (.then
-      (.all Promise [(.arrayBuffer (.file Bun "./generated/wasm/clause_runtime_bg.wasm"))
-                     (.text (.file Bun
+      (.all Promise [(.arrayBuffer (file "./generated/wasm/clause_runtime_bg.wasm"))
+                     (.text (file
                                    "./fixtures/wasm-coherent-game-v1/coherent-game-v1.cwr1.hex"))])
       (fn [assets Any] Any
         (let [port workbench/CartridgePort (wasm/create-wasm-cartridge-port
@@ -913,10 +902,10 @@
    "real Wasm workbench hot-reloads Clause-only collect behavior with fenced prior generation"
    (fn [] Any
      (.then
-      (.all Promise [(.arrayBuffer (.file Bun "./generated/wasm/clause_runtime_bg.wasm"))
-                     (.text (.file Bun
+      (.all Promise [(.arrayBuffer (file "./generated/wasm/clause_runtime_bg.wasm"))
+                     (.text (file
                                    "./fixtures/wasm-gameplay-v1/gameplay-v1.cwr1.hex"))
-                     (.text (.file Bun
+                     (.text (file
                                    "./fixtures/wasm-gameplay-v1/gameplay-spent-v1.cwr1.hex"))])
       (fn [assets Any] Any
         (let [raw-port workbench/CartridgePort (wasm/create-wasm-cartridge-port
@@ -1066,10 +1055,10 @@
    "real Wasm hot-reloads Clause dash jump through Admission and passive rendering"
    (fn [] Any
      (.then
-      (.all Promise [(.arrayBuffer (.file Bun "./generated/wasm/clause_runtime_bg.wasm"))
-                     (.text (.file Bun
+      (.all Promise [(.arrayBuffer (file "./generated/wasm/clause_runtime_bg.wasm"))
+                     (.text (file
                                    "./fixtures/wasm-gameplay-v1/gameplay-v1.cwr1.hex"))
-                     (.text (.file Bun
+                     (.text (file
                                    "./fixtures/wasm-gameplay-v1/gameplay-dash-jump-v1.cwr1.hex"))])
       (fn [assets Any] Any
         (let [port workbench/CartridgePort (wasm/create-wasm-cartridge-port
@@ -1131,8 +1120,8 @@
    "real Wasm transports one source-owned ongoing effect lifecycle"
    (fn [] Any
      (.then
-      (.all Promise [(.arrayBuffer (.file Bun "./generated/wasm/clause_runtime_bg.wasm"))
-                     (.text (.file Bun
+      (.all Promise [(.arrayBuffer (file "./generated/wasm/clause_runtime_bg.wasm"))
+                     (.text (file
                                    "./fixtures/wasm-ongoing-effect-v1/ongoing-effect-v1.cwr1.hex"))])
       (fn [assets Any] Any
         (let [module Any (initialize-real-session-module (nth assets 0))

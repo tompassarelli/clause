@@ -3391,9 +3391,14 @@ fn persistent_wasm_session_keeps_generation_sequence_and_admission_custody() {
         open
     );
     let mut boundary = WasmPersistentSessionBoundaryV1::new();
-    let opened = boundary
-        .open(&exact_open)
-        .expect("one persistent slot opens");
+    boundary
+        .push_request_byte(255)
+        .expect("stale scalar request byte fits");
+    boundary
+        .open_bulk(&exact_open)
+        .expect("one exact bulk request replaces stale scalar I/O");
+    let opened = decode_wasm_session_event_v1(boundary.event())
+        .expect("bulk open installs one exact CSE1 event");
     let handle = opened.handle;
     let (initial_world, initial_run, initial_activation) = match opened.kind {
         WasmSessionEventKindV1::Opened {
@@ -3423,7 +3428,11 @@ fn persistent_wasm_session_keeps_generation_sequence_and_admission_custody() {
         let bytes = encode_wasm_session_command_v1(&command).expect("bounded CWI1 command encodes");
         let decoded = decode_wasm_session_command_v1(&bytes).expect("exact CWI1 command decodes");
         assert_eq!(decoded, command);
-        let event = boundary.command(&bytes).expect("valid command transports");
+        boundary
+            .command_bulk(&bytes)
+            .expect("valid bulk command transports");
+        let event = decode_wasm_session_event_v1(boundary.event())
+            .expect("bulk command installs one exact CSE1 event");
         let event_bytes = encode_wasm_session_event_v1(&event);
         assert_eq!(
             decode_wasm_session_event_v1(&event_bytes).expect("exact CSE1 event decodes"),
@@ -3674,6 +3683,13 @@ fn persistent_wasm_session_keeps_generation_sequence_and_admission_custody() {
         boundary.command(&post_dispose),
         Err(WasmProcessStatusV1::StaleSessionHandle)
     );
+
+    assert_eq!(
+        boundary.open_bulk(&vec![0; WASM_PROCESS_REQUEST_LIMIT_V1 + 1]),
+        Err(WasmProcessStatusV1::RequestOutOfBounds)
+    );
+    assert_eq!(boundary.status(), WasmProcessStatusV1::RequestOutOfBounds);
+    assert!(boundary.event().is_empty());
 }
 
 #[test]

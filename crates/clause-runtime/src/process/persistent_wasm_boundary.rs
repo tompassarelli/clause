@@ -304,6 +304,26 @@ impl WasmPersistentSessionBoundaryV1 {
         Ok(())
     }
 
+    fn replace_request(&mut self, bytes: &[u8]) -> Result<(), WasmProcessStatusV1> {
+        self.clear_io();
+        if bytes.len() > WASM_PROCESS_REQUEST_LIMIT_V1 {
+            self.status = WasmProcessStatusV1::RequestOutOfBounds;
+            return Err(self.status);
+        }
+        self.request.extend_from_slice(bytes);
+        Ok(())
+    }
+
+    pub fn open_bulk(&mut self, bytes: &[u8]) -> Result<(), WasmProcessStatusV1> {
+        self.replace_request(bytes)
+            .and_then(|()| self.open_buffered())
+    }
+
+    pub fn command_bulk(&mut self, bytes: &[u8]) -> Result<(), WasmProcessStatusV1> {
+        self.replace_request(bytes)
+            .and_then(|()| self.command_buffered())
+    }
+
     pub fn open_buffered(&mut self) -> Result<(), WasmProcessStatusV1> {
         self.event.clear();
         let mut bytes = Vec::new();
@@ -1725,6 +1745,33 @@ mod wasm_exports {
             Err(error) => error as u32,
         })
     }
+
+    #[wasm_bindgen(skip_typescript)]
+    pub fn clause_session_v1_open_bulk(request: &[u8]) -> u32 {
+        SESSION_BOUNDARY.with_borrow_mut(|boundary| match boundary.open_bulk(request) {
+            Ok(()) => WasmProcessStatusV1::Ready as u32,
+            Err(error) => error as u32,
+        })
+    }
+
+    #[wasm_bindgen(skip_typescript)]
+    pub fn clause_session_v1_command_bulk(request: &[u8]) -> u32 {
+        SESSION_BOUNDARY.with_borrow_mut(|boundary| match boundary.command_bulk(request) {
+            Ok(()) => WasmProcessStatusV1::Ready as u32,
+            Err(error) => error as u32,
+        })
+    }
+
+    #[wasm_bindgen]
+    pub fn clause_session_v1_event_bulk() -> Vec<u8> {
+        SESSION_BOUNDARY.with_borrow(|boundary| boundary.event().to_vec())
+    }
+
+    #[wasm_bindgen(typescript_custom_section)]
+    const SESSION_BULK_TYPES: &'static str = r#"
+export function clause_session_v1_open_bulk(request: Uint8Array<ArrayBuffer>): number;
+export function clause_session_v1_command_bulk(request: Uint8Array<ArrayBuffer>): number;
+"#;
 
     #[wasm_bindgen]
     pub fn clause_session_v1_event_len() -> u32 {

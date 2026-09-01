@@ -424,21 +424,14 @@
     (.-occurrences (parse-persistent-cartridge! request))))
 
 (defn session-module-functions [module Any] Any
-  (let [reset Any (.-clause_session_v1_io_reset module)
-        push Any (.-clause_session_v1_request_push module)
-        open Any (.-clause_session_v1_open module)
-        command Any (.-clause_session_v1_command module)
-        event-length Any (.-clause_session_v1_event_len module)
-        event-byte Any (.-clause_session_v1_event_byte module)]
-    (when (or (nil? reset) (nil? push) (nil? open) (nil? command)
-              (nil? event-length) (nil? event-byte))
-      (throw (new Error "Wasm module lacks the persistent Clause session ABI")))
-    {:reset reset
-     :push push
-     :open open
+  (let [open Any (.-clause_session_v1_open_bulk module)
+        command Any (.-clause_session_v1_command_bulk module)
+        event Any (.-clause_session_v1_event_bulk module)]
+    (when (or (nil? open) (nil? command) (nil? event))
+      (throw (new Error "Wasm module lacks bulk persistent Clause session I/O")))
+    {:open open
      :command command
-     :eventLength event-length
-     :eventByte event-byte}))
+     :event event}))
 
 (defn dispatch-session-request
   [module Any
@@ -447,28 +440,19 @@
   (if-not (exact-byte-array? request session-command-max-bytes)
     (throw (new Error "persistent session request must carry bounded exact bytes"))
     (let [api Any (session-module-functions module)]
-      ((.-reset api))
-      (doseq [byte Int request]
-        (let [status Int (process-status ((.-push api) byte))]
-          (when (not= status 0)
-            (throw (new Error (str "persistent byte transfer rejected with status " status))))))
       (let [status Int (process-status (if (= operation "open")
-                                        ((.-open api))
-                                        ((.-command api))))]
+                                        ((.-open api) request)
+                                        ((.-command api) request)))]
         (when (not= status 0)
           (throw (new Error (str "persistent session " operation
                                  " rejected with status " status)))))
-      (let [length Int (process-status ((.-eventLength api)))]
+      (let [event Any (.from Array ((.-event api)))
+            length Int (.-length event)]
         (when (or (< length 21) (> length cse1-max-bytes))
           (throw (new Error "CSE1 event length is out of bounds")))
-        (loop [index Int 0
-               event (Vec Int) []]
-          (if (= index length)
-            (.freeze Object event)
-            (let [byte Int (process-status ((.-eventByte api) index))]
-              (if (or (< byte 0) (> byte 255))
-                (throw (new Error "CSE1 event byte is out of bounds"))
-                (recur (inc index) (conj event byte))))))))))
+        (if (exact-byte-array? event cse1-max-bytes)
+          (.freeze Object event)
+          (throw (new Error "CSE1 bulk event byte is out of bounds")))))))
 
 (defn decode-cse1-event [bytes Any] Any
   (if-not (exact-byte-array? bytes cse1-max-bytes)

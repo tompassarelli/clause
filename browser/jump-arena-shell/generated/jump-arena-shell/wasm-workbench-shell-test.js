@@ -213,13 +213,11 @@ function disposed_event_bang() {
 }
 
 function module_for_bang(events, requests) {
-  const request = ({value: [], watches: {}});
   const current = ({value: [], watches: {}});
-  const next_event_bang = () => { requests.push(request.value.slice());
+  const next_event_bang = (request) => { requests.push(request.slice());
 (() => { const _a = current, _v = events.shift(); const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })();
 return 0; };
-  return {[$$bc$property_key($$bc$keyword("clause_session_v1_io_reset"))]: () => (() => { const _a = request, _v = []; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })(), [$$bc$property_key($$bc$keyword("clause_session_v1_request_push"))]: (byte) => { request.value.push(byte);
-return 0; }, [$$bc$property_key($$bc$keyword("clause_session_v1_open"))]: next_event_bang, [$$bc$property_key($$bc$keyword("clause_session_v1_command"))]: next_event_bang, [$$bc$property_key($$bc$keyword("clause_session_v1_event_len"))]: () => current.value.length, [$$bc$property_key($$bc$keyword("clause_session_v1_event_byte"))]: (index) => current.value[index]};
+  return {[$$bc$property_key($$bc$keyword("clause_session_v1_open_bulk"))]: next_event_bang, [$$bc$property_key($$bc$keyword("clause_session_v1_command_bulk"))]: next_event_bang, [$$bc$property_key($$bc$keyword("clause_session_v1_event_bulk"))]: () => current.value};
 }
 
 function throws_p_bang(action) {

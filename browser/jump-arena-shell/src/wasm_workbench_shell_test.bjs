@@ -205,20 +205,15 @@
 (defn module-for!
   [events Any
    requests Any] Any
-  (let [request Any (atom [])
-        current Any (atom [])
-        next-event! Any (fn [] Any
+  (let [current Any (atom [])
+        next-event! Any (fn [request Any] Any
                           (do
-                            (.push requests (.slice @request))
+                            (.push requests (.slice request))
                             (reset! current (.shift events))
                             0))]
-    {:clause_session_v1_io_reset (fn [] Any (reset! request []))
-     :clause_session_v1_request_push (fn [byte Int] Int
-                                       (do (.push @request byte) 0))
-     :clause_session_v1_open next-event!
-     :clause_session_v1_command next-event!
-     :clause_session_v1_event_len (fn [] Int (.-length @current))
-     :clause_session_v1_event_byte (fn [index Int] Int (nth @current index))}))
+    {:clause_session_v1_open_bulk next-event!
+     :clause_session_v1_command_bulk next-event!
+     :clause_session_v1_event_bulk (fn [] Any @current)}))
 
 (defn throws?! [action (Fn [] Any)] Bool
   (try

@@ -95,6 +95,27 @@ export function clause_session_v1_command() {
 }
 
 /**
+ * @param {Uint8Array} request
+ * @returns {number}
+ */
+export function clause_session_v1_command_bulk(request) {
+    const ptr0 = passArray8ToWasm0(request, wasm.__wbindgen_malloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.clause_session_v1_command_bulk(ptr0, len0);
+    return ret >>> 0;
+}
+
+/**
+ * @returns {Uint8Array}
+ */
+export function clause_session_v1_event_bulk() {
+    const ret = wasm.clause_session_v1_event_bulk();
+    var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+    wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+    return v1;
+}
+
+/**
  * Values 0..=255 are event bytes; 256 means an out-of-range index.
  * @param {number} index
  * @returns {number}
@@ -121,6 +142,17 @@ export function clause_session_v1_io_reset() {
  */
 export function clause_session_v1_open() {
     const ret = wasm.clause_session_v1_open();
+    return ret >>> 0;
+}
+
+/**
+ * @param {Uint8Array} request
+ * @returns {number}
+ */
+export function clause_session_v1_open_bulk(request) {
+    const ptr0 = passArray8ToWasm0(request, wasm.__wbindgen_malloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.clause_session_v1_open_bulk(ptr0, len0);
     return ret >>> 0;
 }
 
@@ -182,6 +214,15 @@ function handleError(f, args) {
         wasm.__wbindgen_exn_store(idx);
     }
 }
+
+function passArray8ToWasm0(arg, malloc) {
+    const ptr = malloc(arg.length * 1, 1) >>> 0;
+    getUint8ArrayMemory0().set(arg, ptr / 1);
+    WASM_VECTOR_LEN = arg.length;
+    return ptr;
+}
+
+let WASM_VECTOR_LEN = 0;
 
 let wasmModule, wasm;
 function __wbg_finalize_init(instance, module) {

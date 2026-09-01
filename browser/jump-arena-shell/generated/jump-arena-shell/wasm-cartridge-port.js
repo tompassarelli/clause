@@ -298,39 +298,28 @@ function process_request_occurrences_bang(request) {
 }
 
 function session_module_functions(module) {
-  const reset = module.clause_session_v1_io_reset;
-  const push = module.clause_session_v1_request_push;
-  const open = module.clause_session_v1_open;
-  const command = module.clause_session_v1_command;
-  const event_length = module.clause_session_v1_event_len;
-  const event_byte = module.clause_session_v1_event_byte;
-  if (((reset == null) || ((push == null) || ((open == null) || ((command == null) || ((event_length == null) || (event_byte == null))))))) {
-    (() => { throw new Error("Wasm module lacks the persistent Clause session ABI"); })();
+  const open = module.clause_session_v1_open_bulk;
+  const command = module.clause_session_v1_command_bulk;
+  const event = module.clause_session_v1_event_bulk;
+  if (((open == null) || ((command == null) || (event == null)))) {
+    (() => { throw new Error("Wasm module lacks bulk persistent Clause session I/O"); })();
   }
-  return {[$$bc$property_key($$bc$keyword("reset"))]: reset, [$$bc$property_key($$bc$keyword("push"))]: push, [$$bc$property_key($$bc$keyword("open"))]: open, [$$bc$property_key($$bc$keyword("command"))]: command, [$$bc$property_key($$bc$keyword("eventLength"))]: event_length, [$$bc$property_key($$bc$keyword("eventByte"))]: event_byte};
+  return {[$$bc$property_key($$bc$keyword("open"))]: open, [$$bc$property_key($$bc$keyword("command"))]: command, [$$bc$property_key($$bc$keyword("event"))]: event};
 }
 
 function dispatch_session_request(module, request, operation) {
   if (exact_byte_array_p(request, session_command_max_bytes)) {
     const api = session_module_functions(module);
-    (api.reset)();
-    request.forEach((byte) => {
-  const status = process_status((api.push)(byte));
-  if ((!($$bc$equiv(status, 0)))) {
-    (() => { throw new Error($$bc$str("persistent byte transfer rejected with status ", status)); })();
-  }
-});
-    const status = process_status((($$bc$equiv(operation, "open")) ? (api.open)() : (api.command)()));
+    const status = process_status((($$bc$equiv(operation, "open")) ? (api.open)(request) : (api.command)(request)));
     if ((!($$bc$equiv(status, 0)))) {
       (() => { throw new Error($$bc$str("persistent session ", operation, " rejected with status ", status)); })();
     }
-    const length = process_status((api.eventLength)());
+    const event = Array.from((api.event)());
+    const length = event.length;
     if (((length < 21) || (length > cse1_max_bytes))) {
       (() => { throw new Error("CSE1 event length is out of bounds"); })();
     }
-    return (() => { let index = 0; let event = []; while (true) {
-    if ((index === length)) { return Object.freeze(event); } else { const byte = process_status((api.eventByte)(index)); if (((byte < 0) || (byte > 255))) { return (() => { throw new Error("CSE1 event byte is out of bounds"); })(); } else { const _recur_0 = (index + 1); const _recur_1 = $$bc$conj_value(event, byte); index = _recur_0; event = _recur_1; continue; } }
-  } })();
+    return (exact_byte_array_p(event, cse1_max_bytes) ? Object.freeze(event) : (() => { throw new Error("CSE1 bulk event byte is out of bounds"); })());
   } else {
     return (() => { throw new Error("persistent session request must carry bounded exact bytes"); })();
   }
