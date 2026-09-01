@@ -711,6 +711,14 @@ function reject_reason(error) {
   return (($$bc$equiv(typeof message, "string")) ? message : "Wasm cartridge boundary rejected");
 }
 
+function reclaim_retired_session_bang(module) {
+  const api = session_module_functions(module);
+  if (((_truthy) => _truthy !== false && _truthy != null)((api.reclaim)())) {
+    setTimeout(() => reclaim_retired_session_bang(module), 0);
+  }
+  return null;
+}
+
 function create_wasm_cartridge_port_bang(module, policy) {
   const active_session = ({value: null, watches: {}});
   return workbench["->CartridgePort"]((package_candidate, complete) => (() => { try {
@@ -735,8 +743,7 @@ function create_wasm_cartridge_port_bang(module, policy) {
   }
   (() => { const _a = active_session, _v = session; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })();
   complete(workbench["->SessionStarted"](session, event.world, bootstrap_frame));
-  return setTimeout(() => { const api = session_module_functions(module);
-return (api.reclaim)(); }, 0);
+  return setTimeout(() => reclaim_retired_session_bang(module), 0);
   } catch (_catch_1) {
     switch ($$bd$catch_dispatch(_catch_1, [Error])) {
       case 0: {

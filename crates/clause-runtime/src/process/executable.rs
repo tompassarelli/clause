@@ -2116,6 +2116,10 @@ impl ExecutableProcessRuntimeV1 {
         Self::from_parts(carrier, package_id, application, physical_plan, allocation)
     }
 
+    pub(crate) fn reclaim_retired_entries(&mut self, maximum_entries: usize) -> bool {
+        self.carrier.reclaim_retired_entries(maximum_entries)
+    }
+
     /// Rematerialize an already-recorded occurrence family. The exact
     /// allocation root is preserved only after all typed provenance, semantic
     /// shape, Mode, and physical-plan bindings match.

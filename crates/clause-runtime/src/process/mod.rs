@@ -102,6 +102,10 @@ impl ProcessRuntime {
         self.authority.establish_root_policy(anchor)
     }
 
+    pub(crate) fn reclaim_retired_entries(&mut self, maximum_entries: usize) -> bool {
+        self.carrier.reclaim_retired_entries(maximum_entries)
+    }
+
     pub(crate) fn unique_revision_state_admission_authorization(
         &self,
         revision: clause_package::ProgramRevisionId,

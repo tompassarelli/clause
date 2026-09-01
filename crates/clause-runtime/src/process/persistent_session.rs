@@ -39,7 +39,13 @@ pub struct PersistentProcessSessionV1 {
 /// only destruction of its retained history to a later physical lifecycle
 /// point.
 pub(crate) struct RetiredPersistentProcessRuntimeV1 {
-    _runtime: ExecutableProcessRuntimeV1,
+    runtime: ExecutableProcessRuntimeV1,
+}
+
+impl RetiredPersistentProcessRuntimeV1 {
+    pub(crate) fn reclaim(&mut self, maximum_entries: usize) -> bool {
+        self.runtime.reclaim_retired_entries(maximum_entries)
+    }
 }
 
 impl PersistentProcessSessionV1 {
@@ -316,7 +322,7 @@ impl PersistentProcessSessionV1 {
     pub(crate) fn retire_runtime(&mut self) -> Option<RetiredPersistentProcessRuntimeV1> {
         self.runtime
             .take()
-            .map(|runtime| RetiredPersistentProcessRuntimeV1 { _runtime: runtime })
+            .map(|runtime| RetiredPersistentProcessRuntimeV1 { runtime })
     }
 
     #[must_use]

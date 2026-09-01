@@ -950,6 +950,81 @@ impl ProcessCarrier {
         Ok(carrier)
     }
 
+    /// Release at most `maximum_entries` retained carrier entries after the
+    /// owner has irrevocably retired this carrier from execution.
+    ///
+    /// The carrier is deliberately left structurally valid so its remaining
+    /// physical ownership can cross bounded reclamation turns. Calling this
+    /// on a live carrier destroys its execution history and is therefore only
+    /// valid after the owning runtime has revoked every semantic access path.
+    #[doc(hidden)]
+    pub fn reclaim_retired_entries(&mut self, maximum_entries: usize) -> bool {
+        let mut remaining = maximum_entries;
+        macro_rules! reclaim {
+            ($entries:expr) => {
+                while remaining > 0 && $entries.pop_first().is_some() {
+                    remaining -= 1;
+                }
+            };
+        }
+
+        reclaim!(self.applications);
+        reclaim!(self.activations);
+        reclaim!(self.runs);
+        reclaim!(self.run_members);
+        reclaim!(self.configurations);
+        reclaim!(self.steps);
+        reclaim!(self.observations);
+        reclaim!(self.continuations);
+        reclaim!(self.candidate_deltas);
+        reclaim!(self.judgments);
+        reclaim!(self.issued_admission_authorizations);
+        reclaim!(self.consumed_admission_authorizations);
+        reclaim!(self.decisions);
+        reclaim!(self.decisions_by_occurrence);
+        reclaim!(self.states);
+        reclaim!(self.external_triggers);
+        reclaim!(self.resumptions);
+        reclaim!(self.handoffs);
+        reclaim!(self.cancellations);
+        reclaim!(self.effect_intents);
+        reclaim!(self.issued_effect_authorizations);
+        reclaim!(self.consumed_effect_authorizations);
+        reclaim!(self.effect_attempts);
+        reclaim!(self.effect_receipts);
+        reclaim!(self.effect_judgments);
+        reclaim!(self.boundary_permission_uses);
+        reclaim!(self.causal_predecessors);
+
+        self.applications.is_empty()
+            && self.activations.is_empty()
+            && self.runs.is_empty()
+            && self.run_members.is_empty()
+            && self.configurations.is_empty()
+            && self.steps.is_empty()
+            && self.observations.is_empty()
+            && self.continuations.is_empty()
+            && self.candidate_deltas.is_empty()
+            && self.judgments.is_empty()
+            && self.issued_admission_authorizations.is_empty()
+            && self.consumed_admission_authorizations.is_empty()
+            && self.decisions.is_empty()
+            && self.decisions_by_occurrence.is_empty()
+            && self.states.is_empty()
+            && self.external_triggers.is_empty()
+            && self.resumptions.is_empty()
+            && self.handoffs.is_empty()
+            && self.cancellations.is_empty()
+            && self.effect_intents.is_empty()
+            && self.issued_effect_authorizations.is_empty()
+            && self.consumed_effect_authorizations.is_empty()
+            && self.effect_attempts.is_empty()
+            && self.effect_receipts.is_empty()
+            && self.effect_judgments.is_empty()
+            && self.boundary_permission_uses.is_empty()
+            && self.causal_predecessors.is_empty()
+    }
+
     /// Execute the next record from the exact checked package, in package
     /// order. No caller-supplied semantic selector participates in dispatch.
     pub fn advance_package(

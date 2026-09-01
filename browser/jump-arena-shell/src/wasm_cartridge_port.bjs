@@ -1162,6 +1162,14 @@
       message
       "Wasm cartridge boundary rejected")))
 
+(defn reclaim-retired-session! [module Any] Nil
+  (let [api Any (session-module-functions module)]
+    (when ((.-reclaim api))
+      (setTimeout
+       (fn [] Any (reclaim-retired-session! module))
+       0)))
+  nil)
+
 (defn create-wasm-cartridge-port!
   [module Any
    policy workbench/WorkbenchPolicy] workbench/CartridgePort
@@ -1209,12 +1217,10 @@
                       (.-world event)
                       bootstrap-frame))
            ;; Completion installs and renders the successor before physical
-           ;; destruction of any runtime revoked by this open reaches the
-           ;; browser event loop.
+           ;; destruction of any runtime revoked by this open. Reclamation
+           ;; then yields between fixed runtime-owned batches.
            (setTimeout
-            (fn [] Any
-              (let [api Any (session-module-functions module)]
-                ((.-reclaim api))))
+            (fn [] Any (reclaim-retired-session! module))
             0))
          (catch Error error
            (complete (workbench/->SessionFailed (reject-reason error))))))

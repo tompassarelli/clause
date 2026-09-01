@@ -3750,7 +3750,14 @@ fn persistent_wasm_open_replaces_only_after_the_replacement_is_checked() {
         Err(WasmProcessStatusV1::SessionOccupied),
         "one unreclaimed physical runtime bounds replacement ownership"
     );
-    assert!(boundary.reclaim_retired());
+    let mut reclamation_turns = 1;
+    while boundary.reclaim_retired() {
+        reclamation_turns += 1;
+        assert!(
+            reclamation_turns < 1_000,
+            "bounded reclamation must make progress"
+        );
+    }
     assert!(!boundary.reclaim_retired(), "reclamation is idempotent");
     let third = boundary
         .open(&exact_open)
