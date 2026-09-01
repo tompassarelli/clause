@@ -157,6 +157,14 @@ export function clause_session_v1_open_bulk(request) {
 }
 
 /**
+ * @returns {boolean}
+ */
+export function clause_session_v1_reclaim_retired() {
+    const ret = wasm.clause_session_v1_reclaim_retired();
+    return ret !== 0;
+}
+
+/**
  * @param {number} byte
  * @returns {number}
  */

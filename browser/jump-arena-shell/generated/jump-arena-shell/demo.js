@@ -2,7 +2,7 @@ import * as wasm from "./wasm-cartridge-port.js";
 import * as integration from "./wasm-workbench-shell.js";
 import * as workbench from "./workbench.js";
 import { "BoxGeometry" as BoxGeometry, "Color" as Color, "DirectionalLight" as DirectionalLight, "Group" as Group, "HemisphereLight" as HemisphereLight, "Mesh" as Mesh, "MeshStandardMaterial" as MeshStandardMaterial, "PerspectiveCamera" as PerspectiveCamera, "Scene" as Scene, "WebGLRenderer" as WebGLRenderer } from "three";
-import { "clause_session_v1_command_bulk" as clause__session__v1__command__bulk, "clause_session_v1_event_bulk" as clause__session__v1__event__bulk, "clause_session_v1_open_bulk" as clause__session__v1__open__bulk, "initSync" as initSync } from "#clause-runtime-wasm";
+import { "clause_session_v1_command_bulk" as clause__session__v1__command__bulk, "clause_session_v1_event_bulk" as clause__session__v1__event__bulk, "clause_session_v1_open_bulk" as clause__session__v1__open__bulk, "clause_session_v1_reclaim_retired" as clause__session__v1__reclaim__retired, "initSync" as initSync } from "#clause-runtime-wasm";
 import { keyword as $$bc$keyword, property_key as $$bc$property_key, str as $$bc$str } from 'beagle/core.js';
 
 const module_path = "./generated/wasm/clause_runtime_bg.wasm";
@@ -26,7 +26,7 @@ async function fetch_bytes_bang(path) {
 function initialize_session_module(module) {
   const input = module;
   const __initialized = initSync(input);
-  return Object.freeze({[$$bc$property_key($$bc$keyword("clause_session_v1_open_bulk"))]: (request) => clause__session__v1__open__bulk(new Uint8Array(request)), [$$bc$property_key($$bc$keyword("clause_session_v1_command_bulk"))]: (request) => clause__session__v1__command__bulk(new Uint8Array(request)), [$$bc$property_key($$bc$keyword("clause_session_v1_event_bulk"))]: () => clause__session__v1__event__bulk()});
+  return Object.freeze({[$$bc$property_key($$bc$keyword("clause_session_v1_open_bulk"))]: (request) => clause__session__v1__open__bulk(new Uint8Array(request)), [$$bc$property_key($$bc$keyword("clause_session_v1_command_bulk"))]: (request) => clause__session__v1__command__bulk(new Uint8Array(request)), [$$bc$property_key($$bc$keyword("clause_session_v1_event_bulk"))]: () => clause__session__v1__event__bulk(), [$$bc$property_key($$bc$keyword("clause_session_v1_reclaim_retired"))]: () => clause__session__v1__reclaim__retired()});
 }
 
 const arena = document.querySelector("#arena");

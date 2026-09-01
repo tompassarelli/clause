@@ -3,6 +3,8 @@
 (ns jump-arena-shell.wasm-cartridge-port
   (:require [jump-arena-shell.workbench :as workbench]))
 
+(declare-extern [setTimeout] Any)
+
 (def cwr1-max-bytes Int (* 4 1024 1024))
 (def cwr1-hex-max-source-units Int (* 3 cwr1-max-bytes))
 (def cwo1-max-bytes Int (* 64 1024))
@@ -93,7 +95,8 @@
    world Any
    sequence Any
    occurrences Any
-   disposed Any])
+   disposed Any
+   retirementPending Any])
 
 (defrecord PersistentCartridge
   [openBytes Any
@@ -428,12 +431,14 @@
 (defn session-module-functions [module Any] Any
   (let [open Any (.-clause_session_v1_open_bulk module)
         command Any (.-clause_session_v1_command_bulk module)
-        event Any (.-clause_session_v1_event_bulk module)]
-    (when (or (nil? open) (nil? command) (nil? event))
+        event Any (.-clause_session_v1_event_bulk module)
+        reclaim Any (.-clause_session_v1_reclaim_retired module)]
+    (when (or (nil? open) (nil? command) (nil? event) (nil? reclaim))
       (throw (new Error "Wasm module lacks bulk persistent Clause session I/O")))
     {:open open
      :command command
-     :event event}))
+     :event event
+     :reclaim reclaim}))
 
 (defn dispatch-session-request
   [module Any
@@ -1192,13 +1197,16 @@
                                     (atom (.-world event))
                                     (atom 0)
                                     (.-occurrences cartridge)
+                                    (atom false)
                                     (atom false))
                bootstrap-frame Any (workbench/create-workbench-envelope
                                     policy
                                     "[]")]
            (let [prior Any @active-session]
              (when (not (nil? prior))
-               (reset! (.-disposed prior) true)))
+               (do
+                 (reset! (.-disposed prior) true)
+                 (reset! (.-retirementPending prior) true))))
            (reset! active-session session)
            (complete (workbench/->SessionStarted
                       session
@@ -1269,14 +1277,27 @@
            (complete (workbench/->AdmissionRejected (reject-reason error))))))
      (fn [incoming-session Any] Any
        (let [session WasmSession (require-session incoming-session)]
-         (when (not @(.-disposed session))
+         (cond
+           @(.-retirementPending session)
+           (do
+             (reset! (.-retirementPending session) false)
+             (setTimeout
+              (fn [] Any
+                (let [api Any (session-module-functions module)]
+                  (when-not ((.-reclaim api))
+                    (throw (new Error "retired Clause runtime was already reclaimed")))))
+              0))
+
+           (not @(.-disposed session))
            (let [event Any (apply-session-command!
                             module session (encode-session-command! session 7 nil))]
              (when (not= (.-kind event) "disposed")
                (throw (new Error "CWI1 disposal did not produce Disposed")))
              (reset! (.-disposed session) true)
              (when (identical? @active-session session)
-               (reset! active-session nil)))))))))
+               (reset! active-session nil)))
+
+           :else nil))))))
 
 (js/export
   (def create-wasm-cartridge-port Any create-wasm-cartridge-port!))

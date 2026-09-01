@@ -3745,6 +3745,17 @@ fn persistent_wasm_open_replaces_only_after_the_replacement_is_checked() {
         boundary.command(&stale_command),
         Err(WasmProcessStatusV1::StaleSessionHandle)
     );
+    assert_eq!(
+        boundary.open(&exact_open),
+        Err(WasmProcessStatusV1::SessionOccupied),
+        "one unreclaimed physical runtime bounds replacement ownership"
+    );
+    assert!(boundary.reclaim_retired());
+    assert!(!boundary.reclaim_retired(), "reclamation is idempotent");
+    let third = boundary
+        .open(&exact_open)
+        .expect("reclamation permits the next fresh semantic session");
+    assert_eq!(third.handle.generation, second.handle.generation + 1);
 }
 
 #[test]

@@ -11,6 +11,7 @@
    :refer [clause_session_v1_command_bulk
            clause_session_v1_event_bulk
            clause_session_v1_open_bulk
+           clause_session_v1_reclaim_retired
            initSync
            InitOutput
            SyncInitInput]])
@@ -72,7 +73,8 @@
                             0))]
     {:clause_session_v1_open_bulk next-event!
      :clause_session_v1_command_bulk next-event!
-     :clause_session_v1_event_bulk (fn [] Any @current)}))
+     :clause_session_v1_event_bulk (fn [] Any @current)
+     :clause_session_v1_reclaim_retired (fn [] Bool true)}))
 
 (defn append-u32!
   [bytes Any
@@ -228,7 +230,9 @@
       (fn [request (Vec Int)] Float
         (clause_session_v1_command_bulk (new Uint8Array request)))
       :clause_session_v1_event_bulk
-      (fn [] Any (clause_session_v1_event_bulk))})))
+      (fn [] Any (clause_session_v1_event_bulk))
+      :clause_session_v1_reclaim_retired
+      (fn [] Bool (clause_session_v1_reclaim_retired))})))
 
 (defn key-configuration
   [input-sequence Int

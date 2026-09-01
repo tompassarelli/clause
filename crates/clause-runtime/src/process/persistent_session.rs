@@ -32,6 +32,16 @@ pub struct PersistentProcessSessionV1 {
     last_admitted: Option<ExecutableStateRevisionV1>,
 }
 
+/// Physically owned state from a semantically retired persistent session.
+///
+/// This carrier exposes no execution or authority surface. Keeping it as a
+/// distinct type lets a boundary revoke a session synchronously while moving
+/// only destruction of its retained history to a later physical lifecycle
+/// point.
+pub(crate) struct RetiredPersistentProcessRuntimeV1 {
+    _runtime: ExecutableProcessRuntimeV1,
+}
+
 impl PersistentProcessSessionV1 {
     /// Open one native session by transferring ownership of the checked
     /// package and authority store into its runtime.
@@ -298,7 +308,15 @@ impl PersistentProcessSessionV1 {
     /// Deterministically retire the owned runtime. Disposal is idempotent, and
     /// every later command or live-state query fails closed with `Disposed`.
     pub fn dispose(&mut self) -> bool {
-        self.runtime.take().is_some()
+        self.retire_runtime().is_some()
+    }
+
+    /// Revoke every live execution and authority surface while transferring
+    /// physical ownership of retained history to the caller for later drop.
+    pub(crate) fn retire_runtime(&mut self) -> Option<RetiredPersistentProcessRuntimeV1> {
+        self.runtime
+            .take()
+            .map(|runtime| RetiredPersistentProcessRuntimeV1 { _runtime: runtime })
     }
 
     #[must_use]

@@ -49,6 +49,8 @@ export function clause_session_v1_io_reset(): void;
 
 export function clause_session_v1_open(): number;
 
+export function clause_session_v1_reclaim_retired(): boolean;
+
 export function clause_session_v1_request_push(byte: number): number;
 
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
@@ -74,6 +76,7 @@ export interface InitOutput {
     readonly clause_session_v1_io_reset: () => void;
     readonly clause_session_v1_open: () => number;
     readonly clause_session_v1_open_bulk: (a: number, b: number) => number;
+    readonly clause_session_v1_reclaim_retired: () => number;
     readonly clause_session_v1_request_push: (a: number) => number;
     readonly __wbindgen_exn_store: (a: number) => void;
     readonly __externref_table_alloc: () => number;

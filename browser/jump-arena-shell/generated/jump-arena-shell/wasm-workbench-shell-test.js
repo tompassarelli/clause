@@ -217,7 +217,7 @@ function module_for_bang(events, requests) {
   const next_event_bang = (request) => { requests.push(request.slice());
 (() => { const _a = current, _v = events.shift(); const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })();
 return 0; };
-  return {[$$bc$property_key($$bc$keyword("clause_session_v1_open_bulk"))]: next_event_bang, [$$bc$property_key($$bc$keyword("clause_session_v1_command_bulk"))]: next_event_bang, [$$bc$property_key($$bc$keyword("clause_session_v1_event_bulk"))]: () => current.value};
+  return {[$$bc$property_key($$bc$keyword("clause_session_v1_open_bulk"))]: next_event_bang, [$$bc$property_key($$bc$keyword("clause_session_v1_command_bulk"))]: next_event_bang, [$$bc$property_key($$bc$keyword("clause_session_v1_event_bulk"))]: () => current.value, [$$bc$property_key($$bc$keyword("clause_session_v1_reclaim_retired"))]: () => true};
 }
 
 function throws_p_bang(action) {

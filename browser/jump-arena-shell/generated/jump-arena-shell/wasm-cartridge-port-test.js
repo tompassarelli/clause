@@ -2,7 +2,7 @@ import * as wasm from "./wasm-cartridge-port.js";
 import * as workbench from "./workbench.js";
 import * as test from "bun:test";
 import { "file" as file } from "bun";
-import { "clause_session_v1_command_bulk" as clause__session__v1__command__bulk, "clause_session_v1_event_bulk" as clause__session__v1__event__bulk, "clause_session_v1_open_bulk" as clause__session__v1__open__bulk, "initSync" as initSync } from "#clause-runtime-wasm";
+import { "clause_session_v1_command_bulk" as clause__session__v1__command__bulk, "clause_session_v1_event_bulk" as clause__session__v1__event__bulk, "clause_session_v1_open_bulk" as clause__session__v1__open__bulk, "clause_session_v1_reclaim_retired" as clause__session__v1__reclaim__retired, "initSync" as initSync } from "#clause-runtime-wasm";
 import { equivV as $$bc$equiv, keyword as $$bc$keyword, property_key as $$bc$property_key, str as $$bc$str } from 'beagle/core.js';
 import { catch_dispatch as $$bd$catch_dispatch } from 'beagle/exception-dispatch.js';
 
@@ -55,7 +55,7 @@ function module_for_bang(events, requests) {
   const next_event_bang = (request) => { requests.push(request.slice());
 (() => { const _a = current, _v = events.shift(); const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })();
 return 0; };
-  return {[$$bc$property_key($$bc$keyword("clause_session_v1_open_bulk"))]: next_event_bang, [$$bc$property_key($$bc$keyword("clause_session_v1_command_bulk"))]: next_event_bang, [$$bc$property_key($$bc$keyword("clause_session_v1_event_bulk"))]: () => current.value};
+  return {[$$bc$property_key($$bc$keyword("clause_session_v1_open_bulk"))]: next_event_bang, [$$bc$property_key($$bc$keyword("clause_session_v1_command_bulk"))]: next_event_bang, [$$bc$property_key($$bc$keyword("clause_session_v1_event_bulk"))]: () => current.value, [$$bc$property_key($$bc$keyword("clause_session_v1_reclaim_retired"))]: () => true};
 }
 
 function append_u32_bang(bytes, value) {
@@ -236,7 +236,7 @@ function json_string(value) {
 function initialize_real_session_module(module) {
   const input = module;
   const __initialized = initSync(input);
-  return Object.freeze({[$$bc$property_key($$bc$keyword("clause_session_v1_open_bulk"))]: (request) => clause__session__v1__open__bulk(new Uint8Array(request)), [$$bc$property_key($$bc$keyword("clause_session_v1_command_bulk"))]: (request) => clause__session__v1__command__bulk(new Uint8Array(request)), [$$bc$property_key($$bc$keyword("clause_session_v1_event_bulk"))]: () => clause__session__v1__event__bulk()});
+  return Object.freeze({[$$bc$property_key($$bc$keyword("clause_session_v1_open_bulk"))]: (request) => clause__session__v1__open__bulk(new Uint8Array(request)), [$$bc$property_key($$bc$keyword("clause_session_v1_command_bulk"))]: (request) => clause__session__v1__command__bulk(new Uint8Array(request)), [$$bc$property_key($$bc$keyword("clause_session_v1_event_bulk"))]: () => clause__session__v1__event__bulk(), [$$bc$property_key($$bc$keyword("clause_session_v1_reclaim_retired"))]: () => clause__session__v1__reclaim__retired()});
 }
 
 function key_configuration(input_sequence, revision, code) {

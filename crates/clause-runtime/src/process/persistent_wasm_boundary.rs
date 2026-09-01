@@ -8,10 +8,11 @@ use super::wasm_boundary::{
 };
 use super::{
     ExecutableCarrierErrorV1, ExecutableInputSourceV1, ExecutableKeyPhaseV1,
-    PersistentProcessSessionErrorV1, PersistentProcessSessionV1, RuntimeAllocationEpochV1,
-    WASM_PROCESS_REQUEST_LIMIT_V1, WASM_PROCESS_RESPONSE_LIMIT_V1, WasmAuthorityInputV1,
-    WasmProcessStatusV1, decode_executable_physical_plan_v1, decode_runtime_allocation_epoch_v1,
-    decode_wasm_process_request_v1, encode_runtime_allocation_epoch_v1,
+    PersistentProcessSessionErrorV1, PersistentProcessSessionV1, RetiredPersistentProcessRuntimeV1,
+    RuntimeAllocationEpochV1, WASM_PROCESS_REQUEST_LIMIT_V1, WASM_PROCESS_RESPONSE_LIMIT_V1,
+    WasmAuthorityInputV1, WasmProcessStatusV1, decode_executable_physical_plan_v1,
+    decode_runtime_allocation_epoch_v1, decode_wasm_process_request_v1,
+    encode_runtime_allocation_epoch_v1,
 };
 
 const OPEN_MAGIC: &[u8; 4] = b"CWS1";
@@ -265,6 +266,7 @@ pub struct WasmPersistentSessionBoundaryV1 {
     generation: Option<u32>,
     exhausted: bool,
     live: Option<LiveSessionV1>,
+    retired: Option<RetiredPersistentProcessRuntimeV1>,
     request: Vec<u8>,
     event: Vec<u8>,
     status: WasmProcessStatusV1,
@@ -276,6 +278,7 @@ impl Default for WasmPersistentSessionBoundaryV1 {
             generation: None,
             exhausted: false,
             live: None,
+            retired: None,
             request: Vec::with_capacity(WASM_SESSION_COMMAND_LIMIT_V1),
             event: Vec::with_capacity(WASM_SESSION_EVENT_LIMIT_V1),
             status: WasmProcessStatusV1::Ready,
@@ -362,6 +365,9 @@ impl WasmPersistentSessionBoundaryV1 {
         if self.exhausted {
             return self.fail(WasmProcessStatusV1::SessionExhausted);
         }
+        if self.retired.is_some() {
+            return self.fail(WasmProcessStatusV1::SessionOccupied);
+        }
         if usize::try_from(request.limits.event_bytes).unwrap_or(usize::MAX) < open_event_size() {
             return self.fail(WasmProcessStatusV1::ResponseOutOfBounds);
         }
@@ -413,11 +419,22 @@ impl WasmPersistentSessionBoundaryV1 {
             last_configuration_revision: 0,
         };
         if let Some(mut prior) = self.live.replace(replacement) {
-            prior.session.dispose();
+            self.retired = Some(
+                prior
+                    .session
+                    .retire_runtime()
+                    .expect("a live Wasm session retains one executable runtime"),
+            );
         }
         self.generation = Some(generation);
         self.status = WasmProcessStatusV1::Ready;
         Ok(event)
+    }
+
+    /// Drop one already-revoked runtime outside session replacement and
+    /// execution. Returns false when no physical retirement is pending.
+    pub fn reclaim_retired(&mut self) -> bool {
+        self.retired.take().is_some()
     }
 
     pub fn command(&mut self, bytes: &[u8]) -> Result<WasmSessionEventV1, WasmProcessStatusV1> {
@@ -1744,6 +1761,11 @@ mod wasm_exports {
             Ok(()) => WasmProcessStatusV1::Ready as u32,
             Err(error) => error as u32,
         })
+    }
+
+    #[wasm_bindgen]
+    pub fn clause_session_v1_reclaim_retired() -> bool {
+        SESSION_BOUNDARY.with_borrow_mut(WasmPersistentSessionBoundaryV1::reclaim_retired)
     }
 
     #[wasm_bindgen(skip_typescript)]

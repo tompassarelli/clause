@@ -20,6 +20,7 @@ export const clause_session_v1_event_len: () => number;
 export const clause_session_v1_io_reset: () => void;
 export const clause_session_v1_open: () => number;
 export const clause_session_v1_open_bulk: (a: number, b: number) => number;
+export const clause_session_v1_reclaim_retired: () => number;
 export const clause_session_v1_request_push: (a: number) => number;
 export const __wbindgen_exn_store: (a: number) => void;
 export const __externref_table_alloc: () => number;

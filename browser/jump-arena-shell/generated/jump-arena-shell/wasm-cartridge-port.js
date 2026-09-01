@@ -22,7 +22,7 @@ const cse1_projected_term_json_max_source_units = ((4 * cse1_max_bytes) + 1);
 
 const session_command_max_bytes = (1024 * 1024);
 
-const session_command_limit = 4096;
+const session_command_limit = 1000000;
 
 const identity_bytes = 32;
 
@@ -42,8 +42,9 @@ function decode_cwr1_hex(source) {
     if ((($$bc$equiv(length, 0)) || (length > cwr1_hex_max_source_units))) {
       (() => { throw new Error("CWR1 hex transport is outside its source bound"); })();
     }
-    return (() => { let index = 0; let high = -1; let bytes = []; while (true) {
-    if ((index === length)) { return (((!($$bc$equiv(high, -1)))) ? (() => { throw new Error("CWR1 hex transport has an incomplete byte"); })() : (($$bc$equiv($$bc$count(bytes), 0))) ? (() => { throw new Error("CWR1 hex transport is empty"); })() : Object.freeze(bytes)); } else { const code = source.charCodeAt(index); const nibble = lowercase_hex_nibble(code); if (hex_whitespace_code_p(code)) { const _recur_0 = (index + 1); const _recur_1 = high; const _recur_2 = bytes; index = _recur_0; high = _recur_1; bytes = _recur_2; continue; } else if ((nibble < 0)) { return (() => { throw new Error("CWR1 hex transport contains a non-hex unit"); })(); } else if (($$bc$equiv(high, -1))) { const _recur_0 = (index + 1); const _recur_1 = nibble; const _recur_2 = bytes; index = _recur_0; high = _recur_1; bytes = _recur_2; continue; } else if (($$bc$count(bytes) >= cwr1_max_bytes)) { return (() => { throw new Error("CWR1 hex transport exceeds its byte bound"); })(); } else { const _recur_0 = (index + 1); const _recur_1 = -1; const _recur_2 = $$bc$conj_value(bytes, ((high * 16) + nibble)); index = _recur_0; high = _recur_1; bytes = _recur_2; continue; } }
+    const bytes = [];
+    return (() => { let index = 0; let high = -1; while (true) {
+    if ((index === length)) { return (((!($$bc$equiv(high, -1)))) ? (() => { throw new Error("CWR1 hex transport has an incomplete byte"); })() : (($$bc$equiv($$bc$count(bytes), 0))) ? (() => { throw new Error("CWR1 hex transport is empty"); })() : Object.freeze(bytes)); } else { const code = source.charCodeAt(index); const nibble = lowercase_hex_nibble(code); if (hex_whitespace_code_p(code)) { const _recur_0 = (index + 1); const _recur_1 = high; index = _recur_0; high = _recur_1; continue; } else if ((nibble < 0)) { return (() => { throw new Error("CWR1 hex transport contains a non-hex unit"); })(); } else if (($$bc$equiv(high, -1))) { const _recur_0 = (index + 1); const _recur_1 = nibble; index = _recur_0; high = _recur_1; continue; } else if (($$bc$count(bytes) >= cwr1_max_bytes)) { return (() => { throw new Error("CWR1 hex transport exceeds its byte bound"); })(); } else { bytes.push(((high * 16) + nibble)); const _recur_0 = (index + 1); const _recur_1 = -1; index = _recur_0; high = _recur_1; continue; } }
   } })();
   } else {
     return (() => { throw new Error("CWR1 hex transport must be text"); })();
@@ -70,8 +71,8 @@ function wasmcandidate_candidateId(r) { return r.candidateId; }
 
 function wasmcandidate_base(r) { return r.base; }
 
-function WasmSession(handle, packageId, sessionId, allocation, world, sequence, occurrences, disposed) {
-  return $$bc$record_value("jump-arena-shell.wasm-cartridge-port/WasmSession", {_tag: "WasmSession", handle, packageId, sessionId, allocation, world, sequence, occurrences, disposed});
+function WasmSession(handle, packageId, sessionId, allocation, world, sequence, occurrences, disposed, retirementPending) {
+  return $$bc$record_value("jump-arena-shell.wasm-cartridge-port/WasmSession", {_tag: "WasmSession", handle, packageId, sessionId, allocation, world, sequence, occurrences, disposed, retirementPending});
 }
 
 function wasmsession_handle(r) { return r.handle; }
@@ -89,6 +90,8 @@ function wasmsession_sequence(r) { return r.sequence; }
 function wasmsession_occurrences(r) { return r.occurrences; }
 
 function wasmsession_disposed(r) { return r.disposed; }
+
+function wasmsession_retirementPending(r) { return r.retirementPending; }
 
 function PersistentCartridge(openBytes, occurrences) {
   return $$bc$record_value("jump-arena-shell.wasm-cartridge-port/PersistentCartridge", {_tag: "PersistentCartridge", openBytes, occurrences});
@@ -169,8 +172,9 @@ function require_range(bytes, offset, length, label) {
 }
 
 function frozen_byte_range(bytes, start, end) {
-  return (() => { let index = start; let result = []; while (true) {
-    if ((index === end)) { return Object.freeze(result); } else { const _recur_0 = (index + 1); const _recur_1 = $$bc$conj_value(result, byte_at(bytes, index)); index = _recur_0; result = _recur_1; continue; }
+  const result = [];
+  return (() => { let index = start; while (true) {
+    if ((index === end)) { return Object.freeze(result); } else { result.push(byte_at(bytes, index)); const _recur_0 = (index + 1); index = _recur_0; continue; }
   } })();
 }
 
@@ -301,10 +305,11 @@ function session_module_functions(module) {
   const open = module.clause_session_v1_open_bulk;
   const command = module.clause_session_v1_command_bulk;
   const event = module.clause_session_v1_event_bulk;
-  if (((open == null) || ((command == null) || (event == null)))) {
+  const reclaim = module.clause_session_v1_reclaim_retired;
+  if (((open == null) || ((command == null) || ((event == null) || (reclaim == null))))) {
     (() => { throw new Error("Wasm module lacks bulk persistent Clause session I/O"); })();
   }
-  return {[$$bc$property_key($$bc$keyword("open"))]: open, [$$bc$property_key($$bc$keyword("command"))]: command, [$$bc$property_key($$bc$keyword("event"))]: event};
+  return {[$$bc$property_key($$bc$keyword("open"))]: open, [$$bc$property_key($$bc$keyword("command"))]: command, [$$bc$property_key($$bc$keyword("event"))]: event, [$$bc$property_key($$bc$keyword("reclaim"))]: reclaim};
 }
 
 function dispatch_session_request(module, request, operation) {
@@ -724,11 +729,12 @@ function create_wasm_cartridge_port_bang(module, policy) {
     const cartridge = accepted_package;
   const event = decode_cse1_event(dispatch_session_request(module, cartridge.openBytes, "open"));
   const __opened = (((!($$bc$equiv(event.kind, "opened"))) || (!($$bc$equiv(event.sequence, 0)))) ? (() => { return (() => { throw new Error("persistent session did not open exactly once"); })(); })() : null);
-  const session = WasmSession(Object.freeze({[$$bc$property_key($$bc$keyword("slot"))]: event.slot, [$$bc$property_key($$bc$keyword("generation"))]: event.generation}), event.packageId, event.sessionId, event.allocation, ({value: event.world, watches: {}}), ({value: 0, watches: {}}), cartridge.occurrences, ({value: false, watches: {}}));
+  const session = WasmSession(Object.freeze({[$$bc$property_key($$bc$keyword("slot"))]: event.slot, [$$bc$property_key($$bc$keyword("generation"))]: event.generation}), event.packageId, event.sessionId, event.allocation, ({value: event.world, watches: {}}), ({value: 0, watches: {}}), cartridge.occurrences, ({value: false, watches: {}}), ({value: false, watches: {}}));
   const bootstrap_frame = workbench["create-workbench-envelope"](policy, "[]");
   const prior = active_session.value;
   if ((!(prior == null))) {
     (() => { const _a = prior.disposed, _v = true; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })();
+    (() => { const _a = prior.retirementPending, _v = true; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })();
   }
   (() => { const _a = active_session, _v = session; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })();
   return complete(workbench["->SessionStarted"](session, event.world, bootstrap_frame));
@@ -791,16 +797,17 @@ function create_wasm_cartridge_port_bang(module, policy) {
       }
     }
   } })(), (incoming_session) => { const session = require_session(incoming_session);
-if ((!((_truthy) => _truthy !== false && _truthy != null)(session.disposed.value))) {
-  const event = apply_session_command_bang(module, session, encode_session_command_bang(session, 7, null));
-  if ((!($$bc$equiv(event.kind, "disposed")))) {
-    (() => { throw new Error("CWI1 disposal did not produce Disposed"); })();
-  }
-  (() => { const _a = session.disposed, _v = true; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })();
-  if ((active_session.value === session)) {
-    return (() => { const _a = active_session, _v = null; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })();
-  }
-} });
+return ((((_truthy) => _truthy !== false && _truthy != null)(session.retirementPending.value)) ? (() => { (() => { const _a = session.retirementPending, _v = false; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })();
+return setTimeout(() => { const api = session_module_functions(module);
+if ((!((_truthy) => _truthy !== false && _truthy != null)((api.reclaim)()))) {
+  return (() => { throw new Error("retired Clause runtime was already reclaimed"); })();
+} }, 0); })() : ((!((_truthy) => _truthy !== false && _truthy != null)(session.disposed.value))) ? (() => { const event = apply_session_command_bang(module, session, encode_session_command_bang(session, 7, null)); if ((!($$bc$equiv(event.kind, "disposed")))) {
+  (() => { throw new Error("CWI1 disposal did not produce Disposed"); })();
+}
+(() => { const _a = session.disposed, _v = true; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })();
+if ((active_session.value === session)) {
+  return (() => { const _a = active_session, _v = null; const _old = _a.value; _a.value = _v; for (const _k in _a.watches) _a.watches[_k](_k, _a, _old, _v); return _v; })();
+} })() : null); });
 }
 
 const create_wasm_cartridge_port = create_wasm_cartridge_port_bang;

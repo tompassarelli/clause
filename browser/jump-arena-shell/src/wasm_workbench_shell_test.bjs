@@ -213,7 +213,8 @@
                             0))]
     {:clause_session_v1_open_bulk next-event!
      :clause_session_v1_command_bulk next-event!
-     :clause_session_v1_event_bulk (fn [] Any @current)}))
+     :clause_session_v1_event_bulk (fn [] Any @current)
+     :clause_session_v1_reclaim_retired (fn [] Bool true)}))
 
 (defn throws?! [action (Fn [] Any)] Bool
   (try
