@@ -103,6 +103,153 @@ on adjust ?player ?amount
     ?player reserve ?reserve - ?amount
 "#;
 
+const TRANSITIVE_REFERENT_WORLD: &str = r#"referent F64
+referent Root
+referent Policy
+
+relation balance
+  reads {root: Root} balance {value: F64}
+  subject root
+  mode given root yields value: one
+
+relation selected-policy
+  reads {root: Root} selected policy {policy: Policy}
+  subject root
+  mode given root yields policy: one
+
+relation policy-adjustment
+  reads {policy: Policy} policy adjustment {value: F64}
+  subject policy
+  mode given policy yields value: one
+
+root-1 ∈ Root
+policy-a ∈ Policy
+root-1 balance 10.0
+root-1 selected policy policy-a
+policy-a policy adjustment 2.0
+
+on apply-selected-policy ?root
+  when
+    ?root balance ?prior
+    ?root selected policy ?policy
+    ?policy policy adjustment ?adjustment
+  withdraw
+    ?root balance ?prior
+  include
+    ?root balance ?prior - ?adjustment
+"#;
+
+fn compile_source(
+    source: &str,
+    root: u8,
+) -> Result<CanonicalSourcePackageSliceV1, CanonicalSourceErrorV1> {
+    let cst = read_canonical_source_v1(source.as_bytes())?;
+    let plan = plan_independent_canonical_source_allocations_v1(
+        &cst,
+        ProgramChangeOccurrenceId::from_bytes(raw_id(root)),
+    )?;
+    elaborate_canonical_source_package_v1(
+        &cst,
+        CanonicalSourceContextV1 {
+            universe: UniverseId::from_bytes(raw_id(1)),
+            semantics: ClauseSemanticsId::from_bytes(raw_id(2)),
+        },
+        &plan,
+    )
+}
+
+#[test]
+fn general_handler_joins_a_typed_referent_selected_by_prior_state() {
+    let compiled = compile_source(TRANSITIVE_REFERENT_WORLD, 18)
+        .expect("the selected typed referent reaches executable lowering");
+    let handler = compiled
+        .executable_handlers
+        .iter()
+        .find(|handler| handler.designation == b"apply-selected-policy")
+        .expect("the transitive referent handler is executable");
+    let [rule] = handler.rules.as_slice() else {
+        panic!("one source transition remains one executable rule")
+    };
+    assert_eq!(rule.required_present.len(), 3);
+    assert_eq!(
+        rule.required_present
+            .iter()
+            .map(|state| (
+                state.relation_designation.as_slice(),
+                state.subject.as_slice(),
+            ))
+            .collect::<BTreeSet<_>>(),
+        BTreeSet::from([
+            (b"balance".as_slice(), b"root-1".as_slice()),
+            (b"policy-adjustment".as_slice(), b"policy-a".as_slice()),
+            (b"selected-policy".as_slice(), b"root-1".as_slice()),
+        ]),
+        "every edge in the selected-referent join remains an exact execution support"
+    );
+    assert_eq!(
+        rule.required_present
+            .iter()
+            .map(|state| state.assertion)
+            .collect::<BTreeSet<_>>()
+            .len(),
+        3,
+        "the join retains three distinct nominal assertion identities"
+    );
+    let [assignment] = rule.assignments.as_slice() else {
+        panic!("the source replacement remains one atomic assignment")
+    };
+    assert_eq!(assignment.target.relation_designation, b"balance");
+    assert_eq!(assignment.target.subject, b"root-1");
+    assert!(matches!(
+        &assignment.value,
+        CanonicalExecutableExpressionV1::Subtract(prior, adjustment)
+            if matches!(prior.as_ref(), CanonicalExecutableExpressionV1::State(state)
+                if state.relation_designation == b"balance" && state.subject == b"root-1")
+                && matches!(adjustment.as_ref(), CanonicalExecutableExpressionV1::State(state)
+                    if state.relation_designation == b"policy-adjustment"
+                        && state.subject == b"policy-a")
+    ));
+}
+
+#[test]
+fn transitive_referent_join_rejects_wrong_type_missing_cardinality_and_ambiguity() {
+    let wrong_type = TRANSITIVE_REFERENT_WORLD.replacen(
+        "reads {policy: Policy} policy adjustment",
+        "reads {policy: Root} policy adjustment",
+        1,
+    );
+    assert!(matches!(
+        compile_source(&wrong_type, 19),
+        Err(CanonicalSourceErrorV1::MissingExecutableBinding { .. })
+    ));
+
+    let missing = TRANSITIVE_REFERENT_WORLD.replacen("policy-a policy adjustment 2.0\n", "", 1);
+    assert!(matches!(
+        compile_source(&missing, 20),
+        Err(CanonicalSourceErrorV1::MissingExecutableBinding { .. })
+    ));
+
+    let nonsingleton = TRANSITIVE_REFERENT_WORLD.replacen(
+        "mode given root yields policy: one",
+        "mode given root yields policy: many",
+        1,
+    );
+    assert!(matches!(
+        compile_source(&nonsingleton, 21),
+        Err(CanonicalSourceErrorV1::MissingExecutableBinding { .. })
+    ));
+
+    let ambiguous = TRANSITIVE_REFERENT_WORLD.replacen(
+        "policy-a policy adjustment 2.0\n\non apply-selected-policy",
+        "policy-a policy adjustment 2.0\nroot-2 ∈ Root\nroot-2 balance 8.0\nroot-2 selected policy policy-a\n\non apply-selected-policy",
+        1,
+    );
+    assert!(matches!(
+        compile_source(&ambiguous, 22),
+        Err(CanonicalSourceErrorV1::AmbiguousExecutableBinding { .. })
+    ));
+}
+
 #[test]
 fn general_handler_arguments_lower_by_declared_header_ordinal() {
     let cst = read_canonical_source_v1(GENERAL_HANDLER_ARGUMENT_WORLD.as_bytes())
