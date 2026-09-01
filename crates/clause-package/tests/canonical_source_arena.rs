@@ -22,6 +22,11 @@ referent CombatState
 referent alive
 referent telegraph
 
+shape Vec3
+  x: F64
+  y: F64
+  z: F64
+
 relation score
   reads {player: Player} score {value: F64}
   subject player
@@ -42,12 +47,18 @@ relation grounded
   subject player
   mode given player yields value: one
 
+relation spawn-position
+  reads {enemy: Enemy} spawn position {value: Vec3}
+  subject enemy
+  mode given enemy yields value: one
+
 player-1 ∈ Player
 cinder-wraith ∈ Enemy
 player-1 score 0.0
 cinder-wraith pressure clock 3.0
 cinder-wraith pressure state telegraph
 player-1 grounded true
+cinder-wraith spawn position Vec3 { x: 2.0, y: 0.0, z: 0.0 }
 
 on advance ?player
   when
@@ -91,7 +102,7 @@ fn scalar_handlers_bind_number_symbol_and_boolean_state_parameters() {
             b"?pressure".to_vec(),
         ]
     );
-    assert_eq!(compiled.state_cells.len(), 4);
+    assert_eq!(compiled.state_cells.len(), 7);
     let executable = compiled
         .executable_handlers
         .iter()

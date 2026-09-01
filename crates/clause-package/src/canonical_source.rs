@@ -1387,6 +1387,7 @@ fn allocation_requests(
                                     && source.field.is_some()
                             })
                     })
+                    || declared_state_relation(cst, &assertion.relation)
                 {
                     requested.push(AllocationRequest {
                         producer: assertion_producer(&assertion.subject, &assertion.relation),
@@ -1406,6 +1407,7 @@ fn allocation_requests(
                                     && source.field.is_none()
                             })
                     })
+                    || declared_state_relation(cst, &assertion.relation)
                 {
                     requested.push(AllocationRequest {
                         producer: assertion_producer(&assertion.subject, &assertion.relation),
@@ -1436,6 +1438,7 @@ fn allocation_requests(
                         ]
                         .contains(&assertion.origin)
                     })
+                    || declared_state_relation(cst, &assertion.relation)
                 {
                     requested.push(AllocationRequest {
                         producer: assertion_producer(&assertion.subject, &assertion.relation),
@@ -1452,7 +1455,8 @@ fn allocation_requests(
                                 && source.relation == assertion.relation
                                 && source.field.is_none()
                         })
-                }) {
+                }) || declared_state_relation(cst, &assertion.relation)
+                {
                     requested.push(AllocationRequest {
                         producer: assertion_producer(&assertion.subject, &assertion.relation),
                         slot: head_slot(CanonicalSourceProductionV1::Assertion),
@@ -1472,6 +1476,37 @@ fn allocation_requests(
         }
     }
     Ok(requested)
+}
+
+fn declared_state_relation(cst: &CanonicalSourceCstV1, surface: &[u8]) -> bool {
+    let matching = cst
+        .items
+        .iter()
+        .filter_map(|item| match &item.kind {
+            CstKind::Relation(relation) if relation.surface == surface => Some(relation),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let [relation] = matching.as_slice() else {
+        return false;
+    };
+    let Some(subject) = relation.subject.as_ref() else {
+        return false;
+    };
+    let produced = relation
+        .modes
+        .iter()
+        .filter(|mode| mode.known.iter().any(|role| role == subject))
+        .flat_map(|mode| mode.produced.iter())
+        .collect::<BTreeSet<_>>();
+    if produced.len() != 1 {
+        return false;
+    }
+    let value = *produced
+        .iter()
+        .next()
+        .expect("one produced state role was established");
+    relation.roles.iter().any(|role| &role.name == value)
 }
 
 struct ResolvedStateRelation<'a> {
@@ -2741,6 +2776,7 @@ pub fn elaborate_canonical_source_package_v1(
                                 && source.field.is_some()
                         })
                     })
+                    || declared_state_relation(cst, &assertion.relation)
                 {
                     let producer = assertion_producer(&assertion.subject, &assertion.relation);
                     let slot = head_slot(CanonicalSourceProductionV1::Assertion);
@@ -2773,6 +2809,7 @@ pub fn elaborate_canonical_source_package_v1(
                                     && source.field.is_none()
                             })
                     })
+                    || declared_state_relation(cst, &assertion.relation)
                 {
                     let producer = assertion_producer(&assertion.subject, &assertion.relation);
                     let slot = head_slot(CanonicalSourceProductionV1::Assertion);
@@ -2816,6 +2853,7 @@ pub fn elaborate_canonical_source_package_v1(
                         ]
                         .contains(&assertion.origin)
                     })
+                    || declared_state_relation(cst, &assertion.relation)
                 {
                     let producer = assertion_producer(&assertion.subject, &assertion.relation);
                     let slot = head_slot(CanonicalSourceProductionV1::Assertion);
@@ -2845,7 +2883,8 @@ pub fn elaborate_canonical_source_package_v1(
                                 && source.relation == assertion.relation
                                 && source.field.is_none()
                         })
-                }) {
+                }) || declared_state_relation(cst, &assertion.relation)
+                {
                     let producer = assertion_producer(&assertion.subject, &assertion.relation);
                     let slot = head_slot(CanonicalSourceProductionV1::Assertion);
                     let id = formation_id(plan, &producer, &slot)?;
