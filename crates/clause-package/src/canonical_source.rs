@@ -5273,7 +5273,13 @@ fn parse_scalar_atom(source: &str, current: &str) -> Option<CanonicalScalarExpre
 }
 
 fn parse_scalar_predicate(source: &str, current: &str) -> Option<CanonicalScalarPredicateV1> {
-    let (left, right, constructor) = if let Some((left, right)) = source.split_once(" <= ") {
+    let (left, right, constructor) = if let Some((left, right)) = source.split_once(" >= ") {
+        (
+            right,
+            left,
+            CanonicalScalarPredicateV1::LessThanOrEqual as fn(_, _) -> CanonicalScalarPredicateV1,
+        )
+    } else if let Some((left, right)) = source.split_once(" <= ") {
         (
             left,
             right,

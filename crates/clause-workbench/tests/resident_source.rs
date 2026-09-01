@@ -74,6 +74,7 @@ on count-pulse ?objective
   when
     ?objective pulse count ?count
     game-objective has pulse contact with player-1 as true
+    ?count >= 0.0
   withdraw
     ?objective pulse count ?count
   include
