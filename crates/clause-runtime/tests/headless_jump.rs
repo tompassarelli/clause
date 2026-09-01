@@ -1429,7 +1429,7 @@ fn occurrence(entry: u16, arguments: &[f64]) -> ExecutableOccurrenceV1 {
     }
 }
 
-fn value(configuration: &[ExecutableValueV1], slot: usize) -> f64 {
+fn value(configuration: &[ExecutableSlotV1], slot: usize) -> f64 {
     configuration[slot]
         .as_number()
         .expect("selected slot is numeric")

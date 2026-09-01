@@ -151,6 +151,18 @@ on admitted-hit ?defender
   include
     ?defender vitality ?vitality - ?damage
     ?defender destabilization ?destabilization + ?gain
+
+on finish-reaction ?defender
+  when
+    ?defender vitality ?vitality
+    ?defender destabilization ?destabilization
+    blade-one damage ?damage
+  withdraw
+    ?defender vitality ?vitality
+    ?defender destabilization ?destabilization
+  include
+    ?defender vitality 0.0
+    ?defender destabilization 0.0
 "#;
 const SCALAR_LAW_BOUND_HIT: &str = r#"referent F64
 referent Actor
@@ -274,6 +286,75 @@ on blade-two-hit ?defender
     ?defender destabilization ?next-destabilization
     ?defender launch velocity (?impulse + ?growth * ?next-destabilization / ?threshold) / ?mass
 "#;
+const OPTIONAL_RELATION_TRANSITION: &str = r#"referent F64
+referent Actor
+referent Phase
+referent ready
+referent committed
+
+shape Vec3
+  x: F64
+  y: F64
+  z: F64
+
+relation phase
+  reads {actor: Actor} phase {phase: Phase}
+  subject actor
+  mode given actor yields phase: one
+
+relation position
+  reads {actor: Actor} position {position: Vec3}
+  subject actor
+  mode given actor yields position: one
+
+relation anchor
+  reads {actor: Actor} anchor {position: Vec3}
+  subject actor
+  mode given actor yields position: maybe
+
+test-actor ∈ Actor
+test-actor phase ready
+test-actor position Vec3 { x: 2.0, y: 3.0, z: 4.0 }
+
+on probe ?actor
+  when
+    ?actor phase ?phase
+  withdraw
+    ?actor phase ?phase
+  include
+    ?actor phase ?phase
+
+on replace-position-from-binding ?actor
+  when
+    ?actor phase ?phase
+    ?actor position ?prior-position
+  withdraw
+    ?actor phase ?phase
+    ?actor position ?prior-position
+  include
+    ?actor phase committed
+    ?actor position Vec3 { x: 5.0, y: 6.0, z: 7.0 }
+
+on materialize-anchor ?actor
+  when
+    ?actor phase ?phase
+    ?actor position Vec3 { x: ?x, y: ?y, z: ?z }
+  withdraw
+    ?actor phase ?phase
+  include
+    ?actor phase committed
+    ?actor anchor Vec3 { x: ?x, y: ?y, z: ?z }
+
+on clear-anchor ?actor
+  when
+    ?actor phase ?phase
+    ?actor anchor Vec3 { x: ?x, y: ?y, z: ?z }
+  withdraw
+    ?actor phase ?phase
+    ?actor anchor Vec3 { x: ?x, y: ?y, z: ?z }
+  include
+    ?actor phase ready
+"#;
 
 fn coherent_source(objective: &[u8]) -> Vec<u8> {
     let mut source = Vec::with_capacity(
@@ -359,6 +440,21 @@ fn projected_object_field<'a>(term: &'a Term, expected: &[u8]) -> &'a Term {
         }
         current = rest;
     }
+}
+
+fn projected_object_has_field(term: &Term, expected: &[u8]) -> bool {
+    let mut current = term;
+    while let Some(triple) = current.as_triple() {
+        let [field, _, rest] = triple.slots();
+        if field
+            .as_atom()
+            .is_some_and(|field| field.canonical_payload() == expected)
+        {
+            return true;
+        }
+        current = rest;
+    }
+    false
 }
 
 fn projected_symbol(term: &Term) -> &[u8] {
@@ -822,6 +918,150 @@ fn actor_neutral_hit_updates_two_state_cells_in_one_admitted_candidate() {
     assert_eq!(
         boar_combat_state(&admitted.projection.exact_term_bytes),
         (92.0, 25.0)
+    );
+
+    let finish_reaction = workbench
+        .handler_occurrence(b"finish-reaction", &[])
+        .expect("the three-condition general handler falls through jump classification");
+    workbench
+        .run_occurrences_to_candidate(&[finish_reaction])
+        .expect("the general handler produces one hidden candidate");
+    assert_eq!(
+        boar_combat_state(&workbench.last_projection().unwrap().exact_term_bytes),
+        (92.0, 25.0),
+        "the general-handler result is invisible before Admission"
+    );
+    let finished = workbench
+        .admit()
+        .expect("one Admission exposes both general-handler assignments");
+    assert_eq!(
+        boar_combat_state(&finished.projection.exact_term_bytes),
+        (0.0, 0.0)
+    );
+}
+
+#[test]
+fn optional_relation_inserts_and_removes_with_atomic_state_replacement() {
+    let mut workbench = ResidentSourceWorkbenchV1::open(OPTIONAL_RELATION_TRANSITION.as_bytes())
+        .expect("the neutral optional-relation source opens");
+    let probe = workbench
+        .handler_occurrence(b"probe", &[])
+        .expect("the no-op probe has one occurrence");
+    workbench
+        .run_occurrences_to_candidate(&[probe])
+        .expect("the probe produces one initial Candidate");
+    let initial = workbench
+        .admit()
+        .expect("Admission establishes the prior world");
+    let initial_term = decode_canonical_term_bytes(&initial.projection.exact_term_bytes)
+        .expect("the initial projection decodes");
+    let initial_actor = projected_object_field(&initial_term, b"test-actor");
+    assert_eq!(
+        projected_symbol(projected_object_field(initial_actor, b"phase")),
+        b"ready"
+    );
+    assert!(!projected_object_has_field(initial_actor, b"anchor"));
+    let exact_prior = initial.projection.exact_term_bytes;
+
+    let materialize = workbench
+        .handler_occurrence(b"materialize-anchor", &[])
+        .expect("the optional insertion handler has one occurrence");
+    workbench
+        .run_occurrences_to_candidate(&[materialize])
+        .expect("replacement and insertion produce one Candidate");
+    assert_eq!(
+        workbench.last_projection().unwrap().exact_term_bytes,
+        exact_prior,
+        "neither replacement nor insertion is visible before Admission"
+    );
+    let inserted = workbench
+        .admit()
+        .expect("one Admission exposes replacement and insertion");
+    let inserted_term = decode_canonical_term_bytes(&inserted.projection.exact_term_bytes)
+        .expect("the inserted projection decodes");
+    let inserted_actor = projected_object_field(&inserted_term, b"test-actor");
+    assert_eq!(
+        projected_symbol(projected_object_field(inserted_actor, b"phase")),
+        b"committed"
+    );
+    let anchor = projected_object_field(inserted_actor, b"anchor");
+    assert_eq!(projected_number(projected_object_field(anchor, b"x")), 2.0);
+    assert_eq!(projected_number(projected_object_field(anchor, b"y")), 3.0);
+    assert_eq!(projected_number(projected_object_field(anchor, b"z")), 4.0);
+    let exact_inserted = inserted.projection.exact_term_bytes;
+
+    let clear = workbench
+        .handler_occurrence(b"clear-anchor", &[])
+        .expect("the optional removal handler has one occurrence");
+    workbench
+        .run_occurrences_to_candidate(&[clear])
+        .expect("replacement and removal produce one Candidate");
+    assert_eq!(
+        workbench.last_projection().unwrap().exact_term_bytes,
+        exact_inserted,
+        "neither replacement nor removal is visible before Admission"
+    );
+    let removed = workbench
+        .admit()
+        .expect("one Admission exposes replacement and removal");
+    let removed_term = decode_canonical_term_bytes(&removed.projection.exact_term_bytes)
+        .expect("the removed projection decodes");
+    let removed_actor = projected_object_field(&removed_term, b"test-actor");
+    assert_eq!(
+        projected_symbol(projected_object_field(removed_actor, b"phase")),
+        b"ready"
+    );
+    assert!(!projected_object_has_field(removed_actor, b"anchor"));
+}
+
+#[test]
+fn aggregate_binding_replaces_vec3_in_one_atomic_candidate() {
+    let mut workbench = ResidentSourceWorkbenchV1::open(OPTIONAL_RELATION_TRANSITION.as_bytes())
+        .expect("the neutral aggregate-replacement source opens");
+    let probe = workbench
+        .handler_occurrence(b"probe", &[])
+        .expect("the no-op probe has one occurrence");
+    workbench
+        .run_occurrences_to_candidate(&[probe])
+        .expect("the probe produces one initial Candidate");
+    let initial = workbench
+        .admit()
+        .expect("Admission establishes the prior world");
+    let exact_prior = initial.projection.exact_term_bytes;
+
+    let replace = workbench
+        .handler_occurrence(b"replace-position-from-binding", &[])
+        .expect("the aggregate replacement handler has one occurrence");
+    workbench
+        .run_occurrences_to_candidate(&[replace])
+        .expect("the Vec3 replacement produces one Candidate");
+    assert_eq!(
+        workbench.last_projection().unwrap().exact_term_bytes,
+        exact_prior,
+        "the aggregate replacement remains hidden before Admission"
+    );
+    let replaced = workbench
+        .admit()
+        .expect("one Admission exposes all Vec3 components");
+    let replaced_term = decode_canonical_term_bytes(&replaced.projection.exact_term_bytes)
+        .expect("the replaced projection decodes");
+    let actor = projected_object_field(&replaced_term, b"test-actor");
+    assert_eq!(
+        projected_symbol(projected_object_field(actor, b"phase")),
+        b"committed"
+    );
+    let position = projected_object_field(actor, b"position");
+    assert_eq!(
+        projected_number(projected_object_field(position, b"x")),
+        5.0
+    );
+    assert_eq!(
+        projected_number(projected_object_field(position, b"y")),
+        6.0
+    );
+    assert_eq!(
+        projected_number(projected_object_field(position, b"z")),
+        7.0
     );
 }
 

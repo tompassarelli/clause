@@ -7,7 +7,7 @@ use clause_package::*;
 
 use super::{
     EXECUTABLE_RESUMPTION_PERMISSION_V1, ExecutableAuthorityFactsV1, ExecutableBoundaryFactV1,
-    ExecutableProcessRuntimeV1, ExecutableValueV1, RuntimeAllocationEpochV1,
+    ExecutableProcessRuntimeV1, ExecutableSlotV1, ExecutableValueV1, RuntimeAllocationEpochV1,
     decode_executable_occurrence_v1, decode_executable_physical_plan_v1,
     decode_runtime_allocation_epoch_v1, encode_runtime_allocation_epoch_v1,
 };
@@ -393,7 +393,7 @@ pub fn run_wasm_process_request_v1(
     Ok(WasmProcessObservationV1 {
         observation: observation.id,
         state: observation.state,
-        exact_value_bytes: encode_values(&observation.value)?,
+        exact_value_bytes: encode_slots(&observation.value)?,
     })
 }
 
@@ -826,6 +826,21 @@ fn encode_values(values: &[ExecutableValueV1]) -> Result<Vec<u8>, WasmProcessSta
                         .map_err(|_| WasmProcessStatusV1::RequestOutOfBounds)?,
                 );
                 bytes.extend_from_slice(value.as_bytes());
+            }
+        }
+    }
+    Ok(bytes)
+}
+
+fn encode_slots(values: &[ExecutableSlotV1]) -> Result<Vec<u8>, WasmProcessStatusV1> {
+    let mut bytes = Vec::new();
+    put_count(&mut bytes, values.len())?;
+    for slot in values {
+        match slot {
+            ExecutableSlotV1::Absent(kind) => bytes.extend_from_slice(&[3, *kind as u8]),
+            ExecutableSlotV1::Present(value) => {
+                let encoded = encode_values(&[*value])?;
+                bytes.extend_from_slice(&encoded[2..]);
             }
         }
     }

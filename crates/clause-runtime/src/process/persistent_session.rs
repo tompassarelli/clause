@@ -14,8 +14,8 @@ use super::{
     ExecutableAuthorityFactsV1, ExecutableCandidateV1, ExecutableCarrierErrorV1,
     ExecutableEffectSettlementV1, ExecutableErrorV1, ExecutableInputSourceV1,
     ExecutablePhysicalPlanV1, ExecutableProcessRuntimeV1, ExecutableProjectedObservationV1,
-    ExecutableResumptionV1, ExecutableStateRevisionV1, ExecutableStepV1, ExecutableSuspensionV1,
-    ExecutableValueV1, RuntimeAllocationEpochV1, decode_executable_occurrence_v1,
+    ExecutableResumptionV1, ExecutableSlotV1, ExecutableStateRevisionV1, ExecutableStepV1,
+    ExecutableSuspensionV1, RuntimeAllocationEpochV1, decode_executable_occurrence_v1,
 };
 
 /// One native, long-lived execution binding for an exact package, Program
@@ -370,7 +370,7 @@ impl PersistentProcessSessionV1 {
         Ok(self.runtime()?.configuration_id())
     }
 
-    pub fn configuration(&self) -> Result<&[ExecutableValueV1], PersistentProcessSessionErrorV1> {
+    pub fn configuration(&self) -> Result<&[ExecutableSlotV1], PersistentProcessSessionErrorV1> {
         Ok(self.runtime()?.configuration())
     }
 

@@ -142,6 +142,64 @@ pub enum ExecutableValueKindV1 {
     Symbol = 2,
 }
 
+/// One fixed semantic state coordinate whose relation fact may be absent.
+/// Absence belongs to the configuration structure, never to the scalar value
+/// domain, so no domain value can be mistaken for a missing fact.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ExecutableSlotV1 {
+    Absent(ExecutableValueKindV1),
+    Present(ExecutableValueV1),
+}
+
+impl ExecutableSlotV1 {
+    #[must_use]
+    pub const fn kind(self) -> ExecutableValueKindV1 {
+        match self {
+            Self::Absent(kind) => kind,
+            Self::Present(value) => value.kind(),
+        }
+    }
+
+    #[must_use]
+    pub const fn value(self) -> Option<ExecutableValueV1> {
+        match self {
+            Self::Absent(_) => None,
+            Self::Present(value) => Some(value),
+        }
+    }
+
+    #[must_use]
+    pub fn as_number(self) -> Option<f64> {
+        self.value().and_then(ExecutableValueV1::as_number)
+    }
+
+    #[must_use]
+    pub const fn as_boolean(self) -> Option<bool> {
+        match self.value() {
+            Some(value) => value.as_boolean(),
+            None => None,
+        }
+    }
+}
+
+impl From<ExecutableValueV1> for ExecutableSlotV1 {
+    fn from(value: ExecutableValueV1) -> Self {
+        Self::Present(value)
+    }
+}
+
+impl PartialEq<ExecutableValueV1> for ExecutableSlotV1 {
+    fn eq(&self, other: &ExecutableValueV1) -> bool {
+        matches!(self, Self::Present(value) if value == other)
+    }
+}
+
+impl PartialEq<ExecutableSlotV1> for ExecutableValueV1 {
+    fn eq(&self, other: &ExecutableSlotV1) -> bool {
+        other == self
+    }
+}
+
 impl ExecutableValueV1 {
     #[must_use]
     pub const fn kind(self) -> ExecutableValueKindV1 {
@@ -285,9 +343,17 @@ impl ExecutableValueV1 {
 
 pub fn executable_configuration_term_v1(
     scope: clause_package::TermScope,
-    values: &[ExecutableValueV1],
+    values: &[ExecutableSlotV1],
 ) -> Result<Term, ExecutableErrorV1> {
-    executable_values_term(scope, CONFIGURATION_KIND, values)
+    let mut bytes = Vec::new();
+    encode_slots(&mut bytes, values)?;
+    Term::atom(
+        scope,
+        CONFIGURATION_KIND.to_vec(),
+        bytes,
+        EqualityContract::ExactOctetsV1,
+    )
+    .map_err(|_| ExecutableErrorV1::MalformedProgram)
 }
 
 pub fn executable_occurrence_term_v1(
@@ -338,17 +404,6 @@ pub fn decode_executable_occurrence_v1(
     Ok(occurrence)
 }
 
-fn executable_values_term(
-    scope: clause_package::TermScope,
-    kind: &[u8],
-    values: &[ExecutableValueV1],
-) -> Result<Term, ExecutableErrorV1> {
-    let mut bytes = Vec::new();
-    encode_values(&mut bytes, values)?;
-    Term::atom(scope, kind.to_vec(), bytes, EqualityContract::ExactOctetsV1)
-        .map_err(|_| ExecutableErrorV1::MalformedProgram)
-}
-
 #[derive(Clone, Debug, PartialEq)]
 pub enum ExecutableExpressionV1 {
     Constant(ExecutableValueV1),
@@ -370,7 +425,10 @@ pub enum ExecutableExpressionV1 {
 pub struct ExecutableRuleV1 {
     pub entry: u16,
     pub predicates: Vec<ExecutableExpressionV1>,
+    pub required_present: Vec<u16>,
+    pub required_absent: Vec<u16>,
     pub assignments: Vec<(u16, ExecutableExpressionV1)>,
+    pub removals: Vec<u16>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -425,14 +483,20 @@ pub fn lower_canonical_executable_program_v1(
     {
         return Err(ExecutableErrorV1::MalformedProgram);
     }
-    let mut ordered_states = state_cells.to_vec();
-    ordered_states.sort_by(|left, right| left.state.cmp(&right.state));
-    if ordered_states
-        .windows(2)
-        .any(|pair| pair[0].state == pair[1].state)
+    let mut seen_states = BTreeSet::new();
+    if state_cells
+        .iter()
+        .any(|cell| !seen_states.insert(cell.state.clone()))
     {
         return Err(ExecutableErrorV1::MalformedProgram);
     }
+    let mut ordered_states = state_cells.to_vec();
+    ordered_states.sort_by(|left, right| {
+        left.initial_value
+            .is_none()
+            .cmp(&right.initial_value.is_none())
+            .then_with(|| left.state.cmp(&right.state))
+    });
     let mut roles = projection_roles.to_vec();
     roles.sort();
     roles.dedup();
@@ -448,7 +512,9 @@ pub fn lower_canonical_executable_program_v1(
         if slots.insert(cell.state.clone(), slot).is_some() {
             return Err(ExecutableErrorV1::MalformedProgram);
         }
-        initial_configuration.push(lower_scalar_value(&cell.initial_value)?);
+        if let Some(value) = &cell.initial_value {
+            initial_configuration.push(lower_scalar_value(value)?);
+        }
         state_bindings.push(ExecutableCanonicalStateBindingV1 {
             state: cell.state.clone(),
             projection_role: role,
@@ -495,7 +561,37 @@ pub fn lower_canonical_executable_program_v1(
             rules.push(ExecutableRuleV1 {
                 entry,
                 predicates,
+                required_present: source_rule
+                    .required_present
+                    .iter()
+                    .map(|state| {
+                        slots
+                            .get(state)
+                            .copied()
+                            .ok_or(ExecutableErrorV1::MalformedProgram)
+                    })
+                    .collect::<Result<Vec<_>, _>>()?,
+                required_absent: source_rule
+                    .required_absent
+                    .iter()
+                    .map(|state| {
+                        slots
+                            .get(state)
+                            .copied()
+                            .ok_or(ExecutableErrorV1::MalformedProgram)
+                    })
+                    .collect::<Result<Vec<_>, _>>()?,
                 assignments,
+                removals: source_rule
+                    .removals
+                    .iter()
+                    .map(|state| {
+                        slots
+                            .get(state)
+                            .copied()
+                            .ok_or(ExecutableErrorV1::MalformedProgram)
+                    })
+                    .collect::<Result<Vec<_>, _>>()?,
             });
         }
     }
@@ -653,7 +749,7 @@ fn canonical_source_projection(
                 executable_projection_role_term_v1(
                     scope,
                     binding.projection_role,
-                    lower_scalar_value(&cells[0].initial_value)?.kind(),
+                    lower_scalar_value_kind(cells[0].value_kind),
                 )?
             } else {
                 let fields = cells
@@ -671,7 +767,7 @@ fn canonical_source_projection(
                             executable_projection_role_term_v1(
                                 scope,
                                 binding.projection_role,
-                                lower_scalar_value(&cell.initial_value)?.kind(),
+                                lower_scalar_value_kind(cell.value_kind),
                             )?,
                         ))
                     })
@@ -692,7 +788,7 @@ fn canonical_source_projection(
                 Ok(ExecutableProjectionBindingV1 {
                     role: binding.projection_role,
                     slot: binding.slot,
-                    value_kind: lower_scalar_value(&cell.initial_value)?.kind(),
+                    value_kind: lower_scalar_value_kind(cell.value_kind),
                 })
             })
             .collect::<Result<Vec<_>, ExecutableErrorV1>>()?,
@@ -742,10 +838,13 @@ pub fn lower_canonical_input_handler_v1(
     let rule = ExecutableRuleV1 {
         entry: binding.entry,
         predicates: vec![],
+        required_present: vec![],
+        required_absent: vec![],
         assignments: vec![
             (binding.x_slot, expression(source.result_x)),
             (binding.z_slot, expression(source.result_z)),
         ],
+        removals: vec![],
     };
     let insertion = program
         .rules
@@ -846,7 +945,10 @@ pub fn lower_canonical_jump_handler_v1(
                 ExecutableValueV1::Boolean(source.required_grounded),
             )),
         )],
+        required_present: vec![],
+        required_absent: vec![],
         assignments,
+        removals: vec![],
     };
     let insertion = program
         .rules
@@ -954,7 +1056,10 @@ pub fn lower_canonical_scalar_handler_v1(
     let rule = ExecutableRuleV1 {
         entry: binding.entry,
         predicates,
+        required_present: vec![],
+        required_absent: vec![],
         assignments: vec![(binding.state_slot, assignment)],
+        removals: vec![],
     };
     let insertion = program
         .rules
@@ -1054,6 +1159,16 @@ fn lower_scalar_value(
         CanonicalScalarValueV1::Number(bits) => Ok(ExecutableValueV1::Number(*bits)),
         CanonicalScalarValueV1::Boolean(value) => Ok(ExecutableValueV1::Boolean(*value)),
         CanonicalScalarValueV1::Symbol(value) => ExecutableValueV1::symbol(value),
+    }
+}
+
+const fn lower_scalar_value_kind(
+    kind: clause_package::CanonicalScalarValueKindV1,
+) -> ExecutableValueKindV1 {
+    match kind {
+        clause_package::CanonicalScalarValueKindV1::Number => ExecutableValueKindV1::Number,
+        clause_package::CanonicalScalarValueKindV1::Boolean => ExecutableValueKindV1::Boolean,
+        clause_package::CanonicalScalarValueKindV1::Symbol => ExecutableValueKindV1::Symbol,
     }
 }
 
@@ -1211,7 +1326,10 @@ pub fn lower_canonical_tick_program_v1(
         rules.push(ExecutableRuleV1 {
             entry: binding.entry,
             predicates,
+            required_present: vec![],
+            required_absent: vec![],
             assignments,
+            removals: vec![],
         });
     }
     let insertion = program
@@ -1535,10 +1653,20 @@ fn encode_program_body(
         for predicate in &rule.predicates {
             encode_expression(bytes, predicate)?;
         }
+        for slots in [&rule.required_present, &rule.required_absent] {
+            encode_count(bytes, slots.len())?;
+            for slot in slots {
+                bytes.extend_from_slice(&slot.to_le_bytes());
+            }
+        }
         encode_count(bytes, rule.assignments.len())?;
         for (slot, expression) in &rule.assignments {
             bytes.extend_from_slice(&slot.to_le_bytes());
             encode_expression(bytes, expression)?;
+        }
+        encode_count(bytes, rule.removals.len())?;
+        for slot in &rule.removals {
+            bytes.extend_from_slice(&slot.to_le_bytes());
         }
     }
     encode_projection(bytes, program.projection.as_ref())
@@ -1557,15 +1685,25 @@ fn decode_program_body(
         for _ in 0..predicate_count {
             predicates.push(decoder.expression(0)?);
         }
+        let decode_slots = |decoder: &mut Decoder<'_>| -> Result<Vec<u16>, ExecutableErrorV1> {
+            let count = decoder.count()?;
+            (0..count).map(|_| decoder.u16()).collect()
+        };
+        let required_present = decode_slots(decoder)?;
+        let required_absent = decode_slots(decoder)?;
         let assignment_count = decoder.count()?;
         let mut assignments = Vec::with_capacity(assignment_count);
         for _ in 0..assignment_count {
             assignments.push((decoder.u16()?, decoder.expression(0)?));
         }
+        let removals = decode_slots(decoder)?;
         rules.push(ExecutableRuleV1 {
             entry,
             predicates,
+            required_present,
+            required_absent,
             assignments,
+            removals,
         });
     }
     Ok(ExecutableProgramV1 {
@@ -1596,7 +1734,7 @@ pub struct ExecutableCandidateV1 {
     pub id: CandidateDeltaId,
     pub base: StateRevisionId,
     pub produced_by: StepId,
-    pub configuration: Vec<ExecutableValueV1>,
+    pub configuration: Vec<ExecutableSlotV1>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1651,14 +1789,14 @@ pub struct ExecutableStateRevisionV1 {
     pub id: StateRevisionId,
     pub predecessor: StateRevisionId,
     pub admission: AdmissionOccurrenceId,
-    pub configuration: Vec<ExecutableValueV1>,
+    pub configuration: Vec<ExecutableSlotV1>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ExecutableObservationV1 {
     pub id: ObservationId,
     pub state: StateRevisionId,
-    pub value: Vec<ExecutableValueV1>,
+    pub value: Vec<ExecutableSlotV1>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -2108,7 +2246,7 @@ pub struct ExecutableProcessRuntimeV1 {
     run: RunId,
     activation: clause_package::ActivationId,
     configuration_id: ConfigurationId,
-    configuration: Vec<ExecutableValueV1>,
+    configuration: Vec<ExecutableSlotV1>,
     input: Option<ExecutableInputPlanV1>,
     program: ExecutableProgramV1,
     physical_plan: ExecutablePhysicalPlanIdV1,
@@ -2211,6 +2349,7 @@ impl ExecutableProcessRuntimeV1 {
         let physical_mode = physical_plan.plan.mode;
         let input = physical_plan.plan.input;
         let program = physical_plan.plan.program;
+        let configuration = materialize_initial_configuration(&program)?;
         Ok(Self {
             carrier,
             package,
@@ -2218,7 +2357,7 @@ impl ExecutableProcessRuntimeV1 {
             run,
             activation,
             configuration_id,
-            configuration: program.initial_configuration.clone(),
+            configuration,
             input,
             program,
             physical_plan: physical_plan.id,
@@ -3603,7 +3742,7 @@ impl ExecutableProcessRuntimeV1 {
         occurrence: ExecutableOccurrenceV1,
         step_ordinal: u64,
         configuration_ordinal: u64,
-    ) -> Result<(Vec<ExecutableValueV1>, ExecutableStepV1), ExecutableErrorV1> {
+    ) -> Result<(Vec<ExecutableSlotV1>, ExecutableStepV1), ExecutableErrorV1> {
         let mut selected = None;
         for rule in self
             .program
@@ -3611,6 +3750,18 @@ impl ExecutableProcessRuntimeV1 {
             .iter()
             .filter(|rule| rule.entry == occurrence.entry)
         {
+            let structural_match = rule.required_present.iter().all(|slot| {
+                self.configuration
+                    .get(usize::from(*slot))
+                    .is_some_and(|slot| slot.value().is_some())
+            }) && rule.required_absent.iter().all(|slot| {
+                self.configuration
+                    .get(usize::from(*slot))
+                    .is_some_and(|slot| slot.value().is_none())
+            });
+            if !structural_match {
+                continue;
+            }
             let matches = rule
                 .predicates
                 .iter()
@@ -3632,7 +3783,13 @@ impl ExecutableProcessRuntimeV1 {
                 let target = next
                     .get_mut(usize::from(*slot))
                     .ok_or(ExecutableErrorV1::UnknownSlot(*slot))?;
-                *target = value;
+                *target = value.into();
+            }
+            for slot in &rule.removals {
+                let target = next
+                    .get_mut(usize::from(*slot))
+                    .ok_or(ExecutableErrorV1::UnknownSlot(*slot))?;
+                *target = ExecutableSlotV1::Absent(target.kind());
             }
         }
         let before = self.configuration_id;
@@ -3664,8 +3821,8 @@ impl ExecutableProcessRuntimeV1 {
         &self,
         checker_mode: ModeId,
         mut facts: ExecutableAuthorityFactsV1,
-        before: &[ExecutableValueV1],
-        subject: &[ExecutableValueV1],
+        before: &[ExecutableSlotV1],
+        subject: &[ExecutableSlotV1],
         origin: CheckerOriginV1,
         support: SupportSource,
         ordinal: u64,
@@ -4225,7 +4382,7 @@ impl ExecutableProcessRuntimeV1 {
             universe: self.carrier.carrier().constitution().universe(),
             semantics: self.carrier.carrier().constitution().semantics(),
         };
-        let value = executable_values_term(scope, CONFIGURATION_KIND, &observation.value)
+        let value = executable_configuration_term_v1(scope, &observation.value)
             .map_err(ExecutableCarrierErrorV1::Executable)?;
         let state_role = Term::atom(
             scope,
@@ -4423,7 +4580,7 @@ impl ExecutableProcessRuntimeV1 {
     }
 
     #[must_use]
-    pub fn configuration(&self) -> &[ExecutableValueV1] {
+    pub fn configuration(&self) -> &[ExecutableSlotV1] {
         &self.configuration
     }
 
@@ -4479,6 +4636,7 @@ pub enum ExecutableErrorV1 {
     CarrierRejected,
     ResourceLimit,
     UnknownSlot(u16),
+    MissingState,
     UnknownArgument(u16),
     TypeMismatch,
     NumericDomain,
@@ -4662,25 +4820,50 @@ fn activation_pins_v1(
 }
 
 fn validate_program(program: &ExecutableProgramV1) -> Result<(), ExecutableErrorV1> {
-    if program.initial_configuration.len() > MAX_PROGRAM_ITEMS
-        || program.rules.len() > MAX_PROGRAM_ITEMS
-    {
+    let initial_configuration = materialize_initial_configuration(program)?;
+    if initial_configuration.len() > MAX_PROGRAM_ITEMS || program.rules.len() > MAX_PROGRAM_ITEMS {
         return Err(ExecutableErrorV1::ResourceLimit);
     }
     for rule in &program.rules {
-        if rule.predicates.len() > MAX_PROGRAM_ITEMS || rule.assignments.len() > MAX_PROGRAM_ITEMS {
+        if [
+            rule.predicates.len(),
+            rule.required_present.len(),
+            rule.required_absent.len(),
+            rule.assignments.len(),
+            rule.removals.len(),
+        ]
+        .into_iter()
+        .any(|count| count > MAX_PROGRAM_ITEMS)
+        {
             return Err(ExecutableErrorV1::ResourceLimit);
         }
-        let mut slots = rule
+        let assignment_slots = rule
             .assignments
             .iter()
             .map(|(slot, _)| *slot)
             .collect::<Vec<_>>();
-        slots.sort_unstable();
-        if slots.windows(2).any(|pair| pair[0] == pair[1])
-            || slots
+        for mut slots in [
+            rule.required_present.clone(),
+            rule.required_absent.clone(),
+            assignment_slots.clone(),
+            rule.removals.clone(),
+        ] {
+            slots.sort_unstable();
+            if slots.windows(2).any(|pair| pair[0] == pair[1])
+                || slots
+                    .iter()
+                    .any(|slot| usize::from(*slot) >= initial_configuration.len())
+            {
+                return Err(ExecutableErrorV1::MalformedProgram);
+            }
+        }
+        if rule
+            .required_present
+            .iter()
+            .any(|slot| rule.required_absent.contains(slot))
+            || assignment_slots
                 .iter()
-                .any(|slot| usize::from(*slot) >= program.initial_configuration.len())
+                .any(|slot| rule.removals.contains(slot))
         {
             return Err(ExecutableErrorV1::MalformedProgram);
         }
@@ -4693,11 +4876,10 @@ fn validate_program(program: &ExecutableProgramV1) -> Result<(), ExecutableError
         let mut slots = BTreeSet::new();
         let mut binding_map = BTreeMap::new();
         for binding in &projection.bindings {
-            let value = program
-                .initial_configuration
+            let slot = initial_configuration
                 .get(usize::from(binding.slot))
                 .ok_or(ExecutableErrorV1::MalformedProgram)?;
-            if value.kind() != binding.value_kind
+            if slot.kind() != binding.value_kind
                 || !roles.insert(binding.role)
                 || !slots.insert(binding.slot)
             {
@@ -4712,6 +4894,49 @@ fn validate_program(program: &ExecutableProgramV1) -> Result<(), ExecutableError
         }
     }
     Ok(())
+}
+
+fn materialize_initial_configuration(
+    program: &ExecutableProgramV1,
+) -> Result<Vec<ExecutableSlotV1>, ExecutableErrorV1> {
+    let mut configuration = program
+        .initial_configuration
+        .iter()
+        .copied()
+        .map(ExecutableSlotV1::Present)
+        .collect::<Vec<_>>();
+    let Some(projection) = &program.projection else {
+        return Ok(configuration);
+    };
+    let present = configuration.len();
+    let mut absent = BTreeMap::new();
+    for binding in projection
+        .bindings
+        .iter()
+        .filter(|binding| usize::from(binding.slot) >= present)
+    {
+        if absent.insert(binding.slot, binding.value_kind).is_some() {
+            return Err(ExecutableErrorV1::MalformedProgram);
+        }
+    }
+    let Some(last) = absent.keys().next_back().copied() else {
+        return Ok(configuration);
+    };
+    let total = usize::from(last)
+        .checked_add(1)
+        .ok_or(ExecutableErrorV1::ResourceLimit)?;
+    if total > MAX_PROGRAM_ITEMS {
+        return Err(ExecutableErrorV1::ResourceLimit);
+    }
+    for index in present..total {
+        let slot = u16::try_from(index).map_err(|_| ExecutableErrorV1::ResourceLimit)?;
+        let kind = absent
+            .get(&slot)
+            .copied()
+            .ok_or(ExecutableErrorV1::MalformedProgram)?;
+        configuration.push(ExecutableSlotV1::Absent(kind));
+    }
+    Ok(configuration)
 }
 
 fn validate_input_plan_shape(
@@ -4830,7 +5055,7 @@ fn projected_value_term(
 fn realize_projection_term(
     template: &Term,
     bindings: &BTreeMap<LocalRoleRefV2, ExecutableProjectionBindingV1>,
-    configuration: &[ExecutableValueV1],
+    configuration: &[ExecutableSlotV1],
 ) -> Result<Term, ExecutableErrorV1> {
     if let Some(atom) = template.as_atom() {
         let Some((role, kind)) = projection_role(atom)? else {
@@ -4839,10 +5064,11 @@ fn realize_projection_term(
         let binding = bindings
             .get(&role)
             .ok_or(ExecutableErrorV1::MalformedProgram)?;
-        let value = configuration
+        let slot = configuration
             .get(usize::from(binding.slot))
             .copied()
             .ok_or(ExecutableErrorV1::UnknownSlot(binding.slot))?;
+        let value = slot.value().ok_or(ExecutableErrorV1::MissingState)?;
         if binding.value_kind != kind || value.kind() != kind {
             return Err(ExecutableErrorV1::TypeMismatch);
         }
@@ -4852,6 +5078,14 @@ fn realize_projection_term(
         .as_triple()
         .ok_or(ExecutableErrorV1::MalformedProgram)?;
     let [left, operator, right] = triple.slots();
+    if left
+        .as_atom()
+        .is_some_and(|atom| atom.kind() == b"clause/js-field-v1")
+        && projection_subtree_has_role(operator)?
+        && !projection_subtree_has_present_role(operator, bindings, configuration)?
+    {
+        return realize_projection_term(right, bindings, configuration);
+    }
     Term::triple([
         realize_projection_term(left, bindings, configuration)?,
         realize_projection_term(operator, bindings, configuration)?,
@@ -4860,9 +5094,51 @@ fn realize_projection_term(
     .map_err(|_| ExecutableErrorV1::MalformedProgram)
 }
 
+fn projection_subtree_has_role(term: &Term) -> Result<bool, ExecutableErrorV1> {
+    if let Some(atom) = term.as_atom() {
+        return Ok(projection_role(atom)?.is_some());
+    }
+    let triple = term
+        .as_triple()
+        .ok_or(ExecutableErrorV1::MalformedProgram)?;
+    for child in triple.slots() {
+        if projection_subtree_has_role(child)? {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+fn projection_subtree_has_present_role(
+    term: &Term,
+    bindings: &BTreeMap<LocalRoleRefV2, ExecutableProjectionBindingV1>,
+    configuration: &[ExecutableSlotV1],
+) -> Result<bool, ExecutableErrorV1> {
+    if let Some(atom) = term.as_atom() {
+        let Some((role, _)) = projection_role(atom)? else {
+            return Ok(false);
+        };
+        let binding = bindings
+            .get(&role)
+            .ok_or(ExecutableErrorV1::MalformedProgram)?;
+        return Ok(configuration
+            .get(usize::from(binding.slot))
+            .is_some_and(|slot| slot.value().is_some()));
+    }
+    let triple = term
+        .as_triple()
+        .ok_or(ExecutableErrorV1::MalformedProgram)?;
+    for child in triple.slots() {
+        if projection_subtree_has_present_role(child, bindings, configuration)? {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
 fn evaluate(
     expression: &ExecutableExpressionV1,
-    slots: &[ExecutableValueV1],
+    slots: &[ExecutableSlotV1],
     arguments: &[ExecutableValueV1],
 ) -> Result<ExecutableValueV1, ExecutableErrorV1> {
     use ExecutableExpressionV1 as E;
@@ -4871,7 +5147,9 @@ fn evaluate(
         E::Slot(slot) => slots
             .get(usize::from(*slot))
             .copied()
-            .ok_or(ExecutableErrorV1::UnknownSlot(*slot)),
+            .ok_or(ExecutableErrorV1::UnknownSlot(*slot))?
+            .value()
+            .ok_or(ExecutableErrorV1::MissingState),
         E::Argument(argument) => arguments
             .get(usize::from(*argument))
             .copied()
@@ -4914,7 +5192,7 @@ fn evaluate(
 fn numeric2(
     left: &ExecutableExpressionV1,
     right: &ExecutableExpressionV1,
-    slots: &[ExecutableValueV1],
+    slots: &[ExecutableSlotV1],
     arguments: &[ExecutableValueV1],
     operation: impl FnOnce(f64, f64) -> f64,
 ) -> Result<ExecutableValueV1, ExecutableErrorV1> {
@@ -4926,7 +5204,7 @@ fn numeric2(
 fn compare(
     left: &ExecutableExpressionV1,
     right: &ExecutableExpressionV1,
-    slots: &[ExecutableValueV1],
+    slots: &[ExecutableSlotV1],
     arguments: &[ExecutableValueV1],
     operation: impl FnOnce(f64, f64) -> bool,
 ) -> Result<ExecutableValueV1, ExecutableErrorV1> {
@@ -5002,6 +5280,22 @@ fn encode_values(
     encode_count(bytes, values.len())?;
     for value in values {
         encode_value(bytes, *value);
+    }
+    Ok(())
+}
+
+fn encode_slots(bytes: &mut Vec<u8>, slots: &[ExecutableSlotV1]) -> Result<(), ExecutableErrorV1> {
+    encode_count(bytes, slots.len())?;
+    for slot in slots {
+        match slot {
+            ExecutableSlotV1::Absent(kind) => {
+                bytes.extend_from_slice(&[0, *kind as u8]);
+            }
+            ExecutableSlotV1::Present(value) => {
+                bytes.push(1);
+                encode_value(bytes, *value);
+            }
+        }
     }
     Ok(())
 }

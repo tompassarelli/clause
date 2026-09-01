@@ -209,6 +209,8 @@ fn physical_plan(
             rules: vec![ExecutableRuleV1 {
                 entry: 0,
                 predicates: vec![],
+                required_present: vec![],
+                required_absent: vec![],
                 assignments: vec![(
                     0,
                     ExecutableExpressionV1::Add(
@@ -216,6 +218,7 @@ fn physical_plan(
                         Box::new(ExecutableExpressionV1::Argument(0)),
                     ),
                 )],
+                removals: vec![],
             }],
             projection: None,
         },
