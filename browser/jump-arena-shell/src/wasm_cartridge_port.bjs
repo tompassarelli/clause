@@ -18,7 +18,7 @@
   (def cse1-projected-term-json-max-source-units Int
     (inc (* 4 cse1-max-bytes))))
 (def session-command-max-bytes Int (* 1024 1024))
-(def session-command-limit Int 4096)
+(def session-command-limit Int 1000000)
 (def identity-bytes Int 32)
 (def allocation-epoch-bytes Int 304)
 
