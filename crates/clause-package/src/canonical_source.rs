@@ -372,6 +372,7 @@ pub enum CanonicalScalarExpressionV1 {
     Subtract(Box<Self>, Box<Self>),
     Multiply(Box<Self>, Box<Self>),
     Divide(Box<Self>, Box<Self>),
+    Clamp(Box<Self>, Box<Self>, Box<Self>),
 }
 
 /// One construct-blind predicate over the scalar cell and source-bound
@@ -818,10 +819,18 @@ struct GeneralHandlerCst {
     designation: Vec<u8>,
     subject: Vec<u8>,
     parameter_sources: Vec<ScalarParameterSourceCst>,
+    scalar_bindings: Vec<ScalarLawBindingCst>,
     predicates: Vec<CanonicalScalarPredicateV1>,
     boolean_conditions: Vec<BooleanRelationUseCst>,
     assignments: Vec<GeneralAssignmentCst>,
     includes: Vec<HandlerIncludeCst>,
+}
+
+#[derive(Clone, Debug)]
+struct ScalarLawBindingCst {
+    origin: CanonicalSourceOriginV1,
+    parameter: Vec<u8>,
+    value: CanonicalScalarExpressionV1,
 }
 
 #[derive(Clone, Debug)]
@@ -2274,7 +2283,140 @@ fn canonical_scalar_executable_expression(
             let (left, right) = pair(left, right)?;
             CanonicalExecutableExpressionV1::Divide(left, right)
         }
+        CanonicalScalarExpressionV1::Clamp(value, lower, upper) => {
+            CanonicalExecutableExpressionV1::Clamp(
+                Box::new(canonical_scalar_executable_expression(
+                    value, current, parameters, origin,
+                )?),
+                Box::new(canonical_scalar_executable_expression(
+                    lower, current, parameters, origin,
+                )?),
+                Box::new(canonical_scalar_executable_expression(
+                    upper, current, parameters, origin,
+                )?),
+            )
+        }
     })
+}
+
+fn expand_scalar_law_bindings(
+    expression: &CanonicalScalarExpressionV1,
+    bindings: &BTreeMap<Vec<u8>, CanonicalScalarExpressionV1>,
+    expanding: &mut BTreeSet<Vec<u8>>,
+    origin: CanonicalSourceOriginV1,
+) -> Result<CanonicalScalarExpressionV1, CanonicalSourceErrorV1> {
+    let pair = |left: &CanonicalScalarExpressionV1,
+                right: &CanonicalScalarExpressionV1,
+                expanding: &mut BTreeSet<Vec<u8>>|
+     -> Result<_, CanonicalSourceErrorV1> {
+        Ok((
+            Box::new(expand_scalar_law_bindings(
+                left, bindings, expanding, origin,
+            )?),
+            Box::new(expand_scalar_law_bindings(
+                right, bindings, expanding, origin,
+            )?),
+        ))
+    };
+    Ok(match expression {
+        CanonicalScalarExpressionV1::Parameter(parameter) if bindings.contains_key(parameter) => {
+            if !expanding.insert(parameter.clone()) {
+                return Err(CanonicalSourceErrorV1::AmbiguousExecutableBinding { origin });
+            }
+            let expanded = expand_scalar_law_bindings(
+                bindings.get(parameter).expect("checked scalar binding"),
+                bindings,
+                expanding,
+                origin,
+            )?;
+            expanding.remove(parameter);
+            expanded
+        }
+        CanonicalScalarExpressionV1::Add(left, right) => {
+            let (left, right) = pair(left, right, expanding)?;
+            CanonicalScalarExpressionV1::Add(left, right)
+        }
+        CanonicalScalarExpressionV1::Subtract(left, right) => {
+            let (left, right) = pair(left, right, expanding)?;
+            CanonicalScalarExpressionV1::Subtract(left, right)
+        }
+        CanonicalScalarExpressionV1::Multiply(left, right) => {
+            let (left, right) = pair(left, right, expanding)?;
+            CanonicalScalarExpressionV1::Multiply(left, right)
+        }
+        CanonicalScalarExpressionV1::Divide(left, right) => {
+            let (left, right) = pair(left, right, expanding)?;
+            CanonicalScalarExpressionV1::Divide(left, right)
+        }
+        CanonicalScalarExpressionV1::Clamp(value, lower, upper) => {
+            CanonicalScalarExpressionV1::Clamp(
+                Box::new(expand_scalar_law_bindings(
+                    value, bindings, expanding, origin,
+                )?),
+                Box::new(expand_scalar_law_bindings(
+                    lower, bindings, expanding, origin,
+                )?),
+                Box::new(expand_scalar_law_bindings(
+                    upper, bindings, expanding, origin,
+                )?),
+            )
+        }
+        expression => expression.clone(),
+    })
+}
+
+fn canonical_general_executable_expression(
+    expression: &CanonicalScalarExpressionV1,
+    current: &CanonicalStateRefV1,
+    parameters: &BTreeMap<Vec<u8>, CanonicalStateRefV1>,
+    bindings: &BTreeMap<Vec<u8>, CanonicalScalarExpressionV1>,
+    origin: CanonicalSourceOriginV1,
+) -> Result<CanonicalExecutableExpressionV1, CanonicalSourceErrorV1> {
+    let expression =
+        expand_scalar_law_bindings(expression, bindings, &mut BTreeSet::new(), origin)?;
+    canonical_scalar_executable_expression(&expression, current, parameters, origin)
+}
+
+fn canonical_general_executable_predicates(
+    predicates: &[CanonicalScalarPredicateV1],
+    current: &CanonicalStateRefV1,
+    parameters: &BTreeMap<Vec<u8>, CanonicalStateRefV1>,
+    bindings: &BTreeMap<Vec<u8>, CanonicalScalarExpressionV1>,
+    origin: CanonicalSourceOriginV1,
+) -> Result<Vec<CanonicalExecutablePredicateV1>, CanonicalSourceErrorV1> {
+    predicates
+        .iter()
+        .map(|predicate| {
+            let (left, right, constructor) = match predicate {
+                CanonicalScalarPredicateV1::Equal(left, right) => (
+                    left,
+                    right,
+                    CanonicalExecutablePredicateV1::Equal
+                        as fn(_, _) -> CanonicalExecutablePredicateV1,
+                ),
+                CanonicalScalarPredicateV1::GreaterThan(left, right) => (
+                    left,
+                    right,
+                    CanonicalExecutablePredicateV1::GreaterThan
+                        as fn(_, _) -> CanonicalExecutablePredicateV1,
+                ),
+                CanonicalScalarPredicateV1::LessThanOrEqual(left, right) => (
+                    left,
+                    right,
+                    CanonicalExecutablePredicateV1::LessThanOrEqual
+                        as fn(_, _) -> CanonicalExecutablePredicateV1,
+                ),
+            };
+            Ok(constructor(
+                canonical_general_executable_expression(
+                    left, current, parameters, bindings, origin,
+                )?,
+                canonical_general_executable_expression(
+                    right, current, parameters, bindings, origin,
+                )?,
+            ))
+        })
+        .collect()
 }
 
 fn canonical_scalar_executable_predicates(
@@ -2693,6 +2835,14 @@ fn checked_executable_handlers(
     }) {
         let (parameters, mut entities) =
             resolve_parameter_states(cst, plan, &source.parameter_sources, source.origin)?;
+        let scalar_bindings = source
+            .scalar_bindings
+            .iter()
+            .map(|binding| (binding.parameter.clone(), binding.value.clone()))
+            .collect::<BTreeMap<_, _>>();
+        if let Some(binding) = source.scalar_bindings.first() {
+            validate_clamp_derivation(cst, binding.origin)?;
+        }
         let current = source
             .assignments
             .first()
@@ -2703,10 +2853,20 @@ fn checked_executable_handlers(
             .clone();
         let current = general_parameter_state_ref(cst, plan, &current, source.origin)?;
         entities.insert(source.subject.clone(), current.subject.clone());
-        let mut predicates = canonical_scalar_executable_predicates(
+        for binding in &source.scalar_bindings {
+            canonical_general_executable_expression(
+                &binding.value,
+                &current,
+                &parameters,
+                &scalar_bindings,
+                binding.origin,
+            )?;
+        }
+        let mut predicates = canonical_general_executable_predicates(
             &source.predicates,
             &current,
             &parameters,
+            &scalar_bindings,
             source.origin,
         )?;
         predicates.extend(
@@ -2734,10 +2894,11 @@ fn checked_executable_handlers(
                         &assignment.target,
                         source.origin,
                     )?,
-                    value: canonical_scalar_executable_expression(
+                    value: canonical_general_executable_expression(
                         &assignment.value,
                         &current,
                         &parameters,
+                        &scalar_bindings,
                         source.origin,
                     )?,
                 })
@@ -4482,6 +4643,7 @@ fn parse_general_handler(
     }
 
     let mut parameter_sources = BTreeMap::<Vec<u8>, ScalarParameterSourceCst>::new();
+    let mut scalar_bindings = BTreeMap::<Vec<u8>, ScalarLawBindingCst>::new();
     let mut predicates = Vec::new();
     let mut boolean_conditions = Vec::new();
     for (condition, condition_origin) in &when {
@@ -4493,13 +4655,24 @@ fn parse_general_handler(
             boolean_conditions.push(condition);
             continue;
         }
+        if let Some(binding) = parse_scalar_law_binding(condition, *condition_origin) {
+            if parameter_sources.contains_key(&binding.parameter)
+                || scalar_bindings
+                    .insert(binding.parameter.clone(), binding)
+                    .is_some()
+            {
+                return Ok(None);
+            }
+            continue;
+        }
         let Some(sources) = parse_general_state_declaration(condition, subject) else {
             return Ok(None);
         };
         for source in sources {
-            if parameter_sources
-                .insert(source.parameter.clone(), source)
-                .is_some()
+            if scalar_bindings.contains_key(&source.parameter)
+                || parameter_sources
+                    .insert(source.parameter.clone(), source)
+                    .is_some()
             {
                 return Ok(None);
             }
@@ -4538,10 +4711,12 @@ fn parse_general_handler(
     for assignment in &assignments {
         collect_scalar_expression_parameters(&assignment.value, &mut used_parameters);
     }
-    if used_parameters
-        .iter()
-        .any(|parameter| !parameter_sources.contains_key(parameter))
-    {
+    for binding in scalar_bindings.values() {
+        collect_scalar_expression_parameters(&binding.value, &mut used_parameters);
+    }
+    if used_parameters.iter().any(|parameter| {
+        !parameter_sources.contains_key(parameter) && !scalar_bindings.contains_key(parameter)
+    }) {
         return Err(CanonicalSourceErrorV1::InvalidGeneralHandler { origin });
     }
 
@@ -4554,11 +4729,33 @@ fn parse_general_handler(
         designation: designation.as_bytes().to_vec(),
         subject: subject.as_bytes().to_vec(),
         parameter_sources: parameter_sources.into_values().collect(),
+        scalar_bindings: scalar_bindings.into_values().collect(),
         predicates,
         boolean_conditions,
         assignments,
         includes,
     }))
+}
+
+fn parse_scalar_law_binding(
+    source: &str,
+    origin: CanonicalSourceOriginV1,
+) -> Option<ScalarLawBindingCst> {
+    let (value, rest) = source.split_once(" clamped between ")?;
+    let (lower, rest) = rest.split_once(" and ")?;
+    let (upper, parameter) = rest.split_once(" as ")?;
+    if !parameter.starts_with('?') || parameter.split_whitespace().count() != 1 {
+        return None;
+    }
+    Some(ScalarLawBindingCst {
+        origin,
+        parameter: parameter.as_bytes().to_vec(),
+        value: CanonicalScalarExpressionV1::Clamp(
+            Box::new(parse_scalar_expression(value, "")?),
+            Box::new(parse_scalar_expression(lower, "")?),
+            Box::new(parse_scalar_expression(upper, "")?),
+        ),
+    })
 }
 
 fn parse_general_state_declaration(
@@ -4851,6 +5048,11 @@ fn collect_scalar_expression_parameters(
             collect_scalar_expression_parameters(left, parameters);
             collect_scalar_expression_parameters(right, parameters);
         }
+        CanonicalScalarExpressionV1::Clamp(value, lower, upper) => {
+            collect_scalar_expression_parameters(value, parameters);
+            collect_scalar_expression_parameters(lower, parameters);
+            collect_scalar_expression_parameters(upper, parameters);
+        }
         CanonicalScalarExpressionV1::Current
         | CanonicalScalarExpressionV1::Number(_)
         | CanonicalScalarExpressionV1::Boolean(_)
@@ -5065,6 +5267,46 @@ fn parse_clamp_derive(head: &str, origin: CanonicalSourceOriginV1) -> Option<Cla
         designation: designation.to_vec(),
         branch,
     })
+}
+
+fn validate_clamp_derivation(
+    cst: &CanonicalSourceCstV1,
+    origin: CanonicalSourceOriginV1,
+) -> Result<(), CanonicalSourceErrorV1> {
+    let mut laws = cst
+        .items
+        .iter()
+        .filter_map(|item| match &item.kind {
+            CstKind::ClampLaw(law) => Some(law),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let mut derives = cst
+        .items
+        .iter()
+        .filter_map(|item| match &item.kind {
+            CstKind::ClampDerive(derive) => Some(derive),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    laws.sort_by_key(|law| law.branch);
+    derives.sort_by_key(|derive| derive.branch);
+    if laws.iter().map(|law| law.branch).ne([
+        ClampBranchV1::Lower,
+        ClampBranchV1::Interior,
+        ClampBranchV1::Upper,
+    ]) || derives.iter().map(|derive| derive.branch).ne([
+        ClampBranchV1::Lower,
+        ClampBranchV1::Interior,
+        ClampBranchV1::Upper,
+    ]) || laws
+        .iter()
+        .map(|law| law.designation.as_slice())
+        .ne(derives.iter().map(|derive| derive.designation.as_slice()))
+    {
+        return Err(CanonicalSourceErrorV1::MissingExecutableBinding { origin });
+    }
+    Ok(())
 }
 
 fn parse_tick_handler(
@@ -6249,6 +6491,12 @@ fn scalar_expression_matches_value(
             matches!(initial, CanonicalScalarValueV1::Number(_))
                 && scalar_expression_matches_value(left, initial)
                 && scalar_expression_matches_value(right, initial)
+        }
+        CanonicalScalarExpressionV1::Clamp(value, lower, upper) => {
+            matches!(initial, CanonicalScalarValueV1::Number(_))
+                && scalar_expression_matches_value(value, initial)
+                && scalar_expression_matches_value(lower, initial)
+                && scalar_expression_matches_value(upper, initial)
         }
     }
 }

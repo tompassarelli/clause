@@ -152,6 +152,128 @@ on admitted-hit ?defender
     ?defender vitality ?vitality - ?damage
     ?defender destabilization ?destabilization + ?gain
 "#;
+const SCALAR_LAW_BOUND_HIT: &str = r#"referent F64
+referent Actor
+referent Move
+referent CombatRules
+
+relation clamped-between
+  reads {value: F64} clamped between {lower: F64} and {upper: F64} as {result: F64}
+  mode given value lower upper yields result: maybe
+
+relation vitality
+  reads {actor: Actor} vitality {value: F64}
+  subject actor
+  mode given actor yields value: one
+
+relation destabilization
+  reads {actor: Actor} destabilization {value: F64}
+  subject actor
+  mode given actor yields value: one
+
+relation mass
+  reads {actor: Actor} mass {value: F64}
+  subject actor
+  mode given actor yields value: one
+
+relation launch-velocity
+  reads {actor: Actor} launch velocity {value: F64}
+  subject actor
+  mode given actor yields value: one
+
+relation damage
+  reads {move: Move} damage {value: F64}
+  subject move
+  mode given move yields value: one
+
+relation destabilization-gain
+  reads {move: Move} destabilization gain {value: F64}
+  subject move
+  mode given move yields value: one
+
+relation base-impulse
+  reads {move: Move} base impulse {value: F64}
+  subject move
+  mode given move yields value: one
+
+relation launch-growth
+  reads {move: Move} launch growth {value: F64}
+  subject move
+  mode given move yields value: one
+
+relation destabilization-threshold
+  reads {rules: CombatRules} destabilization threshold {value: F64}
+  subject rules
+  mode given rules yields value: one
+
+law clamp-lower
+  if
+    ?lower <= ?upper
+    ?value < ?lower
+  then
+    ?value clamped between ?lower and ?upper as ?lower
+
+law clamp-interior
+  if
+    ?lower <= ?value
+    ?value <= ?upper
+  then
+    ?value clamped between ?lower and ?upper as ?value
+
+law clamp-upper
+  if
+    ?lower <= ?upper
+    ?value > ?upper
+  then
+    ?value clamped between ?lower and ?upper as ?upper
+
+derive clamp-lower
+derive clamp-interior
+derive clamp-upper
+
+magitek-boar ∈ Actor
+blade-two ∈ Move
+combat-rules ∈ CombatRules
+
+magitek-boar vitality 100.0
+magitek-boar destabilization 100.0
+magitek-boar mass 1.25
+magitek-boar launch velocity 0.0
+blade-two damage 14.0
+blade-two destabilization gain 35.0
+blade-two base impulse 5.0
+blade-two launch growth 8.0
+combat-rules destabilization threshold 100.0
+
+on probe ?defender
+  when
+    ?defender vitality ?vitality
+  withdraw
+    ?defender vitality ?vitality
+  include
+    ?defender vitality ?vitality + 0.0
+
+on blade-two-hit ?defender
+  when
+    ?defender vitality ?vitality
+    ?defender destabilization ?destabilization
+    ?defender mass ?mass
+    ?defender launch velocity ?launch
+    blade-two damage ?damage
+    blade-two destabilization gain ?gain
+    blade-two base impulse ?impulse
+    blade-two launch growth ?growth
+    combat-rules destabilization threshold ?threshold
+    (?destabilization + ?gain) clamped between 0.0 and ?threshold as ?next-destabilization
+  withdraw
+    ?defender vitality ?vitality
+    ?defender destabilization ?destabilization
+    ?defender launch velocity ?launch
+  include
+    ?defender vitality ?vitality - ?damage
+    ?defender destabilization ?next-destabilization
+    ?defender launch velocity (?impulse + ?growth * ?next-destabilization / ?threshold) / ?mass
+"#;
 
 fn coherent_source(objective: &[u8]) -> Vec<u8> {
     let mut source = Vec::with_capacity(
@@ -315,6 +437,16 @@ fn boar_combat_state(exact_term_bytes: &[u8]) -> (f64, f64) {
     (
         projected_number(projected_object_field(boar, b"vitality")),
         projected_number(projected_object_field(boar, b"destabilization")),
+    )
+}
+
+fn boar_blade_two_state(exact_term_bytes: &[u8]) -> (f64, f64, f64) {
+    let term = decode_canonical_term_bytes(exact_term_bytes).expect("projection term decodes");
+    let boar = projected_object_field(&term, b"magitek-boar");
+    (
+        projected_number(projected_object_field(boar, b"vitality")),
+        projected_number(projected_object_field(boar, b"destabilization")),
+        projected_number(projected_object_field(boar, b"launch-velocity")),
     )
 }
 
@@ -690,6 +822,49 @@ fn actor_neutral_hit_updates_two_state_cells_in_one_admitted_candidate() {
     assert_eq!(
         boar_combat_state(&admitted.projection.exact_term_bytes),
         (92.0, 25.0)
+    );
+}
+
+#[test]
+fn scalar_law_result_feeds_one_atomic_multi_state_candidate() {
+    let mut workbench = ResidentSourceWorkbenchV1::open(SCALAR_LAW_BOUND_HIT.as_bytes())
+        .expect("the scalar-law combat source opens");
+    let probe = workbench
+        .handler_occurrence(b"probe", &[])
+        .expect("the no-op probe has one occurrence");
+    workbench
+        .run_occurrences_to_candidate(&[probe])
+        .expect("the no-op probe produces an initial hidden candidate");
+    let initial = workbench
+        .admit()
+        .expect("Admission establishes the exact prior projection");
+    assert_eq!(
+        boar_blade_two_state(&initial.projection.exact_term_bytes),
+        (100.0, 100.0, 0.0)
+    );
+    let exact_prior_projection = initial.projection.exact_term_bytes;
+
+    let blade_two_hit = workbench
+        .handler_occurrence(b"blade-two-hit", &[])
+        .expect("the scalar-law handler has one occurrence");
+    workbench
+        .run_occurrences_to_candidate(&[blade_two_hit])
+        .expect("blade two produces one pending Candidate");
+    assert_eq!(
+        workbench
+            .last_projection()
+            .expect("the prior admitted projection remains visible")
+            .exact_term_bytes,
+        exact_prior_projection,
+        "the pending Candidate cannot expose any assignment"
+    );
+
+    let admitted = workbench
+        .admit()
+        .expect("one Admission atomically exposes the dependent results");
+    assert_eq!(
+        boar_blade_two_state(&admitted.projection.exact_term_bytes),
+        (86.0, 100.0, 10.4)
     );
 }
 

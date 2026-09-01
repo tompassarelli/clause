@@ -1024,6 +1024,26 @@ fn lower_scalar_expression(
             let (left, right) = pair(left, right)?;
             ExecutableExpressionV1::Divide(left, right)
         }
+        CanonicalScalarExpressionV1::Clamp(value, lower, upper) => ExecutableExpressionV1::Clamp(
+            Box::new(lower_scalar_expression(
+                value,
+                state_slot,
+                parameter_slots,
+                depth + 1,
+            )?),
+            Box::new(lower_scalar_expression(
+                lower,
+                state_slot,
+                parameter_slots,
+                depth + 1,
+            )?),
+            Box::new(lower_scalar_expression(
+                upper,
+                state_slot,
+                parameter_slots,
+                depth + 1,
+            )?),
+        ),
     })
 }
 
