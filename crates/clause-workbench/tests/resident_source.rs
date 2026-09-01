@@ -35,6 +35,10 @@ const LEDGER: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../test-vectors/ledger/ledger.clause"
 ));
+const NORTH_REPEATED_TURN: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../test-vectors/north/repeated-turn.clause"
+));
 const SOURCE_ONLY_AUTOMATIC_EXTENSION: &[u8] = br#"
 relation pulse-count
   reads {objective: Objective} pulse count {value: F64}
@@ -1201,4 +1205,10 @@ fn tracked_browser_carrier_uses_the_generic_source_plan() {
     assert_eq!(tracked.authority, current.authority);
     assert_eq!(tracked.occurrences, current.occurrences);
     assert_eq!(tracked.render_slots, current.render_slots);
+}
+
+#[test]
+fn resident_source_opens_the_north_repeated_turn_machine() {
+    ResidentSourceWorkbenchV1::open(NORTH_REPEATED_TURN)
+        .expect("North's repeated-turn machine opens in the generic workbench");
 }

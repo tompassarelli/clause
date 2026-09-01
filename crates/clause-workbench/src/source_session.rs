@@ -668,21 +668,13 @@ fn bind_physical_events(
                 event.occurrence.arguments.len() == usize::from(binding.argument_count)
             })
         }) else {
-            return Err(ResidentSourceWorkbenchErrorV1(format!(
-                "physical adapter has no {}-argument source-handler ingress",
-                binding.argument_count
-            )));
+            continue;
         };
         let (_, group) = groups.remove(group_index);
         events.extend(group.into_iter().map(|mut event| {
             event.occurrence.entry = binding.entry;
             event
         }));
-    }
-    if events.is_empty() {
-        return Err(ResidentSourceWorkbenchErrorV1(
-            "physical adapter produced no source-handler ingress".into(),
-        ));
     }
     Ok(events)
 }
