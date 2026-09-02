@@ -1,4 +1,5 @@
 use std::fmt;
+use std::sync::Arc;
 
 use crate::{ClauseSemanticsId, UniverseId};
 
@@ -158,7 +159,7 @@ impl TermComplexity {
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Term {
     scope: TermScope,
-    value: TermValue,
+    value: Arc<TermValue>,
     complexity: TermComplexity,
 }
 
@@ -171,7 +172,11 @@ impl Term {
     ) -> Result<Self, TermError> {
         Ok(Self {
             scope,
-            value: TermValue::Atom(Atom::new(kind, canonical_payload, equality_contract)?),
+            value: Arc::new(TermValue::Atom(Atom::new(
+                kind,
+                canonical_payload,
+                equality_contract,
+            )?)),
             complexity: TermComplexity::ATOM,
         })
     }
@@ -181,21 +186,21 @@ impl Term {
         let scope = triple.scope();
         Ok(Self {
             scope,
-            value: TermValue::Triple(triple),
+            value: Arc::new(TermValue::Triple(triple)),
             complexity,
         })
     }
 
-    pub(crate) const fn from_atom(scope: TermScope, atom: Atom) -> Self {
+    pub(crate) fn from_atom(scope: TermScope, atom: Atom) -> Self {
         Self {
             scope,
-            value: TermValue::Atom(atom),
+            value: Arc::new(TermValue::Atom(atom)),
             complexity: TermComplexity::ATOM,
         }
     }
 
     pub(crate) fn value(&self) -> TermValueRef<'_> {
-        match &self.value {
+        match self.value.as_ref() {
             TermValue::Atom(atom) => TermValueRef::Atom(atom),
             TermValue::Triple(triple) => TermValueRef::Triple(triple),
         }
@@ -208,7 +213,7 @@ impl Term {
 
     #[must_use]
     pub fn as_atom(&self) -> Option<&Atom> {
-        match &self.value {
+        match self.value.as_ref() {
             TermValue::Atom(atom) => Some(atom),
             TermValue::Triple(_) => None,
         }
@@ -216,7 +221,7 @@ impl Term {
 
     #[must_use]
     pub fn as_triple(&self) -> Option<&Triple> {
-        match &self.value {
+        match self.value.as_ref() {
             TermValue::Atom(_) => None,
             TermValue::Triple(triple) => Some(triple),
         }
@@ -315,6 +320,20 @@ mod tests {
             slots[2].as_atom().expect("Atom slot").canonical_payload(),
             b"right"
         );
+    }
+
+    #[test]
+    fn immutable_term_clones_share_the_recursive_value() {
+        let original = Term::triple([
+            atom(scope(1, 2), b"left"),
+            atom(scope(1, 2), b"middle"),
+            atom(scope(1, 2), b"right"),
+        ])
+        .expect("same-scope Triple is valid");
+        let cloned = original.clone();
+
+        assert!(Arc::ptr_eq(&original.value, &cloned.value));
+        assert_eq!(original, cloned);
     }
 
     #[test]
