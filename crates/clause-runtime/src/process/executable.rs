@@ -191,6 +191,15 @@ impl ExecutableSetV1 {
         }
         Ok(self.values.contains(value))
     }
+
+    fn removed(&self, value: &ExecutableValueV1) -> Result<Self, ExecutableErrorV1> {
+        if value.kind() != self.element_kind {
+            return Err(ExecutableErrorV1::TypeMismatch);
+        }
+        let mut next = self.clone();
+        next.values.remove(value);
+        Ok(next)
+    }
 }
 
 /// One fixed semantic state coordinate whose relation fact may be absent.
@@ -487,6 +496,7 @@ pub enum ExecutableExpressionV1 {
     Not(Box<Self>),
     SetInsert(Box<Self>, Box<Self>),
     SetContains(Box<Self>, Box<Self>),
+    SetRemove(Box<Self>, Box<Self>),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -737,6 +747,10 @@ fn lower_canonical_expression(
             )
         }
         CanonicalExecutableExpressionV1::Insert(set, value) => ExecutableExpressionV1::SetInsert(
+            Box::new(lower_canonical_expression(set, slots, depth + 1)?),
+            Box::new(lower_canonical_expression(value, slots, depth + 1)?),
+        ),
+        CanonicalExecutableExpressionV1::Remove(set, value) => ExecutableExpressionV1::SetRemove(
             Box::new(lower_canonical_expression(set, slots, depth + 1)?),
             Box::new(lower_canonical_expression(value, slots, depth + 1)?),
         ),
@@ -5382,6 +5396,14 @@ fn evaluate(
             };
             Ok(ExecutableValueV1::Boolean(set.contains(&value)?))
         }
+        E::SetRemove(set, value) => {
+            let set = evaluate(set, slots, arguments)?;
+            let value = evaluate(value, slots, arguments)?;
+            let ExecutableValueV1::Set(set) = set else {
+                return Err(ExecutableErrorV1::TypeMismatch);
+            };
+            Ok(ExecutableValueV1::Set(set.removed(&value)?))
+        }
     }
 }
 
@@ -5621,6 +5643,7 @@ fn encode_expression(
         }
         E::SetInsert(set, value) => encode_binary(bytes, 13, set, value)?,
         E::SetContains(set, value) => encode_binary(bytes, 14, set, value)?,
+        E::SetRemove(set, value) => encode_binary(bytes, 15, set, value)?,
     }
     Ok(())
 }
@@ -5772,6 +5795,10 @@ impl<'a> Decoder<'a> {
                 Box::new(self.expression(next)?),
             ),
             14 => E::SetContains(
+                Box::new(self.expression(next)?),
+                Box::new(self.expression(next)?),
+            ),
+            15 => E::SetRemove(
                 Box::new(self.expression(next)?),
                 Box::new(self.expression(next)?),
             ),

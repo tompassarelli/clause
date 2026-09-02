@@ -297,6 +297,7 @@ pub enum CanonicalExecutableExpressionV1 {
     Divide(Box<Self>, Box<Self>),
     Clamp(Box<Self>, Box<Self>, Box<Self>),
     Insert(Box<Self>, Box<Self>),
+    Remove(Box<Self>, Box<Self>),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -3833,8 +3834,20 @@ fn checked_executable_handlers(
                 .collect::<Result<Vec<_>, _>>()?;
             required_absent.sort();
             required_absent.dedup();
-            let mut removals = source
-                .removals
+            let mut scalar_removals = Vec::new();
+            let mut many_removals = Vec::new();
+            for removal in &source.removals {
+                match state_relation_cardinality(cst, plan, removal, source.origin)? {
+                    SourceCardinality::Maybe => scalar_removals.push(removal),
+                    SourceCardinality::Many => many_removals.push(removal),
+                    _ => {
+                        return Err(CanonicalSourceErrorV1::InvalidGeneralHandler {
+                            origin: source.origin,
+                        });
+                    }
+                }
+            }
+            let mut removals = scalar_removals
                 .iter()
                 .map(|removal| {
                     general_target_state_ref(cst, plan, removal, &entities, source.origin)
@@ -3968,6 +3981,30 @@ fn checked_executable_handlers(
                     value: CanonicalExecutableExpressionV1::Insert(
                         Box::new(CanonicalExecutableExpressionV1::State(state)),
                         Box::new(value),
+                    ),
+                });
+            }
+            for removal in many_removals {
+                let argument = arguments.get(&removal.parameter).copied().ok_or(
+                    CanonicalSourceErrorV1::InvalidGeneralHandler {
+                        origin: source.origin,
+                    },
+                )?;
+                let state = many_state_ref(cst, plan, removal, &entities, source.origin)?;
+                if assignments
+                    .iter()
+                    .any(|assignment| assignment.target == state)
+                {
+                    return Err(CanonicalSourceErrorV1::InvalidGeneralHandler {
+                        origin: source.origin,
+                    });
+                }
+                required_present.push(state.clone());
+                assignments.push(CanonicalExecutableAssignmentV1 {
+                    target: state.clone(),
+                    value: CanonicalExecutableExpressionV1::Remove(
+                        Box::new(CanonicalExecutableExpressionV1::State(state)),
+                        Box::new(CanonicalExecutableExpressionV1::Argument(argument)),
                     ),
                 });
             }

@@ -474,6 +474,16 @@ on select ?root ?item
     ?root phase ?prior
   include
     ?root phase ?item
+
+on forget ?root ?item
+  when
+    ?root phase ?phase
+    ?root known ?item
+  withdraw
+    ?root phase ?phase
+    ?root known ?item
+  include
+    ?root phase ?phase
 "#;
 
 fn coherent_source(objective: &[u8]) -> Vec<u8> {
@@ -1281,6 +1291,50 @@ fn many_relation_retains_every_discovered_value_for_membership() {
         projected_symbol_set(projected_object_field(reverse_root, b"known")),
         known,
         "the projected order is independent of insertion order"
+    );
+
+    let forget_alpha = workbench
+        .handler_occurrence(b"forget", &[symbol(b"alpha")])
+        .expect("forget accepts one item identity");
+    workbench
+        .run_occurrences_to_candidate(&[forget_alpha])
+        .expect("a retained member can be withdrawn");
+    let forgotten = workbench
+        .admit()
+        .expect("member withdrawal reaches one admitted successor");
+    let forgotten_term = decode_canonical_term_bytes(&forgotten.projection.exact_term_bytes)
+        .expect("the removal projection decodes");
+    let forgotten_root = projected_object_field(&forgotten_term, b"root");
+    assert_eq!(
+        projected_symbol_set(projected_object_field(forgotten_root, b"known")),
+        vec![b"beta".as_slice()]
+    );
+    let select_retained = workbench
+        .handler_occurrence(b"select", &[symbol(b"beta")])
+        .expect("select accepts the retained item identity");
+    workbench
+        .run_occurrences_to_candidate(&[select_retained])
+        .expect("the retained member still satisfies membership");
+    workbench
+        .admit()
+        .expect("selecting the retained member reaches one successor");
+
+    let select_forgotten = workbench
+        .handler_occurrence(b"select", &[symbol(b"alpha")])
+        .expect("select still accepts the item identity shape");
+    workbench
+        .run_occurrences_to_candidate(&[select_forgotten])
+        .expect("a non-matching occurrence still produces a no-op candidate");
+    let unchanged = workbench
+        .admit()
+        .expect("the no-op candidate remains admissible");
+    let unchanged_term = decode_canonical_term_bytes(&unchanged.projection.exact_term_bytes)
+        .expect("the no-op projection decodes");
+    let unchanged_root = projected_object_field(&unchanged_term, b"root");
+    assert_eq!(
+        projected_symbol(projected_object_field(unchanged_root, b"phase")),
+        b"beta",
+        "a withdrawn member no longer satisfies membership"
     );
 }
 
