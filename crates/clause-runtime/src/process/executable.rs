@@ -18,6 +18,8 @@ const PROJECTED_NUMBER_KIND: &[u8] = b"clause/process-projected-f64-v1";
 const PROJECTED_BOOLEAN_KIND: &[u8] = b"clause/process-projected-bool-v1";
 const PROJECTED_SYMBOL_KIND: &[u8] = b"clause/process-projected-symbol-v1";
 const PROJECTED_TEXT_KIND: &[u8] = b"clause/process-projected-text-v1";
+const PROJECTED_REFERENT_KIND: &[u8] = b"clause/process-projected-referent-v1";
+const PROJECTED_RELATION_TABLE_KIND: &[u8] = b"clause/process-projected-relation-table-v1";
 const PROJECTED_SET_KIND: &[u8] = b"clause/process-projected-set-v1";
 const PROJECTED_SET_END_KIND: &[u8] = b"clause/process-projected-set-end-v1";
 const MAX_EXECUTABLE_SYMBOL_BYTES: usize = 64;
@@ -111,7 +113,49 @@ pub enum ExecutableValueV1 {
     Boolean(bool),
     Symbol(ExecutableSymbolV1),
     Text(ExecutableTextV1),
+    Referent(ExecutableReferentV1),
+    RelationTable(ExecutableRelationTableV1),
     Set(ExecutableSetV1),
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum ExecutableReferentIdentityV1 {
+    Declared(u32),
+    Created([u8; IDENTITY_BYTES]),
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct ExecutableReferentV1 {
+    domain: u32,
+    identity: ExecutableReferentIdentityV1,
+}
+
+impl ExecutableReferentV1 {
+    #[must_use]
+    pub const fn declared(domain: u32, identity: u32) -> Self {
+        Self {
+            domain,
+            identity: ExecutableReferentIdentityV1::Declared(identity),
+        }
+    }
+
+    #[must_use]
+    pub const fn created(domain: u32, identity: [u8; IDENTITY_BYTES]) -> Self {
+        Self {
+            domain,
+            identity: ExecutableReferentIdentityV1::Created(identity),
+        }
+    }
+
+    #[must_use]
+    pub const fn domain(&self) -> u32 {
+        self.domain
+    }
+
+    #[must_use]
+    pub const fn identity(&self) -> &ExecutableReferentIdentityV1 {
+        &self.identity
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -172,6 +216,9 @@ pub enum ExecutableValueKindV1 {
     SymbolSet = 5,
     Text = 6,
     TextSet = 7,
+    Referent = 8,
+    ReferentSet = 9,
+    RelationTable = 10,
 }
 
 impl ExecutableValueKindV1 {
@@ -181,8 +228,174 @@ impl ExecutableValueKindV1 {
             Self::Boolean => Some(Self::BooleanSet),
             Self::Symbol => Some(Self::SymbolSet),
             Self::Text => Some(Self::TextSet),
-            Self::NumberSet | Self::BooleanSet | Self::SymbolSet | Self::TextSet => None,
+            Self::Referent => Some(Self::ReferentSet),
+            Self::NumberSet
+            | Self::BooleanSet
+            | Self::SymbolSet
+            | Self::TextSet
+            | Self::ReferentSet
+            | Self::RelationTable => None,
         }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[repr(u8)]
+pub enum ExecutableRelationValueKindV1 {
+    Number = 0,
+    Boolean = 1,
+    Symbol = 2,
+    Text = 3,
+    Referent = 4,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[repr(u8)]
+pub enum ExecutableRelationCardinalityV1 {
+    One = 0,
+    Maybe = 1,
+    Many = 2,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct ExecutableRelationTableV1 {
+    subject_domain: u32,
+    value_kind: ExecutableRelationValueKindV1,
+    value_domain: Option<u32>,
+    cardinality: ExecutableRelationCardinalityV1,
+    rows: BTreeMap<ExecutableReferentV1, BTreeSet<ExecutableValueV1>>,
+}
+
+impl ExecutableRelationTableV1 {
+    #[must_use]
+    pub const fn subject_domain(&self) -> u32 {
+        self.subject_domain
+    }
+
+    #[must_use]
+    pub const fn cardinality(&self) -> ExecutableRelationCardinalityV1 {
+        self.cardinality
+    }
+
+    #[must_use]
+    pub const fn rows(&self) -> &BTreeMap<ExecutableReferentV1, BTreeSet<ExecutableValueV1>> {
+        &self.rows
+    }
+
+    fn value_matches(&self, value: &ExecutableValueV1) -> bool {
+        match (self.value_kind, value) {
+            (ExecutableRelationValueKindV1::Number, ExecutableValueV1::Number(_))
+            | (ExecutableRelationValueKindV1::Boolean, ExecutableValueV1::Boolean(_))
+            | (ExecutableRelationValueKindV1::Symbol, ExecutableValueV1::Symbol(_))
+            | (ExecutableRelationValueKindV1::Text, ExecutableValueV1::Text(_)) => true,
+            (ExecutableRelationValueKindV1::Referent, ExecutableValueV1::Referent(value)) => {
+                self.value_domain == Some(value.domain())
+            }
+            _ => false,
+        }
+    }
+
+    fn subject<'a>(
+        &self,
+        value: &'a ExecutableValueV1,
+    ) -> Result<&'a ExecutableReferentV1, ExecutableErrorV1> {
+        let ExecutableValueV1::Referent(subject) = value else {
+            return Err(ExecutableErrorV1::TypeMismatch);
+        };
+        if subject.domain() != self.subject_domain {
+            return Err(ExecutableErrorV1::TypeMismatch);
+        }
+        Ok(subject)
+    }
+
+    fn read(&self, subject: &ExecutableValueV1) -> Result<ExecutableValueV1, ExecutableErrorV1> {
+        let subject = self.subject(subject)?;
+        let values = self
+            .rows
+            .get(subject)
+            .filter(|values| !values.is_empty())
+            .ok_or(ExecutableErrorV1::MissingState)?;
+        if self.cardinality == ExecutableRelationCardinalityV1::Many {
+            let element_kind = match self.value_kind {
+                ExecutableRelationValueKindV1::Number => ExecutableValueKindV1::Number,
+                ExecutableRelationValueKindV1::Boolean => ExecutableValueKindV1::Boolean,
+                ExecutableRelationValueKindV1::Symbol => ExecutableValueKindV1::Symbol,
+                ExecutableRelationValueKindV1::Text => ExecutableValueKindV1::Text,
+                ExecutableRelationValueKindV1::Referent => ExecutableValueKindV1::Referent,
+            };
+            return Ok(ExecutableValueV1::Set(ExecutableSetV1 {
+                element_kind,
+                values: values.clone(),
+            }));
+        }
+        values
+            .first()
+            .cloned()
+            .ok_or(ExecutableErrorV1::MissingState)
+    }
+
+    fn present(&self, subject: &ExecutableValueV1) -> Result<bool, ExecutableErrorV1> {
+        let subject = self.subject(subject)?;
+        Ok(self
+            .rows
+            .get(subject)
+            .is_some_and(|values| !values.is_empty()))
+    }
+
+    fn put(
+        &self,
+        subject: &ExecutableValueV1,
+        value: ExecutableValueV1,
+    ) -> Result<Self, ExecutableErrorV1> {
+        if self.cardinality == ExecutableRelationCardinalityV1::Many || !self.value_matches(&value)
+        {
+            return Err(ExecutableErrorV1::TypeMismatch);
+        }
+        let subject = self.subject(subject)?.clone();
+        let mut next = self.clone();
+        next.rows.insert(subject, BTreeSet::from([value]));
+        Ok(next)
+    }
+
+    fn insert(
+        &self,
+        subject: &ExecutableValueV1,
+        value: ExecutableValueV1,
+    ) -> Result<Self, ExecutableErrorV1> {
+        if self.cardinality != ExecutableRelationCardinalityV1::Many || !self.value_matches(&value)
+        {
+            return Err(ExecutableErrorV1::TypeMismatch);
+        }
+        let subject = self.subject(subject)?.clone();
+        let mut next = self.clone();
+        next.rows.entry(subject).or_default().insert(value);
+        Ok(next)
+    }
+
+    fn remove_row(&self, subject: &ExecutableValueV1) -> Result<Self, ExecutableErrorV1> {
+        let subject = self.subject(subject)?;
+        let mut next = self.clone();
+        next.rows.remove(subject);
+        Ok(next)
+    }
+
+    fn remove_value(
+        &self,
+        subject: &ExecutableValueV1,
+        value: &ExecutableValueV1,
+    ) -> Result<Self, ExecutableErrorV1> {
+        if self.cardinality != ExecutableRelationCardinalityV1::Many || !self.value_matches(value) {
+            return Err(ExecutableErrorV1::TypeMismatch);
+        }
+        let subject = self.subject(subject)?;
+        let mut next = self.clone();
+        if let Some(values) = next.rows.get_mut(subject) {
+            values.remove(value);
+            if values.is_empty() {
+                next.rows.remove(subject);
+            }
+        }
+        Ok(next)
     }
 }
 
@@ -300,11 +513,16 @@ impl ExecutableValueV1 {
                 ExecutableValueKindV1::Boolean => ExecutableValueKindV1::BooleanSet,
                 ExecutableValueKindV1::Symbol => ExecutableValueKindV1::SymbolSet,
                 ExecutableValueKindV1::Text => ExecutableValueKindV1::TextSet,
+                ExecutableValueKindV1::Referent => ExecutableValueKindV1::ReferentSet,
                 ExecutableValueKindV1::NumberSet
                 | ExecutableValueKindV1::BooleanSet
                 | ExecutableValueKindV1::SymbolSet => unreachable!(),
-                ExecutableValueKindV1::TextSet => unreachable!(),
+                ExecutableValueKindV1::TextSet
+                | ExecutableValueKindV1::ReferentSet
+                | ExecutableValueKindV1::RelationTable => unreachable!(),
             },
+            Self::Referent(_) => ExecutableValueKindV1::Referent,
+            Self::RelationTable(_) => ExecutableValueKindV1::RelationTable,
         }
     }
 
@@ -421,7 +639,12 @@ impl ExecutableValueV1 {
     pub fn as_number(&self) -> Option<f64> {
         match self {
             Self::Number(bits) => Some(f64::from_bits(*bits)),
-            Self::Boolean(_) | Self::Symbol(_) | Self::Text(_) | Self::Set(_) => None,
+            Self::Boolean(_)
+            | Self::Symbol(_)
+            | Self::Text(_)
+            | Self::Referent(_)
+            | Self::RelationTable(_)
+            | Self::Set(_) => None,
         }
     }
 
@@ -429,7 +652,12 @@ impl ExecutableValueV1 {
     pub const fn as_boolean(&self) -> Option<bool> {
         match self {
             Self::Boolean(value) => Some(*value),
-            Self::Number(_) | Self::Symbol(_) | Self::Text(_) | Self::Set(_) => None,
+            Self::Number(_)
+            | Self::Symbol(_)
+            | Self::Text(_)
+            | Self::Referent(_)
+            | Self::RelationTable(_)
+            | Self::Set(_) => None,
         }
     }
 
@@ -441,7 +669,12 @@ impl ExecutableValueV1 {
     pub fn as_symbol(&self) -> Option<&[u8]> {
         match self {
             Self::Symbol(value) => Some(value.as_bytes()),
-            Self::Number(_) | Self::Boolean(_) | Self::Text(_) | Self::Set(_) => None,
+            Self::Number(_)
+            | Self::Boolean(_)
+            | Self::Text(_)
+            | Self::Referent(_)
+            | Self::RelationTable(_)
+            | Self::Set(_) => None,
         }
     }
 
@@ -453,7 +686,25 @@ impl ExecutableValueV1 {
     pub fn as_text(&self) -> Option<&str> {
         match self {
             Self::Text(value) => Some(value.as_str()),
-            Self::Number(_) | Self::Boolean(_) | Self::Symbol(_) | Self::Set(_) => None,
+            Self::Number(_)
+            | Self::Boolean(_)
+            | Self::Symbol(_)
+            | Self::Referent(_)
+            | Self::RelationTable(_)
+            | Self::Set(_) => None,
+        }
+    }
+
+    #[must_use]
+    pub fn as_referent(&self) -> Option<&ExecutableReferentV1> {
+        match self {
+            Self::Referent(value) => Some(value),
+            Self::Number(_)
+            | Self::Boolean(_)
+            | Self::Symbol(_)
+            | Self::Text(_)
+            | Self::RelationTable(_)
+            | Self::Set(_) => None,
         }
     }
 }
@@ -526,6 +777,13 @@ pub enum ExecutableExpressionV1 {
     Constant(ExecutableValueV1),
     Slot(u16),
     Argument(u16),
+    FreshReferent { domain: u32, binder: u16 },
+    RelationRead(Box<Self>, Box<Self>),
+    RelationPresent(Box<Self>, Box<Self>),
+    RelationPut(Box<Self>, Box<Self>, Box<Self>),
+    RelationInsert(Box<Self>, Box<Self>, Box<Self>),
+    RelationRemoveRow(Box<Self>, Box<Self>),
+    RelationRemoveValue(Box<Self>, Box<Self>, Box<Self>),
     Concatenate(Box<Self>, Box<Self>),
     Add(Box<Self>, Box<Self>),
     Subtract(Box<Self>, Box<Self>),
@@ -766,6 +1024,45 @@ fn lower_canonical_expression(
         CanonicalExecutableExpressionV1::Argument(argument) => {
             ExecutableExpressionV1::Argument(*argument)
         }
+        CanonicalExecutableExpressionV1::FreshReferent { domain, binder } => {
+            ExecutableExpressionV1::FreshReferent {
+                domain: domain.get(),
+                binder: *binder,
+            }
+        }
+        CanonicalExecutableExpressionV1::RelationRead(table, subject) => {
+            let (table, subject) = pair(table, subject)?;
+            ExecutableExpressionV1::RelationRead(table, subject)
+        }
+        CanonicalExecutableExpressionV1::RelationPresent(table, subject) => {
+            let (table, subject) = pair(table, subject)?;
+            ExecutableExpressionV1::RelationPresent(table, subject)
+        }
+        CanonicalExecutableExpressionV1::RelationPut(table, subject, value) => {
+            ExecutableExpressionV1::RelationPut(
+                Box::new(lower_canonical_expression(table, slots, depth + 1)?),
+                Box::new(lower_canonical_expression(subject, slots, depth + 1)?),
+                Box::new(lower_canonical_expression(value, slots, depth + 1)?),
+            )
+        }
+        CanonicalExecutableExpressionV1::RelationInsert(table, subject, value) => {
+            ExecutableExpressionV1::RelationInsert(
+                Box::new(lower_canonical_expression(table, slots, depth + 1)?),
+                Box::new(lower_canonical_expression(subject, slots, depth + 1)?),
+                Box::new(lower_canonical_expression(value, slots, depth + 1)?),
+            )
+        }
+        CanonicalExecutableExpressionV1::RelationRemoveRow(table, subject) => {
+            let (table, subject) = pair(table, subject)?;
+            ExecutableExpressionV1::RelationRemoveRow(table, subject)
+        }
+        CanonicalExecutableExpressionV1::RelationRemoveValue(table, subject, value) => {
+            ExecutableExpressionV1::RelationRemoveValue(
+                Box::new(lower_canonical_expression(table, slots, depth + 1)?),
+                Box::new(lower_canonical_expression(subject, slots, depth + 1)?),
+                Box::new(lower_canonical_expression(value, slots, depth + 1)?),
+            )
+        }
         CanonicalExecutableExpressionV1::Concatenate(left, right) => {
             let (left, right) = pair(left, right)?;
             ExecutableExpressionV1::Concatenate(left, right)
@@ -890,7 +1187,9 @@ fn canonical_source_projection(
             let value = if cells.len() == 1
                 && matches!(
                     cells[0].state.path,
-                    CanonicalStatePathV1::Scalar | CanonicalStatePathV1::Many
+                    CanonicalStatePathV1::Scalar
+                        | CanonicalStatePathV1::Many
+                        | CanonicalStatePathV1::Rows
                 ) {
                 let binding = by_state
                     .get(&cells[0].state)
@@ -1330,6 +1629,53 @@ fn lower_scalar_value(
         CanonicalScalarValueV1::Boolean(value) => Ok(ExecutableValueV1::Boolean(*value)),
         CanonicalScalarValueV1::Symbol(value) => ExecutableValueV1::symbol(value),
         CanonicalScalarValueV1::Text(value) => ExecutableValueV1::text(value),
+        CanonicalScalarValueV1::Referent(value) => Ok(ExecutableValueV1::Referent(
+            ExecutableReferentV1::declared(value.domain.get(), value.identity.get()),
+        )),
+        CanonicalScalarValueV1::RelationTable(table) => {
+            let value_kind = match table.value_kind {
+                CanonicalRelationValueKindV1::Number => ExecutableRelationValueKindV1::Number,
+                CanonicalRelationValueKindV1::Boolean => ExecutableRelationValueKindV1::Boolean,
+                CanonicalRelationValueKindV1::Symbol => ExecutableRelationValueKindV1::Symbol,
+                CanonicalRelationValueKindV1::Text => ExecutableRelationValueKindV1::Text,
+                CanonicalRelationValueKindV1::Referent(_) => {
+                    ExecutableRelationValueKindV1::Referent
+                }
+            };
+            let cardinality = match table.cardinality {
+                CanonicalRelationCardinalityV1::One => ExecutableRelationCardinalityV1::One,
+                CanonicalRelationCardinalityV1::Maybe => ExecutableRelationCardinalityV1::Maybe,
+                CanonicalRelationCardinalityV1::Many => ExecutableRelationCardinalityV1::Many,
+            };
+            let rows = table
+                .rows
+                .iter()
+                .map(|(subject, values)| {
+                    Ok((
+                        ExecutableReferentV1::declared(
+                            subject.domain.get(),
+                            subject.identity.get(),
+                        ),
+                        values
+                            .iter()
+                            .map(lower_scalar_value)
+                            .collect::<Result<BTreeSet<_>, _>>()?,
+                    ))
+                })
+                .collect::<Result<BTreeMap<_, _>, ExecutableErrorV1>>()?;
+            Ok(ExecutableValueV1::RelationTable(
+                ExecutableRelationTableV1 {
+                    subject_domain: table.subject_domain.get(),
+                    value_kind,
+                    value_domain: match table.value_kind {
+                        CanonicalRelationValueKindV1::Referent(domain) => Some(domain.get()),
+                        _ => None,
+                    },
+                    cardinality,
+                    rows,
+                },
+            ))
+        }
     }
 }
 
@@ -1341,6 +1687,10 @@ const fn lower_scalar_value_kind(
         clause_package::CanonicalScalarValueKindV1::Boolean => ExecutableValueKindV1::Boolean,
         clause_package::CanonicalScalarValueKindV1::Symbol => ExecutableValueKindV1::Symbol,
         clause_package::CanonicalScalarValueKindV1::Text => ExecutableValueKindV1::Text,
+        clause_package::CanonicalScalarValueKindV1::Referent => ExecutableValueKindV1::Referent,
+        clause_package::CanonicalScalarValueKindV1::RelationTable => {
+            ExecutableValueKindV1::RelationTable
+        }
     }
 }
 
@@ -3947,6 +4297,10 @@ impl ExecutableProcessRuntimeV1 {
         step_ordinal: u64,
         configuration_ordinal: u64,
     ) -> Result<(Vec<ExecutableSlotV1>, ExecutableStepV1), ExecutableErrorV1> {
+        let evaluation = EvaluationContextV1 {
+            allocation_root: self.allocation.root,
+            step_ordinal,
+        };
         let mut selected = None;
         for rule in self
             .program
@@ -3970,7 +4324,12 @@ impl ExecutableProcessRuntimeV1 {
                 .predicates
                 .iter()
                 .try_fold(true, |matches, predicate| {
-                    let value = evaluate(predicate, &self.configuration, &occurrence.arguments)?;
+                    let value = evaluate(
+                        predicate,
+                        &self.configuration,
+                        &occurrence.arguments,
+                        evaluation,
+                    )?;
                     Ok::<_, ExecutableErrorV1>(
                         matches && value.as_boolean().ok_or(ExecutableErrorV1::TypeMismatch)?,
                     )
@@ -3983,7 +4342,12 @@ impl ExecutableProcessRuntimeV1 {
         let mut next = self.configuration.clone();
         if let Some(rule) = selected {
             for (slot, expression) in &rule.assignments {
-                let value = evaluate(expression, &self.configuration, &occurrence.arguments)?;
+                let value = evaluate(
+                    expression,
+                    &self.configuration,
+                    &occurrence.arguments,
+                    evaluation,
+                )?;
                 let target = next
                     .get_mut(usize::from(*slot))
                     .ok_or(ExecutableErrorV1::UnknownSlot(*slot))?;
@@ -5223,6 +5587,9 @@ fn projection_role(
         5 => ExecutableValueKindV1::SymbolSet,
         6 => ExecutableValueKindV1::Text,
         7 => ExecutableValueKindV1::TextSet,
+        8 => ExecutableValueKindV1::Referent,
+        9 => ExecutableValueKindV1::ReferentSet,
+        10 => ExecutableValueKindV1::RelationTable,
         _ => return Err(ExecutableErrorV1::MalformedProgram),
     };
     Ok(Some((LocalRoleRefV2 { schema, role }, value_kind)))
@@ -5274,6 +5641,16 @@ fn projected_scalar_value_term(
         ExecutableValueV1::Boolean(value) => (PROJECTED_BOOLEAN_KIND, vec![u8::from(*value)]),
         ExecutableValueV1::Symbol(value) => (PROJECTED_SYMBOL_KIND, value.as_bytes().to_vec()),
         ExecutableValueV1::Text(value) => (PROJECTED_TEXT_KIND, value.as_str().as_bytes().to_vec()),
+        ExecutableValueV1::Referent(value) => {
+            let mut payload = Vec::new();
+            encode_referent(&mut payload, value);
+            (PROJECTED_REFERENT_KIND, payload)
+        }
+        ExecutableValueV1::RelationTable(_) => {
+            let mut payload = Vec::new();
+            encode_value(&mut payload, value)?;
+            (PROJECTED_RELATION_TABLE_KIND, payload)
+        }
         ExecutableValueV1::Set(_) => return Err(ExecutableErrorV1::MalformedProgram),
     };
     Term::atom(
@@ -5302,6 +5679,31 @@ pub fn projected_text_value_v1(term: &Term) -> Result<Option<&str>, ExecutableEr
     std::str::from_utf8(atom.canonical_payload())
         .map(Some)
         .map_err(|_| ExecutableErrorV1::MalformedProgram)
+}
+
+/// Decode one exact projected relation table leaf without depending on its
+/// surrounding source-owned object shape.
+pub fn projected_relation_table_v1(
+    term: &Term,
+) -> Result<Option<ExecutableRelationTableV1>, ExecutableErrorV1> {
+    let Some(atom) = term.as_atom() else {
+        return Ok(None);
+    };
+    if atom.kind() != PROJECTED_RELATION_TABLE_KIND {
+        return Ok(None);
+    }
+    if atom.equality_contract() != EqualityContract::ExactOctetsV1 {
+        return Err(ExecutableErrorV1::MalformedProgram);
+    }
+    let mut decoder = Decoder::new(atom.canonical_payload());
+    let value = decoder.value()?;
+    if !decoder.is_complete() {
+        return Err(ExecutableErrorV1::MalformedProgram);
+    }
+    let ExecutableValueV1::RelationTable(table) = value else {
+        return Err(ExecutableErrorV1::MalformedProgram);
+    };
+    Ok(Some(table))
 }
 
 fn projected_set_tree(
@@ -5408,10 +5810,17 @@ fn projection_subtree_has_present_role(
     Ok(false)
 }
 
+#[derive(Clone, Copy)]
+struct EvaluationContextV1 {
+    allocation_root: [u8; IDENTITY_BYTES],
+    step_ordinal: u64,
+}
+
 fn evaluate(
     expression: &ExecutableExpressionV1,
     slots: &[ExecutableSlotV1],
     arguments: &[ExecutableValueV1],
+    context: EvaluationContextV1,
 ) -> Result<ExecutableValueV1, ExecutableErrorV1> {
     use ExecutableExpressionV1 as E;
     match expression {
@@ -5426,58 +5835,136 @@ fn evaluate(
             .get(usize::from(*argument))
             .cloned()
             .ok_or(ExecutableErrorV1::UnknownArgument(*argument)),
-        E::Concatenate(left, right) => concatenate(left, right, slots, arguments),
-        E::Add(left, right) => numeric2(left, right, slots, arguments, |a, b| a + b),
-        E::Subtract(left, right) => numeric2(left, right, slots, arguments, |a, b| a - b),
-        E::Multiply(left, right) => numeric2(left, right, slots, arguments, |a, b| a * b),
+        E::FreshReferent { domain, binder } => {
+            Ok(ExecutableValueV1::Referent(ExecutableReferentV1::created(
+                *domain,
+                runtime_domain_hash(
+                    "clause/runtime-referent/v1",
+                    &[
+                        &context.allocation_root,
+                        &context.step_ordinal.to_be_bytes(),
+                        &domain.to_be_bytes(),
+                        &binder.to_be_bytes(),
+                    ],
+                ),
+            )))
+        }
+        E::RelationRead(table, subject) => {
+            let table = evaluate(table, slots, arguments, context)?;
+            let subject = evaluate(subject, slots, arguments, context)?;
+            let ExecutableValueV1::RelationTable(table) = table else {
+                return Err(ExecutableErrorV1::TypeMismatch);
+            };
+            table.read(&subject)
+        }
+        E::RelationPresent(table, subject) => {
+            let table = evaluate(table, slots, arguments, context)?;
+            let subject = evaluate(subject, slots, arguments, context)?;
+            let ExecutableValueV1::RelationTable(table) = table else {
+                return Err(ExecutableErrorV1::TypeMismatch);
+            };
+            Ok(ExecutableValueV1::Boolean(table.present(&subject)?))
+        }
+        E::RelationPut(table, subject, value) => {
+            let table = evaluate(table, slots, arguments, context)?;
+            let subject = evaluate(subject, slots, arguments, context)?;
+            let value = evaluate(value, slots, arguments, context)?;
+            let ExecutableValueV1::RelationTable(table) = table else {
+                return Err(ExecutableErrorV1::TypeMismatch);
+            };
+            Ok(ExecutableValueV1::RelationTable(
+                table.put(&subject, value)?,
+            ))
+        }
+        E::RelationInsert(table, subject, value) => {
+            let table = evaluate(table, slots, arguments, context)?;
+            let subject = evaluate(subject, slots, arguments, context)?;
+            let value = evaluate(value, slots, arguments, context)?;
+            let ExecutableValueV1::RelationTable(table) = table else {
+                return Err(ExecutableErrorV1::TypeMismatch);
+            };
+            Ok(ExecutableValueV1::RelationTable(
+                table.insert(&subject, value)?,
+            ))
+        }
+        E::RelationRemoveRow(table, subject) => {
+            let table = evaluate(table, slots, arguments, context)?;
+            let subject = evaluate(subject, slots, arguments, context)?;
+            let ExecutableValueV1::RelationTable(table) = table else {
+                return Err(ExecutableErrorV1::TypeMismatch);
+            };
+            Ok(ExecutableValueV1::RelationTable(
+                table.remove_row(&subject)?,
+            ))
+        }
+        E::RelationRemoveValue(table, subject, value) => {
+            let table = evaluate(table, slots, arguments, context)?;
+            let subject = evaluate(subject, slots, arguments, context)?;
+            let value = evaluate(value, slots, arguments, context)?;
+            let ExecutableValueV1::RelationTable(table) = table else {
+                return Err(ExecutableErrorV1::TypeMismatch);
+            };
+            Ok(ExecutableValueV1::RelationTable(
+                table.remove_value(&subject, &value)?,
+            ))
+        }
+        E::Concatenate(left, right) => concatenate(left, right, slots, arguments, context),
+        E::Add(left, right) => numeric2(left, right, slots, arguments, context, |a, b| a + b),
+        E::Subtract(left, right) => numeric2(left, right, slots, arguments, context, |a, b| a - b),
+        E::Multiply(left, right) => numeric2(left, right, slots, arguments, context, |a, b| a * b),
         E::Divide(left, right) => {
-            let denominator = number(evaluate(right, slots, arguments)?)?;
+            let denominator = number(evaluate(right, slots, arguments, context)?)?;
             if denominator == 0.0 {
                 return Err(ExecutableErrorV1::NumericDomain);
             }
-            let numerator = number(evaluate(left, slots, arguments)?)?;
+            let numerator = number(evaluate(left, slots, arguments, context)?)?;
             ExecutableValueV1::number(numerator / denominator)
         }
         E::Clamp(value, lower, upper) => {
-            let value = number(evaluate(value, slots, arguments)?)?;
-            let lower = number(evaluate(lower, slots, arguments)?)?;
-            let upper = number(evaluate(upper, slots, arguments)?)?;
+            let value = number(evaluate(value, slots, arguments, context)?)?;
+            let lower = number(evaluate(lower, slots, arguments, context)?)?;
+            let upper = number(evaluate(upper, slots, arguments, context)?)?;
             if lower > upper {
                 return Err(ExecutableErrorV1::NumericDomain);
             }
             ExecutableValueV1::number(value.clamp(lower, upper))
         }
-        E::GreaterThan(left, right) => compare(left, right, slots, arguments, |a, b| a > b),
-        E::LessThanOrEqual(left, right) => compare(left, right, slots, arguments, |a, b| a <= b),
+        E::GreaterThan(left, right) => {
+            compare(left, right, slots, arguments, context, |a, b| a > b)
+        }
+        E::LessThanOrEqual(left, right) => {
+            compare(left, right, slots, arguments, context, |a, b| a <= b)
+        }
         E::Equal(left, right) => Ok(ExecutableValueV1::Boolean(
-            evaluate(left, slots, arguments)? == evaluate(right, slots, arguments)?,
+            evaluate(left, slots, arguments, context)?
+                == evaluate(right, slots, arguments, context)?,
         )),
         E::And(left, right) => Ok(ExecutableValueV1::Boolean(
-            boolean(evaluate(left, slots, arguments)?)?
-                && boolean(evaluate(right, slots, arguments)?)?,
+            boolean(evaluate(left, slots, arguments, context)?)?
+                && boolean(evaluate(right, slots, arguments, context)?)?,
         )),
         E::Not(value) => Ok(ExecutableValueV1::Boolean(!boolean(evaluate(
-            value, slots, arguments,
+            value, slots, arguments, context,
         )?)?)),
         E::SetInsert(set, value) => {
-            let set = evaluate(set, slots, arguments)?;
-            let value = evaluate(value, slots, arguments)?;
+            let set = evaluate(set, slots, arguments, context)?;
+            let value = evaluate(value, slots, arguments, context)?;
             let ExecutableValueV1::Set(set) = set else {
                 return Err(ExecutableErrorV1::TypeMismatch);
             };
             Ok(ExecutableValueV1::Set(set.inserted(value)?))
         }
         E::SetContains(set, value) => {
-            let set = evaluate(set, slots, arguments)?;
-            let value = evaluate(value, slots, arguments)?;
+            let set = evaluate(set, slots, arguments, context)?;
+            let value = evaluate(value, slots, arguments, context)?;
             let ExecutableValueV1::Set(set) = set else {
                 return Err(ExecutableErrorV1::TypeMismatch);
             };
             Ok(ExecutableValueV1::Boolean(set.contains(&value)?))
         }
         E::SetRemove(set, value) => {
-            let set = evaluate(set, slots, arguments)?;
-            let value = evaluate(value, slots, arguments)?;
+            let set = evaluate(set, slots, arguments, context)?;
+            let value = evaluate(value, slots, arguments, context)?;
             let ExecutableValueV1::Set(set) = set else {
                 return Err(ExecutableErrorV1::TypeMismatch);
             };
@@ -5491,9 +5978,10 @@ fn concatenate(
     right: &ExecutableExpressionV1,
     slots: &[ExecutableSlotV1],
     arguments: &[ExecutableValueV1],
+    context: EvaluationContextV1,
 ) -> Result<ExecutableValueV1, ExecutableErrorV1> {
-    let left = evaluate(left, slots, arguments)?;
-    let right = evaluate(right, slots, arguments)?;
+    let left = evaluate(left, slots, arguments, context)?;
+    let right = evaluate(right, slots, arguments, context)?;
     let (Some(left), Some(right)) = (left.as_text(), right.as_text()) else {
         return Err(ExecutableErrorV1::TypeMismatch);
     };
@@ -5513,10 +6001,11 @@ fn numeric2(
     right: &ExecutableExpressionV1,
     slots: &[ExecutableSlotV1],
     arguments: &[ExecutableValueV1],
+    context: EvaluationContextV1,
     operation: impl FnOnce(f64, f64) -> f64,
 ) -> Result<ExecutableValueV1, ExecutableErrorV1> {
-    let left = number(evaluate(left, slots, arguments)?)?;
-    let right = number(evaluate(right, slots, arguments)?)?;
+    let left = number(evaluate(left, slots, arguments, context)?)?;
+    let right = number(evaluate(right, slots, arguments, context)?)?;
     ExecutableValueV1::number(operation(left, right))
 }
 
@@ -5525,11 +6014,12 @@ fn compare(
     right: &ExecutableExpressionV1,
     slots: &[ExecutableSlotV1],
     arguments: &[ExecutableValueV1],
+    context: EvaluationContextV1,
     operation: impl FnOnce(f64, f64) -> bool,
 ) -> Result<ExecutableValueV1, ExecutableErrorV1> {
     Ok(ExecutableValueV1::Boolean(operation(
-        number(evaluate(left, slots, arguments)?)?,
-        number(evaluate(right, slots, arguments)?)?,
+        number(evaluate(left, slots, arguments, context)?)?,
+        number(evaluate(right, slots, arguments, context)?)?,
     )))
 }
 
@@ -5665,6 +6155,9 @@ fn decode_projection(
                     5 => ExecutableValueKindV1::SymbolSet,
                     6 => ExecutableValueKindV1::Text,
                     7 => ExecutableValueKindV1::TextSet,
+                    8 => ExecutableValueKindV1::Referent,
+                    9 => ExecutableValueKindV1::ReferentSet,
+                    10 => ExecutableValueKindV1::RelationTable,
                     _ => return Err(ExecutableErrorV1::MalformedProgram),
                 };
                 bindings.push(ExecutableProjectionBindingV1 {
@@ -5682,7 +6175,10 @@ fn decode_projection(
     }
 }
 
-fn encode_value(bytes: &mut Vec<u8>, value: &ExecutableValueV1) -> Result<(), ExecutableErrorV1> {
+pub(super) fn encode_value(
+    bytes: &mut Vec<u8>,
+    value: &ExecutableValueV1,
+) -> Result<(), ExecutableErrorV1> {
     match value {
         ExecutableValueV1::Number(bits) => {
             bytes.push(0);
@@ -5701,6 +6197,31 @@ fn encode_value(bytes: &mut Vec<u8>, value: &ExecutableValueV1) -> Result<(), Ex
             encode_count(bytes, value.as_str().len())?;
             bytes.extend_from_slice(value.as_str().as_bytes());
         }
+        ExecutableValueV1::Referent(value) => {
+            bytes.push(5);
+            encode_referent(bytes, value);
+        }
+        ExecutableValueV1::RelationTable(table) => {
+            bytes.push(6);
+            bytes.extend_from_slice(&table.subject_domain.to_le_bytes());
+            bytes.push(table.value_kind as u8);
+            match table.value_domain {
+                Some(domain) => {
+                    bytes.push(1);
+                    bytes.extend_from_slice(&domain.to_le_bytes());
+                }
+                None => bytes.push(0),
+            }
+            bytes.push(table.cardinality as u8);
+            encode_count(bytes, table.rows.len())?;
+            for (subject, values) in &table.rows {
+                encode_referent(bytes, subject);
+                encode_count(bytes, values.len())?;
+                for value in values {
+                    encode_value(bytes, value)?;
+                }
+            }
+        }
         ExecutableValueV1::Set(set) => {
             bytes.push(3);
             bytes.push(set.element_kind as u8);
@@ -5711,6 +6232,20 @@ fn encode_value(bytes: &mut Vec<u8>, value: &ExecutableValueV1) -> Result<(), Ex
         }
     }
     Ok(())
+}
+
+fn encode_referent(bytes: &mut Vec<u8>, value: &ExecutableReferentV1) {
+    bytes.extend_from_slice(&value.domain.to_le_bytes());
+    match &value.identity {
+        ExecutableReferentIdentityV1::Declared(identity) => {
+            bytes.push(0);
+            bytes.extend_from_slice(&identity.to_le_bytes());
+        }
+        ExecutableReferentIdentityV1::Created(identity) => {
+            bytes.push(1);
+            bytes.extend_from_slice(identity);
+        }
+    }
 }
 
 fn encode_expression(
@@ -5730,6 +6265,23 @@ fn encode_expression(
         E::Argument(argument) => {
             bytes.push(2);
             bytes.extend_from_slice(&argument.to_le_bytes());
+        }
+        E::FreshReferent { domain, binder } => {
+            bytes.push(17);
+            bytes.extend_from_slice(&domain.to_le_bytes());
+            bytes.extend_from_slice(&binder.to_le_bytes());
+        }
+        E::RelationRead(table, subject) => encode_binary(bytes, 18, table, subject)?,
+        E::RelationPresent(table, subject) => encode_binary(bytes, 19, table, subject)?,
+        E::RelationPut(table, subject, value) => {
+            encode_ternary(bytes, 20, table, subject, value)?;
+        }
+        E::RelationInsert(table, subject, value) => {
+            encode_ternary(bytes, 21, table, subject, value)?;
+        }
+        E::RelationRemoveRow(table, subject) => encode_binary(bytes, 22, table, subject)?,
+        E::RelationRemoveValue(table, subject, value) => {
+            encode_ternary(bytes, 23, table, subject, value)?;
         }
         E::Concatenate(a, b) => encode_binary(bytes, 16, a, b)?,
         E::Add(a, b) => encode_binary(bytes, 3, a, b)?,
@@ -5766,6 +6318,19 @@ fn encode_binary(
     bytes.push(tag);
     encode_expression(bytes, left)?;
     encode_expression(bytes, right)
+}
+
+fn encode_ternary(
+    bytes: &mut Vec<u8>,
+    tag: u8,
+    first: &ExecutableExpressionV1,
+    second: &ExecutableExpressionV1,
+    third: &ExecutableExpressionV1,
+) -> Result<(), ExecutableErrorV1> {
+    bytes.push(tag);
+    encode_expression(bytes, first)?;
+    encode_expression(bytes, second)?;
+    encode_expression(bytes, third)
 }
 
 struct Decoder<'a> {
@@ -5840,6 +6405,7 @@ impl<'a> Decoder<'a> {
                     1 => ExecutableValueKindV1::Boolean,
                     2 => ExecutableValueKindV1::Symbol,
                     6 => ExecutableValueKindV1::Text,
+                    8 => ExecutableValueKindV1::Referent,
                     _ => return Err(ExecutableErrorV1::MalformedProgram),
                 };
                 let count = self.count()?;
@@ -5855,8 +6421,76 @@ impl<'a> Decoder<'a> {
                     .map_err(|_| ExecutableErrorV1::MalformedProgram)?;
                 ExecutableValueV1::text(value)
             }
+            5 => Ok(ExecutableValueV1::Referent(self.referent()?)),
+            6 => {
+                let subject_domain = self.u32()?;
+                let value_kind = match self.byte()? {
+                    0 => ExecutableRelationValueKindV1::Number,
+                    1 => ExecutableRelationValueKindV1::Boolean,
+                    2 => ExecutableRelationValueKindV1::Symbol,
+                    3 => ExecutableRelationValueKindV1::Text,
+                    4 => ExecutableRelationValueKindV1::Referent,
+                    _ => return Err(ExecutableErrorV1::MalformedProgram),
+                };
+                let value_domain = match self.byte()? {
+                    0 => None,
+                    1 => Some(self.u32()?),
+                    _ => return Err(ExecutableErrorV1::MalformedProgram),
+                };
+                if (value_kind == ExecutableRelationValueKindV1::Referent) != value_domain.is_some()
+                {
+                    return Err(ExecutableErrorV1::MalformedProgram);
+                }
+                let cardinality = match self.byte()? {
+                    0 => ExecutableRelationCardinalityV1::One,
+                    1 => ExecutableRelationCardinalityV1::Maybe,
+                    2 => ExecutableRelationCardinalityV1::Many,
+                    _ => return Err(ExecutableErrorV1::MalformedProgram),
+                };
+                let mut table = ExecutableRelationTableV1 {
+                    subject_domain,
+                    value_kind,
+                    value_domain,
+                    cardinality,
+                    rows: BTreeMap::new(),
+                };
+                let count = self.count()?;
+                for _ in 0..count {
+                    let subject = self.referent()?;
+                    if subject.domain() != subject_domain {
+                        return Err(ExecutableErrorV1::MalformedProgram);
+                    }
+                    let value_count = self.count()?;
+                    if value_count == 0
+                        || (cardinality != ExecutableRelationCardinalityV1::Many
+                            && value_count != 1)
+                    {
+                        return Err(ExecutableErrorV1::MalformedProgram);
+                    }
+                    let mut values = BTreeSet::new();
+                    for _ in 0..value_count {
+                        let value = self.value()?;
+                        if !table.value_matches(&value) || !values.insert(value) {
+                            return Err(ExecutableErrorV1::MalformedProgram);
+                        }
+                    }
+                    if table.rows.insert(subject, values).is_some() {
+                        return Err(ExecutableErrorV1::MalformedProgram);
+                    }
+                }
+                Ok(ExecutableValueV1::RelationTable(table))
+            }
             _ => Err(ExecutableErrorV1::MalformedProgram),
         }
+    }
+    fn referent(&mut self) -> Result<ExecutableReferentV1, ExecutableErrorV1> {
+        let domain = self.u32()?;
+        let identity = match self.byte()? {
+            0 => ExecutableReferentIdentityV1::Declared(self.u32()?),
+            1 => ExecutableReferentIdentityV1::Created(self.identity()?),
+            _ => return Err(ExecutableErrorV1::MalformedProgram),
+        };
+        Ok(ExecutableReferentV1 { domain, identity })
     }
     fn expression(&mut self, depth: usize) -> Result<ExecutableExpressionV1, ExecutableErrorV1> {
         if depth >= MAX_EXPRESSION_DEPTH {
@@ -5919,6 +6553,37 @@ impl<'a> Decoder<'a> {
                 Box::new(self.expression(next)?),
             ),
             16 => E::Concatenate(
+                Box::new(self.expression(next)?),
+                Box::new(self.expression(next)?),
+            ),
+            17 => E::FreshReferent {
+                domain: self.u32()?,
+                binder: self.u16()?,
+            },
+            18 => E::RelationRead(
+                Box::new(self.expression(next)?),
+                Box::new(self.expression(next)?),
+            ),
+            19 => E::RelationPresent(
+                Box::new(self.expression(next)?),
+                Box::new(self.expression(next)?),
+            ),
+            20 => E::RelationPut(
+                Box::new(self.expression(next)?),
+                Box::new(self.expression(next)?),
+                Box::new(self.expression(next)?),
+            ),
+            21 => E::RelationInsert(
+                Box::new(self.expression(next)?),
+                Box::new(self.expression(next)?),
+                Box::new(self.expression(next)?),
+            ),
+            22 => E::RelationRemoveRow(
+                Box::new(self.expression(next)?),
+                Box::new(self.expression(next)?),
+            ),
+            23 => E::RelationRemoveValue(
+                Box::new(self.expression(next)?),
                 Box::new(self.expression(next)?),
                 Box::new(self.expression(next)?),
             ),

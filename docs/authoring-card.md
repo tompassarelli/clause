@@ -222,6 +222,80 @@ on redirect-goal ?north ?objective
     ?north goal objective "North " ++ ?objective
 ```
 
+## Runtime-created Referent and keyed rows
+
+Creates one typed Referent inside a handler, uses it as the key for several relational rows, and retains immutable Text history on redirect.
+
+Catalog ID: `dynamic-relational-rows`
+
+```clause
+North
+Goal
+GoalStatus
+Text
+
+relation known-goal
+  reads {north: North} known goal {value: Goal}
+  subject north
+  mode given north yields value: many
+
+relation goal-title
+  reads {goal: Goal} title {value: Text}
+  subject goal
+  mode given goal yields value: maybe
+
+relation goal-objective
+  reads {goal: Goal} objective {value: Text}
+  subject goal
+  mode given goal yields value: maybe
+
+relation goal-status
+  reads {goal: Goal} status {value: GoalStatus}
+  subject goal
+  mode given goal yields value: maybe
+
+relation prior-goal-objective
+  reads {goal: Goal} prior objective {value: Text}
+  subject goal
+  mode given goal yields value: many
+
+relation goal-catalog-state
+  reads {north: North} goal catalog state {value: GoalStatus}
+  subject north
+  mode given north yields value: one
+
+north-main ∈ North
+ready ∈ GoalStatus
+active ∈ GoalStatus
+north-main goal catalog state ready
+
+on create-goal ?north ?title ?objective
+  when
+    ?north goal catalog state ?catalog
+  create
+    ?goal ∈ Goal
+  withdraw
+    ?north goal catalog state ?catalog
+  include
+    ?north goal catalog state ?catalog
+    ?north known goal ?goal
+    ?goal title ?title
+    ?goal objective ?objective
+    ?goal status active
+
+on redirect-goal ?north ?goal ?objective
+  when
+    ?north known goal ?goal
+    ?goal objective ?previous
+    ?goal status ?status
+    ?status = active
+  withdraw
+    ?goal objective ?previous
+  include
+    ?goal prior objective ?previous
+    ?goal objective ?objective
+```
+
 ## Derived combat transition
 
 Authorizes scalar laws, binds their result in a handler, and publishes one atomic multi-state combat change.

@@ -10,6 +10,7 @@ use super::{
     ExecutableProcessRuntimeV1, ExecutableSlotV1, ExecutableValueV1, RuntimeAllocationEpochV1,
     decode_executable_occurrence_v1, decode_executable_physical_plan_v1,
     decode_runtime_allocation_epoch_v1, encode_runtime_allocation_epoch_v1,
+    encode_value as encode_executable_value,
 };
 
 const REQUEST_MAGIC: &[u8; 4] = b"CWR1";
@@ -813,27 +814,8 @@ fn encode_values(values: &[ExecutableValueV1]) -> Result<Vec<u8>, WasmProcessSta
     let mut bytes = Vec::new();
     put_count(&mut bytes, values.len())?;
     for value in values {
-        match value {
-            ExecutableValueV1::Number(bits) => {
-                bytes.push(0);
-                bytes.extend_from_slice(&bits.to_le_bytes());
-            }
-            ExecutableValueV1::Boolean(value) => bytes.extend_from_slice(&[1, u8::from(*value)]),
-            ExecutableValueV1::Symbol(value) => {
-                bytes.push(2);
-                bytes.push(
-                    u8::try_from(value.as_bytes().len())
-                        .map_err(|_| WasmProcessStatusV1::RequestOutOfBounds)?,
-                );
-                bytes.extend_from_slice(value.as_bytes());
-            }
-            ExecutableValueV1::Text(value) => {
-                bytes.push(4);
-                put_count(&mut bytes, value.as_str().len())?;
-                bytes.extend_from_slice(value.as_str().as_bytes());
-            }
-            ExecutableValueV1::Set(_) => return Err(WasmProcessStatusV1::ProcessRejected),
-        }
+        encode_executable_value(&mut bytes, value)
+            .map_err(|_| WasmProcessStatusV1::ProcessRejected)?;
     }
     Ok(bytes)
 }

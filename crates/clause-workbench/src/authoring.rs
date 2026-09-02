@@ -61,6 +61,15 @@ pub const AUTHORING_EXAMPLES_V1: &[AuthoringExampleV1] = &[
         )),
     },
     AuthoringExampleV1 {
+        slug: "dynamic-relational-rows",
+        title: "Runtime-created Referent and keyed rows",
+        summary: "Creates one typed Referent inside a handler, uses it as the key for several relational rows, and retains immutable Text history on redirect.",
+        source: include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../test-vectors/authoring/dynamic-text-goals.clause"
+        )),
+    },
+    AuthoringExampleV1 {
         slug: "derived-combat-transition",
         title: "Derived combat transition",
         summary: "Authorizes scalar laws, binds their result in a handler, and publishes one atomic multi-state combat change.",

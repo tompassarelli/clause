@@ -292,6 +292,10 @@ iron-door ∈ Door
 iron-door ∈ Lockable
 ```
 
+An unkeyworded leaf such as `Door` declares a Referent domain. A membership
+subject such as `iron-door` is a declared Referent value with its own nominal
+identity; `Door` is its domain, not a string tag or a host-side lookup key.
+
 A statement-level membership group is source grouping sugar:
 
 ```clause
@@ -729,6 +733,30 @@ on collect ?actor
   include
     ?coin state collected
 ```
+
+A transition may create a typed Referent and use that one fresh value
+throughout its atomic delta:
+
+```clause
+on create-goal ?north ?title ?objective
+  when
+    ?north goal catalog state ?catalog
+  create
+    ?goal ∈ Goal
+  withdraw
+    ?north goal catalog state ?catalog
+  include
+    ?north goal catalog state ?catalog
+    ?north known goal ?goal
+    ?goal title ?title
+    ?goal objective ?objective
+```
+
+Each `create` binder is allocated from the accepted transition Step and its
+declared Referent domain. Every use in the same rule denotes that exact value.
+Relations keyed by the new Referent are typed dynamic rows: their one, maybe,
+or many cardinality is enforced per subject, and the whole row delta commits
+or rejects atomically with the rest of the transition.
 
 `when` constrains one exact observed/base StateRevision. All `withdraw` and
 `include` content is grounded, conflict-checked, and staged as one candidate delta

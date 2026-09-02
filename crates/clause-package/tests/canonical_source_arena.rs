@@ -706,7 +706,7 @@ fn canonical_world_declarations_reach_the_checked_package_with_exact_remainder()
     assert_eq!(compiled_again.emissions, compiled.emissions);
 
     let constitution = compiled.checked_package.constitution().preimage();
-    assert_eq!(constitution.formations.len(), 54);
+    assert_eq!(constitution.formations.len(), 56);
     assert_eq!(constitution.schemas.len(), 13);
     assert_eq!(constitution.operators.len(), 13);
     assert!(constitution.applications.is_empty());
@@ -727,7 +727,7 @@ fn canonical_world_declarations_reach_the_checked_package_with_exact_remainder()
         1,
         "the four-role clamped-between declaration remains structurally distinct"
     );
-    assert_eq!(compiled.emissions.len(), 95);
+    assert_eq!(compiled.emissions.len(), 99);
     assert!(compiled.emissions.iter().all(|emission| {
         cst.source_slice(emission.origin)
             .is_some_and(|source| !source.is_empty())
@@ -748,11 +748,14 @@ fn canonical_world_declarations_reach_the_checked_package_with_exact_remainder()
                 counts[index] += 1;
                 counts
             });
-    assert_eq!(unsupported_counts, [0, 0, 2, 0]);
+    assert_eq!(unsupported_counts, [0, 0, 0, 0]);
     let membership_emissions = compiled
-        .unsupported
+        .emissions
         .iter()
-        .flat_map(|unsupported| &unsupported.emissions)
+        .filter(|emission| {
+            emission.slot.production == CanonicalSourceProductionV1::Assertion
+                && matches!(emission.slot.local.as_slice(), b"Arena" | b"Player")
+        })
         .collect::<Vec<_>>();
     assert_eq!(membership_emissions.len(), 2);
     assert_eq!(
@@ -894,27 +897,28 @@ fn standalone_membership_group_preserves_order_and_item_origins() {
     )
     .expect("the membership group reaches bounded elaboration");
 
-    let [group] = compiled.unsupported.as_slice() else {
-        panic!("one standalone membership group remains outside the bounded package profile")
-    };
-    assert_eq!(group.production, CanonicalSourceProductionV1::Assertion);
-    assert_eq!(group.emissions.len(), 2);
-    assert_eq!(group.emissions[0].producer, group.emissions[1].producer);
-    assert_eq!(group.emissions[0].slot.local, b"Door");
-    assert_eq!(group.emissions[1].slot.local, b"Lockable");
-    assert_eq!(group.emissions[0].slot.repetition, None);
-    assert_eq!(group.emissions[1].slot.repetition, None);
+    assert!(compiled.unsupported.is_empty());
+    let emissions = compiled
+        .emissions
+        .iter()
+        .filter(|emission| emission.slot.production == CanonicalSourceProductionV1::Assertion)
+        .collect::<Vec<_>>();
+    assert_eq!(emissions.len(), 2);
+    assert_eq!(emissions[0].producer, emissions[1].producer);
+    assert_eq!(emissions[0].slot.local, b"Door");
+    assert_eq!(emissions[1].slot.local, b"Lockable");
+    assert_eq!(emissions[0].slot.repetition, None);
+    assert_eq!(emissions[1].slot.repetition, None);
     assert_eq!(
-        cst.source_slice(group.emissions[0].origin),
+        cst.source_slice(emissions[0].origin),
         Some(b"Door".as_slice())
     );
     assert_eq!(
-        cst.source_slice(group.emissions[1].origin),
+        cst.source_slice(emissions[1].origin),
         Some(b"Lockable".as_slice())
     );
     assert!(
-        group
-            .emissions
+        emissions
             .iter()
             .all(|emission| emission.allocations.is_empty())
     );
@@ -929,7 +933,7 @@ fn repeated_membership_target_is_not_deduplicated() {
         &cst,
         ProgramChangeOccurrenceId::from_bytes(raw_id(8)),
     )
-    .expect("the repeated unsupported group does not collapse allocation inputs");
+    .expect("the repeated membership group does not collapse allocation inputs");
     let compiled = elaborate_canonical_source_package_v1(
         &cst,
         CanonicalSourceContextV1 {
@@ -939,7 +943,11 @@ fn repeated_membership_target_is_not_deduplicated() {
         &plan,
     )
     .expect("the repeated membership group reaches bounded elaboration");
-    let emissions = &compiled.unsupported[0].emissions;
+    let emissions = compiled
+        .emissions
+        .iter()
+        .filter(|emission| emission.slot.production == CanonicalSourceProductionV1::Assertion)
+        .collect::<Vec<_>>();
     assert_eq!(emissions.len(), 2);
     assert_eq!(emissions[0].slot.local, emissions[1].slot.local);
     assert_eq!(emissions[0].slot.repetition, None);

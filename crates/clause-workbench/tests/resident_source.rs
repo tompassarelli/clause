@@ -8,7 +8,7 @@ use clause_runtime::{
     ExecutableInputSourceV1, ExecutableKeyPhaseV1, ExecutableValueKindV1, ExecutableValueV1,
     ForkedProcessBranchV1, decode_executable_occurrence_v1, decode_executable_physical_plan_v1,
     decode_wasm_process_request_v1, encode_executable_physical_plan_v1,
-    open_fresh_persistent_process_session_v1,
+    open_fresh_persistent_process_session_v1, projected_relation_table_v1,
 };
 use clause_workbench::ResidentSourceWorkbenchV1;
 
@@ -43,6 +43,10 @@ const NORTH_REPEATED_TURN: &[u8] = include_bytes!(concat!(
 const TEXT_STATE: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../test-vectors/authoring/text-state-transition.clause"
+));
+const DYNAMIC_TEXT_GOALS: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../test-vectors/authoring/dynamic-text-goals.clause"
 ));
 const RUNTIME_SELECTED_POLICY: &str = r#"F64
 Root
@@ -1706,4 +1710,101 @@ fn text_handler_state_projection_and_persistent_redirect_are_one_value_path() {
         projected_text_set(projected_object_field(north, b"goal-tags")),
         vec!["Launch North", "🚀 durable"]
     );
+}
+
+#[test]
+fn runtime_created_referent_keys_goal_rows_and_retains_redirect_history() {
+    let mut workbench = ResidentSourceWorkbenchV1::open(DYNAMIC_TEXT_GOALS)
+        .expect("the dynamic relational goal source opens in the resident workbench");
+    let create = workbench
+        .handler_occurrence(
+            b"create-goal",
+            &[
+                ExecutableValueV1::text("Ship North").expect("title is bounded Text"),
+                ExecutableValueV1::text("Clause owns the goal").expect("objective is bounded Text"),
+            ],
+        )
+        .expect("the create handler takes only its two Text inputs");
+    workbench
+        .run_occurrences_to_candidate(&[create])
+        .expect("goal creation reaches one hidden candidate");
+    let created = workbench
+        .admit()
+        .expect("goal creation reaches one admitted successor");
+    let created = decode_canonical_term_bytes(&created.projection.exact_term_bytes)
+        .expect("the keyed goal projection decodes");
+    let relations = projected_object_field(&created, b"relations");
+    let known = projected_relation_table_v1(projected_object_field(relations, b"known-goal"))
+        .expect("the known-goal table projection is canonical")
+        .expect("known-goal projects one relation table");
+    let goal = known
+        .rows()
+        .values()
+        .flat_map(|values| values.iter())
+        .find_map(|value| value.as_referent().cloned())
+        .expect("Clause inserted one runtime-created Goal referent");
+    let title = projected_relation_table_v1(projected_object_field(relations, b"goal-title"))
+        .expect("the title table projection is canonical")
+        .expect("goal-title projects one relation table");
+    assert_eq!(
+        title
+            .rows()
+            .get(&goal)
+            .and_then(|values| values.first())
+            .and_then(ExecutableValueV1::as_text),
+        Some("Ship North")
+    );
+    let objective =
+        projected_relation_table_v1(projected_object_field(relations, b"goal-objective"))
+            .expect("the objective table projection is canonical")
+            .expect("goal-objective projects one relation table");
+    assert_eq!(
+        objective
+            .rows()
+            .get(&goal)
+            .and_then(|values| values.first())
+            .and_then(ExecutableValueV1::as_text),
+        Some("Clause owns the goal")
+    );
+
+    let redirect = workbench
+        .handler_occurrence(
+            b"redirect-goal",
+            &[
+                ExecutableValueV1::Referent(goal.clone()),
+                ExecutableValueV1::text("Clause owns the history")
+                    .expect("redirected objective is bounded Text"),
+            ],
+        )
+        .expect("the redirect handler accepts the created Goal identity");
+    workbench
+        .run_occurrences_to_candidate(&[redirect])
+        .expect("goal redirect reaches one hidden candidate");
+    let redirected = workbench
+        .admit()
+        .expect("goal redirect reaches one admitted successor");
+    let redirected = decode_canonical_term_bytes(&redirected.projection.exact_term_bytes)
+        .expect("the redirected keyed goal projection decodes");
+    let relations = projected_object_field(&redirected, b"relations");
+    let objective =
+        projected_relation_table_v1(projected_object_field(relations, b"goal-objective"))
+            .expect("the redirected objective table is canonical")
+            .expect("goal-objective remains a relation table");
+    assert_eq!(
+        objective
+            .rows()
+            .get(&goal)
+            .and_then(|values| values.first())
+            .and_then(ExecutableValueV1::as_text),
+        Some("Clause owns the history")
+    );
+    let history =
+        projected_relation_table_v1(projected_object_field(relations, b"prior-goal-objective"))
+            .expect("the prior-objective table is canonical")
+            .expect("prior-goal-objective projects one relation table");
+    assert!(history.rows().get(&goal).is_some_and(|values| {
+        values
+            .iter()
+            .any(|value| value.as_text() == Some("Clause owns the goal"))
+    }));
 }
