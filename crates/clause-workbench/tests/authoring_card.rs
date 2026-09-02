@@ -47,13 +47,25 @@ fn authoring_catalog_and_cli_use_the_resident_compiler() {
         checked.stdout.starts_with(b"checked generation="),
         "check-source did not report the opened resident generation: {checked:?}"
     );
+
+    let source = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../test-vectors/authoring/supported-many-insertion.clause");
+    let checked = Command::new(executable)
+        .arg("check-source")
+        .arg(source)
+        .output()
+        .expect("the many-insertion check-source command starts");
+    assert!(
+        checked.status.success(),
+        "supported many insertion failed: {checked:?}"
+    );
 }
 
 #[test]
 fn check_source_rejects_quarantined_productions() {
     let executable = env!("CARGO_BIN_EXE_clause-workbench");
     let source = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../test-vectors/authoring/unsupported-scalar-insertion.clause");
+        .join("../../test-vectors/authoring/unsupported-handler-section.clause");
     let checked = Command::new(executable)
         .arg("check-source")
         .arg(source)

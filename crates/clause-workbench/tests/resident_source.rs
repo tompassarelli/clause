@@ -378,6 +378,42 @@ on clear-anchor ?actor
   include
     ?actor phase ready
 "#;
+const MANY_RELATION_MEMBERSHIP: &str = r#"referent Root
+referent Item
+referent idle
+referent alpha
+referent beta
+
+relation phase
+  reads {root: Root} phase {value: Item}
+  subject root
+  mode given root yields value: one
+
+relation known
+  reads {root: Root} known {value: Item}
+  subject root
+  mode given root yields value: many
+
+root phase idle
+
+on discover ?root ?item
+  when
+    ?root phase ?phase
+  withdraw
+    ?root phase ?phase
+  include
+    ?root phase ?phase
+    ?root known ?item
+
+on select ?root ?item
+  when
+    ?root phase ?prior
+    ?root known ?item
+  withdraw
+    ?root phase ?prior
+  include
+    ?root phase ?item
+"#;
 
 fn coherent_source(objective: &[u8]) -> Vec<u8> {
     let mut source = Vec::with_capacity(
@@ -1004,6 +1040,45 @@ fn actor_neutral_hit_updates_two_state_cells_in_one_admitted_candidate() {
     assert_eq!(
         boar_combat_state(&finished.projection.exact_term_bytes),
         (0.0, 0.0)
+    );
+}
+
+#[test]
+fn many_relation_retains_every_discovered_value_for_membership() {
+    let mut workbench = ResidentSourceWorkbenchV1::open(MANY_RELATION_MEMBERSHIP.as_bytes())
+        .expect("the neutral many-relation source opens");
+    let symbol = |value: &[u8]| {
+        ExecutableValueV1::symbol(value).expect("fixture symbols are executable values")
+    };
+
+    for value in [b"alpha".as_slice(), b"beta".as_slice(), b"alpha".as_slice()] {
+        let discover = workbench
+            .handler_occurrence(b"discover", &[symbol(value)])
+            .expect("discover accepts one item identity");
+        workbench
+            .run_occurrences_to_candidate(&[discover])
+            .expect("discover produces one hidden candidate");
+        workbench
+            .admit()
+            .expect("discover reaches one admitted successor");
+    }
+
+    let select_alpha = workbench
+        .handler_occurrence(b"select", &[symbol(b"alpha")])
+        .expect("select accepts one item identity");
+    workbench
+        .run_occurrences_to_candidate(&[select_alpha])
+        .expect("membership in the retained set admits selection");
+    let selected = workbench
+        .admit()
+        .expect("selection reaches one admitted successor");
+    let term = decode_canonical_term_bytes(&selected.projection.exact_term_bytes)
+        .expect("the selected projection decodes");
+    let root = projected_object_field(&term, b"root");
+    assert!(!projected_object_has_field(root, b"known"));
+    assert_eq!(
+        projected_symbol(projected_object_field(root, b"phase")),
+        b"alpha"
     );
 }
 

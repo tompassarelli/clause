@@ -269,6 +269,7 @@ pub struct CanonicalStateRefV1 {
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum CanonicalStatePathV1 {
     Scalar,
+    Many,
     Field {
         formation: FormationLocalId,
         designation: Vec<u8>,
@@ -295,6 +296,7 @@ pub enum CanonicalExecutableExpressionV1 {
     Multiply(Box<Self>, Box<Self>),
     Divide(Box<Self>, Box<Self>),
     Clamp(Box<Self>, Box<Self>, Box<Self>),
+    Insert(Box<Self>, Box<Self>),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -308,6 +310,10 @@ pub enum CanonicalExecutablePredicateV1 {
         CanonicalExecutableExpressionV1,
     ),
     LessThanOrEqual(
+        CanonicalExecutableExpressionV1,
+        CanonicalExecutableExpressionV1,
+    ),
+    Contains(
         CanonicalExecutableExpressionV1,
         CanonicalExecutableExpressionV1,
     ),
@@ -854,6 +860,7 @@ struct GeneralHandlerCst {
     subject: Vec<u8>,
     arguments: Vec<GeneralHandlerArgumentCst>,
     parameter_sources: Vec<ScalarParameterSourceCst>,
+    membership_sources: Vec<ScalarParameterSourceCst>,
     required_sources: Vec<ScalarParameterSourceCst>,
     scalar_bindings: Vec<ScalarLawBindingCst>,
     predicates: Vec<CanonicalScalarPredicateV1>,
@@ -1364,6 +1371,7 @@ fn allocation_requests(
     cst: &CanonicalSourceCstV1,
 ) -> Result<Vec<AllocationRequest>, CanonicalSourceErrorV1> {
     let mut requested = Vec::new();
+    let mut many_assertions = BTreeSet::new();
     let input = input_handler_parts(cst)?;
     let jump = jump_handler_parts(cst)?;
     let scalar = scalar_handler_parts(cst)?;
@@ -1521,18 +1529,27 @@ fn allocation_requests(
                 let concrete_subject = concrete_general_handler_subject(cst, handler)?;
                 let mut optional_assertions = BTreeSet::new();
                 for insertion in &handler.insertions {
-                    optional_assertions.insert(assertion_producer(
-                        &concrete_subject,
-                        &insertion.target.relation,
-                    ));
+                    let request = AllocationRequest {
+                        producer: assertion_producer(&concrete_subject, &insertion.target.relation),
+                        slot: head_slot(CanonicalSourceProductionV1::Assertion),
+                        domain: AllocationDomain::Formation,
+                    };
+                    if declared_state_cardinality(cst, &insertion.target.relation)
+                        == Some(SourceCardinality::Many)
+                    {
+                        many_assertions.insert(request);
+                    } else {
+                        optional_assertions.insert(request);
+                    }
                 }
-                for producer in optional_assertions {
-                    requested.push(AllocationRequest {
-                        producer,
+                for membership in &handler.membership_sources {
+                    many_assertions.insert(AllocationRequest {
+                        producer: assertion_producer(&concrete_subject, &membership.relation),
                         slot: head_slot(CanonicalSourceProductionV1::Assertion),
                         domain: AllocationDomain::Formation,
                     });
                 }
+                requested.extend(optional_assertions);
             }
             CstKind::TickHandler(handler) => {
                 requested.push(AllocationRequest {
@@ -1680,6 +1697,7 @@ fn allocation_requests(
             | CstKind::Unsupported(_) => {}
         }
     }
+    requested.extend(many_assertions);
     requested.sort();
     for pair in requested.windows(2) {
         if pair[0] == pair[1] {
@@ -1689,6 +1707,26 @@ fn allocation_requests(
         }
     }
     Ok(requested)
+}
+
+fn declared_state_cardinality(
+    cst: &CanonicalSourceCstV1,
+    surface: &[u8],
+) -> Option<SourceCardinality> {
+    let relation = cst.items.iter().find_map(|item| match &item.kind {
+        CstKind::Relation(relation) if relation.surface == surface => Some(relation),
+        _ => None,
+    })?;
+    let subject = relation.subject.as_ref()?;
+    let matching = relation
+        .modes
+        .iter()
+        .filter(|mode| mode.known.iter().any(|role| role == subject))
+        .collect::<Vec<_>>();
+    let [mode] = matching.as_slice() else {
+        return None;
+    };
+    (mode.produced.len() == 1).then_some(mode.cardinality)
 }
 
 fn declared_state_relation(cst: &CanonicalSourceCstV1, surface: &[u8]) -> bool {
@@ -1832,6 +1870,30 @@ fn canonical_state_ref(
         &head_slot(CanonicalSourceProductionV1::Assertion),
     )?;
     canonical_state_ref_with_identity(cst, plan, assertion, subject, &relation, field, origin)
+}
+
+fn canonical_many_state_ref(
+    cst: &CanonicalSourceCstV1,
+    plan: &CanonicalSourceAllocationPlanV1,
+    subject: &[u8],
+    surface: &[u8],
+    origin: CanonicalSourceOriginV1,
+) -> Result<CanonicalStateRefV1, CanonicalSourceErrorV1> {
+    let relation = resolved_state_relation(cst, plan, surface, origin)?;
+    let assertion = formation_id(
+        plan,
+        &assertion_producer(subject, surface),
+        &head_slot(CanonicalSourceProductionV1::Assertion),
+    )?;
+    Ok(CanonicalStateRefV1 {
+        assertion,
+        relation: relation.schema,
+        subject_role: relation.subject_role,
+        value_role: relation.value_role,
+        subject: subject.to_vec(),
+        relation_designation: relation.relation.designation.clone(),
+        path: CanonicalStatePathV1::Many,
+    })
 }
 
 fn canonical_state_ref_with_identity(
@@ -1997,6 +2059,29 @@ fn general_target_state_ref(
     )
 }
 
+fn many_state_ref(
+    cst: &CanonicalSourceCstV1,
+    plan: &CanonicalSourceAllocationPlanV1,
+    source: &ScalarParameterSourceCst,
+    entities: &BTreeMap<Vec<u8>, Vec<u8>>,
+    origin: CanonicalSourceOriginV1,
+) -> Result<CanonicalStateRefV1, CanonicalSourceErrorV1> {
+    if source.field.is_some()
+        || state_relation_cardinality(cst, plan, source, origin)? != SourceCardinality::Many
+    {
+        return Err(CanonicalSourceErrorV1::MissingExecutableBinding { origin });
+    }
+    let subject = if source.subject.starts_with(b"?") {
+        entities
+            .get(&source.subject)
+            .ok_or(CanonicalSourceErrorV1::MissingExecutableBinding { origin })?
+            .as_slice()
+    } else {
+        source.subject.as_slice()
+    };
+    canonical_many_state_ref(cst, plan, subject, &source.relation, origin)
+}
+
 fn concrete_general_handler_subject(
     cst: &CanonicalSourceCstV1,
     handler: &GeneralHandlerCst,
@@ -2008,6 +2093,7 @@ fn concrete_general_handler_subject(
     for source in handler
         .parameter_sources
         .iter()
+        .chain(&handler.membership_sources)
         .chain(&handler.required_sources)
         .filter(|source| source.subject == handler.subject)
     {
@@ -2105,6 +2191,33 @@ fn require_optional_state_relation(
         return Err(CanonicalSourceErrorV1::MissingExecutableBinding { origin });
     }
     Ok(())
+}
+
+fn state_relation_cardinality(
+    cst: &CanonicalSourceCstV1,
+    plan: &CanonicalSourceAllocationPlanV1,
+    source: &ScalarParameterSourceCst,
+    origin: CanonicalSourceOriginV1,
+) -> Result<SourceCardinality, CanonicalSourceErrorV1> {
+    let relation = resolved_state_relation(cst, plan, &source.relation, origin)?;
+    let matching = relation
+        .relation
+        .modes
+        .iter()
+        .filter(|mode| {
+            mode.known
+                .iter()
+                .any(|role| role == relation.subject_designation)
+                && mode
+                    .produced
+                    .iter()
+                    .any(|role| role == relation.value_designation)
+        })
+        .collect::<Vec<_>>();
+    let [mode] = matching.as_slice() else {
+        return Err(CanonicalSourceErrorV1::MissingExecutableBinding { origin });
+    };
+    Ok(mode.cardinality)
 }
 
 struct ResolvedBooleanRelationUse<'a> {
@@ -2709,24 +2822,65 @@ fn checked_source_state_cells(
     }) {
         let subject = concrete_general_handler_subject(cst, handler)?;
         for insertion in &handler.insertions {
-            require_optional_state_relation(cst, plan, &insertion.target, handler.origin)?;
-            let state = canonical_state_ref(
+            let kind = optional_state_value_kind(cst, plan, &insertion.target, handler.origin)?;
+            match state_relation_cardinality(cst, plan, &insertion.target, handler.origin)? {
+                SourceCardinality::Maybe => {
+                    require_optional_state_relation(cst, plan, &insertion.target, handler.origin)?;
+                    let state = canonical_state_ref(
+                        cst,
+                        plan,
+                        &subject,
+                        &insertion.target.relation,
+                        insertion.target.field.as_deref(),
+                        handler.origin,
+                    )?;
+                    cells.entry(state.clone()).or_insert(CanonicalStateCellV1 {
+                        state,
+                        initial_value: None,
+                        value_kind: kind,
+                    });
+                }
+                SourceCardinality::Many if insertion.target.field.is_none() => {
+                    let state = canonical_many_state_ref(
+                        cst,
+                        plan,
+                        &subject,
+                        &insertion.target.relation,
+                        handler.origin,
+                    )?;
+                    cells.entry(state.clone()).or_insert(CanonicalStateCellV1 {
+                        state,
+                        initial_value: None,
+                        value_kind: kind,
+                    });
+                }
+                _ => {
+                    return Err(CanonicalSourceErrorV1::MissingExecutableBinding {
+                        origin: handler.origin,
+                    });
+                }
+            }
+        }
+        for membership in &handler.membership_sources {
+            if membership.field.is_some()
+                || state_relation_cardinality(cst, plan, membership, handler.origin)?
+                    != SourceCardinality::Many
+            {
+                return Err(CanonicalSourceErrorV1::MissingExecutableBinding {
+                    origin: handler.origin,
+                });
+            }
+            let state = canonical_many_state_ref(
                 cst,
                 plan,
                 &subject,
-                &insertion.target.relation,
-                insertion.target.field.as_deref(),
+                &membership.relation,
                 handler.origin,
             )?;
             cells.entry(state.clone()).or_insert(CanonicalStateCellV1 {
                 state,
                 initial_value: None,
-                value_kind: optional_state_value_kind(
-                    cst,
-                    plan,
-                    &insertion.target,
-                    handler.origin,
-                )?,
+                value_kind: optional_state_value_kind(cst, plan, membership, handler.origin)?,
             });
         }
     }
@@ -3429,10 +3583,12 @@ fn checked_executable_handlers(
         let current_source = source
             .assignments
             .first()
+            .map(|assignment| &assignment.target)
+            .or_else(|| source.parameter_sources.first())
+            .or_else(|| source.required_sources.first())
             .ok_or(CanonicalSourceErrorV1::InvalidGeneralHandler {
                 origin: source.origin,
             })?
-            .target
             .clone();
         let current = general_parameter_state_ref(cst, plan, &current_source, source.origin)?;
         let initial_entities = BTreeMap::from([(source.subject.clone(), current.subject.clone())]);
@@ -3469,8 +3625,20 @@ fn checked_executable_handlers(
         );
         required_present.sort();
         required_present.dedup();
-        let mut required_absent = source
-            .insertions
+        let mut optional_insertions = Vec::new();
+        let mut many_insertions = Vec::new();
+        for insertion in &source.insertions {
+            match state_relation_cardinality(cst, plan, &insertion.target, source.origin)? {
+                SourceCardinality::Maybe => optional_insertions.push(insertion),
+                SourceCardinality::Many => many_insertions.push(insertion),
+                _ => {
+                    return Err(CanonicalSourceErrorV1::InvalidGeneralHandler {
+                        origin: source.origin,
+                    });
+                }
+            }
+        }
+        let mut required_absent = optional_insertions
             .iter()
             .map(|insertion| {
                 general_target_state_ref(cst, plan, &insertion.target, &entities, source.origin)
@@ -3517,6 +3685,21 @@ fn checked_executable_handlers(
                 })
                 .collect::<Result<Vec<_>, CanonicalSourceErrorV1>>()?,
         );
+        for membership in &source.membership_sources {
+            let argument = arguments.get(&membership.parameter).copied().ok_or(
+                CanonicalSourceErrorV1::InvalidGeneralHandler {
+                    origin: source.origin,
+                },
+            )?;
+            let state = many_state_ref(cst, plan, membership, &entities, source.origin)?;
+            required_present.push(state.clone());
+            predicates.push(CanonicalExecutablePredicateV1::Contains(
+                CanonicalExecutableExpressionV1::State(state),
+                CanonicalExecutableExpressionV1::Argument(argument),
+            ));
+        }
+        required_present.sort();
+        required_present.dedup();
         let mut assignments = source
             .assignments
             .iter()
@@ -3541,8 +3724,7 @@ fn checked_executable_handlers(
             })
             .collect::<Result<Vec<_>, CanonicalSourceErrorV1>>()?;
         assignments.extend(
-            source
-                .insertions
+            optional_insertions
                 .iter()
                 .map(|assignment| {
                     Ok(CanonicalExecutableAssignmentV1 {
@@ -3565,6 +3747,35 @@ fn checked_executable_handlers(
                 })
                 .collect::<Result<Vec<_>, CanonicalSourceErrorV1>>()?,
         );
+        for insertion in many_insertions {
+            let value = canonical_general_executable_expression(
+                &insertion.value,
+                &current,
+                &parameters,
+                &arguments,
+                &scalar_bindings,
+                source.origin,
+            )?;
+            let state = many_state_ref(cst, plan, &insertion.target, &entities, source.origin)?;
+            if assignments
+                .iter()
+                .any(|assignment| assignment.target == state)
+            {
+                return Err(CanonicalSourceErrorV1::InvalidGeneralHandler {
+                    origin: source.origin,
+                });
+            }
+            required_present.push(state.clone());
+            assignments.push(CanonicalExecutableAssignmentV1 {
+                target: state.clone(),
+                value: CanonicalExecutableExpressionV1::Insert(
+                    Box::new(CanonicalExecutableExpressionV1::State(state)),
+                    Box::new(value),
+                ),
+            });
+        }
+        required_present.sort();
+        required_present.dedup();
         handlers.push(CanonicalExecutableHandlerV1 {
             id: handler_id(&source.producer)?,
             designation: source.designation.clone(),
@@ -5432,11 +5643,12 @@ fn parse_general_handler(
             _ => return Ok(None),
         }
     }
-    if withdraw.is_empty() || include.is_empty() {
+    if include.is_empty() {
         return Ok(None);
     }
 
     let mut parameter_sources = BTreeMap::<Vec<u8>, ScalarParameterSourceCst>::new();
+    let mut membership_sources = Vec::new();
     let mut scalar_bindings = BTreeMap::<Vec<u8>, ScalarLawBindingCst>::new();
     let mut predicates = Vec::new();
     let mut boolean_conditions = Vec::new();
@@ -5464,8 +5676,11 @@ fn parse_general_handler(
             return Ok(None);
         };
         for source in sources {
-            if seen_arguments.contains(&source.parameter)
-                || scalar_bindings.contains_key(&source.parameter)
+            if seen_arguments.contains(&source.parameter) {
+                membership_sources.push(source);
+                continue;
+            }
+            if scalar_bindings.contains_key(&source.parameter)
                 || parameter_sources
                     .insert(source.parameter.clone(), source)
                     .is_some()
@@ -5508,7 +5723,7 @@ fn parse_general_handler(
         });
     }
     for (include, include_origin) in &include[paired..] {
-        let Some(mut inserted) = parse_general_vector_insertion(include, subject) else {
+        let Some(mut inserted) = parse_general_insertion(include, subject) else {
             return Ok(None);
         };
         insertions.append(&mut inserted);
@@ -5567,6 +5782,7 @@ fn parse_general_handler(
         subject: subject.as_bytes().to_vec(),
         arguments,
         parameter_sources: parameter_sources.into_values().collect(),
+        membership_sources,
         required_sources,
         scalar_bindings: scalar_bindings.into_values().collect(),
         predicates,
@@ -5578,32 +5794,50 @@ fn parse_general_handler(
     }))
 }
 
-fn parse_general_vector_insertion(
+fn parse_general_insertion(
     source: &str,
     handler_subject: &str,
 ) -> Option<Vec<GeneralAssignmentCst>> {
-    let (prefix, vector) = split_vector_subject(source)?;
-    let prefix = prefix.split_whitespace().collect::<Vec<_>>();
-    if prefix.len() < 2 || (prefix[0].starts_with('?') && prefix[0] != handler_subject) {
+    if let Some((prefix, vector)) = split_vector_subject(source) {
+        let prefix = prefix.split_whitespace().collect::<Vec<_>>();
+        if prefix.len() < 2 || (prefix[0].starts_with('?') && prefix[0] != handler_subject) {
+            return None;
+        }
+        let subject = prefix[0].as_bytes().to_vec();
+        let relation = prefix[1..].join(" ").into_bytes();
+        return parse_vec3_components(vector)?
+            .into_iter()
+            .zip([b"x".as_slice(), b"y".as_slice(), b"z".as_slice()])
+            .map(|(value, field)| {
+                Some(GeneralAssignmentCst {
+                    target: ScalarParameterSourceCst {
+                        parameter: Vec::new(),
+                        subject: subject.clone(),
+                        relation: relation.clone(),
+                        field: Some(field.to_vec()),
+                    },
+                    value: parse_scalar_expression(value, "")?,
+                })
+            })
+            .collect();
+    }
+
+    let parts = source.split_whitespace().collect::<Vec<_>>();
+    let [subject, relation @ .., value] = parts.as_slice() else {
+        return None;
+    };
+    if relation.is_empty() || (subject.starts_with('?') && *subject != handler_subject) {
         return None;
     }
-    let subject = prefix[0].as_bytes().to_vec();
-    let relation = prefix[1..].join(" ").into_bytes();
-    parse_vec3_components(vector)?
-        .into_iter()
-        .zip([b"x".as_slice(), b"y".as_slice(), b"z".as_slice()])
-        .map(|(value, field)| {
-            Some(GeneralAssignmentCst {
-                target: ScalarParameterSourceCst {
-                    parameter: Vec::new(),
-                    subject: subject.clone(),
-                    relation: relation.clone(),
-                    field: Some(field.to_vec()),
-                },
-                value: parse_scalar_expression(value, "")?,
-            })
-        })
-        .collect()
+    Some(vec![GeneralAssignmentCst {
+        target: ScalarParameterSourceCst {
+            parameter: Vec::new(),
+            subject: subject.as_bytes().to_vec(),
+            relation: relation.join(" ").into_bytes(),
+            field: None,
+        },
+        value: parse_scalar_expression(value, "")?,
+    }])
 }
 
 fn parse_scalar_law_binding(

@@ -101,14 +101,15 @@ impl RuntimeIdentityOrdinalsV1 {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum ExecutableValueV1 {
     Number(u64),
     Boolean(bool),
     Symbol(ExecutableSymbolV1),
+    Set(ExecutableSetV1),
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct ExecutableSymbolV1 {
     length: u8,
     bytes: [u8; MAX_EXECUTABLE_SYMBOL_BYTES],
@@ -134,18 +135,66 @@ impl ExecutableSymbolV1 {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 #[repr(u8)]
 pub enum ExecutableValueKindV1 {
     Number = 0,
     Boolean = 1,
     Symbol = 2,
+    NumberSet = 3,
+    BooleanSet = 4,
+    SymbolSet = 5,
+}
+
+impl ExecutableValueKindV1 {
+    const fn set_kind(self) -> Option<Self> {
+        match self {
+            Self::Number => Some(Self::NumberSet),
+            Self::Boolean => Some(Self::BooleanSet),
+            Self::Symbol => Some(Self::SymbolSet),
+            Self::NumberSet | Self::BooleanSet | Self::SymbolSet => None,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct ExecutableSetV1 {
+    element_kind: ExecutableValueKindV1,
+    values: BTreeSet<ExecutableValueV1>,
+}
+
+impl ExecutableSetV1 {
+    fn empty(element_kind: ExecutableValueKindV1) -> Result<Self, ExecutableErrorV1> {
+        element_kind
+            .set_kind()
+            .ok_or(ExecutableErrorV1::TypeMismatch)?;
+        Ok(Self {
+            element_kind,
+            values: BTreeSet::new(),
+        })
+    }
+
+    fn inserted(&self, value: ExecutableValueV1) -> Result<Self, ExecutableErrorV1> {
+        if value.kind() != self.element_kind {
+            return Err(ExecutableErrorV1::TypeMismatch);
+        }
+        let mut next = self.clone();
+        next.values.insert(value);
+        Ok(next)
+    }
+
+    fn contains(&self, value: &ExecutableValueV1) -> Result<bool, ExecutableErrorV1> {
+        if value.kind() != self.element_kind {
+            return Err(ExecutableErrorV1::TypeMismatch);
+        }
+        Ok(self.values.contains(value))
+    }
 }
 
 /// One fixed semantic state coordinate whose relation fact may be absent.
 /// Absence belongs to the configuration structure, never to the scalar value
 /// domain, so no domain value can be mistaken for a missing fact.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ExecutableSlotV1 {
     Absent(ExecutableValueKindV1),
     Present(ExecutableValueV1),
@@ -153,15 +202,15 @@ pub enum ExecutableSlotV1 {
 
 impl ExecutableSlotV1 {
     #[must_use]
-    pub const fn kind(self) -> ExecutableValueKindV1 {
+    pub fn kind(&self) -> ExecutableValueKindV1 {
         match self {
-            Self::Absent(kind) => kind,
+            Self::Absent(kind) => *kind,
             Self::Present(value) => value.kind(),
         }
     }
 
     #[must_use]
-    pub const fn value(self) -> Option<ExecutableValueV1> {
+    pub const fn value(&self) -> Option<&ExecutableValueV1> {
         match self {
             Self::Absent(_) => None,
             Self::Present(value) => Some(value),
@@ -169,12 +218,12 @@ impl ExecutableSlotV1 {
     }
 
     #[must_use]
-    pub fn as_number(self) -> Option<f64> {
+    pub fn as_number(&self) -> Option<f64> {
         self.value().and_then(ExecutableValueV1::as_number)
     }
 
     #[must_use]
-    pub const fn as_boolean(self) -> Option<bool> {
+    pub const fn as_boolean(&self) -> Option<bool> {
         match self.value() {
             Some(value) => value.as_boolean(),
             None => None,
@@ -202,12 +251,24 @@ impl PartialEq<ExecutableSlotV1> for ExecutableValueV1 {
 
 impl ExecutableValueV1 {
     #[must_use]
-    pub const fn kind(self) -> ExecutableValueKindV1 {
+    pub const fn kind(&self) -> ExecutableValueKindV1 {
         match self {
             Self::Number(_) => ExecutableValueKindV1::Number,
             Self::Boolean(_) => ExecutableValueKindV1::Boolean,
             Self::Symbol(_) => ExecutableValueKindV1::Symbol,
+            Self::Set(set) => match set.element_kind {
+                ExecutableValueKindV1::Number => ExecutableValueKindV1::NumberSet,
+                ExecutableValueKindV1::Boolean => ExecutableValueKindV1::BooleanSet,
+                ExecutableValueKindV1::Symbol => ExecutableValueKindV1::SymbolSet,
+                ExecutableValueKindV1::NumberSet
+                | ExecutableValueKindV1::BooleanSet
+                | ExecutableValueKindV1::SymbolSet => unreachable!(),
+            },
         }
+    }
+
+    fn empty_set(element_kind: ExecutableValueKindV1) -> Result<Self, ExecutableErrorV1> {
+        ExecutableSetV1::empty(element_kind).map(Self::Set)
     }
 }
 
@@ -316,18 +377,18 @@ impl ExecutableValueV1 {
     }
 
     #[must_use]
-    pub fn as_number(self) -> Option<f64> {
+    pub fn as_number(&self) -> Option<f64> {
         match self {
-            Self::Number(bits) => Some(f64::from_bits(bits)),
-            Self::Boolean(_) | Self::Symbol(_) => None,
+            Self::Number(bits) => Some(f64::from_bits(*bits)),
+            Self::Boolean(_) | Self::Symbol(_) | Self::Set(_) => None,
         }
     }
 
     #[must_use]
-    pub const fn as_boolean(self) -> Option<bool> {
+    pub const fn as_boolean(&self) -> Option<bool> {
         match self {
-            Self::Boolean(value) => Some(value),
-            Self::Number(_) | Self::Symbol(_) => None,
+            Self::Boolean(value) => Some(*value),
+            Self::Number(_) | Self::Symbol(_) | Self::Set(_) => None,
         }
     }
 
@@ -339,7 +400,7 @@ impl ExecutableValueV1 {
     pub fn as_symbol(&self) -> Option<&[u8]> {
         match self {
             Self::Symbol(value) => Some(value.as_bytes()),
-            Self::Number(_) | Self::Boolean(_) => None,
+            Self::Number(_) | Self::Boolean(_) | Self::Set(_) => None,
         }
     }
 }
@@ -422,6 +483,8 @@ pub enum ExecutableExpressionV1 {
     Equal(Box<Self>, Box<Self>),
     And(Box<Self>, Box<Self>),
     Not(Box<Self>),
+    SetInsert(Box<Self>, Box<Self>),
+    SetContains(Box<Self>, Box<Self>),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -447,7 +510,7 @@ pub struct ExecutableProgramV1 {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ExecutableCanonicalStateBindingV1 {
     pub state: CanonicalStateRefV1,
-    pub projection_role: LocalRoleRefV2,
+    pub projection_role: Option<LocalRoleRefV2>,
     pub slot: u16,
 }
 
@@ -482,7 +545,11 @@ pub fn lower_canonical_executable_program_v1(
         || handlers.is_empty()
         || state_cells.len() > MAX_PROGRAM_ITEMS
         || handlers.len() > MAX_PROGRAM_ITEMS
-        || projection_roles.len() < state_cells.len()
+        || projection_roles.len()
+            < state_cells
+                .iter()
+                .filter(|cell| !matches!(cell.state.path, CanonicalStatePathV1::Many))
+                .count()
     {
         return Err(ExecutableErrorV1::MalformedProgram);
     }
@@ -495,32 +562,44 @@ pub fn lower_canonical_executable_program_v1(
     }
     let mut ordered_states = state_cells.to_vec();
     ordered_states.sort_by(|left, right| {
-        left.initial_value
-            .is_none()
-            .cmp(&right.initial_value.is_none())
+        canonical_cell_initially_present(right)
+            .cmp(&canonical_cell_initially_present(left))
             .then_with(|| left.state.cmp(&right.state))
     });
     let mut roles = projection_roles.to_vec();
     roles.sort();
     roles.dedup();
-    if roles.len() < ordered_states.len() {
+    let projected_state_count = ordered_states
+        .iter()
+        .filter(|cell| !matches!(cell.state.path, CanonicalStatePathV1::Many))
+        .count();
+    if roles.len() < projected_state_count {
         return Err(ExecutableErrorV1::MalformedProgram);
     }
 
     let mut slots = BTreeMap::new();
     let mut state_bindings = Vec::with_capacity(ordered_states.len());
     let mut initial_configuration = Vec::with_capacity(ordered_states.len());
-    for (ordinal, (cell, role)) in ordered_states.iter().zip(roles).enumerate() {
+    let mut roles = roles.into_iter();
+    for (ordinal, cell) in ordered_states.iter().enumerate() {
         let slot = u16::try_from(ordinal).map_err(|_| ExecutableErrorV1::ResourceLimit)?;
         if slots.insert(cell.state.clone(), slot).is_some() {
             return Err(ExecutableErrorV1::MalformedProgram);
         }
         if let Some(value) = &cell.initial_value {
             initial_configuration.push(lower_scalar_value(value)?);
+        } else if matches!(cell.state.path, CanonicalStatePathV1::Many) {
+            initial_configuration.push(ExecutableValueV1::empty_set(lower_scalar_value_kind(
+                cell.value_kind,
+            ))?);
         }
         state_bindings.push(ExecutableCanonicalStateBindingV1 {
             state: cell.state.clone(),
-            projection_role: role,
+            projection_role: if matches!(cell.state.path, CanonicalStatePathV1::Many) {
+                None
+            } else {
+                Some(roles.next().ok_or(ExecutableErrorV1::MalformedProgram)?)
+            },
             slot,
         });
     }
@@ -612,6 +691,10 @@ pub fn lower_canonical_executable_program_v1(
     })
 }
 
+fn canonical_cell_initially_present(cell: &CanonicalStateCellV1) -> bool {
+    cell.initial_value.is_some() || matches!(cell.state.path, CanonicalStatePathV1::Many)
+}
+
 fn lower_canonical_expression(
     expression: &CanonicalExecutableExpressionV1,
     slots: &BTreeMap<CanonicalStateRefV1, u16>,
@@ -663,6 +746,10 @@ fn lower_canonical_expression(
                 Box::new(lower_canonical_expression(upper, slots, depth + 1)?),
             )
         }
+        CanonicalExecutableExpressionV1::Insert(set, value) => ExecutableExpressionV1::SetInsert(
+            Box::new(lower_canonical_expression(set, slots, depth + 1)?),
+            Box::new(lower_canonical_expression(value, slots, depth + 1)?),
+        ),
     })
 }
 
@@ -688,6 +775,10 @@ fn lower_canonical_predicate(
         CanonicalExecutablePredicateV1::LessThanOrEqual(left, right) => {
             let (left, right) = pair(left, right)?;
             ExecutableExpressionV1::LessThanOrEqual(left, right)
+        }
+        CanonicalExecutablePredicateV1::Contains(set, value) => {
+            let (set, value) = pair(set, value)?;
+            ExecutableExpressionV1::SetContains(set, value)
         }
     })
 }
@@ -729,10 +820,14 @@ fn canonical_source_projection(
 ) -> Result<ExecutableProjectionV1, ExecutableErrorV1> {
     let by_state = bindings
         .iter()
+        .filter(|binding| binding.projection_role.is_some())
         .map(|binding| (binding.state.clone(), binding))
         .collect::<BTreeMap<_, _>>();
     let mut subjects = BTreeMap::<Vec<u8>, BTreeMap<Vec<u8>, Vec<&CanonicalStateCellV1>>>::new();
     for cell in cells {
+        if matches!(cell.state.path, CanonicalStatePathV1::Many) {
+            continue;
+        }
         subjects
             .entry(cell.state.subject.clone())
             .or_default()
@@ -751,7 +846,9 @@ fn canonical_source_projection(
                     .ok_or(ExecutableErrorV1::MalformedProgram)?;
                 executable_projection_role_term_v1(
                     scope,
-                    binding.projection_role,
+                    binding
+                        .projection_role
+                        .ok_or(ExecutableErrorV1::MalformedProgram)?,
                     lower_scalar_value_kind(cells[0].value_kind),
                 )?
             } else {
@@ -769,7 +866,9 @@ fn canonical_source_projection(
                             designation.clone(),
                             executable_projection_role_term_v1(
                                 scope,
-                                binding.projection_role,
+                                binding
+                                    .projection_role
+                                    .ok_or(ExecutableErrorV1::MalformedProgram)?,
                                 lower_scalar_value_kind(cell.value_kind),
                             )?,
                         ))
@@ -784,12 +883,15 @@ fn canonical_source_projection(
     Ok(ExecutableProjectionV1 {
         bindings: cells
             .iter()
+            .filter(|cell| !matches!(cell.state.path, CanonicalStatePathV1::Many))
             .map(|cell| {
                 let binding = by_state
                     .get(&cell.state)
                     .ok_or(ExecutableErrorV1::MalformedProgram)?;
                 Ok(ExecutableProjectionBindingV1 {
-                    role: binding.projection_role,
+                    role: binding
+                        .projection_role
+                        .ok_or(ExecutableErrorV1::MalformedProgram)?,
                     slot: binding.slot,
                     value_kind: lower_scalar_value_kind(cell.value_kind),
                 })
@@ -3362,7 +3464,7 @@ impl ExecutableProcessRuntimeV1 {
         for entry in preceding {
             self.advance_carrier_occurrence(ExecutableOccurrenceV1 {
                 entry: *entry,
-                arguments: vec![argument],
+                arguments: vec![argument.clone()],
             })?;
         }
         self.advance_carrier_occurrence_and_emit_candidate(ExecutableOccurrenceV1 {
@@ -4560,7 +4662,7 @@ impl ExecutableProcessRuntimeV1 {
                 state
                     .configuration
                     .get(usize::from(*slot))
-                    .copied()
+                    .cloned()
                     .ok_or(ExecutableErrorV1::UnknownSlot(*slot))
             })
             .collect::<Result<Vec<_>, _>>()?;
@@ -4937,7 +5039,7 @@ fn materialize_initial_configuration(
     let mut configuration = program
         .initial_configuration
         .iter()
-        .copied()
+        .cloned()
         .map(ExecutableSlotV1::Present)
         .collect::<Vec<_>>();
     let Some(projection) = &program.projection else {
@@ -5085,6 +5187,7 @@ fn projected_value_term(
         ExecutableValueV1::Number(bits) => (PROJECTED_NUMBER_KIND, bits.to_le_bytes().to_vec()),
         ExecutableValueV1::Boolean(value) => (PROJECTED_BOOLEAN_KIND, vec![u8::from(value)]),
         ExecutableValueV1::Symbol(value) => (PROJECTED_SYMBOL_KIND, value.as_bytes().to_vec()),
+        ExecutableValueV1::Set(_) => return Err(ExecutableErrorV1::MalformedProgram),
     };
     Term::atom(
         scope,
@@ -5109,13 +5212,12 @@ fn realize_projection_term(
             .ok_or(ExecutableErrorV1::MalformedProgram)?;
         let slot = configuration
             .get(usize::from(binding.slot))
-            .copied()
             .ok_or(ExecutableErrorV1::UnknownSlot(binding.slot))?;
         let value = slot.value().ok_or(ExecutableErrorV1::MissingState)?;
         if binding.value_kind != kind || value.kind() != kind {
             return Err(ExecutableErrorV1::TypeMismatch);
         }
-        return projected_value_term(template.scope(), value);
+        return projected_value_term(template.scope(), value.clone());
     }
     let triple = template
         .as_triple()
@@ -5186,16 +5288,16 @@ fn evaluate(
 ) -> Result<ExecutableValueV1, ExecutableErrorV1> {
     use ExecutableExpressionV1 as E;
     match expression {
-        E::Constant(value) => Ok(*value),
+        E::Constant(value) => Ok(value.clone()),
         E::Slot(slot) => slots
             .get(usize::from(*slot))
-            .copied()
             .ok_or(ExecutableErrorV1::UnknownSlot(*slot))?
             .value()
+            .cloned()
             .ok_or(ExecutableErrorV1::MissingState),
         E::Argument(argument) => arguments
             .get(usize::from(*argument))
-            .copied()
+            .cloned()
             .ok_or(ExecutableErrorV1::UnknownArgument(*argument)),
         E::Add(left, right) => numeric2(left, right, slots, arguments, |a, b| a + b),
         E::Subtract(left, right) => numeric2(left, right, slots, arguments, |a, b| a - b),
@@ -5229,6 +5331,22 @@ fn evaluate(
         E::Not(value) => Ok(ExecutableValueV1::Boolean(!boolean(evaluate(
             value, slots, arguments,
         )?)?)),
+        E::SetInsert(set, value) => {
+            let set = evaluate(set, slots, arguments)?;
+            let value = evaluate(value, slots, arguments)?;
+            let ExecutableValueV1::Set(set) = set else {
+                return Err(ExecutableErrorV1::TypeMismatch);
+            };
+            Ok(ExecutableValueV1::Set(set.inserted(value)?))
+        }
+        E::SetContains(set, value) => {
+            let set = evaluate(set, slots, arguments)?;
+            let value = evaluate(value, slots, arguments)?;
+            let ExecutableValueV1::Set(set) = set else {
+                return Err(ExecutableErrorV1::TypeMismatch);
+            };
+            Ok(ExecutableValueV1::Boolean(set.contains(&value)?))
+        }
     }
 }
 
@@ -5322,7 +5440,7 @@ fn encode_values(
 ) -> Result<(), ExecutableErrorV1> {
     encode_count(bytes, values.len())?;
     for value in values {
-        encode_value(bytes, *value);
+        encode_value(bytes, value)?;
     }
     Ok(())
 }
@@ -5336,7 +5454,7 @@ fn encode_slots(bytes: &mut Vec<u8>, slots: &[ExecutableSlotV1]) -> Result<(), E
             }
             ExecutableSlotV1::Present(value) => {
                 bytes.push(1);
-                encode_value(bytes, *value);
+                encode_value(bytes, value)?;
             }
         }
     }
@@ -5401,21 +5519,30 @@ fn decode_projection(
     }
 }
 
-fn encode_value(bytes: &mut Vec<u8>, value: ExecutableValueV1) {
+fn encode_value(bytes: &mut Vec<u8>, value: &ExecutableValueV1) -> Result<(), ExecutableErrorV1> {
     match value {
         ExecutableValueV1::Number(bits) => {
             bytes.push(0);
             bytes.extend_from_slice(&bits.to_le_bytes());
         }
         ExecutableValueV1::Boolean(value) => {
-            bytes.extend_from_slice(&[1, u8::from(value)]);
+            bytes.extend_from_slice(&[1, u8::from(*value)]);
         }
         ExecutableValueV1::Symbol(value) => {
             bytes.push(2);
             bytes.push(value.length);
             bytes.extend_from_slice(value.as_bytes());
         }
+        ExecutableValueV1::Set(set) => {
+            bytes.push(3);
+            bytes.push(set.element_kind as u8);
+            encode_count(bytes, set.values.len())?;
+            for value in &set.values {
+                encode_value(bytes, value)?;
+            }
+        }
     }
+    Ok(())
 }
 
 fn encode_expression(
@@ -5426,7 +5553,7 @@ fn encode_expression(
     match expression {
         E::Constant(value) => {
             bytes.push(0);
-            encode_value(bytes, *value);
+            encode_value(bytes, value)?;
         }
         E::Slot(slot) => {
             bytes.push(1);
@@ -5454,6 +5581,8 @@ fn encode_expression(
             bytes.push(12);
             encode_expression(bytes, value)?;
         }
+        E::SetInsert(set, value) => encode_binary(bytes, 13, set, value)?,
+        E::SetContains(set, value) => encode_binary(bytes, 14, set, value)?,
     }
     Ok(())
 }
@@ -5535,6 +5664,20 @@ impl<'a> Decoder<'a> {
                 let length = usize::from(self.byte()?);
                 ExecutableValueV1::symbol(self.take(length)?)
             }
+            3 => {
+                let element_kind = match self.byte()? {
+                    0 => ExecutableValueKindV1::Number,
+                    1 => ExecutableValueKindV1::Boolean,
+                    2 => ExecutableValueKindV1::Symbol,
+                    _ => return Err(ExecutableErrorV1::MalformedProgram),
+                };
+                let count = self.count()?;
+                let mut set = ExecutableSetV1::empty(element_kind)?;
+                for _ in 0..count {
+                    set = set.inserted(self.value()?)?;
+                }
+                Ok(ExecutableValueV1::Set(set))
+            }
             _ => Err(ExecutableErrorV1::MalformedProgram),
         }
     }
@@ -5586,6 +5729,14 @@ impl<'a> Decoder<'a> {
                 Box::new(self.expression(next)?),
             ),
             12 => E::Not(Box::new(self.expression(next)?)),
+            13 => E::SetInsert(
+                Box::new(self.expression(next)?),
+                Box::new(self.expression(next)?),
+            ),
+            14 => E::SetContains(
+                Box::new(self.expression(next)?),
+                Box::new(self.expression(next)?),
+            ),
             _ => return Err(ExecutableErrorV1::MalformedProgram),
         })
     }

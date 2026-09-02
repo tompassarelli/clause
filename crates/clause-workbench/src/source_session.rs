@@ -204,7 +204,7 @@ impl ResidentSourceWorkbenchV1 {
                 encode_executable_occurrence_v1(&ExecutableOccurrenceV1 {
                     entry: binding.entry,
                     arguments: (binding.argument_count == 1)
-                        .then_some(delta)
+                        .then_some(delta.clone())
                         .into_iter()
                         .collect(),
                 })
@@ -411,11 +411,16 @@ impl ResidentSourceWorkbenchV1 {
             })
             .collect::<Vec<_>>();
         projection_roles.sort();
-        if projection_roles.len() < compiled.state_cells.len() {
+        let projected_state_count = compiled
+            .state_cells
+            .iter()
+            .filter(|cell| !matches!(cell.state.path, clause_package::CanonicalStatePathV1::Many))
+            .count();
+        if projection_roles.len() < projected_state_count {
             return Err(ResidentSourceWorkbenchErrorV1(format!(
                 "selected package has {} projection Roles for {} source state cells",
                 projection_roles.len(),
-                compiled.state_cells.len()
+                projected_state_count
             )));
         }
         let template_input = physical_plan.input.clone();

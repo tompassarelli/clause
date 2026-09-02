@@ -827,6 +827,7 @@ fn encode_values(values: &[ExecutableValueV1]) -> Result<Vec<u8>, WasmProcessSta
                 );
                 bytes.extend_from_slice(value.as_bytes());
             }
+            ExecutableValueV1::Set(_) => return Err(WasmProcessStatusV1::ProcessRejected),
         }
     }
     Ok(bytes)
@@ -839,7 +840,7 @@ fn encode_slots(values: &[ExecutableSlotV1]) -> Result<Vec<u8>, WasmProcessStatu
         match slot {
             ExecutableSlotV1::Absent(kind) => bytes.extend_from_slice(&[3, *kind as u8]),
             ExecutableSlotV1::Present(value) => {
-                let encoded = encode_values(&[*value])?;
+                let encoded = encode_values(std::slice::from_ref(value))?;
                 bytes.extend_from_slice(&encoded[2..]);
             }
         }

@@ -43,6 +43,15 @@ pub const AUTHORING_EXAMPLES_V1: &[AuthoringExampleV1] = &[
         )),
     },
     AuthoringExampleV1 {
+        slug: "many-valued-relation",
+        title: "Many-valued relation",
+        summary: "Retains idempotent values in a cardinality-many relation and requires membership before selecting one.",
+        source: include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../test-vectors/authoring/supported-many-insertion.clause"
+        )),
+    },
+    AuthoringExampleV1 {
         slug: "derived-combat-transition",
         title: "Derived combat transition",
         summary: "Authorizes scalar laws, binds their result in a handler, and publishes one atomic multi-state combat change.",

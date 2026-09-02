@@ -13,14 +13,6 @@ relation known
 
 root active none
 
-on inspect ?root
-  when
-    ?root active ?active
-  withdraw
-    ?root active ?active
-  include
-    ?root active ?active
-
 on discover ?root ?item
   when
     ?root active ?active
@@ -29,3 +21,12 @@ on discover ?root ?item
   include
     ?root active ?active
     ?root known ?item
+
+on select ?root ?item
+  when
+    ?root active ?active
+    ?root known ?item
+  withdraw
+    ?root active ?active
+  include
+    ?root active ?item

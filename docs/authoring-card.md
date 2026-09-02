@@ -105,6 +105,47 @@ on observe-camera-heading ?player ?heading
     ?player camera heading ?heading
 ```
 
+## Many-valued relation
+
+Retains idempotent values in a cardinality-many relation and requires membership before selecting one.
+
+Catalog ID: `many-valued-relation`
+
+```clause
+referent Root
+referent Item
+
+relation active
+  reads {root: Root} active {value: Item}
+  subject root
+  mode given root yields value: one
+
+relation known
+  reads {root: Root} known {value: Item}
+  subject root
+  mode given root yields value: many
+
+root active none
+
+on discover ?root ?item
+  when
+    ?root active ?active
+  withdraw
+    ?root active ?active
+  include
+    ?root active ?active
+    ?root known ?item
+
+on select ?root ?item
+  when
+    ?root active ?active
+    ?root known ?item
+  withdraw
+    ?root active ?active
+  include
+    ?root active ?item
+```
+
 ## Derived combat transition
 
 Authorizes scalar laws, binds their result in a handler, and publishes one atomic multi-state combat change.
