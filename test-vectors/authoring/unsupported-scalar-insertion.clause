@@ -1,0 +1,31 @@
+referent Root
+referent Item
+
+relation active
+  reads {root: Root} active {value: Item}
+  subject root
+  mode given root yields value: one
+
+relation known
+  reads {root: Root} known {value: Item}
+  subject root
+  mode given root yields value: many
+
+root active none
+
+on inspect ?root
+  when
+    ?root active ?active
+  withdraw
+    ?root active ?active
+  include
+    ?root active ?active
+
+on discover ?root ?item
+  when
+    ?root active ?active
+  withdraw
+    ?root active ?active
+  include
+    ?root active ?active
+    ?root known ?item

@@ -48,3 +48,24 @@ fn authoring_catalog_and_cli_use_the_resident_compiler() {
         "check-source did not report the opened resident generation: {checked:?}"
     );
 }
+
+#[test]
+fn check_source_rejects_quarantined_productions() {
+    let executable = env!("CARGO_BIN_EXE_clause-workbench");
+    let source = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../test-vectors/authoring/unsupported-scalar-insertion.clause");
+    let checked = Command::new(executable)
+        .arg("check-source")
+        .arg(source)
+        .output()
+        .expect("the check-source command starts");
+
+    assert!(
+        !checked.status.success(),
+        "unsupported source passed: {checked:?}"
+    );
+    assert!(
+        String::from_utf8_lossy(&checked.stderr).contains("unsupported Handler production"),
+        "check-source did not identify the quarantined handler: {checked:?}"
+    );
+}

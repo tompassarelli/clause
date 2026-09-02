@@ -100,6 +100,15 @@ fn check_source(source: &Path) -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
+    if !workbench.generation().unsupported.is_empty() {
+        for unsupported in &workbench.generation().unsupported {
+            eprintln!(
+                "source check found unsupported {:?} production at bytes {}..{}",
+                unsupported.production, unsupported.origin.start, unsupported.origin.end
+            );
+        }
+        return ExitCode::FAILURE;
+    }
     let mut output = std::io::stdout().lock();
     match write_generation(
         &mut output,

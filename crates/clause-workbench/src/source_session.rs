@@ -4,9 +4,9 @@ use std::fmt;
 
 use clause_package::{
     CandidateDeltaId, CanonicalHandlerTriggerV1, CanonicalKeyPhaseV1, CanonicalKeyboardBindingV1,
-    CanonicalScalarInputBindingV1, CanonicalSourceContextV1, LocalRoleRefV2, ProcessPackageId,
-    ProgramChangeOccurrenceId, StateRevisionId, TermScope, check_process_package,
-    decode_process_package, elaborate_canonical_source_package_v1,
+    CanonicalScalarInputBindingV1, CanonicalSourceContextV1, CanonicalUnsupportedProductionV1,
+    LocalRoleRefV2, ProcessPackageId, ProgramChangeOccurrenceId, StateRevisionId, TermScope,
+    check_process_package, decode_process_package, elaborate_canonical_source_package_v1,
     plan_independent_canonical_source_allocations_v1, read_canonical_source_v1,
 };
 use clause_runtime::{
@@ -54,6 +54,7 @@ pub struct ResidentSourceGenerationV1 {
     pub source_package: ProcessPackageId,
     pub cpp1: Vec<u8>,
     pub cwr1: Vec<u8>,
+    pub unsupported: Vec<CanonicalUnsupportedProductionV1>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -106,6 +107,7 @@ impl ResidentSourceWorkbenchV1 {
                 source_package: ProcessPackageId::from_bytes([0; clause_package::IDENTITY_BYTES]),
                 cpp1: Vec::new(),
                 cwr1: Vec::new(),
+                unsupported: Vec::new(),
             },
             package: ProcessPackageId::from_bytes([0; clause_package::IDENTITY_BYTES]),
             session: template.authority.session,
@@ -572,6 +574,7 @@ impl ResidentSourceWorkbenchV1 {
             source_package: compiled.checked_package.id(),
             cpp1,
             cwr1: exact_cwr1,
+            unsupported: compiled.unsupported.clone(),
         };
         self.package = package_id;
         self.session = session;
