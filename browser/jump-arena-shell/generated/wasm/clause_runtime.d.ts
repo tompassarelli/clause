@@ -57,6 +57,11 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
+    readonly clause_process_v1_dispatch: () => number;
+    readonly clause_process_v1_request_push: (a: number) => number;
+    readonly clause_process_v1_reset: () => void;
+    readonly clause_process_v1_response_byte: (a: number) => number;
+    readonly clause_process_v1_response_len: () => number;
     readonly clause_session_v1_command: () => number;
     readonly clause_session_v1_command_bulk: (a: number, b: number) => number;
     readonly clause_session_v1_event_bulk: () => [number, number];
@@ -73,11 +78,6 @@ export interface InitOutput {
     readonly clause_branch_v1_io_reset: () => void;
     readonly clause_branch_v1_open: () => number;
     readonly clause_branch_v1_request_push: (a: number) => number;
-    readonly clause_process_v1_dispatch: () => number;
-    readonly clause_process_v1_request_push: (a: number) => number;
-    readonly clause_process_v1_reset: () => void;
-    readonly clause_process_v1_response_byte: (a: number) => number;
-    readonly clause_process_v1_response_len: () => number;
     readonly __wbindgen_exn_store: (a: number) => void;
     readonly __externref_table_alloc: () => number;
     readonly __wbindgen_externrefs: WebAssembly.Table;
