@@ -1,5 +1,5 @@
-referent F64
-referent Player
+F64
+Player
 
 relation camera-heading
   reads {player: Player} camera heading {value: F64}

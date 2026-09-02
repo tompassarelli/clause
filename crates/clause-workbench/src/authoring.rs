@@ -52,6 +52,15 @@ pub const AUTHORING_EXAMPLES_V1: &[AuthoringExampleV1] = &[
         )),
     },
     AuthoringExampleV1 {
+        slug: "text-state-transition",
+        title: "Text state transition",
+        summary: "Accepts bounded UTF-8 text as handler input, stores it in optional state, and replaces it atomically.",
+        source: include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../test-vectors/authoring/text-state-transition.clause"
+        )),
+    },
+    AuthoringExampleV1 {
         slug: "derived-combat-transition",
         title: "Derived combat transition",
         summary: "Authorizes scalar laws, binds their result in a handler, and publishes one atomic multi-state combat change.",

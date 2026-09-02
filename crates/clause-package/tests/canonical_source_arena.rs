@@ -14,13 +14,13 @@ fn raw_id(tag: u8) -> [u8; IDENTITY_BYTES] {
     bytes
 }
 
-const SCALAR_PARAMETER_WORLD: &str = r#"referent F64
-referent Bool
-referent Player
-referent Enemy
-referent CombatState
-referent alive
-referent telegraph
+const SCALAR_PARAMETER_WORLD: &str = r#"F64
+Bool
+Player
+Enemy
+CombatState
+alive
+telegraph
 
 shape Vec3
   x: F64
@@ -74,8 +74,8 @@ on advance ?player
     ?player score ?score + ?clock
 "#;
 
-const GENERAL_HANDLER_ARGUMENT_WORLD: &str = r#"referent F64
-referent Player
+const GENERAL_HANDLER_ARGUMENT_WORLD: &str = r#"F64
+Player
 
 relation score
   reads {player: Player} score {value: F64}
@@ -103,9 +103,9 @@ on adjust ?player ?amount
     ?player reserve ?reserve - ?amount
 "#;
 
-const TRANSITIVE_REFERENT_WORLD: &str = r#"referent F64
-referent Root
-referent Policy
+const TRANSITIVE_REFERENT_WORLD: &str = r#"F64
+Root
+Policy
 
 relation balance
   reads {root: Root} balance {value: F64}
@@ -246,10 +246,10 @@ fn transitive_referent_join_lowers_each_runtime_selectable_target() {
 
 #[test]
 fn scalar_law_result_updates_a_vector_on_the_selected_handler_subject() {
-    let source = r#"referent F64
-referent Bool
-referent Player
-referent Enemy
+    let source = r#"F64
+Bool
+Player
+Enemy
 
 shape Vec3
   x: F64
@@ -658,11 +658,7 @@ fn canonical_world_declarations_reach_the_checked_package_with_exact_remainder()
 
     let reordered_source = std::str::from_utf8(WORLD)
         .expect("fixture is UTF-8")
-        .replacen(
-            "referent F64\nreferent Bool",
-            "referent Bool\nreferent F64",
-            1,
-        );
+        .replacen("F64\nBool", "Bool\nF64", 1);
     let reordered = read_canonical_source_v1(reordered_source.as_bytes())
         .expect("reordered unrelated declarations remain canonical source");
     assert_eq!(
@@ -881,7 +877,7 @@ fn canonical_input_preserves_negative_zero_bits() {
 
 #[test]
 fn standalone_membership_group_preserves_order_and_item_origins() {
-    let source = "referent Door\nreferent Lockable\niron-door ∈ Door, Lockable\n";
+    let source = "Door\nLockable\niron-door ∈ Door, Lockable\n";
     let cst = read_canonical_source_v1(source.as_bytes()).expect("grouped membership source reads");
     let plan = plan_independent_canonical_source_allocations_v1(
         &cst,
@@ -926,7 +922,7 @@ fn standalone_membership_group_preserves_order_and_item_origins() {
 
 #[test]
 fn repeated_membership_target_is_not_deduplicated() {
-    let source = "referent Door\niron-door ∈ Door, Door\n";
+    let source = "Door\niron-door ∈ Door, Door\n";
     let cst = read_canonical_source_v1(source.as_bytes())
         .expect("repeated targets are valid grouping sugar");
     let plan = plan_independent_canonical_source_allocations_v1(

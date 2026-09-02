@@ -1,5 +1,5 @@
-referent Root
-referent Item
+Root
+Item
 
 relation active
   reads {root: Root} active {value: Item}

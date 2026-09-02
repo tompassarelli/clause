@@ -1,5 +1,5 @@
-referent F64
-referent Player
+F64
+Player
 
 relation score
   reads {player: Player} score {value: F64}

@@ -1,5 +1,5 @@
-referent F64
-referent Account
+F64
+Account
 
 relation balance
   reads {account: Account} balance {value: F64}

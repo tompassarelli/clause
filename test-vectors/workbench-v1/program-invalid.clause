@@ -1,4 +1,4 @@
-referent Number
+Number
 
 answer := 41 + 1
 

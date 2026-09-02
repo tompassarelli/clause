@@ -827,6 +827,11 @@ fn encode_values(values: &[ExecutableValueV1]) -> Result<Vec<u8>, WasmProcessSta
                 );
                 bytes.extend_from_slice(value.as_bytes());
             }
+            ExecutableValueV1::Text(value) => {
+                bytes.push(4);
+                put_count(&mut bytes, value.as_str().len())?;
+                bytes.extend_from_slice(value.as_str().as_bytes());
+            }
             ExecutableValueV1::Set(_) => return Err(WasmProcessStatusV1::ProcessRejected),
         }
     }
@@ -939,6 +944,15 @@ impl<'a> Decoder<'a> {
                     self.take(8)?;
                 }
                 1 if self.take(1)?[0] <= 1 => {}
+                2 => {
+                    let length = usize::from(self.take(1)?[0]);
+                    self.take(length)?;
+                }
+                3 if self.take(1)?[0] <= 7 => {}
+                4 => {
+                    let length = usize::from(self.u16()?);
+                    self.take(length)?;
+                }
                 _ => return Err(WasmProcessStatusV1::MalformedRequest),
             }
         }

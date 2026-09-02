@@ -22,6 +22,7 @@ use crate::term::{EqualityContract, Term, TermError, TermScope};
 const SOURCE_ARTIFACT_DOMAIN: &str = "clause/source-artifact/v1";
 const SOURCE_LOCAL_ALLOCATION_DOMAIN: &str = "clause/source-local-allocation/v1";
 const RESERVED_LOCAL_ID: u32 = 0;
+const MAX_CANONICAL_TEXT_BYTES: usize = u16::MAX as usize;
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct CanonicalSourceArtifactIdV1([u8; IDENTITY_BYTES]);
@@ -242,6 +243,7 @@ pub enum CanonicalScalarValueV1 {
     Number(u64),
     Boolean(bool),
     Symbol(Vec<u8>),
+    Text(String),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -249,6 +251,7 @@ pub enum CanonicalScalarValueKindV1 {
     Number,
     Boolean,
     Symbol,
+    Text,
 }
 
 /// One exact checked source-state coordinate. The assertion identifies the
@@ -291,6 +294,7 @@ pub enum CanonicalExecutableExpressionV1 {
     Constant(CanonicalScalarValueV1),
     State(CanonicalStateRefV1),
     Argument(u16),
+    Concatenate(Box<Self>, Box<Self>),
     Add(Box<Self>, Box<Self>),
     Subtract(Box<Self>, Box<Self>),
     Multiply(Box<Self>, Box<Self>),
@@ -395,6 +399,8 @@ pub enum CanonicalScalarExpressionV1 {
     Number(u64),
     Boolean(bool),
     Symbol(Vec<u8>),
+    Text(String),
+    Concatenate(Box<Self>, Box<Self>),
     Add(Box<Self>, Box<Self>),
     Subtract(Box<Self>, Box<Self>),
     Multiply(Box<Self>, Box<Self>),
@@ -768,6 +774,7 @@ enum CstKind {
     BooleanAssertion(BooleanAssertionCst),
     NumberAssertion(NumberAssertionCst),
     SymbolAssertion(SymbolAssertionCst),
+    TextAssertion(TextAssertionCst),
     Unsupported(CanonicalUnsupportedProductionV1),
 }
 
@@ -830,6 +837,14 @@ struct SymbolAssertionCst {
     subject: Vec<u8>,
     relation: Vec<u8>,
     value: Vec<u8>,
+}
+
+#[derive(Clone, Debug)]
+struct TextAssertionCst {
+    origin: CanonicalSourceOriginV1,
+    subject: Vec<u8>,
+    relation: Vec<u8>,
+    value: String,
 }
 
 #[derive(Clone, Debug)]
@@ -1719,6 +1734,23 @@ fn allocation_requests(
                     });
                 }
             }
+            CstKind::TextAssertion(assertion) => {
+                if scalar.iter().any(|parts| {
+                    parts.initial_origin == assertion.origin
+                        || parts.handler.parameter_sources.iter().any(|source| {
+                            source.subject == assertion.subject
+                                && source.relation == assertion.relation
+                                && source.field.is_none()
+                        })
+                }) || declared_state_relation(cst, &assertion.relation)
+                {
+                    requested.push(AllocationRequest {
+                        producer: assertion_producer(&assertion.subject, &assertion.relation),
+                        slot: head_slot(CanonicalSourceProductionV1::Assertion),
+                        domain: AllocationDomain::Formation,
+                    });
+                }
+            }
             CstKind::KeyboardBinding(_)
             | CstKind::ScalarInputBinding(_)
             | CstKind::Unsupported(_) => {}
@@ -2049,6 +2081,14 @@ fn state_ref_for_origin(
             None,
             origin,
         ),
+        CstKind::TextAssertion(assertion) => canonical_state_ref(
+            cst,
+            plan,
+            &assertion.subject,
+            &assertion.relation,
+            None,
+            origin,
+        ),
         _ => Err(CanonicalSourceErrorV1::MissingExecutableBinding { origin }),
     }
 }
@@ -2087,9 +2127,12 @@ fn validate_shape_assertion(
             (declared.domain.as_slice(), &actual.value),
             (b"F64", CanonicalScalarValueV1::Number(_))
                 | (b"Bool", CanonicalScalarValueV1::Boolean(_))
-        ) || (declared.domain != b"F64"
-            && declared.domain != b"Bool"
-            && matches!(&actual.value, CanonicalScalarValueV1::Symbol(_)));
+        ) || (declared.domain == b"Text"
+            && matches!(&actual.value, CanonicalScalarValueV1::Text(_)))
+            || (declared.domain != b"F64"
+                && declared.domain != b"Bool"
+                && declared.domain != b"Text"
+                && matches!(&actual.value, CanonicalScalarValueV1::Symbol(_)));
         if declared.name != actual.name || !kind_matches {
             return Err(CanonicalSourceErrorV1::MissingExecutableBinding {
                 origin: assertion.origin,
@@ -2134,6 +2177,10 @@ fn general_parameter_state_ref(
                     && (variable_subject || assertion.subject == source.subject)
             }
             (CstKind::SymbolAssertion(assertion), None) => {
+                assertion.relation == source.relation
+                    && (variable_subject || assertion.subject == source.subject)
+            }
+            (CstKind::TextAssertion(assertion), None) => {
                 assertion.relation == source.relation
                     && (variable_subject || assertion.subject == source.subject)
             }
@@ -2237,6 +2284,7 @@ fn concrete_general_handler_subject(
                 (CstKind::SymbolAssertion(assertion), None) => {
                     assertion.relation == source.relation
                 }
+                (CstKind::TextAssertion(assertion), None) => assertion.relation == source.relation,
                 _ => false,
             };
             if matching {
@@ -2246,6 +2294,7 @@ fn concrete_general_handler_subject(
                     CstKind::BooleanAssertion(assertion) => &assertion.subject,
                     CstKind::NumberAssertion(assertion) => &assertion.subject,
                     CstKind::SymbolAssertion(assertion) => &assertion.subject,
+                    CstKind::TextAssertion(assertion) => &assertion.subject,
                     _ => unreachable!(),
                 };
                 subjects.insert(subject.clone());
@@ -2295,6 +2344,7 @@ fn optional_state_value_kind(
     Ok(match domain {
         b"F64" => CanonicalScalarValueKindV1::Number,
         b"Bool" => CanonicalScalarValueKindV1::Boolean,
+        b"Text" => CanonicalScalarValueKindV1::Text,
         _ => CanonicalScalarValueKindV1::Symbol,
     })
 }
@@ -2587,6 +2637,12 @@ fn general_state_candidates(
                     && (variable_subject || assertion.subject == source.subject) =>
             {
                 CanonicalScalarValueV1::Symbol(assertion.value.clone())
+            }
+            (CstKind::TextAssertion(assertion), None)
+                if assertion.relation == source.relation
+                    && (variable_subject || assertion.subject == source.subject) =>
+            {
+                CanonicalScalarValueV1::Text(assertion.value.clone())
             }
             _ => continue,
         };
@@ -2914,6 +2970,9 @@ fn checked_source_state_cells(
             CstKind::SymbolAssertion(assertion) => {
                 Some(assertion_producer(&assertion.subject, &assertion.relation))
             }
+            CstKind::TextAssertion(assertion) => {
+                Some(assertion_producer(&assertion.subject, &assertion.relation))
+            }
             _ => None,
         };
         let Some(producer) = producer else { continue };
@@ -2951,6 +3010,7 @@ fn checked_source_state_cells(
                         CanonicalScalarValueV1::Number(_) => CanonicalScalarValueKindV1::Number,
                         CanonicalScalarValueV1::Boolean(_) => CanonicalScalarValueKindV1::Boolean,
                         CanonicalScalarValueV1::Symbol(_) => CanonicalScalarValueKindV1::Symbol,
+                        CanonicalScalarValueV1::Text(_) => CanonicalScalarValueKindV1::Text,
                     };
                     cells.insert(
                         state.clone(),
@@ -2994,6 +3054,17 @@ fn checked_source_state_cells(
                             assertion.value.clone(),
                         )),
                         value_kind: CanonicalScalarValueKindV1::Symbol,
+                    },
+                );
+            }
+            CstKind::TextAssertion(assertion) => {
+                let state = state_ref_for_origin(cst, plan, item.origin, None)?;
+                cells.insert(
+                    state.clone(),
+                    CanonicalStateCellV1 {
+                        state,
+                        initial_value: Some(CanonicalScalarValueV1::Text(assertion.value.clone())),
+                        value_kind: CanonicalScalarValueKindV1::Text,
                     },
                 );
             }
@@ -3135,6 +3206,13 @@ fn canonical_scalar_executable_expression(
         CanonicalScalarExpressionV1::Symbol(value) => {
             constant_expression(CanonicalScalarValueV1::Symbol(value.clone()))
         }
+        CanonicalScalarExpressionV1::Text(value) => {
+            constant_expression(CanonicalScalarValueV1::Text(value.clone()))
+        }
+        CanonicalScalarExpressionV1::Concatenate(left, right) => {
+            let (left, right) = pair(left, right)?;
+            CanonicalExecutableExpressionV1::Concatenate(left, right)
+        }
         CanonicalScalarExpressionV1::Add(left, right) => {
             let (left, right) = pair(left, right)?;
             CanonicalExecutableExpressionV1::Add(left, right)
@@ -3204,6 +3282,10 @@ fn expand_scalar_law_bindings(
             let (left, right) = pair(left, right, expanding)?;
             CanonicalScalarExpressionV1::Add(left, right)
         }
+        CanonicalScalarExpressionV1::Concatenate(left, right) => {
+            let (left, right) = pair(left, right, expanding)?;
+            CanonicalScalarExpressionV1::Concatenate(left, right)
+        }
         CanonicalScalarExpressionV1::Subtract(left, right) => {
             let (left, right) = pair(left, right, expanding)?;
             CanonicalScalarExpressionV1::Subtract(left, right)
@@ -3262,6 +3344,10 @@ fn canonical_general_executable_expression(
         ))
     };
     match &expression {
+        CanonicalScalarExpressionV1::Concatenate(left, right) => {
+            let (left, right) = pair(left, right)?;
+            Ok(CanonicalExecutableExpressionV1::Concatenate(left, right))
+        }
         CanonicalScalarExpressionV1::Add(left, right) => {
             let (left, right) = pair(left, right)?;
             Ok(CanonicalExecutableExpressionV1::Add(left, right))
@@ -4952,6 +5038,36 @@ pub fn elaborate_canonical_source_package_v1(
                     });
                 }
             }
+            CstKind::TextAssertion(assertion) => {
+                if scalar_parts.iter().any(|parts| {
+                    parts.initial_origin == assertion.origin
+                        || parts.handler.parameter_sources.iter().any(|source| {
+                            source.subject == assertion.subject
+                                && source.relation == assertion.relation
+                                && source.field.is_none()
+                        })
+                }) || declared_state_relation(cst, &assertion.relation)
+                {
+                    let producer = assertion_producer(&assertion.subject, &assertion.relation);
+                    let slot = head_slot(CanonicalSourceProductionV1::Assertion);
+                    let id = formation_id(plan, &producer, &slot)?;
+                    formations.push(source_formation(
+                        scope,
+                        id,
+                        cst.source_slice(assertion.origin)
+                            .expect("owned Text assertion origin"),
+                        assertion.origin,
+                        "initial-assertion",
+                    )?);
+                    emissions.push(emission(plan, producer, slot, assertion.origin));
+                } else {
+                    unsupported.push(CanonicalUnsupportedProductionV1 {
+                        production: CanonicalSourceProductionV1::Assertion,
+                        origin: assertion.origin,
+                        emissions: vec![],
+                    });
+                }
+            }
             CstKind::KeyboardBinding(_) | CstKind::ScalarInputBinding(_) => {}
             CstKind::Unsupported(value) => unsupported.push(value.clone()),
         }
@@ -5061,15 +5177,6 @@ fn parse_item(
     origin: CanonicalSourceOriginV1,
 ) -> Result<CstItem, CanonicalSourceErrorV1> {
     let head = block[0].text;
-    if let Some(designation) = head.strip_prefix("referent ") {
-        require_leaf(block, artifact)?;
-        return Ok(CstItem {
-            origin,
-            kind: CstKind::Referent {
-                designation: designation_bytes(designation, origin)?,
-            },
-        });
-    }
     if let Some(designation) = head.strip_prefix("capability ") {
         require_leaf(block, artifact)?;
         return Ok(CstItem {
@@ -5234,6 +5341,14 @@ fn parse_item(
         )?);
     }
     require_leaf(block, artifact)?;
+    if !head.contains(char::is_whitespace) {
+        return Ok(CstItem {
+            origin,
+            kind: CstKind::Referent {
+                designation: designation_bytes(head, origin)?,
+            },
+        });
+    }
     if head.contains('∈') {
         let emissions = membership_group_emissions(artifact, block[0], origin)?;
         return unsupported_item(
@@ -5266,6 +5381,12 @@ fn parse_item(
         return Ok(CstItem {
             origin,
             kind: CstKind::NumberAssertion(assertion),
+        });
+    }
+    if let Some(assertion) = parse_text_assertion(head, origin) {
+        return Ok(CstItem {
+            origin,
+            kind: CstKind::TextAssertion(assertion),
         });
     }
     if let Some(assertion) = parse_symbol_assertion(head, origin) {
@@ -5465,21 +5586,10 @@ fn parse_jump_handler(
         return Ok(None);
     };
     let Some(subject) = header.next() else {
-        return if designation == "jump" {
-            Err(CanonicalSourceErrorV1::InvalidJumpHandler { origin })
-        } else {
-            Ok(None)
-        };
+        return jump_shape_mismatch(designation, origin);
     };
     if header.next().is_some() || !subject.starts_with('?') {
-        return if designation == "jump" {
-            Err(CanonicalSourceErrorV1::InvalidJumpHandler { origin })
-        } else {
-            Ok(None)
-        };
-    }
-    if designation != "jump" {
-        return Ok(None);
+        return jump_shape_mismatch(designation, origin);
     }
 
     let mut section = "";
@@ -5502,17 +5612,13 @@ fn parse_jump_handler(
             }
             if !matches!(trimmed, "when" | "withdraw" | "include") || !seen_sections.insert(trimmed)
             {
-                return Err(CanonicalSourceErrorV1::InvalidJumpHandler {
-                    origin: line_origin(artifact, *line),
-                });
+                return jump_shape_mismatch(designation, line_origin(artifact, *line));
             }
             section = trimmed;
             continue;
         }
         if line.indent != 4 {
-            return Err(CanonicalSourceErrorV1::InvalidJumpHandler {
-                origin: line_origin(artifact, *line),
-            });
+            return jump_shape_mismatch(designation, line_origin(artifact, *line));
         }
         let entry = (trimmed, line_origin(artifact, *line));
         match section {
@@ -5520,43 +5626,42 @@ fn parse_jump_handler(
             "withdraw" => withdraw.push(entry),
             "include" => include.push(entry),
             _ => {
-                return Err(CanonicalSourceErrorV1::InvalidJumpHandler {
-                    origin: line_origin(artifact, *line),
-                });
+                return jump_shape_mismatch(designation, line_origin(artifact, *line));
             }
         }
     }
     if when.len() != 3 || withdraw.len() != 2 || include.len() != 2 {
-        return if designation == "jump" {
-            Err(CanonicalSourceErrorV1::InvalidJumpHandler { origin })
-        } else {
-            Ok(None)
-        };
+        return jump_shape_mismatch(designation, origin);
     }
     if withdraw[0].0 != when[0].0 || withdraw[1].0 != when[1].0 {
-        return Err(CanonicalSourceErrorV1::InvalidJumpHandler { origin });
+        return jump_shape_mismatch(designation, origin);
     }
 
-    let (velocity_prefix, velocity_vector) = split_vector_subject(when[0].0)
-        .ok_or(CanonicalSourceErrorV1::InvalidJumpHandler { origin })?;
-    let velocity_relation = velocity_prefix
+    let Some((velocity_prefix, velocity_vector)) = split_vector_subject(when[0].0) else {
+        return jump_shape_mismatch(designation, origin);
+    };
+    let Some(velocity_relation) = velocity_prefix
         .strip_prefix(subject)
         .and_then(|rest| rest.strip_prefix(' '))
         .filter(|rest| !rest.is_empty())
-        .ok_or(CanonicalSourceErrorV1::InvalidJumpHandler { origin })?
-        .as_bytes()
-        .to_vec();
-    let velocity_parameters = parse_vec3_components(velocity_vector)
-        .filter(|components| {
-            components.iter().all(|value| value.starts_with('?'))
-                && components.iter().collect::<BTreeSet<_>>().len() == 3
-        })
-        .ok_or(CanonicalSourceErrorV1::InvalidJumpHandler { origin })?;
+        .map(|relation| relation.as_bytes().to_vec())
+    else {
+        return jump_shape_mismatch(designation, origin);
+    };
+    let Some(velocity_parameters) = parse_vec3_components(velocity_vector).filter(|components| {
+        components.iter().all(|value| value.starts_with('?'))
+            && components.iter().collect::<BTreeSet<_>>().len() == 3
+    }) else {
+        return jump_shape_mismatch(designation, origin);
+    };
 
-    let (grounded_subject, grounded_relation, required_grounded) = parse_boolean_clause(when[1].0)
-        .ok_or(CanonicalSourceErrorV1::InvalidJumpHandler { origin })?;
+    let Some((grounded_subject, grounded_relation, required_grounded)) =
+        parse_boolean_clause(when[1].0)
+    else {
+        return jump_shape_mismatch(designation, origin);
+    };
     if grounded_subject != subject {
-        return Err(CanonicalSourceErrorV1::InvalidJumpHandler { origin });
+        return jump_shape_mismatch(designation, origin);
     }
 
     let jump_parts = when[2].0.split_whitespace().collect::<Vec<_>>();
@@ -5565,32 +5670,39 @@ fn parse_jump_handler(
             .last()
             .is_some_and(|value| value.starts_with('?'))
     {
-        return Err(CanonicalSourceErrorV1::InvalidJumpHandler { origin });
+        return jump_shape_mismatch(designation, origin);
     }
     let jump_speed_subject = jump_parts[0].as_bytes().to_vec();
     let jump_speed_relation = jump_parts[1..jump_parts.len() - 1].join(" ").into_bytes();
     let jump_speed_parameter = jump_parts[jump_parts.len() - 1];
 
-    let (result_prefix, result_vector) = split_vector_subject(include[0].0)
-        .ok_or(CanonicalSourceErrorV1::InvalidJumpHandler { origin })?;
+    let Some((result_prefix, result_vector)) = split_vector_subject(include[0].0) else {
+        return jump_shape_mismatch(designation, origin);
+    };
     let expected_result_prefix =
         format!("{subject} {}", String::from_utf8_lossy(&velocity_relation));
     if result_prefix != expected_result_prefix {
-        return Err(CanonicalSourceErrorV1::InvalidJumpHandler { origin });
+        return jump_shape_mismatch(designation, origin);
     }
-    let result_components = parse_vec3_components(result_vector)
-        .ok_or(CanonicalSourceErrorV1::InvalidJumpHandler { origin })?;
-    let result_velocity = result_components
+    let Some(result_components) = parse_vec3_components(result_vector) else {
+        return jump_shape_mismatch(designation, origin);
+    };
+    let Some(result_velocity) = result_components
         .map(|value| parse_jump_scalar(value, velocity_parameters, jump_speed_parameter))
         .into_iter()
         .collect::<Option<Vec<_>>>()
         .and_then(|values| values.try_into().ok())
-        .ok_or(CanonicalSourceErrorV1::InvalidJumpHandler { origin })?;
+    else {
+        return jump_shape_mismatch(designation, origin);
+    };
 
-    let (result_subject, result_relation, result_grounded) = parse_boolean_clause(include[1].0)
-        .ok_or(CanonicalSourceErrorV1::InvalidJumpHandler { origin })?;
+    let Some((result_subject, result_relation, result_grounded)) =
+        parse_boolean_clause(include[1].0)
+    else {
+        return jump_shape_mismatch(designation, origin);
+    };
     if result_subject != subject || result_relation.as_bytes() != grounded_relation.as_bytes() {
-        return Err(CanonicalSourceErrorV1::InvalidJumpHandler { origin });
+        return jump_shape_mismatch(designation, origin);
     }
 
     Ok(Some(JumpHandlerCst {
@@ -5618,6 +5730,17 @@ fn parse_jump_handler(
             },
         ],
     }))
+}
+
+fn jump_shape_mismatch<T>(
+    designation: &str,
+    origin: CanonicalSourceOriginV1,
+) -> Result<Option<T>, CanonicalSourceErrorV1> {
+    if designation == "jump" {
+        Err(CanonicalSourceErrorV1::InvalidJumpHandler { origin })
+    } else {
+        Ok(None)
+    }
 }
 
 fn parse_jump_scalar(
@@ -6269,7 +6392,9 @@ fn parse_scalar_expression(source: &str, current: &str) -> Option<CanonicalScala
 }
 
 fn parse_scalar_atom(source: &str, current: &str) -> Option<CanonicalScalarExpressionV1> {
-    if source == current {
+    if source.starts_with('"') {
+        parse_text_literal(source).map(CanonicalScalarExpressionV1::Text)
+    } else if source == current {
         Some(CanonicalScalarExpressionV1::Current)
     } else if source.starts_with('?') {
         Some(CanonicalScalarExpressionV1::Parameter(
@@ -6291,32 +6416,34 @@ fn parse_scalar_atom(source: &str, current: &str) -> Option<CanonicalScalarExpre
 }
 
 fn parse_scalar_predicate(source: &str, current: &str) -> Option<CanonicalScalarPredicateV1> {
-    let (left, right, constructor) = if let Some((left, right)) = source.split_once(" >= ") {
+    let (left, right, constructor) = if let Some((left, right)) =
+        split_once_outside_text(source, " >= ")
+    {
         (
             right,
             left,
             CanonicalScalarPredicateV1::LessThanOrEqual as fn(_, _) -> CanonicalScalarPredicateV1,
         )
-    } else if let Some((left, right)) = source.split_once(" <= ") {
+    } else if let Some((left, right)) = split_once_outside_text(source, " <= ") {
         (
             left,
             right,
             CanonicalScalarPredicateV1::LessThanOrEqual as fn(_, _) -> CanonicalScalarPredicateV1,
         )
-    } else if let Some((left, right)) = source.split_once(" > ") {
+    } else if let Some((left, right)) = split_once_outside_text(source, " > ") {
         (
             left,
             right,
             CanonicalScalarPredicateV1::GreaterThan as fn(_, _) -> CanonicalScalarPredicateV1,
         )
-    } else if let Some((left, right)) = source.split_once(" < ") {
+    } else if let Some((left, right)) = split_once_outside_text(source, " < ") {
         (
             right,
             left,
             CanonicalScalarPredicateV1::GreaterThan as fn(_, _) -> CanonicalScalarPredicateV1,
         )
     } else {
-        let (left, right) = source.split_once(" = ")?;
+        let (left, right) = split_once_outside_text(source, " = ")?;
         (
             left,
             right,
@@ -6327,6 +6454,32 @@ fn parse_scalar_predicate(source: &str, current: &str) -> Option<CanonicalScalar
         parse_scalar_expression(left, current)?,
         parse_scalar_expression(right, current)?,
     ))
+}
+
+fn split_once_outside_text<'a>(source: &'a str, separator: &str) -> Option<(&'a str, &'a str)> {
+    let bytes = source.as_bytes();
+    let separator = separator.as_bytes();
+    let mut in_text = false;
+    let mut escaped = false;
+    let mut index = 0;
+    while index < bytes.len() {
+        let byte = bytes[index];
+        if in_text {
+            if escaped {
+                escaped = false;
+            } else if byte == b'\\' {
+                escaped = true;
+            } else if byte == b'"' {
+                in_text = false;
+            }
+        } else if byte == b'"' {
+            in_text = true;
+        } else if bytes[index..].starts_with(separator) {
+            return Some((source.get(..index)?, source.get(index + separator.len()..)?));
+        }
+        index += 1;
+    }
+    None
 }
 
 struct ScalarExpressionParser<'a> {
@@ -6340,12 +6493,18 @@ impl ScalarExpressionParser<'_> {
         let mut value = self.multiplicative()?;
         loop {
             self.skip_spaces();
-            let operation = self.take_one(&[b'+', b'-']);
+            let operation = if self.take_exact(b"++") {
+                Some(2)
+            } else {
+                self.take_one(&[b'+', b'-'])
+                    .map(|operation| usize::from(operation == b'-'))
+            };
             let Some(operation) = operation else { break };
             let right = self.multiplicative()?;
             value = match operation {
-                b'+' => CanonicalScalarExpressionV1::Add(Box::new(value), Box::new(right)),
-                b'-' => CanonicalScalarExpressionV1::Subtract(Box::new(value), Box::new(right)),
+                0 => CanonicalScalarExpressionV1::Add(Box::new(value), Box::new(right)),
+                1 => CanonicalScalarExpressionV1::Subtract(Box::new(value), Box::new(right)),
+                2 => CanonicalScalarExpressionV1::Concatenate(Box::new(value), Box::new(right)),
                 _ => unreachable!(),
             };
         }
@@ -6370,6 +6529,23 @@ impl ScalarExpressionParser<'_> {
 
     fn primary(&mut self) -> Option<CanonicalScalarExpressionV1> {
         self.skip_spaces();
+        if self.source.get(self.cursor) == Some(&b'"') {
+            let start = self.cursor;
+            self.cursor += 1;
+            let mut escaped = false;
+            while let Some(byte) = self.source.get(self.cursor) {
+                self.cursor += 1;
+                if escaped {
+                    escaped = false;
+                } else if *byte == b'\\' {
+                    escaped = true;
+                } else if *byte == b'"' {
+                    let literal = std::str::from_utf8(&self.source[start..self.cursor]).ok()?;
+                    return parse_text_literal(literal).map(CanonicalScalarExpressionV1::Text);
+                }
+            }
+            return None;
+        }
         if self.source.get(self.cursor) == Some(&b'(') {
             self.cursor += 1;
             let value = self.additive()?;
@@ -6408,6 +6584,14 @@ impl ScalarExpressionParser<'_> {
             self.cursor += 1;
             byte
         })
+    }
+
+    fn take_exact(&mut self, expected: &[u8]) -> bool {
+        if !self.source[self.cursor..].starts_with(expected) {
+            return false;
+        }
+        self.cursor += expected.len();
+        true
     }
 }
 
@@ -6465,7 +6649,8 @@ fn collect_scalar_expression_parameters(
         CanonicalScalarExpressionV1::Parameter(parameter) => {
             parameters.insert(parameter.clone());
         }
-        CanonicalScalarExpressionV1::Add(left, right)
+        CanonicalScalarExpressionV1::Concatenate(left, right)
+        | CanonicalScalarExpressionV1::Add(left, right)
         | CanonicalScalarExpressionV1::Subtract(left, right)
         | CanonicalScalarExpressionV1::Multiply(left, right)
         | CanonicalScalarExpressionV1::Divide(left, right) => {
@@ -6480,7 +6665,8 @@ fn collect_scalar_expression_parameters(
         CanonicalScalarExpressionV1::Current
         | CanonicalScalarExpressionV1::Number(_)
         | CanonicalScalarExpressionV1::Boolean(_)
-        | CanonicalScalarExpressionV1::Symbol(_) => {}
+        | CanonicalScalarExpressionV1::Symbol(_)
+        | CanonicalScalarExpressionV1::Text(_) => {}
     }
 }
 
@@ -7175,6 +7361,11 @@ fn parse_shape_assertion(
                 CanonicalScalarValueV1::Boolean(true)
             } else if value == "false" {
                 CanonicalScalarValueV1::Boolean(false)
+            } else if value.starts_with('"') {
+                CanonicalScalarValueV1::Text(
+                    parse_text_literal(value)
+                        .ok_or(CanonicalSourceErrorV1::InvalidShapeField { origin })?,
+                )
             } else {
                 CanonicalScalarValueV1::Symbol(designation_bytes(value, origin)?)
             };
@@ -7240,6 +7431,9 @@ fn parse_symbol_assertion(
     source: &str,
     origin: CanonicalSourceOriginV1,
 ) -> Option<SymbolAssertionCst> {
+    if source.contains('"') {
+        return None;
+    }
     let parts = source.split_whitespace().collect::<Vec<_>>();
     if parts.len() < 3 {
         return None;
@@ -7256,6 +7450,63 @@ fn parse_symbol_assertion(
             relation: parts[1..parts.len() - 1].join(" ").into_bytes(),
             value,
         })
+}
+
+fn parse_text_assertion(source: &str, origin: CanonicalSourceOriginV1) -> Option<TextAssertionCst> {
+    let quote = source.find('"')?;
+    let prefix = source.get(..quote)?.strip_suffix(' ')?;
+    let parts = prefix.split_whitespace().collect::<Vec<_>>();
+    if parts.len() < 2 {
+        return None;
+    }
+    Some(TextAssertionCst {
+        origin,
+        subject: parts[0].as_bytes().to_vec(),
+        relation: parts[1..].join(" ").into_bytes(),
+        value: parse_text_literal(source.get(quote..)?)?,
+    })
+}
+
+fn parse_text_literal(source: &str) -> Option<String> {
+    let inner = source.strip_prefix('"')?.strip_suffix('"')?;
+    let mut characters = inner.chars();
+    let mut value = String::new();
+    while let Some(character) = characters.next() {
+        match character {
+            '"' => return None,
+            '\\' => match characters.next()? {
+                '"' => value.push('"'),
+                '\\' => value.push('\\'),
+                'n' => value.push('\n'),
+                'r' => value.push('\r'),
+                't' => value.push('\t'),
+                'u' if characters.next()? == '{' => {
+                    let mut digits = String::new();
+                    loop {
+                        let digit = characters.next()?;
+                        if digit == '}' {
+                            break;
+                        }
+                        if digits.len() == 6 || !digit.is_ascii_hexdigit() {
+                            return None;
+                        }
+                        digits.push(digit);
+                    }
+                    if digits.is_empty() {
+                        return None;
+                    }
+                    value.push(char::from_u32(u32::from_str_radix(&digits, 16).ok()?)?);
+                }
+                _ => return None,
+            },
+            character if character.is_control() => return None,
+            character => value.push(character),
+        }
+        if value.len() > MAX_CANONICAL_TEXT_BYTES {
+            return None;
+        }
+    }
+    Some(value)
 }
 
 fn split_shape_subject(source: &str) -> Option<(&str, &str, &str)> {
@@ -7927,6 +8178,12 @@ fn scalar_handler_parts(
                         CanonicalScalarValueV1::Symbol(assertion.value.clone()),
                     ))
                 }
+                CstKind::TextAssertion(assertion) if assertion.relation == handler.relation => {
+                    Some((
+                        assertion.origin,
+                        CanonicalScalarValueV1::Text(assertion.value.clone()),
+                    ))
+                }
                 _ => None,
             })
             .collect::<Vec<_>>();
@@ -7975,6 +8232,14 @@ fn scalar_expression_matches_value(
         }
         CanonicalScalarExpressionV1::Symbol(_) => {
             matches!(initial, CanonicalScalarValueV1::Symbol(_))
+        }
+        CanonicalScalarExpressionV1::Text(_) => {
+            matches!(initial, CanonicalScalarValueV1::Text(_))
+        }
+        CanonicalScalarExpressionV1::Concatenate(left, right) => {
+            matches!(initial, CanonicalScalarValueV1::Text(_))
+                && scalar_expression_matches_value(left, initial)
+                && scalar_expression_matches_value(right, initial)
         }
         CanonicalScalarExpressionV1::Add(left, right)
         | CanonicalScalarExpressionV1::Subtract(left, right)
@@ -8319,6 +8584,7 @@ fn validate_unique_designations(items: &[CstItem]) -> Result<(), CanonicalSource
         | CstKind::BooleanAssertion(_)
         | CstKind::NumberAssertion(_)
         | CstKind::SymbolAssertion(_)
+        | CstKind::TextAssertion(_)
         | CstKind::Unsupported(_) => None,
     }) {
         if !seen.insert(designation.clone()) {

@@ -4,14 +4,15 @@ use std::path::Path;
 use std::process::ExitCode;
 use std::time::{Duration, Instant};
 
-use clause_package::CanonicalSourceProductionV1;
+use clause_package::{CanonicalSourceProductionV1, Term, decode_canonical_term_bytes};
+use clause_runtime::projected_text_value_v1;
 use clause_substrate::compiler_package_v3::compiler_package_hash;
 use clause_workbench::{
     ResidentSourceGenerationV1, ResidentSourceWorkbenchV1, WorkbenchService,
     render_authoring_card_v1,
 };
 
-const USAGE: &str = "usage:\n  clause-workbench\n  clause-workbench source-loop SOURCE.clause\n  clause-workbench authoring-card\n  clause-workbench check-source FILE.clause";
+const USAGE: &str = "usage:\n  clause-workbench\n  clause-workbench source-loop SOURCE.clause\n  clause-workbench authoring-card [OUTPUT]\n  clause-workbench check-source FILE.clause\n  clause-workbench project-text SOURCE.clause HANDLER [OUTPUT]";
 
 fn main() -> ExitCode {
     let mut arguments = std::env::args_os().skip(1);
@@ -29,11 +30,12 @@ fn main() -> ExitCode {
             serve_source_loop(Path::new(&source))
         }
         Some(command) if command == OsStr::new("authoring-card") => {
+            let destination = arguments.next();
             if arguments.next().is_some() {
                 eprintln!("{USAGE}");
                 return ExitCode::FAILURE;
             }
-            print_authoring_card()
+            print_authoring_card(destination.as_deref().map(Path::new))
         }
         Some(command) if command == OsStr::new("check-source") => {
             let Some(source) = arguments.next() else {
@@ -46,11 +48,113 @@ fn main() -> ExitCode {
             }
             check_source(Path::new(&source))
         }
+        Some(command) if command == OsStr::new("project-text") => {
+            let (Some(source), Some(handler)) = (arguments.next(), arguments.next()) else {
+                eprintln!("{USAGE}");
+                return ExitCode::FAILURE;
+            };
+            let destination = arguments.next();
+            if arguments.next().is_some() {
+                eprintln!("{USAGE}");
+                return ExitCode::FAILURE;
+            }
+            let Some(handler) = handler.to_str() else {
+                eprintln!("project-text handler must be UTF-8");
+                return ExitCode::FAILURE;
+            };
+            project_text(
+                Path::new(&source),
+                handler.as_bytes(),
+                destination.as_deref().map(Path::new),
+            )
+        }
         Some(_) => {
             eprintln!("{USAGE}");
             ExitCode::FAILURE
         }
     }
+}
+
+fn project_text(source: &Path, handler: &[u8], destination: Option<&Path>) -> ExitCode {
+    let exact_source = match std::fs::read(source) {
+        Ok(source) => source,
+        Err(error) => {
+            eprintln!("project-text source read failed: {error}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let mut workbench = match ResidentSourceWorkbenchV1::open(&exact_source) {
+        Ok(workbench) => workbench,
+        Err(error) => {
+            eprintln!("project-text source open failed: {error}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let occurrence = match workbench.handler_occurrence(handler, &[]) {
+        Ok(occurrence) => occurrence,
+        Err(error) => {
+            eprintln!("project-text handler selection failed: {error}");
+            return ExitCode::FAILURE;
+        }
+    };
+    if let Err(error) = workbench.run_occurrences_to_candidate(&[occurrence]) {
+        eprintln!("project-text execution failed: {error}");
+        return ExitCode::FAILURE;
+    }
+    let admission = match workbench.admit() {
+        Ok(admission) => admission,
+        Err(error) => {
+            eprintln!("project-text admission failed: {error}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let term = match decode_canonical_term_bytes(&admission.projection.exact_term_bytes) {
+        Ok(term) => term,
+        Err(error) => {
+            eprintln!("project-text projection decode failed: {error}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let mut values = Vec::new();
+    if let Err(error) = collect_projected_text(&term, &mut values) {
+        eprintln!("project-text projection rejected: {error}");
+        return ExitCode::FAILURE;
+    }
+    let [value] = values.as_slice() else {
+        eprintln!(
+            "project-text requires exactly one projected Text value, found {}",
+            values.len()
+        );
+        return ExitCode::FAILURE;
+    };
+    let result = if let Some(destination) = destination {
+        std::fs::write(destination, value.as_bytes())
+    } else {
+        let mut output = std::io::stdout().lock();
+        output
+            .write_all(value.as_bytes())
+            .and_then(|()| output.flush())
+    };
+    match result {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(error) => {
+            eprintln!("project-text output failed: {error}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+fn collect_projected_text<'a>(term: &'a Term, values: &mut Vec<&'a str>) -> Result<(), String> {
+    if let Some(value) = projected_text_value_v1(term).map_err(|error| error.to_string())? {
+        values.push(value);
+        return Ok(());
+    }
+    if let Some(triple) = term.as_triple() {
+        for child in triple.slots() {
+            collect_projected_text(child, values)?;
+        }
+    }
+    Ok(())
 }
 
 fn serve_binary_workbench() -> ExitCode {
@@ -70,13 +174,17 @@ fn serve_binary_workbench() -> ExitCode {
     }
 }
 
-fn print_authoring_card() -> ExitCode {
+fn print_authoring_card(destination: Option<&Path>) -> ExitCode {
     let card = render_authoring_card_v1();
-    let mut output = std::io::stdout().lock();
-    match output
-        .write_all(card.as_bytes())
-        .and_then(|()| output.flush())
-    {
+    let result = if let Some(destination) = destination {
+        std::fs::write(destination, card.as_bytes())
+    } else {
+        let mut output = std::io::stdout().lock();
+        output
+            .write_all(card.as_bytes())
+            .and_then(|()| output.flush())
+    };
+    match result {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             eprintln!("authoring card write failed: {error}");

@@ -1,7 +1,7 @@
-referent F64
-referent Actor
-referent Move
-referent CombatRules
+F64
+Actor
+Move
+CombatRules
 
 relation clamped-between
   reads {value: F64} clamped between {lower: F64} and {upper: F64} as {result: F64}

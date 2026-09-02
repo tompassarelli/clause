@@ -14,8 +14,8 @@ Declares referents and a cardinality-one relation, then replaces one numeric sta
 Catalog ID: `scalar-state-transition`
 
 ```clause
-referent F64
-referent Account
+F64
+Account
 
 relation balance
   reads {account: Account} balance {value: F64}
@@ -40,9 +40,9 @@ Declares structured and Boolean state, binds a physical key, and updates a Vec3 
 Catalog ID: `structured-keyboard-transition`
 
 ```clause
-referent F64
-referent Bool
-referent Player
+F64
+Bool
+Player
 
 shape Vec3
   x: F64
@@ -83,8 +83,8 @@ Binds one named physical scalar channel to a typed one-argument handler and reco
 Catalog ID: `scalar-input-transition`
 
 ```clause
-referent F64
-referent Player
+F64
+Player
 
 relation camera-heading
   reads {player: Player} camera heading {value: F64}
@@ -112,8 +112,8 @@ Retains idempotent values in a cardinality-many relation and requires membership
 Catalog ID: `many-valued-relation`
 
 ```clause
-referent Root
-referent Item
+Root
+Item
 
 relation active
   reads {root: Root} active {value: Item}
@@ -146,6 +146,82 @@ on select ?root ?item
     ?root active ?item
 ```
 
+## Text state transition
+
+Accepts bounded UTF-8 text as handler input, stores it in optional state, and replaces it atomically.
+
+Catalog ID: `text-state-transition`
+
+```clause
+North
+GoalState
+Text
+
+relation goal-state
+  reads {north: North} goal state {value: GoalState}
+  subject north
+  mode given north yields value: one
+
+relation goal-title
+  reads {north: North} goal title {value: Text}
+  subject north
+  mode given north yields value: maybe
+
+relation goal-objective
+  reads {north: North} goal objective {value: Text}
+  subject north
+  mode given north yields value: maybe
+
+relation goal-tags
+  reads {north: North} goal tags {value: Text}
+  subject north
+  mode given north yields value: many
+
+relation banner
+  reads {north: North} banner {value: Text}
+  subject north
+  mode given north yields value: one
+
+north-main ∈ North
+north-main goal state no-goal
+north-main banner "North says:\n\"ready\" 🚀"
+
+on create-goal ?north ?title ?objective
+  when
+    ?north goal state ?state
+    ?state = no-goal
+    ?objective = "North handles goals elegantly 🚀"
+  withdraw
+    ?north goal state ?state
+  include
+    ?north goal state active
+    ?north goal title ?title
+    ?north goal objective ?objective
+    ?north goal tags ?title
+
+on tag-goal ?north ?tag
+  when
+    ?north goal state ?state
+    ?state = active
+  withdraw
+    ?north goal state ?state
+  include
+    ?north goal state ?state
+    ?north goal tags ?tag
+
+on redirect-goal ?north ?objective
+  when
+    ?north goal state ?state
+    ?state = active
+    ?north goal objective ?previous
+  withdraw
+    ?north goal state ?state
+    ?north goal objective ?previous
+  include
+    ?north goal state ?state
+    ?north goal objective "North " ++ ?objective
+```
+
 ## Derived combat transition
 
 Authorizes scalar laws, binds their result in a handler, and publishes one atomic multi-state combat change.
@@ -153,10 +229,10 @@ Authorizes scalar laws, binds their result in a handler, and publishes one atomi
 Catalog ID: `derived-combat-transition`
 
 ```clause
-referent F64
-referent Actor
-referent Move
-referent CombatRules
+F64
+Actor
+Move
+CombatRules
 
 relation clamped-between
   reads {value: F64} clamped between {lower: F64} and {upper: F64} as {result: F64}

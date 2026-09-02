@@ -1,0 +1,67 @@
+North
+GoalState
+Text
+
+relation goal-state
+  reads {north: North} goal state {value: GoalState}
+  subject north
+  mode given north yields value: one
+
+relation goal-title
+  reads {north: North} goal title {value: Text}
+  subject north
+  mode given north yields value: maybe
+
+relation goal-objective
+  reads {north: North} goal objective {value: Text}
+  subject north
+  mode given north yields value: maybe
+
+relation goal-tags
+  reads {north: North} goal tags {value: Text}
+  subject north
+  mode given north yields value: many
+
+relation banner
+  reads {north: North} banner {value: Text}
+  subject north
+  mode given north yields value: one
+
+north-main ∈ North
+north-main goal state no-goal
+north-main banner "North says:\n\"ready\" 🚀"
+
+on create-goal ?north ?title ?objective
+  when
+    ?north goal state ?state
+    ?state = no-goal
+    ?objective = "North handles goals elegantly 🚀"
+  withdraw
+    ?north goal state ?state
+  include
+    ?north goal state active
+    ?north goal title ?title
+    ?north goal objective ?objective
+    ?north goal tags ?title
+
+on tag-goal ?north ?tag
+  when
+    ?north goal state ?state
+    ?state = active
+  withdraw
+    ?north goal state ?state
+  include
+    ?north goal state ?state
+    ?north goal tags ?tag
+
+on redirect-goal ?north ?objective
+  when
+    ?north goal state ?state
+    ?state = active
+    ?north goal objective ?previous
+  withdraw
+    ?north goal state ?state
+    ?north goal objective ?previous
+  include
+    ?north goal state ?state
+    ?north goal objective "North " ++ ?objective

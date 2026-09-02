@@ -149,12 +149,11 @@ select their own heterogeneous child grammars. Each accepted child head has one
 declared production and one declared focus rule. Heterogeneity never licenses
 child-driven block reclassification.
 
-An unkeyworded block header containing one designation has exactly one CST
-production: `SubjectFocus`. The parser selects that production from the header
-form; it does not inspect the mix of children to classify the block.
-The header must own at least one explicit edge child. Removing every child
-makes it an invalid empty focus, never a bare Referent declaration; use
-`referent iron-door` for that declaration.
+An unkeyworded designation has exactly one CST production at each layout
+shape. As a leaf it is a Referent declaration; with an indented child block it
+is `SubjectFocus`. The parser selects between those productions from layout
+alone and never inspects the mix of children to classify the block. A subject
+focus must own at least one explicit edge child.
 
 The second block omits only the repeated subject `iron-door`; every child still
 names its relation. It does not infer membership, containment, ownership,
@@ -172,8 +171,8 @@ Adding a child may not reinterpret the header or an existing sibling.
 ## Canonical overview
 
 ```clause
-referent Door
-referent Space
+Door
+Space
 
 enum Game
   Chess
@@ -235,10 +234,10 @@ Admission authority, or constitutive status from parsing, checking, or
 grouping lines. A separate proposal may target an exact Program lineage and a
 separate Admission may select the checked snapshot.
 
-Canonical declaration heads are explicit:
+Canonical declarations use their structurally distinct source shapes:
 
 ```clause
-referent Door
+Door
 
 enum Game
   Chess
@@ -249,8 +248,8 @@ shape Vec2
   y: F32
 ```
 
-- `referent` introduces or explicitly resolves one designation through the
-  lineage-aware identity process.
+- A bare designation leaf introduces or explicitly resolves one Referent
+  through the lineage-aware identity process.
 - `enum` declares one homogeneous member-entry reading. Each child contributes
   one independent membership assertion occurrence after checked elaboration.
 - `shape` declares one homogeneous field-entry reading. Each child contributes
@@ -947,15 +946,16 @@ MembershipConstruct ::= MembershipHead
                       | MembershipHead NEWLINE
                         INDENT FocusedEdgeChild+ DEDENT
 SubjectFocus    ::= Designation NEWLINE INDENT FocusedEdgeChild+ DEDENT
+ReferentDeclaration ::= Designation
 ```
 
 `MembershipHead` is one line production whether or not it owns children. In a
 standalone construct it supplies assertion emissions and subject focus; in a
 block it additionally selects the focused-edge child grammar. `TermNoTopComma`
 may contain commas only inside its own balanced `()`, `[]`, or `{}` delimiters.
-`SubjectFocus` contains exactly one Designation and cannot be selected for an
-empty block. Keyworded heads select their own declared child grammars as
-specified above.
+`ReferentDeclaration` is the leaf form of one Designation. `SubjectFocus` is
+the block form of one Designation and requires at least one child. Keyworded
+heads select their own declared child grammars as specified above.
 
 `HSPACE` is exactly one U+0020 ASCII space. `HSPACE+` means one or more such
 spaces where flexible separation is declared; `FieldConstraint` requires
@@ -1041,8 +1041,8 @@ tab, and uses lowercase `\u{...}` for other controls.
 These are required reader negatives, not aliases or recoverable spellings:
 
 ```clause
-referent x/y
-referent `x/y`
+x/y
+`x/y`
 ```
 
 A candidate package or generated form that directly constructs a structured

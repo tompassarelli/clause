@@ -1,16 +1,16 @@
-referent North
-referent NorthPhase
-referent TurnReadiness
-referent AgentRunIdentity
-referent idle
-referent dispatching
-referent delegating
-referent settling
-referent completed
-referent failed
-referent turn-ready
-referent turn-active
-referent no-agent-run
+North
+NorthPhase
+TurnReadiness
+AgentRunIdentity
+idle
+dispatching
+delegating
+settling
+completed
+failed
+turn-ready
+turn-active
+no-agent-run
 
 relation phase
   reads {north: North} phase {value: NorthPhase}

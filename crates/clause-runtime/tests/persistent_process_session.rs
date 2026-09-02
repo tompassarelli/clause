@@ -44,6 +44,39 @@ fn number(value: f64) -> ExecutableValueV1 {
     ExecutableValueV1::number(value).expect("test values are finite")
 }
 
+#[test]
+fn text_occurrence_transport_has_a_distinct_bounded_utf8_wire_identity() {
+    let text = ExecutableOccurrenceV1 {
+        entry: 7,
+        arguments: vec![ExecutableValueV1::text("North 🚀").expect("Text is bounded")],
+    };
+    let symbol = ExecutableOccurrenceV1 {
+        entry: 7,
+        arguments: vec![ExecutableValueV1::symbol(b"North").expect("Symbol is bounded")],
+    };
+
+    let text_bytes = encode_executable_occurrence_v1(&text).expect("Text occurrence encodes");
+    let symbol_bytes = encode_executable_occurrence_v1(&symbol).expect("Symbol occurrence encodes");
+    assert_eq!(text_bytes[8], 4, "Text owns wire value tag 4");
+    assert_eq!(symbol_bytes[8], 2, "Symbol retains wire value tag 2");
+    assert_ne!(text_bytes, symbol_bytes);
+    assert_eq!(
+        decode_executable_occurrence_v1(&text_bytes).expect("Text occurrence decodes"),
+        text
+    );
+
+    let mut malformed_utf8 = text_bytes;
+    malformed_utf8[11] = 0xff;
+    assert_eq!(
+        decode_executable_occurrence_v1(&malformed_utf8),
+        Err(ExecutableErrorV1::MalformedProgram)
+    );
+    assert_eq!(
+        ExecutableValueV1::text(&"x".repeat(usize::from(u16::MAX) + 1)),
+        Err(ExecutableErrorV1::ResourceLimit)
+    );
+}
+
 fn executable_program() -> ExecutableProgramV1 {
     ExecutableProgramV1 {
         initial_configuration: vec![number(0.0)],
@@ -51,11 +84,16 @@ fn executable_program() -> ExecutableProgramV1 {
             ExecutableRuleV1 {
                 entry: 0,
                 predicates: vec![],
+                required_present: vec![],
+                required_absent: vec![],
                 assignments: vec![(0, ExecutableExpressionV1::Argument(0))],
+                removals: vec![],
             },
             ExecutableRuleV1 {
                 entry: 1,
                 predicates: vec![],
+                required_present: vec![],
+                required_absent: vec![],
                 assignments: vec![(
                     0,
                     ExecutableExpressionV1::Add(
@@ -63,6 +101,7 @@ fn executable_program() -> ExecutableProgramV1 {
                         Box::new(ExecutableExpressionV1::Argument(0)),
                     ),
                 )],
+                removals: vec![],
             },
         ],
         projection: None,

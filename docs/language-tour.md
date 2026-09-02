@@ -18,8 +18,8 @@ Declarations use explicit heads. An `enum` gives every child one homogeneous
 membership role; a `shape` gives every child one homogeneous field role:
 
 ```clause
-referent Door
-referent Space
+Door
+Space
 
 enum Game
   Chess
@@ -33,9 +33,9 @@ gravity: 9.81
 origin: Vec2 { x: 0.0, y: 0.0 }
 ```
 
-`referent` introduces or resolves a designation. `∈` expresses ordinary
-membership, `:` constrains a binder or role to one field, and `=` remains
-equality. Cardinality belongs to the field or schema; a singleton field yields
+A bare designation leaf introduces or resolves a Referent. `∈` expresses
+ordinary membership, `:` constrains a binder or role to one field, and `=`
+remains equality. Cardinality belongs to the field or schema; a singleton field yields
 the derived one-denotation case often called definition, but definition is not
 a primitive syntax category. Source forms elaborate into neutral recursive
 Terms plus contextual `ClauseJudgment`s and candidate formations. Lower-case

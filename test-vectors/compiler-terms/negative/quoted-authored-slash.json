@@ -3,10 +3,10 @@
   "context_ref": "../context.json",
   "source_unit": {
     "source_artifact_id": "source-artifact:negative:quoted-authored-slash",
-    "utf8": "referent `x/y`\nreferent recovery-sibling\n",
+    "utf8": "`x/y`\nrecovery-sibling\n",
     "slash_byte_span": [
-      11,
-      12
+      2,
+      3
     ],
     "recovery_sibling_spelling": "recovery-sibling"
   }

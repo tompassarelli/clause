@@ -1,7 +1,7 @@
-referent F64
-referent Bool
-referent Player
-referent Arena
+F64
+Bool
+Player
+Arena
 
 shape Vec3
   x: F64

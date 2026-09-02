@@ -1,9 +1,9 @@
-referent DispatchOpen
-referent Request
-referent Action
-referent Resource
-referent Payload
-referent Result
+DispatchOpen
+Request
+Action
+Resource
+Payload
+Result
 
 capability dispatch-capability
 

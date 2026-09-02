@@ -5,9 +5,10 @@ use clause_package::{
     decode_canonical_term_bytes, decode_process_package,
 };
 use clause_runtime::{
-    ExecutableInputSourceV1, ExecutableKeyPhaseV1, ExecutableValueV1, ForkedProcessBranchV1,
-    decode_executable_occurrence_v1, decode_executable_physical_plan_v1,
-    decode_wasm_process_request_v1, open_fresh_persistent_process_session_v1,
+    ExecutableInputSourceV1, ExecutableKeyPhaseV1, ExecutableValueKindV1, ExecutableValueV1,
+    ForkedProcessBranchV1, decode_executable_occurrence_v1, decode_executable_physical_plan_v1,
+    decode_wasm_process_request_v1, encode_executable_physical_plan_v1,
+    open_fresh_persistent_process_session_v1,
 };
 use clause_workbench::ResidentSourceWorkbenchV1;
 
@@ -39,11 +40,15 @@ const NORTH_REPEATED_TURN: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../test-vectors/north/repeated-turn.clause"
 ));
-const RUNTIME_SELECTED_POLICY: &str = r#"referent F64
-referent Root
-referent Policy
-referent policy-a
-referent policy-b
+const TEXT_STATE: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../test-vectors/authoring/text-state-transition.clause"
+));
+const RUNTIME_SELECTED_POLICY: &str = r#"F64
+Root
+Policy
+policy-a
+policy-b
 
 shape PolicyParameters
   adjustment: F64
@@ -175,9 +180,9 @@ on observe-camera-heading ?player ?heading
   include
     ?player camera heading ?heading
 "#;
-const ACTOR_NEUTRAL_HIT: &str = r#"referent F64
-referent Actor
-referent Move
+const ACTOR_NEUTRAL_HIT: &str = r#"F64
+Actor
+Move
 
 relation vitality
   reads {actor: Actor} vitality {value: F64}
@@ -240,10 +245,10 @@ on finish-reaction ?defender
     ?defender vitality 0.0
     ?defender destabilization 0.0
 "#;
-const SCALAR_LAW_BOUND_HIT: &str = r#"referent F64
-referent Actor
-referent Move
-referent CombatRules
+const SCALAR_LAW_BOUND_HIT: &str = r#"F64
+Actor
+Move
+CombatRules
 
 relation clamped-between
   reads {value: F64} clamped between {lower: F64} and {upper: F64} as {result: F64}
@@ -362,11 +367,11 @@ on blade-two-hit ?defender
     ?defender destabilization ?next-destabilization
     ?defender launch velocity (?impulse + ?growth * ?next-destabilization / ?threshold) / ?mass
 "#;
-const OPTIONAL_RELATION_TRANSITION: &str = r#"referent F64
-referent Actor
-referent Phase
-referent ready
-referent committed
+const OPTIONAL_RELATION_TRANSITION: &str = r#"F64
+Actor
+Phase
+ready
+committed
 
 shape Vec3
   x: F64
@@ -431,11 +436,11 @@ on clear-anchor ?actor
   include
     ?actor phase ready
 "#;
-const MANY_RELATION_MEMBERSHIP: &str = r#"referent Root
-referent Item
-referent idle
-referent alpha
-referent beta
+const MANY_RELATION_MEMBERSHIP: &str = r#"Root
+Item
+idle
+alpha
+beta
 
 relation phase
   reads {root: Root} phase {value: Item}
@@ -593,6 +598,12 @@ fn projected_symbol(term: &Term) -> &[u8] {
     atom.canonical_payload()
 }
 
+fn projected_text(term: &Term) -> &str {
+    let atom = term.as_atom().expect("projected text is an Atom");
+    assert_eq!(atom.kind(), b"clause/process-projected-text-v1");
+    std::str::from_utf8(atom.canonical_payload()).expect("projected Text is canonical UTF-8")
+}
+
 fn projected_symbol_set(term: &Term) -> Vec<&[u8]> {
     let [header, tree, end] = term
         .as_triple()
@@ -619,6 +630,42 @@ fn projected_symbol_set(term: &Term) -> Vec<&[u8]> {
             .slots();
         collect(left, values);
         values.push(projected_symbol(value));
+        collect(right, values);
+    }
+
+    let mut values = Vec::new();
+    collect(tree, &mut values);
+    values
+}
+
+fn projected_text_set(term: &Term) -> Vec<&str> {
+    let [header, tree, end] = term
+        .as_triple()
+        .expect("projected Text set has a typed wrapper")
+        .slots();
+    let header = header
+        .as_atom()
+        .expect("projected Text set header is an Atom");
+    assert_eq!(header.kind(), b"clause/process-projected-set-v1");
+    assert_eq!(header.canonical_payload(), &[6]);
+    assert_eq!(
+        end.as_atom()
+            .expect("projected Text set wrapper has an end Atom")
+            .kind(),
+        b"clause/process-projected-set-end-v1"
+    );
+
+    fn collect<'a>(term: &'a Term, values: &mut Vec<&'a str>) {
+        if let Some(end) = term.as_atom() {
+            assert_eq!(end.kind(), b"clause/process-projected-set-end-v1");
+            return;
+        }
+        let [left, value, right] = term
+            .as_triple()
+            .expect("projected Text set uses a balanced tree")
+            .slots();
+        collect(left, values);
+        values.push(projected_text(value));
         collect(right, values);
     }
 
@@ -1551,4 +1598,112 @@ fn resident_source_opens_the_north_repeated_turn_machine() {
     workbench
         .admit()
         .expect("submit reaches one admitted successor");
+}
+
+#[test]
+fn text_handler_state_projection_and_persistent_redirect_are_one_value_path() {
+    let mut workbench = ResidentSourceWorkbenchV1::open(TEXT_STATE)
+        .expect("the text-state source opens in the resident workbench");
+    let restored_plan = decode_executable_physical_plan_v1(&workbench.generation().cpp1)
+        .expect("the Text physical plan restores from CPP1");
+    assert!(
+        restored_plan
+            .program
+            .initial_configuration
+            .iter()
+            .any(|value| value.kind() == ExecutableValueKindV1::Text)
+    );
+    assert!(
+        restored_plan
+            .program
+            .initial_configuration
+            .iter()
+            .any(|value| value.kind() == ExecutableValueKindV1::TextSet)
+    );
+    assert_eq!(
+        encode_executable_physical_plan_v1(&restored_plan)
+            .expect("the restored Text physical plan re-encodes"),
+        workbench.generation().cpp1
+    );
+    let create = workbench
+        .handler_occurrence(
+            b"create-goal",
+            &[
+                ExecutableValueV1::text("Launch North").expect("title is bounded Text"),
+                ExecutableValueV1::text("North handles goals elegantly 🚀")
+                    .expect("Unicode objective is bounded Text"),
+            ],
+        )
+        .expect("the checked handler accepts Text arguments");
+    workbench
+        .run_occurrences_to_candidate(&[create])
+        .expect("Text creation reaches one hidden candidate");
+    let created = workbench
+        .admit()
+        .expect("Text creation reaches one admitted successor");
+    let created = decode_canonical_term_bytes(&created.projection.exact_term_bytes)
+        .expect("the Text projection decodes");
+    let north = projected_object_field(&created, b"north-main");
+    assert_eq!(
+        projected_symbol(projected_object_field(north, b"goal-state")),
+        b"active"
+    );
+    assert_eq!(
+        projected_text(projected_object_field(north, b"goal-title")),
+        "Launch North"
+    );
+    assert_eq!(
+        projected_text(projected_object_field(north, b"goal-objective")),
+        "North handles goals elegantly 🚀"
+    );
+    assert_eq!(
+        projected_text(projected_object_field(north, b"banner")),
+        "North says:\n\"ready\" 🚀"
+    );
+    assert_eq!(
+        projected_text_set(projected_object_field(north, b"goal-tags")),
+        vec!["Launch North"]
+    );
+
+    let tag = workbench
+        .handler_occurrence(
+            b"tag-goal",
+            &[ExecutableValueV1::text("🚀 durable").expect("tag is bounded Text")],
+        )
+        .expect("the checked handler accepts a Text set member");
+    workbench
+        .run_occurrences_to_candidate(&[tag])
+        .expect("Text set insertion reaches one hidden candidate");
+    workbench
+        .admit()
+        .expect("Text set insertion reaches one admitted successor");
+
+    let redirect = workbench
+        .handler_occurrence(
+            b"redirect-goal",
+            &[ExecutableValueV1::text("subsumes its Rust semantics")
+                .expect("revised objective is bounded Text")],
+        )
+        .expect("the redirect handler accepts Text");
+    workbench
+        .run_occurrences_to_candidate(&[redirect])
+        .expect("Text replacement reaches one hidden candidate");
+    let redirected = workbench
+        .admit()
+        .expect("Text replacement reaches one admitted successor");
+    let redirected = decode_canonical_term_bytes(&redirected.projection.exact_term_bytes)
+        .expect("the redirected projection decodes");
+    let north = projected_object_field(&redirected, b"north-main");
+    assert_eq!(
+        projected_text(projected_object_field(north, b"goal-title")),
+        "Launch North"
+    );
+    assert_eq!(
+        projected_text(projected_object_field(north, b"goal-objective")),
+        "North subsumes its Rust semantics"
+    );
+    assert_eq!(
+        projected_text_set(projected_object_field(north, b"goal-tags")),
+        vec!["Launch North", "🚀 durable"]
+    );
 }

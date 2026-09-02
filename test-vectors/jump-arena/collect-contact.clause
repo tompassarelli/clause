@@ -1,8 +1,8 @@
-referent State
-referent Collectible
-referent active
-referent collected
-referent spent
+State
+Collectible
+active
+collected
+spent
 
 relation state
   reads {collectible: Collectible} state {value: State}

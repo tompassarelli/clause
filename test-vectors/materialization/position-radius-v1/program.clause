@@ -1,6 +1,6 @@
-referent Observer
-referent Target
-referent Space
+Observer
+Target
+Space
 
 relation observer-position-v1
   reads {observer: Observer, space: Space}

@@ -1,41 +1,41 @@
-referent Term
-referent Triple
-referent FormationJudgment
-referent RelationSchemaId
-referent RoleId
-referent OperatorRef
-referent ModeId
-referent ApplicationForm
-referent ApplicationId
-referent LawId
-referent PremiseOccurrenceId
-referent PremiseSlotId
-referent VariableId
-referent JudgmentLocalId
-referent JudgmentRef
-referent JudgmentKind
-referent AuthorizationType
-referent ProgramSnapshotScope
-referent ConclusionProjection
-referent ProjectionField
-referent FormedType
-referent PointComponentProjection
-referent ExecutableValidity
-referent AuthorizationSet
-referent ExternalIdentifier
-referent NumericEncoding
-referent NumericDomain
-referent NumericConstraint
-referent RoleDomain
-referent Purity
-referent Determinism
-referent Totality
-referent Ordering
-referent ContinuationContract
-referent ContextRequirement
-referent Ordinal
-referent Cardinality
-referent Binding
+Term
+Triple
+FormationJudgment
+RelationSchemaId
+RoleId
+OperatorRef
+ModeId
+ApplicationForm
+ApplicationId
+LawId
+PremiseOccurrenceId
+PremiseSlotId
+VariableId
+JudgmentLocalId
+JudgmentRef
+JudgmentKind
+AuthorizationType
+ProgramSnapshotScope
+ConclusionProjection
+ProjectionField
+FormedType
+PointComponentProjection
+ExecutableValidity
+AuthorizationSet
+ExternalIdentifier
+NumericEncoding
+NumericDomain
+NumericConstraint
+RoleDomain
+Purity
+Determinism
+Totality
+Ordering
+ContinuationContract
+ContextRequirement
+Ordinal
+Cardinality
+Binding
 
 shape TripleRecord
   slot-zero: Term

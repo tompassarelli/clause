@@ -17,9 +17,11 @@ const PROJECTION_ROLE_KIND: &[u8] = b"clause/process-projection-role-v1";
 const PROJECTED_NUMBER_KIND: &[u8] = b"clause/process-projected-f64-v1";
 const PROJECTED_BOOLEAN_KIND: &[u8] = b"clause/process-projected-bool-v1";
 const PROJECTED_SYMBOL_KIND: &[u8] = b"clause/process-projected-symbol-v1";
+const PROJECTED_TEXT_KIND: &[u8] = b"clause/process-projected-text-v1";
 const PROJECTED_SET_KIND: &[u8] = b"clause/process-projected-set-v1";
 const PROJECTED_SET_END_KIND: &[u8] = b"clause/process-projected-set-end-v1";
 const MAX_EXECUTABLE_SYMBOL_BYTES: usize = 64;
+const MAX_EXECUTABLE_TEXT_BYTES: usize = u16::MAX as usize;
 const MAX_PROGRAM_ITEMS: usize = 65_536;
 const MAX_EXPRESSION_DEPTH: usize = 64;
 const MAX_INPUT_CODE_BYTES: usize = 64;
@@ -108,6 +110,7 @@ pub enum ExecutableValueV1 {
     Number(u64),
     Boolean(bool),
     Symbol(ExecutableSymbolV1),
+    Text(ExecutableTextV1),
     Set(ExecutableSetV1),
 }
 
@@ -137,6 +140,27 @@ impl ExecutableSymbolV1 {
     }
 }
 
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct ExecutableTextV1 {
+    value: String,
+}
+
+impl ExecutableTextV1 {
+    pub fn new(value: &str) -> Result<Self, ExecutableErrorV1> {
+        if value.len() > MAX_EXECUTABLE_TEXT_BYTES {
+            return Err(ExecutableErrorV1::ResourceLimit);
+        }
+        Ok(Self {
+            value: value.to_owned(),
+        })
+    }
+
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.value
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 #[repr(u8)]
 pub enum ExecutableValueKindV1 {
@@ -146,6 +170,8 @@ pub enum ExecutableValueKindV1 {
     NumberSet = 3,
     BooleanSet = 4,
     SymbolSet = 5,
+    Text = 6,
+    TextSet = 7,
 }
 
 impl ExecutableValueKindV1 {
@@ -154,7 +180,8 @@ impl ExecutableValueKindV1 {
             Self::Number => Some(Self::NumberSet),
             Self::Boolean => Some(Self::BooleanSet),
             Self::Symbol => Some(Self::SymbolSet),
-            Self::NumberSet | Self::BooleanSet | Self::SymbolSet => None,
+            Self::Text => Some(Self::TextSet),
+            Self::NumberSet | Self::BooleanSet | Self::SymbolSet | Self::TextSet => None,
         }
     }
 }
@@ -267,13 +294,16 @@ impl ExecutableValueV1 {
             Self::Number(_) => ExecutableValueKindV1::Number,
             Self::Boolean(_) => ExecutableValueKindV1::Boolean,
             Self::Symbol(_) => ExecutableValueKindV1::Symbol,
+            Self::Text(_) => ExecutableValueKindV1::Text,
             Self::Set(set) => match set.element_kind {
                 ExecutableValueKindV1::Number => ExecutableValueKindV1::NumberSet,
                 ExecutableValueKindV1::Boolean => ExecutableValueKindV1::BooleanSet,
                 ExecutableValueKindV1::Symbol => ExecutableValueKindV1::SymbolSet,
+                ExecutableValueKindV1::Text => ExecutableValueKindV1::TextSet,
                 ExecutableValueKindV1::NumberSet
                 | ExecutableValueKindV1::BooleanSet
                 | ExecutableValueKindV1::SymbolSet => unreachable!(),
+                ExecutableValueKindV1::TextSet => unreachable!(),
             },
         }
     }
@@ -391,7 +421,7 @@ impl ExecutableValueV1 {
     pub fn as_number(&self) -> Option<f64> {
         match self {
             Self::Number(bits) => Some(f64::from_bits(*bits)),
-            Self::Boolean(_) | Self::Symbol(_) | Self::Set(_) => None,
+            Self::Boolean(_) | Self::Symbol(_) | Self::Text(_) | Self::Set(_) => None,
         }
     }
 
@@ -399,7 +429,7 @@ impl ExecutableValueV1 {
     pub const fn as_boolean(&self) -> Option<bool> {
         match self {
             Self::Boolean(value) => Some(*value),
-            Self::Number(_) | Self::Symbol(_) | Self::Set(_) => None,
+            Self::Number(_) | Self::Symbol(_) | Self::Text(_) | Self::Set(_) => None,
         }
     }
 
@@ -411,7 +441,19 @@ impl ExecutableValueV1 {
     pub fn as_symbol(&self) -> Option<&[u8]> {
         match self {
             Self::Symbol(value) => Some(value.as_bytes()),
-            Self::Number(_) | Self::Boolean(_) | Self::Set(_) => None,
+            Self::Number(_) | Self::Boolean(_) | Self::Text(_) | Self::Set(_) => None,
+        }
+    }
+
+    pub fn text(value: &str) -> Result<Self, ExecutableErrorV1> {
+        ExecutableTextV1::new(value).map(Self::Text)
+    }
+
+    #[must_use]
+    pub fn as_text(&self) -> Option<&str> {
+        match self {
+            Self::Text(value) => Some(value.as_str()),
+            Self::Number(_) | Self::Boolean(_) | Self::Symbol(_) | Self::Set(_) => None,
         }
     }
 }
@@ -484,6 +526,7 @@ pub enum ExecutableExpressionV1 {
     Constant(ExecutableValueV1),
     Slot(u16),
     Argument(u16),
+    Concatenate(Box<Self>, Box<Self>),
     Add(Box<Self>, Box<Self>),
     Subtract(Box<Self>, Box<Self>),
     Multiply(Box<Self>, Box<Self>),
@@ -722,6 +765,10 @@ fn lower_canonical_expression(
         ),
         CanonicalExecutableExpressionV1::Argument(argument) => {
             ExecutableExpressionV1::Argument(*argument)
+        }
+        CanonicalExecutableExpressionV1::Concatenate(left, right) => {
+            let (left, right) = pair(left, right)?;
+            ExecutableExpressionV1::Concatenate(left, right)
         }
         CanonicalExecutableExpressionV1::Add(left, right) => {
             let (left, right) = pair(left, right)?;
@@ -1229,6 +1276,13 @@ fn lower_scalar_expression(
         CanonicalScalarExpressionV1::Symbol(value) => {
             ExecutableExpressionV1::Constant(ExecutableValueV1::symbol(value)?)
         }
+        CanonicalScalarExpressionV1::Text(value) => {
+            ExecutableExpressionV1::Constant(ExecutableValueV1::text(value)?)
+        }
+        CanonicalScalarExpressionV1::Concatenate(left, right) => {
+            let (left, right) = pair(left, right)?;
+            ExecutableExpressionV1::Concatenate(left, right)
+        }
         CanonicalScalarExpressionV1::Add(left, right) => {
             let (left, right) = pair(left, right)?;
             ExecutableExpressionV1::Add(left, right)
@@ -1275,6 +1329,7 @@ fn lower_scalar_value(
         CanonicalScalarValueV1::Number(bits) => Ok(ExecutableValueV1::Number(*bits)),
         CanonicalScalarValueV1::Boolean(value) => Ok(ExecutableValueV1::Boolean(*value)),
         CanonicalScalarValueV1::Symbol(value) => ExecutableValueV1::symbol(value),
+        CanonicalScalarValueV1::Text(value) => ExecutableValueV1::text(value),
     }
 }
 
@@ -1285,6 +1340,7 @@ const fn lower_scalar_value_kind(
         clause_package::CanonicalScalarValueKindV1::Number => ExecutableValueKindV1::Number,
         clause_package::CanonicalScalarValueKindV1::Boolean => ExecutableValueKindV1::Boolean,
         clause_package::CanonicalScalarValueKindV1::Symbol => ExecutableValueKindV1::Symbol,
+        clause_package::CanonicalScalarValueKindV1::Text => ExecutableValueKindV1::Text,
     }
 }
 
@@ -5165,6 +5221,8 @@ fn projection_role(
         3 => ExecutableValueKindV1::NumberSet,
         4 => ExecutableValueKindV1::BooleanSet,
         5 => ExecutableValueKindV1::SymbolSet,
+        6 => ExecutableValueKindV1::Text,
+        7 => ExecutableValueKindV1::TextSet,
         _ => return Err(ExecutableErrorV1::MalformedProgram),
     };
     Ok(Some((LocalRoleRefV2 { schema, role }, value_kind)))
@@ -5215,6 +5273,7 @@ fn projected_scalar_value_term(
         ExecutableValueV1::Number(bits) => (PROJECTED_NUMBER_KIND, bits.to_le_bytes().to_vec()),
         ExecutableValueV1::Boolean(value) => (PROJECTED_BOOLEAN_KIND, vec![u8::from(*value)]),
         ExecutableValueV1::Symbol(value) => (PROJECTED_SYMBOL_KIND, value.as_bytes().to_vec()),
+        ExecutableValueV1::Text(value) => (PROJECTED_TEXT_KIND, value.as_str().as_bytes().to_vec()),
         ExecutableValueV1::Set(_) => return Err(ExecutableErrorV1::MalformedProgram),
     };
     Term::atom(
@@ -5224,6 +5283,25 @@ fn projected_scalar_value_term(
         EqualityContract::ExactOctetsV1,
     )
     .map_err(|_| ExecutableErrorV1::MalformedProgram)
+}
+
+/// Decode one exact projected Text leaf without knowing the surrounding
+/// source-owned projection shape. Non-Text terms are left untouched.
+pub fn projected_text_value_v1(term: &Term) -> Result<Option<&str>, ExecutableErrorV1> {
+    let Some(atom) = term.as_atom() else {
+        return Ok(None);
+    };
+    if atom.kind() != PROJECTED_TEXT_KIND {
+        return Ok(None);
+    }
+    if atom.equality_contract() != EqualityContract::ExactOctetsV1
+        || atom.canonical_payload().len() > MAX_EXECUTABLE_TEXT_BYTES
+    {
+        return Err(ExecutableErrorV1::MalformedProgram);
+    }
+    std::str::from_utf8(atom.canonical_payload())
+        .map(Some)
+        .map_err(|_| ExecutableErrorV1::MalformedProgram)
 }
 
 fn projected_set_tree(
@@ -5348,6 +5426,7 @@ fn evaluate(
             .get(usize::from(*argument))
             .cloned()
             .ok_or(ExecutableErrorV1::UnknownArgument(*argument)),
+        E::Concatenate(left, right) => concatenate(left, right, slots, arguments),
         E::Add(left, right) => numeric2(left, right, slots, arguments, |a, b| a + b),
         E::Subtract(left, right) => numeric2(left, right, slots, arguments, |a, b| a - b),
         E::Multiply(left, right) => numeric2(left, right, slots, arguments, |a, b| a * b),
@@ -5405,6 +5484,28 @@ fn evaluate(
             Ok(ExecutableValueV1::Set(set.removed(&value)?))
         }
     }
+}
+
+fn concatenate(
+    left: &ExecutableExpressionV1,
+    right: &ExecutableExpressionV1,
+    slots: &[ExecutableSlotV1],
+    arguments: &[ExecutableValueV1],
+) -> Result<ExecutableValueV1, ExecutableErrorV1> {
+    let left = evaluate(left, slots, arguments)?;
+    let right = evaluate(right, slots, arguments)?;
+    let (Some(left), Some(right)) = (left.as_text(), right.as_text()) else {
+        return Err(ExecutableErrorV1::TypeMismatch);
+    };
+    let length = left
+        .len()
+        .checked_add(right.len())
+        .filter(|length| *length <= MAX_EXECUTABLE_TEXT_BYTES)
+        .ok_or(ExecutableErrorV1::ResourceLimit)?;
+    let mut value = String::with_capacity(length);
+    value.push_str(left);
+    value.push_str(right);
+    ExecutableValueV1::text(&value)
 }
 
 fn numeric2(
@@ -5562,6 +5663,8 @@ fn decode_projection(
                     3 => ExecutableValueKindV1::NumberSet,
                     4 => ExecutableValueKindV1::BooleanSet,
                     5 => ExecutableValueKindV1::SymbolSet,
+                    6 => ExecutableValueKindV1::Text,
+                    7 => ExecutableValueKindV1::TextSet,
                     _ => return Err(ExecutableErrorV1::MalformedProgram),
                 };
                 bindings.push(ExecutableProjectionBindingV1 {
@@ -5593,6 +5696,11 @@ fn encode_value(bytes: &mut Vec<u8>, value: &ExecutableValueV1) -> Result<(), Ex
             bytes.push(value.length);
             bytes.extend_from_slice(value.as_bytes());
         }
+        ExecutableValueV1::Text(value) => {
+            bytes.push(4);
+            encode_count(bytes, value.as_str().len())?;
+            bytes.extend_from_slice(value.as_str().as_bytes());
+        }
         ExecutableValueV1::Set(set) => {
             bytes.push(3);
             bytes.push(set.element_kind as u8);
@@ -5623,6 +5731,7 @@ fn encode_expression(
             bytes.push(2);
             bytes.extend_from_slice(&argument.to_le_bytes());
         }
+        E::Concatenate(a, b) => encode_binary(bytes, 16, a, b)?,
         E::Add(a, b) => encode_binary(bytes, 3, a, b)?,
         E::Subtract(a, b) => encode_binary(bytes, 4, a, b)?,
         E::Multiply(a, b) => encode_binary(bytes, 5, a, b)?,
@@ -5730,6 +5839,7 @@ impl<'a> Decoder<'a> {
                     0 => ExecutableValueKindV1::Number,
                     1 => ExecutableValueKindV1::Boolean,
                     2 => ExecutableValueKindV1::Symbol,
+                    6 => ExecutableValueKindV1::Text,
                     _ => return Err(ExecutableErrorV1::MalformedProgram),
                 };
                 let count = self.count()?;
@@ -5738,6 +5848,12 @@ impl<'a> Decoder<'a> {
                     set = set.inserted(self.value()?)?;
                 }
                 Ok(ExecutableValueV1::Set(set))
+            }
+            4 => {
+                let length = self.count()?;
+                let value = std::str::from_utf8(self.take(length)?)
+                    .map_err(|_| ExecutableErrorV1::MalformedProgram)?;
+                ExecutableValueV1::text(value)
             }
             _ => Err(ExecutableErrorV1::MalformedProgram),
         }
@@ -5799,6 +5915,10 @@ impl<'a> Decoder<'a> {
                 Box::new(self.expression(next)?),
             ),
             15 => E::SetRemove(
+                Box::new(self.expression(next)?),
+                Box::new(self.expression(next)?),
+            ),
+            16 => E::Concatenate(
                 Box::new(self.expression(next)?),
                 Box::new(self.expression(next)?),
             ),

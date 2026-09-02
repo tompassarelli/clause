@@ -1,9 +1,9 @@
-referent Objective
-referent ObjectiveState
-referent playing
-referent completed
-referent failed
-referent resetting
+Objective
+ObjectiveState
+playing
+completed
+failed
+resetting
 
 relation objective-state
   reads {objective: Objective} objective state {value: ObjectiveState}

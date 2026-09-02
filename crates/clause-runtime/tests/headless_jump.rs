@@ -242,6 +242,7 @@ fn scalar_program(
         CanonicalScalarValueV1::Number(_) => ExecutableValueKindV1::Number,
         CanonicalScalarValueV1::Boolean(_) => ExecutableValueKindV1::Boolean,
         CanonicalScalarValueV1::Symbol(_) => ExecutableValueKindV1::Symbol,
+        CanonicalScalarValueV1::Text(_) => ExecutableValueKindV1::Text,
     };
     let mut program = ExecutableProgramV1 {
         initial_configuration: vec![number(0.0)],
@@ -404,6 +405,8 @@ fn headless_program(
                 CanonicalScalarValueV1::Boolean(value) => ExecutableValueV1::Boolean(*value),
                 CanonicalScalarValueV1::Symbol(value) => ExecutableValueV1::symbol(value)
                     .expect("source-owned collectible state is bounded"),
+                CanonicalScalarValueV1::Text(value) => ExecutableValueV1::text(value)
+                    .expect("source-owned collectible Text is bounded"),
             },
         ]);
     }

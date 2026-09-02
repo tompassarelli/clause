@@ -1,6 +1,6 @@
-referent F64
-referent Bool
-referent Player
+F64
+Bool
+Player
 
 shape Vec3
   x: F64

@@ -1,8 +1,8 @@
-referent Observer
-referent Target
-referent Space
-referent metric-SignedQ16
-referent metric-NonnegativeQ16
+Observer
+Target
+Space
+metric-SignedQ16
+metric-NonnegativeQ16
 
 shape metric-Point2Q16
   x: metric-SignedQ16
