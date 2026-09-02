@@ -1004,6 +1004,7 @@ fn persistent_wasm_boundary_transports_the_exact_effect_lifecycle() {
             max_commands: 16,
             command_bytes: 4096,
             event_bytes: WASM_SESSION_EVENT_LIMIT_V1 as u32,
+            trace_retention: WasmSessionTraceRetentionV1::FullUntilCommandLimit,
         },
     };
     let open_bytes = encode_wasm_session_open_v1(&open).expect("effect CWS1 open encodes");
@@ -2069,6 +2070,67 @@ fn persistent_session_keeps_local_steps_and_advances_only_at_atomic_admission() 
         session.carrier(),
         Err(PersistentProcessSessionErrorV1::Disposed)
     ));
+}
+
+#[test]
+fn admitted_frontier_compaction_bounds_history_and_preserves_execution() {
+    let package = checked_program_package();
+    let application = application(&package);
+    let physical_plan = physical_plan(&package);
+    let (authority, facts) = carrier_authority(&package);
+    let mut session = PersistentProcessSessionV1::open(
+        package,
+        authority,
+        application,
+        physical_plan,
+        facts.executable,
+    )
+    .expect("bounded-history session opens");
+    let mut prior = facts.initial_state;
+    let mut accepted_records = 0;
+
+    for admission_index in 1..=64 {
+        session
+            .apply_opaque_input_and_emit_candidate(&opaque(1, 1.0))
+            .expect("the next admitted epoch emits a Candidate");
+        let authorization = session
+            .issue_candidate_admission_authorization()
+            .expect("the exact current Candidate receives Admission authority");
+        let (successor, _) = session
+            .admit_issued_candidate_with_projection(authorization)
+            .expect("the current Candidate is admitted");
+        assert_eq!(successor.predecessor, prior);
+        prior = successor.id;
+
+        let before_compaction = session
+            .carrier()
+            .expect("live Carrier remains available")
+            .accepted_ingress_record_count();
+        assert!(before_compaction > accepted_records);
+        accepted_records = before_compaction;
+        session
+            .compact_to_admitted_frontier()
+            .expect("completed decoded trace compacts to the live frontier");
+
+        let carrier = session.carrier().expect("compacted Carrier remains live");
+        assert_eq!(carrier.state_revision_count(), 1);
+        assert_eq!(carrier.decision_count(), 1);
+        assert_eq!(carrier.run_count(), 0);
+        assert_eq!(carrier.activation_count(), 0);
+        assert_eq!(carrier.step_count(), 0);
+        assert_eq!(carrier.observation_count(), 0);
+        assert_eq!(carrier.candidate_delta_count(), 0);
+        assert_eq!(carrier.resource_usage().resident_ingress_records, 1);
+        assert_eq!(
+            carrier.resource_usage().accepted_ingress_records,
+            accepted_records,
+        );
+        assert_eq!(session.world_base(), successor.id);
+        assert_eq!(
+            session.configuration().expect("configuration remains live")[0].as_number(),
+            Some(f64::from(admission_index)),
+        );
+    }
 }
 
 #[test]

@@ -53,7 +53,9 @@ const cse1_projected_term_json_max_source_units = 4 * cse1_max_bytes + 1;
 
 const session_command_max_bytes = 1024 * 1024;
 
-const session_command_limit = 1000000;
+const session_command_limit = Number.MAX_SAFE_INTEGER;
+
+const current_admission_trace_retention = 1;
 
 const identity_bytes = 32;
 
@@ -1015,6 +1017,7 @@ function parse_persistent_cartridge_bang(
   append_u64_bang(open_bytes, session_command_limit);
   append_u32_bang(open_bytes, session_command_max_bytes);
   append_u32_bang(open_bytes, cse1_max_bytes);
+  open_bytes.push(current_admission_trace_retention);
   return PersistentCartridge(
     Object.freeze(open_bytes),
     Object.freeze(occurrences_result.values),

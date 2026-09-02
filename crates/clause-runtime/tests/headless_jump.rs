@@ -3463,6 +3463,7 @@ fn persistent_wasm_session_keeps_generation_sequence_and_admission_custody() {
             max_commands: 16,
             command_bytes: 4096,
             event_bytes: WASM_SESSION_EVENT_LIMIT_V1 as u32,
+            trace_retention: WasmSessionTraceRetentionV1::CurrentAdmission,
         },
     };
     let exact_open = encode_wasm_session_open_v1(&open).expect("bounded CWS1 open encodes");
@@ -3720,7 +3721,7 @@ fn persistent_wasm_session_keeps_generation_sequence_and_admission_custody() {
             }),
         ),
     );
-    match admitted.kind {
+    let successor = match admitted.kind {
         WasmSessionEventKindV1::AdmissionAccepted {
             predecessor,
             successor,
@@ -3741,14 +3742,33 @@ fn persistent_wasm_session_keeps_generation_sequence_and_admission_custody() {
             let term = decode_canonical_term_bytes(&projection.exact_term_bytes)
                 .expect("projected Term remains exact and canonical");
             assert_arena_projection(&term, 2.5, 5.0);
+            successor
         }
         other => panic!("unexpected Admission event: {other:?}"),
-    }
+    };
 
-    let disposed = apply(&mut boundary, command(11, WasmSessionOperationV1::Dispose));
+    let next_candidate = apply(
+        &mut boundary,
+        command(
+            11,
+            WasmSessionOperationV1::Candidate(
+                encode_executable_occurrence_v1(&occurrence(2, &[0.25])).unwrap(),
+            ),
+        ),
+    );
+    assert!(matches!(
+        next_candidate.kind,
+        WasmSessionEventKindV1::CandidateAccepted {
+            base,
+            state_revision_count: 1,
+            ..
+        } if base == successor
+    ));
+
+    let disposed = apply(&mut boundary, command(12, WasmSessionOperationV1::Dispose));
     assert!(matches!(disposed.kind, WasmSessionEventKindV1::Disposed));
     let post_dispose =
-        encode_wasm_session_command_v1(&command(12, WasmSessionOperationV1::Dispose)).unwrap();
+        encode_wasm_session_command_v1(&command(13, WasmSessionOperationV1::Dispose)).unwrap();
     assert_eq!(
         boundary.command(&post_dispose),
         Err(WasmProcessStatusV1::StaleSessionHandle)
@@ -3785,6 +3805,7 @@ fn persistent_wasm_open_replaces_only_after_the_replacement_is_checked() {
             max_commands: 16,
             command_bytes: 4096,
             event_bytes: WASM_SESSION_EVENT_LIMIT_V1 as u32,
+            trace_retention: WasmSessionTraceRetentionV1::FullUntilCommandLimit,
         },
     };
     let mut boundary = WasmPersistentSessionBoundaryV1::new();
@@ -3916,6 +3937,7 @@ fn shipped_cwr1_has_external_physical_plan_and_successive_issued_admission() {
             max_commands: 16,
             command_bytes: 4096,
             event_bytes: WASM_SESSION_EVENT_LIMIT_V1 as u32,
+            trace_retention: WasmSessionTraceRetentionV1::FullUntilCommandLimit,
         },
     };
     let mut boundary = WasmPersistentSessionBoundaryV1::new();

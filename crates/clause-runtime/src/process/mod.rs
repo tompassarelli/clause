@@ -106,6 +106,14 @@ impl ProcessRuntime {
         self.carrier.reclaim_retired_entries(maximum_entries)
     }
 
+    pub(crate) fn compact_to_admitted_frontier(
+        &mut self,
+        state: clause_package::StateRevisionId,
+        admission: clause_package::AdmissionOccurrenceId,
+    ) -> Result<(), ProcessError> {
+        self.carrier.compact_to_admitted_frontier(state, admission)
+    }
+
     pub(crate) fn unique_revision_state_admission_authorization(
         &self,
         revision: clause_package::ProgramRevisionId,

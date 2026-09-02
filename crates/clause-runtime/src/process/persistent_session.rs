@@ -388,6 +388,20 @@ impl PersistentProcessSessionV1 {
         self.last_admitted.as_ref()
     }
 
+    /// Release completed decoded trace after retaining the exact Admission and
+    /// state frontier required by the next execution epoch.
+    pub fn compact_to_admitted_frontier(&mut self) -> Result<(), PersistentProcessSessionErrorV1> {
+        let admitted = self
+            .last_admitted
+            .as_ref()
+            .ok_or(ExecutableCarrierErrorV1::HistoryCompactionUnavailable)?;
+        let state = admitted.id;
+        let admission = admitted.admission;
+        self.runtime_mut()?
+            .compact_to_admitted_frontier(state, admission)?;
+        Ok(())
+    }
+
     pub fn carrier(&self) -> Result<&ProcessCarrier, PersistentProcessSessionErrorV1> {
         Ok(self.runtime()?.carrier().carrier())
     }

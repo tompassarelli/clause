@@ -791,6 +791,7 @@ pub enum ProcessRecordV2 {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ProcessResourceUsageV2 {
     pub base_records: usize,
+    pub resident_ingress_records: usize,
     pub accepted_ingress_records: usize,
     pub base_package_bytes: usize,
     pub accepted_ingress_bytes: usize,
@@ -836,6 +837,7 @@ pub struct ProcessCarrier {
     causal_edge_count: usize,
     base_record_count: usize,
     applied_base_record_count: usize,
+    resident_ingress_record_count: usize,
     accepted_ingress_record_count: usize,
     accepted_ingress_bytes: usize,
 }
@@ -1025,6 +1027,81 @@ impl ProcessCarrier {
             && self.causal_predecessors.is_empty()
     }
 
+    /// Retain only the exact admitted state and Admission witness needed to
+    /// begin the next stateful execution epoch.
+    ///
+    /// This is the bounded-residency profile for a live carrier whose completed
+    /// trace is not retained in-process. It may be invoked only immediately
+    /// after the state was admitted and before another Activation begins. The
+    /// accepted traffic counters and boundary permission uses remain monotonic;
+    /// only decoded history that is no longer on the live execution frontier is
+    /// released.
+    #[doc(hidden)]
+    pub fn compact_to_admitted_frontier(
+        &mut self,
+        state: StateRevisionId,
+        admission: AdmissionOccurrenceId,
+    ) -> Result<(), ProcessError> {
+        let delta = *self
+            .decisions_by_occurrence
+            .get(&admission)
+            .ok_or(ProcessError::UnknownAdmission(admission))?;
+        let decision = self
+            .decisions
+            .get(&delta)
+            .ok_or(ProcessError::UnknownCandidateDelta(delta))?;
+        let StateAdmissionOutcomeV2::Admit(successor) = &decision.outcome else {
+            return Err(ProcessError::RejectedDecisionIsNotAdmission(admission));
+        };
+        if successor.id != state
+            || self.states.get(&state).is_none()
+            || !matches!(
+                successor.cause,
+                StateRevisionCause::Admission { occurrence, .. } if occurrence == admission
+            )
+        {
+            return Err(ProcessError::RejectedDecisionIsNotAdmission(admission));
+        }
+        let causal = CausalRef::Admission(admission);
+        if !self.causal_predecessors.contains_key(&causal) {
+            return Err(ProcessError::UnknownCausalOccurrence(causal));
+        }
+
+        self.activations.clear();
+        self.runs.clear();
+        self.run_members.clear();
+        self.configurations.clear();
+        self.steps.clear();
+        self.observations.clear();
+        self.continuations.clear();
+        self.candidate_deltas.clear();
+        self.judgments.clear();
+        self.issued_admission_authorizations.clear();
+        self.consumed_admission_authorizations.clear();
+        self.decisions.retain(|candidate, _| *candidate == delta);
+        self.decisions_by_occurrence
+            .retain(|occurrence, _| *occurrence == admission);
+        self.states.retain(|revision, _| *revision == state);
+        self.external_triggers.clear();
+        self.resumptions.clear();
+        self.handoffs.clear();
+        self.cancellations.clear();
+        self.effect_intents.clear();
+        self.issued_effect_authorizations.clear();
+        self.consumed_effect_authorizations.clear();
+        self.effect_attempts.clear();
+        self.effect_receipts.clear();
+        self.effect_judgments.clear();
+        self.causal_predecessors
+            .retain(|occurrence, _| *occurrence == causal);
+        self.causal_edge_count = self
+            .causal_predecessors
+            .get(&causal)
+            .map_or(0, BTreeSet::len);
+        self.resident_ingress_record_count = 1;
+        Ok(())
+    }
+
     /// Execute the next record from the exact checked package, in package
     /// order. No caller-supplied semantic selector participates in dispatch.
     pub fn advance_package(
@@ -1096,6 +1173,7 @@ impl ProcessCarrier {
             causal_edge_count: 0,
             base_record_count: package.records.len(),
             applied_base_record_count: 0,
+            resident_ingress_record_count: 0,
             accepted_ingress_record_count: 0,
             accepted_ingress_bytes: 0,
         })
@@ -1194,7 +1272,7 @@ impl ProcessCarrier {
                 })?;
         let retained_records = checked_resource_add(
             self.base_record_count,
-            self.accepted_ingress_record_count,
+            self.resident_ingress_record_count,
             MAX_PROCESS_RECORDS,
             ProcessResourceKindV2::Record,
         )
@@ -1322,6 +1400,10 @@ impl ProcessCarrier {
             .accepted_ingress_record_count
             .checked_add(cardinality.records)
             .expect("preflight bounded accepted ingress records");
+        self.resident_ingress_record_count = self
+            .resident_ingress_record_count
+            .checked_add(cardinality.records)
+            .expect("preflight bounded resident ingress records");
         self.accepted_ingress_bytes = next_ingress_bytes;
         Ok(())
     }
@@ -4524,6 +4606,7 @@ impl ProcessCarrier {
     pub fn resource_usage(&self) -> ProcessResourceUsageV2 {
         ProcessResourceUsageV2 {
             base_records: self.base_record_count,
+            resident_ingress_records: self.resident_ingress_record_count,
             accepted_ingress_records: self.accepted_ingress_record_count,
             base_package_bytes: self.exact_package_bytes.len(),
             accepted_ingress_bytes: self.accepted_ingress_bytes,

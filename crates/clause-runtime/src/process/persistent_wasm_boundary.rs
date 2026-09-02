@@ -37,6 +37,14 @@ pub struct WasmSessionLimitsV1 {
     pub max_commands: u64,
     pub command_bytes: u32,
     pub event_bytes: u32,
+    pub trace_retention: WasmSessionTraceRetentionV1,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(u8)]
+pub enum WasmSessionTraceRetentionV1 {
+    FullUntilCommandLimit = 0,
+    CurrentAdmission = 1,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -500,7 +508,7 @@ impl WasmPersistentSessionBoundaryV1 {
             }
             _ => None,
         };
-        let kind = execute_operation(&mut live.session, operation);
+        let kind = execute_operation(&mut live.session, operation, live.limits.trace_retention);
         if !matches!(
             kind,
             WasmSessionEventKindV1::Rejected(_) | WasmSessionEventKindV1::CandidateRejected { .. }
@@ -612,6 +620,7 @@ fn instantiate_persistent_process_session_v1(
 fn execute_operation(
     session: &mut PersistentProcessSessionV1,
     operation: WasmSessionOperationV1,
+    trace_retention: WasmSessionTraceRetentionV1,
 ) -> WasmSessionEventKindV1 {
     match operation {
         WasmSessionOperationV1::Input(bytes) => match session.apply_opaque_input(&bytes) {
@@ -697,7 +706,7 @@ fn execute_operation(
             }
         }
         WasmSessionOperationV1::IssueAdmission(input) => issue_admission(session, input),
-        WasmSessionOperationV1::Admit(input) => admit(session, input),
+        WasmSessionOperationV1::Admit(input) => admit(session, input, trace_retention),
         WasmSessionOperationV1::Suspend => match session.suspend() {
             Ok(suspension) => WasmSessionEventKindV1::Suspended {
                 step: suspension.step,
@@ -857,6 +866,7 @@ fn issue_admission(
 fn admit(
     session: &mut PersistentProcessSessionV1,
     input: WasmSessionAdmissionV1,
+    trace_retention: WasmSessionTraceRetentionV1,
 ) -> WasmSessionEventKindV1 {
     let exact = exact_admission_scope(
         session,
@@ -889,7 +899,9 @@ fn admit(
                 .expect("Admission installs a fresh Activation");
             debug_assert_ne!(run, prior_run);
             debug_assert_ne!(activation, prior_activation);
-            WasmSessionEventKindV1::AdmissionAccepted {
+            let state_revision_count =
+                state_revision_count(session).expect("Admission retains its carrier");
+            let event = WasmSessionEventKindV1::AdmissionAccepted {
                 predecessor: successor.predecessor,
                 successor: successor.id,
                 admission,
@@ -897,14 +909,19 @@ fn admit(
                 run,
                 activation,
                 session: session.runtime_session(),
-                state_revision_count: state_revision_count(session)
-                    .expect("Admission retains its carrier"),
+                state_revision_count,
                 projection: projection.map(|projection| WasmSessionProjectionV1 {
                     observation: projection.id,
                     exact_term_bytes: canonical_term_bytes(&projection.term)
                         .expect("checked projection Term remains canonical"),
                 }),
+            };
+            if trace_retention == WasmSessionTraceRetentionV1::CurrentAdmission {
+                session
+                    .compact_to_admitted_frontier()
+                    .expect("accepted Admission has one compactable live frontier");
             }
+            event
         }
         Err(PersistentProcessSessionErrorV1::Carrier(
             ExecutableCarrierErrorV1::ConstitutiveAdmissionAuthorityUnavailable,
@@ -1030,6 +1047,7 @@ pub fn encode_wasm_session_open_v1(
     bytes.extend_from_slice(&request.limits.max_commands.to_le_bytes());
     bytes.extend_from_slice(&request.limits.command_bytes.to_le_bytes());
     bytes.extend_from_slice(&request.limits.event_bytes.to_le_bytes());
+    bytes.push(request.limits.trace_retention as u8);
     if bytes.len() > WASM_PROCESS_REQUEST_LIMIT_V1 {
         return Err(WasmProcessStatusV1::RequestOutOfBounds);
     }
@@ -1061,6 +1079,11 @@ pub fn decode_wasm_session_open_v1(bytes: &[u8]) -> Result<WasmSessionOpenV1, Wa
         max_commands: d.u64()?,
         command_bytes: d.u32()?,
         event_bytes: d.u32()?,
+        trace_retention: match d.take(1)?[0] {
+            0 => WasmSessionTraceRetentionV1::FullUntilCommandLimit,
+            1 => WasmSessionTraceRetentionV1::CurrentAdmission,
+            _ => return Err(WasmProcessStatusV1::MalformedRequest),
+        },
     };
     if !d.is_complete() {
         return Err(WasmProcessStatusV1::MalformedRequest);

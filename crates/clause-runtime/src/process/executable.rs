@@ -2865,6 +2865,26 @@ impl ExecutableProcessRuntimeV1 {
         self.carrier.reclaim_retired_entries(maximum_entries)
     }
 
+    pub(crate) fn compact_to_admitted_frontier(
+        &mut self,
+        state: StateRevisionId,
+        admission: AdmissionOccurrenceId,
+    ) -> Result<(), ExecutableCarrierErrorV1> {
+        if self.candidate.is_some()
+            || self.judgment.is_some()
+            || self.admission.is_some()
+            || self.state.is_some()
+            || self.suspended_continuation.is_some()
+            || self.pending_effect_intent.is_some()
+            || self.active_effect_attempt.is_some()
+        {
+            return Err(ExecutableCarrierErrorV1::HistoryCompactionUnavailable);
+        }
+        self.carrier
+            .compact_to_admitted_frontier(state, admission)
+            .map_err(|_| ExecutableCarrierErrorV1::HistoryCompactionUnavailable)
+    }
+
     /// Rematerialize an already-recorded occurrence family. The exact
     /// allocation root is preserved only after all typed provenance, semantic
     /// shape, Mode, and physical-plan bindings match.
@@ -5300,6 +5320,7 @@ pub enum ExecutableCarrierErrorV1 {
     UnknownPendingEffectIntent,
     UnknownEffectAuthorization,
     UnknownActiveEffectAttempt,
+    HistoryCompactionUnavailable,
     UnsupportedSurface,
 }
 

@@ -560,6 +560,7 @@ impl ResidentSourceWorkbenchV1 {
                     .map_err(|_| ResidentSourceWorkbenchErrorV1("command limit overflow".into()))?,
                 event_bytes: u32::try_from(WASM_SESSION_EVENT_LIMIT_V1)
                     .map_err(|_| ResidentSourceWorkbenchErrorV1("event limit overflow".into()))?,
+                trace_retention: clause_runtime::WasmSessionTraceRetentionV1::FullUntilCommandLimit,
             },
         };
         let exact_open = encode_wasm_session_open_v1(&open)?;
