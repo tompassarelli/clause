@@ -243,6 +243,9 @@ fn scalar_program(
         CanonicalScalarValueV1::Boolean(_) => ExecutableValueKindV1::Boolean,
         CanonicalScalarValueV1::Symbol(_) => ExecutableValueKindV1::Symbol,
         CanonicalScalarValueV1::Text(_) => ExecutableValueKindV1::Text,
+        CanonicalScalarValueV1::Referent(_) | CanonicalScalarValueV1::RelationTable(_) => {
+            panic!("the bounded scalar fixture requires a scalar value cell")
+        }
     };
     let mut program = ExecutableProgramV1 {
         initial_configuration: vec![number(0.0)],
@@ -407,6 +410,9 @@ fn headless_program(
                     .expect("source-owned collectible state is bounded"),
                 CanonicalScalarValueV1::Text(value) => ExecutableValueV1::text(value)
                     .expect("source-owned collectible Text is bounded"),
+                CanonicalScalarValueV1::Referent(_) | CanonicalScalarValueV1::RelationTable(_) => {
+                    panic!("collectible fixture state must remain scalar")
+                }
             },
         ]);
     }
@@ -517,6 +523,7 @@ fn headless_program(
             maximum_x_slot: 11,
             minimum_z_slot: 23,
             maximum_z_slot: 24,
+            state_guard_slots: vec![],
         },
     )
     .expect("source-owned tick program lowers to physical slots");

@@ -507,6 +507,12 @@ pub enum CanonicalTickExpressionV1 {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CanonicalTickPredicateV1 {
     EqualBoolean(CanonicalTickValueV1, bool),
+    EqualState {
+        subject: Vec<u8>,
+        relation: Vec<u8>,
+        field: Option<Vec<u8>>,
+        expected: CanonicalScalarValueV1,
+    },
     GreaterThan(CanonicalTickExpressionV1, CanonicalTickExpressionV1),
     LessThanOrEqual(CanonicalTickExpressionV1, CanonicalTickExpressionV1),
 }
@@ -4444,6 +4450,29 @@ fn checked_executable_handlers(
                             constant_expression(CanonicalScalarValueV1::Boolean(*expected)),
                         ))
                     }
+                    CanonicalTickPredicateV1::EqualState {
+                        subject,
+                        relation,
+                        field,
+                        expected,
+                    } => {
+                        let subject = if subject == b"?player" {
+                            parts.position.subject.as_slice()
+                        } else {
+                            subject.as_slice()
+                        };
+                        Ok(CanonicalExecutablePredicateV1::Equal(
+                            CanonicalExecutableExpressionV1::State(canonical_state_ref(
+                                cst,
+                                plan,
+                                subject,
+                                relation,
+                                field.as_deref(),
+                                source.origin,
+                            )?),
+                            constant_expression(expected.clone()),
+                        ))
+                    }
                     CanonicalTickPredicateV1::GreaterThan(left, right) => {
                         Ok(CanonicalExecutablePredicateV1::GreaterThan(
                             tick_executable_expression(cst, plan, parts, left)?,
@@ -7903,6 +7932,15 @@ fn parse_tick_handler(
     if when.first().map(|entry| entry.0) != Some("?dt > 0.0") {
         return Err(CanonicalSourceErrorV1::InvalidTickProfile { origin });
     }
+    let position_index = when
+        .iter()
+        .position(|entry| entry.0.starts_with("?player position Vec3 { "))
+        .ok_or(CanonicalSourceErrorV1::InvalidTickProfile { origin })?;
+    let state_guards = parse_tick_state_guards(&when[1..position_index], origin)?;
+    let mut core_when = Vec::with_capacity(when.len() - position_index + 1);
+    core_when.push(when[0]);
+    core_when.extend_from_slice(&when[position_index..]);
+    let when = core_when;
     let grounded = when
         .get(4)
         .and_then(|entry| parse_boolean_clause(entry.0))
@@ -7985,8 +8023,12 @@ fn parse_tick_handler(
     let mut predicates = vec![
         parse_tick_comparison(when[0].0, &derived)
             .ok_or(CanonicalSourceErrorV1::InvalidTickProfile { origin: when[0].1 })?,
-        CanonicalTickPredicateV1::EqualBoolean(CanonicalTickValueV1::Grounded, grounded),
     ];
+    predicates.extend(state_guards);
+    predicates.push(CanonicalTickPredicateV1::EqualBoolean(
+        CanonicalTickValueV1::Grounded,
+        grounded,
+    ));
     if !grounded_branch {
         predicates.push(
             parse_tick_comparison(when[14].0, &derived)
@@ -8073,6 +8115,110 @@ fn parse_tick_handler(
             })
             .collect(),
     }))
+}
+
+fn parse_tick_state_guards(
+    lines: &[(&str, CanonicalSourceOriginV1)],
+    origin: CanonicalSourceOriginV1,
+) -> Result<Vec<CanonicalTickPredicateV1>, CanonicalSourceErrorV1> {
+    if lines.is_empty() {
+        return Ok(vec![]);
+    }
+    let reserved = [
+        b"?dt".as_slice(),
+        b"?position-x".as_slice(),
+        b"?position-y".as_slice(),
+        b"?position-z".as_slice(),
+        b"?velocity-x".as_slice(),
+        b"?velocity-y".as_slice(),
+        b"?velocity-z".as_slice(),
+        b"?intent-x".as_slice(),
+        b"?intent-y".as_slice(),
+        b"?intent-z".as_slice(),
+        b"?gravity".as_slice(),
+        b"?move-speed".as_slice(),
+        b"?floor".as_slice(),
+        b"?min-x".as_slice(),
+        b"?max-x".as_slice(),
+        b"?min-z".as_slice(),
+        b"?max-z".as_slice(),
+    ];
+    let mut sources = BTreeMap::new();
+    let mut equalities = Vec::new();
+    for (line, line_origin) in lines {
+        if let Some(declarations) = parse_scalar_parameter_declaration(line, "?player") {
+            for source in declarations {
+                if reserved.contains(&source.parameter.as_slice())
+                    || sources.insert(source.parameter.clone(), source).is_some()
+                {
+                    return Err(CanonicalSourceErrorV1::InvalidTickProfile {
+                        origin: *line_origin,
+                    });
+                }
+            }
+            continue;
+        }
+        let Some(CanonicalScalarPredicateV1::Equal(left, right)) = parse_scalar_predicate(line, "")
+        else {
+            return Err(CanonicalSourceErrorV1::InvalidTickProfile {
+                origin: *line_origin,
+            });
+        };
+        equalities.push((left, right, *line_origin));
+    }
+    if equalities.is_empty() {
+        return Err(CanonicalSourceErrorV1::InvalidTickProfile { origin });
+    }
+    equalities
+        .into_iter()
+        .map(|(left, right, predicate_origin)| {
+            let (parameter, expected) = match (left, right) {
+                (CanonicalScalarExpressionV1::Parameter(parameter), expected) => {
+                    (parameter, tick_guard_literal(expected))
+                }
+                (expected, CanonicalScalarExpressionV1::Parameter(parameter)) => {
+                    (parameter, tick_guard_literal(expected))
+                }
+                _ => {
+                    return Err(CanonicalSourceErrorV1::InvalidTickProfile {
+                        origin: predicate_origin,
+                    });
+                }
+            };
+            let expected = expected.ok_or(CanonicalSourceErrorV1::InvalidTickProfile {
+                origin: predicate_origin,
+            })?;
+            let source =
+                sources
+                    .get(&parameter)
+                    .ok_or(CanonicalSourceErrorV1::InvalidTickProfile {
+                        origin: predicate_origin,
+                    })?;
+            Ok(CanonicalTickPredicateV1::EqualState {
+                subject: source.subject.clone(),
+                relation: source.relation.clone(),
+                field: source.field.clone(),
+                expected,
+            })
+        })
+        .collect()
+}
+
+fn tick_guard_literal(expression: CanonicalScalarExpressionV1) -> Option<CanonicalScalarValueV1> {
+    match expression {
+        CanonicalScalarExpressionV1::Number(value) => Some(CanonicalScalarValueV1::Number(value)),
+        CanonicalScalarExpressionV1::Boolean(value) => Some(CanonicalScalarValueV1::Boolean(value)),
+        CanonicalScalarExpressionV1::Symbol(value) => Some(CanonicalScalarValueV1::Symbol(value)),
+        CanonicalScalarExpressionV1::Text(value) => Some(CanonicalScalarValueV1::Text(value)),
+        CanonicalScalarExpressionV1::Current
+        | CanonicalScalarExpressionV1::Parameter(_)
+        | CanonicalScalarExpressionV1::Concatenate(_, _)
+        | CanonicalScalarExpressionV1::Add(_, _)
+        | CanonicalScalarExpressionV1::Subtract(_, _)
+        | CanonicalScalarExpressionV1::Multiply(_, _)
+        | CanonicalScalarExpressionV1::Divide(_, _)
+        | CanonicalScalarExpressionV1::Clamp(_, _, _) => None,
+    }
 }
 
 fn parse_tick_clamp_binding(

@@ -1696,7 +1696,15 @@ const fn lower_scalar_value_kind(
 
 /// Physical coordinates for the source-owned three-branch `on tick` program.
 /// The binding contains no gameplay constants or expressions.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExecutableCanonicalTickStateBindingV1 {
+    pub subject: Vec<u8>,
+    pub relation: Vec<u8>,
+    pub field: Option<Vec<u8>>,
+    pub slot: u16,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ExecutableCanonicalTickBindingV1 {
     pub entry: u16,
     pub delta_time_argument: u16,
@@ -1711,6 +1719,7 @@ pub struct ExecutableCanonicalTickBindingV1 {
     pub maximum_x_slot: u16,
     pub minimum_z_slot: u16,
     pub maximum_z_slot: u16,
+    pub state_guard_slots: Vec<ExecutableCanonicalTickStateBindingV1>,
 }
 
 /// Refine the checked source-owned tick slice into CPP1. Rust supplies only
@@ -1797,7 +1806,7 @@ pub fn lower_canonical_tick_program_v1(
     }
 
     let lower_expression =
-        |expression: &CanonicalTickExpressionV1| lower_tick_expression(expression, binding, 0);
+        |expression: &CanonicalTickExpressionV1| lower_tick_expression(expression, &binding, 0);
     let mut rules = Vec::with_capacity(source.rules.len());
     for source_rule in &source.rules {
         let mut predicates = Vec::with_capacity(source_rule.predicates.len());
@@ -1805,10 +1814,35 @@ pub fn lower_canonical_tick_program_v1(
             predicates.push(match predicate {
                 CanonicalTickPredicateV1::EqualBoolean(value, expected) => {
                     ExecutableExpressionV1::Equal(
-                        Box::new(lower_tick_value(*value, binding)?),
+                        Box::new(lower_tick_value(*value, &binding)?),
                         Box::new(ExecutableExpressionV1::Constant(
                             ExecutableValueV1::Boolean(*expected),
                         )),
+                    )
+                }
+                CanonicalTickPredicateV1::EqualState {
+                    subject,
+                    relation,
+                    field,
+                    expected,
+                } => {
+                    let matches = binding
+                        .state_guard_slots
+                        .iter()
+                        .filter(|state| {
+                            state.subject == *subject
+                                && state.relation == *relation
+                                && state.field == *field
+                        })
+                        .collect::<Vec<_>>();
+                    let [state] = matches.as_slice() else {
+                        return Err(ExecutableErrorV1::MalformedProgram);
+                    };
+                    ExecutableExpressionV1::Equal(
+                        Box::new(ExecutableExpressionV1::Slot(state.slot)),
+                        Box::new(ExecutableExpressionV1::Constant(lower_scalar_value(
+                            expected,
+                        )?)),
                     )
                 }
                 CanonicalTickPredicateV1::GreaterThan(left, right) => {
@@ -1865,7 +1899,7 @@ pub fn lower_canonical_tick_program_v1(
 
 fn lower_tick_value(
     value: CanonicalTickValueV1,
-    binding: ExecutableCanonicalTickBindingV1,
+    binding: &ExecutableCanonicalTickBindingV1,
 ) -> Result<ExecutableExpressionV1, ExecutableErrorV1> {
     let slot = match value {
         CanonicalTickValueV1::DeltaTime => {
@@ -1898,7 +1932,7 @@ fn lower_tick_value(
 
 fn lower_tick_expression(
     expression: &CanonicalTickExpressionV1,
-    binding: ExecutableCanonicalTickBindingV1,
+    binding: &ExecutableCanonicalTickBindingV1,
     depth: usize,
 ) -> Result<ExecutableExpressionV1, ExecutableErrorV1> {
     if depth >= MAX_EXPRESSION_DEPTH {

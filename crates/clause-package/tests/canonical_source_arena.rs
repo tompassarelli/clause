@@ -627,6 +627,57 @@ on cool-heat ?player
 }
 
 #[test]
+fn tick_rules_accept_typed_state_equality_guards() {
+    let source = std::str::from_utf8(WORLD)
+        .expect("canonical arena source is UTF-8")
+        .replacen(
+            "relation position",
+            "relation reset-gate\n  reads {arena: Arena} reset gate {value: Vec3}\n  subject arena\n  mode given arena yields value: one\n\nrelation position",
+            1,
+        )
+        .replacen(
+            "jump-arena gravity -8.0",
+            "jump-arena reset gate Vec3 { x: 0.0, y: 0.0, z: 0.0 }\njump-arena gravity -8.0",
+            1,
+        )
+        .replace(
+            "    ?dt > 0.0\n",
+            "    ?dt > 0.0\n    jump-arena reset gate Vec3 { x: ?reset, y: ?reset-phase, z: ?reset-unused }\n    ?reset = 0.0\n",
+        );
+    assert_eq!(source.matches("    ?reset = 0.0\n").count(), 3);
+
+    let compiled =
+        compile_source(&source, 42).expect("fixed-tick rules may depend on a typed state equality");
+    let tick = compiled
+        .tick_program
+        .expect("the guarded physics profile remains a checked tick program");
+    assert!(tick.rules.iter().all(|rule| {
+        rule.predicates.iter().any(|predicate| {
+            matches!(
+                predicate,
+                CanonicalTickPredicateV1::EqualState {
+                    relation,
+                    field: Some(field),
+                    expected: CanonicalScalarValueV1::Number(value),
+                    ..
+                } if relation == b"reset gate" && field == b"x" && *value == 0.0f64.to_bits()
+            )
+        })
+    }));
+    assert_eq!(
+        compiled
+            .executable_handlers
+            .iter()
+            .filter(|handler| {
+                handler.designation == b"tick"
+                    && handler.trigger == CanonicalHandlerTriggerV1::FixedTickRoot
+            })
+            .count(),
+        3,
+    );
+}
+
+#[test]
 fn jump_shaped_handlers_retain_their_source_designation() {
     let source = std::str::from_utf8(WORLD)
         .expect("canonical arena source is UTF-8")
