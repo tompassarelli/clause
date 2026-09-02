@@ -447,7 +447,10 @@ impl ResidentSourceWorkbenchV1 {
                 .or_default()
                 .push(binding.clone());
         }
-        physical_plan.program = lowered.program;
+        let declarative_only = lowered.states.is_empty() && lowered.handlers.is_empty();
+        if !declarative_only {
+            physical_plan.program = lowered.program;
+        }
 
         let has_tick = lowered.handlers.iter().any(|binding| {
             matches!(
@@ -463,7 +466,9 @@ impl ResidentSourceWorkbenchV1 {
         let template_tick = decode_executable_occurrence_v1(template_tick)
             .map_err(|error| boxed_error("template tick decode", error))?;
         let mut default_occurrences = Vec::new();
-        if has_tick {
+        if declarative_only {
+            default_occurrences.extend(self.template.occurrences.clone());
+        } else if has_tick {
             let template_input = template_input.ok_or_else(|| {
                 ResidentSourceWorkbenchErrorV1("CPP1 template has no physical input plan".into())
             })?;

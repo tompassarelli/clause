@@ -854,9 +854,7 @@ pub fn lower_canonical_executable_program_v1(
     handlers: &[CanonicalExecutableHandlerV1],
     projection_roles: &[LocalRoleRefV2],
 ) -> Result<ExecutableCanonicalProgramV1, ExecutableErrorV1> {
-    if state_cells.is_empty()
-        || handlers.is_empty()
-        || state_cells.len() > MAX_PROGRAM_ITEMS
+    if state_cells.len() > MAX_PROGRAM_ITEMS
         || handlers.len() > MAX_PROGRAM_ITEMS
         || projection_roles.len() < state_cells.len()
     {
@@ -978,11 +976,13 @@ pub fn lower_canonical_executable_program_v1(
             });
         }
     }
-    let projection = canonical_source_projection(scope, &ordered_states, &state_bindings)?;
+    let projection = (!ordered_states.is_empty())
+        .then(|| canonical_source_projection(scope, &ordered_states, &state_bindings))
+        .transpose()?;
     let program = ExecutableProgramV1 {
         initial_configuration,
         rules,
-        projection: Some(projection),
+        projection,
     };
     validate_program(&program)?;
     Ok(ExecutableCanonicalProgramV1 {

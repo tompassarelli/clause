@@ -81,3 +81,24 @@ fn check_source_rejects_quarantined_productions() {
         "check-source did not identify the quarantined handler: {checked:?}"
     );
 }
+
+#[test]
+fn check_source_accepts_a_declarative_effect_package_without_handlers() {
+    let executable = env!("CARGO_BIN_EXE_clause-workbench");
+    let source = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../test-vectors/process-v2/ongoing-effect.clause");
+    let checked = Command::new(executable)
+        .arg("check-source")
+        .arg(source)
+        .output()
+        .expect("the declarative check-source command starts");
+
+    assert!(
+        checked.status.success(),
+        "declarative effect source failed: {checked:?}"
+    );
+    assert!(
+        checked.stdout.starts_with(b"checked generation="),
+        "declarative source did not open a resident generation: {checked:?}"
+    );
+}
