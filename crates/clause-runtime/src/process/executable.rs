@@ -858,14 +858,14 @@ pub fn lower_canonical_executable_program_v1(
         || handlers.len() > MAX_PROGRAM_ITEMS
         || projection_roles.len() < state_cells.len()
     {
-        return Err(ExecutableErrorV1::MalformedProgram);
+        return Err(ExecutableErrorV1::CanonicalLoweringCapacity);
     }
     let mut seen_states = BTreeSet::new();
     if state_cells
         .iter()
         .any(|cell| !seen_states.insert(cell.state.clone()))
     {
-        return Err(ExecutableErrorV1::MalformedProgram);
+        return Err(ExecutableErrorV1::CanonicalLoweringDuplicateState);
     }
     let mut ordered_states = state_cells.to_vec();
     ordered_states.sort_by(|left, right| {
@@ -877,7 +877,7 @@ pub fn lower_canonical_executable_program_v1(
     roles.sort();
     roles.dedup();
     if roles.len() < ordered_states.len() {
-        return Err(ExecutableErrorV1::MalformedProgram);
+        return Err(ExecutableErrorV1::CanonicalLoweringCapacity);
     }
 
     let mut slots = BTreeMap::new();
@@ -909,7 +909,7 @@ pub fn lower_canonical_executable_program_v1(
         .windows(2)
         .any(|pair| pair[0].id == pair[1].id)
     {
-        return Err(ExecutableErrorV1::MalformedProgram);
+        return Err(ExecutableErrorV1::CanonicalLoweringDuplicateHandler);
     }
     let mut rules = Vec::new();
     let mut handler_bindings = Vec::with_capacity(ordered_handlers.len());
@@ -934,7 +934,7 @@ pub fn lower_canonical_executable_program_v1(
                     Ok((
                         *slots
                             .get(&assignment.target)
-                            .ok_or(ExecutableErrorV1::MalformedProgram)?,
+                            .ok_or(ExecutableErrorV1::CanonicalLoweringUnknownState)?,
                         lower_canonical_expression(&assignment.value, &slots, 0)?,
                     ))
                 })
@@ -949,7 +949,7 @@ pub fn lower_canonical_executable_program_v1(
                         slots
                             .get(state)
                             .copied()
-                            .ok_or(ExecutableErrorV1::MalformedProgram)
+                            .ok_or(ExecutableErrorV1::CanonicalLoweringUnknownState)
                     })
                     .collect::<Result<Vec<_>, _>>()?,
                 required_absent: source_rule
@@ -959,7 +959,7 @@ pub fn lower_canonical_executable_program_v1(
                         slots
                             .get(state)
                             .copied()
-                            .ok_or(ExecutableErrorV1::MalformedProgram)
+                            .ok_or(ExecutableErrorV1::CanonicalLoweringUnknownState)
                     })
                     .collect::<Result<Vec<_>, _>>()?,
                 assignments,
@@ -970,7 +970,7 @@ pub fn lower_canonical_executable_program_v1(
                         slots
                             .get(state)
                             .copied()
-                            .ok_or(ExecutableErrorV1::MalformedProgram)
+                            .ok_or(ExecutableErrorV1::CanonicalLoweringUnknownState)
                     })
                     .collect::<Result<Vec<_>, _>>()?,
             });
@@ -984,7 +984,8 @@ pub fn lower_canonical_executable_program_v1(
         rules,
         projection,
     };
-    validate_program(&program)?;
+    validate_program(&program)
+        .map_err(|error| ExecutableErrorV1::CanonicalLoweringValidation(Box::new(error)))?;
     Ok(ExecutableCanonicalProgramV1 {
         program,
         states: state_bindings,
@@ -1019,7 +1020,7 @@ fn lower_canonical_expression(
         CanonicalExecutableExpressionV1::State(state) => ExecutableExpressionV1::Slot(
             *slots
                 .get(state)
-                .ok_or(ExecutableErrorV1::MalformedProgram)?,
+                .ok_or(ExecutableErrorV1::CanonicalLoweringUnknownState)?,
         ),
         CanonicalExecutableExpressionV1::Argument(argument) => {
             ExecutableExpressionV1::Argument(*argument)
@@ -5281,6 +5282,11 @@ pub enum ExecutableErrorV1 {
     AllocationBindingMismatch,
     MalformedAllocationEpoch,
     MalformedProgram,
+    CanonicalLoweringCapacity,
+    CanonicalLoweringDuplicateState,
+    CanonicalLoweringDuplicateHandler,
+    CanonicalLoweringUnknownState,
+    CanonicalLoweringValidation(Box<ExecutableErrorV1>),
     MalformedOccurrence,
     MissingInputPlan,
     UnknownPhysicalInput,

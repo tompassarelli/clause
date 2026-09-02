@@ -424,6 +424,18 @@ impl ResidentSourceWorkbenchV1 {
                 projected_state_count
             )));
         }
+        let mut handler_designations = BTreeMap::new();
+        for handler in &compiled.executable_handlers {
+            if let Some(previous) = handler_designations.insert(
+                handler.id,
+                String::from_utf8_lossy(&handler.designation).into_owned(),
+            ) {
+                return Err(ResidentSourceWorkbenchErrorV1(format!(
+                    "source handlers `{previous}` and `{}` resolved to the same executable identity",
+                    String::from_utf8_lossy(&handler.designation),
+                )));
+            }
+        }
         let template_input = physical_plan.input.clone();
         let lowered = lower_canonical_executable_program_v1(
             scope,

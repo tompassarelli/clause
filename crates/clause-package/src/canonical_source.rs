@@ -5049,13 +5049,21 @@ fn checked_executable_handlers(
             }],
             removals: vec![],
         });
-        handlers.push(CanonicalExecutableHandlerV1 {
-            id: derive.state.assertion,
-            designation: derive.derive.designation.clone(),
-            trigger: CanonicalHandlerTriggerV1::FixedTickDerived,
-            argument_count: 0,
-            rules,
-        });
+        if let Some(handler) = handlers.iter_mut().find(|handler| {
+            handler.id == derive.state.assertion
+                && handler.designation == derive.derive.designation
+                && handler.trigger == CanonicalHandlerTriggerV1::FixedTickDerived
+        }) {
+            handler.rules.extend(rules);
+        } else {
+            handlers.push(CanonicalExecutableHandlerV1 {
+                id: derive.state.assertion,
+                designation: derive.derive.designation.clone(),
+                trigger: CanonicalHandlerTriggerV1::FixedTickDerived,
+                argument_count: 0,
+                rules,
+            });
+        }
     }
     for parts in scalar {
         let mut rules = Vec::with_capacity(parts.cases.len());
