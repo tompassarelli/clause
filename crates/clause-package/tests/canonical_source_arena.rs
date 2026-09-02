@@ -179,6 +179,82 @@ on apply-selected-policy ?root
     ?root balance ?prior - ?adjustment
 "#;
 
+const MULTI_SUBJECT_BOOLEAN_LAW_WORLD: &str = r#"F64
+Bool
+Player
+Projectile
+ProjectileState
+ProjectileFaction
+Arena
+
+shape Vec3
+  x: F64
+  y: F64
+  z: F64
+
+relation player-position
+  reads {player: Player} player position {value: Vec3}
+  subject player
+  mode given player yields value: one
+
+relation projectile-position
+  reads {projectile: Projectile} projectile position {value: Vec3}
+  subject projectile
+  mode given projectile yields value: one
+
+relation projectile-state
+  reads {projectile: Projectile} projectile state {value: ProjectileState}
+  subject projectile
+  mode given projectile yields value: one
+
+relation projectile-faction
+  reads {projectile: Projectile} projectile faction {value: ProjectileFaction}
+  subject projectile
+  mode given projectile yields value: one
+
+relation contact-radius
+  reads {arena: Arena} contact radius {value: F64}
+  subject arena
+  mode given arena yields value: one
+
+relation hostile-contact
+  reads {player: Player} hostile contact {value: Bool}
+  subject player
+  mode given player yields value: one
+
+law projectile-contact
+  if
+    ?player player position Vec3 { x: ?player-x, y: ?player-y, z: ?player-z }
+    ?projectile projectile position Vec3 { x: ?projectile-x, y: ?projectile-y, z: ?projectile-z }
+    ?projectile projectile state ?projectile-state
+    ?projectile projectile faction enemy-origin
+    combat-arena contact radius ?contact-radius
+    ?projectile-state = flight
+    ((?player-x - ?projectile-x) * (?player-x - ?projectile-x)) + ((?player-z - ?projectile-z) * (?player-z - ?projectile-z)) <= ?contact-radius * ?contact-radius
+  then
+    ?player hostile contact true
+
+derive projectile-contact
+
+player-1 ∈ Player
+cinder-bolt ∈ Projectile
+wayfarer-bolt ∈ Projectile
+dormant ∈ ProjectileState
+flight ∈ ProjectileState
+enemy-origin ∈ ProjectileFaction
+player-origin ∈ ProjectileFaction
+combat-arena ∈ Arena
+
+player-1 player position Vec3 { x: 0.0, y: 0.0, z: 0.0 }
+cinder-bolt projectile position Vec3 { x: 1.0, y: 0.0, z: 0.0 }
+cinder-bolt projectile state flight
+cinder-bolt projectile faction enemy-origin
+wayfarer-bolt projectile position Vec3 { x: 2.0, y: 0.0, z: 0.0 }
+wayfarer-bolt projectile state dormant
+wayfarer-bolt projectile faction player-origin
+combat-arena contact radius 0.6
+"#;
+
 const MULTI_MEMBERSHIP_REFERENT_WORLD: &str = r#"Door
 Lockable
 iron-door
@@ -358,6 +434,154 @@ fn transitive_referent_join_lowers_each_runtime_selectable_target() {
         selected,
         BTreeSet::from([b"policy-a".as_slice(), b"policy-b".as_slice()]),
     );
+}
+
+#[test]
+fn boolean_law_lowers_typed_multi_subject_selector_cases() {
+    let compiled = compile_source(MULTI_SUBJECT_BOOLEAN_LAW_WORLD, 42)
+        .expect("a typed faction selector specializes every projectile contact case");
+    let matching = compiled
+        .executable_handlers
+        .iter()
+        .filter(|handler| handler.designation == b"projectile-contact")
+        .collect::<Vec<_>>();
+    let [handler] = matching.as_slice() else {
+        panic!("one logical Boolean derivation owns all projectile cases")
+    };
+    assert_eq!(handler.trigger, CanonicalHandlerTriggerV1::FixedTickDerived);
+    assert_eq!(
+        handler.rules.len(),
+        3,
+        "two typed projectile cases precede one false fallback"
+    );
+    let selected_projectiles = handler.rules[..2]
+        .iter()
+        .flat_map(|rule| &rule.predicates)
+        .filter_map(|predicate| match predicate {
+            CanonicalExecutablePredicateV1::Equal(
+                CanonicalExecutableExpressionV1::State(state),
+                CanonicalExecutableExpressionV1::Constant(CanonicalScalarValueV1::Symbol(expected)),
+            ) if state.relation_designation == b"projectile-faction"
+                && expected == b"enemy-origin" =>
+            {
+                Some(state.subject.as_slice())
+            }
+            _ => None,
+        })
+        .collect::<BTreeSet<_>>();
+    assert_eq!(
+        selected_projectiles,
+        BTreeSet::from([b"cinder-bolt".as_slice(), b"wayfarer-bolt".as_slice()]),
+        "the runtime selector remains explicit for every typed projectile"
+    );
+    let derived = compiled
+        .state_cells
+        .iter()
+        .filter(|cell| {
+            cell.state.relation_designation == b"hostile-contact"
+                && cell.state.subject == b"player-1"
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        derived.len(),
+        1,
+        "the cases share one derived Boolean state"
+    );
+    assert_eq!(
+        derived[0].initial_value,
+        Some(CanonicalScalarValueV1::Boolean(false))
+    );
+}
+
+#[test]
+fn boolean_law_selector_rejects_wrong_domain_missing_value_and_non_singleton_state() {
+    let wrong_domain = MULTI_SUBJECT_BOOLEAN_LAW_WORLD.replacen(
+        "?projectile projectile faction enemy-origin",
+        "?projectile projectile faction flight",
+        1,
+    );
+    assert!(matches!(
+        compile_source(&wrong_domain, 43),
+        Err(CanonicalSourceErrorV1::MissingExecutableBinding { .. })
+    ));
+
+    let missing = MULTI_SUBJECT_BOOLEAN_LAW_WORLD.replacen(
+        "?projectile projectile faction enemy-origin",
+        "?projectile projectile faction unlisted-origin",
+        1,
+    );
+    assert!(matches!(
+        compile_source(&missing, 44),
+        Err(CanonicalSourceErrorV1::MissingExecutableBinding { .. })
+    ));
+
+    let nonsingleton = MULTI_SUBJECT_BOOLEAN_LAW_WORLD.replacen(
+        "relation projectile-faction\n  reads {projectile: Projectile} projectile faction {value: ProjectileFaction}\n  subject projectile\n  mode given projectile yields value: one",
+        "relation projectile-faction\n  reads {projectile: Projectile} projectile faction {value: ProjectileFaction}\n  subject projectile\n  mode given projectile yields value: many",
+        1,
+    );
+    assert!(matches!(
+        compile_source(&nonsingleton, 45),
+        Err(CanonicalSourceErrorV1::MissingExecutableBinding { .. })
+    ));
+}
+
+#[test]
+fn boolean_law_selector_preserves_ambiguous_relation_rejection() {
+    let ambiguous = MULTI_SUBJECT_BOOLEAN_LAW_WORLD.replacen(
+        "relation contact-radius",
+        "relation alternate-projectile-faction\n  reads {projectile: Projectile} projectile faction {value: ProjectileFaction}\n  subject projectile\n  mode given projectile yields value: one\n\nrelation contact-radius",
+        1,
+    );
+    assert!(matches!(
+        compile_source(&ambiguous, 46),
+        Err(CanonicalSourceErrorV1::AmbiguousExecutableBinding { .. })
+    ));
+}
+
+#[test]
+fn general_handler_lowers_typed_constant_state_selector() {
+    let source = format!(
+        "{MULTI_SUBJECT_BOOLEAN_LAW_WORLD}\n\non reset-hostile-projectile ?projectile\n  when\n    ?projectile projectile state ?state\n    ?projectile projectile faction enemy-origin\n    ?state = flight\n  withdraw\n    ?projectile projectile state ?state\n  include\n    ?projectile projectile state dormant\n"
+    );
+    let compiled = compile_source(&source, 47)
+        .expect("a typed constant state selector lowers in a general handler");
+    let handler = compiled
+        .executable_handlers
+        .iter()
+        .find(|handler| handler.designation == b"reset-hostile-projectile")
+        .expect("the selected general handler is executable");
+    let selected_projectiles = handler
+        .rules
+        .iter()
+        .flat_map(|rule| &rule.predicates)
+        .filter_map(|predicate| match predicate {
+            CanonicalExecutablePredicateV1::Equal(
+                CanonicalExecutableExpressionV1::State(state),
+                CanonicalExecutableExpressionV1::Constant(CanonicalScalarValueV1::Symbol(expected)),
+            ) if state.relation_designation == b"projectile-faction"
+                && expected == b"enemy-origin" =>
+            {
+                Some(state.subject.as_slice())
+            }
+            _ => None,
+        })
+        .collect::<BTreeSet<_>>();
+    assert_eq!(
+        selected_projectiles,
+        BTreeSet::from([b"cinder-bolt".as_slice(), b"wayfarer-bolt".as_slice()]),
+        "the selector remains an explicit typed predicate for each handler subject"
+    );
+
+    let wrong_domain = source.replacen(
+        "?projectile projectile faction enemy-origin",
+        "?projectile projectile faction flight",
+        1,
+    );
+    assert!(matches!(
+        compile_source(&wrong_domain, 48),
+        Err(CanonicalSourceErrorV1::MissingExecutableBinding { .. })
+    ));
 }
 
 #[test]
