@@ -14,10 +14,14 @@ relation loot-state
   subject loot
   mode given loot yields value: one
 
-ashen-key: Loot
-cephorium-cache: Loot
-hidden: LootState
-acquired: LootState
+ashen-key
+  shape: Loot
+cephorium-cache
+  shape: Loot
+hidden
+  shape: LootState
+acquired
+  shape: LootState
 
 ashen-key carried distance 1.0
 cephorium-cache carried distance 2.0

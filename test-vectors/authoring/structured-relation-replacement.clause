@@ -16,8 +16,10 @@ relation loot-origin-position
   subject loot
   mode given loot yields value: one
 
-ashen-key: Loot
-cephorium-cache: Loot
+ashen-key
+  shape: Loot
+cephorium-cache
+  shape: Loot
 
 ashen-key loot position Vec3 { x: 1.0, y: 0.0, z: 2.0 }
 ashen-key loot origin position Vec3 { x: 3.0, y: 0.0, z: 4.0 }

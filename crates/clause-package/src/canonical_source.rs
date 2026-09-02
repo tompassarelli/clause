@@ -3345,16 +3345,18 @@ fn resolve_general_parameter_states(
     let referent_domains_overlap = |left: &[u8], right: &[u8]| {
         left == right
             || cst.items.iter().any(|item| {
-                let CstKind::Binding(binding) = &item.kind else {
+                let CstKind::Application(application) = &item.kind else {
                     return false;
                 };
-                matches!(&binding.value, CanonicalScalarValueV1::Symbol(domain) if domain == left)
+                application.role == b"shape"
+                    && matches!(&application.object, CanonicalScalarValueV1::Symbol(domain) if domain == left)
                     && cst.items.iter().any(|candidate| {
                         matches!(
                             &candidate.kind,
-                            CstKind::Binding(other)
-                                if other.subject == binding.subject
-                                    && matches!(&other.value, CanonicalScalarValueV1::Symbol(domain) if domain == right)
+                            CstKind::Application(other)
+                                if other.subject == application.subject
+                                    && other.role == b"shape"
+                                    && matches!(&other.object, CanonicalScalarValueV1::Symbol(domain) if domain == right)
                         )
                     })
             })
