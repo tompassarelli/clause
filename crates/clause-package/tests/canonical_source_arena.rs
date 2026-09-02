@@ -103,6 +103,41 @@ on adjust ?player ?amount
     ?player reserve ?reserve - ?amount
 "#;
 
+const SPACED_TEXT_INSERTION_WORLD: &str = r#"Root
+Command
+Text
+
+relation phase
+  reads {root: Root} phase {value: Text}
+  subject root
+  mode given root yields value: one
+
+relation known-command
+  reads {root: Root} known command {value: Command}
+  subject root
+  mode given root yields value: many
+
+relation command-description
+  reads {command: Command} description {value: Text}
+  subject command
+  mode given command yields value: maybe
+
+root-main ∈ Root
+root-main phase "ready"
+
+on initialize ?root
+  when
+    ?root phase ?phase
+  create
+    ?command ∈ Command
+  withdraw
+    ?root phase ?phase
+  include
+    ?root phase ?phase
+    ?root known command ?command
+    ?command description "start a new conversation"
+"#;
+
 const TRANSITIVE_REFERENT_WORLD: &str = r#"F64
 Root
 Policy
@@ -156,6 +191,19 @@ fn compile_source(
         },
         &plan,
     )
+}
+
+#[test]
+fn general_handler_inserts_spaced_text_without_absorbing_it_into_the_relation() {
+    let compiled = compile_source(SPACED_TEXT_INSERTION_WORLD, 38)
+        .expect("a spaced Text literal reaches relational insertion lowering");
+    assert!(compiled.unsupported.is_empty());
+    assert!(
+        compiled
+            .executable_handlers
+            .iter()
+            .any(|handler| handler.designation == b"initialize")
+    );
 }
 
 #[test]

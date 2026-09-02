@@ -7109,23 +7109,39 @@ fn parse_general_insertion(
             .collect();
     }
 
-    let parts = source.split_whitespace().collect::<Vec<_>>();
-    let [subject, relation @ .., value] = parts.as_slice() else {
-        return None;
-    };
-    if relation.is_empty() {
-        return None;
-    }
+    let (subject, relation, value) = split_general_scalar_insertion(source)?;
     Some(vec![GeneralAssignmentCst {
         target: ScalarParameterSourceCst {
             parameter: Vec::new(),
             subject: subject.as_bytes().to_vec(),
-            relation: relation.join(" ").into_bytes(),
+            relation: relation.as_bytes().to_vec(),
             shape: None,
             field: None,
         },
-        value: parse_scalar_expression(value, "")?,
+        value,
     }])
+}
+
+fn split_general_scalar_insertion(
+    source: &str,
+) -> Option<(&str, &str, CanonicalScalarExpressionV1)> {
+    let subject_end = source.find(char::is_whitespace)?;
+    let subject = &source[..subject_end];
+    let remainder = source[subject_end..].trim_start();
+    for (boundary, character) in remainder.char_indices() {
+        if !character.is_whitespace() {
+            continue;
+        }
+        let relation = remainder[..boundary].trim_end();
+        let value = remainder[boundary..].trim_start();
+        if relation.is_empty() || value.is_empty() {
+            continue;
+        }
+        if let Some(value) = parse_scalar_expression(value, "") {
+            return Some((subject, relation, value));
+        }
+    }
+    None
 }
 
 fn parse_scalar_law_binding(
