@@ -45,6 +45,10 @@ referent Policy
 referent policy-a
 referent policy-b
 
+shape PolicyParameters
+  adjustment: F64
+  floor: F64
+
 relation balance
   reads {root: Root} balance {value: F64}
   subject root
@@ -55,8 +59,8 @@ relation selected-policy
   subject root
   mode given root yields policy: one
 
-relation policy-adjustment
-  reads {policy: Policy} policy adjustment {value: F64}
+relation policy-parameters
+  reads {policy: Policy} policy parameters {value: PolicyParameters}
   subject policy
   mode given policy yields value: one
 
@@ -65,8 +69,8 @@ policy-a ∈ Policy
 policy-b ∈ Policy
 root-1 balance 10.0
 root-1 selected policy policy-a
-policy-a policy adjustment 2.0
-policy-b policy adjustment 4.0
+policy-a policy parameters PolicyParameters { adjustment: 2.0, floor: 0.0 }
+policy-b policy parameters PolicyParameters { adjustment: 4.0, floor: 0.0 }
 
 on choose-policy-b ?root
   when
@@ -81,7 +85,8 @@ on apply-selected-policy ?root
   when
     ?root balance ?prior
     ?root selected policy ?policy
-    ?policy policy adjustment ?adjustment
+    ?policy policy parameters PolicyParameters { adjustment: ?adjustment, floor: ?floor }
+    ?floor < ?prior
   withdraw
     ?root balance ?prior
   include
@@ -1018,6 +1023,19 @@ fn runtime_selected_referent_uses_the_newly_admitted_binding() {
         projected_number(projected_object_field(root, b"balance")),
         6.0,
         "the newly selected policy-b adjustment, not policy-a's initial adjustment, executes"
+    );
+}
+
+#[test]
+fn shaped_state_rejects_a_value_outside_its_declared_field_domain() {
+    let malformed = RUNTIME_SELECTED_POLICY.replacen(
+        "PolicyParameters { adjustment: 4.0, floor: 0.0 }",
+        "PolicyParameters { adjustment: policy-a, floor: 0.0 }",
+        1,
+    );
+    assert!(
+        ResidentSourceWorkbenchV1::open(malformed.as_bytes()).is_err(),
+        "an F64 field must reject a symbolic value before execution"
     );
 }
 

@@ -763,6 +763,7 @@ enum CstKind {
     BooleanLaw(BooleanLawCst),
     BooleanDerive(BooleanDeriveCst),
     VectorAssertion(VectorAssertionCst),
+    ShapeAssertion(ShapeAssertionCst),
     BooleanAssertion(BooleanAssertionCst),
     NumberAssertion(NumberAssertionCst),
     SymbolAssertion(SymbolAssertionCst),
@@ -789,6 +790,21 @@ struct VectorAssertionCst {
     x: u64,
     y: u64,
     z: u64,
+}
+
+#[derive(Clone, Debug)]
+struct ShapeAssertionCst {
+    origin: CanonicalSourceOriginV1,
+    subject: Vec<u8>,
+    relation: Vec<u8>,
+    shape: Vec<u8>,
+    fields: Vec<ShapeAssertionFieldCst>,
+}
+
+#[derive(Clone, Debug)]
+struct ShapeAssertionFieldCst {
+    name: Vec<u8>,
+    value: CanonicalScalarValueV1,
 }
 
 #[derive(Clone, Debug)]
@@ -916,6 +932,7 @@ struct ScalarParameterSourceCst {
     parameter: Vec<u8>,
     subject: Vec<u8>,
     relation: Vec<u8>,
+    shape: Option<Vec<u8>>,
     field: Option<Vec<u8>>,
 }
 
@@ -1624,6 +1641,15 @@ fn allocation_requests(
                     });
                 }
             }
+            CstKind::ShapeAssertion(assertion) => {
+                if declared_state_relation(cst, &assertion.relation) {
+                    requested.push(AllocationRequest {
+                        producer: assertion_producer(&assertion.subject, &assertion.relation),
+                        slot: head_slot(CanonicalSourceProductionV1::Assertion),
+                        domain: AllocationDomain::Formation,
+                    });
+                }
+            }
             CstKind::BooleanAssertion(assertion) => {
                 if jump.is_some_and(|parts| parts.grounded.origin == assertion.origin)
                     || tick.is_some_and(|parts| parts.grounded.origin == assertion.origin)
@@ -1854,6 +1880,18 @@ fn resolved_state_relation_for<'a>(
     })
 }
 
+fn validate_source_shape(
+    relation: &ResolvedStateRelation<'_>,
+    source: &ScalarParameterSourceCst,
+    origin: CanonicalSourceOriginV1,
+) -> Result<(), CanonicalSourceErrorV1> {
+    match (source.shape.as_deref(), source.field.as_deref()) {
+        (None, None) => Ok(()),
+        (Some(shape), Some(_)) if shape == relation.value_domain => Ok(()),
+        _ => Err(CanonicalSourceErrorV1::MissingExecutableBinding { origin }),
+    }
+}
+
 fn canonical_state_ref(
     cst: &CanonicalSourceCstV1,
     plan: &CanonicalSourceAllocationPlanV1,
@@ -1966,6 +2004,26 @@ fn state_ref_for_origin(
             field,
             origin,
         ),
+        CstKind::ShapeAssertion(assertion) => {
+            let field = field.ok_or(CanonicalSourceErrorV1::MissingExecutableBinding { origin })?;
+            let relation = resolved_state_relation(cst, plan, &assertion.relation, origin)?;
+            if relation.value_domain != assertion.shape
+                || !assertion
+                    .fields
+                    .iter()
+                    .any(|declared| declared.name == field)
+            {
+                return Err(CanonicalSourceErrorV1::MissingExecutableBinding { origin });
+            }
+            canonical_state_ref(
+                cst,
+                plan,
+                &assertion.subject,
+                &assertion.relation,
+                Some(field),
+                origin,
+            )
+        }
         CstKind::BooleanAssertion(assertion) => canonical_state_ref(
             cst,
             plan,
@@ -1994,12 +2052,60 @@ fn state_ref_for_origin(
     }
 }
 
+fn validate_shape_assertion(
+    cst: &CanonicalSourceCstV1,
+    plan: &CanonicalSourceAllocationPlanV1,
+    assertion: &ShapeAssertionCst,
+) -> Result<(), CanonicalSourceErrorV1> {
+    let relation = resolved_state_relation(cst, plan, &assertion.relation, assertion.origin)?;
+    if relation.value_domain != assertion.shape {
+        return Err(CanonicalSourceErrorV1::MissingExecutableBinding {
+            origin: assertion.origin,
+        });
+    }
+    let declared = cst
+        .items
+        .iter()
+        .find_map(|item| match &item.kind {
+            CstKind::Shape {
+                designation,
+                fields,
+            } if designation == &assertion.shape => Some(fields),
+            _ => None,
+        })
+        .ok_or(CanonicalSourceErrorV1::MissingExecutableBinding {
+            origin: assertion.origin,
+        })?;
+    if declared.len() != assertion.fields.len() {
+        return Err(CanonicalSourceErrorV1::MissingExecutableBinding {
+            origin: assertion.origin,
+        });
+    }
+    for (declared, actual) in declared.iter().zip(&assertion.fields) {
+        let kind_matches = matches!(
+            (declared.domain.as_slice(), &actual.value),
+            (b"F64", CanonicalScalarValueV1::Number(_))
+                | (b"Bool", CanonicalScalarValueV1::Boolean(_))
+        ) || (declared.domain != b"F64"
+            && declared.domain != b"Bool"
+            && matches!(&actual.value, CanonicalScalarValueV1::Symbol(_)));
+        if declared.name != actual.name || !kind_matches {
+            return Err(CanonicalSourceErrorV1::MissingExecutableBinding {
+                origin: assertion.origin,
+            });
+        }
+    }
+    Ok(())
+}
+
 fn general_parameter_state_ref(
     cst: &CanonicalSourceCstV1,
     plan: &CanonicalSourceAllocationPlanV1,
     source: &ScalarParameterSourceCst,
     origin: CanonicalSourceOriginV1,
 ) -> Result<CanonicalStateRefV1, CanonicalSourceErrorV1> {
+    let relation = resolved_state_relation(cst, plan, &source.relation, origin)?;
+    validate_source_shape(&relation, source, origin)?;
     let variable_subject = source.subject.starts_with(b"?");
     let assertions = cst
         .items
@@ -2007,6 +2113,15 @@ fn general_parameter_state_ref(
         .filter(|item| match (&item.kind, source.field.as_deref()) {
             (CstKind::VectorAssertion(assertion), Some(_)) => {
                 assertion.relation == source.relation
+                    && (variable_subject || assertion.subject == source.subject)
+            }
+            (CstKind::ShapeAssertion(assertion), Some(field)) => {
+                assertion.relation == source.relation
+                    && source.shape.as_deref() == Some(assertion.shape.as_slice())
+                    && assertion
+                        .fields
+                        .iter()
+                        .any(|declared| declared.name == field)
                     && (variable_subject || assertion.subject == source.subject)
             }
             (CstKind::BooleanAssertion(assertion), None) => {
@@ -2041,6 +2156,8 @@ fn general_target_state_ref(
     entities: &BTreeMap<Vec<u8>, Vec<u8>>,
     origin: CanonicalSourceOriginV1,
 ) -> Result<CanonicalStateRefV1, CanonicalSourceErrorV1> {
+    let relation = resolved_state_relation(cst, plan, &source.relation, origin)?;
+    validate_source_shape(&relation, source, origin)?;
     let subject = if source.subject.starts_with(b"?") {
         entities
             .get(&source.subject)
@@ -2102,6 +2219,14 @@ fn concrete_general_handler_subject(
                 (CstKind::VectorAssertion(assertion), Some(_)) => {
                     assertion.relation == source.relation
                 }
+                (CstKind::ShapeAssertion(assertion), Some(field)) => {
+                    assertion.relation == source.relation
+                        && source.shape.as_deref() == Some(assertion.shape.as_slice())
+                        && assertion
+                            .fields
+                            .iter()
+                            .any(|declared| declared.name == field)
+                }
                 (CstKind::BooleanAssertion(assertion), None) => {
                     assertion.relation == source.relation
                 }
@@ -2116,6 +2241,7 @@ fn concrete_general_handler_subject(
             if matching {
                 let subject = match &item.kind {
                     CstKind::VectorAssertion(assertion) => &assertion.subject,
+                    CstKind::ShapeAssertion(assertion) => &assertion.subject,
                     CstKind::BooleanAssertion(assertion) => &assertion.subject,
                     CstKind::NumberAssertion(assertion) => &assertion.subject,
                     CstKind::SymbolAssertion(assertion) => &assertion.subject,
@@ -2146,6 +2272,7 @@ fn optional_state_value_kind(
     origin: CanonicalSourceOriginV1,
 ) -> Result<CanonicalScalarValueKindV1, CanonicalSourceErrorV1> {
     let relation = resolved_state_relation(cst, plan, &source.relation, origin)?;
+    validate_source_shape(&relation, source, origin)?;
     let domain = if let Some(field) = &source.field {
         cst.items
             .iter()
@@ -2200,6 +2327,7 @@ fn state_relation_cardinality(
     origin: CanonicalSourceOriginV1,
 ) -> Result<SourceCardinality, CanonicalSourceErrorV1> {
     let relation = resolved_state_relation(cst, plan, &source.relation, origin)?;
+    validate_source_shape(&relation, source, origin)?;
     let matching = relation
         .relation
         .modes
@@ -2364,6 +2492,7 @@ fn general_source_value_domain(
     source: &ScalarParameterSourceCst,
     origin: CanonicalSourceOriginV1,
 ) -> Result<Vec<u8>, CanonicalSourceErrorV1> {
+    validate_source_shape(relation, source, origin)?;
     let Some(field) = source.field.as_deref() else {
         return Ok(relation.value_domain.to_vec());
     };
@@ -2407,6 +2536,8 @@ fn general_state_candidates(
     initial_entities: &BTreeMap<Vec<u8>, Vec<u8>>,
     origin: CanonicalSourceOriginV1,
 ) -> Result<Vec<GeneralStateCandidate>, CanonicalSourceErrorV1> {
+    let relation = resolved_state_relation(cst, plan, &source.relation, origin)?;
+    validate_source_shape(&relation, source, origin)?;
     let variable_subject = source.subject.starts_with(b"?");
     let mut candidates = Vec::new();
     for item in &cst.items {
@@ -2422,6 +2553,21 @@ fn general_state_candidates(
                     _ => continue,
                 };
                 CanonicalScalarValueV1::Number(value)
+            }
+            (CstKind::ShapeAssertion(assertion), Some(field))
+                if assertion.relation == source.relation
+                    && source.shape.as_deref() == Some(assertion.shape.as_slice())
+                    && (variable_subject || assertion.subject == source.subject) =>
+            {
+                let Some(value) = assertion
+                    .fields
+                    .iter()
+                    .find(|declared| declared.name == field)
+                    .map(|declared| declared.value.clone())
+                else {
+                    continue;
+                };
+                value
             }
             (CstKind::BooleanAssertion(assertion), None)
                 if assertion.relation == source.relation
@@ -2755,6 +2901,9 @@ fn checked_source_state_cells(
             CstKind::VectorAssertion(assertion) => {
                 Some(assertion_producer(&assertion.subject, &assertion.relation))
             }
+            CstKind::ShapeAssertion(assertion) => {
+                Some(assertion_producer(&assertion.subject, &assertion.relation))
+            }
             CstKind::BooleanAssertion(assertion) => {
                 Some(assertion_producer(&assertion.subject, &assertion.relation))
             }
@@ -2788,6 +2937,26 @@ fn checked_source_state_cells(
                             state,
                             initial_value: Some(CanonicalScalarValueV1::Number(value)),
                             value_kind: CanonicalScalarValueKindV1::Number,
+                        },
+                    );
+                }
+            }
+            CstKind::ShapeAssertion(assertion) => {
+                validate_shape_assertion(cst, plan, assertion)?;
+                for field in &assertion.fields {
+                    let state =
+                        state_ref_for_origin(cst, plan, item.origin, Some(field.name.as_slice()))?;
+                    let value_kind = match field.value {
+                        CanonicalScalarValueV1::Number(_) => CanonicalScalarValueKindV1::Number,
+                        CanonicalScalarValueV1::Boolean(_) => CanonicalScalarValueKindV1::Boolean,
+                        CanonicalScalarValueV1::Symbol(_) => CanonicalScalarValueKindV1::Symbol,
+                    };
+                    cells.insert(
+                        state.clone(),
+                        CanonicalStateCellV1 {
+                            state,
+                            initial_value: Some(field.value.clone()),
+                            value_kind,
                         },
                     );
                 }
@@ -4617,6 +4786,28 @@ pub fn elaborate_canonical_source_package_v1(
                     });
                 }
             }
+            CstKind::ShapeAssertion(assertion) => {
+                if declared_state_relation(cst, &assertion.relation) {
+                    let producer = assertion_producer(&assertion.subject, &assertion.relation);
+                    let slot = head_slot(CanonicalSourceProductionV1::Assertion);
+                    let id = formation_id(plan, &producer, &slot)?;
+                    formations.push(source_formation(
+                        scope,
+                        id,
+                        cst.source_slice(assertion.origin)
+                            .expect("owned shaped assertion origin"),
+                        assertion.origin,
+                        "initial-assertion",
+                    )?);
+                    emissions.push(emission(plan, producer, slot, assertion.origin));
+                } else {
+                    unsupported.push(CanonicalUnsupportedProductionV1 {
+                        production: CanonicalSourceProductionV1::Assertion,
+                        origin: assertion.origin,
+                        emissions: vec![],
+                    });
+                }
+            }
             CstKind::BooleanAssertion(assertion) => {
                 if jump_parts.is_some_and(|parts| parts.grounded.origin == assertion.origin)
                     || tick_parts.is_some_and(|parts| parts.grounded.origin == assertion.origin)
@@ -5020,6 +5211,12 @@ fn parse_item(
         return Ok(CstItem {
             origin,
             kind: CstKind::VectorAssertion(assertion),
+        });
+    }
+    if let Some(assertion) = parse_shape_assertion(head, origin)? {
+        return Ok(CstItem {
+            origin,
+            kind: CstKind::ShapeAssertion(assertion),
         });
     }
     if let Some(assertion) = parse_boolean_assertion(head, origin) {
@@ -5828,23 +6025,23 @@ fn parse_general_insertion(
     source: &str,
     handler_subject: &str,
 ) -> Option<Vec<GeneralAssignmentCst>> {
-    if let Some((prefix, vector)) = split_vector_subject(source) {
+    if let Some((prefix, shape, fields)) = split_shape_subject(source) {
         let prefix = prefix.split_whitespace().collect::<Vec<_>>();
         if prefix.len() < 2 || (prefix[0].starts_with('?') && prefix[0] != handler_subject) {
             return None;
         }
         let subject = prefix[0].as_bytes().to_vec();
         let relation = prefix[1..].join(" ").into_bytes();
-        return parse_vec3_components(vector)?
+        return parse_shape_fields(fields)?
             .into_iter()
-            .zip([b"x".as_slice(), b"y".as_slice(), b"z".as_slice()])
-            .map(|(value, field)| {
+            .map(|(field, value)| {
                 Some(GeneralAssignmentCst {
                     target: ScalarParameterSourceCst {
                         parameter: Vec::new(),
                         subject: subject.clone(),
                         relation: relation.clone(),
-                        field: Some(field.to_vec()),
+                        shape: Some(shape.as_bytes().to_vec()),
+                        field: Some(field.as_bytes().to_vec()),
                     },
                     value: parse_scalar_expression(value, "")?,
                 })
@@ -5864,6 +6061,7 @@ fn parse_general_insertion(
             parameter: Vec::new(),
             subject: subject.as_bytes().to_vec(),
             relation: relation.join(" ").into_bytes(),
+            shape: None,
             field: None,
         },
         value: parse_scalar_expression(value, "")?,
@@ -5895,29 +6093,29 @@ fn parse_general_state_declaration(
     source: &str,
     _handler_subject: &str,
 ) -> Option<Vec<ScalarParameterSourceCst>> {
-    if let Some((prefix, vector)) = split_vector_subject(source) {
+    if let Some((prefix, shape, fields)) = split_shape_subject(source) {
         let prefix = prefix.split_whitespace().collect::<Vec<_>>();
         if prefix.len() < 2 {
             return None;
         }
         let subject = prefix[0].as_bytes().to_vec();
         let relation = prefix[1..].join(" ").into_bytes();
-        let components = parse_vec3_components(vector)?;
-        if !components
+        let fields = parse_shape_fields(fields)?;
+        if !fields
             .iter()
-            .all(|component| component.starts_with('?'))
+            .all(|(_, parameter)| parameter.starts_with('?'))
         {
             return None;
         }
-        return components
+        return fields
             .into_iter()
-            .zip([b"x".as_slice(), b"y".as_slice(), b"z".as_slice()])
-            .map(|(component, field)| {
+            .map(|(field, parameter)| {
                 Some(ScalarParameterSourceCst {
-                    parameter: component.as_bytes().to_vec(),
+                    parameter: parameter.as_bytes().to_vec(),
                     subject: subject.clone(),
                     relation: relation.clone(),
-                    field: Some(field.to_vec()),
+                    shape: Some(shape.as_bytes().to_vec()),
+                    field: Some(field.as_bytes().to_vec()),
                 })
             })
             .collect();
@@ -5932,6 +6130,7 @@ fn parse_general_state_declaration(
         parameter: parameter.as_bytes().to_vec(),
         subject: parts[0].as_bytes().to_vec(),
         relation: parts[1..parts.len() - 1].join(" ").into_bytes(),
+        shape: None,
         field: None,
     }])
 }
@@ -5942,18 +6141,26 @@ fn parse_general_assignments(
     handler_subject: &str,
 ) -> Option<GeneralReplacementCst> {
     let targets = parse_general_state_declaration(withdraw, handler_subject)?;
-    if let Some((withdraw_prefix, withdraw_vector)) = split_vector_subject(withdraw) {
-        let (include_prefix, include_vector) = split_vector_subject(include)?;
-        if include_prefix != withdraw_prefix {
+    if let Some((withdraw_prefix, withdraw_shape, withdraw_fields)) = split_shape_subject(withdraw)
+    {
+        let (include_prefix, include_shape, include_fields) = split_shape_subject(include)?;
+        if include_prefix != withdraw_prefix || include_shape != withdraw_shape {
             return None;
         }
-        let current = parse_vec3_components(withdraw_vector)?;
-        let result = parse_vec3_components(include_vector)?;
+        let current = parse_shape_fields(withdraw_fields)?;
+        let result = parse_shape_fields(include_fields)?;
+        if current
+            .iter()
+            .map(|(field, _)| *field)
+            .ne(result.iter().map(|(field, _)| *field))
+        {
+            return None;
+        }
         let assignments = targets
             .into_iter()
             .zip(current)
             .zip(result)
-            .filter_map(|((target, current), result)| {
+            .filter_map(|((target, (_, current)), (_, result))| {
                 (current != result).then(|| {
                     Some(GeneralAssignmentCst {
                         target,
@@ -5975,20 +6182,20 @@ fn parse_general_assignments(
         String::from_utf8_lossy(&target.subject),
         String::from_utf8_lossy(&target.relation)
     );
-    if let Some((include_prefix, vector)) = split_vector_subject(include) {
+    if let Some((include_prefix, shape, fields)) = split_shape_subject(include) {
         if include_prefix != prefix {
             return None;
         }
         let aggregate_binding = target.parameter.clone();
-        let fields = [b"x".as_slice(), b"y".as_slice(), b"z".as_slice()];
+        let fields = parse_shape_fields(fields)?;
         let mut required_sources = Vec::with_capacity(fields.len());
-        let assignments = parse_vec3_components(vector)?
+        let assignments = fields
             .into_iter()
-            .zip(fields)
-            .map(|(value, field)| {
+            .map(|(field, value)| {
                 let mut component = target.clone();
                 component.parameter.clear();
-                component.field = Some(field.to_vec());
+                component.shape = Some(shape.as_bytes().to_vec());
+                component.field = Some(field.as_bytes().to_vec());
                 required_sources.push(component.clone());
                 Some(GeneralAssignmentCst {
                     target: component,
@@ -6063,6 +6270,12 @@ fn parse_scalar_predicate(source: &str, current: &str) -> Option<CanonicalScalar
         (
             left,
             right,
+            CanonicalScalarPredicateV1::GreaterThan as fn(_, _) -> CanonicalScalarPredicateV1,
+        )
+    } else if let Some((left, right)) = source.split_once(" < ") {
+        (
+            right,
+            left,
             CanonicalScalarPredicateV1::GreaterThan as fn(_, _) -> CanonicalScalarPredicateV1,
         )
     } else {
@@ -6183,6 +6396,7 @@ fn parse_scalar_parameter_declaration(
                         parameter: component.as_bytes().to_vec(),
                         subject: subject.clone(),
                         relation: relation.clone(),
+                        shape: Some(b"Vec3".to_vec()),
                         field: Some(field.to_vec()),
                     })
             })
@@ -6201,6 +6415,7 @@ fn parse_scalar_parameter_declaration(
         parameter: parameter.as_bytes().to_vec(),
         subject: parts[0].as_bytes().to_vec(),
         relation: parts[1..parts.len() - 1].join(" ").into_bytes(),
+        shape: None,
         field: None,
     }])
 }
@@ -6353,6 +6568,7 @@ fn parse_law_state_declaration(source: &str) -> Option<Vec<ScalarParameterSource
                     parameter: component.as_bytes().to_vec(),
                     subject: subject.clone(),
                     relation: relation.clone(),
+                    shape: Some(b"Vec3".to_vec()),
                     field: Some(field.to_vec()),
                 })
             })
@@ -6368,6 +6584,7 @@ fn parse_law_state_declaration(source: &str) -> Option<Vec<ScalarParameterSource
         parameter: parameter.as_bytes().to_vec(),
         subject: parts[0].as_bytes().to_vec(),
         relation: parts[1..parts.len() - 1].join(" ").into_bytes(),
+        shape: None,
         field: None,
     }])
 }
@@ -6893,6 +7110,52 @@ fn parse_vector_assertion(
     }))
 }
 
+fn parse_shape_assertion(
+    line: &str,
+    origin: CanonicalSourceOriginV1,
+) -> Result<Option<ShapeAssertionCst>, CanonicalSourceErrorV1> {
+    let Some((prefix, shape, fields)) = split_shape_subject(line) else {
+        return Ok(None);
+    };
+    if shape == "Vec3" {
+        return Ok(None);
+    }
+    let prefix = prefix.split_whitespace().collect::<Vec<_>>();
+    if prefix.len() < 2 {
+        return Ok(None);
+    }
+    let mut seen = BTreeSet::new();
+    let fields = parse_shape_fields(fields)
+        .ok_or(CanonicalSourceErrorV1::InvalidShapeField { origin })?
+        .into_iter()
+        .map(|(name, value)| {
+            if !seen.insert(name.as_bytes().to_vec()) {
+                return Err(CanonicalSourceErrorV1::InvalidShapeField { origin });
+            }
+            let value = if let Some(number) = parse_source_number(value) {
+                CanonicalScalarValueV1::Number(number)
+            } else if value == "true" {
+                CanonicalScalarValueV1::Boolean(true)
+            } else if value == "false" {
+                CanonicalScalarValueV1::Boolean(false)
+            } else {
+                CanonicalScalarValueV1::Symbol(designation_bytes(value, origin)?)
+            };
+            Ok(ShapeAssertionFieldCst {
+                name: designation_bytes(name, origin)?,
+                value,
+            })
+        })
+        .collect::<Result<Vec<_>, CanonicalSourceErrorV1>>()?;
+    Ok(Some(ShapeAssertionCst {
+        origin,
+        subject: prefix[0].as_bytes().to_vec(),
+        relation: prefix[1..].join(" ").into_bytes(),
+        shape: designation_bytes(shape, origin)?,
+        fields,
+    }))
+}
+
 fn parse_boolean_clause(source: &str) -> Option<(&str, String, bool)> {
     let parts = source.split_whitespace().collect::<Vec<_>>();
     if parts.len() < 3 {
@@ -6958,9 +7221,29 @@ fn parse_symbol_assertion(
         })
 }
 
+fn split_shape_subject(source: &str) -> Option<(&str, &str, &str)> {
+    let (prefix, fields) = source.split_once(" { ")?;
+    let (prefix, shape) = prefix.rsplit_once(' ')?;
+    (!prefix.is_empty() && !shape.is_empty()).then_some((prefix, shape, fields))
+}
+
+fn parse_shape_fields(fields: &str) -> Option<Vec<(&str, &str)>> {
+    let fields = fields.strip_suffix(" }")?;
+    if fields.is_empty() {
+        return None;
+    }
+    fields
+        .split(", ")
+        .map(|field| {
+            let (name, value) = field.split_once(": ")?;
+            (!name.is_empty() && !value.is_empty()).then_some((name, value))
+        })
+        .collect()
+}
+
 fn split_vector_subject(source: &str) -> Option<(&str, &str)> {
-    let (prefix, vector) = source.split_once(" Vec3 { ")?;
-    Some((prefix, vector))
+    let (prefix, shape, vector) = split_shape_subject(source)?;
+    (shape == "Vec3").then_some((prefix, vector))
 }
 
 fn parse_vec3_components(vector: &str) -> Option<[&str; 3]> {
@@ -7995,6 +8278,7 @@ fn validate_unique_designations(items: &[CstItem]) -> Result<(), CanonicalSource
         | CstKind::BooleanLaw(_)
         | CstKind::BooleanDerive(_)
         | CstKind::VectorAssertion(_)
+        | CstKind::ShapeAssertion(_)
         | CstKind::BooleanAssertion(_)
         | CstKind::NumberAssertion(_)
         | CstKind::SymbolAssertion(_)
