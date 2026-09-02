@@ -12,11 +12,66 @@ const MULTILINE_TEXT_OUTPUT: &str = include_str!(concat!(
     "/../../test-vectors/authoring/multiline-text-output.clause"
 ));
 
+const MULTI_REFERENT_SCALAR_HANDLER: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../test-vectors/authoring/multi-referent-scalar-handler.clause"
+));
+
 fn raw_id(tag: u8) -> [u8; IDENTITY_BYTES] {
     let mut bytes = [0; IDENTITY_BYTES];
     bytes[0] = tag;
     bytes[IDENTITY_BYTES - 1] = tag;
     bytes
+}
+
+#[test]
+fn scalar_handler_lowers_one_deterministic_rule_per_referent() {
+    let compiled = compile_source(MULTI_REFERENT_SCALAR_HANDLER, 49)
+        .expect("one typed scalar handler specializes every referent row");
+    let handler = compiled
+        .executable_handlers
+        .iter()
+        .find(|handler| handler.designation == b"carry-loot")
+        .expect("the multi-referent scalar handler is executable");
+    assert_eq!(handler.trigger, CanonicalHandlerTriggerV1::FixedTick);
+    assert_eq!(handler.rules.len(), 2);
+
+    let targets = handler
+        .rules
+        .iter()
+        .map(|rule| {
+            let [assignment] = rule.assignments.as_slice() else {
+                panic!("each referent case owns one scalar assignment")
+            };
+            let target = &assignment.target;
+            assert!(rule.predicates.iter().any(|predicate| matches!(
+                predicate,
+                CanonicalExecutablePredicateV1::Equal(
+                    CanonicalExecutableExpressionV1::State(state),
+                    CanonicalExecutableExpressionV1::Constant(CanonicalScalarValueV1::Symbol(value)),
+                ) if state.subject == target.subject && value == b"acquired"
+            )));
+            target.clone()
+        })
+        .collect::<Vec<_>>();
+    assert!(targets.windows(2).all(|pair| pair[0] < pair[1]));
+    assert_eq!(
+        targets
+            .iter()
+            .map(|target| target.subject.as_slice())
+            .collect::<BTreeSet<_>>(),
+        BTreeSet::from([b"ashen-key".as_slice(), b"cephorium-cache".as_slice()]),
+    );
+
+    let duplicate = MULTI_REFERENT_SCALAR_HANDLER.replacen(
+        "cephorium-cache carried distance 2.0",
+        "ashen-key carried distance 3.0",
+        1,
+    );
+    assert!(matches!(
+        compile_source(&duplicate, 50),
+        Err(CanonicalSourceErrorV1::AmbiguousScalarInitialAssertion { .. })
+    ));
 }
 
 const SCALAR_PARAMETER_WORLD: &str = r#"F64

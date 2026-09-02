@@ -1077,6 +1077,12 @@ struct ScalarParameterSourceCst {
 #[derive(Clone)]
 struct ScalarHandlerParts<'a> {
     handler: &'a ScalarHandlerCst,
+    cases: Vec<ScalarHandlerCase>,
+}
+
+#[derive(Clone)]
+struct ScalarHandlerCase {
+    subject: Vec<u8>,
     initial_origin: CanonicalSourceOriginV1,
     initial_value: CanonicalScalarValueV1,
 }
@@ -1817,7 +1823,10 @@ fn allocation_requests(
                         .contains(&assertion.origin)
                     })
                     || scalar.iter().any(|parts| {
-                        parts.initial_origin == assertion.origin
+                        parts
+                            .cases
+                            .iter()
+                            .any(|case| case.initial_origin == assertion.origin)
                             || parts.handler.parameter_sources.iter().any(|source| {
                                 source.subject == assertion.subject
                                     && source.relation == assertion.relation
@@ -1846,7 +1855,10 @@ fn allocation_requests(
                 if jump.is_some_and(|parts| parts.grounded.origin == assertion.origin)
                     || tick.is_some_and(|parts| parts.grounded.origin == assertion.origin)
                     || scalar.iter().any(|parts| {
-                        parts.initial_origin == assertion.origin
+                        parts
+                            .cases
+                            .iter()
+                            .any(|case| case.initial_origin == assertion.origin)
                             || parts.handler.parameter_sources.iter().any(|source| {
                                 source.subject == assertion.subject
                                     && source.relation == assertion.relation
@@ -1865,7 +1877,10 @@ fn allocation_requests(
             CstKind::NumberAssertion(assertion) => {
                 if jump.is_some_and(|parts| parts.jump_speed.origin == assertion.origin)
                     || scalar.iter().any(|parts| {
-                        parts.initial_origin == assertion.origin
+                        parts
+                            .cases
+                            .iter()
+                            .any(|case| case.initial_origin == assertion.origin)
                             || parts.handler.parameter_sources.iter().any(|source| {
                                 source.subject == assertion.subject
                                     && source.relation == assertion.relation
@@ -1895,7 +1910,10 @@ fn allocation_requests(
             }
             CstKind::SymbolAssertion(assertion) => {
                 if scalar.iter().any(|parts| {
-                    parts.initial_origin == assertion.origin
+                    parts
+                        .cases
+                        .iter()
+                        .any(|case| case.initial_origin == assertion.origin)
                         || parts.handler.parameter_sources.iter().any(|source| {
                             source.subject == assertion.subject
                                 && source.relation == assertion.relation
@@ -1912,7 +1930,10 @@ fn allocation_requests(
             }
             CstKind::TextAssertion(assertion) => {
                 if scalar.iter().any(|parts| {
-                    parts.initial_origin == assertion.origin
+                    parts
+                        .cases
+                        .iter()
+                        .any(|case| case.initial_origin == assertion.origin)
                         || parts.handler.parameter_sources.iter().any(|source| {
                             source.subject == assertion.subject
                                 && source.relation == assertion.relation
@@ -2907,6 +2928,7 @@ fn resolve_parameter_states(
     cst: &CanonicalSourceCstV1,
     plan: &CanonicalSourceAllocationPlanV1,
     sources: &[ScalarParameterSourceCst],
+    mut entities: BTreeMap<Vec<u8>, Vec<u8>>,
     origin: CanonicalSourceOriginV1,
 ) -> Result<
     (
@@ -2916,17 +2938,21 @@ fn resolve_parameter_states(
     CanonicalSourceErrorV1,
 > {
     let mut parameters = BTreeMap::new();
-    let mut entities = BTreeMap::new();
     let mut pending = Vec::new();
     for source in sources {
-        let state = match general_parameter_state_ref(cst, plan, source, origin) {
-            Ok(state) => state,
-            Err(CanonicalSourceErrorV1::MissingExecutableBinding { .. }) => {
-                pending.push(source);
-                continue;
-            }
-            Err(error) => return Err(error),
-        };
+        let state =
+            match if source.subject.starts_with(b"?") && entities.contains_key(&source.subject) {
+                general_target_state_ref(cst, plan, source, &entities, origin)
+            } else {
+                general_parameter_state_ref(cst, plan, source, origin)
+            } {
+                Ok(state) => state,
+                Err(CanonicalSourceErrorV1::MissingExecutableBinding { .. }) => {
+                    pending.push(source);
+                    continue;
+                }
+                Err(error) => return Err(error),
+            };
         if source.subject.starts_with(b"?") {
             if let Some(previous) = entities.insert(source.subject.clone(), state.subject.clone())
                 && previous != state.subject
@@ -4884,56 +4910,45 @@ fn checked_executable_handlers(
         });
     }
     for parts in scalar {
-        let current = state_ref_for_origin(
-            cst,
-            plan,
-            parts.initial_origin,
-            parts.handler.field.as_deref(),
-        )?;
-        let (parameters, mut entities) = resolve_parameter_states(
-            cst,
-            plan,
-            &parts.handler.parameter_sources,
-            parts.handler.origin,
-        )?;
-        entities.insert(parts.handler.subject.clone(), current.subject.clone());
-        let mut predicates = canonical_scalar_executable_predicates(
-            &parts.handler.predicates,
-            &current,
-            &parameters,
-            parts.handler.origin,
-        )?;
-        predicates.extend(
-            parts
-                .handler
-                .boolean_conditions
-                .iter()
-                .map(|condition| {
-                    let (state, expected) =
-                        derived_condition_state_ref(cst, condition, &entities, &derives)?;
-                    Ok(CanonicalExecutablePredicateV1::Equal(
-                        CanonicalExecutableExpressionV1::State(state),
-                        constant_expression(CanonicalScalarValueV1::Boolean(expected)),
-                    ))
-                })
-                .collect::<Result<Vec<_>, CanonicalSourceErrorV1>>()?,
-        );
-        handlers.push(CanonicalExecutableHandlerV1 {
-            id: handler_id(&parts.handler.producer)?,
-            designation: parts.handler.designation.clone(),
-            trigger: if keyboard
-                .iter()
-                .any(|binding| binding.handler_designation == parts.handler.designation)
-                || (keyboard.is_empty()
-                    && parameters.is_empty()
-                    && parts.handler.boolean_conditions.is_empty())
-            {
-                CanonicalHandlerTriggerV1::External
-            } else {
-                CanonicalHandlerTriggerV1::FixedTick
-            },
-            argument_count: 0,
-            rules: vec![CanonicalExecutableRuleV1 {
+        let mut rules = Vec::with_capacity(parts.cases.len());
+        for case in &parts.cases {
+            let current = state_ref_for_origin(
+                cst,
+                plan,
+                case.initial_origin,
+                parts.handler.field.as_deref(),
+            )?;
+            let initial_entities =
+                BTreeMap::from([(parts.handler.subject.clone(), current.subject.clone())]);
+            let (parameters, entities) = resolve_parameter_states(
+                cst,
+                plan,
+                &parts.handler.parameter_sources,
+                initial_entities,
+                parts.handler.origin,
+            )?;
+            let mut predicates = canonical_scalar_executable_predicates(
+                &parts.handler.predicates,
+                &current,
+                &parameters,
+                parts.handler.origin,
+            )?;
+            predicates.extend(
+                parts
+                    .handler
+                    .boolean_conditions
+                    .iter()
+                    .map(|condition| {
+                        let (state, expected) =
+                            derived_condition_state_ref(cst, condition, &entities, &derives)?;
+                        Ok(CanonicalExecutablePredicateV1::Equal(
+                            CanonicalExecutableExpressionV1::State(state),
+                            constant_expression(CanonicalScalarValueV1::Boolean(expected)),
+                        ))
+                    })
+                    .collect::<Result<Vec<_>, CanonicalSourceErrorV1>>()?,
+            );
+            let rule = CanonicalExecutableRuleV1 {
                 predicates,
                 required_present: vec![],
                 required_absent: vec![],
@@ -4947,7 +4962,26 @@ fn checked_executable_handlers(
                     )?,
                 }],
                 removals: vec![],
-            }],
+            };
+            rules.push((current, rule));
+        }
+        rules.sort_by(|(left, _), (right, _)| left.cmp(right));
+        handlers.push(CanonicalExecutableHandlerV1 {
+            id: handler_id(&parts.handler.producer)?,
+            designation: parts.handler.designation.clone(),
+            trigger: if keyboard
+                .iter()
+                .any(|binding| binding.handler_designation == parts.handler.designation)
+                || (keyboard.is_empty()
+                    && parts.handler.parameters.is_empty()
+                    && parts.handler.boolean_conditions.is_empty())
+            {
+                CanonicalHandlerTriggerV1::External
+            } else {
+                CanonicalHandlerTriggerV1::FixedTick
+            },
+            argument_count: 0,
+            rules: rules.into_iter().map(|(_, rule)| rule).collect(),
         });
     }
     for source in cst.items.iter().filter_map(|item| match &item.kind {
@@ -5455,15 +5489,17 @@ fn checked_canonical_source_execution_v1(
     });
     let scalar_handlers = scalar_parts
         .iter()
-        .map(|parts| CanonicalScalarHandlerV1 {
-            artifact: cst.artifact,
-            handler_origin: parts.handler.origin,
-            initial_assertion_origin: parts.initial_origin,
-            include_origin: parts.handler.include.origin,
-            initial_value: parts.initial_value.clone(),
-            parameters: parts.handler.parameters.clone(),
-            predicates: parts.handler.predicates.clone(),
-            result: parts.handler.result.clone(),
+        .flat_map(|parts| {
+            parts.cases.iter().map(|case| CanonicalScalarHandlerV1 {
+                artifact: cst.artifact,
+                handler_origin: parts.handler.origin,
+                initial_assertion_origin: case.initial_origin,
+                include_origin: parts.handler.include.origin,
+                initial_value: case.initial_value.clone(),
+                parameters: parts.handler.parameters.clone(),
+                predicates: parts.handler.predicates.clone(),
+                result: parts.handler.result.clone(),
+            })
         })
         .collect();
     let keyboard_bindings = source_keyboard_bindings(cst)?;
@@ -6162,7 +6198,10 @@ pub fn elaborate_canonical_source_package_v1(
                 if jump_parts.is_some_and(|parts| parts.grounded.origin == assertion.origin)
                     || tick_parts.is_some_and(|parts| parts.grounded.origin == assertion.origin)
                     || scalar_parts.iter().any(|parts| {
-                        parts.initial_origin == assertion.origin
+                        parts
+                            .cases
+                            .iter()
+                            .any(|case| case.initial_origin == assertion.origin)
                             || parts.handler.parameter_sources.iter().any(|source| {
                                 source.subject == assertion.subject
                                     && source.relation == assertion.relation
@@ -6194,7 +6233,10 @@ pub fn elaborate_canonical_source_package_v1(
             CstKind::NumberAssertion(assertion) => {
                 if jump_parts.is_some_and(|parts| parts.jump_speed.origin == assertion.origin)
                     || scalar_parts.iter().any(|parts| {
-                        parts.initial_origin == assertion.origin
+                        parts
+                            .cases
+                            .iter()
+                            .any(|case| case.initial_origin == assertion.origin)
                             || parts.handler.parameter_sources.iter().any(|source| {
                                 source.subject == assertion.subject
                                     && source.relation == assertion.relation
@@ -6237,7 +6279,10 @@ pub fn elaborate_canonical_source_package_v1(
             }
             CstKind::SymbolAssertion(assertion) => {
                 if scalar_parts.iter().any(|parts| {
-                    parts.initial_origin == assertion.origin
+                    parts
+                        .cases
+                        .iter()
+                        .any(|case| case.initial_origin == assertion.origin)
                         || parts.handler.parameter_sources.iter().any(|source| {
                             source.subject == assertion.subject
                                 && source.relation == assertion.relation
@@ -6267,7 +6312,10 @@ pub fn elaborate_canonical_source_package_v1(
             }
             CstKind::TextAssertion(assertion) => {
                 if scalar_parts.iter().any(|parts| {
-                    parts.initial_origin == assertion.origin
+                    parts
+                        .cases
+                        .iter()
+                        .any(|case| case.initial_origin == assertion.origin)
                         || parts.handler.parameter_sources.iter().any(|source| {
                             source.subject == assertion.subject
                                 && source.relation == assertion.relation
@@ -10012,61 +10060,68 @@ fn scalar_handler_parts(
                         b"z" => assertion.z,
                         _ => return None,
                     };
-                    Some((assertion.origin, CanonicalScalarValueV1::Number(value)))
+                    Some(ScalarHandlerCase {
+                        subject: assertion.subject.clone(),
+                        initial_origin: assertion.origin,
+                        initial_value: CanonicalScalarValueV1::Number(value),
+                    })
                 }
                 CstKind::NumberAssertion(assertion) if assertion.relation == handler.relation => {
-                    Some((
-                        assertion.origin,
-                        CanonicalScalarValueV1::Number(assertion.value),
-                    ))
+                    Some(ScalarHandlerCase {
+                        subject: assertion.subject.clone(),
+                        initial_origin: assertion.origin,
+                        initial_value: CanonicalScalarValueV1::Number(assertion.value),
+                    })
                 }
                 CstKind::BooleanAssertion(assertion) if assertion.relation == handler.relation => {
-                    Some((
-                        assertion.origin,
-                        CanonicalScalarValueV1::Boolean(assertion.value),
-                    ))
+                    Some(ScalarHandlerCase {
+                        subject: assertion.subject.clone(),
+                        initial_origin: assertion.origin,
+                        initial_value: CanonicalScalarValueV1::Boolean(assertion.value),
+                    })
                 }
                 CstKind::SymbolAssertion(assertion) if assertion.relation == handler.relation => {
-                    Some((
-                        assertion.origin,
-                        CanonicalScalarValueV1::Symbol(assertion.value.clone()),
-                    ))
+                    Some(ScalarHandlerCase {
+                        subject: assertion.subject.clone(),
+                        initial_origin: assertion.origin,
+                        initial_value: CanonicalScalarValueV1::Symbol(assertion.value.clone()),
+                    })
                 }
                 CstKind::TextAssertion(assertion) if assertion.relation == handler.relation => {
-                    Some((
-                        assertion.origin,
-                        CanonicalScalarValueV1::Text(assertion.value.clone()),
-                    ))
+                    Some(ScalarHandlerCase {
+                        subject: assertion.subject.clone(),
+                        initial_origin: assertion.origin,
+                        initial_value: CanonicalScalarValueV1::Text(assertion.value.clone()),
+                    })
                 }
                 _ => None,
             })
             .collect::<Vec<_>>();
-        match assertions.as_slice() {
-            [(initial_origin, initial_value)]
-                if scalar_expression_matches_value(&handler.result, initial_value) =>
-            {
-                parts.push(ScalarHandlerParts {
-                    handler,
-                    initial_origin: *initial_origin,
-                    initial_value: initial_value.clone(),
-                });
-            }
-            [_] => {
-                return Err(CanonicalSourceErrorV1::InvalidScalarHandler {
-                    origin: handler.origin,
-                });
-            }
-            [] => {
-                return Err(CanonicalSourceErrorV1::MissingScalarInitialAssertion {
-                    origin: handler.origin,
-                });
-            }
-            _ => {
-                return Err(CanonicalSourceErrorV1::AmbiguousScalarInitialAssertion {
-                    origin: handler.origin,
-                });
-            }
+        if assertions.is_empty() {
+            return Err(CanonicalSourceErrorV1::MissingScalarInitialAssertion {
+                origin: handler.origin,
+            });
         }
+        if assertions.iter().any(|initial| {
+            !scalar_expression_matches_value(&handler.result, &initial.initial_value)
+        }) {
+            return Err(CanonicalSourceErrorV1::InvalidScalarHandler {
+                origin: handler.origin,
+            });
+        }
+        let mut subjects = BTreeSet::new();
+        if assertions
+            .iter()
+            .any(|initial| !subjects.insert(initial.subject.clone()))
+        {
+            return Err(CanonicalSourceErrorV1::AmbiguousScalarInitialAssertion {
+                origin: handler.origin,
+            });
+        }
+        parts.push(ScalarHandlerParts {
+            handler,
+            cases: assertions,
+        });
     }
     Ok(parts)
 }

@@ -1,0 +1,45 @@
+F64
+Loot
+LootState
+hidden
+acquired
+
+relation carried-distance
+  reads {loot: Loot} carried distance {value: F64}
+  subject loot
+  mode given loot yields value: one
+
+relation loot-state
+  reads {loot: Loot} loot state {value: LootState}
+  subject loot
+  mode given loot yields value: one
+
+ashen-key: Loot
+cephorium-cache: Loot
+hidden: LootState
+acquired: LootState
+
+ashen-key carried distance 1.0
+cephorium-cache carried distance 2.0
+ashen-key loot state acquired
+cephorium-cache loot state hidden
+
+bind keyboard LootItem down to acquire-loot
+
+on acquire-loot ?loot
+  when
+    ?loot loot state ?state
+  withdraw
+    ?loot loot state ?state
+  include
+    ?loot loot state acquired
+
+on carry-loot ?loot
+  when
+    ?loot carried distance ?distance
+    ?loot loot state ?state
+    ?state = acquired
+  withdraw
+    ?loot carried distance ?distance
+  include
+    ?loot carried distance ?distance + 1.0
