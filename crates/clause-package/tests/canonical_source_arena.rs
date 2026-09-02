@@ -17,6 +17,11 @@ const MULTI_REFERENT_SCALAR_HANDLER: &str = include_str!(concat!(
     "/../../test-vectors/authoring/multi-referent-scalar-handler.clause"
 ));
 
+const STRUCTURED_RELATION_REPLACEMENT: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../test-vectors/authoring/structured-relation-replacement.clause"
+));
+
 fn raw_id(tag: u8) -> [u8; IDENTITY_BYTES] {
     let mut bytes = [0; IDENTITY_BYTES];
     bytes[0] = tag;
@@ -72,6 +77,51 @@ fn scalar_handler_lowers_one_deterministic_rule_per_referent() {
         compile_source(&duplicate, 50),
         Err(CanonicalSourceErrorV1::AmbiguousScalarInitialAssertion { .. })
     ));
+}
+
+#[test]
+fn structured_handler_copies_one_typed_value_per_referent_atomically() {
+    let compiled = compile_source(STRUCTURED_RELATION_REPLACEMENT, 51)
+        .expect("one structured handler specializes every joined referent row");
+    let handler = compiled
+        .executable_handlers
+        .iter()
+        .find(|handler| handler.designation == b"reset-loot-position")
+        .expect("the structured replacement handler is executable");
+    assert_eq!(handler.trigger, CanonicalHandlerTriggerV1::External);
+    assert_eq!(handler.rules.len(), 2);
+
+    let subjects = handler
+        .rules
+        .iter()
+        .map(|rule| {
+            assert_eq!(rule.assignments.len(), 3);
+            let target_subjects = rule
+                .assignments
+                .iter()
+                .map(|assignment| assignment.target.subject.as_slice())
+                .collect::<BTreeSet<_>>();
+            if target_subjects.len() != 1 {
+                panic!("one atomic rule only mutates one joined referent")
+            }
+            let subject = target_subjects
+                .iter()
+                .next()
+                .copied()
+                .expect("one target subject was established");
+            assert!(rule.assignments.iter().all(|assignment| matches!(
+                &assignment.value,
+                CanonicalExecutableExpressionV1::State(source)
+                    if source.subject.as_slice() == subject
+                        && source.relation_designation == b"loot-origin-position"
+            )));
+            subject
+        })
+        .collect::<BTreeSet<_>>();
+    assert_eq!(
+        subjects,
+        BTreeSet::from([b"ashen-key".as_slice(), b"cephorium-cache".as_slice()]),
+    );
 }
 
 const SCALAR_PARAMETER_WORLD: &str = r#"F64

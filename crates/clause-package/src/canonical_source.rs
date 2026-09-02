@@ -1047,7 +1047,14 @@ struct GeneralAssignmentCst {
 struct GeneralReplacementCst {
     assignments: Vec<GeneralAssignmentCst>,
     aggregate_binding: Option<Vec<u8>>,
+    aggregate_result: Option<GeneralAggregateResultCst>,
     required_sources: Vec<ScalarParameterSourceCst>,
+}
+
+struct GeneralAggregateResultCst {
+    parameter: Vec<u8>,
+    shape: Vec<u8>,
+    fields: Vec<(Vec<u8>, Vec<u8>)>,
 }
 
 #[derive(Clone, Debug)]
@@ -1083,8 +1090,44 @@ struct ScalarHandlerParts<'a> {
 #[derive(Clone)]
 struct ScalarHandlerCase {
     subject: Vec<u8>,
+    components: Vec<ScalarHandlerComponentCase>,
+}
+
+#[derive(Clone)]
+struct ScalarHandlerComponentCase {
+    field: Option<Vec<u8>>,
     initial_origin: CanonicalSourceOriginV1,
     initial_value: CanonicalScalarValueV1,
+    parameter_sources: Vec<ScalarParameterSourceCst>,
+}
+
+fn scalar_parts_use_initial(
+    parts: &ScalarHandlerParts<'_>,
+    origin: CanonicalSourceOriginV1,
+) -> bool {
+    parts
+        .cases
+        .iter()
+        .flat_map(|case| &case.components)
+        .any(|component| component.initial_origin == origin)
+}
+
+fn scalar_parts_use_parameter(
+    parts: &ScalarHandlerParts<'_>,
+    subject: &[u8],
+    relation: &[u8],
+    has_field: bool,
+) -> bool {
+    parts
+        .cases
+        .iter()
+        .flat_map(|case| &case.components)
+        .flat_map(|component| &component.parameter_sources)
+        .any(|source| {
+            source.subject == subject
+                && source.relation == relation
+                && source.field.is_some() == has_field
+        })
 }
 
 #[derive(Clone, Copy)]
@@ -1823,15 +1866,13 @@ fn allocation_requests(
                         .contains(&assertion.origin)
                     })
                     || scalar.iter().any(|parts| {
-                        parts
-                            .cases
-                            .iter()
-                            .any(|case| case.initial_origin == assertion.origin)
-                            || parts.handler.parameter_sources.iter().any(|source| {
-                                source.subject == assertion.subject
-                                    && source.relation == assertion.relation
-                                    && source.field.is_some()
-                            })
+                        scalar_parts_use_initial(parts, assertion.origin)
+                            || scalar_parts_use_parameter(
+                                parts,
+                                &assertion.subject,
+                                &assertion.relation,
+                                true,
+                            )
                     })
                     || declared_state_relation(cst, &assertion.relation)
                 {
@@ -1855,15 +1896,13 @@ fn allocation_requests(
                 if jump.is_some_and(|parts| parts.grounded.origin == assertion.origin)
                     || tick.is_some_and(|parts| parts.grounded.origin == assertion.origin)
                     || scalar.iter().any(|parts| {
-                        parts
-                            .cases
-                            .iter()
-                            .any(|case| case.initial_origin == assertion.origin)
-                            || parts.handler.parameter_sources.iter().any(|source| {
-                                source.subject == assertion.subject
-                                    && source.relation == assertion.relation
-                                    && source.field.is_none()
-                            })
+                        scalar_parts_use_initial(parts, assertion.origin)
+                            || scalar_parts_use_parameter(
+                                parts,
+                                &assertion.subject,
+                                &assertion.relation,
+                                false,
+                            )
                     })
                     || declared_state_relation(cst, &assertion.relation)
                 {
@@ -1877,15 +1916,13 @@ fn allocation_requests(
             CstKind::NumberAssertion(assertion) => {
                 if jump.is_some_and(|parts| parts.jump_speed.origin == assertion.origin)
                     || scalar.iter().any(|parts| {
-                        parts
-                            .cases
-                            .iter()
-                            .any(|case| case.initial_origin == assertion.origin)
-                            || parts.handler.parameter_sources.iter().any(|source| {
-                                source.subject == assertion.subject
-                                    && source.relation == assertion.relation
-                                    && source.field.is_none()
-                            })
+                        scalar_parts_use_initial(parts, assertion.origin)
+                            || scalar_parts_use_parameter(
+                                parts,
+                                &assertion.subject,
+                                &assertion.relation,
+                                false,
+                            )
                     })
                     || tick.is_some_and(|parts| {
                         [
@@ -1910,15 +1947,13 @@ fn allocation_requests(
             }
             CstKind::SymbolAssertion(assertion) => {
                 if scalar.iter().any(|parts| {
-                    parts
-                        .cases
-                        .iter()
-                        .any(|case| case.initial_origin == assertion.origin)
-                        || parts.handler.parameter_sources.iter().any(|source| {
-                            source.subject == assertion.subject
-                                && source.relation == assertion.relation
-                                && source.field.is_none()
-                        })
+                    scalar_parts_use_initial(parts, assertion.origin)
+                        || scalar_parts_use_parameter(
+                            parts,
+                            &assertion.subject,
+                            &assertion.relation,
+                            false,
+                        )
                 }) || declared_state_relation(cst, &assertion.relation)
                 {
                     requested.push(AllocationRequest {
@@ -1930,15 +1965,13 @@ fn allocation_requests(
             }
             CstKind::TextAssertion(assertion) => {
                 if scalar.iter().any(|parts| {
-                    parts
-                        .cases
-                        .iter()
-                        .any(|case| case.initial_origin == assertion.origin)
-                        || parts.handler.parameter_sources.iter().any(|source| {
-                            source.subject == assertion.subject
-                                && source.relation == assertion.relation
-                                && source.field.is_none()
-                        })
+                    scalar_parts_use_initial(parts, assertion.origin)
+                        || scalar_parts_use_parameter(
+                            parts,
+                            &assertion.subject,
+                            &assertion.relation,
+                            false,
+                        )
                 }) || declared_state_relation(cst, &assertion.relation)
                 {
                     requested.push(AllocationRequest {
@@ -2585,7 +2618,27 @@ fn selected_general_handler_subjects(
     handler: &GeneralHandlerCst,
 ) -> Result<Vec<Vec<u8>>, CanonicalSourceErrorV1> {
     let subjects = concrete_general_handler_subjects(cst, handler)?;
-    if subjects.len() > 1 && handler.selectors.is_empty() {
+    let has_indirect_variable_source = handler
+        .parameter_sources
+        .iter()
+        .chain(handler.selectors.iter().map(|selector| &selector.source))
+        .chain(&handler.membership_sources)
+        .chain(&handler.required_sources)
+        .chain(&handler.removals)
+        .chain(
+            handler
+                .assignments
+                .iter()
+                .chain(&handler.insertions)
+                .map(|assignment| &assignment.target),
+        )
+        .any(|source| source.subject.starts_with(b"?") && source.subject != handler.subject);
+    if subjects.len() > 1
+        && handler.selectors.is_empty()
+        && handler.predicates.is_empty()
+        && handler.boolean_conditions.is_empty()
+        && has_indirect_variable_source
+    {
         return Err(CanonicalSourceErrorV1::AmbiguousExecutableBinding {
             origin: handler.origin,
         });
@@ -3216,6 +3269,23 @@ fn resolve_general_parameter_states(
     origin: CanonicalSourceOriginV1,
     allow_independent_subjects: bool,
 ) -> Result<Vec<GeneralBindingSolution>, CanonicalSourceErrorV1> {
+    let referent_domains_overlap = |left: &[u8], right: &[u8]| {
+        left == right
+            || cst.items.iter().any(|item| {
+                let CstKind::Binding(binding) = &item.kind else {
+                    return false;
+                };
+                matches!(&binding.value, CanonicalScalarValueV1::Symbol(domain) if domain == left)
+                    && cst.items.iter().any(|candidate| {
+                        matches!(
+                            &candidate.kind,
+                            CstKind::Binding(other)
+                                if other.subject == binding.subject
+                                    && matches!(&other.value, CanonicalScalarValueV1::Symbol(domain) if domain == right)
+                        )
+                    })
+            })
+    };
     let mut planned = Vec::with_capacity(sources.len());
     for source in sources {
         let relation = resolved_state_relation(cst, plan, &source.relation, origin)?;
@@ -3310,7 +3380,9 @@ fn resolve_general_parameter_states(
         let producer = producers
             .get(source.source.subject.as_slice())
             .ok_or(CanonicalSourceErrorV1::MissingExecutableBinding { origin })?;
-        if !producer.singleton_forward_mode || producer.value_domain != source.subject_domain {
+        if !producer.singleton_forward_mode
+            || !referent_domains_overlap(&producer.value_domain, &source.subject_domain)
+        {
             return Err(CanonicalSourceErrorV1::MissingExecutableBinding { origin });
         }
     }
@@ -4912,27 +4984,51 @@ fn checked_executable_handlers(
     for parts in scalar {
         let mut rules = Vec::with_capacity(parts.cases.len());
         for case in &parts.cases {
-            let current = state_ref_for_origin(
-                cst,
-                plan,
-                case.initial_origin,
-                parts.handler.field.as_deref(),
-            )?;
-            let initial_entities =
-                BTreeMap::from([(parts.handler.subject.clone(), current.subject.clone())]);
-            let (parameters, entities) = resolve_parameter_states(
-                cst,
-                plan,
-                &parts.handler.parameter_sources,
-                initial_entities,
-                parts.handler.origin,
-            )?;
-            let mut predicates = canonical_scalar_executable_predicates(
-                &parts.handler.predicates,
-                &current,
-                &parameters,
-                parts.handler.origin,
-            )?;
+            let mut assignments = Vec::with_capacity(case.components.len());
+            let mut predicates = Vec::new();
+            let mut entities =
+                BTreeMap::from([(parts.handler.subject.clone(), case.subject.clone())]);
+            for component in &case.components {
+                let current = state_ref_for_origin(
+                    cst,
+                    plan,
+                    component.initial_origin,
+                    component.field.as_deref(),
+                )?;
+                let (parameters, component_entities) = resolve_parameter_states(
+                    cst,
+                    plan,
+                    &component.parameter_sources,
+                    entities.clone(),
+                    parts.handler.origin,
+                )?;
+                for (parameter, subject) in component_entities {
+                    if let Some(previous) = entities.insert(parameter, subject.clone())
+                        && previous != subject
+                    {
+                        return Err(CanonicalSourceErrorV1::AmbiguousExecutableBinding {
+                            origin: parts.handler.origin,
+                        });
+                    }
+                }
+                if assignments.is_empty() {
+                    predicates.extend(canonical_scalar_executable_predicates(
+                        &parts.handler.predicates,
+                        &current,
+                        &parameters,
+                        parts.handler.origin,
+                    )?);
+                }
+                assignments.push(CanonicalExecutableAssignmentV1 {
+                    target: current.clone(),
+                    value: canonical_scalar_executable_expression(
+                        &parts.handler.result,
+                        &current,
+                        &parameters,
+                        parts.handler.origin,
+                    )?,
+                });
+            }
             predicates.extend(
                 parts
                     .handler
@@ -4948,22 +5044,21 @@ fn checked_executable_handlers(
                     })
                     .collect::<Result<Vec<_>, CanonicalSourceErrorV1>>()?,
             );
+            assignments.sort_by(|left, right| left.target.cmp(&right.target));
+            let key = assignments
+                .first()
+                .map(|assignment| assignment.target.clone())
+                .ok_or(CanonicalSourceErrorV1::InvalidScalarHandler {
+                    origin: parts.handler.origin,
+                })?;
             let rule = CanonicalExecutableRuleV1 {
                 predicates,
                 required_present: vec![],
                 required_absent: vec![],
-                assignments: vec![CanonicalExecutableAssignmentV1 {
-                    target: current.clone(),
-                    value: canonical_scalar_executable_expression(
-                        &parts.handler.result,
-                        &current,
-                        &parameters,
-                        parts.handler.origin,
-                    )?,
-                }],
+                assignments,
                 removals: vec![],
             };
-            rules.push((current, rule));
+            rules.push((key, rule));
         }
         rules.sort_by(|(left, _), (right, _)| left.cmp(right));
         handlers.push(CanonicalExecutableHandlerV1 {
@@ -5490,15 +5585,20 @@ fn checked_canonical_source_execution_v1(
     let scalar_handlers = scalar_parts
         .iter()
         .flat_map(|parts| {
-            parts.cases.iter().map(|case| CanonicalScalarHandlerV1 {
-                artifact: cst.artifact,
-                handler_origin: parts.handler.origin,
-                initial_assertion_origin: case.initial_origin,
-                include_origin: parts.handler.include.origin,
-                initial_value: case.initial_value.clone(),
-                parameters: parts.handler.parameters.clone(),
-                predicates: parts.handler.predicates.clone(),
-                result: parts.handler.result.clone(),
+            parts.cases.iter().filter_map(|case| {
+                let [component] = case.components.as_slice() else {
+                    return None;
+                };
+                Some(CanonicalScalarHandlerV1 {
+                    artifact: cst.artifact,
+                    handler_origin: parts.handler.origin,
+                    initial_assertion_origin: component.initial_origin,
+                    include_origin: parts.handler.include.origin,
+                    initial_value: component.initial_value.clone(),
+                    parameters: parts.handler.parameters.clone(),
+                    predicates: parts.handler.predicates.clone(),
+                    result: parts.handler.result.clone(),
+                })
             })
         })
         .collect();
@@ -6144,11 +6244,13 @@ pub fn elaborate_canonical_source_package_v1(
                         .contains(&assertion.origin)
                     })
                     || scalar_parts.iter().any(|parts| {
-                        parts.handler.parameter_sources.iter().any(|source| {
-                            source.subject == assertion.subject
-                                && source.relation == assertion.relation
-                                && source.field.is_some()
-                        })
+                        scalar_parts_use_initial(parts, assertion.origin)
+                            || scalar_parts_use_parameter(
+                                parts,
+                                &assertion.subject,
+                                &assertion.relation,
+                                true,
+                            )
                     })
                     || declared_state_relation(cst, &assertion.relation)
                 {
@@ -6198,15 +6300,13 @@ pub fn elaborate_canonical_source_package_v1(
                 if jump_parts.is_some_and(|parts| parts.grounded.origin == assertion.origin)
                     || tick_parts.is_some_and(|parts| parts.grounded.origin == assertion.origin)
                     || scalar_parts.iter().any(|parts| {
-                        parts
-                            .cases
-                            .iter()
-                            .any(|case| case.initial_origin == assertion.origin)
-                            || parts.handler.parameter_sources.iter().any(|source| {
-                                source.subject == assertion.subject
-                                    && source.relation == assertion.relation
-                                    && source.field.is_none()
-                            })
+                        scalar_parts_use_initial(parts, assertion.origin)
+                            || scalar_parts_use_parameter(
+                                parts,
+                                &assertion.subject,
+                                &assertion.relation,
+                                false,
+                            )
                     })
                     || declared_state_relation(cst, &assertion.relation)
                 {
@@ -6233,15 +6333,13 @@ pub fn elaborate_canonical_source_package_v1(
             CstKind::NumberAssertion(assertion) => {
                 if jump_parts.is_some_and(|parts| parts.jump_speed.origin == assertion.origin)
                     || scalar_parts.iter().any(|parts| {
-                        parts
-                            .cases
-                            .iter()
-                            .any(|case| case.initial_origin == assertion.origin)
-                            || parts.handler.parameter_sources.iter().any(|source| {
-                                source.subject == assertion.subject
-                                    && source.relation == assertion.relation
-                                    && source.field.is_none()
-                            })
+                        scalar_parts_use_initial(parts, assertion.origin)
+                            || scalar_parts_use_parameter(
+                                parts,
+                                &assertion.subject,
+                                &assertion.relation,
+                                false,
+                            )
                     })
                     || tick_parts.is_some_and(|parts| {
                         [
@@ -6279,15 +6377,13 @@ pub fn elaborate_canonical_source_package_v1(
             }
             CstKind::SymbolAssertion(assertion) => {
                 if scalar_parts.iter().any(|parts| {
-                    parts
-                        .cases
-                        .iter()
-                        .any(|case| case.initial_origin == assertion.origin)
-                        || parts.handler.parameter_sources.iter().any(|source| {
-                            source.subject == assertion.subject
-                                && source.relation == assertion.relation
-                                && source.field.is_none()
-                        })
+                    scalar_parts_use_initial(parts, assertion.origin)
+                        || scalar_parts_use_parameter(
+                            parts,
+                            &assertion.subject,
+                            &assertion.relation,
+                            false,
+                        )
                 }) || declared_state_relation(cst, &assertion.relation)
                 {
                     let producer = assertion_producer(&assertion.subject, &assertion.relation);
@@ -6312,15 +6408,13 @@ pub fn elaborate_canonical_source_package_v1(
             }
             CstKind::TextAssertion(assertion) => {
                 if scalar_parts.iter().any(|parts| {
-                    parts
-                        .cases
-                        .iter()
-                        .any(|case| case.initial_origin == assertion.origin)
-                        || parts.handler.parameter_sources.iter().any(|source| {
-                            source.subject == assertion.subject
-                                && source.relation == assertion.relation
-                                && source.field.is_none()
-                        })
+                    scalar_parts_use_initial(parts, assertion.origin)
+                        || scalar_parts_use_parameter(
+                            parts,
+                            &assertion.subject,
+                            &assertion.relation,
+                            false,
+                        )
                 }) || declared_state_relation(cst, &assertion.relation)
                 {
                     let producer = assertion_producer(&assertion.subject, &assertion.relation);
@@ -7682,18 +7776,29 @@ fn parse_general_handler(
         let Some(sources) = parse_general_state_declaration(condition, subject) else {
             return Ok(None);
         };
-        for source in sources {
+        for mut source in sources {
             if seen_arguments.contains(&source.parameter) {
                 membership_sources.push(source);
                 continue;
             }
-            if scalar_bindings.contains_key(&source.parameter)
-                || parameter_sources
-                    .insert(source.parameter.clone(), source)
-                    .is_some()
-            {
+            if scalar_bindings.contains_key(&source.parameter) {
                 return Ok(None);
             }
+            if parameter_sources.contains_key(&source.parameter) {
+                let original = source.parameter.clone();
+                let alias = format!(
+                    "\0general-join-{}-{}",
+                    String::from_utf8_lossy(&original),
+                    parameter_sources.len(),
+                )
+                .into_bytes();
+                predicates.push(CanonicalScalarPredicateV1::Equal(
+                    CanonicalScalarExpressionV1::Parameter(original),
+                    CanonicalScalarExpressionV1::Parameter(alias.clone()),
+                ));
+                source.parameter = alias;
+            }
+            parameter_sources.insert(source.parameter.clone(), source);
         }
     }
 
@@ -7734,6 +7839,26 @@ fn parse_general_handler(
                 return Ok(None);
             }
         }
+        if let Some(result) = &replacement.aggregate_result {
+            let Some(source) = parameter_sources.remove(&result.parameter) else {
+                return Ok(None);
+            };
+            if source.shape.is_some() || source.field.is_some() {
+                return Ok(None);
+            }
+            for (field, parameter) in &result.fields {
+                let mut component = source.clone();
+                component.parameter = parameter.clone();
+                component.shape = Some(result.shape.clone());
+                component.field = Some(field.clone());
+                if parameter_sources
+                    .insert(parameter.clone(), component)
+                    .is_some()
+                {
+                    return Ok(None);
+                }
+            }
+        }
         assignments.extend(replacement.assignments.clone());
         required_sources.extend(replacement.required_sources.clone());
         used_includes.insert(*include_index);
@@ -7767,7 +7892,6 @@ fn parse_general_handler(
     if assignments.is_empty() && insertions.is_empty() && removals.is_empty() {
         return Ok(None);
     }
-
     let mut used_parameters = BTreeSet::new();
     for predicate in &predicates {
         let (left, right) = match predicate {
@@ -7972,6 +8096,39 @@ fn parse_general_assignments(
     let targets = parse_general_state_declaration(withdraw, handler_subject)?;
     if let Some((withdraw_prefix, withdraw_shape, withdraw_fields)) = split_shape_subject(withdraw)
     {
+        if let Some(result_parameter) = include.strip_prefix(&format!("{withdraw_prefix} "))
+            && result_parameter.starts_with('?')
+            && result_parameter.split_whitespace().count() == 1
+        {
+            let current = parse_shape_fields(withdraw_fields)?;
+            let fields = current
+                .iter()
+                .map(|(field, _)| {
+                    (
+                        field.as_bytes().to_vec(),
+                        format!("\0general-aggregate-result-{field}").into_bytes(),
+                    )
+                })
+                .collect::<Vec<_>>();
+            let assignments = targets
+                .into_iter()
+                .zip(&fields)
+                .map(|(target, (_, parameter))| GeneralAssignmentCst {
+                    target,
+                    value: CanonicalScalarExpressionV1::Parameter(parameter.clone()),
+                })
+                .collect();
+            return Some(GeneralReplacementCst {
+                assignments,
+                aggregate_binding: None,
+                aggregate_result: Some(GeneralAggregateResultCst {
+                    parameter: result_parameter.as_bytes().to_vec(),
+                    shape: withdraw_shape.as_bytes().to_vec(),
+                    fields,
+                }),
+                required_sources: vec![],
+            });
+        }
         let (include_prefix, include_shape, include_fields) = split_shape_subject(include)?;
         if include_prefix != withdraw_prefix || include_shape != withdraw_shape {
             return None;
@@ -8001,6 +8158,7 @@ fn parse_general_assignments(
         return Some(GeneralReplacementCst {
             assignments,
             aggregate_binding: None,
+            aggregate_result: None,
             required_sources: vec![],
         });
     }
@@ -8035,6 +8193,7 @@ fn parse_general_assignments(
         return Some(GeneralReplacementCst {
             assignments,
             aggregate_binding: Some(aggregate_binding),
+            aggregate_result: None,
             required_sources,
         });
     }
@@ -8045,6 +8204,7 @@ fn parse_general_assignments(
         return Some(GeneralReplacementCst {
             assignments: vec![GeneralAssignmentCst { target, value }],
             aggregate_binding: None,
+            aggregate_result: None,
             required_sources: vec![],
         });
     }
@@ -10049,6 +10209,137 @@ fn scalar_handler_parts(
         .collect::<Vec<_>>();
     let mut parts = Vec::with_capacity(handlers.len());
     for handler in handlers {
+        if handler.field.is_none()
+            && let Some((shape, fields)) = state_relation_shape(cst, &handler.relation)
+        {
+            let CanonicalScalarExpressionV1::Parameter(result_parameter) = &handler.result else {
+                return Err(CanonicalSourceErrorV1::InvalidScalarHandler {
+                    origin: handler.origin,
+                });
+            };
+            let result_sources = handler
+                .parameter_sources
+                .iter()
+                .filter(|source| source.parameter == *result_parameter)
+                .collect::<Vec<_>>();
+            let [result_source] = result_sources.as_slice() else {
+                return Err(CanonicalSourceErrorV1::InvalidScalarHandler {
+                    origin: handler.origin,
+                });
+            };
+            let Some((result_shape, result_fields)) =
+                state_relation_shape(cst, &result_source.relation)
+            else {
+                return Err(CanonicalSourceErrorV1::InvalidScalarHandler {
+                    origin: handler.origin,
+                });
+            };
+            if result_source.subject != handler.subject
+                || result_source.shape.is_some()
+                || result_source.field.is_some()
+                || result_shape != shape
+                || result_fields
+                    .iter()
+                    .map(|field| (&field.name, &field.domain))
+                    .ne(fields.iter().map(|field| (&field.name, &field.domain)))
+            {
+                return Err(CanonicalSourceErrorV1::InvalidScalarHandler {
+                    origin: handler.origin,
+                });
+            }
+
+            let mut cases = Vec::new();
+            for item in &cst.items {
+                let (subject, initial_origin, initial_values) = match &item.kind {
+                    CstKind::VectorAssertion(assertion)
+                        if assertion.relation == handler.relation =>
+                    {
+                        let values = fields
+                            .iter()
+                            .map(|field| match field.name.as_slice() {
+                                b"x" => Some(CanonicalScalarValueV1::Number(assertion.x)),
+                                b"y" => Some(CanonicalScalarValueV1::Number(assertion.y)),
+                                b"z" => Some(CanonicalScalarValueV1::Number(assertion.z)),
+                                _ => None,
+                            })
+                            .collect::<Option<Vec<_>>>()
+                            .ok_or(CanonicalSourceErrorV1::InvalidScalarHandler {
+                                origin: handler.origin,
+                            })?;
+                        (assertion.subject.clone(), assertion.origin, values)
+                    }
+                    CstKind::ShapeAssertion(assertion)
+                        if assertion.relation == handler.relation =>
+                    {
+                        if assertion.shape != shape {
+                            return Err(CanonicalSourceErrorV1::InvalidScalarHandler {
+                                origin: handler.origin,
+                            });
+                        }
+                        let values = fields
+                            .iter()
+                            .map(|field| {
+                                assertion
+                                    .fields
+                                    .iter()
+                                    .find(|actual| actual.name == field.name)
+                                    .map(|actual| actual.value.clone())
+                            })
+                            .collect::<Option<Vec<_>>>()
+                            .ok_or(CanonicalSourceErrorV1::InvalidScalarHandler {
+                                origin: handler.origin,
+                            })?;
+                        (assertion.subject.clone(), assertion.origin, values)
+                    }
+                    _ => continue,
+                };
+                let components = fields
+                    .iter()
+                    .zip(initial_values)
+                    .map(|(field, initial_value)| {
+                        let parameter_sources = handler
+                            .parameter_sources
+                            .iter()
+                            .cloned()
+                            .map(|mut source| {
+                                if source.parameter == *result_parameter {
+                                    source.shape = Some(shape.to_vec());
+                                    source.field = Some(field.name.clone());
+                                }
+                                source
+                            })
+                            .collect();
+                        ScalarHandlerComponentCase {
+                            field: Some(field.name.clone()),
+                            initial_origin,
+                            initial_value,
+                            parameter_sources,
+                        }
+                    })
+                    .collect();
+                cases.push(ScalarHandlerCase {
+                    subject,
+                    components,
+                });
+            }
+            if cases.is_empty() {
+                return Err(CanonicalSourceErrorV1::MissingScalarInitialAssertion {
+                    origin: handler.origin,
+                });
+            }
+            let mut subjects = BTreeSet::new();
+            if cases
+                .iter()
+                .any(|initial| !subjects.insert(initial.subject.clone()))
+            {
+                return Err(CanonicalSourceErrorV1::AmbiguousScalarInitialAssertion {
+                    origin: handler.origin,
+                });
+            }
+            parts.push(ScalarHandlerParts { handler, cases });
+            continue;
+        }
+
         let assertions = cst
             .items
             .iter()
@@ -10062,36 +10353,56 @@ fn scalar_handler_parts(
                     };
                     Some(ScalarHandlerCase {
                         subject: assertion.subject.clone(),
-                        initial_origin: assertion.origin,
-                        initial_value: CanonicalScalarValueV1::Number(value),
+                        components: vec![ScalarHandlerComponentCase {
+                            field: handler.field.clone(),
+                            initial_origin: assertion.origin,
+                            initial_value: CanonicalScalarValueV1::Number(value),
+                            parameter_sources: handler.parameter_sources.clone(),
+                        }],
                     })
                 }
                 CstKind::NumberAssertion(assertion) if assertion.relation == handler.relation => {
                     Some(ScalarHandlerCase {
                         subject: assertion.subject.clone(),
-                        initial_origin: assertion.origin,
-                        initial_value: CanonicalScalarValueV1::Number(assertion.value),
+                        components: vec![ScalarHandlerComponentCase {
+                            field: None,
+                            initial_origin: assertion.origin,
+                            initial_value: CanonicalScalarValueV1::Number(assertion.value),
+                            parameter_sources: handler.parameter_sources.clone(),
+                        }],
                     })
                 }
                 CstKind::BooleanAssertion(assertion) if assertion.relation == handler.relation => {
                     Some(ScalarHandlerCase {
                         subject: assertion.subject.clone(),
-                        initial_origin: assertion.origin,
-                        initial_value: CanonicalScalarValueV1::Boolean(assertion.value),
+                        components: vec![ScalarHandlerComponentCase {
+                            field: None,
+                            initial_origin: assertion.origin,
+                            initial_value: CanonicalScalarValueV1::Boolean(assertion.value),
+                            parameter_sources: handler.parameter_sources.clone(),
+                        }],
                     })
                 }
                 CstKind::SymbolAssertion(assertion) if assertion.relation == handler.relation => {
                     Some(ScalarHandlerCase {
                         subject: assertion.subject.clone(),
-                        initial_origin: assertion.origin,
-                        initial_value: CanonicalScalarValueV1::Symbol(assertion.value.clone()),
+                        components: vec![ScalarHandlerComponentCase {
+                            field: None,
+                            initial_origin: assertion.origin,
+                            initial_value: CanonicalScalarValueV1::Symbol(assertion.value.clone()),
+                            parameter_sources: handler.parameter_sources.clone(),
+                        }],
                     })
                 }
                 CstKind::TextAssertion(assertion) if assertion.relation == handler.relation => {
                     Some(ScalarHandlerCase {
                         subject: assertion.subject.clone(),
-                        initial_origin: assertion.origin,
-                        initial_value: CanonicalScalarValueV1::Text(assertion.value.clone()),
+                        components: vec![ScalarHandlerComponentCase {
+                            field: None,
+                            initial_origin: assertion.origin,
+                            initial_value: CanonicalScalarValueV1::Text(assertion.value.clone()),
+                            parameter_sources: handler.parameter_sources.clone(),
+                        }],
                     })
                 }
                 _ => None,
@@ -10103,7 +10414,9 @@ fn scalar_handler_parts(
             });
         }
         if assertions.iter().any(|initial| {
-            !scalar_expression_matches_value(&handler.result, &initial.initial_value)
+            initial.components.iter().any(|component| {
+                !scalar_expression_matches_value(&handler.result, &component.initial_value)
+            })
         }) {
             return Err(CanonicalSourceErrorV1::InvalidScalarHandler {
                 origin: handler.origin,
@@ -10124,6 +10437,40 @@ fn scalar_handler_parts(
         });
     }
     Ok(parts)
+}
+
+fn state_relation_shape<'a>(
+    cst: &'a CanonicalSourceCstV1,
+    surface: &[u8],
+) -> Option<(&'a [u8], &'a [ShapeField])> {
+    let relation = cst.items.iter().find_map(|item| match &item.kind {
+        CstKind::Relation(relation) if relation.surface == surface => Some(relation),
+        _ => None,
+    })?;
+    let subject = relation.subject.as_ref()?;
+    let produced = relation
+        .modes
+        .iter()
+        .filter(|mode| mode.known.iter().any(|role| role == subject))
+        .flat_map(|mode| &mode.produced)
+        .collect::<BTreeSet<_>>();
+    let produced = produced.iter().copied().collect::<Vec<_>>();
+    let [value] = produced.as_slice() else {
+        return None;
+    };
+    let domain = relation
+        .roles
+        .iter()
+        .find(|role| &role.name == *value)?
+        .domain
+        .as_slice();
+    cst.items.iter().find_map(|item| match &item.kind {
+        CstKind::Shape {
+            designation,
+            fields,
+        } if designation == domain => Some((designation.as_slice(), fields.as_slice())),
+        _ => None,
+    })
 }
 
 fn scalar_expression_matches_value(
