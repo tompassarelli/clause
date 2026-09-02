@@ -739,7 +739,7 @@ function decode_cse1_event(bytes) {
                                 })()
                                 : equivalent(tag, 15)
                                     ? (() => {
-                                        const diagnostic = parse_canonical_blob(bytes, 21, "CSE1 candidate rejection diagnostic");
+                                        const diagnostic = parse_blob(bytes, 21, cse1_max_bytes, "CSE1 candidate rejection diagnostic");
                                         if (!equivalent(diagnostic.next, bytes.length)) {
                                             (() => {
                                                 throw new Error("CSE1 candidate rejection has an invalid shape");

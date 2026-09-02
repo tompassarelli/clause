@@ -1283,9 +1283,10 @@ function decode_cse1_event(bytes: unknown): Cse1Event {
                   })()
                 : equivalent(tag, 15)
                   ? (() => {
-                      const diagnostic = parse_canonical_blob(
+                      const diagnostic = parse_blob(
                         bytes,
                         21,
+                        cse1_max_bytes,
                         "CSE1 candidate rejection diagnostic",
                       );
                       if (!equivalent(diagnostic.next, bytes.length)) {
