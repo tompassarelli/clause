@@ -4,7 +4,10 @@ use std::path::Path;
 use std::process::ExitCode;
 use std::time::{Duration, Instant};
 
-use clause_package::{CanonicalSourceProductionV1, Term, decode_canonical_term_bytes};
+use clause_package::{
+    CanonicalSourceProductionV1, Term, decode_canonical_term_bytes, project_nix_flake_v1,
+    render_nix_flake_v1,
+};
 use clause_runtime::projected_text_value_v1;
 use clause_substrate::compiler_package_v3::compiler_package_hash;
 use clause_workbench::{
@@ -12,7 +15,7 @@ use clause_workbench::{
     render_authoring_card_v1,
 };
 
-const USAGE: &str = "usage:\n  clause-workbench\n  clause-workbench source-loop SOURCE.clause\n  clause-workbench authoring-card [OUTPUT]\n  clause-workbench check-source FILE.clause\n  clause-workbench project-text SOURCE.clause HANDLER [OUTPUT]";
+const USAGE: &str = "usage:\n  clause-workbench\n  clause-workbench source-loop SOURCE.clause\n  clause-workbench authoring-card [OUTPUT]\n  clause-workbench check-source FILE.clause\n  clause-workbench project-text SOURCE.clause HANDLER [OUTPUT]\n  clause-workbench project-nix SOURCE.clause [OUTPUT]";
 
 fn main() -> ExitCode {
     let mut arguments = std::env::args_os().skip(1);
@@ -68,8 +71,57 @@ fn main() -> ExitCode {
                 destination.as_deref().map(Path::new),
             )
         }
+        Some(command) if command == OsStr::new("project-nix") => {
+            let Some(source) = arguments.next() else {
+                eprintln!("{USAGE}");
+                return ExitCode::FAILURE;
+            };
+            let destination = arguments.next();
+            if arguments.next().is_some() {
+                eprintln!("{USAGE}");
+                return ExitCode::FAILURE;
+            }
+            project_nix(Path::new(&source), destination.as_deref().map(Path::new))
+        }
         Some(_) => {
             eprintln!("{USAGE}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+fn project_nix(source: &Path, destination: Option<&Path>) -> ExitCode {
+    let exact_source = match std::fs::read(source) {
+        Ok(source) => source,
+        Err(error) => {
+            eprintln!("project-nix source read failed: {error}");
+            return ExitCode::FAILURE;
+        }
+    };
+    if let Err(error) = ResidentSourceWorkbenchV1::open(&exact_source) {
+        eprintln!("project-nix source open failed: {error}");
+        return ExitCode::FAILURE;
+    }
+    let flake = match project_nix_flake_v1(&exact_source) {
+        Ok(flake) => flake,
+        Err(error) => {
+            eprintln!("project-nix projection failed: {error}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let rendered = render_nix_flake_v1(&flake);
+    let result = if let Some(destination) = destination {
+        std::fs::write(destination, rendered.as_bytes())
+    } else {
+        let mut output = std::io::stdout().lock();
+        output
+            .write_all(rendered.as_bytes())
+            .and_then(|()| output.flush())
+    };
+    match result {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(error) => {
+            eprintln!("project-nix output failed: {error}");
             ExitCode::FAILURE
         }
     }

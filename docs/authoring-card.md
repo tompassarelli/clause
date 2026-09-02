@@ -6,6 +6,7 @@ Use that pin's workbench directly:
 
 - `clause-workbench authoring-card` prints this card.
 - `clause-workbench check-source FILE.clause` reads, elaborates, lowers, and opens the source in the resident execution workbench.
+- `clause-workbench project-nix FILE.clause [OUTPUT]` checks `using Nix` relations and renders their typed flake projection.
 
 ## Scalar state transition
 
@@ -457,4 +458,27 @@ on blade-two-hit ?defender
     ?defender vitality ?vitality - ?damage
     ?defender destabilization ?next-destabilization
     ?defender launch velocity (?impulse + ?growth * ?next-destabilization / ?threshold) / ?mass
+```
+
+## Relational Nix flake
+
+Selects the compiler-owned Nix vocabulary and describes a development shell entirely through typed focused relations.
+
+Catalog ID: `relational-nix-flake`
+
+```clause
+using Nix
+
+clause ∈ Flake
+  description "Clause development environment"
+  input nixpkgs from "github:NixOS/nixpkgs/nixos-unstable"
+  input rust-overlay from "github:oxalica/rust-overlay"
+  input rust-overlay follows nixpkgs
+  development shell clause-shell
+
+clause-shell
+  for x86_64-linux
+  imports nixpkgs
+  overlays rust-overlay
+  includes rust from "./rust-toolchain.toml"
 ```

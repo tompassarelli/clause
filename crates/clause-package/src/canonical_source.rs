@@ -573,6 +573,28 @@ pub struct CanonicalSourceCstV1 {
     artifact: CanonicalSourceArtifactIdV1,
     exact_source: Box<[u8]>,
     items: Vec<CstItem>,
+    vocabularies: Vec<CanonicalSourceVocabularyV1>,
+    subject_focuses: Vec<CanonicalSubjectFocusV1>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CanonicalSourceVocabularyV1 {
+    pub designation: Vec<u8>,
+    pub origin: CanonicalSourceOriginV1,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CanonicalFocusedEdgeV1 {
+    pub source: Vec<u8>,
+    pub origin: CanonicalSourceOriginV1,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CanonicalSubjectFocusV1 {
+    pub subject: Vec<u8>,
+    pub memberships: Vec<Vec<u8>>,
+    pub origin: CanonicalSourceOriginV1,
+    pub edges: Vec<CanonicalFocusedEdgeV1>,
 }
 
 impl CanonicalSourceCstV1 {
@@ -594,6 +616,16 @@ impl CanonicalSourceCstV1 {
         let start = usize::try_from(origin.start).ok()?;
         let end = usize::try_from(origin.end).ok()?;
         self.exact_source.get(start..end)
+    }
+
+    #[must_use]
+    pub fn vocabularies(&self) -> &[CanonicalSourceVocabularyV1] {
+        &self.vocabularies
+    }
+
+    #[must_use]
+    pub fn subject_focuses(&self) -> &[CanonicalSubjectFocusV1] {
+        &self.subject_focuses
     }
 }
 
@@ -1272,6 +1304,8 @@ pub fn read_canonical_source_v1(
         CanonicalSourceArtifactIdV1(domain_hash(SOURCE_ARTIFACT_DOMAIN, &[exact_source]));
     let lines = source_lines(source)?;
     let mut items = Vec::new();
+    let mut vocabularies = Vec::new();
+    let mut subject_focuses = Vec::new();
     let mut cursor = 0;
     while cursor < lines.len() {
         if lines[cursor].text.trim().is_empty() {
@@ -1301,7 +1335,19 @@ pub fn read_canonical_source_v1(
             start: block[0].start as u64,
             end: last.end as u64,
         };
-        items.push(parse_item(artifact, block, origin)?);
+        if block.iter().skip(1).all(|line| line.text.trim().is_empty())
+            && let Some(designation) = block[0].text.strip_prefix("using ")
+        {
+            vocabularies.push(CanonicalSourceVocabularyV1 {
+                designation: designation_bytes(designation, origin)?,
+                origin,
+            });
+            continue;
+        }
+        if let Some(focus) = parse_subject_focus(artifact, block, origin)? {
+            subject_focuses.push(focus);
+        }
+        items.extend(parse_items(artifact, block, origin)?);
     }
     retain_supported_boolean_derive_pairs(&mut items);
     validate_unique_designations(&items)?;
@@ -1309,6 +1355,8 @@ pub fn read_canonical_source_v1(
         artifact,
         exact_source: exact_source.into(),
         items,
+        vocabularies,
+        subject_focuses,
     })
 }
 
@@ -3140,6 +3188,63 @@ fn resolve_general_parameter_states(
             value_domain: general_source_value_domain(cst, &relation, source, origin)?,
             singleton_forward_mode: singleton_forward_mode(&relation),
         });
+    }
+
+    let mut shared_subjects = BTreeMap::<(Vec<u8>, Vec<u8>), BTreeSet<Vec<u8>>>::new();
+    for planned_source in &planned {
+        if !planned_source.source.subject.starts_with(b"?") {
+            continue;
+        }
+        shared_subjects
+            .entry((
+                planned_source.source.subject.clone(),
+                planned_source.subject_domain.clone(),
+            ))
+            .or_default()
+            .extend(
+                planned_source
+                    .candidates
+                    .iter()
+                    .map(|candidate| candidate.state.subject.clone()),
+            );
+    }
+    for (parameter, subject) in &initial_entities {
+        for planned_source in &planned {
+            if &planned_source.source.subject == parameter {
+                shared_subjects
+                    .entry((parameter.clone(), planned_source.subject_domain.clone()))
+                    .or_default()
+                    .insert(subject.clone());
+            }
+        }
+    }
+    for planned_source in &mut planned {
+        if !planned_source.candidates.is_empty() || !planned_source.source.subject.starts_with(b"?")
+        {
+            continue;
+        }
+        let Some(subjects) = shared_subjects.get(&(
+            planned_source.source.subject.clone(),
+            planned_source.subject_domain.clone(),
+        )) else {
+            continue;
+        };
+        for subject in subjects {
+            match canonical_state_ref(
+                cst,
+                plan,
+                subject,
+                &planned_source.source.relation,
+                planned_source.source.field.as_deref(),
+                origin,
+            ) {
+                Ok(state) => planned_source
+                    .candidates
+                    .push(GeneralStateCandidate { state, value: None }),
+                Err(CanonicalSourceErrorV1::MissingAllocation { .. }) => {}
+                Err(error) => return Err(error),
+            }
+        }
     }
 
     let producers = planned
@@ -5483,11 +5588,10 @@ pub fn elaborate_canonical_source_package_v1(
                 emissions.push(emission(plan, producer, slot, item.origin));
             }
             CstKind::Membership(membership) => {
-                if membership
-                    .domains
-                    .iter()
-                    .any(|domain| !named_formations.contains_key(domain))
-                {
+                if membership.domains.iter().any(|domain| {
+                    !named_formations.contains_key(domain)
+                        && !source_vocabulary_declares_domain(cst, domain)
+                }) {
                     return Err(CanonicalSourceErrorV1::MissingExecutableBinding {
                         origin: item.origin,
                     });
@@ -6241,6 +6345,14 @@ pub fn elaborate_canonical_source_package_v1(
     })
 }
 
+fn source_vocabulary_declares_domain(cst: &CanonicalSourceCstV1, domain: &[u8]) -> bool {
+    domain == b"Flake"
+        && cst
+            .vocabularies()
+            .iter()
+            .any(|vocabulary| vocabulary.designation == b"Nix")
+}
+
 impl SourceCardinality {
     const fn as_contract(self) -> CardinalityV2 {
         match self {
@@ -6634,6 +6746,158 @@ fn parse_item(
         CanonicalSourceProductionV1::Assertion,
         vec![],
     )?)
+}
+
+fn parse_items(
+    artifact: CanonicalSourceArtifactIdV1,
+    block: &[SourceLine<'_>],
+    origin: CanonicalSourceOriginV1,
+) -> Result<Vec<CstItem>, CanonicalSourceErrorV1> {
+    let Some(focus) = parse_subject_focus(artifact, block, origin)? else {
+        return parse_item(artifact, block, origin).map(|item| vec![item]);
+    };
+
+    let head = block[0];
+    let head_origin = line_origin(artifact, head);
+    let mut items = vec![parse_item(
+        artifact,
+        std::slice::from_ref(&head),
+        head_origin,
+    )?];
+    for edge in focus.edges {
+        let source = std::str::from_utf8(&edge.source)
+            .expect("canonical source focus edges are always valid UTF-8");
+        items.push(parse_focused_edge(&focus.subject, source, edge.origin)?);
+    }
+    Ok(items)
+}
+
+fn parse_subject_focus(
+    artifact: CanonicalSourceArtifactIdV1,
+    block: &[SourceLine<'_>],
+    origin: CanonicalSourceOriginV1,
+) -> Result<Option<CanonicalSubjectFocusV1>, CanonicalSourceErrorV1> {
+    let children = block
+        .iter()
+        .skip(1)
+        .filter(|line| !line.text.trim().is_empty())
+        .copied()
+        .collect::<Vec<_>>();
+    if children.is_empty() {
+        return Ok(None);
+    }
+    let head = block[0];
+    let head_origin = line_origin(artifact, head);
+    let (subject, memberships) = if head.text.contains(" ∈ ") {
+        let (subject, memberships) = parse_membership_group(head.text, head_origin)?;
+        (subject, memberships)
+    } else if !head.text.contains(char::is_whitespace) {
+        (designation_bytes(head.text, head_origin)?, Vec::new())
+    } else {
+        return Ok(None);
+    };
+    let edges = children
+        .into_iter()
+        .map(|child| {
+            let child_origin = line_origin(artifact, child);
+            if child.indent != 2 {
+                return Err(CanonicalSourceErrorV1::UnexpectedIndentation {
+                    origin: child_origin,
+                });
+            }
+            let source = child
+                .text
+                .get(2..)
+                .filter(|source| !source.is_empty())
+                .ok_or(CanonicalSourceErrorV1::UnexpectedIndentation {
+                    origin: child_origin,
+                })?;
+            Ok(CanonicalFocusedEdgeV1 {
+                source: source.as_bytes().to_vec(),
+                origin: child_origin,
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(Some(CanonicalSubjectFocusV1 {
+        subject,
+        memberships,
+        origin,
+        edges,
+    }))
+}
+
+fn parse_focused_edge(
+    subject: &[u8],
+    edge: &str,
+    origin: CanonicalSourceOriginV1,
+) -> Result<CstItem, CanonicalSourceErrorV1> {
+    let subject =
+        std::str::from_utf8(subject).expect("canonical source designations are always valid UTF-8");
+    let expanded = format!("{subject} {edge}");
+    if expanded.contains('∈') {
+        let (subject, domains) = parse_membership_group(&expanded, origin)?;
+        let mut emissions = Vec::new();
+        for domain in &domains {
+            emissions.push(CanonicalSourceEmissionV1 {
+                producer: assertion_producer(&subject, b"membership"),
+                slot: child_slot(CanonicalSourceProductionV1::Assertion, domain),
+                origin,
+                allocations: vec![],
+            });
+        }
+        return Ok(CstItem {
+            origin,
+            kind: CstKind::Membership(MembershipCst {
+                subject,
+                domains,
+                emissions,
+            }),
+        });
+    }
+    if let Some(assertion) = parse_vector_assertion(&expanded, origin)? {
+        return Ok(CstItem {
+            origin,
+            kind: CstKind::VectorAssertion(assertion),
+        });
+    }
+    if let Some(assertion) = parse_shape_assertion(&expanded, origin)? {
+        return Ok(CstItem {
+            origin,
+            kind: CstKind::ShapeAssertion(assertion),
+        });
+    }
+    if let Some(assertion) = parse_boolean_assertion(&expanded, origin) {
+        return Ok(CstItem {
+            origin,
+            kind: CstKind::BooleanAssertion(assertion),
+        });
+    }
+    if let Some(assertion) = parse_number_assertion(&expanded, origin) {
+        return Ok(CstItem {
+            origin,
+            kind: CstKind::NumberAssertion(assertion),
+        });
+    }
+    if let Some(assertion) = parse_text_assertion(&expanded, origin) {
+        return Ok(CstItem {
+            origin,
+            kind: CstKind::TextAssertion(assertion),
+        });
+    }
+    if let Some(assertion) = parse_symbol_assertion(&expanded, origin) {
+        return Ok(CstItem {
+            origin,
+            kind: CstKind::SymbolAssertion(assertion),
+        });
+    }
+    Ok(CstItem {
+        origin,
+        kind: CstKind::Unsupported(CanonicalUnsupportedProductionV1 {
+            production: CanonicalSourceProductionV1::Assertion,
+            origin,
+            emissions: vec![],
+        }),
+    })
 }
 
 fn parse_keyboard_binding(
@@ -7479,19 +7743,6 @@ fn parse_general_insertion(
     source: &str,
     _handler_subject: &str,
 ) -> Option<Vec<GeneralAssignmentCst>> {
-    if let Some((subject, relation, value)) = split_general_scalar_insertion(source) {
-        return Some(vec![GeneralAssignmentCst {
-            target: ScalarParameterSourceCst {
-                parameter: Vec::new(),
-                subject: subject.as_bytes().to_vec(),
-                relation: relation.as_bytes().to_vec(),
-                shape: None,
-                field: None,
-            },
-            value,
-        }]);
-    }
-
     if let Some((prefix, shape, fields)) = split_shape_subject(source) {
         let prefix = prefix.split_whitespace().collect::<Vec<_>>();
         if prefix.len() < 2 {
@@ -7514,6 +7765,18 @@ fn parse_general_insertion(
                 })
             })
             .collect();
+    }
+    if let Some((subject, relation, value)) = split_general_scalar_insertion(source) {
+        return Some(vec![GeneralAssignmentCst {
+            target: ScalarParameterSourceCst {
+                parameter: Vec::new(),
+                subject: subject.as_bytes().to_vec(),
+                relation: relation.as_bytes().to_vec(),
+                shape: None,
+                field: None,
+            },
+            value,
+        }]);
     }
     None
 }
@@ -7654,16 +7917,6 @@ fn parse_general_assignments(
         String::from_utf8_lossy(&target.subject),
         String::from_utf8_lossy(&target.relation)
     );
-    if let Some(value) = include
-        .strip_prefix(&format!("{prefix} "))
-        .and_then(|value| parse_scalar_expression(value, ""))
-    {
-        return Some(GeneralReplacementCst {
-            assignments: vec![GeneralAssignmentCst { target, value }],
-            aggregate_binding: None,
-            required_sources: vec![],
-        });
-    }
     if let Some((include_prefix, shape, fields)) = split_shape_subject(include) {
         if include_prefix != prefix {
             return None;
@@ -7689,6 +7942,16 @@ fn parse_general_assignments(
             assignments,
             aggregate_binding: Some(aggregate_binding),
             required_sources,
+        });
+    }
+    if let Some(value) = include
+        .strip_prefix(&format!("{prefix} "))
+        .and_then(|value| parse_scalar_expression(value, ""))
+    {
+        return Some(GeneralReplacementCst {
+            assignments: vec![GeneralAssignmentCst { target, value }],
+            aggregate_binding: None,
+            required_sources: vec![],
         });
     }
     None

@@ -12,6 +12,7 @@ mod canonical_source;
 mod formation;
 mod hash;
 mod identity;
+mod nix_flake;
 mod process;
 mod provenance;
 mod term;
@@ -28,6 +29,7 @@ pub use canonical::{
 pub use canonical_source::*;
 pub use formation::*;
 pub use identity::*;
+pub use nix_flake::*;
 pub use process::*;
 pub use provenance::*;
 pub use term::{Atom, EqualityContract, Term, TermError, TermScope, Triple};

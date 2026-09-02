@@ -87,6 +87,12 @@ pub const AUTHORING_EXAMPLES_V1: &[AuthoringExampleV1] = &[
             "/../../test-vectors/authoring/derived-combat-transition.clause"
         )),
     },
+    AuthoringExampleV1 {
+        slug: "relational-nix-flake",
+        title: "Relational Nix flake",
+        summary: "Selects the compiler-owned Nix vocabulary and describes a development shell entirely through typed focused relations.",
+        source: include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../flake.clause")),
+    },
 ];
 
 /// Render the checked examples as the concise authoring card shipped with this
@@ -98,7 +104,8 @@ pub fn render_authoring_card_v1() -> String {
 This card is generated from compiler-owned examples. It is a curated current vocabulary, not an exhaustive language specification. The checked examples and diagnostics from the consuming project's immutable Clause compiler pin are authoritative.\n\n\
 Use that pin's workbench directly:\n\n\
 - `clause-workbench authoring-card` prints this card.\n\
-- `clause-workbench check-source FILE.clause` reads, elaborates, lowers, and opens the source in the resident execution workbench.\n\n",
+- `clause-workbench check-source FILE.clause` reads, elaborates, lowers, and opens the source in the resident execution workbench.\n\
+- `clause-workbench project-nix FILE.clause [OUTPUT]` checks `using Nix` relations and renders their typed flake projection.\n\n",
     );
 
     for (index, example) in AUTHORING_EXAMPLES_V1.iter().enumerate() {
