@@ -48,6 +48,10 @@ const DYNAMIC_TEXT_GOALS: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../test-vectors/authoring/dynamic-text-goals.clause"
 ));
+const MULTI_REFERENT_SCALAR_HANDLER: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../test-vectors/authoring/multi-referent-scalar-handler.clause"
+));
 const RUNTIME_SELECTED_POLICY: &str = r#"F64
 Root
 Policy
@@ -705,6 +709,38 @@ fn projected_boolean(term: &Term) -> bool {
         [1] => true,
         _ => panic!("projected Boolean payload is canonical"),
     }
+}
+
+#[test]
+fn one_handler_occurrence_updates_every_independent_matching_referent() {
+    let source = MULTI_REFERENT_SCALAR_HANDLER.replacen(
+        "cephorium-cache loot state hidden",
+        "cephorium-cache loot state acquired",
+        1,
+    );
+    let mut workbench = ResidentSourceWorkbenchV1::open(source.as_bytes())
+        .expect("the multi-referent scalar source opens");
+    let carry = workbench
+        .handler_occurrence(b"carry-loot", &[])
+        .expect("one semantic handler owns every matching loot referent");
+    workbench
+        .run_occurrences_to_candidate(&[carry])
+        .expect("one occurrence produces one hidden multi-referent candidate");
+    let admitted = workbench
+        .admit()
+        .expect("Admission exposes the atomic multi-referent update");
+    let projection = decode_canonical_term_bytes(&admitted.projection.exact_term_bytes)
+        .expect("the admitted projection decodes");
+    let ashen_key = projected_object_field(&projection, b"ashen-key");
+    let cephorium_cache = projected_object_field(&projection, b"cephorium-cache");
+    assert_eq!(
+        projected_number(projected_object_field(ashen_key, b"carried-distance")),
+        2.0,
+    );
+    assert_eq!(
+        projected_number(projected_object_field(cephorium_cache, b"carried-distance",)),
+        3.0,
+    );
 }
 
 fn objective_state(exact_term_bytes: &[u8]) -> Vec<u8> {

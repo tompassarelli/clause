@@ -1,0 +1,36 @@
+F64
+Loot
+
+shape Vec3
+  x: F64
+  y: F64
+  z: F64
+
+relation loot-position
+  reads {loot: Loot} loot position {value: Vec3}
+  subject loot
+  mode given loot yields value: one
+
+relation loot-origin-position
+  reads {loot: Loot} loot origin position {value: Vec3}
+  subject loot
+  mode given loot yields value: one
+
+ashen-key: Loot
+cephorium-cache: Loot
+
+ashen-key loot position Vec3 { x: 1.0, y: 0.0, z: 2.0 }
+ashen-key loot origin position Vec3 { x: 3.0, y: 0.0, z: 4.0 }
+cephorium-cache loot position Vec3 { x: 5.0, y: 0.0, z: 6.0 }
+cephorium-cache loot origin position Vec3 { x: 7.0, y: 0.0, z: 8.0 }
+
+bind keyboard KeyR down to reset-loot-position
+
+on reset-loot-position ?loot
+  when
+    ?loot loot position ?position
+    ?loot loot origin position ?origin
+  withdraw
+    ?loot loot position ?position
+  include
+    ?loot loot position ?origin

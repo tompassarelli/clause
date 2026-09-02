@@ -29,6 +29,7 @@ const COHERENT_TEMPLATE_CWR1_HEX: &str = include_str!(concat!(
     "/../../browser/jump-arena-shell/fixtures/wasm-coherent-game-v1/coherent-game-v1.cwr1.hex"
 ));
 const MAX_COMMANDS: u64 = 4_096;
+const SOURCE_AUTHORITY_BUDGET_UNITS: u64 = 1_000_000;
 
 #[derive(Debug)]
 pub struct ResidentSourceWorkbenchErrorV1(String);
@@ -412,6 +413,7 @@ impl ResidentSourceWorkbenchV1 {
         )
         .map_err(|error| debug_error("canonical source elaboration", error))?;
         self.template = self.coherent_template.clone();
+        self.template.authority.budget_units = SOURCE_AUTHORITY_BUDGET_UNITS;
         let mut physical_plan = self.template_physical_plan.clone();
         let projection_roles = &self.template_projection_roles;
         let projected_state_count = compiled.state_cells.len();
