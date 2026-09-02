@@ -16,6 +16,15 @@ pub struct AuthoringExampleV1 {
 /// accepts it.
 pub const AUTHORING_EXAMPLES_V1: &[AuthoringExampleV1] = &[
     AuthoringExampleV1 {
+        slug: "explicit-semantic-applications",
+        title: "Explicit semantic applications",
+        summary: "Applies one Shape and two scalar roles to a subject without confusing those applications with denotation or representation.",
+        source: include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../test-vectors/authoring/explicit-applications.clause"
+        )),
+    },
+    AuthoringExampleV1 {
         slug: "scalar-state-transition",
         title: "Scalar state transition",
         summary: "Declares referents and a cardinality-one relation, then replaces one numeric state value atomically.",

@@ -8,6 +8,21 @@ Use that pin's workbench directly:
 - `clause-workbench check-source FILE.clause` reads, elaborates, lowers, and opens the source in the resident execution workbench.
 - `clause-workbench project-nix FILE.clause [OUTPUT]` checks `using Nix` relations and renders their typed flake projection.
 
+## Explicit semantic applications
+
+Applies one Shape and two scalar roles to a subject without confusing those applications with denotation or representation.
+
+Catalog ID: `explicit-semantic-applications`
+
+```clause
+Flake
+
+north
+  shape: Flake
+  priority: 5
+  greeting: "hello"
+```
+
 ## Scalar state transition
 
 Declares referents and a cardinality-one relation, then replaces one numeric state value atomically.
@@ -60,7 +75,8 @@ relation empowered
   subject player
   mode given player yields value: one
 
-player-1: Player
+player-1
+  shape: Player
 player-1 velocity Vec3 { x: 0.0, y: 0.0, z: 0.0 }
 player-1 empowered true
 
@@ -92,7 +108,8 @@ relation camera-heading
   subject player
   mode given player yields value: one
 
-player-1: Player
+player-1
+  shape: Player
 player-1 camera heading 0.0
 
 bind scalar-input CameraHeading to observe-camera-heading
@@ -183,7 +200,8 @@ relation banner
   subject north
   mode given north yields value: one
 
-north-main: North
+north-main
+  shape: North
 north-main goal state no-goal
 north-main banner "North says:\n\"ready\" 🚀"
 
@@ -298,16 +316,20 @@ relation goal-catalog-state
   subject north
   mode given north yields value: one
 
-north-main: North
-ready: GoalStatus
-active: GoalStatus
+north-main
+  shape: North
+ready
+  shape: GoalStatus
+active
+  shape: GoalStatus
 north-main goal catalog state ready
 
 on create-goal ?north ?title ?objective
   when
     ?north goal catalog state ?catalog
   create
-    ?goal: Goal
+    ?goal
+      shape: Goal
   withdraw
     ?north goal catalog state ?catalog
   include
@@ -416,9 +438,12 @@ derive clamp-lower
 derive clamp-interior
 derive clamp-upper
 
-magitek-boar: Actor
-blade-two: Move
-combat-rules: CombatRules
+magitek-boar
+  shape: Actor
+blade-two
+  shape: Move
+combat-rules
+  shape: CombatRules
 
 magitek-boar vitality 100.0
 magitek-boar destabilization 100.0
@@ -469,18 +494,22 @@ Catalog ID: `relational-nix-flake`
 ```clause
 using Nix
 
-clause: Flake
-  description "Clause development environment"
+clause
+  shape: Flake
+  description: "Clause development environment"
   inputs
-    nixpkgs from "github:NixOS/nixpkgs/nixos-unstable"
-    rust-overlay from "github:oxalica/rust-overlay"
-    rust-overlay follows nixpkgs
-  development shell clause-shell
-
-clause-shell
-  for x86_64-linux
-  imports nixpkgs
-  overlays rust-overlay
-  includes
-    rust from "./rust-toolchain.toml"
+    nixpkgs
+      from: "github:NixOS/nixpkgs/nixos-unstable"
+    rust-overlay
+      from: "github:oxalica/rust-overlay"
+      follows: nixpkgs
+  development shell
+    clause-shell
+      system: x86_64-linux
+      imports: nixpkgs
+      overlays
+        rust-overlay
+      includes
+        rust
+          from: "./rust-toolchain.toml"
 ```

@@ -10,7 +10,8 @@ relation objective-state
   subject objective
   mode given objective yields value: one
 
-game-objective: Objective
+game-objective
+  shape: Objective
 game-objective objective state playing
 
 on complete-objective ?objective

@@ -1,0 +1,6 @@
+Flake
+
+north
+  shape: Flake
+  priority: 5
+  greeting: "hello"

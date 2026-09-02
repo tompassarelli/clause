@@ -57,8 +57,10 @@ relation spawn-position
   subject enemy
   mode given enemy yields value: one
 
-player-1: Player
-cinder-wraith: Enemy
+player-1
+  shape: Player
+cinder-wraith
+  shape: Enemy
 player-1 score 0.0
 cinder-wraith pressure clock 3.0
 cinder-wraith pressure state telegraph
@@ -92,7 +94,8 @@ relation reserve
   subject player
   mode given player yields value: one
 
-player-1: Player
+player-1
+  shape: Player
 player-1 score 4.0
 player-1 reserve 6.0
 
@@ -127,14 +130,16 @@ relation command-description
   subject command
   mode given command yields value: maybe
 
-root-main: Root
+root-main
+  shape: Root
 root-main phase "ready"
 
 on initialize ?root
   when
     ?root phase ?phase
   create
-    ?command: Command
+    ?command
+      shape: Command
   withdraw
     ?root phase ?phase
   include
@@ -162,8 +167,10 @@ relation policy-adjustment
   subject policy
   mode given policy yields value: one
 
-root-1: Root
-policy-a: Policy
+root-1
+  shape: Root
+policy-a
+  shape: Policy
 root-1 balance 10.0
 root-1 selected policy policy-a
 policy-a policy adjustment 2.0
@@ -236,14 +243,22 @@ law projectile-contact
 
 derive projectile-contact
 
-player-1: Player
-cinder-bolt: Projectile
-wayfarer-bolt: Projectile
-dormant: ProjectileState
-flight: ProjectileState
-enemy-origin: ProjectileFaction
-player-origin: ProjectileFaction
-combat-arena: Arena
+player-1
+  shape: Player
+cinder-bolt
+  shape: Projectile
+wayfarer-bolt
+  shape: Projectile
+dormant
+  shape: ProjectileState
+flight
+  shape: ProjectileState
+enemy-origin
+  shape: ProjectileFaction
+player-origin
+  shape: ProjectileFaction
+combat-arena
+  shape: Arena
 
 player-1 player position Vec3 { x: 0.0, y: 0.0, z: 0.0 }
 cinder-bolt projectile position Vec3 { x: 1.0, y: 0.0, z: 0.0 }
@@ -255,17 +270,16 @@ wayfarer-bolt projectile faction player-origin
 combat-arena contact radius 0.6
 "#;
 
-const MULTI_BINDING_REFERENT_WORLD: &str = r#"Door
+const MULTI_SHAPE_REFERENT_WORLD: &str = r#"Door
 Lockable
 iron-door
-
-iron-door: Door
-iron-door: Lockable
+  shape: Door
+  shape: Lockable
 "#;
 
-const MANY_VALUED_BINDINGS: &str = include_str!(concat!(
+const EXPLICIT_APPLICATIONS: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
-    "/../../test-vectors/authoring/many-valued-bindings.clause"
+    "/../../test-vectors/authoring/explicit-applications.clause"
 ));
 
 fn compile_source(
@@ -288,37 +302,44 @@ fn compile_source(
 }
 
 #[test]
-fn one_referent_may_declare_multiple_category_bindings() {
-    compile_source(MULTI_BINDING_REFERENT_WORLD, 39)
-        .expect("an explicit referent and its category bindings share one allocated identity");
+fn one_referent_may_declare_multiple_shapes() {
+    compile_source(MULTI_SHAPE_REFERENT_WORLD, 39)
+        .expect("an explicit referent and its shape applications share one identity");
     compile_source(
-        "Door\nLockable\n\niron-door: Door\niron-door: Lockable\niron-door\n",
+        "Door\nLockable\n\niron-door\niron-door\n  shape: Door\n  shape: Lockable\n",
         40,
     )
-    .expect("referent identity sharing does not depend on declaration order");
+    .expect("subject focus may reuse an explicitly declared referent");
 }
 
 #[test]
-fn one_referent_retains_many_typed_bindings_without_a_value_slot() {
-    let compiled = compile_source(MANY_VALUED_BINDINGS, 42)
-        .expect("symbol, numeric, and Text bindings elaborate together");
+fn one_referent_retains_explicit_semantic_applications() {
+    let compiled = compile_source(EXPLICIT_APPLICATIONS, 42)
+        .expect("shape, numeric, and Text applications elaborate together");
     assert_eq!(
         compiled
-            .bindings
+            .applications
             .iter()
-            .map(|binding| (binding.subject.clone(), binding.value.clone()))
+            .map(|application| (
+                application.subject.clone(),
+                application.role.clone(),
+                application.object.clone(),
+            ))
             .collect::<Vec<_>>(),
         vec![
             (
                 b"north".to_vec(),
+                b"shape".to_vec(),
                 CanonicalScalarValueV1::Symbol(b"Flake".to_vec())
             ),
             (
                 b"north".to_vec(),
+                b"priority".to_vec(),
                 CanonicalScalarValueV1::Number(5.0_f64.to_bits())
             ),
             (
                 b"north".to_vec(),
+                b"greeting".to_vec(),
                 CanonicalScalarValueV1::Text("hello".into())
             ),
         ]
@@ -672,8 +693,10 @@ derive clamp-lower
 derive clamp-interior
 derive clamp-upper
 
-player-1: Player
-enemy-1: Enemy
+player-1
+  shape: Player
+enemy-1
+  shape: Enemy
 player-1 combat target enemy-1
 player-1 target active true
 enemy-1 vitals Vec3 { x: 6.0, y: 6.0, z: 1.0 }
@@ -1174,42 +1197,45 @@ fn canonical_world_declarations_reach_the_checked_package_with_exact_remainder()
     assert_eq!(unsupported_counts, [0, 0, 0, 0]);
     assert_eq!(
         compiled
-            .bindings
+            .applications
             .iter()
-            .map(|binding| (
-                binding.subject.clone(),
-                binding.value.clone(),
-                cst.source_slice(binding.origin)
-                    .expect("owned binding value origin")
+            .map(|application| (
+                application.subject.clone(),
+                application.role.clone(),
+                application.object.clone(),
+                cst.source_slice(application.origin)
+                    .expect("owned application origin")
                     .to_vec(),
             ))
             .collect::<Vec<_>>(),
         vec![
             (
                 b"jump-arena".to_vec(),
+                b"shape".to_vec(),
                 CanonicalScalarValueV1::Symbol(b"Arena".to_vec()),
-                b"Arena".to_vec(),
+                b"  shape: Arena".to_vec(),
             ),
             (
                 b"player-1".to_vec(),
+                b"shape".to_vec(),
                 CanonicalScalarValueV1::Symbol(b"Player".to_vec()),
-                b"Player".to_vec(),
+                b"  shape: Player".to_vec(),
             ),
         ]
     );
-    let binding_origins = compiled
-        .bindings
+    let application_origins = compiled
+        .applications
         .iter()
-        .map(|binding| binding.origin)
+        .map(|application| application.origin)
         .collect::<Vec<_>>();
-    let binding_emissions = compiled
+    let application_emissions = compiled
         .emissions
         .iter()
-        .filter(|emission| binding_origins.contains(&emission.origin))
+        .filter(|emission| application_origins.contains(&emission.origin))
         .collect::<Vec<_>>();
-    assert_eq!(binding_emissions.len(), 2);
+    assert_eq!(application_emissions.len(), 2);
     assert!(
-        binding_emissions
+        application_emissions
             .iter()
             .all(
                 |emission| emission.slot.production == CanonicalSourceProductionV1::Assertion
@@ -1323,9 +1349,9 @@ fn canonical_input_preserves_negative_zero_bits() {
 }
 
 #[test]
-fn repeated_bindings_preserve_order_and_value_origins() {
-    let source = "Door\nLockable\niron-door: Door\niron-door: Lockable\n";
-    let cst = read_canonical_source_v1(source.as_bytes()).expect("binding source reads");
+fn repeated_roles_preserve_application_order_and_origins() {
+    let source = "Door\nLockable\niron-door\n  shape: Door\n  shape: Lockable\n";
+    let cst = read_canonical_source_v1(source.as_bytes()).expect("application source reads");
     let plan = plan_independent_canonical_source_allocations_v1(
         &cst,
         ProgramChangeOccurrenceId::from_bytes(raw_id(7)),
@@ -1339,16 +1365,17 @@ fn repeated_bindings_preserve_order_and_value_origins() {
         },
         &plan,
     )
-    .expect("the bindings reach bounded elaboration");
+    .expect("the applications reach bounded elaboration");
 
     assert!(compiled.unsupported.is_empty());
-    assert_eq!(compiled.bindings.len(), 2);
+    assert_eq!(compiled.applications.len(), 2);
+    assert_eq!(compiled.applications[0].role, b"shape".to_vec());
     assert_eq!(
-        compiled.bindings[0].value,
+        compiled.applications[0].object,
         CanonicalScalarValueV1::Symbol(b"Door".to_vec())
     );
     assert_eq!(
-        compiled.bindings[1].value,
+        compiled.applications[1].object,
         CanonicalScalarValueV1::Symbol(b"Lockable".to_vec())
     );
     let emissions = compiled
@@ -1363,11 +1390,11 @@ fn repeated_bindings_preserve_order_and_value_origins() {
     assert_eq!(emissions[1].slot.repetition, None);
     assert_eq!(
         cst.source_slice(emissions[0].origin),
-        Some(b"Door".as_slice())
+        Some(b"  shape: Door".as_slice())
     );
     assert_eq!(
         cst.source_slice(emissions[1].origin),
-        Some(b"Lockable".as_slice())
+        Some(b"  shape: Lockable".as_slice())
     );
     assert!(
         emissions
@@ -1377,14 +1404,14 @@ fn repeated_bindings_preserve_order_and_value_origins() {
 }
 
 #[test]
-fn repeated_binding_value_is_not_deduplicated() {
-    let source = "Door\niron-door: Door\niron-door: Door\n";
-    let cst = read_canonical_source_v1(source.as_bytes()).expect("repeated bindings read");
+fn repeated_application_is_not_deduplicated() {
+    let source = "Door\niron-door\n  shape: Door\n  shape: Door\n";
+    let cst = read_canonical_source_v1(source.as_bytes()).expect("repeated applications read");
     let plan = plan_independent_canonical_source_allocations_v1(
         &cst,
         ProgramChangeOccurrenceId::from_bytes(raw_id(8)),
     )
-    .expect("repeated bindings do not collapse allocation inputs");
+    .expect("repeated applications do not collapse emission inputs");
     let compiled = elaborate_canonical_source_package_v1(
         &cst,
         CanonicalSourceContextV1 {
@@ -1393,8 +1420,8 @@ fn repeated_binding_value_is_not_deduplicated() {
         },
         &plan,
     )
-    .expect("repeated bindings reach bounded elaboration");
-    assert_eq!(compiled.bindings.len(), 2);
+    .expect("repeated applications reach bounded elaboration");
+    assert_eq!(compiled.applications.len(), 2);
     let emissions = compiled
         .emissions
         .iter()
@@ -1407,27 +1434,97 @@ fn repeated_binding_value_is_not_deduplicated() {
     assert_ne!(emissions[0].origin, emissions[1].origin);
     assert_eq!(
         cst.source_slice(emissions[0].origin),
-        Some(b"Door".as_slice())
+        Some(b"  shape: Door".as_slice())
     );
     assert_eq!(
         cst.source_slice(emissions[1].origin),
-        Some(b"Door".as_slice())
+        Some(b"  shape: Door".as_slice())
     );
 }
 
 #[test]
-fn noncanonical_or_ambiguous_binding_forms_reject() {
+fn noncanonical_denotation_forms_reject() {
     for source in [
         "iron-door: Door,\n",
         "iron-door∈ Door\n",
         "iron-door ∈ Door\n",
         "iron-door : Door\n",
         "iron-door:Door\n",
-        "iron-door: Door, Lockable\n",
+        "iron-door:\n  Door\n  Lockable\n",
     ] {
         assert!(matches!(
             read_canonical_source_v1(source.as_bytes()),
-            Err(CanonicalSourceErrorV1::InvalidBinding { .. })
+            Err(CanonicalSourceErrorV1::InvalidDenotation { .. })
         ));
     }
+}
+
+#[test]
+fn scalar_and_ordered_product_denotations_remain_distinct() {
+    let source = "five: 5\npair: 5, \"hello\"\nrgb\n  255, 0, 0\n";
+    let cst = read_canonical_source_v1(source.as_bytes()).expect("denotations read");
+    let plan = plan_independent_canonical_source_allocations_v1(
+        &cst,
+        ProgramChangeOccurrenceId::from_bytes(raw_id(9)),
+    )
+    .expect("denotations need no implicit semantic roles");
+    let compiled = elaborate_canonical_source_package_v1(
+        &cst,
+        CanonicalSourceContextV1 {
+            universe: UniverseId::from_bytes(raw_id(1)),
+            semantics: ClauseSemanticsId::from_bytes(raw_id(2)),
+        },
+        &plan,
+    )
+    .expect("denotations elaborate");
+
+    assert_eq!(
+        compiled.denotations,
+        vec![
+            CanonicalSourceDenotationV1 {
+                name: b"five".to_vec(),
+                value: CanonicalSourceDenotedValueV1::Scalar(CanonicalScalarValueV1::Number(
+                    5.0_f64.to_bits()
+                ),),
+                origin: compiled.denotations[0].origin,
+            },
+            CanonicalSourceDenotationV1 {
+                name: b"pair".to_vec(),
+                value: CanonicalSourceDenotedValueV1::OrderedProduct(vec![
+                    CanonicalScalarValueV1::Number(5.0_f64.to_bits()),
+                    CanonicalScalarValueV1::Text("hello".into()),
+                ]),
+                origin: compiled.denotations[1].origin,
+            },
+            CanonicalSourceDenotationV1 {
+                name: b"rgb".to_vec(),
+                value: CanonicalSourceDenotedValueV1::OrderedProduct(vec![
+                    CanonicalScalarValueV1::Number(255.0_f64.to_bits()),
+                    CanonicalScalarValueV1::Number(0.0_f64.to_bits()),
+                    CanonicalScalarValueV1::Number(0.0_f64.to_bits()),
+                ]),
+                origin: compiled.denotations[2].origin,
+            },
+        ]
+    );
+    let origins = compiled
+        .emissions
+        .iter()
+        .filter(|emission| emission.slot.production == CanonicalSourceProductionV1::Assertion)
+        .map(|emission| {
+            cst.source_slice(emission.origin)
+                .expect("each denoted member retains its exact source")
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        origins,
+        vec![
+            b"5".as_slice(),
+            b"5".as_slice(),
+            b"\"hello\"".as_slice(),
+            b"255".as_slice(),
+            b"0".as_slice(),
+            b"0".as_slice(),
+        ]
+    );
 }

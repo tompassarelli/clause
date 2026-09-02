@@ -12,10 +12,10 @@ Clause source is compact and declarative. It says which applications,
 relationships, laws, observations, and changes are admissible without turning
 source order, graph storage, or host-language calls into semantics.
 
-## Declare distinctions without inventing objects
+## Declare distinctions and describe participation
 
 Declarations use explicit heads. An `enum` gives every child one homogeneous
-category role; a `shape` gives every child one homogeneous field role:
+member role; a `shape` gives every child one homogeneous field role:
 
 ```clause
 Door
@@ -30,36 +30,55 @@ shape Vec2
   y: F32
 
 gravity: 9.81
-origin: Vec2 { x: 0.0, y: 0.0 }
 ```
 
-A bare designation leaf introduces or resolves a Referent. `:` binds its LHS
-to one typed term and may repeat: `north: Flake`, `north: 5`, and
-`north: "hello"` coexist without a privileged value slot. Symbol bindings used
-as domains derive classification; scalar and Text bindings remain ordinary
-typed values. `=` remains equality. Cardinality belongs to the field or schema,
-not to the colon token; a singleton field yields the derived one-denotation
-case often called definition, but definition is not a primitive syntax
-category. Source forms elaborate into neutral recursive Terms plus contextual
+A bare designation leaf introduces or resolves a Referent. At top level,
+`gravity: 9.81` makes `gravity` denote one scalar value. Commas instead denote
+an ordered anonymous product, as in `rgb: 255, 0, 0`; a vertical list of bare
+children is not a product because indentation does not invent position or a
+relation. Denotation, equality, Shape satisfaction, and representation remain
+separate. In particular, `north: Flake` means that `north` denotes `Flake`; it
+does not classify `north` or make it satisfy the `Flake` Shape.
+
+An identified subject receives explicitly named semantic applications:
+
+```clause
+north
+  shape: Flake
+  description: "North-v2 development environment"
+  inputs
+    nixpkgs
+      from: "github:NixOS/nixpkgs/nixos-unstable"
+    rust-overlay
+      from: "github:oxalica/rust-overlay"
+      follows: nixpkgs
+  development shell
+    north-shell
+```
+
+`shape: Flake`, `description: ...`, and each `from:` application name the role
+that its object plays. Literal kind constrains the supplied value but never
+invents that role. An interior role such as `inputs` groups repeated
+applications; each object remains independently provenanced, and descendants
+make that object the subject of their nested applications. Commas are not an
+alias for repeated roles. Spaces may occur within a role designation, while a
+colon or grouped indentation fixes its boundary. The reader never splits a
+multiword English phrase heuristically.
+
+`shape: S` means directional Shape satisfaction: the subject must satisfy every
+obligation exposed by `S` and be substitutable wherever `S` is required,
+relative to the Shape's declared observation, effect, failure, progress, and
+representation boundaries. A Shape may describe roles and cardinalities,
+value contracts, modes, effects, failures, laws, observable invariants, and
+progress or resource obligations. The current compiler checks only its
+field/application subset; the broader behavioral contract remains the semantic
+target. A Shape is neither nominal membership nor exact equality, and physical
+layout matters only when explicitly observable.
+
+Source forms elaborate into neutral recursive Terms plus contextual
 `ClauseJudgment`s and candidate formations. Lower-case clause means one such
 contextual judgment over a Term, not an Application or governed Judgment.
 Checked formation still does not assert, authorize, or execute a Term.
-
-Indentation supplies containment and an explicitly declared omitted role. It
-does not guess a domain relationship:
-
-```clause
-north: Flake
-  inputs
-    nixpkgs from "github:NixOS/nixpkgs/nixos-unstable"
-    rust-overlay from "github:oxalica/rust-overlay"
-  development shell north-shell
-```
-
-The header binds and focuses `north`. An interior child such as `inputs`
-explicitly prefixes each complete edge below it. A bare unkeyworded parent and
-child such as `Foo` followed by `Bar` is invalid because no Reading says what
-connects them.
 
 ## Separate relational shape from executable running
 
@@ -72,8 +91,10 @@ relation connects
   subject door
   mode given door origin yields destination: many
 
-Cellar: Space
-Armory: Space
+Cellar
+  shape: Space
+Armory
+  shape: Space
 
 iron-door connects Cellar to Armory
 ```
@@ -212,7 +233,8 @@ Prefix binders precede every dependent use:
 
 ```clause
 for n in 101..106
-  Door-{n}: Door
+  Door-{n}
+    shape: Door
 ```
 
 Ranges are inclusive ascending integer ranges. Brackets remain sequence Terms,

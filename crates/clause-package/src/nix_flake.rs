@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
-use crate::{CanonicalSourceErrorV1, read_canonical_source_v1};
+use crate::{CanonicalScalarValueV1, CanonicalSourceErrorV1, read_canonical_source_v1};
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct NixIdentifierV1(String);
@@ -95,6 +95,8 @@ pub enum NixFlakeProjectionErrorV1 {
     DuplicateShellOverlay(String),
     DuplicateShellInclude(String),
     UnsupportedToolchain(String),
+    MissingToolchainManifest(String),
+    ConflictingToolchainManifest(String),
     InvalidToolchainManifest(String),
 }
 
@@ -175,6 +177,12 @@ impl fmt::Display for NixFlakeProjectionErrorV1 {
             Self::UnsupportedToolchain(name) => {
                 write!(formatter, "`{name}` is not a Nix vocabulary toolchain")
             }
+            Self::MissingToolchainManifest(name) => {
+                write!(formatter, "toolchain `{name}` has no manifest")
+            }
+            Self::ConflictingToolchainManifest(name) => {
+                write!(formatter, "toolchain `{name}` has conflicting manifests")
+            }
             Self::InvalidToolchainManifest(path) => {
                 write!(
                     formatter,
@@ -196,20 +204,16 @@ impl From<CanonicalSourceErrorV1> for NixFlakeProjectionErrorV1 {
 #[derive(Clone, Debug)]
 struct SourceFact {
     line: usize,
-    text: String,
+    role: String,
+    object: CanonicalScalarValueV1,
 }
 
 #[derive(Clone, Debug)]
 struct SourceSubject {
     name: NixIdentifierV1,
-    category: Option<NixIdentifierV1>,
+    shape: Option<NixIdentifierV1>,
+    shape_line: Option<usize>,
     facts: Vec<SourceFact>,
-}
-
-#[derive(Default)]
-struct RawInput {
-    source: Vec<String>,
-    follows: Vec<NixIdentifierV1>,
 }
 
 /// Check canonical Clause source against the exact compiler-owned `Nix`
@@ -225,44 +229,51 @@ pub fn project_nix_flake_v1(exact_source: &[u8]) -> Result<NixFlakeV1, NixFlakeP
                 .map_err(|_| CanonicalSourceErrorV1::InvalidUtf8.into())
         })
         .collect::<Result<Vec<String>, NixFlakeProjectionErrorV1>>()?;
-    let subjects = cst
-        .subject_focuses()
-        .iter()
-        .map(|focus| {
-            let line = source_line(exact_source, focus.origin.start);
-            let name = identifier(
-                std::str::from_utf8(&focus.subject)
-                    .map_err(|_| CanonicalSourceErrorV1::InvalidUtf8)?,
+    let mut subjects = Vec::<SourceSubject>::new();
+    let mut subject_positions = BTreeMap::<NixIdentifierV1, usize>::new();
+    for application in cst.applications() {
+        let line = source_line(exact_source, application.origin.start);
+        let name = identifier(
+            std::str::from_utf8(&application.subject)
+                .map_err(|_| CanonicalSourceErrorV1::InvalidUtf8)?,
+            line,
+        )?;
+        let role = std::str::from_utf8(&application.role)
+            .map_err(|_| CanonicalSourceErrorV1::InvalidUtf8)?;
+        let position = if let Some(position) = subject_positions.get(&name) {
+            *position
+        } else {
+            let position = subjects.len();
+            subject_positions.insert(name.clone(), position);
+            subjects.push(SourceSubject {
+                name,
+                shape: None,
+                shape_line: None,
+                facts: Vec::new(),
+            });
+            position
+        };
+        let subject = &mut subjects[position];
+        if role == "shape" {
+            let CanonicalScalarValueV1::Symbol(shape) = &application.object else {
+                return Err(invalid(line, "shape expects one designation"));
+            };
+            let shape = identifier(
+                std::str::from_utf8(shape).map_err(|_| CanonicalSourceErrorV1::InvalidUtf8)?,
                 line,
             )?;
-            let category = match &focus.binding {
-                None => None,
-                Some(crate::CanonicalScalarValueV1::Symbol(category)) => Some(identifier(
-                    std::str::from_utf8(category)
-                        .map_err(|_| CanonicalSourceErrorV1::InvalidUtf8)?,
-                    line,
-                )?),
-                Some(_) => return Err(invalid(line, "Nix subjects bind one category designation")),
-            };
-            let facts = focus
-                .edges
-                .iter()
-                .map(|edge| {
-                    Ok(SourceFact {
-                        line: source_line(exact_source, edge.origin.start),
-                        text: std::str::from_utf8(&edge.source)
-                            .map_err(|_| CanonicalSourceErrorV1::InvalidUtf8)?
-                            .to_owned(),
-                    })
-                })
-                .collect::<Result<Vec<_>, NixFlakeProjectionErrorV1>>()?;
-            Ok(SourceSubject {
-                name,
-                category,
-                facts,
-            })
-        })
-        .collect::<Result<Vec<_>, NixFlakeProjectionErrorV1>>()?;
+            if subject.shape.replace(shape).is_some() {
+                return Err(invalid(line, "subject repeats its shape application"));
+            }
+            subject.shape_line = Some(line);
+        } else {
+            subject.facts.push(SourceFact {
+                line,
+                role: role.to_owned(),
+                object: application.object.clone(),
+            });
+        }
+    }
     match vocabulary.as_slice() {
         [] => return Err(NixFlakeProjectionErrorV1::MissingVocabulary),
         [name] if name == "Nix" => {}
@@ -278,7 +289,7 @@ pub fn project_nix_flake_v1(exact_source: &[u8]) -> Result<NixFlakeV1, NixFlakeP
         .iter()
         .filter(|subject| {
             subject
-                .category
+                .shape
                 .as_ref()
                 .is_some_and(|kind| kind.as_str() == "Flake")
         })
@@ -292,38 +303,24 @@ pub fn project_nix_flake_v1(exact_source: &[u8]) -> Result<NixFlakeV1, NixFlakeP
     let mut descriptions = Vec::new();
     let mut shell_names = Vec::new();
     let mut input_order = Vec::new();
-    let mut inputs = BTreeMap::<NixIdentifierV1, RawInput>::new();
+    let mut declared_input_names = BTreeSet::new();
     for fact in &flake.facts {
-        if let Some(value) = fact.text.strip_prefix("description ") {
-            descriptions.push(parse_quoted(value, fact.line)?);
-        } else if let Some(rest) = fact.text.strip_prefix("inputs ") {
-            if let Some((name, source)) = rest.split_once(" from ") {
-                let name = identifier(name, fact.line)?;
-                let source = parse_quoted(source, fact.line)?;
-                if !inputs.contains_key(&name) {
-                    input_order.push(name.clone());
+        match fact.role.as_str() {
+            "description" => descriptions.push(fact_text(fact)?),
+            "inputs" => {
+                let name = fact_identifier(fact)?;
+                if !declared_input_names.insert(name.clone()) {
+                    return Err(invalid(fact.line, "Flake repeats an input"));
                 }
-                inputs.entry(name).or_default().source.push(source);
-            } else if let Some((name, followed)) = rest.split_once(" follows ") {
-                let name = identifier(name, fact.line)?;
-                let followed = identifier(followed, fact.line)?;
-                if !inputs.contains_key(&name) {
-                    input_order.push(name.clone());
-                }
-                inputs.entry(name).or_default().follows.push(followed);
-            } else {
+                input_order.push(name);
+            }
+            "development shell" => shell_names.push(fact_identifier(fact)?),
+            _ => {
                 return Err(invalid(
                     fact.line,
-                    "expected `inputs NAME from TEXT` or `inputs NAME follows NAME`",
+                    "role is not in the Nix Flake vocabulary",
                 ));
             }
-        } else if let Some(name) = fact.text.strip_prefix("development shell ") {
-            shell_names.push(identifier(name, fact.line)?);
-        } else {
-            return Err(invalid(
-                fact.line,
-                "relation is not in the Nix Flake vocabulary",
-            ));
         }
     }
     let description = one(
@@ -339,16 +336,35 @@ pub fn project_nix_flake_v1(exact_source: &[u8]) -> Result<NixFlakeV1, NixFlakeP
 
     let mut checked_inputs = Vec::with_capacity(input_order.len());
     for name in input_order {
-        let raw = inputs
-            .get(&name)
-            .expect("input order is built with the input map");
+        let mut sources = Vec::new();
+        let mut follows = Vec::new();
+        if let Some(input) = subjects.iter().find(|subject| subject.name == name) {
+            if let Some(line) = input.shape_line {
+                return Err(invalid(
+                    line,
+                    "only the Flake subject may use the shape role",
+                ));
+            }
+            for fact in &input.facts {
+                match fact.role.as_str() {
+                    "from" => sources.push(fact_text(fact)?),
+                    "follows" => follows.push(fact_identifier(fact)?),
+                    _ => {
+                        return Err(invalid(
+                            fact.line,
+                            "role is not in the Nix input vocabulary",
+                        ));
+                    }
+                }
+            }
+        }
         let source = one(
-            raw.source.clone(),
+            sources,
             NixFlakeProjectionErrorV1::MissingInputSource(name.0.clone()),
             NixFlakeProjectionErrorV1::ConflictingInputSource(name.0.clone()),
         )?;
         let follows = at_most_one(
-            raw.follows.clone(),
+            follows,
             NixFlakeProjectionErrorV1::ConflictingInputFollow(name.0.clone()),
         )?;
         checked_inputs.push(NixInputV1 {
@@ -357,10 +373,7 @@ pub fn project_nix_flake_v1(exact_source: &[u8]) -> Result<NixFlakeV1, NixFlakeP
             follows,
         });
     }
-    let declared_inputs = checked_inputs
-        .iter()
-        .map(|input| input.name.clone())
-        .collect::<BTreeSet<_>>();
+    let declared_inputs = declared_input_names;
     for input in &checked_inputs {
         if let Some(follows) = &input.follows
             && !declared_inputs.contains(follows)
@@ -384,61 +397,84 @@ pub fn project_nix_flake_v1(exact_source: &[u8]) -> Result<NixFlakeV1, NixFlakeP
             ));
         }
     };
-    for subject in &subjects {
-        if subject.name != flake.name && subject.name != shell_name {
-            return Err(NixFlakeProjectionErrorV1::UnreferencedSubject(
-                subject.name.0.clone(),
-            ));
-        }
+    if let Some(line) = shell_subject.shape_line {
+        return Err(invalid(
+            line,
+            "only the Flake subject may use the shape role",
+        ));
     }
-
     let mut systems = Vec::new();
     let mut imports = Vec::new();
     let mut overlays = Vec::new();
     let mut includes = Vec::new();
     let mut included_names = BTreeSet::new();
+    let mut included_order = Vec::new();
     for fact in &shell_subject.facts {
-        if let Some(system) = fact.text.strip_prefix("for ") {
-            systems.push(identifier(system, fact.line)?);
-        } else if let Some(import) = fact.text.strip_prefix("imports ") {
-            imports.push(identifier(import, fact.line)?);
-        } else if let Some(overlay) = fact.text.strip_prefix("overlays ") {
-            let overlay = identifier(overlay, fact.line)?;
-            if overlays.contains(&overlay) {
-                return Err(NixFlakeProjectionErrorV1::DuplicateShellOverlay(overlay.0));
+        match fact.role.as_str() {
+            "system" => systems.push(fact_identifier(fact)?),
+            "imports" => imports.push(fact_identifier(fact)?),
+            "overlays" => {
+                let overlay = fact_identifier(fact)?;
+                if overlays.contains(&overlay) {
+                    return Err(NixFlakeProjectionErrorV1::DuplicateShellOverlay(overlay.0));
+                }
+                overlays.push(overlay);
             }
-            overlays.push(overlay);
-        } else if let Some(include) = fact.text.strip_prefix("includes ") {
-            if let Some((name, manifest)) = include.split_once(" from ") {
-                let name = identifier(name, fact.line)?;
-                if name.as_str() != "rust" {
-                    return Err(NixFlakeProjectionErrorV1::UnsupportedToolchain(name.0));
-                }
-                let manifest = parse_quoted(manifest, fact.line)?;
-                if !valid_relative_nix_path(&manifest) {
-                    return Err(NixFlakeProjectionErrorV1::InvalidToolchainManifest(
-                        manifest,
-                    ));
-                }
+            "includes" => {
+                let name = fact_identifier(fact)?;
                 if !included_names.insert(name.clone()) {
                     return Err(NixFlakeProjectionErrorV1::DuplicateShellInclude(name.0));
                 }
-                includes.push(NixDevelopmentIncludeV1::Toolchain(NixToolchainV1::Rust {
-                    manifest,
-                }));
-            } else {
-                let name = identifier(include, fact.line)?;
-                if !included_names.insert(name.clone()) {
-                    return Err(NixFlakeProjectionErrorV1::DuplicateShellInclude(name.0));
-                }
-                includes.push(NixDevelopmentIncludeV1::Package(NixPackageV1(name)));
+                included_order.push(name);
             }
-        } else {
+            _ => {
+                return Err(invalid(
+                    fact.line,
+                    "role is not in the Nix DevelopmentShell vocabulary",
+                ));
+            }
+        }
+    }
+
+    for name in &included_order {
+        let Some(include_subject) = subjects.iter().find(|subject| subject.name == *name) else {
+            includes.push(NixDevelopmentIncludeV1::Package(NixPackageV1(name.clone())));
+            continue;
+        };
+        if let Some(line) = include_subject.shape_line {
             return Err(invalid(
-                fact.line,
-                "relation is not in the Nix DevelopmentShell vocabulary",
+                line,
+                "only the Flake subject may use the shape role",
             ));
         }
+        if name.as_str() != "rust" {
+            return Err(NixFlakeProjectionErrorV1::UnsupportedToolchain(
+                name.0.clone(),
+            ));
+        }
+        let mut manifests = Vec::new();
+        for fact in &include_subject.facts {
+            if fact.role != "from" {
+                return Err(invalid(
+                    fact.line,
+                    "role is not in the Nix toolchain vocabulary",
+                ));
+            }
+            manifests.push(fact_text(fact)?);
+        }
+        let manifest = one(
+            manifests,
+            NixFlakeProjectionErrorV1::MissingToolchainManifest(name.0.clone()),
+            NixFlakeProjectionErrorV1::ConflictingToolchainManifest(name.0.clone()),
+        )?;
+        if !valid_relative_nix_path(&manifest) {
+            return Err(NixFlakeProjectionErrorV1::InvalidToolchainManifest(
+                manifest,
+            ));
+        }
+        includes.push(NixDevelopmentIncludeV1::Toolchain(NixToolchainV1::Rust {
+            manifest,
+        }));
     }
     let system = one(
         systems,
@@ -453,6 +489,20 @@ pub fn project_nix_flake_v1(exact_source: &[u8]) -> Result<NixFlakeV1, NixFlakeP
     for input in std::iter::once(&import).chain(overlays.iter()) {
         if !declared_inputs.contains(input) {
             return Err(NixFlakeProjectionErrorV1::UndeclaredInput(input.0.clone()));
+        }
+    }
+
+    let referenced_subjects = std::iter::once(&flake.name)
+        .chain(std::iter::once(&shell_name))
+        .chain(declared_inputs.iter())
+        .chain(included_names.iter())
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    for subject in &subjects {
+        if !referenced_subjects.contains(&subject.name) {
+            return Err(NixFlakeProjectionErrorV1::UnreferencedSubject(
+                subject.name.0.clone(),
+            ));
         }
     }
 
@@ -569,31 +619,21 @@ fn identifier(source: &str, line: usize) -> Result<NixIdentifierV1, NixFlakeProj
     Ok(NixIdentifierV1(source.to_owned()))
 }
 
-fn parse_quoted(source: &str, line: usize) -> Result<String, NixFlakeProjectionErrorV1> {
-    let inner = source
-        .strip_prefix('"')
-        .and_then(|value| value.strip_suffix('"'))
-        .ok_or_else(|| invalid(line, "expected one Text value"))?;
-    let mut characters = inner.chars();
-    let mut value = String::new();
-    while let Some(character) = characters.next() {
-        match character {
-            '"' | '\n' | '\r' => return Err(invalid(line, "invalid single-line Text value")),
-            '\\' => match characters.next() {
-                Some('"') => value.push('"'),
-                Some('\\') => value.push('\\'),
-                Some('n') => value.push('\n'),
-                Some('r') => value.push('\r'),
-                Some('t') => value.push('\t'),
-                _ => return Err(invalid(line, "invalid Text escape")),
-            },
-            character if character.is_control() => {
-                return Err(invalid(line, "invalid control character in Text"));
-            }
-            character => value.push(character),
-        }
-    }
-    Ok(value)
+fn fact_identifier(fact: &SourceFact) -> Result<NixIdentifierV1, NixFlakeProjectionErrorV1> {
+    let CanonicalScalarValueV1::Symbol(value) = &fact.object else {
+        return Err(invalid(fact.line, "expected one designation"));
+    };
+    identifier(
+        std::str::from_utf8(value).map_err(|_| CanonicalSourceErrorV1::InvalidUtf8)?,
+        fact.line,
+    )
+}
+
+fn fact_text(fact: &SourceFact) -> Result<String, NixFlakeProjectionErrorV1> {
+    let CanonicalScalarValueV1::Text(value) = &fact.object else {
+        return Err(invalid(fact.line, "expected one Text value"));
+    };
+    Ok(value.clone())
 }
 
 fn one<T>(
@@ -720,7 +760,7 @@ mod tests {
 
     #[test]
     fn undeclared_references_reject() {
-        let source = SOURCE.replace("imports nixpkgs", "imports missing");
+        let source = SOURCE.replace("imports: nixpkgs", "imports: missing");
         assert_eq!(
             project_nix_flake_v1(source.as_bytes()),
             Err(NixFlakeProjectionErrorV1::UndeclaredInput("missing".into()))
@@ -730,8 +770,8 @@ mod tests {
     #[test]
     fn input_follow_cycles_reject() {
         let source = SOURCE.replace(
-            "    rust-overlay follows nixpkgs",
-            "    rust-overlay follows nixpkgs\n    nixpkgs follows rust-overlay",
+            "    nixpkgs\n      from: \"github:NixOS/nixpkgs/nixos-unstable\"",
+            "    nixpkgs\n      from: \"github:NixOS/nixpkgs/nixos-unstable\"\n      follows: rust-overlay",
         );
         assert!(matches!(
             project_nix_flake_v1(source.as_bytes()),
@@ -741,7 +781,10 @@ mod tests {
 
     #[test]
     fn undeclared_overlays_reject() {
-        let source = SOURCE.replace("overlays rust-overlay", "overlays missing");
+        let source = SOURCE.replace(
+            "      overlays\n        rust-overlay",
+            "      overlays\n        missing",
+        );
         assert_eq!(
             project_nix_flake_v1(source.as_bytes()),
             Err(NixFlakeProjectionErrorV1::UndeclaredInput("missing".into()))
@@ -750,7 +793,10 @@ mod tests {
 
     #[test]
     fn conflicting_shell_facts_reject() {
-        let source = SOURCE.replace("for x86_64-linux", "for x86_64-linux\n  for aarch64-linux");
+        let source = SOURCE.replace(
+            "      system: x86_64-linux",
+            "      system: x86_64-linux\n      system: aarch64-linux",
+        );
         assert_eq!(
             project_nix_flake_v1(source.as_bytes()),
             Err(NixFlakeProjectionErrorV1::ConflictingShellSystem(

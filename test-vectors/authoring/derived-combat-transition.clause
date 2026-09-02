@@ -77,9 +77,12 @@ derive clamp-lower
 derive clamp-interior
 derive clamp-upper
 
-magitek-boar: Actor
-blade-two: Move
-combat-rules: CombatRules
+magitek-boar
+  shape: Actor
+blade-two
+  shape: Move
+combat-rules
+  shape: CombatRules
 
 magitek-boar vitality 100.0
 magitek-boar destabilization 100.0

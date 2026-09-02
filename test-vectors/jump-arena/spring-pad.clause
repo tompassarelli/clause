@@ -1,6 +1,7 @@
 SpringPad
 
-spring-pad-1: SpringPad
+spring-pad-1
+  shape: SpringPad
 
 on spring-contact ?player
   when

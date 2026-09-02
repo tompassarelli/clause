@@ -573,6 +573,8 @@ pub struct CanonicalSourceCstV1 {
     artifact: CanonicalSourceArtifactIdV1,
     exact_source: Box<[u8]>,
     items: Vec<CstItem>,
+    denotations: Vec<CanonicalSourceDenotationV1>,
+    applications: Vec<CanonicalSourceApplicationV1>,
     vocabularies: Vec<CanonicalSourceVocabularyV1>,
     subject_focuses: Vec<CanonicalSubjectFocusV1>,
 }
@@ -585,25 +587,37 @@ pub struct CanonicalSourceVocabularyV1 {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CanonicalFocusedEdgeV1 {
+    pub subject: Vec<u8>,
     pub source: Vec<u8>,
     pub origin: CanonicalSourceOriginV1,
 }
 
-/// One source-owned, many-valued binding from a referent to a typed term.
-/// Category membership is the symbol-valued case consumed as a domain by
-/// relations or a compiler-owned vocabulary; scalar and Text values remain
-/// ordinary bindings rather than competing assignments to one slot.
+/// One source-owned application with every semantic position explicit.
+/// Literal kind constrains `object`; it never selects or replaces `role`.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CanonicalSourceBindingV1 {
+pub struct CanonicalSourceApplicationV1 {
     pub subject: Vec<u8>,
-    pub value: CanonicalScalarValueV1,
+    pub role: Vec<u8>,
+    pub object: CanonicalScalarValueV1,
+    pub origin: CanonicalSourceOriginV1,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum CanonicalSourceDenotedValueV1 {
+    Scalar(CanonicalScalarValueV1),
+    OrderedProduct(Vec<CanonicalScalarValueV1>),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CanonicalSourceDenotationV1 {
+    pub name: Vec<u8>,
+    pub value: CanonicalSourceDenotedValueV1,
     pub origin: CanonicalSourceOriginV1,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CanonicalSubjectFocusV1 {
     pub subject: Vec<u8>,
-    pub binding: Option<CanonicalScalarValueV1>,
     pub origin: CanonicalSourceOriginV1,
     pub edges: Vec<CanonicalFocusedEdgeV1>,
 }
@@ -635,6 +649,16 @@ impl CanonicalSourceCstV1 {
     }
 
     #[must_use]
+    pub fn denotations(&self) -> &[CanonicalSourceDenotationV1] {
+        &self.denotations
+    }
+
+    #[must_use]
+    pub fn applications(&self) -> &[CanonicalSourceApplicationV1] {
+        &self.applications
+    }
+
+    #[must_use]
     pub fn subject_focuses(&self) -> &[CanonicalSubjectFocusV1] {
         &self.subject_focuses
     }
@@ -644,7 +668,8 @@ impl CanonicalSourceCstV1 {
 pub struct CanonicalSourcePackageSliceV1 {
     pub checked_package: CheckedProcessPackage,
     pub emissions: Vec<CanonicalSourceEmissionV1>,
-    pub bindings: Vec<CanonicalSourceBindingV1>,
+    pub denotations: Vec<CanonicalSourceDenotationV1>,
+    pub applications: Vec<CanonicalSourceApplicationV1>,
     pub unsupported: Vec<CanonicalUnsupportedProductionV1>,
     pub state_cells: Vec<CanonicalStateCellV1>,
     pub executable_handlers: Vec<CanonicalExecutableHandlerV1>,
@@ -709,7 +734,10 @@ pub enum CanonicalSourceErrorV1 {
     InvalidMode {
         origin: CanonicalSourceOriginV1,
     },
-    InvalidBinding {
+    InvalidApplication {
+        origin: CanonicalSourceOriginV1,
+    },
+    InvalidDenotation {
         origin: CanonicalSourceOriginV1,
     },
     InvalidInputHandler {
@@ -854,8 +882,10 @@ struct CstItem {
 enum CstKind {
     Referent {
         designation: Vec<u8>,
+        declaration: bool,
     },
-    Binding(BindingCst),
+    Denotation(DenotationCst),
+    Application(ApplicationCst),
     Capability {
         designation: Vec<u8>,
     },
@@ -885,10 +915,18 @@ enum CstKind {
 }
 
 #[derive(Clone, Debug)]
-struct BindingCst {
+struct ApplicationCst {
     subject: Vec<u8>,
-    value: CanonicalScalarValueV1,
+    role: Vec<u8>,
+    object: CanonicalScalarValueV1,
     emission: CanonicalSourceEmissionV1,
+}
+
+#[derive(Clone, Debug)]
+struct DenotationCst {
+    name: Vec<u8>,
+    value: CanonicalSourceDenotedValueV1,
+    emissions: Vec<CanonicalSourceEmissionV1>,
 }
 
 #[derive(Clone, Debug)]
@@ -1356,6 +1394,13 @@ pub fn read_canonical_source_v1(
             });
             continue;
         }
+        if let Some(denotation) = parse_denotation(artifact, block, origin)? {
+            items.push(CstItem {
+                origin,
+                kind: CstKind::Denotation(denotation),
+            });
+            continue;
+        }
         if let Some(focus) = parse_subject_focus(artifact, block, origin)? {
             subject_focuses.push(focus);
         }
@@ -1363,10 +1408,35 @@ pub fn read_canonical_source_v1(
     }
     retain_supported_boolean_derive_pairs(&mut items);
     validate_unique_designations(&items)?;
+    let denotations = items
+        .iter()
+        .filter_map(|item| match &item.kind {
+            CstKind::Denotation(denotation) => Some(CanonicalSourceDenotationV1 {
+                name: denotation.name.clone(),
+                value: denotation.value.clone(),
+                origin: item.origin,
+            }),
+            _ => None,
+        })
+        .collect();
+    let applications = items
+        .iter()
+        .filter_map(|item| match &item.kind {
+            CstKind::Application(application) => Some(CanonicalSourceApplicationV1 {
+                subject: application.subject.clone(),
+                role: application.role.clone(),
+                object: application.object.clone(),
+                origin: item.origin,
+            }),
+            _ => None,
+        })
+        .collect();
     Ok(CanonicalSourceCstV1 {
         artifact,
         exact_source: exact_source.into(),
         items,
+        denotations,
+        applications,
         vocabularies,
         subject_focuses,
     })
@@ -1559,7 +1629,7 @@ fn allocation_requests(
     let relational_handlers = relational_handler_origins(cst);
     for item in &cst.items {
         match &item.kind {
-            CstKind::Referent { designation } => {
+            CstKind::Referent { designation, .. } => {
                 if !requested_referents.insert(designation.clone()) {
                     continue;
                 }
@@ -1569,14 +1639,15 @@ fn allocation_requests(
                     domain: AllocationDomain::Formation,
                 });
             }
-            CstKind::Binding(binding) => {
-                if !requested_referents.insert(binding.subject.clone()) {
+            CstKind::Denotation(_) => {}
+            CstKind::Application(application) => {
+                if !requested_referents.insert(application.subject.clone()) {
                     continue;
                 }
                 requested.push(AllocationRequest {
                     producer: semantic_producer(
                         CanonicalSourceProductionV1::Referent,
-                        &binding.subject,
+                        &application.subject,
                     ),
                     slot: head_slot(CanonicalSourceProductionV1::Referent),
                     domain: AllocationDomain::Formation,
@@ -2616,7 +2687,8 @@ fn referent_type_id(
         matches!(
             &item.kind,
             CstKind::Referent {
-                designation: candidate
+                designation: candidate,
+                ..
             } if candidate == designation
         )
     }) {
@@ -2638,10 +2710,11 @@ fn declared_referent_value(
     origin: CanonicalSourceOriginV1,
 ) -> Result<CanonicalReferentV1, CanonicalSourceErrorV1> {
     let declared = cst.items.iter().any(|item| match &item.kind {
-        CstKind::Binding(binding)
-            if binding.subject == designation
+        CstKind::Application(application)
+            if application.subject == designation
+                && application.role == b"shape"
                 && matches!(
-                    &binding.value,
+                    &application.object,
                     CanonicalScalarValueV1::Symbol(candidate) if candidate == domain
                 ) =>
         {
@@ -4352,13 +4425,14 @@ fn relational_checked_handler(
                 .items
                 .iter()
                 .filter_map(|item| match &item.kind {
-                    CstKind::Binding(binding)
-                        if matches!(
-                            &binding.value,
-                            CanonicalScalarValueV1::Symbol(domain) if domain == subject_domain
-                        ) =>
+                    CstKind::Application(application)
+                        if application.role == b"shape"
+                            && matches!(
+                                &application.object,
+                                CanonicalScalarValueV1::Symbol(domain) if domain == subject_domain
+                            ) =>
                     {
-                        Some(binding.subject.clone())
+                        Some(application.subject.clone())
                     }
                     _ => None,
                 })
@@ -5553,13 +5627,14 @@ pub fn elaborate_canonical_source_package_v1(
     let mut capabilities = Vec::new();
     let mut operators = Vec::new();
     let mut emissions = Vec::new();
-    let mut bindings = Vec::new();
+    let mut denotations = Vec::new();
+    let mut applications = Vec::new();
     let mut unsupported = Vec::new();
     let mut named_formations = BTreeMap::new();
     let mut named_capabilities = BTreeMap::new();
     for item in &cst.items {
         match &item.kind {
-            CstKind::Referent { designation } => {
+            CstKind::Referent { designation, .. } => {
                 let producer =
                     semantic_producer(CanonicalSourceProductionV1::Referent, designation);
                 let slot = head_slot(CanonicalSourceProductionV1::Referent);
@@ -5581,10 +5656,10 @@ pub fn elaborate_canonical_source_package_v1(
     let scalar_parts = scalar_handler_parts(cst)?;
     let tick_parts = tick_program_parts(cst)?;
     let mut emitted_referents = BTreeSet::new();
-    let mut binding_repetitions = BTreeMap::<(Vec<u8>, Vec<u8>), u64>::new();
+    let mut application_repetitions = BTreeMap::<(Vec<u8>, Vec<u8>), u64>::new();
     for item in &cst.items {
         match &item.kind {
-            CstKind::Referent { designation } => {
+            CstKind::Referent { designation, .. } => {
                 if !emitted_referents.insert(designation.clone()) {
                     continue;
                 }
@@ -5601,8 +5676,18 @@ pub fn elaborate_canonical_source_package_v1(
                 )?);
                 emissions.push(emission(plan, producer, slot, item.origin));
             }
-            CstKind::Binding(binding) => {
-                if let CanonicalScalarValueV1::Symbol(domain) = &binding.value {
+            CstKind::Denotation(denotation) => {
+                emissions.extend(denotation.emissions.iter().cloned());
+                denotations.push(CanonicalSourceDenotationV1 {
+                    name: denotation.name.clone(),
+                    value: denotation.value.clone(),
+                    origin: item.origin,
+                });
+            }
+            CstKind::Application(application) => {
+                if application.role == b"shape"
+                    && let CanonicalScalarValueV1::Symbol(domain) = &application.object
+                {
                     if !named_formations.contains_key(domain)
                         && !source_vocabulary_declares_domain(cst, domain)
                     {
@@ -5612,34 +5697,38 @@ pub fn elaborate_canonical_source_package_v1(
                     }
                 }
                 let producer =
-                    semantic_producer(CanonicalSourceProductionV1::Referent, &binding.subject);
+                    semantic_producer(CanonicalSourceProductionV1::Referent, &application.subject);
                 let slot = head_slot(CanonicalSourceProductionV1::Referent);
-                if emitted_referents.insert(binding.subject.clone()) {
+                if emitted_referents.insert(application.subject.clone()) {
                     let id = formation_id(plan, &producer, &slot)?;
                     formations.push(source_formation(
                         scope,
                         id,
-                        cst.source_slice(item.origin).expect("owned binding origin"),
+                        cst.source_slice(item.origin)
+                            .expect("owned application origin"),
                         item.origin,
                         "referent",
                     )?);
                     emissions.push(emission(plan, producer, slot, item.origin));
                 }
-                let repetition_key = (binding.subject.clone(), binding.emission.slot.local.clone());
-                let occurrence = binding_repetitions.entry(repetition_key).or_default();
-                let mut binding_emission = binding.emission.clone();
-                binding_emission.slot.repetition = (*occurrence > 0).then_some(*occurrence);
-                *occurrence =
-                    occurrence
-                        .checked_add(1)
-                        .ok_or(CanonicalSourceErrorV1::InvalidBinding {
-                            origin: item.origin,
-                        })?;
-                emissions.push(binding_emission);
-                bindings.push(CanonicalSourceBindingV1 {
-                    subject: binding.subject.clone(),
-                    value: binding.value.clone(),
-                    origin: binding.emission.origin,
+                let repetition_key = (
+                    application.subject.clone(),
+                    application.emission.slot.local.clone(),
+                );
+                let occurrence = application_repetitions.entry(repetition_key).or_default();
+                let mut application_emission = application.emission.clone();
+                application_emission.slot.repetition = (*occurrence > 0).then_some(*occurrence);
+                *occurrence = occurrence.checked_add(1).ok_or(
+                    CanonicalSourceErrorV1::InvalidApplication {
+                        origin: item.origin,
+                    },
+                )?;
+                emissions.push(application_emission);
+                applications.push(CanonicalSourceApplicationV1 {
+                    subject: application.subject.clone(),
+                    role: application.role.clone(),
+                    object: application.object.clone(),
+                    origin: item.origin,
                 });
             }
             CstKind::Capability { designation } => {
@@ -6362,7 +6451,8 @@ pub fn elaborate_canonical_source_package_v1(
     Ok(CanonicalSourcePackageSliceV1 {
         checked_package,
         emissions,
-        bindings,
+        denotations,
+        applications,
         unsupported,
         state_cells,
         executable_handlers,
@@ -6713,23 +6803,18 @@ fn parse_item(
         return Err(CanonicalSourceErrorV1::InvalidMultilineText { origin });
     }
     require_leaf(block, artifact)?;
-    if let Some(binding) = parse_binding_line(artifact, block[0], origin)? {
-        return Ok(CstItem {
-            origin,
-            kind: CstKind::Binding(binding),
-        });
-    }
     let mut tokens = head.split_whitespace();
     let first = tokens.next().unwrap_or_default();
     let second = tokens.next();
     if first.contains(':') || first.contains('∈') || matches!(second, Some(":" | "∈")) {
-        return Err(CanonicalSourceErrorV1::InvalidBinding { origin });
+        return Err(CanonicalSourceErrorV1::InvalidDenotation { origin });
     }
     if !head.contains(char::is_whitespace) {
         return Ok(CstItem {
             origin,
             kind: CstKind::Referent {
                 designation: designation_bytes(head, origin)?,
+                declaration: true,
             },
         });
     }
@@ -6789,17 +6874,208 @@ fn parse_items(
 
     let head = block[0];
     let head_origin = line_origin(artifact, head);
-    let mut items = vec![parse_item(
-        artifact,
-        std::slice::from_ref(&head),
-        head_origin,
-    )?];
+    let mut items = vec![CstItem {
+        origin: head_origin,
+        kind: CstKind::Referent {
+            designation: focus.subject.clone(),
+            declaration: false,
+        },
+    }];
     for edge in focus.edges {
         let source = std::str::from_utf8(&edge.source)
             .expect("canonical source focus edges are always valid UTF-8");
-        items.push(parse_focused_edge(&focus.subject, source, edge.origin)?);
+        items.push(parse_focused_edge(&edge.subject, source, edge.origin)?);
     }
     Ok(items)
+}
+
+fn parse_denotation(
+    artifact: CanonicalSourceArtifactIdV1,
+    block: &[SourceLine<'_>],
+    origin: CanonicalSourceOriginV1,
+) -> Result<Option<DenotationCst>, CanonicalSourceErrorV1> {
+    let head = block[0];
+    if let Some((name, source)) = head.text.split_once(": ")
+        && !name.is_empty()
+        && !name.contains(char::is_whitespace)
+    {
+        if block
+            .iter()
+            .skip(1)
+            .any(|line| !line.text.trim().is_empty())
+        {
+            return Err(CanonicalSourceErrorV1::InvalidDenotation { origin });
+        }
+        let name = denotation_designation_bytes(name, origin)?;
+        let delimiter = head
+            .text
+            .find(": ")
+            .expect("a scalar denotation has one canonical delimiter");
+        let value_start = head
+            .start
+            .checked_add(delimiter)
+            .and_then(|offset| offset.checked_add(2))
+            .ok_or(CanonicalSourceErrorV1::InvalidDenotation { origin })?;
+        let value_origin = CanonicalSourceOriginV1 {
+            artifact,
+            start: value_start as u64,
+            end: head.end as u64,
+        };
+        if let Some((values, emissions)) =
+            parse_ordered_product_values(artifact, &name, source, value_start, value_origin)?
+        {
+            return Ok(Some(DenotationCst {
+                emissions,
+                name,
+                value: CanonicalSourceDenotedValueV1::OrderedProduct(values),
+            }));
+        }
+        let value = parse_application_object(source, value_origin).map_err(|_| {
+            CanonicalSourceErrorV1::InvalidDenotation {
+                origin: value_origin,
+            }
+        })?;
+        return Ok(Some(DenotationCst {
+            emissions: vec![denotation_emission(&name, &value, None, value_origin)],
+            name,
+            value: CanonicalSourceDenotedValueV1::Scalar(value),
+        }));
+    }
+    if head.text.ends_with(':') {
+        return Err(CanonicalSourceErrorV1::InvalidDenotation { origin });
+    }
+    if head.text.contains(char::is_whitespace) {
+        return Ok(None);
+    }
+    let children = block
+        .iter()
+        .skip(1)
+        .filter(|line| !line.text.trim().is_empty())
+        .copied()
+        .collect::<Vec<_>>();
+    let [line] = children.as_slice() else {
+        return Ok(None);
+    };
+    if line.indent != 2 {
+        return Ok(None);
+    }
+    let source = line
+        .text
+        .get(line.indent..)
+        .ok_or(CanonicalSourceErrorV1::InvalidDenotation { origin })?;
+    let source_origin = line_origin(artifact, *line);
+    if ordered_product_members(source, source_origin)?.is_none() {
+        return Ok(None);
+    }
+    let name = denotation_designation_bytes(head.text, origin)?;
+    let source_start = line
+        .start
+        .checked_add(line.indent)
+        .ok_or(CanonicalSourceErrorV1::InvalidDenotation { origin })?;
+    let Some((values, emissions)) =
+        parse_ordered_product_values(artifact, &name, source, source_start, source_origin)?
+    else {
+        unreachable!("the ordered-product delimiter was already observed");
+    };
+    Ok(Some(DenotationCst {
+        name,
+        value: CanonicalSourceDenotedValueV1::OrderedProduct(values),
+        emissions,
+    }))
+}
+
+fn parse_ordered_product_values(
+    artifact: CanonicalSourceArtifactIdV1,
+    name: &[u8],
+    source: &str,
+    source_start: usize,
+    origin: CanonicalSourceOriginV1,
+) -> Result<
+    Option<(Vec<CanonicalScalarValueV1>, Vec<CanonicalSourceEmissionV1>)>,
+    CanonicalSourceErrorV1,
+> {
+    let Some(members) = ordered_product_members(source, origin)? else {
+        return Ok(None);
+    };
+    let mut values = Vec::with_capacity(members.len());
+    let mut emissions = Vec::with_capacity(members.len());
+    for (position, (start, end)) in members.into_iter().enumerate() {
+        let member_source = source
+            .get(start..end)
+            .ok_or(CanonicalSourceErrorV1::InvalidDenotation { origin })?;
+        let member_origin = CanonicalSourceOriginV1 {
+            artifact,
+            start: source_start
+                .checked_add(start)
+                .ok_or(CanonicalSourceErrorV1::InvalidDenotation { origin })?
+                as u64,
+            end: source_start
+                .checked_add(end)
+                .ok_or(CanonicalSourceErrorV1::InvalidDenotation { origin })?
+                as u64,
+        };
+        let value = parse_application_object(member_source, member_origin).map_err(|_| {
+            CanonicalSourceErrorV1::InvalidDenotation {
+                origin: member_origin,
+            }
+        })?;
+        let position = u64::try_from(position)
+            .map_err(|_| CanonicalSourceErrorV1::InvalidDenotation { origin })?;
+        emissions.push(denotation_emission(
+            name,
+            &value,
+            Some(position),
+            member_origin,
+        ));
+        values.push(value);
+    }
+    Ok(Some((values, emissions)))
+}
+
+fn ordered_product_members(
+    source: &str,
+    origin: CanonicalSourceOriginV1,
+) -> Result<Option<Vec<(usize, usize)>>, CanonicalSourceErrorV1> {
+    let mut starts = vec![0];
+    let mut in_text = false;
+    let mut escaped = false;
+    for (offset, character) in source.char_indices() {
+        if in_text {
+            if escaped {
+                escaped = false;
+            } else if character == '\\' {
+                escaped = true;
+            } else if character == '"' {
+                in_text = false;
+            }
+        } else if character == '"' {
+            in_text = true;
+        } else if character == ',' {
+            starts.push(offset + character.len_utf8());
+        }
+    }
+    if starts.len() == 1 {
+        return Ok(None);
+    }
+    if in_text || escaped {
+        return Err(CanonicalSourceErrorV1::InvalidDenotation { origin });
+    }
+    let mut members = Vec::with_capacity(starts.len());
+    for (position, start) in starts.iter().copied().enumerate() {
+        let raw_end = starts
+            .get(position + 1)
+            .map_or(source.len(), |next| next.saturating_sub(1));
+        let raw = source
+            .get(start..raw_end)
+            .ok_or(CanonicalSourceErrorV1::InvalidDenotation { origin })?;
+        let trimmed_start = raw.len() - raw.trim_start().len();
+        let trimmed_end = raw.trim_end().len();
+        if trimmed_start >= trimmed_end {
+            return Err(CanonicalSourceErrorV1::InvalidDenotation { origin });
+        }
+        members.push((start + trimmed_start, start + trimmed_end));
+    }
+    Ok(Some(members))
 }
 
 fn parse_subject_focus(
@@ -6818,18 +7094,18 @@ fn parse_subject_focus(
     }
     let head = block[0];
     let head_origin = line_origin(artifact, head);
-    let (subject, binding) =
-        if let Some((subject, value)) = parse_binding_parts(head.text, head_origin)? {
-            (subject, Some(value))
-        } else if !head.text.contains(char::is_whitespace) {
-            (designation_bytes(head.text, head_origin)?, None)
-        } else {
-            return Ok(None);
-        };
-    let edges = parse_focused_edges(artifact, &children, 0, &mut Vec::new())?;
+    if head.text.contains(char::is_whitespace) {
+        return Ok(None);
+    }
+    if head.text.contains(':') || head.text.contains('∈') {
+        return Err(CanonicalSourceErrorV1::InvalidDenotation {
+            origin: head_origin,
+        });
+    }
+    let subject = designation_bytes(head.text, head_origin)?;
+    let edges = parse_focused_edges(artifact, &children, 0, &subject)?;
     Ok(Some(CanonicalSubjectFocusV1 {
         subject,
-        binding,
         origin,
         edges,
     }))
@@ -6839,7 +7115,7 @@ fn parse_focused_edges(
     artifact: CanonicalSourceArtifactIdV1,
     lines: &[SourceLine<'_>],
     parent_indent: usize,
-    prefixes: &mut Vec<String>,
+    subject: &[u8],
 ) -> Result<Vec<CanonicalFocusedEdgeV1>, CanonicalSourceErrorV1> {
     let expected_indent =
         parent_indent
@@ -6866,24 +7142,67 @@ fn parse_focused_edges(
             descendants_end += 1;
         }
         if descendants_start == descendants_end {
-            let mut expanded = prefixes.join(" ");
-            if !expanded.is_empty() {
-                expanded.push(' ');
-            }
-            expanded.push_str(source);
             edges.push(CanonicalFocusedEdgeV1 {
-                source: expanded.into_bytes(),
+                subject: subject.to_vec(),
+                source: source.as_bytes().to_vec(),
                 origin,
             });
         } else {
-            prefixes.push(source.to_owned());
-            edges.extend(parse_focused_edges(
-                artifact,
-                &lines[descendants_start..descendants_end],
-                line.indent,
-                prefixes,
-            )?);
-            prefixes.pop();
+            let role = application_role_bytes(source, origin)?;
+            let object_indent = line
+                .indent
+                .checked_add(2)
+                .ok_or(CanonicalSourceErrorV1::UnexpectedIndentation { origin })?;
+            let descendants = &lines[descendants_start..descendants_end];
+            let mut object_cursor = 0;
+            while object_cursor < descendants.len() {
+                let object_line = descendants[object_cursor];
+                let object_origin = line_origin(artifact, object_line);
+                if object_line.indent != object_indent {
+                    return Err(CanonicalSourceErrorV1::UnexpectedIndentation {
+                        origin: object_origin,
+                    });
+                }
+                let object_source = object_line
+                    .text
+                    .get(object_line.indent..)
+                    .filter(|object| !object.is_empty())
+                    .ok_or(CanonicalSourceErrorV1::InvalidApplication {
+                        origin: object_origin,
+                    })?;
+                let object = parse_application_object(object_source, object_origin)?;
+                let mut application_source =
+                    String::from_utf8(role.clone()).expect("application roles are valid UTF-8");
+                application_source.push_str(": ");
+                application_source.push_str(object_source);
+                edges.push(CanonicalFocusedEdgeV1 {
+                    subject: subject.to_vec(),
+                    source: application_source.into_bytes(),
+                    origin: object_origin,
+                });
+
+                let object_descendants_start = object_cursor + 1;
+                let mut object_descendants_end = object_descendants_start;
+                while object_descendants_end < descendants.len()
+                    && descendants[object_descendants_end].indent > object_line.indent
+                {
+                    object_descendants_end += 1;
+                }
+                if object_descendants_start != object_descendants_end {
+                    let CanonicalScalarValueV1::Symbol(nested_subject) = object else {
+                        return Err(CanonicalSourceErrorV1::InvalidApplication {
+                            origin: object_origin,
+                        });
+                    };
+                    edges.extend(parse_focused_edges(
+                        artifact,
+                        &descendants[object_descendants_start..object_descendants_end],
+                        object_line.indent,
+                        &nested_subject,
+                    )?);
+                }
+                object_cursor = object_descendants_end;
+            }
         }
         cursor = descendants_end;
     }
@@ -6895,6 +7214,15 @@ fn parse_focused_edge(
     edge: &str,
     origin: CanonicalSourceOriginV1,
 ) -> Result<CstItem, CanonicalSourceErrorV1> {
+    if let Some(application) = parse_application_edge(subject, edge, origin)? {
+        return Ok(CstItem {
+            origin,
+            kind: CstKind::Application(application),
+        });
+    }
+    if edge.contains(':') || edge.contains('∈') {
+        return Err(CanonicalSourceErrorV1::InvalidApplication { origin });
+    }
     let subject =
         std::str::from_utf8(subject).expect("canonical source designations are always valid UTF-8");
     let expanded = format!("{subject} {edge}");
@@ -7537,7 +7865,8 @@ fn parse_general_handler(
     let logical = logical_source_lines(artifact, block)?;
     let mut section = String::new();
     let mut when = Vec::new();
-    let mut create = Vec::new();
+    let mut create = Vec::<(Vec<u8>, Vec<u8>)>::new();
+    let mut pending_creation = None::<(Vec<u8>, CanonicalSourceOriginV1)>;
     let mut withdraw = Vec::new();
     let mut include = Vec::new();
     let mut seen_sections = BTreeSet::new();
@@ -7548,6 +7877,9 @@ fn parse_general_handler(
     {
         let trimmed = line.text.trim();
         if line.indent == 2 {
+            if pending_creation.is_some() {
+                return Err(CanonicalSourceErrorV1::InvalidGeneralHandler { origin });
+            }
             if trimmed == "admit" {
                 return Err(CanonicalSourceErrorV1::NonCanonicalKeyword {
                     origin: line.origin,
@@ -7563,17 +7895,48 @@ fn parse_general_handler(
             section.push_str(trimmed);
             continue;
         }
+        if section == "create" {
+            if line.indent == 4 {
+                if pending_creation.is_some()
+                    || !trimmed.starts_with('?')
+                    || trimmed.contains(char::is_whitespace)
+                {
+                    return Err(CanonicalSourceErrorV1::InvalidGeneralHandler { origin });
+                }
+                pending_creation = Some((trimmed.as_bytes().to_vec(), line.origin));
+                continue;
+            }
+            if line.indent == 6 {
+                let Some((parameter, _)) = pending_creation.take() else {
+                    return Err(CanonicalSourceErrorV1::InvalidGeneralHandler { origin });
+                };
+                let Some((role, object)) = parse_application_parts(trimmed, line.origin)? else {
+                    return Err(CanonicalSourceErrorV1::InvalidGeneralHandler { origin });
+                };
+                let CanonicalScalarValueV1::Symbol(domain) = object else {
+                    return Err(CanonicalSourceErrorV1::InvalidGeneralHandler { origin });
+                };
+                if role != b"shape" || domain.starts_with(b"?") {
+                    return Err(CanonicalSourceErrorV1::InvalidGeneralHandler { origin });
+                }
+                create.push((parameter, domain));
+                continue;
+            }
+            return Ok(None);
+        }
         if line.indent != 4 {
             return Ok(None);
         }
         let entry = (trimmed.to_owned(), line.origin);
         match section.as_str() {
             "when" => when.push(entry),
-            "create" => create.push(entry),
             "withdraw" => withdraw.push(entry),
             "include" => include.push(entry),
             _ => return Ok(None),
         }
+    }
+    if pending_creation.is_some() {
+        return Err(CanonicalSourceErrorV1::InvalidGeneralHandler { origin });
     }
     if include.is_empty() {
         return Ok(None);
@@ -7583,9 +7946,7 @@ fn parse_general_handler(
     let creations = create
         .iter()
         .enumerate()
-        .map(|(binder, (source, _))| {
-            let (parameter, domain) = parse_general_referent_creation(source)
-                .ok_or(CanonicalSourceErrorV1::InvalidGeneralHandler { origin })?;
+        .map(|(binder, (parameter, domain))| {
             if parameter == subject.as_bytes()
                 || seen_arguments.contains(parameter.as_slice())
                 || !seen_creations.insert(parameter.clone())
@@ -7593,8 +7954,8 @@ fn parse_general_handler(
                 return Err(CanonicalSourceErrorV1::InvalidGeneralHandler { origin });
             }
             Ok(GeneralReferentCreationCst {
-                parameter,
-                domain,
+                parameter: parameter.clone(),
+                domain: domain.clone(),
                 binder: u16::try_from(binder)
                     .map_err(|_| CanonicalSourceErrorV1::InvalidGeneralHandler { origin })?,
             })
@@ -7770,19 +8131,6 @@ fn parse_general_handler(
         removals,
         includes,
     }))
-}
-
-fn parse_general_referent_creation(source: &str) -> Option<(Vec<u8>, Vec<u8>)> {
-    let (parameter, domain) = source.split_once(": ")?;
-    if !parameter.starts_with('?')
-        || parameter.contains(char::is_whitespace)
-        || domain.starts_with('?')
-        || domain.is_empty()
-        || domain.contains(char::is_whitespace)
-    {
-        return None;
-    }
-    Some((parameter.as_bytes().to_vec(), domain.as_bytes().to_vec()))
 }
 
 fn parse_general_insertion(
@@ -9708,67 +10056,77 @@ fn handler_include_emissions(
     Ok(emissions)
 }
 
-fn parse_binding_line(
-    artifact: CanonicalSourceArtifactIdV1,
-    line: SourceLine<'_>,
+fn parse_application_edge(
+    subject: &[u8],
+    source: &str,
     origin: CanonicalSourceOriginV1,
-) -> Result<Option<BindingCst>, CanonicalSourceErrorV1> {
-    let Some((subject, value)) = parse_binding_parts(line.text, origin)? else {
+) -> Result<Option<ApplicationCst>, CanonicalSourceErrorV1> {
+    let Some((role, object)) = parse_application_parts(source, origin)? else {
         return Ok(None);
     };
-    let delimiter = line
-        .text
-        .find(": ")
-        .expect("a parsed binding has one canonical delimiter");
-    let value_start = line
-        .start
-        .checked_add(delimiter)
-        .and_then(|offset| offset.checked_add(2))
-        .ok_or(CanonicalSourceErrorV1::InvalidBinding { origin })?;
-    let value_origin = CanonicalSourceOriginV1 {
-        artifact,
-        start: value_start as u64,
-        end: line.end as u64,
-    };
     let emission = CanonicalSourceEmissionV1 {
-        producer: assertion_producer(&subject, b":"),
+        producer: assertion_producer(subject, &role),
         slot: child_slot(
             CanonicalSourceProductionV1::Assertion,
-            &binding_semantic_bytes(&value),
+            &application_semantic_bytes(&role, &object),
         ),
-        origin: value_origin,
+        origin,
         allocations: vec![],
     };
-    Ok(Some(BindingCst {
-        subject,
-        value,
+    Ok(Some(ApplicationCst {
+        subject: subject.to_vec(),
+        role,
+        object,
         emission,
     }))
 }
 
-fn parse_binding_parts(
+fn parse_application_parts(
     source: &str,
     origin: CanonicalSourceOriginV1,
 ) -> Result<Option<(Vec<u8>, CanonicalScalarValueV1)>, CanonicalSourceErrorV1> {
-    let Some((subject, value)) = source.split_once(": ") else {
+    let Some((role, object)) = source.split_once(": ") else {
         return Ok(None);
     };
-    if subject.is_empty() || subject.contains(char::is_whitespace) {
-        return Ok(None);
+    if object.is_empty() {
+        return Err(CanonicalSourceErrorV1::InvalidApplication { origin });
     }
-    let subject = binding_designation_bytes(subject, origin)?;
-    let value = parse_binding_value(value, origin)?;
-    Ok(Some((subject, value)))
+    let role = application_role_bytes(role, origin)?;
+    let object = parse_application_object(object, origin)?;
+    Ok(Some((role, object)))
 }
 
-fn parse_binding_value(
+fn application_role_bytes(
+    source: &str,
+    origin: CanonicalSourceOriginV1,
+) -> Result<Vec<u8>, CanonicalSourceErrorV1> {
+    if source.is_empty()
+        || source.trim() != source
+        || source.contains("  ")
+        || source.split(' ').any(|word| {
+            let bytes = word.as_bytes();
+            !bytes
+                .first()
+                .is_some_and(|byte| byte.is_ascii_alphabetic() || *byte == b'_')
+                || !bytes
+                    .iter()
+                    .skip(1)
+                    .all(|byte| byte.is_ascii_alphanumeric() || matches!(*byte, b'_' | b'-'))
+        })
+    {
+        return Err(CanonicalSourceErrorV1::InvalidApplication { origin });
+    }
+    Ok(source.as_bytes().to_vec())
+}
+
+fn parse_application_object(
     source: &str,
     origin: CanonicalSourceOriginV1,
 ) -> Result<CanonicalScalarValueV1, CanonicalSourceErrorV1> {
     if source.starts_with('"') {
         return parse_text_literal(source)
             .map(CanonicalScalarValueV1::Text)
-            .ok_or(CanonicalSourceErrorV1::InvalidBinding { origin });
+            .ok_or(CanonicalSourceErrorV1::InvalidApplication { origin });
     }
     if source == "true" {
         return Ok(CanonicalScalarValueV1::Boolean(true));
@@ -9779,10 +10137,28 @@ fn parse_binding_value(
     if let Some(number) = parse_source_number(source) {
         return Ok(CanonicalScalarValueV1::Number(number));
     }
-    binding_designation_bytes(source, origin).map(CanonicalScalarValueV1::Symbol)
+    application_designation_bytes(source, origin).map(CanonicalScalarValueV1::Symbol)
 }
 
-fn binding_designation_bytes(
+fn application_designation_bytes(
+    source: &str,
+    origin: CanonicalSourceOriginV1,
+) -> Result<Vec<u8>, CanonicalSourceErrorV1> {
+    let bytes = source.as_bytes();
+    let valid = bytes
+        .first()
+        .is_some_and(|byte| byte.is_ascii_alphanumeric() || *byte == b'_')
+        && bytes
+            .iter()
+            .skip(1)
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(*byte, b'_' | b'-'));
+    if !valid {
+        return Err(CanonicalSourceErrorV1::InvalidApplication { origin });
+    }
+    Ok(bytes.to_vec())
+}
+
+fn denotation_designation_bytes(
     source: &str,
     origin: CanonicalSourceOriginV1,
 ) -> Result<Vec<u8>, CanonicalSourceErrorV1> {
@@ -9795,13 +10171,49 @@ fn binding_designation_bytes(
             .skip(1)
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(*byte, b'_' | b'-'));
     if !valid {
-        return Err(CanonicalSourceErrorV1::InvalidBinding { origin });
+        return Err(CanonicalSourceErrorV1::InvalidDenotation { origin });
     }
     Ok(bytes.to_vec())
 }
 
-fn binding_semantic_bytes(value: &CanonicalScalarValueV1) -> Vec<u8> {
+fn denotation_emission(
+    name: &[u8],
+    value: &CanonicalScalarValueV1,
+    position: Option<u64>,
+    origin: CanonicalSourceOriginV1,
+) -> CanonicalSourceEmissionV1 {
+    CanonicalSourceEmissionV1 {
+        producer: assertion_producer(name, b":"),
+        slot: child_slot(
+            CanonicalSourceProductionV1::Assertion,
+            &denotation_semantic_bytes(position, value),
+        ),
+        origin,
+        allocations: vec![],
+    }
+}
+
+fn denotation_semantic_bytes(position: Option<u64>, value: &CanonicalScalarValueV1) -> Vec<u8> {
     let mut bytes = Vec::new();
+    match position {
+        None => bytes.push(0),
+        Some(position) => {
+            bytes.push(1);
+            bytes.extend_from_slice(&position.to_be_bytes());
+        }
+    }
+    append_scalar_semantic_bytes(&mut bytes, value);
+    bytes
+}
+
+fn application_semantic_bytes(role: &[u8], object: &CanonicalScalarValueV1) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    frame_bytes(&mut bytes, role);
+    append_scalar_semantic_bytes(&mut bytes, object);
+    bytes
+}
+
+fn append_scalar_semantic_bytes(bytes: &mut Vec<u8>, value: &CanonicalScalarValueV1) {
     match value {
         CanonicalScalarValueV1::Number(number) => {
             bytes.push(0);
@@ -9812,17 +10224,16 @@ fn binding_semantic_bytes(value: &CanonicalScalarValueV1) -> Vec<u8> {
         }
         CanonicalScalarValueV1::Symbol(value) => {
             bytes.push(2);
-            frame_bytes(&mut bytes, value);
+            frame_bytes(bytes, value);
         }
         CanonicalScalarValueV1::Text(value) => {
             bytes.push(3);
-            frame_bytes(&mut bytes, value.as_bytes());
+            frame_bytes(bytes, value.as_bytes());
         }
         CanonicalScalarValueV1::Referent(_) | CanonicalScalarValueV1::RelationTable(_) => {
-            unreachable!("source binding values are unresolved scalar terms")
+            unreachable!("canonical source scalar values are unresolved terms")
         }
     }
-    bytes
 }
 
 fn handler_semantic_producer(block: &[SourceLine<'_>]) -> Vec<u8> {
@@ -10417,46 +10828,52 @@ fn retain_supported_boolean_derive_pairs(items: &mut [CstItem]) {
 
 fn validate_unique_designations(items: &[CstItem]) -> Result<(), CanonicalSourceErrorV1> {
     let mut seen = BTreeMap::<Vec<u8>, (bool, bool)>::new();
-    for (designation, referent, binding) in items.iter().filter_map(|item| match &item.kind {
-        CstKind::Referent { designation } => Some((designation, true, false)),
-        CstKind::Binding(binding) => Some((&binding.subject, false, true)),
-        CstKind::Capability { designation } | CstKind::Shape { designation, .. } => {
-            Some((designation, false, false))
-        }
-        CstKind::Relation(relation) => Some((&relation.designation, false, false)),
-        CstKind::InputHandler(_)
-        | CstKind::JumpHandler(_)
-        | CstKind::ScalarHandler(_)
-        | CstKind::GeneralHandler(_)
-        | CstKind::TickHandler(_)
-        | CstKind::KeyboardBinding(_)
-        | CstKind::ScalarInputBinding(_)
-        | CstKind::ClampLaw(_)
-        | CstKind::ClampDerive(_)
-        | CstKind::BooleanLaw(_)
-        | CstKind::BooleanDerive(_)
-        | CstKind::VectorAssertion(_)
-        | CstKind::ShapeAssertion(_)
-        | CstKind::BooleanAssertion(_)
-        | CstKind::NumberAssertion(_)
-        | CstKind::SymbolAssertion(_)
-        | CstKind::TextAssertion(_)
-        | CstKind::Unsupported(_) => None,
-    }) {
-        if let Some((prior_referent, prior_binding)) = seen.get_mut(designation) {
-            let shares_referent_identity = (referent || binding)
-                && (*prior_referent || *prior_binding)
-                && !(referent && *prior_referent);
+    for (designation, declaration, referent_use) in
+        items.iter().filter_map(|item| match &item.kind {
+            CstKind::Referent {
+                designation,
+                declaration,
+            } => Some((designation, *declaration, !*declaration)),
+            CstKind::Denotation(denotation) => Some((&denotation.name, false, false)),
+            CstKind::Application(application) => Some((&application.subject, false, true)),
+            CstKind::Capability { designation } | CstKind::Shape { designation, .. } => {
+                Some((designation, false, false))
+            }
+            CstKind::Relation(relation) => Some((&relation.designation, false, false)),
+            CstKind::InputHandler(_)
+            | CstKind::JumpHandler(_)
+            | CstKind::ScalarHandler(_)
+            | CstKind::GeneralHandler(_)
+            | CstKind::TickHandler(_)
+            | CstKind::KeyboardBinding(_)
+            | CstKind::ScalarInputBinding(_)
+            | CstKind::ClampLaw(_)
+            | CstKind::ClampDerive(_)
+            | CstKind::BooleanLaw(_)
+            | CstKind::BooleanDerive(_)
+            | CstKind::VectorAssertion(_)
+            | CstKind::ShapeAssertion(_)
+            | CstKind::BooleanAssertion(_)
+            | CstKind::NumberAssertion(_)
+            | CstKind::SymbolAssertion(_)
+            | CstKind::TextAssertion(_)
+            | CstKind::Unsupported(_) => None,
+        })
+    {
+        if let Some((prior_declaration, prior_referent_use)) = seen.get_mut(designation) {
+            let shares_referent_identity = (declaration || referent_use)
+                && (*prior_declaration || *prior_referent_use)
+                && !(declaration && *prior_declaration);
             if shares_referent_identity {
-                *prior_referent |= referent;
-                *prior_binding |= binding;
+                *prior_declaration |= declaration;
+                *prior_referent_use |= referent_use;
                 continue;
             }
             return Err(CanonicalSourceErrorV1::DuplicateDesignation {
                 designation: designation.clone(),
             });
         }
-        seen.insert(designation.clone(), (referent, binding));
+        seen.insert(designation.clone(), (declaration, referent_use));
     }
     Ok(())
 }

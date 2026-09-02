@@ -133,17 +133,22 @@ enum Game
   Soccer
 ```
 
-A subject-focus header selects a focused-edge child grammar. A leaf names its
-own edge; an interior child contributes a relation prefix to every leaf below
-it:
+A subject-focus header selects an explicit-application child grammar. A leaf
+spells `role: object`. An interior role groups repeated objects, and any object
+with descendants becomes the subject of those nested applications:
 
 ```clause
-north: Flake
-  description "North-v2 development environment"
+north
+  shape: Flake
+  description: "North-v2 development environment"
   inputs
-    nixpkgs from "github:NixOS/nixpkgs/nixos-unstable"
-    rust-overlay from "github:oxalica/rust-overlay"
-  development shell north-shell
+    nixpkgs
+      from: "github:NixOS/nixpkgs/nixos-unstable"
+    rust-overlay
+      from: "github:oxalica/rust-overlay"
+      follows: nixpkgs
+  development shell
+    north-shell
 ```
 
 Constructs such as `relation`, `function`, `law`, `on`, and requests instead
@@ -157,10 +162,13 @@ is `SubjectFocus`. The parser selects between those productions from layout
 alone and never inspects the mix of children to classify the block. A subject
 focus must own at least one explicit edge child.
 
-The block omits only the repeated subject `north`. `inputs` is an explicit
-relation-prefix token, so its leaves elaborate as `inputs nixpkgs from …` and
-`inputs rust-overlay from …`. Indentation composes those declared tokens; it
-does not infer membership, containment, ownership, fields, or a relation.
+The block omits only repeated positions that layout fixes mechanically. The
+`inputs` group emits `(north, inputs, nixpkgs)` and
+`(north, inputs, rust-overlay)`. The nested `from` and `follows` applications
+use those input objects as subjects. Indentation establishes focus and
+grouping; it never invents a relation. Whitespace inside a role phrase is
+lexical. The following colon, or the child-object indentation of a grouped
+role, fixes the phrase boundary without underscores or type inference.
 
 This is always invalid:
 
@@ -186,20 +194,23 @@ shape Vec2
   y: F32
 
 gravity: 9.81
-origin: Vec2 { x: 0.0, y: 0.0 }
+rgb: 255, 0, 0
 
 relation connects
   reads {door: Door} connects {origin: Space} to {destination: Space}
   subject door
   mode given door origin yields destination: many
 
-Cellar: Space
-Armory: Space
+Cellar
+  shape: Space
+Armory
+  shape: Space
 
-iron-door: Door
+iron-door
+  shape: Door
+  shape: Lockable
   connects Cellar to Armory
   state locked
-iron-door: Lockable
 
 law direct-dependency
   if
@@ -223,7 +234,8 @@ select all ?destination in egress
     ICU-A has a usable egress path to ?destination
 
 for n in 101..106
-  Door-{n}: Door
+  Door-{n}
+    shape: Door
 ```
 
 This is the accepted source shape. It does not expose ActivationIds, StepIds,
@@ -254,9 +266,29 @@ shape Vec2
 - A bare designation leaf introduces or explicitly resolves one Referent
   through the lineage-aware identity process.
 - `enum` declares one homogeneous member-entry reading. Each child contributes
-  one independent category relation after checked elaboration.
+  one independent membership judgment after checked elaboration.
 - `shape` declares one homogeneous field-entry reading. Each child contributes
   one `role: Domain` judgment after checked elaboration.
+
+A Shape is the contract for a subject's admissible participation, not merely
+the arrangement of its fields. Depending on the Shape, that contract may
+include required or permitted roles and cardinalities, value contracts, modes
+and variance, failures and effects, transition laws and observable invariants,
+and declared progress or resource obligations. Physical layout is separate
+representation structure unless the Shape explicitly makes it observable.
+
+Applying `shape: S` is directional satisfaction: the subject meets every
+obligation exposed by `S` and is substitutable wherever `S` is required,
+relative to `S`'s declared observation, effect, failure, progress, and
+representation boundaries. It is not exact Shape equality, nominal membership,
+denotation, or physical layout. Extra private structure may exist; additional
+public structure depends on whether `S` is open or closed.
+
+The current executable `shape` production checks the field/application subset
+of this contract. Modes, laws, observations, effects, failures, and progress
+obligations become part of checked Shape satisfaction only as the compiler
+actually includes them; the broader definition is the semantic target, not a
+claim about the present checker.
 
 There is no routine `model ...` source head. A domain world, scene, game, or
 hospital is an ordinary Referent described by relations. Program identity
@@ -264,138 +296,138 @@ enters at the proposal boundary; Admission authority enters only at the
 separate Admission boundary. Neither comes from a source grouping keyword or
 the candidate snapshot itself.
 
-## Bindings, equality, and focus
+## Denotation, application, equality, and focus
 
 Each surface form has one conceptual job:
 
 | Form | Meaning |
 | --- | --- |
-| `x: value` | bind `x` to one typed term |
+| `name: scalar` | make `name` denote one scalar value |
+| `name: a, b` | make `name` denote one ordered anonymous product |
+| `subject` + `role: object` | apply one explicit semantic role |
 | `x = y` | assert equality relational content |
 | `?name` | use one correlated logical variable |
 | `?_` | use one fresh anonymous query hole |
 
-An ordinary top-level relational line selects an assertive source production.
-Reading and elaboration produce proposition content, an assertive stance
-candidate, and an independent source-origin record; neither operation asserts
-the Term. Checked candidate-snapshot construction may then apply one typed
-`Fresh` allocation judgment for each accepted emission, using its exact
-`EmissionSlot`, semantic producer, and domain-declared basis, to establish one
-nominal `AssertionOccurrence`. Authority comes from that occurrence's admitted
-context, never from punctuation, parsing, Term construction, or the allocation
-act. Relation patterns inside `where`, `when`, `if`, and other
-declared child grammars select their grammar-owned non-assertive stances and do
-not become assertions merely because their Terms equal top-level content.
+These concerns remain separate: a literal supplies a value, a comma supplies
+an ordinal position, a role supplies meaning relative to a subject, a contract
+governs admissibility, and a representation governs storage. None substitutes
+for another.
 
-Colon is one generic, repeatable binding primitive:
+A top-level colon after one name is denotation:
+
+```clause
+five: 5
+phone-number: 123-456-7890
+pair: 5, "hello"
+```
+
+`five` denotes the numeric value `5`. `pair` denotes one ordered compound;
+its applications are position 0 to `5` and position 1 to `"hello"`. Equal
+members at different positions remain distinct occurrences with independent
+origins. A long line may use the equivalent block form:
+
+```clause
+rgb
+  255, 0, 0
+```
+
+The comma is load-bearing. A vertical list of bare children is not an ordered
+product, because indentation alone never invents a relation or position.
+
+Denotation does not classify its name. In particular:
 
 ```clause
 north: Flake
-north: 5
-north: "hello"
 ```
 
-The left side designates one Referent; it does not own a privileged value slot.
-Each line emits one independently ordered and provenanced binding, even when
-another binding has the same subject or an equal value. Scalar and Text values
-remain ordinary typed terms. A symbol-valued binding such as `north: Flake`
-also supplies the classification consequence required when `Flake` is consumed
-as a relation domain or by a compiler-owned vocabulary. The reader does not
-assign different punctuation to those RHS cases; elaboration resolves their
-meaning from the checked context.
-
-Repeated values stay repeated:
+means that `north` denotes the value named `Flake`. It never means Shape
+satisfaction merely because the right side resolves as a Shape or contract.
+Shape satisfaction is an explicit semantic application:
 
 ```clause
-north: Flake
-north: Flake
+north
+  shape: Flake
 ```
 
-They elaborate to two ordered binding emissions with distinct occurrences and
-source origins. A comma does not group bindings. Multiple values use multiple
-lines, so these are reader errors rather than aliases:
+An identified subject may participate in any number of explicitly named
+applications:
 
 ```clause
-north: Flake, 5
-north ∈ Flake
+north
+  shape: Flake
+  worker count: 5
+  description: "North-v2 development environment"
+  enabled: true
 ```
 
-A binding head may also focus its subject for indented relations:
+The literal kinds constrain the objects but never select the roles. Therefore
+`integer: 5`, `string: "hello"`, and `boolean: true` are not generic property
+syntax: they are meaningful only if those words are genuinely the intended
+domain roles. A relation contract may separately require `worker count` to
+admit natural numbers; physical width and encoding remain representation facts.
 
-```clause
-north: Flake
-  description "North-v2 development environment"
-  development shell north-shell
-```
-
-The binding is one emission and `north` is the focus of each child edge. The
-RHS never becomes the block focus and cannot donate tokens to a child Reading.
-Adding or changing a child cannot reinterpret the binding.
-
-Focus is recursively compositional. An interior child contributes an explicit
-relation prefix to every complete leaf below it:
-
-```clause
-north: Flake
-  inputs
-    nixpkgs from "github:NixOS/nixpkgs/nixos-unstable"
-    rust-overlay from "github:oxalica/rust-overlay"
-    rust-overlay follows nixpkgs
-```
-
-The three leaves elaborate with `north` as subject and with the complete edge
-phrases `inputs nixpkgs from …`, `inputs rust-overlay from …`, and
-`inputs rust-overlay follows nixpkgs`. `inputs` by itself emits nothing. Prefix
-nodes may nest to any reader-supported indentation depth, and every level adds
-its source tokens in order. This is relation-prefix focus, not a Nix-specific
-block form.
-
-A bare focus remains available when no header binding is wanted:
+Repeated roles stay repeated and retain independent provenance:
 
 ```clause
 iron-door
-  connects Cellar to Armory
-  state locked
+  shape: Door
+  shape: Lockable
 ```
 
-A focus leaf must resolve as a declared relation phrase whose contract names
-the omitted subject role. A child cannot donate tokens back into the focus
-designation, and changing one child cannot reclassify its siblings or header.
+An interior role groups repeated objects without turning them into one
+collection value:
+
+```clause
+north
+  inputs
+    nixpkgs
+      from: "github:NixOS/nixpkgs/nixos-unstable"
+    rust-overlay
+      from: "github:oxalica/rust-overlay"
+      follows: nixpkgs
+```
+
+This lowers to `(north, inputs, nixpkgs)` and
+`(north, inputs, rust-overlay)`, then to applications whose subjects are
+`nixpkgs` and `rust-overlay`. Every object line remains its own source and
+provenance site. Comma-separated spelling would instead denote one positional
+product and is not an alias for repeated semantic applications.
+
+Whitespace may occur inside a role phrase. The colon fixes the complete leaf
+role boundary, and the object indentation fixes a grouped role boundary:
+
+```clause
+north
+  worker count: 5
+  development shell
+    north-shell
+```
+
+Current source preserves those words exactly. A later declared relation
+grammar may interpret words such as `to` as participant-slot markers; the
+reader never guesses such composition from English heuristics and never
+requires underscore encoding.
 
 Colon has no freely spaced infix form. There is no whitespace before `:` and
 exactly one ASCII space follows it. `x : value`, `x:value`, `x  :  value`,
-`:=`, `::`, `member_of`, and `∈` reject; none is compatibility syntax.
+`:=`, `::`, and `∈` reject; none is compatibility syntax.
 
-Bindings use the same surface primitive in structural contexts:
-
-```clause
-gravity: 9.81
-origin: Vec2 { x: 0.0, y: 0.0 }
-```
-
-Inside a declaration, the selected child grammar resolves the LHS as a binder
-or role rather than a top-level Referent. Cardinality belongs to the governing
-schema, never to the colon token. When one checked context admits exactly one
-denotation, definition is a derived case, not a primitive syntax category or a
-second semantic relation.
-
-The same constraint form is structural inside declarations and values:
+Inside a declaration, its already-selected child grammar may use the same
+punctuation to fill a declared structural role:
 
 ```clause
 shape Vec2
   x: F32
   y: F32
-
-origin: Vec2 { x: 0.0, y: 0.0 }
 ```
 
-The braces do not turn `x` and `y` into host-object labels. Each entry is a
-role-field constraint whose Reading maps that surface role to one exact
-`RoleId`; record order never becomes role identity.
-
-Focused `state locked` is an ordinary declared relation with the focused
-Referent in its declared subject role. It is not object-field mutation or a
-colon constraint. Cardinality belongs to the relation contract.
+The enclosing `shape` production supplies the subject and meaning of those
+entries before their objects are resolved. Cardinality belongs to the shape or
+relation contract, never to the colon token. An ordinary top-level relational
+line still selects its declared assertive Reading; relation patterns inside
+`where`, `when`, `if`, and other child grammars retain their grammar-owned
+non-assertive stances.
 
 ## Relation, operator, mode, and Reading declarations
 
