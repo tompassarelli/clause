@@ -737,213 +737,229 @@ function decode_cse1_event(bytes) {
                                         reason: little_u32(bytes, 21),
                                     };
                                 })()
-                                : equivalent(tag, 8)
+                                : equivalent(tag, 15)
                                     ? (() => {
-                                        if (!equivalent(bytes.length, 21 + 6 * identity_bytes + 8 + 4)) {
+                                        const diagnostic = parse_canonical_blob(bytes, 21, "CSE1 candidate rejection diagnostic");
+                                        if (!equivalent(diagnostic.next, bytes.length)) {
                                             (() => {
-                                                throw new Error("CSE1 Suspended event has an invalid shape");
+                                                throw new Error("CSE1 candidate rejection has an invalid shape");
                                             })();
                                         }
                                         return {
-                                            kind: "suspended",
+                                            kind: "candidate-rejected",
                                             slot: slot,
                                             generation: generation,
                                             sequence: sequence,
-                                            step: identity_at(21),
-                                            continuation: identity_at(53),
-                                            run: identity_at(85),
-                                            activation: identity_at(117),
-                                            before: identity_at(149),
-                                            after: identity_at(181),
-                                            remainingBudget: little_safe_u64(bytes, 213),
-                                            stateRevisionCount: little_u32(bytes, 221),
+                                            diagnostic: ascii_text(diagnostic.bytes, "CSE1 candidate rejection diagnostic"),
                                         };
                                     })()
-                                    : equivalent(tag, 9)
+                                    : equivalent(tag, 8)
                                         ? (() => {
-                                            if (!equivalent(bytes.length, 21 + 7 * identity_bytes + 8 + 4)) {
+                                            if (!equivalent(bytes.length, 21 + 6 * identity_bytes + 8 + 4)) {
                                                 (() => {
-                                                    throw new Error("CSE1 Resumed event has an invalid shape");
+                                                    throw new Error("CSE1 Suspended event has an invalid shape");
                                                 })();
                                             }
                                             return {
-                                                kind: "resumed",
+                                                kind: "suspended",
                                                 slot: slot,
                                                 generation: generation,
                                                 sequence: sequence,
-                                                occurrence: identity_at(21),
-                                                step: identity_at(53),
-                                                continuation: identity_at(85),
-                                                run: identity_at(117),
-                                                activation: identity_at(149),
-                                                before: identity_at(181),
-                                                after: identity_at(213),
-                                                remainingBudget: little_safe_u64(bytes, 245),
-                                                stateRevisionCount: little_u32(bytes, 253),
+                                                step: identity_at(21),
+                                                continuation: identity_at(53),
+                                                run: identity_at(85),
+                                                activation: identity_at(117),
+                                                before: identity_at(149),
+                                                after: identity_at(181),
+                                                remainingBudget: little_safe_u64(bytes, 213),
+                                                stateRevisionCount: little_u32(bytes, 221),
                                             };
                                         })()
-                                        : equivalent(tag, 10)
+                                        : equivalent(tag, 9)
                                             ? (() => {
-                                                const action = parse_blob(bytes, 369, cse1_max_bytes, "CSE1 effect action");
-                                                const resource = parse_blob(bytes, action.next, cse1_max_bytes, "CSE1 effect resource");
-                                                const payload = parse_blob(bytes, resource.next, cse1_max_bytes, "CSE1 effect payload");
-                                                const count_end = require_range(bytes, payload.next, 4, "CSE1 effect StateRevision count");
-                                                if (!equivalent(count_end, bytes.length)) {
+                                                if (!equivalent(bytes.length, 21 + 7 * identity_bytes + 8 + 4)) {
                                                     (() => {
-                                                        throw new Error("CSE1 effect intent has trailing bytes");
+                                                        throw new Error("CSE1 Resumed event has an invalid shape");
                                                     })();
                                                 }
                                                 return {
-                                                    kind: "effect-intent",
+                                                    kind: "resumed",
                                                     slot: slot,
                                                     generation: generation,
                                                     sequence: sequence,
-                                                    intentId: identity_at(21),
-                                                    run: identity_at(53),
-                                                    activation: identity_at(85),
-                                                    step: identity_at(117),
-                                                    contractIndex: little_u32(bytes, 149),
-                                                    capability: {
-                                                        snapshot: identity_at(153),
-                                                        local: little_u32(bytes, 185),
-                                                    },
-                                                    scope: {
-                                                        application: {
-                                                            snapshot: identity_at(189),
-                                                            local: little_u32(bytes, 221),
-                                                        },
-                                                        mode: {
-                                                            snapshot: identity_at(225),
-                                                            operator: little_u32(bytes, 257),
-                                                            local: little_u32(bytes, 261),
-                                                        },
-                                                        programRevision: identity_at(265),
-                                                        world: identity_at(297),
-                                                        sessionId: identity_at(329),
-                                                        remainingBudget: little_safe_u64(bytes, 361),
-                                                    },
-                                                    actionBytes: action.bytes,
-                                                    resourceBytes: resource.bytes,
-                                                    payloadBytes: payload.bytes,
-                                                    stateRevisionCount: little_u32(bytes, payload.next),
+                                                    occurrence: identity_at(21),
+                                                    step: identity_at(53),
+                                                    continuation: identity_at(85),
+                                                    run: identity_at(117),
+                                                    activation: identity_at(149),
+                                                    before: identity_at(181),
+                                                    after: identity_at(213),
+                                                    remainingBudget: little_safe_u64(bytes, 245),
+                                                    stateRevisionCount: little_u32(bytes, 253),
                                                 };
                                             })()
-                                            : equivalent(tag, 11)
+                                            : equivalent(tag, 10)
                                                 ? (() => {
-                                                    if (!equivalent(bytes.length, 25)) {
+                                                    const action = parse_blob(bytes, 369, cse1_max_bytes, "CSE1 effect action");
+                                                    const resource = parse_blob(bytes, action.next, cse1_max_bytes, "CSE1 effect resource");
+                                                    const payload = parse_blob(bytes, resource.next, cse1_max_bytes, "CSE1 effect payload");
+                                                    const count_end = require_range(bytes, payload.next, 4, "CSE1 effect StateRevision count");
+                                                    if (!equivalent(count_end, bytes.length)) {
                                                         (() => {
-                                                            throw new Error("CSE1 absent effect intent has an invalid shape");
+                                                            throw new Error("CSE1 effect intent has trailing bytes");
                                                         })();
                                                     }
                                                     return {
-                                                        kind: "effect-intent-absent",
+                                                        kind: "effect-intent",
                                                         slot: slot,
                                                         generation: generation,
                                                         sequence: sequence,
-                                                        stateRevisionCount: little_u32(bytes, 21),
+                                                        intentId: identity_at(21),
+                                                        run: identity_at(53),
+                                                        activation: identity_at(85),
+                                                        step: identity_at(117),
+                                                        contractIndex: little_u32(bytes, 149),
+                                                        capability: {
+                                                            snapshot: identity_at(153),
+                                                            local: little_u32(bytes, 185),
+                                                        },
+                                                        scope: {
+                                                            application: {
+                                                                snapshot: identity_at(189),
+                                                                local: little_u32(bytes, 221),
+                                                            },
+                                                            mode: {
+                                                                snapshot: identity_at(225),
+                                                                operator: little_u32(bytes, 257),
+                                                                local: little_u32(bytes, 261),
+                                                            },
+                                                            programRevision: identity_at(265),
+                                                            world: identity_at(297),
+                                                            sessionId: identity_at(329),
+                                                            remainingBudget: little_safe_u64(bytes, 361),
+                                                        },
+                                                        actionBytes: action.bytes,
+                                                        resourceBytes: resource.bytes,
+                                                        payloadBytes: payload.bytes,
+                                                        stateRevisionCount: little_u32(bytes, payload.next),
                                                     };
                                                 })()
-                                                : equivalent(tag, 12)
+                                                : equivalent(tag, 11)
                                                     ? (() => {
-                                                        if (!equivalent(bytes.length, 89)) {
+                                                        if (!equivalent(bytes.length, 25)) {
                                                             (() => {
-                                                                throw new Error("CSE1 effect authorization has an invalid shape");
+                                                                throw new Error("CSE1 absent effect intent has an invalid shape");
                                                             })();
                                                         }
                                                         return {
-                                                            kind: "effect-authorization",
+                                                            kind: "effect-intent-absent",
                                                             slot: slot,
                                                             generation: generation,
                                                             sequence: sequence,
-                                                            authorizationId: identity_at(21),
-                                                            intentId: identity_at(53),
-                                                            stateRevisionCount: little_u32(bytes, 85),
+                                                            stateRevisionCount: little_u32(bytes, 21),
                                                         };
                                                     })()
-                                                    : equivalent(tag, 13)
+                                                    : equivalent(tag, 12)
                                                         ? (() => {
-                                                            const action = parse_blob(bytes, 117, cse1_max_bytes, "CSE1 attempted action");
-                                                            const resource = parse_blob(bytes, action.next, cse1_max_bytes, "CSE1 attempted resource");
-                                                            const payload = parse_blob(bytes, resource.next, cse1_max_bytes, "CSE1 attempted payload");
-                                                            const count_end = require_range(bytes, payload.next, 4, "CSE1 attempt StateRevision count");
-                                                            if (!equivalent(count_end, bytes.length)) {
+                                                            if (!equivalent(bytes.length, 89)) {
                                                                 (() => {
-                                                                    throw new Error("CSE1 effect attempt has trailing bytes");
+                                                                    throw new Error("CSE1 effect authorization has an invalid shape");
                                                                 })();
                                                             }
                                                             return {
-                                                                kind: "effect-attempt",
+                                                                kind: "effect-authorization",
                                                                 slot: slot,
                                                                 generation: generation,
                                                                 sequence: sequence,
-                                                                attemptId: identity_at(21),
+                                                                authorizationId: identity_at(21),
                                                                 intentId: identity_at(53),
-                                                                authorizationId: identity_at(85),
-                                                                actionBytes: action.bytes,
-                                                                resourceBytes: resource.bytes,
-                                                                payloadBytes: payload.bytes,
-                                                                stateRevisionCount: little_u32(bytes, payload.next),
+                                                                stateRevisionCount: little_u32(bytes, 85),
                                                             };
                                                         })()
-                                                        : equivalent(tag, 14)
+                                                        : equivalent(tag, 13)
                                                             ? (() => {
-                                                                const receipt_tag = byte_at(bytes, 85);
-                                                                const receipt_offset = 86;
-                                                                const receipt_end = equivalent(receipt_tag, 0)
-                                                                    ? receipt_offset
-                                                                    : equivalent(receipt_tag, 1)
-                                                                        ? require_range(bytes, receipt_offset, identity_bytes, "CSE1 effect receipt identity")
-                                                                        : (() => {
-                                                                            throw new Error("CSE1 effect receipt tag is invalid");
-                                                                        })();
-                                                                const observation_tag = byte_at(bytes, receipt_end);
-                                                                const observation_offset = receipt_end + 1;
-                                                                const observation_end = equivalent(observation_tag, 0)
-                                                                    ? observation_offset
-                                                                    : equivalent(observation_tag, 1)
-                                                                        ? require_range(bytes, observation_offset, identity_bytes, "CSE1 effect Observation identity")
-                                                                        : (() => {
-                                                                            throw new Error("CSE1 effect Observation tag is invalid");
-                                                                        })();
-                                                                const judgment_offset = observation_end;
-                                                                const judgment_end = require_range(bytes, judgment_offset, identity_bytes, "CSE1 effect Judgment identity");
-                                                                const disposition_offset = judgment_end;
-                                                                const count_offset = require_range(bytes, disposition_offset, 1, "CSE1 effect disposition");
-                                                                const end = require_range(bytes, count_offset, 4, "CSE1 effect StateRevision count");
-                                                                const disposition = byte_at(bytes, disposition_offset);
-                                                                if (!equivalent(end, bytes.length) ||
-                                                                    (!equivalent(disposition, 0) &&
-                                                                        !equivalent(disposition, 1))) {
+                                                                const action = parse_blob(bytes, 117, cse1_max_bytes, "CSE1 attempted action");
+                                                                const resource = parse_blob(bytes, action.next, cse1_max_bytes, "CSE1 attempted resource");
+                                                                const payload = parse_blob(bytes, resource.next, cse1_max_bytes, "CSE1 attempted payload");
+                                                                const count_end = require_range(bytes, payload.next, 4, "CSE1 attempt StateRevision count");
+                                                                if (!equivalent(count_end, bytes.length)) {
                                                                     (() => {
-                                                                        throw new Error("CSE1 effect settlement has an invalid shape");
+                                                                        throw new Error("CSE1 effect attempt has trailing bytes");
                                                                     })();
                                                                 }
                                                                 return {
-                                                                    kind: "effect-settlement",
+                                                                    kind: "effect-attempt",
                                                                     slot: slot,
                                                                     generation: generation,
                                                                     sequence: sequence,
-                                                                    intentId: identity_at(21),
-                                                                    attemptId: identity_at(53),
-                                                                    receiptId: equivalent(receipt_tag, 1)
-                                                                        ? identity_at(receipt_offset)
-                                                                        : null,
-                                                                    observationId: equivalent(observation_tag, 1)
-                                                                        ? identity_at(observation_offset)
-                                                                        : null,
-                                                                    judgmentId: identity_at(judgment_offset),
-                                                                    disposition: equivalent(disposition, 0)
-                                                                        ? "receipt-observed"
-                                                                        : "no-receipt",
-                                                                    stateRevisionCount: little_u32(bytes, count_offset),
+                                                                    attemptId: identity_at(21),
+                                                                    intentId: identity_at(53),
+                                                                    authorizationId: identity_at(85),
+                                                                    actionBytes: action.bytes,
+                                                                    resourceBytes: resource.bytes,
+                                                                    payloadBytes: payload.bytes,
+                                                                    stateRevisionCount: little_u32(bytes, payload.next),
                                                                 };
                                                             })()
-                                                            : {
-                                                                kind: "input",
-                                                                slot: slot,
-                                                                generation: generation,
-                                                                sequence: sequence,
-                                                            };
+                                                            : equivalent(tag, 14)
+                                                                ? (() => {
+                                                                    const receipt_tag = byte_at(bytes, 85);
+                                                                    const receipt_offset = 86;
+                                                                    const receipt_end = equivalent(receipt_tag, 0)
+                                                                        ? receipt_offset
+                                                                        : equivalent(receipt_tag, 1)
+                                                                            ? require_range(bytes, receipt_offset, identity_bytes, "CSE1 effect receipt identity")
+                                                                            : (() => {
+                                                                                throw new Error("CSE1 effect receipt tag is invalid");
+                                                                            })();
+                                                                    const observation_tag = byte_at(bytes, receipt_end);
+                                                                    const observation_offset = receipt_end + 1;
+                                                                    const observation_end = equivalent(observation_tag, 0)
+                                                                        ? observation_offset
+                                                                        : equivalent(observation_tag, 1)
+                                                                            ? require_range(bytes, observation_offset, identity_bytes, "CSE1 effect Observation identity")
+                                                                            : (() => {
+                                                                                throw new Error("CSE1 effect Observation tag is invalid");
+                                                                            })();
+                                                                    const judgment_offset = observation_end;
+                                                                    const judgment_end = require_range(bytes, judgment_offset, identity_bytes, "CSE1 effect Judgment identity");
+                                                                    const disposition_offset = judgment_end;
+                                                                    const count_offset = require_range(bytes, disposition_offset, 1, "CSE1 effect disposition");
+                                                                    const end = require_range(bytes, count_offset, 4, "CSE1 effect StateRevision count");
+                                                                    const disposition = byte_at(bytes, disposition_offset);
+                                                                    if (!equivalent(end, bytes.length) ||
+                                                                        (!equivalent(disposition, 0) &&
+                                                                            !equivalent(disposition, 1))) {
+                                                                        (() => {
+                                                                            throw new Error("CSE1 effect settlement has an invalid shape");
+                                                                        })();
+                                                                    }
+                                                                    return {
+                                                                        kind: "effect-settlement",
+                                                                        slot: slot,
+                                                                        generation: generation,
+                                                                        sequence: sequence,
+                                                                        intentId: identity_at(21),
+                                                                        attemptId: identity_at(53),
+                                                                        receiptId: equivalent(receipt_tag, 1)
+                                                                            ? identity_at(receipt_offset)
+                                                                            : null,
+                                                                        observationId: equivalent(observation_tag, 1)
+                                                                            ? identity_at(observation_offset)
+                                                                            : null,
+                                                                        judgmentId: identity_at(judgment_offset),
+                                                                        disposition: equivalent(disposition, 0)
+                                                                            ? "receipt-observed"
+                                                                            : "no-receipt",
+                                                                        stateRevisionCount: little_u32(bytes, count_offset),
+                                                                    };
+                                                                })()
+                                                                : {
+                                                                    kind: "input",
+                                                                    slot: slot,
+                                                                    generation: generation,
+                                                                    sequence: sequence,
+                                                                };
     }
     else {
         return (() => {
@@ -1150,6 +1166,11 @@ function apply_session_command_bang(module, session, command) {
     if (event.kind === "rejected") {
         (() => {
             throw new Error(concatenate("persistent Clause operation rejected with reason ", event.reason));
+        })();
+    }
+    if (event.kind === "candidate-rejected") {
+        (() => {
+            throw new Error(event.diagnostic);
         })();
     }
     return event;

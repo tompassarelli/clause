@@ -64,6 +64,9 @@ export type Cse1Event = (Cse1EventBase & Readonly<{
     kind: "rejected";
     reason: number;
 }>) | (Cse1EventBase & Readonly<{
+    kind: "candidate-rejected";
+    diagnostic: string;
+}>) | (Cse1EventBase & Readonly<{
     kind: "suspended";
     step: ExactBytes;
     continuation: ExactBytes;

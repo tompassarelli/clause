@@ -238,6 +238,9 @@ pub enum WasmSessionEventKindV1 {
     },
     Disposed,
     Rejected(WasmSessionRejectionV1),
+    CandidateRejected {
+        diagnostic: Vec<u8>,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -498,8 +501,10 @@ impl WasmPersistentSessionBoundaryV1 {
             _ => None,
         };
         let kind = execute_operation(&mut live.session, operation);
-        if !matches!(kind, WasmSessionEventKindV1::Rejected(_))
-            && let Some((input_sequence, configuration_revision)) = progress
+        if !matches!(
+            kind,
+            WasmSessionEventKindV1::Rejected(_) | WasmSessionEventKindV1::CandidateRejected { .. }
+        ) && let Some((input_sequence, configuration_revision)) = progress
         {
             live.last_input_sequence = input_sequence;
             if let Some(revision) = configuration_revision {
@@ -642,9 +647,9 @@ fn execute_operation(
                             .expect("accepted candidate retains its carrier"),
                     }
                 }
-                Err(_) => {
-                    WasmSessionEventKindV1::Rejected(WasmSessionRejectionV1::CandidateRejected)
-                }
+                Err(error) => WasmSessionEventKindV1::CandidateRejected {
+                    diagnostic: error.to_string().into_bytes(),
+                },
             }
         }
         WasmSessionOperationV1::PhysicalInput(input) => {
@@ -686,9 +691,9 @@ fn execute_operation(
                             .expect("accepted candidate retains its carrier"),
                     }
                 }
-                Err(_) => {
-                    WasmSessionEventKindV1::Rejected(WasmSessionRejectionV1::CandidateRejected)
-                }
+                Err(error) => WasmSessionEventKindV1::CandidateRejected {
+                    diagnostic: error.to_string().into_bytes(),
+                },
             }
         }
         WasmSessionOperationV1::IssueAdmission(input) => issue_admission(session, input),
@@ -1377,6 +1382,11 @@ pub fn encode_wasm_session_event_v1(event: &WasmSessionEventV1) -> Vec<u8> {
             bytes.push(7);
             bytes.extend_from_slice(&(*rejection as u32).to_le_bytes());
         }
+        WasmSessionEventKindV1::CandidateRejected { diagnostic } => {
+            bytes.push(15);
+            put_blob(&mut bytes, diagnostic)
+                .expect("persistent candidate diagnostic fits the CSE1 event bound");
+        }
         WasmSessionEventKindV1::Suspended {
             step,
             continuation,
@@ -1683,6 +1693,9 @@ pub fn decode_wasm_session_event_v1(
             },
             state_revision_count: d.u32()?,
         },
+        15 => WasmSessionEventKindV1::CandidateRejected {
+            diagnostic: d.blob(WASM_SESSION_EVENT_LIMIT_V1)?.to_vec(),
+        },
         _ => return Err(WasmProcessStatusV1::MalformedRequest),
     };
     if !d.is_complete() {
@@ -1759,6 +1772,31 @@ fn get_effect_scope(decoder: &mut Decoder<'_>) -> Result<EffectScopeV1, WasmProc
             remaining_units: decoder.u64()?,
         },
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn candidate_rejection_event_preserves_its_diagnostic() {
+        let event = WasmSessionEventV1 {
+            handle: WasmSessionHandleV1 {
+                slot: 0,
+                generation: 7,
+            },
+            accepted_sequence: 19,
+            kind: WasmSessionEventKindV1::CandidateRejected {
+                diagnostic: b"persistent carrier error: execution exhausted its exact step budget"
+                    .to_vec(),
+            },
+        };
+        let bytes = encode_wasm_session_event_v1(&event);
+        assert_eq!(
+            decode_wasm_session_event_v1(&bytes).expect("candidate rejection event decodes"),
+            event
+        );
+    }
 }
 
 #[cfg(target_arch = "wasm32")]
