@@ -17,6 +17,8 @@ const PROJECTION_ROLE_KIND: &[u8] = b"clause/process-projection-role-v1";
 const PROJECTED_NUMBER_KIND: &[u8] = b"clause/process-projected-f64-v1";
 const PROJECTED_BOOLEAN_KIND: &[u8] = b"clause/process-projected-bool-v1";
 const PROJECTED_SYMBOL_KIND: &[u8] = b"clause/process-projected-symbol-v1";
+const PROJECTED_SET_KIND: &[u8] = b"clause/process-projected-set-v1";
+const PROJECTED_SET_END_KIND: &[u8] = b"clause/process-projected-set-end-v1";
 const MAX_EXECUTABLE_SYMBOL_BYTES: usize = 64;
 const MAX_PROGRAM_ITEMS: usize = 65_536;
 const MAX_EXPRESSION_DEPTH: usize = 64;
@@ -510,7 +512,7 @@ pub struct ExecutableProgramV1 {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ExecutableCanonicalStateBindingV1 {
     pub state: CanonicalStateRefV1,
-    pub projection_role: Option<LocalRoleRefV2>,
+    pub projection_role: LocalRoleRefV2,
     pub slot: u16,
 }
 
@@ -545,11 +547,7 @@ pub fn lower_canonical_executable_program_v1(
         || handlers.is_empty()
         || state_cells.len() > MAX_PROGRAM_ITEMS
         || handlers.len() > MAX_PROGRAM_ITEMS
-        || projection_roles.len()
-            < state_cells
-                .iter()
-                .filter(|cell| !matches!(cell.state.path, CanonicalStatePathV1::Many))
-                .count()
+        || projection_roles.len() < state_cells.len()
     {
         return Err(ExecutableErrorV1::MalformedProgram);
     }
@@ -569,11 +567,7 @@ pub fn lower_canonical_executable_program_v1(
     let mut roles = projection_roles.to_vec();
     roles.sort();
     roles.dedup();
-    let projected_state_count = ordered_states
-        .iter()
-        .filter(|cell| !matches!(cell.state.path, CanonicalStatePathV1::Many))
-        .count();
-    if roles.len() < projected_state_count {
+    if roles.len() < ordered_states.len() {
         return Err(ExecutableErrorV1::MalformedProgram);
     }
 
@@ -595,11 +589,7 @@ pub fn lower_canonical_executable_program_v1(
         }
         state_bindings.push(ExecutableCanonicalStateBindingV1 {
             state: cell.state.clone(),
-            projection_role: if matches!(cell.state.path, CanonicalStatePathV1::Many) {
-                None
-            } else {
-                Some(roles.next().ok_or(ExecutableErrorV1::MalformedProgram)?)
-            },
+            projection_role: roles.next().ok_or(ExecutableErrorV1::MalformedProgram)?,
             slot,
         });
     }
@@ -820,14 +810,10 @@ fn canonical_source_projection(
 ) -> Result<ExecutableProjectionV1, ExecutableErrorV1> {
     let by_state = bindings
         .iter()
-        .filter(|binding| binding.projection_role.is_some())
         .map(|binding| (binding.state.clone(), binding))
         .collect::<BTreeMap<_, _>>();
     let mut subjects = BTreeMap::<Vec<u8>, BTreeMap<Vec<u8>, Vec<&CanonicalStateCellV1>>>::new();
     for cell in cells {
-        if matches!(cell.state.path, CanonicalStatePathV1::Many) {
-            continue;
-        }
         subjects
             .entry(cell.state.subject.clone())
             .or_default()
@@ -840,16 +826,25 @@ fn canonical_source_projection(
         let mut relation_fields = Vec::with_capacity(relations.len());
         for (relation, mut cells) in relations {
             cells.sort_by(|left, right| left.state.path.cmp(&right.state.path));
-            let value = if cells.len() == 1 && cells[0].state.path == CanonicalStatePathV1::Scalar {
+            let value = if cells.len() == 1
+                && matches!(
+                    cells[0].state.path,
+                    CanonicalStatePathV1::Scalar | CanonicalStatePathV1::Many
+                ) {
                 let binding = by_state
                     .get(&cells[0].state)
                     .ok_or(ExecutableErrorV1::MalformedProgram)?;
+                let value_kind = lower_scalar_value_kind(cells[0].value_kind);
                 executable_projection_role_term_v1(
                     scope,
-                    binding
-                        .projection_role
-                        .ok_or(ExecutableErrorV1::MalformedProgram)?,
-                    lower_scalar_value_kind(cells[0].value_kind),
+                    binding.projection_role,
+                    if matches!(cells[0].state.path, CanonicalStatePathV1::Many) {
+                        value_kind
+                            .set_kind()
+                            .ok_or(ExecutableErrorV1::MalformedProgram)?
+                    } else {
+                        value_kind
+                    },
                 )?
             } else {
                 let fields = cells
@@ -866,9 +861,7 @@ fn canonical_source_projection(
                             designation.clone(),
                             executable_projection_role_term_v1(
                                 scope,
-                                binding
-                                    .projection_role
-                                    .ok_or(ExecutableErrorV1::MalformedProgram)?,
+                                binding.projection_role,
                                 lower_scalar_value_kind(cell.value_kind),
                             )?,
                         ))
@@ -883,17 +876,21 @@ fn canonical_source_projection(
     Ok(ExecutableProjectionV1 {
         bindings: cells
             .iter()
-            .filter(|cell| !matches!(cell.state.path, CanonicalStatePathV1::Many))
             .map(|cell| {
                 let binding = by_state
                     .get(&cell.state)
                     .ok_or(ExecutableErrorV1::MalformedProgram)?;
+                let value_kind = lower_scalar_value_kind(cell.value_kind);
                 Ok(ExecutableProjectionBindingV1 {
-                    role: binding
-                        .projection_role
-                        .ok_or(ExecutableErrorV1::MalformedProgram)?,
+                    role: binding.projection_role,
                     slot: binding.slot,
-                    value_kind: lower_scalar_value_kind(cell.value_kind),
+                    value_kind: if matches!(cell.state.path, CanonicalStatePathV1::Many) {
+                        value_kind
+                            .set_kind()
+                            .ok_or(ExecutableErrorV1::MalformedProgram)?
+                    } else {
+                        value_kind
+                    },
                 })
             })
             .collect::<Result<Vec<_>, ExecutableErrorV1>>()?,
@@ -5151,6 +5148,9 @@ fn projection_role(
         0 => ExecutableValueKindV1::Number,
         1 => ExecutableValueKindV1::Boolean,
         2 => ExecutableValueKindV1::Symbol,
+        3 => ExecutableValueKindV1::NumberSet,
+        4 => ExecutableValueKindV1::BooleanSet,
+        5 => ExecutableValueKindV1::SymbolSet,
         _ => return Err(ExecutableErrorV1::MalformedProgram),
     };
     Ok(Some((LocalRoleRefV2 { schema, role }, value_kind)))
@@ -5183,9 +5183,23 @@ fn projected_value_term(
     scope: TermScope,
     value: ExecutableValueV1,
 ) -> Result<Term, ExecutableErrorV1> {
+    if let ExecutableValueV1::Set(set) = &value {
+        let header = projection_literal(scope, PROJECTED_SET_KIND, &[set.element_kind as u8])?;
+        let end = projection_literal(scope, PROJECTED_SET_END_KIND, &[])?;
+        let values = set.values.iter().collect::<Vec<_>>();
+        return Term::triple([header, projected_set_tree(scope, &values)?, end])
+            .map_err(|_| ExecutableErrorV1::MalformedProgram);
+    }
+    projected_scalar_value_term(scope, &value)
+}
+
+fn projected_scalar_value_term(
+    scope: TermScope,
+    value: &ExecutableValueV1,
+) -> Result<Term, ExecutableErrorV1> {
     let (kind, payload) = match value {
         ExecutableValueV1::Number(bits) => (PROJECTED_NUMBER_KIND, bits.to_le_bytes().to_vec()),
-        ExecutableValueV1::Boolean(value) => (PROJECTED_BOOLEAN_KIND, vec![u8::from(value)]),
+        ExecutableValueV1::Boolean(value) => (PROJECTED_BOOLEAN_KIND, vec![u8::from(*value)]),
         ExecutableValueV1::Symbol(value) => (PROJECTED_SYMBOL_KIND, value.as_bytes().to_vec()),
         ExecutableValueV1::Set(_) => return Err(ExecutableErrorV1::MalformedProgram),
     };
@@ -5195,6 +5209,27 @@ fn projected_value_term(
         payload,
         EqualityContract::ExactOctetsV1,
     )
+    .map_err(|_| ExecutableErrorV1::MalformedProgram)
+}
+
+fn projected_set_tree(
+    scope: TermScope,
+    values: &[&ExecutableValueV1],
+) -> Result<Term, ExecutableErrorV1> {
+    let Some((middle, left, right)) = values.get(values.len() / 2).map(|middle| {
+        (
+            middle,
+            &values[..values.len() / 2],
+            &values[values.len() / 2 + 1..],
+        )
+    }) else {
+        return projection_literal(scope, PROJECTED_SET_END_KIND, &[]);
+    };
+    Term::triple([
+        projected_set_tree(scope, left)?,
+        projected_scalar_value_term(scope, middle)?,
+        projected_set_tree(scope, right)?,
+    ])
     .map_err(|_| ExecutableErrorV1::MalformedProgram)
 }
 
@@ -5502,6 +5537,9 @@ fn decode_projection(
                     0 => ExecutableValueKindV1::Number,
                     1 => ExecutableValueKindV1::Boolean,
                     2 => ExecutableValueKindV1::Symbol,
+                    3 => ExecutableValueKindV1::NumberSet,
+                    4 => ExecutableValueKindV1::BooleanSet,
+                    5 => ExecutableValueKindV1::SymbolSet,
                     _ => return Err(ExecutableErrorV1::MalformedProgram),
                 };
                 bindings.push(ExecutableProjectionBindingV1 {

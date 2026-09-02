@@ -453,6 +453,14 @@ on discover ?root ?item
     ?root phase ?phase
     ?root known ?item
 
+on probe ?root
+  when
+    ?root phase ?phase
+  withdraw
+    ?root phase ?phase
+  include
+    ?root phase ?phase
+
 on select ?root ?item
   when
     ?root phase ?prior
@@ -568,6 +576,40 @@ fn projected_symbol(term: &Term) -> &[u8] {
     let atom = term.as_atom().expect("projected symbol is an Atom");
     assert_eq!(atom.kind(), b"clause/process-projected-symbol-v1");
     atom.canonical_payload()
+}
+
+fn projected_symbol_set(term: &Term) -> Vec<&[u8]> {
+    let [header, tree, end] = term
+        .as_triple()
+        .expect("projected set has a typed wrapper")
+        .slots();
+    let header = header.as_atom().expect("projected set header is an Atom");
+    assert_eq!(header.kind(), b"clause/process-projected-set-v1");
+    assert_eq!(header.canonical_payload(), &[2]);
+    assert_eq!(
+        end.as_atom()
+            .expect("projected set wrapper has an end Atom")
+            .kind(),
+        b"clause/process-projected-set-end-v1"
+    );
+
+    fn collect<'a>(term: &'a Term, values: &mut Vec<&'a [u8]>) {
+        if let Some(end) = term.as_atom() {
+            assert_eq!(end.kind(), b"clause/process-projected-set-end-v1");
+            return;
+        }
+        let [left, value, right] = term
+            .as_triple()
+            .expect("projected set uses a balanced tree")
+            .slots();
+        collect(left, values);
+        values.push(projected_symbol(value));
+        collect(right, values);
+    }
+
+    let mut values = Vec::new();
+    collect(tree, &mut values);
+    values
 }
 
 fn projected_number(term: &Term) -> f64 {
@@ -1130,7 +1172,22 @@ fn many_relation_retains_every_discovered_value_for_membership() {
         ExecutableValueV1::symbol(value).expect("fixture symbols are executable values")
     };
 
-    for value in [b"alpha".as_slice(), b"beta".as_slice(), b"alpha".as_slice()] {
+    let probe = workbench
+        .handler_occurrence(b"probe", &[])
+        .expect("probe accepts the root identity");
+    workbench
+        .run_occurrences_to_candidate(&[probe])
+        .expect("probe produces one hidden candidate");
+    let initial = workbench
+        .admit()
+        .expect("probe reaches the initial admitted world");
+    let initial_term = decode_canonical_term_bytes(&initial.projection.exact_term_bytes)
+        .expect("the initial projection decodes");
+    let initial_root = projected_object_field(&initial_term, b"root");
+    assert!(projected_object_has_field(initial_root, b"known"));
+    assert!(projected_symbol_set(projected_object_field(initial_root, b"known")).is_empty());
+
+    for value in [b"alpha".as_slice(), b"beta".as_slice()] {
         let discover = workbench
             .handler_occurrence(b"discover", &[symbol(value)])
             .expect("discover accepts one item identity");
@@ -1141,6 +1198,24 @@ fn many_relation_retains_every_discovered_value_for_membership() {
             .admit()
             .expect("discover reaches one admitted successor");
     }
+    let before_duplicate = workbench
+        .last_projection()
+        .expect("the two-value set projects")
+        .exact_term_bytes
+        .clone();
+    let duplicate = workbench
+        .handler_occurrence(b"discover", &[symbol(b"alpha")])
+        .expect("duplicate discover accepts one item identity");
+    workbench
+        .run_occurrences_to_candidate(&[duplicate])
+        .expect("duplicate discover produces one hidden candidate");
+    let after_duplicate = workbench
+        .admit()
+        .expect("duplicate discover reaches one admitted successor");
+    assert_eq!(
+        after_duplicate.projection.exact_term_bytes, before_duplicate,
+        "set insertion is idempotent in the exact projection"
+    );
 
     let select_alpha = workbench
         .handler_occurrence(b"select", &[symbol(b"alpha")])
@@ -1154,10 +1229,40 @@ fn many_relation_retains_every_discovered_value_for_membership() {
     let term = decode_canonical_term_bytes(&selected.projection.exact_term_bytes)
         .expect("the selected projection decodes");
     let root = projected_object_field(&term, b"root");
-    assert!(!projected_object_has_field(root, b"known"));
+    let known = projected_symbol_set(projected_object_field(root, b"known"));
+    assert_eq!(known.len(), 2);
+    assert!(known.contains(&b"alpha".as_slice()));
+    assert!(known.contains(&b"beta".as_slice()));
     assert_eq!(
         projected_symbol(projected_object_field(root, b"phase")),
         b"alpha"
+    );
+
+    let mut reverse = ResidentSourceWorkbenchV1::open(MANY_RELATION_MEMBERSHIP.as_bytes())
+        .expect("the neutral many-relation source reopens");
+    for value in [b"beta".as_slice(), b"alpha".as_slice(), b"alpha".as_slice()] {
+        let discover = reverse
+            .handler_occurrence(b"discover", &[symbol(value)])
+            .expect("reverse discover accepts one item identity");
+        reverse
+            .run_occurrences_to_candidate(&[discover])
+            .expect("reverse discover produces one hidden candidate");
+        reverse
+            .admit()
+            .expect("reverse discover reaches one admitted successor");
+    }
+    let reverse_term = decode_canonical_term_bytes(
+        &reverse
+            .last_projection()
+            .expect("reverse insertion projects")
+            .exact_term_bytes,
+    )
+    .expect("the reverse projection decodes");
+    let reverse_root = projected_object_field(&reverse_term, b"root");
+    assert_eq!(
+        projected_symbol_set(projected_object_field(reverse_root, b"known")),
+        known,
+        "the projected order is independent of insertion order"
     );
 }
 

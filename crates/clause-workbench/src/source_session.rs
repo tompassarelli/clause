@@ -411,11 +411,7 @@ impl ResidentSourceWorkbenchV1 {
             })
             .collect::<Vec<_>>();
         projection_roles.sort();
-        let projected_state_count = compiled
-            .state_cells
-            .iter()
-            .filter(|cell| !matches!(cell.state.path, clause_package::CanonicalStatePathV1::Many))
-            .count();
+        let projected_state_count = compiled.state_cells.len();
         if projection_roles.len() < projected_state_count {
             return Err(ResidentSourceWorkbenchErrorV1(format!(
                 "selected package has {} projection Roles for {} source state cells",
