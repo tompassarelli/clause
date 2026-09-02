@@ -1000,7 +1000,7 @@ fn checked_branchable_gameplay_program_package(source: &[u8]) -> CheckedProcessP
     checked_program_package_with_scopes_roles_and_continuation(
         1,
         browser_branchable_gameplay_state_admission_scopes(source),
-        192,
+        384,
         true,
     )
 }
