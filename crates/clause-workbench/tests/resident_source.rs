@@ -39,6 +39,54 @@ const NORTH_REPEATED_TURN: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../test-vectors/north/repeated-turn.clause"
 ));
+const RUNTIME_SELECTED_POLICY: &str = r#"referent F64
+referent Root
+referent Policy
+referent policy-a
+referent policy-b
+
+relation balance
+  reads {root: Root} balance {value: F64}
+  subject root
+  mode given root yields value: one
+
+relation selected-policy
+  reads {root: Root} selected policy {policy: Policy}
+  subject root
+  mode given root yields policy: one
+
+relation policy-adjustment
+  reads {policy: Policy} policy adjustment {value: F64}
+  subject policy
+  mode given policy yields value: one
+
+root-1 ∈ Root
+policy-a ∈ Policy
+policy-b ∈ Policy
+root-1 balance 10.0
+root-1 selected policy policy-a
+policy-a policy adjustment 2.0
+policy-b policy adjustment 4.0
+
+on choose-policy-b ?root
+  when
+    ?root selected policy ?prior
+    ?prior = policy-a
+  withdraw
+    ?root selected policy ?prior
+  include
+    ?root selected policy policy-b
+
+on apply-selected-policy ?root
+  when
+    ?root balance ?prior
+    ?root selected policy ?policy
+    ?policy policy adjustment ?adjustment
+  withdraw
+    ?root balance ?prior
+  include
+    ?root balance ?prior - ?adjustment
+"#;
 const SOURCE_ONLY_AUTOMATIC_EXTENSION: &[u8] = br#"
 relation pulse-count
   reads {objective: Objective} pulse count {value: F64}
@@ -898,6 +946,37 @@ fn source_only_state_and_bounded_automatic_handler_need_no_host_binding_edit() {
         .expect("separate Admission exposes the source-only state");
     assert_eq!(pulse_count(&admitted.projection.exact_term_bytes), 1.0);
     assert_eq!(pulse_echo(&admitted.projection.exact_term_bytes), 1.0);
+}
+
+#[test]
+fn runtime_selected_referent_uses_the_newly_admitted_binding() {
+    let mut workbench = ResidentSourceWorkbenchV1::open(RUNTIME_SELECTED_POLICY.as_bytes())
+        .expect("the typed runtime-selected policy source opens");
+    let choose = workbench
+        .handler_occurrence(b"choose-policy-b", &[])
+        .expect("the policy selection transition has one occurrence");
+    let apply = workbench
+        .handler_occurrence(b"apply-selected-policy", &[])
+        .expect("all policy alternatives remain one physical handler occurrence");
+    workbench
+        .run_occurrences_to_candidate(&[choose, apply])
+        .expect("selection and its consequence produce one hidden CandidateDelta");
+    assert!(workbench.last_projection().is_none());
+    let admitted = workbench
+        .admit()
+        .expect("separate Admission exposes the selected policy consequence");
+    let projection = decode_canonical_term_bytes(&admitted.projection.exact_term_bytes)
+        .expect("selected policy projection decodes");
+    let root = projected_object_field(&projection, b"root-1");
+    assert_eq!(
+        projected_symbol(projected_object_field(root, b"selected-policy")),
+        b"policy-b"
+    );
+    assert_eq!(
+        projected_number(projected_object_field(root, b"balance")),
+        6.0,
+        "the newly selected policy-b adjustment, not policy-a's initial adjustment, executes"
+    );
 }
 
 #[test]

@@ -2355,6 +2355,7 @@ struct GeneralSourcePlan<'a> {
 struct GeneralBindingSolution {
     parameters: BTreeMap<Vec<u8>, CanonicalStateRefV1>,
     entities: BTreeMap<Vec<u8>, Vec<u8>>,
+    selector_equalities: Vec<(CanonicalStateRefV1, Vec<u8>)>,
 }
 
 fn general_source_value_domain(
@@ -2478,13 +2479,27 @@ fn search_general_binding_solutions(
     entities: BTreeMap<Vec<u8>, Vec<u8>>,
     solutions: &mut Vec<GeneralBindingSolution>,
 ) {
-    if solutions.len() > 1 {
-        return;
-    }
     let Some(planned) = plans.get(index) else {
+        let mut selector_equalities = plans
+            .iter()
+            .filter(|planned| {
+                plans
+                    .iter()
+                    .any(|candidate| candidate.source.subject == planned.source.parameter)
+            })
+            .filter_map(|planned| {
+                Some((
+                    parameters.get(&planned.source.parameter)?.clone(),
+                    entities.get(&planned.source.parameter)?.clone(),
+                ))
+            })
+            .collect::<Vec<_>>();
+        selector_equalities.sort();
+        selector_equalities.dedup();
         let solution = GeneralBindingSolution {
             parameters,
             entities,
+            selector_equalities,
         };
         if !solutions.contains(&solution) {
             solutions.push(solution);
@@ -2508,7 +2523,12 @@ fn search_general_binding_solutions(
         let linked_as_subject = plans
             .iter()
             .any(|source| source.source.subject == planned.source.parameter);
-        if let Some(CanonicalScalarValueV1::Symbol(value)) = &candidate.value {
+        if linked_as_subject {
+            // A state-selected referent is a runtime join, not a compile-time
+            // alias for the selector's initial value. The downstream subject
+            // candidates bind the referent and the completed solution records
+            // the exact selector equality that guards this specialized rule.
+        } else if let Some(CanonicalScalarValueV1::Symbol(value)) = &candidate.value {
             if let Some(bound) = next_entities.get(&planned.source.parameter) {
                 if bound != value {
                     continue;
@@ -2538,13 +2558,7 @@ fn resolve_general_parameter_states(
     handler_subject: &[u8],
     initial_entities: BTreeMap<Vec<u8>, Vec<u8>>,
     origin: CanonicalSourceOriginV1,
-) -> Result<
-    (
-        BTreeMap<Vec<u8>, CanonicalStateRefV1>,
-        BTreeMap<Vec<u8>, Vec<u8>>,
-    ),
-    CanonicalSourceErrorV1,
-> {
+) -> Result<Vec<GeneralBindingSolution>, CanonicalSourceErrorV1> {
     let mut planned = Vec::with_capacity(sources.len());
     for source in sources {
         let relation = resolved_state_relation(cst, plan, &source.relation, origin)?;
@@ -2592,10 +2606,10 @@ fn resolve_general_parameter_states(
         initial_entities,
         &mut solutions,
     );
-    match solutions.as_slice() {
-        [solution] => Ok((solution.parameters.clone(), solution.entities.clone())),
-        [] => Err(CanonicalSourceErrorV1::MissingExecutableBinding { origin }),
-        _ => Err(CanonicalSourceErrorV1::AmbiguousExecutableBinding { origin }),
+    if solutions.is_empty() {
+        Err(CanonicalSourceErrorV1::MissingExecutableBinding { origin })
+    } else {
+        Ok(solutions)
     }
 }
 
@@ -3592,7 +3606,7 @@ fn checked_executable_handlers(
             .clone();
         let current = general_parameter_state_ref(cst, plan, &current_source, source.origin)?;
         let initial_entities = BTreeMap::from([(source.subject.clone(), current.subject.clone())]);
-        let (parameters, entities) = resolve_general_parameter_states(
+        let solutions = resolve_general_parameter_states(
             cst,
             plan,
             &source.parameter_sources,
@@ -3613,118 +3627,109 @@ fn checked_executable_handlers(
         if let Some(binding) = source.scalar_bindings.first() {
             validate_clamp_derivation(cst, binding.origin)?;
         }
-        let mut required_present = parameters.values().cloned().collect::<Vec<_>>();
-        required_present.extend(
-            source
-                .required_sources
-                .iter()
-                .map(|required| {
-                    general_target_state_ref(cst, plan, required, &entities, source.origin)
-                })
-                .collect::<Result<Vec<_>, _>>()?,
-        );
-        required_present.sort();
-        required_present.dedup();
-        let mut optional_insertions = Vec::new();
-        let mut many_insertions = Vec::new();
-        for insertion in &source.insertions {
-            match state_relation_cardinality(cst, plan, &insertion.target, source.origin)? {
-                SourceCardinality::Maybe => optional_insertions.push(insertion),
-                SourceCardinality::Many => many_insertions.push(insertion),
-                _ => {
-                    return Err(CanonicalSourceErrorV1::InvalidGeneralHandler {
-                        origin: source.origin,
-                    });
+        let mut rules = Vec::with_capacity(solutions.len());
+        for solution in solutions {
+            let parameters = solution.parameters;
+            let entities = solution.entities;
+            let mut required_present = parameters.values().cloned().collect::<Vec<_>>();
+            required_present.extend(
+                source
+                    .required_sources
+                    .iter()
+                    .map(|required| {
+                        general_target_state_ref(cst, plan, required, &entities, source.origin)
+                    })
+                    .collect::<Result<Vec<_>, _>>()?,
+            );
+            required_present.sort();
+            required_present.dedup();
+            let mut optional_insertions = Vec::new();
+            let mut many_insertions = Vec::new();
+            for insertion in &source.insertions {
+                match state_relation_cardinality(cst, plan, &insertion.target, source.origin)? {
+                    SourceCardinality::Maybe => optional_insertions.push(insertion),
+                    SourceCardinality::Many => many_insertions.push(insertion),
+                    _ => {
+                        return Err(CanonicalSourceErrorV1::InvalidGeneralHandler {
+                            origin: source.origin,
+                        });
+                    }
                 }
             }
-        }
-        let mut required_absent = optional_insertions
-            .iter()
-            .map(|insertion| {
-                general_target_state_ref(cst, plan, &insertion.target, &entities, source.origin)
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        required_absent.sort();
-        required_absent.dedup();
-        let mut removals = source
-            .removals
-            .iter()
-            .map(|removal| general_target_state_ref(cst, plan, removal, &entities, source.origin))
-            .collect::<Result<Vec<_>, _>>()?;
-        removals.sort();
-        removals.dedup();
-        for binding in &source.scalar_bindings {
-            canonical_general_executable_expression(
-                &binding.value,
+            let mut required_absent = optional_insertions
+                .iter()
+                .map(|insertion| {
+                    general_target_state_ref(cst, plan, &insertion.target, &entities, source.origin)
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            required_absent.sort();
+            required_absent.dedup();
+            let mut removals = source
+                .removals
+                .iter()
+                .map(|removal| {
+                    general_target_state_ref(cst, plan, removal, &entities, source.origin)
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            removals.sort();
+            removals.dedup();
+            for binding in &source.scalar_bindings {
+                canonical_general_executable_expression(
+                    &binding.value,
+                    &current,
+                    &parameters,
+                    &arguments,
+                    &scalar_bindings,
+                    binding.origin,
+                )?;
+            }
+            let mut predicates = canonical_general_executable_predicates(
+                &source.predicates,
                 &current,
                 &parameters,
                 &arguments,
                 &scalar_bindings,
-                binding.origin,
+                source.origin,
             )?;
-        }
-        let mut predicates = canonical_general_executable_predicates(
-            &source.predicates,
-            &current,
-            &parameters,
-            &arguments,
-            &scalar_bindings,
-            source.origin,
-        )?;
-        predicates.extend(
-            source
-                .boolean_conditions
-                .iter()
-                .map(|condition| {
-                    let (state, expected) =
-                        derived_condition_state_ref(cst, condition, &entities, &derives)?;
-                    Ok(CanonicalExecutablePredicateV1::Equal(
-                        CanonicalExecutableExpressionV1::State(state),
-                        constant_expression(CanonicalScalarValueV1::Boolean(expected)),
-                    ))
-                })
-                .collect::<Result<Vec<_>, CanonicalSourceErrorV1>>()?,
-        );
-        for membership in &source.membership_sources {
-            let argument = arguments.get(&membership.parameter).copied().ok_or(
-                CanonicalSourceErrorV1::InvalidGeneralHandler {
-                    origin: source.origin,
+            predicates.extend(solution.selector_equalities.into_iter().map(
+                |(selector, expected)| {
+                    CanonicalExecutablePredicateV1::Equal(
+                        CanonicalExecutableExpressionV1::State(selector),
+                        constant_expression(CanonicalScalarValueV1::Symbol(expected)),
+                    )
                 },
-            )?;
-            let state = many_state_ref(cst, plan, membership, &entities, source.origin)?;
-            required_present.push(state.clone());
-            predicates.push(CanonicalExecutablePredicateV1::Contains(
-                CanonicalExecutableExpressionV1::State(state),
-                CanonicalExecutableExpressionV1::Argument(argument),
             ));
-        }
-        required_present.sort();
-        required_present.dedup();
-        let mut assignments = source
-            .assignments
-            .iter()
-            .map(|assignment| {
-                Ok(CanonicalExecutableAssignmentV1 {
-                    target: general_target_state_ref(
-                        cst,
-                        plan,
-                        &assignment.target,
-                        &entities,
-                        source.origin,
-                    )?,
-                    value: canonical_general_executable_expression(
-                        &assignment.value,
-                        &current,
-                        &parameters,
-                        &arguments,
-                        &scalar_bindings,
-                        source.origin,
-                    )?,
-                })
-            })
-            .collect::<Result<Vec<_>, CanonicalSourceErrorV1>>()?;
-        assignments.extend(
-            optional_insertions
+            predicates.extend(
+                source
+                    .boolean_conditions
+                    .iter()
+                    .map(|condition| {
+                        let (state, expected) =
+                            derived_condition_state_ref(cst, condition, &entities, &derives)?;
+                        Ok(CanonicalExecutablePredicateV1::Equal(
+                            CanonicalExecutableExpressionV1::State(state),
+                            constant_expression(CanonicalScalarValueV1::Boolean(expected)),
+                        ))
+                    })
+                    .collect::<Result<Vec<_>, CanonicalSourceErrorV1>>()?,
+            );
+            for membership in &source.membership_sources {
+                let argument = arguments.get(&membership.parameter).copied().ok_or(
+                    CanonicalSourceErrorV1::InvalidGeneralHandler {
+                        origin: source.origin,
+                    },
+                )?;
+                let state = many_state_ref(cst, plan, membership, &entities, source.origin)?;
+                required_present.push(state.clone());
+                predicates.push(CanonicalExecutablePredicateV1::Contains(
+                    CanonicalExecutableExpressionV1::State(state),
+                    CanonicalExecutableExpressionV1::Argument(argument),
+                ));
+            }
+            required_present.sort();
+            required_present.dedup();
+            let mut assignments = source
+                .assignments
                 .iter()
                 .map(|assignment| {
                     Ok(CanonicalExecutableAssignmentV1 {
@@ -3745,37 +3750,68 @@ fn checked_executable_handlers(
                         )?,
                     })
                 })
-                .collect::<Result<Vec<_>, CanonicalSourceErrorV1>>()?,
-        );
-        for insertion in many_insertions {
-            let value = canonical_general_executable_expression(
-                &insertion.value,
-                &current,
-                &parameters,
-                &arguments,
-                &scalar_bindings,
-                source.origin,
-            )?;
-            let state = many_state_ref(cst, plan, &insertion.target, &entities, source.origin)?;
-            if assignments
-                .iter()
-                .any(|assignment| assignment.target == state)
-            {
-                return Err(CanonicalSourceErrorV1::InvalidGeneralHandler {
-                    origin: source.origin,
+                .collect::<Result<Vec<_>, CanonicalSourceErrorV1>>()?;
+            assignments.extend(
+                optional_insertions
+                    .iter()
+                    .map(|assignment| {
+                        Ok(CanonicalExecutableAssignmentV1 {
+                            target: general_target_state_ref(
+                                cst,
+                                plan,
+                                &assignment.target,
+                                &entities,
+                                source.origin,
+                            )?,
+                            value: canonical_general_executable_expression(
+                                &assignment.value,
+                                &current,
+                                &parameters,
+                                &arguments,
+                                &scalar_bindings,
+                                source.origin,
+                            )?,
+                        })
+                    })
+                    .collect::<Result<Vec<_>, CanonicalSourceErrorV1>>()?,
+            );
+            for insertion in many_insertions {
+                let value = canonical_general_executable_expression(
+                    &insertion.value,
+                    &current,
+                    &parameters,
+                    &arguments,
+                    &scalar_bindings,
+                    source.origin,
+                )?;
+                let state = many_state_ref(cst, plan, &insertion.target, &entities, source.origin)?;
+                if assignments
+                    .iter()
+                    .any(|assignment| assignment.target == state)
+                {
+                    return Err(CanonicalSourceErrorV1::InvalidGeneralHandler {
+                        origin: source.origin,
+                    });
+                }
+                required_present.push(state.clone());
+                assignments.push(CanonicalExecutableAssignmentV1 {
+                    target: state.clone(),
+                    value: CanonicalExecutableExpressionV1::Insert(
+                        Box::new(CanonicalExecutableExpressionV1::State(state)),
+                        Box::new(value),
+                    ),
                 });
             }
-            required_present.push(state.clone());
-            assignments.push(CanonicalExecutableAssignmentV1 {
-                target: state.clone(),
-                value: CanonicalExecutableExpressionV1::Insert(
-                    Box::new(CanonicalExecutableExpressionV1::State(state)),
-                    Box::new(value),
-                ),
+            required_present.sort();
+            required_present.dedup();
+            rules.push(CanonicalExecutableRuleV1 {
+                predicates,
+                required_present,
+                required_absent,
+                assignments,
+                removals,
             });
         }
-        required_present.sort();
-        required_present.dedup();
         handlers.push(CanonicalExecutableHandlerV1 {
             id: handler_id(&source.producer)?,
             designation: source.designation.clone(),
@@ -3794,13 +3830,7 @@ fn checked_executable_handlers(
                     origin: source.origin,
                 }
             })?,
-            rules: vec![CanonicalExecutableRuleV1 {
-                predicates,
-                required_present,
-                required_absent,
-                assignments,
-                removals,
-            }],
+            rules,
         });
     }
     handlers.sort_by_key(|handler| handler.id);

@@ -212,6 +212,39 @@ fn general_handler_joins_a_typed_referent_selected_by_prior_state() {
 }
 
 #[test]
+fn transitive_referent_join_lowers_each_runtime_selectable_target() {
+    let source = TRANSITIVE_REFERENT_WORLD.replacen(
+        "policy-a policy adjustment 2.0",
+        "policy-a policy adjustment 2.0\npolicy-b ∈ Policy\npolicy-b policy adjustment 4.0",
+        1,
+    );
+    let compiled = compile_source(&source, 23)
+        .expect("every typed selected policy reaches executable lowering");
+    let handler = compiled
+        .executable_handlers
+        .iter()
+        .find(|handler| handler.designation == b"apply-selected-policy")
+        .expect("the runtime-selected policy handler is executable");
+    assert_eq!(handler.rules.len(), 2);
+    let selected = handler
+        .rules
+        .iter()
+        .flat_map(|rule| &rule.predicates)
+        .filter_map(|predicate| match predicate {
+            CanonicalExecutablePredicateV1::Equal(
+                CanonicalExecutableExpressionV1::State(state),
+                CanonicalExecutableExpressionV1::Constant(CanonicalScalarValueV1::Symbol(expected)),
+            ) if state.relation_designation == b"selected-policy" => Some(expected.as_slice()),
+            _ => None,
+        })
+        .collect::<BTreeSet<_>>();
+    assert_eq!(
+        selected,
+        BTreeSet::from([b"policy-a".as_slice(), b"policy-b".as_slice()]),
+    );
+}
+
+#[test]
 fn scalar_law_result_updates_a_vector_on_the_selected_handler_subject() {
     let source = r#"referent F64
 referent Bool
