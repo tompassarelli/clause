@@ -3879,10 +3879,13 @@ impl ExecutableProcessRuntimeV1 {
             ));
         };
         for entry in preceding {
-            self.advance_carrier_occurrence(ExecutableOccurrenceV1 {
+            let occurrence = ExecutableOccurrenceV1 {
                 entry: *entry,
                 arguments: vec![argument.clone()],
-            })?;
+            };
+            if self.occurrence_changes_configuration(&occurrence)? {
+                self.advance_carrier_occurrence(occurrence)?;
+            }
         }
         self.advance_carrier_occurrence_and_emit_candidate(ExecutableOccurrenceV1 {
             entry: *last,
@@ -4269,6 +4272,21 @@ impl ExecutableProcessRuntimeV1 {
             .last_step
             .as_ref()
             .expect("accepted Step remains retained"))
+    }
+
+    fn occurrence_changes_configuration(
+        &self,
+        occurrence: &ExecutableOccurrenceV1,
+    ) -> Result<bool, ExecutableCarrierErrorV1> {
+        let (step_ordinal, _) = stage_runtime_ordinal(self.identity_ordinals.next_step)
+            .map_err(ExecutableCarrierErrorV1::Executable)?;
+        let (configuration_ordinal, _) =
+            stage_runtime_ordinal(self.identity_ordinals.next_configuration)
+                .map_err(ExecutableCarrierErrorV1::Executable)?;
+        let (next, _) = self
+            .prepare_step(occurrence.clone(), step_ordinal, configuration_ordinal)
+            .map_err(ExecutableCarrierErrorV1::Executable)?;
+        Ok(next != self.configuration)
     }
 
     pub fn advance(

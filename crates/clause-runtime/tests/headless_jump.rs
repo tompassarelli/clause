@@ -2526,6 +2526,11 @@ fn automatic_contact_tick_keeps_collection_hidden_until_admission_and_inactive_a
     let away_step = away_session
         .apply_fixed_tick_and_emit_candidate(16)
         .expect("away tick still completes the ordered movement/contact chain");
+    assert_eq!(
+        away_session.carrier().unwrap().step_count(),
+        2,
+        "the inactive movement/contact entries retain no no-op Steps; only the checker and final candidate Step remain"
+    );
     assert_eq!(away_step.occurrence.entry, 5);
     assert!(!away_step.rule_applied);
     let away_candidate = away_session

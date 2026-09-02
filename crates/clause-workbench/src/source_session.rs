@@ -11,9 +11,10 @@ use clause_package::{
 };
 use clause_runtime::{
     ExecutableCanonicalHandlerBindingV1, ExecutableInputBindingV1, ExecutableInputPlanV1,
-    ExecutableInputSourceV1, ExecutableKeyPhaseV1, ExecutableOccurrenceV1, ExecutableTickBindingV1,
-    ExecutableValueV1, WASM_SESSION_EVENT_LIMIT_V1, WasmPersistentSessionBoundaryV1,
-    WasmProcessRequestV1, WasmProcessStatusV1, WasmSessionAdmissionScopeV1, WasmSessionAdmissionV1,
+    ExecutableInputSourceV1, ExecutableKeyPhaseV1, ExecutableOccurrenceV1,
+    ExecutablePhysicalPlanV1, ExecutableTickBindingV1, ExecutableValueV1,
+    WASM_SESSION_EVENT_LIMIT_V1, WasmPersistentSessionBoundaryV1, WasmProcessRequestV1,
+    WasmProcessStatusV1, WasmSessionAdmissionScopeV1, WasmSessionAdmissionV1,
     WasmSessionAllocationV1, WasmSessionCommandV1, WasmSessionEventKindV1, WasmSessionHandleV1,
     WasmSessionLimitsV1, WasmSessionOpenV1, WasmSessionOperationV1, WasmSessionProjectionV1,
     decode_executable_occurrence_v1, decode_executable_physical_plan_v1,
@@ -81,6 +82,9 @@ pub struct ResidentSourceWorkbenchV1 {
     boundary: WasmPersistentSessionBoundaryV1,
     template: WasmProcessRequestV1,
     coherent_template: WasmProcessRequestV1,
+    template_scope: TermScope,
+    template_projection_roles: Vec<LocalRoleRefV2>,
+    template_physical_plan: ExecutablePhysicalPlanV1,
     generation: ResidentSourceGenerationV1,
     package: ProcessPackageId,
     session: clause_package::RuntimeSessionId,
@@ -97,6 +101,30 @@ impl ResidentSourceWorkbenchV1 {
         let coherent_template =
             decode_wasm_process_request_v1(&decode_hex(COHERENT_TEMPLATE_CWR1_HEX)?)?;
         let template = coherent_template.clone();
+        let decoded = decode_process_package(&coherent_template.package_bytes)
+            .map_err(|error| boxed_error("template package decode", error))?;
+        let checked_template = check_process_package(decoded)
+            .map_err(|error| boxed_error("template package check", error))?;
+        let template_scope = TermScope {
+            universe: checked_template.constitution().universe(),
+            semantics: checked_template.constitution().semantics(),
+        };
+        let mut template_projection_roles = checked_template
+            .constitution()
+            .preimage()
+            .schemas
+            .iter()
+            .flat_map(|schema| {
+                schema.roles.iter().map(|role| LocalRoleRefV2 {
+                    schema: schema.id,
+                    role: role.id,
+                })
+            })
+            .collect::<Vec<_>>();
+        template_projection_roles.sort();
+        let template_physical_plan =
+            decode_executable_physical_plan_v1(&coherent_template.physical_plan_bytes)
+                .map_err(|error| boxed_error("CPP1 template decode", error))?;
         let mut workbench = Self {
             boundary: WasmPersistentSessionBoundaryV1::new(),
             generation: ResidentSourceGenerationV1 {
@@ -113,6 +141,9 @@ impl ResidentSourceWorkbenchV1 {
             session: template.authority.session,
             template,
             coherent_template,
+            template_scope,
+            template_projection_roles,
+            template_physical_plan,
             sequence: 0,
             pending: None,
             last_projection: None,
@@ -360,10 +391,6 @@ impl ResidentSourceWorkbenchV1 {
         &mut self,
         exact_source: &[u8],
     ) -> Result<(), ResidentSourceWorkbenchErrorV1> {
-        let decoded = decode_process_package(&self.template.package_bytes)
-            .map_err(|error| boxed_error("template package decode", error))?;
-        let template_package = check_process_package(decoded)
-            .map_err(|error| boxed_error("template package check", error))?;
         self.next_change = self.next_change.checked_add(1).ok_or_else(|| {
             ResidentSourceWorkbenchErrorV1("source change sequence exhausted".into())
         })?;
@@ -374,10 +401,7 @@ impl ResidentSourceWorkbenchV1 {
             ProgramChangeOccurrenceId::from_bytes(sequence_id(self.next_change)),
         )
         .map_err(|error| debug_error("canonical source allocation", error))?;
-        let scope = TermScope {
-            universe: template_package.constitution().universe(),
-            semantics: template_package.constitution().semantics(),
-        };
+        let scope = self.template_scope;
         let compiled = elaborate_canonical_source_package_v1(
             &cst,
             CanonicalSourceContextV1 {
@@ -388,29 +412,8 @@ impl ResidentSourceWorkbenchV1 {
         )
         .map_err(|error| debug_error("canonical source elaboration", error))?;
         self.template = self.coherent_template.clone();
-        let decoded = decode_process_package(&self.template.package_bytes)
-            .map_err(|error| boxed_error("selected template package decode", error))?;
-        let selected_package = check_process_package(decoded)
-            .map_err(|error| boxed_error("selected template package check", error))?;
-        let mut physical_plan =
-            decode_executable_physical_plan_v1(&self.template.physical_plan_bytes)
-                .map_err(|error| boxed_error("CPP1 template decode", error))?;
-        let mut projection_roles = selected_package
-            .constitution()
-            .preimage()
-            .schemas
-            .iter()
-            .flat_map(|schema| {
-                schema
-                    .roles
-                    .iter()
-                    .map(|role| clause_package::LocalRoleRefV2 {
-                        schema: schema.id,
-                        role: role.id,
-                    })
-            })
-            .collect::<Vec<_>>();
-        projection_roles.sort();
+        let mut physical_plan = self.template_physical_plan.clone();
+        let projection_roles = &self.template_projection_roles;
         let projected_state_count = compiled.state_cells.len();
         if projection_roles.len() < projected_state_count {
             return Err(ResidentSourceWorkbenchErrorV1(format!(
@@ -424,7 +427,7 @@ impl ResidentSourceWorkbenchV1 {
             scope,
             &compiled.state_cells,
             &compiled.executable_handlers,
-            &projection_roles,
+            projection_roles,
         )
         .map_err(|error| boxed_error("generic canonical lowering", error))?;
         let semantic_handlers = compiled
@@ -477,7 +480,7 @@ impl ResidentSourceWorkbenchV1 {
                     &compiled.keyboard_bindings,
                     &lowered.handlers,
                     &semantic_handlers,
-                    &projection_roles,
+                    projection_roles,
                     template_input.tick.role,
                 )?;
                 events.extend(bind_source_scalar_input_events(
@@ -485,7 +488,7 @@ impl ResidentSourceWorkbenchV1 {
                     compiled.keyboard_bindings.len(),
                     &lowered.handlers,
                     &semantic_handlers,
-                    &projection_roles,
+                    projection_roles,
                     template_input.tick.role,
                 )?);
                 events

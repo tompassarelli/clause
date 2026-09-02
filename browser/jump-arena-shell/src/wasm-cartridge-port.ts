@@ -195,6 +195,8 @@ export type Cse1Event =
   | (Cse1EventBase & Readonly<{ kind: "disposed" }>)
   | (Cse1EventBase & Readonly<{ kind: "rejected"; reason: number }>)
   | (Cse1EventBase &
+      Readonly<{ kind: "candidate-rejected"; diagnostic: string }>)
+  | (Cse1EventBase &
       Readonly<{
         kind: "suspended";
         step: ExactBytes;
@@ -1279,6 +1281,32 @@ function decode_cse1_event(bytes: unknown): Cse1Event {
                       reason: little_u32(bytes, 21),
                     };
                   })()
+                : equivalent(tag, 15)
+                  ? (() => {
+                      const diagnostic = parse_blob(
+                        bytes,
+                        21,
+                        cse1_max_bytes,
+                        "CSE1 candidate rejection diagnostic",
+                      );
+                      if (!equivalent(diagnostic.next, bytes.length)) {
+                        (() => {
+                          throw new Error(
+                            "CSE1 candidate rejection has an invalid shape",
+                          );
+                        })();
+                      }
+                      return {
+                        kind: "candidate-rejected",
+                        slot: slot,
+                        generation: generation,
+                        sequence: sequence,
+                        diagnostic: ascii_text(
+                          diagnostic.bytes,
+                          "CSE1 candidate rejection diagnostic",
+                        ),
+                      };
+                    })()
                 : equivalent(tag, 8)
                   ? (() => {
                       if (
@@ -1862,6 +1890,11 @@ function apply_session_command_bang(
           event.reason,
         ),
       );
+    })();
+  }
+  if (event.kind === "candidate-rejected") {
+    (() => {
+      throw new Error(event.diagnostic);
     })();
   }
   return event;
