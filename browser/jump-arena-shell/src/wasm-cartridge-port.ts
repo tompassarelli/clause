@@ -2393,9 +2393,8 @@ function admit_session_candidate_bang(
 }
 
 function reject_reason(error: unknown): string {
-  return error instanceof Error
-    ? error.message
-    : "Wasm cartridge boundary rejected";
+  if (!(error instanceof Error)) return "Wasm cartridge boundary rejected";
+  return error.stack === undefined ? error.message : error.stack;
 }
 
 function reclaim_retired_session_bang(module: unknown): null {

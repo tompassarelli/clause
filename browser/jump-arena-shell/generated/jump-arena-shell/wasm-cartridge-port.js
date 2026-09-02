@@ -1520,9 +1520,9 @@ function admit_session_candidate_bang(module, incoming_session, incoming_candida
     return event;
 }
 function reject_reason(error) {
-    return error instanceof Error
-        ? error.message
-        : "Wasm cartridge boundary rejected";
+    if (!(error instanceof Error))
+        return "Wasm cartridge boundary rejected";
+    return error.stack === undefined ? error.message : error.stack;
 }
 function reclaim_retired_session_bang(module) {
     const api = session_module_functions(module);
