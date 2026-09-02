@@ -34,7 +34,7 @@ const MAX_RUNS: usize = 1_000_000;
 const MAX_ACTIVATIONS: usize = 1_000_000;
 const MAX_CONFIGURATIONS: usize = 1_000_000;
 const MAX_STEP_BATCH_ITEMS: usize = 1_000_000;
-const MAX_CARRIER_BYTES: usize = 256 * 1024 * 1024;
+const MAX_INGRESS_BATCH_FOOTPRINT_BYTES: usize = 256 * 1024 * 1024;
 const MAX_STEP_FRONTIER_ITEMS: usize = 1_000_000;
 const MAX_STEP_OBSERVATIONS: usize = 1_000_000;
 const MAX_CAUSAL_OCCURRENCES: usize = 4_000_000;
@@ -787,7 +787,7 @@ pub enum ProcessRecordV2 {
     EffectJudgment(EffectJudgmentOccurrenceV1),
 }
 
-/// Current cumulative carrier usage at the constitutional live limits.
+/// Current carrier usage plus monotonic accepted-ingress traffic totals.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ProcessResourceUsageV2 {
     pub base_records: usize,
@@ -1284,23 +1284,14 @@ impl ProcessCarrier {
         ingress_bytes: usize,
         authority: &AuthorityStore,
     ) -> Result<(), ProcessIngressError> {
-        let next_ingress_bytes = self
-            .accepted_ingress_bytes
-            .checked_add(ingress_bytes)
-            .unwrap_or(usize::MAX);
-        let carrier_bytes = self
-            .exact_package_bytes
-            .len()
-            .checked_add(next_ingress_bytes)
-            .unwrap_or(usize::MAX);
-        if carrier_bytes > MAX_CARRIER_BYTES {
-            return Err(ProcessIngressError::Batch {
-                cause: Box::new(ProcessError::IngressByteLimitExceeded {
-                    count: carrier_bytes,
-                    maximum: MAX_CARRIER_BYTES,
-                }),
-            });
-        }
+        let next_ingress_bytes = account_ingress_bytes(
+            self.exact_package_bytes.len(),
+            self.accepted_ingress_bytes,
+            ingress_bytes,
+        )
+        .map_err(|cause| ProcessIngressError::Batch {
+            cause: Box::new(cause),
+        })?;
         let mut undo = Vec::new();
         undo.try_reserve_exact(records.len())
             .map_err(|_| ProcessIngressError::Batch {
@@ -4603,6 +4594,23 @@ impl ProcessCarrier {
     }
 }
 
+fn account_ingress_bytes(
+    package_bytes: usize,
+    accepted_ingress_bytes: usize,
+    ingress_batch_bytes: usize,
+) -> Result<usize, ProcessError> {
+    let live_footprint = package_bytes
+        .checked_add(ingress_batch_bytes)
+        .unwrap_or(usize::MAX);
+    if live_footprint > MAX_INGRESS_BATCH_FOOTPRINT_BYTES {
+        return Err(ProcessError::IngressByteLimitExceeded {
+            count: live_footprint,
+            maximum: MAX_INGRESS_BATCH_FOOTPRINT_BYTES,
+        });
+    }
+    Ok(accepted_ingress_bytes.saturating_add(ingress_batch_bytes))
+}
+
 fn expected_continuation_pins(activation: &Activation) -> ContinuationPins {
     ContinuationPins {
         run: activation.membership().run(),
@@ -5100,7 +5108,10 @@ impl From<crate::provenance::ProvenanceError> for ProcessError {
 
 #[cfg(test)]
 mod tests {
-    use super::{ProcessError, checked_aggregate_step_count};
+    use super::{
+        MAX_INGRESS_BATCH_FOOTPRINT_BYTES, ProcessError, account_ingress_bytes,
+        checked_aggregate_step_count,
+    };
 
     #[test]
     fn aggregate_step_count_is_checked_across_record_boundaries() {
@@ -5112,6 +5123,21 @@ mod tests {
         assert_eq!(
             checked_aggregate_step_count([usize::MAX, 1], usize::MAX),
             Err(ProcessError::StepBatchTooLarge(usize::MAX))
+        );
+    }
+
+    #[test]
+    fn ingress_byte_limit_bounds_one_live_batch_not_session_lifetime_traffic() {
+        assert_eq!(
+            account_ingress_bytes(64, MAX_INGRESS_BATCH_FOOTPRINT_BYTES, 1),
+            Ok(MAX_INGRESS_BATCH_FOOTPRINT_BYTES + 1),
+        );
+        assert_eq!(
+            account_ingress_bytes(64, 0, MAX_INGRESS_BATCH_FOOTPRINT_BYTES),
+            Err(ProcessError::IngressByteLimitExceeded {
+                count: MAX_INGRESS_BATCH_FOOTPRINT_BYTES + 64,
+                maximum: MAX_INGRESS_BATCH_FOOTPRINT_BYTES,
+            }),
         );
     }
 }
