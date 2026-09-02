@@ -4174,48 +4174,25 @@ fn validate_scalar_input_handler_targets(
     Ok(())
 }
 
-/// Lower the supported declaration slice, then pass it through the existing
-/// canonical encoder, decoder, and package checker.
-pub fn elaborate_canonical_source_package_v1(
+struct CheckedCanonicalSourceExecutionV1 {
+    state_cells: Vec<CanonicalStateCellV1>,
+    executable_handlers: Vec<CanonicalExecutableHandlerV1>,
+    keyboard_bindings: Vec<CanonicalKeyboardBindingV1>,
+    scalar_input_bindings: Vec<CanonicalScalarInputBindingV1>,
+    input_handler: Option<CanonicalInputHandlerV1>,
+    jump_handler: Option<CanonicalJumpHandlerV1>,
+    scalar_handlers: Vec<CanonicalScalarHandlerV1>,
+    tick_program: Option<CanonicalTickProgramV1>,
+}
+
+fn checked_canonical_source_execution_v1(
     cst: &CanonicalSourceCstV1,
-    context: CanonicalSourceContextV1,
     plan: &CanonicalSourceAllocationPlanV1,
-) -> Result<CanonicalSourcePackageSliceV1, CanonicalSourceErrorV1> {
-    if plan.artifact != cst.artifact {
-        return Err(CanonicalSourceErrorV1::AllocationArtifactMismatch);
-    }
-    let scope = TermScope {
-        universe: context.universe,
-        semantics: context.semantics,
-    };
-    let mut formations = Vec::new();
-    let mut schemas = Vec::new();
-    let mut capabilities = Vec::new();
-    let mut operators = Vec::new();
-    let mut emissions = Vec::new();
-    let mut unsupported = Vec::new();
-    let mut named_formations = BTreeMap::new();
-    let mut named_capabilities = BTreeMap::new();
-    for item in &cst.items {
-        match &item.kind {
-            CstKind::Referent { designation } => {
-                let producer =
-                    semantic_producer(CanonicalSourceProductionV1::Referent, designation);
-                let slot = head_slot(CanonicalSourceProductionV1::Referent);
-                named_formations.insert(designation.clone(), formation_id(plan, &producer, &slot)?);
-            }
-            CstKind::Capability { designation } => {
-                let producer =
-                    semantic_producer(CanonicalSourceProductionV1::Capability, designation);
-                let slot = head_slot(CanonicalSourceProductionV1::Capability);
-                named_formations.insert(designation.clone(), formation_id(plan, &producer, &slot)?);
-                named_capabilities
-                    .insert(designation.clone(), capability_id(plan, &producer, &slot)?);
-            }
-            _ => {}
-        }
-    }
-    let input_parts = input_handler_parts(cst)?;
+    input_parts: Option<(&InputHandlerCst, &VectorAssertionCst)>,
+    jump_parts: Option<JumpHandlerParts<'_>>,
+    scalar_parts: &[ScalarHandlerParts<'_>],
+    tick_parts: Option<TickProgramParts<'_>>,
+) -> Result<CheckedCanonicalSourceExecutionV1, CanonicalSourceErrorV1> {
     let input_handler = input_parts
         .as_ref()
         .map(|(handler, assertion)| CanonicalInputHandlerV1 {
@@ -4227,7 +4204,6 @@ pub fn elaborate_canonical_source_package_v1(
             result_x: handler.result_x,
             result_z: handler.result_z,
         });
-    let jump_parts = jump_handler_parts(cst)?;
     let jump_handler = jump_parts.map(|parts| CanonicalJumpHandlerV1 {
         artifact: cst.artifact,
         handler_origin: parts.handler.origin,
@@ -4241,7 +4217,6 @@ pub fn elaborate_canonical_source_package_v1(
         result_velocity: parts.handler.result_velocity,
         result_grounded: parts.handler.result_grounded,
     });
-    let scalar_parts = scalar_handler_parts(cst)?;
     let scalar_handlers = scalar_parts
         .iter()
         .map(|parts| CanonicalScalarHandlerV1 {
@@ -4255,7 +4230,6 @@ pub fn elaborate_canonical_source_package_v1(
             result: parts.handler.result.clone(),
         })
         .collect();
-    let tick_parts = tick_program_parts(cst)?;
     let keyboard_bindings = source_keyboard_bindings(cst)?;
     let scalar_input_bindings = source_scalar_input_bindings(cst)?;
     let state_cells = checked_source_state_cells(cst, plan)?;
@@ -4264,7 +4238,7 @@ pub fn elaborate_canonical_source_package_v1(
         plan,
         input_parts,
         jump_parts,
-        &scalar_parts,
+        scalar_parts,
         tick_parts,
         &keyboard_bindings,
     )?;
@@ -4312,7 +4286,63 @@ pub fn elaborate_canonical_source_package_v1(
             })
             .into(),
     });
+    Ok(CheckedCanonicalSourceExecutionV1 {
+        state_cells,
+        executable_handlers,
+        keyboard_bindings,
+        scalar_input_bindings,
+        input_handler,
+        jump_handler,
+        scalar_handlers,
+        tick_program,
+    })
+}
 
+/// Lower the supported declaration slice, then pass it through the existing
+/// canonical encoder, decoder, and package checker.
+pub fn elaborate_canonical_source_package_v1(
+    cst: &CanonicalSourceCstV1,
+    context: CanonicalSourceContextV1,
+    plan: &CanonicalSourceAllocationPlanV1,
+) -> Result<CanonicalSourcePackageSliceV1, CanonicalSourceErrorV1> {
+    if plan.artifact != cst.artifact {
+        return Err(CanonicalSourceErrorV1::AllocationArtifactMismatch);
+    }
+    let scope = TermScope {
+        universe: context.universe,
+        semantics: context.semantics,
+    };
+    let mut formations = Vec::new();
+    let mut schemas = Vec::new();
+    let mut capabilities = Vec::new();
+    let mut operators = Vec::new();
+    let mut emissions = Vec::new();
+    let mut unsupported = Vec::new();
+    let mut named_formations = BTreeMap::new();
+    let mut named_capabilities = BTreeMap::new();
+    for item in &cst.items {
+        match &item.kind {
+            CstKind::Referent { designation } => {
+                let producer =
+                    semantic_producer(CanonicalSourceProductionV1::Referent, designation);
+                let slot = head_slot(CanonicalSourceProductionV1::Referent);
+                named_formations.insert(designation.clone(), formation_id(plan, &producer, &slot)?);
+            }
+            CstKind::Capability { designation } => {
+                let producer =
+                    semantic_producer(CanonicalSourceProductionV1::Capability, designation);
+                let slot = head_slot(CanonicalSourceProductionV1::Capability);
+                named_formations.insert(designation.clone(), formation_id(plan, &producer, &slot)?);
+                named_capabilities
+                    .insert(designation.clone(), capability_id(plan, &producer, &slot)?);
+            }
+            _ => {}
+        }
+    }
+    let input_parts = input_handler_parts(cst)?;
+    let jump_parts = jump_handler_parts(cst)?;
+    let scalar_parts = scalar_handler_parts(cst)?;
+    let tick_parts = tick_program_parts(cst)?;
     for item in &cst.items {
         match &item.kind {
             CstKind::Referent { designation } => {
@@ -4956,36 +4986,66 @@ pub fn elaborate_canonical_source_package_v1(
             CstKind::Unsupported(value) => unsupported.push(value.clone()),
         }
     }
-    formations.sort_by_key(|formation| formation.id);
-    schemas.sort_by_key(|schema| schema.id);
-    capabilities.sort_by_key(|capability| capability.id);
-    operators.sort_by_key(|operator| operator.id);
-    let snapshot = ProgramSnapshotPreimageV2 {
-        constitution: ProgramConstitutionPreimageV2 {
-            semantics: context.semantics,
-            universe: context.universe,
-            formations,
-            schemas,
-            capabilities,
-            operators,
-            applications: vec![],
-        },
-        successor_grants: vec![],
-        static_execution_grants: vec![],
-        state_admission_grants: vec![],
-        judgment_authority_grants: vec![],
-    };
-    let claimed_snapshot =
-        derive_program_snapshot_id(&snapshot).map_err(CanonicalSourceErrorV1::Encode)?;
-    let package = ProcessPackageV2 {
-        claimed_snapshot,
-        snapshot,
-        initial_state_views: vec![],
-        records: vec![],
-    };
-    let bytes = encode_process_package(&package).map_err(CanonicalSourceErrorV1::Encode)?;
-    let decoded = decode_process_package(&bytes).map_err(CanonicalSourceErrorV1::Decode)?;
-    let checked_package = check_process_package(decoded).map_err(CanonicalSourceErrorV1::Check)?;
+    let (checked_package, checked_execution) = std::thread::scope(|parallel| {
+        let execution = parallel.spawn(|| {
+            checked_canonical_source_execution_v1(
+                cst,
+                plan,
+                input_parts,
+                jump_parts,
+                &scalar_parts,
+                tick_parts,
+            )
+        });
+        formations.sort_by_key(|formation| formation.id);
+        schemas.sort_by_key(|schema| schema.id);
+        capabilities.sort_by_key(|capability| capability.id);
+        operators.sort_by_key(|operator| operator.id);
+        let checked_package: Result<CheckedProcessPackage, CanonicalSourceErrorV1> = (|| {
+            let snapshot = ProgramSnapshotPreimageV2 {
+                constitution: ProgramConstitutionPreimageV2 {
+                    semantics: context.semantics,
+                    universe: context.universe,
+                    formations,
+                    schemas,
+                    capabilities,
+                    operators,
+                    applications: vec![],
+                },
+                successor_grants: vec![],
+                static_execution_grants: vec![],
+                state_admission_grants: vec![],
+                judgment_authority_grants: vec![],
+            };
+            let claimed_snapshot =
+                derive_program_snapshot_id(&snapshot).map_err(CanonicalSourceErrorV1::Encode)?;
+            let package = ProcessPackageV2 {
+                claimed_snapshot,
+                snapshot,
+                initial_state_views: vec![],
+                records: vec![],
+            };
+            let bytes = encode_process_package(&package).map_err(CanonicalSourceErrorV1::Encode)?;
+            let decoded = decode_process_package(&bytes).map_err(CanonicalSourceErrorV1::Decode)?;
+            let checked = check_process_package(decoded).map_err(CanonicalSourceErrorV1::Check)?;
+            Ok(checked)
+        })();
+        let checked_execution = match execution.join() {
+            Ok(result) => result,
+            Err(payload) => std::panic::resume_unwind(payload),
+        };
+        Ok::<_, CanonicalSourceErrorV1>((checked_package?, checked_execution?))
+    })?;
+    let CheckedCanonicalSourceExecutionV1 {
+        state_cells,
+        executable_handlers,
+        keyboard_bindings,
+        scalar_input_bindings,
+        input_handler,
+        jump_handler,
+        scalar_handlers,
+        tick_program,
+    } = checked_execution;
     Ok(CanonicalSourcePackageSliceV1 {
         checked_package,
         emissions,
