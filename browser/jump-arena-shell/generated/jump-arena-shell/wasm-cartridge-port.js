@@ -1198,6 +1198,14 @@ function ascii_text(bytes, label) {
     }
     return result;
 }
+function utf8_text(bytes, label) {
+    try {
+        return new TextDecoder("utf-8", { fatal: true }).decode(Uint8Array.from({ length: bytes.length }, (_, index) => byte_at(bytes, index)));
+    }
+    catch {
+        throw new Error(concatenate(label, " is not canonical UTF-8"));
+    }
+}
 function decode_term_node(bytes, offset, depth) {
     if (depth > 64) {
         (() => {
@@ -1327,6 +1335,8 @@ function realize_projection_node(node) {
         }
         if (kind === "clause/process-projected-symbol-v1")
             return ascii_text(payload, "projected symbol");
+        if (kind === "clause/process-projected-text-v1")
+            return utf8_text(payload, "projected Text");
         throw new Error("projected scalar Atom is not realizable");
     }
     else {

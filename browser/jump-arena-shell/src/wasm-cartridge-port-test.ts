@@ -135,6 +135,27 @@ function append_u32_bang(bytes: number[], value: number): void {
   });
 }
 
+function append_big_u32_bang(bytes: number[], value: number): void {
+  [16777216, 65536, 256, 1].forEach((divisor) => {
+    bytes.push(Math.trunc(value / divisor) % 256);
+  });
+}
+
+function projected_atom(kind: string, payload: readonly number[]): number[] {
+  const bytes = new Array<number>(64).fill(0);
+  bytes.push(0);
+  append_big_u32_bang(bytes, kind.length);
+  Array.from(kind, (character) => character.charCodeAt(0)).forEach((byte) => {
+    bytes.push(byte);
+  });
+  append_big_u32_bang(bytes, payload.length);
+  payload.forEach((byte) => {
+    bytes.push(byte);
+  });
+  bytes.push(0);
+  return bytes;
+}
+
 function append_u64_bang(bytes: number[], value: number): void {
   append_u32_bang(bytes, value);
   append_u32_bang(bytes, 0);
@@ -547,6 +568,20 @@ function projectedString(
   }
   return result;
 }
+
+test["test"]("projected Text realizes exact UTF-8", () => {
+  const text = wasm["decode-projected-term-frame"](
+    projected_atom("clause/process-projected-text-v1", [
+      78, 111, 114, 116, 104, 32, 240, 159, 154, 128,
+    ]),
+  );
+  test["expect"](text).toBe("North 🚀");
+  test["expect"](() =>
+    wasm["decode-projected-term-frame"](
+      projected_atom("clause/process-projected-text-v1", [255]),
+    ),
+  ).toThrow("projected Text is not canonical UTF-8");
+});
 
 function projectedBoolean(
   value: wasm.ProjectedValue,

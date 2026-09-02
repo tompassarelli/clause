@@ -4373,7 +4373,8 @@ impl ExecutableProcessRuntimeV1 {
             allocation_root: self.allocation.root,
             step_ordinal,
         };
-        let mut selected = None;
+        let mut selected = Vec::new();
+        let mut selected_targets = BTreeSet::new();
         for rule in self
             .program
             .rules
@@ -4405,14 +4406,26 @@ impl ExecutableProcessRuntimeV1 {
                     Ok::<_, ExecutableErrorV1>(
                         matches && value.as_boolean().ok_or(ExecutableErrorV1::TypeMismatch)?,
                     )
-                })?;
+            })?;
             if matches {
-                selected = Some(rule);
-                break;
+                // One source handler may specialize across independent
+                // referents. Apply every disjoint specialization in this
+                // Step, while the first rule retains precedence whenever two
+                // alternatives target the same physical state.
+                let targets = rule
+                    .assignments
+                    .iter()
+                    .map(|(slot, _)| *slot)
+                    .chain(rule.removals.iter().copied())
+                    .collect::<BTreeSet<_>>();
+                if targets.is_disjoint(&selected_targets) {
+                    selected_targets.extend(targets);
+                    selected.push(rule);
+                }
             }
         }
         let mut next = self.configuration.clone();
-        if let Some(rule) = selected {
+        for rule in &selected {
             for (slot, expression) in &rule.assignments {
                 let value = evaluate(
                     expression,
@@ -4448,7 +4461,7 @@ impl ExecutableProcessRuntimeV1 {
             after,
             input_observation: None,
             occurrence,
-            rule_applied: selected.is_some(),
+            rule_applied: !selected.is_empty(),
         };
         Ok((next, step))
     }
