@@ -27,7 +27,7 @@ relation banner
   subject north
   mode given north yields value: one
 
-north-main ∈ North
+north-main: North
 north-main goal state no-goal
 north-main banner "North says:\n\"ready\" 🚀"
 

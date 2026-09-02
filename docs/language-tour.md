@@ -15,7 +15,7 @@ source order, graph storage, or host-language calls into semantics.
 ## Declare distinctions without inventing objects
 
 Declarations use explicit heads. An `enum` gives every child one homogeneous
-membership role; a `shape` gives every child one homogeneous field role:
+category role; a `shape` gives every child one homogeneous field role:
 
 ```clause
 Door
@@ -33,30 +33,33 @@ gravity: 9.81
 origin: Vec2 { x: 0.0, y: 0.0 }
 ```
 
-A bare designation leaf introduces or resolves a Referent. `∈` expresses
-ordinary membership, `:` constrains a binder or role to one field, and `=`
-remains equality. Cardinality belongs to the field or schema; a singleton field yields
-the derived one-denotation case often called definition, but definition is not
-a primitive syntax category. Source forms elaborate into neutral recursive
-Terms plus contextual `ClauseJudgment`s and candidate formations. Lower-case
-clause means one such contextual judgment over a Term, not an Application or
-governed Judgment.
+A bare designation leaf introduces or resolves a Referent. `:` binds its LHS
+to one typed term and may repeat: `north: Flake`, `north: 5`, and
+`north: "hello"` coexist without a privileged value slot. Symbol bindings used
+as domains derive classification; scalar and Text bindings remain ordinary
+typed values. `=` remains equality. Cardinality belongs to the field or schema,
+not to the colon token; a singleton field yields the derived one-denotation
+case often called definition, but definition is not a primitive syntax
+category. Source forms elaborate into neutral recursive Terms plus contextual
+`ClauseJudgment`s and candidate formations. Lower-case clause means one such
+contextual judgment over a Term, not an Application or governed Judgment.
 Checked formation still does not assert, authorize, or execute a Term.
 
 Indentation supplies containment and an explicitly declared omitted role. It
 does not guess a domain relationship:
 
 ```clause
-iron-door
-  ∈ Door
-  ∈ Lockable
-  connects Cellar to Armory
-  state locked
+north: Flake
+  inputs
+    nixpkgs from "github:NixOS/nixpkgs/nixos-unstable"
+    rust-overlay from "github:oxalica/rust-overlay"
+  development shell north-shell
 ```
 
-The header focuses `iron-door`; every child still names its edge. A bare
-unkeyworded parent and child such as `Foo` followed by `Bar` is invalid because
-no Reading says what connects them.
+The header binds and focuses `north`. An interior child such as `inputs`
+explicitly prefixes each complete edge below it. A bare unkeyworded parent and
+child such as `Foo` followed by `Bar` is invalid because no Reading says what
+connects them.
 
 ## Separate relational shape from executable running
 
@@ -69,8 +72,8 @@ relation connects
   subject door
   mode given door origin yields destination: many
 
-Cellar ∈ Space
-Armory ∈ Space
+Cellar: Space
+Armory: Space
 
 iron-door connects Cellar to Armory
 ```
@@ -209,7 +212,7 @@ Prefix binders precede every dependent use:
 
 ```clause
 for n in 101..106
-  Door-{n} ∈ Door
+  Door-{n}: Door
 ```
 
 Ranges are inclusive ascending integer ranges. Brackets remain sequence Terms,

@@ -1,6 +1,6 @@
 SpringPad
 
-spring-pad-1 ∈ SpringPad
+spring-pad-1: SpringPad
 
 on spring-contact ?player
   when

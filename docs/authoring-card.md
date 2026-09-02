@@ -60,7 +60,7 @@ relation empowered
   subject player
   mode given player yields value: one
 
-player-1 ∈ Player
+player-1: Player
 player-1 velocity Vec3 { x: 0.0, y: 0.0, z: 0.0 }
 player-1 empowered true
 
@@ -92,7 +92,7 @@ relation camera-heading
   subject player
   mode given player yields value: one
 
-player-1 ∈ Player
+player-1: Player
 player-1 camera heading 0.0
 
 bind scalar-input CameraHeading to observe-camera-heading
@@ -183,7 +183,7 @@ relation banner
   subject north
   mode given north yields value: one
 
-north-main ∈ North
+north-main: North
 north-main goal state no-goal
 north-main banner "North says:\n\"ready\" 🚀"
 
@@ -298,16 +298,16 @@ relation goal-catalog-state
   subject north
   mode given north yields value: one
 
-north-main ∈ North
-ready ∈ GoalStatus
-active ∈ GoalStatus
+north-main: North
+ready: GoalStatus
+active: GoalStatus
 north-main goal catalog state ready
 
 on create-goal ?north ?title ?objective
   when
     ?north goal catalog state ?catalog
   create
-    ?goal ∈ Goal
+    ?goal: Goal
   withdraw
     ?north goal catalog state ?catalog
   include
@@ -416,9 +416,9 @@ derive clamp-lower
 derive clamp-interior
 derive clamp-upper
 
-magitek-boar ∈ Actor
-blade-two ∈ Move
-combat-rules ∈ CombatRules
+magitek-boar: Actor
+blade-two: Move
+combat-rules: CombatRules
 
 magitek-boar vitality 100.0
 magitek-boar destabilization 100.0
@@ -469,16 +469,18 @@ Catalog ID: `relational-nix-flake`
 ```clause
 using Nix
 
-clause ∈ Flake
+clause: Flake
   description "Clause development environment"
-  input nixpkgs from "github:NixOS/nixpkgs/nixos-unstable"
-  input rust-overlay from "github:oxalica/rust-overlay"
-  input rust-overlay follows nixpkgs
+  inputs
+    nixpkgs from "github:NixOS/nixpkgs/nixos-unstable"
+    rust-overlay from "github:oxalica/rust-overlay"
+    rust-overlay follows nixpkgs
   development shell clause-shell
 
 clause-shell
   for x86_64-linux
   imports nixpkgs
   overlays rust-overlay
-  includes rust from "./rust-toolchain.toml"
+  includes
+    rust from "./rust-toolchain.toml"
 ```

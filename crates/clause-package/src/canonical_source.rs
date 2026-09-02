@@ -589,10 +589,21 @@ pub struct CanonicalFocusedEdgeV1 {
     pub origin: CanonicalSourceOriginV1,
 }
 
+/// One source-owned, many-valued binding from a referent to a typed term.
+/// Category membership is the symbol-valued case consumed as a domain by
+/// relations or a compiler-owned vocabulary; scalar and Text values remain
+/// ordinary bindings rather than competing assignments to one slot.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CanonicalSourceBindingV1 {
+    pub subject: Vec<u8>,
+    pub value: CanonicalScalarValueV1,
+    pub origin: CanonicalSourceOriginV1,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CanonicalSubjectFocusV1 {
     pub subject: Vec<u8>,
-    pub memberships: Vec<Vec<u8>>,
+    pub binding: Option<CanonicalScalarValueV1>,
     pub origin: CanonicalSourceOriginV1,
     pub edges: Vec<CanonicalFocusedEdgeV1>,
 }
@@ -633,6 +644,7 @@ impl CanonicalSourceCstV1 {
 pub struct CanonicalSourcePackageSliceV1 {
     pub checked_package: CheckedProcessPackage,
     pub emissions: Vec<CanonicalSourceEmissionV1>,
+    pub bindings: Vec<CanonicalSourceBindingV1>,
     pub unsupported: Vec<CanonicalUnsupportedProductionV1>,
     pub state_cells: Vec<CanonicalStateCellV1>,
     pub executable_handlers: Vec<CanonicalExecutableHandlerV1>,
@@ -697,7 +709,7 @@ pub enum CanonicalSourceErrorV1 {
     InvalidMode {
         origin: CanonicalSourceOriginV1,
     },
-    InvalidMembershipGroup {
+    InvalidBinding {
         origin: CanonicalSourceOriginV1,
     },
     InvalidInputHandler {
@@ -843,7 +855,7 @@ enum CstKind {
     Referent {
         designation: Vec<u8>,
     },
-    Membership(MembershipCst),
+    Binding(BindingCst),
     Capability {
         designation: Vec<u8>,
     },
@@ -873,10 +885,10 @@ enum CstKind {
 }
 
 #[derive(Clone, Debug)]
-struct MembershipCst {
+struct BindingCst {
     subject: Vec<u8>,
-    domains: Vec<Vec<u8>>,
-    emissions: Vec<CanonicalSourceEmissionV1>,
+    value: CanonicalScalarValueV1,
+    emission: CanonicalSourceEmissionV1,
 }
 
 #[derive(Clone, Debug)]
@@ -1557,14 +1569,14 @@ fn allocation_requests(
                     domain: AllocationDomain::Formation,
                 });
             }
-            CstKind::Membership(membership) => {
-                if !requested_referents.insert(membership.subject.clone()) {
+            CstKind::Binding(binding) => {
+                if !requested_referents.insert(binding.subject.clone()) {
                     continue;
                 }
                 requested.push(AllocationRequest {
                     producer: semantic_producer(
                         CanonicalSourceProductionV1::Referent,
-                        &membership.subject,
+                        &binding.subject,
                     ),
                     slot: head_slot(CanonicalSourceProductionV1::Referent),
                     domain: AllocationDomain::Formation,
@@ -2626,12 +2638,12 @@ fn declared_referent_value(
     origin: CanonicalSourceOriginV1,
 ) -> Result<CanonicalReferentV1, CanonicalSourceErrorV1> {
     let declared = cst.items.iter().any(|item| match &item.kind {
-        CstKind::Membership(membership)
-            if membership.subject == designation
-                && membership
-                    .domains
-                    .iter()
-                    .any(|candidate| candidate == domain) =>
+        CstKind::Binding(binding)
+            if binding.subject == designation
+                && matches!(
+                    &binding.value,
+                    CanonicalScalarValueV1::Symbol(candidate) if candidate == domain
+                ) =>
         {
             true
         }
@@ -4340,13 +4352,13 @@ fn relational_checked_handler(
                 .items
                 .iter()
                 .filter_map(|item| match &item.kind {
-                    CstKind::Membership(membership)
-                        if membership
-                            .domains
-                            .iter()
-                            .any(|domain| domain == subject_domain) =>
+                    CstKind::Binding(binding)
+                        if matches!(
+                            &binding.value,
+                            CanonicalScalarValueV1::Symbol(domain) if domain == subject_domain
+                        ) =>
                     {
-                        Some(membership.subject.clone())
+                        Some(binding.subject.clone())
                     }
                     _ => None,
                 })
@@ -5541,6 +5553,7 @@ pub fn elaborate_canonical_source_package_v1(
     let mut capabilities = Vec::new();
     let mut operators = Vec::new();
     let mut emissions = Vec::new();
+    let mut bindings = Vec::new();
     let mut unsupported = Vec::new();
     let mut named_formations = BTreeMap::new();
     let mut named_capabilities = BTreeMap::new();
@@ -5568,6 +5581,7 @@ pub fn elaborate_canonical_source_package_v1(
     let scalar_parts = scalar_handler_parts(cst)?;
     let tick_parts = tick_program_parts(cst)?;
     let mut emitted_referents = BTreeSet::new();
+    let mut binding_repetitions = BTreeMap::<(Vec<u8>, Vec<u8>), u64>::new();
     for item in &cst.items {
         match &item.kind {
             CstKind::Referent { designation } => {
@@ -5587,31 +5601,46 @@ pub fn elaborate_canonical_source_package_v1(
                 )?);
                 emissions.push(emission(plan, producer, slot, item.origin));
             }
-            CstKind::Membership(membership) => {
-                if membership.domains.iter().any(|domain| {
-                    !named_formations.contains_key(domain)
+            CstKind::Binding(binding) => {
+                if let CanonicalScalarValueV1::Symbol(domain) = &binding.value {
+                    if !named_formations.contains_key(domain)
                         && !source_vocabulary_declares_domain(cst, domain)
-                }) {
-                    return Err(CanonicalSourceErrorV1::MissingExecutableBinding {
-                        origin: item.origin,
-                    });
+                    {
+                        return Err(CanonicalSourceErrorV1::MissingExecutableBinding {
+                            origin: item.origin,
+                        });
+                    }
                 }
                 let producer =
-                    semantic_producer(CanonicalSourceProductionV1::Referent, &membership.subject);
+                    semantic_producer(CanonicalSourceProductionV1::Referent, &binding.subject);
                 let slot = head_slot(CanonicalSourceProductionV1::Referent);
-                if emitted_referents.insert(membership.subject.clone()) {
+                if emitted_referents.insert(binding.subject.clone()) {
                     let id = formation_id(plan, &producer, &slot)?;
                     formations.push(source_formation(
                         scope,
                         id,
-                        cst.source_slice(item.origin)
-                            .expect("owned membership origin"),
+                        cst.source_slice(item.origin).expect("owned binding origin"),
                         item.origin,
                         "referent",
                     )?);
                     emissions.push(emission(plan, producer, slot, item.origin));
                 }
-                emissions.extend(membership.emissions.clone());
+                let repetition_key = (binding.subject.clone(), binding.emission.slot.local.clone());
+                let occurrence = binding_repetitions.entry(repetition_key).or_default();
+                let mut binding_emission = binding.emission.clone();
+                binding_emission.slot.repetition = (*occurrence > 0).then_some(*occurrence);
+                *occurrence =
+                    occurrence
+                        .checked_add(1)
+                        .ok_or(CanonicalSourceErrorV1::InvalidBinding {
+                            origin: item.origin,
+                        })?;
+                emissions.push(binding_emission);
+                bindings.push(CanonicalSourceBindingV1 {
+                    subject: binding.subject.clone(),
+                    value: binding.value.clone(),
+                    origin: binding.emission.origin,
+                });
             }
             CstKind::Capability { designation } => {
                 let producer =
@@ -6333,6 +6362,7 @@ pub fn elaborate_canonical_source_package_v1(
     Ok(CanonicalSourcePackageSliceV1 {
         checked_package,
         emissions,
+        bindings,
         unsupported,
         state_cells,
         executable_handlers,
@@ -6683,24 +6713,24 @@ fn parse_item(
         return Err(CanonicalSourceErrorV1::InvalidMultilineText { origin });
     }
     require_leaf(block, artifact)?;
+    if let Some(binding) = parse_binding_line(artifact, block[0], origin)? {
+        return Ok(CstItem {
+            origin,
+            kind: CstKind::Binding(binding),
+        });
+    }
+    let mut tokens = head.split_whitespace();
+    let first = tokens.next().unwrap_or_default();
+    let second = tokens.next();
+    if first.contains(':') || first.contains('∈') || matches!(second, Some(":" | "∈")) {
+        return Err(CanonicalSourceErrorV1::InvalidBinding { origin });
+    }
     if !head.contains(char::is_whitespace) {
         return Ok(CstItem {
             origin,
             kind: CstKind::Referent {
                 designation: designation_bytes(head, origin)?,
             },
-        });
-    }
-    if head.contains('∈') {
-        let emissions = membership_group_emissions(artifact, block[0], origin)?;
-        let (subject, domains) = parse_membership_group(head, origin)?;
-        return Ok(CstItem {
-            origin,
-            kind: CstKind::Membership(MembershipCst {
-                subject,
-                domains,
-                emissions,
-            }),
         });
     }
     if let Some(assertion) = parse_vector_assertion(head, origin)? {
@@ -6788,42 +6818,76 @@ fn parse_subject_focus(
     }
     let head = block[0];
     let head_origin = line_origin(artifact, head);
-    let (subject, memberships) = if head.text.contains(" ∈ ") {
-        let (subject, memberships) = parse_membership_group(head.text, head_origin)?;
-        (subject, memberships)
-    } else if !head.text.contains(char::is_whitespace) {
-        (designation_bytes(head.text, head_origin)?, Vec::new())
-    } else {
-        return Ok(None);
-    };
-    let edges = children
-        .into_iter()
-        .map(|child| {
-            let child_origin = line_origin(artifact, child);
-            if child.indent != 2 {
-                return Err(CanonicalSourceErrorV1::UnexpectedIndentation {
-                    origin: child_origin,
-                });
-            }
-            let source = child
-                .text
-                .get(2..)
-                .filter(|source| !source.is_empty())
-                .ok_or(CanonicalSourceErrorV1::UnexpectedIndentation {
-                    origin: child_origin,
-                })?;
-            Ok(CanonicalFocusedEdgeV1 {
-                source: source.as_bytes().to_vec(),
-                origin: child_origin,
-            })
-        })
-        .collect::<Result<Vec<_>, _>>()?;
+    let (subject, binding) =
+        if let Some((subject, value)) = parse_binding_parts(head.text, head_origin)? {
+            (subject, Some(value))
+        } else if !head.text.contains(char::is_whitespace) {
+            (designation_bytes(head.text, head_origin)?, None)
+        } else {
+            return Ok(None);
+        };
+    let edges = parse_focused_edges(artifact, &children, 0, &mut Vec::new())?;
     Ok(Some(CanonicalSubjectFocusV1 {
         subject,
-        memberships,
+        binding,
         origin,
         edges,
     }))
+}
+
+fn parse_focused_edges(
+    artifact: CanonicalSourceArtifactIdV1,
+    lines: &[SourceLine<'_>],
+    parent_indent: usize,
+    prefixes: &mut Vec<String>,
+) -> Result<Vec<CanonicalFocusedEdgeV1>, CanonicalSourceErrorV1> {
+    let expected_indent =
+        parent_indent
+            .checked_add(2)
+            .ok_or(CanonicalSourceErrorV1::UnexpectedIndentation {
+                origin: line_origin(artifact, lines[0]),
+            })?;
+    let mut edges = Vec::new();
+    let mut cursor = 0;
+    while cursor < lines.len() {
+        let line = lines[cursor];
+        let origin = line_origin(artifact, line);
+        if line.indent != expected_indent {
+            return Err(CanonicalSourceErrorV1::UnexpectedIndentation { origin });
+        }
+        let source = line
+            .text
+            .get(line.indent..)
+            .filter(|source| !source.is_empty())
+            .ok_or(CanonicalSourceErrorV1::UnexpectedIndentation { origin })?;
+        let descendants_start = cursor + 1;
+        let mut descendants_end = descendants_start;
+        while descendants_end < lines.len() && lines[descendants_end].indent > line.indent {
+            descendants_end += 1;
+        }
+        if descendants_start == descendants_end {
+            let mut expanded = prefixes.join(" ");
+            if !expanded.is_empty() {
+                expanded.push(' ');
+            }
+            expanded.push_str(source);
+            edges.push(CanonicalFocusedEdgeV1 {
+                source: expanded.into_bytes(),
+                origin,
+            });
+        } else {
+            prefixes.push(source.to_owned());
+            edges.extend(parse_focused_edges(
+                artifact,
+                &lines[descendants_start..descendants_end],
+                line.indent,
+                prefixes,
+            )?);
+            prefixes.pop();
+        }
+        cursor = descendants_end;
+    }
+    Ok(edges)
 }
 
 fn parse_focused_edge(
@@ -6834,26 +6898,6 @@ fn parse_focused_edge(
     let subject =
         std::str::from_utf8(subject).expect("canonical source designations are always valid UTF-8");
     let expanded = format!("{subject} {edge}");
-    if expanded.contains('∈') {
-        let (subject, domains) = parse_membership_group(&expanded, origin)?;
-        let mut emissions = Vec::new();
-        for domain in &domains {
-            emissions.push(CanonicalSourceEmissionV1 {
-                producer: assertion_producer(&subject, b"membership"),
-                slot: child_slot(CanonicalSourceProductionV1::Assertion, domain),
-                origin,
-                allocations: vec![],
-            });
-        }
-        return Ok(CstItem {
-            origin,
-            kind: CstKind::Membership(MembershipCst {
-                subject,
-                domains,
-                emissions,
-            }),
-        });
-    }
     if let Some(assertion) = parse_vector_assertion(&expanded, origin)? {
         return Ok(CstItem {
             origin,
@@ -7729,11 +7773,13 @@ fn parse_general_handler(
 }
 
 fn parse_general_referent_creation(source: &str) -> Option<(Vec<u8>, Vec<u8>)> {
-    let parts = source.split_whitespace().collect::<Vec<_>>();
-    let [parameter, "∈", domain] = parts.as_slice() else {
-        return None;
-    };
-    if !parameter.starts_with('?') || domain.starts_with('?') {
+    let (parameter, domain) = source.split_once(": ")?;
+    if !parameter.starts_with('?')
+        || parameter.contains(char::is_whitespace)
+        || domain.starts_with('?')
+        || domain.is_empty()
+        || domain.contains(char::is_whitespace)
+    {
         return None;
     }
     Some((parameter.as_bytes().to_vec(), domain.as_bytes().to_vec()))
@@ -9272,7 +9318,7 @@ fn encode_text_literal(value: &str) -> String {
 }
 
 fn split_shape_subject(source: &str) -> Option<(&str, &str, &str)> {
-    let (prefix, fields) = source.split_once(" { ")?;
+    let (prefix, fields) = split_once_outside_text(source, " { ")?;
     let (prefix, shape) = prefix.rsplit_once(' ')?;
     (!prefix.is_empty() && !shape.is_empty()).then_some((prefix, shape, fields))
 }
@@ -9662,98 +9708,81 @@ fn handler_include_emissions(
     Ok(emissions)
 }
 
-fn membership_group_emissions(
+fn parse_binding_line(
     artifact: CanonicalSourceArtifactIdV1,
     line: SourceLine<'_>,
     origin: CanonicalSourceOriginV1,
-) -> Result<Vec<CanonicalSourceEmissionV1>, CanonicalSourceErrorV1> {
-    let source = line.text;
-    let mut membership_offsets = source.match_indices('∈');
-    let Some((operator_offset, _)) = membership_offsets.next() else {
-        return Err(CanonicalSourceErrorV1::InvalidMembershipGroup { origin });
+) -> Result<Option<BindingCst>, CanonicalSourceErrorV1> {
+    let Some((subject, value)) = parse_binding_parts(line.text, origin)? else {
+        return Ok(None);
     };
-    if membership_offsets.next().is_some() {
-        return Err(CanonicalSourceErrorV1::InvalidMembershipGroup { origin });
-    }
-
-    let left = &source[..operator_offset];
-    let right_offset = operator_offset + '∈'.len_utf8();
-    let right = &source[right_offset..];
-    if !left.ends_with(' ') || !right.starts_with(' ') {
-        return Err(CanonicalSourceErrorV1::InvalidMembershipGroup { origin });
-    }
-    let subject = left.trim_end_matches(' ');
-    let subject_bytes = membership_designation_bytes(subject, origin)?;
-
-    let producer = assertion_producer(&subject_bytes, "∈".as_bytes());
-    let mut repetitions = BTreeMap::<Vec<u8>, u64>::new();
-    let mut emissions = Vec::new();
-    let mut segment_offset = 0;
-    for segment in right.split(',') {
-        let leading = segment.len() - segment.trim_start_matches(' ').len();
-        let target = segment.trim_matches(' ');
-        if target.is_empty() {
-            return Err(CanonicalSourceErrorV1::InvalidMembershipGroup { origin });
-        }
-        let target_bytes = membership_designation_bytes(target, origin)?;
-        let occurrence = repetitions.entry(target_bytes.clone()).or_default();
-        let repetition = (*occurrence > 0).then_some(*occurrence);
-        *occurrence = occurrence
-            .checked_add(1)
-            .ok_or(CanonicalSourceErrorV1::InvalidMembershipGroup { origin })?;
-        let target_start = line
-            .start
-            .checked_add(right_offset)
-            .and_then(|start| start.checked_add(segment_offset))
-            .and_then(|start| start.checked_add(leading))
-            .ok_or(CanonicalSourceErrorV1::InvalidMembershipGroup { origin })?;
-        let target_end = target_start
-            .checked_add(target.len())
-            .ok_or(CanonicalSourceErrorV1::InvalidMembershipGroup { origin })?;
-        emissions.push(CanonicalSourceEmissionV1 {
-            producer: producer.clone(),
-            slot: CanonicalEmissionSlotV1 {
-                production: CanonicalSourceProductionV1::Assertion,
-                local: target_bytes,
-                repetition,
-            },
-            origin: CanonicalSourceOriginV1 {
-                artifact,
-                start: target_start as u64,
-                end: target_end as u64,
-            },
-            allocations: vec![],
-        });
-        segment_offset = segment_offset
-            .checked_add(segment.len())
-            .and_then(|offset| offset.checked_add(1))
-            .ok_or(CanonicalSourceErrorV1::InvalidMembershipGroup { origin })?;
-    }
-    if emissions.is_empty() {
-        return Err(CanonicalSourceErrorV1::InvalidMembershipGroup { origin });
-    }
-    Ok(emissions)
+    let delimiter = line
+        .text
+        .find(": ")
+        .expect("a parsed binding has one canonical delimiter");
+    let value_start = line
+        .start
+        .checked_add(delimiter)
+        .and_then(|offset| offset.checked_add(2))
+        .ok_or(CanonicalSourceErrorV1::InvalidBinding { origin })?;
+    let value_origin = CanonicalSourceOriginV1 {
+        artifact,
+        start: value_start as u64,
+        end: line.end as u64,
+    };
+    let emission = CanonicalSourceEmissionV1 {
+        producer: assertion_producer(&subject, b":"),
+        slot: child_slot(
+            CanonicalSourceProductionV1::Assertion,
+            &binding_semantic_bytes(&value),
+        ),
+        origin: value_origin,
+        allocations: vec![],
+    };
+    Ok(Some(BindingCst {
+        subject,
+        value,
+        emission,
+    }))
 }
 
-fn parse_membership_group(
+fn parse_binding_parts(
     source: &str,
     origin: CanonicalSourceOriginV1,
-) -> Result<(Vec<u8>, Vec<Vec<u8>>), CanonicalSourceErrorV1> {
-    let (subject, domains) = source
-        .split_once(" ∈ ")
-        .ok_or(CanonicalSourceErrorV1::InvalidMembershipGroup { origin })?;
-    let subject = membership_designation_bytes(subject, origin)?;
-    let domains = domains
-        .split(',')
-        .map(|domain| membership_designation_bytes(domain.trim(), origin))
-        .collect::<Result<Vec<_>, _>>()?;
-    if domains.is_empty() {
-        return Err(CanonicalSourceErrorV1::InvalidMembershipGroup { origin });
+) -> Result<Option<(Vec<u8>, CanonicalScalarValueV1)>, CanonicalSourceErrorV1> {
+    let Some((subject, value)) = source.split_once(": ") else {
+        return Ok(None);
+    };
+    if subject.is_empty() || subject.contains(char::is_whitespace) {
+        return Ok(None);
     }
-    Ok((subject, domains))
+    let subject = binding_designation_bytes(subject, origin)?;
+    let value = parse_binding_value(value, origin)?;
+    Ok(Some((subject, value)))
 }
 
-fn membership_designation_bytes(
+fn parse_binding_value(
+    source: &str,
+    origin: CanonicalSourceOriginV1,
+) -> Result<CanonicalScalarValueV1, CanonicalSourceErrorV1> {
+    if source.starts_with('"') {
+        return parse_text_literal(source)
+            .map(CanonicalScalarValueV1::Text)
+            .ok_or(CanonicalSourceErrorV1::InvalidBinding { origin });
+    }
+    if source == "true" {
+        return Ok(CanonicalScalarValueV1::Boolean(true));
+    }
+    if source == "false" {
+        return Ok(CanonicalScalarValueV1::Boolean(false));
+    }
+    if let Some(number) = parse_source_number(source) {
+        return Ok(CanonicalScalarValueV1::Number(number));
+    }
+    binding_designation_bytes(source, origin).map(CanonicalScalarValueV1::Symbol)
+}
+
+fn binding_designation_bytes(
     source: &str,
     origin: CanonicalSourceOriginV1,
 ) -> Result<Vec<u8>, CanonicalSourceErrorV1> {
@@ -9766,9 +9795,34 @@ fn membership_designation_bytes(
             .skip(1)
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(*byte, b'_' | b'-'));
     if !valid {
-        return Err(CanonicalSourceErrorV1::InvalidMembershipGroup { origin });
+        return Err(CanonicalSourceErrorV1::InvalidBinding { origin });
     }
     Ok(bytes.to_vec())
+}
+
+fn binding_semantic_bytes(value: &CanonicalScalarValueV1) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    match value {
+        CanonicalScalarValueV1::Number(number) => {
+            bytes.push(0);
+            bytes.extend_from_slice(&number.to_be_bytes());
+        }
+        CanonicalScalarValueV1::Boolean(value) => {
+            bytes.extend_from_slice(&[1, u8::from(*value)]);
+        }
+        CanonicalScalarValueV1::Symbol(value) => {
+            bytes.push(2);
+            frame_bytes(&mut bytes, value);
+        }
+        CanonicalScalarValueV1::Text(value) => {
+            bytes.push(3);
+            frame_bytes(&mut bytes, value.as_bytes());
+        }
+        CanonicalScalarValueV1::Referent(_) | CanonicalScalarValueV1::RelationTable(_) => {
+            unreachable!("source binding values are unresolved scalar terms")
+        }
+    }
+    bytes
 }
 
 fn handler_semantic_producer(block: &[SourceLine<'_>]) -> Vec<u8> {
@@ -10363,9 +10417,9 @@ fn retain_supported_boolean_derive_pairs(items: &mut [CstItem]) {
 
 fn validate_unique_designations(items: &[CstItem]) -> Result<(), CanonicalSourceErrorV1> {
     let mut seen = BTreeMap::<Vec<u8>, (bool, bool)>::new();
-    for (designation, referent, membership) in items.iter().filter_map(|item| match &item.kind {
+    for (designation, referent, binding) in items.iter().filter_map(|item| match &item.kind {
         CstKind::Referent { designation } => Some((designation, true, false)),
-        CstKind::Membership(membership) => Some((&membership.subject, false, true)),
+        CstKind::Binding(binding) => Some((&binding.subject, false, true)),
         CstKind::Capability { designation } | CstKind::Shape { designation, .. } => {
             Some((designation, false, false))
         }
@@ -10389,20 +10443,20 @@ fn validate_unique_designations(items: &[CstItem]) -> Result<(), CanonicalSource
         | CstKind::TextAssertion(_)
         | CstKind::Unsupported(_) => None,
     }) {
-        if let Some((prior_referent, prior_membership)) = seen.get_mut(designation) {
-            let shares_referent_identity = (referent || membership)
-                && (*prior_referent || *prior_membership)
+        if let Some((prior_referent, prior_binding)) = seen.get_mut(designation) {
+            let shares_referent_identity = (referent || binding)
+                && (*prior_referent || *prior_binding)
                 && !(referent && *prior_referent);
             if shares_referent_identity {
                 *prior_referent |= referent;
-                *prior_membership |= membership;
+                *prior_binding |= binding;
                 continue;
             }
             return Err(CanonicalSourceErrorV1::DuplicateDesignation {
                 designation: designation.clone(),
             });
         }
-        seen.insert(designation.clone(), (referent, membership));
+        seen.insert(designation.clone(), (referent, binding));
     }
     Ok(())
 }

@@ -202,7 +202,7 @@ struct SourceFact {
 #[derive(Clone, Debug)]
 struct SourceSubject {
     name: NixIdentifierV1,
-    membership: Option<NixIdentifierV1>,
+    category: Option<NixIdentifierV1>,
     facts: Vec<SourceFact>,
 }
 
@@ -235,14 +235,14 @@ pub fn project_nix_flake_v1(exact_source: &[u8]) -> Result<NixFlakeV1, NixFlakeP
                     .map_err(|_| CanonicalSourceErrorV1::InvalidUtf8)?,
                 line,
             )?;
-            let membership = match focus.memberships.as_slice() {
-                [] => None,
-                [membership] => Some(identifier(
-                    std::str::from_utf8(membership)
+            let category = match &focus.binding {
+                None => None,
+                Some(crate::CanonicalScalarValueV1::Symbol(category)) => Some(identifier(
+                    std::str::from_utf8(category)
                         .map_err(|_| CanonicalSourceErrorV1::InvalidUtf8)?,
                     line,
                 )?),
-                _ => return Err(invalid(line, "Nix subjects have at most one membership")),
+                Some(_) => return Err(invalid(line, "Nix subjects bind one category designation")),
             };
             let facts = focus
                 .edges
@@ -258,7 +258,7 @@ pub fn project_nix_flake_v1(exact_source: &[u8]) -> Result<NixFlakeV1, NixFlakeP
                 .collect::<Result<Vec<_>, NixFlakeProjectionErrorV1>>()?;
             Ok(SourceSubject {
                 name,
-                membership,
+                category,
                 facts,
             })
         })
@@ -278,7 +278,7 @@ pub fn project_nix_flake_v1(exact_source: &[u8]) -> Result<NixFlakeV1, NixFlakeP
         .iter()
         .filter(|subject| {
             subject
-                .membership
+                .category
                 .as_ref()
                 .is_some_and(|kind| kind.as_str() == "Flake")
         })
@@ -296,7 +296,7 @@ pub fn project_nix_flake_v1(exact_source: &[u8]) -> Result<NixFlakeV1, NixFlakeP
     for fact in &flake.facts {
         if let Some(value) = fact.text.strip_prefix("description ") {
             descriptions.push(parse_quoted(value, fact.line)?);
-        } else if let Some(rest) = fact.text.strip_prefix("input ") {
+        } else if let Some(rest) = fact.text.strip_prefix("inputs ") {
             if let Some((name, source)) = rest.split_once(" from ") {
                 let name = identifier(name, fact.line)?;
                 let source = parse_quoted(source, fact.line)?;
@@ -314,7 +314,7 @@ pub fn project_nix_flake_v1(exact_source: &[u8]) -> Result<NixFlakeV1, NixFlakeP
             } else {
                 return Err(invalid(
                     fact.line,
-                    "expected `input NAME from TEXT` or `input NAME follows NAME`",
+                    "expected `inputs NAME from TEXT` or `inputs NAME follows NAME`",
                 ));
             }
         } else if let Some(name) = fact.text.strip_prefix("development shell ") {
@@ -680,22 +680,10 @@ fn invalid(line: usize, reason: &'static str) -> NixFlakeProjectionErrorV1 {
 mod tests {
     use super::*;
 
-    const SOURCE: &str = r#"using Nix
-
-north ∈ Flake
-  description "North-v2 development environment"
-  input nixpkgs from "github:NixOS/nixpkgs/nixos-unstable"
-  input rust-overlay from "github:oxalica/rust-overlay"
-  input rust-overlay follows nixpkgs
-  development shell north-shell
-
-north-shell
-  for x86_64-linux
-  imports nixpkgs
-  overlays rust-overlay
-  includes rust from "./rust-toolchain.toml"
-  includes bun
-"#;
+    const SOURCE: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../test-vectors/authoring/relational-nix-flake.clause"
+    ));
 
     const OUTPUT: &str = r#"{
   description = "North-v2 development environment";
@@ -742,8 +730,8 @@ north-shell
     #[test]
     fn input_follow_cycles_reject() {
         let source = SOURCE.replace(
-            "input rust-overlay follows nixpkgs",
-            "input rust-overlay follows nixpkgs\n  input nixpkgs follows rust-overlay",
+            "    rust-overlay follows nixpkgs",
+            "    rust-overlay follows nixpkgs\n    nixpkgs follows rust-overlay",
         );
         assert!(matches!(
             project_nix_flake_v1(source.as_bytes()),

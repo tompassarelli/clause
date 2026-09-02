@@ -58,7 +58,7 @@ equality among emitted Terms never deduplicates emissions.
 
 One source construct may therefore emit several clauses. One semantic clause
 never secretly becomes a list of clauses. This is the common contract for
-membership groups, `enum` children, grouped declarations, and any later
+repeated bindings, `enum` children, grouped declarations, and any later
 ratified macro or destructuring form. The selected production assigns every
 emission one stable semantic child slot. Repeated values in that slot each
 receive an explicit `RepetitionSlotId`: retained emissions keep that ID through
@@ -133,15 +133,17 @@ enum Game
   Soccer
 ```
 
-A subject-focus header selects a focused-edge child grammar in which every
-child names its own edge:
+A subject-focus header selects a focused-edge child grammar. A leaf names its
+own edge; an interior child contributes a relation prefix to every leaf below
+it:
 
 ```clause
-iron-door
-  ∈ Door
-  ∈ Lockable
-  connects Cellar to Armory
-  state locked
+north: Flake
+  description "North-v2 development environment"
+  inputs
+    nixpkgs from "github:NixOS/nixpkgs/nixos-unstable"
+    rust-overlay from "github:oxalica/rust-overlay"
+  development shell north-shell
 ```
 
 Constructs such as `relation`, `function`, `law`, `on`, and requests instead
@@ -155,9 +157,10 @@ is `SubjectFocus`. The parser selects between those productions from layout
 alone and never inspects the mix of children to classify the block. A subject
 focus must own at least one explicit edge child.
 
-The second block omits only the repeated subject `iron-door`; every child still
-names its relation. It does not infer membership, containment, ownership,
-fields, or a relation from indentation.
+The block omits only the repeated subject `north`. `inputs` is an explicit
+relation-prefix token, so its leaves elaborate as `inputs nixpkgs from …` and
+`inputs rust-overlay from …`. Indentation composes those declared tokens; it
+does not infer membership, containment, ownership, fields, or a relation.
 
 This is always invalid:
 
@@ -190,13 +193,13 @@ relation connects
   subject door
   mode given door origin yields destination: many
 
-Cellar ∈ Space
-Armory ∈ Space
+Cellar: Space
+Armory: Space
 
-iron-door
-  ∈ Door
+iron-door: Door
   connects Cellar to Armory
   state locked
+iron-door: Lockable
 
 law direct-dependency
   if
@@ -220,7 +223,7 @@ select all ?destination in egress
     ICU-A has a usable egress path to ?destination
 
 for n in 101..106
-  Door-{n} ∈ Door
+  Door-{n}: Door
 ```
 
 This is the accepted source shape. It does not expose ActivationIds, StepIds,
@@ -251,7 +254,7 @@ shape Vec2
 - A bare designation leaf introduces or explicitly resolves one Referent
   through the lineage-aware identity process.
 - `enum` declares one homogeneous member-entry reading. Each child contributes
-  one independent membership assertion occurrence after checked elaboration.
+  one independent category relation after checked elaboration.
 - `shape` declares one homogeneous field-entry reading. Each child contributes
   one `role: Domain` judgment after checked elaboration.
 
@@ -261,14 +264,13 @@ enters at the proposal boundary; Admission authority enters only at the
 separate Admission boundary. Neither comes from a source grouping keyword or
 the candidate snapshot itself.
 
-## Membership, field constraints, equality, and focus
+## Bindings, equality, and focus
 
 Each surface form has one conceptual job:
 
 | Form | Meaning |
 | --- | --- |
-| `x ∈ C` | assert ordinary membership relational content |
-| `x: F` | constrain binder or role `x` to field `F` |
+| `x: value` | bind `x` to one typed term |
 | `x = y` | assert equality relational content |
 | `?name` | use one correlated logical variable |
 | `?_` | use one fresh anonymous query hole |
@@ -285,142 +287,97 @@ act. Relation patterns inside `where`, `when`, `if`, and other
 declared child grammars select their grammar-owned non-assertive stances and do
 not become assertions merely because their Terms equal top-level content.
 
-Membership is repeatable and independently provenanced:
+Colon is one generic, repeatable binding primitive:
 
 ```clause
-iron-door ∈ Door
-iron-door ∈ Lockable
+north: Flake
+north: 5
+north: "hello"
 ```
 
-An unkeyworded leaf such as `Door` declares a Referent domain. A membership
-subject such as `iron-door` is a declared Referent value with its own nominal
-identity; `Door` is its domain, not a string tag or a host-side lookup key.
+The left side designates one Referent; it does not own a privileged value slot.
+Each line emits one independently ordered and provenanced binding, even when
+another binding has the same subject or an equal value. Scalar and Text values
+remain ordinary typed terms. A symbol-valued binding such as `north: Flake`
+also supplies the classification consequence required when `Flake` is consumed
+as a relation domain or by a compiler-owned vocabulary. The reader does not
+assign different punctuation to those RHS cases; elaboration resolves their
+meaning from the checked context.
 
-A statement-level membership group is source grouping sugar:
+Repeated values stay repeated:
 
 ```clause
-iron-door ∈ Door, Lockable
+north: Flake
+north: Flake
 ```
 
-Its CST is `MembershipGroup(iron-door, [Door, Lockable])`. It elaborates
-exactly to two ordered, independent emissions:
+They elaborate to two ordered binding emissions with distinct occurrences and
+source origins. A comma does not group bindings. Multiple values use multiple
+lines, so these are reader errors rather than aliases:
 
-```text
-elaborate(s ∈ t₁, …, tₙ)
-  = NonEmpty[
-      elaborateMembership(s, t₁, origin(t₁)),
-      …,
-      elaborateMembership(s, tₙ, origin(tₙ))
-    ]
+```clause
+north: Flake, 5
+north ∈ Flake
 ```
 
-Each emission has the ordinary membership Term and candidate formation, an
-assertive stance, and the exact source slice of its own target. The focus
-retains the shared subject slice separately. Each accepted emission may
-allocate its own `AssertionOccurrence`; equal targets or equal resulting
-proposition Terms are not deduplicated.
+A binding head may also focus its subject for indented relations:
 
-Inside a focus block, leading `∈` supplies the membership edge while the block
-supplies only its subject. The child may use the same target grouping:
+```clause
+north: Flake
+  description "North-v2 development environment"
+  development shell north-shell
+```
+
+The binding is one emission and `north` is the focus of each child edge. The
+RHS never becomes the block focus and cannot donate tokens to a child Reading.
+Adding or changing a child cannot reinterpret the binding.
+
+Focus is recursively compositional. An interior child contributes an explicit
+relation prefix to every complete leaf below it:
+
+```clause
+north: Flake
+  inputs
+    nixpkgs from "github:NixOS/nixpkgs/nixos-unstable"
+    rust-overlay from "github:oxalica/rust-overlay"
+    rust-overlay follows nixpkgs
+```
+
+The three leaves elaborate with `north` as subject and with the complete edge
+phrases `inputs nixpkgs from …`, `inputs rust-overlay from …`, and
+`inputs rust-overlay follows nixpkgs`. `inputs` by itself emits nothing. Prefix
+nodes may nest to any reader-supported indentation depth, and every level adds
+its source tokens in order. This is relation-prefix focus, not a Nix-specific
+block form.
+
+A bare focus remains available when no header binding is wanted:
 
 ```clause
 iron-door
-  ∈ Door, Lockable
   connects Cellar to Armory
   state locked
 ```
 
-It emits the same two independent membership candidates as:
+A focus leaf must resolve as a declared relation phrase whose contract names
+the omitted subject role. A child cannot donate tokens back into the focus
+designation, and changing one child cannot reclassify its siblings or header.
 
-```clause
-iron-door
-  ∈ Door
-  ∈ Lockable
-```
+Colon has no freely spaced infix form. There is no whitespace before `:` and
+exactly one ASCII space follows it. `x : value`, `x:value`, `x  :  value`,
+`:=`, `::`, `member_of`, and `∈` reject; none is compatibility syntax.
 
-The reader also accepts an explicit `MembershipFocusHeader`:
-
-```clause
-iron-door ∈ Door, Lockable
-  connects Cellar to Armory
-  state locked
-```
-
-The left operand is always the block focus. Every listed target emits one
-independent membership candidate, and the indented children are ordinary
-focused-edge children. Adding, removing, or changing a child cannot alter the
-header memberships, focus, or CST production. Header targets cannot donate
-tokens to a child Reading.
-
-The initial canonical formatter expands every compact membership group. It
-prints a standalone group as one assertion line per target and either focused
-compact form as:
-
-```clause
-iron-door
-  ∈ Door
-  ∈ Lockable
-  connects Cellar to Armory
-  state locked
-```
-
-The formatter never combines memberships across comments, documentation
-attachments, stances, scopes, authorities, or independently retained source
-origins. Compact printing remains unratified until item-level origin identity
-survives the source-map edit and parse–print–parse laws.
-
-Every non-membership child must resolve as a declared relation phrase whose
-contract explicitly names the omitted subject role. A child cannot donate
-tokens back into the focus designation, and changing one child cannot
-reclassify its siblings or header.
-
-The comma is grouping syntax only. It is neither a Term constructor nor a
-semantic connective. For compact input `iron-door ∈ Door, Lockable`, these
-competing CST/elaboration results are required negatives:
-
-```text
-Membership(iron-door, Sequence(Door, Lockable))
-Membership(iron-door, Intersection(Door, Lockable))
-Comma(Membership(iron-door, Door), Lockable)
-```
-
-An explicitly bracketed `iron-door ∈ [Door, Lockable]`, if its sequence Term
-forms, is a different single-target assertion and is never the elaboration of
-the compact group.
-
-An unparenthesized statement-level comma is accepted only by
-`MembershipTargetList`; it cannot express a tuple, sequence, conjunction,
-intersection, argument list, or cardinality rule. `iron-door ∈ Door,` and an
-empty target are reader errors. `iron-door ∈ Door, Door` is valid and emits
-two independently provenanced clauses. A bare child under a
-`MembershipFocusHeader` remains invalid:
-
-```clause
-iron-door ∈ Door, Lockable
-  Armory
-```
-
-Canonical membership uses only `∈`. Raw `::` and `member_of` are invalid.
-An editor may replace the input chord `\in` with `∈` before parsing; the
-formatter and agents emit the glyph directly.
-
-Colon is the sole canonical binder/role field constraint:
+Bindings use the same surface primitive in structural contexts:
 
 ```clause
 gravity: 9.81
 origin: Vec2 { x: 0.0, y: 0.0 }
 ```
 
-`x: F` emits the declared formation constraining binder or role `x` to field
-`F`. Cardinality belongs to that field or its governing schema, never to the
-colon token. When `F` has exactly one admissible denotation, the constraint has
-the derived one-denotation case often called a definition; definition is not a
-primitive syntax category or a second semantic relation.
-
-Colon has no freely spaced infix form. There is no whitespace before `:` and
-exactly one ASCII space follows it. `x : F`, `x:F`, and `x  :  F` reject; the
-formatter emits `x: F`. `:=` is a reader error, not definition sugar or a
-deprecated alias.
+Inside a declaration, the selected child grammar resolves the LHS as a binder
+or role rather than a top-level Referent. Cardinality belongs to the governing
+schema, never to the colon token. When one checked context admits exactly one
+denotation, definition is a derived case, not a primitive syntax category or a
+second semantic relation.
 
 The same constraint form is structural inside declarations and values:
 
@@ -742,7 +699,7 @@ on create-goal ?north ?title ?objective
   when
     ?north goal catalog state ?catalog
   create
-    ?goal ∈ Goal
+    ?goal: Goal
   withdraw
     ?north goal catalog state ?catalog
   include
@@ -928,7 +885,7 @@ Binders precede every dependent use:
 
 ```clause
 for n in 101..106
-  Door-{n} ∈ Door
+  Door-{n}: Door
 
 for n in 101..104
   Door-{n}
@@ -968,33 +925,29 @@ The relevant layout grammar is:
 SourceFile       ::= Trivia* TopLevelConstruct* EOF
 TopLevelConstruct ::= SimpleConstruct NEWLINE
                     | BlockHead NEWLINE INDENT ChildConstruct+ DEDENT
-MembershipHead  ::= TermNoTopComma HSPACE+ "∈" HSPACE+
-                    MembershipTargetList
-MembershipTargetList ::= TermNoTopComma
-                         (HSPACE* "," HSPACE* TermNoTopComma)*
-FocusedMembershipChild ::= "∈" HSPACE+ MembershipTargetList
-FieldConstraint ::= BinderOrRole ":" HSPACE Field
-MembershipConstruct ::= MembershipHead
-                      | MembershipHead NEWLINE
-                        INDENT FocusedEdgeChild+ DEDENT
+BindingHead      ::= Designation ":" HSPACE TermNoTopComma
+BindingConstruct ::= BindingHead
+                   | BindingHead NEWLINE INDENT FocusedEdgeChild+ DEDENT
 SubjectFocus    ::= Designation NEWLINE INDENT FocusedEdgeChild+ DEDENT
+FocusedEdgeChild ::= RelationEdge
+                   | RelationPrefix NEWLINE INDENT FocusedEdgeChild+ DEDENT
 ReferentDeclaration ::= Designation
 MultilineText     ::= '"""' NEWLINE MultilineTextBody MultilineTextClose
 ```
 
-`MembershipHead` is one line production whether or not it owns children. In a
-standalone construct it supplies assertion emissions and subject focus; in a
-block it additionally selects the focused-edge child grammar. `TermNoTopComma`
-may contain commas only inside its own balanced `()`, `[]`, or `{}` delimiters.
+`BindingHead` is one line production whether or not it owns children. In a
+standalone construct it emits one binding; in a block it additionally supplies
+its LHS as subject focus. `TermNoTopComma` may contain commas only inside its
+own balanced `()`, `[]`, or `{}` delimiters. `RelationPrefix` emits no edge by
+itself; it prepends its tokens to each descendant `RelationEdge`.
 `ReferentDeclaration` is the leaf form of one Designation. `SubjectFocus` is
 the block form of one Designation and requires at least one child. Keyworded
 heads select their own declared child grammars as specified above.
 
 `HSPACE` is exactly one U+0020 ASCII space. `HSPACE+` means one or more such
-spaces where flexible separation is declared; `FieldConstraint` requires
-exactly one. Tabs and other Unicode space characters never satisfy it. Around
-a membership-group comma, the reader permits the declared `HSPACE*`; the
-formatter emits no space before the comma and one after it.
+spaces where flexible separation is declared; `BindingHead` requires exactly
+one space after `:` and none before it. Tabs and other Unicode space characters
+never satisfy it.
 
 Familiar mathematical notation is a usability prior, never semantic
 authority. A notation is ratified only when its tokenization, arity,
@@ -1008,7 +961,7 @@ interpretation negatives are specified.
 ### Tokens, operators, and delimiters
 
 - Longest fixed punctuation wins: `<=`, `>=`, `!=`, and `..` are scanned
-  before their one-character prefixes. `∈`, `=`, `:`, `,`, parentheses,
+  before their one-character prefixes. `=`, `:`, `,`, parentheses,
   brackets, and braces are distinct tokens. `:=`, `::`, `->`, and `~>` are
   reader errors in canonical source, not alternate spellings.
 - Unquoted semantic identifiers match
@@ -1016,7 +969,8 @@ interpretation negatives are specified.
   `x--y` are each one Designation token. A symbolic infix operator must have at
   least one ASCII space on both sides: subtraction is `a - b`; `a- b` and
   `a -b` reject instead of being guessed. The same spacing rule applies to
-  `+`, `*`, `/`, `<`, `<=`, `>`, `>=`, `=`, `!=`, and `∈`.
+  `+`, `*`, `/`, `<`, `<=`, `>`, `>=`, `=`, and `!=`. Colon is not an infix
+  expression operator; its binding production fixes its own spacing.
 - At a position where a term may begin, `-` immediately followed by a digit is
   part of a signed numeric literal. Initial canonical integer syntax is `0` or
   an optional `-` followed by a nonzero digit and zero or more digits. Initial
@@ -1028,15 +982,14 @@ interpretation negatives are specified.
 - Postfix calls and delimited structural terms bind first; `*` and `/` bind
   next; `+` and `-` next; `<`, `<=`, `>`, and `>=` next; and `=` and `!=` next.
   Arithmetic operators associate left. Comparison and equality operators do
-  not chain. Membership is a statement/focused-edge production, not another
-  expression-precedence level. `:`, `..`, and statement-level comma have
+  not chain. `:`, `..`, and statement-level comma have
   only their declared construct roles. Parentheses are required whenever these
   rules do not select one CST.
 - `()`, `[]`, and `{}` must balance on one physical line in the initial reader.
   A mismatched or unclosed delimiter rejects that construct; recovery begins at
   the next eligible sibling boundary. Comma separates fields or elements only
-  inside the selected delimited production, except for
-  `MembershipTargetList`. There is no general comma expression.
+  inside the selected delimited production. There is no general comma
+  expression or binding-value list.
 
 Single-line double-quoted Text literals contain UTF-8 scalar values and accept exactly
 `\"`, `\\`, `\n`, `\r`, `\t`, and `\u{H}` through `\u{HHHHHH}` where the

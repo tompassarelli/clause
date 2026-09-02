@@ -6,7 +6,7 @@ relation camera-heading
   subject player
   mode given player yields value: one
 
-player-1 ∈ Player
+player-1: Player
 player-1 camera heading 0.0
 
 bind scalar-input CameraHeading to observe-camera-heading

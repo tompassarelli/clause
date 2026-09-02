@@ -73,9 +73,9 @@ relation policy-parameters
   subject policy
   mode given policy yields value: one
 
-root-1 ∈ Root
-policy-a ∈ Policy
-policy-b ∈ Policy
+root-1: Root
+policy-a: Policy
+policy-b: Policy
 root-1 balance 10.0
 root-1 selected policy policy-a
 policy-a policy parameters PolicyParameters { adjustment: 2.0, floor: 0.0 }
@@ -208,8 +208,8 @@ relation move-destabilization
   subject move
   mode given move yields value: one
 
-magitek-boar ∈ Actor
-blade-one ∈ Move
+magitek-boar: Actor
+blade-one: Move
 
 magitek-boar vitality 100.0
 magitek-boar destabilization 0.0
@@ -328,9 +328,9 @@ derive clamp-lower
 derive clamp-interior
 derive clamp-upper
 
-magitek-boar ∈ Actor
-blade-two ∈ Move
-combat-rules ∈ CombatRules
+magitek-boar: Actor
+blade-two: Move
+combat-rules: CombatRules
 
 magitek-boar vitality 100.0
 magitek-boar destabilization 100.0
@@ -397,7 +397,7 @@ relation anchor
   subject actor
   mode given actor yields position: maybe
 
-test-actor ∈ Actor
+test-actor: Actor
 test-actor phase ready
 test-actor position Vec3 { x: 2.0, y: 3.0, z: 4.0 }
 

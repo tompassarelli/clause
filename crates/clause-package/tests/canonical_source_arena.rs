@@ -57,8 +57,8 @@ relation spawn-position
   subject enemy
   mode given enemy yields value: one
 
-player-1 ∈ Player
-cinder-wraith ∈ Enemy
+player-1: Player
+cinder-wraith: Enemy
 player-1 score 0.0
 cinder-wraith pressure clock 3.0
 cinder-wraith pressure state telegraph
@@ -92,7 +92,7 @@ relation reserve
   subject player
   mode given player yields value: one
 
-player-1 ∈ Player
+player-1: Player
 player-1 score 4.0
 player-1 reserve 6.0
 
@@ -127,14 +127,14 @@ relation command-description
   subject command
   mode given command yields value: maybe
 
-root-main ∈ Root
+root-main: Root
 root-main phase "ready"
 
 on initialize ?root
   when
     ?root phase ?phase
   create
-    ?command ∈ Command
+    ?command: Command
   withdraw
     ?root phase ?phase
   include
@@ -162,8 +162,8 @@ relation policy-adjustment
   subject policy
   mode given policy yields value: one
 
-root-1 ∈ Root
-policy-a ∈ Policy
+root-1: Root
+policy-a: Policy
 root-1 balance 10.0
 root-1 selected policy policy-a
 policy-a policy adjustment 2.0
@@ -236,14 +236,14 @@ law projectile-contact
 
 derive projectile-contact
 
-player-1 ∈ Player
-cinder-bolt ∈ Projectile
-wayfarer-bolt ∈ Projectile
-dormant ∈ ProjectileState
-flight ∈ ProjectileState
-enemy-origin ∈ ProjectileFaction
-player-origin ∈ ProjectileFaction
-combat-arena ∈ Arena
+player-1: Player
+cinder-bolt: Projectile
+wayfarer-bolt: Projectile
+dormant: ProjectileState
+flight: ProjectileState
+enemy-origin: ProjectileFaction
+player-origin: ProjectileFaction
+combat-arena: Arena
 
 player-1 player position Vec3 { x: 0.0, y: 0.0, z: 0.0 }
 cinder-bolt projectile position Vec3 { x: 1.0, y: 0.0, z: 0.0 }
@@ -255,13 +255,18 @@ wayfarer-bolt projectile faction player-origin
 combat-arena contact radius 0.6
 "#;
 
-const MULTI_MEMBERSHIP_REFERENT_WORLD: &str = r#"Door
+const MULTI_BINDING_REFERENT_WORLD: &str = r#"Door
 Lockable
 iron-door
 
-iron-door ∈ Door
-iron-door ∈ Lockable
+iron-door: Door
+iron-door: Lockable
 "#;
+
+const MANY_VALUED_BINDINGS: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../test-vectors/authoring/many-valued-bindings.clause"
+));
 
 fn compile_source(
     source: &str,
@@ -283,14 +288,41 @@ fn compile_source(
 }
 
 #[test]
-fn one_referent_may_declare_multiple_memberships() {
-    compile_source(MULTI_MEMBERSHIP_REFERENT_WORLD, 39)
-        .expect("an explicit referent and its memberships share one allocated identity");
+fn one_referent_may_declare_multiple_category_bindings() {
+    compile_source(MULTI_BINDING_REFERENT_WORLD, 39)
+        .expect("an explicit referent and its category bindings share one allocated identity");
     compile_source(
-        "Door\nLockable\n\niron-door ∈ Door\niron-door ∈ Lockable\niron-door\n",
+        "Door\nLockable\n\niron-door: Door\niron-door: Lockable\niron-door\n",
         40,
     )
     .expect("referent identity sharing does not depend on declaration order");
+}
+
+#[test]
+fn one_referent_retains_many_typed_bindings_without_a_value_slot() {
+    let compiled = compile_source(MANY_VALUED_BINDINGS, 42)
+        .expect("symbol, numeric, and Text bindings elaborate together");
+    assert_eq!(
+        compiled
+            .bindings
+            .iter()
+            .map(|binding| (binding.subject.clone(), binding.value.clone()))
+            .collect::<Vec<_>>(),
+        vec![
+            (
+                b"north".to_vec(),
+                CanonicalScalarValueV1::Symbol(b"Flake".to_vec())
+            ),
+            (
+                b"north".to_vec(),
+                CanonicalScalarValueV1::Number(5.0_f64.to_bits())
+            ),
+            (
+                b"north".to_vec(),
+                CanonicalScalarValueV1::Text("hello".into())
+            ),
+        ]
+    );
 }
 
 #[test]
@@ -407,7 +439,7 @@ fn general_handler_joins_a_typed_referent_selected_by_prior_state() {
 fn transitive_referent_join_lowers_each_runtime_selectable_target() {
     let source = TRANSITIVE_REFERENT_WORLD.replacen(
         "policy-a policy adjustment 2.0",
-        "policy-a policy adjustment 2.0\npolicy-b ∈ Policy\npolicy-b policy adjustment 4.0",
+        "policy-a policy adjustment 2.0\npolicy-b: Policy\npolicy-b policy adjustment 4.0",
         1,
     );
     let compiled = compile_source(&source, 23)
@@ -640,8 +672,8 @@ derive clamp-lower
 derive clamp-interior
 derive clamp-upper
 
-player-1 ∈ Player
-enemy-1 ∈ Enemy
+player-1: Player
+enemy-1: Enemy
 player-1 combat target enemy-1
 player-1 target active true
 enemy-1 vitals Vec3 { x: 6.0, y: 6.0, z: 1.0 }
@@ -721,7 +753,7 @@ fn transitive_referent_join_rejects_wrong_type_missing_cardinality_and_ambiguity
 
     let ambiguous = TRANSITIVE_REFERENT_WORLD.replacen(
         "policy-a policy adjustment 2.0\n\non apply-selected-policy",
-        "policy-a policy adjustment 2.0\nroot-2 ∈ Root\nroot-2 balance 8.0\nroot-2 selected policy policy-a\n\non apply-selected-policy",
+        "policy-a policy adjustment 2.0\nroot-2: Root\nroot-2 balance 8.0\nroot-2 selected policy policy-a\n\non apply-selected-policy",
         1,
     );
     assert!(matches!(
@@ -1140,28 +1172,49 @@ fn canonical_world_declarations_reach_the_checked_package_with_exact_remainder()
                 counts
             });
     assert_eq!(unsupported_counts, [0, 0, 0, 0]);
-    let membership_emissions = compiled
+    assert_eq!(
+        compiled
+            .bindings
+            .iter()
+            .map(|binding| (
+                binding.subject.clone(),
+                binding.value.clone(),
+                cst.source_slice(binding.origin)
+                    .expect("owned binding value origin")
+                    .to_vec(),
+            ))
+            .collect::<Vec<_>>(),
+        vec![
+            (
+                b"jump-arena".to_vec(),
+                CanonicalScalarValueV1::Symbol(b"Arena".to_vec()),
+                b"Arena".to_vec(),
+            ),
+            (
+                b"player-1".to_vec(),
+                CanonicalScalarValueV1::Symbol(b"Player".to_vec()),
+                b"Player".to_vec(),
+            ),
+        ]
+    );
+    let binding_origins = compiled
+        .bindings
+        .iter()
+        .map(|binding| binding.origin)
+        .collect::<Vec<_>>();
+    let binding_emissions = compiled
         .emissions
         .iter()
-        .filter(|emission| {
-            emission.slot.production == CanonicalSourceProductionV1::Assertion
-                && matches!(emission.slot.local.as_slice(), b"Arena" | b"Player")
-        })
+        .filter(|emission| binding_origins.contains(&emission.origin))
         .collect::<Vec<_>>();
-    assert_eq!(membership_emissions.len(), 2);
-    assert_eq!(
-        membership_emissions
-            .iter()
-            .map(|emission| cst
-                .source_slice(emission.origin)
-                .expect("owned target origin"))
-            .collect::<Vec<_>>(),
-        [b"Arena".as_slice(), b"Player".as_slice()]
-    );
+    assert_eq!(binding_emissions.len(), 2);
     assert!(
-        membership_emissions
+        binding_emissions
             .iter()
-            .all(|emission| emission.slot.repetition.is_none())
+            .all(
+                |emission| emission.slot.production == CanonicalSourceProductionV1::Assertion
+                    && emission.slot.repetition.is_none()
+            )
     );
 
     let input = compiled
@@ -1270,9 +1323,9 @@ fn canonical_input_preserves_negative_zero_bits() {
 }
 
 #[test]
-fn standalone_membership_group_preserves_order_and_item_origins() {
-    let source = "Door\nLockable\niron-door ∈ Door, Lockable\n";
-    let cst = read_canonical_source_v1(source.as_bytes()).expect("grouped membership source reads");
+fn repeated_bindings_preserve_order_and_value_origins() {
+    let source = "Door\nLockable\niron-door: Door\niron-door: Lockable\n";
+    let cst = read_canonical_source_v1(source.as_bytes()).expect("binding source reads");
     let plan = plan_independent_canonical_source_allocations_v1(
         &cst,
         ProgramChangeOccurrenceId::from_bytes(raw_id(7)),
@@ -1286,9 +1339,18 @@ fn standalone_membership_group_preserves_order_and_item_origins() {
         },
         &plan,
     )
-    .expect("the membership group reaches bounded elaboration");
+    .expect("the bindings reach bounded elaboration");
 
     assert!(compiled.unsupported.is_empty());
+    assert_eq!(compiled.bindings.len(), 2);
+    assert_eq!(
+        compiled.bindings[0].value,
+        CanonicalScalarValueV1::Symbol(b"Door".to_vec())
+    );
+    assert_eq!(
+        compiled.bindings[1].value,
+        CanonicalScalarValueV1::Symbol(b"Lockable".to_vec())
+    );
     let emissions = compiled
         .emissions
         .iter()
@@ -1296,8 +1358,7 @@ fn standalone_membership_group_preserves_order_and_item_origins() {
         .collect::<Vec<_>>();
     assert_eq!(emissions.len(), 2);
     assert_eq!(emissions[0].producer, emissions[1].producer);
-    assert_eq!(emissions[0].slot.local, b"Door");
-    assert_eq!(emissions[1].slot.local, b"Lockable");
+    assert_ne!(emissions[0].slot.local, emissions[1].slot.local);
     assert_eq!(emissions[0].slot.repetition, None);
     assert_eq!(emissions[1].slot.repetition, None);
     assert_eq!(
@@ -1316,15 +1377,14 @@ fn standalone_membership_group_preserves_order_and_item_origins() {
 }
 
 #[test]
-fn repeated_membership_target_is_not_deduplicated() {
-    let source = "Door\niron-door ∈ Door, Door\n";
-    let cst = read_canonical_source_v1(source.as_bytes())
-        .expect("repeated targets are valid grouping sugar");
+fn repeated_binding_value_is_not_deduplicated() {
+    let source = "Door\niron-door: Door\niron-door: Door\n";
+    let cst = read_canonical_source_v1(source.as_bytes()).expect("repeated bindings read");
     let plan = plan_independent_canonical_source_allocations_v1(
         &cst,
         ProgramChangeOccurrenceId::from_bytes(raw_id(8)),
     )
-    .expect("the repeated membership group does not collapse allocation inputs");
+    .expect("repeated bindings do not collapse allocation inputs");
     let compiled = elaborate_canonical_source_package_v1(
         &cst,
         CanonicalSourceContextV1 {
@@ -1333,7 +1393,8 @@ fn repeated_membership_target_is_not_deduplicated() {
         },
         &plan,
     )
-    .expect("the repeated membership group reaches bounded elaboration");
+    .expect("repeated bindings reach bounded elaboration");
+    assert_eq!(compiled.bindings.len(), 2);
     let emissions = compiled
         .emissions
         .iter()
@@ -1355,15 +1416,18 @@ fn repeated_membership_target_is_not_deduplicated() {
 }
 
 #[test]
-fn malformed_or_competing_membership_group_forms_reject() {
+fn noncanonical_or_ambiguous_binding_forms_reject() {
     for source in [
-        "iron-door ∈ Door,\n",
+        "iron-door: Door,\n",
         "iron-door∈ Door\n",
-        "iron-door ∈ [Door, Lockable]\n",
+        "iron-door ∈ Door\n",
+        "iron-door : Door\n",
+        "iron-door:Door\n",
+        "iron-door: Door, Lockable\n",
     ] {
         assert!(matches!(
             read_canonical_source_v1(source.as_bytes()),
-            Err(CanonicalSourceErrorV1::InvalidMembershipGroup { .. })
+            Err(CanonicalSourceErrorV1::InvalidBinding { .. })
         ));
     }
 }

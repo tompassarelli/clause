@@ -2004,9 +2004,10 @@ license the group role. Any Referent may occupy that role unless the relation's
 explicit contract restricts it. Membership may support a derived category or
 collection view; it does not convert the group Referent into another kind.
 
-A structural field or role is not proposition-level membership. A shape field
-such as `x: F32` describes one structural role; it neither asserts `x ∈ F32`
-nor installs an object field on a domain Referent. Type, value, object, field,
+A structural field or role is not a top-level classification binding. A shape
+field such as `x: F32` describes one structural role; it neither emits the
+same judgment as top-level `value: F32` nor installs an object field on a
+domain Referent. Type, value, object, field,
 record, set, function, variable, state, mutation, checking, and evaluation are
 typed relational or structural views, not additional primitive semantic
 substances or identity universes. Physical representations may specialize

@@ -33,16 +33,16 @@ relation goal-catalog-state
   subject north
   mode given north yields value: one
 
-north-main ∈ North
-ready ∈ GoalStatus
-active ∈ GoalStatus
+north-main: North
+ready: GoalStatus
+active: GoalStatus
 north-main goal catalog state ready
 
 on create-goal ?north ?title ?objective
   when
     ?north goal catalog state ?catalog
   create
-    ?goal ∈ Goal
+    ?goal: Goal
   withdraw
     ?north goal catalog state ?catalog
   include

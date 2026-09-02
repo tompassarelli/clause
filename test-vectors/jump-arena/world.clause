@@ -97,8 +97,8 @@ derive clamp-lower
 derive clamp-interior
 derive clamp-upper
 
-jump-arena ∈ Arena
-player-1 ∈ Player
+jump-arena: Arena
+player-1: Player
 
 jump-arena gravity -8.0
 jump-arena jump speed 8.0
