@@ -174,6 +174,14 @@ on apply-selected-policy ?root
     ?root balance ?prior - ?adjustment
 "#;
 
+const MULTI_MEMBERSHIP_REFERENT_WORLD: &str = r#"Door
+Lockable
+iron-door
+
+iron-door ∈ Door
+iron-door ∈ Lockable
+"#;
+
 fn compile_source(
     source: &str,
     root: u8,
@@ -191,6 +199,28 @@ fn compile_source(
         },
         &plan,
     )
+}
+
+#[test]
+fn one_referent_may_declare_multiple_memberships() {
+    compile_source(MULTI_MEMBERSHIP_REFERENT_WORLD, 39)
+        .expect("an explicit referent and its memberships share one allocated identity");
+    compile_source(
+        "Door\nLockable\n\niron-door ∈ Door\niron-door ∈ Lockable\niron-door\n",
+        40,
+    )
+    .expect("referent identity sharing does not depend on declaration order");
+}
+
+#[test]
+fn repeated_explicit_referent_declaration_remains_rejected() {
+    let error = compile_source("iron-door\niron-door\n", 41)
+        .expect_err("two explicit declarations still compete for one designation");
+    assert!(matches!(
+        error,
+        CanonicalSourceErrorV1::DuplicateDesignation { designation }
+            if designation == b"iron-door"
+    ));
 }
 
 #[test]

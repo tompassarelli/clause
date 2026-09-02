@@ -1465,6 +1465,7 @@ fn allocation_requests(
     cst: &CanonicalSourceCstV1,
 ) -> Result<Vec<AllocationRequest>, CanonicalSourceErrorV1> {
     let mut requested = Vec::new();
+    let mut requested_referents = BTreeSet::new();
     let mut many_assertions = BTreeSet::new();
     let input = input_handler_parts(cst)?;
     let jump = jump_handler_parts(cst)?;
@@ -1474,6 +1475,9 @@ fn allocation_requests(
     for item in &cst.items {
         match &item.kind {
             CstKind::Referent { designation } => {
+                if !requested_referents.insert(designation.clone()) {
+                    continue;
+                }
                 requested.push(AllocationRequest {
                     producer: semantic_producer(CanonicalSourceProductionV1::Referent, designation),
                     slot: head_slot(CanonicalSourceProductionV1::Referent),
@@ -1481,6 +1485,9 @@ fn allocation_requests(
                 });
             }
             CstKind::Membership(membership) => {
+                if !requested_referents.insert(membership.subject.clone()) {
+                    continue;
+                }
                 requested.push(AllocationRequest {
                     producer: semantic_producer(
                         CanonicalSourceProductionV1::Referent,
@@ -2527,26 +2534,22 @@ fn declared_referent_value(
     domain: &[u8],
     origin: CanonicalSourceOriginV1,
 ) -> Result<CanonicalReferentV1, CanonicalSourceErrorV1> {
-    let matching = cst
-        .items
-        .iter()
-        .filter_map(|item| match &item.kind {
-            CstKind::Membership(membership)
-                if membership.subject == designation
-                    && membership
-                        .domains
-                        .iter()
-                        .any(|candidate| candidate == domain) =>
-            {
-                Some(membership)
-            }
-            _ => None,
-        })
-        .collect::<Vec<_>>();
-    let [membership] = matching.as_slice() else {
+    let declared = cst.items.iter().any(|item| match &item.kind {
+        CstKind::Membership(membership)
+            if membership.subject == designation
+                && membership
+                    .domains
+                    .iter()
+                    .any(|candidate| candidate == domain) =>
+        {
+            true
+        }
+        _ => false,
+    });
+    if !declared {
         return Err(CanonicalSourceErrorV1::MissingExecutableBinding { origin });
-    };
-    let producer = semantic_producer(CanonicalSourceProductionV1::Referent, &membership.subject);
+    }
+    let producer = semantic_producer(CanonicalSourceProductionV1::Referent, designation);
     Ok(CanonicalReferentV1 {
         domain: referent_type_id(cst, plan, domain, origin)?,
         identity: formation_id(
@@ -4092,6 +4095,8 @@ fn relational_checked_handler(
                     }
                     _ => None,
                 })
+                .collect::<BTreeSet<_>>()
+                .into_iter()
                 .collect::<Vec<_>>();
             let [subject] = matching.as_slice() else {
                 return Err(if matching.is_empty() {
@@ -5188,9 +5193,13 @@ pub fn elaborate_canonical_source_package_v1(
     let jump_parts = jump_handler_parts(cst)?;
     let scalar_parts = scalar_handler_parts(cst)?;
     let tick_parts = tick_program_parts(cst)?;
+    let mut emitted_referents = BTreeSet::new();
     for item in &cst.items {
         match &item.kind {
             CstKind::Referent { designation } => {
+                if !emitted_referents.insert(designation.clone()) {
+                    continue;
+                }
                 let producer =
                     semantic_producer(CanonicalSourceProductionV1::Referent, designation);
                 let slot = head_slot(CanonicalSourceProductionV1::Referent);
@@ -5217,16 +5226,18 @@ pub fn elaborate_canonical_source_package_v1(
                 let producer =
                     semantic_producer(CanonicalSourceProductionV1::Referent, &membership.subject);
                 let slot = head_slot(CanonicalSourceProductionV1::Referent);
-                let id = formation_id(plan, &producer, &slot)?;
-                formations.push(source_formation(
-                    scope,
-                    id,
-                    cst.source_slice(item.origin)
-                        .expect("owned membership origin"),
-                    item.origin,
-                    "referent",
-                )?);
-                emissions.push(emission(plan, producer, slot, item.origin));
+                if emitted_referents.insert(membership.subject.clone()) {
+                    let id = formation_id(plan, &producer, &slot)?;
+                    formations.push(source_formation(
+                        scope,
+                        id,
+                        cst.source_slice(item.origin)
+                            .expect("owned membership origin"),
+                        item.origin,
+                        "referent",
+                    )?);
+                    emissions.push(emission(plan, producer, slot, item.origin));
+                }
                 emissions.extend(membership.emissions.clone());
             }
             CstKind::Capability { designation } => {
@@ -9496,13 +9507,14 @@ fn retain_supported_boolean_derive_pairs(items: &mut [CstItem]) {
 }
 
 fn validate_unique_designations(items: &[CstItem]) -> Result<(), CanonicalSourceErrorV1> {
-    let mut seen = BTreeSet::new();
-    for designation in items.iter().filter_map(|item| match &item.kind {
-        CstKind::Referent { designation }
-        | CstKind::Capability { designation }
-        | CstKind::Shape { designation, .. } => Some(designation),
-        CstKind::Membership(membership) => Some(&membership.subject),
-        CstKind::Relation(relation) => Some(&relation.designation),
+    let mut seen = BTreeMap::<Vec<u8>, (bool, bool)>::new();
+    for (designation, referent, membership) in items.iter().filter_map(|item| match &item.kind {
+        CstKind::Referent { designation } => Some((designation, true, false)),
+        CstKind::Membership(membership) => Some((&membership.subject, false, true)),
+        CstKind::Capability { designation } | CstKind::Shape { designation, .. } => {
+            Some((designation, false, false))
+        }
+        CstKind::Relation(relation) => Some((&relation.designation, false, false)),
         CstKind::InputHandler(_)
         | CstKind::JumpHandler(_)
         | CstKind::ScalarHandler(_)
@@ -9522,11 +9534,20 @@ fn validate_unique_designations(items: &[CstItem]) -> Result<(), CanonicalSource
         | CstKind::TextAssertion(_)
         | CstKind::Unsupported(_) => None,
     }) {
-        if !seen.insert(designation.clone()) {
+        if let Some((prior_referent, prior_membership)) = seen.get_mut(designation) {
+            let shares_referent_identity = (referent || membership)
+                && (*prior_referent || *prior_membership)
+                && !(referent && *prior_referent);
+            if shares_referent_identity {
+                *prior_referent |= referent;
+                *prior_membership |= membership;
+                continue;
+            }
             return Err(CanonicalSourceErrorV1::DuplicateDesignation {
                 designation: designation.clone(),
             });
         }
+        seen.insert(designation.clone(), (referent, membership));
     }
     Ok(())
 }
