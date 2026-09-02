@@ -946,16 +946,20 @@ in order:
 
 1. Normalize CRLF to LF for layout while preserving original byte spans in the
    lossless CST. Split physical lines; Clause has no backslash or implicit
-   expression-line continuation.
-2. Establish `INDENT` and `DEDENT` tokens from exact multiples of two ASCII
-   spaces. Blank and comment-only lines do not alter indentation.
-3. Scan strings and quoted designations, then longest fixed punctuation, then
-   numbers and unquoted designations. Tokens are maximal; semantic lookup can
-   never split or join them.
-4. Select the line production from its explicit head tokens. A literal keyword
+   expression-line continuation. An explicitly delimited multiline Text is one
+   scalar token, not line continuation.
+2. Scan triple-quoted Text spans through their explicit closing-delimiter
+   margin. Body lines and the closing delimiter do not emit layout tokens.
+3. Establish `INDENT` and `DEDENT` tokens from exact multiples of two ASCII
+   spaces outside those spans. Blank and comment-only lines do not alter
+   indentation.
+4. Scan single-line strings and quoted designations, then longest fixed
+   punctuation, then numbers and unquoted designations. Tokens are maximal;
+   semantic lookup can never split or join them.
+5. Select the line production from its explicit head tokens. A literal keyword
    is a keyword only in the declared grammatical position; successful semantic
    resolution cannot turn an identifier into a construct head.
-5. Wrap an already selected line head in its declared block production when an
+6. Wrap an already selected line head in its declared block production when an
    `INDENT` follows. The head itself is not reparsed after children are known.
 
 The relevant layout grammar is:
@@ -975,6 +979,7 @@ MembershipConstruct ::= MembershipHead
                         INDENT FocusedEdgeChild+ DEDENT
 SubjectFocus    ::= Designation NEWLINE INDENT FocusedEdgeChild+ DEDENT
 ReferentDeclaration ::= Designation
+MultilineText     ::= '"""' NEWLINE MultilineTextBody MultilineTextClose
 ```
 
 `MembershipHead` is one line production whether or not it owns children. In a
@@ -1033,13 +1038,30 @@ interpretation negatives are specified.
   inside the selected delimited production, except for
   `MembershipTargetList`. There is no general comma expression.
 
-Double-quoted Text literals contain UTF-8 scalar values and accept exactly
+Single-line double-quoted Text literals contain UTF-8 scalar values and accept exactly
 `\"`, `\\`, `\n`, `\r`, `\t`, and `\u{H}` through `\u{HHHHHH}` where the
 hexadecimal value is a Unicode scalar. Unknown escapes, surrogate values, raw
 newlines, and unescaped control characters reject. Text is not NFC-normalized
 by the reader. Canonical printing emits printable scalars directly, escapes
 `"` and `\`, uses the named escapes above for newline, carriage return, and
 tab, and uses lowercase `\u{...}` for other controls.
+
+A triple-quoted Text literal begins with `"""` as the final token of a scalar
+expression line. Its first following line whose sole nonspace content is
+`"""` closes the literal and must be indented at least one two-space level
+deeper than the expression line. The closing delimiter's indentation is the
+explicit content margin: every nonblank body line must begin at or to the right
+of that margin, and the reader removes exactly that margin from every body
+line. Extra indentation remains Text. The line feed after the opening delimiter
+is not content; every body line's normalized LF is content, including the LF
+immediately before the closing delimiter. An opener followed immediately by a
+closer is empty Text.
+
+Triple-quoted Text accepts the same escapes as single-line Text, permits
+unescaped `"` within body lines, preserves printable UTF-8 and spaces after the
+explicit margin, and rejects other raw controls. A line containing only
+`"""` is therefore a delimiter; quotes on any other body line are content.
+No minimum-indent guessing, folding, or chomping mode exists.
 
 ### Layout, comments, and names
 
@@ -1049,7 +1071,8 @@ tab, and uses lowercase `\u{...}` for other controls.
   Parsing normalizes trivia without changing lossless source evidence.
 - Canonical formatting emits LF, removes trailing spaces, and uses two spaces
   per level.
-- Outside a Text literal or quoted designation, `#` starts a nonsemantic line
+- Outside a single-line or triple-quoted Text literal or quoted designation,
+  `#` starts a nonsemantic line
   comment and consumes through the line ending.
 - A contiguous run of `##` documentation-comment lines at the indentation of
   the following construct attaches to that next declaration, request, event,
@@ -1062,7 +1085,8 @@ tab, and uses lowercase `\u{...}` for other controls.
   spelling rule: `` `x/y` `` also rejects during reading. Quoted contents must
   already be NFC-normalized and cannot contain `/`, control characters, or
   newlines.
-- Double quotes remain exclusively Text literals, which may contain `/`.
+- Double quotes, including the triple-quoted form, remain exclusively Text
+  literals, which may contain `/`.
   Opaque Atom and transport payloads may also contain `/` under their own
   declared contracts; neither payload kind is a Designation.
 

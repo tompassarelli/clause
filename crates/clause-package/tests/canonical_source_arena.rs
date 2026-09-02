@@ -7,6 +7,11 @@ const WORLD: &[u8] = include_bytes!(concat!(
     "/../../test-vectors/jump-arena/world.clause"
 ));
 
+const MULTILINE_TEXT_OUTPUT: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../test-vectors/authoring/multiline-text-output.clause"
+));
+
 fn raw_id(tag: u8) -> [u8; IDENTITY_BYTES] {
     let mut bytes = [0; IDENTITY_BYTES];
     bytes[0] = tag;
@@ -234,6 +239,39 @@ fn general_handler_inserts_spaced_text_without_absorbing_it_into_the_relation() 
             .iter()
             .any(|handler| handler.designation == b"initialize")
     );
+}
+
+#[test]
+fn multiline_text_uses_the_closing_delimiter_as_its_explicit_margin() {
+    let compiled = compile_source(MULTILINE_TEXT_OUTPUT, 42)
+        .expect("the multiline Text source reaches executable lowering");
+    let handler = compiled
+        .executable_handlers
+        .iter()
+        .find(|handler| handler.designation == b"render")
+        .expect("the multiline Text handler is executable");
+    let [rule] = handler.rules.as_slice() else {
+        panic!("one multiline Text transition remains one executable rule")
+    };
+    let [assignment] = rule.assignments.as_slice() else {
+        panic!("one multiline Text replacement remains one assignment")
+    };
+    assert_eq!(
+        assignment.value,
+        CanonicalExecutableExpressionV1::Constant(CanonicalScalarValueV1::Text(
+            "{\n  title = \"North\";\n  outputs = { nixpkgs, ... }: \"Clause emits readable text\";\n}\n".into()
+        ))
+    );
+}
+
+#[test]
+fn multiline_text_rejects_content_left_of_its_explicit_margin() {
+    let source =
+        MULTILINE_TEXT_OUTPUT.replacen("      {\n        title", "    {\n        title", 1);
+    assert!(matches!(
+        compile_source(&source, 43),
+        Err(CanonicalSourceErrorV1::InvalidMultilineText { .. })
+    ));
 }
 
 #[test]

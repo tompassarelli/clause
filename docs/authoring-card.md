@@ -222,6 +222,39 @@ on redirect-goal ?north ?objective
     ?north goal objective "North " ++ ?objective
 ```
 
+## Multiline Text output
+
+Projects an indented multiline Text value while preserving the document's own quotes, layout, and final newline.
+
+Catalog ID: `multiline-text-output`
+
+```clause
+Document
+Text
+
+relation output
+  reads {document: Document} output {value: Text}
+  subject document
+  mode given document yields value: one
+
+document-main output """
+  initial
+  """
+
+on render ?document
+  when
+    ?document output ?previous
+  withdraw
+    ?document output ?previous
+  include
+    ?document output """
+      {
+        title = "North";
+        outputs = { nixpkgs, ... }: "Clause emits readable text";
+      }
+      """
+```
+
 ## Runtime-created Referent and keyed rows
 
 Creates one typed Referent inside a handler, uses it as the key for several relational rows, and retains immutable Text history on redirect.

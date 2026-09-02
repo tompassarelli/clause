@@ -624,6 +624,9 @@ pub enum CanonicalSourceErrorV1 {
     TabIndentation {
         offset: u64,
     },
+    InvalidMultilineText {
+        origin: CanonicalSourceOriginV1,
+    },
     UnexpectedIndentation {
         origin: CanonicalSourceOriginV1,
     },
@@ -787,6 +790,13 @@ struct SourceLine<'a> {
     text: &'a str,
     start: usize,
     end: usize,
+    indent: usize,
+}
+
+#[derive(Clone, Debug)]
+struct LogicalSourceLine {
+    text: String,
+    origin: CanonicalSourceOriginV1,
     indent: usize,
 }
 
@@ -6055,6 +6065,90 @@ fn source_lines(source: &str) -> Result<Vec<SourceLine<'_>>, CanonicalSourceErro
     Ok(lines)
 }
 
+fn logical_source_lines(
+    artifact: CanonicalSourceArtifactIdV1,
+    block: &[SourceLine<'_>],
+) -> Result<Vec<LogicalSourceLine>, CanonicalSourceErrorV1> {
+    let mut lines = Vec::new();
+    let mut cursor = 0;
+    while cursor < block.len() {
+        let line = block[cursor];
+        let trimmed = line.text.trim();
+        let Some(prefix) = trimmed
+            .strip_suffix("\"\"\"")
+            .and_then(|prefix| prefix.strip_suffix(' '))
+        else {
+            lines.push(LogicalSourceLine {
+                text: trimmed.to_owned(),
+                origin: line_origin(artifact, line),
+                indent: line.indent,
+            });
+            cursor += 1;
+            continue;
+        };
+        if prefix.is_empty() {
+            return Err(CanonicalSourceErrorV1::InvalidMultilineText {
+                origin: line_origin(artifact, line),
+            });
+        }
+
+        let closing_index = (cursor + 1..block.len())
+            .find(|index| block[*index].text.trim() == "\"\"\"")
+            .ok_or(CanonicalSourceErrorV1::InvalidMultilineText {
+                origin: line_origin(artifact, line),
+            })?;
+        let closing = block[closing_index];
+        if closing.indent <= line.indent {
+            return Err(CanonicalSourceErrorV1::InvalidMultilineText {
+                origin: CanonicalSourceOriginV1 {
+                    artifact,
+                    start: line.start as u64,
+                    end: closing.end as u64,
+                },
+            });
+        }
+
+        let mut body = String::new();
+        for content in &block[cursor + 1..closing_index] {
+            if content.text.trim().is_empty() {
+                body.push('\n');
+                continue;
+            }
+            if content.indent < closing.indent {
+                return Err(CanonicalSourceErrorV1::InvalidMultilineText {
+                    origin: line_origin(artifact, *content),
+                });
+            }
+            body.push_str(content.text.get(closing.indent..).ok_or(
+                CanonicalSourceErrorV1::InvalidMultilineText {
+                    origin: line_origin(artifact, *content),
+                },
+            )?);
+            body.push('\n');
+        }
+        let value = parse_multiline_text_body(&body).ok_or(
+            CanonicalSourceErrorV1::InvalidMultilineText {
+                origin: CanonicalSourceOriginV1 {
+                    artifact,
+                    start: line.start as u64,
+                    end: closing.end as u64,
+                },
+            },
+        )?;
+        lines.push(LogicalSourceLine {
+            text: format!("{prefix} {}", encode_text_literal(&value)),
+            origin: CanonicalSourceOriginV1 {
+                artifact,
+                start: line.start as u64,
+                end: closing.end as u64,
+            },
+            indent: line.indent,
+        });
+        cursor = closing_index + 1;
+    }
+    Ok(lines)
+}
+
 fn parse_item(
     artifact: CanonicalSourceArtifactIdV1,
     block: &[SourceLine<'_>],
@@ -6223,6 +6317,28 @@ fn parse_item(
             CanonicalSourceProductionV1::Handler,
             emissions,
         )?);
+    }
+    if head.trim().ends_with("\"\"\"") {
+        let logical = logical_source_lines(artifact, block)?;
+        let mut meaningful = logical.iter().filter(|line| !line.text.is_empty());
+        let Some(line) = meaningful.next() else {
+            return Err(CanonicalSourceErrorV1::InvalidMultilineText { origin });
+        };
+        if meaningful.next().is_some() {
+            return Err(CanonicalSourceErrorV1::InvalidMultilineText { origin });
+        }
+        if line.indent != 0 {
+            return Err(CanonicalSourceErrorV1::InvalidMultilineText {
+                origin: line.origin,
+            });
+        }
+        if let Some(assertion) = parse_text_assertion(&line.text, origin) {
+            return Ok(CstItem {
+                origin,
+                kind: CstKind::TextAssertion(assertion),
+            });
+        }
+        return Err(CanonicalSourceErrorV1::InvalidMultilineText { origin });
     }
     require_leaf(block, artifact)?;
     if !head.contains(char::is_whitespace) {
@@ -6880,13 +6996,14 @@ fn parse_general_handler(
         })
         .collect::<Result<Vec<_>, _>>()?;
 
-    let mut section = "";
+    let logical = logical_source_lines(artifact, block)?;
+    let mut section = String::new();
     let mut when = Vec::new();
     let mut create = Vec::new();
     let mut withdraw = Vec::new();
     let mut include = Vec::new();
     let mut seen_sections = BTreeSet::new();
-    for line in block
+    for line in logical
         .iter()
         .skip(1)
         .filter(|line| !line.text.trim().is_empty())
@@ -6895,23 +7012,24 @@ fn parse_general_handler(
         if line.indent == 2 {
             if trimmed == "admit" {
                 return Err(CanonicalSourceErrorV1::NonCanonicalKeyword {
-                    origin: line_origin(artifact, *line),
+                    origin: line.origin,
                     keyword: b"admit".to_vec(),
                 });
             }
             if !matches!(trimmed, "when" | "create" | "withdraw" | "include")
-                || !seen_sections.insert(trimmed)
+                || !seen_sections.insert(trimmed.to_owned())
             {
                 return Ok(None);
             }
-            section = trimmed;
+            section.clear();
+            section.push_str(trimmed);
             continue;
         }
         if line.indent != 4 {
             return Ok(None);
         }
-        let entry = (trimmed, line_origin(artifact, *line));
-        match section {
+        let entry = (trimmed.to_owned(), line.origin);
+        match section.as_str() {
             "when" => when.push(entry),
             "create" => create.push(entry),
             "withdraw" => withdraw.push(entry),
@@ -7091,7 +7209,7 @@ fn parse_general_handler(
         origin,
         producer: semantic_producer(
             CanonicalSourceProductionV1::Handler,
-            &handler_semantic_producer(block),
+            &handler_semantic_producer_from_logical(&logical),
         ),
         designation: designation.as_bytes().to_vec(),
         subject: subject.as_bytes().to_vec(),
@@ -7125,6 +7243,19 @@ fn parse_general_insertion(
     source: &str,
     _handler_subject: &str,
 ) -> Option<Vec<GeneralAssignmentCst>> {
+    if let Some((subject, relation, value)) = split_general_scalar_insertion(source) {
+        return Some(vec![GeneralAssignmentCst {
+            target: ScalarParameterSourceCst {
+                parameter: Vec::new(),
+                subject: subject.as_bytes().to_vec(),
+                relation: relation.as_bytes().to_vec(),
+                shape: None,
+                field: None,
+            },
+            value,
+        }]);
+    }
+
     if let Some((prefix, shape, fields)) = split_shape_subject(source) {
         let prefix = prefix.split_whitespace().collect::<Vec<_>>();
         if prefix.len() < 2 {
@@ -7148,18 +7279,7 @@ fn parse_general_insertion(
             })
             .collect();
     }
-
-    let (subject, relation, value) = split_general_scalar_insertion(source)?;
-    Some(vec![GeneralAssignmentCst {
-        target: ScalarParameterSourceCst {
-            parameter: Vec::new(),
-            subject: subject.as_bytes().to_vec(),
-            relation: relation.as_bytes().to_vec(),
-            shape: None,
-            field: None,
-        },
-        value,
-    }])
+    None
 }
 
 fn split_general_scalar_insertion(
@@ -7298,6 +7418,16 @@ fn parse_general_assignments(
         String::from_utf8_lossy(&target.subject),
         String::from_utf8_lossy(&target.relation)
     );
+    if let Some(value) = include
+        .strip_prefix(&format!("{prefix} "))
+        .and_then(|value| parse_scalar_expression(value, ""))
+    {
+        return Some(GeneralReplacementCst {
+            assignments: vec![GeneralAssignmentCst { target, value }],
+            aggregate_binding: None,
+            required_sources: vec![],
+        });
+    }
     if let Some((include_prefix, shape, fields)) = split_shape_subject(include) {
         if include_prefix != prefix {
             return None;
@@ -7325,15 +7455,7 @@ fn parse_general_assignments(
             required_sources,
         });
     }
-    let value = include.strip_prefix(&format!("{prefix} "))?;
-    Some(GeneralReplacementCst {
-        assignments: vec![GeneralAssignmentCst {
-            target,
-            value: parse_scalar_expression(value, "")?,
-        }],
-        aggregate_binding: None,
-        required_sources: vec![],
-    })
+    None
 }
 
 fn parse_scalar_expression(source: &str, current: &str) -> Option<CanonicalScalarExpressionV1> {
@@ -8542,11 +8664,19 @@ fn parse_text_assertion(source: &str, origin: CanonicalSourceOriginV1) -> Option
 
 fn parse_text_literal(source: &str) -> Option<String> {
     let inner = source.strip_prefix('"')?.strip_suffix('"')?;
-    let mut characters = inner.chars();
+    parse_text_contents(inner, false)
+}
+
+fn parse_multiline_text_body(source: &str) -> Option<String> {
+    parse_text_contents(source, true)
+}
+
+fn parse_text_contents(source: &str, multiline: bool) -> Option<String> {
+    let mut characters = source.chars();
     let mut value = String::new();
     while let Some(character) = characters.next() {
         match character {
-            '"' => return None,
+            '"' if !multiline => return None,
             '\\' => match characters.next()? {
                 '"' => value.push('"'),
                 '\\' => value.push('\\'),
@@ -8572,6 +8702,7 @@ fn parse_text_literal(source: &str) -> Option<String> {
                 }
                 _ => return None,
             },
+            '\n' if multiline => value.push('\n'),
             character if character.is_control() => return None,
             character => value.push(character),
         }
@@ -8580,6 +8711,25 @@ fn parse_text_literal(source: &str) -> Option<String> {
         }
     }
     Some(value)
+}
+
+fn encode_text_literal(value: &str) -> String {
+    let mut encoded = String::from("\"");
+    for character in value.chars() {
+        match character {
+            '"' => encoded.push_str("\\\""),
+            '\\' => encoded.push_str("\\\\"),
+            '\n' => encoded.push_str("\\n"),
+            '\r' => encoded.push_str("\\r"),
+            '\t' => encoded.push_str("\\t"),
+            character if character.is_control() => {
+                encoded.push_str(&format!("\\u{{{:x}}}", u32::from(character)));
+            }
+            character => encoded.push(character),
+        }
+    }
+    encoded.push('"');
+    encoded
 }
 
 fn split_shape_subject(source: &str) -> Option<(&str, &str, &str)> {
@@ -8932,14 +9082,15 @@ fn handler_include_emissions(
     artifact: CanonicalSourceArtifactIdV1,
     block: &[SourceLine<'_>],
 ) -> Result<Vec<CanonicalSourceEmissionV1>, CanonicalSourceErrorV1> {
+    let logical = logical_source_lines(artifact, block)?;
     let producer = semantic_producer(
         CanonicalSourceProductionV1::Handler,
-        &handler_semantic_producer(block),
+        &handler_semantic_producer_from_logical(&logical),
     );
     let mut in_include = false;
     let mut seen = BTreeSet::new();
     let mut emissions = Vec::new();
-    for line in block
+    for line in logical
         .iter()
         .skip(1)
         .filter(|line| !line.text.trim().is_empty())
@@ -8948,7 +9099,7 @@ fn handler_include_emissions(
         if line.indent == 2 {
             if trimmed == "admit" {
                 return Err(CanonicalSourceErrorV1::NonCanonicalKeyword {
-                    origin: line_origin(artifact, *line),
+                    origin: line.origin,
                     keyword: b"admit".to_vec(),
                 });
             }
@@ -8964,7 +9115,7 @@ fn handler_include_emissions(
             emissions.push(CanonicalSourceEmissionV1 {
                 producer: producer.clone(),
                 slot,
-                origin: line_origin(artifact, *line),
+                origin: line.origin,
                 allocations: vec![],
             });
         }
@@ -9082,6 +9233,25 @@ fn membership_designation_bytes(
 }
 
 fn handler_semantic_producer(block: &[SourceLine<'_>]) -> Vec<u8> {
+    let mut producer = Vec::new();
+    frame_bytes(&mut producer, block[0].text.as_bytes());
+    let mut in_when = false;
+    for line in block
+        .iter()
+        .skip(1)
+        .filter(|line| !line.text.trim().is_empty())
+    {
+        let trimmed = line.text.trim();
+        if line.indent == 2 {
+            in_when = trimmed == "when";
+        } else if line.indent == 4 && in_when {
+            frame_bytes(&mut producer, trimmed.as_bytes());
+        }
+    }
+    producer
+}
+
+fn handler_semantic_producer_from_logical(block: &[LogicalSourceLine]) -> Vec<u8> {
     let mut producer = Vec::new();
     frame_bytes(&mut producer, block[0].text.as_bytes());
     let mut in_when = false;

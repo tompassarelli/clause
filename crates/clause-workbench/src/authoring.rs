@@ -61,6 +61,15 @@ pub const AUTHORING_EXAMPLES_V1: &[AuthoringExampleV1] = &[
         )),
     },
     AuthoringExampleV1 {
+        slug: "multiline-text-output",
+        title: "Multiline Text output",
+        summary: "Projects an indented multiline Text value while preserving the document's own quotes, layout, and final newline.",
+        source: include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../test-vectors/authoring/multiline-text-output.clause"
+        )),
+    },
+    AuthoringExampleV1 {
         slug: "dynamic-relational-rows",
         title: "Runtime-created Referent and keyed rows",
         summary: "Creates one typed Referent inside a handler, uses it as the key for several relational rows, and retains immutable Text history on redirect.",
