@@ -4,6 +4,7 @@ use std::path::Path;
 use std::process::ExitCode;
 use std::time::{Duration, Instant};
 
+use clause_package::CanonicalSourceProductionV1;
 use clause_substrate::compiler_package_v3::compiler_package_hash;
 use clause_workbench::{
     ResidentSourceGenerationV1, ResidentSourceWorkbenchV1, WorkbenchService,
@@ -100,8 +101,14 @@ fn check_source(source: &Path) -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    if !workbench.generation().unsupported.is_empty() {
-        for unsupported in &workbench.generation().unsupported {
+    let unsupported_handlers = workbench
+        .generation()
+        .unsupported
+        .iter()
+        .filter(|unsupported| unsupported.production == CanonicalSourceProductionV1::Handler)
+        .collect::<Vec<_>>();
+    if !unsupported_handlers.is_empty() {
+        for unsupported in unsupported_handlers {
             eprintln!(
                 "source check found unsupported {:?} production at bytes {}..{}",
                 unsupported.production, unsupported.origin.start, unsupported.origin.end
