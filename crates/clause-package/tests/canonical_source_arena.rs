@@ -929,6 +929,48 @@ fn general_handler_arguments_lower_by_declared_header_ordinal() {
 }
 
 #[test]
+fn general_tick_handler_specializes_every_subject_and_receives_delta_time() {
+    let source = r#"F64
+Unit
+
+relation clock
+  reads {unit: Unit} clock {value: F64}
+  subject unit
+  mode given unit yields value: one
+
+unit-a
+  shape: Unit
+unit-b
+  shape: Unit
+unit-a clock 0.0
+unit-b clock 2.0
+
+on tick ?unit ?dt
+  when
+    ?unit clock ?clock
+  withdraw
+    ?unit clock ?clock
+  include
+    ?unit clock ?clock + ?dt
+"#;
+    let compiled = compile_source(source, 50)
+        .expect("a general tick handler lowers for every matching subject");
+    let handler = compiled
+        .executable_handlers
+        .iter()
+        .find(|handler| handler.designation == b"tick")
+        .expect("the general tick handler is executable");
+    assert_eq!(handler.trigger, CanonicalHandlerTriggerV1::FixedTick);
+    assert_eq!(handler.argument_count, 1);
+    assert_eq!(handler.rules.len(), 2);
+    assert!(handler.rules.iter().all(|rule| matches!(
+        &rule.assignments[0].value,
+        CanonicalExecutableExpressionV1::Add(_, argument)
+            if argument.as_ref() == &CanonicalExecutableExpressionV1::Argument(0)
+    )));
+}
+
+#[test]
 fn scalar_handlers_bind_number_symbol_and_boolean_state_parameters() {
     let cst = read_canonical_source_v1(SCALAR_PARAMETER_WORLD.as_bytes())
         .expect("canonical scalar-parameter source reads losslessly");

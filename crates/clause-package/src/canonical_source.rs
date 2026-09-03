@@ -5458,7 +5458,9 @@ fn checked_executable_handlers(
         handlers.push(CanonicalExecutableHandlerV1 {
             id: handler_id(&source.producer)?,
             designation: source.designation.clone(),
-            trigger: if !source.arguments.is_empty()
+            trigger: if source.designation == b"tick" {
+                CanonicalHandlerTriggerV1::FixedTick
+            } else if !source.arguments.is_empty()
                 || keyboard
                     .iter()
                     .any(|binding| binding.handler_designation == source.designation)
@@ -7992,7 +7994,7 @@ fn parse_general_handler(
     let [designation, subject, argument_designations @ ..] = header.as_slice() else {
         return Ok(None);
     };
-    if !subject.starts_with('?') || *designation == "tick" {
+    if !subject.starts_with('?') {
         return Ok(None);
     }
     let mut seen_arguments = BTreeSet::new();
@@ -8013,6 +8015,9 @@ fn parse_general_handler(
             })
         })
         .collect::<Result<Vec<_>, _>>()?;
+    if *designation == "tick" && arguments.len() != 1 {
+        return Err(CanonicalSourceErrorV1::InvalidGeneralHandler { origin });
+    }
 
     let logical = logical_source_lines(artifact, block)?;
     let mut section = String::new();
