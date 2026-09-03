@@ -81,8 +81,8 @@ function append_big_u32_bang(bytes, value) {
         bytes.push(Math.trunc(value / divisor) % 256);
     });
 }
-function projected_atom(kind, payload) {
-    const bytes = new Array(64).fill(0);
+function projected_atom_node(kind, payload) {
+    const bytes = [];
     bytes.push(0);
     append_big_u32_bang(bytes, kind.length);
     Array.from(kind, (character) => character.charCodeAt(0)).forEach((byte) => {
@@ -94,6 +94,14 @@ function projected_atom(kind, payload) {
     });
     bytes.push(0);
     return bytes;
+}
+function projected_atom(kind, payload) {
+    return new Array(64)
+        .fill(0)
+        .concat(projected_atom_node(kind, payload));
+}
+function projected_triple_node(left, operator, right) {
+    return [1, ...left, ...operator, ...right];
 }
 function append_u64_bang(bytes, value) {
     append_u32_bang(bytes, value);
@@ -393,6 +401,23 @@ test["test"]("projected Text realizes exact UTF-8", () => {
     ]));
     test["expect"](text).toBe("North 🚀");
     test["expect"](() => wasm["decode-projected-term-frame"](projected_atom("clause/process-projected-text-v1", [255]))).toThrow("projected Text is not canonical UTF-8");
+});
+test["test"]("projected Term decoding admits transport-bounded depth beyond 64", () => {
+    const nesting = 96;
+    let term = projected_atom_node("clause/process-projected-text-v1", [111, 107]);
+    for (let depth = 0; depth < nesting; depth += 1) {
+        term = projected_triple_node(projected_atom_node("clause/js-item-v1", []), term, projected_atom_node("clause/js-array-end-v1", []));
+    }
+    let projected = wasm["decode-projected-term-frame"](new Array(64).fill(0).concat(term));
+    for (let depth = 0; depth < nesting; depth += 1) {
+        test["expect"](Array.isArray(projected)).toBe(true);
+        test["expect"](projected.length).toBe(1);
+        projected = projected[0];
+    }
+    test["expect"](projected).toBe("ok");
+});
+test["test"]("projected Term decoding retains the CSE1 byte bound", () => {
+    test["expect"](() => wasm["decode-projected-term-frame"](new Array(64 * 1024 + 1).fill(0))).toThrow("projected Term bytes are outside the CSE1 bound");
 });
 function projectedBoolean(value, ...path) {
     const result = projectedField(value, ...path);

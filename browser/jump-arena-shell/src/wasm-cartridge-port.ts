@@ -59,6 +59,16 @@ const current_admission_trace_retention = 1;
 
 const identity_bytes = 32;
 
+const canonical_term_atom_min_bytes = 1 + 4 + 4 + 1;
+
+const canonical_term_triple_path_min_bytes =
+  1 + 2 * canonical_term_atom_min_bytes;
+
+const cse1_projected_term_max_depth = Math.trunc(
+  (cse1_max_bytes - 2 * identity_bytes - canonical_term_atom_min_bytes) /
+    canonical_term_triple_path_min_bytes,
+);
+
 const allocation_epoch_bytes = 304;
 
 export type ExactBytes = readonly number[];
@@ -1947,7 +1957,7 @@ function decode_term_node(
   offset: number,
   depth: number,
 ): DecodedTermNode {
-  if (depth > 64) {
+  if (depth > cse1_projected_term_max_depth) {
     (() => {
       throw new Error("projected Term exceeds its depth bound");
     })();
@@ -2004,7 +2014,7 @@ function decode_canonical_term(bytes: unknown): TermNode {
   const envelope_source = workbench["workbench-byte-envelope-source"](bytes);
   const source = envelope_source === null ? bytes : envelope_source;
   if (
-    typeof source === "string" ||
+    (typeof source === "string" && source.length <= cse1_max_bytes) ||
     exact_byte_array_p(source, cse1_max_bytes)
   ) {
     const node_start = require_range(
