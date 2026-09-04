@@ -102,6 +102,15 @@ pub const AUTHORING_EXAMPLES_V1: &[AuthoringExampleV1] = &[
         summary: "Selects the compiler-owned Nix vocabulary and describes a development shell entirely through typed focused relations.",
         source: include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../flake.clause")),
     },
+    AuthoringExampleV1 {
+        slug: "composed-scalar-laws",
+        title: "Symbolic relations compose",
+        summary: "Defines absolute value with ordinary guarded laws and a symbolic Reading, then composes two uses in one transition. No formula name selects compiler behavior.",
+        source: include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../test-vectors/authoring/composed-scalar-laws.clause"
+        )),
+    },
 ];
 
 /// Render the checked examples as the concise authoring card shipped with this

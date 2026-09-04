@@ -239,11 +239,12 @@ candidate.
 
 ## Why three
 
-Two slots can pair Terms, but cannot make both participants and their
-relationship explicit without hiding the relationship in a participant or in
-an external node kind. Three slots are therefore the smallest direct compound
-form that can hold two Terms and their relating Term. Greater kernel arity is
-unnecessary because higher-arity meaning can be represented by checked
+Three slots make two participants and their relating Term directly inspectable
+in one uniform compound. This is a carrier choice, not a proof of semantic
+minimality: nested pairs can encode triples and triples can encode pairs.
+Neither encoding removes the interpretation, binding, equality, or admissibility
+obligations. The smallness worth preserving is the number of independent
+semantic rules, not the constructor's arity. Higher-arity meaning uses checked
 neighborhoods or recursively complete structural Terms.
 
 The positions of a `Triple` are structurally neutral. A checked relational
@@ -2390,6 +2391,34 @@ retraction removes a consequence only when its final support disappears.
 Caches, schedules, proof selections, and derived closure are replaceable unless
 explicitly admitted as program content.
 
+For a finite positive ground basis with surviving extensional roots E and
+authorized rules R, the derived value set is the least fixed point of
+`F(X) = E ∪ { conclusion(r) | r ∈ R and premises(r) ⊆ X }`, starting from E.
+An empty-premise authorized rule contributes its conclusion; a cycle without
+an extensional or empty-premise anchor contributes nothing. After withdrawal,
+old derived claims are not new roots. In particular, `p → q` and `q → p`
+cannot preserve either claim after the last independent root for p disappears.
+One surviving root does preserve both. Positive closure is separate from
+resource-consuming transitions and from explicitly scoped negation.
+
+Mode soundness means that each produced value row satisfies its declared
+relation at the exact input binding. Completeness means that every satisfying
+row in a declared search scope is produced; it is a separate obligation.
+`one`, `maybe`, `some`, and `many` constrain distinct value rows under the
+declared value equality, not proof-tree count. Independent assertions,
+derivation supports, and emitted occurrences keep their own multiplicity.
+An exhausted or partial search establishes neither completeness nor absence.
+An overlapping pair of proofs for the same value does not violate `maybe`;
+incompatible values do. Physical rule ordering must not resolve that conflict.
+
+Recursive explanations use finite dependency structure with explicit alternative
+supports, not enumeration of infinitely many unfolded proof trees. The bounded
+bootstrap function `derive_ground_closure` in
+`clause:crates/clause-substrate/src/canonical_package.rs` computes this positive
+value closure and supplies one finite certificate per discovered claim through
+the existing checker. It does not enumerate every support, implement general
+source recursion, or prove the source compiler sound.
+
 ## Program identity and history
 
 - A **Program** is one durable evolving lineage, identified by `ProgramId`.
@@ -2933,6 +2962,15 @@ and `clause:semantics/CLAUSE_SEMANTICS_ID` records the reproducible
 derived identifier. Mutable checker/runtime implementation hashes and bounded
 capability labels never enter those bytes: a behavior-preserving implementation
 edit cannot change Clause semantics.
+
+The current manifest commits to a reviewed document bundle. Consequently even
+an explanatory prose edit changes this exact identifier. Unequal identifiers
+do not by themselves prove incompatible meanings, just as equal version labels
+do not prove compatible meanings. A cross-epoch reuse or transport requires an
+explicit checked equivalence at the affected boundary; no such general
+compatibility decision procedure is claimed here. Existing identifiers retain
+their exact preimages. This distinction does not introduce another manifest or
+duplicate the normative semantic facts.
 
 No implementation-artifact or release manifest is implied. Mutable
 checker/runtime inventories, capability attestations, Git publication objects,

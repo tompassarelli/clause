@@ -81,7 +81,6 @@ pub struct ResidentSourceAdmissionV1 {
 /// source elaboration replaces every executable rule and gameplay value.
 pub struct ResidentSourceWorkbenchV1 {
     boundary: WasmPersistentSessionBoundaryV1,
-    template: WasmProcessRequestV1,
     coherent_template: WasmProcessRequestV1,
     template_scope: TermScope,
     template_projection_roles: Vec<LocalRoleRefV2>,
@@ -93,6 +92,7 @@ pub struct ResidentSourceWorkbenchV1 {
     pending: Option<ResidentSourceCandidateV1>,
     last_projection: Option<WasmSessionProjectionV1>,
     next_change: u64,
+    exact_source: Vec<u8>,
     default_occurrences: Vec<Vec<u8>>,
     handlers: BTreeMap<Vec<u8>, Vec<ExecutableCanonicalHandlerBindingV1>>,
 }
@@ -140,7 +140,6 @@ impl ResidentSourceWorkbenchV1 {
             },
             package: ProcessPackageId::from_bytes([0; clause_package::IDENTITY_BYTES]),
             session: template.authority.session,
-            template,
             coherent_template,
             template_scope,
             template_projection_roles,
@@ -149,6 +148,7 @@ impl ResidentSourceWorkbenchV1 {
             pending: None,
             last_projection: None,
             next_change: 0,
+            exact_source: Vec::new(),
             default_occurrences: Vec::new(),
             handlers: BTreeMap::new(),
         };
@@ -252,6 +252,9 @@ impl ResidentSourceWorkbenchV1 {
         &mut self,
         exact_source: &[u8],
     ) -> Result<ResidentSourceGenerationV1, ResidentSourceWorkbenchErrorV1> {
+        if exact_source == self.exact_source {
+            return Ok(self.generation.clone());
+        }
         self.install_source(exact_source)?;
         while self.boundary.reclaim_retired() {}
         Ok(self.generation.clone())
@@ -392,14 +395,14 @@ impl ResidentSourceWorkbenchV1 {
         &mut self,
         exact_source: &[u8],
     ) -> Result<(), ResidentSourceWorkbenchErrorV1> {
-        self.next_change = self.next_change.checked_add(1).ok_or_else(|| {
+        let next_change = self.next_change.checked_add(1).ok_or_else(|| {
             ResidentSourceWorkbenchErrorV1("source change sequence exhausted".into())
         })?;
         let cst = read_canonical_source_v1(exact_source)
             .map_err(|error| debug_error("canonical source read", error))?;
         let allocation_plan = plan_independent_canonical_source_allocations_v1(
             &cst,
-            ProgramChangeOccurrenceId::from_bytes(sequence_id(self.next_change)),
+            ProgramChangeOccurrenceId::from_bytes(sequence_id(next_change)),
         )
         .map_err(|error| debug_error("canonical source allocation", error))?;
         let scope = self.template_scope;
@@ -412,8 +415,8 @@ impl ResidentSourceWorkbenchV1 {
             &allocation_plan,
         )
         .map_err(|error| debug_error("canonical source elaboration", error))?;
-        self.template = self.coherent_template.clone();
-        self.template.authority.budget_units = SOURCE_AUTHORITY_BUDGET_UNITS;
+        let mut template = self.coherent_template.clone();
+        template.authority.budget_units = SOURCE_AUTHORITY_BUDGET_UNITS;
         let mut physical_plan = self.template_physical_plan.clone();
         let projection_roles = &self.template_projection_roles;
         let projected_state_count = compiled.state_cells.len();
@@ -449,14 +452,14 @@ impl ResidentSourceWorkbenchV1 {
             .iter()
             .map(|handler| (handler.id, handler))
             .collect::<BTreeMap<_, _>>();
-        self.handlers.clear();
+        let mut handlers = BTreeMap::<Vec<u8>, Vec<ExecutableCanonicalHandlerBindingV1>>::new();
         for binding in &lowered.handlers {
             let source = semantic_handlers.get(&binding.handler).ok_or_else(|| {
                 ResidentSourceWorkbenchErrorV1(
                     "generic lowering returned an unknown handler identity".into(),
                 )
             })?;
-            self.handlers
+            handlers
                 .entry(source.designation.clone())
                 .or_default()
                 .push(binding.clone());
@@ -474,14 +477,14 @@ impl ResidentSourceWorkbenchV1 {
                     | CanonicalHandlerTriggerV1::FixedTick
             )
         });
-        let template_tick = self.template.occurrences.last().ok_or_else(|| {
+        let template_tick = template.occurrences.last().ok_or_else(|| {
             ResidentSourceWorkbenchErrorV1("CWR1 template has no tick occurrence".into())
         })?;
         let template_tick = decode_executable_occurrence_v1(template_tick)
             .map_err(|error| boxed_error("template tick decode", error))?;
         let mut default_occurrences = Vec::new();
         if declarative_only {
-            default_occurrences.extend(self.template.occurrences.clone());
+            default_occurrences.extend(template.occurrences.clone());
         } else if has_tick {
             let template_input = template_input.ok_or_else(|| {
                 ResidentSourceWorkbenchErrorV1("CPP1 template has no physical input plan".into())
@@ -559,14 +562,13 @@ impl ResidentSourceWorkbenchV1 {
                 .map_err(|error| boxed_error("default external occurrence encode", error))?,
             );
         }
-        self.default_occurrences = default_occurrences;
         let cpp1 = encode_executable_physical_plan_v1(&physical_plan)
             .map_err(|error| boxed_error("CPP1 encode", error))?;
         let open = WasmSessionOpenV1 {
-            package_bytes: self.template.package_bytes.clone(),
-            application: self.template.application,
+            package_bytes: template.package_bytes.clone(),
+            application: template.application,
             physical_plan_bytes: cpp1.clone(),
-            authority: self.template.authority.clone(),
+            authority: template.authority.clone(),
             allocation: WasmSessionAllocationV1::New,
             limits: WasmSessionLimitsV1 {
                 max_commands: MAX_COMMANDS,
@@ -577,6 +579,12 @@ impl ResidentSourceWorkbenchV1 {
                 trace_retention: clause_runtime::WasmSessionTraceRetentionV1::FullUntilCommandLimit,
             },
         };
+        let mut cwr1 = template.clone();
+        cwr1.physical_plan_bytes = cpp1.clone();
+        cwr1.occurrences = default_occurrences.clone();
+        // Check every fallible shape/size constraint before replacing the live session.
+        // The opened allocation only replaces a fixed-width, already-valid epoch.
+        encode_wasm_process_request_v1(&cwr1)?;
         let exact_open = encode_wasm_session_open_v1(&open)?;
         let opened = self.boundary.open(&exact_open)?;
         let WasmSessionEventKindV1::Opened {
@@ -588,11 +596,13 @@ impl ResidentSourceWorkbenchV1 {
         else {
             return Err(unexpected_event("open", opened.kind));
         };
-        let mut cwr1 = self.template.clone();
-        cwr1.physical_plan_bytes = cpp1.clone();
         cwr1.allocation = allocation;
-        cwr1.occurrences = self.default_occurrences.clone();
-        let exact_cwr1 = encode_wasm_process_request_v1(&cwr1)?;
+        let exact_cwr1 = encode_wasm_process_request_v1(&cwr1)
+            .expect("a valid fixed-width allocation preserves the prechecked CWR1 shape");
+        self.handlers = handlers;
+        self.default_occurrences = default_occurrences;
+        self.next_change = next_change;
+        self.exact_source = exact_source.to_vec();
         self.generation = ResidentSourceGenerationV1 {
             handle: opened.handle,
             source_package: compiled.checked_package.id(),

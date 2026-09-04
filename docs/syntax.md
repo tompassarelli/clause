@@ -110,15 +110,21 @@ an ordinary membership emission under an assertive stance. The parent Reading
 selects focus and the child's contribution before inspecting the child's domain
 meaning. The child never guesses them from indentation.
 
-The reader selects a CST production deterministically from explicit head shape
-and declared grammar. Elaboration then resolves each local designation through
+The reader selects a structural production deterministically from explicit head
+shape and layout, retaining a lossless token/layout tree. Application grouping
+is then determined by the fixed declared Reading environment, before type
+inference. Elaboration resolves each local designation through
 the already selected ElaborationContext to one structured `Designation`, and
 selects a declared Reading only through that record's exact ReferentId. Missing
 or competing resolutions or Readings are
 errors. Later schema or type checking may reject the candidate, but cannot
 regroup the CST, reinterpret a sibling, or select a different parent Reading.
-This keeps incremental parsing and recovery independent of successful whole-
-program inference without permitting raw spelling to select behavior.
+This keeps structural parsing and recovery independent of successful whole-
+program inference without pretending that phrase boundaries can always be
+chosen before the available Readings are known. Competing complete parses are
+errors, not opportunities to pick whichever one type-checks. Parentheses make
+nested application boundaries explicit; imported vocabulary changes the fixed
+Reading environment, not the meaning of ambient English.
 
 A block head selects exactly one declared child grammar from its own CST
 production. That grammar fixes the accepted child productions, their order and
@@ -325,15 +331,18 @@ pair: 5, "hello"
 `five` denotes the numeric value `5`. `pair` denotes one ordered compound;
 its applications are position 0 to `5` and position 1 to `"hello"`. Equal
 members at different positions remain distinct occurrences with independent
-origins. A long line may use the equivalent block form:
+origins. Products compose without changing the binding boundary:
 
 ```clause
-rgb
-  255, 0, 0
+rgb: 255, 0, 0
+palette: (255, 0, 0), (0, 0, 255)
 ```
 
-The comma is load-bearing. A vertical list of bare children is not an ordered
-product, because indentation alone never invents a relation or position.
+The comma is load-bearing. Parentheses group; commas at the current delimiter
+depth form a product. Nested positions remain paths, not flattened ordinal
+positions. Commas inside quoted Text are literal contents. A bare head with
+children is always subject focus, never a denotation inferred from commas in
+its children. Bindings do not own indented children in this source profile.
 
 Denotation does not classify its name. In particular:
 
@@ -409,9 +418,11 @@ grammar may interpret words such as `to` as participant-slot markers; the
 reader never guesses such composition from English heuristics and never
 requires underscore encoding.
 
-Colon has no freely spaced infix form. There is no whitespace before `:` and
-exactly one ASCII space follows it. `x : value`, `x:value`, `x  :  value`,
-`:=`, `::`, and `∈` reject; none is compatibility syntax.
+Canonical printing puts no whitespace before `:` and one ASCII space after
+it. Binding denotations also accept horizontal separation around that boundary;
+spacing does not select a different meaning. The bounded role/declaration
+readers still require their displayed field spelling. `:=`, `::`, and `∈`
+are not alternative binding operators.
 
 Inside a declaration, its already-selected child grammar may use the same
 punctuation to fill a declared structural role:
@@ -602,85 +613,50 @@ receives a distinct `ActivationId`.
 `:` is a binder/role field constraint and `=` is equality. Canonical relation
 modes use `given` and `yields`; `->` is not generic directional punctuation.
 
-## Functions, static reuse, and local ownership
+## Declarative definitions and physical realization
 
-`function` is the compact canonical grouping for one RelationSchema, one
-Operator, and one pure, deterministic, single-result Mode. It does not add a
-kernel callable or host closure. `parameters` forms one declaration-level
-rank-1 StaticParameterTelescope; `constraints` forms named static evidence
-slots; `given` and `yields` form exact RelationSchema roles; and `run` supplies
-the Clause process definition.
+A pure function is a relation with a checked deterministic, single-result
+Mode, not another kernel callable. Its ordinary definition states the result's
+meaning. It does not prescribe a builder, loop, ownership-token choreography,
+or execution trace.
 
-The first ratified general-purpose source specimen is:
+For mapping a pure deterministic relation f over a finite sequence x, the
+complete denotation is:
 
-```clause
-function map
-  parameters
-    Item: Type
-    Result: Type
-  constraints
-    mapping: Maps Item to Result
-  given
-    items: Sequence of Item
-  yields
-    mapped: Sequence of Result
-  run
-    region output
-      mutable builder: empty Sequence of Result
-      borrow read items as source
-        lease write builder as sink
-          for item in source
-            append mapping(item) to sink
-      return freeze move builder
-
-upper-names: map(player-names) with
-  Item = Text
-  Result = Text
-  mapping = uppercase
+```text
+indices(y) = indices(x)
+for every i in indices(x): f(x[i], y[i])
 ```
 
-The declaration has these exact surface rules:
+This is mathematics describing the contract, not an additional implemented
+source syntax. Exact index-domain equality rules out missing and extra output
+positions. Indices preserve order and repeated equal values. Soundness of f
+alone does not prove totality or uniqueness of y; the selected Mode must supply
+those obligations. An effectful mapping needs an explicit effect/order contract
+and is not interchangeable with this pure definition.
 
-- parameter and constraint children introduce stable named static slots;
-  dependency determines their checked telescope order, while source traversal
-  order does not become identity;
-- every `with` child is an equality constraint of the form
-  `StaticSlotName = Term`. It is not assignment or keyword-argument binding.
-  The use is accepted only when the named equations have one exact normalized
-  solution that closes every uninferred static parameter and constraint.
-  Missing, extra, duplicate, ambiguous, or wrong-domain equations reject
-  before an ApplicationForm exists; equation order is immaterial, and ambient
-  instance lookup and positional evidence are not canonical;
-- every function-call Reading owns an explicit mapping from each surface phrase
-  slot to one exact `RoleId`. The compact `map(player-names)` form is ratified
-  because its Reading has exactly one positional phrase slot and maps that slot
-  to the `items` RoleId. Declaration order, role-table order, tuple position,
-  and matching value shape are never fallback mappings. A function with more
-  than one `given` role requires a separately declared Reading that fixes every
-  surface-slot-to-RoleId mapping; no implicit multi-argument positional
-  function Reading is ratified yet. The elaborated ApplicationForm stores
-  RoleIds and static use records rather than argument positions;
-- `region name` opens a lexical DeterministicRegion. `mutable` introduces an
-  Activation-local slot; neither operation creates a StateRevision or
-  Admission;
-- `borrow read value as name` opens a scoped Borrow. `lease read|write|exclusive
-  value as name` opens a scoped Lease and must receive causally acknowledged
-  closure before the block can retire;
-- `for binder in value` selects the value's exact iteration Mode. Iterations
-  remain anonymous internal reductions unless a declared Step boundary is
-  crossed;
-- `move name` consumes the source ownership token. `freeze` stabilizes the
-  moved builder into the yielded immutable value and must prove any required
-  allocation-root transfer out of `output`; and
-- `return` closes the produced role and is a semantic Step cut. Failure before
-  it restores the exact before-configuration or discards the unpublished
-  realization and closes every established root and access edge.
+A checked physical strategy may realize the relation by fusion, a packed loop,
+parallel partitions, or a local builder. It must preserve values, order,
+multiplicity, observable failures, and declared resource bounds. Ownership,
+regions, and reclamation remain strategy obligations unless they change
+observable program meaning. Short source does not promise zero allocation,
+automatic parallelism, or a total search.
 
-Static ownership and lifetime proofs may erase from a checked production ABI;
-dynamically varying Lease, continuation, and close tokens remain. Equivalent
-monomorphized, dictionary, irrelevant-evidence-erased, and shared-code
-strategies preserve the exact cold explanation and never merge nominal uses or
-Activations. Additional inference sugar is not canonical.
+Static parameters and evidence remain exact named roles with one normalized
+solution. Call Readings map surface slots to declared RoleIds; matching value
+shape and declaration order never infer that mapping. Static proofs may erase
+when the physical refinement preserves the same meaning and explanation.
+
+The running scalar slice is demonstrated in
+`clause:test-vectors/authoring/composed-scalar-laws.clause`: a user-defined
+symbolic Reading, two ordinary magnitude laws, and two composed uses. Its
+finite F64 forward modes currently use `maybe`; totality is not inferred.
+Law binders substitute simultaneously, so caller names cannot capture them.
+Different result expressions require a proof of disjoint guards; the current
+bounded compiler proves strict-cycle contradictions in finite order constraints
+and otherwise rejects unknown uniqueness. Equal result expressions may retain
+multiple supports without creating multiple values. This is not a general
+constraint solver or a completed collection-function implementation.
 
 ## Laws and derivation authorization
 
@@ -929,9 +905,10 @@ sequence terms; they are not also range or focus-template delimiters.
 
 ## Normative reader boundary
 
-Lexing and CST selection are complete before designation resolution,
-formation, type checking, or child semantics. The reader applies these rules
-in order:
+Lexing and structural layout selection precede designation resolution,
+formation, type checking, and child semantics. Full application grouping is
+Reading-directed under one fixed environment, as specified above. The reader
+applies these structural rules in order:
 
 1. Normalize CRLF to LF for layout while preserving original byte spans in the
    lossless CST. Split physical lines; Clause has no backslash or implicit
@@ -957,9 +934,10 @@ The relevant layout grammar is:
 SourceFile       ::= Trivia* TopLevelConstruct* EOF
 TopLevelConstruct ::= SimpleConstruct NEWLINE
                     | BlockHead NEWLINE INDENT ChildConstruct+ DEDENT
-BindingHead      ::= Designation ":" HSPACE TermNoTopComma
+BindingHead      ::= Designation HSPACE* ":" HSPACE* ProductTerm
 BindingConstruct ::= BindingHead
-                   | BindingHead NEWLINE INDENT FocusedEdgeChild+ DEDENT
+ProductTerm      ::= GroupedTerm ("," HSPACE* GroupedTerm)*
+GroupedTerm      ::= ScalarTerm | "(" HSPACE* ProductTerm HSPACE* ")"
 SubjectFocus    ::= Designation NEWLINE INDENT FocusedEdgeChild+ DEDENT
 FocusedEdgeChild ::= RelationEdge
                    | RelationPrefix NEWLINE INDENT FocusedEdgeChild+ DEDENT
@@ -967,19 +945,17 @@ ReferentDeclaration ::= Designation
 MultilineText     ::= '"""' NEWLINE MultilineTextBody MultilineTextClose
 ```
 
-`BindingHead` is one line production whether or not it owns children. In a
-standalone construct it emits one binding; in a block it additionally supplies
-its LHS as subject focus. `TermNoTopComma` may contain commas only inside its
-own balanced `()`, `[]`, or `{}` delimiters. `RelationPrefix` emits no edge by
+`BindingHead` emits one binding and does not also introduce subject focus.
+Products preserve their balanced grouping at every depth. `RelationPrefix` emits no edge by
 itself; it prepends its tokens to each descendant `RelationEdge`.
 `ReferentDeclaration` is the leaf form of one Designation. `SubjectFocus` is
 the block form of one Designation and requires at least one child. Keyworded
 heads select their own declared child grammars as specified above.
 
 `HSPACE` is exactly one U+0020 ASCII space. `HSPACE+` means one or more such
-spaces where flexible separation is declared; `BindingHead` requires exactly
-one space after `:` and none before it. Tabs and other Unicode space characters
-never satisfy it.
+spaces where flexible separation is declared. The formatter prints no space
+before a binding colon and one after it; harmless horizontal separation does
+not change the binding. Layout indentation still uses ASCII spaces only.
 
 Familiar mathematical notation is a usability prior, never semantic
 authority. A notation is ratified only when its tokenization, arity,

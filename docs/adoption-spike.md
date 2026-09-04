@@ -819,40 +819,16 @@ on collect ?actor
     ?coin state collected
 ```
 
-General-purpose function, static-use, loop, local-mutation, and lifetime
-boundaries:
+General-purpose mapping is specified by index-domain preservation and the
+pointwise mapping relation, as defined in `clause:docs/syntax.md`. The adoption
+artifact must execute that meaning through a checked physical strategy without
+requiring an imperative collection-building recipe in ordinary source. Static
+arguments and evidence retain exact role bindings. Ownership and lifetime
+constraints enter at the observable boundary or in the selected strategy.
 
-```clause
-function map
-  parameters
-    Item: Type
-    Result: Type
-  constraints
-    mapping: Maps Item to Result
-  given
-    items: Sequence of Item
-  yields
-    mapped: Sequence of Result
-  run
-    region output
-      mutable builder: empty Sequence of Result
-      borrow read items as source
-        lease write builder as sink
-          for item in source
-            append mapping(item) to sink
-      return freeze move builder
-
-upper-names: map(player-names) with
-  Item = Text
-  Result = Text
-  mapping = uppercase
-```
-
-This fourth block is the exact syntax-authority specimen. Its dependency
-context supplies the accepted meanings of `Type`, `Maps`, `Sequence`, `empty`,
-`append`, `freeze`, and `uppercase`; none is a host intrinsic selected by
-spelling. The acceptance corpus must freeze the UTF-8/LF bytes and the exact
-pre- and post-edit semantic/cache sets.
+`clause:test-vectors/authoring/composed-scalar-laws.clause` is the current
+executable scalar composition specimen; it is not a claim that generic sequence
+mapping or strategy synthesis already works.
 
 The first two blocks contain no authored ApplicationId, ActivationId, StepId,
 RunId, ContinuationId, revision pin, authority token, scheduler, budget, trace,
@@ -860,9 +836,7 @@ or materialization plan. Their checked crosswalk still exposes every required
 semantic identity and pin. The third exposes only the already canonical
 process-relevant `on`/`when`/`withdraw`/`include` vocabulary; actual activation,
 event occurrence, Step identity, and constitutional Admission remain governed
-boundaries rather than user bookkeeping. The fourth exposes ownership/lifetime
-words only where they change alias, escape, or reclamation meaning. Until
-continuation and race surface
+boundaries rather than user bookkeeping. Until continuation and race surface
 syntax is separately ratified, those fixtures are Clause semantic data and
 exact observations, not invented source spelling.
 

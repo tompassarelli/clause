@@ -19,6 +19,9 @@ use crate::identity::*;
 use crate::process::{CheckedProcessPackage, ProcessPackageV2};
 use crate::term::{EqualityContract, Term, TermError, TermScope};
 
+mod scalar_laws;
+use scalar_laws::*;
+
 const SOURCE_ARTIFACT_DOMAIN: &str = "clause/source-artifact/v1";
 const SOURCE_LOCAL_ALLOCATION_DOMAIN: &str = "clause/source-local-allocation/v1";
 const RESERVED_LOCAL_ID: u32 = 0;
@@ -344,7 +347,6 @@ pub enum CanonicalExecutableExpressionV1 {
     Subtract(Box<Self>, Box<Self>),
     Multiply(Box<Self>, Box<Self>),
     Divide(Box<Self>, Box<Self>),
-    Clamp(Box<Self>, Box<Self>, Box<Self>),
     Insert(Box<Self>, Box<Self>),
     Remove(Box<Self>, Box<Self>),
 }
@@ -377,6 +379,7 @@ pub struct CanonicalExecutableAssignmentV1 {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CanonicalExecutableRuleV1 {
+    pub law_origins: Vec<CanonicalSourceOriginV1>,
     pub predicates: Vec<CanonicalExecutablePredicateV1>,
     pub required_present: Vec<CanonicalStateRefV1>,
     pub required_absent: Vec<CanonicalStateRefV1>,
@@ -450,7 +453,6 @@ pub enum CanonicalScalarExpressionV1 {
     Subtract(Box<Self>, Box<Self>),
     Multiply(Box<Self>, Box<Self>),
     Divide(Box<Self>, Box<Self>),
-    Clamp(Box<Self>, Box<Self>, Box<Self>),
 }
 
 /// One construct-blind predicate over the scalar cell and source-bound
@@ -501,7 +503,6 @@ pub enum CanonicalTickExpressionV1 {
     Subtract(Box<Self>, Box<Self>),
     Multiply(Box<Self>, Box<Self>),
     Divide(Box<Self>, Box<Self>),
-    Clamp(Box<Self>, Box<Self>, Box<Self>),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -538,6 +539,7 @@ pub struct CanonicalTickAssignmentV1 {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CanonicalTickRuleV1 {
+    pub law_origins: Vec<CanonicalSourceOriginV1>,
     pub handler_origin: CanonicalSourceOriginV1,
     pub include_origins: Vec<CanonicalSourceOriginV1>,
     pub predicates: Vec<CanonicalTickPredicateV1>,
@@ -563,8 +565,8 @@ pub struct CanonicalTickProgramV1 {
     pub minimum_z: u64,
     pub maximum_z: u64,
     pub assertion_origins: Vec<CanonicalSourceOriginV1>,
-    pub clamp_law_origins: [CanonicalSourceOriginV1; 3],
-    pub derive_origins: [CanonicalSourceOriginV1; 3],
+    pub law_origins: Vec<CanonicalSourceOriginV1>,
+    pub derive_origins: Vec<CanonicalSourceOriginV1>,
     pub rules: Vec<CanonicalTickRuleV1>,
 }
 
@@ -605,7 +607,7 @@ pub struct CanonicalSourceApplicationV1 {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CanonicalSourceDenotedValueV1 {
     Scalar(CanonicalScalarValueV1),
-    OrderedProduct(Vec<CanonicalScalarValueV1>),
+    OrderedProduct(Vec<Self>),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -689,6 +691,9 @@ pub struct CanonicalSourceContextV1 {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CanonicalSourceErrorV1 {
+    ScalarLawExpansionLimit {
+        origin: CanonicalSourceOriginV1,
+    },
     InvalidUtf8,
     TabIndentation {
         offset: u64,
@@ -901,8 +906,8 @@ enum CstKind {
     TickHandler(TickHandlerCst),
     KeyboardBinding(KeyboardBindingCst),
     ScalarInputBinding(ScalarInputBindingCst),
-    ClampLaw(ClampLawCst),
-    ClampDerive(ClampDeriveCst),
+    ScalarLaw(ScalarLawCst),
+    ScalarDerive(ScalarDeriveCst),
     BooleanLaw(BooleanLawCst),
     BooleanDerive(BooleanDeriveCst),
     VectorAssertion(VectorAssertionCst),
@@ -1073,7 +1078,7 @@ struct GeneralHandlerArgumentCst {
 struct ScalarLawBindingCst {
     origin: CanonicalSourceOriginV1,
     parameter: Vec<u8>,
-    value: CanonicalScalarExpressionV1,
+    cases: Vec<ScalarLawCase>,
 }
 
 #[derive(Clone, Debug)]
@@ -1184,27 +1189,7 @@ struct TickHandlerCst {
     predicates: Vec<CanonicalTickPredicateV1>,
     assignments: Vec<CanonicalTickAssignmentV1>,
     includes: Vec<HandlerIncludeCst>,
-}
-
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-enum ClampBranchV1 {
-    Lower,
-    Interior,
-    Upper,
-}
-
-#[derive(Clone, Debug)]
-struct ClampLawCst {
-    origin: CanonicalSourceOriginV1,
-    designation: Vec<u8>,
-    branch: ClampBranchV1,
-}
-
-#[derive(Clone, Debug)]
-struct ClampDeriveCst {
-    origin: CanonicalSourceOriginV1,
-    designation: Vec<u8>,
-    branch: ClampBranchV1,
+    cases: Vec<CanonicalTickRuleV1>,
 }
 
 #[derive(Clone, Debug)]
@@ -1239,8 +1224,6 @@ struct BooleanDeriveCst {
 #[derive(Clone, Copy)]
 struct TickProgramParts<'a> {
     handlers: [&'a TickHandlerCst; 3],
-    laws: [&'a ClampLawCst; 3],
-    derives: [&'a ClampDeriveCst; 3],
     position: &'a VectorAssertionCst,
     velocity: &'a VectorAssertionCst,
     intent: &'a VectorAssertionCst,
@@ -1402,6 +1385,7 @@ pub fn read_canonical_source_v1(
     let artifact =
         CanonicalSourceArtifactIdV1(domain_hash(SOURCE_ARTIFACT_DOMAIN, &[exact_source]));
     let lines = source_lines(source)?;
+    let scalar_laws = ScalarLawEnvironment::read(artifact, &lines)?;
     let mut items = Vec::new();
     let mut vocabularies = Vec::new();
     let mut subject_focuses = Vec::new();
@@ -1453,7 +1437,7 @@ pub fn read_canonical_source_v1(
         if let Some(focus) = parse_subject_focus(artifact, block, origin)? {
             subject_focuses.push(focus);
         }
-        items.extend(parse_items(artifact, block, origin)?);
+        items.extend(parse_items(artifact, block, origin, &scalar_laws)?);
     }
     retain_supported_boolean_derive_pairs(&mut items);
     validate_unique_designations(&items)?;
@@ -1897,12 +1881,12 @@ fn allocation_requests(
                     });
                 }
             }
-            CstKind::ClampLaw(law) => requested.push(AllocationRequest {
+            CstKind::ScalarLaw(law) => requested.push(AllocationRequest {
                 producer: semantic_producer(CanonicalSourceProductionV1::Law, &law.designation),
                 slot: head_slot(CanonicalSourceProductionV1::Law),
                 domain: AllocationDomain::Formation,
             }),
-            CstKind::ClampDerive(derive) => requested.push(AllocationRequest {
+            CstKind::ScalarDerive(derive) => requested.push(AllocationRequest {
                 producer: semantic_producer(
                     CanonicalSourceProductionV1::Derive,
                     &derive.designation,
@@ -4040,19 +4024,6 @@ fn canonical_scalar_executable_expression(
             let (left, right) = pair(left, right)?;
             CanonicalExecutableExpressionV1::Divide(left, right)
         }
-        CanonicalScalarExpressionV1::Clamp(value, lower, upper) => {
-            CanonicalExecutableExpressionV1::Clamp(
-                Box::new(canonical_scalar_executable_expression(
-                    value, current, parameters, origin,
-                )?),
-                Box::new(canonical_scalar_executable_expression(
-                    lower, current, parameters, origin,
-                )?),
-                Box::new(canonical_scalar_executable_expression(
-                    upper, current, parameters, origin,
-                )?),
-            )
-        }
     })
 }
 
@@ -4109,19 +4080,6 @@ fn expand_scalar_law_bindings(
             let (left, right) = pair(left, right, expanding)?;
             CanonicalScalarExpressionV1::Divide(left, right)
         }
-        CanonicalScalarExpressionV1::Clamp(value, lower, upper) => {
-            CanonicalScalarExpressionV1::Clamp(
-                Box::new(expand_scalar_law_bindings(
-                    value, bindings, expanding, origin,
-                )?),
-                Box::new(expand_scalar_law_bindings(
-                    lower, bindings, expanding, origin,
-                )?),
-                Box::new(expand_scalar_law_bindings(
-                    upper, bindings, expanding, origin,
-                )?),
-            )
-        }
         expression => expression.clone(),
     })
 }
@@ -4174,13 +4132,6 @@ fn canonical_general_executable_expression(
         CanonicalScalarExpressionV1::Divide(left, right) => {
             let (left, right) = pair(left, right)?;
             Ok(CanonicalExecutableExpressionV1::Divide(left, right))
-        }
-        CanonicalScalarExpressionV1::Clamp(value, lower, upper) => {
-            Ok(CanonicalExecutableExpressionV1::Clamp(
-                Box::new(lower_expression(value)?),
-                Box::new(lower_expression(lower)?),
-                Box::new(lower_expression(upper)?),
-            ))
         }
         _ => canonical_scalar_executable_expression(&expression, current, parameters, origin),
     }
@@ -4357,13 +4308,6 @@ fn tick_executable_expression(
             let (left, right) = pair(left, right)?;
             CanonicalExecutableExpressionV1::Divide(left, right)
         }
-        CanonicalTickExpressionV1::Clamp(value, lower, upper) => {
-            CanonicalExecutableExpressionV1::Clamp(
-                Box::new(tick_executable_expression(cst, plan, parts, value)?),
-                Box::new(tick_executable_expression(cst, plan, parts, lower)?),
-                Box::new(tick_executable_expression(cst, plan, parts, upper)?),
-            )
-        }
     })
 }
 
@@ -4472,13 +4416,6 @@ fn relational_scalar_expression(
             let (left, right) = pair(left, right, Some(b"F64"))?;
             CanonicalExecutableExpressionV1::Divide(left, right)
         }
-        CanonicalScalarExpressionV1::Clamp(value, lower, upper) => {
-            CanonicalExecutableExpressionV1::Clamp(
-                Box::new(lower_expression(value, Some(b"F64"))?),
-                Box::new(lower_expression(lower, Some(b"F64"))?),
-                Box::new(lower_expression(upper, Some(b"F64"))?),
-            )
-        }
     })
 }
 
@@ -4501,6 +4438,56 @@ fn relational_checked_handler(
     plan: &CanonicalSourceAllocationPlanV1,
     source: &GeneralHandlerCst,
 ) -> Result<CanonicalExecutableHandlerV1, CanonicalSourceErrorV1> {
+    if !source.scalar_bindings.is_empty() {
+        let mut compiled: Option<CanonicalExecutableHandlerV1> = None;
+        for case in binding_cases(&source.scalar_bindings)? {
+            let mut specialized = source.clone();
+            specialized.scalar_bindings.clear();
+            specialized.predicates = guarded_predicates(&source.predicates, &case);
+            for predicate in &mut specialized.predicates {
+                let (left, right) = match predicate {
+                    CanonicalScalarPredicateV1::Equal(a, b)
+                    | CanonicalScalarPredicateV1::GreaterThan(a, b)
+                    | CanonicalScalarPredicateV1::LessThanOrEqual(a, b) => (a, b),
+                };
+                *left = expand_scalar_law_bindings(
+                    left,
+                    &case.bindings,
+                    &mut BTreeSet::new(),
+                    source.origin,
+                )?;
+                *right = expand_scalar_law_bindings(
+                    right,
+                    &case.bindings,
+                    &mut BTreeSet::new(),
+                    source.origin,
+                )?;
+            }
+            for assignment in specialized
+                .assignments
+                .iter_mut()
+                .chain(&mut specialized.insertions)
+            {
+                assignment.value = expand_scalar_law_bindings(
+                    &assignment.value,
+                    &case.bindings,
+                    &mut BTreeSet::new(),
+                    source.origin,
+                )?;
+            }
+            let mut handler = relational_checked_handler(cst, plan, &specialized)?;
+            for rule in &mut handler.rules {
+                rule.law_origins = case.origins.clone();
+            }
+            match &mut compiled {
+                Some(compiled) => compiled.rules.extend(handler.rules),
+                None => compiled = Some(handler),
+            }
+        }
+        return compiled.ok_or(CanonicalSourceErrorV1::MissingExecutableBinding {
+            origin: source.origin,
+        });
+    }
     let handler_id = formation_id(
         plan,
         &source.producer,
@@ -4805,6 +4792,7 @@ fn relational_checked_handler(
         }
 
         rules.push(CanonicalExecutableRuleV1 {
+            law_origins: vec![],
             predicates,
             required_present: vec![],
             required_absent: vec![],
@@ -4854,6 +4842,7 @@ fn checked_executable_handlers(
             trigger: CanonicalHandlerTriggerV1::External,
             argument_count: 2,
             rules: vec![CanonicalExecutableRuleV1 {
+                law_origins: vec![],
                 predicates: vec![],
                 required_present: vec![],
                 required_absent: vec![],
@@ -4917,6 +4906,7 @@ fn checked_executable_handlers(
             trigger: CanonicalHandlerTriggerV1::External,
             argument_count: 0,
             rules: vec![CanonicalExecutableRuleV1 {
+                law_origins: vec![],
                 predicates: vec![CanonicalExecutablePredicateV1::Equal(
                     CanonicalExecutableExpressionV1::State(grounded),
                     constant_expression(CanonicalScalarValueV1::Boolean(
@@ -4932,83 +4922,88 @@ fn checked_executable_handlers(
     }
     if let Some(parts) = tick {
         for source in parts.handlers {
-            let predicates = source
-                .predicates
-                .iter()
-                .map(|predicate| match predicate {
-                    CanonicalTickPredicateV1::EqualBoolean(value, expected) => {
-                        Ok(CanonicalExecutablePredicateV1::Equal(
-                            tick_state_ref(cst, plan, parts, *value)?,
-                            constant_expression(CanonicalScalarValueV1::Boolean(*expected)),
-                        ))
-                    }
-                    CanonicalTickPredicateV1::EqualState {
-                        subject,
-                        relation,
-                        field,
-                        expected,
-                    } => {
-                        let subject = if subject == b"?player" {
-                            parts.position.subject.as_slice()
-                        } else {
-                            subject.as_slice()
-                        };
-                        Ok(CanonicalExecutablePredicateV1::Equal(
-                            CanonicalExecutableExpressionV1::State(canonical_state_ref(
-                                cst,
-                                plan,
-                                subject,
-                                relation,
-                                field.as_deref(),
-                                source.origin,
-                            )?),
-                            constant_expression(expected.clone()),
-                        ))
-                    }
-                    CanonicalTickPredicateV1::GreaterThan(left, right) => {
-                        Ok(CanonicalExecutablePredicateV1::GreaterThan(
-                            tick_executable_expression(cst, plan, parts, left)?,
-                            tick_executable_expression(cst, plan, parts, right)?,
-                        ))
-                    }
-                    CanonicalTickPredicateV1::LessThanOrEqual(left, right) => {
-                        Ok(CanonicalExecutablePredicateV1::LessThanOrEqual(
-                            tick_executable_expression(cst, plan, parts, left)?,
-                            tick_executable_expression(cst, plan, parts, right)?,
-                        ))
-                    }
-                })
-                .collect::<Result<Vec<_>, CanonicalSourceErrorV1>>()?;
-            let assignments = source
-                .assignments
-                .iter()
-                .map(|assignment| {
-                    let value = match &assignment.value {
-                        CanonicalTickAssignmentValueV1::Number(expression) => {
-                            tick_executable_expression(cst, plan, parts, expression)?
+            let mut rules = Vec::new();
+            for case in &source.cases {
+                let predicates = case
+                    .predicates
+                    .iter()
+                    .map(|predicate| match predicate {
+                        CanonicalTickPredicateV1::EqualBoolean(value, expected) => {
+                            Ok(CanonicalExecutablePredicateV1::Equal(
+                                tick_state_ref(cst, plan, parts, *value)?,
+                                constant_expression(CanonicalScalarValueV1::Boolean(*expected)),
+                            ))
                         }
-                        CanonicalTickAssignmentValueV1::Boolean(value) => {
-                            constant_expression(CanonicalScalarValueV1::Boolean(*value))
+                        CanonicalTickPredicateV1::EqualState {
+                            subject,
+                            relation,
+                            field,
+                            expected,
+                        } => {
+                            let subject = if subject == b"?player" {
+                                parts.position.subject.as_slice()
+                            } else {
+                                subject.as_slice()
+                            };
+                            Ok(CanonicalExecutablePredicateV1::Equal(
+                                CanonicalExecutableExpressionV1::State(canonical_state_ref(
+                                    cst,
+                                    plan,
+                                    subject,
+                                    relation,
+                                    field.as_deref(),
+                                    source.origin,
+                                )?),
+                                constant_expression(expected.clone()),
+                            ))
                         }
-                    };
-                    Ok(CanonicalExecutableAssignmentV1 {
-                        target: tick_assignment_target(cst, plan, parts, assignment.target)?,
-                        value,
+                        CanonicalTickPredicateV1::GreaterThan(left, right) => {
+                            Ok(CanonicalExecutablePredicateV1::GreaterThan(
+                                tick_executable_expression(cst, plan, parts, left)?,
+                                tick_executable_expression(cst, plan, parts, right)?,
+                            ))
+                        }
+                        CanonicalTickPredicateV1::LessThanOrEqual(left, right) => {
+                            Ok(CanonicalExecutablePredicateV1::LessThanOrEqual(
+                                tick_executable_expression(cst, plan, parts, left)?,
+                                tick_executable_expression(cst, plan, parts, right)?,
+                            ))
+                        }
                     })
-                })
-                .collect::<Result<Vec<_>, CanonicalSourceErrorV1>>()?;
-            handlers.push(CanonicalExecutableHandlerV1 {
-                id: handler_id(&source.producer)?,
-                designation: source.designation.clone(),
-                trigger: CanonicalHandlerTriggerV1::FixedTickRoot,
-                argument_count: 1,
-                rules: vec![CanonicalExecutableRuleV1 {
+                    .collect::<Result<Vec<_>, CanonicalSourceErrorV1>>()?;
+                let assignments = case
+                    .assignments
+                    .iter()
+                    .map(|assignment| {
+                        let value = match &assignment.value {
+                            CanonicalTickAssignmentValueV1::Number(expression) => {
+                                tick_executable_expression(cst, plan, parts, expression)?
+                            }
+                            CanonicalTickAssignmentValueV1::Boolean(value) => {
+                                constant_expression(CanonicalScalarValueV1::Boolean(*value))
+                            }
+                        };
+                        Ok(CanonicalExecutableAssignmentV1 {
+                            target: tick_assignment_target(cst, plan, parts, assignment.target)?,
+                            value,
+                        })
+                    })
+                    .collect::<Result<Vec<_>, CanonicalSourceErrorV1>>()?;
+                rules.push(CanonicalExecutableRuleV1 {
+                    law_origins: case.law_origins.clone(),
                     predicates,
                     required_present: vec![],
                     required_absent: vec![],
                     assignments,
                     removals: vec![],
-                }],
+                });
+            }
+            handlers.push(CanonicalExecutableHandlerV1 {
+                id: handler_id(&source.producer)?,
+                designation: source.designation.clone(),
+                trigger: CanonicalHandlerTriggerV1::FixedTickRoot,
+                argument_count: 1,
+                rules,
             });
         }
     }
@@ -5029,6 +5024,7 @@ fn checked_executable_handlers(
                 )
             }));
             rules.push(CanonicalExecutableRuleV1 {
+                law_origins: vec![],
                 predicates,
                 required_present: vec![],
                 required_absent: vec![],
@@ -5040,6 +5036,7 @@ fn checked_executable_handlers(
             });
         }
         rules.push(CanonicalExecutableRuleV1 {
+            law_origins: vec![],
             predicates: vec![],
             required_present: vec![],
             required_absent: vec![],
@@ -5136,6 +5133,7 @@ fn checked_executable_handlers(
                     origin: parts.handler.origin,
                 })?;
             let rule = CanonicalExecutableRuleV1 {
+                law_origins: vec![],
                 predicates,
                 required_present: vec![],
                 required_absent: vec![],
@@ -5204,174 +5202,152 @@ fn checked_executable_handlers(
             source.origin,
             false,
         )?;
-        let scalar_bindings = source
-            .scalar_bindings
-            .iter()
-            .map(|binding| (binding.parameter.clone(), binding.value.clone()))
-            .collect::<BTreeMap<_, _>>();
         let arguments = source
             .arguments
             .iter()
             .map(|argument| (argument.designation.clone(), argument.ordinal))
             .collect::<BTreeMap<_, _>>();
-        if let Some(binding) = source.scalar_bindings.first() {
-            validate_clamp_derivation(cst, binding.origin)?;
-        }
         let mut rules = Vec::with_capacity(solutions.len());
-        for solution in solutions {
-            let GeneralBindingSolution {
-                parameters,
-                entities,
-                selector_equalities,
-            } = solution;
-            let current = parameters.get(&current_parameter).cloned().ok_or(
-                CanonicalSourceErrorV1::MissingExecutableBinding {
-                    origin: source.origin,
-                },
-            )?;
-            let mut required_present = parameters.values().cloned().collect::<Vec<_>>();
-            required_present.extend(
-                source
-                    .required_sources
-                    .iter()
-                    .map(|required| {
-                        general_target_state_ref(cst, plan, required, &entities, source.origin)
-                    })
-                    .collect::<Result<Vec<_>, _>>()?,
-            );
-            required_present.sort();
-            required_present.dedup();
-            let mut optional_insertions = Vec::new();
-            let mut many_insertions = Vec::new();
-            for insertion in &source.insertions {
-                match state_relation_cardinality(cst, plan, &insertion.target, source.origin)? {
-                    SourceCardinality::Maybe => optional_insertions.push(insertion),
-                    SourceCardinality::Many => many_insertions.push(insertion),
-                    _ => {
-                        return Err(CanonicalSourceErrorV1::InvalidGeneralHandler {
-                            origin: source.origin,
-                        });
-                    }
-                }
-            }
-            let mut required_absent = optional_insertions
-                .iter()
-                .map(|insertion| {
-                    general_target_state_ref(cst, plan, &insertion.target, &entities, source.origin)
-                })
-                .collect::<Result<Vec<_>, _>>()?;
-            required_absent.sort();
-            required_absent.dedup();
-            let mut scalar_removals = Vec::new();
-            let mut many_removals = Vec::new();
-            for removal in &source.removals {
-                match state_relation_cardinality(cst, plan, removal, source.origin)? {
-                    SourceCardinality::Maybe => scalar_removals.push(removal),
-                    SourceCardinality::Many => many_removals.push(removal),
-                    _ => {
-                        return Err(CanonicalSourceErrorV1::InvalidGeneralHandler {
-                            origin: source.origin,
-                        });
-                    }
-                }
-            }
-            let mut removals = scalar_removals
-                .iter()
-                .map(|removal| {
-                    general_target_state_ref(cst, plan, removal, &entities, source.origin)
-                })
-                .collect::<Result<Vec<_>, _>>()?;
-            removals.sort();
-            removals.dedup();
-            for binding in &source.scalar_bindings {
-                canonical_general_executable_expression(
-                    &binding.value,
-                    &current,
-                    &parameters,
-                    &arguments,
-                    &scalar_bindings,
-                    binding.origin,
-                )?;
-            }
-            let mut predicates = canonical_general_executable_predicates(
-                &source.predicates,
-                &current,
-                &parameters,
-                &arguments,
-                &scalar_bindings,
-                source.origin,
-            )?;
-            predicates.extend(selector_equalities.into_iter().map(|(selector, expected)| {
-                CanonicalExecutablePredicateV1::Equal(
-                    CanonicalExecutableExpressionV1::State(selector),
-                    constant_expression(CanonicalScalarValueV1::Symbol(expected)),
-                )
-            }));
-            for (parameter, expected) in &selector_parameters {
-                let selector = parameters.get(parameter).cloned().ok_or(
+        for scalar_case in binding_cases(&source.scalar_bindings)? {
+            let scalar_bindings = &scalar_case.bindings;
+            let source_predicates = guarded_predicates(&source.predicates, &scalar_case);
+            for solution in solutions.iter().cloned() {
+                let GeneralBindingSolution {
+                    parameters,
+                    entities,
+                    selector_equalities,
+                } = solution;
+                let current = parameters.get(&current_parameter).cloned().ok_or(
                     CanonicalSourceErrorV1::MissingExecutableBinding {
                         origin: source.origin,
                     },
                 )?;
-                predicates.push(CanonicalExecutablePredicateV1::Equal(
-                    CanonicalExecutableExpressionV1::State(selector),
-                    constant_expression(expected.clone()),
-                ));
-            }
-            predicates.extend(
-                source
-                    .boolean_conditions
+                let mut required_present = parameters.values().cloned().collect::<Vec<_>>();
+                required_present.extend(
+                    source
+                        .required_sources
+                        .iter()
+                        .map(|required| {
+                            general_target_state_ref(cst, plan, required, &entities, source.origin)
+                        })
+                        .collect::<Result<Vec<_>, _>>()?,
+                );
+                required_present.sort();
+                required_present.dedup();
+                let mut optional_insertions = Vec::new();
+                let mut many_insertions = Vec::new();
+                for insertion in &source.insertions {
+                    match state_relation_cardinality(cst, plan, &insertion.target, source.origin)? {
+                        SourceCardinality::Maybe => optional_insertions.push(insertion),
+                        SourceCardinality::Many => many_insertions.push(insertion),
+                        _ => {
+                            return Err(CanonicalSourceErrorV1::InvalidGeneralHandler {
+                                origin: source.origin,
+                            });
+                        }
+                    }
+                }
+                let mut required_absent = optional_insertions
                     .iter()
-                    .map(|condition| {
-                        let (state, expected) =
-                            derived_condition_state_ref(cst, condition, &entities, &derives)?;
-                        Ok(CanonicalExecutablePredicateV1::Equal(
-                            CanonicalExecutableExpressionV1::State(state),
-                            constant_expression(CanonicalScalarValueV1::Boolean(expected)),
-                        ))
-                    })
-                    .collect::<Result<Vec<_>, CanonicalSourceErrorV1>>()?,
-            );
-            for membership in &source.membership_sources {
-                let argument = arguments.get(&membership.parameter).copied().ok_or(
-                    CanonicalSourceErrorV1::InvalidGeneralHandler {
-                        origin: source.origin,
-                    },
-                )?;
-                let state = many_state_ref(cst, plan, membership, &entities, source.origin)?;
-                required_present.push(state.clone());
-                predicates.push(CanonicalExecutablePredicateV1::Contains(
-                    CanonicalExecutableExpressionV1::State(state),
-                    CanonicalExecutableExpressionV1::Argument(argument),
-                ));
-            }
-            required_present.sort();
-            required_present.dedup();
-            let mut assignments = source
-                .assignments
-                .iter()
-                .map(|assignment| {
-                    Ok(CanonicalExecutableAssignmentV1 {
-                        target: general_target_state_ref(
+                    .map(|insertion| {
+                        general_target_state_ref(
                             cst,
                             plan,
-                            &assignment.target,
+                            &insertion.target,
                             &entities,
                             source.origin,
-                        )?,
-                        value: canonical_general_executable_expression(
-                            &assignment.value,
-                            &current,
-                            &parameters,
-                            &arguments,
-                            &scalar_bindings,
-                            source.origin,
-                        )?,
+                        )
                     })
-                })
-                .collect::<Result<Vec<_>, CanonicalSourceErrorV1>>()?;
-            assignments.extend(
-                optional_insertions
+                    .collect::<Result<Vec<_>, _>>()?;
+                required_absent.sort();
+                required_absent.dedup();
+                let mut scalar_removals = Vec::new();
+                let mut many_removals = Vec::new();
+                for removal in &source.removals {
+                    match state_relation_cardinality(cst, plan, removal, source.origin)? {
+                        SourceCardinality::Maybe => scalar_removals.push(removal),
+                        SourceCardinality::Many => many_removals.push(removal),
+                        _ => {
+                            return Err(CanonicalSourceErrorV1::InvalidGeneralHandler {
+                                origin: source.origin,
+                            });
+                        }
+                    }
+                }
+                let mut removals = scalar_removals
+                    .iter()
+                    .map(|removal| {
+                        general_target_state_ref(cst, plan, removal, &entities, source.origin)
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                removals.sort();
+                removals.dedup();
+                for binding in &source.scalar_bindings {
+                    canonical_general_executable_expression(
+                        &scalar_bindings[&binding.parameter],
+                        &current,
+                        &parameters,
+                        &arguments,
+                        &scalar_bindings,
+                        binding.origin,
+                    )?;
+                }
+                let mut predicates = canonical_general_executable_predicates(
+                    &source_predicates,
+                    &current,
+                    &parameters,
+                    &arguments,
+                    &scalar_bindings,
+                    source.origin,
+                )?;
+                predicates.extend(selector_equalities.into_iter().map(|(selector, expected)| {
+                    CanonicalExecutablePredicateV1::Equal(
+                        CanonicalExecutableExpressionV1::State(selector),
+                        constant_expression(CanonicalScalarValueV1::Symbol(expected)),
+                    )
+                }));
+                for (parameter, expected) in &selector_parameters {
+                    let selector = parameters.get(parameter).cloned().ok_or(
+                        CanonicalSourceErrorV1::MissingExecutableBinding {
+                            origin: source.origin,
+                        },
+                    )?;
+                    predicates.push(CanonicalExecutablePredicateV1::Equal(
+                        CanonicalExecutableExpressionV1::State(selector),
+                        constant_expression(expected.clone()),
+                    ));
+                }
+                predicates.extend(
+                    source
+                        .boolean_conditions
+                        .iter()
+                        .map(|condition| {
+                            let (state, expected) =
+                                derived_condition_state_ref(cst, condition, &entities, &derives)?;
+                            Ok(CanonicalExecutablePredicateV1::Equal(
+                                CanonicalExecutableExpressionV1::State(state),
+                                constant_expression(CanonicalScalarValueV1::Boolean(expected)),
+                            ))
+                        })
+                        .collect::<Result<Vec<_>, CanonicalSourceErrorV1>>()?,
+                );
+                for membership in &source.membership_sources {
+                    let argument = arguments.get(&membership.parameter).copied().ok_or(
+                        CanonicalSourceErrorV1::InvalidGeneralHandler {
+                            origin: source.origin,
+                        },
+                    )?;
+                    let state = many_state_ref(cst, plan, membership, &entities, source.origin)?;
+                    required_present.push(state.clone());
+                    predicates.push(CanonicalExecutablePredicateV1::Contains(
+                        CanonicalExecutableExpressionV1::State(state),
+                        CanonicalExecutableExpressionV1::Argument(argument),
+                    ));
+                }
+                required_present.sort();
+                required_present.dedup();
+                let mut assignments = source
+                    .assignments
                     .iter()
                     .map(|assignment| {
                         Ok(CanonicalExecutableAssignmentV1 {
@@ -5392,68 +5368,94 @@ fn checked_executable_handlers(
                             )?,
                         })
                     })
-                    .collect::<Result<Vec<_>, CanonicalSourceErrorV1>>()?,
-            );
-            for insertion in many_insertions {
-                let value = canonical_general_executable_expression(
-                    &insertion.value,
-                    &current,
-                    &parameters,
-                    &arguments,
-                    &scalar_bindings,
-                    source.origin,
-                )?;
-                let state = many_state_ref(cst, plan, &insertion.target, &entities, source.origin)?;
-                if assignments
-                    .iter()
-                    .any(|assignment| assignment.target == state)
-                {
-                    return Err(CanonicalSourceErrorV1::InvalidGeneralHandler {
-                        origin: source.origin,
+                    .collect::<Result<Vec<_>, CanonicalSourceErrorV1>>()?;
+                assignments.extend(
+                    optional_insertions
+                        .iter()
+                        .map(|assignment| {
+                            Ok(CanonicalExecutableAssignmentV1 {
+                                target: general_target_state_ref(
+                                    cst,
+                                    plan,
+                                    &assignment.target,
+                                    &entities,
+                                    source.origin,
+                                )?,
+                                value: canonical_general_executable_expression(
+                                    &assignment.value,
+                                    &current,
+                                    &parameters,
+                                    &arguments,
+                                    &scalar_bindings,
+                                    source.origin,
+                                )?,
+                            })
+                        })
+                        .collect::<Result<Vec<_>, CanonicalSourceErrorV1>>()?,
+                );
+                for insertion in many_insertions {
+                    let value = canonical_general_executable_expression(
+                        &insertion.value,
+                        &current,
+                        &parameters,
+                        &arguments,
+                        &scalar_bindings,
+                        source.origin,
+                    )?;
+                    let state =
+                        many_state_ref(cst, plan, &insertion.target, &entities, source.origin)?;
+                    if assignments
+                        .iter()
+                        .any(|assignment| assignment.target == state)
+                    {
+                        return Err(CanonicalSourceErrorV1::InvalidGeneralHandler {
+                            origin: source.origin,
+                        });
+                    }
+                    required_present.push(state.clone());
+                    assignments.push(CanonicalExecutableAssignmentV1 {
+                        target: state.clone(),
+                        value: CanonicalExecutableExpressionV1::Insert(
+                            Box::new(CanonicalExecutableExpressionV1::State(state)),
+                            Box::new(value),
+                        ),
                     });
                 }
-                required_present.push(state.clone());
-                assignments.push(CanonicalExecutableAssignmentV1 {
-                    target: state.clone(),
-                    value: CanonicalExecutableExpressionV1::Insert(
-                        Box::new(CanonicalExecutableExpressionV1::State(state)),
-                        Box::new(value),
-                    ),
-                });
-            }
-            for removal in many_removals {
-                let argument = arguments.get(&removal.parameter).copied().ok_or(
-                    CanonicalSourceErrorV1::InvalidGeneralHandler {
-                        origin: source.origin,
-                    },
-                )?;
-                let state = many_state_ref(cst, plan, removal, &entities, source.origin)?;
-                if assignments
-                    .iter()
-                    .any(|assignment| assignment.target == state)
-                {
-                    return Err(CanonicalSourceErrorV1::InvalidGeneralHandler {
-                        origin: source.origin,
+                for removal in many_removals {
+                    let argument = arguments.get(&removal.parameter).copied().ok_or(
+                        CanonicalSourceErrorV1::InvalidGeneralHandler {
+                            origin: source.origin,
+                        },
+                    )?;
+                    let state = many_state_ref(cst, plan, removal, &entities, source.origin)?;
+                    if assignments
+                        .iter()
+                        .any(|assignment| assignment.target == state)
+                    {
+                        return Err(CanonicalSourceErrorV1::InvalidGeneralHandler {
+                            origin: source.origin,
+                        });
+                    }
+                    required_present.push(state.clone());
+                    assignments.push(CanonicalExecutableAssignmentV1 {
+                        target: state.clone(),
+                        value: CanonicalExecutableExpressionV1::Remove(
+                            Box::new(CanonicalExecutableExpressionV1::State(state)),
+                            Box::new(CanonicalExecutableExpressionV1::Argument(argument)),
+                        ),
                     });
                 }
-                required_present.push(state.clone());
-                assignments.push(CanonicalExecutableAssignmentV1 {
-                    target: state.clone(),
-                    value: CanonicalExecutableExpressionV1::Remove(
-                        Box::new(CanonicalExecutableExpressionV1::State(state)),
-                        Box::new(CanonicalExecutableExpressionV1::Argument(argument)),
-                    ),
+                required_present.sort();
+                required_present.dedup();
+                rules.push(CanonicalExecutableRuleV1 {
+                    law_origins: scalar_case.origins.clone(),
+                    predicates,
+                    required_present,
+                    required_absent,
+                    assignments,
+                    removals,
                 });
             }
-            required_present.sort();
-            required_present.dedup();
-            rules.push(CanonicalExecutableRuleV1 {
-                predicates,
-                required_present,
-                required_absent,
-                assignments,
-                removals,
-            });
         }
         handlers.push(CanonicalExecutableHandlerV1 {
             id: handler_id(&source.producer)?,
@@ -5728,21 +5730,27 @@ fn checked_canonical_source_execution_v1(
             parts.minimum_z.origin,
             parts.maximum_z.origin,
         ],
-        clamp_law_origins: parts.laws.map(|law| law.origin),
-        derive_origins: parts.derives.map(|derive| derive.origin),
+        law_origins: cst
+            .items
+            .iter()
+            .filter_map(|item| match &item.kind {
+                CstKind::ScalarLaw(law) => Some(law.origin),
+                _ => None,
+            })
+            .collect(),
+        derive_origins: cst
+            .items
+            .iter()
+            .filter_map(|item| match &item.kind {
+                CstKind::ScalarDerive(derive) => Some(derive.origin),
+                _ => None,
+            })
+            .collect(),
         rules: parts
             .handlers
-            .map(|handler| CanonicalTickRuleV1 {
-                handler_origin: handler.origin,
-                include_origins: handler
-                    .includes
-                    .iter()
-                    .map(|include| include.origin)
-                    .collect(),
-                predicates: handler.predicates.clone(),
-                assignments: handler.assignments.clone(),
-            })
-            .into(),
+            .iter()
+            .flat_map(|handler| handler.cases.clone())
+            .collect(),
     });
     Ok(CheckedCanonicalSourceExecutionV1 {
         state_cells,
@@ -6271,7 +6279,7 @@ pub fn elaborate_canonical_source_package_v1(
                     ));
                 }
             }
-            CstKind::ClampLaw(law) => {
+            CstKind::ScalarLaw(law) => {
                 let producer =
                     semantic_producer(CanonicalSourceProductionV1::Law, &law.designation);
                 let slot = head_slot(CanonicalSourceProductionV1::Law);
@@ -6280,13 +6288,13 @@ pub fn elaborate_canonical_source_package_v1(
                     scope,
                     id,
                     cst.source_slice(law.origin)
-                        .expect("owned clamp law origin"),
+                        .expect("owned scalar law origin"),
                     law.origin,
-                    "clamp-law",
+                    "scalar-law",
                 )?);
                 emissions.push(emission(plan, producer, slot, law.origin));
             }
-            CstKind::ClampDerive(derive) => {
+            CstKind::ScalarDerive(derive) => {
                 let producer =
                     semantic_producer(CanonicalSourceProductionV1::Derive, &derive.designation);
                 let slot = head_slot(CanonicalSourceProductionV1::Derive);
@@ -6295,9 +6303,9 @@ pub fn elaborate_canonical_source_package_v1(
                     scope,
                     id,
                     cst.source_slice(derive.origin)
-                        .expect("owned clamp derive origin"),
+                        .expect("owned scalar derive origin"),
                     derive.origin,
-                    "clamp-derive",
+                    "scalar-derive",
                 )?);
                 emissions.push(emission(plan, producer, slot, derive.origin));
             }
@@ -6769,6 +6777,7 @@ fn parse_item(
     artifact: CanonicalSourceArtifactIdV1,
     block: &[SourceLine<'_>],
     origin: CanonicalSourceOriginV1,
+    scalar_laws: &ScalarLawEnvironment,
 ) -> Result<CstItem, CanonicalSourceErrorV1> {
     let head = block[0].text;
     if let Some(designation) = head.strip_prefix("capability ") {
@@ -6849,10 +6858,15 @@ fn parse_item(
         });
     }
     if head.starts_with("law ") {
-        if let Some(law) = parse_clamp_law(block, origin) {
+        if let Some(law) = scalar_laws
+            .laws
+            .iter()
+            .find(|law| law.origin == origin)
+            .cloned()
+        {
             return Ok(CstItem {
                 origin,
-                kind: CstKind::ClampLaw(law),
+                kind: CstKind::ScalarLaw(law),
             });
         }
         if let Some(law) = parse_boolean_law(artifact, block, origin)? {
@@ -6871,10 +6885,15 @@ fn parse_item(
     }
     if head.starts_with("derive ") {
         require_leaf(block, artifact)?;
-        if let Some(derive) = parse_clamp_derive(head, origin) {
+        if let Some(derive) = scalar_laws
+            .derives
+            .iter()
+            .find(|derive| derive.origin == origin)
+            .cloned()
+        {
             return Ok(CstItem {
                 origin,
-                kind: CstKind::ClampDerive(derive),
+                kind: CstKind::ScalarDerive(derive),
             });
         }
         if let Some(designation) = head.strip_prefix("derive ") {
@@ -6907,19 +6926,19 @@ fn parse_item(
                 kind: CstKind::JumpHandler(handler),
             });
         }
-        if let Some(handler) = parse_tick_handler(artifact, block, origin)? {
+        if let Some(handler) = parse_tick_handler(artifact, block, origin, scalar_laws)? {
             return Ok(CstItem {
                 origin,
                 kind: CstKind::TickHandler(handler),
             });
         }
-        if let Some(handler) = parse_scalar_handler(artifact, block, origin)? {
+        if let Some(handler) = parse_scalar_handler(artifact, block, origin, scalar_laws)? {
             return Ok(CstItem {
                 origin,
                 kind: CstKind::ScalarHandler(handler),
             });
         }
-        if let Some(handler) = parse_general_handler(artifact, block, origin)? {
+        if let Some(handler) = parse_general_handler(artifact, block, origin, scalar_laws)? {
             return Ok(CstItem {
                 origin,
                 kind: CstKind::GeneralHandler(handler),
@@ -7021,9 +7040,10 @@ fn parse_items(
     artifact: CanonicalSourceArtifactIdV1,
     block: &[SourceLine<'_>],
     origin: CanonicalSourceOriginV1,
+    scalar_laws: &ScalarLawEnvironment,
 ) -> Result<Vec<CstItem>, CanonicalSourceErrorV1> {
     let Some(focus) = parse_subject_focus(artifact, block, origin)? else {
-        return parse_item(artifact, block, origin).map(|item| vec![item]);
+        return parse_item(artifact, block, origin, scalar_laws).map(|item| vec![item]);
     };
 
     let head = block[0];
@@ -7049,141 +7069,109 @@ fn parse_denotation(
     origin: CanonicalSourceOriginV1,
 ) -> Result<Option<DenotationCst>, CanonicalSourceErrorV1> {
     let head = block[0];
-    if let Some((name, source)) = head.text.split_once(": ")
-        && !name.is_empty()
-        && !name.contains(char::is_whitespace)
-    {
-        if block
-            .iter()
-            .skip(1)
-            .any(|line| !line.text.trim().is_empty())
-        {
-            return Err(CanonicalSourceErrorV1::InvalidDenotation { origin });
-        }
-        let name = denotation_designation_bytes(name, origin)?;
-        let delimiter = head
-            .text
-            .find(": ")
-            .expect("a scalar denotation has one canonical delimiter");
-        let value_start = head
-            .start
-            .checked_add(delimiter)
-            .and_then(|offset| offset.checked_add(2))
-            .ok_or(CanonicalSourceErrorV1::InvalidDenotation { origin })?;
-        let value_origin = CanonicalSourceOriginV1 {
-            artifact,
-            start: value_start as u64,
-            end: head.end as u64,
-        };
-        if let Some((values, emissions)) =
-            parse_ordered_product_values(artifact, &name, source, value_start, value_origin)?
-        {
-            return Ok(Some(DenotationCst {
-                emissions,
-                name,
-                value: CanonicalSourceDenotedValueV1::OrderedProduct(values),
-            }));
-        }
-        let value = parse_application_object(source, value_origin).map_err(|_| {
-            CanonicalSourceErrorV1::InvalidDenotation {
-                origin: value_origin,
-            }
-        })?;
-        return Ok(Some(DenotationCst {
-            emissions: vec![denotation_emission(&name, &value, None, value_origin)],
-            name,
-            value: CanonicalSourceDenotedValueV1::Scalar(value),
-        }));
-    }
-    if head.text.ends_with(':') {
-        return Err(CanonicalSourceErrorV1::InvalidDenotation { origin });
-    }
-    if head.text.contains(char::is_whitespace) {
+    let Some((name, source)) = head.text.split_once(':') else {
+        return Ok(None);
+    };
+    if name.trim().is_empty() || name.trim().contains(char::is_whitespace) {
         return Ok(None);
     }
-    let children = block
+    if block
         .iter()
         .skip(1)
-        .filter(|line| !line.text.trim().is_empty())
-        .copied()
-        .collect::<Vec<_>>();
-    let [line] = children.as_slice() else {
-        return Ok(None);
-    };
-    if line.indent != 2 {
-        return Ok(None);
+        .any(|line| !line.text.trim().is_empty())
+    {
+        return Err(CanonicalSourceErrorV1::InvalidDenotation { origin });
     }
-    let source = line
-        .text
-        .get(line.indent..)
-        .ok_or(CanonicalSourceErrorV1::InvalidDenotation { origin })?;
-    let source_origin = line_origin(artifact, *line);
-    if ordered_product_members(source, source_origin)?.is_none() {
-        return Ok(None);
-    }
-    let name = denotation_designation_bytes(head.text, origin)?;
-    let source_start = line
-        .start
-        .checked_add(line.indent)
-        .ok_or(CanonicalSourceErrorV1::InvalidDenotation { origin })?;
-    let Some((values, emissions)) =
-        parse_ordered_product_values(artifact, &name, source, source_start, source_origin)?
-    else {
-        unreachable!("the ordered-product delimiter was already observed");
+    let name = denotation_designation_bytes(name.trim(), origin)?;
+    let offset = head.text.len() - source.len() + source.len() - source.trim_start().len();
+    let value_origin = CanonicalSourceOriginV1 {
+        artifact,
+        start: (head.start + offset) as u64,
+        end: (head.start + head.text.trim_end().len()) as u64,
     };
+    let mut emissions = Vec::new();
+    let value = parse_denoted_value(
+        &name,
+        source.trim(),
+        value_origin,
+        &mut Vec::new(),
+        &mut emissions,
+        0,
+    )?;
     Ok(Some(DenotationCst {
         name,
-        value: CanonicalSourceDenotedValueV1::OrderedProduct(values),
+        value,
         emissions,
     }))
 }
 
-fn parse_ordered_product_values(
-    artifact: CanonicalSourceArtifactIdV1,
+fn parse_denoted_value(
     name: &[u8],
     source: &str,
-    source_start: usize,
     origin: CanonicalSourceOriginV1,
-) -> Result<
-    Option<(Vec<CanonicalScalarValueV1>, Vec<CanonicalSourceEmissionV1>)>,
-    CanonicalSourceErrorV1,
-> {
-    let Some(members) = ordered_product_members(source, origin)? else {
-        return Ok(None);
-    };
-    let mut values = Vec::with_capacity(members.len());
-    let mut emissions = Vec::with_capacity(members.len());
-    for (position, (start, end)) in members.into_iter().enumerate() {
-        let member_source = source
-            .get(start..end)
-            .ok_or(CanonicalSourceErrorV1::InvalidDenotation { origin })?;
-        let member_origin = CanonicalSourceOriginV1 {
-            artifact,
-            start: source_start
-                .checked_add(start)
-                .ok_or(CanonicalSourceErrorV1::InvalidDenotation { origin })?
-                as u64,
-            end: source_start
-                .checked_add(end)
-                .ok_or(CanonicalSourceErrorV1::InvalidDenotation { origin })?
-                as u64,
-        };
-        let value = parse_application_object(member_source, member_origin).map_err(|_| {
-            CanonicalSourceErrorV1::InvalidDenotation {
-                origin: member_origin,
-            }
-        })?;
-        let position = u64::try_from(position)
-            .map_err(|_| CanonicalSourceErrorV1::InvalidDenotation { origin })?;
-        emissions.push(denotation_emission(
-            name,
-            &value,
-            Some(position),
-            member_origin,
-        ));
-        values.push(value);
+    path: &mut Vec<u64>,
+    emissions: &mut Vec<CanonicalSourceEmissionV1>,
+    depth: usize,
+) -> Result<CanonicalSourceDenotedValueV1, CanonicalSourceErrorV1> {
+    if depth >= 128 {
+        return Err(CanonicalSourceErrorV1::InvalidDenotation { origin });
     }
-    Ok(Some((values, emissions)))
+    if let Some(members) = ordered_product_members(source, origin)? {
+        let mut values = Vec::new();
+        for (position, (start, end)) in members.into_iter().enumerate() {
+            path.push(position as u64);
+            values.push(parse_denoted_value(
+                name,
+                &source[start..end],
+                CanonicalSourceOriginV1 {
+                    artifact: origin.artifact,
+                    start: origin.start + start as u64,
+                    end: origin.start + end as u64,
+                },
+                path,
+                emissions,
+                depth + 1,
+            )?);
+            path.pop();
+        }
+        return Ok(CanonicalSourceDenotedValueV1::OrderedProduct(values));
+    }
+    if source.starts_with('(') && source.ends_with(')') {
+        let inner = &source[1..source.len() - 1];
+        let start = 1 + inner.len() - inner.trim_start().len();
+        let end = 1 + inner.trim_end().len();
+        if start >= end {
+            return Err(CanonicalSourceErrorV1::InvalidDenotation { origin });
+        }
+        // Grouping changes neither product positions nor scalar identity.
+        return parse_denoted_value(
+            name,
+            &source[start..end],
+            CanonicalSourceOriginV1 {
+                artifact: origin.artifact,
+                start: origin.start + start as u64,
+                end: origin.start + end as u64,
+            },
+            path,
+            emissions,
+            depth + 1,
+        );
+    }
+    let value = parse_application_object(source, origin)
+        .map_err(|_| CanonicalSourceErrorV1::InvalidDenotation { origin })?;
+    let mut semantic = Vec::new();
+    semantic.extend_from_slice(&(path.len() as u64).to_be_bytes());
+    for position in path.iter() {
+        semantic.extend_from_slice(&position.to_be_bytes());
+    }
+    append_scalar_semantic_bytes(&mut semantic, &value);
+    emissions.push(CanonicalSourceEmissionV1 {
+        producer: assertion_producer(name, b":"),
+        slot: child_slot(CanonicalSourceProductionV1::Assertion, &semantic),
+        origin,
+        allocations: vec![],
+    });
+    Ok(CanonicalSourceDenotedValueV1::Scalar(value))
 }
 
 fn ordered_product_members(
@@ -7193,6 +7181,7 @@ fn ordered_product_members(
     let mut starts = vec![0];
     let mut in_text = false;
     let mut escaped = false;
+    let mut delimiters = Vec::new();
     for (offset, character) in source.char_indices() {
         if in_text {
             if escaped {
@@ -7204,15 +7193,26 @@ fn ordered_product_members(
             }
         } else if character == '"' {
             in_text = true;
-        } else if character == ',' {
+        } else if matches!(character, '(' | '[' | '{') {
+            delimiters.push(character);
+        } else if matches!(character, ')' | ']' | '}') {
+            let expected = match character {
+                ')' => '(',
+                ']' => '[',
+                _ => '{',
+            };
+            if delimiters.pop() != Some(expected) {
+                return Err(CanonicalSourceErrorV1::InvalidDenotation { origin });
+            }
+        } else if character == ',' && delimiters.is_empty() {
             starts.push(offset + character.len_utf8());
         }
     }
+    if in_text || escaped || !delimiters.is_empty() {
+        return Err(CanonicalSourceErrorV1::InvalidDenotation { origin });
+    }
     if starts.len() == 1 {
         return Ok(None);
-    }
-    if in_text || escaped {
-        return Err(CanonicalSourceErrorV1::InvalidDenotation { origin });
     }
     let mut members = Vec::with_capacity(starts.len());
     for (position, start) in starts.iter().copied().enumerate() {
@@ -7374,7 +7374,8 @@ fn parse_focused_edge(
             kind: CstKind::Application(application),
         });
     }
-    if edge.contains(':') || edge.contains('∈') {
+    if edge.contains(':') || edge.contains('∈') || ordered_product_members(edge, origin)?.is_some()
+    {
         return Err(CanonicalSourceErrorV1::InvalidApplication { origin });
     }
     let subject =
@@ -7783,6 +7784,7 @@ fn parse_scalar_handler(
     artifact: CanonicalSourceArtifactIdV1,
     block: &[SourceLine<'_>],
     origin: CanonicalSourceOriginV1,
+    scalar_laws: &ScalarLawEnvironment,
 ) -> Result<Option<ScalarHandlerCst>, CanonicalSourceErrorV1> {
     let Some(header) = block[0].text.strip_prefix("on ") else {
         return Ok(None);
@@ -7919,7 +7921,7 @@ fn parse_scalar_handler(
             predicates.push(predicate);
             continue;
         }
-        if parse_scalar_law_binding(condition, condition_origin).is_some() {
+        if scalar_laws.binding(condition, condition_origin)?.is_some() {
             return Ok(None);
         }
         if let Some(parameters) = parse_scalar_parameter_declaration(condition, subject) {
@@ -7986,6 +7988,7 @@ fn parse_general_handler(
     artifact: CanonicalSourceArtifactIdV1,
     block: &[SourceLine<'_>],
     origin: CanonicalSourceOriginV1,
+    scalar_laws: &ScalarLawEnvironment,
 ) -> Result<Option<GeneralHandlerCst>, CanonicalSourceErrorV1> {
     let Some(header) = block[0].text.strip_prefix("on ") else {
         return Ok(None);
@@ -8134,7 +8137,7 @@ fn parse_general_handler(
             boolean_conditions.push(condition);
             continue;
         }
-        if let Some(binding) = parse_scalar_law_binding(condition, *condition_origin) {
+        if let Some(binding) = scalar_laws.binding(condition, *condition_origin)? {
             if seen_arguments.contains(&binding.parameter)
                 || parameter_sources.contains_key(&binding.parameter)
                 || scalar_bindings
@@ -8285,7 +8288,12 @@ fn parse_general_handler(
         collect_scalar_expression_parameters(&insertion.value, &mut used_parameters);
     }
     for binding in scalar_bindings.values() {
-        collect_scalar_expression_parameters(&binding.value, &mut used_parameters);
+        for case in &binding.cases {
+            collect_scalar_expression_parameters(&case.value, &mut used_parameters);
+            for predicate in &case.predicates {
+                collect_predicate_parameters(predicate, &mut used_parameters);
+            }
+        }
     }
     if used_parameters.iter().any(|parameter| {
         !parameter_sources.contains_key(parameter)
@@ -8382,27 +8390,6 @@ fn split_general_scalar_insertion(
         }
     }
     None
-}
-
-fn parse_scalar_law_binding(
-    source: &str,
-    origin: CanonicalSourceOriginV1,
-) -> Option<ScalarLawBindingCst> {
-    let (value, rest) = source.split_once(" clamped between ")?;
-    let (lower, rest) = rest.split_once(" and ")?;
-    let (upper, parameter) = rest.split_once(" as ")?;
-    if !parameter.starts_with('?') || parameter.split_whitespace().count() != 1 {
-        return None;
-    }
-    Some(ScalarLawBindingCst {
-        origin,
-        parameter: parameter.as_bytes().to_vec(),
-        value: CanonicalScalarExpressionV1::Clamp(
-            Box::new(parse_scalar_expression(value, "")?),
-            Box::new(parse_scalar_expression(lower, "")?),
-            Box::new(parse_scalar_expression(upper, "")?),
-        ),
-    })
 }
 
 fn parse_general_state_declaration(
@@ -8851,11 +8838,6 @@ fn collect_scalar_expression_parameters(
             collect_scalar_expression_parameters(left, parameters);
             collect_scalar_expression_parameters(right, parameters);
         }
-        CanonicalScalarExpressionV1::Clamp(value, lower, upper) => {
-            collect_scalar_expression_parameters(value, parameters);
-            collect_scalar_expression_parameters(lower, parameters);
-            collect_scalar_expression_parameters(upper, parameters);
-        }
         CanonicalScalarExpressionV1::Current
         | CanonicalScalarExpressionV1::Number(_)
         | CanonicalScalarExpressionV1::Boolean(_)
@@ -9046,119 +9028,11 @@ fn parse_law_state_declaration(source: &str) -> Option<Vec<ScalarParameterSource
     }])
 }
 
-fn parse_clamp_law(
-    block: &[SourceLine<'_>],
-    origin: CanonicalSourceOriginV1,
-) -> Option<ClampLawCst> {
-    let lines = block
-        .iter()
-        .filter(|line| !line.text.trim().is_empty())
-        .map(|line| line.text.trim())
-        .collect::<Vec<_>>();
-    let (designation, branch, expected): (&str, ClampBranchV1, &[&str]) = match lines.first()? {
-        &"law clamp-lower" => (
-            "clamp-lower",
-            ClampBranchV1::Lower,
-            &[
-                "law clamp-lower",
-                "if",
-                "?lower <= ?upper",
-                "?value < ?lower",
-                "then",
-                "?value clamped between ?lower and ?upper as ?lower",
-            ],
-        ),
-        &"law clamp-interior" => (
-            "clamp-interior",
-            ClampBranchV1::Interior,
-            &[
-                "law clamp-interior",
-                "if",
-                "?lower <= ?value",
-                "?value <= ?upper",
-                "then",
-                "?value clamped between ?lower and ?upper as ?value",
-            ],
-        ),
-        &"law clamp-upper" => (
-            "clamp-upper",
-            ClampBranchV1::Upper,
-            &[
-                "law clamp-upper",
-                "if",
-                "?lower <= ?upper",
-                "?value > ?upper",
-                "then",
-                "?value clamped between ?lower and ?upper as ?upper",
-            ],
-        ),
-        _ => return None,
-    };
-    (lines == expected).then(|| ClampLawCst {
-        origin,
-        designation: designation.as_bytes().to_vec(),
-        branch,
-    })
-}
-
-fn parse_clamp_derive(head: &str, origin: CanonicalSourceOriginV1) -> Option<ClampDeriveCst> {
-    let (designation, branch) = match head {
-        "derive clamp-lower" => (b"clamp-lower".as_slice(), ClampBranchV1::Lower),
-        "derive clamp-interior" => (b"clamp-interior".as_slice(), ClampBranchV1::Interior),
-        "derive clamp-upper" => (b"clamp-upper".as_slice(), ClampBranchV1::Upper),
-        _ => return None,
-    };
-    Some(ClampDeriveCst {
-        origin,
-        designation: designation.to_vec(),
-        branch,
-    })
-}
-
-fn validate_clamp_derivation(
-    cst: &CanonicalSourceCstV1,
-    origin: CanonicalSourceOriginV1,
-) -> Result<(), CanonicalSourceErrorV1> {
-    let mut laws = cst
-        .items
-        .iter()
-        .filter_map(|item| match &item.kind {
-            CstKind::ClampLaw(law) => Some(law),
-            _ => None,
-        })
-        .collect::<Vec<_>>();
-    let mut derives = cst
-        .items
-        .iter()
-        .filter_map(|item| match &item.kind {
-            CstKind::ClampDerive(derive) => Some(derive),
-            _ => None,
-        })
-        .collect::<Vec<_>>();
-    laws.sort_by_key(|law| law.branch);
-    derives.sort_by_key(|derive| derive.branch);
-    if laws.iter().map(|law| law.branch).ne([
-        ClampBranchV1::Lower,
-        ClampBranchV1::Interior,
-        ClampBranchV1::Upper,
-    ]) || derives.iter().map(|derive| derive.branch).ne([
-        ClampBranchV1::Lower,
-        ClampBranchV1::Interior,
-        ClampBranchV1::Upper,
-    ]) || laws
-        .iter()
-        .map(|law| law.designation.as_slice())
-        .ne(derives.iter().map(|derive| derive.designation.as_slice()))
-    {
-        return Err(CanonicalSourceErrorV1::MissingExecutableBinding { origin });
-    }
-    Ok(())
-}
-
 fn parse_tick_handler(
     artifact: CanonicalSourceArtifactIdV1,
     block: &[SourceLine<'_>],
     origin: CanonicalSourceOriginV1,
+    scalar_laws: &ScalarLawEnvironment,
 ) -> Result<Option<TickHandlerCst>, CanonicalSourceErrorV1> {
     if block[0].text != "on tick ?player ?dt" {
         return Ok(None);
@@ -9287,93 +9161,150 @@ fn parse_tick_handler(
     if !constants_match || constants.len() != expected_constants.len() {
         return Err(CanonicalSourceErrorV1::InvalidTickProfile { origin });
     }
-    let clamp_start = if grounded_branch { 11 } else { 12 };
-    let mut derived = BTreeMap::new();
-    for line in &when[clamp_start..clamp_start + 2] {
-        let (name, expression) = parse_tick_clamp_binding(line.0, &derived)
-            .ok_or(CanonicalSourceErrorV1::InvalidTickProfile { origin: line.1 })?;
-        derived.insert(name, expression);
-    }
-    if !derived.contains_key("?next-x") || !derived.contains_key("?next-z") {
-        return Err(CanonicalSourceErrorV1::InvalidTickProfile { origin });
-    }
+    let binding_start = if grounded_branch { 11 } else { 12 };
+    let bindings = when[binding_start..binding_start + 2]
+        .iter()
+        .map(|line| {
+            scalar_laws
+                .binding(line.0, line.1)?
+                .ok_or(CanonicalSourceErrorV1::InvalidTickProfile { origin: line.1 })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut cases = Vec::new();
+    for case in binding_cases(&bindings)? {
+        let derived = case
+            .bindings
+            .iter()
+            .map(|(name, expression)| {
+                let expression = expand_scalar_law_bindings(
+                    expression,
+                    &case.bindings,
+                    &mut BTreeSet::new(),
+                    origin,
+                )?;
+                Ok((
+                    String::from_utf8(name.clone()).expect("source binder UTF-8"),
+                    scalar_tick_expression(&expression, origin)?,
+                ))
+            })
+            .collect::<Result<BTreeMap<_, _>, CanonicalSourceErrorV1>>()?;
+        if !derived.contains_key("?next-x") || !derived.contains_key("?next-z") {
+            return Err(CanonicalSourceErrorV1::InvalidTickProfile { origin });
+        }
 
-    let mut predicates = vec![
-        parse_tick_comparison(when[0].0, &derived)
-            .ok_or(CanonicalSourceErrorV1::InvalidTickProfile { origin: when[0].1 })?,
-    ];
-    predicates.extend(state_guards);
-    predicates.push(CanonicalTickPredicateV1::EqualBoolean(
-        CanonicalTickValueV1::Grounded,
-        grounded,
-    ));
-    if !grounded_branch {
-        predicates.push(
-            parse_tick_comparison(when[14].0, &derived)
-                .ok_or(CanonicalSourceErrorV1::InvalidTickProfile { origin: when[14].1 })?,
-        );
-    }
-    if withdraw.get(0).map(|entry| entry.0) != Some(expected_position)
-        || withdraw.get(1).map(|entry| entry.0) != Some(expected_velocity)
-        || (landing_branch
-            && withdraw.get(2).map(|entry| entry.0) != Some("?player grounded false"))
-    {
-        return Err(CanonicalSourceErrorV1::InvalidTickProfile { origin });
-    }
+        let mut predicates = vec![
+            parse_tick_comparison(when[0].0, &derived)
+                .ok_or(CanonicalSourceErrorV1::InvalidTickProfile { origin: when[0].1 })?,
+        ];
+        predicates.extend(state_guards.clone());
+        for predicate in &case.predicates {
+            let convert = |expression: &CanonicalScalarExpressionV1| {
+                let expression = expand_scalar_law_bindings(
+                    expression,
+                    &case.bindings,
+                    &mut BTreeSet::new(),
+                    origin,
+                )?;
+                scalar_tick_expression(&expression, origin)
+            };
+            match predicate {
+                CanonicalScalarPredicateV1::Equal(a, b) => {
+                    predicates.push(CanonicalTickPredicateV1::LessThanOrEqual(
+                        convert(a)?,
+                        convert(b)?,
+                    ));
+                    predicates.push(CanonicalTickPredicateV1::LessThanOrEqual(
+                        convert(b)?,
+                        convert(a)?,
+                    ));
+                }
+                CanonicalScalarPredicateV1::GreaterThan(a, b) => predicates.push(
+                    CanonicalTickPredicateV1::GreaterThan(convert(a)?, convert(b)?),
+                ),
+                CanonicalScalarPredicateV1::LessThanOrEqual(a, b) => predicates.push(
+                    CanonicalTickPredicateV1::LessThanOrEqual(convert(a)?, convert(b)?),
+                ),
+            }
+        }
+        predicates.push(CanonicalTickPredicateV1::EqualBoolean(
+            CanonicalTickValueV1::Grounded,
+            grounded,
+        ));
+        if !grounded_branch {
+            predicates.push(
+                parse_tick_comparison(when[14].0, &derived)
+                    .ok_or(CanonicalSourceErrorV1::InvalidTickProfile { origin: when[14].1 })?,
+            );
+        }
+        if withdraw.get(0).map(|entry| entry.0) != Some(expected_position)
+            || withdraw.get(1).map(|entry| entry.0) != Some(expected_velocity)
+            || (landing_branch
+                && withdraw.get(2).map(|entry| entry.0) != Some("?player grounded false"))
+        {
+            return Err(CanonicalSourceErrorV1::InvalidTickProfile { origin });
+        }
 
-    let mut assignments = Vec::new();
-    let (position_prefix, position_vector) = include
-        .first()
-        .and_then(|entry| split_vector_subject(entry.0))
-        .ok_or(CanonicalSourceErrorV1::InvalidTickProfile { origin })?;
-    let (velocity_prefix, velocity_vector) = include
-        .get(1)
-        .and_then(|entry| split_vector_subject(entry.0))
-        .ok_or(CanonicalSourceErrorV1::InvalidTickProfile { origin })?;
-    if position_prefix != "?player position" || velocity_prefix != "?player velocity" {
-        return Err(CanonicalSourceErrorV1::InvalidTickProfile { origin });
-    }
-    for (target, source) in parse_vec3_components(position_vector)
-        .ok_or(CanonicalSourceErrorV1::InvalidTickProfile { origin })?
-        .into_iter()
-        .enumerate()
-    {
-        assignments.push(CanonicalTickAssignmentV1 {
-            target: CanonicalTickAssignmentTargetV1::PositionComponent(target as u8),
-            value: CanonicalTickAssignmentValueV1::Number(
-                parse_tick_expression(source, &derived).ok_or(
-                    CanonicalSourceErrorV1::InvalidTickProfile {
-                        origin: include[0].1,
-                    },
-                )?,
-            ),
-        });
-    }
-    for (target, source) in parse_vec3_components(velocity_vector)
-        .ok_or(CanonicalSourceErrorV1::InvalidTickProfile { origin })?
-        .into_iter()
-        .enumerate()
-    {
-        assignments.push(CanonicalTickAssignmentV1 {
-            target: CanonicalTickAssignmentTargetV1::VelocityComponent(target as u8),
-            value: CanonicalTickAssignmentValueV1::Number(
-                parse_tick_expression(source, &derived).ok_or(
-                    CanonicalSourceErrorV1::InvalidTickProfile {
-                        origin: include[1].1,
-                    },
-                )?,
-            ),
-        });
-    }
-    if landing_branch {
-        if include[2].0 != "?player grounded true" {
-            return Err(CanonicalSourceErrorV1::InvalidTickProfile {
-                origin: include[2].1,
+        let mut assignments = Vec::new();
+        let (position_prefix, position_vector) = include
+            .first()
+            .and_then(|entry| split_vector_subject(entry.0))
+            .ok_or(CanonicalSourceErrorV1::InvalidTickProfile { origin })?;
+        let (velocity_prefix, velocity_vector) = include
+            .get(1)
+            .and_then(|entry| split_vector_subject(entry.0))
+            .ok_or(CanonicalSourceErrorV1::InvalidTickProfile { origin })?;
+        if position_prefix != "?player position" || velocity_prefix != "?player velocity" {
+            return Err(CanonicalSourceErrorV1::InvalidTickProfile { origin });
+        }
+        for (target, source) in parse_vec3_components(position_vector)
+            .ok_or(CanonicalSourceErrorV1::InvalidTickProfile { origin })?
+            .into_iter()
+            .enumerate()
+        {
+            assignments.push(CanonicalTickAssignmentV1 {
+                target: CanonicalTickAssignmentTargetV1::PositionComponent(target as u8),
+                value: CanonicalTickAssignmentValueV1::Number(
+                    parse_tick_expression(source, &derived).ok_or(
+                        CanonicalSourceErrorV1::InvalidTickProfile {
+                            origin: include[0].1,
+                        },
+                    )?,
+                ),
             });
         }
-        assignments.push(CanonicalTickAssignmentV1 {
-            target: CanonicalTickAssignmentTargetV1::Grounded,
-            value: CanonicalTickAssignmentValueV1::Boolean(true),
+        for (target, source) in parse_vec3_components(velocity_vector)
+            .ok_or(CanonicalSourceErrorV1::InvalidTickProfile { origin })?
+            .into_iter()
+            .enumerate()
+        {
+            assignments.push(CanonicalTickAssignmentV1 {
+                target: CanonicalTickAssignmentTargetV1::VelocityComponent(target as u8),
+                value: CanonicalTickAssignmentValueV1::Number(
+                    parse_tick_expression(source, &derived).ok_or(
+                        CanonicalSourceErrorV1::InvalidTickProfile {
+                            origin: include[1].1,
+                        },
+                    )?,
+                ),
+            });
+        }
+        if landing_branch {
+            if include[2].0 != "?player grounded true" {
+                return Err(CanonicalSourceErrorV1::InvalidTickProfile {
+                    origin: include[2].1,
+                });
+            }
+            assignments.push(CanonicalTickAssignmentV1 {
+                target: CanonicalTickAssignmentTargetV1::Grounded,
+                value: CanonicalTickAssignmentValueV1::Boolean(true),
+            });
+        }
+        cases.push(CanonicalTickRuleV1 {
+            law_origins: case.origins,
+            handler_origin: origin,
+            include_origins: include.iter().map(|(_, origin)| *origin).collect(),
+            predicates,
+            assignments,
         });
     }
     Ok(Some(TickHandlerCst {
@@ -9383,8 +9314,9 @@ fn parse_tick_handler(
             &handler_semantic_producer(block),
         ),
         designation: b"tick".to_vec(),
-        predicates,
-        assignments,
+        predicates: cases[0].predicates.clone(),
+        assignments: cases[0].assignments.clone(),
+        cases,
         includes: include
             .into_iter()
             .map(|(local, origin)| HandlerIncludeCst {
@@ -9494,26 +9426,8 @@ fn tick_guard_literal(expression: CanonicalScalarExpressionV1) -> Option<Canonic
         | CanonicalScalarExpressionV1::Add(_, _)
         | CanonicalScalarExpressionV1::Subtract(_, _)
         | CanonicalScalarExpressionV1::Multiply(_, _)
-        | CanonicalScalarExpressionV1::Divide(_, _)
-        | CanonicalScalarExpressionV1::Clamp(_, _, _) => None,
+        | CanonicalScalarExpressionV1::Divide(_, _) => None,
     }
-}
-
-fn parse_tick_clamp_binding(
-    source: &str,
-    derived: &BTreeMap<String, CanonicalTickExpressionV1>,
-) -> Option<(String, CanonicalTickExpressionV1)> {
-    let (value, rest) = source.split_once(" clamped between ")?;
-    let (bounds, result) = rest.split_once(" as ")?;
-    let (lower, upper) = bounds.split_once(" and ")?;
-    Some((
-        result.to_owned(),
-        CanonicalTickExpressionV1::Clamp(
-            Box::new(parse_tick_expression(value, derived)?),
-            Box::new(parse_tick_expression(lower, derived)?),
-            Box::new(parse_tick_expression(upper, derived)?),
-        ),
-    ))
 }
 
 fn parse_tick_comparison(
@@ -9531,6 +9445,28 @@ fn parse_tick_comparison(
         parse_tick_expression(left, derived)?,
         parse_tick_expression(right, derived)?,
     ))
+}
+
+fn scalar_tick_expression(
+    expression: &CanonicalScalarExpressionV1,
+    origin: CanonicalSourceOriginV1,
+) -> Result<CanonicalTickExpressionV1, CanonicalSourceErrorV1> {
+    use CanonicalScalarExpressionV1 as S;
+    use CanonicalTickExpressionV1 as T;
+    let recurse = |value| scalar_tick_expression(value, origin).map(Box::new);
+    Ok(match expression {
+        S::Number(value) => T::Number(*value),
+        S::Parameter(name) => parse_tick_expression(
+            std::str::from_utf8(name).expect("source binder UTF-8"),
+            &BTreeMap::new(),
+        )
+        .ok_or(CanonicalSourceErrorV1::MissingExecutableBinding { origin })?,
+        S::Add(a, b) => T::Add(recurse(a)?, recurse(b)?),
+        S::Subtract(a, b) => T::Subtract(recurse(a)?, recurse(b)?),
+        S::Multiply(a, b) => T::Multiply(recurse(a)?, recurse(b)?),
+        S::Divide(a, b) => T::Divide(recurse(a)?, recurse(b)?),
+        _ => return Err(CanonicalSourceErrorV1::MissingExecutableBinding { origin }),
+    })
 }
 
 fn parse_tick_expression(
@@ -10399,36 +10335,6 @@ fn denotation_designation_bytes(
     Ok(bytes.to_vec())
 }
 
-fn denotation_emission(
-    name: &[u8],
-    value: &CanonicalScalarValueV1,
-    position: Option<u64>,
-    origin: CanonicalSourceOriginV1,
-) -> CanonicalSourceEmissionV1 {
-    CanonicalSourceEmissionV1 {
-        producer: assertion_producer(name, b":"),
-        slot: child_slot(
-            CanonicalSourceProductionV1::Assertion,
-            &denotation_semantic_bytes(position, value),
-        ),
-        origin,
-        allocations: vec![],
-    }
-}
-
-fn denotation_semantic_bytes(position: Option<u64>, value: &CanonicalScalarValueV1) -> Vec<u8> {
-    let mut bytes = Vec::new();
-    match position {
-        None => bytes.push(0),
-        Some(position) => {
-            bytes.push(1);
-            bytes.extend_from_slice(&position.to_be_bytes());
-        }
-    }
-    append_scalar_semantic_bytes(&mut bytes, value);
-    bytes
-}
-
 fn application_semantic_bytes(role: &[u8], object: &CanonicalScalarValueV1) -> Vec<u8> {
     let mut bytes = Vec::new();
     frame_bytes(&mut bytes, role);
@@ -10931,12 +10837,6 @@ fn scalar_expression_matches_value(
                 && scalar_expression_matches_value(left, initial)
                 && scalar_expression_matches_value(right, initial)
         }
-        CanonicalScalarExpressionV1::Clamp(value, lower, upper) => {
-            matches!(initial, CanonicalScalarValueV1::Number(_))
-                && scalar_expression_matches_value(value, initial)
-                && scalar_expression_matches_value(lower, initial)
-                && scalar_expression_matches_value(upper, initial)
-        }
     }
 }
 
@@ -11003,46 +10903,6 @@ fn tick_program_parts(
         (grounded.as_slice(), airborne.as_slice(), landing.as_slice())
     else {
         return Err(CanonicalSourceErrorV1::InvalidTickProfile { origin });
-    };
-
-    let mut laws = cst
-        .items
-        .iter()
-        .filter_map(|item| match &item.kind {
-            CstKind::ClampLaw(law) => Some(law),
-            _ => None,
-        })
-        .collect::<Vec<_>>();
-    let mut derives = cst
-        .items
-        .iter()
-        .filter_map(|item| match &item.kind {
-            CstKind::ClampDerive(derive) => Some(derive),
-            _ => None,
-        })
-        .collect::<Vec<_>>();
-    laws.sort_by_key(|law| law.branch);
-    derives.sort_by_key(|derive| derive.branch);
-    if laws.iter().map(|law| law.branch).ne([
-        ClampBranchV1::Lower,
-        ClampBranchV1::Interior,
-        ClampBranchV1::Upper,
-    ]) || derives.iter().map(|derive| derive.branch).ne([
-        ClampBranchV1::Lower,
-        ClampBranchV1::Interior,
-        ClampBranchV1::Upper,
-    ]) || laws
-        .iter()
-        .map(|law| law.designation.as_slice())
-        .ne(derives.iter().map(|derive| derive.designation.as_slice()))
-    {
-        return Err(CanonicalSourceErrorV1::InvalidTickProfile { origin });
-    }
-    let [lower_law, interior_law, upper_law] = laws.as_slice() else {
-        unreachable!()
-    };
-    let [lower_derive, interior_derive, upper_derive] = derives.as_slice() else {
-        unreachable!()
     };
 
     let vectors = |relation: &[u8]| {
@@ -11148,8 +11008,6 @@ fn tick_program_parts(
     };
     Ok(Some(TickProgramParts {
         handlers: [*grounded, *airborne, *landing],
-        laws: [*lower_law, *interior_law, *upper_law],
-        derives: [*lower_derive, *interior_derive, *upper_derive],
         position,
         velocity,
         intent,
@@ -11264,8 +11122,8 @@ fn validate_unique_designations(items: &[CstItem]) -> Result<(), CanonicalSource
             | CstKind::TickHandler(_)
             | CstKind::KeyboardBinding(_)
             | CstKind::ScalarInputBinding(_)
-            | CstKind::ClampLaw(_)
-            | CstKind::ClampDerive(_)
+            | CstKind::ScalarLaw(_)
+            | CstKind::ScalarDerive(_)
             | CstKind::BooleanLaw(_)
             | CstKind::BooleanDerive(_)
             | CstKind::VectorAssertion(_)

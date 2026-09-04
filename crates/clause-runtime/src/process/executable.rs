@@ -1084,13 +1084,6 @@ fn lower_canonical_expression(
             let (left, right) = pair(left, right)?;
             ExecutableExpressionV1::Divide(left, right)
         }
-        CanonicalExecutableExpressionV1::Clamp(value, lower, upper) => {
-            ExecutableExpressionV1::Clamp(
-                Box::new(lower_canonical_expression(value, slots, depth + 1)?),
-                Box::new(lower_canonical_expression(lower, slots, depth + 1)?),
-                Box::new(lower_canonical_expression(upper, slots, depth + 1)?),
-            )
-        }
         CanonicalExecutableExpressionV1::Insert(set, value) => ExecutableExpressionV1::SetInsert(
             Box::new(lower_canonical_expression(set, slots, depth + 1)?),
             Box::new(lower_canonical_expression(value, slots, depth + 1)?),
@@ -1599,26 +1592,6 @@ fn lower_scalar_expression(
             let (left, right) = pair(left, right)?;
             ExecutableExpressionV1::Divide(left, right)
         }
-        CanonicalScalarExpressionV1::Clamp(value, lower, upper) => ExecutableExpressionV1::Clamp(
-            Box::new(lower_scalar_expression(
-                value,
-                state_slot,
-                parameter_slots,
-                depth + 1,
-            )?),
-            Box::new(lower_scalar_expression(
-                lower,
-                state_slot,
-                parameter_slots,
-                depth + 1,
-            )?),
-            Box::new(lower_scalar_expression(
-                upper,
-                state_slot,
-                parameter_slots,
-                depth + 1,
-            )?),
-        ),
     })
 }
 
@@ -1966,11 +1939,6 @@ fn lower_tick_expression(
             let (left, right) = lower_pair(left, right)?;
             ExecutableExpressionV1::Divide(left, right)
         }
-        CanonicalTickExpressionV1::Clamp(value, lower, upper) => ExecutableExpressionV1::Clamp(
-            Box::new(lower_tick_expression(value, binding, depth + 1)?),
-            Box::new(lower_tick_expression(lower, binding, depth + 1)?),
-            Box::new(lower_tick_expression(upper, binding, depth + 1)?),
-        ),
     })
 }
 
@@ -4398,6 +4366,9 @@ impl ExecutableProcessRuntimeV1 {
                 .predicates
                 .iter()
                 .try_fold(true, |matches, predicate| {
+                    if !matches {
+                        return Ok(false);
+                    }
                     let value = evaluate(
                         predicate,
                         &self.configuration,
@@ -4407,7 +4378,7 @@ impl ExecutableProcessRuntimeV1 {
                     Ok::<_, ExecutableErrorV1>(
                         matches && value.as_boolean().ok_or(ExecutableErrorV1::TypeMismatch)?,
                     )
-            })?;
+                })?;
             if matches {
                 // One source handler may specialize across independent
                 // referents. Apply every disjoint specialization in this
@@ -5606,7 +5577,7 @@ fn validate_input_plan_shape(
     let Some(input) = input else {
         return Ok(());
     };
-    if input.events.is_empty() || input.events.len() > MAX_PROGRAM_ITEMS {
+    if input.events.len() > MAX_PROGRAM_ITEMS {
         return Err(ExecutableErrorV1::MalformedProgram);
     }
     let mut roles = BTreeSet::new();

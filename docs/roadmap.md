@@ -9,6 +9,27 @@
 
 ## Current position
 
+The bounded resident compiler now composes finite F64 scalar laws by declared
+Reading and role bindings, including symbolic Readings, caller-independent
+binders, dependent results, source origins, and conservative output-uniqueness
+checking. Combat bounds and the bounded tick adapter use those same cases;
+there is no spelling-specific clamp law compiler. The general frontend,
+recursive source relations, totality inference, and complete constraint solving
+remain unfinished. The existing tick adapter still recognizes a game-shaped
+state vocabulary and is not evidence of general game compilation.
+
+The structural reader now supports recursively nested denoted products and
+delimiter-aware commas. Bare indented heads are always subject focus; binding
+colon spacing is not semantic. The resident editor preserves the generation,
+live state, handlers, and pending candidate for unchanged or rejected source.
+Changed text still receives independent allocations; cross-edit identity
+continuity is not implemented by text matching.
+
+The existing finite-ground bootstrap checker also consumes certificates from
+positive least-fixed-point search. Its regression covers circular support,
+independent base evidence, distinct-value cardinality, and explicit exhaustion.
+This bounded model is neither source recursion nor a source-soundness theorem.
+
 Clause has accepted the process-first constitutional reset. The repository now
 contains experimental implementations of a process package, native execution,
 persistent native and Wasm sessions, materialization, and a playable browser

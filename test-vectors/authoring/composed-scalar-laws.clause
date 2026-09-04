@@ -1,0 +1,40 @@
+F64
+Meter
+
+relation magnitude
+  reads | {input: F64} | = {output: F64}
+  mode given input yields output: maybe
+
+law negative-magnitude
+  if
+    ?x < 0.0
+  then
+    | ?x | = (0.0 - ?x)
+
+law nonnegative-magnitude
+  if
+    ?x >= 0.0
+  then
+    | ?x | = ?x
+
+derive negative-magnitude
+derive nonnegative-magnitude
+
+relation reading
+  reads {meter: Meter} reading {value: F64}
+  subject meter
+  mode given meter yields value: one
+
+meter-1
+  shape: Meter
+meter-1 reading -4.0
+
+on rectify ?meter
+  when
+    ?meter reading ?x
+    | ?x | = ?magnitude
+    | (?magnitude - 10.0) | = ?next
+  withdraw
+    ?meter reading ?x
+  include
+    ?meter reading ?next

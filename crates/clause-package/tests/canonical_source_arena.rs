@@ -839,16 +839,29 @@ on targeted-hit ?enemy
         .iter()
         .find(|handler| handler.designation == b"targeted-hit")
         .expect("the selected-subject handler is executable");
-    let [rule] = handler.rules.as_slice() else {
-        panic!("one source transition remains one executable rule")
-    };
-    let [assignment] = rule.assignments.as_slice() else {
-        panic!("only the changed vitality field is assigned")
-    };
-    assert!(matches!(
-        assignment.value,
-        CanonicalExecutableExpressionV1::Clamp(_, _, _)
-    ));
+    assert_eq!(
+        handler.rules.len(),
+        3,
+        "each authored law supplies one guarded case"
+    );
+    for rule in &handler.rules {
+        assert_eq!(
+            rule.assignments.len(),
+            1,
+            "only the changed vitality field is assigned"
+        );
+        assert_eq!(
+            rule.law_origins.len(),
+            2,
+            "law and derivation remain inspectable"
+        );
+        assert!(
+            rule.law_origins
+                .iter()
+                .all(|origin| cst.source_slice(*origin).is_some())
+        );
+        assert!(!rule.predicates.is_empty());
+    }
 }
 
 #[test]
@@ -1429,7 +1442,11 @@ fn canonical_world_declarations_reach_the_checked_package_with_exact_remainder()
     let tick = compiled
         .tick_program
         .expect("the bounded source profile lowers all three on-tick branches");
-    assert_eq!(tick.rules.len(), 3);
+    assert_eq!(
+        tick.rules.len(),
+        27,
+        "three transitions each compose two three-case relations"
+    );
     assert_eq!(tick.initial_position, [0.0_f64.to_bits(); 3]);
     assert_eq!(tick.initial_velocity, [0.0_f64.to_bits(); 3]);
     assert_eq!(tick.initial_intent, [0.0_f64.to_bits(); 3]);
@@ -1444,7 +1461,7 @@ fn canonical_world_declarations_reach_the_checked_package_with_exact_remainder()
     for origin in
         tick.assertion_origins
             .iter()
-            .chain(&tick.clamp_law_origins)
+            .chain(&tick.law_origins)
             .chain(&tick.derive_origins)
             .chain(tick.rules.iter().flat_map(|rule| {
                 std::iter::once(&rule.handler_origin).chain(&rule.include_origins)
@@ -1595,8 +1612,6 @@ fn noncanonical_denotation_forms_reject() {
         "iron-door: Door,\n",
         "iron-door∈ Door\n",
         "iron-door ∈ Door\n",
-        "iron-door : Door\n",
-        "iron-door:Door\n",
         "iron-door:\n  Door\n  Lockable\n",
     ] {
         assert!(matches!(
@@ -1607,8 +1622,34 @@ fn noncanonical_denotation_forms_reject() {
 }
 
 #[test]
+fn denotation_is_compositional_and_never_selected_by_focus_children() {
+    let nested = compile_source("pair: (1, 2), (3, \"comma, literal\")\n", 31).unwrap();
+    let CanonicalSourceDenotedValueV1::OrderedProduct(members) = &nested.denotations[0].value
+    else {
+        panic!("outer product")
+    };
+    assert_eq!(members.len(), 2);
+    assert!(members.iter().all(|value| matches!(value, CanonicalSourceDenotedValueV1::OrderedProduct(items) if items.len() == 2)));
+    let flat = compile_source("pair: 1, 2, 3, \"comma, literal\"\n", 31).unwrap();
+    assert_ne!(nested.denotations[0].value, flat.denotations[0].value);
+    assert_ne!(nested.emissions[0].slot, flat.emissions[0].slot);
+    for source in ["five:5\n", "five : 5\n", "five:   (5)\n"] {
+        let compiled = compile_source(source, 31).unwrap();
+        assert_eq!(
+            compiled.denotations[0].value,
+            CanonicalSourceDenotedValueV1::Scalar(CanonicalScalarValueV1::Number(
+                5.0_f64.to_bits()
+            ))
+        );
+    }
+    for source in ["rgb\n  255, 0, 0\n", "pair: (1, 2]\n", "pair: (1,,2), 3\n"] {
+        assert!(read_canonical_source_v1(source.as_bytes()).is_err());
+    }
+}
+
+#[test]
 fn scalar_and_ordered_product_denotations_remain_distinct() {
-    let source = "five: 5\npair: 5, \"hello\"\nrgb\n  255, 0, 0\n";
+    let source = "five: 5\npair: 5, \"hello\"\nrgb: 255, 0, 0\n";
     let cst = read_canonical_source_v1(source.as_bytes()).expect("denotations read");
     let plan = plan_independent_canonical_source_allocations_v1(
         &cst,
@@ -1638,17 +1679,27 @@ fn scalar_and_ordered_product_denotations_remain_distinct() {
             CanonicalSourceDenotationV1 {
                 name: b"pair".to_vec(),
                 value: CanonicalSourceDenotedValueV1::OrderedProduct(vec![
-                    CanonicalScalarValueV1::Number(5.0_f64.to_bits()),
-                    CanonicalScalarValueV1::Text("hello".into()),
+                    CanonicalSourceDenotedValueV1::Scalar(CanonicalScalarValueV1::Number(
+                        5.0_f64.to_bits()
+                    )),
+                    CanonicalSourceDenotedValueV1::Scalar(CanonicalScalarValueV1::Text(
+                        "hello".into()
+                    )),
                 ]),
                 origin: compiled.denotations[1].origin,
             },
             CanonicalSourceDenotationV1 {
                 name: b"rgb".to_vec(),
                 value: CanonicalSourceDenotedValueV1::OrderedProduct(vec![
-                    CanonicalScalarValueV1::Number(255.0_f64.to_bits()),
-                    CanonicalScalarValueV1::Number(0.0_f64.to_bits()),
-                    CanonicalScalarValueV1::Number(0.0_f64.to_bits()),
+                    CanonicalSourceDenotedValueV1::Scalar(CanonicalScalarValueV1::Number(
+                        255.0_f64.to_bits()
+                    )),
+                    CanonicalSourceDenotedValueV1::Scalar(CanonicalScalarValueV1::Number(
+                        0.0_f64.to_bits()
+                    )),
+                    CanonicalSourceDenotedValueV1::Scalar(CanonicalScalarValueV1::Number(
+                        0.0_f64.to_bits()
+                    )),
                 ]),
                 origin: compiled.denotations[2].origin,
             },

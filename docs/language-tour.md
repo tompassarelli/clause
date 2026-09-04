@@ -1,8 +1,8 @@
 # A Short Tour of Clause
 
 > **Status:** Tour of the canonical source design and process-first semantic
-> contract. These examples are not yet runnable by a supported Clause
-> toolchain; the [roadmap](roadmap.md) alone records implementation status.
+> contract. Some examples are design targets; the compiler-owned
+> `clause:docs/authoring-card.md` identifies the curated executable subset.
 >
 > **Authority:** The [syntax](syntax.md) governs every source spelling shown
 > here, and the [semantic foundation](foundation.md) governs its meaning. This
@@ -241,46 +241,25 @@ Ranges are inclusive ascending integer ranges. Brackets remain sequence Terms,
 not a second range notation. Ordinary source exposes process machinery only
 where it changes meaning.
 
-## General-purpose local work stays local
+## Describe the result, not its construction
 
-Parameters, collections, loops, builders, ownership, and regions are ordinary
-Clause work rather than foreign Rust semantics:
+Mapping means preserving the input's index domain and relating each output
+element to the corresponding input through the supplied mapping relation.
+It does not mean asking the author to allocate a builder, loop, append,
+freeze, and return. Those are possible physical strategies, checked against
+one declarative meaning. Order and duplicate elements survive because their
+indices survive.
 
-```clause
-function map
-  parameters
-    Item: Type
-    Result: Type
-  constraints
-    mapping: Maps Item to Result
-  given
-    items: Sequence of Item
-  yields
-    mapped: Sequence of Result
-  run
-    region output
-      mutable builder: empty Sequence of Result
-      borrow read items as source
-        lease write builder as sink
-          for item in source
-            append mapping(item) to sink
-      return freeze move builder
+Games apply the same idea: a rule describes the permitted old/new-state
+relation. A frame loop is a realization of those rules. Order becomes explicit
+where noncommuting actions make it observable, not merely because a processor
+executes instructions in time.
 
-upper-names: map(player-names) with
-  Item = Text
-  Result = Text
-  mapping = uppercase
-```
-
-This is the same ratified UTF-8/LF specimen frozen by the syntax and adoption
-contracts. The builder is Activation-local: thousands of internal reductions
-need no Admission, StateRevision, or mandatory trace entry. `region`, `borrow`,
-`lease`, `move`, and `freeze` appear because aliasing, escape, or reclamation
-meaning changes there. Static proofs may erase from a checked production ABI.
-The native/Wasm game hot profile uses affine ownership, borrows, leases, and
-deterministic regions with no managed island, no mandatory tracing GC, no
-implicit ARC, and no finalizer fallback. Other profiles may explicitly select
-a finite, budgeted managed island; it is never an ambient Clause heap.
+The current executable example is smaller but real: ordinary laws define a
+symbolic absolute-value relation and a handler composes two uses. See
+`clause:test-vectors/authoring/composed-scalar-laws.clause` and the compiler's
+authoring card. Generic collection mapping and checked strategy synthesis
+remain implementation work; concise notation is not evidence that they exist.
 
 ## Agents get one semantic workbench
 

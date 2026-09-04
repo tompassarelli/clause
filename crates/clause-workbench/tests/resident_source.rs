@@ -807,6 +807,40 @@ fn boar_blade_two_state(exact_term_bytes: &[u8]) -> (f64, f64, f64) {
 }
 
 #[test]
+fn unchanged_and_rejected_edits_preserve_the_live_world_and_pending_candidate() {
+    let mut workbench = ResidentSourceWorkbenchV1::open(LEDGER).unwrap();
+    workbench.run_to_candidate().unwrap();
+    let first = workbench.admit().unwrap();
+    let generation = workbench.generation().clone();
+    let candidate = workbench.run_to_candidate().unwrap();
+    let deposit = workbench.handler_occurrence(b"deposit", &[]).unwrap();
+
+    assert_eq!(workbench.hot_reload(LEDGER).unwrap(), generation);
+    assert_eq!(workbench.pending_candidate(), Some(candidate));
+    assert_eq!(workbench.last_projection(), Some(&first.projection));
+
+    let source = std::str::from_utf8(LEDGER).unwrap();
+    let without_handlers = source.split("on deposit").next().unwrap();
+    let rejected = workbench.hot_reload(without_handlers.as_bytes());
+    assert!(
+        rejected.is_err(),
+        "state without an executable handler cannot open"
+    );
+    assert_eq!(workbench.generation(), &generation);
+    assert_eq!(workbench.pending_candidate(), Some(candidate));
+    assert_eq!(workbench.last_projection(), Some(&first.projection));
+    assert_eq!(
+        workbench.handler_occurrence(b"deposit", &[]).unwrap(),
+        deposit
+    );
+    let second = workbench.admit().unwrap();
+    assert_eq!(second.predecessor, first.successor);
+    assert_ne!(second.projection, first.projection);
+    workbench.run_to_candidate().unwrap();
+    workbench.admit().unwrap();
+}
+
+#[test]
 fn source_edit_hot_reloads_in_one_workbench_without_admission_custody_leak() {
     let mut workbench =
         ResidentSourceWorkbenchV1::open(WORLD).expect("base source opens in one workbench");
@@ -1557,6 +1591,104 @@ fn aggregate_binding_replaces_vec3_in_one_atomic_candidate() {
         projected_number(projected_object_field(position, b"z")),
         7.0
     );
+}
+
+#[test]
+fn declared_scalar_laws_compose_without_formula_or_binder_spelling_dispatch() {
+    let specimen = include_str!("../../../test-vectors/authoring/composed-scalar-laws.clause");
+    for (input, expected) in [(-4.0, 6.0), (0.0, 10.0), (12.0, 2.0)] {
+        let source = specimen.replace("reading -4.0", &format!("reading {input}"));
+        let mut workbench = ResidentSourceWorkbenchV1::open(source.as_bytes()).unwrap();
+        let rectify = workbench.handler_occurrence(b"rectify", &[]).unwrap();
+        workbench.run_occurrences_to_candidate(&[rectify]).unwrap();
+        let admitted = workbench.admit().unwrap();
+        let term = decode_canonical_term_bytes(&admitted.projection.exact_term_bytes).unwrap();
+        let meter = projected_object_field(&term, b"meter-1");
+        assert_eq!(
+            projected_number(projected_object_field(meter, b"reading")),
+            expected
+        );
+    }
+    let renamed = SCALAR_LAW_BOUND_HIT
+        .replace("clamp-", "boundary-")
+        .replace("clamped between", "restricted by")
+        .replace(" and ", " through ")
+        .replace(" as ", " giving ")
+        .replace("?lower", "?low")
+        .replace("?upper", "?high")
+        .replace("?value", "?sample");
+    let mut workbench = ResidentSourceWorkbenchV1::open(renamed.as_bytes()).unwrap();
+    let hit = workbench.handler_occurrence(b"blade-two-hit", &[]).unwrap();
+    workbench.run_occurrences_to_candidate(&[hit]).unwrap();
+    let admitted = workbench.admit().unwrap();
+    assert_eq!(
+        boar_blade_two_state(&admitted.projection.exact_term_bytes),
+        (86.0, 100.0, 10.4)
+    );
+}
+
+#[test]
+fn guarded_law_results_are_not_evaluated_outside_their_domain() {
+    let source = br#"F64
+Meter
+relation reciprocal
+  reads reciprocal {input: F64} is {output: F64}
+  mode given input yields output: maybe
+law positive-reciprocal
+  if
+    ?x > 0.0
+  then
+    reciprocal ?x is (1.0 / ?x)
+derive positive-reciprocal
+relation reading
+  reads {meter: Meter} reading {value: F64}
+  subject meter
+  mode given meter yields value: one
+meter-1 reading 0.0
+on invert ?meter
+  when
+    ?meter reading ?x
+    reciprocal ?x is ?next
+    ?next > 0.0
+  withdraw
+    ?meter reading ?x
+  include
+    ?meter reading ?next
+"#;
+    let mut workbench = ResidentSourceWorkbenchV1::open(source).unwrap();
+    let plan = decode_executable_physical_plan_v1(&workbench.generation().cpp1).unwrap();
+    let input = plan.input.as_ref().unwrap();
+    assert!(
+        input.events.is_empty(),
+        "a timer-only world requires no external input binding"
+    );
+    assert!(!input.tick.entries.is_empty());
+    let invert = workbench.handler_occurrence(b"invert", &[]).unwrap();
+    workbench.run_occurrences_to_candidate(&[invert]).unwrap();
+    let admitted = workbench.admit().unwrap();
+    let term = decode_canonical_term_bytes(&admitted.projection.exact_term_bytes).unwrap();
+    assert_eq!(
+        projected_number(projected_object_field(
+            projected_object_field(&term, b"meter-1"),
+            b"reading"
+        )),
+        0.0
+    );
+}
+
+#[test]
+fn scalar_laws_reject_unbound_results_and_unproved_unique_outputs() {
+    let source = include_str!("../../../test-vectors/authoring/composed-scalar-laws.clause");
+    for invalid in [
+        source.replace("(0.0 - ?x)", "?unbound"),
+        source.replace("?x >= 0.0", "?x <= 0.0"),
+        source.replace(
+            "reads | {input: F64} | = {output: F64}",
+            "reads | {input: F64} | = {output: Text}",
+        ),
+    ] {
+        assert!(ResidentSourceWorkbenchV1::open(invalid.as_bytes()).is_err());
+    }
 }
 
 #[test]

@@ -13,6 +13,59 @@ const SUCCESSOR: &str = include_str!(concat!(
     "/../../test-vectors/canonical-package/positive/successor.hex"
 ));
 
+#[test]
+fn positive_closure_counts_values_not_supports_and_cannot_sustain_itself() {
+    use clause_substrate::canonical_package::{
+        DerivationBasis, GroundClosureError, derive_ground_closure,
+    };
+    let decoded = decode(&hex(BOOTSTRAP)).unwrap();
+    let p = decoded.value().target.clone();
+    let mut q = p.clone();
+    q.term = clause_substrate::canonical_package::Term::Triple(
+        Box::new(p.term.clone()),
+        Box::new(p.term.clone()),
+        Box::new(p.term.clone()),
+    );
+    let mut basis = DerivationBasis {
+        roots: vec![p.clone(), p.clone()],
+        rules: vec![
+            GroundRule {
+                premises: vec![p.clone()],
+                conclusion: q.clone(),
+            },
+            GroundRule {
+                premises: vec![q.clone()],
+                conclusion: p.clone(),
+            },
+        ],
+    };
+    for root_count in [2, 1, 0] {
+        basis.roots.truncate(root_count);
+        let closure = derive_ground_closure(&basis, 10).unwrap();
+        assert_eq!(closure.nodes.len(), if root_count == 0 { 0 } else { 2 });
+        for (index, node) in closure.nodes.iter().enumerate() {
+            check_certificate(
+                &basis,
+                &Certificate {
+                    nodes: closure.nodes[..=index].to_vec(),
+                },
+                &node.claimed,
+            )
+            .unwrap();
+        }
+    }
+    assert_eq!(
+        derive_ground_closure(&basis, 0),
+        Err(GroundClosureError::Exhausted)
+    );
+    basis.roots.push(p.clone());
+    basis.rules.reverse();
+    let closure = derive_ground_closure(&basis, 10).unwrap();
+    assert_eq!(closure.nodes.len(), 2);
+    assert!(closure.nodes.iter().any(|node| node.claimed == q));
+    assert!(closure.nodes.iter().any(|node| node.claimed == p));
+}
+
 fn vector(path: &str) -> Vec<u8> {
     let transport = match path {
         "bad-magic" => include_str!(concat!(

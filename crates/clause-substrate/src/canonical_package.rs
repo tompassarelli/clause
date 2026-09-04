@@ -885,6 +885,92 @@ pub fn encode(value: &PackageValue) -> Result<Vec<u8>, EncodeError> {
     Ok(output)
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum GroundClosureError {
+    Exhausted,
+    IndexOverflow,
+}
+
+impl fmt::Display for GroundClosureError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::Exhausted => "finite ground closure exhausted its rule-check budget",
+            Self::IndexOverflow => "finite ground closure exceeds certificate index width",
+        })
+    }
+}
+
+impl std::error::Error for GroundClosureError {}
+
+/// Compute the positive least fixed point of this exact finite ground basis.
+/// Each distinct claim carries one finite witness consumable by
+/// [`check_certificate`]; this is not an enumeration of independent evidence.
+/// Recompute from the remaining roots after withdrawal, never from old closure.
+/// Like the bootstrap checker, this establishes only relative derivability.
+///
+/// An exhausted search returns no closure and cannot establish absence.
+pub fn derive_ground_closure(
+    basis: &DerivationBasis,
+    mut rule_checks: usize,
+) -> Result<Certificate, GroundClosureError> {
+    let mut certificate = Certificate::default();
+    for (index, root) in basis.roots.iter().enumerate() {
+        if certificate.nodes.iter().any(|node| &node.claimed == root) {
+            continue;
+        }
+        certificate.nodes.push(CertificateNode {
+            claimed: root.clone(),
+            reason: CertificateReason::Root {
+                root_ref: u32::try_from(index).map_err(|_| GroundClosureError::IndexOverflow)?,
+            },
+        });
+    }
+    loop {
+        let prior = certificate.nodes.len();
+        for (index, rule) in basis.rules.iter().enumerate() {
+            rule_checks = rule_checks
+                .checked_sub(1)
+                .ok_or(GroundClosureError::Exhausted)?;
+            if certificate
+                .nodes
+                .iter()
+                .any(|node| node.claimed == rule.conclusion)
+            {
+                continue;
+            }
+            let premises = rule
+                .premises
+                .iter()
+                .map(|premise| {
+                    certificate
+                        .nodes
+                        .iter()
+                        .position(|node| &node.claimed == premise)
+                })
+                .collect::<Option<Vec<_>>>();
+            let Some(premises) = premises else { continue };
+            u32::try_from(certificate.nodes.len())
+                .map_err(|_| GroundClosureError::IndexOverflow)?;
+            certificate.nodes.push(CertificateNode {
+                claimed: rule.conclusion.clone(),
+                reason: CertificateReason::Apply {
+                    rule_ref: u32::try_from(index)
+                        .map_err(|_| GroundClosureError::IndexOverflow)?,
+                    premise_refs: premises
+                        .into_iter()
+                        .map(|index| {
+                            u32::try_from(index).map_err(|_| GroundClosureError::IndexOverflow)
+                        })
+                        .collect::<Result<_, _>>()?,
+                },
+            });
+        }
+        if certificate.nodes.len() == prior {
+            return Ok(certificate);
+        }
+    }
+}
+
 /// Check a finite ground certificate only against the explicitly supplied
 /// basis and requested claim.
 pub fn check_certificate(

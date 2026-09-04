@@ -436,6 +436,14 @@ The constitutional host-freeze test is an ordinary predecessor-authorized
 form, one typed macro, and one diagnostic behavior with zero Lean or Rust
 source, toolchain, binary, or host-mechanics-manifest edits.
 
+Host freeze alone demonstrates programmability, not safe language extension.
+Each extension must preserve designation scope and hygiene, formation/type
+soundness, declared effects and authority, equality and occurrence distinctions,
+and physical refinement of its denotation. An extension earns its abstraction
+by making the existing execution, explanation, and transformation consumers
+work from the same checked definition. A growing collection of host-recognized
+examples does not establish that result.
+
 The same frozen hosts must execute a Clause-defined algebraic data declaration,
 constructors, patterns, and exhaustive match, while rejecting missing and
 unreachable cases with exact obligations. These are user-defined Clause data
