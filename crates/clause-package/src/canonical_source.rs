@@ -1810,6 +1810,7 @@ fn allocation_requests(
     let mut requested = Vec::new();
     let mut requested_referents = BTreeSet::new();
     let mut many_assertions = BTreeSet::new();
+    let mut initial_assertion_repetitions = BTreeMap::new();
     let input = input_handler_parts(cst)?;
     let jump = jump_handler_parts(cst)?;
     let scalar = scalar_handler_parts(cst)?;
@@ -2086,20 +2087,18 @@ fn allocation_requests(
                     })
                     || declared_state_relation(cst, &assertion.relation)
                 {
-                    requested.push(AllocationRequest {
-                        producer: assertion_producer(&assertion.subject, &assertion.relation),
-                        slot: head_slot(CanonicalSourceProductionV1::Assertion),
-                        domain: AllocationDomain::Formation,
-                    });
+                    request_initial_assertion(
+                        cst, &assertion.subject, &assertion.relation, &mut requested, &mut many_assertions,
+                        &mut initial_assertion_repetitions,
+                    );
                 }
             }
             CstKind::ShapeAssertion(assertion) => {
                 if declared_state_relation(cst, &assertion.relation) {
-                    requested.push(AllocationRequest {
-                        producer: assertion_producer(&assertion.subject, &assertion.relation),
-                        slot: head_slot(CanonicalSourceProductionV1::Assertion),
-                        domain: AllocationDomain::Formation,
-                    });
+                    request_initial_assertion(
+                        cst, &assertion.subject, &assertion.relation, &mut requested, &mut many_assertions,
+                        &mut initial_assertion_repetitions,
+                    );
                 }
             }
             CstKind::BooleanAssertion(assertion) => {
@@ -2116,11 +2115,10 @@ fn allocation_requests(
                     })
                     || declared_state_relation(cst, &assertion.relation)
                 {
-                    requested.push(AllocationRequest {
-                        producer: assertion_producer(&assertion.subject, &assertion.relation),
-                        slot: head_slot(CanonicalSourceProductionV1::Assertion),
-                        domain: AllocationDomain::Formation,
-                    });
+                    request_initial_assertion(
+                        cst, &assertion.subject, &assertion.relation, &mut requested, &mut many_assertions,
+                        &mut initial_assertion_repetitions,
+                    );
                 }
             }
             CstKind::NumberAssertion(assertion) => {
@@ -2148,11 +2146,10 @@ fn allocation_requests(
                     })
                     || declared_state_relation(cst, &assertion.relation)
                 {
-                    requested.push(AllocationRequest {
-                        producer: assertion_producer(&assertion.subject, &assertion.relation),
-                        slot: head_slot(CanonicalSourceProductionV1::Assertion),
-                        domain: AllocationDomain::Formation,
-                    });
+                    request_initial_assertion(
+                        cst, &assertion.subject, &assertion.relation, &mut requested, &mut many_assertions,
+                        &mut initial_assertion_repetitions,
+                    );
                 }
             }
             CstKind::SymbolAssertion(assertion) => {
@@ -2166,11 +2163,10 @@ fn allocation_requests(
                         )
                 }) || declared_state_relation(cst, &assertion.relation)
                 {
-                    requested.push(AllocationRequest {
-                        producer: assertion_producer(&assertion.subject, &assertion.relation),
-                        slot: head_slot(CanonicalSourceProductionV1::Assertion),
-                        domain: AllocationDomain::Formation,
-                    });
+                    request_initial_assertion(
+                        cst, &assertion.subject, &assertion.relation, &mut requested, &mut many_assertions,
+                        &mut initial_assertion_repetitions,
+                    );
                 }
             }
             CstKind::TextAssertion(assertion) => {
@@ -2184,11 +2180,10 @@ fn allocation_requests(
                         )
                 }) || declared_state_relation(cst, &assertion.relation)
                 {
-                    requested.push(AllocationRequest {
-                        producer: assertion_producer(&assertion.subject, &assertion.relation),
-                        slot: head_slot(CanonicalSourceProductionV1::Assertion),
-                        domain: AllocationDomain::Formation,
-                    });
+                    request_initial_assertion(
+                        cst, &assertion.subject, &assertion.relation, &mut requested, &mut many_assertions,
+                        &mut initial_assertion_repetitions,
+                    );
                 }
             }
             CstKind::KeyboardBinding(_)
@@ -2207,6 +2202,43 @@ fn allocation_requests(
         }
     }
     Ok(requested)
+}
+
+fn request_initial_assertion(
+    cst: &CanonicalSourceCstV1,
+    subject: &[u8],
+    relation: &[u8],
+    requested: &mut Vec<AllocationRequest>,
+    many: &mut BTreeSet<AllocationRequest>,
+    repetitions: &mut BTreeMap<CanonicalSemanticProducerV1, u64>,
+) {
+    let producer = assertion_producer(subject, relation);
+    let slot = initial_assertion_slot(cst, relation, &producer, repetitions);
+    let request = AllocationRequest {
+        producer,
+        slot,
+        domain: AllocationDomain::Formation,
+    };
+    if declared_state_cardinality(cst, relation) == Some(SourceCardinality::Many) {
+        many.insert(request);
+    } else {
+        requested.push(request);
+    }
+}
+
+fn initial_assertion_slot(
+    cst: &CanonicalSourceCstV1,
+    relation: &[u8],
+    producer: &CanonicalSemanticProducerV1,
+    repetitions: &mut BTreeMap<CanonicalSemanticProducerV1, u64>,
+) -> CanonicalEmissionSlotV1 {
+    let mut slot = head_slot(CanonicalSourceProductionV1::Assertion);
+    if declared_state_cardinality(cst, relation) == Some(SourceCardinality::Many) {
+        let count = repetitions.entry(producer.clone()).or_default();
+        slot.repetition = (*count > 0).then_some(*count);
+        *count += 1;
+    }
+    slot
 }
 
 fn declared_state_cardinality(
@@ -6327,6 +6359,7 @@ pub fn elaborate_canonical_source_package_v1(
     let tick_parts = tick_program_parts(cst)?;
     let mut emitted_referents = BTreeSet::new();
     let mut application_repetitions = BTreeMap::<(Vec<u8>, Vec<u8>), u64>::new();
+    let mut initial_assertion_repetitions = BTreeMap::new();
     for item in &cst.items {
         match &item.kind {
             CstKind::Referent { designation, .. } => {
@@ -6878,7 +6911,7 @@ pub fn elaborate_canonical_source_package_v1(
                     || declared_state_relation(cst, &assertion.relation)
                 {
                     let producer = assertion_producer(&assertion.subject, &assertion.relation);
-                    let slot = head_slot(CanonicalSourceProductionV1::Assertion);
+                    let slot = initial_assertion_slot(cst, &assertion.relation, &producer, &mut initial_assertion_repetitions);
                     let id = formation_id(plan, &producer, &slot)?;
                     formations.push(source_formation(
                         scope,
@@ -6900,7 +6933,7 @@ pub fn elaborate_canonical_source_package_v1(
             CstKind::ShapeAssertion(assertion) => {
                 if declared_state_relation(cst, &assertion.relation) {
                     let producer = assertion_producer(&assertion.subject, &assertion.relation);
-                    let slot = head_slot(CanonicalSourceProductionV1::Assertion);
+                    let slot = initial_assertion_slot(cst, &assertion.relation, &producer, &mut initial_assertion_repetitions);
                     let id = formation_id(plan, &producer, &slot)?;
                     formations.push(source_formation(
                         scope,
@@ -6934,7 +6967,7 @@ pub fn elaborate_canonical_source_package_v1(
                     || declared_state_relation(cst, &assertion.relation)
                 {
                     let producer = assertion_producer(&assertion.subject, &assertion.relation);
-                    let slot = head_slot(CanonicalSourceProductionV1::Assertion);
+                    let slot = initial_assertion_slot(cst, &assertion.relation, &producer, &mut initial_assertion_repetitions);
                     let id = formation_id(plan, &producer, &slot)?;
                     formations.push(source_formation(
                         scope,
@@ -6979,7 +7012,7 @@ pub fn elaborate_canonical_source_package_v1(
                     || declared_state_relation(cst, &assertion.relation)
                 {
                     let producer = assertion_producer(&assertion.subject, &assertion.relation);
-                    let slot = head_slot(CanonicalSourceProductionV1::Assertion);
+                    let slot = initial_assertion_slot(cst, &assertion.relation, &producer, &mut initial_assertion_repetitions);
                     let id = formation_id(plan, &producer, &slot)?;
                     formations.push(source_formation(
                         scope,
@@ -7010,7 +7043,7 @@ pub fn elaborate_canonical_source_package_v1(
                 }) || declared_state_relation(cst, &assertion.relation)
                 {
                     let producer = assertion_producer(&assertion.subject, &assertion.relation);
-                    let slot = head_slot(CanonicalSourceProductionV1::Assertion);
+                    let slot = initial_assertion_slot(cst, &assertion.relation, &producer, &mut initial_assertion_repetitions);
                     let id = formation_id(plan, &producer, &slot)?;
                     formations.push(source_formation(
                         scope,
@@ -7041,7 +7074,7 @@ pub fn elaborate_canonical_source_package_v1(
                 }) || declared_state_relation(cst, &assertion.relation)
                 {
                     let producer = assertion_producer(&assertion.subject, &assertion.relation);
-                    let slot = head_slot(CanonicalSourceProductionV1::Assertion);
+                    let slot = initial_assertion_slot(cst, &assertion.relation, &producer, &mut initial_assertion_repetitions);
                     let id = formation_id(plan, &producer, &slot)?;
                     formations.push(source_formation(
                         scope,
