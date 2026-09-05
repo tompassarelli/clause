@@ -558,13 +558,15 @@ function require_persistent_cartridge(value: unknown): PersistentCartridge {
     value._tag !== "PersistentCartridge" ||
     !exact_byte_array_p(value.openBytes, cwr1_max_bytes) ||
     !Array.isArray(value.occurrences) ||
-    value.occurrences.length === 0 ||
     !value.occurrences.every((occurrence: unknown) =>
       exact_byte_array_p(occurrence, cwr1_max_bytes),
     )
   ) {
     throw new Error("persistent cartridge is invalid");
   }
+  // Event-only source can have no default opaque occurrences. The checked
+  // runtime validates its physical input plan; the passive wrapper must not
+  // invent a mandatory source timer or reject an already accepted cartridge.
   return PersistentCartridge(
     value.openBytes,
     Object.freeze(value.occurrences as ExactBytes[]),

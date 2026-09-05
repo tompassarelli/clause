@@ -780,7 +780,12 @@ pub enum ExecutableExpressionV1 {
     Constant(ExecutableValueV1),
     Slot(u16),
     Argument(u16),
-    FreshReferent { domain: u32, binder: u16 },
+    /// Assignment-root additive effect, never an evaluable subexpression.
+    Accumulate(Box<Self>),
+    FreshReferent {
+        domain: u32,
+        binder: u16,
+    },
     RelationRead(Box<Self>, Box<Self>),
     RelationPresent(Box<Self>, Box<Self>),
     RelationPut(Box<Self>, Box<Self>, Box<Self>),
@@ -1028,6 +1033,29 @@ fn lower_canonical_expression(
         CanonicalExecutableExpressionV1::Argument(argument) => {
             ExecutableExpressionV1::Argument(*argument)
         }
+        CanonicalExecutableExpressionV1::Accumulate(value) => ExecutableExpressionV1::Accumulate(
+            Box::new(lower_canonical_expression(value, slots, depth + 1)?),
+        ),
+        CanonicalExecutableExpressionV1::Not(value) => ExecutableExpressionV1::Not(Box::new(
+            lower_canonical_expression(value, slots, depth + 1)?,
+        )),
+        CanonicalExecutableExpressionV1::MatchesAny(cases) => {
+            let mut none = ExecutableExpressionV1::Constant(ExecutableValueV1::Boolean(true));
+            for case in cases {
+                let mut all = ExecutableExpressionV1::Constant(ExecutableValueV1::Boolean(true));
+                for predicate in case {
+                    all = ExecutableExpressionV1::And(
+                        Box::new(all),
+                        Box::new(lower_canonical_predicate(predicate, slots)?),
+                    );
+                }
+                none = ExecutableExpressionV1::And(
+                    Box::new(none),
+                    Box::new(ExecutableExpressionV1::Not(Box::new(all))),
+                );
+            }
+            ExecutableExpressionV1::Not(Box::new(none))
+        }
         CanonicalExecutableExpressionV1::FreshReferent { domain, binder } => {
             ExecutableExpressionV1::FreshReferent {
                 domain: domain.get(),
@@ -1185,9 +1213,31 @@ fn canonical_source_projection(
             .filter_map(|cell| cell.state.subject_identity.as_ref())
             .collect::<BTreeSet<_>>();
         if identities.len() > 1 {
-            return Err(ExecutableErrorV1::MalformedProgram);
-        }
-        if let Some(identity) = identities.first() {
+            if relations.contains_key(b"$referents".as_slice()) {
+                return Err(ExecutableErrorV1::MalformedProgram);
+            }
+            relation_fields.push((
+                b"$referents".to_vec(),
+                projection_object(
+                    scope,
+                    identities
+                        .iter()
+                        .map(|identity| {
+                            Ok((
+                                identity.domain.get().to_string().into_bytes(),
+                                projected_scalar_value_term(
+                                    scope,
+                                    &ExecutableValueV1::Referent(ExecutableReferentV1::declared(
+                                        identity.domain.get(),
+                                        identity.identity.get(),
+                                    )),
+                                )?,
+                            ))
+                        })
+                        .collect::<Result<Vec<_>, ExecutableErrorV1>>()?,
+                )?,
+            ));
+        } else if let Some(identity) = identities.first() {
             if relations.contains_key(b"$referent".as_slice()) {
                 return Err(ExecutableErrorV1::MalformedProgram);
             }
@@ -1997,6 +2047,74 @@ pub struct ExecutablePhysicalPlanV1 {
     pub target: ExecutablePhysicalTargetV1,
     pub input: Option<ExecutableInputPlanV1>,
     pub program: ExecutableProgramV1,
+}
+
+impl ExecutablePhysicalPlanV1 {
+    /// Project the exact checked physical channel/domain contract beside the
+    /// admitted state. A passive consumer can select a declared domain facet
+    /// without parsing source, guessing IDs, or trial-submitting references.
+    pub fn project_referent_input_domains(
+        &mut self,
+        scope: TermScope,
+    ) -> Result<(), ExecutableErrorV1> {
+        let Some(input) = &self.input else {
+            return Ok(());
+        };
+        let domains = input
+            .events
+            .iter()
+            .filter_map(|event| {
+                let ExecutableInputSourceV1::Referent { channel } = &event.source else {
+                    return None;
+                };
+                Some(match event.occurrence.arguments.as_slice() {
+                    [ExecutableValueV1::Referent(value)] => Ok((channel.clone(), value.domain())),
+                    _ => Err(ExecutableErrorV1::MalformedProgram),
+                })
+            })
+            .collect::<Result<BTreeMap<_, _>, _>>()?;
+        if domains.is_empty() {
+            return Ok(());
+        }
+        let projection = self
+            .program
+            .projection
+            .as_mut()
+            .ok_or(ExecutableErrorV1::MalformedProgram)?;
+        let field = b"$referent-inputs";
+        let mut node = &projection.template;
+        while let Some(triple) = node.as_triple() {
+            let [key, _, rest] = triple.slots();
+            if key.as_atom().is_some_and(|key| {
+                key.kind() == b"clause/js-field-v1" && key.canonical_payload() == field
+            }) {
+                return Err(ExecutableErrorV1::MalformedProgram);
+            }
+            node = rest;
+        }
+        let metadata = projection_object(
+            scope,
+            domains
+                .into_iter()
+                .map(|(channel, domain)| {
+                    Ok((
+                        channel,
+                        projected_scalar_value_term(
+                            scope,
+                            &ExecutableValueV1::number(f64::from(domain))?,
+                        )?,
+                    ))
+                })
+                .collect::<Result<Vec<_>, ExecutableErrorV1>>()?,
+        )?;
+        projection.template = Term::triple([
+            projection_literal(scope, b"clause/js-field-v1", field)?,
+            metadata,
+            projection.template.clone(),
+        ])
+        .map_err(|_| ExecutableErrorV1::MalformedProgram)?;
+        validate_program(&self.program)
+    }
 }
 
 /// Exact byte identity of one physical plan artifact. It is not Application,
@@ -4455,7 +4573,7 @@ impl ExecutableProcessRuntimeV1 {
             step_ordinal,
         };
         let mut selected = Vec::new();
-        let mut selected_targets = BTreeSet::new();
+        let mut selected_targets = BTreeMap::new();
         for rule in self
             .program
             .rules
@@ -4492,25 +4610,43 @@ impl ExecutableProcessRuntimeV1 {
                     )
                 })?;
             if matches {
-                // One source handler may specialize across independent
-                // referents. Apply every disjoint specialization in this
-                // Step, while the first rule retains precedence whenever two
-                // alternatives target the same physical state.
-                let targets = rule
+                // All matching occurrences observe pre-state. Overlapping
+                // effects require an explicit additive contribution contract;
+                // ordinary replacement/removal is an atomic conflict.
+                for (slot, additive) in rule
                     .assignments
                     .iter()
-                    .map(|(slot, _)| *slot)
-                    .chain(rule.removals.iter().copied())
-                    .collect::<BTreeSet<_>>();
-                if targets.is_disjoint(&selected_targets) {
-                    selected_targets.extend(targets);
-                    selected.push(rule);
+                    .map(|(slot, expression)| {
+                        (
+                            *slot,
+                            matches!(expression, ExecutableExpressionV1::Accumulate(_)),
+                        )
+                    })
+                    .chain(rule.removals.iter().map(|slot| (*slot, false)))
+                {
+                    if let Some(prior_additive) = selected_targets.insert(slot, additive)
+                        && (!additive || !prior_additive)
+                    {
+                        return Err(ExecutableErrorV1::ConflictingStateEffects(slot));
+                    }
                 }
+                selected.push(rule);
             }
         }
         let mut next = self.configuration.clone();
+        let mut contributions = BTreeMap::<u16, Vec<f64>>::new();
         for rule in &selected {
             for (slot, expression) in &rule.assignments {
+                if let ExecutableExpressionV1::Accumulate(delta) = expression {
+                    let delta = number(evaluate(
+                        delta,
+                        &self.configuration,
+                        &occurrence.arguments,
+                        evaluation,
+                    )?)?;
+                    contributions.entry(*slot).or_default().push(delta);
+                    continue;
+                }
                 let value = evaluate(
                     expression,
                     &self.configuration,
@@ -4528,6 +4664,22 @@ impl ExecutableProcessRuntimeV1 {
                     .ok_or(ExecutableErrorV1::UnknownSlot(*slot))?;
                 *target = ExecutableSlotV1::Absent(target.kind());
             }
+        }
+        for (slot, mut deltas) in contributions {
+            // Canonical numeric ordering makes the result independent of rule
+            // discovery order. The numeric domain rejects non-finite results.
+            deltas.sort_by(f64::total_cmp);
+            let initial = self.configuration[usize::from(slot)]
+                .value()
+                .ok_or(ExecutableErrorV1::MissingState)?;
+            let mut value = number(initial.clone())?;
+            for delta in deltas {
+                value += delta;
+                if !value.is_finite() {
+                    return Err(ExecutableErrorV1::NumericDomain);
+                }
+            }
+            next[usize::from(slot)] = ExecutableValueV1::number(value)?.into();
         }
         let before = self.configuration_id;
         let after = ConfigurationId::from_bytes(runtime_identity_bytes(
@@ -5381,6 +5533,7 @@ pub enum ExecutableErrorV1 {
     MissingState,
     UnknownArgument(u16),
     TypeMismatch,
+    ConflictingStateEffects(u16),
     NumericDomain,
     CandidateAlreadyEmitted,
     NoStep,
@@ -5568,6 +5721,23 @@ fn validate_program(program: &ExecutableProgramV1) -> Result<(), ExecutableError
         return Err(ExecutableErrorV1::ResourceLimit);
     }
     for rule in &program.rules {
+        for predicate in &rule.predicates {
+            validate_value_expression(predicate, 0)?;
+        }
+        for (slot, expression) in &rule.assignments {
+            if let ExecutableExpressionV1::Accumulate(delta) = expression {
+                if initial_configuration
+                    .get(usize::from(*slot))
+                    .is_none_or(|state| state.kind() != ExecutableValueKindV1::Number)
+                    || !rule.required_present.contains(slot)
+                {
+                    return Err(ExecutableErrorV1::MalformedProgram);
+                }
+                validate_value_expression(delta, 0)?;
+            } else {
+                validate_value_expression(expression, 0)?;
+            }
+        }
         if [
             rule.predicates.len(),
             rule.required_present.len(),
@@ -5635,6 +5805,46 @@ fn validate_program(program: &ExecutableProgramV1) -> Result<(), ExecutableError
         if used.len() != projection.bindings.len() {
             return Err(ExecutableErrorV1::MalformedProgram);
         }
+    }
+    Ok(())
+}
+
+// Effect markers are admitted only at assignment roots, never in a value or
+// predicate. Check both decoded and directly constructed physical plans.
+fn validate_value_expression(
+    expression: &ExecutableExpressionV1,
+    depth: usize,
+) -> Result<(), ExecutableErrorV1> {
+    if depth > MAX_EXPRESSION_DEPTH {
+        return Err(ExecutableErrorV1::ResourceLimit);
+    }
+    use ExecutableExpressionV1 as E;
+    let children: Vec<&E> = match expression {
+        E::Accumulate(_) => return Err(ExecutableErrorV1::MalformedProgram),
+        E::Constant(_) | E::Slot(_) | E::Argument(_) | E::FreshReferent { .. } => vec![],
+        E::Not(value) => vec![value],
+        E::RelationRead(a, b)
+        | E::RelationPresent(a, b)
+        | E::RelationRemoveRow(a, b)
+        | E::Concatenate(a, b)
+        | E::Add(a, b)
+        | E::Subtract(a, b)
+        | E::Multiply(a, b)
+        | E::Divide(a, b)
+        | E::GreaterThan(a, b)
+        | E::LessThanOrEqual(a, b)
+        | E::Equal(a, b)
+        | E::And(a, b)
+        | E::SetInsert(a, b)
+        | E::SetContains(a, b)
+        | E::SetRemove(a, b) => vec![a, b],
+        E::RelationPut(a, b, c)
+        | E::RelationInsert(a, b, c)
+        | E::RelationRemoveValue(a, b, c)
+        | E::Clamp(a, b, c) => vec![a, b, c],
+    };
+    for child in children {
+        validate_value_expression(child, depth + 1)?;
     }
     Ok(())
 }
@@ -6038,6 +6248,7 @@ fn evaluate(
             .get(usize::from(*argument))
             .cloned()
             .ok_or(ExecutableErrorV1::UnknownArgument(*argument)),
+        E::Accumulate(_) => Err(ExecutableErrorV1::MalformedProgram),
         E::FreshReferent { domain, binder } => {
             Ok(ExecutableValueV1::Referent(ExecutableReferentV1::created(
                 *domain,
@@ -6469,6 +6680,10 @@ fn encode_expression(
             bytes.push(2);
             bytes.extend_from_slice(&argument.to_le_bytes());
         }
+        E::Accumulate(value) => {
+            bytes.push(24);
+            encode_expression(bytes, value)?;
+        }
         E::FreshReferent { domain, binder } => {
             bytes.push(17);
             bytes.extend_from_slice(&domain.to_le_bytes());
@@ -6790,6 +7005,7 @@ impl<'a> Decoder<'a> {
                 Box::new(self.expression(next)?),
                 Box::new(self.expression(next)?),
             ),
+            24 => E::Accumulate(Box::new(self.expression(next)?)),
             _ => return Err(ExecutableErrorV1::MalformedProgram),
         })
     }

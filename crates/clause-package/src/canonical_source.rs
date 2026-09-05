@@ -302,7 +302,7 @@ pub struct CanonicalStateRefV1 {
     pub subject_role: LocalRoleRefV2,
     pub value_role: LocalRoleRefV2,
     pub subject: Vec<u8>,
-    /// Exact typed subject identity exposed for source-declared referent input.
+    /// Exact typed identity of this state subject's declared domain facet.
     pub subject_identity: Option<CanonicalReferentV1>,
     pub relation_designation: Vec<u8>,
     pub path: CanonicalStatePathV1,
@@ -334,6 +334,11 @@ pub enum CanonicalExecutableExpressionV1 {
     Constant(CanonicalScalarValueV1),
     State(CanonicalStateRefV1),
     Argument(u16),
+    /// Assignment-root effect: add one explicitly declared numeric contribution.
+    /// It is never a value expression and cannot be nested.
+    Accumulate(Box<Self>),
+    MatchesAny(Vec<Vec<CanonicalExecutablePredicateV1>>),
+    Not(Box<Self>),
     FreshReferent {
         domain: FormationLocalId,
         binder: u16,
@@ -1074,6 +1079,7 @@ struct GeneralHandlerCst {
     predicates: Vec<CanonicalScalarPredicateV1>,
     boolean_conditions: Vec<BooleanRelationUseCst>,
     assignments: Vec<GeneralAssignmentCst>,
+    accumulations: Vec<GeneralAssignmentCst>,
     insertions: Vec<GeneralAssignmentCst>,
     removals: Vec<ScalarParameterSourceCst>,
     includes: Vec<HandlerIncludeCst>,
@@ -2114,6 +2120,7 @@ fn general_handler_relation_designations(handler: &GeneralHandlerCst) -> BTreeSe
                 .assignments
                 .iter()
                 .chain(&handler.insertions)
+                .chain(&handler.accumulations)
                 .map(|assignment| assignment.target.relation.clone()),
         )
         .collect()
@@ -2716,7 +2723,14 @@ fn selected_general_handler_subjects(
                 .chain(&handler.insertions)
                 .map(|assignment| &assignment.target),
         )
-        .any(|source| source.subject.starts_with(b"?") && source.subject != handler.subject);
+        .any(|source| {
+            source.subject.starts_with(b"?")
+                && source.subject != handler.subject
+                && !handler
+                    .arguments
+                    .iter()
+                    .any(|argument| argument.designation == source.subject)
+        });
     if subjects.len() > 1
         && handler.selectors.is_empty()
         && handler.predicates.is_empty()
@@ -2789,14 +2803,8 @@ fn referent_type_id(
     )
 }
 
-fn declared_referent_value(
-    cst: &CanonicalSourceCstV1,
-    plan: &CanonicalSourceAllocationPlanV1,
-    designation: &[u8],
-    domain: &[u8],
-    origin: CanonicalSourceOriginV1,
-) -> Result<CanonicalReferentV1, CanonicalSourceErrorV1> {
-    let declared = cst.items.iter().any(|item| match &item.kind {
+fn declared_domain_facet(cst: &CanonicalSourceCstV1, designation: &[u8], domain: &[u8]) -> bool {
+    cst.items.iter().any(|item| match &item.kind {
         CstKind::Application(application)
             if application.subject == designation
                 && application.role == b"shape"
@@ -2808,8 +2816,17 @@ fn declared_referent_value(
             true
         }
         _ => false,
-    });
-    if !declared {
+    })
+}
+
+fn declared_referent_value(
+    cst: &CanonicalSourceCstV1,
+    plan: &CanonicalSourceAllocationPlanV1,
+    designation: &[u8],
+    domain: &[u8],
+    origin: CanonicalSourceOriginV1,
+) -> Result<CanonicalReferentV1, CanonicalSourceErrorV1> {
+    if !declared_domain_facet(cst, designation, domain) {
         return Err(CanonicalSourceErrorV1::MissingExecutableBinding { origin });
     }
     let producer = semantic_producer(CanonicalSourceProductionV1::Referent, designation);
@@ -2830,15 +2847,89 @@ fn input_subject_identity(
     relation: &ResolvedStateRelation<'_>,
     origin: CanonicalSourceOriginV1,
 ) -> Result<Option<CanonicalReferentV1>, CanonicalSourceErrorV1> {
-    cst.items
-        .iter()
-        .any(|item| {
-            matches!(&item.kind,
-                CstKind::ReferentInputBinding(binding) if binding.domain == relation.subject_domain
-            )
-        })
+    declared_domain_facet(cst, subject, relation.subject_domain)
         .then(|| declared_referent_value(cst, plan, subject, relation.subject_domain, origin))
         .transpose()
+}
+
+// A declared nominal value retains its checked domain and occurrence identity.
+// An unshaped symbol has no asserted domain facet; no foreign spelling is an ID.
+fn typed_state_value(
+    cst: &CanonicalSourceCstV1,
+    plan: &CanonicalSourceAllocationPlanV1,
+    state: &CanonicalStateRefV1,
+    value: CanonicalScalarValueV1,
+    origin: CanonicalSourceOriginV1,
+) -> Result<CanonicalScalarValueV1, CanonicalSourceErrorV1> {
+    let CanonicalScalarValueV1::Symbol(designation) = &value else {
+        return Ok(value);
+    };
+    let relation = cst
+        .items
+        .iter()
+        .find_map(|item| match &item.kind {
+            CstKind::Relation(relation) if relation.designation == state.relation_designation => {
+                Some(relation)
+            }
+            _ => None,
+        })
+        .ok_or(CanonicalSourceErrorV1::MissingExecutableBinding { origin })?;
+    let relation = resolved_state_relation_for(plan, relation, origin)?;
+    if state.path == CanonicalStatePathV1::Scalar
+        && declared_domain_facet(cst, designation, relation.value_domain)
+    {
+        return Ok(CanonicalScalarValueV1::Referent(declared_referent_value(
+            cst,
+            plan,
+            designation,
+            relation.value_domain,
+            origin,
+        )?));
+    }
+    Ok(value)
+}
+
+fn numeric_contribution_expression(
+    cst: &CanonicalSourceCstV1,
+    plan: &CanonicalSourceAllocationPlanV1,
+    expression: &CanonicalExecutableExpressionV1,
+    referent_arguments: &BTreeSet<u16>,
+    origin: CanonicalSourceOriginV1,
+) -> Result<bool, CanonicalSourceErrorV1> {
+    use CanonicalExecutableExpressionV1 as E;
+    Ok(match expression {
+        E::Constant(CanonicalScalarValueV1::Number(_)) => true,
+        E::Argument(ordinal) => !referent_arguments.contains(ordinal),
+        E::State(state) => {
+            let relation = cst
+                .items
+                .iter()
+                .find_map(|item| match &item.kind {
+                    CstKind::Relation(relation)
+                        if relation.designation == state.relation_designation =>
+                    {
+                        Some(relation)
+                    }
+                    _ => None,
+                })
+                .ok_or(CanonicalSourceErrorV1::MissingExecutableBinding { origin })?;
+            let relation = resolved_state_relation_for(plan, relation, origin)?;
+            match &state.path {
+                CanonicalStatePathV1::Scalar => relation.value_domain == b"F64",
+                CanonicalStatePathV1::Field { designation, .. } => {
+                    cst.items.iter().any(|item| matches!(&item.kind,
+                        CstKind::Shape { designation: shape, fields }
+                            if shape == relation.value_domain && fields.iter().any(|field| field.name == *designation && field.domain == b"F64")))
+                }
+                _ => false,
+            }
+        }
+        E::Add(a, b) | E::Subtract(a, b) | E::Multiply(a, b) | E::Divide(a, b) => {
+            numeric_contribution_expression(cst, plan, a, referent_arguments, origin)?
+                && numeric_contribution_expression(cst, plan, b, referent_arguments, origin)?
+        }
+        _ => false,
+    })
 }
 
 fn relation_table_state_ref(
@@ -3373,6 +3464,7 @@ fn resolve_general_parameter_states(
     initial_entities: BTreeMap<Vec<u8>, Vec<u8>>,
     origin: CanonicalSourceOriginV1,
     allow_independent_subjects: bool,
+    independent_arguments: &BTreeMap<Vec<u8>, Vec<u8>>,
 ) -> Result<Vec<GeneralBindingSolution>, CanonicalSourceErrorV1> {
     let referent_domains_overlap = |left: &[u8], right: &[u8]| {
         left == right
@@ -3471,9 +3563,15 @@ fn resolve_general_parameter_states(
         if !source.source.subject.starts_with(b"?") {
             continue;
         }
+        if let Some(domain) = independent_arguments.get(&source.source.subject) {
+            if !referent_domains_overlap(domain, &source.subject_domain) {
+                return Err(CanonicalSourceErrorV1::MissingExecutableBinding { origin });
+            }
+            continue;
+        }
         if source.source.subject == handler_subject || allow_independent_subjects {
             if let Some(expected) = independent_domains.get(source.source.subject.as_slice()) {
-                if *expected != source.subject_domain.as_slice() {
+                if !referent_domains_overlap(expected, &source.subject_domain) {
                     return Err(CanonicalSourceErrorV1::MissingExecutableBinding { origin });
                 }
             } else {
@@ -3607,6 +3705,7 @@ fn resolved_boolean_derives<'a>(
             BTreeMap::new(),
             law.origin,
             true,
+            &BTreeMap::new(),
         )?;
         for solution in solutions {
             let bindings = concretize_relation_bindings(
@@ -3867,14 +3966,24 @@ fn checked_source_state_cells(
             }
             CstKind::SymbolAssertion(assertion) => {
                 let state = state_ref_for_origin(cst, plan, item.origin, None)?;
+                let value = typed_state_value(
+                    cst,
+                    plan,
+                    &state,
+                    CanonicalScalarValueV1::Symbol(assertion.value.clone()),
+                    item.origin,
+                )?;
+                let value_kind = if matches!(value, CanonicalScalarValueV1::Referent(_)) {
+                    CanonicalScalarValueKindV1::Referent
+                } else {
+                    CanonicalScalarValueKindV1::Symbol
+                };
                 cells.insert(
                     state.clone(),
                     CanonicalStateCellV1 {
                         state,
-                        initial_value: Some(CanonicalScalarValueV1::Symbol(
-                            assertion.value.clone(),
-                        )),
-                        value_kind: CanonicalScalarValueKindV1::Symbol,
+                        initial_value: Some(value),
+                        value_kind,
                     },
                 );
             }
@@ -4161,16 +4270,17 @@ fn canonical_general_executable_expression(
     let expression =
         expand_scalar_law_bindings(expression, bindings, &mut BTreeSet::new(), origin)?;
     if let CanonicalScalarExpressionV1::Parameter(parameter) = &expression
+        && let Some(ordinal) = arguments.get(parameter)
+    {
+        return Ok(CanonicalExecutableExpressionV1::Argument(*ordinal));
+    }
+    if let CanonicalScalarExpressionV1::Parameter(parameter) = &expression
+        && !parameters.contains_key(parameter)
         && let Some(value) = referents.get(parameter)
     {
         return Ok(constant_expression(CanonicalScalarValueV1::Referent(
             value.clone(),
         )));
-    }
-    if let CanonicalScalarExpressionV1::Parameter(parameter) = &expression
-        && let Some(ordinal) = arguments.get(parameter)
-    {
-        return Ok(CanonicalExecutableExpressionV1::Argument(*ordinal));
     }
     let lower_expression = |expression: &CanonicalScalarExpressionV1| {
         canonical_general_executable_expression(
@@ -4512,6 +4622,11 @@ fn relational_checked_handler(
     plan: &CanonicalSourceAllocationPlanV1,
     source: &GeneralHandlerCst,
 ) -> Result<CanonicalExecutableHandlerV1, CanonicalSourceErrorV1> {
+    if !source.accumulations.is_empty() {
+        return Err(CanonicalSourceErrorV1::MissingExecutableBinding {
+            origin: source.origin,
+        });
+    }
     if !source.scalar_bindings.is_empty() {
         let mut compiled: Option<CanonicalExecutableHandlerV1> = None;
         for case in binding_cases(&source.scalar_bindings)? {
@@ -5084,6 +5199,7 @@ fn checked_executable_handlers(
     let derives = resolved_boolean_derives(cst, plan)?;
     for derive in &derives {
         let mut rules = Vec::with_capacity(derive.cases.len() + 1);
+        let mut cases = Vec::new();
         for case in &derive.cases {
             let mut predicates = canonical_scalar_executable_predicates(
                 &derive.law.predicates,
@@ -5097,18 +5213,12 @@ fn checked_executable_handlers(
                     constant_expression(expected.clone()),
                 )
             }));
-            rules.push(CanonicalExecutableRuleV1 {
-                law_origins: vec![],
-                predicates,
-                required_present: vec![],
-                required_absent: vec![],
-                assignments: vec![CanonicalExecutableAssignmentV1 {
-                    target: derive.state.clone(),
-                    value: constant_expression(CanonicalScalarValueV1::Boolean(derive.value)),
-                }],
-                removals: vec![],
-            });
+            for predicate in &mut predicates {
+                normalize_typed_predicate(cst, plan, predicate, derive.law.origin)?;
+            }
+            cases.push(predicates);
         }
+        let value = CanonicalExecutableExpressionV1::MatchesAny(cases);
         rules.push(CanonicalExecutableRuleV1 {
             law_origins: vec![],
             predicates: vec![],
@@ -5116,7 +5226,11 @@ fn checked_executable_handlers(
             required_absent: vec![],
             assignments: vec![CanonicalExecutableAssignmentV1 {
                 target: derive.state.clone(),
-                value: constant_expression(CanonicalScalarValueV1::Boolean(!derive.value)),
+                value: if derive.value {
+                    value
+                } else {
+                    CanonicalExecutableExpressionV1::Not(Box::new(value))
+                },
             }],
             removals: vec![],
         });
@@ -5256,6 +5370,7 @@ fn checked_executable_handlers(
         let current_source = source
             .assignments
             .first()
+            .or_else(|| source.accumulations.first())
             .map(|assignment| &assignment.target)
             .or_else(|| source.parameter_sources.first())
             .or_else(|| source.required_sources.first())
@@ -5267,6 +5382,37 @@ fn checked_executable_handlers(
         let mut current_parameter_source = current_source;
         current_parameter_source.parameter = current_parameter.clone();
         parameter_sources.push(current_parameter_source);
+        for (index, accumulation) in source.accumulations.iter().enumerate() {
+            let relation =
+                resolved_state_relation(cst, plan, &accumulation.target.relation, source.origin)?;
+            if general_source_value_domain(cst, &relation, &accumulation.target, source.origin)?
+                != b"F64"
+                || !singleton_forward_mode(&relation)
+            {
+                return Err(CanonicalSourceErrorV1::InvalidGeneralHandler {
+                    origin: source.origin,
+                });
+            }
+            let mut target = accumulation.target.clone();
+            target.parameter = format!("\0general-accumulate-{index}").into_bytes();
+            parameter_sources.push(target);
+        }
+        let independent_arguments = cst
+            .items
+            .iter()
+            .filter_map(|item| match &item.kind {
+                CstKind::ReferentInputBinding(binding)
+                    if binding.handler_designation == source.designation
+                        && source.arguments.len() == 1 =>
+                {
+                    Some((
+                        source.arguments[0].designation.clone(),
+                        binding.domain.clone(),
+                    ))
+                }
+                _ => None,
+            })
+            .collect::<BTreeMap<_, _>>();
         let solutions = resolve_general_parameter_states(
             cst,
             plan,
@@ -5275,6 +5421,7 @@ fn checked_executable_handlers(
             BTreeMap::new(),
             source.origin,
             false,
+            &independent_arguments,
         )?;
         let arguments = source
             .arguments
@@ -5293,11 +5440,16 @@ fn checked_executable_handlers(
                 } = solution;
                 let mut referents = BTreeMap::new();
                 for (variable, subject) in &entities {
-                    if let Some(identity) = parameters.values().find_map(|state| {
-                        (state.subject == *subject)
-                            .then_some(state.subject_identity.as_ref())
-                            .flatten()
-                    }) {
+                    if let Some(identity) = parameter_sources
+                        .iter()
+                        .filter(|source| source.subject == *variable)
+                        .filter_map(|source| parameters.get(&source.parameter))
+                        .find_map(|state| {
+                            (state.subject == *subject)
+                                .then_some(state.subject_identity.as_ref())
+                                .flatten()
+                        })
+                    {
                         referents.insert(variable.clone(), identity.clone());
                     }
                 }
@@ -5386,21 +5538,40 @@ fn checked_executable_handlers(
                     &scalar_bindings,
                     source.origin,
                 )?;
-                predicates.extend(selector_equalities.into_iter().map(|(selector, expected)| {
-                    CanonicalExecutablePredicateV1::Equal(
+                for (argument, domain) in &independent_arguments {
+                    if let Some(subject) = entities.get(argument) {
+                        let expected =
+                            declared_referent_value(cst, plan, subject, domain, source.origin)?;
+                        predicates.push(CanonicalExecutablePredicateV1::Equal(
+                            CanonicalExecutableExpressionV1::Argument(arguments[argument]),
+                            constant_expression(CanonicalScalarValueV1::Referent(expected)),
+                        ));
+                    }
+                }
+                for (selector, expected) in selector_equalities {
+                    let expected = typed_state_value(
+                        cst,
+                        plan,
+                        &selector,
+                        CanonicalScalarValueV1::Symbol(expected),
+                        source.origin,
+                    )?;
+                    predicates.push(CanonicalExecutablePredicateV1::Equal(
                         CanonicalExecutableExpressionV1::State(selector),
-                        constant_expression(CanonicalScalarValueV1::Symbol(expected)),
-                    )
-                }));
+                        constant_expression(expected),
+                    ));
+                }
                 for (parameter, expected) in &selector_parameters {
                     let selector = parameters.get(parameter).cloned().ok_or(
                         CanonicalSourceErrorV1::MissingExecutableBinding {
                             origin: source.origin,
                         },
                     )?;
+                    let expected =
+                        typed_state_value(cst, plan, &selector, expected.clone(), source.origin)?;
                     predicates.push(CanonicalExecutablePredicateV1::Equal(
                         CanonicalExecutableExpressionV1::State(selector),
-                        constant_expression(expected.clone()),
+                        constant_expression(expected),
                     ));
                 }
                 predicates.extend(
@@ -5537,6 +5708,52 @@ fn checked_executable_handlers(
                 }
                 required_present.sort();
                 required_present.dedup();
+                for accumulation in &source.accumulations {
+                    let target = general_target_state_ref(
+                        cst,
+                        plan,
+                        &accumulation.target,
+                        &entities,
+                        source.origin,
+                    )?;
+                    if assignments
+                        .iter()
+                        .any(|assignment| assignment.target == target)
+                        || removals.contains(&target)
+                    {
+                        return Err(CanonicalSourceErrorV1::InvalidGeneralHandler {
+                            origin: source.origin,
+                        });
+                    }
+                    let delta = canonical_general_executable_expression(
+                        &accumulation.value,
+                        &current,
+                        &parameters,
+                        &arguments,
+                        &referents,
+                        &scalar_bindings,
+                        source.origin,
+                    )?;
+                    let referent_arguments = independent_arguments
+                        .keys()
+                        .map(|name| arguments[name])
+                        .collect();
+                    if !numeric_contribution_expression(
+                        cst,
+                        plan,
+                        &delta,
+                        &referent_arguments,
+                        source.origin,
+                    )? {
+                        return Err(CanonicalSourceErrorV1::InvalidGeneralHandler {
+                            origin: source.origin,
+                        });
+                    }
+                    assignments.push(CanonicalExecutableAssignmentV1 {
+                        target,
+                        value: CanonicalExecutableExpressionV1::Accumulate(Box::new(delta)),
+                    });
+                }
                 rules.push(CanonicalExecutableRuleV1 {
                     law_origins: scalar_case.origins.clone(),
                     predicates,
@@ -5583,7 +5800,49 @@ fn checked_executable_handlers(
             .collect::<Result<Vec<_>, _>>()?,
     );
     handlers.sort_by_key(|handler| handler.id);
+    for handler in &mut handlers {
+        for rule in &mut handler.rules {
+            for assignment in &mut rule.assignments {
+                if let CanonicalExecutableExpressionV1::Constant(value) = &mut assignment.value {
+                    *value = typed_state_value(
+                        cst,
+                        plan,
+                        &assignment.target,
+                        value.clone(),
+                        cst.items[0].origin,
+                    )?;
+                }
+            }
+            for predicate in &mut rule.predicates {
+                normalize_typed_predicate(cst, plan, predicate, cst.items[0].origin)?;
+            }
+        }
+    }
     Ok(handlers)
+}
+
+fn normalize_typed_predicate(
+    cst: &CanonicalSourceCstV1,
+    plan: &CanonicalSourceAllocationPlanV1,
+    predicate: &mut CanonicalExecutablePredicateV1,
+    origin: CanonicalSourceOriginV1,
+) -> Result<(), CanonicalSourceErrorV1> {
+    if let CanonicalExecutablePredicateV1::Equal(left, right) = predicate {
+        match (left, right) {
+            (
+                CanonicalExecutableExpressionV1::State(state),
+                CanonicalExecutableExpressionV1::Constant(value),
+            )
+            | (
+                CanonicalExecutableExpressionV1::Constant(value),
+                CanonicalExecutableExpressionV1::State(state),
+            ) => {
+                *value = typed_state_value(cst, plan, state, value.clone(), origin)?;
+            }
+            _ => {}
+        }
+    }
+    Ok(())
 }
 
 fn source_keyboard_bindings(
@@ -5715,6 +5974,18 @@ fn checked_referent_input_bindings(
                 {
                     domains.insert(relation.subject_domain.to_vec());
                 }
+            }
+        }
+        for assignment in source.assignments.iter().chain(&source.insertions) {
+            if assignment.value == CanonicalScalarExpressionV1::Parameter(argument.clone()) {
+                let relation =
+                    resolved_state_relation(cst, plan, &assignment.target.relation, source.origin)?;
+                domains.insert(general_source_value_domain(
+                    cst,
+                    &relation,
+                    &assignment.target,
+                    source.origin,
+                )?);
             }
         }
         if domains != BTreeSet::from([binding.domain.clone()])
@@ -8258,6 +8529,7 @@ fn parse_general_handler(
     let mut pending_creation = None::<(Vec<u8>, CanonicalSourceOriginV1)>;
     let mut withdraw = Vec::new();
     let mut include = Vec::new();
+    let mut accumulate = Vec::new();
     let mut seen_sections = BTreeSet::new();
     for line in logical
         .iter()
@@ -8275,8 +8547,10 @@ fn parse_general_handler(
                     keyword: b"admit".to_vec(),
                 });
             }
-            if !matches!(trimmed, "when" | "create" | "withdraw" | "include")
-                || !seen_sections.insert(trimmed.to_owned())
+            if !matches!(
+                trimmed,
+                "when" | "create" | "withdraw" | "include" | "accumulate"
+            ) || !seen_sections.insert(trimmed.to_owned())
             {
                 return Ok(None);
             }
@@ -8321,13 +8595,14 @@ fn parse_general_handler(
             "when" => when.push(entry),
             "withdraw" => withdraw.push(entry),
             "include" => include.push(entry),
+            "accumulate" => accumulate.push(entry),
             _ => return Ok(None),
         }
     }
     if pending_creation.is_some() {
         return Err(CanonicalSourceErrorV1::InvalidGeneralHandler { origin });
     }
-    if include.is_empty() {
+    if include.is_empty() && accumulate.is_empty() {
         return Ok(None);
     }
 
@@ -8490,14 +8765,32 @@ fn parse_general_handler(
         };
         removals.append(&mut removed);
     }
-    let includes = include
+    let accumulations = accumulate
+        .iter()
+        .map(|(line, _)| {
+            parse_general_insertion(line, subject)
+                .ok_or(CanonicalSourceErrorV1::InvalidGeneralHandler { origin })
+        })
+        .collect::<Result<Vec<_>, _>>()?
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
+    let mut includes = include
         .iter()
         .map(|(include, origin)| HandlerIncludeCst {
             origin: *origin,
             local: include.as_bytes().to_vec(),
         })
         .collect::<Vec<_>>();
-    if assignments.is_empty() && insertions.is_empty() && removals.is_empty() {
+    includes.extend(accumulate.iter().map(|(line, origin)| HandlerIncludeCst {
+        origin: *origin,
+        local: format!("accumulate {line}").into_bytes(),
+    }));
+    if assignments.is_empty()
+        && insertions.is_empty()
+        && removals.is_empty()
+        && accumulations.is_empty()
+    {
         return Ok(None);
     }
     let mut used_parameters = BTreeSet::new();
@@ -8510,7 +8803,7 @@ fn parse_general_handler(
         collect_scalar_expression_parameters(left, &mut used_parameters);
         collect_scalar_expression_parameters(right, &mut used_parameters);
     }
-    for assignment in &assignments {
+    for assignment in assignments.iter().chain(&accumulations) {
         collect_scalar_expression_parameters(&assignment.value, &mut used_parameters);
     }
     for insertion in &insertions {
@@ -8555,6 +8848,7 @@ fn parse_general_handler(
         predicates,
         boolean_conditions,
         assignments,
+        accumulations,
         insertions,
         removals,
         includes,

@@ -70,6 +70,15 @@ pub const AUTHORING_EXAMPLES_V1: &[AuthoringExampleV1] = &[
         )),
     },
     AuthoringExampleV1 {
+        slug: "selected-account-contributions",
+        title: "Independent target selection and explicit contributions",
+        summary: "Stores a typed Account input on an independent controller, then sums explicitly declared numeric contributions from eligible occurrences against the same pre-step state. Ordinary overlapping replacements reject atomically; accumulate does not imply source-order execution.",
+        source: include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../test-vectors/authoring/selected-account-contributions.clause"
+        )),
+    },
+    AuthoringExampleV1 {
         slug: "text-state-transition",
         title: "Text state transition",
         summary: "Accepts bounded UTF-8 text as handler input, stores it in optional state, and replaces it atomically.",

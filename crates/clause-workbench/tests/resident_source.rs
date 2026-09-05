@@ -22,6 +22,450 @@ const REFERENT_INPUT: &[u8] = include_bytes!(concat!(
     "/../../test-vectors/authoring/referent-input-transition.clause"
 ));
 
+const CROSS_SUBJECT_TARGET: &[u8] =
+    include_bytes!("../../../test-vectors/authoring/cross-subject-referent-target.clause");
+const ACCOUNT_CONTRIBUTIONS: &[u8] =
+    include_bytes!("../../../test-vectors/authoring/selected-account-contributions.clause");
+
+#[test]
+fn cross_subject_input_replaces_typed_declared_target() {
+    use clause_runtime::{
+        WasmSessionPhysicalInputV1, WasmSessionTickV1, projected_referent_value_v1,
+    };
+    let mut workbench = ResidentSourceWorkbenchV1::open(CROSS_SUBJECT_TARGET).unwrap();
+    let handle = workbench.generation().handle;
+    workbench
+        .tick_to_candidate(WasmSessionTickV1 {
+            configuration_revision: 1,
+            fixed_tick_milliseconds: 100,
+        })
+        .unwrap();
+    let initial = workbench.admit().unwrap();
+    let term = decode_canonical_term_bytes(&initial.projection.exact_term_bytes).unwrap();
+    let second = projected_referent_value_v1(projected_object_field(
+        projected_object_field(&term, b"second"),
+        b"$referent",
+    ))
+    .unwrap()
+    .unwrap();
+    workbench
+        .apply_physical_input(
+            handle,
+            WasmSessionPhysicalInputV1 {
+                input_sequence: 1,
+                source: ExecutableInputSourceV1::Referent {
+                    channel: b"Target".to_vec(),
+                },
+                value: Some(ExecutableValueV1::Referent(second.clone())),
+            },
+        )
+        .unwrap();
+    assert_eq!(workbench.last_projection().unwrap(), &initial.projection);
+    workbench
+        .tick_to_candidate(WasmSessionTickV1 {
+            configuration_revision: 2,
+            fixed_tick_milliseconds: 100,
+        })
+        .unwrap();
+    assert_eq!(workbench.last_projection().unwrap(), &initial.projection);
+    let admitted = workbench.admit().unwrap();
+    let term = decode_canonical_term_bytes(&admitted.projection.exact_term_bytes).unwrap();
+    assert_eq!(
+        projected_referent_value_v1(projected_object_field(
+            projected_object_field(&term, b"player"),
+            b"chosen-target"
+        ))
+        .unwrap(),
+        Some(second)
+    );
+}
+
+#[test]
+fn explicit_contributions_reach_runtime_selected_account_once_per_contributor() {
+    use clause_runtime::{
+        WasmSessionPhysicalInputV1, WasmSessionTickV1, projected_referent_value_v1,
+    };
+    let mut workbench = ResidentSourceWorkbenchV1::open(ACCOUNT_CONTRIBUTIONS).unwrap();
+    let handle = workbench.generation().handle;
+    let tick = |workbench: &mut ResidentSourceWorkbenchV1, revision, milliseconds| {
+        workbench
+            .tick_to_candidate(WasmSessionTickV1 {
+                configuration_revision: revision,
+                fixed_tick_milliseconds: milliseconds,
+            })
+            .unwrap();
+        let admitted = workbench.admit().unwrap();
+        decode_canonical_term_bytes(&admitted.projection.exact_term_bytes).unwrap()
+    };
+    let term = tick(&mut workbench, 1, 100);
+    let second = projected_referent_value_v1(projected_object_field(
+        projected_object_field(&term, b"second"),
+        b"$referent",
+    ))
+    .unwrap()
+    .unwrap();
+    let apply = |workbench: &mut ResidentSourceWorkbenchV1, sequence| {
+        workbench
+            .apply_physical_input(
+                handle,
+                WasmSessionPhysicalInputV1 {
+                    input_sequence: sequence,
+                    source: ExecutableInputSourceV1::Keyboard {
+                        code: b"Apply".to_vec(),
+                        phase: ExecutableKeyPhaseV1::Down,
+                    },
+                    value: None,
+                },
+            )
+            .unwrap();
+    };
+    apply(&mut workbench, 1);
+    let term = tick(&mut workbench, 2, 100);
+    assert_eq!(
+        projected_number(projected_object_field(
+            projected_object_field(&term, b"first"),
+            b"balance"
+        )),
+        118.0
+    );
+    assert_eq!(
+        projected_number(projected_object_field(
+            projected_object_field(&term, b"second"),
+            b"balance"
+        )),
+        200.0
+    );
+    apply(&mut workbench, 2);
+    let term = tick(&mut workbench, 3, 1000);
+    assert_eq!(
+        projected_number(projected_object_field(
+            projected_object_field(&term, b"first"),
+            b"balance"
+        )),
+        118.0
+    );
+    workbench
+        .apply_physical_input(
+            handle,
+            WasmSessionPhysicalInputV1 {
+                input_sequence: 3,
+                source: ExecutableInputSourceV1::Referent {
+                    channel: b"Choose".to_vec(),
+                },
+                value: Some(ExecutableValueV1::Referent(second)),
+            },
+        )
+        .unwrap();
+    apply(&mut workbench, 4);
+    let term = tick(&mut workbench, 4, 100);
+    assert_eq!(
+        projected_number(projected_object_field(
+            projected_object_field(&term, b"first"),
+            b"balance"
+        )),
+        118.0
+    );
+    assert_eq!(
+        projected_number(projected_object_field(
+            projected_object_field(&term, b"second"),
+            b"balance"
+        )),
+        218.0
+    );
+}
+
+#[test]
+fn overlapping_ordinary_replacements_reject_the_whole_step() {
+    use clause_runtime::{WasmSessionPhysicalInputV1, WasmSessionTickV1};
+    let source = std::str::from_utf8(ACCOUNT_CONTRIBUTIONS).unwrap()
+        .replace("  withdraw\n    ?contributor cooldown ?cooldown\n  include\n    ?contributor cooldown 1.0\n  accumulate\n    ?account balance ?amount",
+                 "  withdraw\n    ?contributor cooldown ?cooldown\n    ?account balance ?balance\n  include\n    ?contributor cooldown 1.0\n    ?account balance ?balance + ?amount");
+    let mut workbench = ResidentSourceWorkbenchV1::open(source.as_bytes()).unwrap();
+    let mut native =
+        open_fresh_persistent_process_session_v1(&workbench.generation().cwr1).unwrap();
+    let error = native
+        .apply_typed_physical_input(
+            native.runtime_session(),
+            &ExecutableInputSourceV1::Keyboard {
+                code: b"Apply".to_vec(),
+                phase: ExecutableKeyPhaseV1::Down,
+            },
+            None,
+        )
+        .unwrap_err();
+    assert!(
+        error.to_string().contains("ConflictingStateEffects"),
+        "{error}"
+    );
+    workbench
+        .tick_to_candidate(WasmSessionTickV1 {
+            configuration_revision: 1,
+            fixed_tick_milliseconds: 100,
+        })
+        .unwrap();
+    let initial = workbench.admit().unwrap();
+    let error = workbench
+        .apply_physical_input(
+            workbench.generation().handle,
+            WasmSessionPhysicalInputV1 {
+                input_sequence: 1,
+                source: ExecutableInputSourceV1::Keyboard {
+                    code: b"Apply".to_vec(),
+                    phase: ExecutableKeyPhaseV1::Down,
+                },
+                value: None,
+            },
+        )
+        .unwrap_err();
+    assert!(
+        error.to_string().contains("InputConfigurationRejected"),
+        "{error}"
+    );
+    assert_eq!(workbench.last_projection().unwrap(), &initial.projection);
+    workbench
+        .tick_to_candidate(WasmSessionTickV1 {
+            configuration_revision: 2,
+            fixed_tick_milliseconds: 100,
+        })
+        .unwrap();
+    let term = decode_canonical_term_bytes(&workbench.admit().unwrap().projection.exact_term_bytes)
+        .unwrap();
+    assert_eq!(
+        projected_number(projected_object_field(
+            projected_object_field(&term, b"first"),
+            b"balance"
+        )),
+        100.0
+    );
+    assert_eq!(
+        projected_number(projected_object_field(
+            projected_object_field(&term, b"alpha"),
+            b"cooldown"
+        )),
+        0.0
+    );
+}
+
+#[test]
+fn actual_party_source_checks_target_range_selection_and_cooldown_before_aggregating() {
+    use clause_runtime::{
+        WasmSessionPhysicalInputV1, WasmSessionTickV1, projected_referent_value_v1,
+    };
+    let source =
+        include_str!("../../../test-vectors/authoring/targeted-party-contributions.clause");
+    for (source, expected) in [
+        (source.to_owned(), 80.0),
+        (
+            source.replace("second selected true", "second selected false"),
+            90.0,
+        ),
+        (
+            source.replace("cinder hostile true", "cinder hostile false"),
+            100.0,
+        ),
+        (
+            source.replace("attack range 5.0", "attack range 0.5"),
+            100.0,
+        ),
+        (
+            source.replace("second action cooldown 0.0", "second action cooldown 1.0"),
+            90.0,
+        ),
+    ] {
+        let mut workbench = ResidentSourceWorkbenchV1::open(source.as_bytes()).unwrap();
+        let handle = workbench.generation().handle;
+        workbench
+            .tick_to_candidate(WasmSessionTickV1 {
+                configuration_revision: 1,
+                fixed_tick_milliseconds: 100,
+            })
+            .unwrap();
+        let initial = workbench.admit().unwrap();
+        let term = decode_canonical_term_bytes(&initial.projection.exact_term_bytes).unwrap();
+        let cinder = projected_referent_value_v1(projected_object_field(
+            projected_object_field(&term, b"cinder"),
+            b"$referent",
+        ))
+        .unwrap()
+        .unwrap();
+        workbench
+            .apply_physical_input(
+                handle,
+                WasmSessionPhysicalInputV1 {
+                    input_sequence: 1,
+                    source: ExecutableInputSourceV1::Referent {
+                        channel: b"Target".to_vec(),
+                    },
+                    value: Some(ExecutableValueV1::Referent(cinder)),
+                },
+            )
+            .unwrap();
+        workbench
+            .apply_physical_input(
+                handle,
+                WasmSessionPhysicalInputV1 {
+                    input_sequence: 2,
+                    source: ExecutableInputSourceV1::Keyboard {
+                        code: b"Attack".to_vec(),
+                        phase: ExecutableKeyPhaseV1::Down,
+                    },
+                    value: None,
+                },
+            )
+            .unwrap();
+        assert_eq!(workbench.last_projection().unwrap(), &initial.projection);
+        workbench
+            .tick_to_candidate(WasmSessionTickV1 {
+                configuration_revision: 2,
+                fixed_tick_milliseconds: 100,
+            })
+            .unwrap();
+        assert_eq!(workbench.last_projection().unwrap(), &initial.projection);
+        let term =
+            decode_canonical_term_bytes(&workbench.admit().unwrap().projection.exact_term_bytes)
+                .unwrap();
+        assert_eq!(
+            projected_number(projected_object_field(
+                projected_object_field(&term, b"cinder"),
+                b"vitality"
+            )),
+            expected
+        );
+        assert_eq!(
+            projected_number(projected_object_field(
+                projected_object_field(&term, b"first"),
+                b"vitality"
+            )),
+            100.0
+        );
+    }
+    let mut workbench = ResidentSourceWorkbenchV1::open(include_bytes!(
+        "../../../test-vectors/authoring/targeted-party-attack-conflict.clause"
+    ))
+    .unwrap();
+    workbench
+        .tick_to_candidate(WasmSessionTickV1 {
+            configuration_revision: 1,
+            fixed_tick_milliseconds: 100,
+        })
+        .unwrap();
+    let initial = workbench.admit().unwrap();
+    let term = decode_canonical_term_bytes(&initial.projection.exact_term_bytes).unwrap();
+    let target = projected_referent_value_v1(projected_object_field(
+        projected_object_field(&term, b"cinder"),
+        b"$referent",
+    ))
+    .unwrap()
+    .unwrap();
+    workbench
+        .apply_physical_input(
+            workbench.generation().handle,
+            WasmSessionPhysicalInputV1 {
+                input_sequence: 1,
+                source: ExecutableInputSourceV1::Referent {
+                    channel: b"Target".to_vec(),
+                },
+                value: Some(ExecutableValueV1::Referent(target)),
+            },
+        )
+        .unwrap();
+    assert!(
+        workbench
+            .apply_physical_input(
+                workbench.generation().handle,
+                WasmSessionPhysicalInputV1 {
+                    input_sequence: 2,
+                    source: ExecutableInputSourceV1::Keyboard {
+                        code: b"Attack".to_vec(),
+                        phase: ExecutableKeyPhaseV1::Down
+                    },
+                    value: None
+                }
+            )
+            .is_err()
+    );
+    workbench
+        .tick_to_candidate(WasmSessionTickV1 {
+            configuration_revision: 2,
+            fixed_tick_milliseconds: 100,
+        })
+        .unwrap();
+    let term = decode_canonical_term_bytes(&workbench.admit().unwrap().projection.exact_term_bytes)
+        .unwrap();
+    assert_eq!(
+        projected_number(projected_object_field(
+            projected_object_field(&term, b"cinder"),
+            b"vitality"
+        )),
+        100.0
+    );
+    assert_eq!(
+        projected_number(projected_object_field(
+            projected_object_field(&term, b"first"),
+            b"action-cooldown"
+        )),
+        0.0
+    );
+}
+
+#[test]
+fn additive_effects_require_numeric_present_targets_and_cannot_be_nested() {
+    use clause_runtime::ExecutableExpressionV1 as E;
+    let workbench = ResidentSourceWorkbenchV1::open(ACCOUNT_CONTRIBUTIONS).unwrap();
+    let plan = decode_executable_physical_plan_v1(&workbench.generation().cpp1).unwrap();
+    assert_eq!(
+        decode_executable_physical_plan_v1(&encode_executable_physical_plan_v1(&plan).unwrap())
+            .unwrap(),
+        plan
+    );
+    let (rule_index, assignment_index) = plan
+        .program
+        .rules
+        .iter()
+        .enumerate()
+        .find_map(|(ri, rule)| {
+            rule.assignments
+                .iter()
+                .position(|(_, e)| matches!(e, E::Accumulate(_)))
+                .map(|ai| (ri, ai))
+        })
+        .unwrap();
+    let mut nested = plan.clone();
+    let (_, expression) = &mut nested.program.rules[rule_index].assignments[assignment_index];
+    *expression = E::Accumulate(Box::new(expression.clone()));
+    assert!(encode_executable_physical_plan_v1(&nested).is_err());
+    let mut predicate = plan.clone();
+    predicate.program.rules[rule_index]
+        .predicates
+        .push(E::Accumulate(Box::new(E::Constant(
+            ExecutableValueV1::number(1.0).unwrap(),
+        ))));
+    assert!(encode_executable_physical_plan_v1(&predicate).is_err());
+    let mut absent = plan.clone();
+    let target = absent.program.rules[rule_index].assignments[assignment_index].0;
+    absent.program.rules[rule_index]
+        .required_present
+        .retain(|slot| *slot != target);
+    assert!(encode_executable_physical_plan_v1(&absent).is_err());
+    let mut wrong_kind = plan;
+    wrong_kind.program.initial_configuration[usize::from(target)] =
+        ExecutableValueV1::Boolean(true);
+    assert!(encode_executable_physical_plan_v1(&wrong_kind).is_err());
+    let bool_target = std::str::from_utf8(ACCOUNT_CONTRIBUTIONS).unwrap().replace(
+        "  accumulate\n    ?account balance ?amount",
+        "  accumulate\n    ?account enabled ?amount",
+    );
+    assert!(ResidentSourceWorkbenchV1::open(bool_target.as_bytes()).is_err());
+    let bool_delta = std::str::from_utf8(ACCOUNT_CONTRIBUTIONS).unwrap().replace(
+        "  accumulate\n    ?account balance ?amount",
+        "  accumulate\n    ?account balance true",
+    );
+    assert!(ResidentSourceWorkbenchV1::open(bool_delta.as_bytes()).is_err());
+    let mixed = std::str::from_utf8(ACCOUNT_CONTRIBUTIONS).unwrap()
+        .replace("  withdraw\n    ?contributor cooldown ?cooldown\n  include\n    ?contributor cooldown 1.0", "  withdraw\n    ?contributor cooldown ?cooldown\n    ?account balance ?balance\n  include\n    ?contributor cooldown 1.0\n    ?account balance ?balance");
+    assert!(ResidentSourceWorkbenchV1::open(mixed.as_bytes()).is_err());
+}
+
 #[test]
 fn typed_physical_input_selects_exact_occurrence_and_preserves_admission_and_generation() {
     use clause_runtime::{
@@ -1335,8 +1779,16 @@ fn runtime_selected_referent_uses_the_newly_admitted_binding() {
         .expect("selected policy projection decodes");
     let root = projected_object_field(&projection, b"root-1");
     assert_eq!(
-        projected_symbol(projected_object_field(root, b"selected-policy")),
-        b"policy-b"
+        clause_runtime::projected_referent_value_v1(projected_object_field(
+            root,
+            b"selected-policy"
+        ))
+        .unwrap(),
+        clause_runtime::projected_referent_value_v1(projected_object_field(
+            projected_object_field(&projection, b"policy-b"),
+            b"$referent"
+        ))
+        .unwrap(),
     );
     assert_eq!(
         projected_number(projected_object_field(root, b"balance")),

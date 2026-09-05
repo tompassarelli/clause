@@ -1,0 +1,104 @@
+F64
+Bool
+Controller
+Contributor
+Account
+
+relation chosen-account
+  reads {controller: Controller} chosen account {value: Account}
+  subject controller
+  mode given controller yields value: one
+relation balance
+  reads {account: Account} balance {value: F64}
+  subject account
+  mode given account yields value: one
+relation enabled
+  reads {account: Account} enabled {value: Bool}
+  subject account
+  mode given account yields value: one
+relation selected
+  reads {contributor: Contributor} selected {value: Bool}
+  subject contributor
+  mode given contributor yields value: one
+relation contribution
+  reads {contributor: Contributor} contribution {value: F64}
+  subject contributor
+  mode given contributor yields value: one
+relation cooldown
+  reads {contributor: Contributor} cooldown {value: F64}
+  subject contributor
+  mode given contributor yields value: one
+
+controller
+  shape: Controller
+first
+  shape: Account
+  shape: Contributor
+second
+  shape: Account
+alpha
+  shape: Contributor
+beta
+  shape: Contributor
+
+controller chosen account first
+first balance 100.0
+first enabled true
+second balance 200.0
+second enabled true
+first selected false
+first contribution 50.0
+first cooldown 0.0
+alpha selected true
+alpha contribution 7.0
+alpha cooldown 0.0
+beta selected true
+beta contribution 11.0
+beta cooldown 0.0
+
+bind referent-input Choose as Account to choose-account
+bind referent-input Select as Contributor to select-contributor
+bind keyboard Apply down to contribute
+
+on choose-account ?controller ?picked
+  when
+    ?controller chosen account ?prior
+    ?picked balance ?balance
+  withdraw
+    ?controller chosen account ?prior
+  include
+    ?controller chosen account ?picked
+
+on select-contributor ?contributor ?picked
+  when
+    ?contributor selected ?prior
+    ?contributor = ?picked
+  withdraw
+    ?contributor selected ?prior
+  include
+    ?contributor selected true
+
+on contribute ?contributor
+  when
+    ?contributor selected true
+    ?contributor contribution ?amount
+    ?contributor cooldown ?cooldown
+    ?cooldown <= 0.0
+    controller chosen account ?account
+    ?account balance ?balance
+    ?account enabled true
+  withdraw
+    ?contributor cooldown ?cooldown
+  include
+    ?contributor cooldown 1.0
+  accumulate
+    ?account balance ?amount
+
+on tick ?contributor ?dt
+  when
+    ?contributor cooldown ?cooldown
+    ?cooldown > 0.0
+  withdraw
+    ?contributor cooldown ?cooldown
+  include
+    ?contributor cooldown ?cooldown - ?dt

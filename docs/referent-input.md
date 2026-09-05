@@ -18,15 +18,39 @@ on select-item ?item ?target
     ?item selected true
 ```
 
-The channel's domain must agree with the argument's checked relational use or
-equality with a quantified subject. The target is an external one-argument
-handler. Every source-declared subject of this input domain is projected with
-`$referent`, alongside its ordinary state fields. A declared reference is
+The channel's domain must agree with the argument's checked relational use,
+assignment value, or equality with a quantified subject. The target is an
+external one-argument handler. A typed argument can independently supply a
+relational subject: `?picked balance ?balance` guards the exact physical input,
+while another quantified subject stores that referent as ordinary state.
+Declared nominal scalar state values retain typed identity, including values selected
+at runtime and used as downstream subjects. They are no longer projected as
+designation strings; passive consumers resolve them against projected identity,
+not a guessed class/name mapping.
+
+The projection records the declared domain facet of each checked state
+subject/relation binding alongside ordinary fields. One domain uses `$referent`; multiple declared domain facets use
+`$referents`, an object keyed by decimal domain ID. Each facet retains its own
+checked domain and the same declared occurrence identity. Choose the projected
+facet matching the input channel; do not change a reference's domain to coerce
+it. A declared reference is
 `{kind:"referent", domain:<u32>, identity:{kind:"declared", value:<u32>}}`.
 Created references retain all 32 identity bytes with `kind:"created"` and a
 byte array. Neither numeric field is a gameplay enum; transport the entire
 projected value unchanged. Domain mismatch, wrong value kind, malformed
 identity, and identities unknown to the current world reject before execution.
+
+The same admitted projection exposes `$referent-inputs`, the checked map from
+source-declared channel to numeric domain ID. A passive consumer uses
+`frame["$referent-inputs"][channel]`, then either the subject's `$referent`
+with that exact domain or `subject["$referents"][String(domain)]`. For example,
+the contribution specimen exposes channels `Choose` (Account) and `Select`
+(Contributor); one subject inhabits both domains. The map is derived from the
+checked physical input plan and travels in the admitted frame, not a host
+registry. Retain this metadata, reference, and generation from the same frame;
+never hardcode numeric IDs, guess the domain from another subject, parse source
+in the host, or trial-submit facets. Unknown channels or missing facets are
+not valid inputs.
 
 The browser foreign adapter accepts an input envelope containing:
 
@@ -89,6 +113,57 @@ bun test ./src/referent-input-test.ts
 Timer-free sources retain their physical bindings and can enter through
 persistent input custody. Their CWR1 default specimen sequence may be empty;
 an empty sequence without a checked physical event plan remains invalid.
+An event-only source's physical tick includes an effect-free checkpoint so an
+unchanged initial frame or pending input effects can produce a hidden candidate.
+This does not invent a source timer or invoke an unrelated input handler.
+
+## Explicit simultaneous contributions
+
+`test-vectors/authoring/selected-account-contributions.clause` is a compiled,
+non-game specimen. `targeted-party-contributions.clause` retains the actual
+consumer's selected-party attack; `targeted-party-attack-conflict.clause` keeps
+the original overlapping replacement counterexample.
+
+```clause
+on contribute ?contributor
+  when
+    ?contributor selected true
+    ?contributor contribution ?amount
+    ?contributor cooldown ?cooldown
+    ?cooldown <= 0.0
+    controller chosen account ?account
+    ?account balance ?balance
+    ?account enabled true
+  withdraw
+    ?contributor cooldown ?cooldown
+  include
+    ?contributor cooldown 1.0
+  accumulate
+    ?account balance ?amount
+```
+
+Each eligible finite relational occurrence contributes once. All predicates,
+ordinary assignment values, and deltas observe the same pre-step state. Deltas
+are collected per exact numeric target, sorted by finite F64 total order, and
+added to its prior value in that canonical order. Non-finite inputs/results
+reject atomically. This is deterministic floating-point accumulation, not exact
+real arithmetic. To subtract, contribute `0.0 - ?amount`. `accumulate` can stand
+alone without `include`; the target must be a present cardinality-one numeric
+state, including a declared numeric structured field.
+
+Two matching ordinary replacements/removals of the same target reject the
+entire step (`ConflictingStateEffects` natively), even if their values happen
+to agree. Mixing contribution and ordinary replacement/removal also rejects.
+No contribution or contributor cooldown is installed on error. Separate
+physical occurrences and the declared tick-handler sequence remain separate
+steps; accumulation does not reorder them. Compiler-owned Boolean derivations
+compute one disjunction-of-guards value, not a competing fallback assignment.
+
+CPP1 adds expression tag 24 as an assignment-root additive effect. It is invalid
+as a predicate or nested value expression. Consumers must rebuild the exact
+native runtime, Wasm and passive adapter; old runtimes reject the new tag.
+The current additive strategy covers finite declared state specialization,
+not runtime-created relation-table aggregation or arbitrary recursive queries.
 
 The current source strategy specializes quantified handlers over finite
 declared state subjects, with runtime guards for selection. It does not claim

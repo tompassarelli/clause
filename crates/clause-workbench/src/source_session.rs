@@ -13,7 +13,7 @@ use clause_package::{
 use clause_runtime::{
     ExecutableCanonicalHandlerBindingV1, ExecutableInputBindingV1, ExecutableInputPlanV1,
     ExecutableInputSourceV1, ExecutableKeyPhaseV1, ExecutableOccurrenceV1,
-    ExecutablePhysicalPlanV1, ExecutableTickBindingV1, ExecutableValueV1,
+    ExecutablePhysicalPlanV1, ExecutableRuleV1, ExecutableTickBindingV1, ExecutableValueV1,
     WASM_SESSION_EVENT_LIMIT_V1, WasmPersistentSessionBoundaryV1, WasmProcessRequestV1,
     WasmProcessStatusV1, WasmSessionAdmissionScopeV1, WasmSessionAdmissionV1,
     WasmSessionAllocationV1, WasmSessionCommandV1, WasmSessionEventKindV1, WasmSessionHandleV1,
@@ -603,11 +603,39 @@ impl ResidentSourceWorkbenchV1 {
                     .map_err(|error| boxed_error("resident tick occurrence encode", error))?,
                 );
             }
+            let mut entries = tick_entries
+                .iter()
+                .map(|binding| binding.entry)
+                .collect::<Vec<_>>();
+            if entries.is_empty() {
+                // An event-only source still needs a physical checkpoint at
+                // which to emit a hidden candidate. This rule has no source
+                // effects; it does not execute an arbitrary input handler.
+                let entry = physical_plan
+                    .program
+                    .rules
+                    .iter()
+                    .map(|rule| rule.entry)
+                    .max()
+                    .and_then(|entry| entry.checked_add(1))
+                    .ok_or_else(|| {
+                        ResidentSourceWorkbenchErrorV1("checkpoint entry capacity".into())
+                    })?;
+                physical_plan.program.rules.push(ExecutableRuleV1 {
+                    entry,
+                    predicates: vec![],
+                    required_present: vec![],
+                    required_absent: vec![],
+                    assignments: vec![],
+                    removals: vec![],
+                });
+                entries.push(entry);
+            }
             physical_plan.input = Some(ExecutableInputPlanV1 {
                 events,
                 tick: ExecutableTickBindingV1 {
                     role: template_input.tick.role,
-                    entries: tick_entries.iter().map(|binding| binding.entry).collect(),
+                    entries,
                 },
             });
         } else {
@@ -629,6 +657,9 @@ impl ResidentSourceWorkbenchV1 {
                 .map_err(|error| boxed_error("default external occurrence encode", error))?,
             );
         }
+        physical_plan
+            .project_referent_input_domains(scope)
+            .map_err(|error| boxed_error("referent input domain projection", error))?;
         let cpp1 = encode_executable_physical_plan_v1(&physical_plan)
             .map_err(|error| boxed_error("CPP1 encode", error))?;
         let open = WasmSessionOpenV1 {
