@@ -62,6 +62,33 @@ fn field<'a>(term: &'a Term, key: &[u8]) -> &'a Term {
 }
 
 #[test]
+fn recorded_views_include_untouched_state_and_do_not_follow_later_events() {
+    let mut w = ResidentSourceWorkbenchV1::open(SOURCE).unwrap();
+    run(&mut w, b"attack", &[]);
+    let explanation = w.explanation(b"attack").unwrap();
+    for (name, health) in [(b"before-projection".as_slice(), 100f64), (b"after-projection".as_slice(), 90f64)] {
+        let projection = field(&explanation, name);
+        for actor in [b"unit-a".as_slice(), b"unit-b".as_slice()] {
+            assert_eq!(field(field(projection, actor), b"vitality").as_atom().unwrap().canonical_payload(),
+                health.to_bits().to_le_bytes());
+        }
+        let effects = clause_runtime::projected_relation_table_v1(
+            field(field(projection, b"relations"), b"effect-remaining"),
+        ).unwrap().unwrap();
+        assert!(effects.rows().is_empty());
+    }
+    run(&mut w, b"ignite", &[n(2.0)]);
+    let later_attack = w.explanation(b"attack").unwrap();
+    assert_eq!(field(&later_attack, b"before-projection"), field(&explanation, b"before-projection"));
+    assert_eq!(field(&later_attack, b"after-projection"), field(&explanation, b"after-projection"));
+    let ignite = w.explanation(b"ignite").unwrap();
+    let effects = clause_runtime::projected_relation_table_v1(field(
+        field(field(&ignite, b"after-projection"), b"relations"), b"effect-remaining",
+    )).unwrap().unwrap();
+    assert_eq!(effects.rows().len(), 2);
+}
+
+#[test]
 fn independent_rows_have_independent_costs_and_numeric_explanations() {
     let mut w = ResidentSourceWorkbenchV1::open(SOURCE).unwrap();
     run(&mut w, b"attack", &[]);
