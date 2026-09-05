@@ -16,6 +16,185 @@ const WORLD: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../test-vectors/jump-arena/world.clause"
 ));
+
+const REFERENT_INPUT: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../test-vectors/authoring/referent-input-transition.clause"
+));
+
+#[test]
+fn typed_physical_input_selects_exact_occurrence_and_preserves_admission_and_generation() {
+    use clause_runtime::{
+        ExecutableReferentV1, WasmSessionPhysicalInputV1, WasmSessionTickV1,
+        projected_referent_value_v1,
+    };
+    let mut workbench = ResidentSourceWorkbenchV1::open(REFERENT_INPUT).unwrap();
+    let old_handle = workbench.generation().handle;
+    let tick = |workbench: &mut ResidentSourceWorkbenchV1, revision| {
+        workbench
+            .tick_to_candidate(WasmSessionTickV1 {
+                configuration_revision: revision,
+                fixed_tick_milliseconds: 100,
+            })
+            .unwrap();
+    };
+    tick(&mut workbench, 1);
+    let initial = workbench.admit().unwrap();
+    let term = decode_canonical_term_bytes(&initial.projection.exact_term_bytes).unwrap();
+    let first = projected_referent_value_v1(projected_object_field(
+        projected_object_field(&term, b"first"),
+        b"$referent",
+    ))
+    .unwrap()
+    .unwrap();
+    let second = projected_referent_value_v1(projected_object_field(
+        projected_object_field(&term, b"second"),
+        b"$referent",
+    ))
+    .unwrap()
+    .unwrap();
+    assert_eq!(first.domain(), second.domain());
+    assert_ne!(first.identity(), second.identity());
+    let input = |sequence, value| WasmSessionPhysicalInputV1 {
+        input_sequence: sequence,
+        source: ExecutableInputSourceV1::Referent {
+            channel: b"Pick".to_vec(),
+        },
+        value: Some(ExecutableValueV1::Referent(value)),
+    };
+    for invalid in [
+        ExecutableReferentV1::declared(first.domain() + 1, 1),
+        ExecutableReferentV1::declared(first.domain(), u32::MAX),
+    ] {
+        assert!(
+            workbench
+                .apply_physical_input(old_handle, input(1, invalid))
+                .is_err()
+        );
+        assert_eq!(workbench.last_projection().unwrap(), &initial.projection);
+    }
+    workbench
+        .apply_physical_input(old_handle, input(2, first.clone()))
+        .unwrap();
+    assert_eq!(
+        workbench.last_projection().unwrap(),
+        &initial.projection,
+        "input cannot publish a projection"
+    );
+    tick(&mut workbench, 2);
+    assert_eq!(
+        workbench.last_projection().unwrap(),
+        &initial.projection,
+        "candidate is hidden until separate Admission"
+    );
+    let changed = workbench.admit().unwrap();
+    let term = decode_canonical_term_bytes(&changed.projection.exact_term_bytes).unwrap();
+    let item = |name| projected_object_field(&term, name);
+    assert!(projected_boolean(projected_object_field(
+        item(b"first"),
+        b"selected"
+    )));
+    assert!(!projected_boolean(projected_object_field(
+        item(b"second"),
+        b"selected"
+    )));
+    assert_eq!(
+        projected_number(projected_object_field(item(b"first"), b"progress")),
+        0.1
+    );
+    assert_eq!(
+        projected_number(projected_object_field(item(b"second"), b"progress")),
+        0.0
+    );
+    workbench
+        .apply_physical_input(old_handle, input(3, second))
+        .unwrap();
+    tick(&mut workbench, 3);
+    let both = workbench.admit().unwrap();
+    let term = decode_canonical_term_bytes(&both.projection.exact_term_bytes).unwrap();
+    assert_eq!(
+        projected_number(projected_object_field(
+            projected_object_field(&term, b"second"),
+            b"progress"
+        )),
+        0.1
+    );
+    workbench.hot_reload(REFERENT_INPUT).unwrap();
+    assert_eq!(workbench.generation().handle, old_handle);
+    let changed_source = String::from_utf8(REFERENT_INPUT.to_vec())
+        .unwrap()
+        .replace("first progress 0.0", "first progress 2.0");
+    workbench.hot_reload(changed_source.as_bytes()).unwrap();
+    assert!(
+        workbench
+            .apply_physical_input(old_handle, input(4, first.clone()))
+            .unwrap_err()
+            .to_string()
+            .contains("stale")
+    );
+    // Native callers carry the runtime-session token with the same exact referent.
+    let mut native =
+        open_fresh_persistent_process_session_v1(&workbench.generation().cwr1).unwrap();
+    let token = native.runtime_session();
+    let mut other = open_fresh_persistent_process_session_v1(&workbench.generation().cwr1).unwrap();
+    assert!(
+        other
+            .apply_typed_physical_input(
+                token,
+                &ExecutableInputSourceV1::Referent {
+                    channel: b"Pick".to_vec()
+                },
+                Some(ExecutableValueV1::Referent(first))
+            )
+            .is_err()
+    );
+    assert!(
+        native
+            .apply_typed_physical_input(
+                token,
+                &ExecutableInputSourceV1::Referent {
+                    channel: b"Pick".to_vec()
+                },
+                Some(ExecutableValueV1::number(1.0).unwrap())
+            )
+            .is_err()
+    );
+}
+
+#[test]
+fn referent_input_binding_checks_source_domain_and_renames() {
+    let source = std::str::from_utf8(REFERENT_INPUT).unwrap();
+    assert!(
+        ResidentSourceWorkbenchV1::open(
+            source
+                .replace("Pick as Item", "Pick as ItemClass")
+                .as_bytes()
+        )
+        .is_err()
+    );
+    assert!(
+        ResidentSourceWorkbenchV1::open(
+            source
+                .replace("to select-item", "to absent-handler")
+                .as_bytes()
+        )
+        .is_err()
+    );
+    let renamed = source
+        .replace("ItemClass", "DocumentKind")
+        .replace("Item", "Document")
+        .replace("item", "document")
+        .replace("Pick", "Focus");
+    ResidentSourceWorkbenchV1::open(renamed.as_bytes()).unwrap();
+    let no_tick = source.split("on tick").next().unwrap();
+    let workbench = ResidentSourceWorkbenchV1::open(no_tick.as_bytes()).unwrap();
+    let plan = decode_executable_physical_plan_v1(&workbench.generation().cpp1).unwrap();
+    assert_eq!(
+        plan.input.unwrap().events.len(),
+        1,
+        "physical input exists independently of timers"
+    );
+}
 const DASH_WORLD: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../test-vectors/jump-arena/world-dash-jump.clause"
@@ -1984,4 +2163,82 @@ fn runtime_created_referent_keys_goal_rows_and_retains_redirect_history() {
             .iter()
             .any(|value| value.as_text() == Some("Clause owns the goal"))
     }));
+}
+
+#[test]
+fn created_referent_physical_input_preserves_full_identity_bytes() {
+    let source = format!(
+        "{}\nbind referent-input Finish as Goal to finish-goal\n\non finish-goal ?north ?goal\n  when\n    ?north known goal ?goal\n    ?goal status ?status\n  withdraw\n    ?goal status ?status\n  include\n    ?goal status ready\n",
+        std::str::from_utf8(DYNAMIC_TEXT_GOALS).unwrap()
+    );
+    let workbench = ResidentSourceWorkbenchV1::open(source.as_bytes()).unwrap();
+    let create = workbench
+        .handler_occurrence(
+            b"create-goal",
+            &[
+                ExecutableValueV1::text("one").unwrap(),
+                ExecutableValueV1::text("objective").unwrap(),
+            ],
+        )
+        .unwrap();
+    let mut session =
+        open_fresh_persistent_process_session_v1(&workbench.generation().cwr1).unwrap();
+    session.apply_opaque_input(&create).unwrap();
+    let goal = session
+        .configuration()
+        .unwrap()
+        .iter()
+        .find_map(|slot| {
+            let clause_runtime::ExecutableSlotV1::Present(ExecutableValueV1::RelationTable(table)) =
+                slot
+            else {
+                return None;
+            };
+            table
+                .rows()
+                .keys()
+                .find(|referent| {
+                    matches!(
+                        referent.identity(),
+                        clause_runtime::ExecutableReferentIdentityV1::Created(_)
+                    )
+                })
+                .cloned()
+        })
+        .unwrap();
+    let command = clause_runtime::WasmSessionCommandV1 {
+        handle: workbench.generation().handle,
+        expected_sequence: 0,
+        operation: clause_runtime::WasmSessionOperationV1::PhysicalInput(
+            clause_runtime::WasmSessionPhysicalInputV1 {
+                input_sequence: 1,
+                source: ExecutableInputSourceV1::Referent {
+                    channel: b"Finish".to_vec(),
+                },
+                value: Some(ExecutableValueV1::Referent(goal.clone())),
+            },
+        ),
+    };
+    let bytes = clause_runtime::encode_wasm_session_command_v1(&command).unwrap();
+    assert_eq!(
+        clause_runtime::decode_wasm_session_command_v1(&bytes).unwrap(),
+        command
+    );
+    assert!(clause_runtime::decode_wasm_session_command_v1(&bytes[..bytes.len() - 1]).is_err());
+    let clause_runtime::WasmSessionOperationV1::PhysicalInput(input) = command.operation else {
+        unreachable!()
+    };
+    session
+        .apply_typed_physical_input(session.runtime_session(), &input.source, input.value)
+        .unwrap();
+    let unknown = clause_runtime::ExecutableReferentV1::created(goal.domain(), [0xff; 32]);
+    assert!(
+        session
+            .apply_typed_physical_input(
+                session.runtime_session(),
+                &input.source,
+                Some(ExecutableValueV1::Referent(unknown))
+            )
+            .is_err()
+    );
 }

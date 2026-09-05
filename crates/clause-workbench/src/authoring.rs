@@ -61,6 +61,15 @@ pub const AUTHORING_EXAMPLES_V1: &[AuthoringExampleV1] = &[
         )),
     },
     AuthoringExampleV1 {
+        slug: "referent-input-transition",
+        title: "Typed occurrence input",
+        summary: "Transports an exact projected Item referent to one reusable selection rule; two items of the same class remain distinct and only selected items advance on tick. Retain the projection's generation with the input.",
+        source: include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../test-vectors/authoring/referent-input-transition.clause"
+        )),
+    },
+    AuthoringExampleV1 {
         slug: "text-state-transition",
         title: "Text state transition",
         summary: "Accepts bounded UTF-8 text as handler input, stores it in optional state, and replaces it atomically.",

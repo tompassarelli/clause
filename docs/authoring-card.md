@@ -164,6 +164,67 @@ on select ?root ?item
     ?root active ?item
 ```
 
+## Typed occurrence input
+
+Transports an exact projected Item referent to one reusable selection rule; two items of the same class remain distinct and only selected items advance on tick. Retain the projection's generation with the input.
+
+Catalog ID: `referent-input-transition`
+
+```clause
+F64
+Bool
+Item
+ItemClass
+
+relation item-class
+  reads {item: Item} item class {value: ItemClass}
+  subject item
+  mode given item yields value: one
+
+relation selected
+  reads {item: Item} selected {value: Bool}
+  subject item
+  mode given item yields value: one
+
+relation progress
+  reads {item: Item} progress {value: F64}
+  subject item
+  mode given item yields value: one
+
+first
+  shape: Item
+second
+  shape: Item
+shared-class
+  shape: ItemClass
+first item class shared-class
+second item class shared-class
+first selected false
+second selected false
+first progress 0.0
+second progress 0.0
+
+bind referent-input Pick as Item to select-item
+
+on select-item ?item ?target
+  when
+    ?item selected ?prior
+    ?item = ?target
+  withdraw
+    ?item selected ?prior
+  include
+    ?item selected true
+
+on tick ?item ?dt
+  when
+    ?item selected true
+    ?item progress ?prior
+  withdraw
+    ?item progress ?prior
+  include
+    ?item progress ?prior + ?dt
+```
+
 ## Text state transition
 
 Accepts bounded UTF-8 text as handler input, stores it in optional state, and replaces it atomically.

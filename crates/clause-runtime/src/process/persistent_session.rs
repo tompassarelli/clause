@@ -199,6 +199,26 @@ impl PersistentProcessSessionV1 {
             .clone())
     }
 
+    /// Enter a typed observation captured for this exact runtime session.
+    /// Callers retain this token with projected referents across replacement.
+    pub fn apply_typed_physical_input(
+        &mut self,
+        expected_session: RuntimeSessionId,
+        source: &ExecutableInputSourceV1,
+        value: Option<super::ExecutableValueV1>,
+    ) -> Result<ExecutableStepV1, PersistentProcessSessionErrorV1> {
+        if expected_session != self.session {
+            return Err(ExecutableCarrierErrorV1::Executable(
+                ExecutableErrorV1::MalformedInputConfiguration,
+            )
+            .into());
+        }
+        Ok(self
+            .runtime_mut()?
+            .advance_carrier_typed_input(source, value)?
+            .clone())
+    }
+
     /// Lower the exact fixed tick and emit one candidate without Admission.
     pub fn apply_fixed_tick_and_emit_candidate(
         &mut self,

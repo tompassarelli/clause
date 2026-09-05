@@ -563,6 +563,9 @@ pub enum ExecutableInputSourceV1 {
     Scalar {
         channel: Vec<u8>,
     },
+    Referent {
+        channel: Vec<u8>,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -1176,6 +1179,29 @@ fn canonical_source_projection(
     let mut subject_fields = Vec::with_capacity(subjects.len());
     for (subject, relations) in subjects {
         let mut relation_fields = Vec::with_capacity(relations.len());
+        let identities = relations
+            .values()
+            .flatten()
+            .filter_map(|cell| cell.state.subject_identity.as_ref())
+            .collect::<BTreeSet<_>>();
+        if identities.len() > 1 {
+            return Err(ExecutableErrorV1::MalformedProgram);
+        }
+        if let Some(identity) = identities.first() {
+            if relations.contains_key(b"$referent".as_slice()) {
+                return Err(ExecutableErrorV1::MalformedProgram);
+            }
+            relation_fields.push((
+                b"$referent".to_vec(),
+                projected_scalar_value_term(
+                    scope,
+                    &ExecutableValueV1::Referent(ExecutableReferentV1::declared(
+                        identity.domain.get(),
+                        identity.identity.get(),
+                    )),
+                )?,
+            ));
+        }
         for (relation, mut cells) in relations {
             cells.sort_by(|left, right| left.state.path.cmp(&right.state.path));
             let value = if cells.len() == 1
@@ -2077,6 +2103,11 @@ fn encode_input_source(
             encode_count(bytes, channel.len())?;
             bytes.extend_from_slice(channel);
         }
+        ExecutableInputSourceV1::Referent { channel } => {
+            bytes.push(2);
+            encode_count(bytes, channel.len())?;
+            bytes.extend_from_slice(channel);
+        }
     }
     Ok(())
 }
@@ -2104,6 +2135,15 @@ fn decode_input_source(
                 return Err(ExecutableErrorV1::MalformedProgram);
             }
             Ok(ExecutableInputSourceV1::Scalar {
+                channel: decoder.take(length)?.to_vec(),
+            })
+        }
+        2 => {
+            let length = decoder.count()?;
+            if length == 0 || length > MAX_INPUT_CODE_BYTES {
+                return Err(ExecutableErrorV1::MalformedProgram);
+            }
+            Ok(ExecutableInputSourceV1::Referent {
                 channel: decoder.take(length)?.to_vec(),
             })
         }
@@ -3841,6 +3881,18 @@ impl ExecutableProcessRuntimeV1 {
         source: &ExecutableInputSourceV1,
         scalar_value: Option<f64>,
     ) -> Result<&ExecutableStepV1, ExecutableCarrierErrorV1> {
+        let value = scalar_value
+            .map(ExecutableValueV1::number)
+            .transpose()
+            .map_err(ExecutableCarrierErrorV1::Executable)?;
+        self.advance_carrier_typed_input(source, value)
+    }
+
+    pub fn advance_carrier_typed_input(
+        &mut self,
+        source: &ExecutableInputSourceV1,
+        value: Option<ExecutableValueV1>,
+    ) -> Result<&ExecutableStepV1, ExecutableCarrierErrorV1> {
         let mut occurrence = self
             .input
             .as_ref()
@@ -3855,15 +3907,38 @@ impl ExecutableProcessRuntimeV1 {
                 ExecutableErrorV1::UnknownPhysicalInput,
             ))?;
         match source {
-            ExecutableInputSourceV1::Keyboard { .. } if scalar_value.is_none() => {}
+            ExecutableInputSourceV1::Keyboard { .. } if value.is_none() => {}
             ExecutableInputSourceV1::Scalar { .. } => {
-                let value = scalar_value.ok_or(ExecutableCarrierErrorV1::Executable(
-                    ExecutableErrorV1::MalformedInputConfiguration,
-                ))?;
-                occurrence.arguments = vec![
-                    ExecutableValueV1::number(value)
-                        .map_err(ExecutableCarrierErrorV1::Executable)?,
-                ];
+                let Some(value @ ExecutableValueV1::Number(_)) = value else {
+                    return Err(ExecutableCarrierErrorV1::Executable(
+                        ExecutableErrorV1::MalformedInputConfiguration,
+                    ));
+                };
+                if !value.as_number().is_some_and(f64::is_finite) {
+                    return Err(ExecutableCarrierErrorV1::Executable(
+                        ExecutableErrorV1::NumericDomain,
+                    ));
+                }
+                occurrence.arguments = vec![value];
+            }
+            ExecutableInputSourceV1::Referent { .. } => {
+                let Some(ExecutableValueV1::Referent(value)) = value else {
+                    return Err(ExecutableCarrierErrorV1::Executable(
+                        ExecutableErrorV1::MalformedInputConfiguration,
+                    ));
+                };
+                let [ExecutableValueV1::Referent(expected)] = occurrence.arguments.as_slice()
+                else {
+                    return Err(ExecutableCarrierErrorV1::Executable(
+                        ExecutableErrorV1::MalformedInputConfiguration,
+                    ));
+                };
+                if value.domain() != expected.domain() || !self.knows_referent(&value) {
+                    return Err(ExecutableCarrierErrorV1::Executable(
+                        ExecutableErrorV1::MalformedInputConfiguration,
+                    ));
+                }
+                occurrence.arguments = vec![ExecutableValueV1::Referent(value)];
             }
             _ => {
                 return Err(ExecutableCarrierErrorV1::Executable(
@@ -3872,6 +3947,43 @@ impl ExecutableProcessRuntimeV1 {
             }
         }
         self.advance_carrier_occurrence(occurrence)
+    }
+
+    fn knows_referent(&self, referent: &ExecutableReferentV1) -> bool {
+        fn in_value(value: &ExecutableValueV1, referent: &ExecutableReferentV1) -> bool {
+            match value {
+                ExecutableValueV1::Referent(value) => value == referent,
+                ExecutableValueV1::Set(set) => {
+                    set.values.iter().any(|value| in_value(value, referent))
+                }
+                ExecutableValueV1::RelationTable(table) => {
+                    table.rows.iter().any(|(subject, values)| {
+                        subject == referent || values.iter().any(|value| in_value(value, referent))
+                    })
+                }
+                _ => false,
+            }
+        }
+        fn in_term(term: &Term, referent: &ExecutableReferentV1) -> bool {
+            if let Some(atom) = term.as_atom() {
+                if atom.kind() != PROJECTED_REFERENT_KIND {
+                    return false;
+                }
+                let mut payload = Vec::new();
+                encode_referent(&mut payload, referent);
+                return atom.canonical_payload() == payload;
+            }
+            term.as_triple()
+                .is_some_and(|triple| triple.slots().iter().any(|slot| in_term(slot, referent)))
+        }
+        self.configuration.iter().any(|slot| match slot {
+            ExecutableSlotV1::Present(value) => in_value(value, referent),
+            _ => false,
+        }) || self
+            .program
+            .projection
+            .as_ref()
+            .is_some_and(|projection| in_term(&projection.template, referent))
     }
 
     /// Lower one fixed tick through the plan's exact tick Role and emit the
@@ -5592,6 +5704,13 @@ fn validate_input_plan_shape(
                     [ExecutableValueV1::Number(_)]
                 ),
             ),
+            ExecutableInputSourceV1::Referent { channel } => (
+                channel,
+                matches!(
+                    binding.occurrence.arguments.as_slice(),
+                    [ExecutableValueV1::Referent(_)]
+                ),
+            ),
         };
         if designation.is_empty()
             || designation.len() > MAX_INPUT_CODE_BYTES
@@ -5609,7 +5728,7 @@ fn validate_input_plan_shape(
     }
     let entries = input.tick.entries.iter().copied().collect::<BTreeSet<_>>();
     if !roles.insert(input.tick.role)
-        || input.tick.entries.is_empty()
+        || (input.tick.entries.is_empty() && input.events.is_empty())
         || input.tick.entries.len() > MAX_PROGRAM_ITEMS
         || entries.len() != input.tick.entries.len()
         || input
@@ -5723,6 +5842,27 @@ fn projected_scalar_value_term(
         EqualityContract::ExactOctetsV1,
     )
     .map_err(|_| ExecutableErrorV1::MalformedProgram)
+}
+
+/// Decode one exact projected referent without inferring identity from its label.
+pub fn projected_referent_value_v1(
+    term: &Term,
+) -> Result<Option<ExecutableReferentV1>, ExecutableErrorV1> {
+    let Some(atom) = term.as_atom() else {
+        return Ok(None);
+    };
+    if atom.kind() != PROJECTED_REFERENT_KIND {
+        return Ok(None);
+    }
+    if atom.equality_contract() != EqualityContract::ExactOctetsV1 {
+        return Err(ExecutableErrorV1::MalformedProgram);
+    }
+    let mut decoder = Decoder::new(atom.canonical_payload());
+    let value = decoder.referent()?;
+    if !decoder.is_complete() {
+        return Err(ExecutableErrorV1::MalformedProgram);
+    }
+    Ok(Some(value))
 }
 
 /// Decode one exact projected Text leaf without knowing the surrounding

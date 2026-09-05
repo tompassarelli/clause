@@ -4,10 +4,11 @@ use std::fmt;
 
 use clause_package::{
     CandidateDeltaId, CanonicalHandlerTriggerV1, CanonicalKeyPhaseV1, CanonicalKeyboardBindingV1,
-    CanonicalScalarInputBindingV1, CanonicalSourceContextV1, CanonicalUnsupportedProductionV1,
-    LocalRoleRefV2, ProcessPackageId, ProgramChangeOccurrenceId, StateRevisionId, TermScope,
-    check_process_package, decode_process_package, elaborate_canonical_source_package_v1,
-    plan_independent_canonical_source_allocations_v1, read_canonical_source_v1,
+    CanonicalReferentInputBindingV1, CanonicalScalarInputBindingV1, CanonicalSourceContextV1,
+    CanonicalUnsupportedProductionV1, LocalRoleRefV2, ProcessPackageId, ProgramChangeOccurrenceId,
+    StateRevisionId, TermScope, check_process_package, decode_process_package,
+    elaborate_canonical_source_package_v1, plan_independent_canonical_source_allocations_v1,
+    read_canonical_source_v1,
 };
 use clause_runtime::{
     ExecutableCanonicalHandlerBindingV1, ExecutableInputBindingV1, ExecutableInputPlanV1,
@@ -328,6 +329,59 @@ impl ResidentSourceWorkbenchV1 {
         Ok(candidate)
     }
 
+    /// Apply a physical observation captured with this exact source generation.
+    /// No executable entry is selected by the caller; the source input plan owns it.
+    pub fn apply_physical_input(
+        &mut self,
+        captured_handle: WasmSessionHandleV1,
+        input: clause_runtime::WasmSessionPhysicalInputV1,
+    ) -> Result<(), ResidentSourceWorkbenchErrorV1> {
+        if captured_handle != self.generation.handle {
+            return Err(ResidentSourceWorkbenchErrorV1(
+                "physical input belongs to a stale source generation".into(),
+            ));
+        }
+        if self.pending.is_some() {
+            return Err(ResidentSourceWorkbenchErrorV1(
+                "physical input cannot replace a hidden candidate".into(),
+            ));
+        }
+        let event = self.command(WasmSessionOperationV1::PhysicalInput(input))?;
+        if !matches!(event, WasmSessionEventKindV1::InputAccepted { .. }) {
+            return Err(unexpected_event("physical input", event));
+        }
+        Ok(())
+    }
+
+    pub fn tick_to_candidate(
+        &mut self,
+        tick: clause_runtime::WasmSessionTickV1,
+    ) -> Result<ResidentSourceCandidateV1, ResidentSourceWorkbenchErrorV1> {
+        if self.pending.is_some() {
+            return Err(ResidentSourceWorkbenchErrorV1(
+                "resident source generation already has a hidden candidate".into(),
+            ));
+        }
+        let event = self.command(WasmSessionOperationV1::TickCandidate(tick))?;
+        let WasmSessionEventKindV1::CandidateAccepted {
+            candidate,
+            base,
+            state_revision_count,
+            ..
+        } = event
+        else {
+            return Err(unexpected_event("physical tick", event));
+        };
+        let candidate = ResidentSourceCandidateV1 {
+            handle: self.generation.handle,
+            base,
+            candidate,
+            state_revision_count,
+        };
+        self.pending = Some(candidate);
+        Ok(candidate)
+    }
+
     /// Perform the separately commanded Admission for the exact hidden
     /// candidate and return only the admitted renderer projection.
     pub fn admit(&mut self) -> Result<ResidentSourceAdmissionV1, ResidentSourceWorkbenchErrorV1> {
@@ -485,12 +539,17 @@ impl ResidentSourceWorkbenchV1 {
         let mut default_occurrences = Vec::new();
         if declarative_only {
             default_occurrences.extend(template.occurrences.clone());
-        } else if has_tick {
+        } else if has_tick
+            || !compiled.keyboard_bindings.is_empty()
+            || !compiled.scalar_input_bindings.is_empty()
+            || !compiled.referent_input_bindings.is_empty()
+        {
             let template_input = template_input.ok_or_else(|| {
                 ResidentSourceWorkbenchErrorV1("CPP1 template has no physical input plan".into())
             })?;
             let events = if compiled.keyboard_bindings.is_empty()
                 && compiled.scalar_input_bindings.is_empty()
+                && compiled.referent_input_bindings.is_empty()
             {
                 bind_physical_events(
                     &template_input.events,
@@ -513,12 +572,20 @@ impl ResidentSourceWorkbenchV1 {
                     projection_roles,
                     template_input.tick.role,
                 )?);
+                events.extend(bind_source_referent_input_events(
+                    &compiled.referent_input_bindings,
+                    compiled.keyboard_bindings.len() + compiled.scalar_input_bindings.len(),
+                    &lowered.handlers,
+                    &semantic_handlers,
+                    projection_roles,
+                    template_input.tick.role,
+                )?);
                 events
             };
-            if let Some(input) = events
-                .iter()
-                .find(|event| !event.occurrence.arguments.is_empty())
-            {
+            if let Some(input) = events.iter().find(|event| {
+                !event.occurrence.arguments.is_empty()
+                    && !matches!(event.source, ExecutableInputSourceV1::Referent { .. })
+            }) {
                 default_occurrences.push(
                     encode_executable_occurrence_v1(&input.occurrence)
                         .map_err(|error| boxed_error("default input occurrence encode", error))?,
@@ -854,6 +921,70 @@ fn bind_source_scalar_input_events(
                         ExecutableValueV1::number(0.0)
                             .map_err(|error| boxed_error("scalar input placeholder", error))?,
                     ],
+                },
+            })
+        })
+        .collect()
+}
+
+fn bind_source_referent_input_events(
+    source_bindings: &[CanonicalReferentInputBindingV1],
+    role_offset: usize,
+    bindings: &[ExecutableCanonicalHandlerBindingV1],
+    semantic: &BTreeMap<
+        clause_package::FormationLocalId,
+        &clause_package::CanonicalExecutableHandlerV1,
+    >,
+    available_roles: &[LocalRoleRefV2],
+    tick_role: LocalRoleRefV2,
+) -> Result<Vec<ExecutableInputBindingV1>, ResidentSourceWorkbenchErrorV1> {
+    let roles = available_roles
+        .iter()
+        .copied()
+        .filter(|role| *role != tick_role)
+        .skip(role_offset)
+        .take(source_bindings.len())
+        .collect::<Vec<_>>();
+    if roles.len() != source_bindings.len() {
+        return Err(ResidentSourceWorkbenchErrorV1(
+            "physical adapter lacks referent event Roles".into(),
+        ));
+    }
+    source_bindings
+        .iter()
+        .zip(roles)
+        .map(|(source, role)| {
+            let targets = semantic
+                .iter()
+                .filter(|(_, handler)| handler.designation == source.handler_designation)
+                .collect::<Vec<_>>();
+            let [(handler, meaning)] = targets.as_slice() else {
+                return Err(ResidentSourceWorkbenchErrorV1(
+                    "referent input target is missing or ambiguous".into(),
+                ));
+            };
+            if meaning.trigger != CanonicalHandlerTriggerV1::External || meaning.argument_count != 1
+            {
+                return Err(ResidentSourceWorkbenchErrorV1(
+                    "referent input requires a checked one-argument handler".into(),
+                ));
+            }
+            let lowered = bindings
+                .iter()
+                .find(|binding| binding.handler == **handler)
+                .ok_or_else(|| {
+                    ResidentSourceWorkbenchErrorV1("referent input target was not lowered".into())
+                })?;
+            Ok(ExecutableInputBindingV1 {
+                role,
+                source: ExecutableInputSourceV1::Referent {
+                    channel: source.channel.clone(),
+                },
+                occurrence: ExecutableOccurrenceV1 {
+                    entry: lowered.entry,
+                    arguments: vec![ExecutableValueV1::Referent(
+                        clause_runtime::ExecutableReferentV1::declared(source.domain.get(), 0),
+                    )],
                 },
             })
         })

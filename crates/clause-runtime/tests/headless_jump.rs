@@ -3383,7 +3383,7 @@ fn wasm_scalar_input_command_round_trips_and_rejects_non_finite_values() {
             source: ExecutableInputSourceV1::Scalar {
                 channel: b"CameraHeading".to_vec(),
             },
-            scalar_value_bits: Some(0.625_f64.to_bits()),
+            value: Some(ExecutableValueV1::Number(0.625_f64.to_bits())),
         }),
     };
     let encoded =
@@ -3407,7 +3407,7 @@ fn wasm_scalar_input_command_round_trips_and_rejects_non_finite_values() {
             source: ExecutableInputSourceV1::Scalar {
                 channel: b"CameraHeading".to_vec(),
             },
-            scalar_value_bits: Some(f64::INFINITY.to_bits()),
+            value: Some(ExecutableValueV1::Number(f64::INFINITY.to_bits())),
         }),
         ..command
     };

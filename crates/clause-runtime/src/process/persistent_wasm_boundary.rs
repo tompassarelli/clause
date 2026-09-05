@@ -8,6 +8,7 @@ use super::wasm_boundary::{
 };
 use super::{
     ExecutableCarrierErrorV1, ExecutableInputSourceV1, ExecutableKeyPhaseV1,
+    ExecutableReferentIdentityV1, ExecutableReferentV1, ExecutableValueV1,
     PersistentProcessSessionErrorV1, PersistentProcessSessionV1, RetiredPersistentProcessRuntimeV1,
     RuntimeAllocationEpochV1, WASM_PROCESS_REQUEST_LIMIT_V1, WASM_PROCESS_RESPONSE_LIMIT_V1,
     WasmAuthorityInputV1, WasmProcessStatusV1, decode_executable_physical_plan_v1,
@@ -84,7 +85,7 @@ pub struct WasmSessionAdmissionScopeV1 {
 pub struct WasmSessionPhysicalInputV1 {
     pub input_sequence: u64,
     pub source: ExecutableInputSourceV1,
-    pub scalar_value_bits: Option<u64>,
+    pub value: Option<ExecutableValueV1>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -662,9 +663,11 @@ fn execute_operation(
             }
         }
         WasmSessionOperationV1::PhysicalInput(input) => {
-            match session
-                .apply_physical_input(&input.source, input.scalar_value_bits.map(f64::from_bits))
-            {
+            match session.apply_typed_physical_input(
+                session.runtime_session(),
+                &input.source,
+                input.value,
+            ) {
                 Ok(step) => WasmSessionEventKindV1::InputAccepted {
                     step: step.id,
                     run: session.run().expect("accepted input retains its Run"),
@@ -989,6 +992,10 @@ fn put_input_source(
             bytes.push(1);
             put_blob(bytes, channel)?;
         }
+        ExecutableInputSourceV1::Referent { channel } => {
+            bytes.push(2);
+            put_blob(bytes, channel)?;
+        }
     }
     Ok(())
 }
@@ -1009,12 +1016,16 @@ fn decode_input_source(
             };
             Ok(ExecutableInputSourceV1::Keyboard { code, phase })
         }
-        1 => {
+        tag @ (1 | 2) => {
             let channel = decoder.blob(64)?.to_vec();
             if channel.is_empty() || !channel.iter().all(u8::is_ascii_graphic) {
                 return Err(WasmProcessStatusV1::MalformedRequest);
             }
-            Ok(ExecutableInputSourceV1::Scalar { channel })
+            Ok(if tag == 1 {
+                ExecutableInputSourceV1::Scalar { channel }
+            } else {
+                ExecutableInputSourceV1::Referent { channel }
+            })
         }
         _ => Err(WasmProcessStatusV1::MalformedRequest),
     }
@@ -1120,10 +1131,24 @@ pub fn encode_wasm_session_command_v1(
             bytes.push(3);
             bytes.extend_from_slice(&input.input_sequence.to_le_bytes());
             put_input_source(&mut bytes, &input.source)?;
-            match input.scalar_value_bits {
-                Some(bits) if f64::from_bits(bits).is_finite() => {
+            match &input.value {
+                Some(ExecutableValueV1::Number(bits)) if f64::from_bits(*bits).is_finite() => {
                     bytes.push(1);
                     bytes.extend_from_slice(&bits.to_le_bytes());
+                }
+                Some(ExecutableValueV1::Referent(value)) => {
+                    bytes.push(2);
+                    bytes.extend_from_slice(&value.domain().to_le_bytes());
+                    match value.identity() {
+                        ExecutableReferentIdentityV1::Declared(id) => {
+                            bytes.push(0);
+                            bytes.extend_from_slice(&id.to_le_bytes());
+                        }
+                        ExecutableReferentIdentityV1::Created(id) => {
+                            bytes.push(1);
+                            bytes.extend_from_slice(id);
+                        }
+                    }
                 }
                 None => bytes.push(0),
                 Some(_) => return Err(WasmProcessStatusV1::MalformedRequest),
@@ -1209,14 +1234,23 @@ pub fn decode_wasm_session_command_v1(
         3 => WasmSessionOperationV1::PhysicalInput(WasmSessionPhysicalInputV1 {
             input_sequence: d.u64()?,
             source: decode_input_source(&mut d)?,
-            scalar_value_bits: match d.take(1)?[0] {
+            value: match d.take(1)?[0] {
                 0 => None,
                 1 => {
                     let bits = d.u64()?;
                     if !f64::from_bits(bits).is_finite() {
                         return Err(WasmProcessStatusV1::MalformedRequest);
                     }
-                    Some(bits)
+                    Some(ExecutableValueV1::Number(bits))
+                }
+                2 => {
+                    let domain = d.u32()?;
+                    let value = match d.take(1)?[0] {
+                        0 => ExecutableReferentV1::declared(domain, d.u32()?),
+                        1 => ExecutableReferentV1::created(domain, d.identity()?),
+                        _ => return Err(WasmProcessStatusV1::MalformedRequest),
+                    };
+                    Some(ExecutableValueV1::Referent(value))
                 }
                 _ => return Err(WasmProcessStatusV1::MalformedRequest),
             },

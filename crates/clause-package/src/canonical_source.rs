@@ -302,6 +302,8 @@ pub struct CanonicalStateRefV1 {
     pub subject_role: LocalRoleRefV2,
     pub value_role: LocalRoleRefV2,
     pub subject: Vec<u8>,
+    /// Exact typed subject identity exposed for source-declared referent input.
+    pub subject_identity: Option<CanonicalReferentV1>,
     pub relation_designation: Vec<u8>,
     pub path: CanonicalStatePathV1,
 }
@@ -435,6 +437,14 @@ pub struct CanonicalKeyboardBindingV1 {
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct CanonicalScalarInputBindingV1 {
     pub channel: Vec<u8>,
+    pub handler_designation: Vec<u8>,
+}
+
+/// A checked physical channel carrying one exact referent of the declared domain.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct CanonicalReferentInputBindingV1 {
+    pub channel: Vec<u8>,
+    pub domain: FormationLocalId,
     pub handler_designation: Vec<u8>,
 }
 
@@ -677,6 +687,7 @@ pub struct CanonicalSourcePackageSliceV1 {
     pub executable_handlers: Vec<CanonicalExecutableHandlerV1>,
     pub keyboard_bindings: Vec<CanonicalKeyboardBindingV1>,
     pub scalar_input_bindings: Vec<CanonicalScalarInputBindingV1>,
+    pub referent_input_bindings: Vec<CanonicalReferentInputBindingV1>,
     pub input_handler: Option<CanonicalInputHandlerV1>,
     pub jump_handler: Option<CanonicalJumpHandlerV1>,
     pub scalar_handlers: Vec<CanonicalScalarHandlerV1>,
@@ -778,6 +789,12 @@ pub enum CanonicalSourceErrorV1 {
     },
     InvalidScalarInputBinding {
         origin: CanonicalSourceOriginV1,
+    },
+    InvalidReferentInputBinding {
+        origin: CanonicalSourceOriginV1,
+    },
+    DuplicateReferentInputBinding {
+        channel: Vec<u8>,
     },
     DuplicateScalarInputBinding {
         channel: Vec<u8>,
@@ -906,6 +923,7 @@ enum CstKind {
     TickHandler(TickHandlerCst),
     KeyboardBinding(KeyboardBindingCst),
     ScalarInputBinding(ScalarInputBindingCst),
+    ReferentInputBinding(ReferentInputBindingCst),
     ScalarLaw(ScalarLawCst),
     ScalarDerive(ScalarDeriveCst),
     BooleanLaw(BooleanLawCst),
@@ -1112,6 +1130,14 @@ struct KeyboardBindingCst {
 struct ScalarInputBindingCst {
     origin: CanonicalSourceOriginV1,
     channel: Vec<u8>,
+    handler_designation: Vec<u8>,
+}
+
+#[derive(Clone, Debug)]
+struct ReferentInputBindingCst {
+    origin: CanonicalSourceOriginV1,
+    channel: Vec<u8>,
+    domain: Vec<u8>,
     handler_designation: Vec<u8>,
 }
 
@@ -2038,6 +2064,7 @@ fn allocation_requests(
             }
             CstKind::KeyboardBinding(_)
             | CstKind::ScalarInputBinding(_)
+            | CstKind::ReferentInputBinding(_)
             | CstKind::Unsupported(_) => {}
         }
     }
@@ -2320,6 +2347,7 @@ fn canonical_many_state_ref(
         subject_role: relation.subject_role,
         value_role: relation.value_role,
         subject: subject.to_vec(),
+        subject_identity: input_subject_identity(cst, plan, subject, &relation, origin)?,
         relation_designation: relation.relation.designation.clone(),
         path: CanonicalStatePathV1::Many,
     })
@@ -2370,6 +2398,7 @@ fn canonical_state_ref_with_identity(
         subject_role: relation.subject_role,
         value_role: relation.value_role,
         subject: subject.to_vec(),
+        subject_identity: input_subject_identity(cst, plan, subject, relation, origin)?,
         relation_designation: relation.relation.designation.clone(),
         path,
     })
@@ -2794,6 +2823,24 @@ fn declared_referent_value(
     })
 }
 
+fn input_subject_identity(
+    cst: &CanonicalSourceCstV1,
+    plan: &CanonicalSourceAllocationPlanV1,
+    subject: &[u8],
+    relation: &ResolvedStateRelation<'_>,
+    origin: CanonicalSourceOriginV1,
+) -> Result<Option<CanonicalReferentV1>, CanonicalSourceErrorV1> {
+    cst.items
+        .iter()
+        .any(|item| {
+            matches!(&item.kind,
+                CstKind::ReferentInputBinding(binding) if binding.domain == relation.subject_domain
+            )
+        })
+        .then(|| declared_referent_value(cst, plan, subject, relation.subject_domain, origin))
+        .transpose()
+}
+
 fn relation_table_state_ref(
     cst: &CanonicalSourceCstV1,
     plan: &CanonicalSourceAllocationPlanV1,
@@ -2815,6 +2862,7 @@ fn relation_table_state_ref(
         subject_role: relation.subject_role,
         value_role: relation.value_role,
         subject: b"relations".to_vec(),
+        subject_identity: None,
         relation_designation: relation.relation.designation.clone(),
         path: CanonicalStatePathV1::Rows,
     })
@@ -3658,6 +3706,7 @@ fn validate_scalar_state_selector(
 
 fn derived_condition_state_ref(
     cst: &CanonicalSourceCstV1,
+    plan: &CanonicalSourceAllocationPlanV1,
     condition: &BooleanRelationUseCst,
     entities: &BTreeMap<Vec<u8>, Vec<u8>>,
     derives: &[ResolvedBooleanDerive<'_>],
@@ -3673,6 +3722,22 @@ fn derived_condition_state_ref(
                 && derive.value == condition_use.value
         })
         .collect::<Vec<_>>();
+    if matching.is_empty() {
+        let relation = condition_use.relation;
+        if let Some(subject_role) = &relation.subject
+            && let Some(subject) = bindings.get(subject_role)
+        {
+            let state = canonical_state_ref(
+                cst,
+                plan,
+                subject,
+                &relation.surface,
+                None,
+                condition.origin,
+            )?;
+            return Ok((state, condition_use.value));
+        }
+    }
     let [derive] = matching.as_slice() else {
         return Err(if matching.is_empty() {
             CanonicalSourceErrorV1::MissingExecutableBinding {
@@ -4089,11 +4154,19 @@ fn canonical_general_executable_expression(
     current: &CanonicalStateRefV1,
     parameters: &BTreeMap<Vec<u8>, CanonicalStateRefV1>,
     arguments: &BTreeMap<Vec<u8>, u16>,
+    referents: &BTreeMap<Vec<u8>, CanonicalReferentV1>,
     bindings: &BTreeMap<Vec<u8>, CanonicalScalarExpressionV1>,
     origin: CanonicalSourceOriginV1,
 ) -> Result<CanonicalExecutableExpressionV1, CanonicalSourceErrorV1> {
     let expression =
         expand_scalar_law_bindings(expression, bindings, &mut BTreeSet::new(), origin)?;
+    if let CanonicalScalarExpressionV1::Parameter(parameter) = &expression
+        && let Some(value) = referents.get(parameter)
+    {
+        return Ok(constant_expression(CanonicalScalarValueV1::Referent(
+            value.clone(),
+        )));
+    }
     if let CanonicalScalarExpressionV1::Parameter(parameter) = &expression
         && let Some(ordinal) = arguments.get(parameter)
     {
@@ -4101,7 +4174,7 @@ fn canonical_general_executable_expression(
     }
     let lower_expression = |expression: &CanonicalScalarExpressionV1| {
         canonical_general_executable_expression(
-            expression, current, parameters, arguments, bindings, origin,
+            expression, current, parameters, arguments, referents, bindings, origin,
         )
     };
     let pair = |left: &CanonicalScalarExpressionV1,
@@ -4142,6 +4215,7 @@ fn canonical_general_executable_predicates(
     current: &CanonicalStateRefV1,
     parameters: &BTreeMap<Vec<u8>, CanonicalStateRefV1>,
     arguments: &BTreeMap<Vec<u8>, u16>,
+    referents: &BTreeMap<Vec<u8>, CanonicalReferentV1>,
     bindings: &BTreeMap<Vec<u8>, CanonicalScalarExpressionV1>,
     origin: CanonicalSourceOriginV1,
 ) -> Result<Vec<CanonicalExecutablePredicateV1>, CanonicalSourceErrorV1> {
@@ -4170,10 +4244,10 @@ fn canonical_general_executable_predicates(
             };
             Ok(constructor(
                 canonical_general_executable_expression(
-                    left, current, parameters, arguments, bindings, origin,
+                    left, current, parameters, arguments, referents, bindings, origin,
                 )?,
                 canonical_general_executable_expression(
-                    right, current, parameters, arguments, bindings, origin,
+                    right, current, parameters, arguments, referents, bindings, origin,
                 )?,
             ))
         })
@@ -5117,7 +5191,7 @@ fn checked_executable_handlers(
                     .iter()
                     .map(|condition| {
                         let (state, expected) =
-                            derived_condition_state_ref(cst, condition, &entities, &derives)?;
+                            derived_condition_state_ref(cst, plan, condition, &entities, &derives)?;
                         Ok(CanonicalExecutablePredicateV1::Equal(
                             CanonicalExecutableExpressionV1::State(state),
                             constant_expression(CanonicalScalarValueV1::Boolean(expected)),
@@ -5217,6 +5291,16 @@ fn checked_executable_handlers(
                     entities,
                     selector_equalities,
                 } = solution;
+                let mut referents = BTreeMap::new();
+                for (variable, subject) in &entities {
+                    if let Some(identity) = parameters.values().find_map(|state| {
+                        (state.subject == *subject)
+                            .then_some(state.subject_identity.as_ref())
+                            .flatten()
+                    }) {
+                        referents.insert(variable.clone(), identity.clone());
+                    }
+                }
                 let current = parameters.get(&current_parameter).cloned().ok_or(
                     CanonicalSourceErrorV1::MissingExecutableBinding {
                         origin: source.origin,
@@ -5288,6 +5372,7 @@ fn checked_executable_handlers(
                         &current,
                         &parameters,
                         &arguments,
+                        &referents,
                         &scalar_bindings,
                         binding.origin,
                     )?;
@@ -5297,6 +5382,7 @@ fn checked_executable_handlers(
                     &current,
                     &parameters,
                     &arguments,
+                    &referents,
                     &scalar_bindings,
                     source.origin,
                 )?;
@@ -5322,8 +5408,9 @@ fn checked_executable_handlers(
                         .boolean_conditions
                         .iter()
                         .map(|condition| {
-                            let (state, expected) =
-                                derived_condition_state_ref(cst, condition, &entities, &derives)?;
+                            let (state, expected) = derived_condition_state_ref(
+                                cst, plan, condition, &entities, &derives,
+                            )?;
                             Ok(CanonicalExecutablePredicateV1::Equal(
                                 CanonicalExecutableExpressionV1::State(state),
                                 constant_expression(CanonicalScalarValueV1::Boolean(expected)),
@@ -5363,6 +5450,7 @@ fn checked_executable_handlers(
                                 &current,
                                 &parameters,
                                 &arguments,
+                                &referents,
                                 &scalar_bindings,
                                 source.origin,
                             )?,
@@ -5386,6 +5474,7 @@ fn checked_executable_handlers(
                                     &current,
                                     &parameters,
                                     &arguments,
+                                    &referents,
                                     &scalar_bindings,
                                     source.origin,
                                 )?,
@@ -5399,6 +5488,7 @@ fn checked_executable_handlers(
                         &current,
                         &parameters,
                         &arguments,
+                        &referents,
                         &scalar_bindings,
                         source.origin,
                     )?;
@@ -5544,6 +5634,104 @@ fn source_scalar_input_bindings(
     Ok(bindings)
 }
 
+fn checked_referent_input_bindings(
+    cst: &CanonicalSourceCstV1,
+    plan: &CanonicalSourceAllocationPlanV1,
+    handlers: &[CanonicalExecutableHandlerV1],
+) -> Result<Vec<CanonicalReferentInputBindingV1>, CanonicalSourceErrorV1> {
+    let mut seen = BTreeSet::new();
+    let mut result = Vec::new();
+    for binding in cst.items.iter().filter_map(|item| match &item.kind {
+        CstKind::ReferentInputBinding(binding) => Some(binding),
+        _ => None,
+    }) {
+        let invalid = || CanonicalSourceErrorV1::InvalidReferentInputBinding {
+            origin: binding.origin,
+        };
+        if !seen.insert(binding.channel.clone()) {
+            return Err(CanonicalSourceErrorV1::DuplicateReferentInputBinding {
+                channel: binding.channel.clone(),
+            });
+        }
+        let targets = handlers
+            .iter()
+            .filter(|handler| handler.designation == binding.handler_designation)
+            .collect::<Vec<_>>();
+        let [target] = targets.as_slice() else {
+            return Err(invalid());
+        };
+        let sources = cst
+            .items
+            .iter()
+            .filter_map(|item| match &item.kind {
+                CstKind::GeneralHandler(handler)
+                    if handler.designation == binding.handler_designation =>
+                {
+                    Some(handler)
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        let [source] = sources.as_slice() else {
+            return Err(invalid());
+        };
+        if target.trigger != CanonicalHandlerTriggerV1::External
+            || source.arguments.len() != 1
+            || target.argument_count != 1
+        {
+            return Err(invalid());
+        }
+        let argument = &source.arguments[0].designation;
+        // Infer the external argument's domain from its relational use or
+        // equality with a quantified subject, not the foreign caller's claim.
+        let mut domains = BTreeSet::new();
+        for state in source
+            .parameter_sources
+            .iter()
+            .chain(&source.membership_sources)
+            .chain(&source.required_sources)
+            .chain(
+                source
+                    .assignments
+                    .iter()
+                    .chain(&source.insertions)
+                    .map(|a| &a.target),
+            )
+        {
+            let relation = resolved_state_relation(cst, plan, &state.relation, source.origin)?;
+            if state.subject == *argument {
+                domains.insert(relation.subject_domain.to_vec());
+            }
+            if state.parameter == *argument {
+                domains.insert(relation.value_domain.to_vec());
+            }
+            for predicate in &source.predicates {
+                if let CanonicalScalarPredicateV1::Equal(
+                    CanonicalScalarExpressionV1::Parameter(left),
+                    CanonicalScalarExpressionV1::Parameter(right),
+                ) = predicate
+                    && ((left == argument && *right == state.subject)
+                        || (right == argument && *left == state.subject))
+                {
+                    domains.insert(relation.subject_domain.to_vec());
+                }
+            }
+        }
+        if domains != BTreeSet::from([binding.domain.clone()])
+            || matches!(binding.domain.as_slice(), b"F64" | b"Bool" | b"Text")
+        {
+            return Err(invalid());
+        }
+        result.push(CanonicalReferentInputBindingV1 {
+            channel: binding.channel.clone(),
+            domain: referent_type_id(cst, plan, &binding.domain, binding.origin)?,
+            handler_designation: binding.handler_designation.clone(),
+        });
+    }
+    result.sort();
+    Ok(result)
+}
+
 fn validate_keyboard_handler_targets(
     cst: &CanonicalSourceCstV1,
     keyboard: &[CanonicalKeyboardBindingV1],
@@ -5632,6 +5820,7 @@ struct CheckedCanonicalSourceExecutionV1 {
     executable_handlers: Vec<CanonicalExecutableHandlerV1>,
     keyboard_bindings: Vec<CanonicalKeyboardBindingV1>,
     scalar_input_bindings: Vec<CanonicalScalarInputBindingV1>,
+    referent_input_bindings: Vec<CanonicalReferentInputBindingV1>,
     input_handler: Option<CanonicalInputHandlerV1>,
     jump_handler: Option<CanonicalJumpHandlerV1>,
     scalar_handlers: Vec<CanonicalScalarHandlerV1>,
@@ -5704,6 +5893,7 @@ fn checked_canonical_source_execution_v1(
     )?;
     validate_keyboard_handler_targets(cst, &keyboard_bindings, &executable_handlers)?;
     validate_scalar_input_handler_targets(cst, &scalar_input_bindings, &executable_handlers)?;
+    let referent_input_bindings = checked_referent_input_bindings(cst, plan, &executable_handlers)?;
     let tick_program = tick_parts.map(|parts| CanonicalTickProgramV1 {
         artifact: cst.artifact,
         initial_position: [parts.position.x, parts.position.y, parts.position.z],
@@ -5757,6 +5947,7 @@ fn checked_canonical_source_execution_v1(
         executable_handlers,
         keyboard_bindings,
         scalar_input_bindings,
+        referent_input_bindings,
         input_handler,
         jump_handler,
         scalar_handlers,
@@ -6546,7 +6737,9 @@ pub fn elaborate_canonical_source_package_v1(
                     });
                 }
             }
-            CstKind::KeyboardBinding(_) | CstKind::ScalarInputBinding(_) => {}
+            CstKind::KeyboardBinding(_)
+            | CstKind::ScalarInputBinding(_)
+            | CstKind::ReferentInputBinding(_) => {}
             CstKind::Unsupported(value) => unsupported.push(value.clone()),
         }
     }
@@ -6605,6 +6798,7 @@ pub fn elaborate_canonical_source_package_v1(
         executable_handlers,
         keyboard_bindings,
         scalar_input_bindings,
+        referent_input_bindings,
         input_handler,
         jump_handler,
         scalar_handlers,
@@ -6620,6 +6814,7 @@ pub fn elaborate_canonical_source_package_v1(
         executable_handlers,
         keyboard_bindings,
         scalar_input_bindings,
+        referent_input_bindings,
         input_handler,
         jump_handler,
         scalar_handlers,
@@ -6855,6 +7050,40 @@ fn parse_item(
         return Ok(CstItem {
             origin,
             kind: CstKind::ScalarInputBinding(binding),
+        });
+    }
+    if head.starts_with("bind referent-input ") {
+        require_leaf(block, artifact)?;
+        let parts = head.split_whitespace().collect::<Vec<_>>();
+        let [
+            "bind",
+            "referent-input",
+            channel,
+            "as",
+            domain,
+            "to",
+            handler,
+        ] = parts.as_slice()
+        else {
+            return Err(CanonicalSourceErrorV1::InvalidReferentInputBinding { origin });
+        };
+        if [channel, domain, handler].iter().any(|value| {
+            value.is_empty()
+                || value.len() > 64
+                || !value
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
+        }) {
+            return Err(CanonicalSourceErrorV1::InvalidReferentInputBinding { origin });
+        }
+        return Ok(CstItem {
+            origin,
+            kind: CstKind::ReferentInputBinding(ReferentInputBindingCst {
+                origin,
+                channel: channel.as_bytes().to_vec(),
+                domain: domain.as_bytes().to_vec(),
+                handler_designation: handler.as_bytes().to_vec(),
+            }),
         });
     }
     if head.starts_with("law ") {
@@ -8300,6 +8529,10 @@ fn parse_general_handler(
             && !scalar_bindings.contains_key(parameter)
             && !seen_arguments.contains(parameter)
             && !seen_creations.contains(parameter)
+            && parameter != subject.as_bytes()
+            && !parameter_sources
+                .values()
+                .any(|source| source.subject == *parameter)
     }) {
         return Err(CanonicalSourceErrorV1::InvalidGeneralHandler { origin });
     }
@@ -11123,6 +11356,7 @@ fn validate_unique_designations(items: &[CstItem]) -> Result<(), CanonicalSource
             | CstKind::KeyboardBinding(_)
             | CstKind::ScalarInputBinding(_)
             | CstKind::ScalarLaw(_)
+            | CstKind::ReferentInputBinding(_)
             | CstKind::ScalarDerive(_)
             | CstKind::BooleanLaw(_)
             | CstKind::BooleanDerive(_)

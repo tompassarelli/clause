@@ -107,6 +107,7 @@ interface WasmCandidate {
 interface WasmSession {
   readonly _tag: "WasmSession";
   readonly handle: SessionHandle;
+  readonly sourceGeneration: number;
   readonly packageId: ExactBytes;
   readonly sessionId: ExactBytes;
   readonly allocation: ExactBytes;
@@ -307,6 +308,13 @@ type PhysicalObservation =
             sequence: number;
             channel: ExactBytes;
             value: number;
+          }>
+        | Readonly<{
+            kind: "referent";
+            sequence: number;
+            generation: number;
+            channel: ExactBytes;
+            value: ProjectedReferent;
           }>;
     }>
   | Readonly<{ kind: "candidate"; ordinal: number }>
@@ -326,6 +334,39 @@ interface DecodedTermNode {
 
 export interface ProjectedObject {
   readonly [key: string]: ProjectedValue;
+}
+
+export type ProjectedReferent = Readonly<{
+  kind: "referent";
+  domain: number;
+  identity:
+    | Readonly<{ kind: "declared"; value: number }>
+    | Readonly<{ kind: "created"; value: readonly number[] }>;
+}>;
+
+function checked_referent(value: unknown): ProjectedReferent {
+  const u32 = (value: unknown): value is number =>
+    typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= 0xffffffff;
+  if (typeof value !== "object" || value === null || !("kind" in value) ||
+      value.kind !== "referent" || !("domain" in value) || !u32(value.domain) ||
+      !("identity" in value)) {
+    throw new Error("referent input is malformed");
+  }
+  const identity = value.identity;
+  if (typeof identity !== "object" || identity === null ||
+      !("kind" in identity) || !("value" in identity)) {
+    throw new Error("referent identity is malformed");
+  }
+  if (identity.kind === "declared" && u32(identity.value)) {
+    return Object.freeze({ kind: "referent", domain: value.domain,
+      identity: Object.freeze({ kind: "declared", value: identity.value }) });
+  }
+  if (identity.kind === "created" && Array.isArray(identity.value) &&
+      identity.value.length === 32 && identity.value.every((byte: unknown) => u32(byte) && byte <= 255)) {
+    return Object.freeze({ kind: "referent", domain: value.domain,
+      identity: Object.freeze({ kind: "created", value: Object.freeze([...identity.value]) }) });
+  }
+  throw new Error("referent identity is malformed");
 }
 
 export type ProjectedValue =
@@ -449,6 +490,7 @@ function wasmcandidate_base(r: WasmCandidate): ExactBytes {
 
 function WasmSession(
   handle: SessionHandle,
+  sourceGeneration: number,
   packageId: ExactBytes,
   sessionId: ExactBytes,
   allocation: ExactBytes,
@@ -460,6 +502,7 @@ function WasmSession(
   return Object.freeze({
     _tag: "WasmSession",
     handle,
+    sourceGeneration,
     packageId,
     sessionId,
     allocation,
@@ -1009,7 +1052,6 @@ function parse_persistent_cartridge_bang(
     "CWR1 legacy projection",
   );
   if (
-    equivalent(occurrence_count, 0) ||
     !equivalent(final_offset, bytes.length)
   ) {
     (() => {
@@ -1756,6 +1798,12 @@ function decode_physical_observation(
     };
   }
 
+  if (value.kind === "referent-input") {
+    if (typeof value.generation !== "number" || !Number.isInteger(value.generation) || value.generation < 1 || value.generation > 0xffffffff) throw new Error("referent input requires its captured generation");
+    return { kind: "input", source: { kind: "referent", sequence: observation.sequence,
+      generation: value.generation, channel: ascii_bytes(value.channel, "referent input channel"), value: checked_referent(value.value) } };
+  }
+
   if (value.kind === "process-occurrence") {
     if (
       typeof value.ordinal !== "number" ||
@@ -1781,7 +1829,7 @@ function physical_input_command_bang(
     append_blob_bang(payload, input.code);
     payload.push(input.phase);
     payload.push(0);
-  } else {
+  } else if (input.kind === "scalar") {
     payload.push(1);
     append_blob_bang(payload, input.channel);
     payload.push(1);
@@ -1789,6 +1837,20 @@ function physical_input_command_bang(
     encoded.setFloat64(0, input.value, true);
     for (let index = 0; index < 8; index += 1) {
       payload.push(encoded.getUint8(index));
+    }
+  } else {
+    if (input.generation !== session.sourceGeneration) throw new Error("referent input belongs to a stale generation");
+    payload.push(2);
+    append_blob_bang(payload, input.channel);
+    payload.push(2);
+    append_u32_bang(payload, input.value.domain);
+    const identity = input.value.identity;
+    if (identity.kind === "declared") {
+      payload.push(0);
+      append_u32_bang(payload, identity.value);
+    } else {
+      payload.push(1);
+      payload.push(...identity.value);
     }
   }
   return encode_session_command_bang(session, 3, payload);
@@ -2122,6 +2184,12 @@ function realize_projection_node(node: TermNode): ProjectedValue {
       return ascii_text(payload, "projected symbol");
     if (kind === "clause/process-projected-text-v1")
       return utf8_text(payload, "projected Text");
+    if (kind === "clause/process-projected-referent-v1") {
+      const bytes = Array.from({ length: payload.length }, (_, index) => byte_at(payload, index));
+      if (payload.length === 9 && byte_at(payload, 4) === 0) return checked_referent({ kind: "referent", domain: little_u32(bytes, 0), identity: { kind: "declared", value: little_u32(bytes, 5) } });
+      if (payload.length === 37 && byte_at(payload, 4) === 1) return checked_referent({ kind: "referent", domain: little_u32(bytes, 0), identity: { kind: "created", value: frozen_byte_range(bytes, 5, 32) } });
+      throw new Error("projected referent is malformed");
+    }
     throw new Error("projected scalar Atom is not realizable");
   } else {
     const head = node.slots[0];
@@ -2458,10 +2526,11 @@ function create_wasm_cartridge_port_bang(
           }
         }
       })(),
-    (accepted_package, __generation, complete) =>
+    (accepted_package, generation, complete) =>
       (() => {
         try {
           const cartridge = require_persistent_cartridge(accepted_package);
+          if (!Number.isSafeInteger(generation) || generation < 1) throw new Error("source generation is invalid");
           const event = decode_cse1_event(
             dispatch_session_request(module, cartridge.openBytes, "open"),
           );
@@ -2470,6 +2539,7 @@ function create_wasm_cartridge_port_bang(
           }
           const session = WasmSession(
             Object.freeze({ slot: event.slot, generation: event.generation }),
+            generation,
             event.packageId,
             event.sessionId,
             event.allocation,
