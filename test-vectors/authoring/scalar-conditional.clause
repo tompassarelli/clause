@@ -1,0 +1,27 @@
+F64
+Meter
+
+relation reading
+  reads {meter: Meter} reading {value: F64}
+  subject meter
+  mode given meter yields value: one
+
+meter
+  shape: Meter
+meter reading 0.0
+
+on measure ?meter
+  when
+    ?meter reading ?value
+  withdraw
+    ?meter reading ?value
+  include
+    ?meter reading if(?value > 0.0, 10.0 / ?value, 0.0)
+
+on inspect ?meter
+  when
+    ?meter reading ?value
+  withdraw
+    ?meter reading ?value
+  include
+    ?meter reading ?value

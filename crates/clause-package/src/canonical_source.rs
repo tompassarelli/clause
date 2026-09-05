@@ -339,6 +339,7 @@ pub enum CanonicalExecutableExpressionV1 {
     GreaterThan(Box<Self>, Box<Self>),
     LessThanOrEqual(Box<Self>, Box<Self>),
     SquareRoot(Box<Self>),
+    Conditional(Box<Self>, Box<Self>, Box<Self>),
     Constant(CanonicalScalarValueV1),
     State(CanonicalStateRefV1),
     Argument(u16),
@@ -512,6 +513,7 @@ pub enum CanonicalScalarExpressionV1 {
     GreaterThan(Box<Self>, Box<Self>),
     LessThanOrEqual(Box<Self>, Box<Self>),
     SquareRoot(Box<Self>),
+    Conditional(Box<Self>, Box<Self>, Box<Self>),
     Current,
     Parameter(Vec<u8>),
     Number(u64),
@@ -4377,6 +4379,12 @@ fn canonical_scalar_executable_expression(
         ))
     };
     Ok(match expression {
+        CanonicalScalarExpressionV1::Conditional(condition, yes, no) => {
+            let (yes, no) = pair(yes, no)?;
+            CanonicalExecutableExpressionV1::Conditional(Box::new(
+                canonical_scalar_executable_expression(condition, current, parameters, origin)?,
+            ), yes, no)
+        }
         CanonicalScalarExpressionV1::GreaterThan(left, right) => {
             let (left, right) = pair(left, right)?;
             CanonicalExecutableExpressionV1::GreaterThan(left, right)
@@ -4460,6 +4468,12 @@ fn expand_scalar_law_bindings(
         ))
     };
     Ok(match expression {
+        CanonicalScalarExpressionV1::Conditional(condition, yes, no) => {
+            let (yes, no) = pair(yes, no, expanding)?;
+            CanonicalScalarExpressionV1::Conditional(Box::new(
+                expand_scalar_law_bindings(condition, bindings, expanding, origin)?,
+            ), yes, no)
+        }
         CanonicalScalarExpressionV1::GreaterThan(left, right) => {
             let (left, right) = pair(left, right, expanding)?;
             CanonicalScalarExpressionV1::GreaterThan(left, right)
@@ -4554,6 +4568,12 @@ fn canonical_general_executable_expression(
         ))
     };
     match &expression {
+        CanonicalScalarExpressionV1::Conditional(condition, yes, no) => {
+            let (yes, no) = pair(yes, no)?;
+            Ok(CanonicalExecutableExpressionV1::Conditional(
+                Box::new(lower_expression(condition)?), yes, no,
+            ))
+        }
         CanonicalScalarExpressionV1::GreaterThan(left, right) => {
             let (left, right) = pair(left, right)?;
             Ok(CanonicalExecutableExpressionV1::GreaterThan(left, right))
@@ -4835,6 +4855,14 @@ fn relational_scalar_expression(
         ))
     };
     Ok(match expression {
+        CanonicalScalarExpressionV1::Conditional(condition, yes, no) => {
+            let domain = expected_domain.or_else(|| relational::expression_domain(yes, domains))
+                .or_else(|| relational::expression_domain(no, domains));
+            let (yes, no) = pair(yes, no, domain)?;
+            CanonicalExecutableExpressionV1::Conditional(
+                Box::new(lower_expression(condition, Some(b"Bool"))?), yes, no,
+            )
+        }
         CanonicalScalarExpressionV1::GreaterThan(left, right) => {
             let (left, right) = pair(left, right, Some(b"F64"))?;
             CanonicalExecutableExpressionV1::GreaterThan(left, right)
@@ -9196,44 +9224,13 @@ fn parse_scalar_atom(source: &str, current: &str) -> Option<CanonicalScalarExpre
 }
 
 fn parse_scalar_predicate(source: &str, current: &str) -> Option<CanonicalScalarPredicateV1> {
-    let (left, right, constructor) = if let Some((left, right)) =
-        split_once_outside_text(source, " >= ")
-    {
-        (
-            right,
-            left,
-            CanonicalScalarPredicateV1::LessThanOrEqual as fn(_, _) -> CanonicalScalarPredicateV1,
-        )
-    } else if let Some((left, right)) = split_once_outside_text(source, " <= ") {
-        (
-            left,
-            right,
-            CanonicalScalarPredicateV1::LessThanOrEqual as fn(_, _) -> CanonicalScalarPredicateV1,
-        )
-    } else if let Some((left, right)) = split_once_outside_text(source, " > ") {
-        (
-            left,
-            right,
-            CanonicalScalarPredicateV1::GreaterThan as fn(_, _) -> CanonicalScalarPredicateV1,
-        )
-    } else if let Some((left, right)) = split_once_outside_text(source, " < ") {
-        (
-            right,
-            left,
-            CanonicalScalarPredicateV1::GreaterThan as fn(_, _) -> CanonicalScalarPredicateV1,
-        )
-    } else {
-        let (left, right) = split_once_outside_text(source, " = ")?;
-        (
-            left,
-            right,
-            CanonicalScalarPredicateV1::Equal as fn(_, _) -> CanonicalScalarPredicateV1,
-        )
-    };
-    Some(constructor(
-        parse_scalar_expression(left, current)?,
-        parse_scalar_expression(right, current)?,
-    ))
+    use CanonicalScalarExpressionV1 as E;
+    Some(match parse_scalar_expression(source, current)? {
+        E::Equal(left, right) => CanonicalScalarPredicateV1::Equal(*left, *right),
+        E::GreaterThan(left, right) => CanonicalScalarPredicateV1::GreaterThan(*left, *right),
+        E::LessThanOrEqual(left, right) => CanonicalScalarPredicateV1::LessThanOrEqual(*left, *right),
+        _ => return None,
+    })
 }
 
 fn split_once_outside_text<'a>(source: &'a str, separator: &str) -> Option<(&'a str, &'a str)> {
@@ -9327,6 +9324,20 @@ impl ScalarExpressionParser<'_> {
 
     fn primary(&mut self) -> Option<CanonicalScalarExpressionV1> {
         self.skip_spaces();
+        if self.take_exact(b"if(") {
+            let condition = self.comparison()?;
+            self.skip_spaces();
+            self.take_exact(b",").then_some(())?;
+            let yes = self.comparison()?;
+            self.skip_spaces();
+            self.take_exact(b",").then_some(())?;
+            let no = self.comparison()?;
+            self.skip_spaces();
+            self.take_exact(b")").then_some(())?;
+            return Some(CanonicalScalarExpressionV1::Conditional(
+                Box::new(condition), Box::new(yes), Box::new(no),
+            ));
+        }
         if self.take_exact(b"sqrt(") {
             let value = self.additive()?;
             self.skip_spaces();
@@ -9363,7 +9374,7 @@ impl ScalarExpressionParser<'_> {
         }
         while let Some(byte) = self.source.get(self.cursor)
             && !byte.is_ascii_whitespace()
-            && !matches!(*byte, b'+' | b'*' | b'/' | b'(' | b')')
+            && !matches!(*byte, b'+' | b'*' | b'/' | b'(' | b')' | b',')
             && !matches!(*byte, b'>' | b'<')
         {
             self.cursor += 1;
@@ -9451,6 +9462,11 @@ fn collect_scalar_expression_parameters(
     parameters: &mut BTreeSet<Vec<u8>>,
 ) {
     match expression {
+        CanonicalScalarExpressionV1::Conditional(condition, yes, no) => {
+            for value in [condition, yes, no] {
+                collect_scalar_expression_parameters(value, parameters);
+            }
+        }
         CanonicalScalarExpressionV1::SquareRoot(value) => {
             collect_scalar_expression_parameters(value, parameters);
         }
@@ -10054,6 +10070,7 @@ fn tick_guard_literal(expression: CanonicalScalarExpressionV1) -> Option<Canonic
         | CanonicalScalarExpressionV1::GreaterThan(_, _)
         | CanonicalScalarExpressionV1::LessThanOrEqual(_, _)
         | CanonicalScalarExpressionV1::SquareRoot(_)
+        | CanonicalScalarExpressionV1::Conditional(..)
         | CanonicalScalarExpressionV1::Current
         | CanonicalScalarExpressionV1::Parameter(_)
         | CanonicalScalarExpressionV1::Concatenate(_, _)
@@ -11462,6 +11479,10 @@ fn scalar_expression_matches_kind(
     let matches = |value, kind| scalar_expression_matches_kind(value, kind, current);
     let initial = expected;
     match expression {
+        CanonicalScalarExpressionV1::Conditional(condition, yes, no) => {
+            matches(condition, &CanonicalScalarValueV1::Boolean(false))
+                && matches(yes, expected) && matches(no, expected)
+        }
         CanonicalScalarExpressionV1::Equal(left, right) => {
             matches!(initial, CanonicalScalarValueV1::Boolean(_))
                 && [

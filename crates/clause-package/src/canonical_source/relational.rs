@@ -538,6 +538,8 @@ pub(super) fn expression_domain<'a>(
 ) -> Option<&'a [u8]> {
     use CanonicalScalarExpressionV1 as S;
     match expression {
+        S::Conditional(_, yes, no) => expression_domain(yes, domains)
+            .or_else(|| expression_domain(no, domains)),
         S::Number(_) | S::SquareRoot(_) | S::Add(..) | S::Subtract(..) | S::Multiply(..) | S::Divide(..) => {
             Some(b"F64")
         }
@@ -562,6 +564,11 @@ pub(super) fn check_expression(
         }
     }
     match expression {
+        S::Conditional(condition, yes, no) => {
+            check_expression(condition, b"Bool", domains, origin)?;
+            check_expression(yes, expected, domains, origin)?;
+            check_expression(no, expected, domains, origin)?;
+        }
         S::Parameter(name) => constrain(domains, name, expected, origin)?,
         S::Equal(a, b) => {
             let domain = expression_domain(a, domains)

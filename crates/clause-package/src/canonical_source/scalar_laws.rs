@@ -407,6 +407,11 @@ fn substitute(
 ) -> CanonicalScalarExpressionV1 {
     use CanonicalScalarExpressionV1::*;
     match expression {
+        Conditional(condition, yes, no) => Conditional(
+            Box::new(substitute(condition, bindings)),
+            Box::new(substitute(yes, bindings)),
+            Box::new(substitute(no, bindings)),
+        ),
         Parameter(name) => bindings.get(name).unwrap_or(expression).clone(),
         Concatenate(a, b) => Concatenate(Box::new(substitute(a, bindings)), Box::new(substitute(b, bindings))),
         Equal(a, b) => Equal(Box::new(substitute(a, bindings)), Box::new(substitute(b, bindings))),

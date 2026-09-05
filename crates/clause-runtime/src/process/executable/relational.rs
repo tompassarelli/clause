@@ -75,6 +75,7 @@ pub(super) fn validate_bindings(rule: &ExecutableRuleV1) -> Result<(), Executabl
             E::RelationPut(a, b, c)
             | E::RelationInsert(a, b, c)
             | E::RelationRemoveValue(a, b, c)
+            | E::Conditional(a, b, c)
             | E::Clamp(a, b, c) => {
                 check(a, bound, false, depth + 1, query_inputs)?;
                 check(b, bound, false, depth + 1, query_inputs)?;

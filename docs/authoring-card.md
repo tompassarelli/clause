@@ -10,6 +10,42 @@ Use that pin's workbench directly:
 
 Live source tooling offers an explicit checked scalar-effect replacement, not arbitrary text-reload continuity. Use `scalar_effects()` and `edit_scalar_effect()` with the captured generation and exact offered node; settle any pending candidate first. Native and Wasm carry the actual live world internally through the checked operation. Retained explanations describe accepted Steps; finite interventions query an isolated recorded pre-state without applying input or admitting a world. See `docs/live-source-semantics.md` for the compiler/runtime and passive browser contract, bounds, and remaining limits.
 
+## Typed lazy value choice
+
+if(condition, yes, no) requires Bool and two values of the expected type. Only the selected branch executes; both branches are checked. It composes with source laws, query contributions, structured fields and atomic updates.
+
+Catalog ID: `scalar-conditional`
+
+```clause
+F64
+Meter
+
+relation reading
+  reads {meter: Meter} reading {value: F64}
+  subject meter
+  mode given meter yields value: one
+
+meter
+  shape: Meter
+meter reading 0.0
+
+on measure ?meter
+  when
+    ?meter reading ?value
+  withdraw
+    ?meter reading ?value
+  include
+    ?meter reading if(?value > 0.0, 10.0 / ?value, 0.0)
+
+on inspect ?meter
+  when
+    ?meter reading ?value
+  withdraw
+    ?meter reading ?value
+  include
+    ?meter reading ?value
+```
+
 ## Explicit finite-query inputs
 
 A query's given list passes exact typed values from the enclosing rule. All other query variables remain local. Count matching optional rows to distinguish presence from absence, including runtime-created referents and withdrawal; exhaustion still fails explicitly.

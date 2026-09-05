@@ -16,6 +16,12 @@ pub struct AuthoringExampleV1 {
 /// accepts it.
 pub const AUTHORING_EXAMPLES_V1: &[AuthoringExampleV1] = &[
     AuthoringExampleV1 {
+        slug: "scalar-conditional",
+        title: "Typed lazy value choice",
+        summary: "if(condition, yes, no) requires Bool and two values of the expected type. Only the selected branch executes; both branches are checked. It composes with source laws, query contributions, structured fields and atomic updates.",
+        source: include_str!("../../../test-vectors/authoring/scalar-conditional.clause"),
+    },
+    AuthoringExampleV1 {
         slug: "query-inputs",
         title: "Explicit finite-query inputs",
         summary: "A query's given list passes exact typed values from the enclosing rule. All other query variables remain local. Count matching optional rows to distinguish presence from absence, including runtime-created referents and withdrawal; exhaustion still fails explicitly.",

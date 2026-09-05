@@ -788,6 +788,7 @@ pub fn decode_executable_occurrence_v1(
 #[derive(Clone, Debug, PartialEq)]
 pub enum ExecutableExpressionV1 {
     SquareRoot(Box<Self>),
+    Conditional(Box<Self>, Box<Self>, Box<Self>),
     Constant(ExecutableValueV1),
     Slot(u16),
     Argument(u16),
@@ -1057,6 +1058,12 @@ fn lower_canonical_expression(
         ))
     };
     Ok(match expression {
+        CanonicalExecutableExpressionV1::Conditional(condition, yes, no) => {
+            let (yes, no) = pair(yes, no)?;
+            ExecutableExpressionV1::Conditional(Box::new(
+                lower_canonical_expression(condition, slots, depth + 1)?,
+            ), yes, no)
+        }
         CanonicalExecutableExpressionV1::Equal(left, right) => {
             let (left, right) = pair(left, right)?;
             ExecutableExpressionV1::Equal(left, right)
@@ -1732,6 +1739,12 @@ fn lower_scalar_expression(
         ))
     };
     Ok(match expression {
+        CanonicalScalarExpressionV1::Conditional(condition, yes, no) => {
+            let (yes, no) = pair(yes, no)?;
+            ExecutableExpressionV1::Conditional(Box::new(
+                lower_scalar_expression(condition, state_slot, parameter_slots, depth + 1)?,
+            ), yes, no)
+        }
         CanonicalScalarExpressionV1::Equal(left, right) => {
             let (left, right) = pair(left, right)?;
             ExecutableExpressionV1::Equal(left, right)
@@ -6174,6 +6187,7 @@ fn validate_value_expression(
         E::RelationPut(a, b, c)
         | E::RelationInsert(a, b, c)
         | E::RelationRemoveValue(a, b, c)
+        | E::Conditional(a, b, c)
         | E::Clamp(a, b, c) => vec![a, b, c],
     };
     for child in children {
@@ -6713,6 +6727,10 @@ fn evaluate(
                 table.remove_value(&subject, &value)?,
             ))
         }
+        E::Conditional(condition, yes, no) => {
+            let branch = if boolean(evaluate(condition, slots, arguments, context)?)? { yes } else { no };
+            evaluate(branch, slots, arguments, context)
+        }
         E::Concatenate(left, right) => concatenate(left, right, slots, arguments, context),
         E::Add(left, right) => numeric2(left, right, slots, arguments, context, |a, b| a + b),
         E::Subtract(left, right) => numeric2(left, right, slots, arguments, context, |a, b| a - b),
@@ -7149,6 +7167,7 @@ fn encode_expression(
         E::Subtract(a, b) => encode_binary(bytes, 4, a, b)?,
         E::Multiply(a, b) => encode_binary(bytes, 5, a, b)?,
         E::Divide(a, b) => encode_binary(bytes, 6, a, b)?,
+        E::Conditional(condition, yes, no) => encode_ternary(bytes, 31, condition, yes, no)?,
         E::SquareRoot(value) => {
             bytes.push(30);
             encode_expression(bytes, value)?;
@@ -7455,6 +7474,11 @@ impl<'a> Decoder<'a> {
             24 => E::Accumulate(Box::new(self.expression(next)?)),
             25 => E::Binding(self.u16()?),
             30 => E::SquareRoot(Box::new(self.expression(next)?)),
+            31 => E::Conditional(
+                Box::new(self.expression(next)?),
+                Box::new(self.expression(next)?),
+                Box::new(self.expression(next)?),
+            ),
             29 => {
                 let count = self.count()?;
                 let inputs = (0..count).map(|_| self.expression(next))
