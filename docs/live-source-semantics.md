@@ -127,13 +127,19 @@ diagnostic, bounded to 1 MiB and never substituted for an admitted world frame.
 It names the exact event Step and old source artifact. It explains that event,
 not necessarily the battle's current state.
 
+Relation states also expose paged `rows`, each carrying its exact typed subject
+and recorded before/after values (omitted on the absent side). These are state
+snapshots, not a claim that every row was read: premise reads still name the
+actual evaluated rows/searches. `explanationRelationRows` passively decodes these
+coordinates, retaining the state source metadata and created occurrence identity.
+
 ## Finite intervention
 
-`intervene(query)` / `interveneSession(module, liveSession, ciq1)` operates on a
+`intervene(query)` / `interveneSession(module, liveSession, queryBytes)` operates on a
 retained event's exact pre-state and occurrence. Allowed changes are a caller-
-supplied finite list of typed slot alternatives (at most 20). One value per
+supplied finite list of typed coordinate alternatives (at most 20). One value per
 changed coordinate is enumerated. Cost is increasing changed-coordinate count,
-then canonical `(slot, typed value)` lexicographic order. The empty intervention
+then canonical `(slot, typed subject, typed value)` lexicographic order. The empty intervention
 is evaluated first. Maximum evaluator runs is explicit and at most 4096.
 
 Each hypothesis uses the same `prepare_step` evaluator as actual execution on
@@ -146,12 +152,23 @@ bound stopped a prefix. A found first solution is minimal under the declared
 order and stops the search, so it need not report full enumeration. Exhaustion
 is not impossibility.
 
-`finiteScalarInterventionQuery` is a passive CIQ1 serializer for Boolean/numeric
-alternatives and a caller-supplied scalar threshold or constant predicate. Native
-CIQ1 supports the normalized expression vocabulary. Neither API silently applies
-historical answers to a later moving world. Validate an answer by reproducing
-the recorded pre-state in an isolated normally executed session and applying
-the changes through the declared inputs.
+`finiteScalarInterventionQuery` passively serializes Boolean/numeric alternatives
+and a caller-supplied threshold or constant predicate. An optional exact typed
+`subject` on an allowed change or desired coordinate addresses one relation row.
+Rows must exist in the recorded pre-state, have the exact declared subject/value
+domain, and have `one` or `maybe` cardinality; many-valued rows are not scalar
+alternatives. Whole-table and row alternatives on the same slot reject as
+overlapping. Different subjects in one table have independent costs; alternative
+values for the same coordinate are mutually exclusive. Duplicate alternatives
+and unchanged values do not increase cost. Queries never allocate missing rows.
+
+CIQ1 slot-only bytes retain their meaning. CIQ2 adds a subject-presence tag and,
+when present, the canonical typed referent after each allowed slot. Encoders use
+CIQ1 for slot-only alternatives and CIQ2 for row alternatives. Both carry the same
+normalized desired expression; row thresholds use `RelationRead`. Solution keys
+for rows contain the slot and canonical subject bytes, never a row ordinal.
+`projectedRelationRowValue` reads an exact predicted row without evaluating rules.
+Neither API applies historical answers to a later moving world.
 
 General source edits, arbitrary reconciliation, general recursive explanations,
 unbounded/inverse solving and future-state tactical prediction remain outside

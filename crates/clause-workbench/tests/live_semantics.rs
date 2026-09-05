@@ -280,6 +280,7 @@ fn real_attack_explanation_and_minimal_finite_intervention_share_execution() {
         .filter(|binding| binding.state.relation_designation == b"selected")
         .map(|binding| ExecutableInterventionChangeV1 {
             slot: binding.slot,
+            subject: None,
             value: ExecutableValueV1::Boolean(false),
         })
         .collect::<Vec<_>>();
@@ -293,6 +294,9 @@ fn real_attack_explanation_and_minimal_finite_intervention_share_execution() {
         ),
         maximum_evaluations: 32,
     };
+    let bytes = clause_runtime::encode_executable_intervention_query_v1(&query).unwrap();
+    assert_eq!(&bytes[..4], b"CIQ1");
+    assert_eq!(clause_runtime::decode_executable_intervention_query_v1(&bytes).unwrap(), query);
     let answer = w.intervene(&query).unwrap();
     assert_eq!(answer.solution.as_ref().unwrap().len(), 4);
     assert_eq!(

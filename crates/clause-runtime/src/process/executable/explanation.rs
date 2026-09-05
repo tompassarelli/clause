@@ -89,11 +89,75 @@ pub struct ExecutableRecordedEventV1 {
 
 /// Allowed changes are an explicit finite set of typed alternatives to exact
 /// pre-state coordinates. Cost is changed coordinate count. Equal-cost sets
-/// are ordered by canonical (slot, typed value); one value per slot.
+/// are ordered by canonical (slot, subject, typed value); one value per coordinate.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct ExecutableInterventionChangeV1 {
     pub slot: u16,
+    pub subject: Option<ExecutableReferentV1>,
     pub value: ExecutableValueV1,
+}
+
+impl ExecutableInterventionChangeV1 {
+    fn coordinate_key(&self) -> String {
+        match &self.subject {
+            None => self.slot.to_string(),
+            Some(subject) => {
+                let mut bytes = Vec::new();
+                encode_referent(&mut bytes, subject);
+                format!("{}:{}", self.slot, hex_identity(&bytes))
+            }
+        }
+    }
+
+    fn before_value(
+        &self,
+        configuration: &[ExecutableSlotV1],
+    ) -> Result<Option<ExecutableValueV1>, ExecutableErrorV1> {
+        let state = configuration
+            .get(usize::from(self.slot))
+            .ok_or(ExecutableErrorV1::UnknownSlot(self.slot))?;
+        if let Some(subject) = &self.subject {
+            let Some(ExecutableValueV1::RelationTable(table)) = state.value() else {
+                return Err(ExecutableErrorV1::TypeMismatch);
+            };
+            if table.cardinality == ExecutableRelationCardinalityV1::Many
+                || !table.value_matches(&self.value)
+            {
+                return Err(ExecutableErrorV1::TypeMismatch);
+            }
+            return table
+                .read(&ExecutableValueV1::Referent(subject.clone()))
+                .map(Some);
+        }
+        if state.kind() != self.value.kind() {
+            return Err(ExecutableErrorV1::TypeMismatch);
+        }
+        if let (Some(ExecutableValueV1::Referent(old)), ExecutableValueV1::Referent(new)) =
+            (state.value(), &self.value)
+        {
+            if old.domain != new.domain {
+                return Err(ExecutableErrorV1::TypeMismatch);
+            }
+        }
+        Ok(state.value().cloned())
+    }
+
+    fn apply(&self, configuration: &mut [ExecutableSlotV1]) -> Result<(), ExecutableErrorV1> {
+        let state = &mut configuration[usize::from(self.slot)];
+        *state = if let Some(subject) = &self.subject {
+            let Some(ExecutableValueV1::RelationTable(table)) = state.value() else {
+                return Err(ExecutableErrorV1::TypeMismatch);
+            };
+            ExecutableValueV1::RelationTable(table.put(
+                &ExecutableValueV1::Referent(subject.clone()),
+                self.value.clone(),
+            )?)
+            .into()
+        } else {
+            self.value.clone().into()
+        };
+        Ok(())
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -119,12 +183,19 @@ pub struct ExecutableInterventionResultV1 {
 pub fn encode_executable_intervention_query_v1(
     query: &ExecutableInterventionQueryV1,
 ) -> Result<Vec<u8>, ExecutableErrorV1> {
-    let mut bytes = b"CIQ1".to_vec();
+    let rows = query.allowed.iter().any(|change| change.subject.is_some());
+    let mut bytes = if rows { b"CIQ2" } else { b"CIQ1" }.to_vec();
     bytes.extend_from_slice(query.event.as_bytes());
     bytes.extend_from_slice(&query.maximum_evaluations.to_le_bytes());
     encode_count(&mut bytes, query.allowed.len())?;
     for change in &query.allowed {
         bytes.extend_from_slice(&change.slot.to_le_bytes());
+        if rows {
+            bytes.push(u8::from(change.subject.is_some()));
+            if let Some(subject) = &change.subject {
+                encode_referent(&mut bytes, subject);
+            }
+        }
         encode_value(&mut bytes, &change.value)?;
     }
     validate_value_expression(&query.desired, 0)?;
@@ -142,9 +213,11 @@ pub fn decode_executable_intervention_query_v1(
         return Err(ExecutableErrorV1::ResourceLimit);
     }
     let mut d = Decoder::new(bytes);
-    if d.take(4)? != b"CIQ1" {
-        return Err(ExecutableErrorV1::MalformedProgram);
-    }
+    let rows = match d.take(4)? {
+        b"CIQ1" => false,
+        b"CIQ2" => true,
+        _ => return Err(ExecutableErrorV1::MalformedProgram),
+    };
     let event = StepId::from_bytes(d.identity()?);
     let maximum_evaluations = d.u32()?;
     let count = d.count()?;
@@ -155,6 +228,15 @@ pub fn decode_executable_intervention_query_v1(
         .map(|_| {
             Ok(ExecutableInterventionChangeV1 {
                 slot: d.u16()?,
+                subject: if rows {
+                    match d.byte()? {
+                        0 => None,
+                        1 => Some(d.referent()?),
+                        _ => return Err(ExecutableErrorV1::MalformedProgram),
+                    }
+                } else {
+                    None
+                },
                 value: d.value()?,
             })
         })
@@ -192,7 +274,7 @@ pub fn executable_intervention_result_term_v1(
             b"cost-order".to_vec(),
             diagnostic_text(
                 scope,
-                "changed-coordinate-count; then (slot, canonical-typed-value) lexicographic",
+                "changed-coordinate-count; then (slot, typed-subject, canonical-typed-value) lexicographic",
             )?,
         ),
     ];
@@ -209,7 +291,7 @@ pub fn executable_intervention_result_term_v1(
                     .iter()
                     .map(|change| {
                         Ok((
-                            change.slot.to_string().into_bytes(),
+                            change.coordinate_key().into_bytes(),
                             projected_value_term(scope, change.value.clone())?,
                         ))
                     })
@@ -519,6 +601,48 @@ impl ExecutableProcessRuntimeV1 {
                         state.push((name.to_vec(), projected_value_term(scope, value.clone())?));
                     }
                 }
+                let subjects = [&recorded.before, &recorded.after]
+                    .into_iter()
+                    .filter_map(|config| match config[usize::from(slot)].value() {
+                        Some(ExecutableValueV1::RelationTable(table)) => Some(table.rows.keys()),
+                        _ => None,
+                    })
+                    .flatten()
+                    .cloned()
+                    .collect::<BTreeSet<_>>();
+                if !subjects.is_empty() {
+                    let rows = subjects
+                        .into_iter()
+                        .enumerate()
+                        .map(|(index, subject)| {
+                            let reference = ExecutableValueV1::Referent(subject);
+                            let mut row = vec![(
+                                b"subject".to_vec(),
+                                projected_value_term(scope, reference.clone())?,
+                            )];
+                            for (name, config) in [
+                                (b"before".as_slice(), &recorded.before),
+                                (b"after".as_slice(), &recorded.after),
+                            ] {
+                                if let Some(ExecutableValueV1::RelationTable(table)) =
+                                    config[usize::from(slot)].value()
+                                {
+                                    if table.present(&reference)? {
+                                        row.push((
+                                            name.to_vec(),
+                                            projected_value_term(scope, table.read(&reference)?)?,
+                                        ));
+                                    }
+                                }
+                            }
+                            Ok((
+                                index.to_string().into_bytes(),
+                                projection_object(scope, row)?,
+                            ))
+                        })
+                        .collect::<Result<_, ExecutableErrorV1>>()?;
+                    state.push((b"rows".to_vec(), diagnostic_index(scope, rows)?));
+                }
                 Ok((
                     slot.to_string().into_bytes(),
                     projection_object(scope, state)?,
@@ -588,30 +712,26 @@ impl ExecutableProcessRuntimeV1 {
         let mut allowed = query.allowed.clone();
         allowed.sort();
         allowed.dedup();
+        if allowed.iter().any(|change| {
+            change.subject.is_none()
+                && allowed
+                    .iter()
+                    .any(|other| other.slot == change.slot && other.subject.is_some())
+        }) {
+            return Err(ExecutableErrorV1::MalformedProgram);
+        }
+        let mut effective = Vec::new();
         for change in &allowed {
-            let state = recorded
-                .before
-                .get(usize::from(change.slot))
-                .ok_or(ExecutableErrorV1::UnknownSlot(change.slot))?;
-            if state.kind() != change.value.kind() {
-                return Err(ExecutableErrorV1::TypeMismatch);
-            }
+            let before = change.before_value(&recorded.before)?;
             // Finite values must be canonical, even for direct native callers.
             let mut bytes = Vec::new();
             encode_value(&mut bytes, &change.value)?;
             Decoder::new(&bytes).value()?;
-            if let Some(ExecutableValueV1::Referent(old)) = state.value() {
-                let ExecutableValueV1::Referent(new) = &change.value else {
-                    return Err(ExecutableErrorV1::TypeMismatch);
-                };
-                if old.domain != new.domain {
-                    return Err(ExecutableErrorV1::TypeMismatch);
-                }
+            if before.as_ref() != Some(&change.value) {
+                effective.push(change.clone());
             }
         }
-        allowed.retain(|change| {
-            recorded.before[usize::from(change.slot)].value() != Some(&change.value)
-        });
+        let allowed = effective;
         let mut result = ExecutableInterventionResultV1 {
             event: query.event,
             evaluations: 0,
@@ -636,14 +756,17 @@ impl ExecutableProcessRuntimeV1 {
                     .iter()
                     .map(|index| allowed[*index].clone())
                     .collect::<Vec<_>>();
-                if !changes.windows(2).any(|pair| pair[0].slot == pair[1].slot) {
+                if !changes
+                    .windows(2)
+                    .any(|pair| pair[0].slot == pair[1].slot && pair[0].subject == pair[1].subject)
+                {
                     if result.evaluations == query.maximum_evaluations {
                         result.exhausted = true;
                         return Ok(result);
                     }
                     let mut pre = recorded.before.clone();
                     for change in &changes {
-                        pre[usize::from(change.slot)] = change.value.clone().into();
+                        change.apply(&mut pre)?;
                     }
                     result.evaluations += 1;
                     // A failed evaluator run is not a false hypothesis. This

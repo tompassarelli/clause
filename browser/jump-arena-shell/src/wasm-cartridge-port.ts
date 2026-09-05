@@ -2936,7 +2936,7 @@ export function sourceContinuity(module: unknown, incomingSession: unknown): Pro
   return realize_projection_node(decode_canonical_term([...bytes], 1024 * 1024));
 }
 
-/** Read-only opaque CIQ1 request: all search and semantic evaluation occurs
+/** Read-only opaque CIQ1/CIQ2 request: all search and semantic evaluation occurs
  * inside the live Wasm runtime against a retained actual event. */
 export function interveneSession(module: unknown, incomingSession: unknown, query: ExactBytes): ProjectedValue {
   const session = require_live_session(incomingSession);
@@ -2945,17 +2945,61 @@ export function interveneSession(module: unknown, incomingSession: unknown, quer
   return realize_projection_node(decode_canonical_term([...bytes], 1024 * 1024));
 }
 
-export interface FiniteScalarChange { readonly slot: number; readonly value: boolean | number }
+export { checked_referent as checkedProjectedReferent };
+export interface InterventionCoordinate { readonly slot: number; readonly subject?: ProjectedReferent }
+export interface FiniteScalarChange extends InterventionCoordinate { readonly value: boolean | number }
+
+export interface ExplainedRelationRow {
+  readonly slot: number;
+  readonly subject: ProjectedReferent;
+  readonly source: ProjectedObject;
+  readonly before: ProjectedValue | undefined;
+  readonly after: ProjectedValue | undefined;
+}
+
+/** Decode exact runtime coordinates; ordinal page keys are not row identities. */
+export function explanationRelationRows(explanation: ProjectedValue): readonly ExplainedRelationRow[] {
+  const object = (value: ProjectedValue): ProjectedObject => {
+    if (typeof value !== "object" || value === null || Array.isArray(value)) throw new Error("invalid explanation object");
+    return value as ProjectedObject;
+  };
+  return Object.entries(object(object(explanation).states)).flatMap(([coordinate, value]) => {
+    const slot = Number(coordinate), state = object(value);
+    if (!Number.isInteger(slot) || slot < 0 || slot > 65535) throw new Error("invalid explanation slot");
+    if (state.rows === undefined) return [];
+    return Object.values(object(state.rows)).flatMap(page => Object.values(object(page))).map(value => {
+      const row = object(value);
+      return { slot, subject: checked_referent(row.subject), source: object(state.source), before: row.before, after: row.after };
+    });
+  });
+}
+
+export function projectedRelationRowValue(table: ProjectedValue, subject: ProjectedReferent): ProjectedValue | undefined {
+  if (typeof table !== "object" || table === null || Array.isArray(table)) throw new Error("invalid predicted table");
+  const value = table as ProjectedObject;
+  if (value.kind !== "relation-table" || value.cardinality === 2 || !Array.isArray(value.rows)) throw new Error("prediction is not a single-valued relation");
+  checked_referent(subject);
+  for (const candidate of value.rows) {
+    if (typeof candidate !== "object" || candidate === null || Array.isArray(candidate)) throw new Error("invalid predicted row");
+    const row = candidate as ProjectedObject;
+    if (projected_scalar_order(row.subject, subject) === 0) {
+      if (!Array.isArray(row.values) || row.values.length !== 1) throw new Error("invalid predicted cardinality");
+      return row.values[0];
+    }
+  }
+  return undefined;
+}
 
 /** Passive typed serializer for a finite question supplied by the caller.
  * CPP1 tags encode the shared normalized predicate; no local evaluation. */
 export function finiteScalarInterventionQuery(
   event: string, allowed: readonly FiniteScalarChange[], maximumEvaluations: number,
-  desired: { readonly slot: number; readonly greaterThan: number } | boolean,
+  desired: (InterventionCoordinate & { readonly greaterThan: number }) | boolean,
 ): ExactBytes {
   if (!/^[0-9a-f]{64}$/.test(event) || allowed.length > 20 || !Number.isInteger(maximumEvaluations)
     || maximumEvaluations < 0 || maximumEvaluations > 4096) throw new Error("finite intervention envelope is invalid");
-  const bytes = [67, 73, 81, 49, ...event.match(/../g)!.map(pair => Number.parseInt(pair, 16))];
+  const rows = allowed.some(change => change.subject !== undefined);
+  const bytes = [67, 73, 81, rows ? 50 : 49, ...event.match(/../g)!.map(pair => Number.parseInt(pair, 16))];
   append_u32_bang(bytes, maximumEvaluations);
   const slot = (value: number) => {
     if (!Number.isInteger(value) || value < 0 || value > 65535) throw new Error("intervention coordinate is invalid");
@@ -2968,10 +3012,30 @@ export function finiteScalarInterventionQuery(
     const buffer = new ArrayBuffer(8); new DataView(buffer).setFloat64(0, value === 0 ? 0 : value, true);
     bytes.push(...new Uint8Array(buffer));
   };
+  const referent = (value: ProjectedReferent) => {
+    const reference = checked_referent(value);
+    append_u32_bang(bytes, reference.domain);
+    if (reference.identity.kind === "declared") {
+      bytes.push(0); append_u32_bang(bytes, reference.identity.value);
+    } else { bytes.push(1, ...reference.identity.value); }
+  };
   slot(allowed.length);
-  for (const change of allowed) { slot(change.slot); scalar(change.value); }
+  for (const change of allowed) {
+    slot(change.slot);
+    if (rows) {
+      bytes.push(change.subject === undefined ? 0 : 1);
+      if (change.subject !== undefined) referent(change.subject);
+    }
+    scalar(change.value);
+  }
   if (typeof desired === "boolean") { bytes.push(0); scalar(desired); }
-  else { bytes.push(8, 1); slot(desired.slot); bytes.push(0); scalar(desired.greaterThan); }
+  else {
+    bytes.push(8);
+    if (desired.subject !== undefined) bytes.push(18);
+    bytes.push(1); slot(desired.slot);
+    if (desired.subject !== undefined) { bytes.push(0, 5); referent(desired.subject); }
+    bytes.push(0); scalar(desired.greaterThan);
+  }
   return Object.freeze(bytes);
 }
 
