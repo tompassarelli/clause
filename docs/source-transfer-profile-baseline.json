@@ -1,0 +1,1230 @@
+{
+  "observedDateUtc": "2026-09-05",
+  "host": "greywrought-dev",
+  "resourceScope": "session-816.scope: tree CPU2, MemoryHigh3GiB/Max4GiB, one admitted heavy command",
+  "nativeBuild": "Rust1.96.1 dev unoptimized + debuginfo, cargo -j2",
+  "wasmBuild": "Rust1.96.1 wasm32-unknown-unknown release, wasm-bindgen0.2.108 web, Bun1.3.13",
+  "note": "One excluded warmup, then alternating3off/on per variant; no renderer, no optimization. Raw source/artifacts retained under target/source-transfer-profile/b5f65ea. Native includes source preparation and2witness checks; Wasm replays1witness check. These are not equivalent target performance comparisons.",
+  "rawArtifactSha256": {
+    "nativeJson": "b95d22ce0bdc46afec8ef49828ebc7feb14a7e39f5ed6ccbd06b68b792dfc7ff",
+    "wasmJson": "b0bddbabe5d4270bdbca6e34c139fcb4244b4409483f8f6b703f762b3a3c465d"
+  },
+  "native": {
+    "compiler": "b5f65ea27cf772ee412d6a9bfdb16f82e4df31a7",
+    "measurement": "native resident edit includes preparation and checked transfer; no renderer",
+    "samplesPerMode": 3,
+    "variants": {
+      "encounter": [
+        {
+          "index": 0,
+          "warmup": true,
+          "profiled": false,
+          "sourcePackage": "c4cc9b34f288f01380cf16670865576ac176f19e41fad1bb27b1255eecb52894",
+          "wallMs": 3201.472027,
+          "profile": null
+        },
+        {
+          "index": 1,
+          "warmup": false,
+          "profiled": false,
+          "sourcePackage": "c4cc9b34f288f01380cf16670865576ac176f19e41fad1bb27b1255eecb52894",
+          "wallMs": 3262.339872,
+          "profile": null
+        },
+        {
+          "index": 2,
+          "warmup": false,
+          "profiled": true,
+          "sourcePackage": "c4cc9b34f288f01380cf16670865576ac176f19e41fad1bb27b1255eecb52894",
+          "wallMs": 3433.72615,
+          "profile": {
+            "clock": "monotonic-wall-ms",
+            "wallMs": 3433.732674,
+            "truncated": false,
+            "phases": {
+              "transfer": {
+                "calls": 1,
+                "inclusiveMs": 1548.60674,
+                "exclusiveMs": 1.2245820000002823
+              },
+              "witness-check": {
+                "calls": 2,
+                "inclusiveMs": 2636.7794169999997,
+                "exclusiveMs": 164.29439899999966
+              },
+              "source-read": {
+                "calls": 2,
+                "inclusiveMs": 36.334207999999876,
+                "exclusiveMs": 36.334207999999876
+              },
+              "allocation": {
+                "calls": 2,
+                "inclusiveMs": 42.1556589999999,
+                "exclusiveMs": 42.1556589999999
+              },
+              "offered-edit": {
+                "calls": 2,
+                "inclusiveMs": 236.66838599999983,
+                "exclusiveMs": 236.66838599999983
+              },
+              "old-elaboration": {
+                "calls": 2,
+                "inclusiveMs": 656.4179410000003,
+                "exclusiveMs": 656.4179410000003
+              },
+              "new-elaboration": {
+                "calls": 2,
+                "inclusiveMs": 587.1060969999996,
+                "exclusiveMs": 587.1060969999996
+              },
+              "lowering": {
+                "calls": 10,
+                "inclusiveMs": 338.23497000000003,
+                "exclusiveMs": 338.23497000000003
+              },
+              "snapshot-metadata": {
+                "calls": 5,
+                "inclusiveMs": 322.63117800000066,
+                "exclusiveMs": 155.38318000000038
+              },
+              "row-projection": {
+                "calls": 5,
+                "inclusiveMs": 0.008929000000080123,
+                "exclusiveMs": 0.008929000000080123
+              },
+              "cpp1-decode": {
+                "calls": 2,
+                "inclusiveMs": 220.35904400000027,
+                "exclusiveMs": 220.35904400000027
+              },
+              "compare-and-map": {
+                "calls": 2,
+                "inclusiveMs": 288.7469950000002,
+                "exclusiveMs": 288.7469950000002
+              },
+              "instantiate": {
+                "calls": 1,
+                "inclusiveMs": 217.2590399999999,
+                "exclusiveMs": 210.2587940000003
+              },
+              "migration": {
+                "calls": 1,
+                "inclusiveMs": 7.000245999999606,
+                "exclusiveMs": 7.000245999999606
+              },
+              "native-edit": {
+                "calls": 1,
+                "inclusiveMs": 3433.7213839999995,
+                "exclusiveMs": 489.5279539999992
+              }
+            }
+          }
+        },
+        {
+          "index": 3,
+          "warmup": false,
+          "profiled": false,
+          "sourcePackage": "c4cc9b34f288f01380cf16670865576ac176f19e41fad1bb27b1255eecb52894",
+          "wallMs": 3534.291747,
+          "profile": null
+        },
+        {
+          "index": 4,
+          "warmup": false,
+          "profiled": true,
+          "sourcePackage": "c4cc9b34f288f01380cf16670865576ac176f19e41fad1bb27b1255eecb52894",
+          "wallMs": 3657.167799,
+          "profile": {
+            "clock": "monotonic-wall-ms",
+            "wallMs": 3657.174906,
+            "truncated": false,
+            "phases": {
+              "transfer": {
+                "calls": 1,
+                "inclusiveMs": 1643.3934879999997,
+                "exclusiveMs": 1.2192849999992177
+              },
+              "witness-check": {
+                "calls": 2,
+                "inclusiveMs": 2743.3887159999995,
+                "exclusiveMs": 174.465323000004
+              },
+              "source-read": {
+                "calls": 2,
+                "inclusiveMs": 42.91266299999916,
+                "exclusiveMs": 42.91266299999916
+              },
+              "allocation": {
+                "calls": 2,
+                "inclusiveMs": 49.1134630000015,
+                "exclusiveMs": 49.1134630000015
+              },
+              "offered-edit": {
+                "calls": 2,
+                "inclusiveMs": 241.58763299999737,
+                "exclusiveMs": 241.58763299999737
+              },
+              "old-elaboration": {
+                "calls": 2,
+                "inclusiveMs": 600.6688389999999,
+                "exclusiveMs": 600.6688389999999
+              },
+              "new-elaboration": {
+                "calls": 2,
+                "inclusiveMs": 669.7407769999991,
+                "exclusiveMs": 669.7407769999991
+              },
+              "lowering": {
+                "calls": 10,
+                "inclusiveMs": 355.2456970000021,
+                "exclusiveMs": 355.2456970000021
+              },
+              "snapshot-metadata": {
+                "calls": 5,
+                "inclusiveMs": 335.11845699999867,
+                "exclusiveMs": 163.53202000000056
+              },
+              "row-projection": {
+                "calls": 5,
+                "inclusiveMs": 0.008437999998932355,
+                "exclusiveMs": 0.008437999998932355
+              },
+              "cpp1-decode": {
+                "calls": 2,
+                "inclusiveMs": 230.8528069999993,
+                "exclusiveMs": 230.8528069999993
+              },
+              "compare-and-map": {
+                "calls": 2,
+                "inclusiveMs": 312.0353409999989,
+                "exclusiveMs": 312.0353409999989
+              },
+              "instantiate": {
+                "calls": 1,
+                "inclusiveMs": 213.88885699999992,
+                "exclusiveMs": 206.11705399999846
+              },
+              "migration": {
+                "calls": 1,
+                "inclusiveMs": 7.771803000001455,
+                "exclusiveMs": 7.771803000001455
+              },
+              "native-edit": {
+                "calls": 1,
+                "inclusiveMs": 3657.1627640000006,
+                "exclusiveMs": 601.8916210000007
+              }
+            }
+          }
+        },
+        {
+          "index": 5,
+          "warmup": false,
+          "profiled": false,
+          "sourcePackage": "c4cc9b34f288f01380cf16670865576ac176f19e41fad1bb27b1255eecb52894",
+          "wallMs": 4033.89372,
+          "profile": null
+        },
+        {
+          "index": 6,
+          "warmup": false,
+          "profiled": true,
+          "sourcePackage": "c4cc9b34f288f01380cf16670865576ac176f19e41fad1bb27b1255eecb52894",
+          "wallMs": 3709.140939,
+          "profile": {
+            "clock": "monotonic-wall-ms",
+            "wallMs": 3709.147771,
+            "truncated": false,
+            "phases": {
+              "transfer": {
+                "calls": 1,
+                "inclusiveMs": 1702.4277150000016,
+                "exclusiveMs": 1.0781980000028852
+              },
+              "witness-check": {
+                "calls": 2,
+                "inclusiveMs": 2825.7190990000017,
+                "exclusiveMs": 166.5989450000161
+              },
+              "source-read": {
+                "calls": 2,
+                "inclusiveMs": 43.22721000000092,
+                "exclusiveMs": 43.22721000000092
+              },
+              "allocation": {
+                "calls": 2,
+                "inclusiveMs": 50.8650340000022,
+                "exclusiveMs": 50.8650340000022
+              },
+              "offered-edit": {
+                "calls": 2,
+                "inclusiveMs": 266.86480599999777,
+                "exclusiveMs": 266.86480599999777
+              },
+              "old-elaboration": {
+                "calls": 2,
+                "inclusiveMs": 652.0690390000018,
+                "exclusiveMs": 652.0690390000018
+              },
+              "new-elaboration": {
+                "calls": 2,
+                "inclusiveMs": 675.7751129999997,
+                "exclusiveMs": 675.7751129999997
+              },
+              "lowering": {
+                "calls": 10,
+                "inclusiveMs": 322.7754729999979,
+                "exclusiveMs": 322.7754729999979
+              },
+              "snapshot-metadata": {
+                "calls": 5,
+                "inclusiveMs": 336.1679049999948,
+                "exclusiveMs": 177.3411299999898
+              },
+              "row-projection": {
+                "calls": 5,
+                "inclusiveMs": 0.007492000004276633,
+                "exclusiveMs": 0.007492000004276633
+              },
+              "cpp1-decode": {
+                "calls": 2,
+                "inclusiveMs": 254.119743999996,
+                "exclusiveMs": 254.119743999996
+              },
+              "compare-and-map": {
+                "calls": 2,
+                "inclusiveMs": 322.78727399999843,
+                "exclusiveMs": 322.78727399999843
+              },
+              "instantiate": {
+                "calls": 1,
+                "inclusiveMs": 204.81078799999887,
+                "exclusiveMs": 199.118097999999
+              },
+              "migration": {
+                "calls": 1,
+                "inclusiveMs": 5.692689999999857,
+                "exclusiveMs": 5.692689999999857
+              },
+              "native-edit": {
+                "calls": 1,
+                "inclusiveMs": 3709.1358580000015,
+                "exclusiveMs": 570.8156119999949
+              }
+            }
+          }
+        }
+      ],
+      "collections": [
+        {
+          "index": 0,
+          "warmup": true,
+          "profiled": false,
+          "sourcePackage": "87cffe21e6b5ff73772b8a9a494ab7bb83447f495be27c38d654e550a828e20b",
+          "wallMs": 1975.688587,
+          "profile": null
+        },
+        {
+          "index": 1,
+          "warmup": false,
+          "profiled": false,
+          "sourcePackage": "87cffe21e6b5ff73772b8a9a494ab7bb83447f495be27c38d654e550a828e20b",
+          "wallMs": 1768.915243,
+          "profile": null
+        },
+        {
+          "index": 2,
+          "warmup": false,
+          "profiled": true,
+          "sourcePackage": "87cffe21e6b5ff73772b8a9a494ab7bb83447f495be27c38d654e550a828e20b",
+          "wallMs": 1719.963017,
+          "profile": {
+            "clock": "monotonic-wall-ms",
+            "wallMs": 1719.9919899999986,
+            "truncated": false,
+            "phases": {
+              "transfer": {
+                "calls": 1,
+                "inclusiveMs": 666.5715400000008,
+                "exclusiveMs": 0.9165429999993648
+              },
+              "witness-check": {
+                "calls": 2,
+                "inclusiveMs": 1224.0211490000002,
+                "exclusiveMs": 44.37115299999277
+              },
+              "source-read": {
+                "calls": 2,
+                "inclusiveMs": 37.093141000004834,
+                "exclusiveMs": 37.093141000004834
+              },
+              "allocation": {
+                "calls": 2,
+                "inclusiveMs": 38.247989999999845,
+                "exclusiveMs": 38.247989999999845
+              },
+              "offered-edit": {
+                "calls": 2,
+                "inclusiveMs": 249.37716900000305,
+                "exclusiveMs": 249.37716900000305
+              },
+              "old-elaboration": {
+                "calls": 2,
+                "inclusiveMs": 288.5642410000037,
+                "exclusiveMs": 288.5642410000037
+              },
+              "new-elaboration": {
+                "calls": 2,
+                "inclusiveMs": 321.46359700000176,
+                "exclusiveMs": 321.46359700000176
+              },
+              "lowering": {
+                "calls": 15,
+                "inclusiveMs": 96.11600899998302,
+                "exclusiveMs": 96.11600899998302
+              },
+              "snapshot-metadata": {
+                "calls": 5,
+                "inclusiveMs": 99.10105100000146,
+                "exclusiveMs": 25.04253299999982
+              },
+              "row-projection": {
+                "calls": 5,
+                "inclusiveMs": 47.710682000000816,
+                "exclusiveMs": 15.85222500000964
+              },
+              "cpp1-decode": {
+                "calls": 2,
+                "inclusiveMs": 61.91193000000203,
+                "exclusiveMs": 61.91193000000203
+              },
+              "compare-and-map": {
+                "calls": 2,
+                "inclusiveMs": 74.20434399999795,
+                "exclusiveMs": 74.20434399999795
+              },
+              "instantiate": {
+                "calls": 1,
+                "inclusiveMs": 78.75759499999913,
+                "exclusiveMs": 72.38182699999743
+              },
+              "migration": {
+                "calls": 1,
+                "inclusiveMs": 6.375768000001699,
+                "exclusiveMs": 6.375768000001699
+              },
+              "native-edit": {
+                "calls": 1,
+                "inclusiveMs": 1719.9577119999994,
+                "exclusiveMs": 388.03924200000256
+              }
+            }
+          }
+        },
+        {
+          "index": 3,
+          "warmup": false,
+          "profiled": false,
+          "sourcePackage": "87cffe21e6b5ff73772b8a9a494ab7bb83447f495be27c38d654e550a828e20b",
+          "wallMs": 1611.6802770000002,
+          "profile": null
+        },
+        {
+          "index": 4,
+          "warmup": false,
+          "profiled": true,
+          "sourcePackage": "87cffe21e6b5ff73772b8a9a494ab7bb83447f495be27c38d654e550a828e20b",
+          "wallMs": 1770.1438839999998,
+          "profile": {
+            "clock": "monotonic-wall-ms",
+            "wallMs": 1770.1494500000008,
+            "truncated": false,
+            "phases": {
+              "transfer": {
+                "calls": 1,
+                "inclusiveMs": 642.6908020000046,
+                "exclusiveMs": 0.5851080000138609
+              },
+              "witness-check": {
+                "calls": 2,
+                "inclusiveMs": 1166.6717609999941,
+                "exclusiveMs": 39.913324000015564
+              },
+              "source-read": {
+                "calls": 2,
+                "inclusiveMs": 37.44866400000683,
+                "exclusiveMs": 37.44866400000683
+              },
+              "allocation": {
+                "calls": 2,
+                "inclusiveMs": 42.37075299999924,
+                "exclusiveMs": 42.37075299999924
+              },
+              "offered-edit": {
+                "calls": 2,
+                "inclusiveMs": 267.0433589999993,
+                "exclusiveMs": 267.0433589999993
+              },
+              "old-elaboration": {
+                "calls": 2,
+                "inclusiveMs": 288.5268999999971,
+                "exclusiveMs": 288.5268999999971
+              },
+              "new-elaboration": {
+                "calls": 2,
+                "inclusiveMs": 272.56091699999524,
+                "exclusiveMs": 272.56091699999524
+              },
+              "lowering": {
+                "calls": 15,
+                "inclusiveMs": 85.66628900000433,
+                "exclusiveMs": 85.66628900000433
+              },
+              "snapshot-metadata": {
+                "calls": 5,
+                "inclusiveMs": 95.59954699999071,
+                "exclusiveMs": 26.527980999991996
+              },
+              "row-projection": {
+                "calls": 5,
+                "inclusiveMs": 40.36620599998423,
+                "exclusiveMs": 13.382493999986764
+              },
+              "cpp1-decode": {
+                "calls": 2,
+                "inclusiveMs": 56.825300999997125,
+                "exclusiveMs": 56.825300999997125
+              },
+              "compare-and-map": {
+                "calls": 2,
+                "inclusiveMs": 65.66912599999705,
+                "exclusiveMs": 65.66912599999705
+              },
+              "instantiate": {
+                "calls": 1,
+                "inclusiveMs": 85.08159899999737,
+                "exclusiveMs": 79.38909699999931
+              },
+              "migration": {
+                "calls": 1,
+                "inclusiveMs": 5.692501999998058,
+                "exclusiveMs": 5.692501999998058
+              },
+              "native-edit": {
+                "calls": 1,
+                "inclusiveMs": 1770.1393620000017,
+                "exclusiveMs": 488.5375469999999
+              }
+            }
+          }
+        },
+        {
+          "index": 5,
+          "warmup": false,
+          "profiled": false,
+          "sourcePackage": "87cffe21e6b5ff73772b8a9a494ab7bb83447f495be27c38d654e550a828e20b",
+          "wallMs": 1775.81948,
+          "profile": null
+        },
+        {
+          "index": 6,
+          "warmup": false,
+          "profiled": true,
+          "sourcePackage": "87cffe21e6b5ff73772b8a9a494ab7bb83447f495be27c38d654e550a828e20b",
+          "wallMs": 1811.831257,
+          "profile": {
+            "clock": "monotonic-wall-ms",
+            "wallMs": 1811.8376790000038,
+            "truncated": false,
+            "phases": {
+              "transfer": {
+                "calls": 1,
+                "inclusiveMs": 696.4030029999994,
+                "exclusiveMs": 0.7126829999979236
+              },
+              "witness-check": {
+                "calls": 2,
+                "inclusiveMs": 1213.261811999997,
+                "exclusiveMs": 47.71804000000702
+              },
+              "source-read": {
+                "calls": 2,
+                "inclusiveMs": 44.65088799998921,
+                "exclusiveMs": 44.65088799998921
+              },
+              "allocation": {
+                "calls": 2,
+                "inclusiveMs": 46.35901400000148,
+                "exclusiveMs": 46.35901400000148
+              },
+              "offered-edit": {
+                "calls": 2,
+                "inclusiveMs": 261.0413289999997,
+                "exclusiveMs": 261.0413289999997
+              },
+              "old-elaboration": {
+                "calls": 2,
+                "inclusiveMs": 265.1507749999946,
+                "exclusiveMs": 265.1507749999946
+              },
+              "new-elaboration": {
+                "calls": 2,
+                "inclusiveMs": 274.3009239999956,
+                "exclusiveMs": 274.3009239999956
+              },
+              "lowering": {
+                "calls": 15,
+                "inclusiveMs": 95.94040000001405,
+                "exclusiveMs": 95.94040000001405
+              },
+              "snapshot-metadata": {
+                "calls": 5,
+                "inclusiveMs": 114.9799389999971,
+                "exclusiveMs": 34.2311619999964
+              },
+              "row-projection": {
+                "calls": 5,
+                "inclusiveMs": 48.193689999992785,
+                "exclusiveMs": 17.068680999997014
+              },
+              "cpp1-decode": {
+                "calls": 2,
+                "inclusiveMs": 64.48821000000316,
+                "exclusiveMs": 64.48821000000316
+              },
+              "compare-and-map": {
+                "calls": 2,
+                "inclusiveMs": 88.3199769999992,
+                "exclusiveMs": 88.3199769999992
+              },
+              "instantiate": {
+                "calls": 1,
+                "inclusiveMs": 86.00228899999638,
+                "exclusiveMs": 77.36829999999463
+              },
+              "migration": {
+                "calls": 1,
+                "inclusiveMs": 8.633989000001748,
+                "exclusiveMs": 8.633989000001748
+              },
+              "native-edit": {
+                "calls": 1,
+                "inclusiveMs": 1811.826298999993,
+                "exclusiveMs": 485.8419270000013
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  "wasm": {
+    "compiler": "b5f65ea27cf772ee412d6a9bfdb16f82e4df31a7",
+    "driverSourceCommit": "1f8f29261a3a3cc251bdbe7451c8b43c477b798b",
+    "runtimeSha256": "7b8a5faacca0ac22425e8f62efca0031a14295f1efaa5bac38fcc6e63c92fa93",
+    "measurement": "Wasm checked source transfer with passive byte adapter; no renderer",
+    "samplesPerMode": 3,
+    "variants": {
+      "encounter": {
+        "sourceSha256": "ac3158ae6e3d644ab9ad78ab01aa3bc89384a507112e6007b537e7a237abbf15",
+        "initialCwr1Sha256": "04eac364cbb2a4e53a4d4430f7d67c944004e37cfa1abef19366ef1e83d2d772",
+        "editedCwr1Sha256": "a079b73b9ac6cf32fc7b5eec0eaa3c258abbd4929487bcfbd417170ed467bd54",
+        "cet1Sha256": "fe054bf90a125a91131ad6e63f821e6762df7285490c5a951acc61f309d01f4d",
+        "observations": [
+          {
+            "index": 0,
+            "warmup": true,
+            "profiled": false,
+            "wallMs": 5738.255453,
+            "profile": null
+          },
+          {
+            "index": 1,
+            "warmup": false,
+            "profiled": false,
+            "wallMs": 5078.301539999997,
+            "profile": null
+          },
+          {
+            "index": 2,
+            "warmup": false,
+            "profiled": true,
+            "wallMs": 5451.873446999998,
+            "profile": {
+              "clock": "monotonic-wall-ms",
+              "wallMs": 5452.077798999999,
+              "truncated": false,
+              "phases": {
+                "transfer": {
+                  "calls": 1,
+                  "inclusiveMs": 309.21831500000553,
+                  "exclusiveMs": 1.5243699999991804
+                },
+                "witness-check": {
+                  "calls": 1,
+                  "inclusiveMs": 280.91548100000364,
+                  "exclusiveMs": 31.654389000002993
+                },
+                "source-read": {
+                  "calls": 1,
+                  "inclusiveMs": 2.8693549999952666,
+                  "exclusiveMs": 2.8693549999952666
+                },
+                "allocation": {
+                  "calls": 1,
+                  "inclusiveMs": 3.034593999997014,
+                  "exclusiveMs": 3.034593999997014
+                },
+                "offered-edit": {
+                  "calls": 1,
+                  "inclusiveMs": 19.8357279999982,
+                  "exclusiveMs": 19.8357279999982
+                },
+                "old-elaboration": {
+                  "calls": 1,
+                  "inclusiveMs": 66.60843500000192,
+                  "exclusiveMs": 66.60843500000192
+                },
+                "new-elaboration": {
+                  "calls": 1,
+                  "inclusiveMs": 56.925537000002805,
+                  "exclusiveMs": 56.925537000002805
+                },
+                "lowering": {
+                  "calls": 4,
+                  "inclusiveMs": 42.088465000000724,
+                  "exclusiveMs": 42.088465000000724
+                },
+                "snapshot-metadata": {
+                  "calls": 2,
+                  "inclusiveMs": 42.663086000000476,
+                  "exclusiveMs": 20.310787999995227
+                },
+                "row-projection": {
+                  "calls": 2,
+                  "inclusiveMs": 0.006255000007513445,
+                  "exclusiveMs": 0.006255000007513445
+                },
+                "cpp1-decode": {
+                  "calls": 1,
+                  "inclusiveMs": 15.503875000002154,
+                  "exclusiveMs": 15.503875000002154
+                },
+                "compare-and-map": {
+                  "calls": 1,
+                  "inclusiveMs": 22.078059999999823,
+                  "exclusiveMs": 22.078059999999823
+                },
+                "instantiate": {
+                  "calls": 1,
+                  "inclusiveMs": 26.778464000002714,
+                  "exclusiveMs": 26.09539699999732
+                },
+                "migration": {
+                  "calls": 1,
+                  "inclusiveMs": 0.6830670000053942,
+                  "exclusiveMs": 0.6830670000053942
+                },
+                "native-edit": {
+                  "calls": 0,
+                  "inclusiveMs": 0,
+                  "exclusiveMs": 0
+                }
+              }
+            }
+          },
+          {
+            "index": 3,
+            "warmup": false,
+            "profiled": false,
+            "wallMs": 5353.061776999995,
+            "profile": null
+          },
+          {
+            "index": 4,
+            "warmup": false,
+            "profiled": true,
+            "wallMs": 4913.9772870000015,
+            "profile": {
+              "clock": "monotonic-wall-ms",
+              "wallMs": 4914.005222,
+              "truncated": false,
+              "phases": {
+                "transfer": {
+                  "calls": 1,
+                  "inclusiveMs": 317.12354099999357,
+                  "exclusiveMs": 1.2800910000005388
+                },
+                "witness-check": {
+                  "calls": 1,
+                  "inclusiveMs": 288.9331299999976,
+                  "exclusiveMs": 28.954361999996763
+                },
+                "source-read": {
+                  "calls": 1,
+                  "inclusiveMs": 2.8243579999980284,
+                  "exclusiveMs": 2.8243579999980284
+                },
+                "allocation": {
+                  "calls": 1,
+                  "inclusiveMs": 2.8850509999974747,
+                  "exclusiveMs": 2.8850509999974747
+                },
+                "offered-edit": {
+                  "calls": 1,
+                  "inclusiveMs": 19.983729999999923,
+                  "exclusiveMs": 19.983729999999923
+                },
+                "old-elaboration": {
+                  "calls": 1,
+                  "inclusiveMs": 74.34347400000115,
+                  "exclusiveMs": 74.34347400000115
+                },
+                "new-elaboration": {
+                  "calls": 1,
+                  "inclusiveMs": 70.0936040000015,
+                  "exclusiveMs": 70.0936040000015
+                },
+                "lowering": {
+                  "calls": 4,
+                  "inclusiveMs": 31.555559000000358,
+                  "exclusiveMs": 31.555559000000358
+                },
+                "snapshot-metadata": {
+                  "calls": 2,
+                  "inclusiveMs": 34.4645340000061,
+                  "exclusiveMs": 17.955425000000105
+                },
+                "row-projection": {
+                  "calls": 2,
+                  "inclusiveMs": 0.0038680000070598908,
+                  "exclusiveMs": 0.0038680000070598908
+                },
+                "cpp1-decode": {
+                  "calls": 1,
+                  "inclusiveMs": 17.990931000000273,
+                  "exclusiveMs": 17.990931000000273
+                },
+                "compare-and-map": {
+                  "calls": 1,
+                  "inclusiveMs": 22.342767999994976,
+                  "exclusiveMs": 22.342767999994976
+                },
+                "instantiate": {
+                  "calls": 1,
+                  "inclusiveMs": 26.91031999999541,
+                  "exclusiveMs": 26.16536499999347
+                },
+                "migration": {
+                  "calls": 1,
+                  "inclusiveMs": 0.7449550000019372,
+                  "exclusiveMs": 0.7449550000019372
+                },
+                "native-edit": {
+                  "calls": 0,
+                  "inclusiveMs": 0,
+                  "exclusiveMs": 0
+                }
+              }
+            }
+          },
+          {
+            "index": 5,
+            "warmup": false,
+            "profiled": false,
+            "wallMs": 5670.5870829999985,
+            "profile": null
+          },
+          {
+            "index": 6,
+            "warmup": false,
+            "profiled": true,
+            "wallMs": 5888.627688000008,
+            "profile": {
+              "clock": "monotonic-wall-ms",
+              "wallMs": 5888.65643599999,
+              "truncated": false,
+              "phases": {
+                "transfer": {
+                  "calls": 1,
+                  "inclusiveMs": 289.1072659999918,
+                  "exclusiveMs": 1.726821000003838
+                },
+                "witness-check": {
+                  "calls": 1,
+                  "inclusiveMs": 261.5232599999872,
+                  "exclusiveMs": 27.770851000008406
+                },
+                "source-read": {
+                  "calls": 1,
+                  "inclusiveMs": 3.732711000004201,
+                  "exclusiveMs": 3.732711000004201
+                },
+                "allocation": {
+                  "calls": 1,
+                  "inclusiveMs": 4.606223000009777,
+                  "exclusiveMs": 4.606223000009777
+                },
+                "offered-edit": {
+                  "calls": 1,
+                  "inclusiveMs": 19.632861999998568,
+                  "exclusiveMs": 19.632861999998568
+                },
+                "old-elaboration": {
+                  "calls": 1,
+                  "inclusiveMs": 60.513587000008556,
+                  "exclusiveMs": 60.513587000008556
+                },
+                "new-elaboration": {
+                  "calls": 1,
+                  "inclusiveMs": 58.931589999992866,
+                  "exclusiveMs": 58.931589999992866
+                },
+                "lowering": {
+                  "calls": 4,
+                  "inclusiveMs": 30.626782999985153,
+                  "exclusiveMs": 30.626782999985153
+                },
+                "snapshot-metadata": {
+                  "calls": 2,
+                  "inclusiveMs": 33.28551099998003,
+                  "exclusiveMs": 17.330256999994162
+                },
+                "row-projection": {
+                  "calls": 2,
+                  "inclusiveMs": 0.005021999997552484,
+                  "exclusiveMs": 0.005021999997552484
+                },
+                "cpp1-decode": {
+                  "calls": 1,
+                  "inclusiveMs": 12.849749000000884,
+                  "exclusiveMs": 12.849749000000884
+                },
+                "compare-and-map": {
+                  "calls": 1,
+                  "inclusiveMs": 25.523624999987078,
+                  "exclusiveMs": 25.523624999987078
+                },
+                "instantiate": {
+                  "calls": 1,
+                  "inclusiveMs": 25.857185000000754,
+                  "exclusiveMs": 25.26936000000569
+                },
+                "migration": {
+                  "calls": 1,
+                  "inclusiveMs": 0.587824999995064,
+                  "exclusiveMs": 0.587824999995064
+                },
+                "native-edit": {
+                  "calls": 0,
+                  "inclusiveMs": 0,
+                  "exclusiveMs": 0
+                }
+              }
+            }
+          }
+        ]
+      },
+      "collections": {
+        "sourceSha256": "bfeab44518c9765dedab2954c19531595af1863a26c9173f7bdfd0a12b9daa88",
+        "initialCwr1Sha256": "bd8f191fcdc49c6fcd88b786c3a8dcf68704ff5eeb8d23c81f79bface8b56f5f",
+        "editedCwr1Sha256": "f894790cb4a0cf64dd123c41e712074552af2b846afa9f5b63a85f15ce2024ff",
+        "cet1Sha256": "c0752e6fd5c21a0dabd1e4637e6782030f1dfccd6776545476d083e3ff9516b9",
+        "observations": [
+          {
+            "index": 0,
+            "warmup": true,
+            "profiled": false,
+            "wallMs": 2027.731375000003,
+            "profile": null
+          },
+          {
+            "index": 1,
+            "warmup": false,
+            "profiled": false,
+            "wallMs": 1469.0987679999962,
+            "profile": null
+          },
+          {
+            "index": 2,
+            "warmup": false,
+            "profiled": true,
+            "wallMs": 1651.2100930000015,
+            "profile": {
+              "clock": "monotonic-wall-ms",
+              "wallMs": 1651.2439799999993,
+              "truncated": false,
+              "phases": {
+                "transfer": {
+                  "calls": 1,
+                  "inclusiveMs": 158.04426599999715,
+                  "exclusiveMs": 0.9995409999828553
+                },
+                "witness-check": {
+                  "calls": 1,
+                  "inclusiveMs": 141.82178900000872,
+                  "exclusiveMs": 9.314990999992006
+                },
+                "source-read": {
+                  "calls": 1,
+                  "inclusiveMs": 4.534673000001931,
+                  "exclusiveMs": 4.534673000001931
+                },
+                "allocation": {
+                  "calls": 1,
+                  "inclusiveMs": 4.210290000002715,
+                  "exclusiveMs": 4.210290000002715
+                },
+                "offered-edit": {
+                  "calls": 1,
+                  "inclusiveMs": 27.9360730000044,
+                  "exclusiveMs": 27.9360730000044
+                },
+                "old-elaboration": {
+                  "calls": 1,
+                  "inclusiveMs": 36.28935000000638,
+                  "exclusiveMs": 36.28935000000638
+                },
+                "new-elaboration": {
+                  "calls": 1,
+                  "inclusiveMs": 36.481260000000475,
+                  "exclusiveMs": 36.481260000000475
+                },
+                "lowering": {
+                  "calls": 6,
+                  "inclusiveMs": 8.623641999991378,
+                  "exclusiveMs": 8.623641999991378
+                },
+                "snapshot-metadata": {
+                  "calls": 2,
+                  "inclusiveMs": 10.757509000002756,
+                  "exclusiveMs": 2.7896269999910146
+                },
+                "row-projection": {
+                  "calls": 2,
+                  "inclusiveMs": 4.9812350000138395,
+                  "exclusiveMs": 1.8700750000134576
+                },
+                "cpp1-decode": {
+                  "calls": 1,
+                  "inclusiveMs": 4.096040000003995,
+                  "exclusiveMs": 4.096040000003995
+                },
+                "compare-and-map": {
+                  "calls": 1,
+                  "inclusiveMs": 5.675768000000971,
+                  "exclusiveMs": 5.675768000000971
+                },
+                "instantiate": {
+                  "calls": 1,
+                  "inclusiveMs": 15.222936000005575,
+                  "exclusiveMs": 13.812724000017624
+                },
+                "migration": {
+                  "calls": 1,
+                  "inclusiveMs": 1.4102119999879505,
+                  "exclusiveMs": 1.4102119999879505
+                },
+                "native-edit": {
+                  "calls": 0,
+                  "inclusiveMs": 0,
+                  "exclusiveMs": 0
+                }
+              }
+            }
+          },
+          {
+            "index": 3,
+            "warmup": false,
+            "profiled": false,
+            "wallMs": 1453.8144549999997,
+            "profile": null
+          },
+          {
+            "index": 4,
+            "warmup": false,
+            "profiled": true,
+            "wallMs": 1583.5915620000014,
+            "profile": {
+              "clock": "monotonic-wall-ms",
+              "wallMs": 1583.6159460000054,
+              "truncated": false,
+              "phases": {
+                "transfer": {
+                  "calls": 1,
+                  "inclusiveMs": 167.4196879999945,
+                  "exclusiveMs": 0.6003409999975702
+                },
+                "witness-check": {
+                  "calls": 1,
+                  "inclusiveMs": 155.70663200000126,
+                  "exclusiveMs": 7.723584000006667
+                },
+                "source-read": {
+                  "calls": 1,
+                  "inclusiveMs": 3.352404999997816,
+                  "exclusiveMs": 3.352404999997816
+                },
+                "allocation": {
+                  "calls": 1,
+                  "inclusiveMs": 3.4914330000028713,
+                  "exclusiveMs": 3.4914330000028713
+                },
+                "offered-edit": {
+                  "calls": 1,
+                  "inclusiveMs": 21.143730999989202,
+                  "exclusiveMs": 21.143730999989202
+                },
+                "old-elaboration": {
+                  "calls": 1,
+                  "inclusiveMs": 42.46759600000223,
+                  "exclusiveMs": 42.46759600000223
+                },
+                "new-elaboration": {
+                  "calls": 1,
+                  "inclusiveMs": 51.647876000002725,
+                  "exclusiveMs": 51.647876000002725
+                },
+                "lowering": {
+                  "calls": 6,
+                  "inclusiveMs": 9.939759999950184,
+                  "exclusiveMs": 9.939759999950184
+                },
+                "snapshot-metadata": {
+                  "calls": 2,
+                  "inclusiveMs": 11.537312000000384,
+                  "exclusiveMs": 3.3597029999946244
+                },
+                "row-projection": {
+                  "calls": 2,
+                  "inclusiveMs": 5.160362000024179,
+                  "exclusiveMs": 2.280486000046949
+                },
+                "cpp1-decode": {
+                  "calls": 1,
+                  "inclusiveMs": 4.1618580000067595,
+                  "exclusiveMs": 4.1618580000067595
+                },
+                "compare-and-map": {
+                  "calls": 1,
+                  "inclusiveMs": 6.138200000001234,
+                  "exclusiveMs": 6.138200000001234
+                },
+                "instantiate": {
+                  "calls": 1,
+                  "inclusiveMs": 11.11271499999566,
+                  "exclusiveMs": 10.29871099999582
+                },
+                "migration": {
+                  "calls": 1,
+                  "inclusiveMs": 0.8140039999998407,
+                  "exclusiveMs": 0.8140039999998407
+                },
+                "native-edit": {
+                  "calls": 0,
+                  "inclusiveMs": 0,
+                  "exclusiveMs": 0
+                }
+              }
+            }
+          },
+          {
+            "index": 5,
+            "warmup": false,
+            "profiled": false,
+            "wallMs": 1736.9280790000048,
+            "profile": null
+          },
+          {
+            "index": 6,
+            "warmup": false,
+            "profiled": true,
+            "wallMs": 1523.5249610000028,
+            "profile": {
+              "clock": "monotonic-wall-ms",
+              "wallMs": 1523.552720000007,
+              "truncated": false,
+              "phases": {
+                "transfer": {
+                  "calls": 1,
+                  "inclusiveMs": 175.9610629999952,
+                  "exclusiveMs": 0.6878489999944577
+                },
+                "witness-check": {
+                  "calls": 1,
+                  "inclusiveMs": 161.49865500000305,
+                  "exclusiveMs": 9.059003000002122
+                },
+                "source-read": {
+                  "calls": 1,
+                  "inclusiveMs": 4.0884360000054585,
+                  "exclusiveMs": 4.0884360000054585
+                },
+                "allocation": {
+                  "calls": 1,
+                  "inclusiveMs": 4.023680999991484,
+                  "exclusiveMs": 4.023680999991484
+                },
+                "offered-edit": {
+                  "calls": 1,
+                  "inclusiveMs": 24.557904999994207,
+                  "exclusiveMs": 24.557904999994207
+                },
+                "old-elaboration": {
+                  "calls": 1,
+                  "inclusiveMs": 48.393585000012536,
+                  "exclusiveMs": 48.393585000012536
+                },
+                "new-elaboration": {
+                  "calls": 1,
+                  "inclusiveMs": 44.20789600000717,
+                  "exclusiveMs": 44.20789600000717
+                },
+                "lowering": {
+                  "calls": 6,
+                  "inclusiveMs": 10.471232999989297,
+                  "exclusiveMs": 10.471232999989297
+                },
+                "snapshot-metadata": {
+                  "calls": 2,
+                  "inclusiveMs": 12.61845799999719,
+                  "exclusiveMs": 3.6938560000126017
+                },
+                "row-projection": {
+                  "calls": 2,
+                  "inclusiveMs": 5.3945049999892944,
+                  "exclusiveMs": 1.9832509999978356
+                },
+                "cpp1-decode": {
+                  "calls": 1,
+                  "inclusiveMs": 4.431736999991699,
+                  "exclusiveMs": 4.431736999991699
+                },
+                "compare-and-map": {
+                  "calls": 1,
+                  "inclusiveMs": 6.588071999998647,
+                  "exclusiveMs": 6.588071999998647
+                },
+                "instantiate": {
+                  "calls": 1,
+                  "inclusiveMs": 13.77455899999768,
+                  "exclusiveMs": 12.595373000003747
+                },
+                "migration": {
+                  "calls": 1,
+                  "inclusiveMs": 1.1791859999939334,
+                  "exclusiveMs": 1.1791859999939334
+                },
+                "native-edit": {
+                  "calls": 0,
+                  "inclusiveMs": 0,
+                  "exclusiveMs": 0
+                }
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}
