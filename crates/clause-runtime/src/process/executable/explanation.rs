@@ -23,6 +23,23 @@ pub struct ExecutableEvaluatedExpressionV1 {
     pub reads: Vec<ExecutableReadV1>,
 }
 
+#[derive(Clone)]
+pub(super) struct BorrowedEvaluation<'a> {
+    pub expression: &'a ExecutableExpressionV1,
+    pub value: ExecutableValueV1,
+    pub reads: Vec<ExecutableReadV1>,
+}
+
+impl BorrowedEvaluation<'_> {
+    pub fn into_owned(self) -> ExecutableEvaluatedExpressionV1 {
+        ExecutableEvaluatedExpressionV1 {
+            expression: self.expression.clone(),
+            value: self.value,
+            reads: self.reads,
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct ExecutableEffectEvaluationV1 {
     pub slot: u16,
@@ -328,6 +345,15 @@ pub(super) fn evaluate_explained(
     arguments: &[ExecutableValueV1],
     context: EvaluationContextV1,
 ) -> Result<ExecutableEvaluatedExpressionV1, ExecutableErrorV1> {
+    Ok(evaluate_borrowed(expression, configuration, arguments, context)?.into_owned())
+}
+
+pub(super) fn evaluate_borrowed<'a>(
+    expression: &'a ExecutableExpressionV1,
+    configuration: &[ExecutableSlotV1],
+    arguments: &[ExecutableValueV1],
+    context: EvaluationContextV1,
+) -> Result<BorrowedEvaluation<'a>, ExecutableErrorV1> {
     let reads = std::cell::RefCell::new(Vec::new());
     let value = evaluate(
         expression,
@@ -338,8 +364,8 @@ pub(super) fn evaluate_explained(
             ..context
         },
     )?;
-    Ok(ExecutableEvaluatedExpressionV1 {
-        expression: expression.clone(),
+    Ok(BorrowedEvaluation {
+        expression,
         value,
         reads: reads.into_inner(),
     })

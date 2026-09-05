@@ -4803,7 +4803,7 @@ impl ExecutableProcessRuntimeV1 {
                     .all(|slot| configuration[usize::from(*slot)].value().is_none());
             let matches = if structural_match {
                 relational::match_rule(
-                    rule,
+                    &rule.predicates,
                     configuration,
                     &occurrence.arguments,
                     evaluation,
@@ -4814,24 +4814,25 @@ impl ExecutableProcessRuntimeV1 {
             };
             for (matched, accepted) in matches {
                 let trace_index = trace.as_ref().map(|trace| trace.rules.len());
-                let rule_trace = ExecutableRuleEvaluationV1 {
-                    rule: rule_index as u16,
-                    bindings: matched.bindings.clone(),
-                    required_present: rule
-                        .required_present
-                        .iter()
-                        .map(|slot| (*slot, configuration[usize::from(*slot)].value().is_some()))
-                        .collect(),
-                    required_absent: rule
-                        .required_absent
-                        .iter()
-                        .map(|slot| (*slot, configuration[usize::from(*slot)].value().is_none()))
-                        .collect(),
-                    predicates: matched.predicates,
-                    selected: accepted,
-                    effects: Vec::new(),
-                };
                 if let Some(trace) = &mut trace {
+                    let rule_trace = ExecutableRuleEvaluationV1 {
+                        rule: rule_index as u16,
+                        bindings: matched.bindings.clone(),
+                        required_present: rule
+                            .required_present
+                            .iter()
+                            .map(|slot| (*slot, configuration[usize::from(*slot)].value().is_some()))
+                            .collect(),
+                        required_absent: rule
+                            .required_absent
+                            .iter()
+                            .map(|slot| (*slot, configuration[usize::from(*slot)].value().is_none()))
+                            .collect(),
+                        predicates: matched.predicates.into_iter()
+                            .map(BorrowedEvaluation::into_owned).collect(),
+                        selected: accepted,
+                        effects: Vec::new(),
+                    };
                     trace.push(rule_trace);
                 }
                 if !accepted {

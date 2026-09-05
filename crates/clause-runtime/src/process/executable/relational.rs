@@ -121,9 +121,9 @@ impl ExecutableRelationEffectV1 {
 }
 
 #[derive(Clone, Default)]
-pub(super) struct Matched {
+pub(super) struct Matched<'a> {
     pub bindings: BTreeMap<u16, ExecutableValueV1>,
-    pub predicates: Vec<ExecutableEvaluatedExpressionV1>,
+    pub predicates: Vec<BorrowedEvaluation<'a>>,
 }
 
 pub(super) fn sum(
@@ -136,15 +136,9 @@ pub(super) fn sum(
 ) -> Result<ExecutableValueV1, ExecutableErrorV1> {
     let inputs = inputs.iter().map(|input| evaluate(input, configuration, arguments, context))
         .collect::<Result<Vec<_>, _>>()?;
-    let query = ExecutableRuleV1 {
-        entry: 0,
-        predicates: predicates.to_vec(),
-        required_present: vec![], required_absent: vec![],
-        assignments: vec![], removals: vec![],
-    };
     let mut visits = 0;
     let mut total = 0.0;
-    for (matched, accepted) in match_rule(&query, configuration, &inputs,
+    for (matched, accepted) in match_rule(predicates, configuration, &inputs,
         EvaluationContextV1 { bindings: None, ..context }, &mut visits)? {
         if let Some(reads) = context.reads {
             for predicate in &matched.predicates {
@@ -258,16 +252,16 @@ fn bound_pattern(
 /// Complete finite positive matching or an explicit error. Never interpret a
 /// bound-exhausted prefix as no match. Duplicate derivations of the same exact
 /// substitution are one match; equal-valued distinct referents are not equal.
-pub(super) fn match_rule(
-    rule: &ExecutableRuleV1,
+pub(super) fn match_rule<'a>(
+    predicates: &'a [ExecutableExpressionV1],
     configuration: &[ExecutableSlotV1],
     arguments: &[ExecutableValueV1],
     context: EvaluationContextV1,
     visits: &mut usize,
-) -> Result<Vec<(Matched, bool)>, ExecutableErrorV1> {
+) -> Result<Vec<(Matched<'a>, bool)>, ExecutableErrorV1> {
     let mut active = vec![Matched::default()];
     let mut rejected = Vec::new();
-    for predicate in &rule.predicates {
+    for predicate in predicates {
         if let ExecutableExpressionV1::RelationMatch(slot, subject_pattern, value_pattern) =
             predicate
         {
@@ -346,8 +340,8 @@ pub(super) fn match_rule(
                             continue;
                         }
                         found = true;
-                        matched.predicates.push(ExecutableEvaluatedExpressionV1 {
-                            expression: predicate.clone(),
+                        matched.predicates.push(BorrowedEvaluation {
+                            expression: predicate,
                             value: ExecutableValueV1::Boolean(true),
                             reads: vec![ExecutableReadV1::RelationRow(
                                 *slot,
@@ -363,8 +357,8 @@ pub(super) fn match_rule(
                 }
                 if !found {
                     let mut incoming = incoming;
-                    incoming.predicates.push(ExecutableEvaluatedExpressionV1 {
-                        expression: predicate.clone(),
+                    incoming.predicates.push(BorrowedEvaluation {
+                        expression: predicate,
                         value: ExecutableValueV1::Boolean(false),
                         reads: vec![ExecutableReadV1::RelationSearch(
                             *slot,
@@ -385,7 +379,7 @@ pub(super) fn match_rule(
         } else {
             let mut next = Vec::new();
             for mut matched in active {
-                let evaluated = evaluate_explained(
+                let evaluated = evaluate_borrowed(
                     predicate,
                     configuration,
                     arguments,
