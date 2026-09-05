@@ -10,6 +10,60 @@ Use that pin's workbench directly:
 
 Live source tooling offers an explicit checked scalar-effect replacement, not arbitrary text-reload continuity. Use `scalar_effects()` and `edit_scalar_effect()` with the captured generation and exact offered node; settle any pending candidate first. Native and Wasm carry the actual live world internally through the checked operation. Retained explanations describe accepted Steps; finite interventions query an isolated recorded pre-state without applying input or admitting a world. See `docs/live-source-semantics.md` for the compiler/runtime and passive browser contract, bounds, and remaining limits.
 
+## Typed Unicode text operations
+
+trim(text), first-word(text), remaining-words(text), and starts-with(text, prefix) parse bounded UTF-8 text inside checked source. Word boundaries use Unicode whitespace; the remainder preserves internal and trailing whitespace. Empty text yields empty words. Prefix comparison is exact and case-sensitive.
+
+Catalog ID: `text-operations`
+
+```clause
+Text
+Bool
+Document
+
+relation cleaned
+  reads {document: Document} cleaned {value: Text}
+  subject document
+  mode given document yields value: one
+
+relation first-word
+  reads {document: Document} first word {value: Text}
+  subject document
+  mode given document yields value: one
+
+relation remaining-words
+  reads {document: Document} remaining words {value: Text}
+  subject document
+  mode given document yields value: one
+
+relation prefixed
+  reads {document: Document} prefixed {value: Bool}
+  subject document
+  mode given document yields value: one
+
+document-main prefixed false
+document-main cleaned ""
+document-main first word ""
+document-main remaining words ""
+
+on tokenize ?document ?input
+  when
+    ?document cleaned ?cleaned
+    ?document first word ?first
+    ?document remaining words ?remaining
+    ?document prefixed ?prefixed
+  withdraw
+    ?document cleaned ?cleaned
+    ?document first word ?first
+    ?document remaining words ?remaining
+    ?document prefixed ?prefixed
+  include
+    ?document cleaned trim(?input)
+    ?document first word first-word(?input)
+    ?document remaining words remaining-words(?input)
+    ?document prefixed starts-with(trim(?input), "/")
+```
+
 ## Reusable checked laws inside finite queries
 
 Query-local scalar laws compose with typed rows, explicit inputs and predicates. Each matching row contributes once even when equal-result law cases overlap. A missing law result excludes that row; an invalid expression or exhausted search remains an error.

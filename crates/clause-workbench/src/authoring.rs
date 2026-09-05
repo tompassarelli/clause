@@ -16,6 +16,12 @@ pub struct AuthoringExampleV1 {
 /// accepts it.
 pub const AUTHORING_EXAMPLES_V1: &[AuthoringExampleV1] = &[
     AuthoringExampleV1 {
+        slug: "text-operations",
+        title: "Typed Unicode text operations",
+        summary: "trim(text), first-word(text), remaining-words(text), and starts-with(text, prefix) parse bounded UTF-8 text inside checked source. Word boundaries use Unicode whitespace; the remainder preserves internal and trailing whitespace. Empty text yields empty words. Prefix comparison is exact and case-sensitive.",
+        source: include_str!("../../../test-vectors/authoring/text-operations.clause"),
+    },
+    AuthoringExampleV1 {
         slug: "query-laws",
         title: "Reusable checked laws inside finite queries",
         summary: "Query-local scalar laws compose with typed rows, explicit inputs and predicates. Each matching row contributes once even when equal-result law cases overlap. A missing law result excludes that row; an invalid expression or exhausted search remains an error.",
