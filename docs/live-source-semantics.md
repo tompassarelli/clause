@@ -33,6 +33,11 @@ process's live browser world. `last_source_edit()` returns a CET1 witness with
 the exact old source/root, new root, selected identities, replacement expression,
 and old/new CPP1. No host configuration is included. Its bound is 4 MiB.
 
+`exact_source()` immutably borrows the exact checked source installed in the
+current native workbench generation. After an accepted edit, persist these
+compiler-produced bytes rather than reconstructing the source in the host.
+No-op and rejected edits leave these bytes unchanged.
+
 The passive adapter's `editSourceSession(module, liveSession, generation,
 newCwr1Request, cet1, policy)` applies that witness to the browser's captured live
 Wasm session. It returns `SessionStarted`/`SessionFailed`, not an admitted frame.

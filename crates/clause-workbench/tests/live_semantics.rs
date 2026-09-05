@@ -76,6 +76,7 @@ fn tick(w: &mut ResidentSourceWorkbenchV1, revision: u64) -> Term {
 #[test]
 fn real_open_encounter_changed_rule_preserves_affected_world_state() {
     let mut w = ResidentSourceWorkbenchV1::open(ENCOUNTER).unwrap();
+    assert_eq!(w.exact_source(), ENCOUNTER);
     key(&mut w, 1, b"BeginEncounter");
     input(
         &mut w,
@@ -121,6 +122,7 @@ fn real_open_encounter_changed_rule_preserves_affected_world_state() {
         old_generation
     );
     assert_eq!(w.pending_candidate(), Some(pending));
+    assert_eq!(w.exact_source(), ENCOUNTER, "no-op changed exact source");
     assert!(
         w.edit_scalar_effect(old_generation.handle, &effect, b"0.0\non injected")
             .is_err()
@@ -132,6 +134,11 @@ fn real_open_encounter_changed_rule_preserves_affected_world_state() {
     );
     assert_eq!(w.generation(), &old_generation);
     assert_eq!(w.pending_candidate(), Some(pending));
+    assert_eq!(
+        w.exact_source(),
+        ENCOUNTER,
+        "rejected edit changed exact source"
+    );
     w.admit().unwrap();
     key(&mut w, 7, b"Attack");
     let prior_state = w
@@ -142,10 +149,23 @@ fn real_open_encounter_changed_rule_preserves_affected_world_state() {
         .clone();
     w.edit_scalar_effect(w.generation().handle, &effect, b"0.0 - (?damage * 2.0)")
         .unwrap();
+    let mut expected_source = ENCOUNTER[..effect.expression_origin.start as usize].to_vec();
+    expected_source.extend_from_slice(b"0.0 - (?damage * 2.0)");
+    expected_source.extend_from_slice(&ENCOUNTER[effect.expression_origin.end as usize..]);
+    assert_eq!(
+        w.exact_source(),
+        expected_source,
+        "accepted edit omitted exact compiler-produced bytes"
+    );
     assert!(w.rejects_stale_handle(old_generation.handle).unwrap());
     assert!(
         w.edit_scalar_effect(old_generation.handle, &effect, b"0.0")
             .is_err()
+    );
+    assert_eq!(
+        w.exact_source(),
+        expected_source,
+        "stale edit changed exact source"
     );
     assert!(w.pending_candidate().is_none());
     assert!(

@@ -263,6 +263,14 @@ impl ResidentSourceWorkbenchV1 {
         Ok(self.generation.clone())
     }
 
+    /// Exact source bytes checked and installed in the current generation.
+    /// Successful edits expose the compiler-produced replacement; unchanged
+    /// and rejected edits preserve these bytes. This borrow grants no mutation.
+    #[must_use]
+    pub fn exact_source(&self) -> &[u8] {
+        &self.exact_source
+    }
+
     pub fn scalar_effects(&self) -> Result<Vec<clause_package::CanonicalScalarEffectV1>, ResidentSourceWorkbenchErrorV1> {
         let cst = read_canonical_source_v1(&self.exact_source).map_err(|error| debug_error("source read", error))?;
         let plan = plan_independent_canonical_source_allocations_v1(&cst, ProgramChangeOccurrenceId::from_bytes(sequence_id(self.next_change)))
