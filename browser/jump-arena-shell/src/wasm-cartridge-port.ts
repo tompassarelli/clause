@@ -120,7 +120,7 @@ interface WasmSession {
 
 interface PersistentCartridge {
   readonly _tag: "PersistentCartridge";
-  readonly openBytes: ExactBytes;
+  readonly openBytes: string;
   readonly occurrences: readonly ExactBytes[];
 }
 
@@ -556,7 +556,7 @@ function wasmsession_disposed(r: WasmSession): Cell<boolean> {
 }
 
 function PersistentCartridge(
-  openBytes: ExactBytes,
+  openBytes: string,
   occurrences: readonly ExactBytes[],
 ): PersistentCartridge {
   return Object.freeze({ _tag: "PersistentCartridge", openBytes, occurrences });
@@ -566,7 +566,7 @@ function require_persistent_cartridge(value: unknown): PersistentCartridge {
   if (
     !isRecord(value) ||
     value._tag !== "PersistentCartridge" ||
-    !exact_byte_array_p(value.openBytes, cwr1_max_bytes) ||
+    !binary_text_p(value.openBytes, cwr1_max_bytes) ||
     !Array.isArray(value.occurrences) ||
     !value.occurrences.every((occurrence: unknown) =>
       exact_byte_array_p(occurrence, cwr1_max_bytes),
@@ -583,7 +583,7 @@ function require_persistent_cartridge(value: unknown): PersistentCartridge {
   );
 }
 
-function persistentcartridge_openBytes(r: PersistentCartridge): ExactBytes {
+function persistentcartridge_openBytes(r: PersistentCartridge): string {
   return r.openBytes;
 }
 
@@ -641,20 +641,18 @@ function exact_byte_array_p(
   } finally { leaveSourceTransferPhase(profile); }
 }
 
-function require_request(request: unknown): ExactProcessRequest {
+function require_request_bytes(request: unknown): string {
   const profile = enterSourceTransferPhase("request-custody");
   try {
   if (
     typeof request !== "object" ||
     request === null ||
     !("bytes" in request) ||
-    !exact_byte_array_p(request.bytes, cwr1_max_bytes)
+    !Array.isArray(request.bytes) || request.bytes.length < 1 || request.bytes.length > cwr1_max_bytes
   ) {
     throw new Error("cartridge request must carry bounded exact bytes");
   }
-  return ExactProcessRequest(
-    frozen_byte_range(request.bytes, 0, request.bytes.length),
-  );
+  return exact_bytes_to_binary_text(request.bytes);
   } finally { leaveSourceTransferPhase(profile); }
 }
 
@@ -671,11 +669,11 @@ function byte_at(bytes: CanonicalBytes, index: number): number {
   return byte;
 }
 
-function little_u16(bytes: ExactBytes, offset: number): number {
+function little_u16(bytes: CanonicalBytes, offset: number): number {
   return byte_at(bytes, offset) + 256 * byte_at(bytes, offset + 1);
 }
 
-function little_u32(bytes: ExactBytes, offset: number): number {
+function little_u32(bytes: CanonicalBytes, offset: number): number {
   return (
     byte_at(bytes, offset) +
     256 * byte_at(bytes, offset + 1) +
@@ -739,7 +737,7 @@ function require_range(
 }
 
 function frozen_byte_range(
-  bytes: ExactBytes,
+  bytes: CanonicalBytes,
   start: number,
   end: number,
 ): ExactBytes {
@@ -779,11 +777,24 @@ function exact_bytes_to_binary_text(bytes: ExactBytes): string {
     const end = Math.min(start + chunk_size, bytes.length);
     let chunk = "";
     for (let index = start; index < end; index += 1) {
-      chunk += String.fromCharCode(byte_at(bytes, index));
+      const byte = byte_at(bytes, index);
+      if (!Number.isInteger(byte) || byte < 0 || byte > 255) throw new Error("cartridge byte is not an exact octet");
+      chunk += String.fromCharCode(byte);
     }
     chunks.push(chunk);
   }
   return chunks.join("");
+}
+
+function binary_text_p(value: unknown, maximum: number): value is string {
+  return typeof value === "string" && value.length > 0 && value.length <= maximum && !/[^\u0000-\u00ff]/.test(value);
+}
+
+function typed_bytes(bytes: CanonicalBytes): Uint8Array<ArrayBuffer> {
+  if (typeof bytes !== "string") return new Uint8Array(bytes);
+  const result = new Uint8Array(bytes.length);
+  for (let index = 0; index < bytes.length; index += 1) result[index] = bytes.charCodeAt(index);
+  return result;
 }
 
 function finite_f64(bytes: CanonicalBytes, offset: number): number {
@@ -888,14 +899,15 @@ function dispatch_exact_request(
   module: ProcessWasmModule,
   request: unknown,
 ): ExactProcessObservation {
-  const checked = require_request(request);
+  const checked = require_request_bytes(request);
   const reset = module.clause_process_v1_reset;
   const push = module.clause_process_v1_request_push;
   const dispatch = module.clause_process_v1_dispatch;
   const response_length = module.clause_process_v1_response_len;
   const response_byte = module.clause_process_v1_response_byte;
   reset();
-  checked.bytes.forEach((byte: number) => {
+  for (let index = 0; index < checked.length; index += 1) {
+    const byte = checked.charCodeAt(index);
     const status = process_status(push(byte));
     if (!equivalent(status, 0)) {
       (() => {
@@ -904,7 +916,7 @@ function dispatch_exact_request(
         );
       })();
     }
-  });
+  }
   const status = process_status(dispatch());
   if (!equivalent(status, 0)) {
     (() => {
@@ -929,12 +941,12 @@ function dispatch_exact_request(
   return ExactProcessObservation(Object.freeze(bytes));
 }
 
-function parse_blob(
-  bytes: ExactBytes,
+function blob_end(
+  bytes: CanonicalBytes,
   offset: number,
   maximum: number,
   label: string,
-): ParsedBlob {
+): number {
   const header_end = require_range(bytes, offset, 4, label);
   const length = little_u32(bytes, offset);
   const __bound =
@@ -945,7 +957,12 @@ function parse_blob(
           })();
         })()
       : null;
-  const end = require_range(bytes, header_end, length, label);
+  return require_range(bytes, header_end, length, label);
+}
+
+function parse_blob(bytes: CanonicalBytes, offset: number, maximum: number, label: string): ParsedBlob {
+  const end = blob_end(bytes, offset, maximum, label);
+  const header_end = offset + 4;
   return { bytes: frozen_byte_range(bytes, header_end, end), next: end };
 }
 
@@ -964,8 +981,7 @@ function parse_persistent_cartridge_bang(
 ): PersistentCartridge {
   const profile = enterSourceTransferPhase("cartridge-parse");
   try {
-  const checked = require_request(request);
-  const bytes = checked.bytes;
+  const bytes = require_request_bytes(request);
   if (
     bytes.length < 4 ||
     !equivalent(byte_at(bytes, 0), 67) ||
@@ -977,15 +993,14 @@ function parse_persistent_cartridge_bang(
       throw new Error("persistent cartridge must carry exact CWR1 bytes");
     })();
   }
-  const package_record = parse_blob(bytes, 4, cwr1_max_bytes, "CWR1 package");
-  const package_end = package_record.next;
+  const package_end = blob_end(bytes, 4, cwr1_max_bytes, "CWR1 package");
   const application_end = require_range(
     bytes,
     package_end,
     4,
     "CWR1 application",
   );
-  const physical_plan = parse_blob(
+  const physical_plan_end = blob_end(
     bytes,
     application_end,
     cwr1_max_bytes,
@@ -993,7 +1008,7 @@ function parse_persistent_cartridge_bang(
   );
   const allocation = parse_blob(
     bytes,
-    physical_plan.next,
+    physical_plan_end,
     allocation_epoch_bytes,
     "CWR1 allocation epoch",
   );
@@ -1005,7 +1020,7 @@ function parse_persistent_cartridge_bang(
     9 * identity_bytes,
     "CWR1 authority identities",
   );
-  const occurrence_evidence = parse_blob(
+  const occurrence_evidence_end = blob_end(
     bytes,
     identities_end,
     cwr1_max_bytes,
@@ -1013,11 +1028,11 @@ function parse_persistent_cartridge_bang(
   );
   const judgment_id_end = require_range(
     bytes,
-    occurrence_evidence.next,
+    occurrence_evidence_end,
     identity_bytes,
     "CWR1 Judgment evidence identity",
   );
-  const judgment_evidence = parse_blob(
+  const judgment_evidence_end = blob_end(
     bytes,
     judgment_id_end,
     cwr1_max_bytes,
@@ -1025,11 +1040,11 @@ function parse_persistent_cartridge_bang(
   );
   const admission_id_end = require_range(
     bytes,
-    judgment_evidence.next,
+    judgment_evidence_end,
     identity_bytes,
     "CWR1 Admission evidence identity",
   );
-  const admission_evidence = parse_blob(
+  const admission_evidence_end = blob_end(
     bytes,
     admission_id_end,
     cwr1_max_bytes,
@@ -1037,7 +1052,7 @@ function parse_persistent_cartridge_bang(
   );
   const budget_end = require_range(
     bytes,
-    admission_evidence.next,
+    admission_evidence_end,
     8,
     "CWR1 budget",
   );
@@ -1083,20 +1098,13 @@ function parse_persistent_cartridge_bang(
   }
   const assembly = enterSourceTransferPhase("cws1-assembly");
   try {
-  const open_bytes = [67, 87, 83, 49];
-  bytes.slice(4, physical_plan.next).forEach((byte: number) => {
-    open_bytes.push(byte);
-  });
-  bytes.slice(authority_start, budget_end).forEach((byte: number) => {
-    open_bytes.push(byte);
-  });
-  open_bytes.push(0);
-  append_u64_bang(open_bytes, session_command_limit);
-  append_u32_bang(open_bytes, session_command_max_bytes);
-  append_u32_bang(open_bytes, cse1_max_bytes);
-  open_bytes.push(current_admission_trace_retention);
+  const trailer = [0];
+  append_u64_bang(trailer, session_command_limit);
+  append_u32_bang(trailer, session_command_max_bytes);
+  append_u32_bang(trailer, cse1_max_bytes);
+  trailer.push(current_admission_trace_retention);
   return PersistentCartridge(
-    Object.freeze(open_bytes),
+    "CWS1" + bytes.slice(4, physical_plan_end) + bytes.slice(authority_start, budget_end) + exact_bytes_to_binary_text(trailer),
     Object.freeze(occurrences_result.values),
   );
   } finally { leaveSourceTransferPhase(assembly); }
@@ -1145,9 +1153,9 @@ function dispatch_session_request(
   request: unknown,
   operation: "open" | "command",
 ): ExactBytes {
-  if (exact_byte_array_p(request, session_command_max_bytes)) {
+  if (exact_byte_array_p(request, session_command_max_bytes) || binary_text_p(request, session_command_max_bytes)) {
     const api = session_module_functions(module);
-    const typed_request = new Uint8Array(request);
+    const typed_request = typed_bytes(request);
     const status = process_status(
       operation === "open"
         ? api.open(typed_request)
@@ -2901,7 +2909,7 @@ export function editSourceSession(
     const cartridge = parse_persistent_cartridge_bang(request);
     const status = observeSourceTransferPhase("bulk-call", () => module.clause_session_v1_source_edit_bulk(
       previous.handle.slot, previous.handle.generation, BigInt(previous.sequence.value),
-      observeSourceTransferPhase("typed-array-construction", () => new Uint8Array(cartridge.openBytes)),
+      observeSourceTransferPhase("typed-array-construction", () => typed_bytes(cartridge.openBytes)),
       observeSourceTransferPhase("typed-array-construction", () => new Uint8Array(witness)),
     ));
     if (status !== 0) throw new Error(`checked source edit rejected: ${process_status(status)}`);

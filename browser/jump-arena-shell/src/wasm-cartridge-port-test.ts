@@ -229,6 +229,35 @@ function cse_header_bang(sequence: number, tag: number): number[] {
   return bytes;
 }
 
+test.test("cartridge byte custody survives mutation of the producer's array", () => {
+  const source = minimal_cwr1_bang();
+  const original = source.slice();
+  const actual: number[][] = [];
+  const expected: number[][] = [];
+  const port = wasm["create-wasm-cartridge-port"](module_for_bang([opened_event_bang()], actual), policy());
+  const reference = wasm["create-wasm-cartridge-port"](module_for_bang([opened_event_bang()], expected), policy());
+  const accepted = acceptPackage(port, wasm["->ExactProcessRequest"](source));
+  source.fill(255);
+  startSession(port, accepted.acceptedPackage);
+  startSession(reference, acceptPackage(reference, wasm["->ExactProcessRequest"](original)).acceptedPackage);
+  expect(actual).toEqual(expected);
+  expect(actual).toHaveLength(1);
+});
+
+test.test("cartridge byte custody rejects malformed octets and skipped-blob bounds", () => {
+  const port = wasm["create-wasm-cartridge-port"](module_for_bang([], []), policy());
+  const invalid: number[][] = [];
+  for (const value of [NaN, 256, -1, 0.5]) {
+    const source = minimal_cwr1_bang(); source[9] = value; invalid.push(source);
+  }
+  const sparse = minimal_cwr1_bang(); delete sparse[9]; invalid.push(sparse);
+  const oversized = minimal_cwr1_bang(); oversized.splice(4, 4, 255, 255, 255, 255); invalid.push(oversized);
+  invalid.push(minimal_cwr1_bang().slice(0, 8));
+  for (const source of invalid) {
+    port.acceptPackage(wasm["->ExactProcessRequest"](source), result => expect(result._tag).toBe("PackageRejected"));
+  }
+});
+
 function put_identities_bang(bytes: number[], tags: readonly number[]): void {
   tags.forEach((tag) => {
     identity(tag).forEach((byte) => {
