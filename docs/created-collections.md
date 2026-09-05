@@ -65,9 +65,13 @@ per rule and 4,096 selected bound matches overall, with at most 128 local
 bindings. Exhaustion returns `ResourceLimit`; it never establishes absence or
 uniqueness from a prefix. Existing expression, wire, carrier, projection and
 diagnostic bounds still apply; accepted execution trace is bounded to 4,096
-rules and reports truncation. Join order is deterministic but not optimized;
-guards follow positive joins, so a large join may exhaust before a later false
-predicate. These are explicit resource limits, not universal scalability claims.
+rules and reports truncation. Join order deterministically favors keyed and
+filtered row matches. Total guards move before remaining matches as soon as
+their bindings exist; partial expressions retain their ordered guards and wait
+for the row query. This avoids expanding a broad search after an independent
+false condition, while genuinely exhausted queries still reject atomically.
+A condition that needs the full join can still follow a search that exhausts.
+These are explicit resource limits, not universal scalability claims.
 
 This slice lowers connected general/scalar handlers, typed relation rows,
 Boolean state guards and existing scalar-law composition. It does not implement

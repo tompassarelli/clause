@@ -314,7 +314,67 @@ fn checked_conditions(
             relational_scalar_expression(cst, plan, right, &variables, &domains, expected, source.origin)?,
         ));
     }
-    Ok(CheckedConditions { predicates, variables, domains })
+    Ok(CheckedConditions { predicates: schedule_predicates(predicates), variables, domains })
+}
+
+// Row matches are finite conjunctions. Run keyed/selective matches first and
+// move only total guards ahead of remaining matches; partial expressions keep
+// their authored guard order and cannot fail for a query with no matching row.
+fn schedule_predicates(predicates: Vec<CanonicalExecutablePredicateV1>) -> Vec<CanonicalExecutablePredicateV1> {
+    use CanonicalExecutableExpressionV1 as E;
+    use CanonicalExecutablePredicateV1 as P;
+    fn references(expression: &E) -> Option<BTreeSet<u16>> {
+        match expression {
+            E::Binding(binding) => Some(BTreeSet::from([*binding])),
+            E::Constant(_) | E::State(_) | E::Argument(_) => Some(BTreeSet::new()),
+            E::ReferentFacet { value, .. } => references(value),
+            E::Equal(a, b) | E::GreaterThan(a, b) | E::LessThanOrEqual(a, b)
+            | E::RelationPresent(a, b) => {
+                let mut result = references(a)?;
+                result.extend(references(b)?);
+                Some(result)
+            }
+            _ => None,
+        }
+    }
+    fn guard_references(predicate: &P) -> Option<BTreeSet<u16>> {
+        let (a, b) = match predicate {
+            P::Equal(a, b) | P::GreaterThan(a, b) | P::LessThanOrEqual(a, b) => (a, b),
+            _ => return None,
+        };
+        let mut result = references(a)?;
+        result.extend(references(b)?);
+        Some(result)
+    }
+    let (mut matches, guards): (Vec<_>, Vec<_>) = predicates.into_iter()
+        .partition(|predicate| matches!(predicate, P::RelationMatch(..)));
+    let mut guards = guards.into_iter().peekable();
+    let mut bound = BTreeSet::new();
+    let mut scheduled = Vec::new();
+    while !matches.is_empty() {
+        while guards.peek().and_then(guard_references).is_some_and(|used| used.is_subset(&bound)) {
+            scheduled.push(guards.next().expect("guard was present"));
+        }
+        let needed = guards.peek().and_then(guard_references).unwrap_or_default();
+        let index = matches.iter().enumerate().max_by_key(|(index, predicate)| {
+            let P::RelationMatch(_, subject, value) = predicate else { unreachable!() };
+            let subject = references(subject);
+            let value = references(value);
+            let keyed = subject.as_ref().is_some_and(|used| used.is_subset(&bound));
+            let filtered = value.as_ref().is_some_and(|used| used.is_subset(&bound));
+            let needed_bindings = subject.iter().chain(value.iter()).flatten()
+                .filter(|binding| needed.contains(binding) && !bound.contains(binding)).count();
+            (usize::from(keyed) * 4 + usize::from(filtered) * 2, needed_bindings, std::cmp::Reverse(*index))
+        }).map(|(index, _)| index).expect("at least one row match");
+        let predicate = matches.remove(index);
+        if let P::RelationMatch(_, subject, value) = &predicate {
+            bound.extend(references(subject).unwrap_or_default());
+            bound.extend(references(value).unwrap_or_default());
+        }
+        scheduled.push(predicate);
+    }
+    scheduled.extend(guards);
+    scheduled
 }
 
 pub(super) fn checked_handler(

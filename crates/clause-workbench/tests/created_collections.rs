@@ -160,13 +160,23 @@ fn collection_contributions_read_one_prestate_and_ordinary_overlap_rejects_atomi
 #[test]
 fn exhausted_finite_join_is_an_error_not_absence() {
     let source = format!(
-        "{}\non impossible-search ?account\n  when\n    ?account known goal ?first\n    ?account known goal ?second\n    ?account known goal ?third\n    ?account balance ?balance\n    ?balance < 0.0\n  accumulate\n    ?account balance 1.0\n",
+        "{}\non impossible-search ?account\n  when\n    ?account known goal ?first\n    ?account known goal ?second\n    ?account known goal ?third\n    ?first remaining ?first-duration\n    ?second remaining ?second-duration\n    ?third remaining ?third-duration\n    ?account balance ?balance\n    ?first-duration + ?second-duration + ?third-duration < 0.0\n  accumulate\n    ?account balance 1.0\n\non cheap-rejection ?account\n  when\n    ?account known goal ?first\n    ?account known goal ?second\n    ?account known goal ?third\n    ?account balance ?balance\n    ?balance < 0.0\n  accumulate\n    ?account balance 1.0\n",
         std::str::from_utf8(SOURCE).unwrap()
     );
     let mut w = ResidentSourceWorkbenchV1::open(source.as_bytes()).unwrap();
     for _ in 0..17 {
         run(&mut w, b"create-goal", &[n(7.0), n(3.0)]);
     }
+    // An independent false guard can reject before expansion. Exhaustion still
+    // rejects atomically when the condition requires the complete broad join.
+    let unchanged = run(&mut w, b"cheap-rejection", &[]);
+    assert_eq!(balance(&unchanged), 100.0);
+    assert_eq!(known(&unchanged).len(), 17);
+    let trace = &w.recorded_event(b"cheap-rejection").unwrap().unwrap().trace;
+    assert!(trace.rules.iter().all(|rule| !rule.selected));
+    assert!(!trace.rules.iter().flat_map(|rule| &rule.predicates)
+        .flat_map(|predicate| &predicate.reads)
+        .any(|read| matches!(read, clause_runtime::ExecutableReadV1::RelationRow(_, _, V::Referent(_)))));
     let occurrence = w.handler_occurrence(b"impossible-search", &[]).unwrap();
     let error = w
         .run_occurrences_to_candidate(&[occurrence])
