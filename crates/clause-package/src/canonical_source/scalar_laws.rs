@@ -109,6 +109,27 @@ impl ScalarLawEnvironment {
             let Some((relation, roles)) = environment.application(result, origin)? else {
                 continue;
             };
+            let mut domains = BTreeMap::new();
+            for role in &relation.roles {
+                relational::check_expression(&roles[&role.name], &role.domain, &mut domains, origin)?;
+            }
+            for predicate in &predicates {
+                let (a, b, numeric) = match predicate {
+                    CanonicalScalarPredicateV1::Equal(a, b) => (a, b, false),
+                    CanonicalScalarPredicateV1::GreaterThan(a, b)
+                    | CanonicalScalarPredicateV1::LessThanOrEqual(a, b) => (a, b, true),
+                };
+                let domain = if numeric {
+                    b"F64".to_vec()
+                } else {
+                    relational::expression_domain(a, &domains)
+                        .or_else(|| relational::expression_domain(b, &domains))
+                        .ok_or(CanonicalSourceErrorV1::MissingExecutableBinding { origin })?
+                        .to_vec()
+                };
+                relational::check_expression(a, &domain, &mut domains, origin)?;
+                relational::check_expression(b, &domain, &mut domains, origin)?;
+            }
             let relation = relation.designation.clone();
             environment.laws.push(ScalarLawCst {
                 origin,
@@ -166,7 +187,7 @@ impl ScalarLawEnvironment {
     > {
         let mut matches = Vec::new();
         for relation in &self.relations {
-            if relation.subject.is_some() || relation.roles.iter().any(|role| role.domain != b"F64")
+            if relation.subject.is_some() || relation.roles.iter().any(|role| !matches!(role.domain.as_slice(), b"F64" | b"Bool" | b"Text"))
             {
                 continue;
             }
@@ -243,7 +264,9 @@ impl ScalarLawEnvironment {
                                 .push(CanonicalScalarPredicateV1::Equal(previous, given.clone()));
                         }
                     }
-                    CanonicalScalarExpressionV1::Number(_) => {
+                    CanonicalScalarExpressionV1::Number(_)
+                    | CanonicalScalarExpressionV1::Boolean(_)
+                    | CanonicalScalarExpressionV1::Text(_) => {
                         predicates.push(CanonicalScalarPredicateV1::Equal(
                             law.roles[role].clone(),
                             given.clone(),
@@ -299,6 +322,7 @@ impl ScalarLawEnvironment {
         Ok(Some(ScalarLawBindingCst {
             origin,
             parameter: parameter.clone(),
+            typed_roles: relation.roles.iter().map(|role| (roles[&role.name].clone(), role.domain.clone())).collect(),
             cases,
         }))
     }
@@ -335,11 +359,20 @@ fn reading_matches(
             }
             RelationReadingPartCst::Role(role) => {
                 let mut depth = 0_i32;
+                let mut quoted = false;
+                let mut escaped = false;
                 for (end, character) in source
                     .char_indices()
                     .chain(std::iter::once((source.len(), ' ')))
                 {
+                    if quoted {
+                        if escaped { escaped = false; }
+                        else if character == '\\' { escaped = true; }
+                        else if character == '"' { quoted = false; }
+                        continue;
+                    }
                     match character {
+                        '"' => { quoted = true; continue; }
                         '(' => depth += 1,
                         ')' => depth -= 1,
                         _ => {}
@@ -350,9 +383,6 @@ fn reading_matches(
                     let Some(value) = parse_scalar_expression(&source[..end], "") else {
                         continue;
                     };
-                    if !numeric_expression(&value) {
-                        continue;
-                    }
                     if bindings
                         .get(role)
                         .is_some_and(|previous| previous != &value)
@@ -371,18 +401,6 @@ fn reading_matches(
     found
 }
 
-fn numeric_expression(value: &CanonicalScalarExpressionV1) -> bool {
-    use CanonicalScalarExpressionV1::*;
-    match value {
-        Parameter(_) | Number(_) => true,
-        SquareRoot(value) => numeric_expression(value),
-        Add(a, b) | Subtract(a, b) | Multiply(a, b) | Divide(a, b) => {
-            numeric_expression(a) && numeric_expression(b)
-        }
-        _ => false,
-    }
-}
-
 fn substitute(
     expression: &CanonicalScalarExpressionV1,
     bindings: &BTreeMap<Vec<u8>, CanonicalScalarExpressionV1>,
@@ -390,6 +408,7 @@ fn substitute(
     use CanonicalScalarExpressionV1::*;
     match expression {
         Parameter(name) => bindings.get(name).unwrap_or(expression).clone(),
+        Concatenate(a, b) => Concatenate(Box::new(substitute(a, bindings)), Box::new(substitute(b, bindings))),
         Equal(a, b) => Equal(Box::new(substitute(a, bindings)), Box::new(substitute(b, bindings))),
         GreaterThan(a, b) => GreaterThan(Box::new(substitute(a, bindings)), Box::new(substitute(b, bindings))),
         LessThanOrEqual(a, b) => LessThanOrEqual(Box::new(substitute(a, bindings)), Box::new(substitute(b, bindings))),
@@ -480,6 +499,14 @@ fn contradictory<'a>(predicates: impl Iterator<Item = &'a CanonicalScalarPredica
         }
     }
     (0..count).any(|index| closure[index][index] == Some(true))
+        || (0..count).any(|a| (a + 1..count).any(|b| {
+            let distinct = match (nodes[a], nodes[b]) {
+                (CanonicalScalarExpressionV1::Boolean(a), CanonicalScalarExpressionV1::Boolean(b)) => a != b,
+                (CanonicalScalarExpressionV1::Text(a), CanonicalScalarExpressionV1::Text(b)) => a != b,
+                _ => false,
+            };
+            distinct && closure[a][b].is_some() && closure[b][a].is_some()
+        }))
 }
 
 pub(super) fn binding_cases(

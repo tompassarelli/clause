@@ -103,17 +103,23 @@ fn facet(
     })
 }
 
+struct CheckedConditions {
+    predicates: Vec<CanonicalExecutablePredicateV1>,
+    variables: BTreeMap<Vec<u8>, CanonicalExecutableExpressionV1>,
+    domains: BTreeMap<Vec<u8>, Vec<u8>>,
+}
+
 fn checked_conditions(
     cst: &CanonicalSourceCstV1,
     plan: &CanonicalSourceAllocationPlanV1,
     source: &GeneralHandlerCst,
-) -> Result<(Vec<CanonicalExecutablePredicateV1>, BTreeMap<Vec<u8>, CanonicalExecutableExpressionV1>), CanonicalSourceErrorV1> {
+) -> Result<CheckedConditions, CanonicalSourceErrorV1> {
     use CanonicalExecutableExpressionV1 as E;
     use CanonicalExecutablePredicateV1 as P;
     let error = || CanonicalSourceErrorV1::MissingExecutableBinding {
         origin: source.origin,
     };
-    check_domains(cst, plan, source)?;
+    let domains = check_domains(cst, plan, source)?;
     let mut variables = source
         .arguments
         .iter()
@@ -235,10 +241,9 @@ fn checked_conditions(
             assignments: vec![], accumulations: vec![], insertions: vec![],
             removals: vec![], includes: vec![],
         };
-        let mut domains = check_domains(cst, plan, &query)?;
+        let CheckedConditions { predicates, variables: bindings, mut domains } = checked_conditions(cst, plan, &query)?;
         check_expression(&sum.value, b"F64", &mut domains, sum.origin)?;
-        let (predicates, bindings) = checked_conditions(cst, plan, &query)?;
-        let value = relational_scalar_expression(cst, plan, &sum.value, &bindings,
+        let value = relational_scalar_expression(cst, plan, &sum.value, &bindings, &domains,
             Some(b"F64"), sum.origin)?;
         variables.insert(sum.parameter.clone(), E::Sum { predicates, value: Box::new(value) });
     }
@@ -305,11 +310,11 @@ fn checked_conditions(
                 .map(|relation| relation.value_domain)
         });
         predicates.push(constructor(
-            relational_scalar_expression(cst, plan, left, &variables, expected, source.origin)?,
-            relational_scalar_expression(cst, plan, right, &variables, expected, source.origin)?,
+            relational_scalar_expression(cst, plan, left, &variables, &domains, expected, source.origin)?,
+            relational_scalar_expression(cst, plan, right, &variables, &domains, expected, source.origin)?,
         ));
     }
-    Ok((predicates, variables))
+    Ok(CheckedConditions { predicates, variables, domains })
 }
 
 pub(super) fn checked_handler(
@@ -321,7 +326,7 @@ pub(super) fn checked_handler(
     use CanonicalExecutablePredicateV1 as P;
     use CanonicalRelationEffectV1 as R;
     let error = || CanonicalSourceErrorV1::MissingExecutableBinding { origin: source.origin };
-    let (mut predicates, variables) = checked_conditions(cst, plan, source)?;
+    let CheckedConditions { mut predicates, variables, domains } = checked_conditions(cst, plan, source)?;
     let mut effects = BTreeMap::<CanonicalStateRefV1, Vec<R>>::new();
     for (assignments, mode) in [
         (&source.assignments, 0),
@@ -348,6 +353,7 @@ pub(super) fn checked_handler(
                 plan,
                 &assignment.value,
                 &variables,
+                &domains,
                 Some(domain),
                 source.origin,
             )?;
@@ -437,7 +443,7 @@ fn constrain(
     Ok(())
 }
 
-fn expression_domain<'a>(
+pub(super) fn expression_domain<'a>(
     expression: &'a CanonicalScalarExpressionV1,
     domains: &'a BTreeMap<Vec<u8>, Vec<u8>>,
 ) -> Option<&'a [u8]> {
@@ -453,7 +459,7 @@ fn expression_domain<'a>(
     }
 }
 
-fn check_expression(
+pub(super) fn check_expression(
     expression: &CanonicalScalarExpressionV1,
     expected: &[u8],
     domains: &mut BTreeMap<Vec<u8>, Vec<u8>>,
@@ -554,6 +560,11 @@ pub(super) fn check_domains(
             relation.subject_domain,
             condition.origin,
         )?;
+    }
+    for binding in &source.scalar_bindings {
+        for (expression, domain) in &binding.typed_roles {
+            check_expression(expression, domain, &mut domains, binding.origin)?;
+        }
     }
     for assignment in source
         .assignments

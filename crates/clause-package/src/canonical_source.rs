@@ -1176,6 +1176,7 @@ struct GeneralHandlerArgumentCst {
 struct ScalarLawBindingCst {
     origin: CanonicalSourceOriginV1,
     parameter: Vec<u8>,
+    typed_roles: Vec<(CanonicalScalarExpressionV1, Vec<u8>)>,
     cases: Vec<ScalarLawCase>,
 }
 
@@ -4506,6 +4507,8 @@ fn expand_scalar_law_bindings(
 }
 
 fn canonical_general_executable_expression(
+    cst: &CanonicalSourceCstV1,
+    plan: &CanonicalSourceAllocationPlanV1,
     expression: &CanonicalScalarExpressionV1,
     current: &CanonicalStateRefV1,
     parameters: &BTreeMap<Vec<u8>, CanonicalStateRefV1>,
@@ -4531,7 +4534,7 @@ fn canonical_general_executable_expression(
     }
     let lower_expression = |expression: &CanonicalScalarExpressionV1| {
         canonical_general_executable_expression(
-            expression, current, parameters, arguments, referents, bindings, origin,
+            cst, plan, expression, current, parameters, arguments, referents, bindings, origin,
         )
     };
     let pair = |left: &CanonicalScalarExpressionV1,
@@ -4548,7 +4551,8 @@ fn canonical_general_executable_expression(
             Ok(CanonicalExecutableExpressionV1::GreaterThan(left, right))
         }
         CanonicalScalarExpressionV1::Equal(left, right) => {
-            let (left, right) = pair(left, right)?;
+            let (mut left, mut right) = pair(left, right)?;
+            normalize_typed_equality(cst, plan, &mut left, &mut right, origin)?;
             Ok(CanonicalExecutableExpressionV1::Equal(left, right))
         }
         CanonicalScalarExpressionV1::LessThanOrEqual(left, right) => {
@@ -4583,6 +4587,8 @@ fn canonical_general_executable_expression(
 }
 
 fn canonical_general_executable_predicates(
+    cst: &CanonicalSourceCstV1,
+    plan: &CanonicalSourceAllocationPlanV1,
     predicates: &[CanonicalScalarPredicateV1],
     current: &CanonicalStateRefV1,
     parameters: &BTreeMap<Vec<u8>, CanonicalStateRefV1>,
@@ -4616,10 +4622,10 @@ fn canonical_general_executable_predicates(
             };
             Ok(constructor(
                 canonical_general_executable_expression(
-                    left, current, parameters, arguments, referents, bindings, origin,
+                    cst, plan, left, current, parameters, arguments, referents, bindings, origin,
                 )?,
                 canonical_general_executable_expression(
-                    right, current, parameters, arguments, referents, bindings, origin,
+                    cst, plan, right, current, parameters, arguments, referents, bindings, origin,
                 )?,
             ))
         })
@@ -4803,12 +4809,13 @@ fn relational_scalar_expression(
     plan: &CanonicalSourceAllocationPlanV1,
     expression: &CanonicalScalarExpressionV1,
     variables: &BTreeMap<Vec<u8>, CanonicalExecutableExpressionV1>,
+    domains: &BTreeMap<Vec<u8>, Vec<u8>>,
     expected_domain: Option<&[u8]>,
     origin: CanonicalSourceOriginV1,
 ) -> Result<CanonicalExecutableExpressionV1, CanonicalSourceErrorV1> {
     let lower_expression = |expression: &CanonicalScalarExpressionV1,
                             expected_domain: Option<&[u8]>| {
-        relational_scalar_expression(cst, plan, expression, variables, expected_domain, origin)
+        relational_scalar_expression(cst, plan, expression, variables, domains, expected_domain, origin)
     };
     let pair = |left: &CanonicalScalarExpressionV1,
                 right: &CanonicalScalarExpressionV1,
@@ -4825,7 +4832,9 @@ fn relational_scalar_expression(
             CanonicalExecutableExpressionV1::GreaterThan(left, right)
         }
         CanonicalScalarExpressionV1::Equal(left, right) => {
-            let (left, right) = pair(left, right, None)?;
+            let operand_domain = relational::expression_domain(left, domains)
+                .or_else(|| relational::expression_domain(right, domains));
+            let (left, right) = pair(left, right, operand_domain)?;
             CanonicalExecutableExpressionV1::Equal(left, right)
         }
         CanonicalScalarExpressionV1::LessThanOrEqual(left, right) => {
@@ -4917,6 +4926,7 @@ fn relational_checked_handler(
     source: &GeneralHandlerCst,
 ) -> Result<CanonicalExecutableHandlerV1, CanonicalSourceErrorV1> {
     if !source.scalar_bindings.is_empty() {
+        relational::check_domains(cst, plan, source)?;
         let mut compiled: Option<CanonicalExecutableHandlerV1> = None;
         for case in binding_cases(&source.scalar_bindings)? {
             let specialized = specialize_scalar_binding_case(source, &case)?;
@@ -5360,6 +5370,7 @@ fn checked_executable_handlers(
             .map(|argument| (argument.designation.clone(), argument.ordinal))
             .collect::<BTreeMap<_, _>>();
         let mut rules = Vec::with_capacity(solutions.len());
+        relational::check_domains(cst, plan, source)?;
         for scalar_case in binding_cases(&source.scalar_bindings)? {
             relational::check_domains(cst, plan, &specialize_scalar_binding_case(source, &scalar_case)?)?;
             let scalar_bindings = &scalar_case.bindings;
@@ -5452,6 +5463,8 @@ fn checked_executable_handlers(
                 removals.dedup();
                 for binding in &source.scalar_bindings {
                     canonical_general_executable_expression(
+                        cst,
+                        plan,
                         &scalar_bindings[&binding.parameter],
                         &current,
                         &parameters,
@@ -5462,6 +5475,8 @@ fn checked_executable_handlers(
                     )?;
                 }
                 let mut predicates = canonical_general_executable_predicates(
+                    cst,
+                    plan,
                     &source_predicates,
                     &current,
                     &parameters,
@@ -5549,6 +5564,8 @@ fn checked_executable_handlers(
                                 source.origin,
                             )?,
                             value: canonical_general_executable_expression(
+                                cst,
+                                plan,
                                 &assignment.value,
                                 &current,
                                 &parameters,
@@ -5573,6 +5590,8 @@ fn checked_executable_handlers(
                                     source.origin,
                                 )?,
                                 value: canonical_general_executable_expression(
+                                    cst,
+                                    plan,
                                     &assignment.value,
                                     &current,
                                     &parameters,
@@ -5587,6 +5606,8 @@ fn checked_executable_handlers(
                 );
                 for insertion in many_insertions {
                     let value = canonical_general_executable_expression(
+                        cst,
+                        plan,
                         &insertion.value,
                         &current,
                         &parameters,
@@ -5658,6 +5679,8 @@ fn checked_executable_handlers(
                         });
                     }
                     let delta = canonical_general_executable_expression(
+                        cst,
+                        plan,
                         &accumulation.value,
                         &current,
                         &parameters,
@@ -5760,19 +5783,30 @@ fn normalize_typed_predicate(
     origin: CanonicalSourceOriginV1,
 ) -> Result<(), CanonicalSourceErrorV1> {
     if let CanonicalExecutablePredicateV1::Equal(left, right) = predicate {
-        match (left, right) {
-            (
-                CanonicalExecutableExpressionV1::State(state),
-                CanonicalExecutableExpressionV1::Constant(value),
-            )
-            | (
-                CanonicalExecutableExpressionV1::Constant(value),
-                CanonicalExecutableExpressionV1::State(state),
-            ) => {
-                *value = typed_state_value(cst, plan, state, value.clone(), origin)?;
-            }
-            _ => {}
+        normalize_typed_equality(cst, plan, left, right, origin)?;
+    }
+    Ok(())
+}
+
+fn normalize_typed_equality(
+    cst: &CanonicalSourceCstV1,
+    plan: &CanonicalSourceAllocationPlanV1,
+    left: &mut CanonicalExecutableExpressionV1,
+    right: &mut CanonicalExecutableExpressionV1,
+    origin: CanonicalSourceOriginV1,
+) -> Result<(), CanonicalSourceErrorV1> {
+    match (left, right) {
+        (
+            CanonicalExecutableExpressionV1::State(state),
+            CanonicalExecutableExpressionV1::Constant(value),
+        )
+        | (
+            CanonicalExecutableExpressionV1::Constant(value),
+            CanonicalExecutableExpressionV1::State(state),
+        ) => {
+            *value = typed_state_value(cst, plan, state, value.clone(), origin)?;
         }
+        _ => {}
     }
     Ok(())
 }
