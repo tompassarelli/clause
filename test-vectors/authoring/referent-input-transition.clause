@@ -19,11 +19,11 @@ relation progress
   mode given item yields value: one
 
 first
-  shape: Item
+  member of: Item
 second
-  shape: Item
+  member of: Item
 shared-class
-  shape: ItemClass
+  member of: ItemClass
 first item class shared-class
 second item class shared-class
 first selected false

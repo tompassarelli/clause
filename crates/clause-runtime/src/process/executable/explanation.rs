@@ -58,7 +58,8 @@ impl std::ops::Deref for ExecutableExpressionReferenceV1 {
             ExpressionCoordinate::Predicate(index) => &rule.predicates[index],
             ExpressionCoordinate::Assignment(index) => &rule.assignments[index].1,
             ExpressionCoordinate::RowEffectValue { assignment, effect } => {
-                let ExecutableExpressionV1::RelationEffects(effects) = &rule.assignments[assignment].1 else {
+                let (ExecutableExpressionV1::RelationEffects(effects)
+                    | ExecutableExpressionV1::DerivedRelation(effects)) = &rule.assignments[assignment].1 else {
                     unreachable!("expression coordinate is created from a checked row effect")
                 };
                 effects[effect].parts().2

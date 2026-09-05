@@ -1,0 +1,18 @@
+Device
+F64
+
+charge
+  domain: Device
+  range: F64
+  cardinality: one
+
+lamp
+  charge: 2.0
+
+on consume ?device
+  when
+    ?device charge ?prior
+  withdraw
+    ?device charge ?prior
+  include
+    ?device charge ?prior - 1.0

@@ -1,0 +1,79 @@
+Task
+Root
+F64
+Text
+
+duration
+  domain: Task
+  range: F64
+  cardinality: one
+reason
+  domain: Root
+  range: Text
+  cardinality: one
+
+prerequisite
+  domain: Task
+  range: Task
+  cardinality: many
+obstruction
+  domain: Task
+  range: Root
+  cardinality: many
+blocker
+  domain: Task
+  range: Root
+  cardinality: many
+
+approval
+  reason: "Review approval is missing"
+material
+  reason: "Build material is unavailable"
+
+build
+  duration: 3.0
+  prerequisite: design
+review
+  duration: 1.0
+  prerequisite: build
+design
+  duration: 2.0
+  prerequisite: review
+  obstruction: approval
+  obstruction: material
+
+law direct-obstruction
+  if
+    ?task obstruction ?root
+  then
+    ?task blocker ?root
+derive direct-obstruction
+
+law prerequisite-obstruction
+  if
+    ?task:
+      prerequisite: ?prior
+    ?prior:
+      blocker: ?root
+  then
+    ?task:
+      blocker: ?root
+derive prerequisite-obstruction
+
+on inspect ?task
+  when
+    ?task obstruction ?root
+  include
+    ?task obstruction ?root
+
+on resolve ?task ?root
+  when
+    ?task obstruction ?root
+  withdraw
+    ?task obstruction ?root
+
+on obstruct ?task ?root
+  when
+    ?task prerequisite ?prior
+  include
+    ?task obstruction ?root

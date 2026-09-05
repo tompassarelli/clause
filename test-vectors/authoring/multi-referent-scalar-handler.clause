@@ -15,13 +15,13 @@ relation loot-state
   mode given loot yields value: one
 
 ashen-key
-  shape: Loot
+  member of: Loot
 cephorium-cache
-  shape: Loot
+  member of: Loot
 hidden
-  shape: LootState
+  member of: LootState
 acquired
-  shape: LootState
+  member of: LootState
 
 ashen-key carried distance 1.0
 cephorium-cache carried distance 2.0

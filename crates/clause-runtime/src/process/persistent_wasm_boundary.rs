@@ -314,6 +314,24 @@ impl WasmPersistentSessionBoundaryV1 {
         self.captured_session(handle)?.explanation_term(entry).map_err(|_| WasmProcessStatusV1::ProcessRejected)
     }
 
+    pub fn current_accepted_projection_term(
+        &self,
+        handle: WasmSessionHandleV1,
+    ) -> Result<Term, WasmProcessStatusV1> {
+        self.captured_session(handle)?
+            .current_accepted_projection_term()
+            .map_err(|_| WasmProcessStatusV1::ProcessRejected)?
+            .cloned()
+            .ok_or(WasmProcessStatusV1::ProcessRejected)
+    }
+
+    pub fn current_accepted_projection_bytes(
+        &self,
+        handle: WasmSessionHandleV1,
+    ) -> Result<Vec<u8>, WasmProcessStatusV1> {
+        diagnostic_bytes(self.current_accepted_projection_term(handle)?)
+    }
+
     pub fn intervene(&self, handle: WasmSessionHandleV1, query: &super::ExecutableInterventionQueryV1) -> Result<super::ExecutableInterventionResultV1, WasmProcessStatusV1> {
         self.captured_session(handle)?.intervene(query).map_err(|_| WasmProcessStatusV1::ProcessRejected)
     }
@@ -2025,6 +2043,12 @@ mod wasm_exports {
     #[wasm_bindgen]
     pub fn clause_session_v1_explain_bulk(slot: u32, generation: u32, entry: u16) -> Result<Vec<u8>, wasm_bindgen::JsError> {
         SESSION_BOUNDARY.with_borrow(|boundary| boundary.explanation_bytes(super::WasmSessionHandleV1 { slot, generation }, entry))
+            .map_err(|error| wasm_bindgen::JsError::new(&error.to_string()))
+    }
+
+    #[wasm_bindgen]
+    pub fn clause_session_v1_project_bulk(slot: u32, generation: u32) -> Result<Vec<u8>, wasm_bindgen::JsError> {
+        SESSION_BOUNDARY.with_borrow(|boundary| boundary.current_accepted_projection_bytes(super::WasmSessionHandleV1 { slot, generation }))
             .map_err(|error| wasm_bindgen::JsError::new(&error.to_string()))
     }
 

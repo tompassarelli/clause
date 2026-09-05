@@ -20,7 +20,7 @@ relation remaining
   mode given goal yields value: one
 
 account
-  shape: Account
+  member of: Account
 account balance 100.0
 
 on create-goal ?account ?amount ?duration
@@ -28,7 +28,7 @@ on create-goal ?account ?amount ?duration
     ?account balance ?balance
   create
     ?goal
-      shape: Goal
+      member of: Goal
   include
     ?account known goal ?goal
     ?goal contribution ?amount

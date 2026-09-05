@@ -15,8 +15,6 @@ relationships, laws, permissible transitions, effects, and physical
 constraints. Clause process semantics determines which typed activations and
 steps are admissible; checked physical execution specializes that meaning.
 
-This document is Clause's semantic authority.
-
 The product mission does not depend on this mechanism surviving. Clause aims
 to replace general-purpose languages for agent-authored software, not merely to
 serve governed databases or causal ledgers. That requires exceptional
@@ -26,6 +24,44 @@ static reuse, explicit resource control, and one language from native software
 through Wasm, JavaScript, browsers, and data systems. None of that support is
 implemented yet. The three-slot mechanism remains a falsifiable way to reach
 the mission, not a reason to narrow it.
+
+## Design discipline
+
+Author each independent semantic fact once. Checking, execution, queries,
+explanations, optimization, and editing must consume that same meaning, not
+parallel descriptions maintained by the author.
+
+Explicitness does not justify unnecessary meaning. Before requiring a
+declaration, classification, keyword, or wrapper, apply the deletion test:
+
+> If we remove it, what intended meaning, checking obligation, or necessary
+> disambiguation becomes inexpressible or ambiguous?
+
+If only compiler bookkeeping is lost, remove it from required source. If the
+information follows from existing facts and contracts, derive and check it.
+If several meanings remain possible, require the smallest explicit distinction
+that resolves them; do not guess.
+
+A task must not need a second entry in a `Task` registry merely to participate
+in `prerequisite`. Check the obligations of participation directly. Membership
+belongs in source when belonging itself matters, as with a team's roster.
+Structural conformance proves required capabilities; it neither requires nor
+asserts nominal membership. Removing registration must preserve those checks;
+a missing checker capability is an implementation gap, not a reason to weaken
+the contract or make authors supply redundant facts.
+
+Declarations and uses must share Clause's binding, focus, and constraint
+language. Grouping earns its place by clarifying scope or removing repetition,
+not by wrapping another miniature declaration language. Names must identify a
+precise concept or obligation; brevity alone is not clarity. Changing brackets
+or renaming a compiler category does not repair a redundant model.
+
+Before accepting a design, exercise it in a nontrivial executable program.
+Count independently authored facts and the places an ordinary change must
+touch, not just tokens or lines. Preserve independent choices about effects,
+authority, identity, cardinality, and order wherever they affect meaning.
+Documentation states each invariant at its authority and links to it elsewhere;
+every sentence must define, distinguish, constrain, or demonstrate something.
 
 ## Decision
 

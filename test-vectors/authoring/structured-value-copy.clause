@@ -20,7 +20,7 @@ relation moving
   mode given item yields value: one
 
 item
-  shape: Item
+  member of: Item
 item position Point { x: 2.0, y: 3.0 }
 item destination Point { x: 8.0, y: 9.0 }
 item moving true

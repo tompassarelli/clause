@@ -28,11 +28,11 @@ relation total
   mode given report yields value: one
 
 first
-  shape: Item
+  member of: Item
 second
-  shape: Item
+  member of: Item
 report
-  shape: Report
+  member of: Report
 first amount -3.0
 second amount 4.0
 report total 0.0

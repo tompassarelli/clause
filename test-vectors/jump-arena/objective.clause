@@ -11,7 +11,7 @@ relation objective-state
   mode given objective yields value: one
 
 game-objective
-  shape: Objective
+  member of: Objective
 game-objective objective state playing
 
 on complete-objective ?objective

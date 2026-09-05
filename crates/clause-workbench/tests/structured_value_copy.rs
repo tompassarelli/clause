@@ -76,7 +76,7 @@ fn whole_structure_copy_includes_runtime_created_rows() {
     ?item moving ?prior
   create
     ?new
-      shape: Item
+      member of: Item
   include
     ?new position Point { x: 5.0, y: 6.0 }
     ?new destination Point { x: 0.0, y: 0.0 }

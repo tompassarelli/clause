@@ -16,6 +16,18 @@ pub struct AuthoringExampleV1 {
 /// accepts it.
 pub const AUTHORING_EXAMPLES_V1: &[AuthoringExampleV1] = &[
     AuthoringExampleV1 {
+        slug: "role-contracts",
+        title: "Ordinary role contracts",
+        summary: "Domain, range, and cardinality facts constrain a binary role. Actual properties establish structural participation without a membership registry. Required properties remain checked across atomic changes.",
+        source: include_str!("../../../test-vectors/authoring/role-contracts.clause"),
+    },
+    AuthoringExampleV1 {
+        slug: "recursive-dependencies",
+        title: "Recursive dependencies with withdrawal",
+        summary: "Positive laws derive blockers through prerequisites. Independent support preserves a conclusion; removing the last root removes its consequences, even through cycles. Bounded closure either completes or returns an error without admitting a prefix.",
+        source: include_str!("../../../test-vectors/authoring/recursive-dependencies.clause"),
+    },
+    AuthoringExampleV1 {
         slug: "query-laws",
         title: "Reusable checked laws inside finite queries",
         summary: "Query-local scalar laws compose with typed rows, explicit inputs and predicates. Each matching row contributes once even when equal-result law cases overlap. A missing law result excludes that row; an invalid expression or exhausted search remains an error.",

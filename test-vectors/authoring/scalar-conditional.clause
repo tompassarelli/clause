@@ -7,7 +7,7 @@ relation reading
   mode given meter yields value: one
 
 meter
-  shape: Meter
+  member of: Meter
 meter reading 0.0
 
 on measure ?meter

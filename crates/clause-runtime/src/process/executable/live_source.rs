@@ -644,6 +644,7 @@ fn migrate_value(
                 value_kind: table.value_kind,
                 value_domain: table.value_domain.map(formation).transpose()?,
                 cardinality: table.cardinality,
+                total: table.total,
                 rows: table
                     .rows
                     .iter()

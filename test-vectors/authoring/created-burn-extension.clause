@@ -20,7 +20,7 @@ on ignite-target ?controller ?duration
     ?controller chosen target ?target
   create
     ?effect
-      shape: BurnEffect
+      member of: BurnEffect
   include
     ?effect burn target ?target
     ?effect effect remaining ?duration

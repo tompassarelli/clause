@@ -124,7 +124,9 @@ pub fn canonical_scalar_effects_v1(
                     .ok_or(CanonicalSourceErrorV1::RecordedPlanMismatch)?,
             )
             .map_err(|_| CanonicalSourceErrorV1::RecordedPlanMismatch)?;
-            let line = exact.trim();
+            let line = std::str::from_utf8(&include.local)
+                .map_err(|_| CanonicalSourceErrorV1::RecordedPlanMismatch)?;
+            let line = line.strip_prefix("accumulate ").unwrap_or(line);
             // Structured products need their own field operation; accepting a
             // whole row here would let callers replace a state binding.
             if split_shape_subject(line).is_some() {
@@ -135,7 +137,13 @@ pub fn canonical_scalar_effects_v1(
             };
             let tail = line[subject.len()..].trim_start();
             let expression = tail[relation.len()..].trim_start();
-            let offset = exact.len() - exact.trim_start().len() + line.len() - expression.len();
+            // Focus changes the printed prefix, not the parsed expression.
+            // Only a contiguous exact source suffix admits this scalar edit;
+            // multiline and structured values require their own operations.
+            let Some(prefix) = exact.trim_end().strip_suffix(expression) else {
+                continue;
+            };
+            let offset = prefix.len();
             effects.push(CanonicalScalarEffectV1 {
                 artifact: cst.artifact,
                 handler,

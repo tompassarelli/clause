@@ -26,7 +26,7 @@ relation reading
   mode given meter yields value: one
 
 meter-1
-  shape: Meter
+  member of: Meter
 meter-1 reading -4.0
 
 on rectify ?meter

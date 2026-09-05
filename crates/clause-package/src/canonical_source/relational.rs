@@ -12,30 +12,25 @@ pub(super) fn projection_views(
         let Some(CanonicalScalarValueV1::RelationTable(table)) = &state.initial_value else {
             continue;
         };
-        let mut seen = BTreeSet::new();
-        for item in &cst.items {
-            let CstKind::Application(application) = &item.kind else {
-                continue;
-            };
-            let CanonicalScalarValueV1::Symbol(domain) = &application.object else {
-                continue;
-            };
-            if application.role != b"shape"
-                || referent_type_id(cst, plan, domain, item.origin)? != table.subject_domain
-            {
-                continue;
-            }
-            if !seen.insert(application.subject.clone()) {
-                continue;
-            }
+        let (relation, origin) = cst.items.iter().find_map(|item| match &item.kind {
+            CstKind::Relation(relation) if relation.designation == state.state.relation_designation =>
+                Some((relation, item.origin)),
+            _ => None,
+        }).ok_or(CanonicalSourceErrorV1::RecordedPlanMismatch)?;
+        let relation = resolved_state_relation_for(plan, relation, origin)?;
+        let domain = relation.subject_domain;
+        if referent_type_id(cst, plan, domain, origin)? != table.subject_domain {
+            return Err(CanonicalSourceErrorV1::RecordedPlanMismatch);
+        }
+        for subject in conformance::members(cst, domain) {
             views.push(CanonicalRelationalProjectionV1 {
-                subject: application.subject.clone(),
+                subject: subject.clone(),
                 referent: declared_referent_value(
                     cst,
                     plan,
-                    &application.subject,
+                    subject,
                     domain,
-                    item.origin,
+                    origin,
                 )?,
                 state: state.state.clone(),
             });
@@ -84,17 +79,8 @@ fn facet(
         return Err(CanonicalSourceErrorV1::MissingExecutableBinding { origin });
     }
     let mut members = BTreeSet::new();
-    for item in &cst.items {
-        if let CstKind::Application(application) = &item.kind {
-            if application.role == b"shape"
-                && matches!(&application.object, CanonicalScalarValueV1::Symbol(shape) if shape == domain)
-            {
-                members.insert(
-                    declared_referent_value(cst, plan, &application.subject, domain, origin)?
-                        .identity,
-                );
-            }
-        }
+    for subject in conformance::members(cst, domain) {
+        members.insert(declared_referent_value(cst, plan, subject, domain, origin)?.identity);
     }
     Ok(CanonicalExecutableExpressionV1::ReferentFacet {
         value: Box::new(value),
@@ -115,6 +101,7 @@ fn sum_query(source: &GeneralHandlerCst, sum: &GeneralSumCst) -> Result<GeneralH
             ordinal: u16::try_from(ordinal).map_err(|_| CanonicalSourceErrorV1::MissingExecutableBinding { origin: sum.origin })? }))
         .collect::<Result<Vec<_>, CanonicalSourceErrorV1>>()?;
     Ok(GeneralHandlerCst {
+        derivation: false,
         origin: sum.origin, producer: source.producer.clone(),
         designation: source.designation.clone(), subject: Vec::new(),
         arguments, creations: vec![], parameter_sources: sum.parameter_sources.clone(),
@@ -463,6 +450,11 @@ pub(super) fn checked_handler(
     use CanonicalExecutablePredicateV1 as P;
     use CanonicalRelationEffectV1 as R;
     let error = || CanonicalSourceErrorV1::MissingExecutableBinding { origin: source.origin };
+    if source.derivation && (!source.sums.is_empty() || !source.creations.is_empty()
+        || !source.assignments.is_empty() || !source.accumulations.is_empty()
+        || !source.removals.is_empty() || !source.arguments.is_empty()) {
+        return Err(error());
+    }
     let CheckedConditions { mut predicates, variables, domains } = checked_conditions(cst, plan, source)?;
     let mut effects = BTreeMap::<CanonicalStateRefV1, Vec<R>>::new();
     for (assignments, mode) in [
@@ -481,6 +473,9 @@ pub(super) fn checked_handler(
                 source.origin,
             )?;
             let cardinality = state_relation_cardinality(cst, plan, target, source.origin)?;
+            if source.derivation && cardinality != SourceCardinality::Many {
+                return Err(error());
+            }
             if mode == 2 && (domain != b"F64" || cardinality == SourceCardinality::Many) {
                 return Err(error());
             }
@@ -550,15 +545,16 @@ pub(super) fn checked_handler(
             .push(R::Remove(subject, value));
     }
     Ok(CanonicalExecutableHandlerV1 {
-        id: formation_id(plan, &source.producer, &head_slot(CanonicalSourceProductionV1::Handler))?,
+        id: formation_id(plan, &source.producer, &head_slot(source.producer.production))?,
         designation: source.designation.clone(),
-        trigger: if source.designation == b"tick" { CanonicalHandlerTriggerV1::FixedTick }
+        trigger: if source.derivation { CanonicalHandlerTriggerV1::RelationClosure }
+            else if source.designation == b"tick" { CanonicalHandlerTriggerV1::FixedTick }
             else if !source.arguments.is_empty() || cst.items.iter().any(|item| matches!(&item.kind,
                 CstKind::KeyboardBinding(binding) if binding.handler_designation == source.designation))
                 || (source.predicates.is_empty() && source.boolean_conditions.is_empty()) { CanonicalHandlerTriggerV1::External }
             else { CanonicalHandlerTriggerV1::FixedTick },
         argument_count: u16::try_from(source.arguments.len()).map_err(|_| error())?,
-        rules: vec![CanonicalExecutableRuleV1 { law_origins: vec![], predicates, required_present: vec![], required_absent: vec![],
+        rules: vec![CanonicalExecutableRuleV1 { law_origins: if source.derivation { vec![source.origin] } else { vec![] }, predicates, required_present: vec![], required_absent: vec![],
             assignments: effects.into_iter().map(|(target, effects)| CanonicalExecutableAssignmentV1 { target, value: E::RelationEffects(effects) }).collect(), removals: vec![] }],
     })
 }

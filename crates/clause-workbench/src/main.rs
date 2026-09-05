@@ -15,7 +15,7 @@ use clause_workbench::{
     render_authoring_card_v1,
 };
 
-const USAGE: &str = "usage:\n  clause-workbench\n  clause-workbench source-loop SOURCE.clause\n  clause-workbench authoring-card [OUTPUT]\n  clause-workbench check-source FILE.clause\n  clause-workbench project-text SOURCE.clause HANDLER [OUTPUT]\n  clause-workbench project-nix SOURCE.clause [OUTPUT]";
+const USAGE: &str = "usage:\n  clause-workbench\n  clause-workbench source-loop SOURCE.clause\n  clause-workbench authoring-card [OUTPUT]\n  clause-workbench check-source FILE.clause\n  clause-workbench compile-source FILE.clause [OUTPUT]\n  clause-workbench project-text SOURCE.clause HANDLER [OUTPUT]\n  clause-workbench project-nix SOURCE.clause [OUTPUT]";
 
 fn main() -> ExitCode {
     let mut arguments = std::env::args_os().skip(1);
@@ -40,16 +40,18 @@ fn main() -> ExitCode {
             }
             print_authoring_card(destination.as_deref().map(Path::new))
         }
-        Some(command) if command == OsStr::new("check-source") => {
+        Some(command) if command == OsStr::new("check-source") || command == OsStr::new("compile-source") => {
             let Some(source) = arguments.next() else {
                 eprintln!("{USAGE}");
                 return ExitCode::FAILURE;
             };
+            let compile = command == OsStr::new("compile-source");
+            let destination = if compile { arguments.next() } else { None };
             if arguments.next().is_some() {
                 eprintln!("{USAGE}");
                 return ExitCode::FAILURE;
             }
-            check_source(Path::new(&source))
+            check_source(Path::new(&source), compile, destination.as_deref().map(Path::new))
         }
         Some(command) if command == OsStr::new("project-text") => {
             let (Some(source), Some(handler)) = (arguments.next(), arguments.next()) else {
@@ -245,7 +247,7 @@ fn print_authoring_card(destination: Option<&Path>) -> ExitCode {
     }
 }
 
-fn check_source(source: &Path) -> ExitCode {
+fn check_source(source: &Path, compile: bool, destination: Option<&Path>) -> ExitCode {
     let startup = Instant::now();
     let exact_source = match std::fs::read(source) {
         Ok(source) => source,
@@ -275,6 +277,20 @@ fn check_source(source: &Path) -> ExitCode {
             );
         }
         return ExitCode::FAILURE;
+    }
+    if compile {
+        let result = if let Some(destination) = destination {
+            std::fs::write(destination, &workbench.generation().cwr1)
+        } else {
+            std::io::stdout().lock().write_all(&workbench.generation().cwr1)
+        };
+        return match result {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(error) => {
+                eprintln!("compiled source write failed: {error}");
+                ExitCode::FAILURE
+            }
+        };
     }
     let mut output = std::io::stdout().lock();
     match write_generation(

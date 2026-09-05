@@ -320,6 +320,16 @@ impl ResidentSourceWorkbenchV1 {
         Ok(self.boundary.source_continuity_term(self.generation.handle)?)
     }
 
+    /// Read the package-declared projection of the latest accepted world.
+    /// Opening and reading consume no occurrence or command sequence.
+    pub fn project_current_world(
+        &self,
+    ) -> Result<clause_package::Term, ResidentSourceWorkbenchErrorV1> {
+        Ok(self
+            .boundary
+            .current_accepted_projection_term(self.generation.handle)?)
+    }
+
     pub fn recorded_event(&self, designation: &[u8]) -> Result<Option<&clause_runtime::ExecutableRecordedEventV1>, ResidentSourceWorkbenchErrorV1> {
         Ok(self.boundary.recorded_event(self.generation.handle, self.diagnostic_entry(designation)?)?)
     }
@@ -883,7 +893,7 @@ const fn fixed_tick_rank(trigger: CanonicalHandlerTriggerV1) -> u8 {
         CanonicalHandlerTriggerV1::FixedTickRoot => 0,
         CanonicalHandlerTriggerV1::FixedTickDerived => 1,
         CanonicalHandlerTriggerV1::FixedTick => 2,
-        CanonicalHandlerTriggerV1::External => 3,
+        CanonicalHandlerTriggerV1::External | CanonicalHandlerTriggerV1::RelationClosure => 3,
     }
 }
 

@@ -12,11 +12,11 @@ relation hostile
   mode given target yields value: one
 
 player
-  shape: Controller
+  member of: Controller
 first
-  shape: Target
+  member of: Target
 second
-  shape: Target
+  member of: Target
 player chosen target first
 first hostile false
 second hostile true

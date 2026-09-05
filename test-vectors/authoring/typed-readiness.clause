@@ -41,7 +41,7 @@ derive empty
 derive ready
 
 device
-  shape: Device
+  member of: Device
 device enabled true
 device charge 1.0
 device message "Unchecked"

@@ -314,7 +314,7 @@ fn physical_collection_program_rejects_unbound_bindings_and_unordered_facets() {
 #[test]
 fn one_creation_step_allocates_distinct_identity_per_matching_account() {
     let source = format!(
-        "{}\nsecond-account\n  shape: Account\nsecond-account balance 100.0\n",
+        "{}\nsecond-account\n  member of: Account\nsecond-account balance 100.0\n",
         std::str::from_utf8(SOURCE).unwrap()
     );
     let mut w = ResidentSourceWorkbenchV1::open(source.as_bytes()).unwrap();

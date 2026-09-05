@@ -14,7 +14,7 @@ relation reading
   mode given item yields value: one
 
 item
-  shape: Item
+  member of: Item
 item reading Reading { amount: 0.0, enabled: true, label: "a, b" }
 
 on measure ?item

@@ -7,7 +7,7 @@ use clause_package::{
     EffectIntentId, EffectIntentOccurrenceV1, IssuedAdmissionAuthorizationOccurrenceId,
     IssuedEffectAuthorizationOccurrenceId, IssuedEffectAuthorizationV1, ProcessCarrier,
     ProcessPackageId, ProgramRevisionId, RootPolicyAnchor, RunId, RuntimeSessionId,
-    StateRevisionId,
+    StateRevisionId, Term,
 };
 
 use super::{
@@ -30,6 +30,7 @@ pub struct PersistentProcessSessionV1 {
     world_base: StateRevisionId,
     allocation: RuntimeAllocationEpochV1,
     last_admitted: Option<ExecutableStateRevisionV1>,
+    accepted_projection: Option<Term>,
 }
 
 /// Physically owned state from a semantically retired persistent session.
@@ -52,6 +53,17 @@ impl PersistentProcessSessionV1 {
     pub fn source_continuity_term(&self) -> Result<clause_package::Term, PersistentProcessSessionErrorV1> {
         Ok(self.runtime()?.source_continuity_term()?)
     }
+
+    /// Return the package-declared projection of the latest accepted world.
+    /// This read allocates no semantic occurrence and never exposes an
+    /// unadmitted local configuration or hidden candidate.
+    pub fn current_accepted_projection_term(
+        &self,
+    ) -> Result<Option<&Term>, PersistentProcessSessionErrorV1> {
+        self.runtime()?;
+        Ok(self.accepted_projection.as_ref())
+    }
+
     pub fn recorded_event(&self, entry: u16) -> Result<Option<&super::ExecutableRecordedEventV1>, PersistentProcessSessionErrorV1> {
         Ok(self.runtime()?.recorded_event(entry))
     }
@@ -69,7 +81,12 @@ impl PersistentProcessSessionV1 {
         previous: &Self,
         checked: &super::CheckedExecutableSourceEditV1,
     ) -> Result<(), PersistentProcessSessionErrorV1> {
-        self.runtime_mut()?.initialize_source_continuity(previous.runtime()?, checked)?;
+        let accepted_projection = {
+            let runtime = self.runtime_mut()?;
+            runtime.initialize_source_continuity(previous.runtime()?, checked)?;
+            runtime.current_projection_term()?
+        };
+        self.accepted_projection = accepted_projection;
         Ok(())
     }
 
@@ -90,6 +107,7 @@ impl PersistentProcessSessionV1 {
             facts,
         )?;
         runtime.start_carrier_process(facts)?;
+        let accepted_projection = runtime.current_projection_term()?;
         let allocation = runtime.allocation();
         Ok(Self {
             runtime: Some(runtime),
@@ -98,6 +116,7 @@ impl PersistentProcessSessionV1 {
             world_base: facts.initial_state,
             allocation,
             last_admitted: None,
+            accepted_projection,
         })
     }
 
@@ -121,6 +140,7 @@ impl PersistentProcessSessionV1 {
             allocation,
         )?;
         runtime.start_carrier_process(facts)?;
+        let accepted_projection = runtime.current_projection_term()?;
         Ok(Self {
             runtime: Some(runtime),
             session: facts.session,
@@ -128,6 +148,7 @@ impl PersistentProcessSessionV1 {
             world_base: facts.initial_state,
             allocation,
             last_admitted: None,
+            accepted_projection,
         })
     }
 
@@ -303,6 +324,7 @@ impl PersistentProcessSessionV1 {
             .settle_carrier_process_project_and_start_epoch(authorization)?;
         self.world_base = admitted.id;
         self.last_admitted = Some(admitted.clone());
+        self.accepted_projection = projection.as_ref().map(|projection| projection.term.clone());
         Ok((admitted, projection))
     }
 

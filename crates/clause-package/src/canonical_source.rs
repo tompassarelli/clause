@@ -23,6 +23,9 @@ mod scalar_laws;
 use scalar_laws::*;
 mod live_edit;
 mod relational;
+mod contracts;
+mod conformance;
+mod patterns;
 mod structured_bindings;
 pub use live_edit::*;
 
@@ -30,6 +33,7 @@ const SOURCE_ARTIFACT_DOMAIN: &str = "clause/source-artifact/v1";
 const SOURCE_LOCAL_ALLOCATION_DOMAIN: &str = "clause/source-local-allocation/v1";
 const RESERVED_LOCAL_ID: u32 = 0;
 const MAX_CANONICAL_TEXT_BYTES: usize = u16::MAX as usize;
+const MEMBERSHIP_ROLE: &[u8] = b"member of";
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct CanonicalSourceArtifactIdV1([u8; IDENTITY_BYTES]);
@@ -292,6 +296,8 @@ pub struct CanonicalRelationTableV1 {
     pub subject_domain: FormationLocalId,
     pub value_kind: CanonicalRelationValueKindV1,
     pub cardinality: CanonicalRelationCardinalityV1,
+    /// Relation-level totality, not a Mode's result guarantee.
+    pub total: bool,
     pub rows: BTreeMap<CanonicalReferentV1, BTreeSet<CanonicalScalarValueV1>>,
 }
 
@@ -448,6 +454,8 @@ pub struct CanonicalExecutableRuleV1 {
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum CanonicalHandlerTriggerV1 {
+    /// Positive relation laws are closed atomically at every state boundary.
+    RelationClosure,
     /// A physical adapter supplies this handler's declared arguments.
     External,
     /// A source `on tick` rule consumes the fixed-tick delta-time argument and
@@ -652,6 +660,7 @@ pub struct CanonicalSourceCstV1 {
     applications: Vec<CanonicalSourceApplicationV1>,
     vocabularies: Vec<CanonicalSourceVocabularyV1>,
     subject_focuses: Vec<CanonicalSubjectFocusV1>,
+    conformance: std::sync::OnceLock<conformance::Domains>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1131,6 +1140,7 @@ struct ScalarHandlerCst {
 
 #[derive(Clone, Debug)]
 struct GeneralHandlerCst {
+    derivation: bool,
     origin: CanonicalSourceOriginV1,
     producer: CanonicalSemanticProducerV1,
     designation: Vec<u8>,
@@ -1391,6 +1401,8 @@ struct RelationEffectCst {
 
 #[derive(Clone, Debug)]
 struct RelationCst {
+    /// A checked descriptor elaborated from ordinary subject/role facts.
+    contract_origin: Option<CanonicalSourceOriginV1>,
     designation: Vec<u8>,
     surface: Vec<u8>,
     reading: Vec<RelationReadingPartCst>,
@@ -1557,11 +1569,15 @@ pub fn read_canonical_source_v1(
         }
         items.extend(parse_items(artifact, block, origin, &scalar_laws)?);
     }
+    items.extend(scalar_laws.relations.iter().filter_map(|relation|
+        relation.contract_origin.map(|origin| CstItem { origin, kind: CstKind::Relation(relation.clone()) })));
     retain_supported_boolean_derive_pairs(&mut items);
     // Scalar syntax is a front-end convenience, not a separate state system.
     // Promote only handlers connected to created relation rows into the same
     // general checked representation, without changing the source text.
-    if items.iter().any(|item| matches!(&item.kind, CstKind::GeneralHandler(handler) if !handler.creations.is_empty())) {
+    if items.iter().any(|item| matches!(&item.kind,
+        CstKind::GeneralHandler(handler) if handler.derivation || !handler.creations.is_empty()))
+        || items.iter().any(|item| matches!(&item.kind, CstKind::Relation(relation) if relation.contract_origin.is_some())) {
         let mut alternatives = BTreeMap::new();
         for (index, item) in items.iter().enumerate() {
             if !matches!(item.kind, CstKind::ScalarHandler(_)) { continue; }
@@ -1569,8 +1585,11 @@ pub fn read_canonical_source_v1(
             if let Some(handler) = parse_general_handler(artifact, &block, item.origin, &scalar_laws)? { alternatives.insert(index, handler); }
         }
         let mut connected = items.iter().filter_map(|item| match &item.kind {
-            CstKind::GeneralHandler(handler) if !handler.creations.is_empty() => Some(general_handler_relation_designations(handler, &items)), _ => None,
+            CstKind::GeneralHandler(handler) if handler.derivation || !handler.creations.is_empty() => Some(general_handler_relation_designations(handler, &items)), _ => None,
         }).flatten().collect::<BTreeSet<_>>();
+        connected.extend(items.iter().filter_map(|item| match &item.kind {
+            CstKind::Relation(relation) if relation.contract_origin.is_some() => Some(relation.surface.clone()), _ => None,
+        }));
         loop {
             let before = connected.len();
             for handler in items.iter().filter_map(|item| match &item.kind { CstKind::GeneralHandler(handler) => Some(handler), _ => None }).chain(alternatives.values()) {
@@ -1615,6 +1634,7 @@ pub fn read_canonical_source_v1(
         applications,
         vocabularies,
         subject_focuses,
+        conformance: std::sync::OnceLock::new(),
     })
 }
 
@@ -1957,7 +1977,7 @@ fn allocation_requests(
             CstKind::GeneralHandler(handler) => {
                 requested.push(AllocationRequest {
                     producer: handler.producer.clone(),
-                    slot: head_slot(CanonicalSourceProductionV1::Handler),
+                    slot: head_slot(handler.producer.production),
                     domain: AllocationDomain::Formation,
                 });
                 for include in &handler.includes {
@@ -2075,7 +2095,7 @@ fn allocation_requests(
                     || declared_state_relation(cst, &assertion.relation)
                 {
                     requested.push(AllocationRequest {
-                        producer: assertion_producer(&assertion.subject, &assertion.relation),
+                        producer: initial_assertion_producer(cst, &assertion.subject, &assertion.relation, assertion.origin),
                         slot: head_slot(CanonicalSourceProductionV1::Assertion),
                         domain: AllocationDomain::Formation,
                     });
@@ -2084,7 +2104,7 @@ fn allocation_requests(
             CstKind::ShapeAssertion(assertion) => {
                 if declared_state_relation(cst, &assertion.relation) {
                     requested.push(AllocationRequest {
-                        producer: assertion_producer(&assertion.subject, &assertion.relation),
+                        producer: initial_assertion_producer(cst, &assertion.subject, &assertion.relation, assertion.origin),
                         slot: head_slot(CanonicalSourceProductionV1::Assertion),
                         domain: AllocationDomain::Formation,
                     });
@@ -2105,7 +2125,7 @@ fn allocation_requests(
                     || declared_state_relation(cst, &assertion.relation)
                 {
                     requested.push(AllocationRequest {
-                        producer: assertion_producer(&assertion.subject, &assertion.relation),
+                        producer: initial_assertion_producer(cst, &assertion.subject, &assertion.relation, assertion.origin),
                         slot: head_slot(CanonicalSourceProductionV1::Assertion),
                         domain: AllocationDomain::Formation,
                     });
@@ -2137,7 +2157,7 @@ fn allocation_requests(
                     || declared_state_relation(cst, &assertion.relation)
                 {
                     requested.push(AllocationRequest {
-                        producer: assertion_producer(&assertion.subject, &assertion.relation),
+                        producer: initial_assertion_producer(cst, &assertion.subject, &assertion.relation, assertion.origin),
                         slot: head_slot(CanonicalSourceProductionV1::Assertion),
                         domain: AllocationDomain::Formation,
                     });
@@ -2155,7 +2175,7 @@ fn allocation_requests(
                 }) || declared_state_relation(cst, &assertion.relation)
                 {
                     requested.push(AllocationRequest {
-                        producer: assertion_producer(&assertion.subject, &assertion.relation),
+                        producer: initial_assertion_producer(cst, &assertion.subject, &assertion.relation, assertion.origin),
                         slot: head_slot(CanonicalSourceProductionV1::Assertion),
                         domain: AllocationDomain::Formation,
                     });
@@ -2173,7 +2193,7 @@ fn allocation_requests(
                 }) || declared_state_relation(cst, &assertion.relation)
                 {
                     requested.push(AllocationRequest {
-                        producer: assertion_producer(&assertion.subject, &assertion.relation),
+                        producer: initial_assertion_producer(cst, &assertion.subject, &assertion.relation, assertion.origin),
                         slot: head_slot(CanonicalSourceProductionV1::Assertion),
                         domain: AllocationDomain::Formation,
                     });
@@ -2274,7 +2294,7 @@ fn relational_handler_origins(cst: &CanonicalSourceCstV1) -> BTreeSet<CanonicalS
         .collect::<Vec<_>>();
     let mut origins = handlers
         .iter()
-        .filter(|handler| !handler.creations.is_empty() || !handler.sums.is_empty())
+        .filter(|handler| handler.derivation || !handler.creations.is_empty() || !handler.sums.is_empty())
         .map(|handler| handler.origin)
         .collect::<BTreeSet<_>>();
     let mut relations = handlers
@@ -2282,6 +2302,9 @@ fn relational_handler_origins(cst: &CanonicalSourceCstV1) -> BTreeSet<CanonicalS
         .filter(|handler| origins.contains(&handler.origin))
         .flat_map(|handler| general_handler_relation_designations(handler, &cst.items))
         .collect::<BTreeSet<_>>();
+    relations.extend(cst.items.iter().filter_map(|item| match &item.kind {
+        CstKind::Relation(relation) if relation.contract_origin.is_some() => Some(relation.surface.clone()), _ => None,
+    }));
     loop {
         let mut changed = false;
         for handler in &handlers {
@@ -2314,6 +2337,9 @@ fn relational_relation_designations(cst: &CanonicalSourceCstV1) -> BTreeSet<Vec<
             _ => None,
         })
         .flat_map(|handler| general_handler_relation_designations(handler, &cst.items))
+        .chain(cst.items.iter().filter_map(|item| match &item.kind {
+            CstKind::Relation(relation) if relation.contract_origin.is_some() => Some(relation.surface.clone()), _ => None,
+        }))
         .collect()
 }
 
@@ -2941,19 +2967,7 @@ fn referent_type_id(
 }
 
 fn declared_domain_facet(cst: &CanonicalSourceCstV1, designation: &[u8], domain: &[u8]) -> bool {
-    cst.items.iter().any(|item| match &item.kind {
-        CstKind::Application(application)
-            if application.subject == designation
-                && application.role == b"shape"
-                && matches!(
-                    &application.object,
-                    CanonicalScalarValueV1::Symbol(candidate) if candidate == domain
-                ) =>
-        {
-            true
-        }
-        _ => false,
-    })
+    conformance::members(cst, domain).any(|subject| subject.as_slice() == designation)
 }
 
 fn declared_referent_value(
@@ -2989,8 +3003,8 @@ fn input_subject_identity(
         .transpose()
 }
 
-// A declared nominal value retains its checked domain and occurrence identity.
-// An unshaped symbol has no asserted domain facet; no foreign spelling is an ID.
+// A referent retains its checked domain and occurrence identity. Neither a
+// conformance proof nor a membership fact turns foreign spelling into an ID.
 fn typed_state_value(
     cst: &CanonicalSourceCstV1,
     plan: &CanonicalSourceAllocationPlanV1,
@@ -3159,6 +3173,9 @@ fn canonical_relation_table(
     let mut rows = BTreeMap::<CanonicalReferentV1, BTreeSet<CanonicalScalarValueV1>>::new();
     for item in &cst.items {
         let (subject, value) = match &item.kind {
+            CstKind::Application(application) if application.role == surface && field.is_none() => (
+                application.subject.as_slice(), application.object.clone(),
+            ),
             CstKind::VectorAssertion(assertion)
                 if assertion.relation == surface && field.is_some() =>
             {
@@ -3248,6 +3265,8 @@ fn canonical_relation_table(
         subject_domain,
         value_kind,
         cardinality,
+        total: relation.relation.contract_origin.is_some()
+            && cardinality == CanonicalRelationCardinalityV1::One,
         rows,
     })
 }
@@ -3674,22 +3693,8 @@ fn resolve_general_parameter_states(
 ) -> Result<Vec<GeneralBindingSolution>, CanonicalSourceErrorV1> {
     let referent_domains_overlap = |left: &[u8], right: &[u8]| {
         left == right
-            || cst.items.iter().any(|item| {
-                let CstKind::Application(application) = &item.kind else {
-                    return false;
-                };
-                application.role == b"shape"
-                    && matches!(&application.object, CanonicalScalarValueV1::Symbol(domain) if domain == left)
-                    && cst.items.iter().any(|candidate| {
-                        matches!(
-                            &candidate.kind,
-                            CstKind::Application(other)
-                                if other.subject == application.subject
-                                    && other.role == b"shape"
-                                    && matches!(&other.object, CanonicalScalarValueV1::Symbol(domain) if domain == right)
-                        )
-                    })
-            })
+            || conformance::members(cst, left)
+                .any(|subject| declared_domain_facet(cst, subject, right))
     };
     let mut planned = Vec::with_capacity(sources.len());
     for source in sources {
@@ -3857,7 +3862,9 @@ fn resolved_boolean_derives<'a>(
         .items
         .iter()
         .filter_map(|item| match &item.kind {
-            CstKind::BooleanDerive(derive) => Some(derive),
+            CstKind::BooleanDerive(derive) if !cst.items.iter().any(|item| matches!(
+                &item.kind, CstKind::GeneralHandler(law) if law.derivation && law.designation == derive.designation
+            )) => Some(derive),
             _ => None,
         })
         .collect::<Vec<_>>();
@@ -5951,54 +5958,10 @@ fn checked_referent_input_bindings(
             return Err(invalid());
         }
         let argument = &source.arguments[0].designation;
-        // Infer the external argument's domain from its relational use or
-        // equality with a quantified subject, not the foreign caller's claim.
-        let mut domains = BTreeSet::new();
-        for state in source
-            .parameter_sources
-            .iter()
-            .chain(&source.membership_sources)
-            .chain(&source.required_sources)
-            .chain(
-                source
-                    .assignments
-                    .iter()
-                    .chain(&source.insertions)
-                    .map(|a| &a.target),
-            )
-        {
-            let relation = resolved_state_relation(cst, plan, &state.relation, source.origin)?;
-            if state.subject == *argument {
-                domains.insert(relation.subject_domain.to_vec());
-            }
-            if state.parameter == *argument {
-                domains.insert(relation.value_domain.to_vec());
-            }
-            for predicate in &source.predicates {
-                if let CanonicalScalarPredicateV1::Equal(
-                    CanonicalScalarExpressionV1::Parameter(left),
-                    CanonicalScalarExpressionV1::Parameter(right),
-                ) = predicate
-                    && ((left == argument && *right == state.subject)
-                        || (right == argument && *left == state.subject))
-                {
-                    domains.insert(relation.subject_domain.to_vec());
-                }
-            }
-        }
-        for assignment in source.assignments.iter().chain(&source.insertions) {
-            if assignment.value == CanonicalScalarExpressionV1::Parameter(argument.clone()) {
-                let relation =
-                    resolved_state_relation(cst, plan, &assignment.target.relation, source.origin)?;
-                domains.insert(general_source_value_domain(
-                    cst,
-                    &relation,
-                    &assignment.target,
-                    source.origin,
-                )?);
-            }
-        }
-        if domains != BTreeSet::from([binding.domain.clone()])
+        // Foreign inputs consume the same checked domain inference as rule
+        // execution, including literal selectors and correlated query inputs.
+        let domains = relational::check_domains(cst, plan, source)?;
+        if domains.get(argument) != Some(&binding.domain)
             || matches!(binding.domain.as_slice(), b"F64" | b"Bool" | b"Text")
         {
             return Err(invalid());
@@ -6311,9 +6274,24 @@ pub fn elaborate_canonical_source_package_v1(
                 });
             }
             CstKind::Application(application) => {
+                if application.role == MEMBERSHIP_ROLE {
+                    let CanonicalScalarValueV1::Symbol(domain) = &application.object else {
+                        return Err(CanonicalSourceErrorV1::MissingExecutableBinding {
+                            origin: item.origin,
+                        });
+                    };
+                    referent_type_id(cst, plan, domain, item.origin)?;
+                }
                 if application.role == b"shape"
                     && let CanonicalScalarValueV1::Symbol(domain) = &application.object
                 {
+                    if conformance::is_structural(cst, domain)
+                        && !declared_domain_facet(cst, &application.subject, domain)
+                    {
+                        return Err(CanonicalSourceErrorV1::MissingExecutableBinding {
+                            origin: item.origin,
+                        });
+                    }
                     if !named_formations.contains_key(domain)
                         && !source_vocabulary_declares_domain(cst, domain)
                     {
@@ -6676,7 +6654,7 @@ pub fn elaborate_canonical_source_package_v1(
                 ));
             }
             CstKind::GeneralHandler(handler) => {
-                let head = head_slot(CanonicalSourceProductionV1::Handler);
+                let head = head_slot(handler.producer.production);
                 let head_id = formation_id(plan, &handler.producer, &head)?;
                 formations.push(source_formation(
                     scope,
@@ -6684,7 +6662,7 @@ pub fn elaborate_canonical_source_package_v1(
                     cst.source_slice(handler.origin)
                         .expect("owned general handler origin"),
                     handler.origin,
-                    "general-handler",
+                    if handler.derivation { "relational-law" } else { "general-handler" },
                 )?);
                 emissions.push(emission(
                     plan,
@@ -6833,7 +6811,7 @@ pub fn elaborate_canonical_source_package_v1(
                     })
                     || declared_state_relation(cst, &assertion.relation)
                 {
-                    let producer = assertion_producer(&assertion.subject, &assertion.relation);
+                    let producer = initial_assertion_producer(cst, &assertion.subject, &assertion.relation, assertion.origin);
                     let slot = head_slot(CanonicalSourceProductionV1::Assertion);
                     let id = formation_id(plan, &producer, &slot)?;
                     formations.push(source_formation(
@@ -6855,7 +6833,7 @@ pub fn elaborate_canonical_source_package_v1(
             }
             CstKind::ShapeAssertion(assertion) => {
                 if declared_state_relation(cst, &assertion.relation) {
-                    let producer = assertion_producer(&assertion.subject, &assertion.relation);
+                    let producer = initial_assertion_producer(cst, &assertion.subject, &assertion.relation, assertion.origin);
                     let slot = head_slot(CanonicalSourceProductionV1::Assertion);
                     let id = formation_id(plan, &producer, &slot)?;
                     formations.push(source_formation(
@@ -6889,7 +6867,7 @@ pub fn elaborate_canonical_source_package_v1(
                     })
                     || declared_state_relation(cst, &assertion.relation)
                 {
-                    let producer = assertion_producer(&assertion.subject, &assertion.relation);
+                    let producer = initial_assertion_producer(cst, &assertion.subject, &assertion.relation, assertion.origin);
                     let slot = head_slot(CanonicalSourceProductionV1::Assertion);
                     let id = formation_id(plan, &producer, &slot)?;
                     formations.push(source_formation(
@@ -6934,7 +6912,7 @@ pub fn elaborate_canonical_source_package_v1(
                     })
                     || declared_state_relation(cst, &assertion.relation)
                 {
-                    let producer = assertion_producer(&assertion.subject, &assertion.relation);
+                    let producer = initial_assertion_producer(cst, &assertion.subject, &assertion.relation, assertion.origin);
                     let slot = head_slot(CanonicalSourceProductionV1::Assertion);
                     let id = formation_id(plan, &producer, &slot)?;
                     formations.push(source_formation(
@@ -6965,7 +6943,7 @@ pub fn elaborate_canonical_source_package_v1(
                         )
                 }) || declared_state_relation(cst, &assertion.relation)
                 {
-                    let producer = assertion_producer(&assertion.subject, &assertion.relation);
+                    let producer = initial_assertion_producer(cst, &assertion.subject, &assertion.relation, assertion.origin);
                     let slot = head_slot(CanonicalSourceProductionV1::Assertion);
                     let id = formation_id(plan, &producer, &slot)?;
                     formations.push(source_formation(
@@ -6996,7 +6974,7 @@ pub fn elaborate_canonical_source_package_v1(
                         )
                 }) || declared_state_relation(cst, &assertion.relation)
                 {
-                    let producer = assertion_producer(&assertion.subject, &assertion.relation);
+                    let producer = initial_assertion_producer(cst, &assertion.subject, &assertion.relation, assertion.origin);
                     let slot = head_slot(CanonicalSourceProductionV1::Assertion);
                     let id = formation_id(plan, &producer, &slot)?;
                     formations.push(source_formation(
@@ -7265,6 +7243,28 @@ fn parse_item(
     origin: CanonicalSourceOriginV1,
     scalar_laws: &ScalarLawEnvironment,
 ) -> Result<CstItem, CanonicalSourceErrorV1> {
+    if block[0].text.starts_with("on ") || block[0].text.starts_with("law ") {
+        let logical = patterns::handler_lines(logical_source_lines(artifact, block)?)?;
+        let text = logical.iter().map(|line|
+            format!("{}{}", " ".repeat(line.indent), line.text)
+        ).collect::<Vec<_>>();
+        let expanded = logical.iter().zip(&text).map(|(line, text)| SourceLine {
+            text,
+            start: line.origin.start as usize,
+            end: line.origin.end as usize,
+            indent: line.indent,
+        }).collect::<Vec<_>>();
+        return parse_expanded_item(artifact, &expanded, origin, scalar_laws);
+    }
+    parse_expanded_item(artifact, block, origin, scalar_laws)
+}
+
+fn parse_expanded_item(
+    artifact: CanonicalSourceArtifactIdV1,
+    block: &[SourceLine<'_>],
+    origin: CanonicalSourceOriginV1,
+    scalar_laws: &ScalarLawEnvironment,
+) -> Result<CstItem, CanonicalSourceErrorV1> {
     let head = block[0].text;
     if let Some(designation) = head.strip_prefix("capability ") {
         require_leaf(block, artifact)?;
@@ -7394,6 +7394,9 @@ fn parse_item(
                 origin,
                 kind: CstKind::BooleanLaw(law),
             });
+        }
+        if let Some(law) = parse_general_handler(artifact, block, origin, scalar_laws)? {
+            return Ok(CstItem { origin, kind: CstKind::GeneralHandler(law) });
         }
         return Ok(unsupported_item(
             artifact,
@@ -7757,12 +7760,8 @@ fn parse_subject_focus(
     block: &[SourceLine<'_>],
     origin: CanonicalSourceOriginV1,
 ) -> Result<Option<CanonicalSubjectFocusV1>, CanonicalSourceErrorV1> {
-    let children = block
-        .iter()
-        .skip(1)
-        .filter(|line| !line.text.trim().is_empty())
-        .copied()
-        .collect::<Vec<_>>();
+    let children = logical_source_lines(artifact, &block[1..])?
+        .into_iter().filter(|line| !line.text.is_empty()).collect::<Vec<_>>();
     if children.is_empty() {
         return Ok(None);
     }
@@ -7777,7 +7776,7 @@ fn parse_subject_focus(
         });
     }
     let subject = designation_bytes(head.text, head_origin)?;
-    let edges = parse_focused_edges(artifact, &children, 0, &subject)?;
+    let edges = parse_focused_edges(&children, 0, &subject, application_designation_bytes)?;
     Ok(Some(CanonicalSubjectFocusV1 {
         subject,
         origin,
@@ -7786,30 +7785,29 @@ fn parse_subject_focus(
 }
 
 fn parse_focused_edges(
-    artifact: CanonicalSourceArtifactIdV1,
-    lines: &[SourceLine<'_>],
+    lines: &[LogicalSourceLine],
     parent_indent: usize,
     subject: &[u8],
+    nested_subject: fn(&str, CanonicalSourceOriginV1) -> Result<Vec<u8>, CanonicalSourceErrorV1>,
 ) -> Result<Vec<CanonicalFocusedEdgeV1>, CanonicalSourceErrorV1> {
     let expected_indent =
         parent_indent
             .checked_add(2)
             .ok_or(CanonicalSourceErrorV1::UnexpectedIndentation {
-                origin: line_origin(artifact, lines[0]),
+                origin: lines[0].origin,
             })?;
     let mut edges = Vec::new();
     let mut cursor = 0;
     while cursor < lines.len() {
-        let line = lines[cursor];
-        let origin = line_origin(artifact, line);
+        let line = &lines[cursor];
+        let origin = line.origin;
         if line.indent != expected_indent {
             return Err(CanonicalSourceErrorV1::UnexpectedIndentation { origin });
         }
-        let source = line
-            .text
-            .get(line.indent..)
-            .filter(|source| !source.is_empty())
-            .ok_or(CanonicalSourceErrorV1::UnexpectedIndentation { origin })?;
+        let source = line.text.as_str();
+        if source.is_empty() {
+            return Err(CanonicalSourceErrorV1::UnexpectedIndentation { origin });
+        }
         let descendants_start = cursor + 1;
         let mut descendants_end = descendants_start;
         while descendants_end < lines.len() && lines[descendants_end].indent > line.indent {
@@ -7830,21 +7828,14 @@ fn parse_focused_edges(
             let descendants = &lines[descendants_start..descendants_end];
             let mut object_cursor = 0;
             while object_cursor < descendants.len() {
-                let object_line = descendants[object_cursor];
-                let object_origin = line_origin(artifact, object_line);
+                let object_line = &descendants[object_cursor];
+                let object_origin = object_line.origin;
                 if object_line.indent != object_indent {
                     return Err(CanonicalSourceErrorV1::UnexpectedIndentation {
                         origin: object_origin,
                     });
                 }
-                let object_source = object_line
-                    .text
-                    .get(object_line.indent..)
-                    .filter(|object| !object.is_empty())
-                    .ok_or(CanonicalSourceErrorV1::InvalidApplication {
-                        origin: object_origin,
-                    })?;
-                let object = parse_application_object(object_source, object_origin)?;
+                let object_source = object_line.text.as_str();
                 let mut application_source =
                     String::from_utf8(role.clone()).expect("application roles are valid UTF-8");
                 application_source.push_str(": ");
@@ -7863,16 +7854,12 @@ fn parse_focused_edges(
                     object_descendants_end += 1;
                 }
                 if object_descendants_start != object_descendants_end {
-                    let CanonicalScalarValueV1::Symbol(nested_subject) = object else {
-                        return Err(CanonicalSourceErrorV1::InvalidApplication {
-                            origin: object_origin,
-                        });
-                    };
+                    let focus = nested_subject(object_source, object_origin)?;
                     edges.extend(parse_focused_edges(
-                        artifact,
                         &descendants[object_descendants_start..object_descendants_end],
                         object_line.indent,
-                        &nested_subject,
+                        &focus,
+                        nested_subject,
                     )?);
                 }
                 object_cursor = object_descendants_end;
@@ -8513,14 +8500,19 @@ fn parse_general_handler(
     origin: CanonicalSourceOriginV1,
     scalar_laws: &ScalarLawEnvironment,
 ) -> Result<Option<GeneralHandlerCst>, CanonicalSourceErrorV1> {
-    let Some(header) = block[0].text.strip_prefix("on ") else {
+    let derivation = block[0].text.starts_with("law ");
+    let Some(header) = block[0].text.strip_prefix(if derivation { "law " } else { "on " }) else {
         return Ok(None);
     };
     let header = header.split_whitespace().collect::<Vec<_>>();
-    let [designation, subject, argument_designations @ ..] = header.as_slice() else {
-        return Ok(None);
+    let (designation, subject, argument_designations) = if derivation {
+        let [designation] = header.as_slice() else { return Ok(None) };
+        (*designation, "", &[][..])
+    } else {
+        let [designation, subject, arguments @ ..] = header.as_slice() else { return Ok(None) };
+        (*designation, *subject, arguments)
     };
-    if !subject.starts_with('?') {
+    if !derivation && !subject.starts_with('?') {
         return Ok(None);
     }
     let mut seen_arguments = BTreeSet::new();
@@ -8529,7 +8521,7 @@ fn parse_general_handler(
         .enumerate()
         .map(|(ordinal, designation)| {
             if !designation.starts_with('?')
-                || *designation == *subject
+                || *designation == subject
                 || !seen_arguments.insert(designation.as_bytes().to_vec())
             {
                 return Err(CanonicalSourceErrorV1::InvalidGeneralHandler { origin });
@@ -8541,14 +8533,14 @@ fn parse_general_handler(
             })
         })
         .collect::<Result<Vec<_>, _>>()?;
-    if *designation == "tick" && arguments.len() != 1 {
+    if designation == "tick" && arguments.len() != 1 {
         return Err(CanonicalSourceErrorV1::InvalidGeneralHandler { origin });
     }
 
-    let logical = logical_source_lines(artifact, block)?;
+    let logical = patterns::handler_lines(logical_source_lines(artifact, block)?)?;
     let mut section = String::new();
     let mut when = Vec::new();
-    let mut create = Vec::<(Vec<u8>, Vec<u8>)>::new();
+    let mut create = Vec::<(Vec<u8>, Option<Vec<u8>>)>::new();
     let mut pending_creation = None::<(Vec<u8>, CanonicalSourceOriginV1)>;
     let mut withdraw = Vec::new();
     let mut include = Vec::new();
@@ -8561,8 +8553,8 @@ fn parse_general_handler(
     {
         let trimmed = line.text.trim();
         if line.indent == 2 {
-            if pending_creation.is_some() {
-                return Err(CanonicalSourceErrorV1::InvalidGeneralHandler { origin });
+            if let Some((parameter, _)) = pending_creation.take() {
+                create.push((parameter, None));
             }
             if trimmed == "admit" {
                 return Err(CanonicalSourceErrorV1::NonCanonicalKeyword {
@@ -8570,6 +8562,9 @@ fn parse_general_handler(
                     keyword: b"admit".to_vec(),
                 });
             }
+            let trimmed = if derivation {
+                match trimmed { "if" => "when", "then" => "include", _ => return Ok(None) }
+            } else { trimmed };
             if !matches!(
                 trimmed,
                 "when" | "create" | "withdraw" | "include" | "accumulate"
@@ -8583,11 +8578,13 @@ fn parse_general_handler(
         }
         if section == "create" {
             if line.indent == 4 {
-                if pending_creation.is_some()
-                    || !trimmed.starts_with('?')
+                if !trimmed.starts_with('?')
                     || trimmed.contains(char::is_whitespace)
                 {
                     return Err(CanonicalSourceErrorV1::InvalidGeneralHandler { origin });
+                }
+                if let Some((parameter, _)) = pending_creation.take() {
+                    create.push((parameter, None));
                 }
                 pending_creation = Some((trimmed.as_bytes().to_vec(), line.origin));
                 continue;
@@ -8602,10 +8599,10 @@ fn parse_general_handler(
                 let CanonicalScalarValueV1::Symbol(domain) = object else {
                     return Err(CanonicalSourceErrorV1::InvalidGeneralHandler { origin });
                 };
-                if role != b"shape" || domain.starts_with(b"?") {
+                if role != MEMBERSHIP_ROLE || domain.starts_with(b"?") {
                     return Err(CanonicalSourceErrorV1::InvalidGeneralHandler { origin });
                 }
-                create.push((parameter, domain));
+                create.push((parameter, Some(domain)));
                 continue;
             }
             return Ok(None);
@@ -8622,8 +8619,8 @@ fn parse_general_handler(
             _ => return Ok(None),
         }
     }
-    if pending_creation.is_some() {
-        return Err(CanonicalSourceErrorV1::InvalidGeneralHandler { origin });
+    if let Some((parameter, _)) = pending_creation.take() {
+        create.push((parameter, None));
     }
     if include.is_empty() && accumulate.is_empty() && withdraw.is_empty() {
         return Ok(None);
@@ -8642,7 +8639,10 @@ fn parse_general_handler(
             }
             Ok(GeneralReferentCreationCst {
                 parameter: parameter.clone(),
-                domain: domain.clone(),
+                domain: match domain {
+                    Some(domain) => domain.clone(),
+                    None => conformance::creation_domain(parameter, &include, scalar_laws, origin)?,
+                },
                 binder: u16::try_from(binder)
                     .map_err(|_| CanonicalSourceErrorV1::InvalidGeneralHandler { origin })?,
             })
@@ -8874,11 +8874,14 @@ fn parse_general_handler(
     }
 
     Ok(Some(GeneralHandlerCst {
+        derivation,
         origin,
-        producer: semantic_producer(
+        producer: if derivation {
+            semantic_producer(CanonicalSourceProductionV1::Law, designation.as_bytes())
+        } else { semantic_producer(
             CanonicalSourceProductionV1::Handler,
             &handler_semantic_producer_from_logical(&logical),
-        ),
+        ) },
         designation: designation.as_bytes().to_vec(),
         subject: subject.as_bytes().to_vec(),
         arguments,
@@ -9091,7 +9094,19 @@ fn parse_general_assignments(
     include: &str,
     handler_subject: &str,
 ) -> Option<GeneralReplacementCst> {
-    let targets = parse_general_state_declaration(withdraw, handler_subject)?;
+    let targets = parse_general_state_declaration(withdraw, handler_subject).or_else(|| {
+        // The identical when-clause checks the old value. Replacing a literal
+        // needs no synthetic author-visible variable for that same value.
+        let (subject, relation, value) = split_general_scalar_insertion(withdraw)?;
+        if !matches!(value, CanonicalScalarExpressionV1::Number(_)
+            | CanonicalScalarExpressionV1::Boolean(_)
+            | CanonicalScalarExpressionV1::Text(_)
+            | CanonicalScalarExpressionV1::Symbol(_)) { return None; }
+        Some(vec![ScalarParameterSourceCst {
+            parameter: Vec::new(), subject: subject.as_bytes().to_vec(),
+            relation: relation.as_bytes().to_vec(), shape: None, field: None,
+        }])
+    })?;
     if let Some((withdraw_prefix, withdraw_shape, withdraw_fields)) = split_shape_subject(withdraw)
     {
         if let Some(result_parameter) = include.strip_prefix(&format!("{withdraw_prefix} "))
@@ -10695,6 +10710,7 @@ fn parse_relation(
         modes.iter().map(|mode| mode.canonical.as_slice()),
     )?;
     Ok(RelationCst {
+        contract_origin: None,
         designation,
         surface: surface.expect("a parsed Reading has one surface phrase"),
         reading: reading_pattern.expect("a parsed Reading has one role pattern"),
@@ -11766,6 +11782,42 @@ fn assertion_producer(subject: &[u8], relation: &[u8]) -> CanonicalSemanticProdu
     semantic_producer(CanonicalSourceProductionV1::Assertion, &key)
 }
 
+fn initial_assertion_producer(
+    cst: &CanonicalSourceCstV1,
+    subject: &[u8],
+    relation: &[u8],
+    origin: CanonicalSourceOriginV1,
+) -> CanonicalSemanticProducerV1 {
+    let mut producer = assertion_producer(subject, relation);
+    if declared_state_cardinality(cst, relation) != Some(SourceCardinality::Many)
+        || !relational_relation_designations(cst).contains(relation) {
+        return producer;
+    }
+    // A many-valued row's distinct facts have distinct semantic producers.
+    // Exact duplicate occurrences still require an explicit repetition plan.
+    let item = cst.items.iter().find(|item| item.origin == origin)
+        .expect("an initial assertion has an owned source occurrence");
+    let mut value = Vec::new();
+    match &item.kind {
+        CstKind::NumberAssertion(a) => append_scalar_semantic_bytes(&mut value, &CanonicalScalarValueV1::Number(a.value)),
+        CstKind::BooleanAssertion(a) => append_scalar_semantic_bytes(&mut value, &CanonicalScalarValueV1::Boolean(a.value)),
+        CstKind::TextAssertion(a) => append_scalar_semantic_bytes(&mut value, &CanonicalScalarValueV1::Text(a.value.clone())),
+        CstKind::SymbolAssertion(a) => append_scalar_semantic_bytes(&mut value, &CanonicalScalarValueV1::Symbol(a.value.clone())),
+        CstKind::VectorAssertion(a) => {
+            for component in [a.x, a.y, a.z] { append_scalar_semantic_bytes(&mut value, &CanonicalScalarValueV1::Number(component)); }
+        }
+        CstKind::ShapeAssertion(a) => {
+            frame_bytes(&mut value, &a.shape);
+            let mut fields = a.fields.iter().collect::<Vec<_>>();
+            fields.sort_by_key(|field| &field.name);
+            for field in fields { frame_bytes(&mut value, &field.name); append_scalar_semantic_bytes(&mut value, &field.value); }
+        }
+        _ => unreachable!("only initial assertions allocate initial assertion producers"),
+    }
+    frame_bytes(&mut producer.semantic_key, &value);
+    producer
+}
+
 fn frame_bytes(target: &mut Vec<u8>, value: &[u8]) {
     let length = u32::try_from(value.len()).expect("one source line length fits u32");
     target.extend_from_slice(&length.to_be_bytes());
@@ -11809,6 +11861,7 @@ fn retain_supported_boolean_derive_pairs(items: &mut [CstItem]) {
     let mut counts = BTreeMap::<Vec<u8>, (usize, usize)>::new();
     for item in items.iter() {
         match &item.kind {
+            CstKind::GeneralHandler(law) if law.derivation => counts.entry(law.designation.clone()).or_default().0 += 1,
             CstKind::BooleanLaw(law) => counts.entry(law.designation.clone()).or_default().0 += 1,
             CstKind::BooleanDerive(derive) => {
                 counts.entry(derive.designation.clone()).or_default().1 += 1;
@@ -11818,6 +11871,9 @@ fn retain_supported_boolean_derive_pairs(items: &mut [CstItem]) {
     }
     for item in items {
         let unsupported = match &item.kind {
+            CstKind::GeneralHandler(law) if law.derivation && counts.get(&law.designation).copied() != Some((1, 1)) => {
+                Some(CanonicalSourceProductionV1::Law)
+            }
             CstKind::BooleanLaw(law) if counts.get(&law.designation).copied() != Some((1, 1)) => {
                 Some(CanonicalSourceProductionV1::Law)
             }
@@ -11851,7 +11907,8 @@ fn validate_unique_designations(items: &[CstItem]) -> Result<(), CanonicalSource
             CstKind::Capability { designation } | CstKind::Shape { designation, .. } => {
                 Some((designation, false, false))
             }
-            CstKind::Relation(relation) => Some((&relation.designation, false, false)),
+            CstKind::Relation(relation) if relation.contract_origin.is_none() => Some((&relation.designation, false, false)),
+            CstKind::Relation(_) => None,
             CstKind::InputHandler(_)
             | CstKind::JumpHandler(_)
             | CstKind::ScalarHandler(_)

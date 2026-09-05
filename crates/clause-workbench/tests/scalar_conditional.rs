@@ -85,7 +85,7 @@ fn conditional_composes_with_laws_queries_guards_and_created_rows() {
     let frame = run(&mut w, b"measure");
     assert_eq!(field(field(&frame, b"report"), b"total").as_atom().unwrap().canonical_payload(), 12.0_f64.to_bits().to_le_bytes());
 
-    let source = format!("{source}\non spawn ?report\n  when\n    ?report total ?prior\n  create\n    ?new\n      shape: Item\n  include\n    ?new amount if(?prior > 0.0, 3.0, 0.0)\n");
+    let source = format!("{source}\non spawn ?report\n  when\n    ?report total ?prior\n  create\n    ?new\n      member of: Item\n  include\n    ?new amount if(?prior > 0.0, 3.0, 0.0)\n");
     let mut w = ResidentSourceWorkbenchV1::open(source.as_bytes()).unwrap();
     run(&mut w, b"spawn");
     let frame = run(&mut w, b"measure");

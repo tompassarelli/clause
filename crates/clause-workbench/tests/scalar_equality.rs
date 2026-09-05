@@ -69,7 +69,7 @@ fn equality_toggles_runtime_created_rows() {
     ?item selected ?prior
   create
     ?new
-      shape: Item
+      member of: Item
   include
     ?new selected true
 "#

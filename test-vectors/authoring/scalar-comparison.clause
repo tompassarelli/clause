@@ -12,7 +12,7 @@ relation positive
   mode given meter yields value: one
 
 meter
-  shape: Meter
+  member of: Meter
 meter reading 25.0
 meter positive false
 

@@ -208,13 +208,13 @@ relation connects
   mode given door origin yields destination: many
 
 Cellar
-  shape: Space
+  member of: Space
 Armory
-  shape: Space
+  member of: Space
 
 iron-door
-  shape: Door
-  shape: Lockable
+  member of: Door
+  member of: Lockable
   connects Cellar to Armory
   state locked
 
@@ -241,7 +241,7 @@ select all ?destination in egress
 
 for n in 101..106
   Door-{n}
-    shape: Door
+    member of: Door
 ```
 
 This is the accepted source shape. It does not expose ActivationIds, StepIds,
@@ -289,6 +289,12 @@ relative to `S`'s declared observation, effect, failure, progress, and
 representation boundaries. It is not exact Shape equality, nominal membership,
 denotation, or physical layout. Extra private structure may exist; additional
 public structure depends on whether `S` is open or closed.
+
+`member of: Group` instead asserts membership in an ordinary named group.
+Membership admits that referent where the group is required as a nominal
+domain; it does not prove the obligations of a structural contract. A referent
+may belong to several groups without acquiring a second identity. Neither
+group membership nor conformance follows from denotation.
 
 The current executable `shape` production checks the field/application subset
 of this contract. Modes, laws, observations, effects, failures, and progress
@@ -380,8 +386,8 @@ Repeated roles stay repeated and retain independent provenance:
 
 ```clause
 iron-door
-  shape: Door
-  shape: Lockable
+  member of: Door
+  member of: Lockable
 ```
 
 An interior role groups repeated objects without turning them into one
@@ -439,6 +445,73 @@ relation contract, never to the colon token. An ordinary top-level relational
 line still selects its declared assertive Reading; relation patterns inside
 `where`, `when`, `if`, and other child grammars retain their grammar-owned
 non-assertive stances.
+
+## Ordinary binary role contracts
+
+An ordinary subject-focus block can describe a binary role:
+
+```clause
+prerequisite
+  domain: Task
+  range: Task
+  cardinality: many
+```
+
+The role relates a subject in its domain to values in its range. Cardinality
+constrains distinct values per subject: `one` is exactly one, `maybe` at most
+one, `some` at least one, and `many` unrestricted. Repeated equal contract
+facts retain their occurrences but impose the same constraint; contradictory
+constraints fail. An incomplete description remains ordinary data and cannot
+justify executable use as a complete role contract.
+
+The same role is used in focused facts (`prerequisite: design`) and bound
+patterns (`?task prerequisite ?prior`). Its name and constraints are not
+repeated in a separate schema or source template. The contract supplies no
+facts about particular tasks and does not itself run a computation. A finite
+table realization can implement subject-to-value lookup under its cardinality
+without requiring the author to restate that contract as a mode.
+
+Ordinary role contracts sharing a subject domain jointly constrain its
+participants. A `duration` contract with domain Task, range F64, and cardinality
+`one` requires a numeric duration from each Task participant, including a
+prerequisite target. The checker establishes conformance from actual facts;
+it neither requires nor asserts group membership. Domains without these
+contracts remain nominal.
+
+Required roles must be present in the initial world and after each complete
+atomic change. Intermediate removals during replacement are not separate
+worlds. Relation-level `one` requires a value from every participant; a mode's
+`yields ...: one` instead guarantees a result for that computation's inputs.
+It does not impose a global required-property constraint.
+
+## Focused patterns
+
+Within a rule's clause block, `?task:` focuses its children on the named
+variable. The child grammar is the same explicit-role grammar used by focused
+facts; the enclosing section supplies the stance:
+
+```clause
+law prerequisite-obstruction
+  if
+    ?task:
+      prerequisite: ?prior
+    ?prior:
+      blocker: ?root
+  then
+    ?task:
+      blocker: ?root
+derive prerequisite-obstruction
+```
+
+The two occurrences of `?task` denote the same binding, as do those of `?prior`
+and `?root`. Focus neither introduces another variable nor supplies membership
+or conformance. A focused head must have children. `?task: Task` is not a typed
+focus header. Flat clauses may appear beside focused blocks.
+
+The same expansion applies in `if`, `then`, `when`, `withdraw`, `include`, and
+`accumulate`. A grouped role may focus its object for further children, exactly
+as in facts. Each resulting clause retains its own child's source span.
+Expression edits use those spans and preserve the surrounding focus.
 
 ## Relation, operator, mode, and Reading declarations
 
@@ -739,25 +812,22 @@ A transition may create a typed Referent and use that one fresh value
 throughout its atomic delta:
 
 ```clause
-on create-goal ?north ?title ?objective
+on add-task ?prior ?chosen ?duration
   when
-    ?north goal catalog state ?catalog
+    ?prior duration ?old-duration
+    ?prior = ?chosen
   create
-    ?goal: Goal
-  withdraw
-    ?north goal catalog state ?catalog
+    ?task
   include
-    ?north goal catalog state ?catalog
-    ?north known goal ?goal
-    ?goal title ?title
-    ?goal objective ?objective
+    ?task duration ?duration
+    ?task prerequisite ?prior
 ```
 
-Each `create` binder is allocated from the accepted transition Step and its
-declared Referent domain. Every use in the same rule denotes that exact value.
-Relations keyed by the new Referent are typed dynamic rows: their one, maybe,
-or many cardinality is enforced per subject, and the whole row delta commits
-or rejects atomically with the rest of the transition.
+The roles in `include` determine the new binder's domain; they must identify
+one domain unambiguously. Every use of `?task` denotes the same fresh identity.
+The complete candidate must satisfy its required roles before the change is
+accepted. An explicit nominal creation may instead give the binder a nested
+`member of: Group` fact; membership does not discharge structural obligations.
 
 `when` constrains one exact observed/base StateRevision. All `withdraw` and
 `include` content is grounded, conflict-checked, and staged as one candidate delta

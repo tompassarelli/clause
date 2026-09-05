@@ -59,7 +59,7 @@ fn typed_laws_use_runtime_created_rows_too() {
     ?device charge ?charge
   create
     ?new
-      shape: Device
+      member of: Device
   include
     ?new enabled false
     ?new charge 2.0
@@ -101,7 +101,7 @@ fn declared_types_survive_law_specialization() {
 #[test]
 fn readiness_accepts_equality_of_typed_state_referents() {
     let source = SOURCE
-        .replace("relation readiness", "Mode\n\nrelation mode\n  reads {device: Device} mode {value: Mode}\n  subject device\n  mode given device yields value: one\n\nrunning\n  shape: Mode\n\nrelation readiness")
+        .replace("relation readiness", "Mode\n\nrelation mode\n  reads {device: Device} mode {value: Mode}\n  subject device\n  mode given device yields value: one\n\nrunning\n  member of: Mode\n\nrelation readiness")
         .replace("device enabled true", "device enabled true\ndevice mode running")
         .replace("    ?device enabled ?enabled\n", "    ?device mode ?mode\n")
         .replace("?enabled enabled with charge ?charge reports ?message", "(?mode = running) enabled with charge ?charge reports ?message");
@@ -111,19 +111,19 @@ fn readiness_accepts_equality_of_typed_state_referents() {
         assert_eq!(message(&run(&mut w, b"inspect")), "Ready", "{expression}");
         assert_eq!(charge(&run(&mut w, b"use")), 0.0);
         assert_eq!(message(&run(&mut w, b"inspect")), "Empty");
-        let source = source.replace("device mode running", "device mode stopped\nstopped\n  shape: Mode");
+        let source = source.replace("device mode running", "device mode stopped\nstopped\n  member of: Mode");
         let mut w = ResidentSourceWorkbenchV1::open(source.as_bytes()).unwrap();
         assert_eq!(message(&run(&mut w, b"inspect")), "Disabled", "{expression}");
         assert_eq!(charge(&run(&mut w, b"use")), 1.0);
     }
     let source = format!("{source}\n{}", r#"stopped
-  shape: Mode
+  member of: Mode
 on spawn ?device
   when
     ?device charge ?charge
   create
     ?new
-      shape: Device
+      member of: Device
   include
     ?new mode stopped
     ?new enabled true

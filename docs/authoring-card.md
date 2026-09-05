@@ -10,6 +10,121 @@ Use that pin's workbench directly:
 
 Live source tooling offers an explicit checked scalar-effect replacement, not arbitrary text-reload continuity. Use `scalar_effects()` and `edit_scalar_effect()` with the captured generation and exact offered node; settle any pending candidate first. Native and Wasm carry the actual live world internally through the checked operation. Retained explanations describe accepted Steps; finite interventions query an isolated recorded pre-state without applying input or admitting a world. See `docs/live-source-semantics.md` for the compiler/runtime and passive browser contract, bounds, and remaining limits.
 
+## Ordinary role contracts
+
+Domain, range, and cardinality facts constrain a binary role. Actual properties establish structural participation without a membership registry. Required properties remain checked across atomic changes.
+
+Catalog ID: `role-contracts`
+
+```clause
+Device
+F64
+
+charge
+  domain: Device
+  range: F64
+  cardinality: one
+
+lamp
+  charge: 2.0
+
+on consume ?device
+  when
+    ?device charge ?prior
+  withdraw
+    ?device charge ?prior
+  include
+    ?device charge ?prior - 1.0
+```
+
+## Recursive dependencies with withdrawal
+
+Positive laws derive blockers through prerequisites. Independent support preserves a conclusion; removing the last root removes its consequences, even through cycles. Bounded closure either completes or returns an error without admitting a prefix.
+
+Catalog ID: `recursive-dependencies`
+
+```clause
+Task
+Root
+F64
+Text
+
+duration
+  domain: Task
+  range: F64
+  cardinality: one
+reason
+  domain: Root
+  range: Text
+  cardinality: one
+
+prerequisite
+  domain: Task
+  range: Task
+  cardinality: many
+obstruction
+  domain: Task
+  range: Root
+  cardinality: many
+blocker
+  domain: Task
+  range: Root
+  cardinality: many
+
+approval
+  reason: "Review approval is missing"
+material
+  reason: "Build material is unavailable"
+
+build
+  duration: 3.0
+  prerequisite: design
+review
+  duration: 1.0
+  prerequisite: build
+design
+  duration: 2.0
+  prerequisite: review
+  obstruction: approval
+  obstruction: material
+
+law direct-obstruction
+  if
+    ?task obstruction ?root
+  then
+    ?task blocker ?root
+derive direct-obstruction
+
+law prerequisite-obstruction
+  if
+    ?task:
+      prerequisite: ?prior
+    ?prior:
+      blocker: ?root
+  then
+    ?task:
+      blocker: ?root
+derive prerequisite-obstruction
+
+on inspect ?task
+  when
+    ?task obstruction ?root
+  include
+    ?task obstruction ?root
+
+on resolve ?task ?root
+  when
+    ?task obstruction ?root
+  withdraw
+    ?task obstruction ?root
+
+on obstruct ?task ?root
+  when
+    ?task prerequisite ?prior
+  include
+    ?task obstruction ?root
+```
+
 ## Reusable checked laws inside finite queries
 
 Query-local scalar laws compose with typed rows, explicit inputs and predicates. Each matching row contributes once even when equal-result law cases overlap. A missing law result excludes that row; an invalid expression or exhausted search remains an error.
@@ -47,11 +162,11 @@ relation total
   mode given report yields value: one
 
 first
-  shape: Item
+  member of: Item
 second
-  shape: Item
+  member of: Item
 report
-  shape: Report
+  member of: Report
 first amount -3.0
 second amount 4.0
 report total 0.0
@@ -82,7 +197,7 @@ relation reading
   mode given meter yields value: one
 
 meter
-  shape: Meter
+  member of: Meter
 meter reading 0.0
 
 on measure ?meter
@@ -123,9 +238,9 @@ relation available
   mode given device yields value: one
 
 first
-  shape: Device
+  member of: Device
 second
-  shape: Device
+  member of: Device
 first charge 2.0
 first available false
 second available false
@@ -150,7 +265,7 @@ on spawn ?device
     ?device charge ?charge
   create
     ?new
-      shape: Device
+      member of: Device
   include
     ?new charge ?charge
     ?new available false
@@ -172,7 +287,7 @@ relation selected
   mode given item yields value: one
 
 first
-  shape: Item
+  member of: Item
 first selected false
 
 on toggle ?item
@@ -205,7 +320,7 @@ relation positive
   mode given meter yields value: one
 
 meter
-  shape: Meter
+  member of: Meter
 meter reading 25.0
 meter positive false
 
@@ -250,7 +365,7 @@ relation moving
   mode given item yields value: one
 
 item
-  shape: Item
+  member of: Item
 item position Point { x: 2.0, y: 3.0 }
 item destination Point { x: 8.0, y: 9.0 }
 item moving true
@@ -284,7 +399,7 @@ relation reading
   mode given meter yields value: one
 
 meter
-  shape: Meter
+  member of: Meter
 meter reading 25.0
 
 on measure ?meter
@@ -334,11 +449,11 @@ relation count
   mode given report yields value: one
 
 first
-  shape: Item
+  member of: Item
 second
-  shape: Item
+  member of: Item
 report
-  shape: Report
+  member of: Report
 first enabled true
 first amount -2.0
 second enabled false
@@ -380,7 +495,7 @@ on create-item ?report ?amount
     ?report total ?prior
   create
     ?item
-      shape: Item
+      member of: Item
   include
     ?item amount ?amount
     ?item enabled true
@@ -454,7 +569,7 @@ relation empowered
   mode given player yields value: one
 
 player-1
-  shape: Player
+  member of: Player
 player-1 velocity Vec3 { x: 0.0, y: 0.0, z: 0.0 }
 player-1 empowered true
 
@@ -487,7 +602,7 @@ relation camera-heading
   mode given player yields value: one
 
 player-1
-  shape: Player
+  member of: Player
 player-1 camera heading 0.0
 
 bind scalar-input CameraHeading to observe-camera-heading
@@ -570,11 +685,11 @@ relation progress
   mode given item yields value: one
 
 first
-  shape: Item
+  member of: Item
 second
-  shape: Item
+  member of: Item
 shared-class
-  shape: ItemClass
+  member of: ItemClass
 first item class shared-class
 second item class shared-class
 first selected false
@@ -642,16 +757,16 @@ relation cooldown
   mode given contributor yields value: one
 
 controller
-  shape: Controller
+  member of: Controller
 first
-  shape: Account
-  shape: Contributor
+  member of: Account
+  member of: Contributor
 second
-  shape: Account
+  member of: Account
 alpha
-  shape: Contributor
+  member of: Contributor
 beta
-  shape: Contributor
+  member of: Contributor
 
 controller chosen account first
 first balance 100.0
@@ -753,7 +868,7 @@ relation banner
   mode given north yields value: one
 
 north-main
-  shape: North
+  member of: North
 north-main goal state no-goal
 north-main banner "North says:\n\"ready\" 🚀"
 
@@ -869,11 +984,11 @@ relation goal-catalog-state
   mode given north yields value: one
 
 north-main
-  shape: North
+  member of: North
 ready
-  shape: GoalStatus
+  member of: GoalStatus
 active
-  shape: GoalStatus
+  member of: GoalStatus
 north-main goal catalog state ready
 
 on create-goal ?north ?title ?objective
@@ -881,7 +996,7 @@ on create-goal ?north ?title ?objective
     ?north goal catalog state ?catalog
   create
     ?goal
-      shape: Goal
+      member of: Goal
   withdraw
     ?north goal catalog state ?catalog
   include
@@ -933,7 +1048,7 @@ relation remaining
   mode given goal yields value: one
 
 account
-  shape: Account
+  member of: Account
 account balance 100.0
 
 on create-goal ?account ?amount ?duration
@@ -941,7 +1056,7 @@ on create-goal ?account ?amount ?duration
     ?account balance ?balance
   create
     ?goal
-      shape: Goal
+      member of: Goal
   include
     ?account known goal ?goal
     ?goal contribution ?amount
@@ -1065,11 +1180,11 @@ derive clamp-interior
 derive clamp-upper
 
 magitek-boar
-  shape: Actor
+  member of: Actor
 blade-two
-  shape: Move
+  member of: Move
 combat-rules
-  shape: CombatRules
+  member of: CombatRules
 
 magitek-boar vitality 100.0
 magitek-boar destabilization 100.0
@@ -1175,7 +1290,7 @@ relation reading
   mode given meter yields value: one
 
 meter-1
-  shape: Meter
+  member of: Meter
 meter-1 reading -4.0
 
 on rectify ?meter

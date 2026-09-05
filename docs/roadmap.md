@@ -9,12 +9,38 @@
 
 ## Current position
 
+The resident compiler accepts ordinary binary role contracts expressed as
+domain/range/cardinality facts. The executable scheduling fixture uses those
+same roles in initial facts and positive recursive laws. Atomic reclosure
+preserves independently supported conclusions and removes unsupported cycles
+after the last root is withdrawn. Closure is bounded; exhaustion admits no
+partial result. Derived targets are currently separate many-valued tables,
+without direct external writes, negation, aggregates, or allocation in their
+recursive rules.
+
+Named-variable focus (`?task:`) now shares the fact reader's nested edge grammar
+across rule conditions and conclusions, handler reads, removals, insertions,
+and contributions. Focused recursive withdrawal and scalar expression editing
+run through the resident compiler; the edit preserves live state and source
+layout. This is not the completed extensible parser or formatter.
+
+Ordinary binary role contracts now check structural participation without
+nominal registration: required properties, scalar types, reference targets,
+and record fields. Atomic changes preserve required properties, and bare
+creation binders infer one domain from their inserted roles. The scheduling
+fixture contains no membership registry. Domains without ordinary contracts
+remain nominal. Behavioral conformance, multi-domain creation, declaration-free
+derived-role typing, and source-level explanation/hypothetical/repair queries
+remain work. Contract vocabulary still uses built-in spellings, not a general
+extension mechanism; `some` has no runtime table lowering yet. The fixture is
+not the completed interactive second application.
+
 The bounded resident compiler now composes finite F64 scalar laws by declared
 Reading and role bindings, including symbolic Readings, caller-independent
 binders, dependent results, source origins, and conservative output-uniqueness
 checking. Combat bounds and the bounded tick adapter use those same cases;
 there is no spelling-specific clamp law compiler. The general frontend,
-recursive source relations, totality inference, and complete constraint solving
+general recursive constraints, totality inference, and complete constraint solving
 remain unfinished. The existing tick adapter still recognizes a game-shaped
 state vocabulary and is not evidence of general game compilation.
 

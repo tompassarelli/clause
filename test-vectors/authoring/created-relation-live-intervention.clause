@@ -19,9 +19,9 @@ relation effect-remaining
   mode given effect yields value: one
 
 unit-a
-  shape: Actor
+  member of: Actor
 unit-b
-  shape: Actor
+  member of: Actor
 
 unit-a vitality 100.0
 unit-a selected true
@@ -43,7 +43,7 @@ on ignite ?actor ?duration
     ?actor selected true
   create
     ?effect
-      shape: BurnEffect
+      member of: BurnEffect
   include
     ?effect burn target ?actor
     ?effect effect remaining ?duration

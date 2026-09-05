@@ -1,11 +1,9 @@
 # Runtime-created finite relations
 
-This is the first M5 collection capability, not completion of Clause's wider
-language ambitions. The preserved counterexample is
-`test-vectors/authoring/created-timed-contributions.clause`: the prior compiler
-rejected its tick/accumulate handler with `MissingExecutableBinding` at source
-bytes 771..1048. The same mechanism is consumed by the unchanged real encounter
-plus `created-burn-extension.clause`, composed by the executable fixture builder.
+Finite handlers can create referents, join their rows, and change them
+atomically. Executable examples include
+`clause:test-vectors/authoring/created-timed-contributions.clause` and
+`clause:test-vectors/authoring/created-burn-extension.clause`.
 
 ## Executable meaning
 
@@ -30,11 +28,14 @@ world, identity ordinals and accepted-event record unchanged.
 
 Structured fields are typed tables, not opaque dynamic objects. Declared
 subjects retain their original projected field views as selectors into those
-same tables, not mirrored state. Cross-domain declared facets require actual
-checked shape membership of that exact referent. Created values do not acquire
-unasserted domain facets. Scalar-domain conflicts and nonnumeric contributions
-are rejected during source checking. Boolean premises remain exact Boolean
-relation matches, and composed scalar-law guards/origins remain checked.
+same tables, not mirrored state. Declared facets follow checked structural
+contracts or explicit nominal membership, without copying the referent's
+identity or state. A bare creation binder infers one domain from its inserted
+roles; cross-domain created facets remain unsupported. Required properties
+are checked on the complete initial and candidate worlds. Scalar-domain
+conflicts and nonnumeric contributions are rejected during source checking.
+Boolean premises remain exact Boolean relation matches, and composed
+scalar-law guards/origins remain checked.
 
 ## Evidence and transport
 
@@ -54,9 +55,12 @@ ReferentFacet (28). Bindings must be in scope, with ordered finite membership
 lists. The passive TypeScript projection adapter decodes typed relation table
 Atoms and ordered set Terms; it performs no joins, expiry, combat or mutation.
 Tables project as `{kind: "relation-table", subjectDomain, valueKind,
-valueDomain?, cardinality, rows: [{subject, values}]}`; sets project as immutable
-ordered arrays. Decoders reject truncated/trailing bytes, domain/cardinality
-mismatches and unordered or duplicate rows/values.
+valueDomain?, cardinality, total, rows: [{subject, values}]}`; sets project as
+immutable ordered arrays. Cardinality bytes 0, 1, and 2 represent one, maybe,
+and many; byte 3 represents one with a required-property obligation. The
+adapter exposes byte 3 as `cardinality: 0, total: true`, preserving the
+distinction from mode-only guarantees. Decoders reject truncated/trailing
+bytes, domain/cardinality mismatches and unordered or duplicate rows/values.
 
 ## Bounds and remaining scope
 
@@ -74,50 +78,19 @@ A condition that needs the full join can still follow a search that exhausts.
 These are explicit resource limits, not universal scalability claims.
 
 This slice lowers connected general/scalar handlers, typed relation rows,
-Boolean state guards and existing scalar-law composition. It does not implement
-arbitrary recursive relations, general multi-input derived relations over
-created rows, reusable definition/strategy/specialization ambitions, or a full
+Boolean state guards and existing scalar-law composition. Positive recursive
+laws also reclose over current rows after atomic changes, including creations.
+Negation, aggregation, and allocation inside recursive rules remain unsupported,
+as do general multi-input derived relations, specialization, and a full
 source-language type-system proof. Unsupported seams reject rather than route
-to host gameplay. The original source profile limitations remain outside the
-connected path. Per-frame projection size and repeated compiler witness work
-are costs to measure and repair in the following M5 performance slice.
+to host gameplay. Per-frame projection size and compiler witness work still
+need measurement against the application performance targets.
 
 Reproduce nearest native checks with `cargo test -p clause-workbench --test
-created_collections --test live_semantics --test resident_source --test
+created_collections --test structural_contracts --test live_semantics --test
 authoring_card --locked -j 2`. Build `created-collections-artifact` into
-`target/created-collections`, generate fresh runtime Wasm into its `wasm/`
-directory, then run the browser package's `test:created-collections` alongside
+`clause:target/created-collections`, generate fresh runtime Wasm into
+`clause:target/created-collections/wasm`, then run the browser package's
+`test:created-collections` alongside
 `test:live-semantics` and `test:referent-input`. These are compiler/passive
 adapter checks; final DPR1 Greywrought browser adoption belongs to the consumer.
-
-## Observed checkpoint (2026-09-05)
-
-Focused native collection tests pass 9/9, existing live semantics 4/4,
-resident source 31/31, and compiler authoring-card 3/3. Exact Goal/account and
-composed encounter `check-source` pass. Fresh Wasm plus TS7 passive adapter
-checks pass 4/4 with 303 assertions (34.11 s), including occurrence bindings,
-law origins, fractional lifetimes, explicit continuity, and non-game set views.
-The generated runtime Wasm SHA256 is
-`11fd5182de742340d557c951701438c64094f47c8bc79a708489b5f6b9071d8d`
-(4,441,694 bytes). The encounter CWR1 is 262,593 bytes; CET1 is 367,416 bytes.
-These sizes and tests are not a performance improvement claim.
-
-A wider `canonical_source_arena` check reports 25 pass/4 failures. An exact
-archive of the untouched published baseline
-`c8a7a48fa79b2b54734a926f161bd39f3b463630`, compiled separately in this lane,
-reproduces the same four assertions with identical differences:
-
-- `scalar_handler_lowers_one_deterministic_rule_per_referent` expects Symbol
-  selector constants;
-- `transitive_referent_join_lowers_each_runtime_selectable_target` expects both
-  Symbol policy constants but sees only policy-b;
-- `boolean_law_lowers_typed_multi_subject_selector_cases` expects three rules
-  but sees one;
-- `general_handler_lowers_typed_constant_state_selector` expects two Symbol
-  selectors but sees none.
-
-No baseline fixture or assertion was changed. These are separately established
-published-baseline failures, not a relabeling of the earlier 16 runtime/host
-failures and not proof that their owning semantic issues are resolved. The
-current actual encounter gates pass; broader soundness/review repair remains
-in the program scope.

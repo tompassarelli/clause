@@ -11,7 +11,7 @@
     },
     "foundation": {
       "path": "docs/foundation.md",
-      "sha256": "9234d2ff88441c67eb07a70452e56b45a8b4ff7e9552b2a7d0852ea2e787be9d"
+      "sha256": "2385e3c3b322482994b0907c05f5e1f59a81071de6d0f212f47d56e4d822f11a"
     },
     "selected_carrier_contract": [
       {
@@ -25,7 +25,7 @@
     ],
     "syntax": {
       "path": "docs/syntax.md",
-      "sha256": "8a66a3de2278229935115e85635f2a0303a4b8de541ba3de124337e797aa264a"
+      "sha256": "b2bbeca3eea87bafd4a3bdfd5ab160fc7890aa04bcf865857241cab263601d93"
     }
   },
   "corpus_roots": {

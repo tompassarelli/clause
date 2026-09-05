@@ -30,16 +30,16 @@ relation cooldown
   mode given contributor yields value: one
 
 controller
-  shape: Controller
+  member of: Controller
 first
-  shape: Account
-  shape: Contributor
+  member of: Account
+  member of: Contributor
 second
-  shape: Account
+  member of: Account
 alpha
-  shape: Contributor
+  member of: Contributor
 beta
-  shape: Contributor
+  member of: Contributor
 
 controller chosen account first
 first balance 100.0

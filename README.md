@@ -1,40 +1,34 @@
 # Clause
 
-Clause is a process-first relational programming language. Its source describes
-applications, relationships, laws, transitions, and effects. Its checked
-process constitution fixes typed schemas, Applications, Modes, identities, and
-contracts; transition semantics defines how Activations run through Steps and
-continuations within Runs; and Admission alone establishes governed successors.
-The Clause Graph is the canonical inspectable carrier and explanation surface,
-while checked physical implementations may specialize accepted meaning into
-efficient native, Wasm, browser, or data-system execution. Truth status is
-extrinsic to representation. A lower-case clause is a contextual judgment over
-a neutral Term, not an Application, assertion, or runtime event.
+Clause is a general-purpose relational language under development.
 
-The target is a general-purpose language for agent-authored software, not a
-governed-state niche. Ordinary local mutation needs no Admission or
-StateRevision. Modes declare only the dynamic prerequisites their Activations
-actually need; effect Modes choose strict per-intent governance or bounded
-preauthorized local/session/Lease/batch scope, and Admission keeps its own
-authority boundary.
-Causal-affine reclamation has no automatic Clause tracing/ARC/finalizer
-fallback. Generic reuse, deterministic lifetimes, and direct native/Wasm
-lowering are early falsifiers, not implemented capability.
+Its [design discipline](docs/foundation.md#design-discipline): author each
+independent semantic fact once.
+Checking, execution, queries, explanations, and editing must use that same
+meaning. Physical implementations may specialize it, not redefine it.
 
-> **Current status:** Clause has an accepted semantic constitution and canonical
-> source design. An experimental canonical reader now lowers the jump arena's
-> input, jump, tick, and collect handlers into external CPP1 plans that execute
-> through persistent native and Wasm sessions, separate Admission, and the
-> playable browser shell. These paths have focused end-to-end tests, but none is
-> a supported language implementation yet. The
-> [roadmap](docs/roadmap.md) is the sole implementation-status authority and
-> records the stale prior aggregate result and exact open carrier/runtime gaps;
-> this constitutional tranche does not claim a current Rust-gate verdict.
+The [authoring card](docs/authoring-card.md) describes executable source;
+the [roadmap](docs/roadmap.md) records unfinished work. Design examples are
+not implementation claims.
+
+## Governing distinctions
+
+- A name denotes a value. A role says what that value means relative to a
+  subject. A contract constrains it. Representation determines its encoding.
+- Equal values may have different occurrences and independent support.
+- A description does not assert, execute, or authorize itself.
+- A relation's meaning is distinct from the directions in which it can be
+  computed. Each direction must state its result and failure guarantees.
+- Exhausted search proves neither absence nor falsehood.
+- An edit preserves identity only through checked continuity, not similar text.
+- Local computation needs no governed revision. Authoritative shared changes
+  and external effects require the authority appropriate to their scope.
+
+The [semantic foundation](docs/foundation.md) defines these distinctions.
 
 ## A Clause transition
 
-This canonical source form describes a complete transition from a pinned state
-observation to a candidate delta:
+Collecting a coin changes its state only when it is active and owned by the actor:
 
 ```clause
 on collect ?actor
@@ -47,72 +41,34 @@ on collect ?actor
     ?coin state collected
 ```
 
-The spelling is canonical and runs through the bounded experimental
-source-to-CPP1 path, but not yet through a supported toolchain.
-`on` declares process constitution; it does not execute merely by being stored.
-A matching occurrence can activate one exact Application under a selected Mode
-and context. `when` observes one StateRevision, while `withdraw` and source
-`include` stage a candidate delta. Only a separate governed Admission can create
-the successor StateRevision.
+The conditions read one pre-state. Removal and addition form one proposed
+change; admitting it is a separate operation. Two collection events remain
+distinct even if their values are equal.
 
-The semantic path is:
-
-```text
-neutral Term
-  -> checked, closed ApplicationForm
-  -> nominal Application
-  -> Activation from one exact ActivationStartRecord: static basis, context,
-     Mode-declared prerequisite bindings, and a separate occurrence frontier
-  -> causal Steps within one Run
-  -> observations, results, continuations, and candidate deltas
-  -> governed Admission, when authoritative change is requested
-```
-
-One Application may be activated many times; every Activation remains distinct
-and keeps one identity across its Steps, suspension, and resumption. Pure
-running and Activation-local mutation can advance without creating any
-revision. Canonical examples and their exact elaboration contracts live in the
-[syntax specification](docs/syntax.md); executable falsification programs are
-defined by the [adoption spike](docs/adoption-spike.md).
-
-## Read the contracts
+## Documentation
 
 | Document | Owns |
 | --- | --- |
-| [Language tour](docs/language-tour.md) | Compact examples and the shortest conceptual path |
-| [Semantic foundation](docs/foundation.md) | Clause meaning, process identities, effects, and Admission |
-| [Syntax](docs/syntax.md) | The sole canonical human-readable source design |
-| [Architecture](docs/architecture.md) | Trust, host, compiler, runtime, and physical boundaries |
-| [Canonical packages](docs/canonical-package.md) | Exact CLCP transport and compiler-machine wire contracts |
-| [Compiler genesis](docs/compiler-genesis.md) | External genesis anchor and predecessor-owned succession |
-| [Adoption spike](docs/adoption-spike.md) | Executable falsifiers for the constitutional design |
-| [Roadmap](docs/roadmap.md) | Current implementation facts, dependency order, and exit evidence |
+| [Language tour](docs/language-tour.md) | Examples and concepts |
+| [Semantic foundation](docs/foundation.md) | Meaning, identity, effects, and authority |
+| [Syntax](docs/syntax.md) | Source grammar |
+| [Architecture](docs/architecture.md) | Compiler, runtime, host, and trust boundaries |
+| [Canonical packages](docs/canonical-package.md) | Exact transport and compiler-machine contracts |
+| [Compiler genesis](docs/compiler-genesis.md) | Initial authority and compiler succession |
+| [Adoption spike](docs/adoption-spike.md) | Executable tests of the design |
+| [Roadmap](docs/roadmap.md) | Implementation status and remaining work |
 
-The frozen [execution corpus](docs/execution-corpus.md) preserves narrower v0
-observations. The separate process-v2 corpus is an experimental Rust carrier,
-not a ratified canonical package or complete process constitution. Historical
-experiments, including the game-leverage materialization probe, are evidence
-rather than supported language features.
+## Development
 
-## Bootstrap evidence
-
-The repository currently contains a Lean constitutional/checker bootstrap, a
-historical combined Rust bootstrap crate, and exact shared test vectors. The
-shortest broad checks are:
+Broad implementation checks:
 
 ```sh
 (cd lean && lake build && lake env leanchecker --fresh ClauseCore)
 cargo test --workspace --locked --all-targets
 ```
 
-The Cargo workspace command reaches `clause-substrate`, `clause-package`,
-`clause-runtime`, and `clause-materialization`. These commands check their
-bounded contracts; they do not promote the experimental process carrier or
-runtime to supported Clause, and the roadmap records the current gate result.
-`ClauseCore` and `clause-substrate` are historical implementation names, not
-names for Clause semantics or the target package architecture. The target split
-is a user-facing `clause` facade over `clause-package`, `clause-runtime`,
-`clause-materialization`, and `clause-wasm`.
+Use focused tests while developing. The roadmap records known failures and
+the scope of observed results.
 
-Clause is available under the [MIT License](LICENSE-MIT) or the
-[Apache License, Version 2.0](LICENSE-APACHE), at your option.
+Available under the [MIT License](LICENSE-MIT) or
+[Apache License, Version 2.0](LICENSE-APACHE).

@@ -5,6 +5,37 @@ const MAX_JOIN_VISITS: usize = 65_536;
 const MAX_MATCHES: usize = 4_096;
 const MAX_BINDINGS: usize = 128;
 
+/// Relation-level totality is checked on the complete candidate, not between
+/// individual row effects. A Mode's one-result guarantee does not imply it.
+pub(super) fn validate_contracts(configuration: &[ExecutableSlotV1]) -> Result<(), ExecutableErrorV1> {
+    let tables = configuration.iter().filter_map(|slot| match slot.value() {
+        Some(ExecutableValueV1::RelationTable(table)) => Some(table),
+        _ => None,
+    }).collect::<Vec<_>>();
+    if !tables.iter().any(|table| table.total) { return Ok(()); }
+    let mut participants = BTreeMap::<u32, BTreeSet<ExecutableReferentV1>>::new();
+    for table in &tables {
+        for (subject, values) in &table.rows {
+            participants.entry(subject.domain).or_default().insert(subject.clone());
+            for value in values {
+                if let ExecutableValueV1::Referent(value) = value {
+                    participants.entry(value.domain).or_default().insert(value.clone());
+                }
+            }
+        }
+    }
+    for table in tables.into_iter().filter(|table| table.total) {
+        if table.cardinality != ExecutableRelationCardinalityV1::One {
+            return Err(ExecutableErrorV1::MalformedProgram);
+        }
+        if participants.get(&table.subject_domain).into_iter().flatten().any(|subject|
+            table.rows.get(subject).is_none_or(|values| values.len() != 1)) {
+            return Err(ExecutableErrorV1::MissingState);
+        }
+    }
+    Ok(())
+}
+
 pub(super) fn validate_bindings(rule: &ExecutableRuleV1) -> Result<(), ExecutableErrorV1> {
     use ExecutableExpressionV1 as E;
     fn check(
@@ -46,7 +77,7 @@ pub(super) fn validate_bindings(rule: &ExecutableRuleV1) -> Result<(), Executabl
                 check(a, bound, true, depth + 1, query_inputs)?;
                 check(b, bound, true, depth + 1, query_inputs)?;
             }
-            E::RelationEffects(effects) => {
+            E::RelationEffects(effects) | E::DerivedRelation(effects) => {
                 for effect in effects {
                     let (_, a, b) = effect.parts();
                     check(a, bound, false, depth + 1, query_inputs)?;

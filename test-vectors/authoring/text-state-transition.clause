@@ -28,7 +28,7 @@ relation banner
   mode given north yields value: one
 
 north-main
-  shape: North
+  member of: North
 north-main goal state no-goal
 north-main banner "North says:\n\"ready\" 🚀"
 

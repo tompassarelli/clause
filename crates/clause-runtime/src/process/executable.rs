@@ -33,6 +33,7 @@ pub use live_source::*;
 mod explanation;
 pub use explanation::*;
 mod relational;
+mod closure;
 pub use relational::ExecutableRelationEffectV1;
 mod relational_projection;
 mod source_profile;
@@ -273,6 +274,7 @@ pub struct ExecutableRelationTableV1 {
     value_kind: ExecutableRelationValueKindV1,
     value_domain: Option<u32>,
     cardinality: ExecutableRelationCardinalityV1,
+    total: bool,
     rows: BTreeMap<ExecutableReferentV1, BTreeSet<ExecutableValueV1>>,
 }
 
@@ -809,6 +811,8 @@ pub enum ExecutableExpressionV1 {
     RelationMatch(u16, Box<Self>, Box<Self>),
     /// Assignment-root simultaneous row effects.
     RelationEffects(Vec<ExecutableRelationEffectV1>),
+    /// Assignment-root positive conclusions, closed atomically from base rows.
+    DerivedRelation(Vec<ExecutableRelationEffectV1>),
     /// Assignment-root additive effect, never an evaluable subexpression.
     Accumulate(Box<Self>),
     FreshReferent {
@@ -975,11 +979,18 @@ pub fn lower_canonical_executable_program_v1(
                 .assignments
                 .iter()
                 .map(|assignment| {
+                    let value = lower_canonical_expression(&assignment.value, &slots, 0)?;
+                    let value = if handler.trigger == CanonicalHandlerTriggerV1::RelationClosure {
+                        let ExecutableExpressionV1::RelationEffects(effects) = value else {
+                            return Err(ExecutableErrorV1::MalformedProgram);
+                        };
+                        ExecutableExpressionV1::DerivedRelation(effects)
+                    } else { value };
                     Ok((
                         *slots
                             .get(&assignment.target)
                             .ok_or(ExecutableErrorV1::CanonicalLoweringUnknownState)?,
-                        lower_canonical_expression(&assignment.value, &slots, 0)?,
+                        value,
                     ))
                 })
                 .collect::<Result<Vec<_>, ExecutableErrorV1>>()?;
@@ -1852,6 +1863,7 @@ fn lower_scalar_value(
                         _ => None,
                     },
                     cardinality,
+                    total: table.total,
                     rows,
                 },
             ))
@@ -3353,6 +3365,19 @@ fn validate_projection_roles(
 }
 
 impl ExecutableProcessRuntimeV1 {
+    pub(crate) fn current_projection_term(&self) -> Result<Option<Term>, ExecutableErrorV1> {
+        let Some(projection) = &self.program.projection else {
+            return Ok(None);
+        };
+        let bindings = projection
+            .bindings
+            .iter()
+            .copied()
+            .map(|binding| (binding.role, binding))
+            .collect::<BTreeMap<_, _>>();
+        realize_projection_term(&projection.template, &bindings, &self.configuration).map(Some)
+    }
+
     /// Start the unique stateful or effectful Mode constituted for this
     /// Application. The caller supplies operational authority facts only;
     /// package structure supplies the executable Mode and all semantic pins.
@@ -4782,6 +4807,14 @@ impl ExecutableProcessRuntimeV1 {
             bindings: None,
             relational_occurrence: None,
         };
+        // Interventions may change the supplied base rows; every rule must
+        // observe their closure, not the retained closure of the old world.
+        let closed;
+        let configuration = if self.program.rules.iter().any(closure::is_derivation) {
+            closed = closure::close(&self.program, configuration, evaluation, None)?;
+            closed.as_slice()
+        } else { configuration };
+        relational::validate_contracts(configuration)?;
         let mut selected = Vec::new();
         let mut selected_targets = BTreeMap::<u16, u8>::new();
         let mut join_visits = 0;
@@ -4791,7 +4824,7 @@ impl ExecutableProcessRuntimeV1 {
             .rules
             .iter()
             .enumerate()
-            .filter(|(_, rule)| rule.entry == occurrence.entry)
+            .filter(|(_, rule)| rule.entry == occurrence.entry && !closure::is_derivation(rule))
         {
             let structural_match = rule
                 .required_present
@@ -4979,6 +5012,10 @@ impl ExecutableProcessRuntimeV1 {
             next[usize::from(slot)] = ExecutableValueV1::number(value)?.into();
         }
         row_effects.apply(&mut next)?;
+        if self.program.rules.iter().any(closure::is_derivation) {
+            next = closure::close(&self.program, &next, evaluation, trace.map(|trace| (&self.program, trace)))?;
+        }
+        relational::validate_contracts(&next)?;
         let before = self.configuration_id;
         let after = ConfigurationId::from_bytes(runtime_identity_bytes(
             self.allocation.root,
@@ -6015,7 +6052,7 @@ fn activation_pins_v1(
 }
 
 fn validate_program(program: &ExecutableProgramV1) -> Result<(), ExecutableErrorV1> {
-    let initial_configuration = materialize_initial_configuration(program)?;
+    let initial_configuration = materialize_base_configuration(program)?;
     if initial_configuration.len() > MAX_PROGRAM_ITEMS || program.rules.len() > MAX_PROGRAM_ITEMS {
         return Err(ExecutableErrorV1::ResourceLimit);
     }
@@ -6045,7 +6082,8 @@ fn validate_program(program: &ExecutableProgramV1) -> Result<(), ExecutableError
                     return Err(ExecutableErrorV1::MalformedProgram);
                 }
                 validate_value_expression(delta, 0)?;
-            } else if let ExecutableExpressionV1::RelationEffects(effects) = expression {
+            } else if let ExecutableExpressionV1::RelationEffects(effects)
+                | ExecutableExpressionV1::DerivedRelation(effects) = expression {
                 if initial_configuration
                     .get(usize::from(*slot))
                     .is_none_or(|state| state.kind() != ExecutableValueKindV1::RelationTable)
@@ -6106,6 +6144,7 @@ fn validate_program(program: &ExecutableProgramV1) -> Result<(), ExecutableError
             return Err(ExecutableErrorV1::MalformedProgram);
         }
     }
+    closure::validate(program, &initial_configuration)?;
     if let Some(projection) = &program.projection {
         if projection.bindings.is_empty() || projection.bindings.len() > MAX_PROGRAM_ITEMS {
             return Err(ExecutableErrorV1::MalformedProgram);
@@ -6159,7 +6198,7 @@ fn validate_value_expression(
             }
             inputs.iter().chain(std::iter::once(value.as_ref())).collect()
         }
-        E::Accumulate(_) | E::RelationMatch(..) | E::RelationEffects(_) => {
+        E::Accumulate(_) | E::RelationMatch(..) | E::RelationEffects(_) | E::DerivedRelation(_) => {
             return Err(ExecutableErrorV1::MalformedProgram);
         }
         E::Constant(_) | E::Slot(_) | E::Argument(_) | E::FreshReferent { .. } => vec![],
@@ -6206,6 +6245,18 @@ fn validate_value_expression(
 }
 
 fn materialize_initial_configuration(
+    program: &ExecutableProgramV1,
+) -> Result<Vec<ExecutableSlotV1>, ExecutableErrorV1> {
+    let base = materialize_base_configuration(program)?;
+    let closed = closure::close(program, &base, EvaluationContextV1 {
+        allocation_root: [0; IDENTITY_BYTES], step_ordinal: 0, reads: None,
+        bindings: None, relational_occurrence: None,
+    }, None)?;
+    relational::validate_contracts(&closed)?;
+    Ok(closed)
+}
+
+fn materialize_base_configuration(
     program: &ExecutableProgramV1,
 ) -> Result<Vec<ExecutableSlotV1>, ExecutableErrorV1> {
     let mut configuration = program
@@ -6658,7 +6709,7 @@ fn evaluate(
             members,
         )
         .ok_or(ExecutableErrorV1::TypeMismatch),
-        E::Accumulate(_) | E::RelationMatch(..) | E::RelationEffects(_) => {
+        E::Accumulate(_) | E::RelationMatch(..) | E::RelationEffects(_) | E::DerivedRelation(_) => {
             Err(ExecutableErrorV1::MalformedProgram)
         }
         E::FreshReferent { domain, binder } => {
@@ -7051,7 +7102,12 @@ pub(super) fn encode_value(
                 }
                 None => bytes.push(0),
             }
-            bytes.push(table.cardinality as u8);
+            bytes.push(if table.total {
+                if table.cardinality != ExecutableRelationCardinalityV1::One {
+                    return Err(ExecutableErrorV1::MalformedProgram);
+                }
+                3
+            } else { table.cardinality as u8 });
             encode_count(bytes, table.rows.len())?;
             for (subject, values) in &table.rows {
                 encode_referent(bytes, subject);
@@ -7140,8 +7196,8 @@ fn encode_expression(
             encode_expression(bytes, subject)?;
             encode_expression(bytes, value)?;
         }
-        E::RelationEffects(effects) => {
-            bytes.push(27);
+        E::RelationEffects(effects) | E::DerivedRelation(effects) => {
+            bytes.push(if matches!(expression, E::DerivedRelation(_)) { 32 } else { 27 });
             encode_count(bytes, effects.len())?;
             for effect in effects {
                 let (mode, subject, value) = effect.parts();
@@ -7334,10 +7390,11 @@ impl<'a> Decoder<'a> {
                 {
                     return Err(ExecutableErrorV1::MalformedProgram);
                 }
-                let cardinality = match self.byte()? {
-                    0 => ExecutableRelationCardinalityV1::One,
-                    1 => ExecutableRelationCardinalityV1::Maybe,
-                    2 => ExecutableRelationCardinalityV1::Many,
+                let (cardinality, total) = match self.byte()? {
+                    0 => (ExecutableRelationCardinalityV1::One, false),
+                    1 => (ExecutableRelationCardinalityV1::Maybe, false),
+                    2 => (ExecutableRelationCardinalityV1::Many, false),
+                    3 => (ExecutableRelationCardinalityV1::One, true),
                     _ => return Err(ExecutableErrorV1::MalformedProgram),
                 };
                 let mut table = ExecutableRelationTableV1 {
@@ -7345,6 +7402,7 @@ impl<'a> Decoder<'a> {
                     value_kind,
                     value_domain,
                     cardinality,
+                    total,
                     rows: BTreeMap::new(),
                 };
                 let count = self.count()?;
@@ -7518,7 +7576,7 @@ impl<'a> Decoder<'a> {
                 Box::new(self.expression(next)?),
                 Box::new(self.expression(next)?),
             ),
-            27 => {
+            tag @ (27 | 32) => {
                 let count = self.count()?;
                 let mut effects = Vec::with_capacity(count);
                 for _ in 0..count {
@@ -7533,7 +7591,7 @@ impl<'a> Decoder<'a> {
                         _ => return Err(ExecutableErrorV1::MalformedProgram),
                     });
                 }
-                E::RelationEffects(effects)
+                if tag == 32 { E::DerivedRelation(effects) } else { E::RelationEffects(effects) }
             }
             _ => return Err(ExecutableErrorV1::MalformedProgram),
         })

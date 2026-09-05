@@ -20,9 +20,9 @@ relation total
   mode given report yields value: one
 
 first
-  shape: Item
+  member of: Item
 report
-  shape: Report
+  member of: Report
 first amount 3.0
 report total 2.0
 

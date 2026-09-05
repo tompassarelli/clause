@@ -7,7 +7,7 @@ relation camera-heading
   mode given player yields value: one
 
 player-1
-  shape: Player
+  member of: Player
 player-1 camera heading 0.0
 
 bind scalar-input CameraHeading to observe-camera-heading

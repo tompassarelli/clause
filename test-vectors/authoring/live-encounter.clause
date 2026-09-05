@@ -194,53 +194,53 @@ derive full-damage
 derive warded-damage
 
 player-1
-  shape: Controller
+  member of: Controller
 warrior-1
-  shape: Unit
-  shape: Actor
+  member of: Unit
+  member of: Actor
 artificer-1
-  shape: Unit
-  shape: Actor
+  member of: Unit
+  member of: Actor
 rogue-1
-  shape: Unit
-  shape: Actor
+  member of: Unit
+  member of: Actor
 priest-1
-  shape: Unit
-  shape: Actor
+  member of: Unit
+  member of: Actor
 ranger-1
-  shape: Unit
-  shape: Actor
+  member of: Unit
+  member of: Actor
 cinder-1
-  shape: Enemy
-  shape: Actor
+  member of: Enemy
+  member of: Actor
 cinder-2
-  shape: Enemy
-  shape: Actor
+  member of: Enemy
+  member of: Actor
 moonwell
-  shape: Objective
-  shape: Actor
+  member of: Objective
+  member of: Actor
 encounter
-  shape: Encounter
+  member of: Encounter
 combat-rules
-  shape: CombatRules
+  member of: CombatRules
 warrior-class
-  shape: UnitClass
+  member of: UnitClass
 artificer-class
-  shape: UnitClass
+  member of: UnitClass
 rogue-class
-  shape: UnitClass
+  member of: UnitClass
 priest-class
-  shape: UnitClass
+  member of: UnitClass
 ranger-class
-  shape: UnitClass
+  member of: UnitClass
 ready
-  shape: EncounterState
+  member of: EncounterState
 active
-  shape: EncounterState
+  member of: EncounterState
 victory
-  shape: EncounterState
+  member of: EncounterState
 defeat
-  shape: EncounterState
+  member of: EncounterState
 
 player-1 order target Vec3 { x: 0.0, y: 0.0, z: 0.0 }
 player-1 chosen target cinder-1

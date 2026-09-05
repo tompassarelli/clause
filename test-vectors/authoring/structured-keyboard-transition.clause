@@ -18,7 +18,7 @@ relation empowered
   mode given player yields value: one
 
 player-1
-  shape: Player
+  member of: Player
 player-1 velocity Vec3 { x: 0.0, y: 0.0, z: 0.0 }
 player-1 empowered true
 

@@ -12,9 +12,9 @@ relation available
   mode given device yields value: one
 
 first
-  shape: Device
+  member of: Device
 second
-  shape: Device
+  member of: Device
 first charge 2.0
 first available false
 second available false
@@ -39,7 +39,7 @@ on spawn ?device
     ?device charge ?charge
   create
     ?new
-      shape: Device
+      member of: Device
   include
     ?new charge ?charge
     ?new available false

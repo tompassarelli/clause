@@ -98,9 +98,9 @@ derive clamp-interior
 derive clamp-upper
 
 jump-arena
-  shape: Arena
+  member of: Arena
 player-1
-  shape: Player
+  member of: Player
 
 jump-arena gravity -8.0
 jump-arena jump speed 8.0

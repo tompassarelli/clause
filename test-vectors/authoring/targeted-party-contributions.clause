@@ -57,20 +57,20 @@ relation encounter-state
   mode given encounter yields value: one
 
 player
-  shape: Controller
+  member of: Controller
 first
-  shape: Unit
-  shape: Target
+  member of: Unit
+  member of: Target
 second
-  shape: Unit
-  shape: Target
+  member of: Unit
+  member of: Target
 cinder
-  shape: Target
+  member of: Target
 encounter
-  shape: Encounter
+  member of: Encounter
 
 active
-  shape: EncounterState
+  member of: EncounterState
 
 player chosen target first
 encounter encounter state active

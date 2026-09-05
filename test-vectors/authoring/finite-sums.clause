@@ -21,11 +21,11 @@ relation count
   mode given report yields value: one
 
 first
-  shape: Item
+  member of: Item
 second
-  shape: Item
+  member of: Item
 report
-  shape: Report
+  member of: Report
 first enabled true
 first amount -2.0
 second enabled false
@@ -67,7 +67,7 @@ on create-item ?report ?amount
     ?report total ?prior
   create
     ?item
-      shape: Item
+      member of: Item
   include
     ?item amount ?amount
     ?item enabled true

@@ -54,6 +54,7 @@ impl ScalarLawEnvironment {
             .map(|pair| &lines[pair[0]..pair[1]])
             .collect::<Vec<_>>();
         let mut environment = Self::default();
+        environment.relations.extend(contracts::read(artifact, &blocks)?);
         for block in &blocks {
             if let Some(name) = block[0].text.strip_prefix("relation ") {
                 let origin = line_origin(artifact, block[0]);
@@ -77,12 +78,13 @@ impl ScalarLawEnvironment {
                     .unwrap()
                     .end as u64,
             };
+            let logical = patterns::handler_lines(logical_source_lines(artifact, block)?)?;
             let mut section = "";
             let mut predicates = Vec::new();
             let mut result = None;
             let mut supported = true;
             let mut sections = BTreeSet::new();
-            for line in block
+            for line in logical
                 .iter()
                 .skip(1)
                 .filter(|line| !line.text.trim().is_empty())

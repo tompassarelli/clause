@@ -2164,13 +2164,8 @@ function realize_object(
       throw new Error("projected object entry lacks a field Atom");
     }
     const key = ascii_text(field.payload, "projected field");
-    if (
-      key === "__proto__" ||
-      key === "prototype" ||
-      key === "constructor" ||
-      keys.has(key)
-    ) {
-      throw new Error("projected object field is unsafe or duplicated");
+    if (keys.has(key)) {
+      throw new Error("projected object field is duplicated");
     }
     keys.add(key);
     fields.push([key, realize_node(value)]);
@@ -2179,6 +2174,8 @@ function realize_object(
   if (atom_kind_text(node) !== "clause/js-object-end-v1") {
     throw new Error("projected object has an invalid terminator");
   }
+  // Object.fromEntries defines own data properties without invoking the
+  // legacy __proto__ setter; freezing prevents later prototype mutation.
   return Object.freeze(Object.fromEntries(fields));
 }
 
@@ -2247,8 +2244,9 @@ function projected_table(payload: CanonicalBytes): ProjectedValue {
   if (valueKind > 4 || optional > 1) throw new Error("invalid projected relation domain");
   const valueDomain = optional === 1 ? u32() : undefined;
   if ((valueKind === 4) !== (valueDomain !== undefined)) throw new Error("inconsistent projected relation domain");
-  const cardinality = u8(), count = u16();
-  if (cardinality > 2) throw new Error("invalid projected relation cardinality");
+  const contract = u8(), count = u16();
+  if (contract > 3) throw new Error("invalid projected relation cardinality");
+  const total = contract === 3, cardinality = total ? 0 : contract;
   const rows: ProjectedObject[] = [];
   let previous: ProjectedReferent | undefined;
   for (let row = 0; row < count; ++row) {
@@ -2275,7 +2273,7 @@ function projected_table(payload: CanonicalBytes): ProjectedValue {
     rows.push(Object.freeze({ subject, values: Object.freeze(values) }));
   }
   if (offset !== payload.length) throw new Error("trailing projected relation bytes");
-  return Object.freeze({ kind: "relation-table", subjectDomain, valueKind, cardinality,
+  return Object.freeze({ kind: "relation-table", subjectDomain, valueKind, cardinality, total,
     ...(valueDomain === undefined ? {} : { valueDomain }), rows: Object.freeze(rows) });
 }
 
@@ -2935,6 +2933,7 @@ export function editSourceSession(
 }
 
 interface DiagnosticWasmModule extends SessionWasmModule {
+  readonly clause_session_v1_project_bulk: (slot: number, generation: number) => Uint8Array;
   readonly clause_session_v1_explain_bulk: typeof import("#clause-runtime-wasm").clause_session_v1_explain_bulk;
   readonly clause_session_v1_intervene_bulk: typeof import("#clause-runtime-wasm").clause_session_v1_intervene_bulk;
   readonly clause_session_v1_source_continuity_bulk: typeof import("#clause-runtime-wasm").clause_session_v1_source_continuity_bulk;
@@ -2942,6 +2941,7 @@ interface DiagnosticWasmModule extends SessionWasmModule {
 
 function isDiagnosticModule(module: unknown): module is DiagnosticWasmModule {
   return is_session_wasm_module(module)
+    && "clause_session_v1_project_bulk" in module && typeof module.clause_session_v1_project_bulk === "function"
     && "clause_session_v1_explain_bulk" in module && typeof module.clause_session_v1_explain_bulk === "function"
     && "clause_session_v1_intervene_bulk" in module && typeof module.clause_session_v1_intervene_bulk === "function"
     && "clause_session_v1_source_continuity_bulk" in module && typeof module.clause_session_v1_source_continuity_bulk === "function";
@@ -2952,6 +2952,14 @@ function diagnosticModule(module: unknown): DiagnosticWasmModule {
     throw new Error("Wasm runtime lacks execution-backed diagnostic API");
   }
   return module;
+}
+
+/** Read the package-declared projection of the current accepted world without
+ * executing an input or creating a semantic event. */
+export function projectSession(module: unknown, incomingSession: unknown): ProjectedValue {
+  const session = require_live_session(incomingSession);
+  const bytes = diagnosticModule(module).clause_session_v1_project_bulk(session.handle.slot, session.handle.generation);
+  return realize_projection_node(decode_canonical_term([...bytes], 1024 * 1024));
 }
 
 export function explainSession(module: unknown, incomingSession: unknown, entry: number): ProjectedValue {

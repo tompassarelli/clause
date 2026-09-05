@@ -1,0 +1,153 @@
+Task
+Root
+F64
+Text
+Bool
+
+title
+  domain: Task
+  range: Text
+  cardinality: one
+duration
+  domain: Task
+  range: F64
+  cardinality: one
+completed
+  domain: Task
+  range: Bool
+  cardinality: one
+reason
+  domain: Root
+  range: Text
+  cardinality: one
+prerequisite
+  domain: Task
+  range: Task
+  cardinality: many
+obstruction
+  domain: Task
+  range: Root
+  cardinality: many
+blocker
+  domain: Task
+  range: Root
+  cardinality: many
+waiting
+  domain: Task
+  range: Task
+  cardinality: many
+
+approval
+  reason: "Design approval"
+components
+  reason: "Prototype components"
+
+design
+  title: "Design the prototype"
+  duration: 2.0
+  completed: false
+  obstruction: approval
+prototype
+  title: "Build the prototype"
+  duration: 4.0
+  completed: false
+  prerequisite: design
+  obstruction: components
+validation
+  title: "Validate the prototype"
+  duration: 2.0
+  completed: false
+  prerequisite: prototype
+documentation
+  title: "Write the guide"
+  duration: 1.0
+  completed: false
+  prerequisite: design
+launch
+  title: "Launch"
+  duration: 1.0
+  completed: false
+  prerequisite: validation
+  prerequisite: documentation
+
+law direct-obstruction
+  if
+    ?task:
+      obstruction: ?root
+  then
+    ?task:
+      blocker: ?root
+derive direct-obstruction
+
+law inherited-obstruction
+  if
+    ?task:
+      prerequisite: ?prior
+    ?prior:
+      blocker: ?root
+  then
+    ?task:
+      blocker: ?root
+derive inherited-obstruction
+
+law unfinished-prerequisite
+  if
+    ?task:
+      prerequisite: ?prior
+    ?prior:
+      completed: false
+  then
+    ?task:
+      waiting: ?prior
+derive unfinished-prerequisite
+
+law inherited-waiting
+  if
+    ?task:
+      prerequisite: ?prior
+    ?prior:
+      waiting: ?earlier
+  then
+    ?task:
+      waiting: ?earlier
+derive inherited-waiting
+
+bind referent-input Resolve as Root to resolve
+bind referent-input Complete as Task to complete
+bind referent-input Extend as Task to extend
+
+on resolve ?task ?root
+  when
+    ?task:
+      obstruction: ?root
+  withdraw
+    ?task:
+      obstruction: ?root
+
+on complete ?task ?chosen
+  when
+    ?task:
+      completed: false
+    ?task = ?chosen
+    sum 1.0 given ?task where { ?task waiting ?prior } as ?waiting
+    ?waiting = 0.0
+    sum 1.0 given ?task where { ?task blocker ?root } as ?blockers
+    ?blockers = 0.0
+  withdraw
+    ?task:
+      completed: false
+  include
+    ?task:
+      completed: true
+
+on extend ?task ?chosen
+  when
+    ?task:
+      duration: ?prior
+    ?task = ?chosen
+  withdraw
+    ?task:
+      duration: ?prior
+  include
+    ?task:
+      duration: ?prior + 1.0

@@ -45,7 +45,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     )?;
     // Same non-game fixture, one source-owned physical input for browser use.
     let goal_source = format!(
-        "{}\nbind scalar-input GoalDuration to timed-goal\n\non timed-goal ?account ?duration\n  when\n    ?account balance ?balance\n  create\n    ?goal\n      shape: Goal\n  include\n    ?account known goal ?goal\n    ?goal contribution 7.0\n    ?goal remaining ?duration\n",
+        "{}\nbind scalar-input GoalDuration to timed-goal\n\non timed-goal ?account ?duration\n  when\n    ?account balance ?balance\n  create\n    ?goal\n      member of: Goal\n  include\n    ?account known goal ?goal\n    ?goal contribution 7.0\n    ?goal remaining ?duration\n",
         include_str!("../../../test-vectors/authoring/created-timed-contributions.clause")
     );
     let goal = ResidentSourceWorkbenchV1::open(goal_source.as_bytes())?;

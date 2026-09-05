@@ -7,7 +7,7 @@ relation selected
   mode given item yields value: one
 
 first
-  shape: Item
+  member of: Item
 first selected false
 
 on toggle ?item

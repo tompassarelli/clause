@@ -615,6 +615,39 @@ function projectedString(
   return result;
 }
 
+test["test"]("projected relation contracts retain required participation", () => {
+  const decode = (contract: number, values: readonly number[] = [2]) => {
+    const payload = [6];
+    append_u32_bang(payload, 1);
+    payload.push(0, 0, contract, 1, 0);
+    append_u32_bang(payload, 1);
+    payload.push(0);
+    append_u32_bang(payload, 2);
+    payload.push(values.length, 0);
+    for (const value of values) {
+      const bytes = new ArrayBuffer(8);
+      new DataView(bytes).setFloat64(0, value, true);
+      payload.push(0, ...new Uint8Array(bytes));
+    }
+    return wasm["decode-projected-term-frame"](
+      projected_atom("clause/process-projected-relation-table-v1", payload),
+    );
+  };
+  for (const contract of [0, 1, 2, 3]) {
+    const table = decode(contract);
+    expect(table).toEqual({
+      kind: "relation-table", subjectDomain: 1, valueKind: 0,
+      cardinality: contract === 3 ? 0 : contract, total: contract === 3,
+      rows: [{ subject: { kind: "referent", domain: 1,
+        identity: { kind: "declared", value: 2 } }, values: [2] }],
+    });
+    expect(Object.isFrozen(table)).toBe(true);
+  }
+  expect(() => decode(4)).toThrow("invalid projected relation cardinality");
+  expect(() => decode(3, [2, 3])).toThrow("invalid projected row cardinality");
+  expect(() => decode(3, [])).toThrow("invalid projected row cardinality");
+});
+
 test["test"]("projected Text realizes exact UTF-8", () => {
   const text = wasm["decode-projected-term-frame"](
     projected_atom("clause/process-projected-text-v1", [

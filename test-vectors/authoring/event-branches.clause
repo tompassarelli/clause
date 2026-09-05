@@ -16,7 +16,7 @@ relation attempts
   mode given device yields value: one
 
 device
-  shape: Device
+  member of: Device
 device charge 1.0
 device accepted false
 device attempts 0.0

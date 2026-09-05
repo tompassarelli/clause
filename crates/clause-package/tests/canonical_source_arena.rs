@@ -29,6 +29,19 @@ fn raw_id(tag: u8) -> [u8; IDENTITY_BYTES] {
     bytes
 }
 
+fn nominal_value(compiled: &CanonicalSourcePackageSliceV1, name: &[u8], domain: &[u8]) -> CanonicalScalarValueV1 {
+    let identity = |name: &[u8]| compiled.emissions.iter()
+        .filter(|emission| emission.producer.production == CanonicalSourceProductionV1::Referent
+            && emission.producer.semantic_key == name
+            && emission.slot.production == CanonicalSourceProductionV1::Referent)
+        .flat_map(|emission| &emission.allocations)
+        .find_map(|allocation| match allocation.identity {
+            CanonicalAllocatedIdentityV1::Formation(id) => Some(id),
+            _ => None,
+        }).expect("declared referent has its exact allocated identity");
+    CanonicalScalarValueV1::Referent(CanonicalReferentV1 { domain: identity(domain), identity: identity(name) })
+}
+
 #[test]
 fn scalar_handler_lowers_one_deterministic_rule_per_referent() {
     let compiled = compile_source(MULTI_REFERENT_SCALAR_HANDLER, 49)
@@ -53,8 +66,8 @@ fn scalar_handler_lowers_one_deterministic_rule_per_referent() {
                 predicate,
                 CanonicalExecutablePredicateV1::Equal(
                     CanonicalExecutableExpressionV1::State(state),
-                    CanonicalExecutableExpressionV1::Constant(CanonicalScalarValueV1::Symbol(value)),
-                ) if state.subject == target.subject && value == b"acquired"
+                    CanonicalExecutableExpressionV1::Constant(value),
+                ) if state.subject == target.subject && *value == nominal_value(&compiled, b"acquired", b"LootState")
             )));
             target.clone()
         })
@@ -163,9 +176,9 @@ relation spawn-position
   mode given enemy yields value: one
 
 player-1
-  shape: Player
+  member of: Player
 cinder-wraith
-  shape: Enemy
+  member of: Enemy
 player-1 score 0.0
 cinder-wraith pressure clock 3.0
 cinder-wraith pressure state telegraph
@@ -200,7 +213,7 @@ relation reserve
   mode given player yields value: one
 
 player-1
-  shape: Player
+  member of: Player
 player-1 score 4.0
 player-1 reserve 6.0
 
@@ -236,7 +249,7 @@ relation command-description
   mode given command yields value: maybe
 
 root-main
-  shape: Root
+  member of: Root
 root-main phase "ready"
 
 on initialize ?root
@@ -244,7 +257,7 @@ on initialize ?root
     ?root phase ?phase
   create
     ?command
-      shape: Command
+      member of: Command
   withdraw
     ?root phase ?phase
   include
@@ -273,9 +286,9 @@ relation policy-adjustment
   mode given policy yields value: one
 
 root-1
-  shape: Root
+  member of: Root
 policy-a
-  shape: Policy
+  member of: Policy
 root-1 balance 10.0
 root-1 selected policy policy-a
 policy-a policy adjustment 2.0
@@ -349,21 +362,21 @@ law projectile-contact
 derive projectile-contact
 
 player-1
-  shape: Player
+  member of: Player
 cinder-bolt
-  shape: Projectile
+  member of: Projectile
 wayfarer-bolt
-  shape: Projectile
+  member of: Projectile
 dormant
-  shape: ProjectileState
+  member of: ProjectileState
 flight
-  shape: ProjectileState
+  member of: ProjectileState
 enemy-origin
-  shape: ProjectileFaction
+  member of: ProjectileFaction
 player-origin
-  shape: ProjectileFaction
+  member of: ProjectileFaction
 combat-arena
-  shape: Arena
+  member of: Arena
 
 player-1 player position Vec3 { x: 0.0, y: 0.0, z: 0.0 }
 cinder-bolt projectile position Vec3 { x: 1.0, y: 0.0, z: 0.0 }
@@ -378,8 +391,8 @@ combat-arena contact radius 0.6
 const MULTI_SHAPE_REFERENT_WORLD: &str = r#"Door
 Lockable
 iron-door
-  shape: Door
-  shape: Lockable
+  member of: Door
+  member of: Lockable
 "#;
 
 const EXPLICIT_APPLICATIONS: &str = include_str!(concat!(
@@ -407,11 +420,11 @@ fn compile_source(
 }
 
 #[test]
-fn one_referent_may_declare_multiple_shapes() {
+fn one_referent_may_declare_multiple_memberships() {
     compile_source(MULTI_SHAPE_REFERENT_WORLD, 39)
-        .expect("an explicit referent and its shape applications share one identity");
+        .expect("an explicit referent and its memberships share one identity");
     compile_source(
-        "Door\nLockable\n\niron-door\niron-door\n  shape: Door\n  shape: Lockable\n",
+        "Door\nLockable\n\niron-door\niron-door\n  member of: Door\n  member of: Lockable\n",
         40,
     )
     .expect("subject focus may reuse an explicitly declared referent");
@@ -565,7 +578,7 @@ fn general_handler_joins_a_typed_referent_selected_by_prior_state() {
 fn transitive_referent_join_lowers_each_runtime_selectable_target() {
     let source = TRANSITIVE_REFERENT_WORLD.replacen(
         "policy-a policy adjustment 2.0",
-        "policy-a policy adjustment 2.0\npolicy-b: Policy\npolicy-b policy adjustment 4.0",
+        "policy-a policy adjustment 2.0\npolicy-b\n  member of: Policy\npolicy-b policy adjustment 4.0",
         1,
     );
     let compiled = compile_source(&source, 23)
@@ -583,14 +596,14 @@ fn transitive_referent_join_lowers_each_runtime_selectable_target() {
         .filter_map(|predicate| match predicate {
             CanonicalExecutablePredicateV1::Equal(
                 CanonicalExecutableExpressionV1::State(state),
-                CanonicalExecutableExpressionV1::Constant(CanonicalScalarValueV1::Symbol(expected)),
-            ) if state.relation_designation == b"selected-policy" => Some(expected.as_slice()),
+                CanonicalExecutableExpressionV1::Constant(expected),
+            ) if state.relation_designation == b"selected-policy" => Some(expected.clone()),
             _ => None,
         })
         .collect::<BTreeSet<_>>();
     assert_eq!(
         selected,
-        BTreeSet::from([b"policy-a".as_slice(), b"policy-b".as_slice()]),
+        BTreeSet::from([nominal_value(&compiled, b"policy-a", b"Policy"), nominal_value(&compiled, b"policy-b", b"Policy")]),
     );
 }
 
@@ -607,20 +620,21 @@ fn boolean_law_lowers_typed_multi_subject_selector_cases() {
         panic!("one logical Boolean derivation owns all projectile cases")
     };
     assert_eq!(handler.trigger, CanonicalHandlerTriggerV1::FixedTickDerived);
-    assert_eq!(
-        handler.rules.len(),
-        3,
-        "two typed projectile cases precede one false fallback"
-    );
-    let selected_projectiles = handler.rules[..2]
-        .iter()
-        .flat_map(|rule| &rule.predicates)
+    let [rule] = handler.rules.as_slice() else { panic!("one derived value assignment") };
+    let [assignment] = rule.assignments.as_slice() else { panic!("one Boolean result") };
+    assert_eq!(assignment.target.relation_designation, b"hostile-contact");
+    assert!(rule.predicates.is_empty(), "false must also update the derived value");
+    let CanonicalExecutableExpressionV1::MatchesAny(cases) = &assignment.value else {
+        panic!("the derived result tests every case and is false when none match")
+    };
+    assert_eq!(cases.len(), 2, "both projectile cases survive lowering");
+    let selected_projectiles = cases.iter().flatten()
         .filter_map(|predicate| match predicate {
             CanonicalExecutablePredicateV1::Equal(
                 CanonicalExecutableExpressionV1::State(state),
-                CanonicalExecutableExpressionV1::Constant(CanonicalScalarValueV1::Symbol(expected)),
+                CanonicalExecutableExpressionV1::Constant(expected),
             ) if state.relation_designation == b"projectile-faction"
-                && expected == b"enemy-origin" =>
+                && *expected == nominal_value(&compiled, b"enemy-origin", b"ProjectileFaction") =>
             {
                 Some(state.subject.as_slice())
             }
@@ -716,9 +730,9 @@ fn general_handler_lowers_typed_constant_state_selector() {
         .filter_map(|predicate| match predicate {
             CanonicalExecutablePredicateV1::Equal(
                 CanonicalExecutableExpressionV1::State(state),
-                CanonicalExecutableExpressionV1::Constant(CanonicalScalarValueV1::Symbol(expected)),
+                CanonicalExecutableExpressionV1::Constant(expected),
             ) if state.relation_designation == b"projectile-faction"
-                && expected == b"enemy-origin" =>
+                && *expected == nominal_value(&compiled, b"enemy-origin", b"ProjectileFaction") =>
             {
                 Some(state.subject.as_slice())
             }
@@ -799,9 +813,9 @@ derive clamp-interior
 derive clamp-upper
 
 player-1
-  shape: Player
+  member of: Player
 enemy-1
-  shape: Enemy
+  member of: Enemy
 player-1 combat target enemy-1
 player-1 target active true
 enemy-1 vitals Vec3 { x: 6.0, y: 6.0, z: 1.0 }
@@ -952,9 +966,9 @@ relation clock
   mode given unit yields value: one
 
 unit-a
-  shape: Unit
+  member of: Unit
 unit-b
-  shape: Unit
+  member of: Unit
 unit-a clock 0.0
 unit-b clock 2.0
 
@@ -1371,15 +1385,15 @@ fn canonical_world_declarations_reach_the_checked_package_with_exact_remainder()
         vec![
             (
                 b"jump-arena".to_vec(),
-                b"shape".to_vec(),
+                b"member of".to_vec(),
                 CanonicalScalarValueV1::Symbol(b"Arena".to_vec()),
-                b"  shape: Arena".to_vec(),
+                b"  member of: Arena".to_vec(),
             ),
             (
                 b"player-1".to_vec(),
-                b"shape".to_vec(),
+                b"member of".to_vec(),
                 CanonicalScalarValueV1::Symbol(b"Player".to_vec()),
-                b"  shape: Player".to_vec(),
+                b"  member of: Player".to_vec(),
             ),
         ]
     );
@@ -1514,7 +1528,7 @@ fn canonical_input_preserves_negative_zero_bits() {
 
 #[test]
 fn repeated_roles_preserve_application_order_and_origins() {
-    let source = "Door\nLockable\niron-door\n  shape: Door\n  shape: Lockable\n";
+    let source = "Door\nLockable\niron-door\n  member of: Door\n  member of: Lockable\n";
     let cst = read_canonical_source_v1(source.as_bytes()).expect("application source reads");
     let plan = plan_independent_canonical_source_allocations_v1(
         &cst,
@@ -1533,7 +1547,7 @@ fn repeated_roles_preserve_application_order_and_origins() {
 
     assert!(compiled.unsupported.is_empty());
     assert_eq!(compiled.applications.len(), 2);
-    assert_eq!(compiled.applications[0].role, b"shape".to_vec());
+    assert_eq!(compiled.applications[0].role, b"member of".to_vec());
     assert_eq!(
         compiled.applications[0].object,
         CanonicalScalarValueV1::Symbol(b"Door".to_vec())
@@ -1554,11 +1568,11 @@ fn repeated_roles_preserve_application_order_and_origins() {
     assert_eq!(emissions[1].slot.repetition, None);
     assert_eq!(
         cst.source_slice(emissions[0].origin),
-        Some(b"  shape: Door".as_slice())
+        Some(b"  member of: Door".as_slice())
     );
     assert_eq!(
         cst.source_slice(emissions[1].origin),
-        Some(b"  shape: Lockable".as_slice())
+        Some(b"  member of: Lockable".as_slice())
     );
     assert!(
         emissions
@@ -1569,7 +1583,7 @@ fn repeated_roles_preserve_application_order_and_origins() {
 
 #[test]
 fn repeated_application_is_not_deduplicated() {
-    let source = "Door\niron-door\n  shape: Door\n  shape: Door\n";
+    let source = "Door\niron-door\n  member of: Door\n  member of: Door\n";
     let cst = read_canonical_source_v1(source.as_bytes()).expect("repeated applications read");
     let plan = plan_independent_canonical_source_allocations_v1(
         &cst,
@@ -1598,11 +1612,11 @@ fn repeated_application_is_not_deduplicated() {
     assert_ne!(emissions[0].origin, emissions[1].origin);
     assert_eq!(
         cst.source_slice(emissions[0].origin),
-        Some(b"  shape: Door".as_slice())
+        Some(b"  member of: Door".as_slice())
     );
     assert_eq!(
         cst.source_slice(emissions[1].origin),
-        Some(b"  shape: Door".as_slice())
+        Some(b"  member of: Door".as_slice())
     );
 }
 
