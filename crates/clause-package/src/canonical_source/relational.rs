@@ -110,8 +110,8 @@ struct CheckedConditions {
 }
 
 fn sum_query(source: &GeneralHandlerCst, sum: &GeneralSumCst) -> Result<GeneralHandlerCst, CanonicalSourceErrorV1> {
-    let arguments = sum.inputs.iter().enumerate().map(|(ordinal, name)|
-        Ok(GeneralHandlerArgumentCst { designation: name.clone(),
+    let arguments = sum.inputs.iter().enumerate().map(|(ordinal, input)|
+        Ok(GeneralHandlerArgumentCst { designation: input.parameter.clone(),
             ordinal: u16::try_from(ordinal).map_err(|_| CanonicalSourceErrorV1::MissingExecutableBinding { origin: sum.origin })? }))
         .collect::<Result<Vec<_>, CanonicalSourceErrorV1>>()?;
     Ok(GeneralHandlerCst {
@@ -252,14 +252,21 @@ fn checked_conditions_with_inputs(
     drop(operand);
     let mut pending_sums = source.sums.iter().collect::<Vec<_>>();
     while !pending_sums.is_empty() {
-        let index = pending_sums.iter().position(|sum|
-            sum.inputs.iter().all(|name| variables.contains_key(name))).ok_or_else(error)?;
+        let index = pending_sums.iter().position(|sum| sum.inputs.iter().all(|input| {
+            let mut used = BTreeSet::new();
+            collect_scalar_expression_parameters(&input.value, &mut used);
+            used.iter().all(|name| variables.contains_key(name))
+        })).ok_or_else(error)?;
         let sum = pending_sums.remove(index);
         // Only explicitly supplied inputs cross the query's lexical boundary.
-        let inputs = sum.inputs.iter().map(|name| variables.get(name).cloned().ok_or_else(error))
+        let inputs = sum.inputs.iter().map(|input| relational_scalar_expression(
+            cst, plan, &input.value, &variables, &domains,
+            expression_domain(&input.value, &domains), sum.origin,
+        ))
             .collect::<Result<Vec<_>, _>>()?;
-        let input_domains = sum.inputs.iter().map(|name|
-            Ok((name.clone(), domains.get(name).cloned().ok_or_else(error)?)))
+        let input_domains = sum.inputs.iter().map(|input|
+            Ok((input.parameter.clone(), expression_domain(&input.value, &domains)
+                .ok_or_else(error)?.to_vec())))
             .collect::<Result<BTreeMap<_, _>, CanonicalSourceErrorV1>>()?;
         let query = sum_query(source, sum)?;
         let CheckedConditions { predicates, variables: bindings, mut domains } =
@@ -702,13 +709,14 @@ fn check_domains_with_inputs(
         check_expression(b, &domain, &mut domains, source.origin)?;
     }
     for sum in &source.sums {
-        let input_domains = sum.inputs.iter().filter_map(|name|
-            domains.get(name).map(|domain| (name.clone(), domain.clone()))).collect();
+        let input_domains = sum.inputs.iter().filter_map(|input|
+            expression_domain(&input.value, &domains)
+                .map(|domain| (input.parameter.clone(), domain.to_vec()))).collect();
         let mut query_domains = check_domains_with_inputs(cst, plan, &sum_query(source, sum)?, input_domains)?;
         check_expression(&sum.value, b"F64", &mut query_domains, sum.origin)?;
         for input in &sum.inputs {
-            let domain = query_domains.get(input).ok_or(CanonicalSourceErrorV1::MissingExecutableBinding { origin: sum.origin })?;
-            constrain(&mut domains, input, domain, sum.origin)?;
+            let domain = query_domains.get(&input.parameter).ok_or(CanonicalSourceErrorV1::MissingExecutableBinding { origin: sum.origin })?;
+            check_expression(&input.value, domain, &mut domains, sum.origin)?;
         }
     }
     Ok(domains)

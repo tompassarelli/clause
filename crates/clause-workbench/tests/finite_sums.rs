@@ -147,3 +147,21 @@ fn dependent_query_results_follow_bindings_not_binder_spelling() {
         .replace("sum ?value where", "sum ?value * ?count given ?count where");
     assert!(ResidentSourceWorkbenchV1::open(cycle.as_bytes()).is_err());
 }
+
+#[test]
+fn query_inputs_expand_law_results_without_capturing_query_locals() {
+    let source = include_str!("../../../test-vectors/authoring/query-law-inputs.clause");
+    let mut w = ResidentSourceWorkbenchV1::open(source.as_bytes()).unwrap();
+    assert_eq!(result(&run(&mut w, b"measure", &[]), b"total"), 12.0);
+    assert_eq!(result(&run(&mut w, b"measure", &[]), b"total"), 72.0);
+
+    let chained = source.replace("double ?value as ?weight",
+        "double ?value as ?first\n    double ?first as ?weight");
+    let mut w = ResidentSourceWorkbenchV1::open(chained.as_bytes()).unwrap();
+    assert_eq!(result(&run(&mut w, b"measure", &[]), b"total"), 24.0);
+
+    let query_dependent = source.replace("double ?value as ?weight",
+        "sum ?amount where { ?item amount ?amount } as ?count\n    double ?count as ?weight");
+    let mut w = ResidentSourceWorkbenchV1::open(query_dependent.as_bytes()).unwrap();
+    assert_eq!(result(&run(&mut w, b"measure", &[]), b"total"), 18.0);
+}

@@ -1155,10 +1155,16 @@ struct GeneralSumCst {
     origin: CanonicalSourceOriginV1,
     parameter: Vec<u8>,
     value: CanonicalScalarExpressionV1,
-    inputs: Vec<Vec<u8>>,
+    inputs: Vec<GeneralQueryInputCst>,
     parameter_sources: Vec<ScalarParameterSourceCst>,
     selectors: Vec<ScalarStateSelectorCst>,
     predicates: Vec<CanonicalScalarPredicateV1>,
+}
+
+#[derive(Clone, Debug)]
+struct GeneralQueryInputCst {
+    parameter: Vec<u8>,
+    value: CanonicalScalarExpressionV1,
 }
 
 #[derive(Clone, Debug)]
@@ -4918,6 +4924,13 @@ fn specialize_scalar_binding_case(
         assignment.value = expand_scalar_law_bindings(
             &assignment.value, &case.bindings, &mut BTreeSet::new(), source.origin,
         )?;
+    }
+    for sum in &mut specialized.sums {
+        for input in &mut sum.inputs {
+            input.value = expand_scalar_law_bindings(
+                &input.value, &case.bindings, &mut BTreeSet::new(), sum.origin,
+            )?;
+        }
     }
     Ok(specialized)
 }
@@ -8907,6 +8920,9 @@ fn parse_general_sum(
     if !used.is_subset(&bound) {
         return Err(error());
     }
+    let inputs = inputs.into_iter().map(|parameter| GeneralQueryInputCst {
+        value: CanonicalScalarExpressionV1::Parameter(parameter.clone()), parameter,
+    }).collect();
     Ok(GeneralSumCst { origin, parameter: parameter.as_bytes().to_vec(), value, inputs,
         parameter_sources, selectors, predicates })
 }

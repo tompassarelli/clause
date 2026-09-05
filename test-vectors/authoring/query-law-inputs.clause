@@ -1,0 +1,37 @@
+F64
+Item
+Report
+
+relation doubled
+  reads double {input: F64} as {output: F64}
+  mode given input yields output: maybe
+law double-value
+  then
+    double ?value as ?value * 2.0
+derive double-value
+
+relation amount
+  reads {item: Item} amount {value: F64}
+  subject item
+  mode given item yields value: one
+relation total
+  reads {report: Report} total {value: F64}
+  subject report
+  mode given report yields value: one
+
+first
+  shape: Item
+report
+  shape: Report
+first amount 3.0
+report total 2.0
+
+on measure ?report
+  when
+    ?report total ?value
+    double ?value as ?weight
+    sum ?value * ?weight given ?weight where { ?item amount ?value } as ?sum
+  withdraw
+    ?report total ?value
+  include
+    ?report total ?sum
