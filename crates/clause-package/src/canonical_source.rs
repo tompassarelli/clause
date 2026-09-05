@@ -10515,8 +10515,33 @@ fn parse_shape_fields(fields: &str) -> Option<Vec<(&str, &str)>> {
     if fields.is_empty() {
         return None;
     }
-    fields
-        .split(", ")
+    let mut parts = Vec::new();
+    let mut start = 0;
+    let mut depth = 0_usize;
+    let mut quoted = false;
+    let mut escaped = false;
+    for (index, character) in fields.char_indices() {
+        if quoted {
+            if escaped { escaped = false; }
+            else if character == '\\' { escaped = true; }
+            else if character == '"' { quoted = false; }
+            continue;
+        }
+        match character {
+            '"' => quoted = true,
+            '(' => depth += 1,
+            ')' => depth = depth.checked_sub(1)?,
+            ',' if depth == 0 => {
+                parts.push(&fields[start..index]);
+                start = index + 1;
+            }
+            _ => {}
+        }
+    }
+    if depth != 0 || quoted { return None; }
+    parts.push(&fields[start..]);
+    parts.into_iter()
+        .map(str::trim)
         .map(|field| {
             let (name, value) = field.split_once(": ")?;
             (!name.is_empty() && !value.is_empty()).then_some((name, value))
@@ -10530,12 +10555,9 @@ fn split_vector_subject(source: &str) -> Option<(&str, &str)> {
 }
 
 fn parse_vec3_components(vector: &str) -> Option<[&str; 3]> {
-    let vector = vector.strip_suffix(" }")?;
-    let mut fields = vector.split(", ");
-    let x = fields.next()?.strip_prefix("x: ")?;
-    let y = fields.next()?.strip_prefix("y: ")?;
-    let z = fields.next()?.strip_prefix("z: ")?;
-    fields.next().is_none().then_some([x, y, z])
+    let fields = parse_shape_fields(vector)?;
+    let [("x", x), ("y", y), ("z", z)] = fields.as_slice() else { return None; };
+    Some([x, y, z])
 }
 
 fn parse_source_number(source: &str) -> Option<u64> {

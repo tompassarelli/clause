@@ -3,6 +3,23 @@ use clause_workbench::ResidentSourceWorkbenchV1;
 
 const SOURCE: &str = include_str!("../../../test-vectors/authoring/scalar-conditional.clause");
 
+#[test]
+fn conditional_fields_keep_nested_commas_and_text_inside_each_value() {
+    let source = include_str!("../../../test-vectors/authoring/structured-conditional.clause");
+    let mut w = ResidentSourceWorkbenchV1::open(source.as_bytes()).unwrap();
+    let frame = run(&mut w, b"measure");
+    let value = field(field(&frame, b"item"), b"reading");
+    assert_eq!(field(value, b"amount").as_atom().unwrap().canonical_payload(), 5.0_f64.to_bits().to_le_bytes());
+    assert_eq!(field(value, b"enabled").as_atom().unwrap().canonical_payload(), [0]);
+    assert_eq!(field(value, b"label").as_atom().unwrap().canonical_payload(), b"c, d");
+
+    let source = include_str!("../../../test-vectors/authoring/structured-keyboard-transition.clause")
+        .replace("?velocity-x + 3.0", "if(?velocity-x = 0.0, 3.0, 0.0)");
+    let mut w = ResidentSourceWorkbenchV1::open(source.as_bytes()).unwrap();
+    let frame = run(&mut w, b"planar-burst");
+    assert_eq!(field(field(field(&frame, b"player-1"), b"velocity"), b"x").as_atom().unwrap().canonical_payload(), 3.0_f64.to_bits().to_le_bytes());
+}
+
 fn field<'a>(term: &'a Term, key: &[u8]) -> &'a Term {
     let mut current = term;
     loop {

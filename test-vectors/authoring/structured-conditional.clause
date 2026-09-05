@@ -1,0 +1,26 @@
+F64
+Bool
+Text
+Item
+
+shape Reading
+  amount: F64
+  enabled: Bool
+  label: Text
+
+relation reading
+  reads {item: Item} reading {value: Reading}
+  subject item
+  mode given item yields value: one
+
+item
+  shape: Item
+item reading Reading { amount: 0.0, enabled: true, label: "a, b" }
+
+on measure ?item
+  when
+    ?item reading Reading { amount: ?amount, enabled: ?enabled, label: ?label }
+  withdraw
+    ?item reading Reading { amount: ?amount, enabled: ?enabled, label: ?label }
+  include
+    ?item reading Reading { amount: if(?enabled, if(?amount = 0.0, 5.0, 10.0 / ?amount), 0.0), enabled: if(?enabled, false, true), label: if(?enabled, "c, d", ?label) }
