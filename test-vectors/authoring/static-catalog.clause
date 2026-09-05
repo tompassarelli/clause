@@ -1,0 +1,37 @@
+Root
+Item
+Text
+F64
+
+relation known
+  reads {root: Root} known {value: Item}
+  subject root
+  mode given root yields value: many
+relation label
+  reads {item: Item} label {value: Text}
+  subject item
+  mode given item yields value: one
+relation count
+  reads {root: Root} count {value: F64}
+  subject root
+  mode given root yields value: one
+
+root
+  shape: Root
+first
+  shape: Item
+second
+  shape: Item
+root known first
+root known second
+first label "First"
+second label "Second"
+root count 0.0
+
+on tick ?root
+  when
+    ?root count ?prior
+  withdraw
+    ?root count ?prior
+  include
+    ?root count ?prior + 1.0

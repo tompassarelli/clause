@@ -2326,6 +2326,7 @@ fn relational_handler_origins(cst: &CanonicalSourceCstV1) -> BTreeSet<CanonicalS
         .filter(|handler| origins.contains(&handler.origin))
         .flat_map(|handler| general_handler_relation_designations(handler, &cst.items))
         .collect::<BTreeSet<_>>();
+    relations.extend(initial_relational_designations(cst));
     loop {
         let mut changed = false;
         for handler in &handlers {
@@ -2358,7 +2359,34 @@ fn relational_relation_designations(cst: &CanonicalSourceCstV1) -> BTreeSet<Vec<
             _ => None,
         })
         .flat_map(|handler| general_handler_relation_designations(handler, &cst.items))
+        .chain(initial_relational_designations(cst))
         .collect()
+}
+
+// Initial collections need rows even without an event that reads them.
+// Initial collections also seed handler closure so updates share their storage.
+fn initial_relational_designations(cst: &CanonicalSourceCstV1) -> BTreeSet<Vec<u8>> {
+    cst.items.iter().filter_map(|item| {
+        let (subject, surface) = match &item.kind {
+            CstKind::VectorAssertion(a) => (&a.subject, &a.relation),
+            CstKind::ShapeAssertion(a) => (&a.subject, &a.relation),
+            CstKind::BooleanAssertion(a) => (&a.subject, &a.relation),
+            CstKind::NumberAssertion(a) => (&a.subject, &a.relation),
+            CstKind::SymbolAssertion(a) => (&a.subject, &a.relation),
+            CstKind::TextAssertion(a) => (&a.subject, &a.relation),
+            _ => return None,
+        };
+        if declared_state_cardinality(cst, surface) != Some(SourceCardinality::Many) {
+            return None;
+        }
+        let relation = cst.items.iter().find_map(|item| match &item.kind {
+            CstKind::Relation(r) if &r.surface == surface => Some(r),
+            _ => None,
+        })?;
+        let subject_role = relation.subject.as_ref()?;
+        let domain = &relation.roles.iter().find(|role| &role.name == subject_role)?.domain;
+        declared_domain_facet(cst, subject, domain).then(|| surface.clone())
+    }).collect()
 }
 
 fn declared_state_relation(cst: &CanonicalSourceCstV1, surface: &[u8]) -> bool {
