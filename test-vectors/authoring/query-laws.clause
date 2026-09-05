@@ -1,0 +1,47 @@
+F64
+Item
+Report
+
+relation magnitude
+  reads magnitude of {input: F64} as {output: F64}
+  mode given input yields output: maybe
+law negative
+  if
+    ?value < 0.0
+  then
+    magnitude of ?value as 0.0 - ?value
+law positive
+  if
+    ?value >= 0.0
+  then
+    magnitude of ?value as ?value
+derive negative
+derive positive
+
+relation amount
+  reads {item: Item} amount {value: F64}
+  subject item
+  mode given item yields value: one
+relation total
+  reads {report: Report} total {value: F64}
+  subject report
+  mode given report yields value: one
+
+first
+  shape: Item
+second
+  shape: Item
+report
+  shape: Report
+first amount -3.0
+second amount 4.0
+report total 0.0
+
+on measure ?report
+  when
+    ?report total ?prior
+    sum ?magnitude where { ?item amount ?value; magnitude of ?value as ?magnitude } as ?sum
+  withdraw
+    ?report total ?prior
+  include
+    ?report total ?sum

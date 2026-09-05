@@ -1160,6 +1160,7 @@ struct GeneralSumCst {
     inputs: Vec<GeneralQueryInputCst>,
     parameter_sources: Vec<ScalarParameterSourceCst>,
     selectors: Vec<ScalarStateSelectorCst>,
+    scalar_bindings: Vec<ScalarLawBindingCst>,
     predicates: Vec<CanonicalScalarPredicateV1>,
 }
 
@@ -8436,6 +8437,9 @@ fn parse_scalar_handler(
         .copied()
         .filter(|(condition, _)| *condition != withdraw)
     {
+        if condition.starts_with("sum ") {
+            return Ok(None);
+        }
         if let Some(predicate) = parse_scalar_predicate(condition, current) {
             predicates.push(predicate);
             continue;
@@ -8654,7 +8658,7 @@ fn parse_general_handler(
     let mut boolean_conditions = Vec::new();
     for (condition, condition_origin) in &when {
         if condition.starts_with("sum ") {
-            let sum = parse_general_sum(condition, *condition_origin)?;
+            let sum = parse_general_sum(condition, *condition_origin, scalar_laws)?;
             if seen_arguments.contains(&sum.parameter)
                 || sums.insert(sum.parameter.clone(), sum).is_some()
             {
@@ -8898,6 +8902,7 @@ fn parse_general_handler(
 fn parse_general_sum(
     source: &str,
     origin: CanonicalSourceOriginV1,
+    scalar_laws: &ScalarLawEnvironment,
 ) -> Result<GeneralSumCst, CanonicalSourceErrorV1> {
     let error = || CanonicalSourceErrorV1::InvalidGeneralHandler { origin };
     let (value, query) = source.strip_prefix("sum ").ok_or_else(error)?
@@ -8920,10 +8925,16 @@ fn parse_general_sum(
     let value = parse_scalar_expression(value, "").ok_or_else(error)?;
     let mut parameter_sources = Vec::new();
     let mut selectors = Vec::new();
+    let mut scalar_bindings = Vec::<ScalarLawBindingCst>::new();
     let mut predicates = Vec::new();
     for condition in query.split(';').map(str::trim) {
         if let Some(predicate) = parse_scalar_predicate(condition, "") {
             predicates.push(predicate);
+        } else if let Some(binding) = scalar_laws.binding(condition, origin)? {
+            if inputs.contains(&binding.parameter)
+                || scalar_bindings.iter().any(|prior| prior.parameter == binding.parameter)
+            { return Err(error()); }
+            scalar_bindings.push(binding);
         } else if let Some(selector) = parse_scalar_state_selector(condition, origin) {
             selectors.push(selector);
         } else {
@@ -8938,12 +8949,22 @@ fn parse_general_sum(
         .flat_map(|source| [&source.parameter, &source.subject])
         .chain(selectors.iter().map(|selector| &selector.source.subject))
         .chain(&inputs)
+        .chain(scalar_bindings.iter().map(|binding| &binding.parameter))
         .filter(|name| name.starts_with(b"?"))
         .cloned().collect::<BTreeSet<_>>();
     let mut used = BTreeSet::new();
     collect_scalar_expression_parameters(&value, &mut used);
     for predicate in &predicates {
         collect_predicate_parameters(predicate, &mut used);
+    }
+    for binding in &scalar_bindings {
+        if parameter_sources.iter().any(|source| source.parameter == binding.parameter
+            || source.subject == binding.parameter)
+            || selectors.iter().any(|selector| selector.source.subject == binding.parameter)
+        { return Err(error()); }
+        for (expression, _) in &binding.typed_roles {
+            collect_scalar_expression_parameters(expression, &mut used);
+        }
     }
     if !used.is_subset(&bound) {
         return Err(error());
@@ -8952,7 +8973,7 @@ fn parse_general_sum(
         value: CanonicalScalarExpressionV1::Parameter(parameter.clone()), parameter,
     }).collect();
     Ok(GeneralSumCst { origin, parameter: parameter.as_bytes().to_vec(), value, inputs,
-        parameter_sources, selectors, predicates })
+        parameter_sources, selectors, scalar_bindings, predicates })
 }
 
 fn parse_general_insertion(

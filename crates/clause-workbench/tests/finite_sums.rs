@@ -165,3 +165,27 @@ fn query_inputs_expand_law_results_without_capturing_query_locals() {
     let mut w = ResidentSourceWorkbenchV1::open(query_dependent.as_bytes()).unwrap();
     assert_eq!(result(&run(&mut w, b"measure", &[]), b"total"), 18.0);
 }
+
+#[test]
+fn queries_compose_checked_laws_and_count_each_row_once() {
+    let source = include_str!("../../../test-vectors/authoring/query-laws.clause");
+    let mut w = ResidentSourceWorkbenchV1::open(source.as_bytes()).unwrap();
+    assert_eq!(result(&run(&mut w, b"measure", &[]), b"total"), 7.0);
+    let overlap = source.replace("derive positive", "derive positive\nlaw also-positive\n  if\n    ?value >= 0.0\n  then\n    magnitude of ?value as ?value\nderive also-positive");
+    let mut w = ResidentSourceWorkbenchV1::open(overlap.as_bytes()).unwrap();
+    assert_eq!(result(&run(&mut w, b"measure", &[]), b"total"), 7.0);
+    let chain = source.replace("sum ?magnitude", "sum ?twice")
+        .replace("as ?magnitude }", "as ?magnitude; magnitude of (0.0 - ?magnitude * 2.0) as ?twice }");
+    let mut w = ResidentSourceWorkbenchV1::open(chain.as_bytes()).unwrap();
+    assert_eq!(result(&run(&mut w, b"measure", &[]), b"total"), 14.0);
+    let partial = source.replace("derive negative", "");
+    let mut w = ResidentSourceWorkbenchV1::open(partial.as_bytes()).unwrap();
+    assert_eq!(result(&run(&mut w, b"measure", &[]), b"total"), 4.0);
+    for invalid in [
+        source.replace("magnitude of ?value as ?magnitude }", "magnitude of true as ?magnitude }"),
+        source.replace("magnitude of ?value as ?magnitude }", "magnitude of ?missing as ?magnitude }"),
+        source.replace("as ?magnitude }", "as ?value }"),
+    ] {
+        assert!(ResidentSourceWorkbenchV1::open(invalid.as_bytes()).is_err());
+    }
+}

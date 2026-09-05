@@ -119,7 +119,7 @@ fn sum_query(source: &GeneralHandlerCst, sum: &GeneralSumCst) -> Result<GeneralH
         designation: source.designation.clone(), subject: Vec::new(),
         arguments, creations: vec![], parameter_sources: sum.parameter_sources.clone(),
         membership_sources: vec![], required_sources: vec![], selectors: sum.selectors.clone(),
-        scalar_bindings: vec![], sums: vec![], predicates: sum.predicates.clone(),
+        scalar_bindings: sum.scalar_bindings.clone(), sums: vec![], predicates: sum.predicates.clone(),
         boolean_conditions: vec![], assignments: vec![], accumulations: vec![],
         insertions: vec![], removals: vec![], includes: vec![],
     })
@@ -269,12 +269,8 @@ fn checked_conditions_with_inputs(
                 .ok_or_else(error)?.to_vec())))
             .collect::<Result<BTreeMap<_, _>, CanonicalSourceErrorV1>>()?;
         let query = sum_query(source, sum)?;
-        let CheckedConditions { predicates, variables: bindings, mut domains } =
-            checked_conditions_with_inputs(cst, plan, &query, input_domains)?;
-        check_expression(&sum.value, b"F64", &mut domains, sum.origin)?;
-        let value = relational_scalar_expression(cst, plan, &sum.value, &bindings, &domains,
-            Some(b"F64"), sum.origin)?;
-        variables.insert(sum.parameter.clone(), E::Sum { inputs, predicates, value: Box::new(value) });
+        let value = checked_sum(cst, plan, &query, sum, inputs, input_domains)?;
+        variables.insert(sum.parameter.clone(), value);
     }
     for required in &source.required_sources {
         let subject = subject_expression(cst, plan, &variables, required, source.origin)?;
@@ -344,6 +340,58 @@ fn checked_conditions_with_inputs(
         ));
     }
     Ok(CheckedConditions { predicates: schedule_predicates(predicates), variables, domains })
+}
+
+fn checked_sum(
+    cst: &CanonicalSourceCstV1,
+    plan: &CanonicalSourceAllocationPlanV1,
+    query: &GeneralHandlerCst,
+    sum: &GeneralSumCst,
+    inputs: Vec<CanonicalExecutableExpressionV1>,
+    input_domains: BTreeMap<Vec<u8>, Vec<u8>>,
+) -> Result<CanonicalExecutableExpressionV1, CanonicalSourceErrorV1> {
+    use CanonicalExecutableExpressionV1 as E;
+    use CanonicalExecutablePredicateV1 as P;
+    if query.scalar_bindings.is_empty() {
+        let CheckedConditions { predicates, variables, mut domains } =
+            checked_conditions_with_inputs(cst, plan, query, input_domains)?;
+        check_expression(&sum.value, b"F64", &mut domains, sum.origin)?;
+        let value = relational_scalar_expression(cst, plan, &sum.value, &variables, &domains,
+            Some(b"F64"), sum.origin)?;
+        return Ok(E::Sum { inputs, predicates, value: Box::new(value) });
+    }
+    let mut rows_query = query.clone();
+    rows_query.scalar_bindings.clear();
+    rows_query.predicates.clear();
+    let rows = checked_conditions_with_inputs(cst, plan, &rows_query, input_domains.clone())?.predicates;
+    let mut contribution = constant_expression(CanonicalScalarValueV1::Number(0.0_f64.to_bits()));
+    // A law has at most one distinct result for each row match. Overlapping
+    // equal-result cases select that result once, not one contribution per proof.
+    for case in binding_cases(&query.scalar_bindings)?.into_iter().rev() {
+        let specialized = specialize_scalar_binding_case(query, &case)?;
+        let CheckedConditions { predicates, variables, mut domains } =
+            checked_conditions_with_inputs(cst, plan, &specialized, input_domains.clone())?;
+        let value = expand_scalar_law_bindings(&sum.value, &case.bindings,
+            &mut BTreeSet::new(), sum.origin)?;
+        check_expression(&value, b"F64", &mut domains, sum.origin)?;
+        let value = relational_scalar_expression(cst, plan, &value, &variables, &domains,
+            Some(b"F64"), sum.origin)?;
+        let guards = predicates.into_iter().filter(|predicate| !matches!(predicate, P::RelationMatch(..)));
+        let mut accepted = constant_expression(CanonicalScalarValueV1::Boolean(true));
+        for guard in guards.rev() {
+            let condition = match guard {
+                P::Equal(a, b) => E::Equal(Box::new(a), Box::new(b)),
+                P::GreaterThan(a, b) => E::GreaterThan(Box::new(a), Box::new(b)),
+                P::LessThanOrEqual(a, b) => E::LessThanOrEqual(Box::new(a), Box::new(b)),
+                P::Contains(a, b) => E::MatchesAny(vec![vec![P::Contains(a, b)]]),
+                P::RelationMatch(..) => unreachable!("row predicates were partitioned"),
+            };
+            accepted = E::Conditional(Box::new(condition), Box::new(accepted),
+                Box::new(constant_expression(CanonicalScalarValueV1::Boolean(false))));
+        }
+        contribution = E::Conditional(Box::new(accepted), Box::new(value), Box::new(contribution));
+    }
+    Ok(E::Sum { inputs, predicates: rows, value: Box::new(contribution) })
 }
 
 // Row matches are finite conjunctions. Run keyed/selective matches first and

@@ -10,6 +10,62 @@ Use that pin's workbench directly:
 
 Live source tooling offers an explicit checked scalar-effect replacement, not arbitrary text-reload continuity. Use `scalar_effects()` and `edit_scalar_effect()` with the captured generation and exact offered node; settle any pending candidate first. Native and Wasm carry the actual live world internally through the checked operation. Retained explanations describe accepted Steps; finite interventions query an isolated recorded pre-state without applying input or admitting a world. See `docs/live-source-semantics.md` for the compiler/runtime and passive browser contract, bounds, and remaining limits.
 
+## Reusable checked laws inside finite queries
+
+Query-local scalar laws compose with typed rows, explicit inputs and predicates. Each matching row contributes once even when equal-result law cases overlap. A missing law result excludes that row; an invalid expression or exhausted search remains an error.
+
+Catalog ID: `query-laws`
+
+```clause
+F64
+Item
+Report
+
+relation magnitude
+  reads magnitude of {input: F64} as {output: F64}
+  mode given input yields output: maybe
+law negative
+  if
+    ?value < 0.0
+  then
+    magnitude of ?value as 0.0 - ?value
+law positive
+  if
+    ?value >= 0.0
+  then
+    magnitude of ?value as ?value
+derive negative
+derive positive
+
+relation amount
+  reads {item: Item} amount {value: F64}
+  subject item
+  mode given item yields value: one
+relation total
+  reads {report: Report} total {value: F64}
+  subject report
+  mode given report yields value: one
+
+first
+  shape: Item
+second
+  shape: Item
+report
+  shape: Report
+first amount -3.0
+second amount 4.0
+report total 0.0
+
+on measure ?report
+  when
+    ?report total ?prior
+    sum ?magnitude where { ?item amount ?value; magnitude of ?value as ?magnitude } as ?sum
+  withdraw
+    ?report total ?prior
+  include
+    ?report total ?sum
+```
+
 ## Typed lazy value choice
 
 if(condition, yes, no) requires Bool and two values of the expected type. Only the selected branch executes; both branches are checked. It composes with source laws, query contributions, structured fields and atomic updates.

@@ -16,6 +16,12 @@ pub struct AuthoringExampleV1 {
 /// accepts it.
 pub const AUTHORING_EXAMPLES_V1: &[AuthoringExampleV1] = &[
     AuthoringExampleV1 {
+        slug: "query-laws",
+        title: "Reusable checked laws inside finite queries",
+        summary: "Query-local scalar laws compose with typed rows, explicit inputs and predicates. Each matching row contributes once even when equal-result law cases overlap. A missing law result excludes that row; an invalid expression or exhausted search remains an error.",
+        source: include_str!("../../../test-vectors/authoring/query-laws.clause"),
+    },
+    AuthoringExampleV1 {
         slug: "scalar-conditional",
         title: "Typed lazy value choice",
         summary: "if(condition, yes, no) requires Bool and two values of the expected type. Only the selected branch executes; both branches are checked. It composes with source laws, query contributions, structured fields and atomic updates.",
