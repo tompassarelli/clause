@@ -356,6 +356,7 @@ fn physical_plan(package: &CheckedProcessPackage) -> ExecutablePhysicalPlanV1 {
         executable_projection_role_term_v1(scope, projection_role, ExecutableValueKindV1::Number)
             .expect("generic fixture projection binds one numeric role");
     ExecutablePhysicalPlanV1 {
+        source_metadata: None,
         application_shape: constitution
             .application_shape(application)
             .expect("fixture Application has one exact semantic shape"),
@@ -397,6 +398,7 @@ fn ongoing_effect_physical_plan(
         .find(|candidate| candidate.id == application)
         .expect("effect fixture retains its exact Application");
     ExecutablePhysicalPlanV1 {
+        source_metadata: None,
         application_shape: constitution
             .application_shape(application)
             .expect("effect fixture Application has one exact semantic shape"),

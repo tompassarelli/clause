@@ -149,6 +149,15 @@ interface SessionApi {
   readonly reclaim: () => boolean;
 }
 
+interface SourceEditWasmModule extends SessionWasmModule {
+  readonly clause_session_v1_source_edit_bulk: typeof import("#clause-runtime-wasm").clause_session_v1_source_edit_bulk;
+}
+
+function is_source_edit_module(module: unknown): module is SourceEditWasmModule {
+  return is_session_wasm_module(module) && "clause_session_v1_source_edit_bulk" in module
+    && typeof module.clause_session_v1_source_edit_bulk === "function";
+}
+
 interface ProcessWasmModule {
   readonly clause_process_v1_reset: typeof import("#clause-runtime-wasm").clause_process_v1_reset;
   readonly clause_process_v1_request_push: typeof import("#clause-runtime-wasm").clause_process_v1_request_push;
@@ -2074,12 +2083,12 @@ function decode_term_node(
         })();
 }
 
-function decode_canonical_term(bytes: unknown): TermNode {
+function decode_canonical_term(bytes: unknown, maximumBytes = cse1_max_bytes): TermNode {
   const envelope_source = workbench["workbench-byte-envelope-source"](bytes);
   const source = envelope_source === null ? bytes : envelope_source;
   if (
-    (typeof source === "string" && source.length <= cse1_max_bytes) ||
-    exact_byte_array_p(source, cse1_max_bytes)
+    (typeof source === "string" && source.length <= maximumBytes) ||
+    exact_byte_array_p(source, maximumBytes)
   ) {
     const node_start = require_range(
       source,
@@ -2173,6 +2182,8 @@ function realize_projection_node(node: TermNode): ProjectedValue {
   if (node.kind === "atom") {
     const kind = atom_kind_text(node);
     const payload = node.payload;
+    if (kind === "clause/js-object-end-v1" && payload.length === 0) return Object.freeze({});
+    if (kind === "clause/js-array-end-v1" && payload.length === 0) return Object.freeze([]);
     if (kind === "clause/process-projected-f64-v1")
       return projected_number(payload);
     if (kind === "clause/process-projected-bool-v1") {
@@ -2748,6 +2759,117 @@ function create_wasm_cartridge_port_bang(
         : null;
     },
   );
+}
+
+/** Apply compiler-owned CET1 to this exact live Wasm session. No source parsing,
+ * identity inference, native shadow-state import, or automatic Admission. */
+export function editSourceSession(
+  module: unknown,
+  incomingSession: unknown,
+  generation: number,
+  request: ExactProcessRequest,
+  witness: ExactBytes,
+  policy: workbench.WorkbenchPolicy,
+): workbench.SessionCompletion {
+  try {
+    const previous = require_live_session(incomingSession);
+    if (!Number.isSafeInteger(generation) || generation <= previous.sourceGeneration) {
+      throw new Error("source edit requires a fresh captured generation");
+    }
+    if (!is_source_edit_module(module)) throw new Error("Wasm runtime lacks checked source edit API");
+    if (!exact_byte_array_p(witness, cwr1_max_bytes)) throw new Error("source edit witness exceeds bound");
+    const cartridge = parse_persistent_cartridge_bang(request);
+    const status = module.clause_session_v1_source_edit_bulk(
+      previous.handle.slot, previous.handle.generation, BigInt(previous.sequence.value),
+      new Uint8Array(cartridge.openBytes), new Uint8Array(witness),
+    );
+    if (status !== 0) throw new Error(`checked source edit rejected: ${process_status(status)}`);
+    const event = decode_cse1_event([...module.clause_session_v1_event_bulk()]);
+    if (event.kind !== "opened" || event.sequence !== 0) throw new Error("source edit returned invalid replacement custody");
+    const session = WasmSession(
+      Object.freeze({ slot: event.slot, generation: event.generation }), generation,
+      event.packageId, event.sessionId, event.allocation,
+      { value: event.world, watches: {} }, { value: 0, watches: {} }, cartridge.occurrences,
+      { value: false, watches: {} },
+    );
+    previous.disposed.value = true;
+    setTimeout(() => reclaim_retired_session_bang(module), 0);
+    return workbench["->SessionStarted"](session, event.world, workbench["create-workbench-envelope"](policy, "[]"));
+  } catch (error) {
+    return workbench["->SessionFailed"](reject_reason(error));
+  }
+}
+
+interface DiagnosticWasmModule extends SessionWasmModule {
+  readonly clause_session_v1_explain_bulk: typeof import("#clause-runtime-wasm").clause_session_v1_explain_bulk;
+  readonly clause_session_v1_intervene_bulk: typeof import("#clause-runtime-wasm").clause_session_v1_intervene_bulk;
+  readonly clause_session_v1_source_continuity_bulk: typeof import("#clause-runtime-wasm").clause_session_v1_source_continuity_bulk;
+}
+
+function isDiagnosticModule(module: unknown): module is DiagnosticWasmModule {
+  return is_session_wasm_module(module)
+    && "clause_session_v1_explain_bulk" in module && typeof module.clause_session_v1_explain_bulk === "function"
+    && "clause_session_v1_intervene_bulk" in module && typeof module.clause_session_v1_intervene_bulk === "function"
+    && "clause_session_v1_source_continuity_bulk" in module && typeof module.clause_session_v1_source_continuity_bulk === "function";
+}
+
+function diagnosticModule(module: unknown): DiagnosticWasmModule {
+  if (!isDiagnosticModule(module)) {
+    throw new Error("Wasm runtime lacks execution-backed diagnostic API");
+  }
+  return module;
+}
+
+export function explainSession(module: unknown, incomingSession: unknown, entry: number): ProjectedValue {
+  const session = require_live_session(incomingSession);
+  if (!Number.isInteger(entry) || entry < 0 || entry > 65535) throw new Error("explanation entry is invalid");
+  const bytes = diagnosticModule(module).clause_session_v1_explain_bulk(session.handle.slot, session.handle.generation, entry);
+  return realize_projection_node(decode_canonical_term([...bytes], 1024 * 1024));
+}
+
+export function sourceContinuity(module: unknown, incomingSession: unknown): ProjectedValue {
+  const session = require_live_session(incomingSession);
+  const bytes = diagnosticModule(module).clause_session_v1_source_continuity_bulk(session.handle.slot, session.handle.generation);
+  return realize_projection_node(decode_canonical_term([...bytes], 1024 * 1024));
+}
+
+/** Read-only opaque CIQ1 request: all search and semantic evaluation occurs
+ * inside the live Wasm runtime against a retained actual event. */
+export function interveneSession(module: unknown, incomingSession: unknown, query: ExactBytes): ProjectedValue {
+  const session = require_live_session(incomingSession);
+  if (!exact_byte_array_p(query, 64 * 1024)) throw new Error("intervention query exceeds bound");
+  const bytes = diagnosticModule(module).clause_session_v1_intervene_bulk(session.handle.slot, session.handle.generation, new Uint8Array(query));
+  return realize_projection_node(decode_canonical_term([...bytes], 1024 * 1024));
+}
+
+export interface FiniteScalarChange { readonly slot: number; readonly value: boolean | number }
+
+/** Passive typed serializer for a finite question supplied by the caller.
+ * CPP1 tags encode the shared normalized predicate; no local evaluation. */
+export function finiteScalarInterventionQuery(
+  event: string, allowed: readonly FiniteScalarChange[], maximumEvaluations: number,
+  desired: { readonly slot: number; readonly greaterThan: number } | boolean,
+): ExactBytes {
+  if (!/^[0-9a-f]{64}$/.test(event) || allowed.length > 20 || !Number.isInteger(maximumEvaluations)
+    || maximumEvaluations < 0 || maximumEvaluations > 4096) throw new Error("finite intervention envelope is invalid");
+  const bytes = [67, 73, 81, 49, ...event.match(/../g)!.map(pair => Number.parseInt(pair, 16))];
+  append_u32_bang(bytes, maximumEvaluations);
+  const slot = (value: number) => {
+    if (!Number.isInteger(value) || value < 0 || value > 65535) throw new Error("intervention coordinate is invalid");
+    bytes.push(value & 255, value >>> 8);
+  };
+  const scalar = (value: boolean | number) => {
+    if (typeof value === "boolean") { bytes.push(1, value ? 1 : 0); return; }
+    if (!Number.isFinite(value)) throw new Error("intervention value is not finite");
+    bytes.push(0);
+    const buffer = new ArrayBuffer(8); new DataView(buffer).setFloat64(0, value === 0 ? 0 : value, true);
+    bytes.push(...new Uint8Array(buffer));
+  };
+  slot(allowed.length);
+  for (const change of allowed) { slot(change.slot); scalar(change.value); }
+  if (typeof desired === "boolean") { bytes.push(0); scalar(desired); }
+  else { bytes.push(8, 1); slot(desired.slot); bytes.push(0); scalar(desired.greaterThan); }
+  return Object.freeze(bytes);
 }
 
 const create_wasm_cartridge_port = create_wasm_cartridge_port_bang;

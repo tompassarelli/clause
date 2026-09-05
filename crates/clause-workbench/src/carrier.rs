@@ -193,6 +193,7 @@ fn physical_plan(
         .application_shape(application)
         .ok_or(WorkbenchCarrierError::MissingApplicationShape)?;
     Ok(ExecutablePhysicalPlanV1 {
+        source_metadata: None,
         application_shape,
         mode: ModeId {
             operator: OperatorRef {

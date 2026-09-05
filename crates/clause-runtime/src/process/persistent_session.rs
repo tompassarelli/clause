@@ -49,6 +49,30 @@ impl RetiredPersistentProcessRuntimeV1 {
 }
 
 impl PersistentProcessSessionV1 {
+    pub fn source_continuity_term(&self) -> Result<clause_package::Term, PersistentProcessSessionErrorV1> {
+        Ok(self.runtime()?.source_continuity_term()?)
+    }
+    pub fn recorded_event(&self, entry: u16) -> Result<Option<&super::ExecutableRecordedEventV1>, PersistentProcessSessionErrorV1> {
+        Ok(self.runtime()?.recorded_event(entry))
+    }
+
+    pub fn explanation_term(&self, entry: u16) -> Result<clause_package::Term, PersistentProcessSessionErrorV1> {
+        Ok(self.runtime()?.explanation_term(entry)?)
+    }
+
+    pub fn intervene(&self, query: &super::ExecutableInterventionQueryV1) -> Result<super::ExecutableInterventionResultV1, PersistentProcessSessionErrorV1> {
+        Ok(self.runtime()?.intervene(query)?)
+    }
+
+    pub(crate) fn initialize_source_continuity(
+        &mut self,
+        previous: &Self,
+        checked: &super::CheckedExecutableSourceEditV1,
+    ) -> Result<(), PersistentProcessSessionErrorV1> {
+        self.runtime_mut()?.initialize_source_continuity(previous.runtime()?, checked)?;
+        Ok(())
+    }
+
     /// Open one native session by transferring ownership of the checked
     /// package and authority store into its runtime.
     pub fn open(

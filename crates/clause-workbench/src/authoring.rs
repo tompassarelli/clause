@@ -141,7 +141,8 @@ This card is generated from compiler-owned examples. It is a curated current voc
 Use that pin's workbench directly:\n\n\
 - `clause-workbench authoring-card` prints this card.\n\
 - `clause-workbench check-source FILE.clause` reads, elaborates, lowers, and opens the source in the resident execution workbench.\n\
-- `clause-workbench project-nix FILE.clause [OUTPUT]` checks `using Nix` relations and renders their typed flake projection.\n\n",
+- `clause-workbench project-nix FILE.clause [OUTPUT]` checks `using Nix` relations and renders their typed flake projection.\n\n\
+Live source tooling offers an explicit checked scalar-effect replacement, not arbitrary text-reload continuity. Use `scalar_effects()` and `edit_scalar_effect()` with the captured generation and exact offered node; settle any pending candidate first. Native and Wasm carry the actual live world internally through the checked operation. Retained explanations describe accepted Steps; finite interventions query an isolated recorded pre-state without applying input or admitting a world. See `docs/live-source-semantics.md` for the compiler/runtime and passive browser contract, bounds, and remaining limits.\n\n",
     );
 
     for (index, example) in AUTHORING_EXAMPLES_V1.iter().enumerate() {

@@ -13,6 +13,7 @@
     "test": "bun test ./generated/jump-arena-shell/shell-boundary-test.js ./generated/jump-arena-shell/workbench-boundary-test.js ./generated/jump-arena-shell/wasm-cartridge-port-test.js ./generated/jump-arena-shell/branch-wasm-port-test.js ./generated/jump-arena-shell/wasm-workbench-shell-test.js",
     "test:branch": "bun test ./generated/jump-arena-shell/branch-wasm-port-test.js",
     "test:referent-input": "bun test ./src/referent-input-test.ts",
+    "test:live-semantics": "bun test ./src/live-semantics-test.ts",
     "test:gameplay-hot-reload": "bun test ./generated/jump-arena-shell/wasm-cartridge-port-test.js --test-name-pattern 'real Wasm (workbench )?hot-reloads Clause'",
     "check:gameplay-hot-reload": "bun run build:gameplay && bun run test:gameplay-hot-reload"
   },

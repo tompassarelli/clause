@@ -28,6 +28,11 @@ const MAX_PROGRAM_ITEMS: usize = 65_536;
 const MAX_EXPRESSION_DEPTH: usize = 64;
 const MAX_INPUT_CODE_BYTES: usize = 64;
 
+mod live_source;
+pub use live_source::*;
+mod explanation;
+pub use explanation::*;
+
 static ALLOCATED_RUNTIME_ROOTS_V1: OnceLock<Mutex<BTreeSet<[u8; IDENTITY_BYTES]>>> =
     OnceLock::new();
 
@@ -2047,6 +2052,9 @@ pub struct ExecutablePhysicalPlanV1 {
     pub target: ExecutablePhysicalTargetV1,
     pub input: Option<ExecutableInputPlanV1>,
     pub program: ExecutableProgramV1,
+    /// Compiler provenance bound by the exact physical artifact. It is not
+    /// an execution observation and is never itself proof a rule fired.
+    pub source_metadata: Option<Term>,
 }
 
 impl ExecutablePhysicalPlanV1 {
@@ -2157,6 +2165,13 @@ pub fn encode_executable_physical_plan_v1(
     bytes.push(plan.target as u8);
     encode_input_plan(&mut bytes, plan.input.as_ref())?;
     encode_program_body(&mut bytes, &plan.program)?;
+    if let Some(metadata) = &plan.source_metadata {
+        let metadata = canonical_term_bytes(metadata).map_err(|_| ExecutableErrorV1::MalformedProgram)?;
+        if metadata.len() > 1024 * 1024 { return Err(ExecutableErrorV1::ResourceLimit); }
+        bytes.extend_from_slice(b"CSM1");
+        bytes.extend_from_slice(&(metadata.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(&metadata);
+    }
     Ok(bytes)
 }
 
@@ -2183,6 +2198,12 @@ pub fn decode_executable_physical_plan_v1(
     };
     let input = decode_input_plan(&mut decoder)?;
     let program = decode_program_body(&mut decoder)?;
+    let source_metadata = if decoder.is_complete() { None } else {
+        if decoder.take(4)? != b"CSM1" { return Err(ExecutableErrorV1::MalformedPhysicalPlan); }
+        let length = decoder.u32()? as usize;
+        if length > 1024 * 1024 { return Err(ExecutableErrorV1::ResourceLimit); }
+        Some(decode_canonical_term_bytes(decoder.take(length)?).map_err(|_| ExecutableErrorV1::MalformedPhysicalPlan)?)
+    };
     if !decoder.is_complete() {
         return Err(ExecutableErrorV1::MalformedPhysicalPlan);
     }
@@ -2199,6 +2220,7 @@ pub fn decode_executable_physical_plan_v1(
         target,
         input,
         program,
+        source_metadata,
     };
     validate_program(&plan.program)?;
     validate_input_plan_shape(plan.input.as_ref(), &plan.program)?;
@@ -2961,6 +2983,9 @@ pub struct ExecutableProcessRuntimeV1 {
     suspended_continuation: Option<ContinuationId>,
     pending_effect_intent: Option<EffectIntentId>,
     active_effect_attempt: Option<EffectAttemptId>,
+    recorded_events: BTreeMap<u16, ExecutableRecordedEventV1>,
+    source_metadata: Option<Term>,
+    source_continuity: Option<ExecutableSourceContinuityV1>,
 }
 
 impl ExecutableProcessRuntimeV1 {
@@ -3092,6 +3117,9 @@ impl ExecutableProcessRuntimeV1 {
             suspended_continuation: None,
             pending_effect_intent: None,
             active_effect_attempt: None,
+            recorded_events: BTreeMap::new(),
+            source_metadata: physical_plan.plan.source_metadata,
+            source_continuity: None,
         })
     }
 }
@@ -4245,8 +4273,9 @@ impl ExecutableProcessRuntimeV1 {
             )
             .map_err(ExecutableCarrierErrorV1::Executable)?,
         );
+        let mut trace = ExecutableEvaluationTraceV1::default();
         let (next_configuration, mut bridge_step) = self
-            .prepare_step(occurrence, step_ordinal, configuration_ordinal)
+            .prepare_step_traced(occurrence, step_ordinal, configuration_ordinal, &self.configuration, Some(&mut trace))
             .map_err(ExecutableCarrierErrorV1::Executable)?;
         bridge_step.input_observation = Some(occurrence_id);
         let execution = self
@@ -4502,6 +4531,7 @@ impl ExecutableProcessRuntimeV1 {
             .apply_ingress(&ingress)
             .map_err(ExecutableCarrierErrorV1::Ingress)?;
 
+        self.retain_executed_event(&bridge_step, step_ordinal, configuration_ordinal, &next_configuration, trace);
         self.configuration = next_configuration;
         self.configuration_id = bridge_step.after;
         self.last_step = Some(bridge_step);
@@ -4553,7 +4583,9 @@ impl ExecutableProcessRuntimeV1 {
             stage_runtime_ordinal(self.identity_ordinals.next_step)?;
         let (configuration_ordinal, next_configuration_ordinal) =
             stage_runtime_ordinal(self.identity_ordinals.next_configuration)?;
-        let (next, step) = self.prepare_step(occurrence, step_ordinal, configuration_ordinal)?;
+        let mut trace = ExecutableEvaluationTraceV1::default();
+        let (next, step) = self.prepare_step_traced(occurrence, step_ordinal, configuration_ordinal, &self.configuration, Some(&mut trace))?;
+        self.retain_executed_event(&step, step_ordinal, configuration_ordinal, &next, trace);
         self.configuration_id = step.after;
         self.configuration = next;
         self.last_step = Some(step);
@@ -4568,9 +4600,21 @@ impl ExecutableProcessRuntimeV1 {
         step_ordinal: u64,
         configuration_ordinal: u64,
     ) -> Result<(Vec<ExecutableSlotV1>, ExecutableStepV1), ExecutableErrorV1> {
+        self.prepare_step_traced(occurrence, step_ordinal, configuration_ordinal, &self.configuration, None)
+    }
+
+    fn prepare_step_traced(
+        &self,
+        occurrence: ExecutableOccurrenceV1,
+        step_ordinal: u64,
+        configuration_ordinal: u64,
+        configuration: &[ExecutableSlotV1],
+        mut trace: Option<&mut ExecutableEvaluationTraceV1>,
+    ) -> Result<(Vec<ExecutableSlotV1>, ExecutableStepV1), ExecutableErrorV1> {
         let evaluation = EvaluationContextV1 {
             allocation_root: self.allocation.root,
             step_ordinal,
+            reads: None,
         };
         let mut selected = Vec::new();
         let mut selected_targets = BTreeMap::new();
@@ -4578,18 +4622,25 @@ impl ExecutableProcessRuntimeV1 {
             .program
             .rules
             .iter()
-            .filter(|rule| rule.entry == occurrence.entry)
+            .enumerate()
+            .filter(|(_, rule)| rule.entry == occurrence.entry)
         {
+            let (rule_index, rule) = rule;
             let structural_match = rule.required_present.iter().all(|slot| {
-                self.configuration
+                configuration
                     .get(usize::from(*slot))
                     .is_some_and(|slot| slot.value().is_some())
             }) && rule.required_absent.iter().all(|slot| {
-                self.configuration
+                configuration
                     .get(usize::from(*slot))
                     .is_some_and(|slot| slot.value().is_none())
             });
+            let mut rule_trace = ExecutableRuleEvaluationV1 { rule: rule_index as u16,
+                required_present: rule.required_present.iter().map(|slot| (*slot, configuration[usize::from(*slot)].value().is_some())).collect(),
+                required_absent: rule.required_absent.iter().map(|slot| (*slot, configuration[usize::from(*slot)].value().is_none())).collect(),
+                predicates: Vec::new(), selected: false, effects: Vec::new() };
             if !structural_match {
+                if let Some(trace) = &mut trace { trace.push(rule_trace); }
                 continue;
             }
             let matches = rule
@@ -4599,17 +4650,20 @@ impl ExecutableProcessRuntimeV1 {
                     if !matches {
                         return Ok(false);
                     }
-                    let value = evaluate(
+                    let evaluated = evaluate_explained(
                         predicate,
-                        &self.configuration,
+                        configuration,
                         &occurrence.arguments,
                         evaluation,
                     )?;
+                    let value = evaluated.value.clone();
+                    rule_trace.predicates.push(evaluated);
                     Ok::<_, ExecutableErrorV1>(
                         matches && value.as_boolean().ok_or(ExecutableErrorV1::TypeMismatch)?,
                     )
                 })?;
             if matches {
+                rule_trace.selected = true;
                 // All matching occurrences observe pre-state. Overlapping
                 // effects require an explicit additive contribution contract;
                 // ordinary replacement/removal is an atomic conflict.
@@ -4630,35 +4684,42 @@ impl ExecutableProcessRuntimeV1 {
                         return Err(ExecutableErrorV1::ConflictingStateEffects(slot));
                     }
                 }
-                selected.push(rule);
+                selected.push((rule_index, rule));
             }
+            if let Some(trace) = &mut trace { trace.push(rule_trace); }
         }
-        let mut next = self.configuration.clone();
+        let mut next = configuration.to_vec();
         let mut contributions = BTreeMap::<u16, Vec<f64>>::new();
-        for rule in &selected {
+        for (rule_index, rule) in &selected {
             for (slot, expression) in &rule.assignments {
                 if let ExecutableExpressionV1::Accumulate(delta) = expression {
-                    let delta = number(evaluate(
+                    let mut evaluated = evaluate_explained(
                         delta,
-                        &self.configuration,
+                        configuration,
                         &occurrence.arguments,
                         evaluation,
-                    )?)?;
+                    )?;
+                    let delta = number(evaluated.value.clone())?;
+                    evaluated.expression = expression.clone();
+                    if let Some(trace) = &mut trace { trace.effect(*rule_index as u16, *slot, true, Some(evaluated)); }
                     contributions.entry(*slot).or_default().push(delta);
                     continue;
                 }
-                let value = evaluate(
+                let evaluated = evaluate_explained(
                     expression,
-                    &self.configuration,
+                    configuration,
                     &occurrence.arguments,
                     evaluation,
                 )?;
+                let value = evaluated.value.clone();
+                if let Some(trace) = &mut trace { trace.effect(*rule_index as u16, *slot, false, Some(evaluated)); }
                 let target = next
                     .get_mut(usize::from(*slot))
                     .ok_or(ExecutableErrorV1::UnknownSlot(*slot))?;
                 *target = value.into();
             }
             for slot in &rule.removals {
+                if let Some(trace) = &mut trace { trace.effect(*rule_index as u16, *slot, false, None); }
                 let target = next
                     .get_mut(usize::from(*slot))
                     .ok_or(ExecutableErrorV1::UnknownSlot(*slot))?;
@@ -4669,7 +4730,7 @@ impl ExecutableProcessRuntimeV1 {
             // Canonical numeric ordering makes the result independent of rule
             // discovery order. The numeric domain rejects non-finite results.
             deltas.sort_by(f64::total_cmp);
-            let initial = self.configuration[usize::from(slot)]
+            let initial = configuration[usize::from(slot)]
                 .value()
                 .ok_or(ExecutableErrorV1::MissingState)?;
             let mut value = number(initial.clone())?;
@@ -5508,6 +5569,7 @@ impl ExecutableProcessRuntimeV1 {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ExecutableErrorV1 {
+    SourceContinuityRejected(&'static str),
     MalformedPhysicalPlan,
     UnsupportedPhysicalTarget,
     UnsupportedPhysicalRefinement,
@@ -6224,9 +6286,10 @@ fn projection_subtree_has_present_role(
 }
 
 #[derive(Clone, Copy)]
-struct EvaluationContextV1 {
+struct EvaluationContextV1<'a> {
     allocation_root: [u8; IDENTITY_BYTES],
     step_ordinal: u64,
+    reads: Option<&'a std::cell::RefCell<Vec<ExecutableReadV1>>>,
 }
 
 fn evaluate(
@@ -6238,16 +6301,24 @@ fn evaluate(
     use ExecutableExpressionV1 as E;
     match expression {
         E::Constant(value) => Ok(value.clone()),
-        E::Slot(slot) => slots
+        E::Slot(slot) => {
+            let value = slots
             .get(usize::from(*slot))
             .ok_or(ExecutableErrorV1::UnknownSlot(*slot))?
             .value()
             .cloned()
-            .ok_or(ExecutableErrorV1::MissingState),
-        E::Argument(argument) => arguments
+            .ok_or(ExecutableErrorV1::MissingState)?;
+            if let Some(reads) = context.reads { reads.borrow_mut().push(ExecutableReadV1::State(*slot, value.clone())); }
+            Ok(value)
+        }
+        E::Argument(argument) => {
+            let value = arguments
             .get(usize::from(*argument))
             .cloned()
-            .ok_or(ExecutableErrorV1::UnknownArgument(*argument)),
+            .ok_or(ExecutableErrorV1::UnknownArgument(*argument))?;
+            if let Some(reads) = context.reads { reads.borrow_mut().push(ExecutableReadV1::Argument(*argument, value.clone())); }
+            Ok(value)
+        }
         E::Accumulate(_) => Err(ExecutableErrorV1::MalformedProgram),
         E::FreshReferent { domain, binder } => {
             Ok(ExecutableValueV1::Referent(ExecutableReferentV1::created(

@@ -21,6 +21,8 @@ use crate::term::{EqualityContract, Term, TermError, TermScope};
 
 mod scalar_laws;
 use scalar_laws::*;
+mod live_edit;
+pub use live_edit::*;
 
 const SOURCE_ARTIFACT_DOMAIN: &str = "clause/source-artifact/v1";
 const SOURCE_LOCAL_ALLOCATION_DOMAIN: &str = "clause/source-local-allocation/v1";
@@ -7014,8 +7016,7 @@ pub fn elaborate_canonical_source_package_v1(
             CstKind::Unsupported(value) => unsupported.push(value.clone()),
         }
     }
-    let (checked_package, checked_execution) = std::thread::scope(|parallel| {
-        let execution = parallel.spawn(|| {
+    let check_execution = || {
             checked_canonical_source_execution_v1(
                 cst,
                 plan,
@@ -7024,7 +7025,8 @@ pub fn elaborate_canonical_source_package_v1(
                 &scalar_parts,
                 tick_parts,
             )
-        });
+        };
+    let check_package = || {
         formations.sort_by_key(|formation| formation.id);
         schemas.sort_by_key(|schema| schema.id);
         capabilities.sort_by_key(|capability| capability.id);
@@ -7058,11 +7060,24 @@ pub fn elaborate_canonical_source_package_v1(
             let checked = check_process_package(decoded).map_err(CanonicalSourceErrorV1::Check)?;
             Ok(checked)
         })();
-        let checked_execution = match execution.join() {
+        checked_package
+    };
+    // Thread availability is physical execution strategy, not source meaning.
+    // Both targets perform the exact same two checks; Wasm cannot spawn a
+    // native scoped thread while replaying a checked source operation.
+    #[cfg(target_arch = "wasm32")]
+    let (checked_package, checked_execution) = {
+        (check_package()?, check_execution()?)
+    };
+    #[cfg(not(target_arch = "wasm32"))]
+    let (checked_package, checked_execution) = std::thread::scope(|parallel| {
+        let execution = parallel.spawn(check_execution);
+        let package = check_package();
+        let execution = match execution.join() {
             Ok(result) => result,
             Err(payload) => std::panic::resume_unwind(payload),
         };
-        Ok::<_, CanonicalSourceErrorV1>((checked_package?, checked_execution?))
+        Ok::<_, CanonicalSourceErrorV1>((package?, execution?))
     })?;
     let CheckedCanonicalSourceExecutionV1 {
         state_cells,

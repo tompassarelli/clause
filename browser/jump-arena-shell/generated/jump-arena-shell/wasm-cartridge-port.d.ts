@@ -149,6 +149,17 @@ export type Cse1Event = (Cse1EventBase & Readonly<{
 export interface ProjectedObject {
     readonly [key: string]: ProjectedValue;
 }
+export type ProjectedReferent = Readonly<{
+    kind: "referent";
+    domain: number;
+    identity: Readonly<{
+        kind: "declared";
+        value: number;
+    }> | Readonly<{
+        kind: "created";
+        value: readonly number[];
+    }>;
+}>;
 export type ProjectedValue = number | boolean | string | readonly ProjectedValue[] | ProjectedObject;
 declare function decode_cwr1_hex(source: unknown): ExactBytes;
 declare function ExactProcessRequest(bytes: ExactBytes): ExactProcessRequest;
@@ -202,6 +213,24 @@ declare function admit_session_candidate_bang(module: unknown, incoming_session:
     kind: "admission";
 }>;
 declare function create_wasm_cartridge_port_bang(module: unknown, policy: workbench.WorkbenchPolicy): workbench.CartridgePort;
+/** Apply compiler-owned CET1 to this exact live Wasm session. No source parsing,
+ * identity inference, native shadow-state import, or automatic Admission. */
+export declare function editSourceSession(module: unknown, incomingSession: unknown, generation: number, request: ExactProcessRequest, witness: ExactBytes, policy: workbench.WorkbenchPolicy): workbench.SessionCompletion;
+export declare function explainSession(module: unknown, incomingSession: unknown, entry: number): ProjectedValue;
+export declare function sourceContinuity(module: unknown, incomingSession: unknown): ProjectedValue;
+/** Read-only opaque CIQ1 request: all search and semantic evaluation occurs
+ * inside the live Wasm runtime against a retained actual event. */
+export declare function interveneSession(module: unknown, incomingSession: unknown, query: ExactBytes): ProjectedValue;
+export interface FiniteScalarChange {
+    readonly slot: number;
+    readonly value: boolean | number;
+}
+/** Passive typed serializer for a finite question supplied by the caller.
+ * CPP1 tags encode the shared normalized predicate; no local evaluation. */
+export declare function finiteScalarInterventionQuery(event: string, allowed: readonly FiniteScalarChange[], maximumEvaluations: number, desired: {
+    readonly slot: number;
+    readonly greaterThan: number;
+} | boolean): ExactBytes;
 declare const create_wasm_cartridge_port: typeof create_wasm_cartridge_port_bang;
 export { Cwo1Observation as "->Cwo1Observation" };
 export { ExactProcessObservation as "->ExactProcessObservation" };

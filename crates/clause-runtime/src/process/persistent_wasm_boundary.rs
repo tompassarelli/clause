@@ -301,6 +301,40 @@ impl Default for WasmPersistentSessionBoundaryV1 {
 }
 
 impl WasmPersistentSessionBoundaryV1 {
+    fn captured_session(&self, handle: WasmSessionHandleV1) -> Result<&PersistentProcessSessionV1, WasmProcessStatusV1> {
+        if handle.slot != SLOT || self.generation != Some(handle.generation) { return Err(WasmProcessStatusV1::StaleSessionHandle); }
+        Ok(&self.live.as_ref().ok_or(WasmProcessStatusV1::StaleSessionHandle)?.session)
+    }
+
+    pub fn recorded_event(&self, handle: WasmSessionHandleV1, entry: u16) -> Result<Option<&super::ExecutableRecordedEventV1>, WasmProcessStatusV1> {
+        self.captured_session(handle)?.recorded_event(entry).map_err(|_| WasmProcessStatusV1::ProcessRejected)
+    }
+
+    pub fn explanation_term(&self, handle: WasmSessionHandleV1, entry: u16) -> Result<Term, WasmProcessStatusV1> {
+        self.captured_session(handle)?.explanation_term(entry).map_err(|_| WasmProcessStatusV1::ProcessRejected)
+    }
+
+    pub fn intervene(&self, handle: WasmSessionHandleV1, query: &super::ExecutableInterventionQueryV1) -> Result<super::ExecutableInterventionResultV1, WasmProcessStatusV1> {
+        self.captured_session(handle)?.intervene(query).map_err(|_| WasmProcessStatusV1::ProcessRejected)
+    }
+
+    pub fn explanation_bytes(&self, handle: WasmSessionHandleV1, entry: u16) -> Result<Vec<u8>, WasmProcessStatusV1> {
+        diagnostic_bytes(self.explanation_term(handle, entry)?)
+    }
+
+    pub fn source_continuity_term(&self, handle: WasmSessionHandleV1) -> Result<Term, WasmProcessStatusV1> {
+        self.captured_session(handle)?.source_continuity_term().map_err(|_| WasmProcessStatusV1::ProcessRejected)
+    }
+
+    pub fn intervention_bytes(&self, handle: WasmSessionHandleV1, request: &[u8]) -> Result<Vec<u8>, WasmProcessStatusV1> {
+        let query = super::decode_executable_intervention_query_v1(request).map_err(|_| WasmProcessStatusV1::MalformedRequest)?;
+        let result = self.intervene(handle, &query)?;
+        let carrier = self.captured_session(handle)?.carrier().map_err(|_| WasmProcessStatusV1::ProcessRejected)?;
+        let constitution = carrier.constitution();
+        let scope = TermScope { universe: constitution.universe(), semantics: constitution.semantics() };
+        diagnostic_bytes(super::executable_intervention_result_term_v1(scope, &result).map_err(|_| WasmProcessStatusV1::ProcessRejected)?)
+    }
+
     #[must_use]
     pub fn new() -> Self {
         Self::default()
@@ -341,6 +375,16 @@ impl WasmPersistentSessionBoundaryV1 {
             .and_then(|()| self.command_buffered())
     }
 
+    pub fn source_edit_bulk(
+        &mut self, handle: WasmSessionHandleV1, sequence: u64, open: &[u8], witness: &[u8],
+    ) -> Result<(), WasmProcessStatusV1> {
+        self.clear_io();
+        match self.open_source_edit(handle, sequence, open, witness) {
+            Ok(event) => self.install_event(event),
+            Err(error) => { self.status = error; Err(error) }
+        }
+    }
+
     pub fn open_buffered(&mut self) -> Result<(), WasmProcessStatusV1> {
         self.event.clear();
         let mut bytes = Vec::new();
@@ -374,6 +418,37 @@ impl WasmPersistentSessionBoundaryV1 {
     }
 
     pub fn open(&mut self, bytes: &[u8]) -> Result<WasmSessionEventV1, WasmProcessStatusV1> {
+        self.open_inner(bytes, None)
+    }
+
+    /// A compiler witness is replayed against the exact currently owned plan.
+    /// It carries no host configuration. Only after all checks succeed is the
+    /// replacement initialized internally from the actual live runtime.
+    pub fn open_source_edit(
+        &mut self,
+        handle: WasmSessionHandleV1,
+        expected_sequence: u64,
+        open: &[u8],
+        witness: &[u8],
+    ) -> Result<WasmSessionEventV1, WasmProcessStatusV1> {
+        if handle.slot != SLOT || self.generation != Some(handle.generation) {
+            return Err(WasmProcessStatusV1::StaleSessionHandle);
+        }
+        let live = self.live.as_ref().ok_or(WasmProcessStatusV1::StaleSessionHandle)?;
+        if live.sequence != expected_sequence { return Err(WasmProcessStatusV1::SequenceRejected); }
+        let carrier = live.session.carrier().map_err(|_| WasmProcessStatusV1::ProcessRejected)?;
+        let constitution = carrier.constitution();
+        let scope = TermScope { universe: constitution.universe(), semantics: constitution.semantics() };
+        let witness = super::decode_executable_source_edit_v1(witness).map_err(|_| WasmProcessStatusV1::MalformedRequest)?;
+        let request = decode_wasm_session_open_v1(open)?;
+        if request.physical_plan_bytes != witness.new_cpp1 || !matches!(request.allocation, WasmSessionAllocationV1::New) {
+            return Err(WasmProcessStatusV1::ProcessRejected);
+        }
+        let checked = super::check_executable_source_edit_v1(&witness, scope).map_err(|_| WasmProcessStatusV1::ProcessRejected)?;
+        self.open_inner(open, Some(&checked))
+    }
+
+    fn open_inner(&mut self, bytes: &[u8], continuity: Option<&super::CheckedExecutableSourceEditV1>) -> Result<WasmSessionEventV1, WasmProcessStatusV1> {
         let request = decode_wasm_session_open_v1(bytes)?;
         validate_limits(request.limits)?;
         if self.exhausted {
@@ -395,13 +470,17 @@ impl WasmPersistentSessionBoundaryV1 {
                 }
             },
         };
-        let session = instantiate_persistent_process_session_v1(
+        let mut session = instantiate_persistent_process_session_v1(
             request.package_bytes,
             request.application,
             request.physical_plan_bytes,
             request.authority,
             request.allocation,
         )?;
+        if let Some(checked) = continuity {
+            let previous = &self.live.as_ref().ok_or(WasmProcessStatusV1::StaleSessionHandle)?.session;
+            session.initialize_source_continuity(previous, checked).map_err(|_| WasmProcessStatusV1::ProcessRejected)?;
+        }
         let handle = WasmSessionHandleV1 {
             slot: SLOT,
             generation,
@@ -562,6 +641,12 @@ impl WasmPersistentSessionBoundaryV1 {
     pub const fn status(&self) -> WasmProcessStatusV1 {
         self.status
     }
+}
+
+fn diagnostic_bytes(term: Term) -> Result<Vec<u8>, WasmProcessStatusV1> {
+    let bytes = canonical_term_bytes(&term).map_err(|_| WasmProcessStatusV1::ProcessRejected)?;
+    if bytes.len() > 1024 * 1024 { return Err(WasmProcessStatusV1::ResponseOutOfBounds); }
+    Ok(bytes)
 }
 
 /// Open a fresh native persistent session from one exact checked CWR1
@@ -1922,6 +2007,34 @@ mod wasm_exports {
         })
     }
 
+    #[wasm_bindgen(skip_typescript)]
+    pub fn clause_session_v1_source_edit_bulk(slot: u32, generation: u32, sequence: u64, open: &[u8], witness: &[u8]) -> u32 {
+        SESSION_BOUNDARY.with_borrow_mut(|boundary| match boundary.source_edit_bulk(
+            super::WasmSessionHandleV1 { slot, generation }, sequence, open, witness,
+        ) {
+            Ok(()) => WasmProcessStatusV1::Ready as u32,
+            Err(error) => error as u32,
+        })
+    }
+
+    #[wasm_bindgen]
+    pub fn clause_session_v1_explain_bulk(slot: u32, generation: u32, entry: u16) -> Result<Vec<u8>, wasm_bindgen::JsError> {
+        SESSION_BOUNDARY.with_borrow(|boundary| boundary.explanation_bytes(super::WasmSessionHandleV1 { slot, generation }, entry))
+            .map_err(|error| wasm_bindgen::JsError::new(&error.to_string()))
+    }
+
+    #[wasm_bindgen]
+    pub fn clause_session_v1_source_continuity_bulk(slot: u32, generation: u32) -> Result<Vec<u8>, wasm_bindgen::JsError> {
+        SESSION_BOUNDARY.with_borrow(|boundary| boundary.source_continuity_term(super::WasmSessionHandleV1 { slot, generation }).and_then(super::diagnostic_bytes))
+            .map_err(|error| wasm_bindgen::JsError::new(&error.to_string()))
+    }
+
+    #[wasm_bindgen(skip_typescript)]
+    pub fn clause_session_v1_intervene_bulk(slot: u32, generation: u32, request: &[u8]) -> Result<Vec<u8>, wasm_bindgen::JsError> {
+        SESSION_BOUNDARY.with_borrow(|boundary| boundary.intervention_bytes(super::WasmSessionHandleV1 { slot, generation }, request))
+            .map_err(|error| wasm_bindgen::JsError::new(&error.to_string()))
+    }
+
     #[wasm_bindgen]
     pub fn clause_session_v1_event_bulk() -> Vec<u8> {
         SESSION_BOUNDARY.with_borrow(|boundary| boundary.event().to_vec())
@@ -1931,6 +2044,8 @@ mod wasm_exports {
     const SESSION_BULK_TYPES: &'static str = r#"
 export function clause_session_v1_open_bulk(request: Uint8Array<ArrayBuffer>): number;
 export function clause_session_v1_command_bulk(request: Uint8Array<ArrayBuffer>): number;
+export function clause_session_v1_source_edit_bulk(slot: number, generation: number, sequence: bigint, open: Uint8Array<ArrayBuffer>, witness: Uint8Array<ArrayBuffer>): number;
+export function clause_session_v1_intervene_bulk(slot: number, generation: number, request: Uint8Array<ArrayBuffer>): Uint8Array;
 "#;
 
     #[wasm_bindgen]

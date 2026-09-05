@@ -778,6 +778,7 @@ fn physical_plan_with_source(
         ]);
     }
     ExecutablePhysicalPlanV1 {
+        source_metadata: None,
         application_shape: constitution
             .application_shape(application)
             .expect("fixture Application has one exact semantic shape"),
@@ -830,6 +831,7 @@ fn scalar_plan_with_source_and_projection(
     };
     let handler = source_scalar_handler(source, scope);
     ExecutablePhysicalPlanV1 {
+        source_metadata: None,
         application_shape: constitution
             .application_shape(application)
             .expect("fixture Application has one exact semantic shape"),

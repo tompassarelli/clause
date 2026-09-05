@@ -96,6 +96,7 @@ pub struct ResidentSourceWorkbenchV1 {
     exact_source: Vec<u8>,
     default_occurrences: Vec<Vec<u8>>,
     handlers: BTreeMap<Vec<u8>, Vec<ExecutableCanonicalHandlerBindingV1>>,
+    last_source_edit: Option<Vec<u8>>,
 }
 
 impl ResidentSourceWorkbenchV1 {
@@ -152,6 +153,7 @@ impl ResidentSourceWorkbenchV1 {
             exact_source: Vec::new(),
             default_occurrences: Vec::new(),
             handlers: BTreeMap::new(),
+            last_source_edit: None,
         };
         workbench.install_source(exact_source)?;
         Ok(workbench)
@@ -259,6 +261,80 @@ impl ResidentSourceWorkbenchV1 {
         self.install_source(exact_source)?;
         while self.boundary.reclaim_retired() {}
         Ok(self.generation.clone())
+    }
+
+    pub fn scalar_effects(&self) -> Result<Vec<clause_package::CanonicalScalarEffectV1>, ResidentSourceWorkbenchErrorV1> {
+        let cst = read_canonical_source_v1(&self.exact_source).map_err(|error| debug_error("source read", error))?;
+        let plan = plan_independent_canonical_source_allocations_v1(&cst, ProgramChangeOccurrenceId::from_bytes(sequence_id(self.next_change)))
+            .map_err(|error| debug_error("source allocations", error))?;
+        clause_package::canonical_scalar_effects_v1(&cst, &plan).map_err(|error| debug_error("editable effects", error))
+    }
+
+    /// Replay one explicit compiler-owned operation. Arbitrary imported text
+    /// cannot claim continuity. Exact no-op and rejected operations leave the
+    /// generation, pending candidate and handler table untouched.
+    pub fn edit_scalar_effect(
+        &mut self,
+        captured_handle: WasmSessionHandleV1,
+        selected: &clause_package::CanonicalScalarEffectV1,
+        replacement: &[u8],
+    ) -> Result<ResidentSourceGenerationV1, ResidentSourceWorkbenchErrorV1> {
+        if captured_handle != self.generation.handle || !self.scalar_effects()?.contains(selected) {
+            return Err(ResidentSourceWorkbenchErrorV1("stale structured source operation".into()));
+        }
+        if selected.expression == replacement { return Ok(self.generation.clone()); }
+        if self.pending.is_some() {
+            return Err(ResidentSourceWorkbenchErrorV1("settle hidden candidate before changed source edit".into()));
+        }
+        let old_root = ProgramChangeOccurrenceId::from_bytes(sequence_id(self.next_change));
+        let new_root = ProgramChangeOccurrenceId::from_bytes(sequence_id(self.next_change.checked_add(1)
+            .ok_or_else(|| ResidentSourceWorkbenchErrorV1("source sequence exhausted".into()))?));
+        let cst = read_canonical_source_v1(&self.exact_source).map_err(|error| debug_error("source read", error))?;
+        let plan = plan_independent_canonical_source_allocations_v1(&cst, old_root).map_err(|error| debug_error("source allocation", error))?;
+        let edit = clause_package::replace_canonical_scalar_effect_v1(&cst, &plan, selected, replacement, new_root)
+            .map_err(|error| debug_error("structured edit", error))?;
+        let witness = clause_runtime::ExecutableSourceEditV1 {
+            old_source: self.exact_source.clone(), old_root, new_root, handler: selected.handler,
+            effect: selected.effect, expression: replacement.to_vec(), old_cpp1: self.generation.cpp1.clone(), new_cpp1: vec![],
+        };
+        self.install_source_with_edit(edit.source().exact_source(), Some(witness))?;
+        while self.boundary.reclaim_retired() {}
+        Ok(self.generation.clone())
+    }
+
+    /// Compiler witness only: the external browser must apply it to its own
+    /// captured live Wasm generation. It contains no native runtime state.
+    pub fn last_source_edit(&self) -> Option<&[u8]> { self.last_source_edit.as_deref() }
+
+    pub fn source_continuity(&self) -> Result<clause_package::Term, ResidentSourceWorkbenchErrorV1> {
+        Ok(self.boundary.source_continuity_term(self.generation.handle)?)
+    }
+
+    pub fn recorded_event(&self, designation: &[u8]) -> Result<Option<&clause_runtime::ExecutableRecordedEventV1>, ResidentSourceWorkbenchErrorV1> {
+        let occurrence = decode_executable_occurrence_v1(&self.handler_occurrence(designation, &[])?)
+            .map_err(|error| boxed_error("explanation handler", error))?;
+        Ok(self.boundary.recorded_event(self.generation.handle, occurrence.entry)?)
+    }
+
+    pub fn explanation(&self, designation: &[u8]) -> Result<clause_package::Term, ResidentSourceWorkbenchErrorV1> {
+        let occurrence = decode_executable_occurrence_v1(&self.handler_occurrence(designation, &[])?)
+            .map_err(|error| boxed_error("explanation handler", error))?;
+        Ok(self.boundary.explanation_term(self.generation.handle, occurrence.entry)?)
+    }
+
+    pub fn intervene(&self, query: &clause_runtime::ExecutableInterventionQueryV1) -> Result<clause_runtime::ExecutableInterventionResultV1, ResidentSourceWorkbenchErrorV1> {
+        Ok(self.boundary.intervene(self.generation.handle, query)?)
+    }
+
+    pub fn state_bindings(&self) -> Result<Vec<clause_runtime::ExecutableCanonicalStateBindingV1>, ResidentSourceWorkbenchErrorV1> {
+        let cst = read_canonical_source_v1(&self.exact_source).map_err(|error| debug_error("state source", error))?;
+        let allocations = plan_independent_canonical_source_allocations_v1(&cst, ProgramChangeOccurrenceId::from_bytes(sequence_id(self.next_change)))
+            .map_err(|error| debug_error("state allocation", error))?;
+        let compiled = elaborate_canonical_source_package_v1(&cst, CanonicalSourceContextV1 {
+            universe: self.template_scope.universe, semantics: self.template_scope.semantics }, &allocations)
+            .map_err(|error| debug_error("state elaboration", error))?;
+        Ok(lower_canonical_executable_program_v1(self.template_scope, &compiled.state_cells, &compiled.executable_handlers, &self.template_projection_roles)
+            .map_err(|error| boxed_error("state binding", error))?.states)
     }
 
     /// Run the template's opaque occurrence sequence and stop at a hidden
@@ -448,6 +524,14 @@ impl ResidentSourceWorkbenchV1 {
     fn install_source(
         &mut self,
         exact_source: &[u8],
+    ) -> Result<(), ResidentSourceWorkbenchErrorV1> {
+        self.install_source_with_edit(exact_source, None)
+    }
+
+    fn install_source_with_edit(
+        &mut self,
+        exact_source: &[u8],
+        mut edit: Option<clause_runtime::ExecutableSourceEditV1>,
     ) -> Result<(), ResidentSourceWorkbenchErrorV1> {
         let next_change = self.next_change.checked_add(1).ok_or_else(|| {
             ResidentSourceWorkbenchErrorV1("source change sequence exhausted".into())
@@ -660,6 +744,10 @@ impl ResidentSourceWorkbenchV1 {
         physical_plan
             .project_referent_input_domains(scope)
             .map_err(|error| boxed_error("referent input domain projection", error))?;
+        if !declarative_only {
+            physical_plan.bind_source_snapshot(scope, &compiled, cst.artifact(), allocation_plan.root())
+                .map_err(|error| boxed_error("checked source snapshot", error))?;
+        }
         let cpp1 = encode_executable_physical_plan_v1(&physical_plan)
             .map_err(|error| boxed_error("CPP1 encode", error))?;
         let open = WasmSessionOpenV1 {
@@ -684,7 +772,16 @@ impl ResidentSourceWorkbenchV1 {
         // The opened allocation only replaces a fixed-width, already-valid epoch.
         encode_wasm_process_request_v1(&cwr1)?;
         let exact_open = encode_wasm_session_open_v1(&open)?;
-        let opened = self.boundary.open(&exact_open)?;
+        let source_edit = edit.as_mut().map(|edit| {
+            edit.new_cpp1 = cpp1.clone();
+            clause_runtime::check_executable_source_edit_v1(edit, scope)
+                .map_err(|error| boxed_error("source continuity check", error))?;
+            clause_runtime::encode_executable_source_edit_v1(edit)
+                .map_err(|error| boxed_error("source edit encode", error))
+        }).transpose()?;
+        let opened = if let Some(witness) = &source_edit {
+            self.boundary.open_source_edit(self.generation.handle, self.sequence, &exact_open, witness)?
+        } else { self.boundary.open(&exact_open)? };
         let WasmSessionEventKindV1::Opened {
             package: package_id,
             session,
@@ -713,6 +810,7 @@ impl ResidentSourceWorkbenchV1 {
         self.sequence = 0;
         self.pending = None;
         self.last_projection = None;
+        self.last_source_edit = source_edit;
         Ok(())
     }
 

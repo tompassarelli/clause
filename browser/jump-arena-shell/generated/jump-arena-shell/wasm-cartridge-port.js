@@ -41,6 +41,33 @@ const canonical_term_triple_path_min_bytes = 1 + 2 * canonical_term_atom_min_byt
 const cse1_projected_term_max_depth = Math.trunc((cse1_max_bytes - 2 * identity_bytes - canonical_term_atom_min_bytes) /
     canonical_term_triple_path_min_bytes);
 const allocation_epoch_bytes = 304;
+function is_source_edit_module(module) {
+    return is_session_wasm_module(module) && "clause_session_v1_source_edit_bulk" in module
+        && typeof module.clause_session_v1_source_edit_bulk === "function";
+}
+function checked_referent(value) {
+    const u32 = (value) => typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= 0xffffffff;
+    if (typeof value !== "object" || value === null || !("kind" in value) ||
+        value.kind !== "referent" || !("domain" in value) || !u32(value.domain) ||
+        !("identity" in value)) {
+        throw new Error("referent input is malformed");
+    }
+    const identity = value.identity;
+    if (typeof identity !== "object" || identity === null ||
+        !("kind" in identity) || !("value" in identity)) {
+        throw new Error("referent identity is malformed");
+    }
+    if (identity.kind === "declared" && u32(identity.value)) {
+        return Object.freeze({ kind: "referent", domain: value.domain,
+            identity: Object.freeze({ kind: "declared", value: identity.value }) });
+    }
+    if (identity.kind === "created" && Array.isArray(identity.value) &&
+        identity.value.length === 32 && identity.value.every((byte) => u32(byte) && byte <= 255)) {
+        return Object.freeze({ kind: "referent", domain: value.domain,
+            identity: Object.freeze({ kind: "created", value: Object.freeze([...identity.value]) }) });
+    }
+    throw new Error("referent identity is malformed");
+}
 function hex_whitespace_code_p(code) {
     return (equivalent(code, 9) ||
         equivalent(code, 10) ||
@@ -144,10 +171,11 @@ function wasmcandidate_candidateId(r) {
 function wasmcandidate_base(r) {
     return r.base;
 }
-function WasmSession(handle, packageId, sessionId, allocation, world, sequence, occurrences, disposed) {
+function WasmSession(handle, sourceGeneration, packageId, sessionId, allocation, world, sequence, occurrences, disposed) {
     return Object.freeze({
         _tag: "WasmSession",
         handle,
+        sourceGeneration,
         packageId,
         sessionId,
         allocation,
@@ -189,10 +217,12 @@ function require_persistent_cartridge(value) {
         value._tag !== "PersistentCartridge" ||
         !exact_byte_array_p(value.openBytes, cwr1_max_bytes) ||
         !Array.isArray(value.occurrences) ||
-        value.occurrences.length === 0 ||
         !value.occurrences.every((occurrence) => exact_byte_array_p(occurrence, cwr1_max_bytes))) {
         throw new Error("persistent cartridge is invalid");
     }
+    // Event-only source can have no default opaque occurrences. The checked
+    // runtime validates its physical input plan; the passive wrapper must not
+    // invent a mandatory source timer or reject an already accepted cartridge.
     return PersistentCartridge(value.openBytes, Object.freeze(value.occurrences));
 }
 function persistentcartridge_openBytes(r) {
@@ -506,8 +536,7 @@ function parse_persistent_cartridge_bang(request) {
     const slot_count_end = require_range(bytes, occurrences_result.next, 2, "CWR1 projection count");
     const slot_count = little_u16(bytes, occurrences_result.next);
     const final_offset = require_range(bytes, slot_count_end, slot_count * 2, "CWR1 legacy projection");
-    if (equivalent(occurrence_count, 0) ||
-        !equivalent(final_offset, bytes.length)) {
+    if (!equivalent(final_offset, bytes.length)) {
         (() => {
             throw new Error("CWR1 cartridge shape is incomplete");
         })();
@@ -1068,6 +1097,12 @@ function decode_physical_observation(observation) {
             },
         };
     }
+    if (value.kind === "referent-input") {
+        if (typeof value.generation !== "number" || !Number.isInteger(value.generation) || value.generation < 1 || value.generation > 0xffffffff)
+            throw new Error("referent input requires its captured generation");
+        return { kind: "input", source: { kind: "referent", sequence: observation.sequence,
+                generation: value.generation, channel: ascii_bytes(value.channel, "referent input channel"), value: checked_referent(value.value) } };
+    }
     if (value.kind === "process-occurrence") {
         if (typeof value.ordinal !== "number" ||
             !Number.isSafeInteger(value.ordinal) ||
@@ -1087,7 +1122,7 @@ function physical_input_command_bang(session, input) {
         payload.push(input.phase);
         payload.push(0);
     }
-    else {
+    else if (input.kind === "scalar") {
         payload.push(1);
         append_blob_bang(payload, input.channel);
         payload.push(1);
@@ -1095,6 +1130,23 @@ function physical_input_command_bang(session, input) {
         encoded.setFloat64(0, input.value, true);
         for (let index = 0; index < 8; index += 1) {
             payload.push(encoded.getUint8(index));
+        }
+    }
+    else {
+        if (input.generation !== session.sourceGeneration)
+            throw new Error("referent input belongs to a stale generation");
+        payload.push(2);
+        append_blob_bang(payload, input.channel);
+        payload.push(2);
+        append_u32_bang(payload, input.value.domain);
+        const identity = input.value.identity;
+        if (identity.kind === "declared") {
+            payload.push(0);
+            append_u32_bang(payload, identity.value);
+        }
+        else {
+            payload.push(1);
+            payload.push(...identity.value);
         }
     }
     return encode_session_command_bang(session, 3, payload);
@@ -1250,11 +1302,11 @@ function decode_term_node(bytes, offset, depth) {
                 throw new Error("projected Term node tag is invalid");
             })();
 }
-function decode_canonical_term(bytes) {
+function decode_canonical_term(bytes, maximumBytes = cse1_max_bytes) {
     const envelope_source = workbench["workbench-byte-envelope-source"](bytes);
     const source = envelope_source === null ? bytes : envelope_source;
-    if ((typeof source === "string" && source.length <= cse1_max_bytes) ||
-        exact_byte_array_p(source, cse1_max_bytes)) {
+    if ((typeof source === "string" && source.length <= maximumBytes) ||
+        exact_byte_array_p(source, maximumBytes)) {
         const node_start = require_range(source, 0, 2 * identity_bytes, "projected Term scope");
         const result = decode_term_node(source, node_start, 0);
         if (!equivalent(result.next, source.length)) {
@@ -1328,6 +1380,10 @@ function realize_projection_node(node) {
     if (node.kind === "atom") {
         const kind = atom_kind_text(node);
         const payload = node.payload;
+        if (kind === "clause/js-object-end-v1" && payload.length === 0)
+            return Object.freeze({});
+        if (kind === "clause/js-array-end-v1" && payload.length === 0)
+            return Object.freeze([]);
         if (kind === "clause/process-projected-f64-v1")
             return projected_number(payload);
         if (kind === "clause/process-projected-bool-v1") {
@@ -1341,6 +1397,14 @@ function realize_projection_node(node) {
             return ascii_text(payload, "projected symbol");
         if (kind === "clause/process-projected-text-v1")
             return utf8_text(payload, "projected Text");
+        if (kind === "clause/process-projected-referent-v1") {
+            const bytes = Array.from({ length: payload.length }, (_, index) => byte_at(payload, index));
+            if (payload.length === 9 && byte_at(payload, 4) === 0)
+                return checked_referent({ kind: "referent", domain: little_u32(bytes, 0), identity: { kind: "declared", value: little_u32(bytes, 5) } });
+            if (payload.length === 37 && byte_at(payload, 4) === 1)
+                return checked_referent({ kind: "referent", domain: little_u32(bytes, 0), identity: { kind: "created", value: frozen_byte_range(bytes, 5, 32) } });
+            throw new Error("projected referent is malformed");
+        }
         throw new Error("projected scalar Atom is not realizable");
     }
     else {
@@ -1562,14 +1626,16 @@ function create_wasm_cartridge_port_bang(module, policy) {
                 }
             }
         }
-    })(), (accepted_package, __generation, complete) => (() => {
+    })(), (accepted_package, generation, complete) => (() => {
         try {
             const cartridge = require_persistent_cartridge(accepted_package);
+            if (!Number.isSafeInteger(generation) || generation < 1)
+                throw new Error("source generation is invalid");
             const event = decode_cse1_event(dispatch_session_request(module, cartridge.openBytes, "open"));
             if (event.kind !== "opened" || event.sequence !== 0) {
                 throw new Error("persistent session did not open exactly once");
             }
-            const session = WasmSession(Object.freeze({ slot: event.slot, generation: event.generation }), event.packageId, event.sessionId, event.allocation, { value: event.world, watches: {} }, { value: 0, watches: {} }, cartridge.occurrences, { value: false, watches: {} });
+            const session = WasmSession(Object.freeze({ slot: event.slot, generation: event.generation }), generation, event.packageId, event.sessionId, event.allocation, { value: event.world, watches: {} }, { value: 0, watches: {} }, cartridge.occurrences, { value: false, watches: {} });
             const bootstrap_frame = workbench["create-workbench-envelope"](policy, "[]");
             const prior = active_session.value;
             if (!(prior == null)) {
@@ -1712,6 +1778,109 @@ function create_wasm_cartridge_port_bang(module, policy) {
             })()
             : null;
     });
+}
+/** Apply compiler-owned CET1 to this exact live Wasm session. No source parsing,
+ * identity inference, native shadow-state import, or automatic Admission. */
+export function editSourceSession(module, incomingSession, generation, request, witness, policy) {
+    try {
+        const previous = require_live_session(incomingSession);
+        if (!Number.isSafeInteger(generation) || generation <= previous.sourceGeneration) {
+            throw new Error("source edit requires a fresh captured generation");
+        }
+        if (!is_source_edit_module(module))
+            throw new Error("Wasm runtime lacks checked source edit API");
+        if (!exact_byte_array_p(witness, cwr1_max_bytes))
+            throw new Error("source edit witness exceeds bound");
+        const cartridge = parse_persistent_cartridge_bang(request);
+        const status = module.clause_session_v1_source_edit_bulk(previous.handle.slot, previous.handle.generation, BigInt(previous.sequence.value), new Uint8Array(cartridge.openBytes), new Uint8Array(witness));
+        if (status !== 0)
+            throw new Error(`checked source edit rejected: ${process_status(status)}`);
+        const event = decode_cse1_event([...module.clause_session_v1_event_bulk()]);
+        if (event.kind !== "opened" || event.sequence !== 0)
+            throw new Error("source edit returned invalid replacement custody");
+        const session = WasmSession(Object.freeze({ slot: event.slot, generation: event.generation }), generation, event.packageId, event.sessionId, event.allocation, { value: event.world, watches: {} }, { value: 0, watches: {} }, cartridge.occurrences, { value: false, watches: {} });
+        previous.disposed.value = true;
+        setTimeout(() => reclaim_retired_session_bang(module), 0);
+        return workbench["->SessionStarted"](session, event.world, workbench["create-workbench-envelope"](policy, "[]"));
+    }
+    catch (error) {
+        return workbench["->SessionFailed"](reject_reason(error));
+    }
+}
+function isDiagnosticModule(module) {
+    return is_session_wasm_module(module)
+        && "clause_session_v1_explain_bulk" in module && typeof module.clause_session_v1_explain_bulk === "function"
+        && "clause_session_v1_intervene_bulk" in module && typeof module.clause_session_v1_intervene_bulk === "function"
+        && "clause_session_v1_source_continuity_bulk" in module && typeof module.clause_session_v1_source_continuity_bulk === "function";
+}
+function diagnosticModule(module) {
+    if (!isDiagnosticModule(module)) {
+        throw new Error("Wasm runtime lacks execution-backed diagnostic API");
+    }
+    return module;
+}
+export function explainSession(module, incomingSession, entry) {
+    const session = require_live_session(incomingSession);
+    if (!Number.isInteger(entry) || entry < 0 || entry > 65535)
+        throw new Error("explanation entry is invalid");
+    const bytes = diagnosticModule(module).clause_session_v1_explain_bulk(session.handle.slot, session.handle.generation, entry);
+    return realize_projection_node(decode_canonical_term([...bytes], 1024 * 1024));
+}
+export function sourceContinuity(module, incomingSession) {
+    const session = require_live_session(incomingSession);
+    const bytes = diagnosticModule(module).clause_session_v1_source_continuity_bulk(session.handle.slot, session.handle.generation);
+    return realize_projection_node(decode_canonical_term([...bytes], 1024 * 1024));
+}
+/** Read-only opaque CIQ1 request: all search and semantic evaluation occurs
+ * inside the live Wasm runtime against a retained actual event. */
+export function interveneSession(module, incomingSession, query) {
+    const session = require_live_session(incomingSession);
+    if (!exact_byte_array_p(query, 64 * 1024))
+        throw new Error("intervention query exceeds bound");
+    const bytes = diagnosticModule(module).clause_session_v1_intervene_bulk(session.handle.slot, session.handle.generation, new Uint8Array(query));
+    return realize_projection_node(decode_canonical_term([...bytes], 1024 * 1024));
+}
+/** Passive typed serializer for a finite question supplied by the caller.
+ * CPP1 tags encode the shared normalized predicate; no local evaluation. */
+export function finiteScalarInterventionQuery(event, allowed, maximumEvaluations, desired) {
+    if (!/^[0-9a-f]{64}$/.test(event) || allowed.length > 20 || !Number.isInteger(maximumEvaluations)
+        || maximumEvaluations < 0 || maximumEvaluations > 4096)
+        throw new Error("finite intervention envelope is invalid");
+    const bytes = [67, 73, 81, 49, ...event.match(/../g).map(pair => Number.parseInt(pair, 16))];
+    append_u32_bang(bytes, maximumEvaluations);
+    const slot = (value) => {
+        if (!Number.isInteger(value) || value < 0 || value > 65535)
+            throw new Error("intervention coordinate is invalid");
+        bytes.push(value & 255, value >>> 8);
+    };
+    const scalar = (value) => {
+        if (typeof value === "boolean") {
+            bytes.push(1, value ? 1 : 0);
+            return;
+        }
+        if (!Number.isFinite(value))
+            throw new Error("intervention value is not finite");
+        bytes.push(0);
+        const buffer = new ArrayBuffer(8);
+        new DataView(buffer).setFloat64(0, value === 0 ? 0 : value, true);
+        bytes.push(...new Uint8Array(buffer));
+    };
+    slot(allowed.length);
+    for (const change of allowed) {
+        slot(change.slot);
+        scalar(change.value);
+    }
+    if (typeof desired === "boolean") {
+        bytes.push(0);
+        scalar(desired);
+    }
+    else {
+        bytes.push(8, 1);
+        slot(desired.slot);
+        bytes.push(0);
+        scalar(desired.greaterThan);
+    }
+    return Object.freeze(bytes);
 }
 const create_wasm_cartridge_port = create_wasm_cartridge_port_bang;
 export { Cwo1Observation as "->Cwo1Observation" };
